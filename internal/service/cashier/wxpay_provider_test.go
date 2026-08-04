@@ -133,6 +133,15 @@ func TestWxPayPaymentDisplayBuilderBuildsJSAPIToken(t *testing.T) {
 	}
 }
 
+func TestWxPayAmountRejectsFractionalFen(t *testing.T) {
+	if _, err := WxPayAmountFenFromCNY("12.345"); err == nil {
+		t.Fatal("expected WeChat Pay amount with fractional fen to be rejected")
+	}
+	if amount, err := WxPayAmountFenFromCNY("12.34000"); err != nil || amount != 1234 {
+		t.Fatalf("expected exact-fen amount 1234, got amount=%d err=%v", amount, err)
+	}
+}
+
 func buildWxPayDisplayForTest(t *testing.T, privateKey string, gatewayURL string, paymentMode string, extraConfig map[string]any) PaymentDisplayResult {
 	t.Helper()
 	config := map[string]any{

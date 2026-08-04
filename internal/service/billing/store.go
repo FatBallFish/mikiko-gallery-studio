@@ -112,6 +112,8 @@ type Store interface {
 	ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error)
 	CreateOrder(ctx context.Context, req domainbilling.CreateOrderRequest) (domainbilling.PaymentOrder, error)
 	CreateCustomAmountOrder(ctx context.Context, req domainbilling.CreateCustomAmountOrderRequest) (domainbilling.PaymentOrder, error)
+	InitializePaymentOrder(ctx context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error)
+	FailPaymentOrderInitialization(ctx context.Context, req domainbilling.FailPaymentOrderInitializationRequest) (domainbilling.PaymentOrder, error)
 	CancelOrder(ctx context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error)
 	MarkOrderPaid(ctx context.Context, req domainbilling.MarkOrderPaidRequest) (domainbilling.PaymentOrder, error)
 	CompleteRechargeOrder(ctx context.Context, req domainbilling.CompleteRechargeOrderRequest) (domainbilling.PaymentOrder, error)
@@ -668,6 +670,50 @@ func (s *MemoryStore) CreateCustomAmountOrder(_ context.Context, req domainbilli
 	return order, nil
 }
 
+func (s *MemoryStore) InitializePaymentOrder(_ context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.orders[req.OrderID]
+	if !ok || order.UserID != req.UserID {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	if order.Status != "pending" {
+		return order, nil
+	}
+	order.PaymentDisplay = cloneMap(req.PaymentDisplay)
+	order.PaymentURL = strings.TrimSpace(req.PaymentURL)
+	order.QRCode = strings.TrimSpace(req.QRCode)
+	order.ClientToken = strings.TrimSpace(req.ClientToken)
+	order.TradeNo = strings.TrimSpace(req.TradeNo)
+	order.FailureReason = ""
+	order.UpdatedAt = time.Now().UTC()
+	s.orders[order.ID] = order
+	return order, nil
+}
+
+func (s *MemoryStore) FailPaymentOrderInitialization(_ context.Context, req domainbilling.FailPaymentOrderInitializationRequest) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.orders[req.OrderID]
+	if !ok || order.UserID != req.UserID {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	if order.Status != "pending" || paymentOrderHasInitialization(order) {
+		return order, nil
+	}
+	now := time.Now().UTC()
+	order.Status = "failed"
+	order.FailureReason = strings.TrimSpace(req.FailureReason)
+	order.ClosedAt = &now
+	order.UpdatedAt = now
+	s.orders[order.ID] = order
+	return order, nil
+}
+
+func paymentOrderHasInitialization(order domainbilling.PaymentOrder) bool {
+	return strings.TrimSpace(order.PaymentURL) != "" || strings.TrimSpace(order.QRCode) != "" || strings.TrimSpace(order.ClientToken) != "" || len(order.PaymentDisplay) > 0
+}
+
 func (s *MemoryStore) CancelOrder(_ context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -692,6 +738,9 @@ func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrd
 	for id, order := range s.orders {
 		if order.OrderNo != req.OrderNo {
 			continue
+		}
+		if err := ValidatePaymentCallbackBinding(order.ProviderType, order.Provider, order.ProviderInstanceID, req); err != nil {
+			return domainbilling.PaymentOrder{}, err
 		}
 		if err := ensurePaymentAmountMatches(order.AmountCNY, req.AmountCNY, s.scale); err != nil {
 			return domainbilling.PaymentOrder{}, err
@@ -739,6 +788,21 @@ func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrd
 		return order, nil
 	}
 	return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+}
+
+func ValidatePaymentCallbackBinding(orderProviderType, orderProvider string, orderProviderInstanceID int64, req domainbilling.MarkOrderPaidRequest) error {
+	expectedProvider := strings.ToLower(strings.TrimSpace(orderProviderType))
+	if expectedProvider == "" {
+		expectedProvider = strings.ToLower(strings.TrimSpace(orderProvider))
+	}
+	callbackProvider := strings.ToLower(strings.TrimSpace(req.Provider))
+	if expectedProvider == "" || callbackProvider == "" || expectedProvider != callbackProvider {
+		return errs.New(http.StatusConflict, errs.CodePaymentSignatureInvalid, "payment webhook provider does not match order")
+	}
+	if orderProviderInstanceID > 0 && req.ProviderInstanceID != orderProviderInstanceID && callbackProvider != "mock" {
+		return errs.New(http.StatusConflict, errs.CodePaymentSignatureInvalid, "payment webhook provider instance does not match order")
+	}
+	return nil
 }
 
 func ensurePaymentAmountMatches(orderAmountCNY, callbackAmountCNY string, scale int32) error {

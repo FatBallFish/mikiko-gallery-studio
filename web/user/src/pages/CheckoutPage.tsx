@@ -9,6 +9,7 @@ import { Wallet, CreditCard, QrCode } from '../ui/icons'
 import { errorMessage } from '../useApiResource'
 import { checkoutPaymentMethodEmptyState, checkoutPlanEmptyState, checkoutUnavailableEmptyState, type CheckoutUnavailableEmptyState } from './checkoutEmptyState'
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
+import { checkoutPaymentErrorMessage } from './checkoutPaymentError'
 import { closePaymentWindow, dispatchPaymentWindow, reservePaymentWindow } from './checkoutPaymentWindow'
 import { checkoutDateTime, checkoutMoney, checkoutOrderActionState, checkoutOrderRuntimeState, checkoutPaymentMethodLabel, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
 import { checkoutPurchasablePlans } from './checkoutPlans'
@@ -260,7 +261,8 @@ export function CheckoutPage() {
       app.notify('success', '订单已创建，请继续完成支付')
     } catch (caught) {
       closePaymentWindow(paymentWindow)
-      app.notify('error', errorMessage(caught))
+      void loadRecentOrders()
+      app.notify('error', checkoutPaymentErrorMessage(caught))
     } finally {
       setBusy(false)
     }

@@ -573,6 +573,14 @@ func (s *Service) CancelOrder(ctx context.Context, userID, orderID int64) (domai
 	return item, nil
 }
 
+func (s *Service) InitializePaymentOrder(ctx context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error) {
+	return s.store.InitializePaymentOrder(ctx, req)
+}
+
+func (s *Service) FailPaymentOrderInitialization(ctx context.Context, req domainbilling.FailPaymentOrderInitializationRequest) (domainbilling.PaymentOrder, error) {
+	return s.store.FailPaymentOrderInitialization(ctx, req)
+}
+
 func (s *Service) MarkOrderPaid(ctx context.Context, req domainbilling.MarkOrderPaidRequest) (domainbilling.PaymentOrder, error) {
 	item, err := s.store.MarkOrderPaid(ctx, req)
 	if err != nil {

@@ -73,6 +73,41 @@ func TestReserveFinalizeAndLedger(t *testing.T) {
 	}
 }
 
+func TestMarkOrderPaidRejectsCallbackFromDifferentProviderInstance(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	order, err := svc.CreateCustomAmountOrder(t.Context(), domainbilling.CreateCustomAmountOrderRequest{
+		UserID:             901,
+		OrderNo:            "PGO-CALLBACK-BINDING-MEMORY",
+		AmountCNY:          "10.00",
+		CNYPerPoint:        "0.31250",
+		Provider:           "jeepay_alipay",
+		PurchaseType:       "custom_amount",
+		VisibleMethod:      "alipay",
+		ProviderType:       "jeepay_alipay",
+		ProviderInstanceID: 41,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+
+	if _, err := svc.MarkOrderPaid(t.Context(), domainbilling.MarkOrderPaidRequest{
+		Provider:           "jeepay_alipay",
+		ProviderInstanceID: 42,
+		OrderNo:            order.OrderNo,
+		TradeNo:            "JEEPAY-CROSS-INSTANCE",
+		AmountCNY:          order.AmountCNY,
+	}); err == nil {
+		t.Fatal("expected callback from a different provider instance to be rejected")
+	}
+	reloaded, err := svc.GetOrder(t.Context(), order.UserID, order.ID)
+	if err != nil {
+		t.Fatalf("GetOrder: %v", err)
+	}
+	if reloaded.Status != "pending" || reloaded.TradeNo != "" {
+		t.Fatalf("cross-instance callback must not mutate order: %#v", reloaded)
+	}
+}
+
 func TestReserveTaskRejectsInsufficientBalance(t *testing.T) {
 	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
 	if _, err := svc.ReserveTask(context.Background(), domainbilling.ReserveRequest{

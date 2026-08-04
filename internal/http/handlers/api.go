@@ -1093,7 +1093,7 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 	if idempotencyKey != "" {
 		existing, err := a.billing.GetOrderByIdempotencyKey(ctx, userID, idempotencyKey)
 		if err == nil {
-			return existing, nil
+			return cashierExistingOrderResult(existing)
 		}
 		appErr := normalizeAppError(err)
 		if appErr.Code != errs.CodeNotFound {
@@ -1128,15 +1128,6 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 			return domainbilling.PaymentOrder{}, scheduleErr
 		}
 		orderNo := newCashierOrderNo()
-		payment, paymentErr := a.cashierPaymentDisplay(ctx, method, instance, cashierPaymentDisplayRequest{
-			OrderNo:         orderNo,
-			AmountCNY:       strings.TrimSpace(req.AmountCNY),
-			Subject:         "自定义充值",
-			ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
-		})
-		if paymentErr != nil {
-			return domainbilling.PaymentOrder{}, paymentErr
-		}
 		result, err := a.billing.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
 			UserID:             userID,
 			OrderNo:            orderNo,
@@ -1147,16 +1138,27 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 			VisibleMethod:      method.Method,
 			ProviderType:       instance.ProviderType,
 			ProviderInstanceID: instance.ID,
-			PaymentDisplay:     payment.Display,
-			PaymentURL:         payment.PaymentURL,
-			QRCode:             payment.QRCode,
-			ClientToken:        payment.ClientToken,
 			IdempotencyKey:     idempotencyKey,
 		})
 		if err != nil {
 			return domainbilling.PaymentOrder{}, normalizeAppError(err)
 		}
-		return result, nil
+		if result.OrderNo != orderNo {
+			return cashierExistingOrderResult(result)
+		}
+		payment, paymentErr, outcomeUncertain := a.cashierPaymentDisplay(ctx, method, instance, cashierPaymentDisplayRequest{
+			OrderNo:         result.OrderNo,
+			AmountCNY:       result.AmountCNY,
+			Subject:         result.PlanName,
+			ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
+		})
+		if paymentErr != nil {
+			if !outcomeUncertain {
+				a.failCashierOrderInitialization(ctx, result, paymentErr)
+			}
+			return domainbilling.PaymentOrder{}, paymentErr
+		}
+		return a.initializeCashierOrder(ctx, result, payment)
 	}
 	if purchaseType != "plan" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("purchase_type must be plan or custom_amount")
@@ -1170,15 +1172,6 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 		return domainbilling.PaymentOrder{}, scheduleErr
 	}
 	orderNo := newCashierOrderNo()
-	payment, paymentErr := a.cashierPaymentDisplay(ctx, method, instance, cashierPaymentDisplayRequest{
-		OrderNo:         orderNo,
-		AmountCNY:       plan.PriceCNY,
-		Subject:         plan.PlanName,
-		ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
-	})
-	if paymentErr != nil {
-		return domainbilling.PaymentOrder{}, paymentErr
-	}
 	result, err := a.billing.CreateOrder(ctx, domainbilling.CreateOrderRequest{
 		UserID:             userID,
 		OrderNo:            orderNo,
@@ -1188,16 +1181,62 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 		VisibleMethod:      method.Method,
 		ProviderType:       instance.ProviderType,
 		ProviderInstanceID: instance.ID,
-		PaymentDisplay:     payment.Display,
-		PaymentURL:         payment.PaymentURL,
-		QRCode:             payment.QRCode,
-		ClientToken:        payment.ClientToken,
 		IdempotencyKey:     idempotencyKey,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
 	}
-	return result, nil
+	if result.OrderNo != orderNo {
+		return cashierExistingOrderResult(result)
+	}
+	payment, paymentErr, outcomeUncertain := a.cashierPaymentDisplay(ctx, method, instance, cashierPaymentDisplayRequest{
+		OrderNo:         result.OrderNo,
+		AmountCNY:       result.AmountCNY,
+		Subject:         result.PlanName,
+		ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
+	})
+	if paymentErr != nil {
+		if !outcomeUncertain {
+			a.failCashierOrderInitialization(ctx, result, paymentErr)
+		}
+		return domainbilling.PaymentOrder{}, paymentErr
+	}
+	return a.initializeCashierOrder(ctx, result, payment)
+}
+
+func cashierExistingOrderResult(order domainbilling.PaymentOrder) (domainbilling.PaymentOrder, *errs.Error) {
+	if cashierOrderHasProviderInitialization(order) || order.Status == "completed" || order.Status == "paid" {
+		return order, nil
+	}
+	return domainbilling.PaymentOrder{}, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider initialization did not complete")
+}
+
+func cashierOrderHasProviderInitialization(order domainbilling.PaymentOrder) bool {
+	return strings.TrimSpace(order.PaymentURL) != "" || strings.TrimSpace(order.QRCode) != "" || strings.TrimSpace(order.ClientToken) != "" || len(order.PaymentDisplay) > 0
+}
+
+func (a *API) initializeCashierOrder(ctx context.Context, order domainbilling.PaymentOrder, payment cashierservice.PaymentDisplayResult) (domainbilling.PaymentOrder, *errs.Error) {
+	tradeNo := strings.TrimSpace(mapStringValue(payment.Display, "channel_trade_no", "trade_no"))
+	initialized, err := a.billing.InitializePaymentOrder(ctx, domainbilling.InitializePaymentOrderRequest{
+		UserID: order.UserID, OrderID: order.ID, PaymentDisplay: payment.Display,
+		PaymentURL: payment.PaymentURL, QRCode: payment.QRCode, ClientToken: payment.ClientToken, TradeNo: tradeNo,
+	})
+	if err != nil {
+		return domainbilling.PaymentOrder{}, normalizeAppError(err)
+	}
+	return initialized, nil
+}
+
+func (a *API) failCashierOrderInitialization(ctx context.Context, order domainbilling.PaymentOrder, paymentErr *errs.Error) {
+	reason := errs.CodePaymentProviderUnavailable
+	if paymentErr != nil && strings.TrimSpace(paymentErr.Code) != "" {
+		reason = strings.TrimSpace(paymentErr.Code)
+	}
+	if _, err := a.billing.FailPaymentOrderInitialization(ctx, domainbilling.FailPaymentOrderInitializationRequest{
+		UserID: order.UserID, OrderID: order.ID, FailureReason: reason,
+	}); err != nil {
+		slog.ErrorContext(ctx, "mark payment order initialization failed", "order_no", order.OrderNo, "error", err)
+	}
 }
 
 func legacyBillingProviderToVisibleMethod(provider string) string {
@@ -1669,8 +1708,8 @@ func (a *API) HandlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusForbidden, errs.CodeForbidden, "mock payment is disabled in production"))
 		return
 	}
-	if strings.EqualFold(providerCode, "easypay") {
-		_, appErr := a.handleEasyPayWebhook(r)
+	if strings.EqualFold(providerCode, "easypay") || strings.HasPrefix(strings.ToLower(providerCode), "easypay_") {
+		_, appErr := a.handleEasyPayWebhook(r, providerCode)
 		if appErr != nil {
 			httpx.WriteError(w, r, appErr)
 			return
@@ -1747,8 +1786,8 @@ func writePaymentWebhookSuccess(w http.ResponseWriter, providerCode string) {
 	_, _ = w.Write([]byte("success"))
 }
 
-func (a *API) handleEasyPayWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(r.Body)
+func (a *API) handleEasyPayWebhook(r *http.Request, providerCode string) (domainbilling.PaymentOrder, *errs.Error) {
+	body, readErr := readCashierWebhookBody(r.Body)
 	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
 	}
@@ -1757,7 +1796,7 @@ func (a *API) handleEasyPayWebhook(r *http.Request) (domainbilling.PaymentOrder,
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid easypay webhook body")
 	}
 	pid := strings.TrimSpace(values.Get("pid"))
-	instance, ok := a.easypayProviderInstanceByPID(r.Context(), pid)
+	instance, ok := a.easypayProviderInstanceByPID(r.Context(), providerCode, pid)
 	if !ok {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
@@ -1770,15 +1809,20 @@ func (a *API) handleEasyPayWebhook(r *http.Request) (domainbilling.PaymentOrder,
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook signature is invalid")
 	}
 	status := strings.TrimSpace(values.Get("trade_status"))
-	if status != "" && !strings.EqualFold(status, "TRADE_SUCCESS") && status != "1" {
+	if !strings.EqualFold(status, "TRADE_SUCCESS") && status != "1" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook status is not success")
+	}
+	amountCNY := strings.TrimSpace(values.Get("money"))
+	if amountCNY == "" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
 	}
 	providerType := strings.ToLower(strings.TrimSpace(instance.ProviderType))
 	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
-		Provider:  providerType,
-		OrderNo:   strings.TrimSpace(values.Get("out_trade_no")),
-		TradeNo:   strings.TrimSpace(values.Get("trade_no")),
-		AmountCNY: strings.TrimSpace(values.Get("money")),
+		Provider:           providerType,
+		ProviderInstanceID: instance.ID,
+		OrderNo:            strings.TrimSpace(values.Get("out_trade_no")),
+		TradeNo:            strings.TrimSpace(values.Get("trade_no")),
+		AmountCNY:          amountCNY,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1787,7 +1831,7 @@ func (a *API) handleEasyPayWebhook(r *http.Request) (domainbilling.PaymentOrder,
 }
 
 func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(r.Body)
+	body, readErr := readCashierWebhookBody(r.Body)
 	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
 	}
@@ -1811,7 +1855,7 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 	}
 	state := strings.TrimSpace(values.Get("state"))
 	status := strings.TrimSpace(values.Get("status"))
-	if state != "" && state != "2" && !strings.EqualFold(state, "success") {
+	if state != "2" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook status is not success")
 	}
 	if status != "" && !strings.EqualFold(status, "success") && !strings.EqualFold(status, "paid") {
@@ -1825,10 +1869,11 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 		tradeNo = strings.TrimSpace(values.Get("trade_no"))
 	}
 	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
-		Provider:  strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		OrderNo:   strings.TrimSpace(values.Get("mchOrderNo")),
-		TradeNo:   tradeNo,
-		AmountCNY: jeepayAmountCNYFromFen(values.Get("amount")),
+		Provider:           strings.ToLower(strings.TrimSpace(instance.ProviderType)),
+		ProviderInstanceID: instance.ID,
+		OrderNo:            strings.TrimSpace(values.Get("mchOrderNo")),
+		TradeNo:            tradeNo,
+		AmountCNY:          jeepayAmountCNYFromFen(values.Get("amount")),
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1836,11 +1881,22 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 	return result, nil
 }
 
-const maxStripeWebhookBodyBytes = 1 << 20
+const maxCashierWebhookBodyBytes = 1 << 20
+
+func readCashierWebhookBody(body io.Reader) ([]byte, error) {
+	content, err := io.ReadAll(io.LimitReader(body, maxCashierWebhookBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(content) > maxCashierWebhookBodyBytes {
+		return nil, fmt.Errorf("payment webhook body exceeds %d bytes", maxCashierWebhookBodyBytes)
+	}
+	return content, nil
+}
 
 func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(io.LimitReader(r.Body, maxStripeWebhookBodyBytes+1))
-	if readErr != nil || len(body) > maxStripeWebhookBodyBytes {
+	body, readErr := readCashierWebhookBody(r.Body)
+	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid payment webhook body")
 	}
 	signature := strings.TrimSpace(r.Header.Get("Stripe-Signature"))
@@ -1851,6 +1907,7 @@ func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 	configured := false
 	var event cashierservice.StripeWebhookEvent
 	verified := false
+	verifiedInstanceID := int64(0)
 	for _, instance := range a.cashierProviderInstances(r.Context()) {
 		if !strings.EqualFold(strings.TrimSpace(instance.ProviderType), "stripe") || !instance.Enabled || instance.ConfigStatus != "configured" {
 			continue
@@ -1864,6 +1921,7 @@ func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 		if err == nil {
 			event = parsed
 			verified = true
+			verifiedInstanceID = instance.ID
 			break
 		}
 	}
@@ -1882,10 +1940,11 @@ func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
 		}
 		result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
-			Provider:  "stripe",
-			OrderNo:   event.OrderNo,
-			TradeNo:   event.PaymentIntentID,
-			AmountCNY: event.AmountCNY,
+			Provider:           "stripe",
+			ProviderInstanceID: verifiedInstanceID,
+			OrderNo:            event.OrderNo,
+			TradeNo:            event.PaymentIntentID,
+			AmountCNY:          event.AmountCNY,
 		})
 		if err != nil {
 			return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1897,7 +1956,7 @@ func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 }
 
 func (a *API) handleAlipayWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(r.Body)
+	body, readErr := readCashierWebhookBody(r.Body)
 	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
 	}
@@ -1919,14 +1978,19 @@ func (a *API) handleAlipayWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook signature is invalid")
 	}
 	status := strings.TrimSpace(values.Get("trade_status"))
-	if status != "" && !strings.EqualFold(status, "TRADE_SUCCESS") && !strings.EqualFold(status, "TRADE_FINISHED") {
+	if !strings.EqualFold(status, "TRADE_SUCCESS") && !strings.EqualFold(status, "TRADE_FINISHED") {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook status is not success")
 	}
+	amountCNY := strings.TrimSpace(values.Get("total_amount"))
+	if amountCNY == "" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
+	}
 	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
-		Provider:  "alipay_direct",
-		OrderNo:   strings.TrimSpace(values.Get("out_trade_no")),
-		TradeNo:   strings.TrimSpace(values.Get("trade_no")),
-		AmountCNY: strings.TrimSpace(values.Get("total_amount")),
+		Provider:           "alipay_direct",
+		ProviderInstanceID: instance.ID,
+		OrderNo:            strings.TrimSpace(values.Get("out_trade_no")),
+		TradeNo:            strings.TrimSpace(values.Get("trade_no")),
+		AmountCNY:          amountCNY,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1935,7 +1999,7 @@ func (a *API) handleAlipayWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 }
 
 func (a *API) handleWxPayWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(r.Body)
+	body, readErr := readCashierWebhookBody(r.Body)
 	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
 	}
@@ -1962,15 +2026,25 @@ func (a *API) handleWxPayWebhook(r *http.Request) (domainbilling.PaymentOrder, *
 	if decryptErr != nil {
 		return domainbilling.PaymentOrder{}, decryptErr
 	}
-	if transaction.TradeState != "" && !strings.EqualFold(transaction.TradeState, "SUCCESS") {
+	var envelope wxPayWebhookEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil || !strings.EqualFold(strings.TrimSpace(envelope.EventType), "TRANSACTION.SUCCESS") {
+		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook event is not a successful transaction")
+	}
+	expectedAppID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
+	expectedMchID := strings.TrimSpace(mapStringValue(instance.Config, "mch_id", "mchId", "merchant_id", "merchantId"))
+	if !hmac.Equal([]byte(expectedAppID), []byte(strings.TrimSpace(transaction.AppID))) || !hmac.Equal([]byte(expectedMchID), []byte(strings.TrimSpace(transaction.MchID))) {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook merchant identity is invalid")
+	}
+	if !strings.EqualFold(strings.TrimSpace(transaction.TradeState), "SUCCESS") {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook status is not success")
 	}
 	amountCNY := wxPayAmountCNYFromFen(transaction.Amount.Total)
 	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
-		Provider:  "wxpay_direct",
-		OrderNo:   strings.TrimSpace(transaction.OutTradeNo),
-		TradeNo:   strings.TrimSpace(transaction.TransactionID),
-		AmountCNY: amountCNY,
+		Provider:           "wxpay_direct",
+		ProviderInstanceID: instance.ID,
+		OrderNo:            strings.TrimSpace(transaction.OutTradeNo),
+		TradeNo:            strings.TrimSpace(transaction.TransactionID),
+		AmountCNY:          amountCNY,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1978,14 +2052,18 @@ func (a *API) handleWxPayWebhook(r *http.Request) (domainbilling.PaymentOrder, *
 	return result, nil
 }
 
-func (a *API) easypayProviderInstanceByPID(ctx context.Context, pid string) (cashierProviderInstance, bool) {
+func (a *API) easypayProviderInstanceByPID(ctx context.Context, providerCode string, pid string) (cashierProviderInstance, bool) {
 	pid = strings.TrimSpace(pid)
 	if pid == "" {
 		return cashierProviderInstance{}, false
 	}
+	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
 	for _, instance := range a.cashierProviderInstances(ctx) {
 		providerType := strings.ToLower(strings.TrimSpace(instance.ProviderType))
 		if providerType != "easypay_alipay" && providerType != "easypay_wxpay" {
+			continue
+		}
+		if providerCode != "" && providerCode != "easypay" && providerCode != providerType {
 			continue
 		}
 		if !instance.Enabled || instance.ConfigStatus != "configured" {
@@ -2043,7 +2121,7 @@ func (a *API) wxpayProviderInstanceBySerial(ctx context.Context, serial string) 
 func (a *API) jeepayProviderInstanceByMerchant(ctx context.Context, providerCode string, mchNo string, appID string) (cashierProviderInstance, bool) {
 	mchNo = strings.TrimSpace(mchNo)
 	appID = strings.TrimSpace(appID)
-	if mchNo == "" {
+	if mchNo == "" || appID == "" {
 		return cashierProviderInstance{}, false
 	}
 	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
@@ -2060,7 +2138,7 @@ func (a *API) jeepayProviderInstanceByMerchant(ctx context.Context, providerCode
 		}
 		instanceMchNo := strings.TrimSpace(mapStringValue(instance.Config, "mch_no", "mchNo", "merchant_id", "merchantId"))
 		instanceAppID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-		if instanceMchNo == mchNo && (appID == "" || instanceAppID == "" || instanceAppID == appID) {
+		if instanceMchNo == mchNo && instanceAppID == appID {
 			return instance, true
 		}
 	}
@@ -8925,7 +9003,7 @@ func newCashierOrderNo() string {
 	return fmt.Sprintf("PGO-%d-%06d", now.Unix(), now.Nanosecond()%1000000)
 }
 
-func (a *API) cashierPaymentDisplay(ctx context.Context, method cashierVisibleMethod, instance cashierProviderInstance, req cashierPaymentDisplayRequest) (cashierPaymentBuildResult, *errs.Error) {
+func (a *API) cashierPaymentDisplay(ctx context.Context, method cashierVisibleMethod, instance cashierProviderInstance, req cashierPaymentDisplayRequest) (cashierPaymentBuildResult, *errs.Error, bool) {
 	req.Method = method
 	req.Instance = instance
 	siteBaseURL := a.cashierSiteBaseURL(ctx)
@@ -8940,11 +9018,11 @@ func (a *API) cashierPaymentDisplay(ctx context.Context, method cashierVisibleMe
 	result, err := registry.BuildPaymentDisplay(ctx, req)
 	if err != nil {
 		if errors.Is(err, cashierservice.ErrPaymentProviderNotImplemented) {
-			return cashierPaymentBuildResult{}, errs.New(http.StatusNotImplemented, errs.CodePaymentProviderNotImplemented, "payment provider is not implemented")
+			return cashierPaymentBuildResult{}, errs.New(http.StatusNotImplemented, errs.CodePaymentProviderNotImplemented, "payment provider is not implemented"), false
 		}
-		return cashierPaymentBuildResult{}, normalizeAppError(err)
+		return cashierPaymentBuildResult{}, normalizeAppError(err), cashierservice.PaymentInitializationOutcomeUncertain(err)
 	}
-	return result, nil
+	return result, nil, false
 }
 
 func (a *API) cashierCallbackURLs(instance cashierProviderInstance, providerType string, clientReturnURL ...string) (string, string) {
@@ -9297,7 +9375,7 @@ func easyPaySign(params map[string]string, key string) string {
 func jeepaySign(params map[string]string, key string) string {
 	keys := make([]string, 0, len(params))
 	for name, value := range params {
-		if strings.EqualFold(name, "sign") || strings.EqualFold(name, "signType") || strings.TrimSpace(value) == "" {
+		if strings.EqualFold(name, "sign") || strings.TrimSpace(value) == "" {
 			continue
 		}
 		keys = append(keys, name)
@@ -9577,7 +9655,8 @@ func openAPIDocumentPath() string {
 }
 
 func normalizeAppError(err error) *errs.Error {
-	if appErr, ok := err.(*errs.Error); ok {
+	var appErr *errs.Error
+	if errors.As(err, &appErr) {
 		return appErr
 	}
 	if upstream, ok := provider.AsUpstreamError(err); ok {

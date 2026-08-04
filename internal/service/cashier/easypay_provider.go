@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -28,7 +27,7 @@ func BuildEasyPayPaymentDisplay(ctx context.Context, callbacks CallbackURLConfig
 	}
 	prepayMode := strings.ToLower(strings.TrimSpace(configString(req.Instance.Config, "payment_mode", "prepay_mode", "trade_type")))
 	if prepayMode == "api" || prepayMode == "qrcode" || prepayMode == "qr_code" {
-		paymentURL, qrCode, sign, err := BuildEasyPayAPIPayment(ctx, callbacks, req, paymentType)
+		paymentURL, qrCode, _, err := BuildEasyPayAPIPayment(ctx, callbacks, req, paymentType)
 		if err != nil {
 			return PaymentDisplayResult{}, err
 		}
@@ -42,18 +41,14 @@ func BuildEasyPayPaymentDisplay(ctx context.Context, callbacks CallbackURLConfig
 			display["payment_url"] = paymentURL
 		}
 		display["prepay_mode"] = "api"
-		display["sign"] = sign
-		display["sign_type"] = "MD5"
 		return result, nil
 	}
-	paymentURL, sign, err := BuildEasyPayPaymentURL(callbacks, req, paymentType)
+	paymentURL, _, err := BuildEasyPayPaymentURL(callbacks, req, paymentType)
 	if err != nil {
 		return PaymentDisplayResult{}, err
 	}
 	display["type"] = "redirect"
 	display["payment_url"] = paymentURL
-	display["sign"] = sign
-	display["sign_type"] = "MD5"
 	return PaymentDisplayResult{Display: display, PaymentURL: paymentURL}, nil
 }
 
@@ -92,17 +87,21 @@ func BuildEasyPayAPIPayment(ctx context.Context, callbacks CallbackURLConfig, re
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	httpReq.Header.Set("Accept", "application/json")
-	resp, doErr := http.DefaultClient.Do(httpReq)
+	resp, doErr := cashierProviderHTTPClient.Do(httpReq)
 	if doErr != nil {
-		return "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return "", "", "", paymentInitializationOutcomeUncertain(errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable"))
 	}
 	defer resp.Body.Close()
-	respBody, readErr := io.ReadAll(resp.Body)
+	respBody, readErr := readCashierProviderResponse(resp.Body)
 	if readErr != nil {
-		return "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return "", "", "", paymentInitializationOutcomeUncertain(errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable"))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		providerErr := errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		if resp.StatusCode >= 500 {
+			return "", "", "", paymentInitializationOutcomeUncertain(providerErr)
+		}
+		return "", "", "", providerErr
 	}
 	var parsed struct {
 		Code    int    `json:"code"`
@@ -112,7 +111,10 @@ func BuildEasyPayAPIPayment(ctx context.Context, callbacks CallbackURLConfig, re
 		PayURL2 string `json:"payurl2"`
 		QRCode  string `json:"qrcode"`
 	}
-	if err := json.Unmarshal(respBody, &parsed); err != nil || parsed.Code != 1 {
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return "", "", "", paymentInitializationOutcomeUncertain(errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable"))
+	}
+	if parsed.Code != 1 {
 		return "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	paymentURL := strings.TrimSpace(parsed.PayURL)
@@ -121,7 +123,7 @@ func BuildEasyPayAPIPayment(ctx context.Context, callbacks CallbackURLConfig, re
 	}
 	qrCode := strings.TrimSpace(parsed.QRCode)
 	if paymentURL == "" && qrCode == "" {
-		return "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return "", "", "", paymentInitializationOutcomeUncertain(errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable"))
 	}
 	return paymentURL, qrCode, sign, nil
 }
@@ -137,6 +139,10 @@ func BuildEasyPayPaymentParams(callbacks CallbackURLConfig, req PaymentDisplayRe
 	if pid == "" || key == "" {
 		return "", nil, "", "", errs.BadRequest("easypay pid and key are required")
 	}
+	amountCNY, amountErr := cashierAmountCNYWithExactFen(req.AmountCNY)
+	if amountErr != nil {
+		return "", nil, "", "", amountErr
+	}
 	notifyURL, returnURL := cashierCallbackURLs(callbacks, req.Instance.Config, strings.ToLower(strings.TrimSpace(req.Instance.ProviderType)), req.ClientReturnURL)
 	params := map[string]string{
 		"pid":          pid,
@@ -145,7 +151,7 @@ func BuildEasyPayPaymentParams(callbacks CallbackURLConfig, req PaymentDisplayRe
 		"notify_url":   notifyURL,
 		"return_url":   returnURL,
 		"name":         defaultString(strings.TrimSpace(req.Subject), "Pic Gallery 充值"),
-		"money":        strings.TrimSpace(req.AmountCNY),
+		"money":        amountCNY,
 	}
 	if cid := strings.TrimSpace(configString(req.Instance.Config, "cid")); cid != "" {
 		params["cid"] = cid

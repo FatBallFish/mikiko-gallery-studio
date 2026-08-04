@@ -8,9 +8,31 @@ import (
 	"sync"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
+	"github.com/shopspring/decimal"
 )
 
 var ErrPaymentProviderNotImplemented = errors.New("payment provider adapter is not implemented")
+
+type paymentInitializationError struct {
+	err              error
+	outcomeUncertain bool
+}
+
+func (e *paymentInitializationError) Error() string { return e.err.Error() }
+func (e *paymentInitializationError) Unwrap() error { return e.err }
+
+func paymentInitializationOutcomeUncertain(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &paymentInitializationError{err: err, outcomeUncertain: true}
+}
+
+func PaymentInitializationOutcomeUncertain(err error) bool {
+	var initializationErr *paymentInitializationError
+	return errors.As(err, &initializationErr) && initializationErr.outcomeUncertain
+}
 
 type PaymentDisplayRequest struct {
 	Method          domaincashier.VisibleMethod
@@ -104,4 +126,16 @@ func BasePaymentDisplay(req PaymentDisplayRequest, providerType string) map[stri
 func mockPaymentDisplayBuilder(_ context.Context, _ PaymentDisplayRequest, display map[string]any) (PaymentDisplayResult, error) {
 	display["type"] = "mock"
 	return PaymentDisplayResult{Display: display}, nil
+}
+
+func cashierAmountCNYWithExactFen(raw string) (string, error) {
+	amount, err := decimal.NewFromString(strings.TrimSpace(raw))
+	if err != nil || !amount.IsPositive() {
+		return "", errs.BadRequest("amount_cny is invalid")
+	}
+	amountFen := amount.Mul(decimal.NewFromInt(100))
+	if !amountFen.Equal(amountFen.Truncate(0)) {
+		return "", errs.BadRequest("amount_cny must not contain fractional fen")
+	}
+	return strings.TrimSpace(raw), nil
 }

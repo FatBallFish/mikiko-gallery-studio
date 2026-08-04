@@ -3,7 +3,6 @@ package cashier
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +14,8 @@ import (
 
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
+
+var cashierProviderHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
 func StandardQueryProviderBuilders() QueryProviderBuilders {
 	return QueryProviderBuilders{
@@ -64,6 +65,12 @@ func AlipayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusRequ
 	data := raw
 	if nested, ok := raw["alipay_trade_query_response"].(map[string]any); ok {
 		data = nested
+	}
+	if code := strings.TrimSpace(firstRawString(data, "code")); code != "10000" {
+		return QueryOrderStatusResult{}, paymentProviderUnavailable()
+	}
+	if subCode := strings.TrimSpace(firstRawString(data, "sub_code")); subCode != "" {
+		return QueryOrderStatusResult{}, paymentProviderUnavailable()
 	}
 	status := strings.ToLower(strings.TrimSpace(firstRawString(data, "trade_status", "status")))
 	if status == "" {
@@ -208,23 +215,33 @@ func JeePayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusRequ
 		}
 		endpoint = strings.TrimRight(baseURL, "/") + queryPath
 	}
+	reqTime := time.Now().UnixMilli()
 	params := map[string]string{
 		"mchNo":      mchNo,
 		"appId":      appID,
 		"mchOrderNo": strings.TrimSpace(order.OrderNo),
+		"reqTime":    strconv.FormatInt(reqTime, 10),
+		"version":    "1.0",
 		"signType":   "MD5",
 	}
 	params["sign"] = jeepaySign(params, key)
-	values := url.Values{}
-	for key, value := range params {
-		values.Set(key, value)
+	payload := map[string]any{
+		"mchNo": params["mchNo"], "appId": params["appId"], "mchOrderNo": params["mchOrderNo"],
+		"reqTime": reqTime, "version": params["version"], "signType": params["signType"], "sign": params["sign"],
 	}
-	body, appErr := postFormForCashierProvider(ctx, endpoint, values)
+	requestBody, marshalErr := json.Marshal(payload)
+	if marshalErr != nil {
+		return QueryOrderStatusResult{}, paymentProviderUnavailable()
+	}
+	body, appErr := postJSONForCashierProvider(ctx, endpoint, requestBody, nil)
 	if appErr != nil {
 		return QueryOrderStatusResult{}, appErr
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
+		return QueryOrderStatusResult{}, paymentProviderUnavailable()
+	}
+	if code := strings.TrimSpace(firstRawString(raw, "code")); code != "0" {
 		return QueryOrderStatusResult{}, paymentProviderUnavailable()
 	}
 	data := raw
@@ -253,12 +270,12 @@ func postFormForCashierProvider(ctx context.Context, endpoint string, values url
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	httpReq.Header.Set("Accept", "application/json")
-	resp, doErr := http.DefaultClient.Do(httpReq)
+	resp, doErr := cashierProviderHTTPClient.Do(httpReq)
 	if doErr != nil {
 		return nil, paymentProviderUnavailable()
 	}
 	defer resp.Body.Close()
-	body, readErr := io.ReadAll(resp.Body)
+	body, readErr := readCashierProviderResponse(resp.Body)
 	if readErr != nil {
 		return nil, paymentProviderUnavailable()
 	}
@@ -279,12 +296,12 @@ func getJSONForCashierProvider(ctx context.Context, endpoint string, headers map
 			httpReq.Header.Set(key, value)
 		}
 	}
-	resp, doErr := http.DefaultClient.Do(httpReq)
+	resp, doErr := cashierProviderHTTPClient.Do(httpReq)
 	if doErr != nil {
 		return nil, paymentProviderUnavailable()
 	}
 	defer resp.Body.Close()
-	body, readErr := io.ReadAll(resp.Body)
+	body, readErr := readCashierProviderResponse(resp.Body)
 	if readErr != nil {
 		return nil, paymentProviderUnavailable()
 	}

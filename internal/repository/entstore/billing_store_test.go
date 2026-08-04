@@ -900,6 +900,59 @@ func TestBillingStoreCreateOrderReusesIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestBillingStoreInitializationFailureDoesNotOverwriteCompletedCallback(t *testing.T) {
+	ctx := context.Background()
+	const dsn = "file:billingstore-initialization-callback-race?mode=memory&cache=shared&_fk=1"
+	client, err := repoent.Open(dialect.SQLite, dsn)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	callbackClient, err := repoent.Open(dialect.SQLite, dsn)
+	if err != nil {
+		t.Fatalf("open callback ent client: %v", err)
+	}
+	defer callbackClient.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 188, OrderNo: "PGO-INIT-CALLBACK-RACE", AmountCNY: "12.50000", CNYPerPoint: "0.31250",
+		Provider: "jeepay_alipay", PurchaseType: "custom_amount", VisibleMethod: "alipay", ProviderType: "jeepay_alipay", ProviderInstanceID: 8,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+
+	var callbackOnce sync.Once
+	client.Use(func(next repoent.Mutator) repoent.Mutator {
+		return repoent.MutateFunc(func(ctx context.Context, mutation repoent.Mutation) (repoent.Value, error) {
+			if paymentMutation, ok := mutation.(*repoent.PaymentOrderMutation); ok {
+				if status, exists := paymentMutation.Status(); exists && status == "failed" {
+					callbackOnce.Do(func() {
+						if _, updateErr := callbackClient.PaymentOrder.UpdateOneID(int(order.ID)).SetStatus("completed").Save(ctx); updateErr != nil {
+							t.Fatalf("simulate completed callback: %v", updateErr)
+						}
+					})
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+
+	result, err := store.FailPaymentOrderInitialization(ctx, domainbilling.FailPaymentOrderInitializationRequest{
+		UserID: order.UserID, OrderID: order.ID, FailureReason: errs.CodePaymentProviderUnavailable,
+	})
+	if err != nil {
+		t.Fatalf("FailPaymentOrderInitialization: %v", err)
+	}
+	if result.Status != "completed" {
+		t.Fatalf("provider failure must not overwrite a completed callback: %#v", result)
+	}
+}
+
 func TestBillingStoreCompleteRechargeOrderCompletesAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-complete-recharge-order?mode=memory&cache=shared&_fk=1")
@@ -1617,5 +1670,50 @@ func TestBillingStoreMarkOrderPaidCompletesCashierRechargeOrderIdempotently(t *t
 	}
 	if ledgerCount != 1 {
 		t.Fatalf("expected one recharge ledger, got %d", ledgerCount)
+	}
+}
+
+func TestBillingStoreMarkOrderPaidRejectsDifferentProviderBinding(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-webhook-provider-binding?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID:             91,
+		OrderNo:            "PGO-CALLBACK-BINDING-ENT",
+		AmountCNY:          "10.00",
+		CNYPerPoint:        "0.31250",
+		Provider:           "stripe",
+		PurchaseType:       "custom_amount",
+		VisibleMethod:      "stripe",
+		ProviderType:       "stripe",
+		ProviderInstanceID: 51,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+
+	if _, err := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+		Provider:           "stripe",
+		ProviderInstanceID: 52,
+		OrderNo:            order.OrderNo,
+		TradeNo:            "pi_cross_instance",
+		AmountCNY:          order.AmountCNY,
+	}); err == nil {
+		t.Fatal("expected callback from a different provider instance to be rejected")
+	}
+	reloaded, err := store.GetOrder(ctx, order.UserID, order.ID)
+	if err != nil {
+		t.Fatalf("GetOrder: %v", err)
+	}
+	if reloaded.Status != "pending" || reloaded.TradeNo != "" {
+		t.Fatalf("cross-instance callback must not mutate order: %#v", reloaded)
 	}
 }

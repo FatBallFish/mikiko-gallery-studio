@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,9 +36,13 @@ func AlipayRefundPaymentBuilder(ctx context.Context, req RefundPaymentRequest) (
 	if appID == "" {
 		return RefundPaymentResult{}, paymentProviderUnavailable()
 	}
+	refundAmountCNY, amountErr := cashierAmountCNYWithExactFen(defaultString(strings.TrimSpace(req.RefundAmountCNY), strings.TrimSpace(order.AmountCNY)))
+	if amountErr != nil {
+		return RefundPaymentResult{}, amountErr
+	}
 	bizContent, _ := json.Marshal(map[string]string{
 		"out_trade_no":   strings.TrimSpace(order.OrderNo),
-		"refund_amount":  defaultString(strings.TrimSpace(req.RefundAmountCNY), strings.TrimSpace(order.AmountCNY)),
+		"refund_amount":  refundAmountCNY,
 		"refund_reason":  defaultString(strings.TrimSpace(req.Reason), "cashier order refund"),
 		"out_request_no": strings.TrimSpace(req.RefundTradeNo),
 	})
@@ -68,7 +72,7 @@ func AlipayRefundPaymentBuilder(ctx context.Context, req RefundPaymentRequest) (
 		data = nested
 	}
 	code := strings.TrimSpace(firstRawString(data, "code"))
-	if code != "" && code != "10000" {
+	if code != "10000" {
 		return RefundPaymentResult{}, paymentRefundProviderUnavailable()
 	}
 	if subCode := strings.TrimSpace(firstRawString(data, "sub_code")); subCode != "" {
@@ -174,6 +178,10 @@ func EasyPayRefundPaymentBuilder(ctx context.Context, req RefundPaymentRequest) 
 	if pid == "" || key == "" {
 		return RefundPaymentResult{}, paymentProviderUnavailable()
 	}
+	refundAmountCNY, amountErr := cashierAmountCNYWithExactFen(defaultString(strings.TrimSpace(req.RefundAmountCNY), strings.TrimSpace(order.AmountCNY)))
+	if amountErr != nil {
+		return RefundPaymentResult{}, amountErr
+	}
 	endpoint := strings.TrimSpace(configString(instance.Config, "refund_url", "refundUrl"))
 	if endpoint == "" {
 		endpoint = strings.TrimRight(baseURL, "/") + "/api.php"
@@ -182,7 +190,7 @@ func EasyPayRefundPaymentBuilder(ctx context.Context, req RefundPaymentRequest) 
 	values.Set("act", "refund")
 	values.Set("pid", pid)
 	values.Set("key", key)
-	values.Set("money", defaultString(strings.TrimSpace(req.RefundAmountCNY), strings.TrimSpace(order.AmountCNY)))
+	values.Set("money", refundAmountCNY)
 	values.Set("out_trade_no", strings.TrimSpace(order.OrderNo))
 	raw, appErr := postEasyPayRefundForm(ctx, endpoint, values)
 	if appErr != nil && strings.TrimSpace(order.TradeNo) != "" && easyPayRefundShouldRetryByTradeNo(raw) {
@@ -227,6 +235,10 @@ func JeePayRefundPaymentBuilder(ctx context.Context, req RefundPaymentRequest) (
 	if mchNo == "" || appID == "" || key == "" {
 		return RefundPaymentResult{}, paymentProviderUnavailable()
 	}
+	refundAmount, amountErr := jeepayAmountFenFromCNYExact(defaultString(strings.TrimSpace(req.RefundAmountCNY), strings.TrimSpace(order.AmountCNY)))
+	if amountErr != nil {
+		return RefundPaymentResult{}, amountErr
+	}
 	endpoint := strings.TrimSpace(configString(instance.Config, "refund_url", "refundUrl"))
 	if endpoint == "" {
 		refundPath := strings.TrimSpace(configString(instance.Config, "refund_path", "refundPath"))
@@ -238,15 +250,16 @@ func JeePayRefundPaymentBuilder(ctx context.Context, req RefundPaymentRequest) (
 		}
 		endpoint = strings.TrimRight(baseURL, "/") + refundPath
 	}
+	reqTime := time.Now().UnixMilli()
 	params := map[string]string{
 		"mchNo":        mchNo,
 		"appId":        appID,
 		"mchOrderNo":   strings.TrimSpace(order.OrderNo),
 		"mchRefundNo":  strings.TrimSpace(req.RefundTradeNo),
-		"refundAmount": jeepayAmountFenFromCNY(defaultString(strings.TrimSpace(req.RefundAmountCNY), strings.TrimSpace(order.AmountCNY))),
+		"refundAmount": refundAmount,
 		"currency":     "cny",
 		"refundReason": defaultString(strings.TrimSpace(req.Reason), "cashier order refund"),
-		"reqTime":      time.Now().UTC().Format("20060102150405"),
+		"reqTime":      strconv.FormatInt(reqTime, 10),
 		"version":      "1.0",
 		"signType":     "MD5",
 	}
@@ -260,11 +273,21 @@ func JeePayRefundPaymentBuilder(ctx context.Context, req RefundPaymentRequest) (
 		params["notifyUrl"] = notifyURL
 	}
 	params["sign"] = jeepaySign(params, key)
-	values := url.Values{}
-	for name, value := range params {
-		values.Set(name, value)
+	refundAmountFen, parseAmountErr := strconv.ParseInt(refundAmount, 10, 64)
+	if parseAmountErr != nil {
+		return RefundPaymentResult{}, errs.BadRequest("invalid jeepay refund amount")
 	}
-	body, appErr := postFormForCashierProvider(ctx, endpoint, values)
+	payload := make(map[string]any, len(params))
+	for name, value := range params {
+		payload[name] = value
+	}
+	payload["reqTime"] = reqTime
+	payload["refundAmount"] = refundAmountFen
+	requestBody, marshalErr := json.Marshal(payload)
+	if marshalErr != nil {
+		return RefundPaymentResult{}, errs.Internal("encode jeepay refund request")
+	}
+	body, appErr := postJSONForCashierProvider(ctx, endpoint, requestBody, nil)
 	if appErr != nil {
 		return RefundPaymentResult{}, appErr
 	}
@@ -273,7 +296,7 @@ func JeePayRefundPaymentBuilder(ctx context.Context, req RefundPaymentRequest) (
 		return RefundPaymentResult{}, paymentRefundProviderUnavailable()
 	}
 	code := strings.TrimSpace(firstRawString(raw, "code"))
-	if code != "" && code != "0" {
+	if code != "0" {
 		return RefundPaymentResult{}, paymentRefundProviderUnavailable()
 	}
 	data := raw
@@ -341,12 +364,12 @@ func postJSONForCashierProvider(ctx context.Context, endpoint string, body []byt
 			httpReq.Header.Set(key, value)
 		}
 	}
-	resp, doErr := http.DefaultClient.Do(httpReq)
+	resp, doErr := cashierProviderHTTPClient.Do(httpReq)
 	if doErr != nil {
 		return nil, paymentProviderUnavailable()
 	}
 	defer resp.Body.Close()
-	respBody, readErr := io.ReadAll(resp.Body)
+	respBody, readErr := readCashierProviderResponse(resp.Body)
 	if readErr != nil {
 		return nil, paymentProviderUnavailable()
 	}

@@ -484,7 +484,6 @@ func (s *BillingStore) CreateOrder(ctx context.Context, req domainbilling.Create
 		SetVisibleMethod(visibleMethod).
 		SetProviderType(providerType).
 		SetProviderSnapshot(providerSnapshot).
-		SetPaymentDisplay(cloneMap(req.PaymentDisplay)).
 		SetStatus("pending").
 		SetCurrency(plan.Currency).
 		SetAmountCny(plan.PriceCny).
@@ -492,6 +491,9 @@ func (s *BillingStore) CreateOrder(ctx context.Context, req domainbilling.Create
 		SetBonusPoints(plan.BonusPoints).
 		SetExpiresAt(now.Add(15 * time.Minute)).
 		SetProviderPayload(providerPayload)
+	if len(req.PaymentDisplay) > 0 {
+		create.SetPaymentDisplay(cloneMap(req.PaymentDisplay))
+	}
 	if paymentURL != "" {
 		create.SetPaymentURL(paymentURL)
 	}
@@ -564,7 +566,6 @@ func (s *BillingStore) CreateCustomAmountOrder(ctx context.Context, req domainbi
 		SetVisibleMethod(visibleMethod).
 		SetProviderType(providerType).
 		SetProviderSnapshot(providerSnapshot).
-		SetPaymentDisplay(cloneMap(req.PaymentDisplay)).
 		SetStatus("pending").
 		SetCurrency("CNY").
 		SetAmountCny(amount.Round(s.scale).StringFixed(s.scale)).
@@ -572,6 +573,9 @@ func (s *BillingStore) CreateCustomAmountOrder(ctx context.Context, req domainbi
 		SetBonusPoints(decimal.Zero.StringFixed(s.scale)).
 		SetExpiresAt(now.Add(15 * time.Minute)).
 		SetProviderPayload(providerPayload)
+	if len(req.PaymentDisplay) > 0 {
+		create.SetPaymentDisplay(cloneMap(req.PaymentDisplay))
+	}
 	if paymentURL != "" {
 		create.SetPaymentURL(paymentURL)
 	}
@@ -589,6 +593,65 @@ func (s *BillingStore) CreateCustomAmountOrder(ctx context.Context, req domainbi
 	}
 	order, err := create.Save(ctx)
 	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return s.mapPaymentOrder(ctx, order), nil
+}
+
+func (s *BillingStore) InitializePaymentOrder(ctx context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error) {
+	update := s.client.PaymentOrder.Update().
+		Where(paymentorder.IDEQ(int(req.OrderID)), paymentorder.UserIDEQ(req.UserID), paymentorder.StatusEQ("pending")).
+		SetPaymentDisplay(cloneMap(req.PaymentDisplay)).
+		ClearFailureReason()
+	if paymentURL := strings.TrimSpace(req.PaymentURL); paymentURL != "" {
+		update.SetPaymentURL(paymentURL)
+	}
+	if qrCode := strings.TrimSpace(req.QRCode); qrCode != "" {
+		update.SetQrCode(qrCode)
+	}
+	if clientToken := strings.TrimSpace(req.ClientToken); clientToken != "" {
+		update.SetClientToken(clientToken)
+	}
+	if tradeNo := strings.TrimSpace(req.TradeNo); tradeNo != "" {
+		update.SetTradeNo(tradeNo)
+	}
+	_, err := update.Save(ctx)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return s.paymentOrderAfterInitializationMutation(ctx, req.UserID, req.OrderID)
+}
+
+func (s *BillingStore) FailPaymentOrderInitialization(ctx context.Context, req domainbilling.FailPaymentOrderInitializationRequest) (domainbilling.PaymentOrder, error) {
+	now := time.Now().UTC()
+	_, err := s.client.PaymentOrder.Update().
+		Where(
+			paymentorder.IDEQ(int(req.OrderID)),
+			paymentorder.UserIDEQ(req.UserID),
+			paymentorder.StatusEQ("pending"),
+			paymentorder.PaymentDisplayIsNil(),
+			paymentorder.PaymentURLIsNil(),
+			paymentorder.QrCodeIsNil(),
+			paymentorder.ClientTokenIsNil(),
+		).
+		SetStatus("failed").
+		SetFailureReason(strings.TrimSpace(req.FailureReason)).
+		SetClosedAt(now).
+		Save(ctx)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return s.paymentOrderAfterInitializationMutation(ctx, req.UserID, req.OrderID)
+}
+
+func (s *BillingStore) paymentOrderAfterInitializationMutation(ctx context.Context, userID, orderID int64) (domainbilling.PaymentOrder, error) {
+	order, err := s.client.PaymentOrder.Query().
+		Where(paymentorder.IDEQ(int(orderID)), paymentorder.UserIDEQ(userID)).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+		}
 		return domainbilling.PaymentOrder{}, err
 	}
 	return s.mapPaymentOrder(ctx, order), nil
@@ -966,6 +1029,13 @@ func (s *BillingStore) MarkOrderPaid(ctx context.Context, req domainbilling.Mark
 			if repoent.IsNotFound(err) {
 				return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
 			}
+			return domainbilling.PaymentOrder{}, err
+		}
+		providerInstanceID := int64(0)
+		if order.ProviderInstanceID != nil {
+			providerInstanceID = *order.ProviderInstanceID
+		}
+		if err := billingservice.ValidatePaymentCallbackBinding(order.ProviderType, order.Provider, providerInstanceID, req); err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
 		if err := ensurePaymentAmountMatches(order.AmountCny, req.AmountCNY, s.scale); err != nil {

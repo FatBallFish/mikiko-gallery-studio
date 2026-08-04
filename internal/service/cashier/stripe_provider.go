@@ -97,10 +97,10 @@ func newStripePaymentDisplayBuilder(clientFactory stripePaymentIntentsFactory) P
 		params.SetIdempotencyKey(strings.TrimSpace(req.OrderNo))
 		intent, err := clientFactory(secretKey).New(params)
 		if err != nil {
-			return PaymentDisplayResult{}, fmt.Errorf("create Stripe PaymentIntent: %w", err)
+			return PaymentDisplayResult{}, stripePaymentInitializationFailure(err)
 		}
 		if intent == nil || strings.TrimSpace(intent.ID) == "" || strings.TrimSpace(intent.ClientSecret) == "" {
-			return PaymentDisplayResult{}, fmt.Errorf("Stripe PaymentIntent response is incomplete")
+			return PaymentDisplayResult{}, paymentInitializationOutcomeUncertain(apperrs.New(http.StatusBadGateway, apperrs.CodePaymentProviderUnavailable, "payment provider instance is unavailable"))
 		}
 		return PaymentDisplayResult{
 			Display: map[string]any{
@@ -111,6 +111,15 @@ func newStripePaymentDisplayBuilder(clientFactory stripePaymentIntentsFactory) P
 			ClientToken: strings.TrimSpace(intent.ID),
 		}, nil
 	}
+}
+
+func stripePaymentInitializationFailure(err error) error {
+	providerErr := apperrs.New(http.StatusBadGateway, apperrs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+	var stripeErr *stripe.Error
+	if errors.As(err, &stripeErr) && stripeErr.HTTPStatusCode >= http.StatusBadRequest && stripeErr.HTTPStatusCode < http.StatusInternalServerError {
+		return providerErr
+	}
+	return paymentInitializationOutcomeUncertain(providerErr)
 }
 
 func StripeAmountFenFromCNY(amountCNY string) (int64, error) {

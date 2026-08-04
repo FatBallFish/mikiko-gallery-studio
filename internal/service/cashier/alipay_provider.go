@@ -47,10 +47,14 @@ func BuildAlipayPaymentURL(callbacks CallbackURLConfig, req PaymentDisplayReques
 	if appID == "" {
 		return "", false, errs.BadRequest("alipay app_id is required")
 	}
+	amountCNY, amountErr := cashierAmountCNYWithExactFen(req.AmountCNY)
+	if amountErr != nil {
+		return "", false, amountErr
+	}
 	notifyURL, returnURL := cashierCallbackURLs(callbacks, instance.Config, "alipay_direct", req.ClientReturnURL)
 	bizContent, _ := json.Marshal(map[string]string{
 		"out_trade_no": strings.TrimSpace(req.OrderNo),
-		"total_amount": strings.TrimSpace(req.AmountCNY),
+		"total_amount": amountCNY,
 		"subject":      defaultString(strings.TrimSpace(req.Subject), "Pic Gallery 充值"),
 		"product_code": "FAST_INSTANT_TRADE_PAY",
 	})
@@ -64,8 +68,6 @@ func BuildAlipayPaymentURL(callbacks CallbackURLConfig, req PaymentDisplayReques
 	values.Set("notify_url", notifyURL)
 	values.Set("return_url", returnURL)
 	values.Set("biz_content", string(bizContent))
-	values.Set("out_trade_no", strings.TrimSpace(req.OrderNo))
-	values.Set("total_amount", strings.TrimSpace(req.AmountCNY))
 	sign, signErr := alipayRSA2Sign(values, configString(instance.Config, "app_private_key", "private_key", "privateKey"))
 	if signErr != nil {
 		return "", false, signErr
