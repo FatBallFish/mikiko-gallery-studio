@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -514,7 +515,93 @@ func (s *ImageTaskStore) ListGallery(ctx context.Context, req domainimagetask.Ga
 	if status := strings.TrimSpace(req.Status); status != "" {
 		query.Where(imageresult.VisibilityStatusEQ(status))
 	}
+	empty, err := s.applyAdminGalleryFilters(ctx, query, req)
+	if err != nil {
+		return domainimagetask.GalleryPage{}, err
+	}
+	if empty {
+		return domainimagetask.GalleryPage{Items: []domainimagetask.GalleryImage{}, Page: page, PageSize: pageSize, Total: 0}, nil
+	}
 	return s.galleryPageFromQuery(ctx, query, page, pageSize)
+}
+
+func (s *ImageTaskStore) applyAdminGalleryFilters(ctx context.Context, query *repoent.ImageResultQuery, req domainimagetask.GalleryListRequest) (bool, error) {
+	if userQuery := strings.TrimSpace(req.UserQuery); userQuery != "" {
+		userPredicates := []predicate.User{
+			entuser.EmailContainsFold(userQuery),
+			entuser.NicknameContainsFold(userQuery),
+		}
+		if userID, err := strconv.ParseInt(userQuery, 10, 64); err == nil && userID > 0 && int64(int(userID)) == userID {
+			userPredicates = append(userPredicates, entuser.IDEQ(int(userID)))
+		}
+		userIDs, err := s.client.User.Query().
+			Where(entuser.DeletedAtIsNil(), entuser.Or(userPredicates...)).
+			IDs(ctx)
+		if err != nil {
+			return false, err
+		}
+		if len(userIDs) == 0 {
+			return true, nil
+		}
+		resultUserIDs := make([]int64, 0, len(userIDs))
+		for _, userID := range userIDs {
+			resultUserIDs = append(resultUserIDs, int64(userID))
+		}
+		query.Where(imageresult.UserIDIn(resultUserIDs...))
+	}
+
+	taskPredicates := make([]predicate.ImageTask, 0, 8)
+	if prompt := strings.TrimSpace(req.PromptQuery); prompt != "" {
+		taskPredicates = append(taskPredicates, imagetask.PromptContainsFold(prompt))
+	}
+	if model := strings.TrimSpace(req.ModelQuery); model != "" {
+		taskPredicates = append(taskPredicates, imagetask.Or(imagetask.AbstractModelContainsFold(model), imagetask.RouteModelCodeContainsFold(model)))
+	}
+	if taskType := strings.TrimSpace(req.TaskType); taskType != "" {
+		taskPredicates = append(taskPredicates, imagetask.TaskTypeEQ(taskType))
+	}
+	if baseResolution := strings.TrimSpace(req.BaseResolution); baseResolution != "" {
+		taskPredicates = append(taskPredicates, imagetask.BaseResolutionEQ(baseResolution))
+	}
+	if requestedSize := strings.TrimSpace(req.RequestedSize); requestedSize != "" {
+		taskPredicates = append(taskPredicates, imagetask.RequestedSizeEQ(requestedSize))
+	}
+	if aspectRatio := strings.TrimSpace(req.AspectRatio); aspectRatio != "" {
+		taskPredicates = append(taskPredicates, imagetask.AspectRatioEQ(aspectRatio))
+	}
+	if len(taskPredicates) > 0 {
+		taskIDs, err := s.client.ImageTask.Query().
+			Where(imagetask.DeletedAtIsNil()).
+			Where(taskPredicates...).
+			IDs(ctx)
+		if err != nil {
+			return false, err
+		}
+		if len(taskIDs) == 0 {
+			return true, nil
+		}
+		query.Where(imageresult.TaskIDIn(taskIDs...))
+	}
+
+	if req.Width > 0 {
+		query.Where(imageresult.WidthEQ(req.Width))
+	}
+	if req.Height > 0 {
+		query.Where(imageresult.HeightEQ(req.Height))
+	}
+	if !req.CreatedFrom.IsZero() {
+		query.Where(imageresult.CreatedAtGTE(req.CreatedFrom))
+	}
+	if !req.CreatedTo.IsZero() {
+		query.Where(imageresult.CreatedAtLTE(req.CreatedTo))
+	}
+	if !req.PublishedFrom.IsZero() {
+		query.Where(imageresult.PublishedAtGTE(req.PublishedFrom))
+	}
+	if !req.PublishedTo.IsZero() {
+		query.Where(imageresult.PublishedAtLTE(req.PublishedTo))
+	}
+	return false, nil
 }
 
 func (s *ImageTaskStore) ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {

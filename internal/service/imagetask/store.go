@@ -365,6 +365,9 @@ func (s *MemoryStore) ListGalleryByUser(_ context.Context, userID int64, req dom
 			if req.Status != "" && !strings.EqualFold(image.VisibilityStatus, req.Status) {
 				continue
 			}
+			if !adminGalleryImageMatches(image, req) {
+				continue
+			}
 			items = append(items, image)
 		}
 	}
@@ -372,6 +375,52 @@ func (s *MemoryStore) ListGalleryByUser(_ context.Context, userID int64, req dom
 		return items[i].CreatedAt.After(items[j].CreatedAt)
 	})
 	return sliceGalleryPage(items, page, pageSize), nil
+}
+
+func adminGalleryImageMatches(image domainimagetask.GalleryImage, req domainimagetask.GalleryListRequest) bool {
+	contains := func(value, query string) bool {
+		return strings.Contains(strings.ToLower(strings.TrimSpace(value)), strings.ToLower(strings.TrimSpace(query)))
+	}
+	if req.UserQuery != "" && !contains(image.AuthorName, req.UserQuery) && strings.TrimSpace(req.UserQuery) != fmt.Sprintf("%d", image.UserID) {
+		return false
+	}
+	if req.PromptQuery != "" && !contains(image.Prompt, req.PromptQuery) {
+		return false
+	}
+	if req.ModelQuery != "" && !contains(image.AbstractModel, req.ModelQuery) && !contains(image.RouteModelCode, req.ModelQuery) {
+		return false
+	}
+	if req.TaskType != "" && !strings.EqualFold(image.TaskType, req.TaskType) {
+		return false
+	}
+	if req.BaseResolution != "" && !strings.EqualFold(image.BaseResolution, req.BaseResolution) {
+		return false
+	}
+	if req.RequestedSize != "" && !strings.EqualFold(image.RequestedSize, req.RequestedSize) {
+		return false
+	}
+	if req.Width > 0 && image.Width != req.Width {
+		return false
+	}
+	if req.Height > 0 && image.Height != req.Height {
+		return false
+	}
+	if req.AspectRatio != "" && !strings.EqualFold(image.AspectRatio, req.AspectRatio) {
+		return false
+	}
+	if !req.CreatedFrom.IsZero() && image.CreatedAt.Before(req.CreatedFrom) {
+		return false
+	}
+	if !req.CreatedTo.IsZero() && image.CreatedAt.After(req.CreatedTo) {
+		return false
+	}
+	if !req.PublishedFrom.IsZero() && (image.PublishedAt == nil || image.PublishedAt.Before(req.PublishedFrom)) {
+		return false
+	}
+	if !req.PublishedTo.IsZero() && (image.PublishedAt == nil || image.PublishedAt.After(req.PublishedTo)) {
+		return false
+	}
+	return true
 }
 
 func (s *MemoryStore) ListGallery(_ context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
@@ -389,6 +438,9 @@ func (s *MemoryStore) ListGallery(_ context.Context, req domainimagetask.Gallery
 				continue
 			}
 			if req.Status != "" && !strings.EqualFold(image.VisibilityStatus, req.Status) {
+				continue
+			}
+			if !adminGalleryImageMatches(image, req) {
 				continue
 			}
 			items = append(items, image)

@@ -1,19 +1,25 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import type { ReviewItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { AdminTabs, Badge, ConfirmDrawer, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { useAdminPreviewMotion } from '../ui/adminMotion'
-import { ListPage } from '../ui/dataTable'
-import { reviewDefaultReason, reviewRowView, reviewStatusLabel } from './reviewRows'
-import type { ReviewDecision } from './reviewRows'
+import { FilterToolbar, ListPage, Pager } from '../ui/dataTable'
+import { FilterIcon, XIcon } from '../ui/listIcons'
+import { adminTaskTypeOptions } from './adminTaskTypes'
+import { reviewDefaultReason, reviewListQuery, reviewRowView, reviewStatusLabel } from './reviewRows'
+import type { ReviewDecision, ReviewListFilters } from './reviewRows'
 
 type DrawerState = { item: ReviewItem; decision: ReviewDecision } | null
 const primaryReviewTabs = ['pending_review', 'approved', 'rejected'] as const
 const secondaryReviewTabs = ['unpublished', 'all'] as const
 const allReviewTabs = [...primaryReviewTabs, ...secondaryReviewTabs] as const
 const reasonPresets = ['违规内容', '低质量图片', '版权风险'] as const
+const initialFilters: ReviewListFilters = {
+  user: '', prompt: '', model: '', taskType: '', baseResolution: '', requestedSize: '', width: '', height: '', aspectRatio: '',
+  createdFrom: '', createdTo: '', publishedFrom: '', publishedTo: '',
+}
 const reviewClasses = {
   workbench: 'grid min-h-[560px] grid-cols-[minmax(240px,.85fr)_minmax(320px,1.35fr)_minmax(240px,.8fr)] overflow-hidden rounded-lg bg-[var(--surface-solid)] max-[1100px]:grid-cols-1',
   queue: 'min-h-0 overflow-y-auto border-r border-[var(--border)] p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus-ring)] max-[1100px]:border-b max-[1100px]:border-r-0',
@@ -33,6 +39,11 @@ const reviewClasses = {
 export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<ReviewItem[]>([])
   const [filter, setFilter] = useState<ReviewItem['status'] | 'all'>('pending_review')
+  const [filters, setFilters] = useState<ReviewListFilters>(initialFilters)
+  const [appliedFilters, setAppliedFilters] = useState<ReviewListFilters>(initialFilters)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,9 +61,10 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
     else setRefreshing(true)
     setError(null)
     try {
-      const nextRows = await adminApi.listReviews()
+      const result = await adminApi.listReviews(reviewListQuery(appliedFilters, filter, page, pageSize))
       if (requestGeneration !== requestGenerationRef.current) return
-      setRows(nextRows)
+      setRows(result.items)
+      setTotal(result.total)
     } catch (caught) {
       if (requestGeneration !== requestGenerationRef.current) return
       setError(caught instanceof Error ? caught.message : '审核队列载入失败')
@@ -63,11 +75,9 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
     }
   }
 
-  useEffect(() => {
-    void load()
-  }, [])
+  useEffect(() => { void load() }, [appliedFilters, filter, page, pageSize])
 
-  const visibleRows = useMemo(() => filter === 'all' ? rows : rows.filter((row) => row.status === filter), [filter, rows])
+  const visibleRows = rows
   const selectedItem = useMemo(() => visibleRows.find((row) => String(row.id) === selectedId) ?? visibleRows[0] ?? null, [selectedId, visibleRows])
 
   useEffect(() => {
@@ -91,13 +101,18 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
 
   const submitDecision = async () => {
     if (!drawer) return
+    if (drawer.decision === 'unpublish' && !reason.trim()) {
+      setMutationError('下架原因不能为空')
+      return
+    }
     requestGenerationRef.current += 1
     setRefreshing(false)
     setBusy(true)
     setMutationError('')
     try {
       const updated = await adminApi.decideReview(drawer.item.image_id ?? drawer.item.id, drawer.decision, reason)
-      setRows((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setRows((current) => filter === 'all' ? current.map((item) => item.id === updated.id ? updated : item) : current.filter((item) => item.id !== updated.id))
+      if (filter !== 'all') setTotal((current) => Math.max(0, current - 1))
       onFeedback('审核决策已提交', `${updated.title}: ${reviewStatusLabel(updated.status)}`)
       setDrawer(null)
     } catch (caught) {
@@ -107,18 +122,51 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
     }
   }
 
+  const submitFilters = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setPage(1)
+    setAppliedFilters(filters)
+  }
+
+  const resetFilters = () => {
+    setFilters(initialFilters)
+    setAppliedFilters(initialFilters)
+    setPage(1)
+  }
+
   if (loading && !rows.length) return <LoadingBlock label="载入审核队列" />
   if (error && !rows.length) return <ErrorBlock message={error} onRetry={load} />
 
   return (
     <section className={adminPage.stack}>
       <PageHeader
-        title="审核队列"
-        description="队列、图片预览和审核动作并排处理，减少高频审核的来回跳转。"
+        title="公开图片管理"
+        description="集中处理公开申请、已公开图片、已下架和已驳回内容。"
         secondaryActions={<button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={refreshing || Boolean(drawer) || busy} onClick={() => void load()}>{refreshing ? '刷新中...' : '刷新队列'}</button>}
       />
       {refreshing ? <InlineFeedback tone="neutral" message="正在刷新审核队列，当前预览与选择会保留。" /> : null}
       {error && rows.length ? <InlineFeedback tone="danger" message={error} /> : null}
+      <form onSubmit={submitFilters}>
+        <FilterToolbar
+          fields={[
+            { key: 'user', label: '用户', primary: true, control: <input value={filters.user} onChange={(event) => setFilters({ ...filters, user: event.target.value })} placeholder="用户 ID、邮箱或名称" /> },
+            { key: 'prompt', label: '提示词', primary: true, control: <input value={filters.prompt} onChange={(event) => setFilters({ ...filters, prompt: event.target.value })} placeholder="提示词关键词" /> },
+            { key: 'model', label: '模型', primary: true, control: <input value={filters.model} onChange={(event) => setFilters({ ...filters, model: event.target.value })} placeholder="抽象模型或路由模型" /> },
+            { key: 'taskType', label: '任务类型', control: <select value={filters.taskType} onChange={(event) => setFilters({ ...filters, taskType: event.target.value })}><option value="">全部类型</option>{adminTaskTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> },
+            { key: 'baseResolution', label: '基础分辨率', control: <input value={filters.baseResolution} onChange={(event) => setFilters({ ...filters, baseResolution: event.target.value })} placeholder="例如 2k" /> },
+            { key: 'requestedSize', label: '请求尺寸', control: <input value={filters.requestedSize} onChange={(event) => setFilters({ ...filters, requestedSize: event.target.value })} placeholder="例如 1536x1024" /> },
+            { key: 'width', label: '实际宽度', control: <input type="number" min="1" value={filters.width} onChange={(event) => setFilters({ ...filters, width: event.target.value })} /> },
+            { key: 'height', label: '实际高度', control: <input type="number" min="1" value={filters.height} onChange={(event) => setFilters({ ...filters, height: event.target.value })} /> },
+            { key: 'aspectRatio', label: '宽高比', control: <input value={filters.aspectRatio} onChange={(event) => setFilters({ ...filters, aspectRatio: event.target.value })} placeholder="例如 3:2" /> },
+            { key: 'createdFrom', label: '创建时间从', control: <input type="date" value={filters.createdFrom} onChange={(event) => setFilters({ ...filters, createdFrom: event.target.value })} /> },
+            { key: 'createdTo', label: '创建时间至', control: <input type="date" value={filters.createdTo} onChange={(event) => setFilters({ ...filters, createdTo: event.target.value })} /> },
+            { key: 'publishedFrom', label: '公开时间从', control: <input type="date" value={filters.publishedFrom} onChange={(event) => setFilters({ ...filters, publishedFrom: event.target.value })} /> },
+            { key: 'publishedTo', label: '公开时间至', control: <input type="date" value={filters.publishedTo} onChange={(event) => setFilters({ ...filters, publishedTo: event.target.value })} /> },
+          ]}
+          actions={<><button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="submit"><FilterIcon className="size-4" /><span>筛选</span></button><button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={resetFilters}><XIcon className="size-4" /><span>清空</span></button></>}
+          resultSummary={`共 ${total} 张图片 · 当前显示 ${rows.length} 张`}
+        />
+      </form>
       <section className="grid min-h-0 gap-5">
         <ListPage
           filters={(
@@ -130,9 +178,10 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
                 badge: tab === 'pending_review' ? <span>{rows.filter((row) => row.status === 'pending_review' || row.status === 'pending').length}</span> : undefined,
               }))}
               value={filter}
-              onChange={setFilter}
+              onChange={(value) => { setFilter(value); setPage(1) }}
             />
           )}
+          pagination={<Pager page={page} pageSize={pageSize} total={total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
         >
           {!visibleRows.length ? <EmptyBlock title="没有匹配的审核项" detail="切换筛选或等待用户提交公开申请。" /> : (
             <ReviewWorkbench
@@ -307,6 +356,7 @@ function ReviewWorkbench({
 
 function reviewTabLabel(tab: typeof allReviewTabs[number]) {
   if (tab === 'pending_review') return '待处理'
+  if (tab === 'approved') return '已公开'
   if (tab === 'all') return '全部'
   return reviewStatusLabel(tab)
 }

@@ -1348,12 +1348,9 @@ func (s *Service) DownloadImageResult(ctx context.Context, userID int64, imageID
 }
 
 func (s *Service) DownloadImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, []byte, error) {
-	result, err := s.store.GetImageResultForAdmin(ctx, imageID)
+	result, err := s.GetImageResultForAdmin(ctx, imageID)
 	if err != nil {
-		if errors.Is(err, repoerr.ErrNotFound) {
-			return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
-		}
-		return provider.ImageResult{}, nil, errs.Internal("failed to load image result")
+		return provider.ImageResult{}, nil, err
 	}
 	if result.StorageDriver == "remote" || strings.TrimSpace(result.ObjectKey) == "" {
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
@@ -1367,6 +1364,17 @@ func (s *Service) DownloadImageResultForAdmin(ctx context.Context, imageID strin
 		return provider.ImageResult{}, nil, errs.New(404, errs.CodeNotFound, "image not found")
 	}
 	return result, content, nil
+}
+
+func (s *Service) GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error) {
+	result, err := s.store.GetImageResultForAdmin(ctx, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return provider.ImageResult{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return provider.ImageResult{}, errs.Internal("failed to load image result")
+	}
+	return result, nil
 }
 
 func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string) (provider.ImageResult, []byte, error) {
@@ -1546,6 +1554,13 @@ func (s *Service) ReviewImage(ctx context.Context, imageID, nextStatus, reviewRe
 func (s *Service) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
 	req.Page, req.PageSize = normalizeListPage(req.Page, req.PageSize)
 	req.Status = strings.TrimSpace(req.Status)
+	req.UserQuery = strings.TrimSpace(req.UserQuery)
+	req.PromptQuery = strings.TrimSpace(req.PromptQuery)
+	req.ModelQuery = strings.TrimSpace(req.ModelQuery)
+	req.TaskType = strings.TrimSpace(req.TaskType)
+	req.BaseResolution = strings.TrimSpace(req.BaseResolution)
+	req.RequestedSize = strings.TrimSpace(req.RequestedSize)
+	req.AspectRatio = strings.TrimSpace(req.AspectRatio)
 	page, err := s.store.ListGallery(ctx, req)
 	if err != nil {
 		return domainimagetask.GalleryPage{}, errs.Internal("failed to list gallery images")

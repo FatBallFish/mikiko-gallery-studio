@@ -210,9 +210,9 @@ export const adminApi = {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.auditLogs, { query }))
     return result.items.map(toAudit)
   },
-  listReviews: async (status = '', page = 1, page_size = 20) => {
-    const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.imageReviews, { query: { status, page, page_size } }))
-    return result.items.map(toReview)
+  listReviews: async (query: Record<string, string | number | undefined> = {}) => {
+    const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.imageReviews, { query }))
+    return { ...result, items: result.items.map(toReview) }
   },
   imageReviewUrl: (image_id: string, accessToken?: string | null) => adminAssetUrl(fillPath(API_PATHS.ops.imageReviewImage, { image_id }), accessToken),
   decideReview: async (image_id: string, decision: 'approve' | 'reject' | 'unpublish', reason = '') => {
@@ -622,7 +622,7 @@ function toReview(raw: any): ReviewItem {
     id: String(raw.id ?? raw.image_id),
     image_id: String(raw.image_id ?? raw.id),
     title: raw.title ?? raw.prompt?.slice(0, 32) ?? '公开图片',
-    owner: raw.owner ?? raw.user_id ?? '',
+    owner: raw.owner ?? raw.author_name ?? raw.user_id ?? '',
     task_type: raw.task_type ?? 'text_to_image',
     image_url: raw.image_url ?? raw.download_url ?? raw.url ?? '',
     status,

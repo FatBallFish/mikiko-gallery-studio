@@ -229,6 +229,17 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 		t.Fatalf("expected approved body=%s", approveRec.Body.String())
 	}
 
+	filteredReviewReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/image-reviews?page=1&page_size=10&status=approved&prompt=not-a-matching-prompt", nil)
+	filteredReviewReq.Header.Set("Authorization", "Bearer "+adminToken)
+	filteredReviewRec := httptest.NewRecorder()
+	handler.ServeHTTP(filteredReviewRec, filteredReviewReq)
+	if filteredReviewRec.Code != http.StatusOK {
+		t.Fatalf("filtered review list: %d body=%s", filteredReviewRec.Code, filteredReviewRec.Body.String())
+	}
+	if bytes.Contains(filteredReviewRec.Body.Bytes(), []byte(imageID)) || !bytes.Contains(filteredReviewRec.Body.Bytes(), []byte(`"total":0`)) {
+		t.Fatalf("admin review filters must be applied before pagination body=%s", filteredReviewRec.Body.String())
+	}
+
 	dashboardReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/metrics/dashboard", nil)
 	dashboardReq.Header.Set("Authorization", "Bearer "+adminToken)
 	dashboardRec := httptest.NewRecorder()
@@ -457,6 +468,30 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	}
 	if contentType := publicImageRec.Header().Get("Content-Type"); contentType != "image/png" {
 		t.Fatalf("expected public image/png content type, got %q", contentType)
+	}
+
+	emptyUnpublishReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/image-reviews/"+imageID+":unpublish", bytes.NewBufferString(`{"reason":"  "}`))
+	emptyUnpublishReq.Header.Set("Authorization", "Bearer "+adminToken)
+	emptyUnpublishReq.Header.Set("Content-Type", "application/json")
+	emptyUnpublishRec := httptest.NewRecorder()
+	handler.ServeHTTP(emptyUnpublishRec, emptyUnpublishReq)
+	if emptyUnpublishRec.Code != http.StatusBadRequest {
+		t.Fatalf("unpublish reason must be required: status=%d body=%s", emptyUnpublishRec.Code, emptyUnpublishRec.Body.String())
+	}
+
+	unpublishReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/image-reviews/"+imageID+":unpublish", bytes.NewBufferString(`{"reason":"版权方申请下架"}`))
+	unpublishReq.Header.Set("Authorization", "Bearer "+adminToken)
+	unpublishReq.Header.Set("Content-Type", "application/json")
+	unpublishRec := httptest.NewRecorder()
+	handler.ServeHTTP(unpublishRec, unpublishReq)
+	if unpublishRec.Code != http.StatusOK || !bytes.Contains(unpublishRec.Body.Bytes(), []byte(`"visibility_status":"unpublished"`)) || !bytes.Contains(unpublishRec.Body.Bytes(), []byte(`版权方申请下架`)) {
+		t.Fatalf("unpublish approved image: status=%d body=%s", unpublishRec.Code, unpublishRec.Body.String())
+	}
+	publicAfterUnpublishReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images?page=1&page_size=10", nil)
+	publicAfterUnpublishRec := httptest.NewRecorder()
+	handler.ServeHTTP(publicAfterUnpublishRec, publicAfterUnpublishReq)
+	if publicAfterUnpublishRec.Code != http.StatusOK || bytes.Contains(publicAfterUnpublishRec.Body.Bytes(), []byte(imageID)) {
+		t.Fatalf("unpublished image must leave public gallery: status=%d body=%s", publicAfterUnpublishRec.Code, publicAfterUnpublishRec.Body.String())
 	}
 }
 

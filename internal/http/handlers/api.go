@@ -3324,11 +3324,46 @@ func (a *API) HandleAdminImageReviews(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
+	width, queryErr := parsePositiveIntQuery(r, "width", 0)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	height, queryErr := parsePositiveIntQuery(r, "height", 0)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	createdFrom, queryErr := parseOptionalTime(r.URL.Query().Get("created_from"), "created_from")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	createdTo, queryErr := parseOptionalTime(r.URL.Query().Get("created_to"), "created_to")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	publishedFrom, queryErr := parseOptionalTime(r.URL.Query().Get("published_from"), "published_from")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	publishedTo, queryErr := parseOptionalTime(r.URL.Query().Get("published_to"), "published_to")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	if (!createdFrom.IsZero() && !createdTo.IsZero() && createdFrom.After(createdTo)) || (!publishedFrom.IsZero() && !publishedTo.IsZero() && publishedFrom.After(publishedTo)) {
+		httpx.WriteError(w, r, errs.BadRequest("invalid review time range"))
+		return
+	}
 	result, err := a.tasks.ListGallery(r.Context(), domainimagetask.GalleryListRequest{
-		Page:       page,
-		PageSize:   pageSize,
-		Status:     r.URL.Query().Get("status"),
-		ReviewOnly: true,
+		Page: page, PageSize: pageSize, Status: r.URL.Query().Get("status"), ReviewOnly: true,
+		UserQuery: r.URL.Query().Get("user"), PromptQuery: r.URL.Query().Get("prompt"), ModelQuery: r.URL.Query().Get("model"),
+		TaskType: r.URL.Query().Get("task_type"), BaseResolution: r.URL.Query().Get("base_resolution"), RequestedSize: r.URL.Query().Get("requested_size"),
+		Width: width, Height: height, AspectRatio: r.URL.Query().Get("aspect_ratio"),
+		CreatedFrom: createdFrom, CreatedTo: createdTo, PublishedFrom: publishedFrom, PublishedTo: publishedTo,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
@@ -3390,10 +3425,23 @@ func (a *API) HandleAdminImageReviewDetail(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	var (
-		image   domainimagetask.GalleryImage
-		err     error
-		auditOp string
+		image          domainimagetask.GalleryImage
+		err            error
+		auditOp        string
+		previousStatus string
 	)
+	switch action {
+	case "approve", "reject", "unpublish":
+		previous, lookupErr := a.tasks.GetImageResultForAdmin(r.Context(), imageID)
+		if lookupErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(lookupErr))
+			return
+		}
+		previousStatus = previous.VisibilityStatus
+	default:
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "image review route not found"))
+		return
+	}
 	switch action {
 	case "approve":
 		now := time.Now().UTC()
@@ -3403,17 +3451,18 @@ func (a *API) HandleAdminImageReviewDetail(w http.ResponseWriter, r *http.Reques
 		image, err = a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityRejected, defaultString(strings.TrimSpace(req.Reason), "rejected by admin"), nil)
 		auditOp = "image_review.reject"
 	case "unpublish":
-		image, err = a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityUnpublished, defaultString(strings.TrimSpace(req.Reason), "unpublished by admin"), nil)
+		if strings.TrimSpace(req.Reason) == "" {
+			httpx.WriteError(w, r, errs.BadRequest("unpublish reason is required"))
+			return
+		}
+		image, err = a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityUnpublished, strings.TrimSpace(req.Reason), nil)
 		auditOp = "image_review.unpublish"
-	default:
-		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "image review route not found"))
-		return
 	}
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
-	a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), auditOp, "image_result", imageID, map[string]any{"status": image.VisibilityStatus, "reason": image.ReviewReason})
+	a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), auditOp, "image_result", imageID, map[string]any{"previous_status": previousStatus, "next_status": image.VisibilityStatus, "reason": image.ReviewReason})
 	httpx.WriteSuccess(w, r, http.StatusOK, image)
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -187,6 +188,93 @@ func TestImageTaskStoreCancelPublishIsOwnerScopedAndReversible(t *testing.T) {
 	reapplied, err := store.RequestPublish(ctx, task.UserID, imageID)
 	if err != nil || reapplied.VisibilityStatus != domainimagetask.VisibilityPendingReview {
 		t.Fatalf("reapply after cancellation: image=%#v err=%v", reapplied, err)
+	}
+}
+
+func TestAdminReviewFilterUsesCombinedDatabasePredicatesAndExactTotal(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-review-filter?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	alice, err := client.User.Create().SetEmail("alice@example.com").SetNickname("Alice Studio").SetStatus("active").Save(ctx)
+	if err != nil {
+		t.Fatalf("create alice: %v", err)
+	}
+	bob, err := client.User.Create().SetEmail("bob@example.com").SetNickname("Bob").SetStatus("active").Save(ctx)
+	if err != nil {
+		t.Fatalf("create bob: %v", err)
+	}
+
+	store := NewImageTaskStore(client)
+	var windowStart, windowEnd, publishedWindowStart, publishedWindowEnd time.Time
+	tasks := []domainimagetask.Task{
+		{
+			UserID: int64(alice.ID), ID: "81818181-8181-8181-8181-818181818181", Status: domainimagetask.StatusSucceeded,
+			AbstractModel: "studio", RouteModelCode: "studio-v2", TaskType: string(provider.TaskTypeImageEdit),
+			Prompt: "alpine portrait with warm light", BaseResolution: "2k", RequestedSize: "1536x1024", AspectRatio: "3:2",
+			Results: []provider.ImageResult{{ID: "81818181-0000-0000-0000-818181818181", ObjectKey: "generated/alice.png", MimeType: "image/png", Width: 1536, Height: 1024, SHA256: "alice", StorageDriver: "local"}},
+		},
+		{
+			UserID: int64(bob.ID), ID: "82828282-8282-8282-8282-828282828282", Status: domainimagetask.StatusSucceeded,
+			AbstractModel: "basic", RouteModelCode: "basic-v1", TaskType: string(provider.TaskTypeTextToImage),
+			Prompt: "city skyline", BaseResolution: "1k", RequestedSize: "1024x1024", AspectRatio: "1:1",
+			Results: []provider.ImageResult{{ID: "82828282-0000-0000-0000-828282828282", ObjectKey: "generated/bob.png", MimeType: "image/png", Width: 1024, Height: 1024, SHA256: "bob", StorageDriver: "local"}},
+		},
+	}
+	for _, task := range tasks {
+		if err := store.Save(ctx, task); err != nil {
+			t.Fatalf("Save %s: %v", task.ID, err)
+		}
+		if _, err := store.RequestPublish(ctx, task.UserID, task.Results[0].ID); err != nil {
+			t.Fatalf("RequestPublish %s: %v", task.ID, err)
+		}
+		publishedAt := time.Now().UTC()
+		approved, err := store.ReviewImage(ctx, task.Results[0].ID, domainimagetask.VisibilityApproved, "", &publishedAt)
+		if err != nil {
+			t.Fatalf("ReviewImage %s: %v", task.ID, err)
+		}
+		_ = approved
+	}
+	baseline, err := store.ListGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 10, ReviewOnly: true})
+	if err != nil {
+		t.Fatalf("ListGallery baseline: %v", err)
+	}
+	for _, item := range baseline.Items {
+		if item.TaskID != tasks[0].ID {
+			continue
+		}
+		windowStart, windowEnd = item.CreatedAt.Add(-time.Second), item.CreatedAt.Add(time.Second)
+		if item.PublishedAt != nil {
+			publishedWindowStart, publishedWindowEnd = item.PublishedAt.Add(-time.Second), item.PublishedAt.Add(time.Second)
+		}
+	}
+
+	page, err := store.ListGallery(ctx, domainimagetask.GalleryListRequest{
+		Page: 1, PageSize: 1, ReviewOnly: true, Status: domainimagetask.VisibilityApproved,
+		UserQuery: "alice", PromptQuery: "warm light", ModelQuery: "studio-v2",
+		TaskType: string(provider.TaskTypeImageEdit), BaseResolution: "2k", RequestedSize: "1536x1024",
+		Width: 1536, Height: 1024, AspectRatio: "3:2",
+		CreatedFrom: windowStart, CreatedTo: windowEnd, PublishedFrom: publishedWindowStart, PublishedTo: publishedWindowEnd,
+	})
+	if err != nil {
+		t.Fatalf("ListGallery combined filters: %v", err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].TaskID != tasks[0].ID {
+		t.Fatalf("combined filters must produce an exact filtered total, got %#v", page)
+	}
+
+	byID, err := store.ListGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 10, ReviewOnly: true, UserQuery: fmt.Sprintf("%d", alice.ID)})
+	if err != nil {
+		t.Fatalf("ListGallery user id: %v", err)
+	}
+	if byID.Total != 1 || len(byID.Items) != 1 || byID.Items[0].UserID != int64(alice.ID) {
+		t.Fatalf("numeric user query must match exact user id, got %#v", byID)
 	}
 }
 
