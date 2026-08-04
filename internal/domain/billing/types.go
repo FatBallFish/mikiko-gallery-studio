@@ -112,6 +112,26 @@ type SubscriptionPlan struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+const (
+	SubscriptionPlanStatusActive   = "active"
+	SubscriptionPlanStatusDisabled = "disabled"
+	SubscriptionPlanStatusArchived = "archived"
+
+	SubscriptionPlanActionEnable  = "enable"
+	SubscriptionPlanActionDisable = "disable"
+	SubscriptionPlanActionArchive = "archive"
+	SubscriptionPlanActionRestore = "restore"
+)
+
+type SubscriptionPlanListRequest struct {
+	Status string
+}
+
+type TransitionSubscriptionPlanRequest struct {
+	PlanID int64
+	Action string
+}
+
 type CreateSubscriptionPlanRequest struct {
 	PlanCode        string `json:"plan_code"`
 	PlanName        string `json:"plan_name"`

@@ -22,6 +22,68 @@ import (
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
+func TestBillingStorePlanListAndStateTransitions(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-plan-lifecycle?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	disabled, err := store.CreatePlan(ctx, domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "disabled-plan", PlanName: "Disabled", PlanType: "points_package", Status: "disabled",
+		PurchaseEnabled: false, PriceCNY: "10.00000", Points: "20.00000", BonusPoints: "0.00000",
+		DurationDays: 30, Currency: "CNY",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlan disabled: %v", err)
+	}
+	archived, err := store.CreatePlan(ctx, domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "archived-plan", PlanName: "Archived", PlanType: "points_package", Status: "archived",
+		PurchaseEnabled: false, PriceCNY: "12.00000", Points: "24.00000", BonusPoints: "0.00000",
+		DurationDays: 30, Currency: "CNY",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlan archived: %v", err)
+	}
+
+	visible, err := store.ListPlans(ctx, domainbilling.SubscriptionPlanListRequest{})
+	if err != nil {
+		t.Fatalf("ListPlans default: %v", err)
+	}
+	for _, plan := range visible {
+		if plan.ID == archived.ID || plan.Status == "archived" {
+			t.Fatalf("default list must hide archived plans: %#v", visible)
+		}
+	}
+	disabledOnly, err := store.ListPlans(ctx, domainbilling.SubscriptionPlanListRequest{Status: "disabled"})
+	if err != nil {
+		t.Fatalf("ListPlans disabled: %v", err)
+	}
+	if len(disabledOnly) != 1 || disabledOnly[0].ID != disabled.ID {
+		t.Fatalf("expected status filter to return disabled plan, got %#v", disabledOnly)
+	}
+
+	restored, err := store.TransitionPlan(ctx, domainbilling.TransitionSubscriptionPlanRequest{PlanID: archived.ID, Action: "restore"})
+	if err != nil {
+		t.Fatalf("restore archived plan: %v", err)
+	}
+	if restored.Status != "disabled" || restored.PurchaseEnabled {
+		t.Fatalf("restore must target disabled state: %#v", restored)
+	}
+	restoredAgain, err := store.TransitionPlan(ctx, domainbilling.TransitionSubscriptionPlanRequest{PlanID: archived.ID, Action: "restore"})
+	if err != nil {
+		t.Fatalf("restore plan again: %v", err)
+	}
+	if restoredAgain.Status != "disabled" || restoredAgain.PurchaseEnabled {
+		t.Fatalf("repeated restore must be idempotent: %#v", restoredAgain)
+	}
+}
+
 func TestBillingStoreReserveFinalizeAndLedger(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore?mode=memory&cache=shared&_fk=1")

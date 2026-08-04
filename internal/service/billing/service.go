@@ -299,12 +299,34 @@ func (s *Service) ListLedger(ctx context.Context, userID int64, page, pageSize i
 	return pageResult, nil
 }
 
-func (s *Service) ListPlans(ctx context.Context) ([]domainbilling.SubscriptionPlan, error) {
-	items, err := s.store.ListPlans(ctx)
+func (s *Service) ListPlans(ctx context.Context, req domainbilling.SubscriptionPlanListRequest) ([]domainbilling.SubscriptionPlan, error) {
+	req.Status = strings.ToLower(strings.TrimSpace(req.Status))
+	switch req.Status {
+	case "", "all", domainbilling.SubscriptionPlanStatusActive, domainbilling.SubscriptionPlanStatusDisabled, domainbilling.SubscriptionPlanStatusArchived:
+	default:
+		return nil, errs.BadRequest("invalid subscription plan status")
+	}
+	items, err := s.store.ListPlans(ctx, req)
 	if err != nil {
 		return nil, errs.Internal("failed to load subscription plans")
 	}
 	return items, nil
+}
+
+func (s *Service) TransitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
+	if req.PlanID <= 0 {
+		return domainbilling.SubscriptionPlan{}, errs.BadRequest("plan_id is required")
+	}
+	req.Action = strings.ToLower(strings.TrimSpace(req.Action))
+	switch req.Action {
+	case domainbilling.SubscriptionPlanActionEnable,
+		domainbilling.SubscriptionPlanActionDisable,
+		domainbilling.SubscriptionPlanActionArchive,
+		domainbilling.SubscriptionPlanActionRestore:
+	default:
+		return domainbilling.SubscriptionPlan{}, errs.BadRequest("invalid subscription plan action")
+	}
+	return s.store.TransitionPlan(ctx, req)
 }
 
 func (s *Service) CreatePlan(ctx context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
@@ -361,14 +383,10 @@ func (s *Service) UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscr
 }
 
 func (s *Service) DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error) {
-	if planID <= 0 {
-		return domainbilling.SubscriptionPlan{}, errs.BadRequest("plan_id is required")
-	}
-	item, err := s.store.DeletePlan(ctx, planID)
-	if err != nil {
-		return domainbilling.SubscriptionPlan{}, err
-	}
-	return item, nil
+	return s.TransitionPlan(ctx, domainbilling.TransitionSubscriptionPlanRequest{
+		PlanID: planID,
+		Action: domainbilling.SubscriptionPlanActionArchive,
+	})
 }
 
 func normalizePlanWrite(req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.CreateSubscriptionPlanRequest, error) {

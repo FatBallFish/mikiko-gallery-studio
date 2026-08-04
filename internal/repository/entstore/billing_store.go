@@ -64,11 +64,18 @@ func (s *BillingStore) ListLedger(ctx context.Context, userID int64, page, pageS
 	return domainbilling.LedgerPage{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
 }
 
-func (s *BillingStore) ListPlans(ctx context.Context) ([]domainbilling.SubscriptionPlan, error) {
+func (s *BillingStore) ListPlans(ctx context.Context, req domainbilling.SubscriptionPlanListRequest) ([]domainbilling.SubscriptionPlan, error) {
 	if err := s.ensureDefaultPlans(ctx); err != nil {
 		return nil, err
 	}
-	plans, err := s.client.SubscriptionPlan.Query().
+	query := s.client.SubscriptionPlan.Query()
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status == "" {
+		query = query.Where(subscriptionplan.StatusNEQ(domainbilling.SubscriptionPlanStatusArchived))
+	} else if status != "all" {
+		query = query.Where(subscriptionplan.StatusEQ(status))
+	}
+	plans, err := query.
 		Order(repoent.Asc(subscriptionplan.FieldSortOrder), repoent.Asc(subscriptionplan.FieldID)).
 		All(ctx)
 	if err != nil {
@@ -133,7 +140,14 @@ func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateS
 }
 
 func (s *BillingStore) DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error) {
-	current, err := s.client.SubscriptionPlan.Get(ctx, int(planID))
+	return s.TransitionPlan(ctx, domainbilling.TransitionSubscriptionPlanRequest{
+		PlanID: planID,
+		Action: domainbilling.SubscriptionPlanActionArchive,
+	})
+}
+
+func (s *BillingStore) TransitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
+	current, err := s.client.SubscriptionPlan.Get(ctx, int(req.PlanID))
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
@@ -141,10 +155,16 @@ func (s *BillingStore) DeletePlan(ctx context.Context, planID int64) (domainbill
 		return domainbilling.SubscriptionPlan{}, err
 	}
 	planType := subscriptionPlanType(current.PlanType, current.Metadata)
-	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(planID)).
-		SetStatus("archived").
-		SetPurchaseEnabled(false).
-		SetMetadata(subscriptionPlanMetadata(planType, false)).
+	currentPlan := mapSubscriptionPlan(current)
+	currentPlan.PlanType = planType
+	status, purchaseEnabled, err := billingservice.TransitionPlanState(currentPlan, req.Action)
+	if err != nil {
+		return domainbilling.SubscriptionPlan{}, err
+	}
+	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(req.PlanID)).
+		SetStatus(status).
+		SetPurchaseEnabled(purchaseEnabled).
+		SetMetadata(subscriptionPlanMetadata(planType, purchaseEnabled)).
 		Save(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {

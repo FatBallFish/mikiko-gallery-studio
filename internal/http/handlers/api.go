@@ -875,7 +875,7 @@ func (a *API) HandleBillingPlans(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	result, err := a.billing.ListPlans(r.Context())
+	result, err := a.billing.ListPlans(r.Context(), domainbilling.SubscriptionPlanListRequest{Status: domainbilling.SubscriptionPlanStatusActive})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -1004,7 +1004,7 @@ func (a *API) HandleCashierOptions(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	plans, err := a.billing.ListPlans(r.Context())
+	plans, err := a.billing.ListPlans(r.Context(), domainbilling.SubscriptionPlanListRequest{Status: domainbilling.SubscriptionPlanStatusActive})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -3829,7 +3829,7 @@ func (a *API) HandleAdminCashierPlans(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	plans, err := a.billing.ListPlans(r.Context())
+	plans, err := a.billing.ListPlans(r.Context(), domainbilling.SubscriptionPlanListRequest{})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -8897,7 +8897,7 @@ func (a *API) cashierPurchasablePlan(ctx context.Context, planCode string) (doma
 	if planCode == "" {
 		return domainbilling.SubscriptionPlan{}, errs.BadRequest("plan_code is required")
 	}
-	plans, err := a.billing.ListPlans(ctx)
+	plans, err := a.billing.ListPlans(ctx, domainbilling.SubscriptionPlanListRequest{Status: domainbilling.SubscriptionPlanStatusActive})
 	if err != nil {
 		return domainbilling.SubscriptionPlan{}, normalizeAppError(err)
 	}

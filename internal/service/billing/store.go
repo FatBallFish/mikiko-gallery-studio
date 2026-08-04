@@ -97,9 +97,10 @@ type ChargebackSummaryStoreRequest struct {
 type Store interface {
 	GetBalance(ctx context.Context, userID int64) (BalanceState, error)
 	ListLedger(ctx context.Context, userID int64, page, pageSize int) (domainbilling.LedgerPage, error)
-	ListPlans(ctx context.Context) ([]domainbilling.SubscriptionPlan, error)
+	ListPlans(ctx context.Context, req domainbilling.SubscriptionPlanListRequest) ([]domainbilling.SubscriptionPlan, error)
 	CreatePlan(ctx context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
 	UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
+	TransitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
 	DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error)
 	GetActiveSubscription(ctx context.Context, userID int64) (*domainbilling.UserSubscriptionSummary, error)
 	ListOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.PaymentOrderPage, error)
@@ -241,11 +242,15 @@ func (s *MemoryStore) ListLedger(_ context.Context, userID int64, page, pageSize
 	}, nil
 }
 
-func (s *MemoryStore) ListPlans(_ context.Context) ([]domainbilling.SubscriptionPlan, error) {
+func (s *MemoryStore) ListPlans(_ context.Context, req domainbilling.SubscriptionPlanListRequest) ([]domainbilling.SubscriptionPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	items := make([]domainbilling.SubscriptionPlan, 0, len(s.plans))
-	items = append(items, s.plans...)
+	for _, item := range s.plans {
+		if planMatchesListRequest(item, req) {
+			items = append(items, item)
+		}
+	}
 	return items, nil
 }
 
@@ -306,20 +311,67 @@ func (s *MemoryStore) UpdatePlan(_ context.Context, req domainbilling.UpdateSubs
 	return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
 }
 
-func (s *MemoryStore) DeletePlan(_ context.Context, planID int64) (domainbilling.SubscriptionPlan, error) {
+func (s *MemoryStore) DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error) {
+	return s.TransitionPlan(ctx, domainbilling.TransitionSubscriptionPlanRequest{
+		PlanID: planID,
+		Action: domainbilling.SubscriptionPlanActionArchive,
+	})
+}
+
+func (s *MemoryStore) TransitionPlan(_ context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for index, item := range s.plans {
-		if item.ID != planID {
+		if item.ID != req.PlanID {
 			continue
 		}
-		item.Status = "archived"
-		item.PurchaseEnabled = false
+		status, purchaseEnabled, err := TransitionPlanState(item, req.Action)
+		if err != nil {
+			return domainbilling.SubscriptionPlan{}, err
+		}
+		item.Status = status
+		item.PurchaseEnabled = purchaseEnabled
 		item.UpdatedAt = time.Now().UTC()
 		s.plans[index] = item
 		return item, nil
 	}
 	return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
+}
+
+func planMatchesListRequest(plan domainbilling.SubscriptionPlan, req domainbilling.SubscriptionPlanListRequest) bool {
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status == "all" {
+		return true
+	}
+	if status != "" {
+		return plan.Status == status
+	}
+	return plan.Status != domainbilling.SubscriptionPlanStatusArchived
+}
+
+func TransitionPlanState(plan domainbilling.SubscriptionPlan, action string) (string, bool, error) {
+	action = strings.ToLower(strings.TrimSpace(action))
+	switch action {
+	case domainbilling.SubscriptionPlanActionEnable:
+		if plan.Status == domainbilling.SubscriptionPlanStatusArchived {
+			return "", false, errs.New(http.StatusConflict, errs.CodeConflict, "archived subscription plan must be restored before enabling")
+		}
+		return domainbilling.SubscriptionPlanStatusActive, plan.PlanType == "points_package", nil
+	case domainbilling.SubscriptionPlanActionDisable:
+		if plan.Status == domainbilling.SubscriptionPlanStatusArchived {
+			return "", false, errs.New(http.StatusConflict, errs.CodeConflict, "archived subscription plan cannot be disabled")
+		}
+		return domainbilling.SubscriptionPlanStatusDisabled, false, nil
+	case domainbilling.SubscriptionPlanActionArchive:
+		return domainbilling.SubscriptionPlanStatusArchived, false, nil
+	case domainbilling.SubscriptionPlanActionRestore:
+		if plan.Status == domainbilling.SubscriptionPlanStatusActive {
+			return "", false, errs.New(http.StatusConflict, errs.CodeConflict, "active subscription plan cannot be restored")
+		}
+		return domainbilling.SubscriptionPlanStatusDisabled, false, nil
+	default:
+		return "", false, errs.BadRequest("invalid subscription plan action")
+	}
 }
 
 func (s *MemoryStore) GetActiveSubscription(_ context.Context, _ int64) (*domainbilling.UserSubscriptionSummary, error) {
