@@ -123,6 +123,10 @@ func (s *countingStore) RequestPublish(ctx context.Context, userID int64, imageI
 	return s.base.RequestPublish(ctx, userID, imageID)
 }
 
+func (s *countingStore) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.CancelPublish(ctx, userID, imageID)
+}
+
 func (s *countingStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
 	return s.base.SetImageGroup(ctx, userID, imageID, imageGroup)
 }
