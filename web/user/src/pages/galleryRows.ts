@@ -22,9 +22,10 @@ export type AssetCardModel = {
   assetPath: string
   canPreview: boolean
   canDownload: boolean
-  canEdit: boolean
-  canPublish: boolean
-  publishActionLabel: string
+	canEdit: boolean
+	canPublish: boolean
+	publishAction: 'request' | 'cancel' | null
+	publishActionLabel: string
 }
 export type GalleryImageCardModel = AssetCardModel
 
@@ -47,7 +48,7 @@ export function galleryImageCard(image: GalleryImage): GalleryImageCardModel {
   const assetPath = image.url || image.download_url || ''
   const publishStatus = galleryPublishStatus(image)
   const hasAsset = Boolean(assetPath)
-  const canPublish = hasAsset && ['private', 'rejected', 'unpublished'].includes(publishStatus)
+	const publishAction = galleryPublishAction(publishStatus, hasAsset)
   const modelLabel = image.route_model_code || image.abstract_model || '-'
   return {
     id: image.id,
@@ -64,7 +65,8 @@ export function galleryImageCard(image: GalleryImage): GalleryImageCardModel {
     canPreview: hasAsset,
     canDownload: hasAsset,
     canEdit: hasAsset,
-    canPublish,
+		canPublish: publishAction !== null,
+		publishAction,
     publishActionLabel: galleryPublishActionLabel(publishStatus, hasAsset),
   }
 }
@@ -132,10 +134,18 @@ function galleryTaskTypeLabel(taskType: string) {
 }
 
 function galleryPublishActionLabel(publishStatus: string, hasAsset: boolean) {
-  if (!hasAsset) return '无图片文件'
-  if (publishStatus === 'approved') return '已公开'
-  if (publishStatus === 'pending_review') return '审核中'
-  return '申请公开'
+	const action = galleryPublishAction(publishStatus, hasAsset)
+	if (!action) return '无图片文件'
+	if (publishStatus === 'approved') return '取消公开'
+	if (publishStatus === 'pending_review') return '取消申请'
+	if (publishStatus === 'rejected' || publishStatus === 'unpublished') return '重新申请'
+	return '申请公开'
+}
+
+function galleryPublishAction(publishStatus: string, hasAsset: boolean): 'request' | 'cancel' | null {
+	if (publishStatus === 'approved' || publishStatus === 'pending_review') return 'cancel'
+	if (hasAsset && ['private', 'rejected', 'unpublished'].includes(publishStatus)) return 'request'
+	return null
 }
 
 function galleryDateTime(value?: string) {

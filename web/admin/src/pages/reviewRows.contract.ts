@@ -1,6 +1,7 @@
 import {
   reviewActionsForStatus,
   reviewDefaultReason,
+  reviewListQuery,
   reviewRowView,
   reviewStatusLabel,
   reviewStatusTone,
@@ -11,6 +12,32 @@ import {
 import { readFileSync } from 'node:fs'
 
 const reviewPageSource = readFileSync(new URL('./ReviewPage.tsx', import.meta.url), 'utf8')
+
+const combinedQuery = reviewListQuery({
+  user: 'alice',
+  prompt: 'warm light',
+  model: 'studio-v2',
+  taskType: 'image_edit',
+  baseResolution: '2k',
+  requestedSize: '1536x1024',
+  width: '1536',
+  height: '1024',
+  aspectRatio: '3:2',
+  createdFrom: '2026-08-01T00:00:00Z',
+  createdTo: '2026-08-05T23:59:59Z',
+  publishedFrom: '2026-08-02T00:00:00Z',
+  publishedTo: '2026-08-04T23:59:59Z',
+}, 'approved', 2, 50)
+for (const [key, expected] of Object.entries({
+  user: 'alice', prompt: 'warm light', model: 'studio-v2', task_type: 'image_edit', base_resolution: '2k',
+  requested_size: '1536x1024', width: 1536, height: 1024, aspect_ratio: '3:2', status: 'approved', page: 2, page_size: 50,
+  created_from: '2026-08-01T00:00:00Z', created_to: '2026-08-05T23:59:59Z', published_from: '2026-08-02T00:00:00Z', published_to: '2026-08-04T23:59:59Z',
+})) {
+  if (combinedQuery[key] !== expected) throw new Error(`review server query should map ${key}, got ${JSON.stringify(combinedQuery)}`)
+}
+if (reviewListQuery({ user: '', prompt: '', model: '', taskType: '', baseResolution: '', requestedSize: '', width: '', height: '', aspectRatio: '', createdFrom: '', createdTo: '', publishedFrom: '', publishedTo: '' }, 'all', 1, 20).status !== undefined) {
+  throw new Error('all review tab should omit the status query')
+}
 
 const pendingActions = reviewActionsForStatus('pending_review')
 if (pendingActions.map((action) => action.decision).join(',') !== 'approve,reject') {
@@ -125,6 +152,11 @@ for (const reasonContract of [
 
 for (const behaviorContract of [
   'adminApi.decideReview',
+  'adminApi.listReviews(reviewListQuery(appliedFilters, filter, page, pageSize))',
+  'setRows(result.items)',
+  'setTotal(result.total)',
+  '<FilterToolbar',
+  '<Pager',
   'setMutationError(',
   '<InlineFeedback tone="danger" message={mutationError}',
   'useAdminPreviewMotion',

@@ -875,7 +875,7 @@ func (a *API) HandleBillingPlans(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	result, err := a.billing.ListPlans(r.Context())
+	result, err := a.billing.ListPlans(r.Context(), domainbilling.SubscriptionPlanListRequest{Status: domainbilling.SubscriptionPlanStatusActive})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -1004,7 +1004,7 @@ func (a *API) HandleCashierOptions(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	plans, err := a.billing.ListPlans(r.Context())
+	plans, err := a.billing.ListPlans(r.Context(), domainbilling.SubscriptionPlanListRequest{Status: domainbilling.SubscriptionPlanStatusActive})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -1093,7 +1093,7 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 	if idempotencyKey != "" {
 		existing, err := a.billing.GetOrderByIdempotencyKey(ctx, userID, idempotencyKey)
 		if err == nil {
-			return existing, nil
+			return cashierExistingOrderResult(existing)
 		}
 		appErr := normalizeAppError(err)
 		if appErr.Code != errs.CodeNotFound {
@@ -1128,15 +1128,6 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 			return domainbilling.PaymentOrder{}, scheduleErr
 		}
 		orderNo := newCashierOrderNo()
-		payment, paymentErr := a.cashierPaymentDisplay(ctx, method, instance, cashierPaymentDisplayRequest{
-			OrderNo:         orderNo,
-			AmountCNY:       strings.TrimSpace(req.AmountCNY),
-			Subject:         "自定义充值",
-			ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
-		})
-		if paymentErr != nil {
-			return domainbilling.PaymentOrder{}, paymentErr
-		}
 		result, err := a.billing.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
 			UserID:             userID,
 			OrderNo:            orderNo,
@@ -1147,16 +1138,27 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 			VisibleMethod:      method.Method,
 			ProviderType:       instance.ProviderType,
 			ProviderInstanceID: instance.ID,
-			PaymentDisplay:     payment.Display,
-			PaymentURL:         payment.PaymentURL,
-			QRCode:             payment.QRCode,
-			ClientToken:        payment.ClientToken,
 			IdempotencyKey:     idempotencyKey,
 		})
 		if err != nil {
 			return domainbilling.PaymentOrder{}, normalizeAppError(err)
 		}
-		return result, nil
+		if result.OrderNo != orderNo {
+			return cashierExistingOrderResult(result)
+		}
+		payment, paymentErr, outcomeUncertain := a.cashierPaymentDisplay(ctx, method, instance, cashierPaymentDisplayRequest{
+			OrderNo:         result.OrderNo,
+			AmountCNY:       result.AmountCNY,
+			Subject:         result.PlanName,
+			ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
+		})
+		if paymentErr != nil {
+			if !outcomeUncertain {
+				a.failCashierOrderInitialization(ctx, result, paymentErr)
+			}
+			return domainbilling.PaymentOrder{}, paymentErr
+		}
+		return a.initializeCashierOrder(ctx, result, payment)
 	}
 	if purchaseType != "plan" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("purchase_type must be plan or custom_amount")
@@ -1170,15 +1172,6 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 		return domainbilling.PaymentOrder{}, scheduleErr
 	}
 	orderNo := newCashierOrderNo()
-	payment, paymentErr := a.cashierPaymentDisplay(ctx, method, instance, cashierPaymentDisplayRequest{
-		OrderNo:         orderNo,
-		AmountCNY:       plan.PriceCNY,
-		Subject:         plan.PlanName,
-		ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
-	})
-	if paymentErr != nil {
-		return domainbilling.PaymentOrder{}, paymentErr
-	}
 	result, err := a.billing.CreateOrder(ctx, domainbilling.CreateOrderRequest{
 		UserID:             userID,
 		OrderNo:            orderNo,
@@ -1188,16 +1181,62 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 		VisibleMethod:      method.Method,
 		ProviderType:       instance.ProviderType,
 		ProviderInstanceID: instance.ID,
-		PaymentDisplay:     payment.Display,
-		PaymentURL:         payment.PaymentURL,
-		QRCode:             payment.QRCode,
-		ClientToken:        payment.ClientToken,
 		IdempotencyKey:     idempotencyKey,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
 	}
-	return result, nil
+	if result.OrderNo != orderNo {
+		return cashierExistingOrderResult(result)
+	}
+	payment, paymentErr, outcomeUncertain := a.cashierPaymentDisplay(ctx, method, instance, cashierPaymentDisplayRequest{
+		OrderNo:         result.OrderNo,
+		AmountCNY:       result.AmountCNY,
+		Subject:         result.PlanName,
+		ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
+	})
+	if paymentErr != nil {
+		if !outcomeUncertain {
+			a.failCashierOrderInitialization(ctx, result, paymentErr)
+		}
+		return domainbilling.PaymentOrder{}, paymentErr
+	}
+	return a.initializeCashierOrder(ctx, result, payment)
+}
+
+func cashierExistingOrderResult(order domainbilling.PaymentOrder) (domainbilling.PaymentOrder, *errs.Error) {
+	if cashierOrderHasProviderInitialization(order) || order.Status == "completed" || order.Status == "paid" {
+		return order, nil
+	}
+	return domainbilling.PaymentOrder{}, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider initialization did not complete")
+}
+
+func cashierOrderHasProviderInitialization(order domainbilling.PaymentOrder) bool {
+	return strings.TrimSpace(order.PaymentURL) != "" || strings.TrimSpace(order.QRCode) != "" || strings.TrimSpace(order.ClientToken) != "" || len(order.PaymentDisplay) > 0
+}
+
+func (a *API) initializeCashierOrder(ctx context.Context, order domainbilling.PaymentOrder, payment cashierservice.PaymentDisplayResult) (domainbilling.PaymentOrder, *errs.Error) {
+	tradeNo := strings.TrimSpace(mapStringValue(payment.Display, "channel_trade_no", "trade_no"))
+	initialized, err := a.billing.InitializePaymentOrder(ctx, domainbilling.InitializePaymentOrderRequest{
+		UserID: order.UserID, OrderID: order.ID, PaymentDisplay: payment.Display,
+		PaymentURL: payment.PaymentURL, QRCode: payment.QRCode, ClientToken: payment.ClientToken, TradeNo: tradeNo,
+	})
+	if err != nil {
+		return domainbilling.PaymentOrder{}, normalizeAppError(err)
+	}
+	return initialized, nil
+}
+
+func (a *API) failCashierOrderInitialization(ctx context.Context, order domainbilling.PaymentOrder, paymentErr *errs.Error) {
+	reason := errs.CodePaymentProviderUnavailable
+	if paymentErr != nil && strings.TrimSpace(paymentErr.Code) != "" {
+		reason = strings.TrimSpace(paymentErr.Code)
+	}
+	if _, err := a.billing.FailPaymentOrderInitialization(ctx, domainbilling.FailPaymentOrderInitializationRequest{
+		UserID: order.UserID, OrderID: order.ID, FailureReason: reason,
+	}); err != nil {
+		slog.ErrorContext(ctx, "mark payment order initialization failed", "order_no", order.OrderNo, "error", err)
+	}
 }
 
 func legacyBillingProviderToVisibleMethod(provider string) string {
@@ -1669,8 +1708,8 @@ func (a *API) HandlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusForbidden, errs.CodeForbidden, "mock payment is disabled in production"))
 		return
 	}
-	if strings.EqualFold(providerCode, "easypay") {
-		_, appErr := a.handleEasyPayWebhook(r)
+	if strings.EqualFold(providerCode, "easypay") || strings.HasPrefix(strings.ToLower(providerCode), "easypay_") {
+		_, appErr := a.handleEasyPayWebhook(r, providerCode)
 		if appErr != nil {
 			httpx.WriteError(w, r, appErr)
 			return
@@ -1747,8 +1786,8 @@ func writePaymentWebhookSuccess(w http.ResponseWriter, providerCode string) {
 	_, _ = w.Write([]byte("success"))
 }
 
-func (a *API) handleEasyPayWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(r.Body)
+func (a *API) handleEasyPayWebhook(r *http.Request, providerCode string) (domainbilling.PaymentOrder, *errs.Error) {
+	body, readErr := readCashierWebhookBody(r.Body)
 	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
 	}
@@ -1757,7 +1796,7 @@ func (a *API) handleEasyPayWebhook(r *http.Request) (domainbilling.PaymentOrder,
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid easypay webhook body")
 	}
 	pid := strings.TrimSpace(values.Get("pid"))
-	instance, ok := a.easypayProviderInstanceByPID(r.Context(), pid)
+	instance, ok := a.easypayProviderInstanceByPID(r.Context(), providerCode, pid)
 	if !ok {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
@@ -1770,15 +1809,20 @@ func (a *API) handleEasyPayWebhook(r *http.Request) (domainbilling.PaymentOrder,
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook signature is invalid")
 	}
 	status := strings.TrimSpace(values.Get("trade_status"))
-	if status != "" && !strings.EqualFold(status, "TRADE_SUCCESS") && status != "1" {
+	if !strings.EqualFold(status, "TRADE_SUCCESS") && status != "1" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook status is not success")
+	}
+	amountCNY := strings.TrimSpace(values.Get("money"))
+	if amountCNY == "" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
 	}
 	providerType := strings.ToLower(strings.TrimSpace(instance.ProviderType))
 	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
-		Provider:  providerType,
-		OrderNo:   strings.TrimSpace(values.Get("out_trade_no")),
-		TradeNo:   strings.TrimSpace(values.Get("trade_no")),
-		AmountCNY: strings.TrimSpace(values.Get("money")),
+		Provider:           providerType,
+		ProviderInstanceID: instance.ID,
+		OrderNo:            strings.TrimSpace(values.Get("out_trade_no")),
+		TradeNo:            strings.TrimSpace(values.Get("trade_no")),
+		AmountCNY:          amountCNY,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1787,7 +1831,7 @@ func (a *API) handleEasyPayWebhook(r *http.Request) (domainbilling.PaymentOrder,
 }
 
 func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(r.Body)
+	body, readErr := readCashierWebhookBody(r.Body)
 	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
 	}
@@ -1811,7 +1855,7 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 	}
 	state := strings.TrimSpace(values.Get("state"))
 	status := strings.TrimSpace(values.Get("status"))
-	if state != "" && state != "2" && !strings.EqualFold(state, "success") {
+	if state != "2" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook status is not success")
 	}
 	if status != "" && !strings.EqualFold(status, "success") && !strings.EqualFold(status, "paid") {
@@ -1825,10 +1869,11 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 		tradeNo = strings.TrimSpace(values.Get("trade_no"))
 	}
 	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
-		Provider:  strings.ToLower(strings.TrimSpace(instance.ProviderType)),
-		OrderNo:   strings.TrimSpace(values.Get("mchOrderNo")),
-		TradeNo:   tradeNo,
-		AmountCNY: jeepayAmountCNYFromFen(values.Get("amount")),
+		Provider:           strings.ToLower(strings.TrimSpace(instance.ProviderType)),
+		ProviderInstanceID: instance.ID,
+		OrderNo:            strings.TrimSpace(values.Get("mchOrderNo")),
+		TradeNo:            tradeNo,
+		AmountCNY:          jeepayAmountCNYFromFen(values.Get("amount")),
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1836,11 +1881,22 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 	return result, nil
 }
 
-const maxStripeWebhookBodyBytes = 1 << 20
+const maxCashierWebhookBodyBytes = 1 << 20
+
+func readCashierWebhookBody(body io.Reader) ([]byte, error) {
+	content, err := io.ReadAll(io.LimitReader(body, maxCashierWebhookBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(content) > maxCashierWebhookBodyBytes {
+		return nil, fmt.Errorf("payment webhook body exceeds %d bytes", maxCashierWebhookBodyBytes)
+	}
+	return content, nil
+}
 
 func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(io.LimitReader(r.Body, maxStripeWebhookBodyBytes+1))
-	if readErr != nil || len(body) > maxStripeWebhookBodyBytes {
+	body, readErr := readCashierWebhookBody(r.Body)
+	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid payment webhook body")
 	}
 	signature := strings.TrimSpace(r.Header.Get("Stripe-Signature"))
@@ -1851,6 +1907,7 @@ func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 	configured := false
 	var event cashierservice.StripeWebhookEvent
 	verified := false
+	verifiedInstanceID := int64(0)
 	for _, instance := range a.cashierProviderInstances(r.Context()) {
 		if !strings.EqualFold(strings.TrimSpace(instance.ProviderType), "stripe") || !instance.Enabled || instance.ConfigStatus != "configured" {
 			continue
@@ -1864,6 +1921,7 @@ func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 		if err == nil {
 			event = parsed
 			verified = true
+			verifiedInstanceID = instance.ID
 			break
 		}
 	}
@@ -1882,10 +1940,11 @@ func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
 		}
 		result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
-			Provider:  "stripe",
-			OrderNo:   event.OrderNo,
-			TradeNo:   event.PaymentIntentID,
-			AmountCNY: event.AmountCNY,
+			Provider:           "stripe",
+			ProviderInstanceID: verifiedInstanceID,
+			OrderNo:            event.OrderNo,
+			TradeNo:            event.PaymentIntentID,
+			AmountCNY:          event.AmountCNY,
 		})
 		if err != nil {
 			return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1897,7 +1956,7 @@ func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 }
 
 func (a *API) handleAlipayWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(r.Body)
+	body, readErr := readCashierWebhookBody(r.Body)
 	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
 	}
@@ -1919,14 +1978,19 @@ func (a *API) handleAlipayWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook signature is invalid")
 	}
 	status := strings.TrimSpace(values.Get("trade_status"))
-	if status != "" && !strings.EqualFold(status, "TRADE_SUCCESS") && !strings.EqualFold(status, "TRADE_FINISHED") {
+	if !strings.EqualFold(status, "TRADE_SUCCESS") && !strings.EqualFold(status, "TRADE_FINISHED") {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook status is not success")
 	}
+	amountCNY := strings.TrimSpace(values.Get("total_amount"))
+	if amountCNY == "" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
+	}
 	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
-		Provider:  "alipay_direct",
-		OrderNo:   strings.TrimSpace(values.Get("out_trade_no")),
-		TradeNo:   strings.TrimSpace(values.Get("trade_no")),
-		AmountCNY: strings.TrimSpace(values.Get("total_amount")),
+		Provider:           "alipay_direct",
+		ProviderInstanceID: instance.ID,
+		OrderNo:            strings.TrimSpace(values.Get("out_trade_no")),
+		TradeNo:            strings.TrimSpace(values.Get("trade_no")),
+		AmountCNY:          amountCNY,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1935,7 +1999,7 @@ func (a *API) handleAlipayWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 }
 
 func (a *API) handleWxPayWebhook(r *http.Request) (domainbilling.PaymentOrder, *errs.Error) {
-	body, readErr := io.ReadAll(r.Body)
+	body, readErr := readCashierWebhookBody(r.Body)
 	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
 	}
@@ -1962,15 +2026,25 @@ func (a *API) handleWxPayWebhook(r *http.Request) (domainbilling.PaymentOrder, *
 	if decryptErr != nil {
 		return domainbilling.PaymentOrder{}, decryptErr
 	}
-	if transaction.TradeState != "" && !strings.EqualFold(transaction.TradeState, "SUCCESS") {
+	var envelope wxPayWebhookEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil || !strings.EqualFold(strings.TrimSpace(envelope.EventType), "TRANSACTION.SUCCESS") {
+		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook event is not a successful transaction")
+	}
+	expectedAppID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
+	expectedMchID := strings.TrimSpace(mapStringValue(instance.Config, "mch_id", "mchId", "merchant_id", "merchantId"))
+	if !hmac.Equal([]byte(expectedAppID), []byte(strings.TrimSpace(transaction.AppID))) || !hmac.Equal([]byte(expectedMchID), []byte(strings.TrimSpace(transaction.MchID))) {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook merchant identity is invalid")
+	}
+	if !strings.EqualFold(strings.TrimSpace(transaction.TradeState), "SUCCESS") {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook status is not success")
 	}
 	amountCNY := wxPayAmountCNYFromFen(transaction.Amount.Total)
 	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
-		Provider:  "wxpay_direct",
-		OrderNo:   strings.TrimSpace(transaction.OutTradeNo),
-		TradeNo:   strings.TrimSpace(transaction.TransactionID),
-		AmountCNY: amountCNY,
+		Provider:           "wxpay_direct",
+		ProviderInstanceID: instance.ID,
+		OrderNo:            strings.TrimSpace(transaction.OutTradeNo),
+		TradeNo:            strings.TrimSpace(transaction.TransactionID),
+		AmountCNY:          amountCNY,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1978,14 +2052,18 @@ func (a *API) handleWxPayWebhook(r *http.Request) (domainbilling.PaymentOrder, *
 	return result, nil
 }
 
-func (a *API) easypayProviderInstanceByPID(ctx context.Context, pid string) (cashierProviderInstance, bool) {
+func (a *API) easypayProviderInstanceByPID(ctx context.Context, providerCode string, pid string) (cashierProviderInstance, bool) {
 	pid = strings.TrimSpace(pid)
 	if pid == "" {
 		return cashierProviderInstance{}, false
 	}
+	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
 	for _, instance := range a.cashierProviderInstances(ctx) {
 		providerType := strings.ToLower(strings.TrimSpace(instance.ProviderType))
 		if providerType != "easypay_alipay" && providerType != "easypay_wxpay" {
+			continue
+		}
+		if providerCode != "" && providerCode != "easypay" && providerCode != providerType {
 			continue
 		}
 		if !instance.Enabled || instance.ConfigStatus != "configured" {
@@ -2043,7 +2121,7 @@ func (a *API) wxpayProviderInstanceBySerial(ctx context.Context, serial string) 
 func (a *API) jeepayProviderInstanceByMerchant(ctx context.Context, providerCode string, mchNo string, appID string) (cashierProviderInstance, bool) {
 	mchNo = strings.TrimSpace(mchNo)
 	appID = strings.TrimSpace(appID)
-	if mchNo == "" {
+	if mchNo == "" || appID == "" {
 		return cashierProviderInstance{}, false
 	}
 	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
@@ -2060,7 +2138,7 @@ func (a *API) jeepayProviderInstanceByMerchant(ctx context.Context, providerCode
 		}
 		instanceMchNo := strings.TrimSpace(mapStringValue(instance.Config, "mch_no", "mchNo", "merchant_id", "merchantId"))
 		instanceAppID := strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId"))
-		if instanceMchNo == mchNo && (appID == "" || instanceAppID == "" || instanceAppID == appID) {
+		if instanceMchNo == mchNo && instanceAppID == appID {
 			return instance, true
 		}
 	}
@@ -2091,6 +2169,11 @@ func (a *API) HandleReferenceAssetUpload(w http.ResponseWriter, r *http.Request)
 	}
 
 	asset, svcErr := a.assets.Upload(user.ID, header.Filename, header.Header.Get("Content-Type"), content)
+	if svcErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(svcErr))
+		return
+	}
+	asset, svcErr = a.assets.ProjectURLs(r.Context(), asset)
 	if svcErr != nil {
 		httpx.WriteError(w, r, normalizeAppError(svcErr))
 		return
@@ -2150,6 +2233,11 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 			httpx.WriteError(w, r, normalizeAppError(svcErr))
 			return
 		}
+		asset, svcErr = a.assets.ProjectURLs(r.Context(), asset)
+		if svcErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(svcErr))
+			return
+		}
 		items = append(items, referenceAssetPayload(asset, false))
 	}
 	httpx.WriteSuccess(w, r, http.StatusCreated, map[string]any{"items": items})
@@ -2186,7 +2274,7 @@ func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
-		asset, err := a.assets.Get(user.ID, assetID)
+		asset, err := a.assets.GetWithContext(r.Context(), user.ID, assetID)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
@@ -2312,6 +2400,11 @@ func (a *API) HandleOpenReferenceAssetUploadSession(w http.ResponseWriter, r *ht
 		httpx.WriteError(w, r, normalizeAppError(svcErr))
 		return
 	}
+	asset, svcErr = a.assets.ProjectURLs(r.Context(), asset)
+	if svcErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(svcErr))
+		return
+	}
 	httpx.WriteSuccess(w, r, http.StatusCreated, map[string]any{
 		"asset_id":    asset.ID,
 		"status":      asset.Status,
@@ -2350,6 +2443,11 @@ func (a *API) HandleOpenReferenceAssetMultipartUpload(w http.ResponseWriter, r *
 		httpx.WriteError(w, r, normalizeAppError(svcErr))
 		return
 	}
+	asset, svcErr = a.assets.ProjectURLs(r.Context(), asset)
+	if svcErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(svcErr))
+		return
+	}
 	httpx.WriteSuccess(w, r, http.StatusCreated, referenceAssetPayload(asset, true))
 }
 
@@ -2364,7 +2462,7 @@ func (a *API) HandleOpenReferenceAssetGet(w http.ResponseWriter, r *http.Request
 		return
 	}
 	assetID := strings.TrimPrefix(r.URL.Path, "/api/open/image/v1/reference-assets/")
-	asset, err := a.assets.Get(identity.UserID, assetID)
+	asset, err := a.assets.GetWithContext(r.Context(), identity.UserID, assetID)
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -2741,6 +2839,16 @@ func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if r.Method == http.MethodDelete {
+		if action == "publish" {
+			image, err := a.tasks.CancelPublish(r.Context(), user.ID, imageID)
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_cancel", "image_result", imageID, map[string]any{"status": image.VisibilityStatus})
+			httpx.WriteSuccess(w, r, http.StatusOK, image)
+			return
+		}
 		if action != "" {
 			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery image route not found"))
 			return
@@ -3236,11 +3344,46 @@ func (a *API) HandleAdminImageReviews(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
+	width, queryErr := parsePositiveIntQuery(r, "width", 0)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	height, queryErr := parsePositiveIntQuery(r, "height", 0)
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	createdFrom, queryErr := parseOptionalTime(r.URL.Query().Get("created_from"), "created_from")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	createdTo, queryErr := parseOptionalTime(r.URL.Query().Get("created_to"), "created_to")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	publishedFrom, queryErr := parseOptionalTime(r.URL.Query().Get("published_from"), "published_from")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	publishedTo, queryErr := parseOptionalTime(r.URL.Query().Get("published_to"), "published_to")
+	if queryErr != nil {
+		httpx.WriteError(w, r, queryErr)
+		return
+	}
+	if (!createdFrom.IsZero() && !createdTo.IsZero() && createdFrom.After(createdTo)) || (!publishedFrom.IsZero() && !publishedTo.IsZero() && publishedFrom.After(publishedTo)) {
+		httpx.WriteError(w, r, errs.BadRequest("invalid review time range"))
+		return
+	}
 	result, err := a.tasks.ListGallery(r.Context(), domainimagetask.GalleryListRequest{
-		Page:       page,
-		PageSize:   pageSize,
-		Status:     r.URL.Query().Get("status"),
-		ReviewOnly: true,
+		Page: page, PageSize: pageSize, Status: r.URL.Query().Get("status"), ReviewOnly: true,
+		UserQuery: r.URL.Query().Get("user"), PromptQuery: r.URL.Query().Get("prompt"), ModelQuery: r.URL.Query().Get("model"),
+		TaskType: r.URL.Query().Get("task_type"), BaseResolution: r.URL.Query().Get("base_resolution"), RequestedSize: r.URL.Query().Get("requested_size"),
+		Width: width, Height: height, AspectRatio: r.URL.Query().Get("aspect_ratio"),
+		CreatedFrom: createdFrom, CreatedTo: createdTo, PublishedFrom: publishedFrom, PublishedTo: publishedTo,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
@@ -3302,10 +3445,23 @@ func (a *API) HandleAdminImageReviewDetail(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	var (
-		image   domainimagetask.GalleryImage
-		err     error
-		auditOp string
+		image          domainimagetask.GalleryImage
+		err            error
+		auditOp        string
+		previousStatus string
 	)
+	switch action {
+	case "approve", "reject", "unpublish":
+		previous, lookupErr := a.tasks.GetImageResultForAdmin(r.Context(), imageID)
+		if lookupErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(lookupErr))
+			return
+		}
+		previousStatus = previous.VisibilityStatus
+	default:
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "image review route not found"))
+		return
+	}
 	switch action {
 	case "approve":
 		now := time.Now().UTC()
@@ -3315,17 +3471,23 @@ func (a *API) HandleAdminImageReviewDetail(w http.ResponseWriter, r *http.Reques
 		image, err = a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityRejected, defaultString(strings.TrimSpace(req.Reason), "rejected by admin"), nil)
 		auditOp = "image_review.reject"
 	case "unpublish":
-		image, err = a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityUnpublished, defaultString(strings.TrimSpace(req.Reason), "unpublished by admin"), nil)
+		if strings.TrimSpace(req.Reason) == "" {
+			httpx.WriteError(w, r, errs.BadRequest("unpublish reason is required"))
+			return
+		}
+		image, err = a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityUnpublished, strings.TrimSpace(req.Reason), nil)
 		auditOp = "image_review.unpublish"
-	default:
-		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "image review route not found"))
-		return
 	}
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
-	a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), auditOp, "image_result", imageID, map[string]any{"status": image.VisibilityStatus, "reason": image.ReviewReason})
+	image, err = a.tasks.ProjectGalleryImageForAdmin(r.Context(), image)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), auditOp, "image_result", imageID, map[string]any{"previous_status": previousStatus, "next_status": image.VisibilityStatus, "reason": image.ReviewReason})
 	httpx.WriteSuccess(w, r, http.StatusOK, image)
 }
 
@@ -3751,7 +3913,7 @@ func (a *API) HandleAdminCashierPlans(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	plans, err := a.billing.ListPlans(r.Context())
+	plans, err := a.billing.ListPlans(r.Context(), domainbilling.SubscriptionPlanListRequest{Status: r.URL.Query().Get("status")})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -3769,25 +3931,38 @@ func (a *API) HandleAdminCashierPlanDetail(w http.ResponseWriter, r *http.Reques
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	planID, parseErr := parseAdminCashierPlanID(r.URL.Path)
+	planID, action, parseErr := parseAdminCashierPlanPath(r.URL.Path)
 	if parseErr != nil {
 		httpx.WriteError(w, r, parseErr)
 		return
 	}
-	if r.Method == http.MethodDelete {
-		plan, err := a.billing.DeletePlan(r.Context(), planID)
+	if r.Method == http.MethodPost && action != "" {
+		plan, err := a.billing.TransitionPlan(r.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: action})
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan.delete", "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan."+action, "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, cashierPlanPayload(plan))
 		return
 	}
-	if r.Method != http.MethodPut {
+	if r.Method == http.MethodDelete && action == "" {
+		plan, err := a.billing.TransitionPlan(r.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: domainbilling.SubscriptionPlanActionArchive})
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan.archive", "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, cashierPlanPayload(plan))
+		return
+	}
+	if r.Method != http.MethodPut || action != "" {
 		writeMethodNotAllowed(w, r)
 		return
 	}
@@ -6091,9 +6266,6 @@ func (a *API) handleAdminModelAccountTestImage(w http.ResponseWriter, r *http.Re
 		httpx.WriteError(w, r, normalizeAppError(testErr))
 		return
 	}
-	if result.Image.ID != "" {
-		result.ImageURL = "/api/ops/admin/v1/image-reviews/" + result.Image.ID + "/image"
-	}
 	if err := a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "model_account.test_image", "model_account", fmt.Sprintf("%d", accountID), map[string]any{"model_id": model.ID, "model_code": model.ModelCode, "status": result.Status}); err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -7591,18 +7763,31 @@ func parseCashierOrderPath(path string) (int64, string, *errs.Error) {
 	return orderID, action, nil
 }
 
-func parseAdminCashierPlanID(path string) (int64, *errs.Error) {
+func parseAdminCashierPlanPath(path string) (int64, string, *errs.Error) {
 	const prefix = "/api/ops/admin/v1/cashier/plans/"
 	raw := strings.TrimPrefix(path, prefix)
 	raw = strings.Trim(raw, "/")
-	if raw == "" || strings.Contains(raw, "/") {
-		return 0, errs.BadRequest("invalid plan_id")
+	parts := strings.Split(raw, "/")
+	if len(parts) == 0 || len(parts) > 2 || parts[0] == "" {
+		return 0, "", errs.BadRequest("invalid plan_id")
 	}
-	planID, err := strconv.ParseInt(raw, 10, 64)
+	planID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || planID <= 0 {
-		return 0, errs.BadRequest("invalid plan_id")
+		return 0, "", errs.BadRequest("invalid plan_id")
 	}
-	return planID, nil
+	action := ""
+	if len(parts) == 2 {
+		action = strings.ToLower(strings.TrimSpace(parts[1]))
+		switch action {
+		case domainbilling.SubscriptionPlanActionEnable,
+			domainbilling.SubscriptionPlanActionDisable,
+			domainbilling.SubscriptionPlanActionArchive,
+			domainbilling.SubscriptionPlanActionRestore:
+		default:
+			return 0, "", errs.BadRequest("invalid subscription plan action")
+		}
+	}
+	return planID, action, nil
 }
 
 func parseAdminCashierProviderInstanceID(path string) (int64, *errs.Error) {
@@ -8819,7 +9004,7 @@ func (a *API) cashierPurchasablePlan(ctx context.Context, planCode string) (doma
 	if planCode == "" {
 		return domainbilling.SubscriptionPlan{}, errs.BadRequest("plan_code is required")
 	}
-	plans, err := a.billing.ListPlans(ctx)
+	plans, err := a.billing.ListPlans(ctx, domainbilling.SubscriptionPlanListRequest{Status: domainbilling.SubscriptionPlanStatusActive})
 	if err != nil {
 		return domainbilling.SubscriptionPlan{}, normalizeAppError(err)
 	}
@@ -8925,7 +9110,7 @@ func newCashierOrderNo() string {
 	return fmt.Sprintf("PGO-%d-%06d", now.Unix(), now.Nanosecond()%1000000)
 }
 
-func (a *API) cashierPaymentDisplay(ctx context.Context, method cashierVisibleMethod, instance cashierProviderInstance, req cashierPaymentDisplayRequest) (cashierPaymentBuildResult, *errs.Error) {
+func (a *API) cashierPaymentDisplay(ctx context.Context, method cashierVisibleMethod, instance cashierProviderInstance, req cashierPaymentDisplayRequest) (cashierPaymentBuildResult, *errs.Error, bool) {
 	req.Method = method
 	req.Instance = instance
 	siteBaseURL := a.cashierSiteBaseURL(ctx)
@@ -8940,11 +9125,11 @@ func (a *API) cashierPaymentDisplay(ctx context.Context, method cashierVisibleMe
 	result, err := registry.BuildPaymentDisplay(ctx, req)
 	if err != nil {
 		if errors.Is(err, cashierservice.ErrPaymentProviderNotImplemented) {
-			return cashierPaymentBuildResult{}, errs.New(http.StatusNotImplemented, errs.CodePaymentProviderNotImplemented, "payment provider is not implemented")
+			return cashierPaymentBuildResult{}, errs.New(http.StatusNotImplemented, errs.CodePaymentProviderNotImplemented, "payment provider is not implemented"), false
 		}
-		return cashierPaymentBuildResult{}, normalizeAppError(err)
+		return cashierPaymentBuildResult{}, normalizeAppError(err), cashierservice.PaymentInitializationOutcomeUncertain(err)
 	}
-	return result, nil
+	return result, nil, false
 }
 
 func (a *API) cashierCallbackURLs(instance cashierProviderInstance, providerType string, clientReturnURL ...string) (string, string) {
@@ -9297,7 +9482,7 @@ func easyPaySign(params map[string]string, key string) string {
 func jeepaySign(params map[string]string, key string) string {
 	keys := make([]string, 0, len(params))
 	for name, value := range params {
-		if strings.EqualFold(name, "sign") || strings.EqualFold(name, "signType") || strings.TrimSpace(value) == "" {
+		if strings.EqualFold(name, "sign") || strings.TrimSpace(value) == "" {
 			continue
 		}
 		keys = append(keys, name)
@@ -9577,7 +9762,8 @@ func openAPIDocumentPath() string {
 }
 
 func normalizeAppError(err error) *errs.Error {
-	if appErr, ok := err.(*errs.Error); ok {
+	var appErr *errs.Error
+	if errors.As(err, &appErr) {
 		return appErr
 	}
 	if upstream, ok := provider.AsUpstreamError(err); ok {

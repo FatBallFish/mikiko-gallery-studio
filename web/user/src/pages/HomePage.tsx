@@ -123,6 +123,7 @@ export function HomePage() {
                     height={image.height}
                     aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
                     onOpen={() => openImage(image)}
+                    onMediaRefresh={() => void publicGallery.reload()}
                   />
                   <h3 className={homeClasses.galleryTitle}>{card.title}</h3>
                   <span className={homeClasses.galleryMeta}>{card.meta}</span>
@@ -142,6 +143,7 @@ export function HomePage() {
           app.notify('success', 'Prompt 已复制')
         }}
         previewSourceLabel="精选灵感"
+        onMediaRefresh={() => void publicGallery.reload()}
         onClose={() => setSelectedImage(null)}
       />
     </main>

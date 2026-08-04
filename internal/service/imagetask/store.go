@@ -23,6 +23,7 @@ type Store interface {
 	GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error)
 	ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error)
 	RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error)
+	CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error)
 	SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error)
 	ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error)
 	DeleteImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error)
@@ -250,6 +251,34 @@ func (s *MemoryStore) RequestPublish(_ context.Context, userID int64, imageID st
 	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 }
 
+func (s *MemoryStore) CancelPublish(_ context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for taskID, task := range s.tasksByID {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for idx, result := range task.Results {
+			if result.ID != imageID {
+				continue
+			}
+			switch defaultVisibilityStatus(result.VisibilityStatus) {
+			case domainimagetask.VisibilityPrivate, domainimagetask.VisibilityPendingReview, domainimagetask.VisibilityApproved:
+				result.VisibilityStatus = domainimagetask.VisibilityPrivate
+				result.ReviewReason = ""
+				result.PublishedAt = nil
+				task.Results[idx] = result
+				s.tasksByID[taskID] = cloneTask(task)
+				return galleryImageFromMemoryTask(task, result), nil
+			default:
+				return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+			}
+		}
+	}
+	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+}
+
 func (s *MemoryStore) SetImageGroup(_ context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -336,6 +365,9 @@ func (s *MemoryStore) ListGalleryByUser(_ context.Context, userID int64, req dom
 			if req.Status != "" && !strings.EqualFold(image.VisibilityStatus, req.Status) {
 				continue
 			}
+			if !adminGalleryImageMatches(image, req) {
+				continue
+			}
 			items = append(items, image)
 		}
 	}
@@ -343,6 +375,52 @@ func (s *MemoryStore) ListGalleryByUser(_ context.Context, userID int64, req dom
 		return items[i].CreatedAt.After(items[j].CreatedAt)
 	})
 	return sliceGalleryPage(items, page, pageSize), nil
+}
+
+func adminGalleryImageMatches(image domainimagetask.GalleryImage, req domainimagetask.GalleryListRequest) bool {
+	contains := func(value, query string) bool {
+		return strings.Contains(strings.ToLower(strings.TrimSpace(value)), strings.ToLower(strings.TrimSpace(query)))
+	}
+	if req.UserQuery != "" && !contains(image.AuthorName, req.UserQuery) && strings.TrimSpace(req.UserQuery) != fmt.Sprintf("%d", image.UserID) {
+		return false
+	}
+	if req.PromptQuery != "" && !contains(image.Prompt, req.PromptQuery) {
+		return false
+	}
+	if req.ModelQuery != "" && !contains(image.AbstractModel, req.ModelQuery) && !contains(image.RouteModelCode, req.ModelQuery) {
+		return false
+	}
+	if req.TaskType != "" && !strings.EqualFold(image.TaskType, req.TaskType) {
+		return false
+	}
+	if req.BaseResolution != "" && !strings.EqualFold(image.BaseResolution, req.BaseResolution) {
+		return false
+	}
+	if req.RequestedSize != "" && !strings.EqualFold(image.RequestedSize, req.RequestedSize) {
+		return false
+	}
+	if req.Width > 0 && image.Width != req.Width {
+		return false
+	}
+	if req.Height > 0 && image.Height != req.Height {
+		return false
+	}
+	if req.AspectRatio != "" && !strings.EqualFold(image.AspectRatio, req.AspectRatio) {
+		return false
+	}
+	if !req.CreatedFrom.IsZero() && image.CreatedAt.Before(req.CreatedFrom) {
+		return false
+	}
+	if !req.CreatedTo.IsZero() && image.CreatedAt.After(req.CreatedTo) {
+		return false
+	}
+	if !req.PublishedFrom.IsZero() && (image.PublishedAt == nil || image.PublishedAt.Before(req.PublishedFrom)) {
+		return false
+	}
+	if !req.PublishedTo.IsZero() && (image.PublishedAt == nil || image.PublishedAt.After(req.PublishedTo)) {
+		return false
+	}
+	return true
 }
 
 func (s *MemoryStore) ListGallery(_ context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
@@ -360,6 +438,9 @@ func (s *MemoryStore) ListGallery(_ context.Context, req domainimagetask.Gallery
 				continue
 			}
 			if req.Status != "" && !strings.EqualFold(image.VisibilityStatus, req.Status) {
+				continue
+			}
+			if !adminGalleryImageMatches(image, req) {
 				continue
 			}
 			items = append(items, image)

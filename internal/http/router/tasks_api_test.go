@@ -568,7 +568,7 @@ func TestAgentImageDownloadRedirectsToOwnedTemporaryStorageURL(t *testing.T) {
 	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "private, no-store" {
 		t.Fatalf("Cache-Control = %q, want private, no-store", cacheControl)
 	}
-	if rec.Body.Len() != 0 || backend.getCalls != 0 || backend.signCalls != 1 {
+	if rec.Body.Len() != 0 || backend.getCalls != 0 || backend.signCalls != 2 {
 		t.Fatalf("redirect response body=%q getCalls=%d signCalls=%d", rec.Body.String(), backend.getCalls, backend.signCalls)
 	}
 }

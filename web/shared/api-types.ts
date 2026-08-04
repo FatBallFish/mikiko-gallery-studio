@@ -163,6 +163,7 @@ export const API_PATHS = {
     cashierOverview: '/api/ops/admin/v1/cashier/overview',
     cashierPlans: '/api/ops/admin/v1/cashier/plans',
     cashierPlanDetail: '/api/ops/admin/v1/cashier/plans/{plan_id}',
+    cashierPlanTransition: '/api/ops/admin/v1/cashier/plans/{plan_id}/{action}',
     cashierCustomAmountConfig: '/api/ops/admin/v1/cashier/custom-amount-config',
     paymentVisibleMethods: '/api/ops/admin/v1/cashier/visible-methods',
     paymentProviderInstances: '/api/ops/admin/v1/cashier/provider-instances',
@@ -330,6 +331,8 @@ export type CashierPlan = SubscriptionPlan & {
   purchase_enabled?: boolean
   sort_order?: number
 }
+export type CashierPlanStatus = 'active' | 'disabled' | 'archived'
+export type CashierPlanTransitionAction = 'enable' | 'disable' | 'archive' | 'restore'
 export type CashierCustomAmountConfig = {
   enabled: boolean
   min_amount_cny: string

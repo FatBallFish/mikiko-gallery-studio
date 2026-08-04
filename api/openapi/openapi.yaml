@@ -1229,6 +1229,24 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+    delete:
+      tags: [Agent Image]
+      summary: Cancel a pending or approved image publication
+      operationId: deleteAgentGalleryPublish
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Publication canceled and image returned to private
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
   /api/open/image/v1/gallery/images:
     get:
       tags: [Open Image API]
@@ -2107,6 +2125,47 @@ paths:
         - name: status
           in: query
           schema: {type: string}
+        - name: user
+          in: query
+          description: User ID, email, or display-name query
+          schema: {type: string}
+        - name: prompt
+          in: query
+          schema: {type: string}
+        - name: model
+          in: query
+          description: Abstract-model or route-model query
+          schema: {type: string}
+        - name: task_type
+          in: query
+          schema: {type: string}
+        - name: base_resolution
+          in: query
+          schema: {type: string}
+        - name: requested_size
+          in: query
+          schema: {type: string}
+        - name: width
+          in: query
+          schema: {type: integer, minimum: 1}
+        - name: height
+          in: query
+          schema: {type: integer, minimum: 1}
+        - name: aspect_ratio
+          in: query
+          schema: {type: string}
+        - name: created_from
+          in: query
+          schema: {type: string, format: date-time}
+        - name: created_to
+          in: query
+          schema: {type: string, format: date-time}
+        - name: published_from
+          in: query
+          schema: {type: string, format: date-time}
+        - name: published_to
+          in: query
+          schema: {type: string, format: date-time}
       responses:
         '200':
           description: Gallery review queue
@@ -2174,14 +2233,16 @@ paths:
           required: true
           schema: {type: string, format: uuid}
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required: [reason]
               properties:
                 reason:
                   type: string
+                  minLength: 1
       responses:
         '200':
           description: Review updated

@@ -41,6 +41,71 @@ func TestStorageRouterPinsReferenceAssetToOriginalConfig(t *testing.T) {
 	}
 }
 
+func TestTemporaryMediaURLProjectionForReferenceAsset(t *testing.T) {
+	data, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII=")
+	backend := &temporaryAssetBackend{}
+	svc := NewServiceWithStoreAndBackend(config.StorageConfig{}, config.GenerationLimitsConfig{ReferenceImageMaxMB: 10}, nil, backend)
+	asset, err := svc.Upload(9, "tiny.png", "image/png", data)
+	if err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+
+	projected, err := svc.Get(9, asset.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if projected.PreviewURL != "https://assets.example.test/preview?sig=secret" || projected.DownloadURL != "https://assets.example.test/download?sig=secret" {
+		t.Fatalf("unexpected projected asset %#v", projected)
+	}
+	if backend.signCalls != 2 || backend.lastOptions.Expiry != 5*time.Minute || backend.lastOptions.ResponseFilename != filepath.Base(asset.ObjectKey) {
+		t.Fatalf("unexpected signer calls=%d options=%#v", backend.signCalls, backend.lastOptions)
+	}
+	if _, err := svc.Get(10, asset.ID); err == nil {
+		t.Fatal("non-owner must be rejected")
+	}
+	if backend.signCalls != 2 {
+		t.Fatalf("non-owner request reached signer; sign calls=%d", backend.signCalls)
+	}
+	backend.signErr = errors.New("signing unavailable")
+	if _, err := svc.Get(9, asset.ID); err == nil {
+		t.Fatal("reference asset signing failure must not silently fall back")
+	}
+}
+
+type temporaryAssetBackend struct {
+	objects     map[string][]byte
+	signCalls   int
+	lastOptions storage.TemporaryGetURLOptions
+	signErr     error
+}
+
+func (b *temporaryAssetBackend) Driver() string { return "s3" }
+func (b *temporaryAssetBackend) Put(_ context.Context, key, _ string, content []byte) error {
+	if b.objects == nil {
+		b.objects = map[string][]byte{}
+	}
+	b.objects[key] = append([]byte(nil), content...)
+	return nil
+}
+func (b *temporaryAssetBackend) Get(_ context.Context, key string) ([]byte, error) {
+	return append([]byte(nil), b.objects[key]...), nil
+}
+func (b *temporaryAssetBackend) Delete(_ context.Context, key string) error {
+	delete(b.objects, key)
+	return nil
+}
+func (b *temporaryAssetBackend) TemporaryGetURL(_ context.Context, _ string, options storage.TemporaryGetURLOptions) (string, error) {
+	b.signCalls++
+	b.lastOptions = options
+	if b.signErr != nil {
+		return "", b.signErr
+	}
+	if options.ResponseFilename == "" {
+		return "https://assets.example.test/preview?sig=secret", nil
+	}
+	return "https://assets.example.test/download?sig=secret", nil
+}
+
 type switchingAssetRouter struct {
 	defaultRef storage.BackendRef
 	refs       map[string]storage.BackendRef

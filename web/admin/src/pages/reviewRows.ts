@@ -3,6 +3,54 @@ import { adminTaskTypeLabel } from './adminTaskTypes'
 
 export type ReviewDecision = 'approve' | 'reject' | 'unpublish'
 
+export type ReviewListFilters = {
+  user: string
+  prompt: string
+  model: string
+  taskType: string
+  baseResolution: string
+  requestedSize: string
+  width: string
+  height: string
+  aspectRatio: string
+  createdFrom: string
+  createdTo: string
+  publishedFrom: string
+  publishedTo: string
+}
+
+export function reviewListQuery(filters: ReviewListFilters, status: string, page: number, pageSize: number): Record<string, string | number | undefined> {
+  const positiveInt = (value: string) => {
+    const parsed = Number(value)
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
+  }
+  const optional = (value: string) => value.trim() || undefined
+  const dateBoundary = (value: string, endOfDay: boolean) => {
+    const normalized = value.trim()
+    if (!normalized) return undefined
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return `${normalized}T${endOfDay ? '23:59:59' : '00:00:00'}Z`
+    return normalized
+  }
+  return {
+    page,
+    page_size: pageSize,
+    status: status === 'all' ? undefined : status,
+    user: optional(filters.user),
+    prompt: optional(filters.prompt),
+    model: optional(filters.model),
+    task_type: optional(filters.taskType),
+    base_resolution: optional(filters.baseResolution),
+    requested_size: optional(filters.requestedSize),
+    width: positiveInt(filters.width),
+    height: positiveInt(filters.height),
+    aspect_ratio: optional(filters.aspectRatio),
+    created_from: dateBoundary(filters.createdFrom, false),
+    created_to: dateBoundary(filters.createdTo, true),
+    published_from: dateBoundary(filters.publishedFrom, false),
+    published_to: dateBoundary(filters.publishedTo, true),
+  }
+}
+
 export type ReviewActionModel = {
   decision: ReviewDecision
   label: string
@@ -12,6 +60,7 @@ export type ReviewActionModel = {
 export type ReviewRowView = {
   raw: ReviewItem
   imageID: string
+  imageURL: string
   title: string
   owner: string
   context: string
@@ -68,6 +117,7 @@ export function reviewRowView(item: ReviewItem): ReviewRowView {
   return {
     raw: item,
     imageID: item.image_id ?? item.id,
+    imageURL: item.image_url ?? '',
     title: item.title || item.id,
     owner: item.owner || '-',
     context: item.reason || item.review_reason || '-',

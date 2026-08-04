@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import type { CashierCustomAmountConfig, CashierOverview, CashierPlan, PageResult, PaymentOrder, PaymentProviderInstance, PaymentProviderType, PaymentSchedulerStrategy, PaymentVisibleMethod, PaymentWebhookEvent } from '../../../shared/api-types'
+import { Archive, Pause, Pencil, Play, RotateCcw } from 'lucide-react'
+import type { CashierCustomAmountConfig, CashierOverview, CashierPlan, CashierPlanStatus, CashierPlanTransitionAction, PageResult, PaymentOrder, PaymentProviderInstance, PaymentProviderType, PaymentSchedulerStrategy, PaymentVisibleMethod, PaymentWebhookEvent } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { AdminTabs, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader } from '../components'
+import { AdminTabs, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
 import { FilterBar, ListPage, Pager } from '../ui/dataTable'
@@ -11,7 +12,7 @@ import { applyJeePayWayCodeTemplate, jeepayTemplatesForProvider } from './cashie
 import { cashierAdminDateTime, cashierManualCompletionProviderOptions, cashierOrderPaymentLabel, cashierOrderPurchaseTypeLabel, cashierProviderConfigStatusLabel, cashierProviderSupportedMethodsLabel, cashierWebhookEventTypeLabel, cashierWebhookProviderLabel } from './cashierPaymentDisplay'
 import { CashierPlanEditorDialog } from './CashierPlanEditorDialog'
 import { cashierPlanDraftFromRow, cashierPlanEmptyDraft, cashierPlanPayloadFromDraft, type CashierPlanDraft } from './cashierPlanDraft'
-import { cashierPlanEmptyState, cashierPlanPurchaseBadge, cashierPlanSectionCopy } from './cashierPlanPurchase'
+import { cashierPlanActions, cashierPlanEmptyState, cashierPlanFilterOptions, cashierPlanPurchaseBadge, cashierPlanSectionCopy, type CashierPlanAction } from './cashierPlanPurchase'
 import { cashierProviderConfigFields, cashierProviderConfigGuide, cashierProviderInstanceFieldHints, cashierProviderLabel, cashierProviderSupportedMethodOptions, cashierProviderTypes, cashierProviderTypesForMethod, cashierSupportedMethodLabel, cashierToggleSupportedMethod } from './cashierProviderOptions'
 import type { CashierProviderConfigField } from './cashierProviderOptions'
 import { newProviderDraft, providerDraftForTypeChange, providerDraftFromInstance, providerPayloadFromDraft, type CashierProviderFormDraft } from './cashierProviderForm'
@@ -74,6 +75,11 @@ type OrderFilters = {
 }
 
 type CashierTabId = 'overview' | 'plans' | 'methods' | 'instances' | 'orders' | 'events'
+
+type PlanTransitionDraft = {
+  plan: CashierPlan
+  action: CashierPlanAction
+}
 
 const cashierTabs: Array<{ id: CashierTabId; label: string; detail: string }> = [
   { id: 'overview', label: '概览', detail: '指标与体验额度' },
@@ -182,6 +188,8 @@ export function CashierPage({
   const [trialDraft, setTrialDraft] = useState<CashierTrialConfigDraft | null>(null)
   const [methodsDraft, setMethodsDraft] = useState<PaymentVisibleMethod[]>([])
   const [planDialog, setPlanDialog] = useState<CashierPlanDraft | null>(null)
+  const [planTransition, setPlanTransition] = useState<PlanTransitionDraft | null>(null)
+  const [planStatusFilter, setPlanStatusFilter] = useState<CashierPlanStatus>('active')
   const [instanceDialog, setInstanceDialog] = useState<CashierProviderFormDraft | null>(null)
   const [orderDetail, setOrderDetail] = useState<PaymentOrder | null>(null)
   const [completeDialog, setCompleteDialog] = useState<CompleteOrderDraft | null>(null)
@@ -216,7 +224,7 @@ export function CashierPage({
     try {
       const [overview, plans, customAmount, methods, instances, orders, events, configTabs] = await Promise.all([
         adminApi.getCashierOverview(),
-        adminApi.listCashierPlans(),
+        adminApi.listCashierPlans({ status: planStatusFilter }),
         adminApi.getCashierCustomAmountConfig(),
         adminApi.listPaymentVisibleMethods(),
         adminApi.listPaymentProviderInstances(),
@@ -321,9 +329,22 @@ export function CashierPage({
     setMethodsDraft((current) => current.filter((_, itemIndex) => itemIndex !== index))
   }
 
-  async function reloadPlans() {
-    const plans = await adminApi.listCashierPlans()
+  async function reloadPlans(status: CashierPlanStatus = planStatusFilter) {
+    const plans = await adminApi.listCashierPlans({ status })
     setData((current) => current ? { ...current, plans } : current)
+  }
+
+  async function changePlanFilter(status: CashierPlanStatus) {
+    setPlanStatusFilter(status)
+    setSavingPlan(true)
+    setError(null)
+    try {
+      await reloadPlans(status)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '套餐列表载入失败')
+    } finally {
+      setSavingPlan(false)
+    }
   }
 
   async function reloadInstances() {
@@ -371,16 +392,17 @@ export function CashierPage({
     }
   }
 
-  async function deletePlan(plan: CashierPlan) {
-    if (!window.confirm(`确定删除/归档套餐「${plan.plan_name}」吗？历史订单会保留，用户端将不可购买。`)) return
+  async function transitionPlan() {
+    if (!planTransition) return
     setSavingPlan(true)
     setError(null)
     try {
-      const deleted = await adminApi.deleteCashierPlan(plan.id)
+      const updated = await adminApi.transitionCashierPlan(planTransition.plan.id, planTransition.action.action)
+      setPlanTransition(null)
       await reloadPlans()
-      onFeedback?.('充值套餐已归档', deleted.plan_name)
+      onFeedback?.(planTransition.action.label, updated.plan_name)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '充值套餐删除失败')
+      setError(caught instanceof Error ? caught.message : '套餐状态更新失败')
     } finally {
       setSavingPlan(false)
     }
@@ -707,11 +729,15 @@ export function CashierPage({
               <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => setPlanDialog(cashierPlanEmptyDraft())}>新增套餐</button>
             </>}
           >
-            {!isPackagesPage ? (
-              <div className={cashierClasses.toolbar}>
-                <p>{cashierPlanSectionCopy.toolbarDetail}</p>
-              </div>
-            ) : null}
+            <div className={cashierClasses.toolbar}>
+              {!isPackagesPage ? <p>{cashierPlanSectionCopy.toolbarDetail}</p> : <span />}
+              <label className="flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
+                <span>状态</span>
+                <select value={planStatusFilter} disabled={savingPlan} onChange={(event) => void changePlanFilter(event.target.value as CashierPlanStatus)}>
+                  {cashierPlanFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+            </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {data.plans.items.map((plan) => {
                 const active = plan.status === 'active' && Boolean(plan.purchase_enabled)
@@ -733,9 +759,19 @@ export function CashierPage({
                       </div>
                       <div className="font-mono text-base font-semibold text-[var(--accent)]">¥ {Number(plan.price_cny).toFixed(2)}</div>
                     </div>
-                    <div className="flex gap-3">
-                      <button type="button" className={cn(adminButton.base, adminButton.ghost, 'flex-1')} onClick={() => setPlanDialog(cashierPlanDraftFromRow(plan))}>编辑</button>
-                      <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.danger)} disabled={savingPlan} onClick={() => void deletePlan(plan)} aria-label={`删除 ${plan.plan_name}`}>删除</button>
+                    <div className="flex items-center justify-end gap-2">
+                      {plan.status !== 'archived' ? <TooltipIconButton label={`编辑 ${plan.plan_name}`} disabled={savingPlan} onClick={() => setPlanDialog(cashierPlanDraftFromRow(plan))}><Pencil /></TooltipIconButton> : null}
+                      {cashierPlanActions(plan).map((action) => (
+                        <TooltipIconButton
+                          key={action.action}
+                          label={`${action.label} ${plan.plan_name}`}
+                          disabled={savingPlan}
+                          className={action.tone === 'danger' ? 'text-[var(--red)]' : undefined}
+                          onClick={() => setPlanTransition({ plan, action })}
+                        >
+                          <PlanActionIcon action={action.action} />
+                        </TooltipIconButton>
+                      ))}
                     </div>
                   </div>
                 )
@@ -743,6 +779,16 @@ export function CashierPage({
             </div>
             {!data.plans.items.length ? <EmptyBlock title={cashierPlanEmptyState.title} detail={cashierPlanEmptyState.detail} /> : null}
           </CashierSection> : null}
+
+          {planTransition ? <Modal
+            title={planTransition.action.label}
+            detail={planTransition.action.detail}
+            onClose={() => setPlanTransition(null)}
+            footer={<>
+              <button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={savingPlan} onClick={() => setPlanTransition(null)}>取消</button>
+              <button type="button" className={cn(adminButton.base, planTransition.action.tone === 'danger' ? adminButton.danger : adminButton.primary)} disabled={savingPlan} onClick={() => void transitionPlan()}>{savingPlan ? '处理中...' : '确认'}</button>
+            </>}
+          ><p className="text-sm leading-6 text-[var(--muted-strong)]">状态变更只影响后续展示和购买，不会修改历史订单、积分或账本记录。</p></Modal> : null}
 
           {activeTab === 'plans' && (!isPackagesPage || customAmountOpen) ? <CashierSection title="自定义金额">
             <form className={cashierClasses.configForm} onSubmit={(event) => void saveCustomAmount(event)}>
@@ -1686,7 +1732,14 @@ function newChargebackOrderDraft(order: PaymentOrder): ChargebackOrderDraft {
 }
 
 function canChargebackOrder(order: PaymentOrder) {
-  return order.status === 'completed' || order.status === 'partially_refunded' || order.status === 'refunded'
+	return order.status === 'completed' || order.status === 'partially_refunded' || order.status === 'refunded'
+}
+
+function PlanActionIcon({ action }: { action: CashierPlanTransitionAction }) {
+  if (action === 'enable') return <Play />
+  if (action === 'disable') return <Pause />
+  if (action === 'restore') return <RotateCcw />
+  return <Archive />
 }
 
 function cashierOrderQuery(page: number, filters: OrderFilters, pageSize: number = cashierAdminPageSize) {

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,13 +16,17 @@ import (
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
+	"github.com/fatballfish/pic-gallery/internal/provider"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
 func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
@@ -174,6 +180,27 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	if !bytes.Contains(publishRec.Body.Bytes(), []byte(`"visibility_status":"pending_review"`)) {
 		t.Fatalf("expected pending review body=%s", publishRec.Body.String())
 	}
+	cancelReq := httptest.NewRequest(http.MethodDelete, "/api/agent/gallery/v1/images/"+imageID+"/publish", nil)
+	cancelReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	cancelRec := httptest.NewRecorder()
+	handler.ServeHTTP(cancelRec, cancelReq)
+	if cancelRec.Code != http.StatusOK || !bytes.Contains(cancelRec.Body.Bytes(), []byte(`"visibility_status":"private"`)) {
+		t.Fatalf("cancel pending publish: status=%d body=%s", cancelRec.Code, cancelRec.Body.String())
+	}
+	canceledReviewReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/image-reviews?page=1&page_size=10&status=pending_review", nil)
+	canceledReviewReq.Header.Set("Authorization", "Bearer "+adminToken)
+	canceledReviewRec := httptest.NewRecorder()
+	handler.ServeHTTP(canceledReviewRec, canceledReviewReq)
+	if canceledReviewRec.Code != http.StatusOK || bytes.Contains(canceledReviewRec.Body.Bytes(), []byte(imageID)) {
+		t.Fatalf("canceled image must leave review queue: status=%d body=%s", canceledReviewRec.Code, canceledReviewRec.Body.String())
+	}
+	reapplyReq := httptest.NewRequest(http.MethodPost, "/api/agent/gallery/v1/images/"+imageID+"/publish", nil)
+	reapplyReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	reapplyRec := httptest.NewRecorder()
+	handler.ServeHTTP(reapplyRec, reapplyReq)
+	if reapplyRec.Code != http.StatusAccepted || !bytes.Contains(reapplyRec.Body.Bytes(), []byte(`"visibility_status":"pending_review"`)) {
+		t.Fatalf("reapply publish: status=%d body=%s", reapplyRec.Code, reapplyRec.Body.String())
+	}
 
 	reviewListReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/image-reviews?page=1&page_size=10&status=pending_review", nil)
 	reviewListReq.Header.Set("Authorization", "Bearer "+adminToken)
@@ -206,6 +233,17 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	}
 	if !bytes.Contains(approveRec.Body.Bytes(), []byte(`"visibility_status":"approved"`)) {
 		t.Fatalf("expected approved body=%s", approveRec.Body.String())
+	}
+
+	filteredReviewReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/image-reviews?page=1&page_size=10&status=approved&prompt=not-a-matching-prompt", nil)
+	filteredReviewReq.Header.Set("Authorization", "Bearer "+adminToken)
+	filteredReviewRec := httptest.NewRecorder()
+	handler.ServeHTTP(filteredReviewRec, filteredReviewReq)
+	if filteredReviewRec.Code != http.StatusOK {
+		t.Fatalf("filtered review list: %d body=%s", filteredReviewRec.Code, filteredReviewRec.Body.String())
+	}
+	if bytes.Contains(filteredReviewRec.Body.Bytes(), []byte(imageID)) || !bytes.Contains(filteredReviewRec.Body.Bytes(), []byte(`"total":0`)) {
+		t.Fatalf("admin review filters must be applied before pagination body=%s", filteredReviewRec.Body.String())
 	}
 
 	dashboardReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/metrics/dashboard", nil)
@@ -437,6 +475,179 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	if contentType := publicImageRec.Header().Get("Content-Type"); contentType != "image/png" {
 		t.Fatalf("expected public image/png content type, got %q", contentType)
 	}
+
+	emptyUnpublishReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/image-reviews/"+imageID+":unpublish", bytes.NewBufferString(`{"reason":"  "}`))
+	emptyUnpublishReq.Header.Set("Authorization", "Bearer "+adminToken)
+	emptyUnpublishReq.Header.Set("Content-Type", "application/json")
+	emptyUnpublishRec := httptest.NewRecorder()
+	handler.ServeHTTP(emptyUnpublishRec, emptyUnpublishReq)
+	if emptyUnpublishRec.Code != http.StatusBadRequest {
+		t.Fatalf("unpublish reason must be required: status=%d body=%s", emptyUnpublishRec.Code, emptyUnpublishRec.Body.String())
+	}
+
+	unpublishReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/image-reviews/"+imageID+":unpublish", bytes.NewBufferString(`{"reason":"版权方申请下架"}`))
+	unpublishReq.Header.Set("Authorization", "Bearer "+adminToken)
+	unpublishReq.Header.Set("Content-Type", "application/json")
+	unpublishRec := httptest.NewRecorder()
+	handler.ServeHTTP(unpublishRec, unpublishReq)
+	if unpublishRec.Code != http.StatusOK || !bytes.Contains(unpublishRec.Body.Bytes(), []byte(`"visibility_status":"unpublished"`)) || !bytes.Contains(unpublishRec.Body.Bytes(), []byte(`版权方申请下架`)) {
+		t.Fatalf("unpublish approved image: status=%d body=%s", unpublishRec.Code, unpublishRec.Body.String())
+	}
+	publicAfterUnpublishReq := httptest.NewRequest(http.MethodGet, "/api/open/image/v1/gallery/images?page=1&page_size=10", nil)
+	publicAfterUnpublishRec := httptest.NewRecorder()
+	handler.ServeHTTP(publicAfterUnpublishRec, publicAfterUnpublishReq)
+	if publicAfterUnpublishRec.Code != http.StatusOK || bytes.Contains(publicAfterUnpublishRec.Body.Bytes(), []byte(imageID)) {
+		t.Fatalf("unpublished image must leave public gallery: status=%d body=%s", publicAfterUnpublishRec.Code, publicAfterUnpublishRec.Body.String())
+	}
+}
+
+func TestDirectMediaURLProjectionAcrossImageAPIs(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc, session := loginTestUser(t, "direct-media@example.com")
+	store := imagetaskservice.NewMemoryStore()
+	backend := &directMediaBackend{}
+	assetSvc := assetservice.NewServiceWithStoreAndBackend(cfg.Storage, cfg.GenerationLimits, nil, backend)
+	asset, err := assetSvc.Upload(1, "reference.png", "image/png", tinyPNG(t))
+	if err != nil {
+		t.Fatalf("Upload reference: %v", err)
+	}
+	publishedAt := time.Now().UTC()
+	const taskID = "91919191-9191-9191-9191-919191919191"
+	const imageID = "91919191-0000-0000-0000-919191919191"
+	if err := store.Save(t.Context(), domainimagetask.Task{
+		UserID: 1, ID: taskID, Status: domainimagetask.StatusSucceeded, Prompt: "direct object media",
+		AbstractModel: "plus", RouteModelCode: "plus", TaskType: string(provider.TaskTypeTextToImage), BaseResolution: "2k", AspectRatio: "1:1",
+		ReferenceAssetIDs: []string{asset.ID},
+		Results: []provider.ImageResult{{
+			ID: imageID, StorageDriver: "s3", StorageConfigID: "bfss-primary", ObjectKey: "generated/direct.png", MimeType: "image/png",
+			VisibilityStatus: domainimagetask.VisibilityApproved, PublishedAt: &publishedAt,
+		}},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg, nil, store, assetSvc, nil, backend)
+
+	adminStore := adminauthservice.NewMemoryStore()
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{Email: "admin-direct-media@example.com", PasswordHash: adminauthservice.HashPassword("password"), Role: "super_admin", Status: "active"}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "admin-secret", RefreshCookieName: "pg_admin_refresh"}, adminStore)
+	api := handlers.NewAPIWithAdminServices(cfg, authSvc, assetSvc, taskSvc, adminconfigservice.NewService(cfg), nil, nil, adminAuth, auditservice.NewService(nil), nil, nil)
+	handler := NewWithAPI(api)
+	adminToken := loginAdminForDirectMediaTest(t, handler)
+
+	tests := []struct {
+		name  string
+		path  string
+		token string
+	}{
+		{name: "task detail", path: "/api/agent/image/v1/tasks/" + taskID, token: session.AccessToken},
+		{name: "task list", path: "/api/agent/image/v1/tasks", token: session.AccessToken},
+		{name: "task stream", path: "/api/agent/image/v1/tasks/" + taskID + "/events", token: session.AccessToken},
+		{name: "history detail", path: "/api/agent/image/v1/history/tasks/" + taskID, token: session.AccessToken},
+		{name: "private gallery", path: "/api/agent/gallery/v1/images?page=1&page_size=10", token: session.AccessToken},
+		{name: "public gallery", path: "/api/open/image/v1/gallery/images?page=1&page_size=10"},
+		{name: "public detail", path: "/api/open/image/v1/gallery/images/" + imageID, token: session.AccessToken},
+		{name: "admin review", path: "/api/ops/admin/v1/image-reviews?page=1&page_size=10&status=approved", token: adminToken},
+		{name: "reference asset", path: "/api/agent/image/v1/reference-assets/" + asset.ID, token: session.AccessToken},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, test.path, nil)
+			if test.token != "" {
+				req.Header.Set("Authorization", "Bearer "+test.token)
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			if !bytes.Contains(rec.Body.Bytes(), []byte("https://objects.example.test/")) {
+				t.Fatalf("response must contain direct signed media URL body=%s", rec.Body.String())
+			}
+			if bytes.Contains(rec.Body.Bytes(), []byte("/api/agent/image/v1/images/")) {
+				t.Fatalf("response must not rebuild the legacy image route body=%s", rec.Body.String())
+			}
+			if bytes.Contains(rec.Body.Bytes(), []byte("/api/agent/image/v1/reference-assets/")) {
+				t.Fatalf("response must not rebuild the reference asset fallback route body=%s", rec.Body.String())
+			}
+		})
+	}
+
+	unpublishReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/image-reviews/"+imageID+":unpublish", bytes.NewBufferString(`{"reason":"direct media audit"}`))
+	unpublishReq.Header.Set("Authorization", "Bearer "+adminToken)
+	unpublishReq.Header.Set("Content-Type", "application/json")
+	unpublishRec := httptest.NewRecorder()
+	handler.ServeHTTP(unpublishRec, unpublishReq)
+	if unpublishRec.Code != http.StatusOK || !bytes.Contains(unpublishRec.Body.Bytes(), []byte("https://objects.example.test/")) {
+		t.Fatalf("admin review mutation must return direct signed media URL: status=%d body=%s", unpublishRec.Code, unpublishRec.Body.String())
+	}
+	if bytes.Contains(unpublishRec.Body.Bytes(), []byte("/api/agent/image/v1/images/")) {
+		t.Fatalf("admin review mutation must not return a user fallback route body=%s", unpublishRec.Body.String())
+	}
+
+	var uploadBody bytes.Buffer
+	uploadWriter := multipart.NewWriter(&uploadBody)
+	uploadPart, err := uploadWriter.CreateFormFile("file", "direct-reference.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := uploadPart.Write(tinyPNG(t)); err != nil {
+		t.Fatalf("write upload: %v", err)
+	}
+	if err := uploadWriter.Close(); err != nil {
+		t.Fatalf("close multipart upload: %v", err)
+	}
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/reference-assets", &uploadBody)
+	uploadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	uploadReq.Header.Set("Content-Type", uploadWriter.FormDataContentType())
+	uploadRec := httptest.NewRecorder()
+	handler.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusCreated {
+		t.Fatalf("reference upload: status=%d body=%s", uploadRec.Code, uploadRec.Body.String())
+	}
+	if !bytes.Contains(uploadRec.Body.Bytes(), []byte("https://objects.example.test/reference-assets/")) {
+		t.Fatalf("reference upload must return direct signed media URL body=%s", uploadRec.Body.String())
+	}
+	if bytes.Contains(uploadRec.Body.Bytes(), []byte("/api/agent/image/v1/reference-assets/")) {
+		t.Fatalf("reference upload must not rebuild the fallback route body=%s", uploadRec.Body.String())
+	}
+}
+
+type directMediaBackend struct{}
+
+func (*directMediaBackend) Driver() string                                    { return "s3" }
+func (*directMediaBackend) Put(context.Context, string, string, []byte) error { return nil }
+func (*directMediaBackend) Get(context.Context, string) ([]byte, error) {
+	return nil, errors.New("direct media must not be proxied")
+}
+func (*directMediaBackend) Delete(context.Context, string) error { return nil }
+func (*directMediaBackend) TemporaryGetURL(_ context.Context, objectKey string, options storage.TemporaryGetURLOptions) (string, error) {
+	mode := "preview"
+	if options.ResponseFilename != "" {
+		mode = "download"
+	}
+	return "https://objects.example.test/" + objectKey + "?mode=" + mode + "&X-Amz-Signature=test", nil
+}
+
+func loginAdminForDirectMediaTest(t *testing.T, handler http.Handler) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/auth/login", bytes.NewBufferString(`{"email":"admin-direct-media@example.com","password":"password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin login: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil || response.Data.AccessToken == "" {
+		t.Fatalf("decode admin login: token=%q err=%v", response.Data.AccessToken, err)
+	}
+	return response.Data.AccessToken
 }
 
 func TestGalleryPublishRejectedByModeration(t *testing.T) {

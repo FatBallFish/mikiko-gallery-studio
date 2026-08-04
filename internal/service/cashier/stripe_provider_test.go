@@ -19,13 +19,14 @@ import (
 type recordingStripePaymentIntents struct {
 	newParams *stripe.PaymentIntentParams
 	intent    *stripe.PaymentIntent
+	newErr    error
 	getID     string
 	getIntent *stripe.PaymentIntent
 }
 
 func (c *recordingStripePaymentIntents) New(params *stripe.PaymentIntentParams) (*stripe.PaymentIntent, error) {
 	c.newParams = params
-	return c.intent, nil
+	return c.intent, c.newErr
 }
 
 func (c *recordingStripePaymentIntents) Get(id string, _ *stripe.PaymentIntentParams) (*stripe.PaymentIntent, error) {
@@ -153,6 +154,36 @@ func TestConfigureStripeAPIBackendUsesOnlyLoopbackServer(t *testing.T) {
 func TestStripeAmountFenFromCNYRejectsFractionalFen(t *testing.T) {
 	if _, err := StripeAmountFenFromCNY("10.251"); err == nil {
 		t.Fatal("expected fractional fen amount to be rejected")
+	}
+}
+
+func TestStripePaymentIntentBuilderSeparatesDefiniteRejectionFromTransportUncertainty(t *testing.T) {
+	req := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "stripe", Config: map[string]any{
+			"publishable_key": "pk_test_public",
+			"secret_key":      "sk_test_private",
+		}},
+		OrderNo: "PGO-STRIPE-OUTCOME", AmountCNY: "10.00", Subject: "outcome classification",
+	}
+
+	definiteBuilder := newStripePaymentDisplayBuilder(func(string) StripePaymentIntents {
+		return &recordingStripePaymentIntents{newErr: &stripe.Error{
+			HTTPStatusCode: http.StatusUnauthorized,
+			Type:           stripe.ErrorTypeInvalidRequest,
+			Msg:            "invalid API key",
+		}}
+	})
+	_, err := definiteBuilder(t.Context(), req, nil)
+	if err == nil || PaymentInitializationOutcomeUncertain(err) {
+		t.Fatalf("Stripe 4xx rejection must be definite, got %v", err)
+	}
+
+	uncertainBuilder := newStripePaymentDisplayBuilder(func(string) StripePaymentIntents {
+		return &recordingStripePaymentIntents{newErr: errors.New("connection reset after request write")}
+	})
+	_, err = uncertainBuilder(t.Context(), req, nil)
+	if err == nil || !PaymentInitializationOutcomeUncertain(err) {
+		t.Fatalf("Stripe transport failure must remain uncertain, got %v", err)
 	}
 }
 

@@ -150,10 +150,22 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 }
 
 func (s *Service) Get(userID int64, assetID string) (domainassets.ReferenceAsset, error) {
+	return s.GetWithContext(context.Background(), userID, assetID)
+}
+
+func (s *Service) GetWithContext(ctx context.Context, userID int64, assetID string) (domainassets.ReferenceAsset, error) {
+	asset, err := s.getStored(ctx, userID, assetID)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, err
+	}
+	return s.ProjectURLs(ctx, asset)
+}
+
+func (s *Service) getStored(ctx context.Context, userID int64, assetID string) (domainassets.ReferenceAsset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.store != nil {
-		asset, err := s.store.GetByUserAndID(context.Background(), userID, assetID)
+		asset, err := s.store.GetByUserAndID(ctx, userID, assetID)
 		if err != nil {
 			if err == repoerr.ErrNotFound {
 				return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "reference asset not found")
@@ -170,6 +182,24 @@ func (s *Service) Get(userID int64, assetID string) (domainassets.ReferenceAsset
 		return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "reference asset not found")
 	}
 	return stored.Asset, nil
+}
+
+func (s *Service) ProjectURLs(ctx context.Context, asset domainassets.ReferenceAsset) (domainassets.ReferenceAsset, error) {
+	if strings.TrimSpace(asset.ObjectKey) == "" || strings.EqualFold(strings.TrimSpace(asset.StorageDriver), "remote") {
+		return asset, nil
+	}
+	backend, err := s.router.BackendFor(ctx, asset.StorageConfigID, asset.StorageDriver)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+	}
+	urls, supported, err := storage.ProjectTemporaryMediaURLs(ctx, backend.Backend, asset.ObjectKey, asset.MimeType, filepath.Base(asset.ObjectKey))
+	if err != nil {
+		return domainassets.ReferenceAsset{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
+	}
+	if supported {
+		asset.PreviewURL, asset.DownloadURL = urls.PreviewURL, urls.DownloadURL
+	}
+	return asset, nil
 }
 
 func (s *Service) Delete(userID int64, assetID string) error {
@@ -204,7 +234,7 @@ func (s *Service) Delete(userID int64, assetID string) error {
 }
 
 func (s *Service) Download(userID int64, assetID string) (domainassets.ReferenceAsset, []byte, error) {
-	asset, err := s.Get(userID, assetID)
+	asset, err := s.getStored(context.Background(), userID, assetID)
 	if err != nil {
 		return domainassets.ReferenceAsset{}, nil, err
 	}
@@ -220,7 +250,7 @@ func (s *Service) Download(userID int64, assetID string) (domainassets.Reference
 }
 
 func (s *Service) LoadInput(userID int64, assetID string) (provider.ImageInput, error) {
-	asset, err := s.Get(userID, assetID)
+	asset, err := s.getStored(context.Background(), userID, assetID)
 	if err != nil {
 		return provider.ImageInput{}, err
 	}

@@ -52,8 +52,11 @@ func TestEasyPayPaymentDisplayBuilderBuildsSignedPopupURL(t *testing.T) {
 	if query.Get("sign") == "" || query.Get("sign_type") != "MD5" {
 		t.Fatalf("expected MD5 signature in %s", result.PaymentURL)
 	}
-	if result.Display["type"] != "redirect" || result.Display["payment_url"] != result.PaymentURL || result.Display["sign_type"] != "MD5" {
+	if result.Display["type"] != "redirect" || result.Display["payment_url"] != result.PaymentURL {
 		t.Fatalf("unexpected easypay display %#v", result.Display)
+	}
+	if _, ok := result.Display["sign"]; ok {
+		t.Fatalf("easypay display must not duplicate the redirect signature: %#v", result.Display)
 	}
 }
 
@@ -111,5 +114,41 @@ func TestEasyPayPaymentDisplayBuilderAPIModePostsMAPI(t *testing.T) {
 	}
 	if result.Display["type"] != "qr_code" || result.Display["payment_url"] != result.PaymentURL || result.Display["qr_code"] != result.QRCode || result.Display["prepay_mode"] != "api" {
 		t.Fatalf("unexpected api display %#v", result.Display)
+	}
+}
+
+func TestEasyPayPaymentRejectsFractionalFen(t *testing.T) {
+	req := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "easypay_alipay", Config: map[string]any{
+			"gateway_url": "https://pay.example.com", "pid": "10001", "key": "merchant-secret", "payment_mode": "popup",
+		}},
+		OrderNo: "PGO-EASY-FRACTIONAL-FEN", AmountCNY: "12.345", Subject: "fractional fen",
+	}
+	if _, _, err := BuildEasyPayPaymentURL(CallbackURLConfig{}, req, "alipay"); err == nil {
+		t.Fatal("easypay payment must reject amounts that cannot be represented as whole fen")
+	}
+}
+
+func TestEasyPayPaymentTreatsBusinessRejectionAsDefinite(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"msg":"merchant configuration rejected"}`))
+	}))
+	defer upstream.Close()
+
+	req := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "easypay_alipay", Config: map[string]any{
+			"gateway_url": upstream.URL,
+			"pid":         "10001",
+			"key":         "merchant-secret",
+		}},
+		OrderNo: "PGO-EASYPAY-REJECTED", AmountCNY: "10.00", Subject: "rejected order",
+	}
+	_, _, _, err := BuildEasyPayAPIPayment(t.Context(), CallbackURLConfig{SiteBaseURL: "https://merchant.example.com"}, req, "alipay")
+	if err == nil {
+		t.Fatal("expected EasyPay business rejection")
+	}
+	if PaymentInitializationOutcomeUncertain(err) {
+		t.Fatalf("EasyPay business rejection must be definite, got %v", err)
 	}
 }

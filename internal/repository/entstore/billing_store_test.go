@@ -22,6 +22,68 @@ import (
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
+func TestBillingStorePlanListAndStateTransitions(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-plan-lifecycle?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	disabled, err := store.CreatePlan(ctx, domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "disabled-plan", PlanName: "Disabled", PlanType: "points_package", Status: "disabled",
+		PurchaseEnabled: false, PriceCNY: "10.00000", Points: "20.00000", BonusPoints: "0.00000",
+		DurationDays: 30, Currency: "CNY",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlan disabled: %v", err)
+	}
+	archived, err := store.CreatePlan(ctx, domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "archived-plan", PlanName: "Archived", PlanType: "points_package", Status: "archived",
+		PurchaseEnabled: false, PriceCNY: "12.00000", Points: "24.00000", BonusPoints: "0.00000",
+		DurationDays: 30, Currency: "CNY",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlan archived: %v", err)
+	}
+
+	visible, err := store.ListPlans(ctx, domainbilling.SubscriptionPlanListRequest{})
+	if err != nil {
+		t.Fatalf("ListPlans default: %v", err)
+	}
+	for _, plan := range visible {
+		if plan.ID == archived.ID || plan.Status == "archived" {
+			t.Fatalf("default list must hide archived plans: %#v", visible)
+		}
+	}
+	disabledOnly, err := store.ListPlans(ctx, domainbilling.SubscriptionPlanListRequest{Status: "disabled"})
+	if err != nil {
+		t.Fatalf("ListPlans disabled: %v", err)
+	}
+	if len(disabledOnly) != 1 || disabledOnly[0].ID != disabled.ID {
+		t.Fatalf("expected status filter to return disabled plan, got %#v", disabledOnly)
+	}
+
+	restored, err := store.TransitionPlan(ctx, domainbilling.TransitionSubscriptionPlanRequest{PlanID: archived.ID, Action: "restore"})
+	if err != nil {
+		t.Fatalf("restore archived plan: %v", err)
+	}
+	if restored.Status != "disabled" || restored.PurchaseEnabled {
+		t.Fatalf("restore must target disabled state: %#v", restored)
+	}
+	restoredAgain, err := store.TransitionPlan(ctx, domainbilling.TransitionSubscriptionPlanRequest{PlanID: archived.ID, Action: "restore"})
+	if err != nil {
+		t.Fatalf("restore plan again: %v", err)
+	}
+	if restoredAgain.Status != "disabled" || restoredAgain.PurchaseEnabled {
+		t.Fatalf("repeated restore must be idempotent: %#v", restoredAgain)
+	}
+}
+
 func TestBillingStoreReserveFinalizeAndLedger(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore?mode=memory&cache=shared&_fk=1")
@@ -900,6 +962,59 @@ func TestBillingStoreCreateOrderReusesIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestBillingStoreInitializationFailureDoesNotOverwriteCompletedCallback(t *testing.T) {
+	ctx := context.Background()
+	const dsn = "file:billingstore-initialization-callback-race?mode=memory&cache=shared&_fk=1"
+	client, err := repoent.Open(dialect.SQLite, dsn)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	callbackClient, err := repoent.Open(dialect.SQLite, dsn)
+	if err != nil {
+		t.Fatalf("open callback ent client: %v", err)
+	}
+	defer callbackClient.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 188, OrderNo: "PGO-INIT-CALLBACK-RACE", AmountCNY: "12.50000", CNYPerPoint: "0.31250",
+		Provider: "jeepay_alipay", PurchaseType: "custom_amount", VisibleMethod: "alipay", ProviderType: "jeepay_alipay", ProviderInstanceID: 8,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+
+	var callbackOnce sync.Once
+	client.Use(func(next repoent.Mutator) repoent.Mutator {
+		return repoent.MutateFunc(func(ctx context.Context, mutation repoent.Mutation) (repoent.Value, error) {
+			if paymentMutation, ok := mutation.(*repoent.PaymentOrderMutation); ok {
+				if status, exists := paymentMutation.Status(); exists && status == "failed" {
+					callbackOnce.Do(func() {
+						if _, updateErr := callbackClient.PaymentOrder.UpdateOneID(int(order.ID)).SetStatus("completed").Save(ctx); updateErr != nil {
+							t.Fatalf("simulate completed callback: %v", updateErr)
+						}
+					})
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+
+	result, err := store.FailPaymentOrderInitialization(ctx, domainbilling.FailPaymentOrderInitializationRequest{
+		UserID: order.UserID, OrderID: order.ID, FailureReason: errs.CodePaymentProviderUnavailable,
+	})
+	if err != nil {
+		t.Fatalf("FailPaymentOrderInitialization: %v", err)
+	}
+	if result.Status != "completed" {
+		t.Fatalf("provider failure must not overwrite a completed callback: %#v", result)
+	}
+}
+
 func TestBillingStoreCompleteRechargeOrderCompletesAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-complete-recharge-order?mode=memory&cache=shared&_fk=1")
@@ -1617,5 +1732,50 @@ func TestBillingStoreMarkOrderPaidCompletesCashierRechargeOrderIdempotently(t *t
 	}
 	if ledgerCount != 1 {
 		t.Fatalf("expected one recharge ledger, got %d", ledgerCount)
+	}
+}
+
+func TestBillingStoreMarkOrderPaidRejectsDifferentProviderBinding(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-webhook-provider-binding?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID:             91,
+		OrderNo:            "PGO-CALLBACK-BINDING-ENT",
+		AmountCNY:          "10.00",
+		CNYPerPoint:        "0.31250",
+		Provider:           "stripe",
+		PurchaseType:       "custom_amount",
+		VisibleMethod:      "stripe",
+		ProviderType:       "stripe",
+		ProviderInstanceID: 51,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+
+	if _, err := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+		Provider:           "stripe",
+		ProviderInstanceID: 52,
+		OrderNo:            order.OrderNo,
+		TradeNo:            "pi_cross_instance",
+		AmountCNY:          order.AmountCNY,
+	}); err == nil {
+		t.Fatal("expected callback from a different provider instance to be rejected")
+	}
+	reloaded, err := store.GetOrder(ctx, order.UserID, order.ID)
+	if err != nil {
+		t.Fatalf("GetOrder: %v", err)
+	}
+	if reloaded.Status != "pending" || reloaded.TradeNo != "" {
+		t.Fatalf("cross-instance callback must not mutate order: %#v", reloaded)
 	}
 }

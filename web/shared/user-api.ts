@@ -30,7 +30,8 @@ import type {
   UserProfile,
 } from './api-types'
 import { API_PATHS } from './api-types'
-import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
+import { fillPath, normalizePage, sharedApiClient } from './http-client'
+import { mediaAssetURL } from './media-url'
 
 export { resolveGenerationResolution } from './generation-resolution'
 
@@ -466,7 +467,7 @@ export const userApi = {
   },
   getReferenceAsset: async (asset_id: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { pathParams: { asset_id } })),
   deleteReferenceAsset: (asset_id: string) => sharedApiClient.request<void>(API_PATHS.agent.referenceAssetDetail, { method: 'DELETE', pathParams: { asset_id } }),
-  imageAssetUrl: (url: string, accessToken?: string | null) => apiEventUrl(url, accessToken),
+  imageAssetUrl: (url: string, accessToken?: string | null) => mediaAssetURL(url, accessToken),
   createTask: async (req: CreateTaskRequest) => {
     const wire = buildCreateTaskWireRequest(req)
     return toTask(await sharedApiClient.request(API_PATHS.agent.tasks, { method: 'POST', body: wire.body, headers: wire.headers }))
@@ -491,7 +492,8 @@ export const userApi = {
   deleteTask: (task_id: string) => sharedApiClient.request<void>(API_PATHS.agent.historyTaskDetail, { method: 'DELETE', pathParams: { task_id } }),
   deleteGalleryImage: (image_id: string) => sharedApiClient.request<void>(API_PATHS.agent.galleryImageDetail, { method: 'DELETE', pathParams: { image_id } }),
   updateGalleryImageGroup: async (image_id: string, image_group: string) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.galleryImageGroup, { method: 'PUT', pathParams: { image_id }, body: { image_group } })),
-  publishImage: async (image_id: string) => toImageResult(await sharedApiClient.request(API_PATHS.agent.publishImage, { method: 'POST', pathParams: { image_id } })),
+  publishImage: async (image_id: string) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.publishImage, { method: 'POST', pathParams: { image_id } })),
+  cancelImagePublish: async (image_id: string) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.publishImage, { method: 'DELETE', pathParams: { image_id } })),
   likePublicImage: async (image_id: string, active: boolean) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.likePublicImage, { method: 'POST', pathParams: { image_id }, body: { active } })),
   favoritePublicImage: async (image_id: string, active: boolean) => toGalleryImage(await sharedApiClient.request(API_PATHS.agent.favoritePublicImage, { method: 'POST', pathParams: { image_id }, body: { active } })),
   listApiKeys: async () => ((await sharedApiClient.request<{ items: any[] }>(API_PATHS.agent.apiKeys)).items ?? []).map(toApiKey),
@@ -516,9 +518,7 @@ export const userApi = {
 }
 
 function apiEventUrl(path: string, accessToken?: string | null) {
-  if (/^https?:\/\//i.test(path)) return path
-  const baseUrl = getDefaultBaseUrl() || globalThis.location?.origin || ''
-  return `${baseUrl}${withQuery(path, { access_token: accessToken })}`
+  return mediaAssetURL(path, accessToken)
 }
 
 function toApiKey(raw: any): ApiKey {

@@ -112,6 +112,26 @@ type SubscriptionPlan struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+const (
+	SubscriptionPlanStatusActive   = "active"
+	SubscriptionPlanStatusDisabled = "disabled"
+	SubscriptionPlanStatusArchived = "archived"
+
+	SubscriptionPlanActionEnable  = "enable"
+	SubscriptionPlanActionDisable = "disable"
+	SubscriptionPlanActionArchive = "archive"
+	SubscriptionPlanActionRestore = "restore"
+)
+
+type SubscriptionPlanListRequest struct {
+	Status string
+}
+
+type TransitionSubscriptionPlanRequest struct {
+	PlanID int64
+	Action string
+}
+
 type CreateSubscriptionPlanRequest struct {
 	PlanCode        string `json:"plan_code"`
 	PlanName        string `json:"plan_name"`
@@ -497,6 +517,22 @@ type CreateCustomAmountOrderRequest struct {
 	IdempotencyKey     string
 }
 
+type InitializePaymentOrderRequest struct {
+	UserID         int64
+	OrderID        int64
+	PaymentDisplay map[string]any
+	PaymentURL     string
+	QRCode         string
+	ClientToken    string
+	TradeNo        string
+}
+
+type FailPaymentOrderInitializationRequest struct {
+	UserID        int64
+	OrderID       int64
+	FailureReason string
+}
+
 type ListOrdersRequest struct {
 	UserID        int64
 	Status        string
@@ -509,10 +545,11 @@ type ListOrdersRequest struct {
 }
 
 type MarkOrderPaidRequest struct {
-	Provider  string
-	TradeNo   string
-	OrderNo   string
-	AmountCNY string
+	Provider           string
+	ProviderInstanceID int64
+	TradeNo            string
+	OrderNo            string
+	AmountCNY          string
 }
 
 type CompleteRechargeOrderRequest struct {

@@ -64,11 +64,18 @@ func (s *BillingStore) ListLedger(ctx context.Context, userID int64, page, pageS
 	return domainbilling.LedgerPage{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
 }
 
-func (s *BillingStore) ListPlans(ctx context.Context) ([]domainbilling.SubscriptionPlan, error) {
+func (s *BillingStore) ListPlans(ctx context.Context, req domainbilling.SubscriptionPlanListRequest) ([]domainbilling.SubscriptionPlan, error) {
 	if err := s.ensureDefaultPlans(ctx); err != nil {
 		return nil, err
 	}
-	plans, err := s.client.SubscriptionPlan.Query().
+	query := s.client.SubscriptionPlan.Query()
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status == "" {
+		query = query.Where(subscriptionplan.StatusNEQ(domainbilling.SubscriptionPlanStatusArchived))
+	} else if status != "all" {
+		query = query.Where(subscriptionplan.StatusEQ(status))
+	}
+	plans, err := query.
 		Order(repoent.Asc(subscriptionplan.FieldSortOrder), repoent.Asc(subscriptionplan.FieldID)).
 		All(ctx)
 	if err != nil {
@@ -108,12 +115,19 @@ func (s *BillingStore) CreatePlan(ctx context.Context, req domainbilling.CreateS
 }
 
 func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
-	metadata := subscriptionPlanMetadata(req.PlanType, req.PurchaseEnabled)
+	current, err := s.client.SubscriptionPlan.Get(ctx, int(req.PlanID))
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
+		}
+		return domainbilling.SubscriptionPlan{}, err
+	}
+	purchaseEnabled := current.PurchaseEnabled && strings.TrimSpace(req.PlanType) == "points_package"
+	metadata := subscriptionPlanMetadata(req.PlanType, purchaseEnabled)
 	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(req.PlanID)).
 		SetPlanName(strings.TrimSpace(req.PlanName)).
 		SetPlanType(strings.TrimSpace(req.PlanType)).
-		SetPurchaseEnabled(req.PurchaseEnabled).
-		SetStatus(strings.TrimSpace(req.Status)).
+		SetPurchaseEnabled(purchaseEnabled).
 		SetPriceCny(strings.TrimSpace(req.PriceCNY)).
 		SetPoints(strings.TrimSpace(req.Points)).
 		SetBonusPoints(strings.TrimSpace(req.BonusPoints)).
@@ -133,7 +147,14 @@ func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateS
 }
 
 func (s *BillingStore) DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error) {
-	current, err := s.client.SubscriptionPlan.Get(ctx, int(planID))
+	return s.TransitionPlan(ctx, domainbilling.TransitionSubscriptionPlanRequest{
+		PlanID: planID,
+		Action: domainbilling.SubscriptionPlanActionArchive,
+	})
+}
+
+func (s *BillingStore) TransitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
+	current, err := s.client.SubscriptionPlan.Get(ctx, int(req.PlanID))
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
@@ -141,10 +162,16 @@ func (s *BillingStore) DeletePlan(ctx context.Context, planID int64) (domainbill
 		return domainbilling.SubscriptionPlan{}, err
 	}
 	planType := subscriptionPlanType(current.PlanType, current.Metadata)
-	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(planID)).
-		SetStatus("archived").
-		SetPurchaseEnabled(false).
-		SetMetadata(subscriptionPlanMetadata(planType, false)).
+	currentPlan := mapSubscriptionPlan(current)
+	currentPlan.PlanType = planType
+	status, purchaseEnabled, err := billingservice.TransitionPlanState(currentPlan, req.Action)
+	if err != nil {
+		return domainbilling.SubscriptionPlan{}, err
+	}
+	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(req.PlanID)).
+		SetStatus(status).
+		SetPurchaseEnabled(purchaseEnabled).
+		SetMetadata(subscriptionPlanMetadata(planType, purchaseEnabled)).
 		Save(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -484,7 +511,6 @@ func (s *BillingStore) CreateOrder(ctx context.Context, req domainbilling.Create
 		SetVisibleMethod(visibleMethod).
 		SetProviderType(providerType).
 		SetProviderSnapshot(providerSnapshot).
-		SetPaymentDisplay(cloneMap(req.PaymentDisplay)).
 		SetStatus("pending").
 		SetCurrency(plan.Currency).
 		SetAmountCny(plan.PriceCny).
@@ -492,6 +518,9 @@ func (s *BillingStore) CreateOrder(ctx context.Context, req domainbilling.Create
 		SetBonusPoints(plan.BonusPoints).
 		SetExpiresAt(now.Add(15 * time.Minute)).
 		SetProviderPayload(providerPayload)
+	if len(req.PaymentDisplay) > 0 {
+		create.SetPaymentDisplay(cloneMap(req.PaymentDisplay))
+	}
 	if paymentURL != "" {
 		create.SetPaymentURL(paymentURL)
 	}
@@ -564,7 +593,6 @@ func (s *BillingStore) CreateCustomAmountOrder(ctx context.Context, req domainbi
 		SetVisibleMethod(visibleMethod).
 		SetProviderType(providerType).
 		SetProviderSnapshot(providerSnapshot).
-		SetPaymentDisplay(cloneMap(req.PaymentDisplay)).
 		SetStatus("pending").
 		SetCurrency("CNY").
 		SetAmountCny(amount.Round(s.scale).StringFixed(s.scale)).
@@ -572,6 +600,9 @@ func (s *BillingStore) CreateCustomAmountOrder(ctx context.Context, req domainbi
 		SetBonusPoints(decimal.Zero.StringFixed(s.scale)).
 		SetExpiresAt(now.Add(15 * time.Minute)).
 		SetProviderPayload(providerPayload)
+	if len(req.PaymentDisplay) > 0 {
+		create.SetPaymentDisplay(cloneMap(req.PaymentDisplay))
+	}
 	if paymentURL != "" {
 		create.SetPaymentURL(paymentURL)
 	}
@@ -589,6 +620,65 @@ func (s *BillingStore) CreateCustomAmountOrder(ctx context.Context, req domainbi
 	}
 	order, err := create.Save(ctx)
 	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return s.mapPaymentOrder(ctx, order), nil
+}
+
+func (s *BillingStore) InitializePaymentOrder(ctx context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error) {
+	update := s.client.PaymentOrder.Update().
+		Where(paymentorder.IDEQ(int(req.OrderID)), paymentorder.UserIDEQ(req.UserID), paymentorder.StatusEQ("pending")).
+		SetPaymentDisplay(cloneMap(req.PaymentDisplay)).
+		ClearFailureReason()
+	if paymentURL := strings.TrimSpace(req.PaymentURL); paymentURL != "" {
+		update.SetPaymentURL(paymentURL)
+	}
+	if qrCode := strings.TrimSpace(req.QRCode); qrCode != "" {
+		update.SetQrCode(qrCode)
+	}
+	if clientToken := strings.TrimSpace(req.ClientToken); clientToken != "" {
+		update.SetClientToken(clientToken)
+	}
+	if tradeNo := strings.TrimSpace(req.TradeNo); tradeNo != "" {
+		update.SetTradeNo(tradeNo)
+	}
+	_, err := update.Save(ctx)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return s.paymentOrderAfterInitializationMutation(ctx, req.UserID, req.OrderID)
+}
+
+func (s *BillingStore) FailPaymentOrderInitialization(ctx context.Context, req domainbilling.FailPaymentOrderInitializationRequest) (domainbilling.PaymentOrder, error) {
+	now := time.Now().UTC()
+	_, err := s.client.PaymentOrder.Update().
+		Where(
+			paymentorder.IDEQ(int(req.OrderID)),
+			paymentorder.UserIDEQ(req.UserID),
+			paymentorder.StatusEQ("pending"),
+			paymentorder.PaymentDisplayIsNil(),
+			paymentorder.PaymentURLIsNil(),
+			paymentorder.QrCodeIsNil(),
+			paymentorder.ClientTokenIsNil(),
+		).
+		SetStatus("failed").
+		SetFailureReason(strings.TrimSpace(req.FailureReason)).
+		SetClosedAt(now).
+		Save(ctx)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	return s.paymentOrderAfterInitializationMutation(ctx, req.UserID, req.OrderID)
+}
+
+func (s *BillingStore) paymentOrderAfterInitializationMutation(ctx context.Context, userID, orderID int64) (domainbilling.PaymentOrder, error) {
+	order, err := s.client.PaymentOrder.Query().
+		Where(paymentorder.IDEQ(int(orderID)), paymentorder.UserIDEQ(userID)).
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+		}
 		return domainbilling.PaymentOrder{}, err
 	}
 	return s.mapPaymentOrder(ctx, order), nil
@@ -966,6 +1056,13 @@ func (s *BillingStore) MarkOrderPaid(ctx context.Context, req domainbilling.Mark
 			if repoent.IsNotFound(err) {
 				return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
 			}
+			return domainbilling.PaymentOrder{}, err
+		}
+		providerInstanceID := int64(0)
+		if order.ProviderInstanceID != nil {
+			providerInstanceID = *order.ProviderInstanceID
+		}
+		if err := billingservice.ValidatePaymentCallbackBinding(order.ProviderType, order.Provider, providerInstanceID, req); err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
 		if err := ensurePaymentAmountMatches(order.AmountCny, req.AmountCNY, s.scale); err != nil {

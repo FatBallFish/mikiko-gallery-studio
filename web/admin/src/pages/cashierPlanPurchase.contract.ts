@@ -1,5 +1,5 @@
 import type { CashierPlan } from '../../../shared/api-types'
-import { cashierPlanEmptyState, cashierPlanPurchaseBadge, cashierPlanSavePayload, cashierPlanSectionCopy } from './cashierPlanPurchase'
+import { cashierPlanActions, cashierPlanEmptyState, cashierPlanFilterOptions, cashierPlanPurchaseBadge, cashierPlanSavePayload, cashierPlanSectionCopy } from './cashierPlanPurchase'
 
 const subscriptionPayload = cashierPlanSavePayload({
   plan_code: 'sub-monthly',
@@ -86,4 +86,21 @@ if (!visiblePlanCopy.includes('订阅套餐') || !visiblePlanCopy.includes('不�
 
 if (/占位|placeholder/i.test(visiblePlanCopy)) {
   throw new Error(`cashier plan admin copy should avoid internal placeholder wording, got ${visiblePlanCopy}`)
+}
+
+if (cashierPlanFilterOptions.map((option) => option.value).join(',') !== 'active,disabled,archived') {
+  throw new Error(`plan filters must expose active, disabled, and archived states, got ${JSON.stringify(cashierPlanFilterOptions)}`)
+}
+
+const activeActions = cashierPlanActions({ ...subscriptionPlan, plan_type: 'points_package', purchase_enabled: true, status: 'active' })
+if (activeActions.map((action) => action.action).join(',') !== 'disable,archive') {
+  throw new Error(`active plan actions must disable or archive, got ${JSON.stringify(activeActions)}`)
+}
+const disabledActions = cashierPlanActions({ ...subscriptionPlan, plan_type: 'points_package', purchase_enabled: false, status: 'disabled' })
+if (disabledActions.map((action) => action.action).join(',') !== 'enable,archive') {
+  throw new Error(`disabled plan actions must enable or archive, got ${JSON.stringify(disabledActions)}`)
+}
+const archivedActions = cashierPlanActions({ ...subscriptionPlan, plan_type: 'points_package', purchase_enabled: false, status: 'archived' })
+if (archivedActions.map((action) => action.action).join(',') !== 'restore') {
+  throw new Error(`archived plan actions must only restore, got ${JSON.stringify(archivedActions)}`)
 }

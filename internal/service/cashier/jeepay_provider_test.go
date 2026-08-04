@@ -3,16 +3,107 @@ package cashier
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
 )
+
+func TestJeePaySignMatchesOfficialVector(t *testing.T) {
+	params := map[string]string{
+		"mchNo":        "M1682391685",
+		"appId":        "6447428682ca7458118af79f",
+		"mchOrderNo":   "mho1694051705945",
+		"wayCode":      "ALI_BAR",
+		"amount":       "1",
+		"currency":     "CNY",
+		"clientIp":     "192.166.1.132",
+		"subject":      "商品标题",
+		"body":         "商品描述",
+		"notifyUrl":    "https://www.jeequan.com",
+		"reqTime":      "1694051706",
+		"version":      "1.0",
+		"signType":     "MD5",
+		"channelExtra": `{"authCode":"284957415846666792"}`,
+	}
+	const key = "UNpEETkvMpqC9oDLBr9S2X7U92k462h3zhHiy7hj4xbw23PiWhMv6TCAQ2vh8PzynZXZYo9n6puxHkAHG7li6LZi8IpaQrshzydnBll64iKlb4U59ggiyCTaHJeqffiW"
+	const want = "924065BA077FA461A9B06D2E76E9ED3C"
+	if got := jeepaySign(params, key); got != want {
+		t.Fatalf("jeepaySign() = %s, want official vector %s", got, want)
+	}
+}
+
+func TestJeePayUnifiedOrderUsesNumericContractAndCanonicalSignature(t *testing.T) {
+	const merchantKey = "merchant-secret"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode unified order body: %v", err)
+		}
+		if _, ok := body["amount"].(float64); !ok {
+			t.Fatalf("amount must be a JSON number, got %T (%v)", body["amount"], body["amount"])
+		}
+		if _, ok := body["reqTime"].(float64); !ok {
+			t.Fatalf("reqTime must be a JSON number, got %T (%v)", body["reqTime"], body["reqTime"])
+		}
+		gotSign, _ := body["sign"].(string)
+		if wantSign := officialJeePaySignForTest(body, merchantKey); gotSign != wantSign {
+			t.Fatalf("sign = %q, want %q; signType and every other non-empty field must be signed", gotSign, wantSign)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"payDataType":"payUrl","payData":"https://jeepay.example.com/pay"}}`))
+	}))
+	defer upstream.Close()
+
+	req := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_alipay", Config: map[string]any{
+			"gateway_url": upstream.URL, "mch_no": "MCH10001", "app_id": "APP10001", "key": merchantKey,
+		}},
+		OrderNo: "PGO-JEEPAY-CONTRACT", AmountCNY: "9.90000", Subject: "Contract test",
+	}
+	if _, err := NewJeePayPaymentDisplayBuilder(CallbackURLConfig{})(context.Background(), req, BasePaymentDisplay(req, "jeepay_alipay")); err != nil {
+		t.Fatalf("BuildJeePayPaymentDisplay returned error: %v", err)
+	}
+}
+
+func TestJeePayUnifiedOrderRejectsBusinessCodeOne(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":1,"msg":"FAILED","data":{"payUrl":"https://jeepay.example.com/invalid"}}`))
+	}))
+	defer upstream.Close()
+	req := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_alipay", Config: map[string]any{
+			"gateway_url": upstream.URL, "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret",
+		}},
+		OrderNo: "PGO-JEEPAY-CODE-ONE", AmountCNY: "9.90000", Subject: "Contract test",
+	}
+	if _, err := NewJeePayPaymentDisplayBuilder(CallbackURLConfig{})(context.Background(), req, BasePaymentDisplay(req, "jeepay_alipay")); err == nil {
+		t.Fatal("expected JeePay business code 1 to be rejected")
+	}
+}
+
+func TestJeePayUnifiedOrderRejectsFractionalFen(t *testing.T) {
+	req := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_alipay", Config: map[string]any{
+			"gateway_url": "https://jeepay.example.com", "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret",
+		}},
+		OrderNo: "PGO-JEEPAY-FRACTIONAL-FEN", AmountCNY: "12.345", Subject: "Contract test",
+	}
+	if _, _, _, _, err := BuildJeePayPaymentParams(CallbackURLConfig{}, req); err == nil {
+		t.Fatal("expected JeePay amount with fractional fen to be rejected")
+	}
+}
 
 func TestJeePayUnifiedOrderHasIndependentRequestTimeout(t *testing.T) {
 	previousClient := jeepayHTTPClient
@@ -51,10 +142,11 @@ func TestJeePayPaymentDisplayBuilderDefaultsToAPIPost(t *testing.T) {
 		if contentType := r.Header.Get("Content-Type"); contentType != "application/json" {
 			t.Fatalf("expected application/json, got %q", contentType)
 		}
-		var body map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		var rawBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&rawBody); err != nil {
 			t.Fatalf("decode unified order body: %v", err)
 		}
+		body := jeepayStringMapForTest(rawBody)
 		for key, want := range map[string]string{
 			"mchNo": "MCH10001", "appId": "APP10001", "mchOrderNo": "PGO-JEEPAY-001",
 			"wayCode": "ALI_PC", "amount": "1250", "version": "1.0", "signType": "MD5",
@@ -104,6 +196,9 @@ func TestJeePayPaymentDisplayBuilderDefaultsToAPIPost(t *testing.T) {
 	if result.PaymentURL != "https://jeepay.example.com/pay/session" || result.Display["type"] != "redirect" || result.Display["payment_url"] != result.PaymentURL || result.Display["prepay_mode"] != "api" || result.Display["channel_trade_no"] != "JEEPAY-PAY-001" {
 		t.Fatalf("unexpected jeepay display %#v", result.Display)
 	}
+	if _, ok := result.Display["sign"]; ok {
+		t.Fatalf("jeepay display must not expose the merchant request signature: %#v", result.Display)
+	}
 }
 
 func TestJeePayPaymentDisplayBuilderAPIModePostsChannelExtra(t *testing.T) {
@@ -117,9 +212,11 @@ func TestJeePayPaymentDisplayBuilderAPIModePostsChannelExtra(t *testing.T) {
 		if contentType := r.Header.Get("Content-Type"); contentType != "application/json" {
 			t.Fatalf("expected application/json, got %q", contentType)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&upstreamValues); err != nil {
+		var rawBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&rawBody); err != nil {
 			t.Fatalf("decode JSON body: %v", err)
 		}
+		upstreamValues = jeepayStringMapForTest(rawBody)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-API-PAY-001","payUrl":"https://jeepay.example.com/pay/session","codeUrl":"https://jeepay.example.com/qr/session"}}`))
 	}))
@@ -237,10 +334,11 @@ func TestJeePayHTTPFailureLogsSanitizedDiagnostic(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var requestBody map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		var rawBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&rawBody); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
+		requestBody := jeepayStringMapForTest(rawBody)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -306,6 +404,25 @@ func TestJeePayProviderFailureLogsCodeAndBoundedMessage(t *testing.T) {
 	}
 }
 
+func TestJeePayUnifiedOrderRejectsOversizedResponse(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"payOrderId":"JEEPAY-OVERSIZED","payDataType":"payUrl","payData":"https://jeepay.example.com/pay"}}`))
+		_, _ = w.Write([]byte(strings.Repeat(" ", (1<<20)+1)))
+	}))
+	defer upstream.Close()
+
+	req := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_alipay", Config: map[string]any{
+			"gateway_url": upstream.URL, "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret", "way_code": "ALI_PC",
+		}},
+		OrderNo: "PGO-JEEPAY-OVERSIZED", AmountCNY: "9.90000", Subject: "oversized response",
+	}
+	if _, _, _, _, _, err := BuildJeePayAPIPayment(context.Background(), CallbackURLConfig{}, req); err == nil {
+		t.Fatal("JeePay response larger than the provider response limit must be rejected")
+	}
+}
+
 func TestJeePayPaymentDisplayBuilderClassifiesPayData(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -316,10 +433,12 @@ func TestJeePayPaymentDisplayBuilderClassifiesPayData(t *testing.T) {
 		displayType string
 		paymentURL  string
 		qrCode      string
+		formHTML    string
 	}{
-		{name: "browser URL", provider: "jeepay_alipay", wayCode: "ALI_PC", payData: "https://jeepay.example.com/cashier/session", displayType: "redirect", paymentURL: "https://jeepay.example.com/cashier/session"},
+		{name: "browser URL", provider: "jeepay_alipay", wayCode: "ALI_PC", payData: "https://jeepay.example.com/cashier/session", payDataType: "payUrl", displayType: "redirect", paymentURL: "https://jeepay.example.com/cashier/session"},
 		{name: "native QR payload", provider: "jeepay_wxpay", wayCode: "WX_NATIVE", payData: "weixin://wxpay/bizpayurl?pr=jeepay", displayType: "qr_code", qrCode: "weixin://wxpay/bizpayurl?pr=jeepay"},
 		{name: "explicit QR image URL", provider: "jeepay_alipay", wayCode: "ALI_QR", payData: "https://jeepay.example.com/qr/session.png", payDataType: "codeUrl", displayType: "qr_code", qrCode: "https://jeepay.example.com/qr/session.png"},
+		{name: "provider form", provider: "jeepay_alipay", wayCode: "ALI_PC", payData: `<form method="post" action="https://jeepay.example.com/cashier"><input name="token" value="opaque"></form>`, payDataType: "form", displayType: "form", formHTML: `<form method="post" action="https://jeepay.example.com/cashier"><input name="token" value="opaque"></form>`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -343,6 +462,73 @@ func TestJeePayPaymentDisplayBuilderClassifiesPayData(t *testing.T) {
 			if result.Display["type"] != tt.displayType || result.PaymentURL != tt.paymentURL || result.QRCode != tt.qrCode {
 				t.Fatalf("display = %#v, paymentURL=%q qrCode=%q", result.Display, result.PaymentURL, result.QRCode)
 			}
+			if got, _ := result.Display["form_html"].(string); got != tt.formHTML {
+				t.Fatalf("form_html = %q, want %q", got, tt.formHTML)
+			}
 		})
 	}
+}
+
+func TestJeePayPaymentDisplayRejectsUnsupportedAppPayload(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"payOrderId":"JEEPAY-APP-001","payDataType":"wxapp","payData":"{\"appId\":\"wx-app\"}"}}`))
+	}))
+	defer upstream.Close()
+
+	req := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "jeepay_wxpay", Config: map[string]any{
+			"gateway_url": upstream.URL, "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret", "way_code": "WX_JSAPI",
+		}},
+		OrderNo: "PGO-JEEPAY-APP", AmountCNY: "9.90000", Subject: "Basic Monthly",
+	}
+	if _, err := BuildJeePayPaymentDisplay(context.Background(), CallbackURLConfig{}, req, BasePaymentDisplay(req, "jeepay_wxpay")); err == nil {
+		t.Fatal("unsupported JeePay app payload must not be exposed as executable form HTML")
+	}
+}
+
+func officialJeePaySignForTest(params map[string]any, key string) string {
+	keys := make([]string, 0, len(params))
+	values := make(map[string]string, len(params))
+	for name, raw := range params {
+		if name == "sign" || raw == nil {
+			continue
+		}
+		var value string
+		switch typed := raw.(type) {
+		case string:
+			value = typed
+		case float64:
+			value = strconv.FormatFloat(typed, 'f', -1, 64)
+		default:
+			value = fmt.Sprint(typed)
+		}
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		keys = append(keys, name)
+		values[name] = value
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, name := range keys {
+		parts = append(parts, name+"="+values[name])
+	}
+	sum := md5.Sum([]byte(strings.Join(parts, "&") + "&key=" + key))
+	return strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
+func jeepayStringMapForTest(raw map[string]any) map[string]string {
+	values := make(map[string]string, len(raw))
+	for key, value := range raw {
+		switch typed := value.(type) {
+		case string:
+			values[key] = typed
+		case float64:
+			values[key] = strconv.FormatFloat(typed, 'f', -1, 64)
+		default:
+			values[key] = fmt.Sprint(typed)
+		}
+	}
+	return values
 }

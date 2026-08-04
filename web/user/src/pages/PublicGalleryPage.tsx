@@ -287,6 +287,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
                   height={image.height}
                   aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
                   onOpen={() => void openDetail(image)}
+                  onMediaRefresh={() => void loadPage(1, 'replace')}
                   actions={<div className={publicGalleryClasses.iconActions}>
                     {publicDetailButton('查看详情', <PublicDetailIcon name="eye" />, () => void openDetail(image), '', busyId === `detail:${image.id}`)}
                     {publicDetailButton(`点赞 ${image.like_count ?? 0}`, <PublicDetailIcon name="heart" active={image.liked_by_viewer} />, () => void toggleReaction(image, 'like'), image.liked_by_viewer ? 'liked' : '', busyId === `like:${image.id}`)}
@@ -319,6 +320,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
         onCopyPrompt={(prompt) => void copyPrompt(prompt)}
         actions={selected ? [{ key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: () => reuseConfiguration(selected), disabled: !selected.prompt }] : []}
         previewSourceLabel="公开广场"
+        onMediaRefresh={() => void loadPage(1, 'replace')}
         onClose={() => setSelected(null)}
       />
     </main>

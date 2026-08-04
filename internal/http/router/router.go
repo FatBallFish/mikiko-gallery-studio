@@ -287,7 +287,7 @@ var supplementalNormalTemplateRoutes = map[string]map[string]bool{
 	"/api/agent/gallery/v1/images/{image_id}/group":          {http.MethodPut: true, http.MethodPatch: true},
 	"/api/agent/gallery/v1/images/{image_id}/like":           {http.MethodPost: true},
 	"/api/agent/gallery/v1/images/{image_id}/favorite":       {http.MethodPost: true},
-	"/api/agent/gallery/v1/images/{image_id}/publish":        {http.MethodPost: true},
+	"/api/agent/gallery/v1/images/{image_id}/publish":        {http.MethodPost: true, http.MethodDelete: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:approve":     {http.MethodPost: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:reject":      {http.MethodPost: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:unpublish":   {http.MethodPost: true},

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { GalleryImage, ImageResult, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../shared/api-types'
 import { cn } from '../../shared/classnames'
+import { RefreshableMediaImage, useMediaRefreshOnce } from './ui/mediaRefresh'
 import { avatarMenuItems, type AvatarMenuIcon } from './avatarMenu'
 import { BrandMark, siteBrand } from './brand'
 import { openDocsEntry } from './docsUrl'
@@ -243,7 +244,7 @@ export type ImageDetailAction = {
   disabled?: boolean
 }
 
-export function ImageDetailModal({ title, image, imageUrl, referenceImages = [], showPublicStats = true, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产', onClose }: {
+export function ImageDetailModal({ title, image, imageUrl, referenceImages = [], showPublicStats = true, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产', onMediaRefresh, onClose }: {
   title: string
   image: ImageResult | GalleryImage | null
   imageUrl?: string
@@ -255,6 +256,7 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
   onCopyPrompt: (prompt: string) => void
   actions?: ImageDetailAction[]
   previewSourceLabel?: string
+  onMediaRefresh?: () => void | Promise<void>
   onClose: () => void
 }) {
   const [zoomImage, setZoomImage] = useState<ImagePreviewPayload | null>(null)
@@ -279,6 +281,7 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
           onCopyPrompt={onCopyPrompt}
           actions={actions}
           previewSourceLabel={previewSourceLabel}
+          onMediaRefresh={onMediaRefresh}
         />
       </Modal>
       {zoomImage ? <ImageZoomViewer image={zoomImage} onClose={() => setZoomImage(null)} /> : null}
@@ -286,7 +289,7 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
   )
 }
 
-export function PublicImageDetail({ image, imageUrl, referenceImages = [], showPublicStats = true, onPreviewImage, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产' }: {
+export function PublicImageDetail({ image, imageUrl, referenceImages = [], showPublicStats = true, onPreviewImage, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产', onMediaRefresh }: {
   image: ImageResult | GalleryImage
   imageUrl?: string
   referenceImages?: Array<{ id: string; url: string; alt: string; onPreview?: () => void }>
@@ -298,6 +301,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
   onCopyPrompt: (prompt: string) => void
   actions?: ImageDetailAction[]
   previewSourceLabel?: string
+  onMediaRefresh?: () => void | Promise<void>
 }) {
   const authorName = image.author_name || '匿名用户'
   const prompt = image.prompt || '-'
@@ -314,7 +318,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
             <span className={publicDetailClasses.referenceLabel}>引用图片</span>
             {referenceImages.map((item) => (
               <button key={item.id || item.url} type="button" className={publicDetailClasses.referenceButton} onClick={item.onPreview} disabled={!item.onPreview}>
-                <img src={item.url} alt={item.alt} className={publicDetailClasses.referenceImage} />
+                <RefreshableMediaImage src={item.url} alt={item.alt} className={publicDetailClasses.referenceImage} onMediaRefresh={onMediaRefresh} />
               </button>
             ))}
           </div>
@@ -336,6 +340,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
                 source: previewSourceLabel,
                 creationDraft: workspaceCreationDraftFromSnapshot(image),
               }) : undefined}
+              onMediaRefresh={onMediaRefresh}
             />
           ) : <div className={publicDetailClasses.placeholder}>图片不可预览</div>}
         </div>
@@ -385,13 +390,14 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
   )
 }
 
-function DetailImageMedia({ src, alt, onOpen }: { src: string; alt: string; onOpen?: () => void }) {
+function DetailImageMedia({ src, alt, onOpen, onMediaRefresh }: { src: string; alt: string; onOpen?: () => void; onMediaRefresh?: () => void | Promise<void> }) {
   const [failed, setFailed] = useState(false)
+  const { markMediaLoaded, refreshFailedMedia } = useMediaRefreshOnce(src, onMediaRefresh)
   useEffect(() => setFailed(false), [src])
   if (failed) return <div className={publicDetailClasses.placeholder} role="status">图片暂时无法预览</div>
   return (
     <button type="button" className={publicDetailClasses.imageButton} onClick={onOpen} disabled={!onOpen}>
-      <img src={src} alt={alt} className={publicDetailClasses.image} loading="lazy" decoding="async" onError={() => setFailed(true)} />
+      <img src={src} alt={alt} className={publicDetailClasses.image} loading="lazy" decoding="async" onLoad={markMediaLoaded} onError={() => { refreshFailedMedia(); setFailed(true) }} />
     </button>
   )
 }
@@ -774,7 +780,7 @@ export function ImageFrame({ src, alt, actions, children, className = '', imageC
   )
 }
 
-export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 3', actions, topAction, onOpen, selected = false, className = '', imageClassName = '' }: {
+export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 3', actions, topAction, onOpen, onMediaRefresh, selected = false, className = '', imageClassName = '' }: {
   src?: string
   alt: string
   width?: number
@@ -783,6 +789,7 @@ export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 
   actions?: React.ReactNode
   topAction?: React.ReactNode
   onOpen?: () => void
+  onMediaRefresh?: () => void | Promise<void>
   selected?: boolean
   className?: string
   imageClassName?: string
@@ -790,6 +797,7 @@ export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 
   const [imageState, setImageState] = useState<'loading' | 'ready' | 'error'>(src ? 'loading' : 'error')
   const [retryKey, setRetryKey] = useState(0)
   const imageRef = useRef<HTMLImageElement>(null)
+  const { markMediaLoaded, refreshFailedMedia } = useMediaRefreshOnce(src, onMediaRefresh)
 
   useLayoutEffect(() => {
     const image = imageRef.current
@@ -813,8 +821,8 @@ export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 
       loading="lazy"
       decoding="async"
       className={cn('size-full object-cover transition duration-700 ease-out group-hover:scale-[1.025] motion-reduce:transition-none motion-reduce:transform-none', imageState !== 'ready' && 'opacity-0', imageClassName)}
-      onLoad={() => setImageState('ready')}
-      onError={() => setImageState('error')}
+      onLoad={() => { markMediaLoaded(); setImageState('ready') }}
+      onError={() => { refreshFailedMedia(); setImageState('error') }}
     />
   ) : null
 
@@ -1032,11 +1040,11 @@ export function LocalFeedback({ tone = 'info', title, detail, action, className 
 }
 
 export function StatusPill({ status }: { status: ImageTaskStatus | PublishStatus | string }) {
-  const tone = status === 'succeeded' || status === 'public' || status === 'active'
+	const tone = status === 'succeeded' || status === 'public' || status === 'approved' || status === 'active'
     ? 'good'
     : status === 'failed' || status === 'rejected' || status === 'disabled'
       ? 'bad'
-      : status === 'running' || status === 'queued' || status === 'reviewing'
+		: status === 'running' || status === 'queued' || status === 'reviewing' || status === 'pending_review'
         ? 'warn'
         : 'neutral'
   const label: Record<string, string> = {
@@ -1046,9 +1054,12 @@ export function StatusPill({ status }: { status: ImageTaskStatus | PublishStatus
     failed: '失败',
     cancelled: '已取消',
     private: '私有',
-    reviewing: '审核中',
-    public: '已公开',
-    rejected: '已拒绝',
+		reviewing: '审核中',
+		pending_review: '审核中',
+		public: '已公开',
+		approved: '已公开',
+		rejected: '已拒绝',
+		unpublished: '已下架',
     active: '启用中',
     disabled: '已禁用',
   }

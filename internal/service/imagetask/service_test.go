@@ -210,7 +210,8 @@ func TestTestModelAccountUsesDirectCandidateWithoutBilling(t *testing.T) {
 		}},
 	}
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	backend := &modelTestTemporaryURLBackend{objects: map[string][]byte{}}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg, providers, store, nil, nil, backend)
 
 	result, err := svc.TestModelAccount(context.Background(), domainimagetask.TestModelAccountRequest{
 		AccountID: 201,
@@ -243,6 +244,9 @@ func TestTestModelAccountUsesDirectCandidateWithoutBilling(t *testing.T) {
 	if result.Image.ID == "" || result.Image.URL == "" || result.Width != 1 || result.Height != 1 {
 		t.Fatalf("expected persisted image metadata, got %#v", result)
 	}
+	if result.ImageURL != backend.previewURL() || result.Image.URL != backend.previewURL() || result.Image.DownloadURL != backend.downloadURL() {
+		t.Fatalf("model test result must expose direct temporary URLs, got %#v", result)
+	}
 	loaded, err := store.GetByID(context.Background(), 0, result.Task.ID)
 	if err != nil {
 		t.Fatalf("GetByID test task: %v", err)
@@ -250,6 +254,35 @@ func TestTestModelAccountUsesDirectCandidateWithoutBilling(t *testing.T) {
 	if loaded.ActualPoints != "0.00000" || loaded.EstimatedPoints != "0.00000" || loaded.ChargedPoints != "0.00000" {
 		t.Fatalf("expected model account test to avoid billing, got %#v", loaded)
 	}
+}
+
+type modelTestTemporaryURLBackend struct {
+	objects map[string][]byte
+}
+
+func (*modelTestTemporaryURLBackend) Driver() string { return "s3" }
+func (backend *modelTestTemporaryURLBackend) Put(_ context.Context, key, _ string, content []byte) error {
+	backend.objects[key] = append([]byte(nil), content...)
+	return nil
+}
+func (backend *modelTestTemporaryURLBackend) Get(_ context.Context, key string) ([]byte, error) {
+	return append([]byte(nil), backend.objects[key]...), nil
+}
+func (backend *modelTestTemporaryURLBackend) Delete(_ context.Context, key string) error {
+	delete(backend.objects, key)
+	return nil
+}
+func (backend *modelTestTemporaryURLBackend) TemporaryGetURL(_ context.Context, _ string, options storage.TemporaryGetURLOptions) (string, error) {
+	if options.ResponseFilename != "" {
+		return backend.downloadURL(), nil
+	}
+	return backend.previewURL(), nil
+}
+func (*modelTestTemporaryURLBackend) previewURL() string {
+	return "https://objects.example.test/model-test.png?mode=preview&X-Amz-Signature=test"
+}
+func (*modelTestTemporaryURLBackend) downloadURL() string {
+	return "https://objects.example.test/model-test.png?mode=download&X-Amz-Signature=test"
 }
 
 func TestTestModelAccountUsesRequestedPixelSize(t *testing.T) {
@@ -950,7 +983,7 @@ func TestDeliverImageResultUsesTemporaryURLAfterOwnershipCheck(t *testing.T) {
 	if delivery.Result.ID != result.ID || delivery.TemporaryURL != backend.signedURL || len(delivery.Content) != 0 {
 		t.Fatalf("unexpected temporary delivery %#v", delivery)
 	}
-	if backend.getCalls != 0 || backend.signCalls != 1 || backend.objectKey != result.ObjectKey {
+	if backend.getCalls != 0 || backend.signCalls != 2 || backend.objectKey != result.ObjectKey {
 		t.Fatalf("temporary delivery calls: get=%d sign=%d key=%q", backend.getCalls, backend.signCalls, backend.objectKey)
 	}
 	if backend.options.Expiry != 5*time.Minute || backend.options.ContentType != "image/png" || backend.options.ResponseFilename != "signed-image.png" {
@@ -960,8 +993,143 @@ func TestDeliverImageResultUsesTemporaryURLAfterOwnershipCheck(t *testing.T) {
 	if _, err := svc.DeliverImageResult(t.Context(), 23, result.ID); err == nil {
 		t.Fatal("expected non-owner delivery to be rejected")
 	}
-	if backend.signCalls != 1 {
+	if backend.signCalls != 2 {
 		t.Fatalf("non-owner request reached signer; sign calls=%d", backend.signCalls)
+	}
+}
+
+func TestTemporaryMediaURLProjectionForTaskResults(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	result := provider.ImageResult{
+		ID: "projected-image", StorageDriver: "s3", StorageConfigID: "bfss-primary",
+		ObjectKey: "generated/projected-image.png", MimeType: "image/png", VisibilityStatus: "private",
+	}
+	if err := store.Save(t.Context(), domainimagetask.Task{
+		UserID: 22, ID: "projected-task", Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{result},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	backend := &temporaryURLBackend{
+		previewURL:  "https://bfss.example.com/generated/projected-image.png?mode=preview&X-Amz-Signature=preview",
+		downloadURL: "https://bfss.example.com/generated/projected-image.png?mode=download&X-Amz-Signature=download",
+	}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(taskTestConfig(), nil, store, nil, nil, backend)
+
+	task, err := svc.GetByID(t.Context(), 22, "projected-task")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if len(task.Results) != 1 || task.Results[0].URL != backend.previewURL || task.Results[0].DownloadURL != backend.downloadURL {
+		t.Fatalf("task result must expose separate temporary URLs, got %#v", task.Results)
+	}
+	if backend.signCalls != 2 || backend.options.Expiry != 5*time.Minute || backend.options.ResponseFilename != "projected-image.png" {
+		t.Fatalf("unexpected signer calls=%d options=%#v", backend.signCalls, backend.options)
+	}
+	if _, err := svc.GetByID(t.Context(), 23, "projected-task"); err == nil {
+		t.Fatal("non-owner must be rejected before media signing")
+	}
+	if backend.signCalls != 2 {
+		t.Fatalf("non-owner request reached signer; sign calls=%d", backend.signCalls)
+	}
+}
+
+func TestMediaProjectionUsesLocalFallbackAndSurfacesSigningFailure(t *testing.T) {
+	localStore := imagetask.NewMemoryStore()
+	localResult := provider.ImageResult{ID: "local-projection", StorageDriver: "local", ObjectKey: "generated/local.png", MimeType: "image/png"}
+	if err := localStore.Save(t.Context(), domainimagetask.Task{UserID: 22, ID: "local-projection-task", Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{localResult}}); err != nil {
+		t.Fatalf("Save local: %v", err)
+	}
+	localService := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(taskTestConfig(), nil, localStore, nil, nil, storage.NewLocalBackend(t.TempDir()))
+	localTask, err := localService.GetByID(t.Context(), 22, "local-projection-task")
+	if err != nil {
+		t.Fatalf("GetByID local: %v", err)
+	}
+	wantFallback := "/api/agent/image/v1/images/local-projection"
+	if localTask.Results[0].URL != wantFallback || localTask.Results[0].DownloadURL != wantFallback {
+		t.Fatalf("local media must use authenticated fallback route, got %#v", localTask.Results[0])
+	}
+
+	signingStore := imagetask.NewMemoryStore()
+	signedResult := provider.ImageResult{ID: "broken-signing", StorageDriver: "s3", ObjectKey: "generated/broken.png", MimeType: "image/png"}
+	if err := signingStore.Save(t.Context(), domainimagetask.Task{UserID: 22, ID: "broken-signing-task", Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{signedResult}}); err != nil {
+		t.Fatalf("Save signing: %v", err)
+	}
+	signingService := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(taskTestConfig(), nil, signingStore, nil, nil, &temporaryURLBackend{signErr: errors.New("signing unavailable")})
+	_, err = signingService.GetByID(t.Context(), 22, "broken-signing-task")
+	appErr, ok := err.(*errs.Error)
+	if !ok || appErr.Code != "STORAGE_CONFIG_UNAVAILABLE" {
+		t.Fatalf("signing failure must surface stable storage error, got %T %v", err, err)
+	}
+}
+
+func TestCancelPublishPendingAndApprovedAllowsReapply(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	const userID int64 = 71
+	const imageID = "cancel-publish-image"
+	if err := store.Save(t.Context(), domainimagetask.Task{
+		UserID: userID, ID: "cancel-publish-task", Status: domainimagetask.StatusSucceeded,
+		Prompt: "cancel publish", Results: []provider.ImageResult{{
+			ID: imageID, URL: "https://example.test/cancel.png", VisibilityStatus: domainimagetask.VisibilityPrivate,
+		}},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	svc := imagetask.NewServiceWithStore(taskTestConfig(), store)
+
+	pending, err := svc.RequestPublish(t.Context(), userID, imageID)
+	if err != nil {
+		t.Fatalf("RequestPublish pending: %v", err)
+	}
+	if pending.VisibilityStatus != domainimagetask.VisibilityPendingReview {
+		t.Fatalf("expected pending review, got %#v", pending)
+	}
+	canceled, err := svc.CancelPublish(t.Context(), userID, imageID)
+	if err != nil {
+		t.Fatalf("CancelPublish pending: %v", err)
+	}
+	if canceled.VisibilityStatus != domainimagetask.VisibilityPrivate || canceled.ReviewReason != "" || canceled.PublishedAt != nil {
+		t.Fatalf("pending cancellation must clear publication metadata: %#v", canceled)
+	}
+
+	reviewPage, err := svc.ListGallery(t.Context(), domainimagetask.GalleryListRequest{Page: 1, PageSize: 10, ReviewOnly: true})
+	if err != nil {
+		t.Fatalf("ListGallery review: %v", err)
+	}
+	if reviewPage.Total != 0 {
+		t.Fatalf("canceled image must leave review query: %#v", reviewPage)
+	}
+
+	if _, err := svc.RequestPublish(t.Context(), userID, imageID); err != nil {
+		t.Fatalf("RequestPublish again: %v", err)
+	}
+	publishedAt := time.Now().UTC()
+	if _, err := svc.ReviewImage(t.Context(), imageID, domainimagetask.VisibilityApproved, "", &publishedAt); err != nil {
+		t.Fatalf("ReviewImage approve: %v", err)
+	}
+	publicPage, err := svc.ListPublicGallery(t.Context(), domainimagetask.GalleryListRequest{Page: 1, PageSize: 10})
+	if err != nil || publicPage.Total != 1 {
+		t.Fatalf("approved image must enter public query: page=%#v err=%v", publicPage, err)
+	}
+	canceled, err = svc.CancelPublish(t.Context(), userID, imageID)
+	if err != nil {
+		t.Fatalf("CancelPublish approved: %v", err)
+	}
+	if canceled.VisibilityStatus != domainimagetask.VisibilityPrivate || canceled.PublishedAt != nil {
+		t.Fatalf("approved cancellation must return private: %#v", canceled)
+	}
+	publicPage, err = svc.ListPublicGallery(t.Context(), domainimagetask.GalleryListRequest{Page: 1, PageSize: 10})
+	if err != nil || publicPage.Total != 0 {
+		t.Fatalf("canceled image must leave public query: page=%#v err=%v", publicPage, err)
+	}
+	if _, err := svc.CancelPublish(t.Context(), userID, imageID); err != nil {
+		t.Fatalf("CancelPublish private idempotently: %v", err)
+	}
+	if _, err := svc.CancelPublish(t.Context(), userID+1, imageID); err == nil {
+		t.Fatal("expected non-owner cancellation to fail")
+	}
+	reapplied, err := svc.RequestPublish(t.Context(), userID, imageID)
+	if err != nil || reapplied.VisibilityStatus != domainimagetask.VisibilityPendingReview {
+		t.Fatalf("canceled image must allow reapply: image=%#v err=%v", reapplied, err)
 	}
 }
 
@@ -993,11 +1161,14 @@ func TestDeliverImageResultFallsBackToBackendBytes(t *testing.T) {
 }
 
 type temporaryURLBackend struct {
-	signedURL string
-	objectKey string
-	options   storage.TemporaryGetURLOptions
-	getCalls  int
-	signCalls int
+	signedURL   string
+	previewURL  string
+	downloadURL string
+	objectKey   string
+	options     storage.TemporaryGetURLOptions
+	getCalls    int
+	signCalls   int
+	signErr     error
 }
 
 func (backend *temporaryURLBackend) Driver() string { return "s3" }
@@ -1013,6 +1184,15 @@ func (backend *temporaryURLBackend) TemporaryGetURL(_ context.Context, objectKey
 	backend.signCalls++
 	backend.objectKey = objectKey
 	backend.options = options
+	if backend.signErr != nil {
+		return "", backend.signErr
+	}
+	if options.ResponseFilename != "" && backend.downloadURL != "" {
+		return backend.downloadURL, nil
+	}
+	if options.ResponseFilename == "" && backend.previewURL != "" {
+		return backend.previewURL, nil
+	}
 	return backend.signedURL, nil
 }
 
@@ -1205,6 +1385,10 @@ func (s *failingSaveStore) RequestPublish(ctx context.Context, userID int64, ima
 	return s.base.RequestPublish(ctx, userID, imageID)
 }
 
+func (s *failingSaveStore) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.CancelPublish(ctx, userID, imageID)
+}
+
 func (s *failingSaveStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
 	return s.base.SetImageGroup(ctx, userID, imageID, imageGroup)
 }
@@ -1331,6 +1515,10 @@ func (s *raceyTerminalStore) ListByUser(ctx context.Context, userID int64) ([]do
 
 func (s *raceyTerminalStore) RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
 	return s.base.RequestPublish(ctx, userID, imageID)
+}
+
+func (s *raceyTerminalStore) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.CancelPublish(ctx, userID, imageID)
 }
 
 func (s *raceyTerminalStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {

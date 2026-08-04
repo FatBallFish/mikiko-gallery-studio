@@ -25,6 +25,48 @@ func TestLocalBackendRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestTemporaryMediaURLProjectionSignsPreviewAndDownloadSeparately(t *testing.T) {
+	backend := &recordingTemporaryURLBackend{}
+	urls, supported, err := ProjectTemporaryMediaURLs(t.Context(), backend, "generated/result.png", "image/png", "result.png")
+	if err != nil {
+		t.Fatalf("ProjectTemporaryMediaURLs: %v", err)
+	}
+	if !supported || urls.PreviewURL != "https://objects.example.test/generated/result.png?mode=preview&sig=secret" || urls.DownloadURL != "https://objects.example.test/generated/result.png?mode=download&sig=secret" {
+		t.Fatalf("unexpected projected URLs %#v supported=%v", urls, supported)
+	}
+	if len(backend.options) != 2 || backend.options[0].Expiry != 5*time.Minute || backend.options[0].ResponseFilename != "" || backend.options[1].ResponseFilename != "result.png" {
+		t.Fatalf("unexpected signing options %#v", backend.options)
+	}
+	if _, supported, err := ProjectTemporaryMediaURLs(t.Context(), NewLocalBackend(t.TempDir()), "generated/result.png", "image/png", "result.png"); err != nil || supported {
+		t.Fatalf("local backend must deliberately use fallback URLs: supported=%v err=%v", supported, err)
+	}
+	invalid := &recordingTemporaryURLBackend{previewURL: "https://user:secret@objects.example.test/result.png?X-Amz-Signature=do-not-log"}
+	if _, _, err := ProjectTemporaryMediaURLs(t.Context(), invalid, "generated/result.png", "image/png", "result.png"); err == nil || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), "X-Amz-Signature") {
+		t.Fatalf("invalid signed URL must fail without leaking credentials or query values: %v", err)
+	}
+}
+
+type recordingTemporaryURLBackend struct {
+	options    []TemporaryGetURLOptions
+	previewURL string
+}
+
+func (b *recordingTemporaryURLBackend) Driver() string                                    { return "s3" }
+func (b *recordingTemporaryURLBackend) Put(context.Context, string, string, []byte) error { return nil }
+func (b *recordingTemporaryURLBackend) Get(context.Context, string) ([]byte, error)       { return nil, nil }
+func (b *recordingTemporaryURLBackend) Delete(context.Context, string) error              { return nil }
+func (b *recordingTemporaryURLBackend) TemporaryGetURL(_ context.Context, objectKey string, options TemporaryGetURLOptions) (string, error) {
+	b.options = append(b.options, options)
+	mode := "preview"
+	if options.ResponseFilename != "" {
+		mode = "download"
+	}
+	if mode == "preview" && b.previewURL != "" {
+		return b.previewURL, nil
+	}
+	return "https://objects.example.test/" + objectKey + "?mode=" + mode + "&sig=secret", nil
+}
+
 func TestLocalBackendGetBoundedHonorsLimitAndContext(t *testing.T) {
 	backend := NewLocalBackend(t.TempDir())
 	content := []byte("probe-content")

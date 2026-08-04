@@ -72,7 +72,8 @@ import type {
   UserGroupWriteRequest,
 } from './api-types'
 import { API_PATHS } from './api-types'
-import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
+import { fillPath, normalizePage, sharedApiClient } from './http-client'
+import { mediaAssetURL } from './media-url'
 
 const adminSessionMutationLock = 'pic-gallery-admin-session-mutation'
 const adminSessionMutationTimeoutMs = 10_000
@@ -210,11 +211,11 @@ export const adminApi = {
     const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.auditLogs, { query }))
     return result.items.map(toAudit)
   },
-  listReviews: async (status = '', page = 1, page_size = 20) => {
-    const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.imageReviews, { query: { status, page, page_size } }))
-    return result.items.map(toReview)
+  listReviews: async (query: Record<string, string | number | undefined> = {}) => {
+    const result = normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.imageReviews, { query }))
+    return { ...result, items: result.items.map(toReview) }
   },
-  imageReviewUrl: (image_id: string, accessToken?: string | null) => adminAssetUrl(fillPath(API_PATHS.ops.imageReviewImage, { image_id }), accessToken),
+  imageReviewUrl: (image_id: string, accessToken?: string | null, projectedURL?: string) => mediaAssetURL(projectedURL || fillPath(API_PATHS.ops.imageReviewImage, { image_id }), accessToken),
   decideReview: async (image_id: string, decision: 'approve' | 'reject' | 'unpublish', reason = '') => {
     const path = decision === 'approve' ? API_PATHS.ops.imageReviewApprove : decision === 'reject' ? API_PATHS.ops.imageReviewReject : API_PATHS.ops.imageReviewUnpublish
     return toReview(await sharedApiClient.request(path, { method: 'POST', pathParams: { image_id }, body: { reason } }))
@@ -231,6 +232,7 @@ export const adminApi = {
   createCashierPlan: (input: Partial<CashierPlan>) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlans, { method: 'POST', body: input }),
   updateCashierPlan: (plan_id: string | number, input: Partial<CashierPlan>) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlanDetail, { method: 'PUT', pathParams: { plan_id }, body: input }),
   deleteCashierPlan: (plan_id: string | number) => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlanDetail, { method: 'DELETE', pathParams: { plan_id } }),
+  transitionCashierPlan: (plan_id: string | number, action: 'enable' | 'disable' | 'archive' | 'restore') => sharedApiClient.request<CashierPlan>(API_PATHS.ops.cashierPlanTransition, { method: 'POST', pathParams: { plan_id, action } }),
   getCashierCustomAmountConfig: () => sharedApiClient.request<CashierCustomAmountConfig>(API_PATHS.ops.cashierCustomAmountConfig),
   updateCashierCustomAmountConfig: (input: CashierCustomAmountConfig) => sharedApiClient.request<CashierCustomAmountConfig>(API_PATHS.ops.cashierCustomAmountConfig, { method: 'PUT', body: input }),
   listPaymentVisibleMethods: async () => (await sharedApiClient.request<{ items: PaymentVisibleMethod[] }>(API_PATHS.ops.paymentVisibleMethods)).items ?? [],
@@ -301,7 +303,7 @@ export const adminApi = {
   deleteTextModel: (model_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.textModelDetail, { method: 'DELETE', pathParams: { model_id } }),
   setDefaultTextModel: (model_id: string | number) => sharedApiClient.request<TextModel>(API_PATHS.ops.textModelDefault, { method: 'PUT', pathParams: { model_id } }),
   testTextModel: (model_id: string | number) => sharedApiClient.request<TextModelConnectionTest>(API_PATHS.ops.textModelTest, { method: 'POST', pathParams: { model_id } }),
-  modelAccountTestImageUrl: (path: string, accessToken?: string | null) => adminAssetUrl(path, accessToken),
+  modelAccountTestImageUrl: (path: string, accessToken?: string | null) => mediaAssetURL(path, accessToken),
   listRouteModels: async (query: Record<string, string | number | boolean | undefined> = {}) => (normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.routeModels, { query }))).items.map(toRouteModel),
   createRouteModel: async (input: RouteModelWriteRequest) => toRouteModel(await sharedApiClient.request(API_PATHS.ops.routeModels, { method: 'POST', body: input })),
   updateRouteModel: async (route_model_id: string | number, input: Partial<RouteModelWriteRequest>) => toRouteModel(await sharedApiClient.request(API_PATHS.ops.routeModelDetail, { method: 'PUT', pathParams: { route_model_id }, body: input })),
@@ -621,7 +623,7 @@ function toReview(raw: any): ReviewItem {
     id: String(raw.id ?? raw.image_id),
     image_id: String(raw.image_id ?? raw.id),
     title: raw.title ?? raw.prompt?.slice(0, 32) ?? '公开图片',
-    owner: raw.owner ?? raw.user_id ?? '',
+    owner: raw.owner ?? raw.author_name ?? raw.user_id ?? '',
     task_type: raw.task_type ?? 'text_to_image',
     image_url: raw.image_url ?? raw.download_url ?? raw.url ?? '',
     status,
@@ -634,12 +636,6 @@ function normalizeReviewStatus(status: unknown) {
   const value = String(status ?? '').trim()
   if (value === 'pending') return 'pending_review'
   return value || 'private'
-}
-
-function adminAssetUrl(path: string, accessToken?: string | null) {
-  if (/^https?:\/\//i.test(path)) return path
-  const baseUrl = getDefaultBaseUrl() || globalThis.location?.origin || ''
-  return `${baseUrl}${withQuery(path, { access_token: accessToken })}`
 }
 
 function toRoute(raw: any): ModelRoute {

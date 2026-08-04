@@ -10,7 +10,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -118,7 +117,7 @@ func BuildWxPayJSAPIClientToken(ctx context.Context, callbacks CallbackURLConfig
 		PrepayID string `json:"prepay_id"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil || strings.TrimSpace(parsed.PrepayID) == "" {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return "", paymentInitializationOutcomeUncertain(errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable"))
 	}
 	return WxPayBuildJSAPIClientToken(appID, strings.TrimSpace(parsed.PrepayID), privateKeyRaw)
 }
@@ -163,7 +162,7 @@ func BuildWxPayH5PaymentURL(ctx context.Context, callbacks CallbackURLConfig, re
 		H5URL string `json:"h5_url"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil || strings.TrimSpace(parsed.H5URL) == "" {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return "", paymentInitializationOutcomeUncertain(errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable"))
 	}
 	return strings.TrimSpace(parsed.H5URL), nil
 }
@@ -202,7 +201,7 @@ func BuildWxPayNativeCodeURL(ctx context.Context, callbacks CallbackURLConfig, r
 		CodeURL string `json:"code_url"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil || strings.TrimSpace(parsed.CodeURL) == "" {
-		return "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return "", paymentInitializationOutcomeUncertain(errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable"))
 	}
 	return strings.TrimSpace(parsed.CodeURL), nil
 }
@@ -235,17 +234,21 @@ func postWxPayJSON(ctx context.Context, config map[string]any, requestURI string
 	}
 	httpReq.Header.Set("Authorization", auth)
 	httpReq.Header.Set("Accept", "application/json")
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := cashierProviderHTTPClient.Do(httpReq)
 	if err != nil {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return nil, paymentInitializationOutcomeUncertain(errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable"))
 	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readCashierProviderResponse(resp.Body)
 	if err != nil {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return nil, paymentInitializationOutcomeUncertain(errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable"))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		providerErr := errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		if resp.StatusCode >= 500 {
+			return nil, paymentInitializationOutcomeUncertain(providerErr)
+		}
+		return nil, providerErr
 	}
 	return respBody, nil
 }
@@ -315,5 +318,9 @@ func WxPayAmountFenFromCNY(amountCNY string) (int64, error) {
 	if err != nil || amount.LessThanOrEqual(decimal.Zero) {
 		return 0, errs.BadRequest("amount_cny is invalid")
 	}
-	return amount.Mul(decimal.NewFromInt(100)).Round(0).IntPart(), nil
+	scaled := amount.Mul(decimal.NewFromInt(100))
+	if !scaled.Equal(scaled.Truncate(0)) {
+		return 0, errs.BadRequest("amount_cny must not contain fractional fen")
+	}
+	return scaled.IntPart(), nil
 }

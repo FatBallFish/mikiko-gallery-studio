@@ -73,6 +73,156 @@ func TestReserveFinalizeAndLedger(t *testing.T) {
 	}
 }
 
+func TestMarkOrderPaidRejectsCallbackFromDifferentProviderInstance(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	order, err := svc.CreateCustomAmountOrder(t.Context(), domainbilling.CreateCustomAmountOrderRequest{
+		UserID:             901,
+		OrderNo:            "PGO-CALLBACK-BINDING-MEMORY",
+		AmountCNY:          "10.00",
+		CNYPerPoint:        "0.31250",
+		Provider:           "jeepay_alipay",
+		PurchaseType:       "custom_amount",
+		VisibleMethod:      "alipay",
+		ProviderType:       "jeepay_alipay",
+		ProviderInstanceID: 41,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+
+	if _, err := svc.MarkOrderPaid(t.Context(), domainbilling.MarkOrderPaidRequest{
+		Provider:           "jeepay_alipay",
+		ProviderInstanceID: 42,
+		OrderNo:            order.OrderNo,
+		TradeNo:            "JEEPAY-CROSS-INSTANCE",
+		AmountCNY:          order.AmountCNY,
+	}); err == nil {
+		t.Fatal("expected callback from a different provider instance to be rejected")
+	}
+	reloaded, err := svc.GetOrder(t.Context(), order.UserID, order.ID)
+	if err != nil {
+		t.Fatalf("GetOrder: %v", err)
+	}
+	if reloaded.Status != "pending" || reloaded.TradeNo != "" {
+		t.Fatalf("cross-instance callback must not mutate order: %#v", reloaded)
+	}
+}
+
+func TestPlanListDefaultsToNonArchivedAndSupportsStatusFilter(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+
+	if _, err := svc.TransitionPlan(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 1, Action: "disable"}); err != nil {
+		t.Fatalf("disable plan: %v", err)
+	}
+	if _, err := svc.TransitionPlan(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 2, Action: "archive"}); err != nil {
+		t.Fatalf("archive plan: %v", err)
+	}
+
+	visible, err := svc.ListPlans(t.Context(), domainbilling.SubscriptionPlanListRequest{})
+	if err != nil {
+		t.Fatalf("ListPlans default: %v", err)
+	}
+	if len(visible) != 1 || visible[0].ID != 1 || visible[0].Status != "disabled" {
+		t.Fatalf("expected only non-archived disabled plan, got %#v", visible)
+	}
+
+	archived, err := svc.ListPlans(t.Context(), domainbilling.SubscriptionPlanListRequest{Status: "archived"})
+	if err != nil {
+		t.Fatalf("ListPlans archived: %v", err)
+	}
+	if len(archived) != 1 || archived[0].ID != 2 || archived[0].Status != "archived" {
+		t.Fatalf("expected only archived plan, got %#v", archived)
+	}
+}
+
+func TestPlanStateTransitionsAreSafeAndIdempotent(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+
+	disabled, err := svc.TransitionPlan(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 1, Action: "disable"})
+	if err != nil {
+		t.Fatalf("disable plan: %v", err)
+	}
+	if disabled.Status != "disabled" || disabled.PurchaseEnabled {
+		t.Fatalf("disabled plan must not be purchasable: %#v", disabled)
+	}
+
+	disabledAgain, err := svc.TransitionPlan(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 1, Action: "disable"})
+	if err != nil {
+		t.Fatalf("disable plan again: %v", err)
+	}
+	if disabledAgain.Status != "disabled" || disabledAgain.PurchaseEnabled {
+		t.Fatalf("repeated disable must remain disabled: %#v", disabledAgain)
+	}
+
+	enabled, err := svc.TransitionPlan(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 1, Action: "enable"})
+	if err != nil {
+		t.Fatalf("enable plan: %v", err)
+	}
+	if enabled.Status != "active" || !enabled.PurchaseEnabled {
+		t.Fatalf("enabled points package must be purchasable: %#v", enabled)
+	}
+
+	archived, err := svc.TransitionPlan(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 1, Action: "archive"})
+	if err != nil {
+		t.Fatalf("archive plan: %v", err)
+	}
+	if archived.Status != "archived" || archived.PurchaseEnabled {
+		t.Fatalf("archived plan must not be purchasable: %#v", archived)
+	}
+
+	restored, err := svc.TransitionPlan(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 1, Action: "restore"})
+	if err != nil {
+		t.Fatalf("restore plan: %v", err)
+	}
+	if restored.Status != "disabled" || restored.PurchaseEnabled {
+		t.Fatalf("restored plan must require explicit enable: %#v", restored)
+	}
+
+	subscription, err := svc.CreatePlan(t.Context(), domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "subscription-placeholder", PlanName: "Subscription", PlanType: "subscription",
+		PurchaseEnabled: false, Status: "disabled", PriceCNY: "99.00000", Points: "500.00000",
+		Currency: "CNY", DurationDays: 30,
+	})
+	if err != nil {
+		t.Fatalf("CreatePlan subscription: %v", err)
+	}
+	subscription, err = svc.TransitionPlan(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: subscription.ID, Action: "enable"})
+	if err != nil {
+		t.Fatalf("enable subscription: %v", err)
+	}
+	if subscription.Status != "active" || subscription.PurchaseEnabled {
+		t.Fatalf("non-points plan must not become purchasable: %#v", subscription)
+	}
+}
+
+func TestPlanHistoricalOrderUsesSnapshotAfterArchive(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	order, err := svc.CreateOrder(t.Context(), domainbilling.CreateOrderRequest{
+		UserID: 902, OrderNo: "PGO-PLAN-SNAPSHOT", PlanCode: "basic-monthly", Provider: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	if order.Points != "100.00000" {
+		t.Fatalf("unexpected order snapshot: %#v", order)
+	}
+	if _, err := svc.TransitionPlan(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: order.PlanID, Action: "archive"}); err != nil {
+		t.Fatalf("archive plan: %v", err)
+	}
+	if _, err := svc.MarkOrderPaid(t.Context(), domainbilling.MarkOrderPaidRequest{
+		Provider: "mock", OrderNo: order.OrderNo, TradeNo: "SNAPSHOT-PAID", AmountCNY: order.AmountCNY,
+	}); err != nil {
+		t.Fatalf("MarkOrderPaid: %v", err)
+	}
+	balance, err := svc.GetBalance(t.Context(), order.UserID, "1.00000")
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if balance.AvailablePoints != "100.00000" {
+		t.Fatalf("historical order must credit snapshotted points, got %#v", balance)
+	}
+}
+
 func TestReserveTaskRejectsInsufficientBalance(t *testing.T) {
 	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
 	if _, err := svc.ReserveTask(context.Background(), domainbilling.ReserveRequest{

@@ -290,8 +290,20 @@ type GalleryListRequest struct {
 	ReviewOnly     bool
 	Sort           string
 	Query          string
+	UserQuery      string
+	PromptQuery    string
+	ModelQuery     string
 	RouteModelCode string
 	TaskType       string
+	BaseResolution string
+	RequestedSize  string
+	Width          int
+	Height         int
+	AspectRatio    string
+	CreatedFrom    time.Time
+	CreatedTo      time.Time
+	PublishedFrom  time.Time
+	PublishedTo    time.Time
 	ViewerUserID   int64
 	LikedOnly      bool
 	FavoritedOnly  bool

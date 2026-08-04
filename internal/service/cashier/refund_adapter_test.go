@@ -2,11 +2,99 @@ package cashier
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
 )
+
+func TestJeePayRefundUsesMillisecondTimeAndCanonicalSignature(t *testing.T) {
+	const merchantKey = "merchant-secret"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/refund/refundOrder" {
+			t.Fatalf("unexpected refund request %s %s", r.Method, r.URL.Path)
+		}
+		if contentType := r.Header.Get("Content-Type"); contentType != "application/json" {
+			t.Fatalf("refund content type = %q, want application/json", contentType)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode refund JSON: %v", err)
+		}
+		values := jeepayStringMapForTest(payload)
+		if _, ok := payload["reqTime"].(float64); !ok || len(values["reqTime"]) != 13 || values["version"] != "1.0" || values["signType"] != "MD5" {
+			t.Fatalf("unexpected JeePay refund contract: %#v", payload)
+		}
+		if _, ok := payload["refundAmount"].(float64); !ok || values["refundAmount"] != "1990" {
+			t.Fatalf("refundAmount must be numeric fen: %#v", payload)
+		}
+		if got, want := values["sign"], officialJeePaySignForTest(payload, merchantKey); got != want {
+			t.Fatalf("refund sign = %s, want %s", got, want)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"state":1,"refundOrderId":"R20260804001"}}`))
+	}))
+	defer upstream.Close()
+
+	result, err := JeePayRefundPaymentBuilder(context.Background(), RefundPaymentRequest{
+		Order: OrderSnapshot{OrderNo: "PGO-JEEPAY-REFUND", TradeNo: "P20260804001", AmountCNY: "19.90000", Status: "completed"},
+		Instance: domaincashier.ProviderInstance{ID: 8, ProviderType: "jeepay_alipay", Config: map[string]any{
+			"gateway_url": upstream.URL, "mch_no": "MCH10001", "app_id": "APP10001", "key": merchantKey,
+		}},
+		RefundTradeNo: "MGR-REFUND-001", RefundAmountCNY: "19.90000", Reason: "user requested",
+	})
+	if err != nil {
+		t.Fatalf("JeePayRefundPaymentBuilder returned error: %v", err)
+	}
+	if result.ChannelRefundNo != "R20260804001" || strings.TrimSpace(result.RefundStatus) == "" {
+		t.Fatalf("unexpected refund result %#v", result)
+	}
+}
+
+func TestPaymentRefundsRequireExplicitProviderSuccessCode(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer upstream.Close()
+
+	tests := []struct {
+		name   string
+		refund func() error
+	}{
+		{name: "JeePay", refund: func() error {
+			_, err := JeePayRefundPaymentBuilder(context.Background(), RefundPaymentRequest{
+				Order: OrderSnapshot{OrderNo: "PGO-JEEPAY-REFUND-MISSING-CODE", AmountCNY: "19.90000", Status: "completed"},
+				Instance: domaincashier.ProviderInstance{ID: 8, ProviderType: "jeepay_alipay", Config: map[string]any{
+					"gateway_url": upstream.URL, "mch_no": "MCH10001", "app_id": "APP10001", "key": "merchant-secret",
+				}},
+				RefundTradeNo: "MGR-JEEPAY-MISSING-CODE", RefundAmountCNY: "19.90000",
+			})
+			return err
+		}},
+		{name: "Alipay", refund: func() error {
+			_, err := AlipayRefundPaymentBuilder(context.Background(), RefundPaymentRequest{
+				Order: OrderSnapshot{OrderNo: "PGO-ALIPAY-REFUND-MISSING-CODE", AmountCNY: "19.90000", Status: "completed"},
+				Instance: domaincashier.ProviderInstance{ID: 12, ProviderType: "alipay_direct", Config: map[string]any{
+					"gateway_url": upstream.URL, "app_id": "app-123", "app_private_key": alipayTestPrivateKeyPEM(t),
+				}},
+				RefundTradeNo: "MGR-ALIPAY-MISSING-CODE", RefundAmountCNY: "19.90000",
+			})
+			return err
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.refund(); err == nil {
+				t.Fatal("refund response without an explicit success code must be rejected")
+			}
+		})
+	}
+}
 
 func TestRefundAdapterRegistryDispatchesRegisteredProvider(t *testing.T) {
 	registry := NewRefundAdapterRegistry()

@@ -54,6 +54,60 @@ type TemporaryURLSigner interface {
 	TemporaryGetURL(ctx context.Context, objectKey string, options TemporaryGetURLOptions) (string, error)
 }
 
+const TemporaryMediaURLExpiry = 5 * time.Minute
+
+type TemporaryMediaURLs struct {
+	PreviewURL  string
+	DownloadURL string
+}
+
+func ProjectTemporaryMediaURLs(ctx context.Context, backend Backend, objectKey, contentType, responseFilename string) (TemporaryMediaURLs, bool, error) {
+	signer, ok := backend.(TemporaryURLSigner)
+	if !ok {
+		return TemporaryMediaURLs{}, false, nil
+	}
+	objectKey = strings.TrimSpace(objectKey)
+	if objectKey == "" {
+		return TemporaryMediaURLs{}, true, errors.New("temporary media object key is required")
+	}
+	previewURL, err := signer.TemporaryGetURL(ctx, objectKey, TemporaryGetURLOptions{
+		Expiry:      TemporaryMediaURLExpiry,
+		ContentType: strings.TrimSpace(contentType),
+	})
+	if err != nil {
+		return TemporaryMediaURLs{}, true, fmt.Errorf("sign temporary media preview URL: %w", err)
+	}
+	previewURL, err = validateTemporaryMediaURL(previewURL)
+	if err != nil {
+		return TemporaryMediaURLs{}, true, fmt.Errorf("validate temporary media preview URL: %w", err)
+	}
+	downloadURL, err := signer.TemporaryGetURL(ctx, objectKey, TemporaryGetURLOptions{
+		Expiry:           TemporaryMediaURLExpiry,
+		ResponseFilename: strings.TrimSpace(responseFilename),
+		ContentType:      strings.TrimSpace(contentType),
+	})
+	if err != nil {
+		return TemporaryMediaURLs{}, true, fmt.Errorf("sign temporary media download URL: %w", err)
+	}
+	downloadURL, err = validateTemporaryMediaURL(downloadURL)
+	if err != nil {
+		return TemporaryMediaURLs{}, true, fmt.Errorf("validate temporary media download URL: %w", err)
+	}
+	return TemporaryMediaURLs{PreviewURL: previewURL, DownloadURL: downloadURL}, true, nil
+}
+
+func validateTemporaryMediaURL(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	target, err := url.Parse(value)
+	if err != nil {
+		return "", err
+	}
+	if (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.Fragment != "" {
+		return "", errors.New("temporary media URL must be an absolute HTTP(S) URL without credentials or fragment")
+	}
+	return target.String(), nil
+}
+
 var (
 	_ BoundedGetter      = (*LocalBackend)(nil)
 	_ BoundedGetter      = (*S3Backend)(nil)

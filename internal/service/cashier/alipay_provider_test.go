@@ -56,8 +56,8 @@ func TestAlipayPaymentDisplayBuilderBuildsSignedRedirectURL(t *testing.T) {
 	if query.Get("app_id") != "app-123" || query.Get("method") != "alipay.trade.page.pay" {
 		t.Fatalf("unexpected alipay gateway params: %s", result.PaymentURL)
 	}
-	if query.Get("out_trade_no") != "PGO-ALI-001" || query.Get("total_amount") != "19.90000" {
-		t.Fatalf("expected order amount params in %s", result.PaymentURL)
+	if query.Has("out_trade_no") || query.Has("total_amount") {
+		t.Fatalf("Alipay business fields must only appear in biz_content: %s", result.PaymentURL)
 	}
 	if query.Get("notify_url") != "https://pic.example.com/api/open/image/v1/payments/webhooks/alipay_direct" {
 		t.Fatalf("unexpected notify_url %q", query.Get("notify_url"))
@@ -73,6 +73,18 @@ func TestAlipayPaymentDisplayBuilderBuildsSignedRedirectURL(t *testing.T) {
 	}
 	if result.Display["type"] != "redirect" || result.Display["payment_url"] != result.PaymentURL || result.Display["signed"] != true || result.Display["sign_type"] != "RSA2" {
 		t.Fatalf("unexpected alipay display %#v", result.Display)
+	}
+}
+
+func TestAlipayPaymentRejectsFractionalFen(t *testing.T) {
+	req := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "alipay_direct", Config: map[string]any{
+			"app_id": "app-123", "app_private_key": alipayTestPrivateKeyPEM(t),
+		}},
+		OrderNo: "PGO-ALIPAY-FRACTIONAL-FEN", AmountCNY: "12.345", Subject: "fractional fen",
+	}
+	if _, _, err := BuildAlipayPaymentURL(CallbackURLConfig{}, req); err == nil {
+		t.Fatal("alipay payment must reject amounts that cannot be represented as whole fen")
 	}
 }
 

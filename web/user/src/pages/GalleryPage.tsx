@@ -187,7 +187,8 @@ export function GalleryPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [groupDialog, setGroupDialog] = useState<{ ids: string[] } | null>(null)
   const [groupDraft, setGroupDraft] = useState('')
-  const [deleteDialog, setDeleteDialog] = useState<{ images: GalleryImage[] } | null>(null)
+	const [deleteDialog, setDeleteDialog] = useState<{ images: GalleryImage[] } | null>(null)
+	const [publishDialog, setPublishDialog] = useState<{ image: GalleryImage; label: string } | null>(null)
 
   async function loadPage(pageNumber: number, mode: 'replace' | 'append') {
     const generation = ++loadGenerationRef.current
@@ -294,10 +295,36 @@ export function GalleryPage() {
   const allVisibleSelected = useMemo(() => areAllVisibleGalleryItemsSelected(filtered, selectedIds), [filtered, selectedIds])
 
   async function publishImage(image: GalleryImage) {
-    setBusyId(image.id)
-    try {
-      await userApi.publishImage(image.id)
+	setBusyId(image.id)
+	try {
+		const updated = await userApi.publishImage(image.id)
+		setSelected((current) => current?.id === updated.id ? { ...current, ...updated } : current)
       app.notify('success', '已提交公开审核')
+      await reloadLoadedPages()
+    } catch (err) {
+      app.notify('error', errorMessage(err))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  function handlePublishAction(image: GalleryImage) {
+    const card = galleryImageCard(image)
+    if (card.publishAction === 'cancel') {
+      setPublishDialog({ image, label: card.publishActionLabel })
+      return
+    }
+    if (card.publishAction === 'request') void publishImage(image)
+  }
+
+  async function confirmCancelPublish() {
+    if (!publishDialog) return
+    setBusyId(publishDialog.image.id)
+    try {
+      const updated = await userApi.cancelImagePublish(publishDialog.image.id)
+      setSelected((current) => current?.id === updated.id ? { ...current, ...updated } : current)
+      setPublishDialog(null)
+      app.notify('success', publishDialog.label === '取消公开' ? '已取消公开' : '已取消公开申请')
       await reloadLoadedPages()
     } catch (err) {
       app.notify('error', errorMessage(err))
@@ -310,7 +337,12 @@ export function GalleryPage() {
     if (!images.length) return
     setBusyId('batch')
     try {
-      const result = await runGalleryBatch(images, (image) => userApi.publishImage(image.id))
+      const requestable = images.filter((image) => galleryImageCard(image).publishAction === 'request')
+      if (!requestable.length) {
+        app.notify('error', '所选图片中没有可申请公开的项目')
+        return
+      }
+      const result = await runGalleryBatch(requestable, (image) => userApi.publishImage(image.id))
       await reloadLoadedPages()
       const succeeded = new Set(result.succeeded.map(({ item }) => item.id))
       clearSucceededSelection(succeeded)
@@ -499,9 +531,10 @@ export function GalleryPage() {
         }}
         onReuse={reuseConfiguration}
         onDownload={(image) => downloadImage(image)}
-        onPublish={publishImage}
+			onPublish={handlePublishAction}
         onDelete={(image) => requestDeleteImages([image])}
         onGroup={(image) => openGroupDialog([image])}
+        onMediaRefresh={() => void reloadLoadedPages()}
       />
 
       <div ref={loadMoreRef} className="flex min-h-16 items-center justify-center py-4 text-sm text-[var(--muted)]" aria-live="polite">
@@ -525,16 +558,31 @@ export function GalleryPage() {
           await copyText(prompt)
           app.notify('success', 'Prompt 已复制')
         }}
-        actions={selected ? [
+		actions={selected ? [
           { key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: () => reuseConfiguration(selected) },
           { key: 'download', label: '下载图片', icon: <PublicDetailIcon name="download" />, onClick: () => downloadImage(selected), disabled: !selected.url && !selected.download_url },
-          { key: 'public', label: '申请公开', icon: <PublicDetailIcon name="public" />, onClick: () => void publishImage(selected), disabled: !selected.url },
+			{ key: 'public', label: galleryImageCard(selected).publishActionLabel, icon: <PublicDetailIcon name="public" />, onClick: () => handlePublishAction(selected), disabled: !galleryImageCard(selected).canPublish },
           { key: 'group', label: '设置分组', icon: <PublicDetailIcon name="group" />, onClick: () => openGroupDialog([selected]) },
           { key: 'delete', label: '删除图片', icon: <PublicDetailIcon name="delete" />, onClick: () => requestDeleteImages([selected]), tone: 'danger' },
         ] : []}
         previewSourceLabel="历史资产"
-        onClose={() => setSelected(null)}
-      />
+        onMediaRefresh={() => void reloadLoadedPages()}
+		onClose={() => setSelected(null)}
+	/>
+	{publishDialog ? (
+		<Modal title={publishDialog.label} onClose={() => setPublishDialog(null)}>
+			<div className={galleryClasses.deleteConfirm}>
+				<div>
+					<h3 className={galleryClasses.deleteTitle}>确认{publishDialog.label}？</h3>
+					<p className={galleryClasses.deleteText}>{publishDialog.label === '取消公开' ? '图片将立即从公开画廊移除，并恢复为私有状态。' : '图片将从审核队列移除，并恢复为私有状态。'}</p>
+				</div>
+				<div className={galleryClasses.deleteActions}>
+					<Button tone="ghost" onClick={() => setPublishDialog(null)} disabled={busyId === publishDialog.image.id}>返回</Button>
+					<Button tone="danger" busy={busyId === publishDialog.image.id} onClick={() => void confirmCancelPublish()}>确认</Button>
+				</div>
+			</div>
+		</Modal>
+	) : null}
       {deleteDialog ? (
         <Modal title="永久删除图片" onClose={() => setDeleteDialog(null)}>
           <div className={galleryClasses.deleteConfirm}>
@@ -578,7 +626,7 @@ export function GalleryPage() {
   )
 }
 
-function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, onOpen, onCopyPrompt, onReuse, onDownload, onPublish, onDelete, onGroup }: {
+function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, onOpen, onCopyPrompt, onReuse, onDownload, onPublish, onDelete, onGroup, onMediaRefresh }: {
   rows: GalleryImage[]
   accessToken?: string
   busyId: string | null
@@ -591,6 +639,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
   onPublish: (image: GalleryImage) => void
   onDelete: (image: GalleryImage) => void
   onGroup: (image: GalleryImage) => void
+  onMediaRefresh: () => void | Promise<void>
 }) {
   return (
     <div className={galleryClasses.grid}>
@@ -606,6 +655,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
               aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
               selected={selectedIds.has(image.id)}
               onOpen={() => onOpen(image)}
+              onMediaRefresh={onMediaRefresh}
               imageClassName={galleryClasses.thumbImage}
               topAction={(
                 <button

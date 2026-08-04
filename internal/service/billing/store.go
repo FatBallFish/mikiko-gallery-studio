@@ -97,9 +97,10 @@ type ChargebackSummaryStoreRequest struct {
 type Store interface {
 	GetBalance(ctx context.Context, userID int64) (BalanceState, error)
 	ListLedger(ctx context.Context, userID int64, page, pageSize int) (domainbilling.LedgerPage, error)
-	ListPlans(ctx context.Context) ([]domainbilling.SubscriptionPlan, error)
+	ListPlans(ctx context.Context, req domainbilling.SubscriptionPlanListRequest) ([]domainbilling.SubscriptionPlan, error)
 	CreatePlan(ctx context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
 	UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
+	TransitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
 	DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error)
 	GetActiveSubscription(ctx context.Context, userID int64) (*domainbilling.UserSubscriptionSummary, error)
 	ListOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.PaymentOrderPage, error)
@@ -112,6 +113,8 @@ type Store interface {
 	ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error)
 	CreateOrder(ctx context.Context, req domainbilling.CreateOrderRequest) (domainbilling.PaymentOrder, error)
 	CreateCustomAmountOrder(ctx context.Context, req domainbilling.CreateCustomAmountOrderRequest) (domainbilling.PaymentOrder, error)
+	InitializePaymentOrder(ctx context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error)
+	FailPaymentOrderInitialization(ctx context.Context, req domainbilling.FailPaymentOrderInitializationRequest) (domainbilling.PaymentOrder, error)
 	CancelOrder(ctx context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error)
 	MarkOrderPaid(ctx context.Context, req domainbilling.MarkOrderPaidRequest) (domainbilling.PaymentOrder, error)
 	CompleteRechargeOrder(ctx context.Context, req domainbilling.CompleteRechargeOrderRequest) (domainbilling.PaymentOrder, error)
@@ -239,11 +242,15 @@ func (s *MemoryStore) ListLedger(_ context.Context, userID int64, page, pageSize
 	}, nil
 }
 
-func (s *MemoryStore) ListPlans(_ context.Context) ([]domainbilling.SubscriptionPlan, error) {
+func (s *MemoryStore) ListPlans(_ context.Context, req domainbilling.SubscriptionPlanListRequest) ([]domainbilling.SubscriptionPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	items := make([]domainbilling.SubscriptionPlan, 0, len(s.plans))
-	items = append(items, s.plans...)
+	for _, item := range s.plans {
+		if planMatchesListRequest(item, req) {
+			items = append(items, item)
+		}
+	}
 	return items, nil
 }
 
@@ -288,8 +295,9 @@ func (s *MemoryStore) UpdatePlan(_ context.Context, req domainbilling.UpdateSubs
 		}
 		item.PlanName = strings.TrimSpace(req.PlanName)
 		item.PlanType = normalizePlanType(req.PlanType)
-		item.PurchaseEnabled = req.PurchaseEnabled
-		item.Status = normalizePlanStatus(req.Status)
+		if item.PlanType != "points_package" {
+			item.PurchaseEnabled = false
+		}
 		item.PriceCNY = strings.TrimSpace(req.PriceCNY)
 		item.Points = strings.TrimSpace(req.Points)
 		item.BonusPoints = strings.TrimSpace(req.BonusPoints)
@@ -304,20 +312,67 @@ func (s *MemoryStore) UpdatePlan(_ context.Context, req domainbilling.UpdateSubs
 	return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
 }
 
-func (s *MemoryStore) DeletePlan(_ context.Context, planID int64) (domainbilling.SubscriptionPlan, error) {
+func (s *MemoryStore) DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error) {
+	return s.TransitionPlan(ctx, domainbilling.TransitionSubscriptionPlanRequest{
+		PlanID: planID,
+		Action: domainbilling.SubscriptionPlanActionArchive,
+	})
+}
+
+func (s *MemoryStore) TransitionPlan(_ context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for index, item := range s.plans {
-		if item.ID != planID {
+		if item.ID != req.PlanID {
 			continue
 		}
-		item.Status = "archived"
-		item.PurchaseEnabled = false
+		status, purchaseEnabled, err := TransitionPlanState(item, req.Action)
+		if err != nil {
+			return domainbilling.SubscriptionPlan{}, err
+		}
+		item.Status = status
+		item.PurchaseEnabled = purchaseEnabled
 		item.UpdatedAt = time.Now().UTC()
 		s.plans[index] = item
 		return item, nil
 	}
 	return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
+}
+
+func planMatchesListRequest(plan domainbilling.SubscriptionPlan, req domainbilling.SubscriptionPlanListRequest) bool {
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status == "all" {
+		return true
+	}
+	if status != "" {
+		return plan.Status == status
+	}
+	return plan.Status != domainbilling.SubscriptionPlanStatusArchived
+}
+
+func TransitionPlanState(plan domainbilling.SubscriptionPlan, action string) (string, bool, error) {
+	action = strings.ToLower(strings.TrimSpace(action))
+	switch action {
+	case domainbilling.SubscriptionPlanActionEnable:
+		if plan.Status == domainbilling.SubscriptionPlanStatusArchived {
+			return "", false, errs.New(http.StatusConflict, errs.CodeConflict, "archived subscription plan must be restored before enabling")
+		}
+		return domainbilling.SubscriptionPlanStatusActive, plan.PlanType == "points_package", nil
+	case domainbilling.SubscriptionPlanActionDisable:
+		if plan.Status == domainbilling.SubscriptionPlanStatusArchived {
+			return "", false, errs.New(http.StatusConflict, errs.CodeConflict, "archived subscription plan cannot be disabled")
+		}
+		return domainbilling.SubscriptionPlanStatusDisabled, false, nil
+	case domainbilling.SubscriptionPlanActionArchive:
+		return domainbilling.SubscriptionPlanStatusArchived, false, nil
+	case domainbilling.SubscriptionPlanActionRestore:
+		if plan.Status == domainbilling.SubscriptionPlanStatusActive {
+			return "", false, errs.New(http.StatusConflict, errs.CodeConflict, "active subscription plan cannot be restored")
+		}
+		return domainbilling.SubscriptionPlanStatusDisabled, false, nil
+	default:
+		return "", false, errs.BadRequest("invalid subscription plan action")
+	}
 }
 
 func (s *MemoryStore) GetActiveSubscription(_ context.Context, _ int64) (*domainbilling.UserSubscriptionSummary, error) {
@@ -668,6 +723,50 @@ func (s *MemoryStore) CreateCustomAmountOrder(_ context.Context, req domainbilli
 	return order, nil
 }
 
+func (s *MemoryStore) InitializePaymentOrder(_ context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.orders[req.OrderID]
+	if !ok || order.UserID != req.UserID {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	if order.Status != "pending" {
+		return order, nil
+	}
+	order.PaymentDisplay = cloneMap(req.PaymentDisplay)
+	order.PaymentURL = strings.TrimSpace(req.PaymentURL)
+	order.QRCode = strings.TrimSpace(req.QRCode)
+	order.ClientToken = strings.TrimSpace(req.ClientToken)
+	order.TradeNo = strings.TrimSpace(req.TradeNo)
+	order.FailureReason = ""
+	order.UpdatedAt = time.Now().UTC()
+	s.orders[order.ID] = order
+	return order, nil
+}
+
+func (s *MemoryStore) FailPaymentOrderInitialization(_ context.Context, req domainbilling.FailPaymentOrderInitializationRequest) (domainbilling.PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.orders[req.OrderID]
+	if !ok || order.UserID != req.UserID {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+	}
+	if order.Status != "pending" || paymentOrderHasInitialization(order) {
+		return order, nil
+	}
+	now := time.Now().UTC()
+	order.Status = "failed"
+	order.FailureReason = strings.TrimSpace(req.FailureReason)
+	order.ClosedAt = &now
+	order.UpdatedAt = now
+	s.orders[order.ID] = order
+	return order, nil
+}
+
+func paymentOrderHasInitialization(order domainbilling.PaymentOrder) bool {
+	return strings.TrimSpace(order.PaymentURL) != "" || strings.TrimSpace(order.QRCode) != "" || strings.TrimSpace(order.ClientToken) != "" || len(order.PaymentDisplay) > 0
+}
+
 func (s *MemoryStore) CancelOrder(_ context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -692,6 +791,9 @@ func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrd
 	for id, order := range s.orders {
 		if order.OrderNo != req.OrderNo {
 			continue
+		}
+		if err := ValidatePaymentCallbackBinding(order.ProviderType, order.Provider, order.ProviderInstanceID, req); err != nil {
+			return domainbilling.PaymentOrder{}, err
 		}
 		if err := ensurePaymentAmountMatches(order.AmountCNY, req.AmountCNY, s.scale); err != nil {
 			return domainbilling.PaymentOrder{}, err
@@ -739,6 +841,21 @@ func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrd
 		return order, nil
 	}
 	return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+}
+
+func ValidatePaymentCallbackBinding(orderProviderType, orderProvider string, orderProviderInstanceID int64, req domainbilling.MarkOrderPaidRequest) error {
+	expectedProvider := strings.ToLower(strings.TrimSpace(orderProviderType))
+	if expectedProvider == "" {
+		expectedProvider = strings.ToLower(strings.TrimSpace(orderProvider))
+	}
+	callbackProvider := strings.ToLower(strings.TrimSpace(req.Provider))
+	if expectedProvider == "" || callbackProvider == "" || expectedProvider != callbackProvider {
+		return errs.New(http.StatusConflict, errs.CodePaymentSignatureInvalid, "payment webhook provider does not match order")
+	}
+	if orderProviderInstanceID > 0 && req.ProviderInstanceID != orderProviderInstanceID && callbackProvider != "mock" {
+		return errs.New(http.StatusConflict, errs.CodePaymentSignatureInvalid, "payment webhook provider instance does not match order")
+	}
+	return nil
 }
 
 func ensurePaymentAmountMatches(orderAmountCNY, callbackAmountCNY string, scale int32) error {

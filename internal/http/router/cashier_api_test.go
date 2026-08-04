@@ -531,8 +531,11 @@ func TestCashierJeePayDisplayIsSignedAndPersisted(t *testing.T) {
 	if order.Provider != "jeepay_alipay" || order.ProviderType != "jeepay_alipay" || order.ProviderInstanceID == 0 || order.PaymentURL != "https://jeepay.example.com/pay/session" {
 		t.Fatalf("expected jeepay order provider metadata and payment url, got %#v", order)
 	}
-	if order.PaymentDisplay["type"] != "redirect" || order.PaymentDisplay["payment_url"] != order.PaymentURL || order.PaymentDisplay["prepay_mode"] != "api" || order.PaymentDisplay["sign_type"] != "MD5" || order.PaymentDisplay["way_code"] != "ALI_PC" {
-		t.Fatalf("expected signed jeepay display to mirror payment url, got %#v", order.PaymentDisplay)
+	if order.PaymentDisplay["type"] != "redirect" || order.PaymentDisplay["payment_url"] != order.PaymentURL || order.PaymentDisplay["prepay_mode"] != "api" || order.PaymentDisplay["way_code"] != "ALI_PC" {
+		t.Fatalf("expected jeepay display to mirror payment url, got %#v", order.PaymentDisplay)
+	}
+	if _, ok := order.PaymentDisplay["sign"]; ok {
+		t.Fatalf("jeepay order response must not expose the merchant request signature: %#v", order.PaymentDisplay)
 	}
 
 	detailReq := httptest.NewRequest(http.MethodGet, "/api/agent/cashier/v1/orders/"+jsonInt64(order.ID), nil)
@@ -550,6 +553,104 @@ func TestCashierJeePayDisplayIsSignedAndPersisted(t *testing.T) {
 	}
 	if detailResp.Data.PaymentURL != order.PaymentURL || detailResp.Data.PaymentDisplay["payment_url"] != order.PaymentURL {
 		t.Fatalf("expected persisted jeepay payment display, create=%#v detail=%#v", order, detailResp.Data)
+	}
+}
+
+func TestCashierProviderFailurePersistsOneFailedOrderPerIdempotencyKey(t *testing.T) {
+	var upstreamCalls int
+	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-failed-order@example.com", func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":1008,"msg":"merchant configuration rejected"}`))
+	})
+
+	const idempotencyKey = "checkout-order-provider-failure"
+	for attempt := 0; attempt < 2; attempt++ {
+		createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"plan","plan_code":"basic-monthly","visible_method":"alipay"}`))
+		createReq.Header.Set("Authorization", "Bearer "+userToken)
+		createReq.Header.Set("Content-Type", "application/json")
+		createReq.Header.Set("Idempotency-Key", idempotencyKey)
+		createRec := httptest.NewRecorder()
+		handler.ServeHTTP(createRec, createReq)
+		if createRec.Code != http.StatusBadGateway {
+			t.Fatalf("attempt %d: expected provider failure 502, got %d body=%s", attempt+1, createRec.Code, createRec.Body.String())
+		}
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/agent/cashier/v1/orders?page=1&page_size=20", nil)
+	listReq.Header.Set("Authorization", "Bearer "+userToken)
+	listRec := httptest.NewRecorder()
+	handler.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list orders expected 200, got %d body=%s", listRec.Code, listRec.Body.String())
+	}
+	var listResp struct {
+		Data struct {
+			Items []domainbilling.PaymentOrder `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(listRec.Body).Decode(&listResp); err != nil {
+		t.Fatalf("decode order list: %v", err)
+	}
+	if len(listResp.Data.Items) != 1 {
+		t.Fatalf("expected exactly one durable failed order, got %#v", listResp.Data)
+	}
+	order := listResp.Data.Items[0]
+	if order.Status != "failed" || order.IdempotencyKey != idempotencyKey || strings.TrimSpace(order.FailureReason) == "" {
+		t.Fatalf("expected failed order with safe diagnostic, got %#v", order)
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected known failed initialization to call provider once, got %d", upstreamCalls)
+	}
+}
+
+func TestCashierTransportUncertaintyKeepsOrderPendingForCallback(t *testing.T) {
+	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-uncertain-order@example.com", func(w http.ResponseWriter, _ *http.Request) {
+		connection, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Fatalf("hijack upstream connection: %v", err)
+		}
+		_ = connection.Close()
+	})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"plan","plan_code":"basic-monthly","visible_method":"alipay"}`))
+	createReq.Header.Set("Authorization", "Bearer "+userToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("Idempotency-Key", "checkout-order-transport-uncertain")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusBadGateway {
+		t.Fatalf("expected uncertain provider result 502, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/agent/cashier/v1/orders?page=1&page_size=20", nil)
+	listReq.Header.Set("Authorization", "Bearer "+userToken)
+	listRec := httptest.NewRecorder()
+	handler.ServeHTTP(listRec, listReq)
+	var listResp struct {
+		Data struct {
+			Items []domainbilling.PaymentOrder `json:"items"`
+		} `json:"data"`
+	}
+	if listRec.Code != http.StatusOK || json.NewDecoder(listRec.Body).Decode(&listResp) != nil || len(listResp.Data.Items) != 1 {
+		t.Fatalf("expected one durable uncertain order, status=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+	order := listResp.Data.Items[0]
+	if order.Status != "pending" || order.FailureReason != "" {
+		t.Fatalf("transport uncertainty must remain pending for callback reconciliation: %#v", order)
+	}
+
+	values := jeepayWebhookValuesForTest(order, "MCH10001", "merchant-secret", "1990", "jeepay-trade-after-uncertain-response")
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/jeepay_alipay", strings.NewReader(values.Encode()))
+	webhookReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	webhookRec := httptest.NewRecorder()
+	handler.ServeHTTP(webhookRec, webhookReq)
+	if webhookRec.Code != http.StatusOK || webhookRec.Body.String() != "success" {
+		t.Fatalf("callback must reconcile an uncertain order, status=%d body=%s", webhookRec.Code, webhookRec.Body.String())
+	}
+	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
+	if completed.Status != "completed" || completed.TradeNo != "jeepay-trade-after-uncertain-response" {
+		t.Fatalf("expected callback to complete uncertain order: %#v", completed)
 	}
 }
 
@@ -704,7 +805,9 @@ func TestCashierJeePayAPIModePostsUnifiedOrderAndPersistsDisplay(t *testing.T) {
 		if r.URL.Path != "/api/pay/unifiedOrder" {
 			t.Fatalf("unexpected jeepay api path %s", r.URL.Path)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&upstreamValues); err != nil {
+		var err error
+		upstreamValues, err = decodeJeePayBodyForRouterTest(r)
+		if err != nil {
 			t.Fatalf("decode jeepay unified order JSON: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -781,7 +884,9 @@ func TestCashierJeePayAPIModePostsUnifiedOrderAndPersistsDisplay(t *testing.T) {
 func TestCashierJeePayAPIModeSerializesStructuredChannelExtra(t *testing.T) {
 	var upstreamValues map[string]string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&upstreamValues); err != nil {
+		var err error
+		upstreamValues, err = decodeJeePayBodyForRouterTest(r)
+		if err != nil {
 			t.Fatalf("decode jeepay unified order JSON: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -886,6 +991,26 @@ func TestCashierJeePayWebhookRejectsAmountMismatch(t *testing.T) {
 	}
 }
 
+func TestCashierJeePayWebhookRejectsMissingApplicationIdentity(t *testing.T) {
+	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-missing-app-user@example.com")
+	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	values := jeepayWebhookValuesForTest(order, "MCH10001", "merchant-secret", "1250", "jeepay-trade-missing-app")
+	values.Del("appId")
+	values.Set("sign", jeepaySignForTest(values, "merchant-secret"))
+
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/jeepay_alipay", strings.NewReader(values.Encode()))
+	webhookReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	webhookRec := httptest.NewRecorder()
+	handler.ServeHTTP(webhookRec, webhookReq)
+	if webhookRec.Code == http.StatusOK {
+		t.Fatalf("jeepay webhook without appId must be rejected, body=%s", webhookRec.Body.String())
+	}
+	pending := getCashierOrderForTest(t, handler, userToken, order.ID)
+	if pending.Status != "pending" || pending.LedgerID != 0 {
+		t.Fatalf("jeepay webhook without appId must not credit order: %#v", pending)
+	}
+}
+
 func TestCashierJeePayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-success-user@example.com")
 	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
@@ -898,7 +1023,7 @@ func TestCashierJeePayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 	if webhookRec.Code != http.StatusOK {
 		t.Fatalf("expected jeepay webhook 200, got %d body=%s", webhookRec.Code, webhookRec.Body.String())
 	}
-	if strings.TrimSpace(webhookRec.Body.String()) != "success" {
+	if webhookRec.Body.String() != "success" {
 		t.Fatalf("expected raw jeepay success response, got body=%s", webhookRec.Body.String())
 	}
 	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
@@ -913,7 +1038,7 @@ func TestCashierJeePayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 	if secondRec.Code != http.StatusOK {
 		t.Fatalf("expected second jeepay webhook 200, got %d body=%s", secondRec.Code, secondRec.Body.String())
 	}
-	if strings.TrimSpace(secondRec.Body.String()) != "success" {
+	if secondRec.Body.String() != "success" {
 		t.Fatalf("expected raw idempotent jeepay success response, got body=%s", secondRec.Body.String())
 	}
 	secondCompleted := getCashierOrderForTest(t, handler, userToken, order.ID)
@@ -936,6 +1061,25 @@ func TestCashierJeePayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 	}
 	if balanceResp.Data.RechargePoints != order.Points || balanceResp.Data.AvailablePoints != order.Points {
 		t.Fatalf("expected jeepay webhook to credit recharge bucket once, got %#v", balanceResp.Data)
+	}
+}
+
+func TestCashierJeePayWebhookRequiresExplicitSuccessStatus(t *testing.T) {
+	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-missing-status@example.com")
+	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	values := jeepayWebhookValuesForTest(order, "MCH10001", "merchant-secret", "1250", "jeepay-trade-missing-status")
+	values.Del("state")
+	values.Set("sign", jeepaySignForTest(values, "merchant-secret"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/jeepay_alipay", strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("JeePay callback without explicit success state must be rejected: %s", rec.Body.String())
+	}
+	if pending := getCashierOrderForTest(t, handler, userToken, order.ID); pending.Status != "pending" {
+		t.Fatalf("missing-state JeePay callback must not credit order: %#v", pending)
 	}
 }
 
@@ -1016,10 +1160,17 @@ func TestCashierOrderSchedulesConfiguredProviderInstance(t *testing.T) {
 		t.Fatalf("parse alipay payment url: %v", err)
 	}
 	query := payURL.Query()
-	if payURL.Scheme != "https" || payURL.Host != "openapi.alipaydev.com" || query.Get("app_id") != "app-123" || query.Get("out_trade_no") != createResp.Data.OrderNo || query.Get("total_amount") != createResp.Data.AmountCNY {
+	if payURL.Scheme != "https" || payURL.Host != "openapi.alipaydev.com" || query.Get("app_id") != "app-123" {
 		t.Fatalf("unexpected alipay payment url %s", createResp.Data.PaymentURL)
 	}
-	if query.Get("notify_url") == "" || query.Get("return_url") == "" || !strings.Contains(query.Get("biz_content"), createResp.Data.OrderNo) {
+	if query.Get("out_trade_no") != "" || query.Get("total_amount") != "" {
+		t.Fatalf("alipay order fields must only appear in biz_content, got %s", createResp.Data.PaymentURL)
+	}
+	var bizContent map[string]string
+	if err := json.Unmarshal([]byte(query.Get("biz_content")), &bizContent); err != nil {
+		t.Fatalf("decode alipay biz_content: %v", err)
+	}
+	if query.Get("notify_url") == "" || query.Get("return_url") == "" || bizContent["out_trade_no"] != createResp.Data.OrderNo || bizContent["total_amount"] != createResp.Data.AmountCNY {
 		t.Fatalf("expected alipay url to carry callback and order payload, got %s", createResp.Data.PaymentURL)
 	}
 	if query.Get("sign_type") != "RSA2" || query.Get("sign") == "" || createResp.Data.PaymentDisplay["signed"] != true {
@@ -1197,8 +1348,11 @@ func TestCashierEasyPayPopupDisplayIsSignedAndPersisted(t *testing.T) {
 	if query.Get("pid") != "10001" || query.Get("type") != "alipay" || query.Get("out_trade_no") != createResp.Data.OrderNo || query.Get("money") != "12.50000" || query.Get("sign") == "" || query.Get("sign_type") != "MD5" {
 		t.Fatalf("unexpected easypay query params: %s", createResp.Data.PaymentURL)
 	}
-	if createResp.Data.PaymentDisplay["sign_type"] != "MD5" || createResp.Data.PaymentDisplay["payment_url"] != createResp.Data.PaymentURL {
-		t.Fatalf("expected signed display to mirror payment url, got %#v", createResp.Data.PaymentDisplay)
+	if createResp.Data.PaymentDisplay["payment_url"] != createResp.Data.PaymentURL {
+		t.Fatalf("expected display to mirror payment url, got %#v", createResp.Data.PaymentDisplay)
+	}
+	if _, ok := createResp.Data.PaymentDisplay["sign"]; ok {
+		t.Fatalf("easypay order response must not duplicate the redirect signature: %#v", createResp.Data.PaymentDisplay)
 	}
 
 	detailReq := httptest.NewRequest(http.MethodGet, "/api/agent/cashier/v1/orders/"+jsonInt64(createResp.Data.ID), nil)
@@ -1311,7 +1465,7 @@ func TestCashierEasyPayWebhookRejectsInvalidSignature(t *testing.T) {
 	values := easyPayWebhookValuesForTest(order, "10001", "merchant-secret", "12.50000", "easypay-trade-invalid-sign")
 	values.Set("sign", "invalid-signature")
 
-	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay", strings.NewReader(values.Encode()))
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay_alipay", strings.NewReader(values.Encode()))
 	webhookReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	webhookRec := httptest.NewRecorder()
 	handler.ServeHTTP(webhookRec, webhookReq)
@@ -1328,7 +1482,7 @@ func TestCashierEasyPayWebhookRejectsAmountMismatch(t *testing.T) {
 	order := createEasyPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
 	values := easyPayWebhookValuesForTest(order, "10001", "merchant-secret", "10.00000", "easypay-trade-amount-mismatch")
 
-	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay", strings.NewReader(values.Encode()))
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay_alipay", strings.NewReader(values.Encode()))
 	webhookReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	webhookRec := httptest.NewRecorder()
 	handler.ServeHTTP(webhookRec, webhookReq)
@@ -1340,12 +1494,31 @@ func TestCashierEasyPayWebhookRejectsAmountMismatch(t *testing.T) {
 	}
 }
 
+func TestCashierEasyPayWebhookRequiresAmount(t *testing.T) {
+	handler, userToken, _ := setupEasyPayCashierTest(t, "cashier-easypay-missing-amount@example.com")
+	order := createEasyPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	values := easyPayWebhookValuesForTest(order, "10001", "merchant-secret", "12.50000", "easypay-trade-missing-amount")
+	values.Del("money")
+	values.Set("sign", easyPaySignForTest(values, "merchant-secret"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay_alipay", strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("EasyPay callback without amount must be rejected: %s", rec.Body.String())
+	}
+	if pending := getCashierOrderForTest(t, handler, userToken, order.ID); pending.Status != "pending" {
+		t.Fatalf("missing-amount EasyPay callback must not credit order: %#v", pending)
+	}
+}
+
 func TestCashierEasyPayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 	handler, userToken, _ := setupEasyPayCashierTest(t, "cashier-easypay-success-user@example.com")
 	order := createEasyPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
 	values := easyPayWebhookValuesForTest(order, "10001", "merchant-secret", "12.50000", "easypay-trade-success")
 
-	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay", strings.NewReader(values.Encode()))
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay_alipay", strings.NewReader(values.Encode()))
 	webhookReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	webhookRec := httptest.NewRecorder()
 	handler.ServeHTTP(webhookRec, webhookReq)
@@ -1360,7 +1533,7 @@ func TestCashierEasyPayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 		t.Fatalf("expected completed easypay recharge order, got %#v", completed)
 	}
 
-	secondReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay", strings.NewReader(values.Encode()))
+	secondReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay_alipay", strings.NewReader(values.Encode()))
 	secondReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	secondRec := httptest.NewRecorder()
 	handler.ServeHTTP(secondRec, secondReq)
@@ -1390,6 +1563,63 @@ func TestCashierEasyPayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 	}
 	if balanceResp.Data.RechargePoints != order.Points || balanceResp.Data.AvailablePoints != order.Points {
 		t.Fatalf("expected easypay webhook to credit recharge bucket once, got %#v", balanceResp.Data)
+	}
+}
+
+func TestCashierEasyPayWebhookRequiresExplicitSuccessStatus(t *testing.T) {
+	handler, userToken, _ := setupEasyPayCashierTest(t, "cashier-easypay-missing-status@example.com")
+	order := createEasyPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	values := easyPayWebhookValuesForTest(order, "10001", "merchant-secret", "12.50000", "easypay-trade-missing-status")
+	values.Del("trade_status")
+	values.Set("sign", easyPaySignForTest(values, "merchant-secret"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay_alipay", strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("EasyPay callback without explicit success status must be rejected: %s", rec.Body.String())
+	}
+	if pending := getCashierOrderForTest(t, handler, userToken, order.ID); pending.Status != "pending" {
+		t.Fatalf("missing-status EasyPay callback must not credit order: %#v", pending)
+	}
+}
+
+func TestCashierEasyPayWebhookRejectsProviderPathMismatch(t *testing.T) {
+	handler, userToken, _ := setupEasyPayCashierTest(t, "cashier-easypay-provider-mismatch-user@example.com")
+	order := createEasyPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	values := easyPayWebhookValuesForTest(order, "10001", "merchant-secret", "12.50000", "easypay-trade-provider-mismatch")
+
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay_wxpay", strings.NewReader(values.Encode()))
+	webhookReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	webhookRec := httptest.NewRecorder()
+	handler.ServeHTTP(webhookRec, webhookReq)
+	if webhookRec.Code == http.StatusOK {
+		t.Fatalf("provider-mismatched easypay webhook must be rejected, body=%s", webhookRec.Body.String())
+	}
+	pending := getCashierOrderForTest(t, handler, userToken, order.ID)
+	if pending.Status != "pending" || pending.LedgerID != 0 {
+		t.Fatalf("provider-mismatched easypay webhook must not credit order: %#v", pending)
+	}
+}
+
+func TestCashierEasyPayWebhookRejectsOversizedSignedBody(t *testing.T) {
+	handler, userToken, _ := setupEasyPayCashierTest(t, "cashier-easypay-oversized-webhook-user@example.com")
+	order := createEasyPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	values := easyPayWebhookValuesForTest(order, "10001", "merchant-secret", "12.50000", "easypay-trade-oversized")
+	values.Set("padding", strings.Repeat("x", (1<<20)+1))
+	values.Set("sign", easyPaySignForTest(values, "merchant-secret"))
+
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/easypay_alipay", strings.NewReader(values.Encode()))
+	webhookReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	webhookRec := httptest.NewRecorder()
+	handler.ServeHTTP(webhookRec, webhookReq)
+	if webhookRec.Code == http.StatusOK {
+		t.Fatalf("oversized easypay webhook must be rejected, body=%s", webhookRec.Body.String())
+	}
+	pending := getCashierOrderForTest(t, handler, userToken, order.ID)
+	if pending.Status != "pending" || pending.LedgerID != 0 {
+		t.Fatalf("oversized easypay webhook must not credit order: %#v", pending)
 	}
 }
 
@@ -1425,6 +1655,25 @@ func TestCashierAlipayWebhookRejectsAmountMismatch(t *testing.T) {
 	}
 	if !bytes.Contains(webhookRec.Body.Bytes(), []byte("PAYMENT_AMOUNT_MISMATCH")) {
 		t.Fatalf("expected PAYMENT_AMOUNT_MISMATCH, body=%s", webhookRec.Body.String())
+	}
+}
+
+func TestCashierAlipayWebhookRequiresAmount(t *testing.T) {
+	handler, userToken, privateKey := setupAlipayCashierTest(t, "cashier-alipay-missing-amount@example.com")
+	order := createAlipayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	values := alipayWebhookValuesForTest(t, order, "app-123", privateKey, "12.50000", "alipay-trade-missing-amount")
+	values.Del("total_amount")
+	values.Set("sign", alipaySignForTest(t, values, privateKey))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/alipay_direct", strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("Alipay callback without amount must be rejected: %s", rec.Body.String())
+	}
+	if pending := getCashierOrderForTest(t, handler, userToken, order.ID); pending.Status != "pending" {
+		t.Fatalf("missing-amount Alipay callback must not credit order: %#v", pending)
 	}
 }
 
@@ -1481,6 +1730,25 @@ func TestCashierAlipayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 	}
 }
 
+func TestCashierAlipayWebhookRequiresExplicitSuccessStatus(t *testing.T) {
+	handler, userToken, privateKey := setupAlipayCashierTest(t, "cashier-alipay-missing-status@example.com")
+	order := createAlipayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	values := alipayWebhookValuesForTest(t, order, "app-123", privateKey, "12.50000", "alipay-trade-missing-status")
+	values.Del("trade_status")
+	values.Set("sign", alipaySignForTest(t, values, privateKey))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/alipay_direct", strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("Alipay callback without explicit success status must be rejected: %s", rec.Body.String())
+	}
+	if pending := getCashierOrderForTest(t, handler, userToken, order.ID); pending.Status != "pending" {
+		t.Fatalf("missing-status Alipay callback must not credit order: %#v", pending)
+	}
+}
+
 func TestCashierWxPayWebhookRejectsInvalidSignature(t *testing.T) {
 	handler, userToken, privateKey, apiV3Key, serial := setupWxPayCashierTest(t, "cashier-wxpay-invalid-sign-user@example.com")
 	order := createWxPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
@@ -1523,6 +1791,42 @@ func TestCashierWxPayWebhookRejectsAmountMismatch(t *testing.T) {
 	}
 	if !bytes.Contains(webhookRec.Body.Bytes(), []byte("PAYMENT_AMOUNT_MISMATCH")) {
 		t.Fatalf("expected PAYMENT_AMOUNT_MISMATCH, body=%s", webhookRec.Body.String())
+	}
+}
+
+func TestCashierWxPayWebhookRejectsMerchantIdentityMismatch(t *testing.T) {
+	handler, userToken, privateKey, apiV3Key, serial := setupWxPayCashierTest(t, "cashier-wxpay-merchant-mismatch@example.com")
+	order := createWxPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	body, headers := wxPayWebhookRequestWithMerchantForTest(t, order, privateKey, apiV3Key, serial, 1250, "wxpay-trade-merchant-mismatch", "other-mch", "other-app")
+
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/wxpay_direct", strings.NewReader(body))
+	webhookReq.Header = headers
+	webhookReq.Header.Set("Content-Type", "application/json")
+	webhookRec := httptest.NewRecorder()
+	handler.ServeHTTP(webhookRec, webhookReq)
+	if webhookRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected wxpay merchant mismatch 400, got %d body=%s", webhookRec.Code, webhookRec.Body.String())
+	}
+	if completed := getCashierOrderForTest(t, handler, userToken, order.ID); completed.Status != "pending" {
+		t.Fatalf("merchant-mismatched callback must not complete order: %#v", completed)
+	}
+}
+
+func TestCashierWxPayWebhookRequiresExplicitSuccessState(t *testing.T) {
+	handler, userToken, privateKey, apiV3Key, serial := setupWxPayCashierTest(t, "cashier-wxpay-missing-state@example.com")
+	order := createWxPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	body, headers := wxPayWebhookRequestWithStateForTest(t, order, privateKey, apiV3Key, serial, 1250, "wxpay-trade-missing-state", "mch-123", "wx-app-123", "")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/wxpay_direct", strings.NewReader(body))
+	req.Header = headers
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("WeChat Pay callback without explicit trade_state must be rejected: %s", rec.Body.String())
+	}
+	if pending := getCashierOrderForTest(t, handler, userToken, order.ID); pending.Status != "pending" {
+		t.Fatalf("missing-state WeChat Pay callback must not credit order: %#v", pending)
 	}
 }
 
@@ -2333,22 +2637,26 @@ func createStripeCustomAmountOrderForWebhookTest(t *testing.T, handler http.Hand
 	return resp.Data
 }
 
-func setupJeePayCashierTest(t *testing.T, userEmail string) (http.Handler, string, string) {
+func setupJeePayCashierTest(t *testing.T, userEmail string, upstreamHandlers ...http.HandlerFunc) (http.Handler, string, string) {
 	t.Helper()
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstreamHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/pay/unifiedOrder" || r.Header.Get("Content-Type") != "application/json" {
 			t.Fatalf("unexpected jeepay unified order request %s %s content-type=%q", r.Method, r.URL.Path, r.Header.Get("Content-Type"))
 		}
-		var body map[string]string
+		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode jeepay unified order JSON: %v", err)
 		}
-		if body["mchNo"] != "MCH10001" || body["appId"] != "APP10001" || body["wayCode"] != "ALI_PC" || body["sign"] == "" {
+		if body["mchNo"] != "MCH10001" || body["appId"] != "APP10001" || body["wayCode"] != "ALI_PC" || fmt.Sprint(body["sign"]) == "" {
 			t.Fatalf("unexpected jeepay unified order body: %#v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":0,"msg":"SUCCESS","data":{"payOrderId":"JEEPAY-PAY-001","payUrl":"https://jeepay.example.com/pay/session"}}`))
-	}))
+	})
+	if len(upstreamHandlers) > 0 && upstreamHandlers[0] != nil {
+		upstreamHandler = upstreamHandlers[0]
+	}
+	upstream := httptest.NewServer(upstreamHandler)
 	t.Cleanup(upstream.Close)
 
 	cfg := taskAPIConfig("http://127.0.0.1:1")
@@ -2616,15 +2924,15 @@ func jeepayWebhookValuesForTest(order domainbilling.PaymentOrder, mchNo, key, am
 	values.Set("amount", amountFen)
 	values.Set("state", "2")
 	values.Set("wayCode", "ALI_PC")
-	values.Set("sign", jeepaySignForTest(values, key))
 	values.Set("signType", "MD5")
+	values.Set("sign", jeepaySignForTest(values, key))
 	return values
 }
 
 func jeepaySignForTest(values url.Values, key string) string {
 	keys := make([]string, 0, len(values))
 	for name, items := range values {
-		if strings.EqualFold(name, "sign") || strings.EqualFold(name, "signType") || len(items) == 0 || strings.TrimSpace(items[0]) == "" {
+		if strings.EqualFold(name, "sign") || len(items) == 0 || strings.TrimSpace(items[0]) == "" {
 			continue
 		}
 		keys = append(keys, name)
@@ -2636,6 +2944,20 @@ func jeepaySignForTest(values url.Values, key string) string {
 	}
 	sum := md5.Sum([]byte(strings.Join(parts, "&") + "&key=" + key))
 	return strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
+func decodeJeePayBodyForRouterTest(r *http.Request) (map[string]string, error) {
+	var rawBody map[string]any
+	decoder := json.NewDecoder(r.Body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&rawBody); err != nil {
+		return nil, err
+	}
+	values := make(map[string]string, len(rawBody))
+	for key, value := range rawBody {
+		values[key] = fmt.Sprint(value)
+	}
+	return values, nil
 }
 
 func easyPaySignForTest(values url.Values, key string) string {
@@ -2709,13 +3031,21 @@ func alipaySignContentForTest(values url.Values) string {
 }
 
 func wxPayWebhookRequestForTest(t *testing.T, order domainbilling.PaymentOrder, privateKeyPEM string, apiV3Key string, serial string, amountFen int, transactionID string) (string, http.Header) {
+	return wxPayWebhookRequestWithMerchantForTest(t, order, privateKeyPEM, apiV3Key, serial, amountFen, transactionID, "mch-123", "wx-app-123")
+}
+
+func wxPayWebhookRequestWithMerchantForTest(t *testing.T, order domainbilling.PaymentOrder, privateKeyPEM string, apiV3Key string, serial string, amountFen int, transactionID string, mchID string, appID string) (string, http.Header) {
+	return wxPayWebhookRequestWithStateForTest(t, order, privateKeyPEM, apiV3Key, serial, amountFen, transactionID, mchID, appID, "SUCCESS")
+}
+
+func wxPayWebhookRequestWithStateForTest(t *testing.T, order domainbilling.PaymentOrder, privateKeyPEM string, apiV3Key string, serial string, amountFen int, transactionID string, mchID string, appID string, tradeState string) (string, http.Header) {
 	t.Helper()
 	plain := map[string]any{
-		"mchid":            "mch-123",
-		"appid":            "wx-app-123",
+		"mchid":            mchID,
+		"appid":            appID,
 		"out_trade_no":     order.OrderNo,
 		"transaction_id":   transactionID,
-		"trade_state":      "SUCCESS",
+		"trade_state":      tradeState,
 		"success_time":     "2026-06-05T12:00:00+08:00",
 		"trade_state_desc": "支付成功",
 		"amount": map[string]any{

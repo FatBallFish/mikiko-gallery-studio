@@ -105,17 +105,22 @@ if (downloadable.modelLine !== '文生图 · gpt-image') {
 }
 
 const reviewing = galleryImageCard(image({ visibility_status: 'pending_review', url: '/image.png' }))
-if (reviewing.canPublish || reviewing.publishActionLabel !== '审核中') {
-  throw new Error(`gallery card should not allow duplicate publish while reviewing, got ${JSON.stringify(reviewing)}`)
+if (!reviewing.canPublish || reviewing.publishAction !== 'cancel' || reviewing.publishActionLabel !== '取消申请') {
+  throw new Error(`gallery card should allow cancel while reviewing, got ${JSON.stringify(reviewing)}`)
 }
 
 const approved = galleryImageCard(image({ visibility_status: 'approved', url: '/image.png' }))
-if (approved.canPublish || approved.publishActionLabel !== '已公开') {
-  throw new Error(`gallery card should not allow duplicate publish for approved images, got ${JSON.stringify(approved)}`)
+if (!approved.canPublish || approved.publishAction !== 'cancel' || approved.publishActionLabel !== '取消公开') {
+  throw new Error(`gallery card should allow cancel for approved images, got ${JSON.stringify(approved)}`)
+}
+
+const rejected = galleryImageCard(image({ visibility_status: 'rejected', url: '/image.png' }))
+if (!rejected.canPublish || rejected.publishAction !== 'request' || rejected.publishActionLabel !== '重新申请') {
+  throw new Error(`rejected image should allow reapply, got ${JSON.stringify(rejected)}`)
 }
 
 const privateWithoutAsset = galleryImageCard(image({ visibility_status: 'private', url: '', download_url: '' }))
-if (privateWithoutAsset.canPublish || privateWithoutAsset.canDownload || privateWithoutAsset.publishActionLabel !== '无图片文件') {
+if (privateWithoutAsset.canPublish || privateWithoutAsset.publishAction !== null || privateWithoutAsset.canDownload || privateWithoutAsset.publishActionLabel !== '无图片文件') {
   throw new Error(`gallery card should block publish/download without image asset, got ${JSON.stringify(privateWithoutAsset)}`)
 }
 if (privateWithoutAsset.canPreview || privateWithoutAsset.canEdit) {
