@@ -23,6 +23,7 @@ type Store interface {
 	GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error)
 	ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error)
 	RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error)
+	CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error)
 	SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error)
 	ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error)
 	DeleteImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error)
@@ -244,6 +245,34 @@ func (s *MemoryStore) RequestPublish(_ context.Context, userID int64, imageID st
 				task.Results[idx] = result
 				s.tasksByID[taskID] = cloneTask(task)
 				return galleryImageFromMemoryTask(task, result), nil
+			}
+		}
+	}
+	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+}
+
+func (s *MemoryStore) CancelPublish(_ context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for taskID, task := range s.tasksByID {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for idx, result := range task.Results {
+			if result.ID != imageID {
+				continue
+			}
+			switch defaultVisibilityStatus(result.VisibilityStatus) {
+			case domainimagetask.VisibilityPrivate, domainimagetask.VisibilityPendingReview, domainimagetask.VisibilityApproved:
+				result.VisibilityStatus = domainimagetask.VisibilityPrivate
+				result.ReviewReason = ""
+				result.PublishedAt = nil
+				task.Results[idx] = result
+				s.tasksByID[taskID] = cloneTask(task)
+				return galleryImageFromMemoryTask(task, result), nil
+			default:
+				return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 			}
 		}
 	}

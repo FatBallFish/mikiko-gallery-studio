@@ -1501,6 +1501,17 @@ func (s *Service) RequestPublish(ctx context.Context, userID int64, imageID stri
 	return image, nil
 }
 
+func (s *Service) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	image, err := s.store.CancelPublish(ctx, userID, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return domainimagetask.GalleryImage{}, errs.Internal("failed to cancel image publish")
+	}
+	return image, nil
+}
+
 func (s *Service) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
 	imageGroup = strings.TrimSpace(imageGroup)
 	if len([]rune(imageGroup)) > 64 {

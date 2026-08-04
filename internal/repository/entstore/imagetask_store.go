@@ -376,6 +376,42 @@ func (s *ImageTaskStore) RequestPublish(ctx context.Context, userID int64, image
 	return mapGalleryImageEntity(updated, taskEntity), nil
 }
 
+func (s *ImageTaskStore) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	imageUUID, err := uuid.Parse(imageID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	updated, err := s.client.ImageResult.Update().
+		Where(
+			imageresult.IDEQ(imageUUID),
+			imageresult.UserIDEQ(userID),
+			imageresult.DeletedAtIsNil(),
+			imageresult.VisibilityStatusIn(
+				domainimagetask.VisibilityPrivate,
+				domainimagetask.VisibilityPendingReview,
+				domainimagetask.VisibilityApproved,
+			),
+		).
+		SetVisibilityStatus(domainimagetask.VisibilityPrivate).
+		ClearReviewReason().
+		ClearPublishedAt().
+		Save(ctx)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	if updated == 0 {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	entity, taskEntity, err := s.loadGalleryImageWithTask(ctx, imageUUID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	if taskEntity.UserID != userID {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	return mapGalleryImageEntity(entity, taskEntity), nil
+}
+
 func (s *ImageTaskStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
 	imageUUID, err := uuid.Parse(imageID)
 	if err != nil {

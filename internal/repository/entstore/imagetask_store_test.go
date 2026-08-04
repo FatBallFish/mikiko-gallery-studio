@@ -127,6 +127,69 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 	}
 }
 
+func TestImageTaskStoreCancelPublishIsOwnerScopedAndReversible(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-cancel-publish?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewImageTaskStore(client)
+	task := domainimagetask.Task{
+		UserID: 72, ID: "72727272-7272-7272-7272-727272727272", Status: domainimagetask.StatusSucceeded,
+		AbstractModel: "basic", TaskType: string(provider.TaskTypeTextToImage), Prompt: "owner cancellation", Results: []provider.ImageResult{{
+			ObjectKey: "generated/cancel.png", MimeType: "image/png", StorageDriver: "local",
+			VisibilityStatus: domainimagetask.VisibilityPrivate,
+		}},
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	imageID := loaded.Results[0].ID
+	if _, err := store.RequestPublish(ctx, task.UserID, imageID); err != nil {
+		t.Fatalf("RequestPublish: %v", err)
+	}
+	if _, err := store.CancelPublish(ctx, task.UserID+1, imageID); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("non-owner cancellation must be hidden as not found, got %v", err)
+	}
+	canceled, err := store.CancelPublish(ctx, task.UserID, imageID)
+	if err != nil {
+		t.Fatalf("CancelPublish pending: %v", err)
+	}
+	if canceled.VisibilityStatus != domainimagetask.VisibilityPrivate || canceled.ReviewReason != "" || canceled.PublishedAt != nil {
+		t.Fatalf("unexpected pending cancellation %#v", canceled)
+	}
+	if _, err := store.RequestPublish(ctx, task.UserID, imageID); err != nil {
+		t.Fatalf("RequestPublish again: %v", err)
+	}
+	publishedAt := time.Now().UTC()
+	if _, err := store.ReviewImage(ctx, imageID, domainimagetask.VisibilityApproved, "", &publishedAt); err != nil {
+		t.Fatalf("ReviewImage approve: %v", err)
+	}
+	canceled, err = store.CancelPublish(ctx, task.UserID, imageID)
+	if err != nil {
+		t.Fatalf("CancelPublish approved: %v", err)
+	}
+	if canceled.VisibilityStatus != domainimagetask.VisibilityPrivate || canceled.PublishedAt != nil {
+		t.Fatalf("unexpected approved cancellation %#v", canceled)
+	}
+	if _, err := store.CancelPublish(ctx, task.UserID, imageID); err != nil {
+		t.Fatalf("CancelPublish private idempotently: %v", err)
+	}
+	reapplied, err := store.RequestPublish(ctx, task.UserID, imageID)
+	if err != nil || reapplied.VisibilityStatus != domainimagetask.VisibilityPendingReview {
+		t.Fatalf("reapply after cancellation: image=%#v err=%v", reapplied, err)
+	}
+}
+
 func TestImageTaskStoreProgressUpdatePreservesStateAndRejectsStaleOwner(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:imagetask-progress-owner?mode=memory&cache=shared&_fk=1")

@@ -965,6 +965,77 @@ func TestDeliverImageResultUsesTemporaryURLAfterOwnershipCheck(t *testing.T) {
 	}
 }
 
+func TestCancelPublishPendingAndApprovedAllowsReapply(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	const userID int64 = 71
+	const imageID = "cancel-publish-image"
+	if err := store.Save(t.Context(), domainimagetask.Task{
+		UserID: userID, ID: "cancel-publish-task", Status: domainimagetask.StatusSucceeded,
+		Prompt: "cancel publish", Results: []provider.ImageResult{{
+			ID: imageID, URL: "https://example.test/cancel.png", VisibilityStatus: domainimagetask.VisibilityPrivate,
+		}},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	svc := imagetask.NewServiceWithStore(taskTestConfig(), store)
+
+	pending, err := svc.RequestPublish(t.Context(), userID, imageID)
+	if err != nil {
+		t.Fatalf("RequestPublish pending: %v", err)
+	}
+	if pending.VisibilityStatus != domainimagetask.VisibilityPendingReview {
+		t.Fatalf("expected pending review, got %#v", pending)
+	}
+	canceled, err := svc.CancelPublish(t.Context(), userID, imageID)
+	if err != nil {
+		t.Fatalf("CancelPublish pending: %v", err)
+	}
+	if canceled.VisibilityStatus != domainimagetask.VisibilityPrivate || canceled.ReviewReason != "" || canceled.PublishedAt != nil {
+		t.Fatalf("pending cancellation must clear publication metadata: %#v", canceled)
+	}
+
+	reviewPage, err := svc.ListGallery(t.Context(), domainimagetask.GalleryListRequest{Page: 1, PageSize: 10, ReviewOnly: true})
+	if err != nil {
+		t.Fatalf("ListGallery review: %v", err)
+	}
+	if reviewPage.Total != 0 {
+		t.Fatalf("canceled image must leave review query: %#v", reviewPage)
+	}
+
+	if _, err := svc.RequestPublish(t.Context(), userID, imageID); err != nil {
+		t.Fatalf("RequestPublish again: %v", err)
+	}
+	publishedAt := time.Now().UTC()
+	if _, err := svc.ReviewImage(t.Context(), imageID, domainimagetask.VisibilityApproved, "", &publishedAt); err != nil {
+		t.Fatalf("ReviewImage approve: %v", err)
+	}
+	publicPage, err := svc.ListPublicGallery(t.Context(), domainimagetask.GalleryListRequest{Page: 1, PageSize: 10})
+	if err != nil || publicPage.Total != 1 {
+		t.Fatalf("approved image must enter public query: page=%#v err=%v", publicPage, err)
+	}
+	canceled, err = svc.CancelPublish(t.Context(), userID, imageID)
+	if err != nil {
+		t.Fatalf("CancelPublish approved: %v", err)
+	}
+	if canceled.VisibilityStatus != domainimagetask.VisibilityPrivate || canceled.PublishedAt != nil {
+		t.Fatalf("approved cancellation must return private: %#v", canceled)
+	}
+	publicPage, err = svc.ListPublicGallery(t.Context(), domainimagetask.GalleryListRequest{Page: 1, PageSize: 10})
+	if err != nil || publicPage.Total != 0 {
+		t.Fatalf("canceled image must leave public query: page=%#v err=%v", publicPage, err)
+	}
+	if _, err := svc.CancelPublish(t.Context(), userID, imageID); err != nil {
+		t.Fatalf("CancelPublish private idempotently: %v", err)
+	}
+	if _, err := svc.CancelPublish(t.Context(), userID+1, imageID); err == nil {
+		t.Fatal("expected non-owner cancellation to fail")
+	}
+	reapplied, err := svc.RequestPublish(t.Context(), userID, imageID)
+	if err != nil || reapplied.VisibilityStatus != domainimagetask.VisibilityPendingReview {
+		t.Fatalf("canceled image must allow reapply: image=%#v err=%v", reapplied, err)
+	}
+}
+
 func TestDeliverImageResultFallsBackToBackendBytes(t *testing.T) {
 	backend := storage.NewLocalBackend(t.TempDir())
 	content := []byte("local-image-content")
@@ -1205,6 +1276,10 @@ func (s *failingSaveStore) RequestPublish(ctx context.Context, userID int64, ima
 	return s.base.RequestPublish(ctx, userID, imageID)
 }
 
+func (s *failingSaveStore) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.CancelPublish(ctx, userID, imageID)
+}
+
 func (s *failingSaveStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
 	return s.base.SetImageGroup(ctx, userID, imageID, imageGroup)
 }
@@ -1331,6 +1406,10 @@ func (s *raceyTerminalStore) ListByUser(ctx context.Context, userID int64) ([]do
 
 func (s *raceyTerminalStore) RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
 	return s.base.RequestPublish(ctx, userID, imageID)
+}
+
+func (s *raceyTerminalStore) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.base.CancelPublish(ctx, userID, imageID)
 }
 
 func (s *raceyTerminalStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
