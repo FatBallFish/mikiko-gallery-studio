@@ -6,6 +6,8 @@ This runbook covers moving Pic Gallery from a single startup storage backend to 
 
 R2 is configured as `driver=s3` and `provider=r2`. Do not introduce a separate R2 storage driver.
 
+For response URL projection, fallback endpoints, expiration, and lifecycle checks, also follow [Plan, Public Image, and Media Delivery Runbook](./plan-public-media-lifecycle.md).
+
 ## Preconditions
 
 - API and worker are both deployed with multi-storage code.
