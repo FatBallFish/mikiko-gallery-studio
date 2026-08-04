@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
@@ -92,6 +93,10 @@ type openAIFanoutProgress struct {
 
 type AssetLoader interface {
 	LoadInput(userID int64, assetID string) (provider.ImageInput, error)
+}
+
+type assetMediaURLLoader interface {
+	GetWithContext(ctx context.Context, userID int64, assetID string) (domainassets.ReferenceAsset, error)
 }
 
 type BillingManager interface {
@@ -572,6 +577,14 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 	if err := s.store.Save(ctx, task); err != nil {
 		return domainimagetask.TestModelAccountResult{}, errs.Internal("failed to persist model account test image")
 	}
+	projectedTask := cloneTask(task)
+	for index, image := range projectedTask.Results {
+		projected, projectErr := s.projectImageResultMedia(ctx, image, "/api/ops/admin/v1/image-reviews/"+url.PathEscape(image.ID)+"/image")
+		if projectErr != nil {
+			return domainimagetask.TestModelAccountResult{}, projectErr
+		}
+		projectedTask.Results[index] = projected
+	}
 	result := domainimagetask.TestModelAccountResult{
 		Status:            domainimagetask.StatusSucceeded,
 		ProviderRequestID: resp.ProviderRequestID,
@@ -584,10 +597,10 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 			"moderation":         providerReq.Moderation,
 		},
 		ElapsedMS: finishedAt.Sub(startedAt).Milliseconds(),
-		Task:      task,
+		Task:      projectedTask,
 	}
-	if len(persisted) > 0 {
-		image := persisted[0]
+	if len(projectedTask.Results) > 0 {
+		image := projectedTask.Results[0]
 		result.Image = image
 		result.ImageURL = image.URL
 		result.Width = image.Width
@@ -1443,7 +1456,8 @@ func (s *Service) ListByUser(ctx context.Context, userID int64) ([]domainimageta
 
 func (s *Service) projectTaskMedia(ctx context.Context, task domainimagetask.Task, fallbackPrefix string) (domainimagetask.Task, error) {
 	for index, result := range task.Results {
-		projected, err := s.projectImageResultMedia(ctx, result, fallbackPrefix)
+		fallbackURL := strings.TrimRight(fallbackPrefix, "/") + "/" + url.PathEscape(strings.TrimSpace(result.ID))
+		projected, err := s.projectImageResultMedia(ctx, result, fallbackURL)
 		if err != nil {
 			return domainimagetask.Task{}, err
 		}
@@ -1452,8 +1466,7 @@ func (s *Service) projectTaskMedia(ctx context.Context, task domainimagetask.Tas
 	return task, nil
 }
 
-func (s *Service) projectImageResultMedia(ctx context.Context, result provider.ImageResult, fallbackPrefix string) (provider.ImageResult, error) {
-	fallbackURL := strings.TrimRight(fallbackPrefix, "/") + "/" + url.PathEscape(strings.TrimSpace(result.ID))
+func (s *Service) projectImageResultMedia(ctx context.Context, result provider.ImageResult, fallbackURL string) (provider.ImageResult, error) {
 	if strings.EqualFold(strings.TrimSpace(result.StorageDriver), "remote") || strings.TrimSpace(result.ObjectKey) == "" {
 		if remoteURL := absoluteHTTPMediaURL(defaultString(result.URL, result.ObjectKey)); remoteURL != "" {
 			result.URL, result.DownloadURL = remoteURL, remoteURL
@@ -1476,6 +1489,46 @@ func (s *Service) projectImageResultMedia(ctx context.Context, result provider.I
 	}
 	result.URL, result.DownloadURL = fallbackURL, fallbackURL
 	return result, nil
+}
+
+func (s *Service) projectGalleryImageMedia(ctx context.Context, image domainimagetask.GalleryImage, fallbackURL string) (domainimagetask.GalleryImage, error) {
+	result, err := s.projectImageResultMedia(ctx, provider.ImageResult{
+		ID: image.ID, URL: image.URL, DownloadURL: image.DownloadURL, MimeType: image.MimeType,
+		StorageConfigID: image.StorageConfigID, ObjectKey: image.ObjectKey, StorageDriver: image.StorageDriver,
+	}, fallbackURL)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	image.URL, image.DownloadURL = result.URL, result.DownloadURL
+	assetLoader, ok := s.assets.(assetMediaURLLoader)
+	if !ok {
+		return image, nil
+	}
+	for index, reference := range image.ReferenceAssets {
+		asset, loadErr := assetLoader.GetWithContext(ctx, image.UserID, reference.ID)
+		if loadErr != nil {
+			var appErr *errs.Error
+			if errors.As(loadErr, &appErr) && appErr.StatusCode == http.StatusNotFound {
+				continue
+			}
+			return domainimagetask.GalleryImage{}, loadErr
+		}
+		if strings.TrimSpace(asset.PreviewURL) != "" {
+			image.ReferenceAssets[index].PreviewURL = asset.PreviewURL
+		}
+	}
+	return image, nil
+}
+
+func (s *Service) projectGalleryPageMedia(ctx context.Context, page domainimagetask.GalleryPage, fallback func(string) string) (domainimagetask.GalleryPage, error) {
+	for index, image := range page.Items {
+		projected, err := s.projectGalleryImageMedia(ctx, image, fallback(image.ID))
+		if err != nil {
+			return domainimagetask.GalleryPage{}, err
+		}
+		page.Items[index] = projected
+	}
+	return page, nil
 }
 
 func absoluteHTTPMediaURL(value string) string {
@@ -1567,7 +1620,7 @@ func (s *Service) RequestPublish(ctx context.Context, userID int64, imageID stri
 		}
 		return domainimagetask.GalleryImage{}, errs.Internal("failed to request image publish")
 	}
-	return image, nil
+	return s.projectGalleryImageMedia(ctx, image, "/api/agent/image/v1/images/"+url.PathEscape(image.ID))
 }
 
 func (s *Service) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
@@ -1578,7 +1631,7 @@ func (s *Service) CancelPublish(ctx context.Context, userID int64, imageID strin
 		}
 		return domainimagetask.GalleryImage{}, errs.Internal("failed to cancel image publish")
 	}
-	return image, nil
+	return s.projectGalleryImageMedia(ctx, image, "/api/agent/image/v1/images/"+url.PathEscape(image.ID))
 }
 
 func (s *Service) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
@@ -1593,7 +1646,7 @@ func (s *Service) SetImageGroup(ctx context.Context, userID int64, imageID, imag
 		}
 		return domainimagetask.GalleryImage{}, errs.Internal("failed to update image group")
 	}
-	return image, nil
+	return s.projectGalleryImageMedia(ctx, image, "/api/agent/image/v1/images/"+url.PathEscape(image.ID))
 }
 
 func (s *Service) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
@@ -1626,7 +1679,9 @@ func (s *Service) ListGallery(ctx context.Context, req domainimagetask.GalleryLi
 	if err != nil {
 		return domainimagetask.GalleryPage{}, errs.Internal("failed to list gallery images")
 	}
-	return page, nil
+	return s.projectGalleryPageMedia(ctx, page, func(imageID string) string {
+		return "/api/ops/admin/v1/image-reviews/" + url.PathEscape(imageID) + "/image"
+	})
 }
 
 func (s *Service) ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
@@ -1636,7 +1691,9 @@ func (s *Service) ListGalleryByUser(ctx context.Context, userID int64, req domai
 	if err != nil {
 		return domainimagetask.GalleryPage{}, errs.Internal("failed to list user gallery images")
 	}
-	return page, nil
+	return s.projectGalleryPageMedia(ctx, page, func(imageID string) string {
+		return "/api/agent/image/v1/images/" + url.PathEscape(imageID)
+	})
 }
 
 func (s *Service) ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
@@ -1646,7 +1703,9 @@ func (s *Service) ListPublicGallery(ctx context.Context, req domainimagetask.Gal
 	if err != nil {
 		return domainimagetask.GalleryPage{}, errs.Internal("failed to list public gallery images")
 	}
-	return page, nil
+	return s.projectGalleryPageMedia(ctx, page, func(imageID string) string {
+		return "/api/open/image/v1/gallery/images/" + url.PathEscape(imageID) + "/image"
+	})
 }
 
 func (s *Service) GetPublicImage(ctx context.Context, imageID string, viewerUserID int64) (domainimagetask.GalleryImage, error) {
@@ -1657,7 +1716,7 @@ func (s *Service) GetPublicImage(ctx context.Context, imageID string, viewerUser
 		}
 		return domainimagetask.GalleryImage{}, errs.Internal("failed to load public gallery image")
 	}
-	return image, nil
+	return s.projectGalleryImageMedia(ctx, image, "/api/open/image/v1/gallery/images/"+url.PathEscape(image.ID)+"/image")
 }
 
 func (s *Service) SetPublicImageInteraction(ctx context.Context, userID int64, imageID, kind string, active bool) (domainimagetask.GalleryImage, error) {
@@ -1672,7 +1731,7 @@ func (s *Service) SetPublicImageInteraction(ctx context.Context, userID int64, i
 		}
 		return domainimagetask.GalleryImage{}, errs.Internal("failed to update public image interaction")
 	}
-	return image, nil
+	return s.projectGalleryImageMedia(ctx, image, "/api/open/image/v1/gallery/images/"+url.PathEscape(image.ID)+"/image")
 }
 
 func (s *Service) saveOwnedTask(ctx context.Context, task domainimagetask.Task, owner string) error {

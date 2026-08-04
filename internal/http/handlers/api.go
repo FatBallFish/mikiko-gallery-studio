@@ -2173,6 +2173,11 @@ func (a *API) HandleReferenceAssetUpload(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, r, normalizeAppError(svcErr))
 		return
 	}
+	asset, svcErr = a.assets.ProjectURLs(r.Context(), asset)
+	if svcErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(svcErr))
+		return
+	}
 	httpx.WriteSuccess(w, r, http.StatusCreated, referenceAssetPayload(asset, false))
 }
 
@@ -2228,6 +2233,11 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 			httpx.WriteError(w, r, normalizeAppError(svcErr))
 			return
 		}
+		asset, svcErr = a.assets.ProjectURLs(r.Context(), asset)
+		if svcErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(svcErr))
+			return
+		}
 		items = append(items, referenceAssetPayload(asset, false))
 	}
 	httpx.WriteSuccess(w, r, http.StatusCreated, map[string]any{"items": items})
@@ -2264,7 +2274,7 @@ func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
-		asset, err := a.assets.Get(user.ID, assetID)
+		asset, err := a.assets.GetWithContext(r.Context(), user.ID, assetID)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
@@ -2390,6 +2400,11 @@ func (a *API) HandleOpenReferenceAssetUploadSession(w http.ResponseWriter, r *ht
 		httpx.WriteError(w, r, normalizeAppError(svcErr))
 		return
 	}
+	asset, svcErr = a.assets.ProjectURLs(r.Context(), asset)
+	if svcErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(svcErr))
+		return
+	}
 	httpx.WriteSuccess(w, r, http.StatusCreated, map[string]any{
 		"asset_id":    asset.ID,
 		"status":      asset.Status,
@@ -2428,6 +2443,11 @@ func (a *API) HandleOpenReferenceAssetMultipartUpload(w http.ResponseWriter, r *
 		httpx.WriteError(w, r, normalizeAppError(svcErr))
 		return
 	}
+	asset, svcErr = a.assets.ProjectURLs(r.Context(), asset)
+	if svcErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(svcErr))
+		return
+	}
 	httpx.WriteSuccess(w, r, http.StatusCreated, referenceAssetPayload(asset, true))
 }
 
@@ -2442,7 +2462,7 @@ func (a *API) HandleOpenReferenceAssetGet(w http.ResponseWriter, r *http.Request
 		return
 	}
 	assetID := strings.TrimPrefix(r.URL.Path, "/api/open/image/v1/reference-assets/")
-	asset, err := a.assets.Get(identity.UserID, assetID)
+	asset, err := a.assets.GetWithContext(r.Context(), identity.UserID, assetID)
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -6240,9 +6260,6 @@ func (a *API) handleAdminModelAccountTestImage(w http.ResponseWriter, r *http.Re
 	if testErr != nil {
 		httpx.WriteError(w, r, normalizeAppError(testErr))
 		return
-	}
-	if result.Image.ID != "" {
-		result.ImageURL = "/api/ops/admin/v1/image-reviews/" + result.Image.ID + "/image"
 	}
 	if err := a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "model_account.test_image", "model_account", fmt.Sprintf("%d", accountID), map[string]any{"model_id": model.ID, "model_code": model.ModelCode, "status": result.Status}); err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))

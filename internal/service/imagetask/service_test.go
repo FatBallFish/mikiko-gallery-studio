@@ -210,7 +210,8 @@ func TestTestModelAccountUsesDirectCandidateWithoutBilling(t *testing.T) {
 		}},
 	}
 	store := imagetask.NewMemoryStore()
-	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	backend := &modelTestTemporaryURLBackend{objects: map[string][]byte{}}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg, providers, store, nil, nil, backend)
 
 	result, err := svc.TestModelAccount(context.Background(), domainimagetask.TestModelAccountRequest{
 		AccountID: 201,
@@ -243,6 +244,9 @@ func TestTestModelAccountUsesDirectCandidateWithoutBilling(t *testing.T) {
 	if result.Image.ID == "" || result.Image.URL == "" || result.Width != 1 || result.Height != 1 {
 		t.Fatalf("expected persisted image metadata, got %#v", result)
 	}
+	if result.ImageURL != backend.previewURL() || result.Image.URL != backend.previewURL() || result.Image.DownloadURL != backend.downloadURL() {
+		t.Fatalf("model test result must expose direct temporary URLs, got %#v", result)
+	}
 	loaded, err := store.GetByID(context.Background(), 0, result.Task.ID)
 	if err != nil {
 		t.Fatalf("GetByID test task: %v", err)
@@ -250,6 +254,35 @@ func TestTestModelAccountUsesDirectCandidateWithoutBilling(t *testing.T) {
 	if loaded.ActualPoints != "0.00000" || loaded.EstimatedPoints != "0.00000" || loaded.ChargedPoints != "0.00000" {
 		t.Fatalf("expected model account test to avoid billing, got %#v", loaded)
 	}
+}
+
+type modelTestTemporaryURLBackend struct {
+	objects map[string][]byte
+}
+
+func (*modelTestTemporaryURLBackend) Driver() string { return "s3" }
+func (backend *modelTestTemporaryURLBackend) Put(_ context.Context, key, _ string, content []byte) error {
+	backend.objects[key] = append([]byte(nil), content...)
+	return nil
+}
+func (backend *modelTestTemporaryURLBackend) Get(_ context.Context, key string) ([]byte, error) {
+	return append([]byte(nil), backend.objects[key]...), nil
+}
+func (backend *modelTestTemporaryURLBackend) Delete(_ context.Context, key string) error {
+	delete(backend.objects, key)
+	return nil
+}
+func (backend *modelTestTemporaryURLBackend) TemporaryGetURL(_ context.Context, _ string, options storage.TemporaryGetURLOptions) (string, error) {
+	if options.ResponseFilename != "" {
+		return backend.downloadURL(), nil
+	}
+	return backend.previewURL(), nil
+}
+func (*modelTestTemporaryURLBackend) previewURL() string {
+	return "https://objects.example.test/model-test.png?mode=preview&X-Amz-Signature=test"
+}
+func (*modelTestTemporaryURLBackend) downloadURL() string {
+	return "https://objects.example.test/model-test.png?mode=download&X-Amz-Signature=test"
 }
 
 func TestTestModelAccountUsesRequestedPixelSize(t *testing.T) {

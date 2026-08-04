@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,13 +16,17 @@ import (
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
+	"github.com/fatballfish/pic-gallery/internal/provider"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
 func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
@@ -493,6 +499,143 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	if publicAfterUnpublishRec.Code != http.StatusOK || bytes.Contains(publicAfterUnpublishRec.Body.Bytes(), []byte(imageID)) {
 		t.Fatalf("unpublished image must leave public gallery: status=%d body=%s", publicAfterUnpublishRec.Code, publicAfterUnpublishRec.Body.String())
 	}
+}
+
+func TestDirectMediaURLProjectionAcrossImageAPIs(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc, session := loginTestUser(t, "direct-media@example.com")
+	store := imagetaskservice.NewMemoryStore()
+	backend := &directMediaBackend{}
+	assetSvc := assetservice.NewServiceWithStoreAndBackend(cfg.Storage, cfg.GenerationLimits, nil, backend)
+	asset, err := assetSvc.Upload(1, "reference.png", "image/png", tinyPNG(t))
+	if err != nil {
+		t.Fatalf("Upload reference: %v", err)
+	}
+	publishedAt := time.Now().UTC()
+	const taskID = "91919191-9191-9191-9191-919191919191"
+	const imageID = "91919191-0000-0000-0000-919191919191"
+	if err := store.Save(t.Context(), domainimagetask.Task{
+		UserID: 1, ID: taskID, Status: domainimagetask.StatusSucceeded, Prompt: "direct object media",
+		AbstractModel: "plus", RouteModelCode: "plus", TaskType: string(provider.TaskTypeTextToImage), BaseResolution: "2k", AspectRatio: "1:1",
+		ReferenceAssetIDs: []string{asset.ID},
+		Results: []provider.ImageResult{{
+			ID: imageID, StorageDriver: "s3", StorageConfigID: "bfss-primary", ObjectKey: "generated/direct.png", MimeType: "image/png",
+			VisibilityStatus: domainimagetask.VisibilityApproved, PublishedAt: &publishedAt,
+		}},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndBackend(cfg, nil, store, assetSvc, nil, backend)
+
+	adminStore := adminauthservice.NewMemoryStore()
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{Email: "admin-direct-media@example.com", PasswordHash: adminauthservice.HashPassword("password"), Role: "super_admin", Status: "active"}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "admin-secret", RefreshCookieName: "pg_admin_refresh"}, adminStore)
+	api := handlers.NewAPIWithAdminServices(cfg, authSvc, assetSvc, taskSvc, adminconfigservice.NewService(cfg), nil, nil, adminAuth, auditservice.NewService(nil), nil, nil)
+	handler := NewWithAPI(api)
+	adminToken := loginAdminForDirectMediaTest(t, handler)
+
+	tests := []struct {
+		name  string
+		path  string
+		token string
+	}{
+		{name: "task detail", path: "/api/agent/image/v1/tasks/" + taskID, token: session.AccessToken},
+		{name: "task list", path: "/api/agent/image/v1/tasks", token: session.AccessToken},
+		{name: "task stream", path: "/api/agent/image/v1/tasks/" + taskID + "/events", token: session.AccessToken},
+		{name: "history detail", path: "/api/agent/image/v1/history/tasks/" + taskID, token: session.AccessToken},
+		{name: "private gallery", path: "/api/agent/gallery/v1/images?page=1&page_size=10", token: session.AccessToken},
+		{name: "public gallery", path: "/api/open/image/v1/gallery/images?page=1&page_size=10"},
+		{name: "public detail", path: "/api/open/image/v1/gallery/images/" + imageID, token: session.AccessToken},
+		{name: "admin review", path: "/api/ops/admin/v1/image-reviews?page=1&page_size=10&status=approved", token: adminToken},
+		{name: "reference asset", path: "/api/agent/image/v1/reference-assets/" + asset.ID, token: session.AccessToken},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, test.path, nil)
+			if test.token != "" {
+				req.Header.Set("Authorization", "Bearer "+test.token)
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			if !bytes.Contains(rec.Body.Bytes(), []byte("https://objects.example.test/")) {
+				t.Fatalf("response must contain direct signed media URL body=%s", rec.Body.String())
+			}
+			if bytes.Contains(rec.Body.Bytes(), []byte("/api/agent/image/v1/images/")) {
+				t.Fatalf("response must not rebuild the legacy image route body=%s", rec.Body.String())
+			}
+			if bytes.Contains(rec.Body.Bytes(), []byte("/api/agent/image/v1/reference-assets/")) {
+				t.Fatalf("response must not rebuild the reference asset fallback route body=%s", rec.Body.String())
+			}
+		})
+	}
+
+	var uploadBody bytes.Buffer
+	uploadWriter := multipart.NewWriter(&uploadBody)
+	uploadPart, err := uploadWriter.CreateFormFile("file", "direct-reference.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := uploadPart.Write(tinyPNG(t)); err != nil {
+		t.Fatalf("write upload: %v", err)
+	}
+	if err := uploadWriter.Close(); err != nil {
+		t.Fatalf("close multipart upload: %v", err)
+	}
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/reference-assets", &uploadBody)
+	uploadReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	uploadReq.Header.Set("Content-Type", uploadWriter.FormDataContentType())
+	uploadRec := httptest.NewRecorder()
+	handler.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusCreated {
+		t.Fatalf("reference upload: status=%d body=%s", uploadRec.Code, uploadRec.Body.String())
+	}
+	if !bytes.Contains(uploadRec.Body.Bytes(), []byte("https://objects.example.test/reference-assets/")) {
+		t.Fatalf("reference upload must return direct signed media URL body=%s", uploadRec.Body.String())
+	}
+	if bytes.Contains(uploadRec.Body.Bytes(), []byte("/api/agent/image/v1/reference-assets/")) {
+		t.Fatalf("reference upload must not rebuild the fallback route body=%s", uploadRec.Body.String())
+	}
+}
+
+type directMediaBackend struct{}
+
+func (*directMediaBackend) Driver() string                                    { return "s3" }
+func (*directMediaBackend) Put(context.Context, string, string, []byte) error { return nil }
+func (*directMediaBackend) Get(context.Context, string) ([]byte, error) {
+	return nil, errors.New("direct media must not be proxied")
+}
+func (*directMediaBackend) Delete(context.Context, string) error { return nil }
+func (*directMediaBackend) TemporaryGetURL(_ context.Context, objectKey string, options storage.TemporaryGetURLOptions) (string, error) {
+	mode := "preview"
+	if options.ResponseFilename != "" {
+		mode = "download"
+	}
+	return "https://objects.example.test/" + objectKey + "?mode=" + mode + "&X-Amz-Signature=test", nil
+}
+
+func loginAdminForDirectMediaTest(t *testing.T, handler http.Handler) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/auth/login", bytes.NewBufferString(`{"email":"admin-direct-media@example.com","password":"password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin login: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil || response.Data.AccessToken == "" {
+		t.Fatalf("decode admin login: token=%q err=%v", response.Data.AccessToken, err)
+	}
+	return response.Data.AccessToken
 }
 
 func TestGalleryPublishRejectedByModeration(t *testing.T) {
