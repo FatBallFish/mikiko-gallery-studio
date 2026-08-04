@@ -26,6 +26,7 @@
 18. 非 TUI 的脚本化输出不纳入本次国际化范围。
 19. Tag `vX.Y.Z` push 自动构建并上传 `mgsctl`、API、Worker、三个前端发布包及校验文件。
 20. 同一 workflow 构建并推送五个 `docker.io/fatballfish/mikiko-gallery-studio-*` 多架构镜像，并在全部发布检查通过后更新 `latest`。
+21. setup binding 摘要算法演进必须通过显式 `mgsctl upgrade` 迁移兼容。迁移只能在数据库绑定和 `install-state.json` 可由旧算法严格复算命中时执行，任意无法验证的摘要仍须 fail-closed。
 
 ## 已确认决策
 
@@ -45,6 +46,7 @@
 - 从 runtime 外运行 `mgsctl upgrade` 能定位最近安装；Docker full 升级能在 Compose 网络内完成迁移并恢复健康。
 - Release 资产、校验和、Manifest、OCI labels 和镜像 digest 相互一致。
 - Docker Hub 同时存在 `vX.Y.Z` 和指向相同 digest 的 `latest` 多架构镜像。
+- 从旧摘要版本升级时，目标迁移器使用升级前发布身份复算旧摘要，并在启动目标服务前同步更新数据库绑定和 `install-state.json`；普通 API/Worker 启动不自动修复摘要。
 - 仓库当前用户文档和可执行入口中不存在 `deployctl` 或 `pic-gallery-*` 品牌残留。
 - `./scripts/workflow/verify.sh`、隔离 API smoke、Docker 升级 E2E 和 committed-scope review gate 通过。
 

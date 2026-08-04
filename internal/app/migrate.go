@@ -7,10 +7,14 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
+	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	"github.com/fatballfish/pic-gallery/internal/setup"
 )
 
 type runtimeLoader func(string) (config.Config, error)
 type databaseMigrator func(context.Context, string, db.MigrationRequest) (db.MigrationResult, error)
+type upgradeRuntimeLoader func(string) (config.BootstrapConfig, config.Config, error)
+type legacyBindingReconciler func(context.Context, config.BootstrapConfig, setup.LegacySetupReleaseIdentity) (bool, error)
 
 var ErrDatabaseMigrationRoleForbidden = errors.New("database migration is allowed only for single or control deployment roles")
 
@@ -34,6 +38,44 @@ func (e *DatabaseMigrationRoleError) Unwrap() error {
 // by setup and deployment tooling. Ordinary API and Worker startup never call it.
 func RunDatabaseMigration(ctx context.Context, runtimeEnvPath string) (db.MigrationResult, error) {
 	return runDatabaseMigration(ctx, runtimeEnvPath, config.LoadRuntime, db.Migrate)
+}
+
+// RunUpgradeDatabaseMigration runs the target schema migration and then
+// canonicalizes a verifiable legacy setup binding before services are rolled.
+func RunUpgradeDatabaseMigration(ctx context.Context, runtimeEnvPath string, previousRelease setup.LegacySetupReleaseIdentity) (db.MigrationResult, error) {
+	return runUpgradeDatabaseMigration(ctx, runtimeEnvPath, previousRelease, loadUpgradeRuntime, db.Migrate, func(ctx context.Context, bootstrap config.BootstrapConfig, identity setup.LegacySetupReleaseIdentity) (bool, error) {
+		return setup.ReconcileLegacyCompletedBinding(ctx, bootstrap, identity, setup.NewStateStore(bootstrap.Path), entstore.OpenSetupStore)
+	})
+}
+
+func loadUpgradeRuntime(path string) (config.BootstrapConfig, config.Config, error) {
+	bootstrap, err := config.LoadBootstrap(path)
+	if err != nil {
+		return config.BootstrapConfig{}, config.Config{}, err
+	}
+	cfg, err := config.RuntimeFromBootstrap(bootstrap)
+	if err != nil {
+		return config.BootstrapConfig{}, config.Config{}, err
+	}
+	return bootstrap, cfg, nil
+}
+
+func runUpgradeDatabaseMigration(ctx context.Context, runtimeEnvPath string, previousRelease setup.LegacySetupReleaseIdentity, load upgradeRuntimeLoader, migrate databaseMigrator, reconcile legacyBindingReconciler) (db.MigrationResult, error) {
+	if load == nil || migrate == nil || reconcile == nil {
+		return db.MigrationResult{}, fmt.Errorf("upgrade database migration dependencies are required")
+	}
+	bootstrap, cfg, err := load(runtimeEnvPath)
+	if err != nil {
+		return db.MigrationResult{}, fmt.Errorf("load runtime configuration for upgrade database migration: %w", err)
+	}
+	result, err := runDatabaseMigrationSnapshot(ctx, cfg, migrate)
+	if err != nil {
+		return db.MigrationResult{}, err
+	}
+	if _, err := reconcile(ctx, bootstrap, previousRelease); err != nil {
+		return db.MigrationResult{}, fmt.Errorf("reconcile legacy setup binding after database migration: %w", err)
+	}
+	return result, nil
 }
 
 // RunDatabaseMigrationSnapshot performs the explicit migration using an

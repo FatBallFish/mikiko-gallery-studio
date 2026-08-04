@@ -7,8 +7,10 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 )
@@ -111,6 +113,99 @@ func TestS3BackendRoundTrip(t *testing.T) {
 	}
 	if _, err := backend.Get(context.Background(), "generated-images/result.png"); err != ErrNotFound {
 		t.Fatalf("expected deleted object to be gone, got %v", err)
+	}
+}
+
+func TestS3BackendTemporaryGetURLUsesBoundedSigV4QueryWithoutNetwork(t *testing.T) {
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: "https://s3.example.com", Region: "us-east-1", Bucket: "bucket",
+			AccessKeyID: "AKIDEXAMPLE", SecretAccessKey: "secret-example", ForcePathStyle: true, Prefix: "prefix",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+	backend.now = func() time.Time { return time.Date(2026, time.August, 3, 12, 34, 56, 0, time.UTC) }
+	transport := &recordingRoundTripper{}
+	backend.client = &http.Client{Transport: transport}
+
+	options := TemporaryGetURLOptions{
+		Expiry:           10 * 24 * time.Hour,
+		ResponseFilename: "Mikiko result 01.png",
+		ContentType:      "image/png",
+	}
+	first, err := backend.TemporaryGetURL(t.Context(), "generated images/result + one.png", options)
+	if err != nil {
+		t.Fatalf("TemporaryGetURL: %v", err)
+	}
+	second, err := backend.TemporaryGetURL(t.Context(), "generated images/result + one.png", options)
+	if err != nil {
+		t.Fatalf("second TemporaryGetURL: %v", err)
+	}
+	if first != second {
+		t.Fatalf("fixed-time presign must be deterministic:\nfirst:  %s\nsecond: %s", first, second)
+	}
+	if transport.calls != 0 {
+		t.Fatalf("TemporaryGetURL performed %d network calls", transport.calls)
+	}
+
+	parsed, err := url.Parse(first)
+	if err != nil {
+		t.Fatalf("parse presigned URL: %v", err)
+	}
+	if parsed.Path != "/bucket/prefix/generated images/result + one.png" {
+		t.Fatalf("presigned path = %q", parsed.Path)
+	}
+	query := parsed.Query()
+	for key, want := range map[string]string{
+		"X-Amz-Algorithm":       "AWS4-HMAC-SHA256",
+		"X-Amz-Credential":      "AKIDEXAMPLE/20260803/us-east-1/s3/aws4_request",
+		"X-Amz-Date":            "20260803T123456Z",
+		"X-Amz-Expires":         "604800",
+		"X-Amz-SignedHeaders":   "host",
+		"response-content-type": "image/png",
+	} {
+		if got := query.Get(key); got != want {
+			t.Fatalf("%s = %q, want %q; URL=%s", key, got, want, first)
+		}
+	}
+	if disposition := query.Get("response-content-disposition"); !strings.Contains(disposition, "attachment") || !strings.Contains(disposition, "Mikiko result 01.png") {
+		t.Fatalf("unexpected response content disposition %q", disposition)
+	}
+	if signature := query.Get("X-Amz-Signature"); len(signature) != 64 {
+		t.Fatalf("signature = %q, want 64 lowercase hexadecimal characters", signature)
+	}
+	if strings.Contains(first, "access_token") || strings.Contains(first, "secret-example") {
+		t.Fatalf("presigned URL leaked application token or storage secret: %s", first)
+	}
+}
+
+func TestS3BackendTemporaryGetURLDefaultsToFiveMinutesAndLocalDoesNotSign(t *testing.T) {
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: "https://bucket.example.com", Region: "us-east-1", Bucket: "bucket",
+			AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+	backend.now = func() time.Time { return time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC) }
+	signedURL, err := backend.TemporaryGetURL(t.Context(), "result.png", TemporaryGetURLOptions{})
+	if err != nil {
+		t.Fatalf("TemporaryGetURL: %v", err)
+	}
+	parsed, _ := url.Parse(signedURL)
+	if got := parsed.Query().Get("X-Amz-Expires"); got != "300" {
+		t.Fatalf("default expiry = %q, want 300", got)
+	}
+
+	var backendContract Backend = NewLocalBackend(t.TempDir())
+	if _, ok := backendContract.(TemporaryURLSigner); ok {
+		t.Fatal("local storage must retain byte delivery instead of exposing a temporary URL")
 	}
 }
 

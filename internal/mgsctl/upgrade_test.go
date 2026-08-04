@@ -97,6 +97,9 @@ func TestUpgradeResolvesAndPreparesTargetBeforeWritingMigratingAndRolling(t *tes
 			if target.Release.MigrationImage != migrationImage {
 				t.Fatalf("migration image = %#v", target.Release.MigrationImage)
 			}
+			if target.PreviousReleaseIdentity.ApplicationVersion != "v1" || target.PreviousReleaseIdentity.ImageTag != "v1" {
+				t.Fatalf("previous release identity = %#v", target.PreviousReleaseIdentity)
+			}
 			return nil
 		},
 		ApplyDeployment: func(context.Context, InstallPlan) error { events = append(events, "roll"); return nil },

@@ -373,9 +373,13 @@ func BuildDockerMigrationProcessSpec(target UpgradeTarget, installationID, nodeI
 	imageRef := upgradeImageReference(target.Plan, ComponentAPI, target.Release.MigrationImage)
 	arguments := []string{
 		"run", "--rm", "--network", projectName + "_default", "--user", runtimeUser,
-		"--volume", filepath.Join(absoluteRuntime, "config") + ":/app/config:ro",
+		"--volume", filepath.Join(absoluteRuntime, "config") + ":/app/config",
 		"--entrypoint", "mikiko-gallery-studio-db-migrate", imageRef,
-		"--env-file", "/app/config/runtime.env",
+		"--env-file", "/app/config/runtime.env", "--reconcile-legacy-setup-binding",
+		"--legacy-application-version", target.PreviousReleaseIdentity.ApplicationVersion,
+		"--legacy-image-registry", target.PreviousReleaseIdentity.ImageRegistry,
+		"--legacy-image-tag", target.PreviousReleaseIdentity.ImageTag,
+		"--legacy-release-version", target.PreviousReleaseIdentity.ReleaseVersion,
 	}
 	return ProcessSpec{
 		Executable: "docker", Arguments: arguments, Directory: absoluteRuntime,

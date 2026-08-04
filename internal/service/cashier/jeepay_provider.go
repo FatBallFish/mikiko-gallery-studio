@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -69,22 +70,28 @@ func BuildJeePayAPIPayment(ctx context.Context, callbacks CallbackURLConfig, req
 	httpReq.Header.Set("Accept", "application/json")
 	resp, doErr := jeepayHTTPClient.Do(httpReq)
 	if doErr != nil {
+		logJeePayFailure(ctx, req, "request", 0, "", "request failed")
 		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	defer resp.Body.Close()
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
+		logJeePayFailure(ctx, req, "read_response", resp.StatusCode, "", "response could not be read")
 		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		code, message := jeepayResponseDiagnostic(respBody)
+		logJeePayFailure(ctx, req, "http_response", resp.StatusCode, code, message)
 		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(respBody, &raw); err != nil {
+		logJeePayFailure(ctx, req, "decode_response", resp.StatusCode, "", "invalid JSON response")
 		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	code := strings.TrimSpace(rawString(raw["code"]))
 	if code != "0" && code != "1" && !strings.EqualFold(code, "success") {
+		logJeePayFailure(ctx, req, "provider_response", resp.StatusCode, code, firstRawString(raw, "msg", "message"))
 		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	data := raw
@@ -105,9 +112,61 @@ func BuildJeePayAPIPayment(ctx context.Context, callbacks CallbackURLConfig, req
 	}
 	channelTradeNo := strings.TrimSpace(firstRawString(data, "payOrderId", "pay_order_id", "trade_no", "tradeNo", "channelOrderNo"))
 	if paymentURL == "" && qrCode == "" {
+		logJeePayFailure(ctx, req, "payment_payload", resp.StatusCode, code, firstRawString(raw, "msg", "message"))
 		return "", "", "", "", "", errs.New(http.StatusBadGateway, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	return paymentURL, qrCode, sign, wayCode, channelTradeNo, nil
+}
+
+func jeepayResponseDiagnostic(body []byte) (string, string) {
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return "", "upstream returned a non-JSON response"
+	}
+	return strings.TrimSpace(rawString(raw["code"])), strings.TrimSpace(firstRawString(raw, "msg", "message"))
+}
+
+func logJeePayFailure(ctx context.Context, req PaymentDisplayRequest, stage string, status int, code, message string) {
+	slog.WarnContext(ctx, "jeepay unified order failed",
+		"stage", stage,
+		"provider_type", strings.TrimSpace(req.Instance.ProviderType),
+		"http_status", status,
+		"provider_code", strings.TrimSpace(code),
+		"message", sanitizeJeePayDiagnostic(message, req.Instance.Config),
+	)
+}
+
+func sanitizeJeePayDiagnostic(message string, config map[string]any) string {
+	message = strings.Join(strings.Fields(strings.TrimSpace(message)), " ")
+	for _, key := range []string{"key", "api_key", "apiKey", "merchant_key", "merchantKey"} {
+		secret := strings.TrimSpace(configString(config, key))
+		if secret != "" {
+			message = strings.ReplaceAll(message, secret, "[redacted]")
+		}
+	}
+	parts := strings.Fields(message)
+	for index, part := range parts {
+		lower := strings.ToLower(part)
+		switch {
+		case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"):
+			if parsed, err := url.Parse(part); err == nil && parsed.Host != "" {
+				parsed.RawQuery = ""
+				parsed.Fragment = ""
+				parts[index] = parsed.String()
+			}
+		case strings.Contains(lower, "sign="), strings.Contains(lower, "signature="), strings.Contains(lower, "token="), strings.Contains(lower, "key="), strings.Contains(lower, "secret="):
+			parts[index] = "[redacted]"
+		}
+	}
+	message = strings.Join(parts, " ")
+	runes := []rune(message)
+	if len(runes) > 160 {
+		message = string(runes[:160])
+	}
+	if message == "" {
+		return "upstream request failed"
+	}
+	return message
 }
 
 func BuildJeePayPaymentParams(callbacks CallbackURLConfig, req PaymentDisplayRequest) (string, map[string]string, string, string, error) {
@@ -154,10 +213,24 @@ func BuildJeePayPaymentParams(callbacks CallbackURLConfig, req PaymentDisplayReq
 	}
 	if channelExtra != "" {
 		params["channelExtra"] = channelExtra
+	} else if defaultChannelExtra := defaultJeePayChannelExtra(wayCode); defaultChannelExtra != "" {
+		params["channelExtra"] = defaultChannelExtra
 	}
 	sign := jeepaySign(params, key)
 	params["sign"] = sign
 	return baseURL, params, sign, wayCode, nil
+}
+
+func defaultJeePayChannelExtra(wayCode string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(wayCode))
+	switch {
+	case strings.Contains(normalized, "NATIVE"), strings.Contains(normalized, "QR"):
+		return `{"payDataType":"codeUrl"}`
+	case strings.Contains(normalized, "PC"), strings.Contains(normalized, "WEB"), strings.Contains(normalized, "WAP"), strings.Contains(normalized, "H5"):
+		return `{"payDataType":"payUrl"}`
+	default:
+		return ""
+	}
 }
 
 func trimJeePayEndpointBase(raw string) string {

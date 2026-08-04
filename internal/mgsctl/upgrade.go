@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	"github.com/fatballfish/pic-gallery/internal/setup"
 )
 
 const upgradeRecoveryTimeout = 2 * time.Minute
@@ -29,9 +30,12 @@ type UpgradeDependencies struct {
 type UpgradeTarget struct {
 	Plan                      InstallPlan
 	Release                   ResolvedRelease
+	PreviousReleaseIdentity   ReleaseIdentity
 	NativeMigrationExecutable string
 	Cleanup                   func() error
 }
+
+type ReleaseIdentity = setup.LegacySetupReleaseIdentity
 
 type UpgradeResult struct {
 	RuntimeEnvPath  string
@@ -81,6 +85,12 @@ func Upgrade(ctx context.Context, options UpgradeOptions, dependencies UpgradeDe
 	target, err := resolveUpgradeTarget(ctx, plan, options, dependencies.ResolveRelease, previousVersion)
 	if err != nil {
 		return UpgradeResult{}, fmt.Errorf("resolve target release: %w", err)
+	}
+	target.PreviousReleaseIdentity = ReleaseIdentity{
+		ApplicationVersion: previousValues["APPLICATION_VERSION"],
+		ImageRegistry:      previousValues["IMAGE_REGISTRY"],
+		ImageTag:           previousValues["IMAGE_TAG"],
+		ReleaseVersion:     previousValues["RELEASE_VERSION"],
 	}
 	plan = target.Plan
 	targetVersion := plan.ApplicationVersion

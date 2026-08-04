@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 )
@@ -32,6 +33,23 @@ type SetupBinding struct {
 	RequestDigest  string
 	AdminID        int64
 	AdminEmail     string
+}
+
+type SetupBindingDigestUpdate struct {
+	OperationID           string
+	InstallationID        string
+	ConfigRevision        int
+	ExpectedRequestDigest string
+	RequestDigest         string
+}
+
+type SetupBindingDigestReconciler interface {
+	ReconcileRequestDigest(context.Context, SetupBindingDigestUpdate) (SetupBinding, error)
+}
+
+type CompletedBindingStateStore interface {
+	Load() (InstallState, bool, error)
+	ReconcileCompletedCommit(CommitProof, time.Time) (InstallState, error)
 }
 
 type SetupStore interface {

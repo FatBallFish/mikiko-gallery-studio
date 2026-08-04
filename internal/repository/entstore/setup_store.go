@@ -198,6 +198,34 @@ func (store *SetupStore) GetBinding(ctx context.Context, installationID string) 
 	return setupBindingFromClient(ctx, store.client, entities[0])
 }
 
+func (store *SetupStore) ReconcileRequestDigest(ctx context.Context, update setup.SetupBindingDigestUpdate) (setup.SetupBinding, error) {
+	if store == nil || store.client == nil {
+		return setup.SetupBinding{}, fmt.Errorf("setup store is not configured")
+	}
+	parsedOperationID, err := uuid.Parse(update.OperationID)
+	if err != nil || parsedOperationID.String() != update.OperationID || strings.TrimSpace(update.InstallationID) == "" ||
+		update.ConfigRevision <= 0 || !setupDigestPattern.MatchString(update.ExpectedRequestDigest) || !setupDigestPattern.MatchString(update.RequestDigest) {
+		return setup.SetupBinding{}, fmt.Errorf("setup binding digest update identity is invalid")
+	}
+	updated, err := store.client.Installation.Update().
+		Where(
+			installation.SingletonKeyEQ("installation"),
+			installation.InstallationIDEQ(update.InstallationID),
+			installation.SetupOperationIDEQ(update.OperationID),
+			installation.SetupConfigRevisionEQ(update.ConfigRevision),
+			installation.SetupRequestDigestEQ(update.ExpectedRequestDigest),
+		).
+		SetSetupRequestDigest(update.RequestDigest).
+		Save(ctx)
+	if err != nil {
+		return setup.SetupBinding{}, fmt.Errorf("reconcile setup binding digest: %w", err)
+	}
+	if updated != 1 {
+		return setup.SetupBinding{}, setup.ErrSetupBindingMismatch
+	}
+	return store.GetBinding(ctx, update.InstallationID)
+}
+
 func (store *SetupStore) MigrationCompleted(ctx context.Context, expected db.SchemaVersion) (bool, error) {
 	if store == nil || store.client == nil {
 		return false, fmt.Errorf("setup store is not configured")

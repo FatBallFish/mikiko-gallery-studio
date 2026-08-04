@@ -564,3 +564,17 @@ git commit -m "fix: address mgsctl verification findings"
 ```
 
 Re-run Steps 1-6 after any commit because the committed-scope marker is tree-specific.
+
+### Task 11: Migrate verifiable legacy setup binding digests during upgrade
+
+**Files:**
+- Modify: `cmd/db-migrate/main.go`
+- Modify: `internal/app/migrate.go`
+- Modify: `internal/mgsctl/upgrade.go`
+- Modify: `internal/mgsctl/docker.go`
+- Modify: `internal/mgsctl/native.go`
+- Modify: `internal/repository/entstore/setup_store.go`
+- Modify: `internal/setup/service.go`
+- Create: `internal/setup/legacy_binding_reconcile.go`
+
+Use the upgrade's previous release identity to reproduce the legacy digest, require matching completed state and database identities, update the database digest with compare-and-swap, and atomically reconcile `install-state.json`. Invoke this only from the target migration binary's explicit upgrade flag. Keep ordinary startup fail-closed and cover legacy, canonical, forged, rollback, Docker, and Native paths with focused tests.

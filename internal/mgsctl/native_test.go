@@ -132,11 +132,17 @@ func TestNativeExecutorRunsPreparedTargetMigrationBinary(t *testing.T) {
 		received = spec
 		return nil
 	})}
-	target := UpgradeTarget{Plan: plan, NativeMigrationExecutable: executable}
+	target := UpgradeTarget{
+		Plan: plan, NativeMigrationExecutable: executable,
+		PreviousReleaseIdentity: ReleaseIdentity{ApplicationVersion: "v1.0.0", ReleaseVersion: "v1.0.0"},
+	}
 	if err := executor.MigrateUpgrade(context.Background(), target, filepath.Join(plan.RuntimeDir, "config", "runtime.env")); err != nil {
 		t.Fatal(err)
 	}
-	if received.Executable != executable || !reflect.DeepEqual(received.Arguments, []string{"--env-file", filepath.Join(plan.RuntimeDir, "config", "runtime.env")}) || received.Directory != plan.RuntimeDir {
+	if received.Executable != executable || !reflect.DeepEqual(received.Arguments, []string{
+		"--env-file", filepath.Join(plan.RuntimeDir, "config", "runtime.env"), "--reconcile-legacy-setup-binding",
+		"--legacy-application-version", "v1.0.0", "--legacy-image-registry", "", "--legacy-image-tag", "", "--legacy-release-version", "v1.0.0",
+	}) || received.Directory != plan.RuntimeDir {
 		t.Fatalf("native migration process = %#v", received)
 	}
 }

@@ -1,7 +1,7 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { ArrowLeft, ArrowRight, ChevronUp, SlidersHorizontal } from 'lucide-react'
-import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset } from '../../../shared/api-types'
+import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
 import { toTask, userApi } from '../../../shared/user-api'
@@ -23,6 +23,7 @@ import { useCompactWorkspaceViewport, workspaceParametersHidden } from './worksp
 import { workspaceSheetDragOffset, workspaceSheetSnap } from './workspaceSheetGesture'
 import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHistoryInteraction } from './workspaceTaskHistory'
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
+import { projectWorkspaceImageDetail } from './workspaceImageDetail'
 import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspaceRatioPixelEstimate } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
@@ -283,7 +284,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [busy, setBusy] = useState(false)
   const [editSourceOpen, setEditSourceOpen] = useState(false)
   const [previewImage, setPreviewImage] = useState<ImagePreviewPayload | null>(null)
-  const previewDetailImage: ImageResult | null = previewImage ? {
+  const previewDetailImage: ImageResult | null = previewImage?.detailImage ?? (previewImage ? {
     id: previewImage.alt || 'preview',
     url: previewImage.url,
     download_url: previewImage.downloadUrl,
@@ -293,7 +294,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     prompt: previewImage.prompt,
     aspect_ratio: previewImage.ratio,
     route_model_code: previewImage.model,
-  } : null
+    author_name: app.profile?.display_name,
+  } : null)
   const [outputTab, setOutputTab] = useState<OutputTab>('current')
   const [historyTaskDialog, setHistoryTaskDialog] = useState<ImageTask | null>(null)
   const [galleryImportTarget, setGalleryImportTarget] = useState<'edit' | null>(null)
@@ -1472,6 +1474,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
               <GenerationOutput
                 key={latestTask.id}
                 task={latestTask}
+                profile={app.profile}
                 onCopyPrompt={async () => {
                   await copyText(latestTask.prompt)
                   app.notify('success', '提示词已复制')
@@ -1512,7 +1515,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 accessToken={app.session?.token}
               />
             ) : (
-              <HistoryCreationGrid tasks={historyTasks} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} />
+              <HistoryCreationGrid tasks={historyTasks} profile={app.profile} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} />
             )}
             <div ref={feedEndRef} />
           </div>
@@ -1840,8 +1843,9 @@ function formatCompactDuration(ms: number) {
   return `${seconds}s`
 }
 
-function HistoryCreationGrid({ tasks, accessToken, onPreviewImage, onOpenTaskDialog }: {
+function HistoryCreationGrid({ tasks, profile, accessToken, onPreviewImage, onOpenTaskDialog }: {
   tasks: ImageTask[]
+  profile?: Pick<UserProfile, 'display_name'> | null
   accessToken?: string | null
   onPreviewImage: (image: ImagePreviewPayload) => void
   onOpenTaskDialog: (task: ImageTask) => void
@@ -1855,6 +1859,7 @@ function HistoryCreationGrid({ tasks, accessToken, onPreviewImage, onOpenTaskDia
         <HistoryCreationCard
           key={task.id}
           task={task}
+          profile={profile}
           accessToken={accessToken}
           onPreviewImage={onPreviewImage}
           onOpenTaskDialog={onOpenTaskDialog}
@@ -1864,8 +1869,9 @@ function HistoryCreationGrid({ tasks, accessToken, onPreviewImage, onOpenTaskDia
   )
 }
 
-function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTaskDialog }: {
+function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpenTaskDialog }: {
   task: ImageTask
+  profile?: Pick<UserProfile, 'display_name'> | null
   accessToken?: string | null
   onPreviewImage: (image: ImagePreviewPayload) => void
   onOpenTaskDialog: (task: ImageTask) => void
@@ -1896,6 +1902,8 @@ function HistoryCreationCard({ task, accessToken, onPreviewImage, onOpenTaskDial
       ratio: task.aspect_ratio,
       model: imageSlot.image.route_model_code || task.route_model_code || task.model_group,
       source: '历史创作',
+      creationDraft: workspaceCreationDraftFromSnapshot(task),
+      detailImage: projectWorkspaceImageDetail(imageSlot.image, task, profile),
     })
   }
 
@@ -1941,23 +1949,7 @@ function HistoryTaskDialog({ task, accessToken, onClose }: {
   useEffect(() => setSelectedIndex(0), [task.id])
   const image = task.results[selectedIndex] ?? task.results[0]
   if (!image) return null
-  const detailImage: ImageResult = {
-    ...image,
-    prompt: image.prompt || task.prompt,
-    task_type: task.task_type,
-    route_model_code: image.route_model_code || task.route_model_code,
-    abstract_model: image.abstract_model || task.abstract_model,
-    size_mode: task.size_mode,
-    requested_size: task.requested_size,
-    base_resolution: image.base_resolution || task.base_resolution,
-    quality: image.quality || task.quality,
-    aspect_ratio: image.aspect_ratio || task.aspect_ratio,
-    output_format: task.output_format,
-    output_compression: task.output_compression,
-    moderation: task.moderation,
-    requested_output_image_count: task.requested_output_image_count || task.image_count,
-    reference_asset_ids: task.reference_asset_ids,
-  }
+  const detailImage = projectWorkspaceImageDetail(image, task, app.profile)
   const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
   const reuseConfiguration = () => {
     stageWorkspaceCreationDraft(workspaceCreationDraftFromSnapshot(task), window.sessionStorage, window.history)
@@ -1994,8 +1986,9 @@ function HistoryTaskDialog({ task, accessToken, onClose }: {
   )
 }
 
-function GenerationOutput({ task, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken }: {
+function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken }: {
   task: ImageTask
+  profile?: Pick<UserProfile, 'display_name'> | null
   onCopyPrompt: () => Promise<void>
   onUseReference: (url: string) => Promise<void>
   onPreviewImage: (image: ImagePreviewPayload) => void
@@ -2063,6 +2056,8 @@ function GenerationOutput({ task, onCopyPrompt, onUseReference, onPreviewImage, 
                   <GeneratedImage
                     key={slot.image.id || `image-${slot.index}`}
                     image={slot.image}
+                    task={task}
+                    profile={profile}
                     alt={task.title}
                     fallbackRatio={task.aspect_ratio}
                     accessToken={accessToken}
@@ -2178,8 +2173,10 @@ function normalizeAspectRatio(input?: string) {
   return undefined
 }
 
-function GeneratedImage({ image, alt, fallbackRatio, accessToken, onUseReference, onPreview }: {
+function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken, onUseReference, onPreview }: {
   image: ImageResult
+  task: ImageTask
+  profile?: Pick<UserProfile, 'display_name'> | null
   alt: string
   fallbackRatio?: string
   accessToken?: string
@@ -2208,6 +2205,8 @@ function GeneratedImage({ image, alt, fallbackRatio, accessToken, onUseReference
           ratio: fallbackRatio,
           model: image.route_model_code || image.abstract_model,
           source: '创作输出',
+          creationDraft: workspaceCreationDraftFromSnapshot(task),
+          detailImage: projectWorkspaceImageDetail(image, task, profile),
         })}
         aria-label="预览生成图片"
       >

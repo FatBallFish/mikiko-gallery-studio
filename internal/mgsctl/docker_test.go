@@ -162,7 +162,9 @@ func TestBuildDockerMigrationProcessSpecUsesTargetDigestAndComposeNetwork(t *tes
 		Mode: "docker", Profile: "custom", Topology: "single", Role: "single", RuntimeDir: "runtime",
 		StorageDriver: "local", ApplicationVersion: "v2.0.0", Components: []Component{ComponentWorker},
 	}
-	target := UpgradeTarget{Plan: plan, Release: ResolvedRelease{MigrationImage: ReleaseImage{
+	target := UpgradeTarget{Plan: plan, PreviousReleaseIdentity: ReleaseIdentity{
+		ApplicationVersion: "v1.0.0", ImageRegistry: "docker.io/fatballfish", ImageTag: "v1.0.0",
+	}, Release: ResolvedRelease{MigrationImage: ReleaseImage{
 		Repository: "docker.io/fatballfish/mikiko-gallery-studio-api", Digest: "sha256:" + strings.Repeat("a", 64),
 	}}}
 	spec, err := BuildDockerMigrationProcessSpec(target, "019d0000-0000-7000-8000-000000000123", "", "1000:1000", []string{"PATH=/usr/bin", "DATABASE_URL=host-secret"})
@@ -173,10 +175,12 @@ func TestBuildDockerMigrationProcessSpecUsesTargetDigestAndComposeNetwork(t *tes
 	absoluteRuntime, _ := filepath.Abs(plan.RuntimeDir)
 	for _, required := range []string{
 		"run --rm", "--network app-019d0000000070008000000000000123_default", "--user 1000:1000",
-		"--volume " + filepath.Join(absoluteRuntime, "config") + ":/app/config:ro",
+		"--volume " + filepath.Join(absoluteRuntime, "config") + ":/app/config",
 		"--entrypoint mikiko-gallery-studio-db-migrate",
 		"docker.io/fatballfish/mikiko-gallery-studio-api@sha256:" + strings.Repeat("a", 64),
 		"--env-file /app/config/runtime.env",
+		"--reconcile-legacy-setup-binding",
+		"--legacy-application-version v1.0.0", "--legacy-image-registry docker.io/fatballfish", "--legacy-image-tag v1.0.0",
 	} {
 		if !strings.Contains(joined, required) {
 			t.Errorf("migration arguments %q missing %q", joined, required)

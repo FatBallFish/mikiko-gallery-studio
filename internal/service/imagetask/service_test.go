@@ -929,6 +929,93 @@ func TestDownloadImageResultRejectsLocalObjectKeyTraversal(t *testing.T) {
 	}
 }
 
+func TestDeliverImageResultUsesTemporaryURLAfterOwnershipCheck(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	result := provider.ImageResult{
+		ID: "signed-image", StorageDriver: "s3", StorageConfigID: "bfss-primary",
+		ObjectKey: "generated/signed-image.png", MimeType: "image/png", VisibilityStatus: "private",
+	}
+	if err := store.Save(t.Context(), domainimagetask.Task{
+		UserID: 22, ID: "signed-task", Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{result},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	backend := &temporaryURLBackend{signedURL: "https://bfss.example.com/bucket/generated/signed-image.png?X-Amz-Signature=signed"}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(taskTestConfig(), nil, store, nil, nil, backend)
+
+	delivery, err := svc.DeliverImageResult(t.Context(), 22, result.ID)
+	if err != nil {
+		t.Fatalf("DeliverImageResult: %v", err)
+	}
+	if delivery.Result.ID != result.ID || delivery.TemporaryURL != backend.signedURL || len(delivery.Content) != 0 {
+		t.Fatalf("unexpected temporary delivery %#v", delivery)
+	}
+	if backend.getCalls != 0 || backend.signCalls != 1 || backend.objectKey != result.ObjectKey {
+		t.Fatalf("temporary delivery calls: get=%d sign=%d key=%q", backend.getCalls, backend.signCalls, backend.objectKey)
+	}
+	if backend.options.Expiry != 5*time.Minute || backend.options.ContentType != "image/png" || backend.options.ResponseFilename != "signed-image.png" {
+		t.Fatalf("unexpected temporary URL options %#v", backend.options)
+	}
+
+	if _, err := svc.DeliverImageResult(t.Context(), 23, result.ID); err == nil {
+		t.Fatal("expected non-owner delivery to be rejected")
+	}
+	if backend.signCalls != 1 {
+		t.Fatalf("non-owner request reached signer; sign calls=%d", backend.signCalls)
+	}
+}
+
+func TestDeliverImageResultFallsBackToBackendBytes(t *testing.T) {
+	backend := storage.NewLocalBackend(t.TempDir())
+	content := []byte("local-image-content")
+	if err := backend.Put(t.Context(), "generated/local-image.webp", "image/webp", content); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	store := imagetask.NewMemoryStore()
+	result := provider.ImageResult{
+		ID: "local-image", StorageDriver: "local", ObjectKey: "generated/local-image.webp",
+		MimeType: "image/webp", VisibilityStatus: "private",
+	}
+	if err := store.Save(t.Context(), domainimagetask.Task{
+		UserID: 22, ID: "local-task", Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{result},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(taskTestConfig(), nil, store, nil, nil, backend)
+
+	delivery, err := svc.DeliverImageResult(t.Context(), 22, result.ID)
+	if err != nil {
+		t.Fatalf("DeliverImageResult: %v", err)
+	}
+	if delivery.TemporaryURL != "" || !bytes.Equal(delivery.Content, content) {
+		t.Fatalf("unexpected local delivery %#v", delivery)
+	}
+}
+
+type temporaryURLBackend struct {
+	signedURL string
+	objectKey string
+	options   storage.TemporaryGetURLOptions
+	getCalls  int
+	signCalls int
+}
+
+func (backend *temporaryURLBackend) Driver() string { return "s3" }
+func (backend *temporaryURLBackend) Put(context.Context, string, string, []byte) error {
+	return nil
+}
+func (backend *temporaryURLBackend) Get(context.Context, string) ([]byte, error) {
+	backend.getCalls++
+	return nil, errors.New("Get must not be called for a signing backend")
+}
+func (backend *temporaryURLBackend) Delete(context.Context, string) error { return nil }
+func (backend *temporaryURLBackend) TemporaryGetURL(_ context.Context, objectKey string, options storage.TemporaryGetURLOptions) (string, error) {
+	backend.signCalls++
+	backend.objectKey = objectKey
+	backend.options = options
+	return backend.signedURL, nil
+}
+
 func taskTestConfig() config.Config {
 	cfg := config.Config{}
 	cfg.Billing.CNYPerPoint = "0.31250"

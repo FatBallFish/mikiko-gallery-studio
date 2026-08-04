@@ -10,12 +10,14 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,9 +44,20 @@ type BoundedGetter interface {
 	GetBounded(ctx context.Context, objectKey string, maxBytes int64) ([]byte, error)
 }
 
+type TemporaryGetURLOptions struct {
+	Expiry           time.Duration
+	ResponseFilename string
+	ContentType      string
+}
+
+type TemporaryURLSigner interface {
+	TemporaryGetURL(ctx context.Context, objectKey string, options TemporaryGetURLOptions) (string, error)
+}
+
 var (
-	_ BoundedGetter = (*LocalBackend)(nil)
-	_ BoundedGetter = (*S3Backend)(nil)
+	_ BoundedGetter      = (*LocalBackend)(nil)
+	_ BoundedGetter      = (*S3Backend)(nil)
+	_ TemporaryURLSigner = (*S3Backend)(nil)
 )
 
 func NewBackend(cfg config.StorageConfig) (Backend, error) {
@@ -161,6 +174,7 @@ type S3Backend struct {
 	prefix          string
 	forcePathStyle  bool
 	client          *http.Client
+	now             func() time.Time
 }
 
 func NewS3Backend(cfg config.StorageConfig) (*S3Backend, error) {
@@ -193,10 +207,88 @@ func NewS3Backend(cfg config.StorageConfig) (*S3Backend, error) {
 		prefix:          strings.Trim(strings.TrimSpace(cfg.S3.Prefix), "/"),
 		forcePathStyle:  cfg.S3.ForcePathStyle,
 		client:          &http.Client{Timeout: 30 * time.Second},
+		now:             time.Now,
 	}, nil
 }
 
 func (b *S3Backend) Driver() string { return "s3" }
+
+func (b *S3Backend) TemporaryGetURL(ctx context.Context, objectKey string, options TemporaryGetURLOptions) (string, error) {
+	if err := contextError(ctx); err != nil {
+		return "", err
+	}
+	key := b.normalizeKey(objectKey)
+	if key == "" {
+		return "", fmt.Errorf("invalid s3 object key %q", objectKey)
+	}
+	requestURL, host, canonicalURI, err := b.requestTarget(key)
+	if err != nil {
+		return "", err
+	}
+	target, err := url.Parse(requestURL)
+	if err != nil {
+		return "", err
+	}
+
+	expiry := options.Expiry
+	if expiry <= 0 {
+		expiry = 5 * time.Minute
+	}
+	if expiry > 7*24*time.Hour {
+		expiry = 7 * 24 * time.Hour
+	}
+	expiresSeconds := int64(expiry / time.Second)
+	if expiresSeconds < 1 {
+		expiresSeconds = 1
+	}
+
+	now := b.nowUTC()
+	amzDate := now.Format("20060102T150405Z")
+	dateStamp := now.Format("20060102")
+	credentialScope := dateStamp + "/" + b.region + "/s3/aws4_request"
+	query := url.Values{
+		"X-Amz-Algorithm":     {"AWS4-HMAC-SHA256"},
+		"X-Amz-Credential":    {b.accessKeyID + "/" + credentialScope},
+		"X-Amz-Date":          {amzDate},
+		"X-Amz-Expires":       {strconv.FormatInt(expiresSeconds, 10)},
+		"X-Amz-SignedHeaders": {"host"},
+	}
+	if contentType := strings.TrimSpace(options.ContentType); contentType != "" {
+		query.Set("response-content-type", contentType)
+	}
+	if filename := strings.TrimSpace(options.ResponseFilename); filename != "" {
+		query.Set("response-content-disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+	}
+	canonicalQuery := awsCanonicalQuery(query)
+	canonicalRequest := strings.Join([]string{
+		http.MethodGet,
+		canonicalURI,
+		canonicalQuery,
+		"host:" + host + "\n",
+		"host",
+		"UNSIGNED-PAYLOAD",
+	}, "\n")
+	stringToSign := strings.Join([]string{
+		"AWS4-HMAC-SHA256",
+		amzDate,
+		credentialScope,
+		sha256Hex([]byte(canonicalRequest)),
+	}, "\n")
+	query.Set("X-Amz-Signature", hex.EncodeToString(hmacSHA256(b.signingKey(dateStamp), stringToSign)))
+	target.RawQuery = awsCanonicalQuery(query)
+	return target.String(), nil
+}
+
+func (b *S3Backend) nowUTC() time.Time {
+	if b == nil || b.now == nil {
+		return time.Now().UTC()
+	}
+	return b.now().UTC()
+}
+
+func awsCanonicalQuery(query url.Values) string {
+	return strings.ReplaceAll(query.Encode(), "+", "%20")
+}
 
 func (b *S3Backend) Put(ctx context.Context, objectKey string, contentType string, content []byte) error {
 	req, err := b.newSignedRequest(ctx, http.MethodPut, objectKey, contentType, content)
@@ -357,7 +449,7 @@ func (b *S3Backend) newSignedRequest(ctx context.Context, method string, objectK
 		return nil, err
 	}
 	payloadHash := sha256Hex(content)
-	now := time.Now().UTC()
+	now := b.nowUTC()
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
 	req, err := http.NewRequestWithContext(ctx, method, requestURL, bytes.NewReader(content))
@@ -398,13 +490,17 @@ func (b *S3Backend) requestTarget(key string) (string, string, string, error) {
 	clone := *b.endpoint
 	host := clone.Host
 	canonicalURI := "/" + b.bucket + "/" + escapePath(key)
+	requestPath := "/" + b.bucket + "/" + key
 	if !b.usePathStyle() {
 		host = b.bucket + "." + clone.Host
 		clone.Host = host
 		canonicalURI = "/" + escapePath(key)
+		requestPath = "/" + key
 	}
-	clone.Path = canonicalURI
+	clone.Path = requestPath
 	clone.RawPath = canonicalURI
+	clone.RawQuery = ""
+	clone.Fragment = ""
 	return clone.String(), host, canonicalURI, nil
 }
 
@@ -457,7 +553,7 @@ func sha256Hex(value []byte) string {
 func escapePath(key string) string {
 	parts := strings.Split(strings.Trim(key, "/"), "/")
 	for idx, part := range parts {
-		parts[idx] = url.PathEscape(part)
+		parts[idx] = strings.ReplaceAll(url.QueryEscape(part), "+", "%20")
 	}
 	return strings.Join(parts, "/")
 }

@@ -67,6 +67,8 @@ Native 发布包包含 `mikiko-gallery-studio-db-migrate`。升级先准备目�
 
 解析、下载、校验或迁移失败时恢复旧 runtime 配置，旧服务继续运行。迁移成功但服务滚动失败时保留目标配置并要求以同一目标重试，不尝试逆向数据库迁移。
 
+setup binding 摘要算法发生兼容性演进时，由目标版本迁移器接收升级前的发布身份并复算旧摘要。只有数据库绑定和本地 completed install-state 的操作 ID、安装 ID、配置 revision 均一致，且各自摘要严格等于旧摘要或当前摘要时，才允许使用 compare-and-swap 统一到当前摘要。文件写入失败时回滚本次数据库摘要更新；无法验证的摘要保持 fail-closed。该迁移仅由 `mgsctl upgrade` 调用，普通 API/Worker 启动继续只做严格验证。
+
 ## 直接更名
 
 二进制、命令、Go 包、Make target、安装路径、安装器变量、Release 资产、self-update、帮助、文档、runtime 锁、临时文件和 Compose 控制变量统一改为 `mgsctl` / `MGSCTL_*`。删除旧命令、旧变量和旧资产解析逻辑。
