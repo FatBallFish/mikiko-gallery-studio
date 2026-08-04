@@ -1229,6 +1229,24 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+    delete:
+      tags: [Agent Image]
+      summary: Cancel a pending or approved image publication
+      operationId: deleteAgentGalleryPublish
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Publication canceled and image returned to private
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
   /api/open/image/v1/gallery/images:
     get:
       tags: [Open Image API]

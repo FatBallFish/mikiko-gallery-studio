@@ -1032,11 +1032,11 @@ export function LocalFeedback({ tone = 'info', title, detail, action, className 
 }
 
 export function StatusPill({ status }: { status: ImageTaskStatus | PublishStatus | string }) {
-  const tone = status === 'succeeded' || status === 'public' || status === 'active'
+	const tone = status === 'succeeded' || status === 'public' || status === 'approved' || status === 'active'
     ? 'good'
     : status === 'failed' || status === 'rejected' || status === 'disabled'
       ? 'bad'
-      : status === 'running' || status === 'queued' || status === 'reviewing'
+		: status === 'running' || status === 'queued' || status === 'reviewing' || status === 'pending_review'
         ? 'warn'
         : 'neutral'
   const label: Record<string, string> = {
@@ -1046,9 +1046,12 @@ export function StatusPill({ status }: { status: ImageTaskStatus | PublishStatus
     failed: '失败',
     cancelled: '已取消',
     private: '私有',
-    reviewing: '审核中',
-    public: '已公开',
-    rejected: '已拒绝',
+		reviewing: '审核中',
+		pending_review: '审核中',
+		public: '已公开',
+		approved: '已公开',
+		rejected: '已拒绝',
+		unpublished: '已下架',
     active: '启用中',
     disabled: '已禁用',
   }

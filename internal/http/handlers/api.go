@@ -2819,6 +2819,16 @@ func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if r.Method == http.MethodDelete {
+		if action == "publish" {
+			image, err := a.tasks.CancelPublish(r.Context(), user.ID, imageID)
+			if err != nil {
+				httpx.WriteError(w, r, normalizeAppError(err))
+				return
+			}
+			a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_cancel", "image_result", imageID, map[string]any{"status": image.VisibilityStatus})
+			httpx.WriteSuccess(w, r, http.StatusOK, image)
+			return
+		}
 		if action != "" {
 			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery image route not found"))
 			return

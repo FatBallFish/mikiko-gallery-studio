@@ -174,6 +174,27 @@ func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	if !bytes.Contains(publishRec.Body.Bytes(), []byte(`"visibility_status":"pending_review"`)) {
 		t.Fatalf("expected pending review body=%s", publishRec.Body.String())
 	}
+	cancelReq := httptest.NewRequest(http.MethodDelete, "/api/agent/gallery/v1/images/"+imageID+"/publish", nil)
+	cancelReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	cancelRec := httptest.NewRecorder()
+	handler.ServeHTTP(cancelRec, cancelReq)
+	if cancelRec.Code != http.StatusOK || !bytes.Contains(cancelRec.Body.Bytes(), []byte(`"visibility_status":"private"`)) {
+		t.Fatalf("cancel pending publish: status=%d body=%s", cancelRec.Code, cancelRec.Body.String())
+	}
+	canceledReviewReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/image-reviews?page=1&page_size=10&status=pending_review", nil)
+	canceledReviewReq.Header.Set("Authorization", "Bearer "+adminToken)
+	canceledReviewRec := httptest.NewRecorder()
+	handler.ServeHTTP(canceledReviewRec, canceledReviewReq)
+	if canceledReviewRec.Code != http.StatusOK || bytes.Contains(canceledReviewRec.Body.Bytes(), []byte(imageID)) {
+		t.Fatalf("canceled image must leave review queue: status=%d body=%s", canceledReviewRec.Code, canceledReviewRec.Body.String())
+	}
+	reapplyReq := httptest.NewRequest(http.MethodPost, "/api/agent/gallery/v1/images/"+imageID+"/publish", nil)
+	reapplyReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	reapplyRec := httptest.NewRecorder()
+	handler.ServeHTTP(reapplyRec, reapplyReq)
+	if reapplyRec.Code != http.StatusAccepted || !bytes.Contains(reapplyRec.Body.Bytes(), []byte(`"visibility_status":"pending_review"`)) {
+		t.Fatalf("reapply publish: status=%d body=%s", reapplyRec.Code, reapplyRec.Body.String())
+	}
 
 	reviewListReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/image-reviews?page=1&page_size=10&status=pending_review", nil)
 	reviewListReq.Header.Set("Authorization", "Bearer "+adminToken)
