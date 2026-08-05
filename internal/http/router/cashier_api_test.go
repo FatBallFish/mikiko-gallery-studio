@@ -1011,13 +1011,14 @@ func TestCashierJeePayWebhookRejectsMissingApplicationIdentity(t *testing.T) {
 	}
 }
 
-func TestCashierJeePayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
+func TestCashierJeePayJSONWebhookCompletesRechargeOrderAndFormReplayIsIdempotent(t *testing.T) {
 	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-success-user@example.com")
 	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
 	values := jeepayWebhookValuesForTest(order, "MCH10001", "merchant-secret", "1250", "jeepay-trade-success")
+	jsonBody := jeepayWebhookJSONForTest(t, values)
 
-	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/jeepay_alipay", strings.NewReader(values.Encode()))
-	webhookReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/jeepay_alipay", bytes.NewReader(jsonBody))
+	webhookReq.Header.Set("Content-Type", "application/json")
 	webhookRec := httptest.NewRecorder()
 	handler.ServeHTTP(webhookRec, webhookReq)
 	if webhookRec.Code != http.StatusOK {
@@ -2927,6 +2928,21 @@ func jeepayWebhookValuesForTest(order domainbilling.PaymentOrder, mchNo, key, am
 	values.Set("signType", "MD5")
 	values.Set("sign", jeepaySignForTest(values, key))
 	return values
+}
+
+func jeepayWebhookJSONForTest(t *testing.T, values url.Values) []byte {
+	t.Helper()
+	payload := make(map[string]any, len(values))
+	for name := range values {
+		payload[name] = values.Get(name)
+	}
+	payload["amount"] = json.Number(values.Get("amount"))
+	payload["state"] = json.Number(values.Get("state"))
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("encode JeePay webhook JSON: %v", err)
+	}
+	return body
 }
 
 func jeepaySignForTest(values url.Values, key string) string {

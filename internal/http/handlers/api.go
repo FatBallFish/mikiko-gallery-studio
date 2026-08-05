@@ -1835,12 +1835,12 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 	if readErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid webhook body")
 	}
-	values, parseErr := url.ParseQuery(string(body))
+	values, parseErr := cashierservice.ParseJeePayNotification(body, r.Header.Get("Content-Type"))
 	if parseErr != nil {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("invalid jeepay webhook body")
 	}
-	mchNo := strings.TrimSpace(values.Get("mchNo"))
-	appID := strings.TrimSpace(values.Get("appId"))
+	mchNo := strings.TrimSpace(values["mchNo"])
+	appID := strings.TrimSpace(values["appId"])
 	instance, ok := a.jeepayProviderInstanceByMerchant(r.Context(), providerCode, mchNo, appID)
 	if !ok {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
@@ -1849,31 +1849,31 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 	if key == "" {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
-	sign := strings.TrimSpace(values.Get("sign"))
-	if sign == "" || !hmac.Equal([]byte(jeepaySignFromValues(values, key)), []byte(sign)) {
+	sign := strings.TrimSpace(values["sign"])
+	if sign == "" || !hmac.Equal([]byte(jeepaySign(values, key)), []byte(sign)) {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentSignatureInvalid, "payment webhook signature is invalid")
 	}
-	state := strings.TrimSpace(values.Get("state"))
-	status := strings.TrimSpace(values.Get("status"))
+	state := strings.TrimSpace(values["state"])
+	status := strings.TrimSpace(values["status"])
 	if state != "2" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook status is not success")
 	}
 	if status != "" && !strings.EqualFold(status, "success") && !strings.EqualFold(status, "paid") {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("payment webhook status is not success")
 	}
-	tradeNo := strings.TrimSpace(values.Get("payOrderId"))
+	tradeNo := strings.TrimSpace(values["payOrderId"])
 	if tradeNo == "" {
-		tradeNo = strings.TrimSpace(values.Get("channelOrderNo"))
+		tradeNo = strings.TrimSpace(values["channelOrderNo"])
 	}
 	if tradeNo == "" {
-		tradeNo = strings.TrimSpace(values.Get("trade_no"))
+		tradeNo = strings.TrimSpace(values["trade_no"])
 	}
 	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
 		Provider:           strings.ToLower(strings.TrimSpace(instance.ProviderType)),
 		ProviderInstanceID: instance.ID,
-		OrderNo:            strings.TrimSpace(values.Get("mchOrderNo")),
+		OrderNo:            strings.TrimSpace(values["mchOrderNo"]),
 		TradeNo:            tradeNo,
-		AmountCNY:          jeepayAmountCNYFromFen(values.Get("amount")),
+		AmountCNY:          jeepayAmountCNYFromFen(values["amount"]),
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -9506,14 +9506,6 @@ func easyPaySignFromValues(values url.Values, key string) string {
 		params[name] = values.Get(name)
 	}
 	return easyPaySign(params, key)
-}
-
-func jeepaySignFromValues(values url.Values, key string) string {
-	params := make(map[string]string, len(values))
-	for name := range values {
-		params[name] = values.Get(name)
-	}
-	return jeepaySign(params, key)
 }
 
 func jeepayAmountFenFromCNY(amountCNY string) string {
