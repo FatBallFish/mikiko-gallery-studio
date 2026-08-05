@@ -1921,27 +1921,47 @@ func TestBillingStorePostgresCancelAndPaidReconciliationEndsCompleted(t *testing
 	}
 
 	start := make(chan struct{})
-	errCh := make(chan error, 2)
+	type raceResult struct {
+		operation string
+		order     domainbilling.PaymentOrder
+		err       error
+	}
+	resultCh := make(chan raceResult, 2)
 	go func() {
 		<-start
-		_, cancelErr := store.CancelOrder(ctx, order.UserID, order.ID)
-		errCh <- cancelErr
+		canceled, cancelErr := store.CancelOrder(ctx, order.UserID, order.ID)
+		resultCh <- raceResult{operation: "cancel", order: canceled, err: cancelErr}
 	}()
 	go func() {
 		<-start
-		_, paidErr := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+		completed, paidErr := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
 			Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-POSTGRES-RACE", AmountCNY: order.AmountCNY,
 		})
-		errCh <- paidErr
+		resultCh <- raceResult{operation: "paid", order: completed, err: paidErr}
 	}()
 	close(start)
+	results := make(map[string]raceResult, 2)
 	for range 2 {
-		_ = <-errCh
+		result := <-resultCh
+		results[result.operation] = result
 	}
-	if _, err := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
-		Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-POSTGRES-RACE", AmountCNY: order.AmountCNY,
-	}); err != nil {
-		t.Fatalf("final paid reconciliation: %v", err)
+	paidResult := results["paid"]
+	if paidResult.err != nil {
+		t.Fatalf("paid reconciliation must retry serialization conflicts: %v", paidResult.err)
+	}
+	if paidResult.order.Status != "completed" {
+		t.Fatalf("paid reconciliation must return completed order, got %#v", paidResult.order)
+	}
+	cancelResult := results["cancel"]
+	if cancelResult.err == nil {
+		if cancelResult.order.Status != "canceled" && cancelResult.order.Status != "completed" {
+			t.Fatalf("successful cancel race returned unexpected order: %#v", cancelResult.order)
+		}
+	} else {
+		var appErr *errs.Error
+		if !errors.As(cancelResult.err, &appErr) || appErr.Code != errs.CodeConflict {
+			t.Fatalf("cancel race must succeed or report completed-order conflict, got %T %v", cancelResult.err, cancelResult.err)
+		}
 	}
 	finalOrder, err := store.GetOrder(ctx, order.UserID, order.ID)
 	if err != nil {
