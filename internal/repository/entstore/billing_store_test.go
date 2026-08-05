@@ -2,8 +2,13 @@ package entstore
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +16,7 @@ import (
 	"entgo.io/ent/dialect"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
@@ -1733,6 +1739,234 @@ func TestBillingStoreMarkOrderPaidCompletesCashierRechargeOrderIdempotently(t *t
 	if ledgerCount != 1 {
 		t.Fatalf("expected one recharge ledger, got %d", ledgerCount)
 	}
+}
+
+func TestBillingStoreMarkOrderPaidRecoversCashierOrdersExactlyOnce(t *testing.T) {
+	for _, previousStatus := range []string{"pending", "canceled", "expired", "failed"} {
+		t.Run(previousStatus, func(t *testing.T) {
+			ctx := t.Context()
+			client, err := repoent.Open(dialect.SQLite, "file:billingstore-paid-recovery-"+previousStatus+"?mode=memory&cache=shared&_fk=1")
+			if err != nil {
+				t.Fatalf("open ent client: %v", err)
+			}
+			defer client.Close()
+			if err := client.Schema.Create(ctx); err != nil {
+				t.Fatalf("create schema: %v", err)
+			}
+			store := NewBillingStore(client, 5)
+			order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+				UserID: 92, OrderNo: "PGO-ENT-RECOVER-" + previousStatus,
+				AmountCNY: "10.00000", CNYPerPoint: "0.31250", Provider: "jeepay_alipay",
+				PurchaseType: "custom_amount", VisibleMethod: "alipay", ProviderType: "jeepay_alipay", ProviderInstanceID: 61,
+			})
+			if err != nil {
+				t.Fatalf("CreateCustomAmountOrder: %v", err)
+			}
+			if _, err := client.PaymentOrder.UpdateOneID(int(order.ID)).SetStatus(previousStatus).Save(ctx); err != nil {
+				t.Fatalf("set previous status: %v", err)
+			}
+			req := domainbilling.MarkOrderPaidRequest{
+				Provider: "jeepay_alipay", ProviderInstanceID: 61, OrderNo: order.OrderNo,
+				TradeNo: "JEEPAY-ENT-" + previousStatus, AmountCNY: order.AmountCNY,
+				ReconciliationSource: domainbilling.PaymentReconciliationSourceProviderWebhook,
+			}
+			first, err := store.MarkOrderPaid(ctx, req)
+			if err != nil {
+				t.Fatalf("MarkOrderPaid first: %v", err)
+			}
+			second, err := store.MarkOrderPaid(ctx, req)
+			if err != nil {
+				t.Fatalf("MarkOrderPaid second: %v", err)
+			}
+			if first.Status != "completed" || second.Status != "completed" || first.LedgerID == 0 || second.LedgerID != first.LedgerID {
+				t.Fatalf("expected one idempotently completed order, first=%#v second=%#v", first, second)
+			}
+
+			grantCount, err := client.WalletGrant.Query().Where(
+				walletgrant.UserIDEQ(order.UserID), walletgrant.SourceTypeEQ("payment_order"), walletgrant.SourceIDEQ(order.ID),
+			).Count(ctx)
+			if err != nil {
+				t.Fatalf("count recharge grants: %v", err)
+			}
+			ledgerCount, err := client.PointLedger.Query().Where(pointledger.OrderIDEQ(order.ID), pointledger.LedgerTypeEQ("recharge")).Count(ctx)
+			if err != nil {
+				t.Fatalf("count recharge ledgers: %v", err)
+			}
+			if grantCount != 1 || ledgerCount != 1 {
+				t.Fatalf("expected one recharge grant and ledger, grants=%d ledgers=%d", grantCount, ledgerCount)
+			}
+			events, err := client.PaymentWebhookEvent.Query().Where(paymentwebhookevent.PaymentOrderIDEQ(order.ID)).All(ctx)
+			if err != nil {
+				t.Fatalf("query reconciliation events: %v", err)
+			}
+			if len(events) != 1 {
+				t.Fatalf("expected one reconciliation event, got %#v", events)
+			}
+			var audit map[string]any
+			if err := json.Unmarshal([]byte(events[0].Payload), &audit); err != nil {
+				t.Fatalf("decode reconciliation audit: %v", err)
+			}
+			if audit["previous_local_status"] != previousStatus || audit["reconciliation_source"] != domainbilling.PaymentReconciliationSourceProviderWebhook {
+				t.Fatalf("expected recovery audit metadata, got %#v", audit)
+			}
+		})
+	}
+}
+
+func TestBillingStoreMarkOrderPaidRejectsRefundAndDisputeStates(t *testing.T) {
+	for _, terminalStatus := range []string{"partially_refunded", "refunded", "chargeback", "dispute"} {
+		t.Run(terminalStatus, func(t *testing.T) {
+			ctx := t.Context()
+			client, err := repoent.Open(dialect.SQLite, "file:billingstore-paid-terminal-"+terminalStatus+"?mode=memory&cache=shared&_fk=1")
+			if err != nil {
+				t.Fatalf("open ent client: %v", err)
+			}
+			defer client.Close()
+			if err := client.Schema.Create(ctx); err != nil {
+				t.Fatalf("create schema: %v", err)
+			}
+			store := NewBillingStore(client, 5)
+			order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+				UserID: 93, OrderNo: "PGO-ENT-TERMINAL-" + terminalStatus,
+				AmountCNY: "10.00000", CNYPerPoint: "0.31250", Provider: "mock",
+				PurchaseType: "custom_amount", VisibleMethod: "mock", ProviderType: "mock",
+			})
+			if err != nil {
+				t.Fatalf("CreateCustomAmountOrder: %v", err)
+			}
+			if _, err := client.PaymentOrder.UpdateOneID(int(order.ID)).SetStatus(terminalStatus).Save(ctx); err != nil {
+				t.Fatalf("set terminal status: %v", err)
+			}
+			if _, err := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+				Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-TERMINAL-" + terminalStatus, AmountCNY: order.AmountCNY,
+			}); err == nil {
+				t.Fatal("expected terminal payment state to reject paid recovery")
+			}
+			grantCount, _ := client.WalletGrant.Query().Where(walletgrant.SourceTypeEQ("payment_order"), walletgrant.SourceIDEQ(order.ID)).Count(ctx)
+			ledgerCount, _ := client.PointLedger.Query().Where(pointledger.OrderIDEQ(order.ID)).Count(ctx)
+			if grantCount != 0 || ledgerCount != 0 {
+				t.Fatalf("terminal recovery must not credit: grants=%d ledgers=%d", grantCount, ledgerCount)
+			}
+		})
+	}
+}
+
+func TestBillingStoreMarkOrderPaidRejectsDifferentTradeForCompletedOrder(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-paid-idempotency-binding?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 94, OrderNo: "PGO-ENT-IDEMPOTENCY-BINDING", AmountCNY: "10.00000",
+		CNYPerPoint: "0.31250", Provider: "mock", PurchaseType: "custom_amount", VisibleMethod: "mock", ProviderType: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+	if _, err := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+		Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-FIRST", AmountCNY: order.AmountCNY,
+	}); err != nil {
+		t.Fatalf("MarkOrderPaid first: %v", err)
+	}
+	if _, err := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+		Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-DIFFERENT", AmountCNY: order.AmountCNY,
+	}); err == nil {
+		t.Fatal("expected completed order to reject a different provider trade")
+	}
+	grantCount, _ := client.WalletGrant.Query().Where(walletgrant.SourceTypeEQ("payment_order"), walletgrant.SourceIDEQ(order.ID)).Count(ctx)
+	ledgerCount, _ := client.PointLedger.Query().Where(pointledger.OrderIDEQ(order.ID), pointledger.LedgerTypeEQ("recharge")).Count(ctx)
+	if grantCount != 1 || ledgerCount != 1 {
+		t.Fatalf("mismatched replay must not duplicate credit: grants=%d ledgers=%d", grantCount, ledgerCount)
+	}
+}
+
+func TestBillingStorePostgresCancelAndPaidReconciliationEndsCompleted(t *testing.T) {
+	adminURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
+	if adminURL == "" {
+		t.Skip("set PIC_GALLERY_TEST_POSTGRES_URL to run PostgreSQL payment reconciliation race")
+	}
+	ctx := t.Context()
+	schemaName := "billing_paid_race_" + strings.ReplaceAll(fmt.Sprintf("%d", time.Now().UnixNano()), "-", "")
+	database, err := sql.Open("postgres", adminURL)
+	if err != nil {
+		t.Fatalf("open PostgreSQL admin database: %v", err)
+	}
+	defer database.Close()
+	if _, err := database.ExecContext(ctx, `CREATE SCHEMA "`+schemaName+`"`); err != nil {
+		t.Fatalf("create PostgreSQL test schema: %v", err)
+	}
+	defer func() { _, _ = database.ExecContext(context.Background(), `DROP SCHEMA "`+schemaName+`" CASCADE`) }()
+
+	client, err := repoent.Open(dialect.Postgres, billingPostgresURLWithSearchPath(t, adminURL, schemaName))
+	if err != nil {
+		t.Fatalf("open Ent PostgreSQL client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create Ent schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 95, OrderNo: "PGO-POSTGRES-PAID-RACE", AmountCNY: "10.00000", CNYPerPoint: "0.31250",
+		Provider: "mock", PurchaseType: "custom_amount", VisibleMethod: "mock", ProviderType: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+
+	start := make(chan struct{})
+	errCh := make(chan error, 2)
+	go func() {
+		<-start
+		_, cancelErr := store.CancelOrder(ctx, order.UserID, order.ID)
+		errCh <- cancelErr
+	}()
+	go func() {
+		<-start
+		_, paidErr := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+			Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-POSTGRES-RACE", AmountCNY: order.AmountCNY,
+		})
+		errCh <- paidErr
+	}()
+	close(start)
+	for range 2 {
+		_ = <-errCh
+	}
+	if _, err := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+		Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-POSTGRES-RACE", AmountCNY: order.AmountCNY,
+	}); err != nil {
+		t.Fatalf("final paid reconciliation: %v", err)
+	}
+	finalOrder, err := store.GetOrder(ctx, order.UserID, order.ID)
+	if err != nil {
+		t.Fatalf("GetOrder: %v", err)
+	}
+	if finalOrder.Status != "completed" {
+		t.Fatalf("payment success must win cancellation race, got %#v", finalOrder)
+	}
+	grantCount, _ := client.WalletGrant.Query().Where(walletgrant.SourceTypeEQ("payment_order"), walletgrant.SourceIDEQ(order.ID)).Count(ctx)
+	ledgerCount, _ := client.PointLedger.Query().Where(pointledger.OrderIDEQ(order.ID), pointledger.LedgerTypeEQ("recharge")).Count(ctx)
+	if grantCount != 1 || ledgerCount != 1 {
+		t.Fatalf("expected exactly one credit after race: grants=%d ledgers=%d", grantCount, ledgerCount)
+	}
+}
+
+func billingPostgresURLWithSearchPath(t *testing.T, rawURL, searchPath string) string {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse PostgreSQL test URL: %v", err)
+	}
+	query := parsed.Query()
+	query.Set("search_path", searchPath)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 func TestBillingStoreMarkOrderPaidRejectsDifferentProviderBinding(t *testing.T) {
