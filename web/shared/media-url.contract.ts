@@ -15,31 +15,30 @@ assert.equal(
   'relative fallback paths should receive the application token',
 )
 
-for (const file of ['../user/src/ui/mediaRefresh.tsx', '../admin/src/ui/mediaRefresh.tsx']) {
-  const refreshSource = readFileSync(new URL(file, import.meta.url), 'utf8')
-  for (const contract of [
-    'const attemptedRef = useRef(false)',
-    'if (attemptedRef.current || !src || !isAbsoluteHTTPMediaURL(src)) return false',
-    'attemptedRef.current = true',
-    'attemptedRef.current = false',
-  ]) {
-    assert.ok(refreshSource.includes(contract), `${file} must bound media refresh and reset only after a successful load: ${contract}`)
-  }
+const userRefreshSource = readFileSync(new URL('../user/src/ui/mediaRefresh.tsx', import.meta.url), 'utf8')
+for (const contract of [
+  'const attemptedRef = useRef(false)',
+  'const failedSrc = currentSrcRef.current',
+  'if (attemptedRef.current || !failedSrc || !isAbsoluteHTTPMediaURL(failedSrc) || !refresh) return false',
+  'mediaRefreshRetry(failedSrc, nextSrc, currentSrcRef.current)',
+  'src={currentSrc}',
+]) {
+  assert.ok(userRefreshSource.includes(contract), `user media refresh must replace only the failed image URL: ${contract}`)
 }
 
-for (const [file, contract] of [
-  ['../user/src/pages/HomePage.tsx', 'onMediaRefresh={() => void publicGallery.reload()}'],
-  ['../user/src/pages/GalleryPage.tsx', 'onMediaRefresh={() => void reloadLoadedPages()}'],
-  ['../user/src/pages/PublicGalleryPage.tsx', "onMediaRefresh={() => void loadPage(1, 'replace')}"],
-  ['../user/src/pages/WorkspacePage.tsx', 'onMediaRefresh={() => void refreshWorkspaceMedia()}'],
-  ['../admin/src/pages/ReviewPage.tsx', 'onMediaRefresh={() => void load()}'],
-] as const) {
-  const source = readFileSync(new URL(file, import.meta.url), 'utf8')
-  assert.ok(source.includes(contract), `${file} must refetch its media resource once after an expired signed URL fails`)
+const adminRefreshSource = readFileSync(new URL('../admin/src/ui/mediaRefresh.tsx', import.meta.url), 'utf8')
+for (const contract of [
+  'const attemptedRef = useRef(false)',
+  'if (attemptedRef.current || !src || !isAbsoluteHTTPMediaURL(src)) return false',
+  'attemptedRef.current = true',
+  'attemptedRef.current = false',
+]) {
+  assert.ok(adminRefreshSource.includes(contract), `admin media refresh must bound its resource reload: ${contract}`)
 }
 
 const reviewSource = readFileSync(new URL('../admin/src/pages/ReviewPage.tsx', import.meta.url), 'utf8')
 assert.ok(reviewSource.includes('selectedRow.imageURL'), 'admin review must consume the projected image URL from its list response')
+assert.ok(reviewSource.includes('onMediaRefresh={() => void load()}'), 'admin review must refetch its resource after an expired signed URL fails')
 
 const openAPISource = readFileSync(new URL('./open-api.ts', import.meta.url), 'utf8')
 assert.ok(!openAPISource.includes('API_PATHS.open.galleryImageDownload'), 'public gallery adapters must preserve projected media URLs instead of rebuilding application download routes')

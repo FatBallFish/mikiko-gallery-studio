@@ -545,12 +545,19 @@ type ListOrdersRequest struct {
 }
 
 type MarkOrderPaidRequest struct {
-	Provider           string
-	ProviderInstanceID int64
-	TradeNo            string
-	OrderNo            string
-	AmountCNY          string
+	Provider             string
+	ProviderInstanceID   int64
+	TradeNo              string
+	OrderNo              string
+	AmountCNY            string
+	ReconciliationSource string
 }
+
+const (
+	PaymentReconciliationSourceProviderWebhook  = "provider_webhook"
+	PaymentReconciliationSourceProviderQuery    = "provider_query"
+	PaymentReconciliationSourceMockConfirmation = "mock_confirmation"
+)
 
 type CompleteRechargeOrderRequest struct {
 	UserID   int64

@@ -3,9 +3,12 @@ import {
   filterGalleryImages,
   galleryImageCard,
   galleryImageSearchText,
+  galleryPublishActionPresentation,
   galleryPublishLabel,
   galleryPublishMatches,
   galleryPublishStatus,
+  patchGalleryItems,
+  removeGalleryItems,
 } from './galleryRows'
 
 if (galleryPublishLabel('public') !== '已公开' || galleryPublishLabel('approved') !== '已公开') {
@@ -112,6 +115,37 @@ if (!reviewing.canPublish || reviewing.publishAction !== 'cancel' || reviewing.p
 const approved = galleryImageCard(image({ visibility_status: 'approved', url: '/image.png' }))
 if (!approved.canPublish || approved.publishAction !== 'cancel' || approved.publishActionLabel !== '取消公开') {
   throw new Error(`gallery card should allow cancel for approved images, got ${JSON.stringify(approved)}`)
+}
+
+const requestPresentation = galleryPublishActionPresentation('private', true)
+const withdrawPresentation = galleryPublishActionPresentation('pending_review', true)
+const unpublishPresentation = galleryPublishActionPresentation('approved', true)
+if (requestPresentation.icon === withdrawPresentation.icon || withdrawPresentation.icon === unpublishPresentation.icon || requestPresentation.icon === unpublishPresentation.icon) {
+  throw new Error('申请公开、取消申请、取消公开必须使用三种不同图标')
+}
+if (requestPresentation.tone !== 'positive' || withdrawPresentation.tone !== 'warning' || unpublishPresentation.tone !== 'danger') {
+  throw new Error(`publish action tones drifted: ${JSON.stringify({ requestPresentation, withdrawPresentation, unpublishPresentation })}`)
+}
+
+const mutationRows = [
+  image({ id: 'patch-1', image_group: '保留' }),
+  image({ id: 'patch-2', image_group: '旧分组' }),
+  image({ id: 'patch-3', image_group: '保留' }),
+]
+const patchedRows = patchGalleryItems(mutationRows, [image({ id: 'patch-2', image_group: '新分组', visibility_status: 'pending_review' })])
+if (patchedRows === mutationRows || patchedRows[0] !== mutationRows[0] || patchedRows[2] !== mutationRows[2]) {
+  throw new Error('gallery patch must replace the collection while preserving untouched item identity')
+}
+if (patchedRows[1] === mutationRows[1] || patchedRows[1]?.image_group !== '新分组' || patchedRows[1]?.visibility_status !== 'pending_review') {
+  throw new Error(`gallery patch did not merge the affected item: ${JSON.stringify(patchedRows[1])}`)
+}
+const unchangedRows = patchGalleryItems(mutationRows, [image({ id: 'missing' })])
+if (unchangedRows !== mutationRows) {
+  throw new Error('gallery patch must preserve collection identity when no loaded item matches')
+}
+const removedRows = removeGalleryItems(mutationRows, new Set(['patch-2']))
+if (removedRows.length !== 2 || removedRows[0] !== mutationRows[0] || removedRows[1] !== mutationRows[2]) {
+  throw new Error('gallery removal must preserve untouched items and remove only successful IDs')
 }
 
 const rejected = galleryImageCard(image({ visibility_status: 'rejected', url: '/image.png' }))

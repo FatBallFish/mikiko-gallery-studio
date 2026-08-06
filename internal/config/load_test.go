@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -449,6 +450,24 @@ func TestLoadYAMLRemainsExplicit(t *testing.T) {
 	}
 	if cfg.App.Name != "explicit-yaml" {
 		t.Fatalf("LoadYAML app name = %q", cfg.App.Name)
+	}
+}
+
+func TestLoadYAMLDefaultsAttachmentPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("app:\n  name: attachment-policy-test\n"), 0o600); err != nil {
+		t.Fatalf("write YAML: %v", err)
+	}
+
+	cfg, err := LoadYAML(path)
+	if err != nil {
+		t.Fatalf("LoadYAML: %v", err)
+	}
+	if cfg.GenerationLimits.ReferenceImageMaxMB != 20 || cfg.AttachmentPolicy.ImageMaxMB != 20 {
+		t.Fatalf("expected 20 MB default image policy: generation=%d attachment=%d", cfg.GenerationLimits.ReferenceImageMaxMB, cfg.AttachmentPolicy.ImageMaxMB)
+	}
+	if !slices.Equal(cfg.AttachmentPolicy.ImageAllowedFormats, []string{"png", "jpeg", "webp", "gif"}) {
+		t.Fatalf("unexpected default image formats: %#v", cfg.AttachmentPolicy.ImageAllowedFormats)
 	}
 }
 

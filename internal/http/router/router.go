@@ -81,8 +81,20 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/billing/v1/redeem-codes/redeem", api.HandleRedeemCode)
 		mux.HandleFunc("/api/agent/image/v1/reference-assets", api.HandleReferenceAssetUpload)
 		mux.HandleFunc("/api/agent/image/v1/reference-assets:import-from-gallery", api.HandleReferenceAssetsImportFromGallery)
-		mux.HandleFunc("/api/agent/image/v1/reference-assets/", api.HandleReferenceAssetGet)
-		mux.HandleFunc("/api/agent/image/v1/images/", api.HandleImageDownload)
+		mux.HandleFunc("/api/agent/image/v1/reference-assets/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/access") {
+				api.HandleReferenceAssetAccess(w, r)
+				return
+			}
+			api.HandleReferenceAssetGet(w, r)
+		})
+		mux.HandleFunc("/api/agent/image/v1/images/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/access") {
+				api.HandleImageAccess(w, r)
+				return
+			}
+			api.HandleImageDownload(w, r)
+		})
 		mux.HandleFunc("/api/agent/image/v1/tasks", api.HandleAgentTasks)
 		mux.HandleFunc("/api/agent/image/v1/tasks/events", api.HandleAgentTaskEvents)
 		mux.HandleFunc("/api/agent/image/v1/tasks/", api.HandleAgentTaskDetail)
@@ -97,7 +109,13 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/open/image/v1/capabilities", api.HandleOpenCapabilities)
 		mux.HandleFunc("/api/open/image/v1/estimate", api.HandleOpenEstimate)
 		mux.HandleFunc("/api/open/image/v1/gallery/images", api.HandleOpenGalleryImages)
-		mux.HandleFunc("/api/open/image/v1/gallery/images/", api.HandleOpenGalleryImageDetail)
+		mux.HandleFunc("/api/open/image/v1/gallery/images/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/access") {
+				api.HandleOpenGalleryImageAccess(w, r)
+				return
+			}
+			api.HandleOpenGalleryImageDetail(w, r)
+		})
 		mux.HandleFunc("/api/open/image/v1/payments/webhooks/", api.HandlePaymentWebhook)
 		mux.HandleFunc("/api/open/cluster/v1/challenges", api.HandleClusterChallenge)
 		mux.HandleFunc("/api/open/cluster/v1/join", api.HandleClusterJoin)

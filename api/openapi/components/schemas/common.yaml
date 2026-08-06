@@ -57,6 +57,12 @@ components:
           type: integer
         height:
           type: integer
+        preview_expires_at:
+          type: string
+          format: date-time
+        download_expires_at:
+          type: string
+          format: date-time
     ImageResult:
       type: object
       properties:
@@ -69,6 +75,12 @@ components:
         download_url:
           type: string
           description: Authenticated local download URL. Present for locally stored generated images.
+        preview_expires_at:
+          type: string
+          format: date-time
+        download_expires_at:
+          type: string
+          format: date-time
         b64_json:
           type: string
         mime_type:
@@ -222,6 +234,12 @@ components:
           type: string
         download_url:
           type: string
+        preview_expires_at:
+          type: string
+          format: date-time
+        download_expires_at:
+          type: string
+          format: date-time
         mime_type:
           type: string
         file_size_bytes:

@@ -169,6 +169,15 @@ export type CheckoutOrderActionState = {
   terminalLabel?: string
 }
 
+export type CheckoutCancelResultState = 'canceled' | 'paid' | 'unchanged'
+
+export function checkoutCancelResultState(status?: string): CheckoutCancelResultState {
+  const normalized = (status ?? '').trim().toLowerCase()
+  if (normalized === 'paid' || normalized === 'completed') return 'paid'
+  if (normalized === 'canceled' || normalized === 'cancelled' || normalized === 'closed') return 'canceled'
+  return 'unchanged'
+}
+
 export function checkoutOrderRuntimeState(order: CashierOrder | null, nowMs = Date.now()): CheckoutOrderRuntimeState {
   if (!order) {
     return { step: 'select', shouldPoll: false, label: '选择充值内容', detail: '请选择固定积分包或自定义金额后创建订单。' }

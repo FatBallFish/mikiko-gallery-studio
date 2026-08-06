@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { GalleryImage, ImageResult, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../shared/api-types'
 import { cn } from '../../shared/classnames'
-import { RefreshableMediaImage, useMediaRefreshOnce } from './ui/mediaRefresh'
+import { RefreshableMediaImage, useMediaRefreshOnce, type MediaRefreshHandler } from './ui/mediaRefresh'
 import { avatarMenuItems, type AvatarMenuIcon } from './avatarMenu'
 import { BrandMark, siteBrand } from './brand'
 import { openDocsEntry } from './docsUrl'
@@ -16,6 +16,7 @@ import { imageMediaTransition, initialImageMediaState } from './ui/imageMediaMod
 import { shouldStartZoomDrag } from './ui/zoomPointer'
 import { resetShellScroll, shellActiveNavIndex, shellChromeClasses, shellLayoutClasses, type ShellScrollMode } from './shellLayout'
 import { workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './pages/workspaceCreationDraft'
+import type { MediaResource } from './mediaAccess'
 export { userShell, userButton, userForm, userState, userPill, userCard, userText }
 
 export const AppContext = createContext<AppContextValue | null>(null)
@@ -38,6 +39,9 @@ export type ImagePreviewPayload = {
   source?: string
   creationDraft?: WorkspaceCreationDraft
   detailImage?: ImageResult
+  mediaResource?: MediaResource
+  mediaExpiresAt?: string
+  onMediaRefresh?: MediaRefreshHandler
 }
 
 export function imagePixelsLabel(width?: number, height?: number) {
@@ -99,6 +103,7 @@ function ImageZoomViewer({ image, onClose }: { image: ImagePreviewPayload; onClo
   const dragRef = useRef<{ x: number; y: number; active: boolean }>({ x: 0, y: 0, active: false })
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const media = useImageMediaState(image.url)
+  const { currentSrc, mediaRetryKey, markMediaLoaded, refreshFailedMedia, resetMediaRefresh } = useMediaRefreshOnce(image.url, image.onMediaRefresh, image.mediaExpiresAt, true)
   useDismissableLayer(true, onClose, dialogRef)
 
   const scaleLabel = useMemo(() => `${Math.round(scale * 100)}%`, [scale])
@@ -168,9 +173,21 @@ function ImageZoomViewer({ image, onClose }: { image: ImagePreviewPayload; onClo
         onPointerCancel={handlePointerUp}
       >
         {media.status === 'loading' ? <span className={lightboxClasses.mediaLoading} role="status">正在加载大图</span> : null}
-        {media.status === 'error' ? <div className={lightboxClasses.zoomFallback}><ImageMediaFallback onRetry={media.retry} /></div> : (
+        {media.status === 'error' ? <div className={lightboxClasses.zoomFallback}><ImageMediaFallback onRetry={() => { resetMediaRefresh(); media.retry() }} /></div> : (
           <div className={lightboxClasses.zoomStage} style={{ transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px)) scale(${scale})` }}>
-            <img key={media.imageKey} className={cn(lightboxClasses.zoomImage, media.status !== 'loaded' && 'opacity-0')} src={image.url} alt={image.alt} draggable={false} onLoad={media.markLoaded} onError={media.markError} />
+            <img
+              key={`${media.imageKey}:${currentSrc}:${mediaRetryKey}`}
+              className={cn(lightboxClasses.zoomImage, media.status !== 'loaded' && 'opacity-0')}
+              src={currentSrc}
+              alt={image.alt}
+              draggable={false}
+              onLoad={() => { markMediaLoaded(); media.markLoaded() }}
+              onError={() => {
+                void refreshFailedMedia().then((refreshed) => {
+                  if (!refreshed) media.markError()
+                })
+              }}
+            />
           </div>
         )}
       </div>
@@ -248,7 +265,7 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
   title: string
   image: ImageResult | GalleryImage | null
   imageUrl?: string
-  referenceImages?: Array<{ id: string; url: string; alt: string }>
+  referenceImages?: Array<{ id: string; url: string; alt: string; mediaExpiresAt?: string; onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void> }>
   showPublicStats?: boolean
   onLike?: (image: ImageResult | GalleryImage) => void
   onFavorite?: (image: ImageResult | GalleryImage) => void
@@ -256,15 +273,22 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
   onCopyPrompt: (prompt: string) => void
   actions?: ImageDetailAction[]
   previewSourceLabel?: string
-  onMediaRefresh?: () => void | Promise<void>
+  onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void>
   onClose: () => void
 }) {
   const [zoomImage, setZoomImage] = useState<ImagePreviewPayload | null>(null)
-  useEffect(() => setZoomImage(null), [image?.id, imageUrl])
+  useEffect(() => setZoomImage(null), [image?.id])
   if (!image) return null
   const zoomableReferences = referenceImages.map((item) => ({
     ...item,
-    onPreview: () => setZoomImage({ url: item.url, downloadUrl: item.url, alt: item.alt, source: '原图引用' }),
+    onPreview: () => setZoomImage({
+      url: item.url,
+      downloadUrl: item.url,
+      alt: item.alt,
+      source: '原图引用',
+      mediaExpiresAt: item.mediaExpiresAt,
+      onMediaRefresh: item.onMediaRefresh ?? onMediaRefresh,
+    }),
   }))
   return (
     <>
@@ -292,7 +316,7 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
 export function PublicImageDetail({ image, imageUrl, referenceImages = [], showPublicStats = true, onPreviewImage, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产', onMediaRefresh }: {
   image: ImageResult | GalleryImage
   imageUrl?: string
-  referenceImages?: Array<{ id: string; url: string; alt: string; onPreview?: () => void }>
+  referenceImages?: Array<{ id: string; url: string; alt: string; mediaExpiresAt?: string; onPreview?: () => void; onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void> }>
   showPublicStats?: boolean
   onPreviewImage?: (payload: ImagePreviewPayload) => void
   onLike?: (image: ImageResult | GalleryImage) => void
@@ -301,7 +325,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
   onCopyPrompt: (prompt: string) => void
   actions?: ImageDetailAction[]
   previewSourceLabel?: string
-  onMediaRefresh?: () => void | Promise<void>
+  onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void>
 }) {
   const authorName = image.author_name || '匿名用户'
   const prompt = image.prompt || '-'
@@ -318,7 +342,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
             <span className={publicDetailClasses.referenceLabel}>引用图片</span>
             {referenceImages.map((item) => (
               <button key={item.id || item.url} type="button" className={publicDetailClasses.referenceButton} onClick={item.onPreview} disabled={!item.onPreview}>
-                <RefreshableMediaImage src={item.url} alt={item.alt} className={publicDetailClasses.referenceImage} onMediaRefresh={onMediaRefresh} />
+                <RefreshableMediaImage src={item.url} mediaExpiresAt={item.mediaExpiresAt} alt={item.alt} className={publicDetailClasses.referenceImage} onMediaRefresh={item.onMediaRefresh ?? onMediaRefresh} />
               </button>
             ))}
           </div>
@@ -327,6 +351,7 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
           {imageUrl ? (
             <DetailImageMedia
               src={imageUrl}
+              mediaExpiresAt={image.preview_expires_at}
               alt={image.prompt || image.id}
               onOpen={onPreviewImage ? () => onPreviewImage({
                 url: imageUrl,
@@ -339,6 +364,8 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
                 model: image.route_model_code || image.abstract_model,
                 source: previewSourceLabel,
                 creationDraft: workspaceCreationDraftFromSnapshot(image),
+                mediaExpiresAt: image.preview_expires_at,
+                onMediaRefresh,
               }) : undefined}
               onMediaRefresh={onMediaRefresh}
             />
@@ -390,14 +417,27 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
   )
 }
 
-function DetailImageMedia({ src, alt, onOpen, onMediaRefresh }: { src: string; alt: string; onOpen?: () => void; onMediaRefresh?: () => void | Promise<void> }) {
+function DetailImageMedia({ src, mediaExpiresAt, alt, onOpen, onMediaRefresh }: { src: string; mediaExpiresAt?: string; alt: string; onOpen?: () => void; onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void> }) {
   const [failed, setFailed] = useState(false)
-  const { markMediaLoaded, refreshFailedMedia } = useMediaRefreshOnce(src, onMediaRefresh)
+  const { currentSrc, mediaRetryKey, markMediaLoaded, refreshFailedMedia, resetMediaRefresh } = useMediaRefreshOnce(src, onMediaRefresh, mediaExpiresAt, true)
   useEffect(() => setFailed(false), [src])
-  if (failed) return <div className={publicDetailClasses.placeholder} role="status">图片暂时无法预览</div>
+  if (failed) return <div className={publicDetailClasses.placeholder}><ImageMediaFallback onRetry={() => { resetMediaRefresh(); setFailed(false) }} /></div>
   return (
     <button type="button" className={publicDetailClasses.imageButton} onClick={onOpen} disabled={!onOpen}>
-      <img src={src} alt={alt} className={publicDetailClasses.image} loading="lazy" decoding="async" onLoad={markMediaLoaded} onError={() => { refreshFailedMedia(); setFailed(true) }} />
+      <img
+        key={mediaRetryKey}
+        src={currentSrc}
+        alt={alt}
+        className={publicDetailClasses.image}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => { markMediaLoaded(); setFailed(false) }}
+        onError={() => {
+          void refreshFailedMedia().then((refreshed) => {
+            if (!refreshed) setFailed(true)
+          })
+        }}
+      />
     </button>
   )
 }
@@ -780,8 +820,9 @@ export function ImageFrame({ src, alt, actions, children, className = '', imageC
   )
 }
 
-export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 3', actions, topAction, onOpen, onMediaRefresh, selected = false, className = '', imageClassName = '' }: {
+export function GalleryImageFrame({ src, mediaExpiresAt, alt, width, height, aspectRatio = '4 / 3', actions, topAction, onOpen, onMediaRefresh, selected = false, className = '', imageClassName = '' }: {
   src?: string
+  mediaExpiresAt?: string
   alt: string
   width?: number
   height?: number
@@ -789,7 +830,7 @@ export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 
   actions?: React.ReactNode
   topAction?: React.ReactNode
   onOpen?: () => void
-  onMediaRefresh?: () => void | Promise<void>
+  onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void>
   selected?: boolean
   className?: string
   imageClassName?: string
@@ -797,7 +838,7 @@ export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 
   const [imageState, setImageState] = useState<'loading' | 'ready' | 'error'>(src ? 'loading' : 'error')
   const [retryKey, setRetryKey] = useState(0)
   const imageRef = useRef<HTMLImageElement>(null)
-  const { markMediaLoaded, refreshFailedMedia } = useMediaRefreshOnce(src, onMediaRefresh)
+  const { currentSrc, mediaRetryKey, markMediaLoaded, refreshFailedMedia, resetMediaRefresh } = useMediaRefreshOnce(src, onMediaRefresh, mediaExpiresAt)
 
   useLayoutEffect(() => {
     const image = imageRef.current
@@ -808,13 +849,13 @@ export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 
     } else {
       setImageState('loading')
     }
-  }, [src, retryKey])
+  }, [currentSrc, retryKey, src])
 
   const media = src ? (
     <img
       ref={imageRef}
-      key={`${src}:${retryKey}`}
-      src={src}
+      key={`${currentSrc}:${retryKey}:${mediaRetryKey}`}
+      src={currentSrc}
       alt={alt}
       width={width}
       height={height}
@@ -822,7 +863,11 @@ export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 
       decoding="async"
       className={cn('size-full object-cover transition duration-700 ease-out group-hover:scale-[1.025] motion-reduce:transition-none motion-reduce:transform-none', imageState !== 'ready' && 'opacity-0', imageClassName)}
       onLoad={() => { markMediaLoaded(); setImageState('ready') }}
-      onError={() => { refreshFailedMedia(); setImageState('error') }}
+      onError={() => {
+        void refreshFailedMedia().then((refreshed) => {
+          if (!refreshed) setImageState('error')
+        })
+      }}
     />
   ) : null
 
@@ -844,7 +889,7 @@ export function GalleryImageFrame({ src, alt, width, height, aspectRatio = '4 / 
       {imageState === 'error' ? (
         <div className="absolute inset-0 z-[2] grid place-items-center gap-2 bg-[var(--canvas-bg)] p-5 text-center text-sm text-[var(--muted)]" role="status">
           <span>图片暂时无法显示</span>
-          {src ? <button type="button" className="min-h-10 rounded-xl border border-[var(--border)] px-3 text-[var(--fg)] hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]" onClick={() => { setImageState('loading'); setRetryKey((value) => value + 1) }}>重试</button> : null}
+          {src ? <button type="button" className="min-h-10 rounded-xl border border-[var(--border)] px-3 text-[var(--fg)] hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]" onClick={() => { resetMediaRefresh(); setImageState('loading'); setRetryKey((value) => value + 1) }}>重试</button> : null}
         </div>
       ) : null}
       {topAction ? <div className="absolute left-3 top-3 z-[4]">{topAction}</div> : null}

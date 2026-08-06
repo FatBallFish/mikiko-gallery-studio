@@ -76,18 +76,22 @@ func AlipayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusRequ
 	if status == "" {
 		status = "pending"
 	}
+	queryStatus := NormalizeQueryStatus(status)
+	if !queryResponseIdentityMatches(order.OrderNo, []map[string]any{data}, queryStatusRequiresIdentity(queryStatus), "out_trade_no") {
+		return QueryOrderStatusResult{}, paymentProviderUnavailable()
+	}
 	tradeNo := strings.TrimSpace(firstRawString(data, "trade_no"))
 	amountCNY := strings.TrimSpace(firstRawString(data, "total_amount", "receipt_amount", "buyer_pay_amount"))
 	raw["source"] = "alipay_query_api"
 	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
 	raw["order_no"] = order.OrderNo
-	return BuildQueryOrderStatusResult(instance, NormalizeQueryStatus(status), tradeNo, amountCNY, raw), nil
+	return BuildQueryOrderStatusResult(instance, queryStatus, tradeNo, amountCNY, raw), nil
 }
 
 func WxPayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusRequest) (QueryOrderStatusResult, error) {
 	order := req.Order
 	instance := req.Instance
-	_, mchID, serial, privateKeyRaw, err := wxPayRequiredMerchantConfig(instance.Config)
+	appID, mchID, serial, privateKeyRaw, err := wxPayRequiredMerchantConfig(instance.Config)
 	if err != nil {
 		return QueryOrderStatusResult{}, paymentProviderUnavailable()
 	}
@@ -116,6 +120,13 @@ func WxPayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusReque
 	if status == "" {
 		status = "pending"
 	}
+	queryStatus := NormalizeQueryStatus(status)
+	requireIdentity := queryStatusRequiresIdentity(queryStatus)
+	if !queryResponseIdentityMatches(order.OrderNo, []map[string]any{raw}, requireIdentity, "out_trade_no") ||
+		!queryResponseIdentityMatches(mchID, []map[string]any{raw}, requireIdentity, "mchid") ||
+		!queryResponseIdentityMatches(appID, []map[string]any{raw}, requireIdentity, "appid") {
+		return QueryOrderStatusResult{}, paymentProviderUnavailable()
+	}
 	tradeNo := strings.TrimSpace(firstRawString(raw, "transaction_id", "trade_no"))
 	amountCNY := ""
 	if amountRaw, ok := raw["amount"].(map[string]any); ok {
@@ -129,7 +140,7 @@ func WxPayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusReque
 	raw["source"] = "wxpay_query_api"
 	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
 	raw["order_no"] = order.OrderNo
-	return BuildQueryOrderStatusResult(instance, NormalizeQueryStatus(status), tradeNo, amountCNY, raw), nil
+	return BuildQueryOrderStatusResult(instance, queryStatus, tradeNo, amountCNY, raw), nil
 }
 
 func EasyPayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusRequest) (QueryOrderStatusResult, error) {
@@ -169,25 +180,60 @@ func EasyPayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusReq
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return QueryOrderStatusResult{}, paymentProviderUnavailable()
 	}
-	status := strings.ToLower(strings.TrimSpace(rawString(raw["status"])))
-	if status == "" {
-		status = strings.ToLower(strings.TrimSpace(rawString(raw["trade_status"])))
+	data := raw
+	identitySources := []map[string]any{raw}
+	if nested, ok := raw["data"].(map[string]any); ok {
+		data = nested
+		identitySources = append(identitySources, nested)
 	}
-	if status == "" {
-		status = "pending"
+	tradeStatusRaw, tradeStatusPresent := raw["trade_status"]
+	if !tradeStatusPresent && data != nil {
+		tradeStatusRaw, tradeStatusPresent = data["trade_status"]
+	}
+	status := "pending"
+	if tradeStatusPresent {
+		tradeStatus := strings.ToLower(strings.TrimSpace(rawString(tradeStatusRaw)))
+		if tradeStatus != "" {
+			status = tradeStatus
+		}
+	} else {
+		statusRaw, statusPresent := raw["status"]
+		if !statusPresent && data != nil {
+			statusRaw, statusPresent = data["status"]
+		}
+		if statusPresent {
+			candidate := strings.ToLower(strings.TrimSpace(rawString(statusRaw)))
+			if candidate == "1" {
+				status = "paid"
+			} else if candidate != "" && candidate != "0" {
+				status = candidate
+			}
+		}
+	}
+	queryStatus := NormalizeQueryStatus(status)
+	requireIdentity := queryStatusRequiresIdentity(queryStatus)
+	if !queryResponseIdentityMatches(order.OrderNo, identitySources, requireIdentity, "out_trade_no", "mch_order_no") ||
+		!queryResponseIdentityMatches(pid, identitySources, requireIdentity, "pid", "merchant_id") {
+		return QueryOrderStatusResult{}, paymentProviderUnavailable()
 	}
 	tradeNo := strings.TrimSpace(rawString(raw["trade_no"]))
 	if tradeNo == "" {
 		tradeNo = strings.TrimSpace(rawString(raw["api_trade_no"]))
 	}
+	if tradeNo == "" {
+		tradeNo = strings.TrimSpace(firstRawString(data, "trade_no", "api_trade_no"))
+	}
 	amountCNY := strings.TrimSpace(rawString(raw["money"]))
 	if amountCNY == "" {
 		amountCNY = strings.TrimSpace(rawString(raw["amount_cny"]))
 	}
+	if amountCNY == "" {
+		amountCNY = strings.TrimSpace(firstRawString(data, "money", "amount_cny"))
+	}
 	raw["source"] = "easypay_query_api"
 	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
 	raw["order_no"] = order.OrderNo
-	return BuildQueryOrderStatusResult(instance, NormalizeQueryStatus(status), tradeNo, amountCNY, raw), nil
+	return BuildQueryOrderStatusResult(instance, queryStatus, tradeNo, amountCNY, raw), nil
 }
 
 func JeePayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusRequest) (QueryOrderStatusResult, error) {
@@ -245,12 +291,21 @@ func JeePayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusRequ
 		return QueryOrderStatusResult{}, paymentProviderUnavailable()
 	}
 	data := raw
+	identitySources := []map[string]any{raw}
 	if nested, ok := raw["data"].(map[string]any); ok {
 		data = nested
+		identitySources = append(identitySources, nested)
 	}
 	status := strings.ToLower(strings.TrimSpace(firstRawString(data, "state", "status", "trade_state", "tradeStatus")))
 	if status == "" {
 		status = "pending"
+	}
+	queryStatus := NormalizeQueryStatus(jeepayQueryStatus(status))
+	requireIdentity := queryStatusRequiresIdentity(queryStatus)
+	if !queryResponseIdentityMatches(order.OrderNo, identitySources, requireIdentity, "mchOrderNo", "mch_order_no") ||
+		!queryResponseIdentityMatches(mchNo, identitySources, requireIdentity, "mchNo", "mch_no") ||
+		!queryResponseIdentityMatches(appID, identitySources, requireIdentity, "appId", "app_id") {
+		return QueryOrderStatusResult{}, paymentProviderUnavailable()
 	}
 	tradeNo := strings.TrimSpace(firstRawString(data, "payOrderId", "channelOrderNo", "trade_no", "tradeNo"))
 	amountCNY := strings.TrimSpace(firstRawString(data, "amount_cny", "amountCNY", "money", "total_amount", "totalAmount"))
@@ -260,7 +315,49 @@ func JeePayOrderStatusQueryBuilder(ctx context.Context, req QueryOrderStatusRequ
 	raw["source"] = "jeepay_query_api"
 	raw["provider_type"] = strings.ToLower(strings.TrimSpace(instance.ProviderType))
 	raw["order_no"] = order.OrderNo
-	return BuildQueryOrderStatusResult(instance, NormalizeQueryStatus(status), tradeNo, amountCNY, raw), nil
+	return BuildQueryOrderStatusResult(instance, queryStatus, tradeNo, amountCNY, raw), nil
+}
+
+func jeepayQueryStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "0", "1":
+		return "pending"
+	case "2":
+		return "paid"
+	case "3":
+		return "failed"
+	case "4":
+		return "closed"
+	case "5":
+		return "refunded"
+	default:
+		return status
+	}
+}
+
+func queryStatusRequiresIdentity(status QueryStatus) bool {
+	switch status.Status {
+	case "paid", "closed", "refunded":
+		return true
+	default:
+		return false
+	}
+}
+
+func queryResponseIdentityMatches(expected string, sources []map[string]any, required bool, keys ...string) bool {
+	expected = strings.TrimSpace(expected)
+	found := false
+	for _, source := range sources {
+		actual := strings.TrimSpace(firstRawString(source, keys...))
+		if actual == "" {
+			continue
+		}
+		found = true
+		if actual != expected {
+			return false
+		}
+	}
+	return !required || found
 }
 
 func postFormForCashierProvider(ctx context.Context, endpoint string, values url.Values) ([]byte, error) {

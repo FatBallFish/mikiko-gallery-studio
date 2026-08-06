@@ -703,7 +703,7 @@ func (s *BillingStore) CompleteRechargeOrder(ctx context.Context, req domainbill
 			}
 			return domainbilling.PaymentOrder{}, err
 		}
-		return s.completeRechargeOrderInTx(ctx, tx, order, provider, tradeNo, map[string]any{"order_no": order.OrderNo, "source": "cashier_mock_pay"})
+		return s.completeRechargeOrderInTx(ctx, tx, order, provider, tradeNo, map[string]any{"order_no": order.OrderNo}, domainbilling.PaymentReconciliationSourceMockConfirmation)
 	})
 }
 
@@ -1020,6 +1020,15 @@ func (s *BillingStore) CheckRefundPaymentOrder(ctx context.Context, req domainbi
 }
 
 func (s *BillingStore) CancelOrder(ctx context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error) {
+	now := time.Now().UTC()
+	updated, err := s.client.PaymentOrder.Update().
+		Where(paymentorder.IDEQ(int(orderID)), paymentorder.UserIDEQ(userID), paymentorder.StatusEQ("pending")).
+		SetStatus("canceled").
+		SetClosedAt(now).
+		Save(ctx)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
 	order, err := s.client.PaymentOrder.Query().
 		Where(paymentorder.IDEQ(int(orderID)), paymentorder.UserIDEQ(userID)).
 		Only(ctx)
@@ -1029,16 +1038,8 @@ func (s *BillingStore) CancelOrder(ctx context.Context, userID int64, orderID in
 		}
 		return domainbilling.PaymentOrder{}, err
 	}
-	if order.Status != "pending" {
+	if updated == 0 {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order cannot be canceled")
-	}
-	now := time.Now().UTC()
-	order, err = s.client.PaymentOrder.UpdateOneID(order.ID).
-		SetStatus("canceled").
-		SetClosedAt(now).
-		Save(ctx)
-	if err != nil {
-		return domainbilling.PaymentOrder{}, err
 	}
 	return s.mapPaymentOrder(ctx, order), nil
 }
@@ -1049,6 +1050,10 @@ func (s *BillingStore) MarkOrderPaid(ctx context.Context, req domainbilling.Mark
 	provider := strings.ToLower(strings.TrimSpace(req.Provider))
 	if orderNo == "" || tradeNo == "" || provider == "" {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("provider, order_no, and trade_no are required")
+	}
+	reconciliationSource, err := billingservice.NormalizePaymentReconciliationSource(req.ReconciliationSource)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, err
 	}
 	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (domainbilling.PaymentOrder, error) {
 		order, err := tx.PaymentOrder.Query().Where(paymentorder.OrderNoEQ(orderNo)).Only(ctx)
@@ -1069,7 +1074,7 @@ func (s *BillingStore) MarkOrderPaid(ctx context.Context, req domainbilling.Mark
 			return domainbilling.PaymentOrder{}, err
 		}
 		if isEntCashierRechargeOrder(order) {
-			return s.completeRechargeOrderInTx(ctx, tx, order, provider, tradeNo, map[string]any{"order_no": orderNo})
+			return s.completeRechargeOrderInTx(ctx, tx, order, provider, tradeNo, map[string]any{"order_no": orderNo}, reconciliationSource)
 		}
 		if order.Status == "paid" {
 			if err := s.ensureWebhookEvent(ctx, tx, provider, tradeNo, int64(order.ID), map[string]any{"order_no": orderNo}); err != nil {
@@ -2329,11 +2334,34 @@ func (s *BillingStore) grantRechargeOrderCredits(ctx context.Context, tx *repoen
 	return state, ledgerID, nil
 }
 
-func (s *BillingStore) completeRechargeOrderInTx(ctx context.Context, tx *repoent.Tx, order *repoent.PaymentOrder, provider, tradeNo string, payload map[string]any) (domainbilling.PaymentOrder, error) {
+func (s *BillingStore) completeRechargeOrderInTx(ctx context.Context, tx *repoent.Tx, order *repoent.PaymentOrder, provider, tradeNo string, payload map[string]any, reconciliationSource string) (domainbilling.PaymentOrder, error) {
+	payload = cloneMap(payload)
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["previous_local_status"] = order.Status
+	payload["reconciliation_source"] = reconciliationSource
 	if order.Status == "completed" {
+		existingTradeNo := ""
+		if order.TradeNo != nil {
+			existingTradeNo = *order.TradeNo
+		}
+		if err := billingservice.ValidateCompletedPaymentTrade(existingTradeNo, tradeNo); err != nil {
+			return domainbilling.PaymentOrder{}, err
+		}
+		if err := s.ensureWebhookEvent(ctx, tx, provider, tradeNo, int64(order.ID), payload); err != nil {
+			return domainbilling.PaymentOrder{}, err
+		}
 		return s.mapPaymentOrder(ctx, order), nil
 	}
-	if order.Status != "pending" {
+	existingTradeNo := ""
+	if order.TradeNo != nil {
+		existingTradeNo = *order.TradeNo
+	}
+	if err := billingservice.ValidateInitializedPaymentTrade(existingTradeNo, tradeNo); err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	if !billingservice.PaymentSuccessCanRecoverStatus(order.Status) {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order cannot transition to completed")
 	}
 	now := time.Now().UTC()
@@ -2351,6 +2379,8 @@ func (s *BillingStore) completeRechargeOrderInTx(ctx context.Context, tx *repoen
 		SetPaidAt(now).
 		SetCompletedAt(now).
 		SetLedgerID(ledgerID).
+		ClearClosedAt().
+		ClearFailureReason().
 		Save(ctx); err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
@@ -2366,7 +2396,10 @@ func isEntCashierRechargeOrder(order *repoent.PaymentOrder) bool {
 }
 
 func (s *BillingStore) ensureWebhookEvent(ctx context.Context, tx *repoent.Tx, provider, tradeNo string, orderID int64, payload map[string]any) error {
-	if _, err := tx.PaymentWebhookEvent.Query().Where(paymentwebhookevent.ProviderEQ(provider), paymentwebhookevent.TradeNoEQ(tradeNo)).Only(ctx); err == nil {
+	if event, err := tx.PaymentWebhookEvent.Query().Where(paymentwebhookevent.ProviderEQ(provider), paymentwebhookevent.TradeNoEQ(tradeNo)).Only(ctx); err == nil {
+		if event.PaymentOrderID == nil || *event.PaymentOrderID != orderID {
+			return errs.New(http.StatusConflict, errs.CodeConflict, "payment provider trade belongs to a different order")
+		}
 		return nil
 	} else if !repoent.IsNotFound(err) {
 		return err
@@ -3241,6 +3274,8 @@ func isRetryableTxErr(err error) bool {
 		switch string(pqErr.Code) {
 		case "40001", "40P01":
 			return true
+		case "23505":
+			return pqErr.Constraint == "paymentwebhookevent_provider_trade_no"
 		}
 	}
 
@@ -3252,5 +3287,6 @@ func isRetryableTxErr(err error) bool {
 		strings.Contains(message, "sqlite_locked") ||
 		strings.Contains(message, "database is locked") ||
 		strings.Contains(message, "database table is locked") ||
+		(repoent.IsConstraintError(err) && strings.Contains(message, "payment_webhook_events.provider") && strings.Contains(message, "payment_webhook_events.trade_no")) ||
 		(repoent.IsConstraintError(err) && strings.Contains(message, "idempotency"))
 }

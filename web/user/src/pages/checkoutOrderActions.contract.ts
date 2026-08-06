@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import type { CashierOrder } from '../../../shared/api-types'
-import { checkoutOrderActionState } from './checkoutOrderState'
+import { checkoutCancelResultState, checkoutOrderActionState } from './checkoutOrderState'
 
 const baseOrder: CashierOrder = {
   id: 7,
@@ -34,4 +35,31 @@ if (completedActions.canCancel || completedActions.canMockPay) {
 const canceledActions = checkoutOrderActionState({ ...baseOrder, status: 'canceled' }, Date.parse('2026-06-05T10:05:00Z'))
 if (canceledActions.canCancel || canceledActions.canMockPay || canceledActions.terminalLabel !== '订单已取消') {
   throw new Error(`canceled cashier orders should show terminal canceled label, got ${JSON.stringify(canceledActions)}`)
+}
+
+for (const status of ['canceled', 'cancelled', 'closed']) {
+  if (checkoutCancelResultState(status) !== 'canceled') {
+    throw new Error(`safe cancellation result ${status} must show canceled feedback`)
+  }
+}
+for (const status of ['paid', 'completed']) {
+  if (checkoutCancelResultState(status) !== 'paid') {
+    throw new Error(`safe cancellation result ${status} must show payment success feedback`)
+  }
+}
+for (const status of ['pending', 'failed', 'expired', 'refunded']) {
+  if (checkoutCancelResultState(status) !== 'unchanged') {
+    throw new Error(`safe cancellation result ${status} must not claim the order was canceled`)
+  }
+}
+
+const checkoutSource = readFileSync(new URL('./CheckoutPage.tsx', import.meta.url), 'utf8')
+const cancelOrderBody = checkoutSource.match(/async function cancelOrder[\s\S]*?\n  }\n\n  if \(loading\)/)?.[0] ?? ''
+for (const required of ['checkoutCancelResultState(next.status)', 'monitorOrder?.id === next.id', 'app.refreshAccount()', 'loadRecentOrders()']) {
+  if (!cancelOrderBody.includes(required)) {
+    throw new Error(`safe cancellation UI must handle ${required}`)
+  }
+}
+if (!cancelOrderBody.includes("cancelResult === 'paid'") || !cancelOrderBody.includes("cancelResult === 'canceled'")) {
+  throw new Error('safe cancellation UI must separate paid and canceled provider outcomes')
 }

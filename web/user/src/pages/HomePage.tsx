@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import type { ImageResult } from '../../../shared/api-types'
+import type { ImageResult, MediaAccessProjection } from '../../../shared/api-types'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, GalleryImageFrame, ImageDetailModal, LocalFeedback, StatusRail, copyText, useApp } from '../components'
 import { useApiResource } from '../useApiResource'
+import { mediaAccess } from '../mediaAccess'
 import { ArrowRight, Image as ImageIcon, RefreshCw, Sparkles } from '../ui/icons'
 import { galleryImageAspect } from './galleryExperience'
 import { curatedHomeGallery, homeAccountReadinessView, homeContinuationView, homeGalleryCardView, homeModelReadinessView, homePublicDetailImage, homeRecentTaskView, newestHomeTask } from './homeGalleryModel'
@@ -43,6 +44,7 @@ export function HomePage() {
   const tasks = useApiResource(() => userApi.listTasks(), [])
   const publicGallery = useApiResource(() => openApi.listPublicGallery(1, 12, { sort: 'hot', accessToken: null }), [])
   const [selectedImage, setSelectedImage] = useState<ImageResult | null>(null)
+  const [publicImageAccess, setPublicImageAccess] = useState<Record<string, MediaAccessProjection>>({})
 
   const latestTask = useMemo(() => newestHomeTask(tasks.data ?? []), [tasks.data])
   const continuation = useMemo(() => homeContinuationView(tasks.data ?? []), [tasks.data])
@@ -52,9 +54,33 @@ export function HomePage() {
   const curated = useMemo(() => curatedHomeGallery(publicGallery.data?.items ?? [], 6), [publicGallery.data?.items])
 
   function openImage(image: ImageResult) {
-    const source = image.url || image.download_url
+    const access = publicImageAccess[image.id]
+    const resolvedImage = access ? { ...image, url: access.url, download_url: access.url, preview_expires_at: access.expires_at } : image
+    const source = resolvedImage.url || resolvedImage.download_url
     if (!source) return
-    setSelectedImage(homePublicDetailImage(image))
+    setSelectedImage(homePublicDetailImage(resolvedImage))
+  }
+
+  async function refreshPublicImage(imageId: string) {
+    const projection = await mediaAccess.preview({ kind: 'image', scope: 'public', id: imageId })
+    setPublicImageAccess((current) => ({ ...current, [imageId]: projection }))
+    setSelectedImage((current) => current?.id === imageId ? { ...current, url: projection.url, download_url: projection.url, preview_expires_at: projection.expires_at } : current)
+    return projection.url
+  }
+
+  async function downloadPublicImage(image: ImageResult) {
+    try {
+      const projection = await mediaAccess.download({ kind: 'image', scope: 'public', id: image.id })
+      const link = document.createElement('a')
+      link.href = projection.url
+      link.download = `mikiko-${image.id}`
+      link.rel = 'noopener noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch (error) {
+      app.notify('error', error instanceof Error ? error.message : '下载地址刷新失败')
+    }
   }
 
   return (
@@ -113,17 +139,19 @@ export function HomePage() {
           <div className={homeClasses.gallery}>
             {curated.map((image) => {
               const card = homeGalleryCardView(image)
-              const src = image.url || image.download_url
+              const access = publicImageAccess[image.id]
+              const src = access?.url || image.url || image.download_url
               return (
                 <article className={homeClasses.galleryItem} key={image.id}>
                   <GalleryImageFrame
                     src={src ? userApi.imageAssetUrl(src, null) : undefined}
+                    mediaExpiresAt={publicImageAccess[image.id]?.expires_at ?? image.preview_expires_at}
                     alt={card.title}
                     width={image.width}
                     height={image.height}
                     aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
                     onOpen={() => openImage(image)}
-                    onMediaRefresh={() => void publicGallery.reload()}
+                    onMediaRefresh={() => refreshPublicImage(image.id)}
                   />
                   <h3 className={homeClasses.galleryTitle}>{card.title}</h3>
                   <span className={homeClasses.galleryMeta}>{card.meta}</span>
@@ -137,13 +165,13 @@ export function HomePage() {
         title="精选作品详情"
         image={selectedImage}
         imageUrl={selectedImage?.url || selectedImage?.download_url ? userApi.imageAssetUrl(selectedImage.url || selectedImage.download_url || '', null) : undefined}
-        onDownload={(image) => window.open(userApi.imageAssetUrl(image.download_url || image.url || '', null), '_blank', 'noopener,noreferrer')}
+        onDownload={(image) => void downloadPublicImage(image as ImageResult)}
         onCopyPrompt={async (prompt) => {
           await copyText(prompt)
           app.notify('success', 'Prompt 已复制')
         }}
         previewSourceLabel="精选灵感"
-        onMediaRefresh={() => void publicGallery.reload()}
+        onMediaRefresh={selectedImage ? () => refreshPublicImage(selectedImage.id) : undefined}
         onClose={() => setSelectedImage(null)}
       />
     </main>

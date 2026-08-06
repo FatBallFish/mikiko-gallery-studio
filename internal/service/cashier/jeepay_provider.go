@@ -315,7 +315,7 @@ func trimJeePayEndpointBase(raw string) string {
 		parsed.RawPath = ""
 		path := strings.TrimRight(parsed.Path, "/")
 		lower := strings.ToLower(path)
-		for _, endpoint := range []string{"/api/pay/unifiedorder", "/api/pay/notify", "/api/pay"} {
+		for _, endpoint := range []string{"/api/pay/unifiedorder", "/api/pay/query", "/api/pay/close", "/api/refund/refundorder", "/api/pay/notify", "/api/pay"} {
 			if strings.HasSuffix(lower, endpoint) {
 				path = strings.TrimRight(path[:len(path)-len(endpoint)], "/")
 				break

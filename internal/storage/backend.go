@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -44,56 +45,107 @@ type BoundedGetter interface {
 	GetBounded(ctx context.Context, objectKey string, maxBytes int64) ([]byte, error)
 }
 
+// ObjectCopier is an optional backend capability for copying objects without
+// routing their bytes through the application service.
+type ObjectCopier interface {
+	Copy(ctx context.Context, sourceKey, destinationKey string) error
+}
+
 type TemporaryGetURLOptions struct {
-	Expiry           time.Duration
-	ResponseFilename string
-	ContentType      string
+	Expiry               time.Duration
+	SigningTimeBucket    time.Duration
+	ResponseFilename     string
+	ContentType          string
+	ResponseCacheControl string
 }
 
 type TemporaryURLSigner interface {
 	TemporaryGetURL(ctx context.Context, objectKey string, options TemporaryGetURLOptions) (string, error)
 }
 
-const TemporaryMediaURLExpiry = 5 * time.Minute
+const (
+	TemporaryMediaURLExpiry            = 5 * time.Minute
+	temporaryMediaPreviewSigningBucket = time.Minute
+)
 
 type TemporaryMediaURLs struct {
-	PreviewURL  string
-	DownloadURL string
+	PreviewURL        string
+	DownloadURL       string
+	PreviewExpiresAt  time.Time
+	DownloadExpiresAt time.Time
 }
 
+type TemporaryMediaAccess struct {
+	URL       string
+	ExpiresAt time.Time
+}
+
+const (
+	TemporaryMediaPurposePreview  = "preview"
+	TemporaryMediaPurposeDownload = "download"
+)
+
 func ProjectTemporaryMediaURLs(ctx context.Context, backend Backend, objectKey, contentType, responseFilename string) (TemporaryMediaURLs, bool, error) {
+	preview, supported, err := ProjectTemporaryMediaAccess(ctx, backend, objectKey, contentType, responseFilename, TemporaryMediaPurposePreview)
+	if err != nil || !supported {
+		return TemporaryMediaURLs{}, supported, err
+	}
+	download, _, err := ProjectTemporaryMediaAccess(ctx, backend, objectKey, contentType, responseFilename, TemporaryMediaPurposeDownload)
+	if err != nil {
+		return TemporaryMediaURLs{}, true, err
+	}
+	return TemporaryMediaURLs{
+		PreviewURL: preview.URL, DownloadURL: download.URL,
+		PreviewExpiresAt: preview.ExpiresAt, DownloadExpiresAt: download.ExpiresAt,
+	}, true, nil
+}
+
+func ProjectTemporaryMediaAccess(ctx context.Context, backend Backend, objectKey, contentType, responseFilename, purpose string) (TemporaryMediaAccess, bool, error) {
 	signer, ok := backend.(TemporaryURLSigner)
 	if !ok {
-		return TemporaryMediaURLs{}, false, nil
+		return TemporaryMediaAccess{}, false, nil
 	}
 	objectKey = strings.TrimSpace(objectKey)
 	if objectKey == "" {
-		return TemporaryMediaURLs{}, true, errors.New("temporary media object key is required")
+		return TemporaryMediaAccess{}, true, errors.New("temporary media object key is required")
 	}
-	previewURL, err := signer.TemporaryGetURL(ctx, objectKey, TemporaryGetURLOptions{
-		Expiry:      TemporaryMediaURLExpiry,
-		ContentType: strings.TrimSpace(contentType),
-	})
+	options := TemporaryGetURLOptions{ContentType: strings.TrimSpace(contentType)}
+	switch strings.ToLower(strings.TrimSpace(purpose)) {
+	case TemporaryMediaPurposePreview:
+		options.Expiry = TemporaryMediaURLExpiry + temporaryMediaPreviewSigningBucket
+		options.SigningTimeBucket = temporaryMediaPreviewSigningBucket
+		options.ResponseCacheControl = fmt.Sprintf("private, max-age=%d", int64(TemporaryMediaURLExpiry/time.Second))
+	case TemporaryMediaPurposeDownload:
+		options.Expiry = TemporaryMediaURLExpiry
+		options.ResponseFilename = strings.TrimSpace(responseFilename)
+	default:
+		return TemporaryMediaAccess{}, true, errors.New("temporary media purpose must be preview or download")
+	}
+	projectedURL, err := signer.TemporaryGetURL(ctx, objectKey, options)
 	if err != nil {
-		return TemporaryMediaURLs{}, true, fmt.Errorf("sign temporary media preview URL: %w", err)
+		return TemporaryMediaAccess{}, true, fmt.Errorf("sign temporary media %s URL: %w", purpose, err)
 	}
-	previewURL, err = validateTemporaryMediaURL(previewURL)
+	projectedURL, err = validateTemporaryMediaURL(projectedURL)
 	if err != nil {
-		return TemporaryMediaURLs{}, true, fmt.Errorf("validate temporary media preview URL: %w", err)
+		return TemporaryMediaAccess{}, true, fmt.Errorf("validate temporary media %s URL: %w", purpose, err)
 	}
-	downloadURL, err := signer.TemporaryGetURL(ctx, objectKey, TemporaryGetURLOptions{
-		Expiry:           TemporaryMediaURLExpiry,
-		ResponseFilename: strings.TrimSpace(responseFilename),
-		ContentType:      strings.TrimSpace(contentType),
-	})
+	return TemporaryMediaAccess{URL: projectedURL, ExpiresAt: temporaryMediaURLExpiry(projectedURL)}, true, nil
+}
+
+func temporaryMediaURLExpiry(value string) time.Time {
+	target, err := url.Parse(value)
 	if err != nil {
-		return TemporaryMediaURLs{}, true, fmt.Errorf("sign temporary media download URL: %w", err)
+		return time.Time{}
 	}
-	downloadURL, err = validateTemporaryMediaURL(downloadURL)
+	signedAt, err := time.Parse("20060102T150405Z", target.Query().Get("X-Amz-Date"))
 	if err != nil {
-		return TemporaryMediaURLs{}, true, fmt.Errorf("validate temporary media download URL: %w", err)
+		return time.Time{}
 	}
-	return TemporaryMediaURLs{PreviewURL: previewURL, DownloadURL: downloadURL}, true, nil
+	expiresSeconds, err := strconv.ParseInt(target.Query().Get("X-Amz-Expires"), 10, 64)
+	if err != nil || expiresSeconds <= 0 {
+		return time.Time{}
+	}
+	return signedAt.Add(time.Duration(expiresSeconds) * time.Second)
 }
 
 func validateTemporaryMediaURL(value string) (string, error) {
@@ -111,6 +163,8 @@ func validateTemporaryMediaURL(value string) (string, error) {
 var (
 	_ BoundedGetter      = (*LocalBackend)(nil)
 	_ BoundedGetter      = (*S3Backend)(nil)
+	_ ObjectCopier       = (*LocalBackend)(nil)
+	_ ObjectCopier       = (*S3Backend)(nil)
 	_ TemporaryURLSigner = (*S3Backend)(nil)
 )
 
@@ -183,6 +237,64 @@ func (b *LocalBackend) GetBounded(ctx context.Context, objectKey string, maxByte
 		return nil, err
 	}
 	return readBoundedAndClose(ctx, file, maxBytes)
+}
+
+func (b *LocalBackend) Copy(ctx context.Context, sourceKey, destinationKey string) error {
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	sourcePath, ok := b.resolvePath(sourceKey)
+	if !ok {
+		return ErrNotFound
+	}
+	destinationPath, ok := b.resolvePath(destinationKey)
+	if !ok {
+		return fmt.Errorf("invalid local storage destination key %q", destinationKey)
+	}
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("open local storage source %q: %w", sourceKey, err)
+	}
+	defer source.Close()
+
+	destinationDir := filepath.Dir(destinationPath)
+	if err := os.MkdirAll(destinationDir, 0o755); err != nil {
+		return fmt.Errorf("create local storage destination directory: %w", err)
+	}
+	temporary, err := os.CreateTemp(destinationDir, ".copy-*")
+	if err != nil {
+		return fmt.Errorf("create local storage copy target: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+
+	_, copyErr := io.Copy(temporary, contextReader{ctx: ctx, reader: source})
+	closeErr := temporary.Close()
+	if copyErr != nil {
+		return fmt.Errorf("copy local storage object: %w", copyErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close local storage copy target: %w", closeErr)
+	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	if err := os.Chmod(temporaryPath, 0o644); err != nil {
+		return fmt.Errorf("set local storage copy permissions: %w", err)
+	}
+	if err := os.Rename(temporaryPath, destinationPath); err != nil {
+		return fmt.Errorf("commit local storage copy: %w", err)
+	}
+	committed = true
+	return nil
 }
 
 func (b *LocalBackend) Delete(_ context.Context, objectKey string) error {
@@ -297,6 +409,9 @@ func (b *S3Backend) TemporaryGetURL(ctx context.Context, objectKey string, optio
 	}
 
 	now := b.nowUTC()
+	if bucket := options.SigningTimeBucket; bucket > 0 {
+		now = now.Truncate(bucket)
+	}
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
 	credentialScope := dateStamp + "/" + b.region + "/s3/aws4_request"
@@ -309,6 +424,9 @@ func (b *S3Backend) TemporaryGetURL(ctx context.Context, objectKey string, optio
 	}
 	if contentType := strings.TrimSpace(options.ContentType); contentType != "" {
 		query.Set("response-content-type", contentType)
+	}
+	if cacheControl := strings.TrimSpace(options.ResponseCacheControl); cacheControl != "" {
+		query.Set("response-cache-control", cacheControl)
 	}
 	if filename := strings.TrimSpace(options.ResponseFilename); filename != "" {
 		query.Set("response-content-disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
@@ -414,6 +532,68 @@ func (b *S3Backend) GetBounded(ctx context.Context, objectKey string, maxBytes i
 	}
 }
 
+func (b *S3Backend) Copy(ctx context.Context, sourceKey, destinationKey string) error {
+	sourceKey = b.normalizeKey(sourceKey)
+	if sourceKey == "" {
+		return ErrNotFound
+	}
+	copySource := "/" + b.bucket + "/" + escapePath(sourceKey)
+	req, err := b.newSignedRequestWithCopySource(ctx, destinationKey, copySource)
+	if err != nil {
+		return err
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("copy s3 object: %w", err)
+	}
+	defer resp.Body.Close()
+
+	const maximumCopyResponseBytes = int64(64 << 10)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maximumCopyResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("read s3 copy response: %w", err)
+	}
+	if int64(len(body)) > maximumCopyResponseBytes {
+		return errors.New("s3 copy response exceeds maximum size")
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("copy s3 object %q to %q: status=%d body=%s", sourceKey, destinationKey, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if err := validateS3CopyResponse(body); err != nil {
+		return err
+	}
+	return contextError(ctx)
+}
+
+func validateS3CopyResponse(body []byte) error {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil
+	}
+	var response struct {
+		XMLName xml.Name
+		Code    string `xml:"Code"`
+		Message string `xml:"Message"`
+	}
+	if err := xml.Unmarshal(body, &response); err != nil {
+		return fmt.Errorf("decode s3 copy response: %w", err)
+	}
+	switch response.XMLName.Local {
+	case "CopyObjectResult":
+		return nil
+	case "Error":
+		if response.Code == "NoSuchKey" || response.Code == "NoSuchBucket" {
+			return ErrNotFound
+		}
+		return fmt.Errorf("s3 copy failed: code=%s message=%s", response.Code, response.Message)
+	default:
+		return fmt.Errorf("unexpected s3 copy response %q", response.XMLName.Local)
+	}
+}
+
 func validateBoundedReadLimit(maxBytes int64) error {
 	if maxBytes < 0 || maxBytes == math.MaxInt64 {
 		return errInvalidBoundedReadLimit
@@ -494,6 +674,16 @@ func (b *S3Backend) Delete(ctx context.Context, objectKey string) error {
 }
 
 func (b *S3Backend) newSignedRequest(ctx context.Context, method string, objectKey string, contentType string, content []byte) (*http.Request, error) {
+	return b.newSignedRequestWithHeaders(ctx, method, objectKey, contentType, content, nil)
+}
+
+func (b *S3Backend) newSignedRequestWithCopySource(ctx context.Context, destinationKey, copySource string) (*http.Request, error) {
+	return b.newSignedRequestWithHeaders(ctx, http.MethodPut, destinationKey, "", nil, map[string]string{
+		"X-Amz-Copy-Source": copySource,
+	})
+}
+
+func (b *S3Backend) newSignedRequestWithHeaders(ctx context.Context, method string, objectKey string, contentType string, content []byte, extraHeaders map[string]string) (*http.Request, error) {
 	key := b.normalizeKey(objectKey)
 	if key == "" {
 		return nil, fmt.Errorf("invalid s3 object key %q", objectKey)
@@ -517,8 +707,17 @@ func (b *S3Backend) newSignedRequest(ctx context.Context, method string, objectK
 	req.Header.Set("Host", host)
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
 	req.Header.Set("X-Amz-Date", amzDate)
-	canonicalHeaders := "host:" + host + "\n" + "x-amz-content-sha256:" + payloadHash + "\n" + "x-amz-date:" + amzDate + "\n"
-	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
+	for name, value := range extraHeaders {
+		req.Header.Set(name, strings.TrimSpace(value))
+	}
+	canonicalHeaders := "host:" + host + "\n" + "x-amz-content-sha256:" + payloadHash + "\n"
+	signedHeaders := "host;x-amz-content-sha256"
+	if copySource := req.Header.Get("X-Amz-Copy-Source"); copySource != "" {
+		canonicalHeaders += "x-amz-copy-source:" + copySource + "\n"
+		signedHeaders += ";x-amz-copy-source"
+	}
+	canonicalHeaders += "x-amz-date:" + amzDate + "\n"
+	signedHeaders += ";x-amz-date"
 	canonicalRequest := strings.Join([]string{
 		method,
 		canonicalURI,

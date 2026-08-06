@@ -11,12 +11,14 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"mime"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	_ "golang.org/x/image/webp"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
@@ -35,7 +37,9 @@ type Service struct {
 	mu           sync.Mutex
 	store        Store
 	router       storage.Router
-	maxBytes     int64
+	fallback     AttachmentPolicy
+	policyMu     sync.RWMutex
+	policy       *AttachmentPolicyResolver
 	assetsByID   map[string]storedAsset
 	assetsByHash map[string]string
 }
@@ -63,30 +67,60 @@ func NewServiceWithStoreAndRouter(limits config.GenerationLimitsConfig, store St
 	if router == nil {
 		router = storage.NewStaticRouter(storage.NewLocalBackend(""))
 	}
-	return &Service{store: store, router: router, maxBytes: int64(limits.ReferenceImageMaxMB) * 1024 * 1024, assetsByID: map[string]storedAsset{}, assetsByHash: map[string]string{}}
+	defaults := config.ApplyAttachmentPolicyDefaults(config.AttachmentPolicyConfig{}, limits.ReferenceImageMaxMB)
+	fallback, _ := NewAttachmentPolicyResolver(defaults, nil).Resolve(context.Background())
+	return &Service{store: store, router: router, fallback: fallback, assetsByID: map[string]storedAsset{}, assetsByHash: map[string]string{}}
+}
+
+func (s *Service) SetAttachmentPolicyResolver(resolver *AttachmentPolicyResolver) {
+	s.policyMu.Lock()
+	s.policy = resolver
+	s.policyMu.Unlock()
+}
+
+func (s *Service) AttachmentPolicy(ctx context.Context) (AttachmentPolicy, error) {
+	s.policyMu.RLock()
+	resolver := s.policy
+	s.policyMu.RUnlock()
+	if resolver != nil {
+		return resolver.Resolve(ctx)
+	}
+	return cloneAttachmentPolicy(s.fallback), nil
 }
 
 func (s *Service) Upload(userID int64, filename string, contentType string, content []byte) (domainassets.ReferenceAsset, error) {
-	return s.UploadWithMetadata(userID, filename, contentType, content, domainassets.UploadMetadata{UploadSource: "web"})
+	return s.UploadWithMetadataContext(context.Background(), userID, filename, contentType, content, domainassets.UploadMetadata{UploadSource: "web"})
 }
 
 func (s *Service) UploadWithMetadata(userID int64, filename string, contentType string, content []byte, metadata domainassets.UploadMetadata) (domainassets.ReferenceAsset, error) {
+	return s.UploadWithMetadataContext(context.Background(), userID, filename, contentType, content, metadata)
+}
+
+func (s *Service) UploadWithMetadataContext(ctx context.Context, userID int64, filename string, contentType string, content []byte, metadata domainassets.UploadMetadata) (domainassets.ReferenceAsset, error) {
 	if len(content) == 0 {
 		return domainassets.ReferenceAsset{}, errs.New(400, errs.CodeImageReferenceRequired, "reference asset file is required")
 	}
-	if s.maxBytes > 0 && int64(len(content)) > s.maxBytes {
-		maxMB := int(s.maxBytes / (1024 * 1024))
+	policy, policyErr := s.AttachmentPolicy(ctx)
+	if policyErr != nil {
+		return domainassets.ReferenceAsset{}, fmt.Errorf("resolve attachment policy: %w", policyErr)
+	}
+	if policy.Image.MaxBytes > 0 && int64(len(content)) > policy.Image.MaxBytes {
+		maxMB := policy.Image.MaxMB
 		if maxMB <= 0 {
 			maxMB = 1
 		}
 		return domainassets.ReferenceAsset{}, errs.WithDetails(
 			errs.New(400, errs.CodeImageReferenceTooLarge, fmt.Sprintf("参考图文件超过 %d MB，请压缩后重新上传。", maxMB)),
 			map[string]any{
-				"max_size_bytes":    s.maxBytes,
+				"max_size_bytes":    policy.Image.MaxBytes,
 				"max_size_mb":       maxMB,
 				"actual_size_bytes": int64(len(content)),
 			},
 		)
+	}
+	imageConfig, detectedFormat, detectedMIME, validationErr := validateImageContent(filename, contentType, content, policy.Image)
+	if validationErr != nil {
+		return domainassets.ReferenceAsset{}, validationErr
 	}
 	hash := sha256.Sum256(content)
 	sha := hex.EncodeToString(hash[:])
@@ -95,7 +129,7 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.store != nil {
-		existing, err := s.store.GetByUserAndHash(context.Background(), userID, sha)
+		existing, err := s.store.GetByUserAndHash(ctx, userID, sha)
 		if err == nil {
 			return existing, nil
 		}
@@ -110,43 +144,92 @@ func (s *Service) UploadWithMetadata(userID int64, filename string, contentType 
 		delete(s.assetsByHash, key)
 	}
 
-	config, _, err := image.DecodeConfig(bytes.NewReader(content))
-	if err != nil {
-		return domainassets.ReferenceAsset{}, errs.New(400, errs.CodeUpstreamBadRequest, "unsupported image format")
-	}
 	assetID := uuid.NewString()
-	ext := filepath.Ext(filename)
-	if ext == "" {
-		if exts, _ := mime.ExtensionsByType(contentType); len(exts) > 0 {
-			ext = exts[0]
-		}
-		if ext == "" {
-			ext = ".bin"
-		}
+	ext := "." + detectedFormat
+	if detectedFormat == "jpeg" {
+		ext = ".jpg"
 	}
 	objectKey := filepath.Join("reference-assets", assetID+strings.ToLower(ext))
-	writer, err := s.router.DefaultWriter(context.Background())
+	writer, err := s.router.DefaultWriter(ctx)
 	if err != nil {
 		return domainassets.ReferenceAsset{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "default storage config is unavailable")
 	}
-	if err := writer.Backend.Put(context.Background(), objectKey, contentType, content); err != nil {
+	if err := writer.Backend.Put(ctx, objectKey, detectedMIME, content); err != nil {
 		return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store reference asset")
 	}
-	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", StorageConfigID: writer.ConfigID, StorageDriver: writer.Driver, MimeType: contentType, FileSizeBytes: int64(len(content)), Width: config.Width, Height: config.Height, SHA256: sha, ObjectKey: objectKey, CreatedAt: time.Now()}
+	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", StorageConfigID: writer.ConfigID, StorageDriver: writer.Driver, MimeType: detectedMIME, FileSizeBytes: int64(len(content)), Width: imageConfig.Width, Height: imageConfig.Height, SHA256: sha, ObjectKey: objectKey, CreatedAt: time.Now()}
 	if s.store != nil {
 		if metadataStore, ok := s.store.(MetadataStore); ok {
-			err = metadataStore.SaveWithMetadata(context.Background(), userID, asset, metadata)
+			err = metadataStore.SaveWithMetadata(ctx, userID, asset, metadata)
 		} else {
-			err = s.store.Save(context.Background(), userID, asset)
+			err = s.store.Save(ctx, userID, asset)
 		}
 		if err != nil {
-			_ = writer.Backend.Delete(context.Background(), objectKey)
+			_ = writer.Backend.Delete(ctx, objectKey)
 			return domainassets.ReferenceAsset{}, err
 		}
 	}
 	s.assetsByID[assetID] = storedAsset{UserID: userID, Asset: asset}
 	s.assetsByHash[key] = assetID
 	return asset, nil
+}
+
+func validateImageContent(filename, declaredContentType string, content []byte, policy FilePolicy) (image.Config, string, string, error) {
+	imageConfig, format, err := image.DecodeConfig(bytes.NewReader(content))
+	if err != nil {
+		return image.Config{}, "", "", imageFormatError(filename, policy, "unsupported image content")
+	}
+	format = strings.ToLower(strings.TrimSpace(format))
+	actualMIME := imageFormatMIME(format)
+	if actualMIME == "" || !containsString(policy.AllowedFormats, format) {
+		return image.Config{}, "", "", imageFormatError(filename, policy, "image format is not allowed")
+	}
+	detectedMIME, _, _ := mime.ParseMediaType(http.DetectContentType(content))
+	if detectedMIME != "" && detectedMIME != "application/octet-stream" && !strings.EqualFold(detectedMIME, actualMIME) {
+		return image.Config{}, "", "", imageFormatError(filename, policy, "detected image content is inconsistent")
+	}
+	declaredMIME := strings.TrimSpace(declaredContentType)
+	if declaredMIME != "" {
+		parsed, _, parseErr := mime.ParseMediaType(declaredMIME)
+		if parseErr != nil {
+			return image.Config{}, "", "", imageFormatError(filename, policy, "declared content type is invalid")
+		}
+		if parsed != "application/octet-stream" && !strings.EqualFold(parsed, actualMIME) {
+			return image.Config{}, "", "", imageFormatError(filename, policy, "declared content type does not match image content")
+		}
+	}
+	return imageConfig, format, actualMIME, nil
+}
+
+func imageFormatMIME(format string) string {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "png":
+		return "image/png"
+	case "jpeg", "jpg":
+		return "image/jpeg"
+	case "webp":
+		return "image/webp"
+	case "gif":
+		return "image/gif"
+	default:
+		return ""
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), target) {
+			return true
+		}
+	}
+	return false
+}
+
+func imageFormatError(filename string, policy FilePolicy, message string) error {
+	return errs.WithDetails(errs.New(400, errs.CodeValidationFailed, message), map[string]any{
+		"filename":        filepath.Base(filename),
+		"allowed_formats": append([]string(nil), policy.AllowedFormats...),
+	})
 }
 
 func (s *Service) Get(userID int64, assetID string) (domainassets.ReferenceAsset, error) {
@@ -198,8 +281,18 @@ func (s *Service) ProjectURLs(ctx context.Context, asset domainassets.ReferenceA
 	}
 	if supported {
 		asset.PreviewURL, asset.DownloadURL = urls.PreviewURL, urls.DownloadURL
+		asset.PreviewExpiresAt = mediaExpiryPointer(urls.PreviewExpiresAt)
+		asset.DownloadExpiresAt = mediaExpiryPointer(urls.DownloadExpiresAt)
 	}
 	return asset, nil
+}
+
+func mediaExpiryPointer(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	value = value.UTC()
+	return &value
 }
 
 func (s *Service) Delete(userID int64, assetID string) error {

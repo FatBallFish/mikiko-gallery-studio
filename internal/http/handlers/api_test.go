@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 )
 
@@ -30,6 +32,28 @@ func TestReadBoundedBodyRejectsOversizedUnsignedBody(t *testing.T) {
 	}
 	if string(body) != "small" {
 		t.Fatalf("unexpected body %q", string(body))
+	}
+}
+
+func TestOpenAPIRequestBodyLimitAccountsForUploadEncoding(t *testing.T) {
+	const imageBytes int64 = 20 * 1024 * 1024
+	jsonLimit := openAPIRequestBodyLimit("/api/open/image/v1/reference-assets/uploads", "application/json", imageBytes)
+	wantJSONMinimum := int64(base64.StdEncoding.EncodedLen(int(imageBytes))) + referenceAssetMultipartOverheadBytes
+	if jsonLimit < wantJSONMinimum {
+		t.Fatalf("JSON upload limit %d cannot carry 20 MB base64 payload; want at least %d", jsonLimit, wantJSONMinimum)
+	}
+	multipartLimit := openAPIRequestBodyLimit("/api/open/image/v1/reference-assets", "multipart/form-data; boundary=test", imageBytes)
+	if multipartLimit != imageBytes+referenceAssetMultipartOverheadBytes {
+		t.Fatalf("multipart upload limit = %d, want %d", multipartLimit, imageBytes+referenceAssetMultipartOverheadBytes)
+	}
+}
+
+func TestOpenAPIRequestBodyLimitClampsPersistedImagePolicy(t *testing.T) {
+	const unsafePersistedLimit = int64(10 * 1024 * 1024 * 1024)
+	got := openAPIRequestBodyLimit("/api/open/image/v1/reference-assets/uploads", "application/json", unsafePersistedLimit)
+	want := int64(base64.StdEncoding.EncodedLen(assetservice.MaxImageAttachmentSizeMB*1024*1024)) + referenceAssetMultipartOverheadBytes
+	if got != want {
+		t.Fatalf("OpenAPI body limit = %d, want hard-clamped %d", got, want)
 	}
 }
 

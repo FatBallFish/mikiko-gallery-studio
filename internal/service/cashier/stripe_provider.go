@@ -180,10 +180,17 @@ func newStripeOrderStatusQueryBuilder(clientFactory stripePaymentIntentsFactory)
 		if err != nil || intent == nil {
 			return QueryOrderStatusResult{}, paymentProviderUnavailable()
 		}
+		if strings.TrimSpace(intent.ID) != intentID {
+			return QueryOrderStatusResult{}, paymentProviderUnavailable()
+		}
+		queryStatus := stripePaymentIntentQueryStatus(intent)
+		responseOrderNo := strings.TrimSpace(intent.Metadata["order_no"])
+		if responseOrderNo != strings.TrimSpace(req.Order.OrderNo) && (responseOrderNo != "" || queryStatusRequiresIdentity(queryStatus)) {
+			return QueryOrderStatusResult{}, paymentProviderUnavailable()
+		}
 		if intent.Currency != stripe.CurrencyCNY {
 			return QueryOrderStatusResult{}, stripePaymentAmountMismatch()
 		}
-		queryStatus := stripePaymentIntentQueryStatus(intent)
 		amountCNY := decimal.NewFromInt(intent.Amount).Shift(-2).StringFixed(2)
 		raw := map[string]any{
 			"source":            "stripe_payment_intent",
@@ -204,7 +211,7 @@ func stripePaymentIntentQueryStatus(intent *stripe.PaymentIntent) QueryStatus {
 	case stripe.PaymentIntentStatusSucceeded:
 		return NormalizeQueryStatus("succeeded")
 	case stripe.PaymentIntentStatusCanceled:
-		return NormalizeQueryStatus("failed")
+		return NormalizeQueryStatus("closed")
 	case stripe.PaymentIntentStatusRequiresPaymentMethod:
 		if intent.LastPaymentError != nil {
 			return NormalizeQueryStatus("failed")

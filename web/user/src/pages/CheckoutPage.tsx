@@ -1,22 +1,21 @@
-import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { toDataURL } from 'qrcode'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import type { CashierOptions, CashierOrder, CashierPlan, PaymentVisibleMethod } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, LoadingState, Modal, copyText, useApp } from '../components'
+import { Button, EmptyState, ErrorState, LoadingState, useApp } from '../components'
 import { rdBilling } from '../ui/redesign-classes'
 import { Wallet, CreditCard, QrCode } from '../ui/icons'
 import { errorMessage } from '../useApiResource'
 import { checkoutPaymentMethodEmptyState, checkoutPlanEmptyState, checkoutUnavailableEmptyState, type CheckoutUnavailableEmptyState } from './checkoutEmptyState'
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import { checkoutPaymentErrorMessage } from './checkoutPaymentError'
-import { closePaymentWindow, dispatchPaymentWindow, reservePaymentWindow } from './checkoutPaymentWindow'
-import { checkoutDateTime, checkoutMoney, checkoutOrderActionState, checkoutOrderRuntimeState, checkoutPaymentMethodLabel, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
+import { closePaymentWindow, dispatchPaymentWindow, paymentMethodNeedsReservedWindow, reservePaymentWindow } from './checkoutPaymentWindow'
+import { checkoutCancelResultState, checkoutMoney, checkoutOrderActionState, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
 import { checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
 import { RedeemCodeForm } from './RedeemCodeForm'
-
-const StripePaymentPanel = lazy(async () => ({ default: (await import('./StripePaymentPanel')).StripePaymentPanel }))
+import { PaymentMonitorModal } from './PaymentMonitorModal'
+import { PaymentOrderDetailModal } from './PaymentOrderDetailModal'
 
 const checkoutClasses = {
   page: 'w-full flex-1 px-4 py-6 sm:px-6 md:px-10 md:py-8',
@@ -52,26 +51,6 @@ const checkoutClasses = {
   orderTotal: rdBilling.orderTotal,
   payButton: 'relative mt-1 grid h-14 w-full place-items-center overflow-hidden rounded-xl bg-[var(--accent)] px-5 text-base font-black text-[#111218] shadow-[0_14px_34px_rgba(var(--accent-rgb),0.24)] transition-transform hover:scale-[1.01] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100 motion-reduce:transform-none motion-reduce:transition-none',
   actions: 'flex flex-wrap justify-end gap-3 max-[420px]:flex-col max-[420px]:items-stretch',
-  payment: 'grid gap-2.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5',
-  paymentUnsupported: 'border-[color-mix(in_oklch,var(--warn)_45%,var(--border))] bg-[color-mix(in_oklch,var(--warn)_9%,transparent)]',
-  paymentLabel: 'text-sm font-extrabold text-[var(--fg)]',
-  paymentDetail: 'm-0 text-[13px] leading-relaxed text-[var(--muted)]',
-  paymentCode: 'block max-w-full whitespace-normal rounded-xl bg-[color-mix(in_oklch,var(--bg)_72%,transparent)] p-2.5 text-[var(--accent)] [overflow-wrap:anywhere]',
-  paymentQrWrap: 'grid justify-items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--bg)] p-5',
-  paymentQrImage: 'size-52 rounded-2xl border border-[var(--border)] bg-[var(--surface-solid)] p-3 shadow-[var(--pg-shadow-md)]',
-  paymentModalBody: 'grid gap-5 pt-2',
-  paymentModalLayout: 'grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.78fr)]',
-  paymentModalCard: 'grid gap-4 rounded-3xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_82%,transparent)] p-5',
-  paymentModalGrid: 'grid gap-3 sm:grid-cols-2',
-  paymentMeta: 'grid gap-1.5 rounded-2xl border border-[var(--border)] bg-[var(--bg)]/72 p-3.5',
-  paymentMetaLabel: 'text-[11px] font-bold text-[var(--muted)]',
-  paymentMetaValue: 'text-sm font-black text-[var(--fg)] [overflow-wrap:anywhere]',
-  paymentStatus: 'grid gap-2 rounded-2xl border border-[var(--border)] bg-[var(--bg)]/72 p-4',
-  paymentStatusStrong: 'text-base font-black text-[var(--fg)]',
-  paymentStatusDetail: 'm-0 text-sm leading-relaxed text-[var(--muted)]',
-  paymentResult: 'grid gap-2 rounded-2xl border border-[color-mix(in_oklch,var(--accent)_38%,var(--border))] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] p-4',
-  paymentResultWarn: 'border-[color-mix(in_oklch,var(--accent-coral)_42%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_10%,transparent)]',
-  paymentResultNote: 'text-xs text-[var(--muted)]',
   recentActions: 'flex flex-wrap items-center justify-end gap-2 md:col-start-4 md:justify-self-end',
   recent: 'mt-10 grid gap-4 border-t border-[var(--border)] pt-8',
   recentTitle: 'flex items-center justify-between gap-3',
@@ -85,16 +64,13 @@ const checkoutClasses = {
 
 export function CheckoutPage() {
   const app = useApp()
-  const balanceRefreshedOrderID = useRef<number | null>(null)
-  const terminalModalTimerRef = useRef<number | null>(null)
   const [options, setOptions] = useState<CashierOptions | null>(null)
   const [selectedPlan, setSelectedPlan] = useState('')
   const [selectedMethod, setSelectedMethod] = useState('')
   const [customAmount, setCustomAmount] = useState('25.00')
   const [purchaseType, setPurchaseType] = useState<'plan' | 'custom_amount'>('plan')
-  const [order, setOrder] = useState<CashierOrder | null>(null)
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
-  const [nowMs, setNowMs] = useState(() => Date.now())
+  const [monitorOrder, setMonitorOrder] = useState<CashierOrder | null>(null)
+  const [detailOrder, setDetailOrder] = useState<CashierOrder | null>(null)
   const [recentOrders, setRecentOrders] = useState<CashierOrder[]>([])
   const [recentLoading, setRecentLoading] = useState(true)
   const [recentError, setRecentError] = useState<string | null>(null)
@@ -155,77 +131,7 @@ export function CheckoutPage() {
       points: currentPlan ? checkoutPoints(String(Number(currentPlan.points || 0) + Number(currentPlan.bonus_points || 0))) : '0.00',
       amountLabel: currentPlan ? checkoutMoney(currentPlan.price_cny) : '-',
     }
-  const orderRuntime = useMemo(() => checkoutOrderRuntimeState(order), [order])
-  const orderActions = useMemo(() => checkoutOrderActionState(order), [order])
   const recentRows = useMemo(() => checkoutRecentOrderRows(recentOrders), [recentOrders])
-
-  useEffect(() => {
-    if (!paymentModalOpen) return undefined
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [paymentModalOpen])
-
-  useEffect(() => {
-    if (!order) return
-    if (orderRuntime.step === 'success' && balanceRefreshedOrderID.current !== order.id) {
-      balanceRefreshedOrderID.current = order.id
-      void app.refreshAccount()
-      return
-    }
-    if (!orderRuntime.shouldPoll) return
-    const timer = window.setTimeout(() => {
-      void userApi.getCashierOrder(order.id)
-        .then((next) => {
-          setOrder(next)
-          const nextRuntime = checkoutOrderRuntimeState(next)
-          if (nextRuntime.step === 'success') {
-            app.notify('success', '支付成功，充值余额已刷新')
-            void loadRecentOrders()
-          }
-          if (nextRuntime.step === 'expired') app.notify('error', '订单已过期，请重新创建')
-        })
-        .catch((caught) => {
-          app.notify('error', errorMessage(caught))
-        })
-    }, 2000)
-    return () => window.clearTimeout(timer)
-  }, [app, order, orderRuntime])
-
-  useEffect(() => {
-    if (!paymentModalOpen || !order) return undefined
-    if (terminalModalTimerRef.current) {
-      window.clearTimeout(terminalModalTimerRef.current)
-      terminalModalTimerRef.current = null
-    }
-    if (orderRuntime.step === 'paying' || orderRuntime.step === 'select') return undefined
-    terminalModalTimerRef.current = window.setTimeout(() => {
-      setPaymentModalOpen(false)
-      void app.refreshAccount()
-      void loadRecentOrders()
-    }, 3000)
-    return () => {
-      if (terminalModalTimerRef.current) {
-        window.clearTimeout(terminalModalTimerRef.current)
-        terminalModalTimerRef.current = null
-      }
-    }
-  }, [app, order, orderRuntime.step, paymentModalOpen])
-
-  function openPaymentModal(nextOrder: CashierOrder) {
-    setOrder(nextOrder)
-    setNowMs(Date.now())
-    setPaymentModalOpen(true)
-  }
-
-  function closePaymentModal() {
-    setPaymentModalOpen(false)
-    if (terminalModalTimerRef.current) {
-      window.clearTimeout(terminalModalTimerRef.current)
-      terminalModalTimerRef.current = null
-    }
-    void app.refreshAccount()
-    void loadRecentOrders()
-  }
 
   async function createOrder(event: FormEvent) {
     event.preventDefault()
@@ -241,7 +147,8 @@ export function CheckoutPage() {
       app.notify('error', normalizedCustomAmount.error ?? '请输入有效金额')
       return
     }
-    const paymentWindow = reservePaymentWindow()
+    const selectedPaymentMethod = methods.find((method) => method.method === selectedMethod)
+    const paymentWindow = paymentMethodNeedsReservedWindow(selectedPaymentMethod) ? reservePaymentWindow() : null
     setBusy(true)
     try {
       const nextOrder = await userApi.createCashierOrder({
@@ -252,11 +159,9 @@ export function CheckoutPage() {
         client_return_url: `${window.location.origin}${window.location.pathname}#/checkout`,
       }, orderIdempotencyKey)
       dispatchPaymentWindow(paymentWindow, checkoutPaymentDisplayModel(nextOrder))
-      setOrder(nextOrder)
-      setPaymentModalOpen(true)
-      setNowMs(Date.now())
+      setDetailOrder(null)
+      setMonitorOrder(nextOrder)
       void loadRecentOrders()
-      balanceRefreshedOrderID.current = null
       setOrderIdempotencyKey(newCheckoutOrderIdempotencyKey())
       app.notify('success', '订单已创建，请继续完成支付')
     } catch (caught) {
@@ -268,17 +173,21 @@ export function CheckoutPage() {
     }
   }
 
-  async function refreshOrder() {
-    if (!order) return
+  function openPaymentMonitor(nextOrder: CashierOrder) {
+    setDetailOrder(null)
+    setMonitorOrder(nextOrder)
+  }
+
+  function openOrderDetail(nextOrder: CashierOrder) {
+    setMonitorOrder(null)
+    setDetailOrder(nextOrder)
+  }
+
+  async function mockPay(target: CashierOrder) {
     setBusy(true)
     try {
-      const next = await userApi.getCashierOrder(order.id)
-      setOrder(next)
-      void loadRecentOrders()
-      if (checkoutOrderRuntimeState(next).step === 'success') {
-        balanceRefreshedOrderID.current = next.id
-        await app.refreshAccount()
-      }
+      const next = await userApi.mockPayCashierOrder(target.id)
+      setMonitorOrder(next)
     } catch (caught) {
       app.notify('error', errorMessage(caught))
     } finally {
@@ -286,40 +195,28 @@ export function CheckoutPage() {
     }
   }
 
-  async function selectRecentOrder(nextOrder: CashierOrder, openModal = false) {
-    setOrder(nextOrder)
-    balanceRefreshedOrderID.current = checkoutOrderRuntimeState(nextOrder).step === 'success' ? nextOrder.id : null
-    if (openModal) {
-      openPaymentModal(nextOrder)
-    }
-  }
-
-  async function mockPay() {
-    if (!order) return
-    setBusy(true)
-    try {
-      const next = await userApi.mockPayCashierOrder(order.id)
-      setOrder(next)
-      void loadRecentOrders()
-      balanceRefreshedOrderID.current = next.id
-      await app.refreshAccount()
-      app.notify('success', '模拟支付成功，充值余额已刷新')
-    } catch (caught) {
-      app.notify('error', errorMessage(caught))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function cancelOrder(target: CashierOrder | null = order) {
-    if (!target) return
+  async function cancelOrder(target: CashierOrder) {
     setBusy(true)
     try {
       const next = await userApi.cancelCashierOrder(target.id)
-      if (order?.id === next.id || target.id === order?.id) setOrder(next)
+      const cancelResult = checkoutCancelResultState(next.status)
+      const monitoredPayment = monitorOrder?.id === next.id
+      setMonitorOrder((current) => current?.id === next.id ? next : current)
+      setDetailOrder((current) => current?.id === next.id ? next : current)
+      if (cancelResult === 'paid') {
+        if (!monitoredPayment) {
+          app.notify('success', '支付成功，充值余额已刷新')
+          void app.refreshAccount()
+          void loadRecentOrders()
+        }
+        return
+      }
       void loadRecentOrders()
-      if (paymentModalOpen && target.id === order?.id) setOrder(next)
-      app.notify('success', '订单已取消，可重新创建支付订单')
+      if (cancelResult === 'canceled') {
+        app.notify('success', '订单已取消，可重新创建支付订单')
+      } else {
+        app.notify('info', '订单状态未改变，请刷新支付结果后重试')
+      }
     } catch (caught) {
       app.notify('error', errorMessage(caught))
     } finally {
@@ -430,7 +327,7 @@ export function CheckoutPage() {
             {recentRows.map((row) => (
               <article
                 key={row.id}
-                className={cn(checkoutClasses.recentRow, order?.id === row.id && checkoutClasses.recentRowActive)}
+                className={cn(checkoutClasses.recentRow, (monitorOrder?.id === row.id || detailOrder?.id === row.id) && checkoutClasses.recentRowActive)}
               >
                 <span className={checkoutClasses.recentCell}>
                   <strong className={checkoutClasses.recentStrong}>{row.title}</strong>
@@ -448,11 +345,11 @@ export function CheckoutPage() {
                   <time className={checkoutClasses.recentMeta} dateTime={row.createdAt}>{row.createdAtLabel}</time>
                   {checkoutOrderActionState(row.order).canContinuePay ? (
                     <>
-                      <Button tone="ghost" onClick={() => void selectRecentOrder(row.order, true)}>继续支付</Button>
+                      <Button tone="ghost" onClick={() => openPaymentMonitor(row.order)}>继续支付</Button>
                       <Button tone="ghost" busy={busy} onClick={() => void cancelOrder(row.order)}>取消支付</Button>
                     </>
                   ) : (
-                    <Button tone="ghost" onClick={() => void selectRecentOrder(row.order, true)}>查看订单</Button>
+                    <Button tone="ghost" onClick={() => openOrderDetail(row.order)}>查看订单</Button>
                   )}
                 </div>
               </article>
@@ -469,203 +366,32 @@ export function CheckoutPage() {
         <RedeemCodeForm onRedeemed={() => Promise.all([app.refreshAccount(), loadRecentOrders()]).then(() => undefined)} />
       </section>
 
-      {paymentModalOpen && order ? (
-        <PaymentOrderModal
-          order={order}
-          nowMs={nowMs}
+      {monitorOrder ? (
+        <PaymentMonitorModal
+          order={monitorOrder}
           busy={busy}
-          runtime={orderRuntime}
-          actions={orderActions}
-          onClose={closePaymentModal}
-          onRefresh={() => void refreshOrder()}
-          onCancel={() => void cancelOrder()}
-          onMockPay={() => void mockPay()}
+          onOrderChange={setMonitorOrder}
+          onSuccess={(next) => {
+            setMonitorOrder(next)
+            app.notify('success', '支付成功，充值余额已刷新')
+            void app.refreshAccount()
+            void loadRecentOrders()
+          }}
+          onClose={() => {
+            setMonitorOrder(null)
+          }}
+          onCancel={(target) => void cancelOrder(target)}
+          onMockPay={(target) => void mockPay(target)}
         />
       ) : null}
+      {detailOrder ? <PaymentOrderDetailModal order={detailOrder} busy={busy} onCancel={(target) => void cancelOrder(target)} onClose={() => setDetailOrder(null)} /> : null}
     </div>
   )
-}
-
-function PaymentOrderModal({
-  order,
-  nowMs,
-  busy,
-  runtime,
-  actions,
-  onClose,
-  onRefresh,
-  onCancel,
-  onMockPay,
-}: {
-  order: CashierOrder
-  nowMs: number
-  busy: boolean
-  runtime: ReturnType<typeof checkoutOrderRuntimeState>
-  actions: ReturnType<typeof checkoutOrderActionState>
-  onClose: () => void
-  onRefresh: () => void
-  onCancel: () => void
-  onMockPay: () => void
-}) {
-  const terminal = runtime.step !== 'paying' && runtime.step !== 'select'
-  const countdown = checkoutRemainingLabel(order.expires_at, nowMs)
-  const resultClass = runtime.step === 'success'
-    ? checkoutClasses.paymentResult
-    : cn(checkoutClasses.paymentResult, checkoutClasses.paymentResultWarn)
-  return (
-    <Modal title="收银台订单" onClose={onClose}>
-      <div className={checkoutClasses.paymentModalBody}>
-        <div className={checkoutClasses.paymentModalLayout}>
-          <section className={checkoutClasses.paymentModalCard}>
-            <div className={checkoutClasses.paymentModalGrid}>
-              <PaymentMetaItem label="订单号" value={order.order_no} />
-              <PaymentMetaItem label="支付方式" value={checkoutPaymentMethodLabel(order)} />
-              <PaymentMetaItem label="支付金额" value={checkoutMoney(order.amount_cny)} />
-              <PaymentMetaItem label="到账积分" value={`${checkoutPoints(order.points)} ◈`} />
-              <PaymentMetaItem label="创建时间" value={checkoutDateTime(order.created_at)} />
-              <PaymentMetaItem label="过期时间" value={checkoutDateTime(order.expires_at)} />
-            </div>
-            <div className={checkoutClasses.paymentStatus}>
-              <strong className={checkoutClasses.paymentStatusStrong}>{runtime.label}</strong>
-              <p className={checkoutClasses.paymentStatusDetail}>{runtime.detail}</p>
-              {!terminal ? <span className={checkoutClasses.paymentResultNote}>剩余支付时间 {countdown}</span> : null}
-            </div>
-            {terminal ? (
-              <div className={resultClass}>
-                <strong className={checkoutClasses.paymentStatusStrong}>{runtime.step === 'success' ? '支付结果已确认' : orderActionsLabel(actions, runtime.step)}</strong>
-                <span className={checkoutClasses.paymentResultNote}>弹窗将在 3 秒后自动关闭，你也可以立即手动关闭。</span>
-              </div>
-            ) : null}
-          </section>
-
-          <section className={checkoutClasses.paymentModalCard}>
-            <PaymentDisplayPanel order={order} busy={busy} onMockPay={onMockPay} onConfirmed={onRefresh} />
-          </section>
-        </div>
-
-        <div className={checkoutClasses.actions}>
-          <Button tone="ghost" busy={busy} onClick={onRefresh}>刷新订单</Button>
-          {actions.canCancel ? <Button tone="ghost" busy={busy} onClick={onCancel}>{actions.cancelLabel}</Button> : null}
-          <Button tone={terminal ? 'primary' : 'ghost'} onClick={onClose}>{terminal ? '关闭弹窗' : '稍后支付'}</Button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
-function PaymentMetaItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={checkoutClasses.paymentMeta}>
-      <span className={checkoutClasses.paymentMetaLabel}>{label}</span>
-      <strong className={checkoutClasses.paymentMetaValue}>{value}</strong>
-    </div>
-  )
-}
-
-function PaymentDisplayPanel({
-  order,
-  busy,
-  onMockPay,
-  onConfirmed,
-}: {
-  order: CashierOrder
-  busy: boolean
-  onMockPay: () => void
-  onConfirmed: () => void
-}) {
-  const display = checkoutPaymentDisplayModel(order)
-  const paymentHref = display.href ?? ''
-  const openForm = () => {
-    if (!display.formHtml) return
-    dispatchPaymentWindow(reservePaymentWindow(), display)
-  }
-  return (
-    <section className={cn(checkoutClasses.payment, display.kind === 'unsupported' && checkoutClasses.paymentUnsupported)}>
-      <span className={checkoutClasses.paymentLabel}>{display.label}</span>
-      <p className={checkoutClasses.paymentDetail}>{display.detail}</p>
-      {display.href ? (
-        <>
-          {display.kind === 'qr_code' ? (
-            <div className={checkoutClasses.paymentQrWrap}>
-              <PaymentQRCode value={paymentHref} />
-              <code className={checkoutClasses.paymentCode}>{paymentHref}</code>
-              <div className="flex flex-wrap justify-center gap-2">
-                <Button tone="ghost" onClick={() => window.open(paymentHref, '_blank', 'noopener,noreferrer')}>打开支付页</Button>
-                <Button tone="ghost" onClick={() => void copyText(paymentHref)}>复制支付链接</Button>
-              </div>
-            </div>
-          ) : (
-            <a className="inline-flex items-center justify-center gap-2 rounded-xl border border-transparent bg-transparent px-[18px] py-2.5 text-sm font-bold text-[var(--fg)] no-underline transition-all duration-200 hover:bg-[color-mix(in_oklch,var(--accent)_8%,transparent)]" href={paymentHref} target="_blank" rel="noreferrer">打开支付页</a>
-          )}
-        </>
-      ) : null}
-      {display.kind === 'form' ? <Button tone="ghost" onClick={openForm}>打开支付表单</Button> : null}
-      {display.kind === 'mock' ? <Button tone="ghost" busy={busy} onClick={onMockPay}>模拟支付成功</Button> : null}
-      {display.kind === 'stripe' && display.publishableKey && display.clientSecret ? (
-        <Suspense fallback={<LoadingState label="加载 Stripe 安全支付..." />}>
-          <StripePaymentPanel
-            publishableKey={display.publishableKey}
-            clientSecret={display.clientSecret}
-            disabled={busy}
-            onConfirmed={onConfirmed}
-          />
-        </Suspense>
-      ) : null}
-    </section>
-  )
-}
-
-function PaymentQRCode({ value }: { value: string }) {
-  const [dataUrl, setDataUrl] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    void toDataURL(value, {
-      margin: 1,
-      width: 208,
-      color: resolveQrColors(),
-    }).then((url) => {
-      if (!cancelled) setDataUrl(url)
-    }).catch(() => {
-      if (!cancelled) setDataUrl('')
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [value])
-
-  if (!dataUrl) return <div className={checkoutClasses.paymentQrImage} />
-  return <img className={checkoutClasses.paymentQrImage} src={dataUrl} alt="支付二维码" />
-}
-
-function resolveQrColors() {
-  if (typeof window === 'undefined') {
-    return { dark: '#111111', light: '#ffffff' }
-  }
-  const style = window.getComputedStyle(document.documentElement)
-  const dark = style.getPropertyValue('--fg').trim() || '#111111'
-  const light = style.getPropertyValue('--surface-solid').trim() || '#ffffff'
-  return { dark, light }
 }
 
 function newCheckoutOrderIdempotencyKey() {
   const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
   return `checkout-order-${random}`
-}
-
-function checkoutRemainingLabel(expiresAt: string, nowMs: number) {
-  const expiresMs = Date.parse(expiresAt)
-  if (!Number.isFinite(expiresMs)) return '--:--'
-  const remaining = Math.max(0, Math.floor((expiresMs - nowMs) / 1000))
-  const minutes = Math.floor(remaining / 60)
-  const seconds = remaining % 60
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-}
-
-function orderActionsLabel(actions: ReturnType<typeof checkoutOrderActionState>, step: ReturnType<typeof checkoutOrderRuntimeState>['step']) {
-  if (actions.terminalLabel) return actions.terminalLabel
-  if (step === 'expired') return '订单已过期'
-  return '订单未完成'
 }
 
 function CheckoutEmptyActions({ empty, onRefresh, onBalance }: { empty: CheckoutUnavailableEmptyState; onRefresh: () => void | Promise<void>; onBalance: () => void }) {

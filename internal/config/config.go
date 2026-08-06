@@ -2,6 +2,8 @@ package config
 
 import "time"
 
+const MaxImageAttachmentSizeMB = 100
+
 type Config struct {
 	Runtime          RuntimeConfig          `yaml:"-"`
 	App              AppConfig              `yaml:"app"`
@@ -16,6 +18,7 @@ type Config struct {
 	Security         SecurityConfig         `yaml:"security"`
 	Worker           WorkerConfig           `yaml:"worker"`
 	GenerationLimits GenerationLimitsConfig `yaml:"generation_limits"`
+	AttachmentPolicy AttachmentPolicyConfig `yaml:"attachment_policy"`
 	Providers        ProvidersConfig        `yaml:"providers"`
 	Routing          RoutingConfig          `yaml:"routing"`
 	Docs             DocsConfig             `yaml:"docs"`
@@ -148,6 +151,56 @@ type GenerationLimitsConfig struct {
 	ReferenceImageMaxCount int `yaml:"reference_image_max_count"`
 	PromptMaxChars         int `yaml:"prompt_max_chars"`
 	NegativePromptMaxChars int `yaml:"negative_prompt_max_chars"`
+}
+
+type AttachmentPolicyConfig struct {
+	ImageMaxMB             int      `yaml:"image_max_mb"`
+	VideoMaxMB             int      `yaml:"video_max_mb"`
+	AudioMaxMB             int      `yaml:"audio_max_mb"`
+	DocumentMaxMB          int      `yaml:"document_max_mb"`
+	ImageAllowedFormats    []string `yaml:"image_allowed_formats"`
+	VideoAllowedFormats    []string `yaml:"video_allowed_formats"`
+	AudioAllowedFormats    []string `yaml:"audio_allowed_formats"`
+	DocumentAllowedFormats []string `yaml:"document_allowed_formats"`
+}
+
+func ApplyAttachmentPolicyDefaults(policy AttachmentPolicyConfig, referenceImageMaxMB int) AttachmentPolicyConfig {
+	if referenceImageMaxMB <= 0 {
+		referenceImageMaxMB = 20
+	}
+	if policy.ImageMaxMB == 0 {
+		policy.ImageMaxMB = referenceImageMaxMB
+	}
+	if policy.VideoMaxMB == 0 {
+		policy.VideoMaxMB = 100
+	}
+	if policy.AudioMaxMB == 0 {
+		policy.AudioMaxMB = 50
+	}
+	if policy.DocumentMaxMB == 0 {
+		policy.DocumentMaxMB = 20
+	}
+	if len(policy.ImageAllowedFormats) == 0 {
+		policy.ImageAllowedFormats = []string{"png", "jpeg", "webp", "gif"}
+	} else {
+		policy.ImageAllowedFormats = append([]string(nil), policy.ImageAllowedFormats...)
+	}
+	if len(policy.VideoAllowedFormats) == 0 {
+		policy.VideoAllowedFormats = []string{"mp4", "webm"}
+	} else {
+		policy.VideoAllowedFormats = append([]string(nil), policy.VideoAllowedFormats...)
+	}
+	if len(policy.AudioAllowedFormats) == 0 {
+		policy.AudioAllowedFormats = []string{"mp3", "wav"}
+	} else {
+		policy.AudioAllowedFormats = append([]string(nil), policy.AudioAllowedFormats...)
+	}
+	if len(policy.DocumentAllowedFormats) == 0 {
+		policy.DocumentAllowedFormats = []string{"pdf", "docx"}
+	} else {
+		policy.DocumentAllowedFormats = append([]string(nil), policy.DocumentAllowedFormats...)
+	}
+	return policy
 }
 
 type ProvidersConfig struct {

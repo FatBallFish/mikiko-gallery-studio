@@ -284,6 +284,35 @@ func TestOpenAPISpecPlacesProgressOnImageTask(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpecDocumentsMediaURLExpirations(t *testing.T) {
+	content, err := os.ReadFile("components/schemas/common.yaml")
+	if err != nil {
+		t.Fatalf("read common schemas: %v", err)
+	}
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Type   string `yaml:"type"`
+					Format string `yaml:"format"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		t.Fatalf("unmarshal common schemas: %v", err)
+	}
+	for _, schemaName := range []string{"ReferenceAsset", "ImageResult", "GalleryImage"} {
+		schema := doc.Components.Schemas[schemaName]
+		for _, field := range []string{"preview_expires_at", "download_expires_at"} {
+			property, ok := schema.Properties[field]
+			if !ok || property.Type != "string" || property.Format != "date-time" {
+				t.Fatalf("%s.%s must document optional date-time expiry metadata", schemaName, field)
+			}
+		}
+	}
+}
+
 func TestOpenAPISpecDocumentsPublicGalleryPromptBoundaryContract(t *testing.T) {
 	content, err := os.ReadFile("openapi.yaml")
 	if err != nil {

@@ -623,6 +623,47 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/PaymentOrder'
+    CashierOrderSyncResult:
+      type: object
+      required: [provider_type, query_status, paid, completed, synced_at]
+      properties:
+        provider_type:
+          type: string
+        provider_instance_id:
+          type: integer
+          format: int64
+        query_status:
+          type: string
+          enum: [pending, paid, closed, failed, refunded]
+        risk_category:
+          type: string
+        action_hint:
+          type: string
+        paid:
+          type: boolean
+        completed:
+          type: boolean
+        trade_no:
+          type: string
+        amount_cny:
+          type: string
+        message:
+          type: string
+        synced_at:
+          type: string
+          format: date-time
+    CashierOrderSyncResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [order, sync]
+          properties:
+            order:
+              $ref: '#/components/schemas/PaymentOrder'
+            sync:
+              $ref: '#/components/schemas/CashierOrderSyncResult'
     PaymentOrderResponse:
       type: object
       properties:

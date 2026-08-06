@@ -37,12 +37,34 @@ if (!source.includes('zoomBackdrop:') || !source.includes('motion-reduce:animate
 }
 for (const contract of [
   'useImageMediaState(',
-  'onLoad={media.markLoaded}',
-  'onError={media.markError}',
-  '<ImageMediaFallback onRetry={media.retry}',
-  'key={media.imageKey}',
+  'useMediaRefreshOnce(image.url, image.onMediaRefresh, image.mediaExpiresAt, true)',
+  'markMediaLoaded(); media.markLoaded()',
+  'if (!refreshed) media.markError()',
+  '<ImageMediaFallback onRetry={() => { resetMediaRefresh(); media.retry() }}',
+  'src={currentSrc}',
 ]) {
   if (!zoomSource.includes(contract)) {
     throw new Error(`zoom media must expose ${contract}`)
+  }
+}
+
+for (const contract of [
+  'onMediaRefresh: item.onMediaRefresh ?? onMediaRefresh',
+  'onMediaRefresh,',
+  'useEffect(() => setZoomImage(null), [image?.id])',
+]) {
+  if (!source.includes(contract)) {
+    throw new Error(`zoom payload must preserve resource-scoped refresh behavior: missing ${contract}`)
+  }
+}
+if (source.includes('useEffect(() => setZoomImage(null), [image?.id, imageUrl])')) {
+  throw new Error('refreshing a signed URL must not close an open zoom viewer')
+}
+for (const contract of [
+  '<ImageMediaFallback onRetry={() => { resetMediaRefresh(); setFailed(false) }}',
+  "resetMediaRefresh(); setImageState('loading')",
+]) {
+  if (!source.includes(contract)) {
+    throw new Error(`explicit image retry must request a new projection after another failure: missing ${contract}`)
   }
 }

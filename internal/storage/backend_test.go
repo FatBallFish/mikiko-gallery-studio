@@ -34,7 +34,15 @@ func TestTemporaryMediaURLProjectionSignsPreviewAndDownloadSeparately(t *testing
 	if !supported || urls.PreviewURL != "https://objects.example.test/generated/result.png?mode=preview&sig=secret" || urls.DownloadURL != "https://objects.example.test/generated/result.png?mode=download&sig=secret" {
 		t.Fatalf("unexpected projected URLs %#v supported=%v", urls, supported)
 	}
-	if len(backend.options) != 2 || backend.options[0].Expiry != 5*time.Minute || backend.options[0].ResponseFilename != "" || backend.options[1].ResponseFilename != "result.png" {
+	if len(backend.options) != 2 ||
+		backend.options[0].Expiry != 6*time.Minute ||
+		backend.options[0].SigningTimeBucket != time.Minute ||
+		backend.options[0].ResponseCacheControl != "private, max-age=300" ||
+		backend.options[0].ResponseFilename != "" ||
+		backend.options[1].Expiry != 5*time.Minute ||
+		backend.options[1].SigningTimeBucket != 0 ||
+		backend.options[1].ResponseCacheControl != "" ||
+		backend.options[1].ResponseFilename != "result.png" {
 		t.Fatalf("unexpected signing options %#v", backend.options)
 	}
 	if _, supported, err := ProjectTemporaryMediaURLs(t.Context(), NewLocalBackend(t.TempDir()), "generated/result.png", "image/png", "result.png"); err != nil || supported {
@@ -84,6 +92,54 @@ func TestLocalBackendGetBoundedHonorsLimitAndContext(t *testing.T) {
 	cancel()
 	if _, err := backend.GetBounded(cancelled, "probe-object", int64(len(content))); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled local read error=%v", err)
+	}
+}
+
+func TestLocalBackendCopyCreatesIndependentObject(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	copier, ok := any(backend).(interface {
+		Copy(context.Context, string, string) error
+	})
+	if !ok {
+		t.Fatal("local backend does not expose server-side copy capability")
+	}
+	source := []byte("independent-image-content")
+	if err := backend.Put(t.Context(), "source/image.png", "image/png", source); err != nil {
+		t.Fatalf("Put source: %v", err)
+	}
+	if err := copier.Copy(t.Context(), "source/image.png", "references/copied.png"); err != nil {
+		t.Fatalf("Copy: %v", err)
+	}
+	if err := backend.Delete(t.Context(), "source/image.png"); err != nil {
+		t.Fatalf("Delete source: %v", err)
+	}
+	loaded, err := backend.Get(t.Context(), "references/copied.png")
+	if err != nil || string(loaded) != string(source) {
+		t.Fatalf("copied object after source deletion: content=%q err=%v", loaded, err)
+	}
+}
+
+func TestLocalBackendCopyRejectsInvalidPathsAndCancellation(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	copier, ok := any(backend).(interface {
+		Copy(context.Context, string, string) error
+	})
+	if !ok {
+		t.Fatal("local backend does not expose server-side copy capability")
+	}
+	if err := backend.Put(t.Context(), "source.png", "image/png", []byte("content")); err != nil {
+		t.Fatalf("Put source: %v", err)
+	}
+	if err := copier.Copy(t.Context(), "source.png", "../outside.png"); err == nil {
+		t.Fatal("copy accepted traversal destination")
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := copier.Copy(cancelled, "source.png", "cancelled.png"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled copy error = %v, want context.Canceled", err)
+	}
+	if _, err := backend.Get(t.Context(), "cancelled.png"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cancelled copy left destination behind: %v", err)
 	}
 }
 
@@ -224,6 +280,80 @@ func TestS3BackendTemporaryGetURLUsesBoundedSigV4QueryWithoutNetwork(t *testing.
 	}
 }
 
+func TestS3BackendCopyUsesSignedCopyObjectRequest(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodPut || r.URL.Path != "/bucket/prefix/references/copied image.png" {
+			t.Fatalf("copy request = %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("X-Amz-Copy-Source"); got != "/bucket/prefix/generated/source%20image.png" {
+			t.Fatalf("x-amz-copy-source = %q", got)
+		}
+		authorization := r.Header.Get("Authorization")
+		if !strings.Contains(authorization, "SignedHeaders=host;x-amz-content-sha256;x-amz-copy-source;x-amz-date") {
+			t.Fatalf("copy source missing from signed headers: %q", authorization)
+		}
+		if got := r.Header.Get("X-Amz-Content-Sha256"); got != sha256Hex(nil) {
+			t.Fatalf("copy payload hash = %q, want empty payload hash", got)
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = io.WriteString(w, `<CopyObjectResult><ETag>"copied-etag"</ETag></CopyObjectResult>`)
+	}))
+	defer server.Close()
+
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: server.URL, Region: "us-east-1", Bucket: "bucket",
+			AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true, Prefix: "prefix",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+	copier, ok := any(backend).(interface {
+		Copy(context.Context, string, string) error
+	})
+	if !ok {
+		t.Fatal("S3 backend does not expose server-side copy capability")
+	}
+	if err := copier.Copy(t.Context(), "generated/source image.png", "references/copied image.png"); err != nil {
+		t.Fatalf("Copy: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("copy round trips = %d, want 1", calls)
+	}
+}
+
+func TestS3BackendCopyRejectsEmbeddedErrorResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = io.WriteString(w, `<Error><Code>NoSuchKey</Code><Message>source missing</Message></Error>`)
+	}))
+	defer server.Close()
+
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: server.URL, Region: "us-east-1", Bucket: "bucket",
+			AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+	copier, ok := any(backend).(interface {
+		Copy(context.Context, string, string) error
+	})
+	if !ok {
+		t.Fatal("S3 backend does not expose server-side copy capability")
+	}
+	if err := copier.Copy(t.Context(), "missing.png", "copied.png"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("embedded NoSuchKey error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestS3BackendTemporaryGetURLDefaultsToFiveMinutesAndLocalDoesNotSign(t *testing.T) {
 	backend, err := NewS3Backend(config.StorageConfig{
 		Driver: "s3",
@@ -248,6 +378,86 @@ func TestS3BackendTemporaryGetURLDefaultsToFiveMinutesAndLocalDoesNotSign(t *tes
 	var backendContract Backend = NewLocalBackend(t.TempDir())
 	if _, ok := backendContract.(TemporaryURLSigner); ok {
 		t.Fatal("local storage must retain byte delivery instead of exposing a temporary URL")
+	}
+}
+
+func TestProjectTemporaryMediaURLsBucketsPreviewAndFreshlySignsDownload(t *testing.T) {
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: "https://bucket.example.com", Region: "us-east-1", Bucket: "bucket",
+			AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+
+	now := time.Date(2026, time.August, 6, 12, 34, 5, 0, time.UTC)
+	backend.now = func() time.Time { return now }
+	first, supported, err := ProjectTemporaryMediaURLs(t.Context(), backend, "generated/result.png", "image/png", "result.png")
+	if err != nil || !supported {
+		t.Fatalf("first projection: supported=%v err=%v", supported, err)
+	}
+
+	now = time.Date(2026, time.August, 6, 12, 34, 59, 0, time.UTC)
+	second, _, err := ProjectTemporaryMediaURLs(t.Context(), backend, "generated/result.png", "image/png", "result.png")
+	if err != nil {
+		t.Fatalf("second projection: %v", err)
+	}
+	if first.PreviewURL != second.PreviewURL {
+		t.Fatalf("preview URL changed inside signing bucket:\nfirst:  %s\nsecond: %s", first.PreviewURL, second.PreviewURL)
+	}
+	if first.DownloadURL == second.DownloadURL {
+		t.Fatal("download URL must be freshly signed instead of sharing the preview bucket")
+	}
+	if want := time.Date(2026, time.August, 6, 12, 40, 0, 0, time.UTC); !first.PreviewExpiresAt.Equal(want) {
+		t.Fatalf("preview expiry metadata = %s, want %s", first.PreviewExpiresAt, want)
+	}
+	if want := time.Date(2026, time.August, 6, 12, 39, 59, 0, time.UTC); !second.DownloadExpiresAt.Equal(want) {
+		t.Fatalf("download expiry metadata = %s, want %s", second.DownloadExpiresAt, want)
+	}
+
+	preview, err := url.Parse(first.PreviewURL)
+	if err != nil {
+		t.Fatalf("parse preview URL: %v", err)
+	}
+	previewQuery := preview.Query()
+	if got := previewQuery.Get("X-Amz-Date"); got != "20260806T123400Z" {
+		t.Fatalf("preview signing time = %q, want bucket start", got)
+	}
+	if got := previewQuery.Get("X-Amz-Expires"); got != "360" {
+		t.Fatalf("preview expiry = %q, want 360 seconds to preserve five-minute validity at bucket end", got)
+	}
+	if got := previewQuery.Get("response-cache-control"); got != "private, max-age=300" {
+		t.Fatalf("preview cache control = %q, want private five-minute browser cache", got)
+	}
+	if got := previewQuery.Get("response-content-disposition"); got != "" {
+		t.Fatalf("preview unexpectedly forces download disposition %q", got)
+	}
+
+	download, err := url.Parse(second.DownloadURL)
+	if err != nil {
+		t.Fatalf("parse download URL: %v", err)
+	}
+	downloadQuery := download.Query()
+	if got := downloadQuery.Get("X-Amz-Date"); got != "20260806T123459Z" {
+		t.Fatalf("download signing time = %q, want current request time", got)
+	}
+	if disposition := downloadQuery.Get("response-content-disposition"); !strings.Contains(disposition, "attachment") || !strings.Contains(disposition, "result.png") {
+		t.Fatalf("download disposition = %q, want attachment filename", disposition)
+	}
+	if got := downloadQuery.Get("response-cache-control"); got != "" {
+		t.Fatalf("download unexpectedly reused preview cache control %q", got)
+	}
+
+	now = time.Date(2026, time.August, 6, 12, 35, 0, 0, time.UTC)
+	third, _, err := ProjectTemporaryMediaURLs(t.Context(), backend, "generated/result.png", "image/png", "result.png")
+	if err != nil {
+		t.Fatalf("third projection: %v", err)
+	}
+	if second.PreviewURL == third.PreviewURL {
+		t.Fatal("preview URL did not rotate at the next signing bucket")
 	}
 }
 

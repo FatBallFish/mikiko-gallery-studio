@@ -886,6 +886,25 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/CashierOrderResponse
+  /api/agent/cashier/v1/orders/{order_id}/sync:
+    post:
+      tags: [Agent Cashier]
+      summary: Synchronize a cashier order with its payment provider
+      operationId: postAgentCashierOrderSync
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Current cashier order and sanitized provider sync result
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/CashierOrderSyncResponse
   /api/agent/cashier/v1/orders/{order_id}/mock-pay:
     post:
       tags: [Agent Cashier]
@@ -1069,6 +1088,43 @@ paths:
                 $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
         '404':
           description: Image not found, not owned by caller, deleted, or not locally stored
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+  /api/agent/image/v1/images/{image_id}/access:
+    get:
+      tags: [Agent Image]
+      summary: Project a fresh direct-storage URL for an owned generated image
+      operationId: getAgentImageAccess
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: purpose
+          in: query
+          required: true
+          schema: {type: string, enum: [preview, download]}
+      responses:
+        '200':
+          description: Short-lived permission-checked media URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [url]
+                    properties:
+                      url: {type: string, format: uri-reference}
+                      expires_at: {type: string, format: date-time}
+        '404':
+          description: Image not found or not owned by caller
           content:
             application/json:
               schema:
@@ -1306,6 +1362,41 @@ paths:
                 $ref: ./components/schemas/common.yaml#/components/schemas/PublicGalleryDetailResponse
         '401':
           description: Login required for full prompt and viewer interaction state
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/image/v1/gallery/images/{image_id}/access:
+    get:
+      tags: [Open Image API]
+      summary: Project a fresh direct-storage URL for an approved public image
+      operationId: getOpenGalleryImageAccess
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: purpose
+          in: query
+          required: true
+          schema: {type: string, enum: [preview, download]}
+      responses:
+        '200':
+          description: Short-lived URL for an approved public image
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [url]
+                    properties:
+                      url: {type: string, format: uri-reference}
+                      expires_at: {type: string, format: date-time}
+        '404':
+          description: Image is not approved for public access
           content:
             application/json:
               schema:
@@ -3597,6 +3688,43 @@ paths:
               schema:
                 type: string
                 format: binary
+  /api/agent/image/v1/reference-assets/{asset_id}/access:
+    get:
+      tags: [Agent Image]
+      summary: Project a fresh direct-storage URL for an owned reference asset
+      operationId: getAgentReferenceAssetAccess
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: purpose
+          in: query
+          required: true
+          schema: {type: string, enum: [preview, download]}
+      responses:
+        '200':
+          description: Short-lived permission-checked media URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [url]
+                    properties:
+                      url: {type: string, format: uri-reference}
+                      expires_at: {type: string, format: date-time}
+        '404':
+          description: Reference asset not found or not owned by caller
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
   /api/open/image/v1/reference-assets:
     post:
       tags: [Open Image API]

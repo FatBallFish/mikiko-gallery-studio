@@ -179,6 +179,54 @@ paths:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/image/v1/gallery/images/{image_id}/access:
+    get:
+      tags:
+        - Open Image API
+      summary: Project a fresh direct-storage URL for an approved public image
+      operationId: getOpenGalleryImageAccess
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: purpose
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - preview
+              - download
+      responses:
+        "200":
+          description: Short-lived URL for an approved public image
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - url
+                    properties:
+                      url:
+                        type: string
+                        format: uri-reference
+                      expires_at:
+                        type: string
+                        format: date-time
+        "404":
+          description: Image is not approved for public access
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/open/image/v1/payments/webhooks/{channel}:
     post:
       tags:

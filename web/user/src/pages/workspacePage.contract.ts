@@ -54,7 +54,7 @@ for (const required of [
   'markWorkspaceStreamHealthy(generation)',
   'markStreamHealthy()',
   'streamTokenRef.current !== token',
-  "mergeReferenceAssets(items, [nextAsset], maxReferenceImages)",
+  'mergeReferenceAssets(items, imported, maxReferenceImages)',
   'workspaceOutputOptions(selectedModel)',
   'normalizeWorkspaceOutputParameters',
   '按像素',
@@ -115,9 +115,12 @@ const historyEditStart = source.indexOf('async function applyAsEditSource')
 const historyEditEnd = source.indexOf('\n  function removeEditAsset', historyEditStart)
 const historyEditSource = source.slice(historyEditStart, historyEditEnd)
 const historyLimitCheck = historyEditSource.indexOf('singleReferenceAddition')
-const historyFetch = historyEditSource.indexOf('await fetch')
-if (!(historyLimitCheck >= 0 && historyFetch > historyLimitCheck)) {
-  throw new Error('history edit source must enforce the live reference limit before fetching or uploading')
+const historyImport = historyEditSource.indexOf('userApi.importReferenceAssetsFromGallery')
+if (!(historyLimitCheck >= 0 && historyImport > historyLimitCheck)) {
+  throw new Error('history edit source must enforce the live reference limit before importing by image ID')
+}
+if (historyEditSource.includes('await fetch')) {
+  throw new Error('history edit source must not fetch an expiring object-storage URL in the browser')
 }
 
 for (const removed of ['参考生图', 'reference_to_image', "openGalleryImport('reference')", "uploadReference(event, 'reference')"]) {

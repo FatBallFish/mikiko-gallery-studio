@@ -1010,8 +1010,8 @@ func TestTemporaryMediaURLProjectionForTaskResults(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 	backend := &temporaryURLBackend{
-		previewURL:  "https://bfss.example.com/generated/projected-image.png?mode=preview&X-Amz-Signature=preview",
-		downloadURL: "https://bfss.example.com/generated/projected-image.png?mode=download&X-Amz-Signature=download",
+		previewURL:  "https://bfss.example.com/generated/projected-image.png?mode=preview&X-Amz-Signature=preview&X-Amz-Date=20260806T120000Z&X-Amz-Expires=360",
+		downloadURL: "https://bfss.example.com/generated/projected-image.png?mode=download&X-Amz-Signature=download&X-Amz-Date=20260806T120000Z&X-Amz-Expires=300",
 	}
 	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndBackend(taskTestConfig(), nil, store, nil, nil, backend)
 
@@ -1021,6 +1021,11 @@ func TestTemporaryMediaURLProjectionForTaskResults(t *testing.T) {
 	}
 	if len(task.Results) != 1 || task.Results[0].URL != backend.previewURL || task.Results[0].DownloadURL != backend.downloadURL {
 		t.Fatalf("task result must expose separate temporary URLs, got %#v", task.Results)
+	}
+	if task.Results[0].PreviewExpiresAt == nil || task.Results[0].DownloadExpiresAt == nil ||
+		!task.Results[0].PreviewExpiresAt.Equal(time.Date(2026, time.August, 6, 12, 6, 0, 0, time.UTC)) ||
+		!task.Results[0].DownloadExpiresAt.Equal(time.Date(2026, time.August, 6, 12, 5, 0, 0, time.UTC)) {
+		t.Fatalf("task result must expose URL expiry metadata, got %#v", task.Results[0])
 	}
 	if backend.signCalls != 2 || backend.options.Expiry != 5*time.Minute || backend.options.ResponseFilename != "projected-image.png" {
 		t.Fatalf("unexpected signer calls=%d options=%#v", backend.signCalls, backend.options)

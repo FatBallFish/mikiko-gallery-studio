@@ -66,6 +66,12 @@ type HMACRequest struct {
 	Now        time.Time
 }
 
+type PreparedHMAC struct {
+	service    *Service
+	key        domainapikey.APIKey
+	bodySHA256 string
+}
+
 type Service struct {
 	store                      *MemoryStore
 	signingSecretEncryptionKey string
@@ -264,14 +270,19 @@ func (s *Service) AuthenticateBearer(ctx context.Context, bearerSecret string) (
 }
 
 func (s *Service) VerifyCanonicalHMAC(ctx context.Context, req HMACRequest) (domainapikey.Identity, error) {
+	prepared, err := s.PrepareCanonicalHMAC(ctx, req)
+	if err != nil {
+		return domainapikey.Identity{}, err
+	}
+	return s.CompleteCanonicalHMAC(ctx, prepared, BodySHA256(req.Body))
+}
+
+func (s *Service) PrepareCanonicalHMAC(ctx context.Context, req HMACRequest) (PreparedHMAC, error) {
 	accessKey := strings.TrimSpace(req.AccessKey)
 	signature := strings.TrimSpace(req.Signature)
 	bodyHash := strings.TrimSpace(req.BodySHA256)
 	if accessKey == "" || signature == "" || bodyHash == "" || req.Timestamp.IsZero() {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "missing api key credentials")
-	}
-	if subtle.ConstantTimeCompare([]byte(bodyHash), []byte(BodySHA256(req.Body))) != 1 {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key body hash")
+		return PreparedHMAC{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "missing api key credentials")
 	}
 	now := req.Now
 	if now.IsZero() {
@@ -282,21 +293,41 @@ func (s *Service) VerifyCanonicalHMAC(ctx context.Context, req HMACRequest) (dom
 		drift = defaultHMACMaxDrift
 	}
 	if absDuration(now.Sub(req.Timestamp)) > drift {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "api key timestamp expired")
+		return PreparedHMAC{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "api key timestamp expired")
 	}
 	key, err := s.store.GetByAccessKey(ctx, accessKey)
 	if err != nil {
-		return domainapikey.Identity{}, mapLookupError(err)
+		return PreparedHMAC{}, mapLookupError(err)
+	}
+	if err := validateKeyAvailable(key, time.Now()); err != nil {
+		return PreparedHMAC{}, err
 	}
 	signingSecret, err := s.decryptSecret(key.SecretCiphertext)
 	if err != nil {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "api key signing secret is unavailable")
+		return PreparedHMAC{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "api key signing secret is unavailable")
 	}
 	expected := signCanonicalHMACWithKey(signingSecret, req.Method, req.Path, req.Timestamp, bodyHash)
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) != 1 {
+		return PreparedHMAC{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key credentials")
+	}
+	return PreparedHMAC{service: s, key: key, bodySHA256: bodyHash}, nil
+}
+
+func (s *Service) CompleteCanonicalHMAC(ctx context.Context, prepared PreparedHMAC, actualBodySHA256 string) (domainapikey.Identity, error) {
+	if prepared.service != s || prepared.key.ID <= 0 || strings.TrimSpace(prepared.bodySHA256) == "" {
 		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key credentials")
 	}
-	return s.acceptKey(ctx, key)
+	if subtle.ConstantTimeCompare([]byte(prepared.bodySHA256), []byte(strings.TrimSpace(actualBodySHA256))) != 1 {
+		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key body hash")
+	}
+	current, err := s.store.GetByAccessKey(ctx, prepared.key.AccessKey)
+	if err != nil {
+		return domainapikey.Identity{}, mapLookupError(err)
+	}
+	if current.ID != prepared.key.ID || subtle.ConstantTimeCompare([]byte(current.SecretCiphertext), []byte(prepared.key.SecretCiphertext)) != 1 {
+		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key credentials")
+	}
+	return s.acceptKey(ctx, current)
 }
 
 func (s *Service) ReserveQuota(ctx context.Context, identity domainapikey.Identity, reservationID, points string) error {
@@ -339,11 +370,8 @@ func (s *Service) SetExpiresAtForTest(ctx context.Context, id int64, expiresAt t
 }
 
 func (s *Service) acceptKey(ctx context.Context, key domainapikey.APIKey) (domainapikey.Identity, error) {
-	if key.Status != domainapikey.StatusActive {
-		return domainapikey.Identity{}, errs.New(http.StatusForbidden, errs.CodeAPIKeyDisabled, "api key is disabled")
-	}
-	if key.ExpiresAt != nil && time.Now().After(*key.ExpiresAt) {
-		return domainapikey.Identity{}, errs.New(http.StatusForbidden, errs.CodeAPIKeyDisabled, "api key is expired")
+	if err := validateKeyAvailable(key, time.Now()); err != nil {
+		return domainapikey.Identity{}, err
 	}
 	if key.RPMLimit != nil {
 		if err := s.store.RecordRequest(ctx, key.ID, *key.RPMLimit, time.Now().UTC()); err != nil {
@@ -357,6 +385,16 @@ func (s *Service) acceptKey(ctx context.Context, key domainapikey.APIKey) (domai
 		AccessKey: key.AccessKey,
 		GroupCode: defaultString(key.GroupCode, "basic"),
 	}, nil
+}
+
+func validateKeyAvailable(key domainapikey.APIKey, now time.Time) error {
+	if key.Status != domainapikey.StatusActive {
+		return errs.New(http.StatusForbidden, errs.CodeAPIKeyDisabled, "api key is disabled")
+	}
+	if key.ExpiresAt != nil && now.After(*key.ExpiresAt) {
+		return errs.New(http.StatusForbidden, errs.CodeAPIKeyDisabled, "api key is expired")
+	}
+	return nil
 }
 
 func BodySHA256(body []byte) string {

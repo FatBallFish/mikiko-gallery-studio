@@ -1636,6 +1636,8 @@ start_smoke_middleware
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/entstore -run '^TestTextModelStore.*Postgres' -count=1
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/entstore -run '^TestBillingStorePostgres(CancelAndPaidReconciliationEndsCompleted|ConcurrentDuplicatePaidCallbacksAreIdempotent)$' -count=2
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/db -run '^TestSchemaV2MigratesLegacyRefreshSessions$' -count=1
 start_fake_provider
 write_smoke_config true
@@ -2229,14 +2231,19 @@ canceled_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${
 assert_cashier_order_state "$canceled_order_body" "canceled" "" "" "no" >/dev/null
 assert_json_field "$canceled_order_body" "data.closed_at" >/dev/null
 
-canceled_mock_pay_status="$(curl --silent --output "$TMP_DIR/canceled-mock-pay.json" --write-out "%{http_code}" \
-  -X POST "$BASE_URL/api/agent/cashier/v1/orders/${CANCEL_ORDER_ID}/mock-pay" \
+canceled_recovered_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${CANCEL_ORDER_ID}/mock-pay" \
   -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$canceled_mock_pay_status" == "409" ]]
-[[ "$(assert_json_field "$(cat "$TMP_DIR/canceled-mock-pay.json")" "error.code")" == "CONFLICT" ]]
+assert_cashier_order_state "$canceled_recovered_body" "completed" "" "" "yes" >/dev/null
 
 canceled_detail_body="$(request "$BASE_URL/api/agent/cashier/v1/orders/${CANCEL_ORDER_ID}" -H "Authorization: Bearer $ACCESS_TOKEN")"
-assert_cashier_order_state "$canceled_detail_body" "canceled" "" "" "no" >/dev/null
+assert_cashier_order_state "$canceled_detail_body" "completed" "" "" "yes" >/dev/null
+
+canceled_recovery_refund_trade_no="REFUND-CANCELED-RECOVERY-SMOKE-${SMOKE_ID}"
+canceled_recovery_refund_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${CANCEL_ORDER_ID}/refund" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "{\"refund_trade_no\":\"${canceled_recovery_refund_trade_no}\",\"reason\":\"api smoke rollback canceled payment recovery\"}")"
+assert_cashier_refund_state "$canceled_recovery_refund_body" "refunded" "$canceled_recovery_refund_trade_no" "19.90000" "100.00000" >/dev/null
 
 manual_complete_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
@@ -2570,9 +2577,21 @@ assert_cashier_order_state "$wxpay_limit_order_body" "pending" "10.00000" "20.00
 [[ "$(assert_json_field "$wxpay_limit_order_body" "data.provider_instance_id")" == "$WXPAY_LIMITED_PROVIDER_ID" ]]
 [[ "$(assert_json_field "$wxpay_limit_order_body" "data.payment_display.type")" == "qr_code" ]]
 
-wxpay_limit_cancel_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${WXPAY_LIMIT_ORDER_ID}/cancel" \
+wxpay_limit_cancel_status="$(curl --silent --output "$TMP_DIR/wxpay-limit-cancel.json" --write-out "%{http_code}" \
+  -X POST "$BASE_URL/api/agent/cashier/v1/orders/${WXPAY_LIMIT_ORDER_ID}/cancel" \
   -H "Authorization: Bearer $ACCESS_TOKEN")"
-assert_cashier_order_state "$wxpay_limit_cancel_body" "canceled" "10.00000" "20.00000" "no" >/dev/null
+[[ "$wxpay_limit_cancel_status" == "409" ]]
+[[ "$(assert_json_field "$(cat "$TMP_DIR/wxpay-limit-cancel.json")" "error.code")" == "PAYMENT_PROVIDER_UNAVAILABLE" ]]
+
+wxpay_limit_after_cancel_body="$(request "$BASE_URL/api/agent/cashier/v1/orders/${WXPAY_LIMIT_ORDER_ID}" \
+  -H "Authorization: Bearer $ACCESS_TOKEN")"
+assert_cashier_order_state "$wxpay_limit_after_cancel_body" "pending" "10.00000" "20.00000" "no" >/dev/null
+
+psql_exec -v payment_order_id="$WXPAY_LIMIT_ORDER_ID" <<'SQL'
+UPDATE payment_orders
+SET status = 'canceled', closed_at = CURRENT_TIMESTAMP
+WHERE id = :'payment_order_id' AND status = 'pending';
+SQL
 
 pending_limit_key="cashier-pending-limit-${SMOKE_ID}"
 pending_limit_first_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \

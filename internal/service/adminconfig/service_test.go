@@ -3,6 +3,7 @@ package adminconfig_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,6 +72,49 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 		"visible_methods",
 	})
 	assertTabKeys(t, tabs, "runtime", []string{"worker_max_concurrent_tasks"})
+	assertTabKeys(t, tabs, "attachment_policy", []string{
+		"audio_allowed_formats",
+		"audio_max_mb",
+		"document_allowed_formats",
+		"document_max_mb",
+		"image_allowed_formats",
+		"image_max_mb",
+		"video_allowed_formats",
+		"video_max_mb",
+	})
+}
+
+func TestAttachmentPolicyTabRejectsInvalidValues(t *testing.T) {
+	svc := adminconfig.NewServiceWithStore(testConfig(), adminconfig.NewMemoryStore())
+	for _, item := range []domainadminconfig.Item{
+		{ConfigKey: "image_max_mb", ConfigValue: map[string]any{"value": 0}, Scope: "global"},
+		{ConfigKey: "image_allowed_formats", ConfigValue: map[string]any{"value": []any{"png", "svg"}}, Scope: "global"},
+	} {
+		item.ConfigCategory = "attachment_policy"
+		if _, err := svc.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+			TabKey: "attachment_policy", Version: 1, Items: []domainadminconfig.Item{item},
+		}); err == nil {
+			t.Fatalf("expected invalid attachment policy item to be rejected: %#v", item)
+		}
+	}
+}
+
+func TestAttachmentPolicyTabRejectsImageSizeAboveMemoryCap(t *testing.T) {
+	svc := adminconfig.NewServiceWithStore(testConfig(), adminconfig.NewMemoryStore())
+	_, err := svc.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey:  "attachment_policy",
+		Version: 1,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "attachment_policy",
+			ConfigKey:      "image_max_mb",
+			ConfigValue:    map[string]any{"value": 101},
+			Scope:          "global",
+		}},
+	})
+	appErr, ok := err.(*errs.Error)
+	if !ok || appErr.StatusCode != 400 || !strings.Contains(appErr.Message, "between 1 and 100 MB") {
+		t.Fatalf("expected explicit 100 MB validation error, got %#v", err)
+	}
 }
 
 func TestUpdateTabOverridesConfigAndBumpsVersion(t *testing.T) {
@@ -349,6 +393,13 @@ func testConfig() config.Config {
 			ReferenceImageMaxCount: 4,
 			PromptMaxChars:         4000,
 			NegativePromptMaxChars: 1000,
+		},
+		AttachmentPolicy: config.AttachmentPolicyConfig{
+			ImageMaxMB: 20, VideoMaxMB: 100, AudioMaxMB: 50, DocumentMaxMB: 20,
+			ImageAllowedFormats:    []string{"png", "jpeg", "webp", "gif"},
+			VideoAllowedFormats:    []string{"mp4", "webm"},
+			AudioAllowedFormats:    []string{"mp3", "wav"},
+			DocumentAllowedFormats: []string{"pdf", "docx"},
 		},
 		Providers: config.ProvidersConfig{
 			OpenAI:     config.ProviderConfig{Enabled: true, BaseURL: "https://api.openai.com"},
