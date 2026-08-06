@@ -353,9 +353,14 @@ func easyPayRefundShouldRetryByTradeNo(raw map[string]any) bool {
 }
 
 func postJSONForCashierProvider(ctx context.Context, endpoint string, body []byte, headers map[string]string) ([]byte, error) {
+	respBody, _, err := postJSONForCashierProviderWithStatus(ctx, endpoint, body, headers)
+	return respBody, err
+}
+
+func postJSONForCashierProviderWithStatus(ctx context.Context, endpoint string, body []byte, headers map[string]string) ([]byte, int, error) {
 	httpReq, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if reqErr != nil {
-		return nil, paymentProviderUnavailable()
+		return nil, 0, paymentProviderUnavailable()
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
@@ -366,17 +371,17 @@ func postJSONForCashierProvider(ctx context.Context, endpoint string, body []byt
 	}
 	resp, doErr := cashierProviderHTTPClient.Do(httpReq)
 	if doErr != nil {
-		return nil, paymentProviderUnavailable()
+		return nil, 0, paymentProviderUnavailable()
 	}
 	defer resp.Body.Close()
 	respBody, readErr := readCashierProviderResponse(resp.Body)
 	if readErr != nil {
-		return nil, paymentProviderUnavailable()
+		return nil, resp.StatusCode, paymentProviderUnavailable()
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, paymentProviderUnavailable()
+		return nil, resp.StatusCode, paymentProviderUnavailable()
 	}
-	return respBody, nil
+	return respBody, resp.StatusCode, nil
 }
 
 func paymentRefundProviderUnavailable() error {

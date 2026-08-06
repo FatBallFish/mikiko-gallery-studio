@@ -29,6 +29,7 @@ import (
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
@@ -371,7 +372,7 @@ func TestCashierOptionsUsesAdminConfiguredOrderTimeout(t *testing.T) {
 	}
 }
 
-func TestCashierCancelPendingOrderUsesCanceledStatusAndBlocksMockPay(t *testing.T) {
+func TestCashierCancelPendingOrderCanRecoverFromTrustedMockPayment(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	authSvc := authservice.NewService(config.AuthConfig{
 		AccessTokenTTL:    10 * time.Minute,
@@ -423,8 +424,8 @@ func TestCashierCancelPendingOrderUsesCanceledStatusAndBlocksMockPay(t *testing.
 	mockPayReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	mockPayRec := httptest.NewRecorder()
 	handler.ServeHTTP(mockPayRec, mockPayReq)
-	if mockPayRec.Code != http.StatusConflict {
-		t.Fatalf("mock pay after cancel expected 409, got %d body=%s", mockPayRec.Code, mockPayRec.Body.String())
+	if mockPayRec.Code != http.StatusOK {
+		t.Fatalf("mock pay after cancel expected 200, got %d body=%s", mockPayRec.Code, mockPayRec.Body.String())
 	}
 
 	detailReq := httptest.NewRequest(http.MethodGet, "/api/agent/cashier/v1/orders/"+jsonInt64(createResp.Data.ID), nil)
@@ -440,9 +441,326 @@ func TestCashierCancelPendingOrderUsesCanceledStatusAndBlocksMockPay(t *testing.
 	if err := json.NewDecoder(detailRec.Body).Decode(&detailResp); err != nil {
 		t.Fatalf("decode detail after cancel: %v", err)
 	}
-	if detailResp.Data.Status != "canceled" || detailResp.Data.LedgerID != 0 || detailResp.Data.CompletedAt != nil {
-		t.Fatalf("expected canceled order to remain unpaid, got %#v", detailResp.Data)
+	if detailResp.Data.Status != "completed" || detailResp.Data.LedgerID == 0 || detailResp.Data.CompletedAt == nil {
+		t.Fatalf("expected trusted payment to recover canceled order, got %#v", detailResp.Data)
 	}
+}
+
+func TestCashierCancelInitializedOrderReconcilesPaidProvider(t *testing.T) {
+	queryCalls := 0
+	closeCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/query":
+			queryCalls++
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "paid", "trade_no": "EP-INIT-001", "money": "19.90000",
+				"out_trade_no": r.PostForm.Get("out_trade_no"), "pid": r.PostForm.Get("pid"),
+			})
+		case "/close":
+			closeCalls++
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 1, "status": "closed"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	handler, billingSvc, session, order := setupSafeCashierCancelTest(t, upstream.URL, true, true)
+	first := cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusOK)
+	if first.Status != "completed" || first.LedgerID == 0 || first.TradeNo != "EP-INIT-001" {
+		t.Fatalf("paid provider must complete instead of cancel: %#v", first)
+	}
+	second := cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusOK)
+	if second.Status != "completed" || second.LedgerID != first.LedgerID {
+		t.Fatalf("repeated cancel must return idempotent completed order: %#v", second)
+	}
+	if queryCalls != 1 || closeCalls != 0 {
+		t.Fatalf("expected one query and no close, query=%d close=%d", queryCalls, closeCalls)
+	}
+	balance, err := billingSvc.GetBalance(context.Background(), order.UserID, "")
+	if err != nil || balance.RechargePoints != "100.00000" {
+		t.Fatalf("expected one recharge credit, balance=%#v err=%v", balance, err)
+	}
+}
+
+func TestCashierCancelInitializedOrderRequiresDefinitiveProviderClose(t *testing.T) {
+	tests := []struct {
+		name          string
+		queryStatus   string
+		closeStatus   string
+		closeHTTPCode int
+		withCloseURL  bool
+		wantHTTP      int
+		wantStatus    string
+		wantCloseCall int
+	}{
+		{name: "provider already closed", queryStatus: "closed", withCloseURL: true, wantHTTP: http.StatusOK, wantStatus: "canceled"},
+		{name: "pending and close succeeds", queryStatus: "pending", closeStatus: "closed", withCloseURL: true, wantHTTP: http.StatusOK, wantStatus: "canceled", wantCloseCall: 1},
+		{name: "pending and close outcome uncertain", queryStatus: "pending", closeHTTPCode: http.StatusServiceUnavailable, withCloseURL: true, wantHTTP: http.StatusConflict, wantStatus: "pending", wantCloseCall: 1},
+		{name: "easypay close unsupported", queryStatus: "pending", withCloseURL: false, wantHTTP: http.StatusConflict, wantStatus: "pending"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			closeCalls := 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/query":
+					if err := r.ParseForm(); err != nil {
+						t.Fatal(err)
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"status": tt.queryStatus, "trade_no": "EP-CLOSE-001", "money": "19.90000",
+						"out_trade_no": r.PostForm.Get("out_trade_no"), "pid": r.PostForm.Get("pid"),
+					})
+				case "/close":
+					closeCalls++
+					if tt.closeHTTPCode != 0 {
+						w.WriteHeader(tt.closeHTTPCode)
+						return
+					}
+					if err := r.ParseForm(); err != nil {
+						t.Fatal(err)
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"code": 1, "status": tt.closeStatus,
+						"out_trade_no": r.PostForm.Get("out_trade_no"), "pid": r.PostForm.Get("pid"),
+					})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer upstream.Close()
+
+			handler, billingSvc, session, order := setupSafeCashierCancelTest(t, upstream.URL, true, tt.withCloseURL)
+			result := cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, tt.wantHTTP)
+			if tt.wantHTTP == http.StatusOK && result.Status != tt.wantStatus {
+				t.Fatalf("unexpected cancel result %#v", result)
+			}
+			stored, err := billingSvc.GetOrder(context.Background(), order.UserID, order.ID)
+			if err != nil || stored.Status != tt.wantStatus || stored.LedgerID != 0 {
+				t.Fatalf("unexpected stored order %#v err=%v", stored, err)
+			}
+			if closeCalls != tt.wantCloseCall {
+				t.Fatalf("close calls=%d want %d", closeCalls, tt.wantCloseCall)
+			}
+		})
+	}
+}
+
+func TestCashierCancelRealOrderWithoutDisplayStillRequiresProviderClose(t *testing.T) {
+	queryCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/query" {
+			http.NotFound(w, r)
+			return
+		}
+		queryCalls++
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 1, "trade_status": "WAITING", "out_trade_no": r.PostForm.Get("out_trade_no"), "pid": "1001",
+		})
+	}))
+	defer upstream.Close()
+	handler, billingSvc, session, order := setupSafeCashierCancelTest(t, upstream.URL, false, false)
+
+	cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusConflict)
+	stored, err := billingSvc.GetOrder(context.Background(), order.UserID, order.ID)
+	if err != nil || stored.Status != "pending" || stored.LedgerID != 0 || queryCalls != 1 {
+		t.Fatalf("real order without display must remain pending after unsupported close: order=%#v queries=%d err=%v", stored, queryCalls, err)
+	}
+}
+
+func TestCashierPaymentSuccessWinsCloseCancelRace(t *testing.T) {
+	var billingSvc *billingservice.Service
+	var order domainbilling.PaymentOrder
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/query":
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "pending", "trade_no": "EP-RACE-001", "money": "19.90000"})
+		case "/close":
+			completed, err := billingSvc.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
+				Provider: "easypay_alipay", ProviderInstanceID: 81, TradeNo: order.TradeNo,
+				OrderNo: order.OrderNo, AmountCNY: order.AmountCNY,
+				ReconciliationSource: domainbilling.PaymentReconciliationSourceProviderQuery,
+			})
+			if err != nil || completed.Status != "completed" {
+				t.Fatalf("race payment completion=%#v err=%v", completed, err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 1, "status": "closed", "out_trade_no": order.OrderNo, "pid": "1001",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	handler, service, session, created := setupSafeCashierCancelTest(t, upstream.URL, true, true)
+	billingSvc, order = service, created
+
+	result := cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusOK)
+	if result.Status != "completed" || result.LedgerID == 0 || result.TradeNo != order.TradeNo {
+		t.Fatalf("payment must win close/cancel race: %#v", result)
+	}
+}
+
+func TestCashierCancelPaidProviderWithoutAmountKeepsOrderPending(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/query" {
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "paid", "trade_no": "EP-NO-AMOUNT",
+				"out_trade_no": r.PostForm.Get("out_trade_no"), "pid": r.PostForm.Get("pid"),
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer upstream.Close()
+	handler, billingSvc, session, order := setupSafeCashierCancelTest(t, upstream.URL, true, false)
+	cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusConflict)
+	stored, err := billingSvc.GetOrder(context.Background(), order.UserID, order.ID)
+	if err != nil || stored.Status != "pending" || stored.LedgerID != 0 {
+		t.Fatalf("unverified paid amount must not credit or cancel: order=%#v err=%v", stored, err)
+	}
+}
+
+func TestCashierCancelPaidProviderRejectsMismatchedInitializedTradeNo(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/query" {
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "paid", "trade_no": "EP-DIFFERENT-ORDER", "money": "19.90000",
+				"out_trade_no": r.PostForm.Get("out_trade_no"), "pid": r.PostForm.Get("pid"),
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer upstream.Close()
+	handler, billingSvc, session, order := setupSafeCashierCancelTest(t, upstream.URL, true, false)
+	cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusConflict)
+	stored, err := billingSvc.GetOrder(context.Background(), order.UserID, order.ID)
+	if err != nil || stored.Status != "pending" || stored.LedgerID != 0 || stored.TradeNo != "EP-INIT-001" {
+		t.Fatalf("mismatched provider trade must not credit or cancel: order=%#v err=%v", stored, err)
+	}
+}
+
+func TestCashierCancelRejectsProviderInstanceTypeDrift(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/query" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{
+				"state": 4, "mchNo": "MCH10001", "appId": "APP10001", "mchOrderNo": "PGO-OTHER",
+			}})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer upstream.Close()
+	handler, billingSvc, session, order := setupSafeCashierCancelTest(t, upstream.URL, true, false, "jeepay_alipay")
+	cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusConflict)
+	stored, err := billingSvc.GetOrder(context.Background(), order.UserID, order.ID)
+	if err != nil || stored.Status != "pending" || stored.LedgerID != 0 {
+		t.Fatalf("provider instance type drift must fail closed: order=%#v err=%v", stored, err)
+	}
+}
+
+type cashierProviderInstanceStoreStub struct {
+	instances []domaincashier.ProviderInstance
+}
+
+func (s *cashierProviderInstanceStoreStub) ProviderInstances(context.Context) ([]domaincashier.ProviderInstance, error) {
+	return append([]domaincashier.ProviderInstance(nil), s.instances...), nil
+}
+
+func (s *cashierProviderInstanceStoreStub) CreateProviderInstance(context.Context, domaincashier.ProviderInstanceWriteRequest) (domaincashier.ProviderInstance, error) {
+	panic("unexpected CreateProviderInstance")
+}
+
+func (s *cashierProviderInstanceStoreStub) UpdateProviderInstance(context.Context, int64, domaincashier.ProviderInstanceWriteRequest) (domaincashier.ProviderInstance, error) {
+	panic("unexpected UpdateProviderInstance")
+}
+
+func (s *cashierProviderInstanceStoreStub) DeleteProviderInstance(context.Context, int64) (domaincashier.ProviderInstance, error) {
+	panic("unexpected DeleteProviderInstance")
+}
+
+func setupSafeCashierCancelTest(t *testing.T, upstreamURL string, initialized, withCloseURL bool, instanceProviderTypes ...string) (http.Handler, *billingservice.Service, domainauthSession, domainbilling.PaymentOrder) {
+	t.Helper()
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test",
+		AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	session := loginExistingAuthUser(t, authSvc, "cashier-safe-cancel-"+fmt.Sprint(time.Now().UnixNano())+"@example.com")
+	claims, err := authSvc.ParseAccessToken(session.AccessToken)
+	if err != nil {
+		t.Fatalf("ParseAccessToken: %v", err)
+	}
+	billingSvc := billingservice.NewService(cfg.Billing)
+	order, err := billingSvc.CreateOrder(context.Background(), domainbilling.CreateOrderRequest{
+		UserID: claims.UserID, OrderNo: "PGO-SAFE-CANCEL-" + fmt.Sprint(time.Now().UnixNano()), PlanCode: "basic-monthly",
+		Provider: "easypay_alipay", PurchaseType: "plan", VisibleMethod: "alipay", ProviderType: "easypay_alipay", ProviderInstanceID: 81,
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	if initialized {
+		order, err = billingSvc.InitializePaymentOrder(context.Background(), domainbilling.InitializePaymentOrderRequest{
+			UserID: claims.UserID, OrderID: order.ID, PaymentDisplay: map[string]any{"type": "redirect"},
+			PaymentURL: upstreamURL + "/pay", TradeNo: "EP-INIT-001",
+		})
+		if err != nil {
+			t.Fatalf("InitializePaymentOrder: %v", err)
+		}
+	}
+	instanceConfig := map[string]any{
+		"gateway_url": upstreamURL, "query_url": upstreamURL + "/query", "pid": "1001", "key": "secret",
+		"mch_no": "MCH10001", "app_id": "APP10001",
+	}
+	if withCloseURL {
+		instanceConfig["close_url"] = upstreamURL + "/close"
+	}
+	instanceProviderType := "easypay_alipay"
+	if len(instanceProviderTypes) > 0 && strings.TrimSpace(instanceProviderTypes[0]) != "" {
+		instanceProviderType = strings.TrimSpace(instanceProviderTypes[0])
+	}
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, nil, billingSvc)
+	api.SetCashierProviderInstanceStore(&cashierProviderInstanceStoreStub{instances: []domaincashier.ProviderInstance{{
+		ID: 81, ProviderType: instanceProviderType, Name: "Payment provider test", Enabled: true,
+		SupportedMethods: []string{"alipay"}, Config: instanceConfig,
+	}}})
+	return NewWithAPI(api), billingSvc, session, order
+}
+
+func cancelCashierOrderForTest(t *testing.T, handler http.Handler, accessToken string, orderID int64, wantStatus int) domainbilling.PaymentOrder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders/"+jsonInt64(orderID)+"/cancel", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != wantStatus {
+		t.Fatalf("cancel expected %d, got %d body=%s", wantStatus, rec.Code, rec.Body.String())
+	}
+	if wantStatus != http.StatusOK {
+		return domainbilling.PaymentOrder{}
+	}
+	var response struct {
+		Data domainbilling.PaymentOrder `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("decode cancel response: %v", err)
+	}
+	return response.Data
 }
 
 func TestCashierWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
@@ -1014,7 +1332,7 @@ func TestCashierJeePayWebhookRejectsMissingApplicationIdentity(t *testing.T) {
 func TestCashierJeePayJSONWebhookCompletesRechargeOrderAndFormReplayIsIdempotent(t *testing.T) {
 	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-success-user@example.com")
 	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
-	values := jeepayWebhookValuesForTest(order, "MCH10001", "merchant-secret", "1250", "jeepay-trade-success")
+	values := jeepayWebhookValuesForTest(order, "MCH10001", "merchant-secret", "1250", order.TradeNo)
 	jsonBody := jeepayWebhookJSONForTest(t, values)
 
 	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/jeepay_alipay", bytes.NewReader(jsonBody))
@@ -1028,7 +1346,7 @@ func TestCashierJeePayJSONWebhookCompletesRechargeOrderAndFormReplayIsIdempotent
 		t.Fatalf("expected raw jeepay success response, got body=%s", webhookRec.Body.String())
 	}
 	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
-	if completed.Status != "completed" || completed.LedgerID == 0 || completed.TradeNo != "jeepay-trade-success" {
+	if completed.Status != "completed" || completed.LedgerID == 0 || completed.TradeNo != order.TradeNo {
 		t.Fatalf("expected completed jeepay recharge order, got %#v", completed)
 	}
 

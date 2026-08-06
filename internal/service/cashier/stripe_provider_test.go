@@ -215,7 +215,7 @@ func TestStripeOrderQueryMapsPaymentIntentStatuses(t *testing.T) {
 		{status: stripe.PaymentIntentStatusSucceeded, want: "paid", paid: true},
 		{status: stripe.PaymentIntentStatusProcessing, want: "pending"},
 		{status: stripe.PaymentIntentStatusRequiresAction, want: "pending"},
-		{status: stripe.PaymentIntentStatusCanceled, want: "failed"},
+		{status: stripe.PaymentIntentStatusCanceled, want: "closed"},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.status), func(t *testing.T) {
@@ -224,6 +224,7 @@ func TestStripeOrderQueryMapsPaymentIntentStatuses(t *testing.T) {
 				Amount:   1025,
 				Currency: stripe.CurrencyCNY,
 				Status:   tt.status,
+				Metadata: map[string]string{"order_no": "PGO-QUERY-STRIPE"},
 			}}
 			builder := newStripeOrderStatusQueryBuilder(func(string) StripePaymentIntents { return client })
 			result, err := builder(context.Background(), QueryOrderStatusRequest{
@@ -239,6 +240,35 @@ func TestStripeOrderQueryMapsPaymentIntentStatuses(t *testing.T) {
 				t.Fatalf("unexpected Stripe query result %#v client=%#v", result, client)
 			}
 		})
+	}
+}
+
+func TestStripeTerminalQueryRequiresOrderMetadata(t *testing.T) {
+	client := &recordingStripePaymentIntents{getIntent: &stripe.PaymentIntent{
+		ID: "pi_expected", Amount: 1025, Currency: stripe.CurrencyCNY, Status: stripe.PaymentIntentStatusSucceeded,
+	}}
+	builder := newStripeOrderStatusQueryBuilder(func(string) StripePaymentIntents { return client })
+	_, err := builder(context.Background(), QueryOrderStatusRequest{
+		Order:    OrderSnapshot{OrderNo: "PGO-STRIPE-BOUND", AmountCNY: "10.25", ClientToken: "pi_expected"},
+		Instance: domaincashier.ProviderInstance{ProviderType: "stripe", Config: map[string]any{"secret_key": "sk_test_query"}},
+	})
+	if err == nil {
+		t.Fatal("terminal Stripe response without order metadata must be rejected")
+	}
+}
+
+func TestStripeOrderQueryRejectsMismatchedIntentIdentity(t *testing.T) {
+	client := &recordingStripePaymentIntents{getIntent: &stripe.PaymentIntent{
+		ID: "pi_other", Amount: 1025, Currency: stripe.CurrencyCNY, Status: stripe.PaymentIntentStatusSucceeded,
+		Metadata: map[string]string{"order_no": "PGO-OTHER"},
+	}}
+	builder := newStripeOrderStatusQueryBuilder(func(string) StripePaymentIntents { return client })
+	_, err := builder(context.Background(), QueryOrderStatusRequest{
+		Order:    OrderSnapshot{OrderNo: "PGO-STRIPE-BOUND", AmountCNY: "10.25", ClientToken: "pi_expected"},
+		Instance: domaincashier.ProviderInstance{ProviderType: "stripe", Config: map[string]any{"secret_key": "sk_test_query"}},
+	})
+	if err == nil {
+		t.Fatal("Stripe response for another PaymentIntent/order must be rejected")
 	}
 }
 

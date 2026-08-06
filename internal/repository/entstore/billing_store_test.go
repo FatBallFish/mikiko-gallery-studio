@@ -1752,6 +1752,42 @@ func TestBillingStoreMarkOrderPaidCompletesCashierRechargeOrderIdempotently(t *t
 	}
 }
 
+func TestBillingStoreMarkOrderPaidRejectsDifferentTradeForInitializedOrder(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-initial-trade-binding?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 91, PlanCode: "basic-monthly", Provider: "jeepay_alipay", PurchaseType: "plan",
+		VisibleMethod: "alipay", ProviderType: "jeepay_alipay", ProviderInstanceID: 41,
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	order, err = store.InitializePaymentOrder(ctx, domainbilling.InitializePaymentOrderRequest{
+		UserID: order.UserID, OrderID: order.ID, PaymentDisplay: map[string]any{"type": "redirect"}, TradeNo: "JEEPAY-BOUND-001",
+	})
+	if err != nil {
+		t.Fatalf("InitializePaymentOrder: %v", err)
+	}
+	if _, err := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+		Provider: "jeepay_alipay", ProviderInstanceID: 41, OrderNo: order.OrderNo,
+		TradeNo: "JEEPAY-OTHER-ORDER", AmountCNY: order.AmountCNY,
+	}); err == nil {
+		t.Fatal("expected initialized order to reject a different provider trade")
+	}
+	reloaded, err := store.GetOrder(ctx, order.UserID, order.ID)
+	if err != nil || reloaded.Status != "pending" || reloaded.TradeNo != "JEEPAY-BOUND-001" || reloaded.LedgerID != 0 {
+		t.Fatalf("mismatched initialized trade must not mutate order: order=%#v err=%v", reloaded, err)
+	}
+}
+
 func TestBillingStoreMarkOrderPaidRecoversCashierOrdersExactlyOnce(t *testing.T) {
 	for _, previousStatus := range []string{"pending", "canceled", "expired", "failed"} {
 		t.Run(previousStatus, func(t *testing.T) {

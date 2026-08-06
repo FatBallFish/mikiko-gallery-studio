@@ -924,6 +924,14 @@ func ValidateCompletedPaymentTrade(existingTradeNo, paidTradeNo string) error {
 	return nil
 }
 
+func ValidateInitializedPaymentTrade(existingTradeNo, paidTradeNo string) error {
+	existingTradeNo = strings.TrimSpace(existingTradeNo)
+	if existingTradeNo != "" && existingTradeNo != strings.TrimSpace(paidTradeNo) {
+		return errs.New(http.StatusConflict, errs.CodePaymentSignatureInvalid, "payment provider trade does not match initialized order")
+	}
+	return nil
+}
+
 func ensurePaymentAmountMatches(orderAmountCNY, callbackAmountCNY string, scale int32) error {
 	callbackAmountCNY = strings.TrimSpace(callbackAmountCNY)
 	if callbackAmountCNY == "" {
@@ -1254,6 +1262,9 @@ func (s *MemoryStore) completeRechargeOrderLocked(order domainbilling.PaymentOrd
 			return domainbilling.PaymentOrder{}, err
 		}
 		return order, nil
+	}
+	if err := ValidateInitializedPaymentTrade(order.TradeNo, req.TradeNo); err != nil {
+		return domainbilling.PaymentOrder{}, err
 	}
 	if !PaymentSuccessCanRecoverStatus(order.Status) {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order cannot transition to completed")

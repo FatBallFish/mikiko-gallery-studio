@@ -94,7 +94,7 @@ func (r *QueryAdapterRegistry) Register(providerType string, builder QueryOrderS
 
 func (r *QueryAdapterRegistry) QueryOrderStatus(ctx context.Context, req QueryOrderStatusRequest) (QueryOrderStatusResult, error) {
 	providerType := strings.ToLower(strings.TrimSpace(req.Instance.ProviderType))
-	if hasConfigQueryStatus(req.Instance) || providerType == "mock" {
+	if providerType == "mock" {
 		return ConfigDrivenQueryOrderStatus(req), nil
 	}
 	if r != nil {
@@ -105,7 +105,7 @@ func (r *QueryAdapterRegistry) QueryOrderStatus(ctx context.Context, req QueryOr
 			return builder(ctx, req)
 		}
 	}
-	return ConfigDrivenQueryOrderStatus(req), nil
+	return QueryOrderStatusResult{}, paymentProviderUnavailable()
 }
 
 func ConfigDrivenQueryOrderStatus(req QueryOrderStatusRequest) QueryOrderStatusResult {
@@ -183,10 +183,6 @@ func NormalizeQueryStatus(status string) QueryStatus {
 	default:
 		return QueryStatus{Status: "pending", RiskCategory: "pending", ActionHint: "渠道仍未确认支付，稍后可再次查单。", Message: "渠道订单未支付或仍在处理中"}
 	}
-}
-
-func hasConfigQueryStatus(instance domaincashier.ProviderInstance) bool {
-	return strings.TrimSpace(configString(instance.Config, "query_status", "sync_status", "payment_status", "trade_status")) != ""
 }
 
 func configString(config map[string]any, keys ...string) string {

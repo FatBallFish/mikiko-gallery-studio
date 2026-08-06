@@ -132,6 +132,33 @@ func TestMemoryStoreMarkOrderPaidRejectsDifferentTradeForCompletedOrder(t *testi
 	}
 }
 
+func TestMemoryStoreMarkOrderPaidRejectsDifferentTradeForInitializedOrder(t *testing.T) {
+	store := NewMemoryStore(5)
+	order, err := store.CreateCustomAmountOrder(t.Context(), domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 706, OrderNo: "PGO-MEMORY-INITIAL-TRADE", AmountCNY: "10.00000", CNYPerPoint: "0.31250",
+		Provider: "jeepay_alipay", PurchaseType: "custom_amount", VisibleMethod: "alipay", ProviderType: "jeepay_alipay", ProviderInstanceID: 41,
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+	order, err = store.InitializePaymentOrder(t.Context(), domainbilling.InitializePaymentOrderRequest{
+		UserID: order.UserID, OrderID: order.ID, PaymentDisplay: map[string]any{"type": "redirect"}, TradeNo: "JEEPAY-BOUND-001",
+	})
+	if err != nil {
+		t.Fatalf("InitializePaymentOrder: %v", err)
+	}
+	if _, err := store.MarkOrderPaid(t.Context(), domainbilling.MarkOrderPaidRequest{
+		Provider: "jeepay_alipay", ProviderInstanceID: 41, OrderNo: order.OrderNo,
+		TradeNo: "JEEPAY-OTHER-ORDER", AmountCNY: order.AmountCNY,
+	}); err == nil {
+		t.Fatal("expected initialized order to reject a different provider trade")
+	}
+	reloaded, err := store.GetOrder(t.Context(), order.UserID, order.ID)
+	if err != nil || reloaded.Status != "pending" || reloaded.TradeNo != "JEEPAY-BOUND-001" || reloaded.LedgerID != 0 {
+		t.Fatalf("mismatched initialized trade must not mutate order: order=%#v err=%v", reloaded, err)
+	}
+}
+
 func TestMemoryStoreMarkOrderPaidRejectsProviderTradeOwnedByDifferentOrder(t *testing.T) {
 	store := NewMemoryStore(5)
 	createOrder := func(userID int64, orderNo string) domainbilling.PaymentOrder {

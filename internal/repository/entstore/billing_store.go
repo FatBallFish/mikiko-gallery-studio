@@ -2354,6 +2354,13 @@ func (s *BillingStore) completeRechargeOrderInTx(ctx context.Context, tx *repoen
 		}
 		return s.mapPaymentOrder(ctx, order), nil
 	}
+	existingTradeNo := ""
+	if order.TradeNo != nil {
+		existingTradeNo = *order.TradeNo
+	}
+	if err := billingservice.ValidateInitializedPaymentTrade(existingTradeNo, tradeNo); err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
 	if !billingservice.PaymentSuccessCanRecoverStatus(order.Status) {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order cannot transition to completed")
 	}

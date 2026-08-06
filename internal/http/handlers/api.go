@@ -984,15 +984,113 @@ func (a *API) HandleBillingOrderDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, result)
 	case r.Method == http.MethodPost && action == "cancel":
-		result, err := a.billing.CancelOrder(r.Context(), user.ID, orderID)
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
+		result, cancelErr := a.cancelCashierOrderSafely(r.Context(), user.ID, orderID)
+		if cancelErr != nil {
+			httpx.WriteError(w, r, cancelErr)
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, result)
 	default:
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 	}
+}
+
+func (a *API) cancelCashierOrderSafely(ctx context.Context, userID, orderID int64) (domainbilling.PaymentOrder, *errs.Error) {
+	order, err := a.billing.GetOrder(ctx, userID, orderID)
+	if err != nil {
+		return domainbilling.PaymentOrder{}, normalizeAppError(err)
+	}
+	switch strings.ToLower(strings.TrimSpace(order.Status)) {
+	case "completed", "paid", "canceled":
+		return order, nil
+	case "pending":
+	default:
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order cannot be canceled")
+	}
+
+	providerType := cashierOrderProviderType(order, cashierProviderInstance{})
+	if providerType == "mock" || strings.HasPrefix(providerType, "manual") {
+		return a.cancelCashierOrderLocally(ctx, userID, order)
+	}
+	instance, ok := a.cashierProviderInstanceForOrder(ctx, order)
+	if !ok {
+		return domainbilling.PaymentOrder{}, cashierCancelConflict("payment provider instance is unavailable")
+	}
+	queryResult, queryErr := a.queryCashierOrderStatus(ctx, order, instance)
+	if queryErr != nil {
+		return domainbilling.PaymentOrder{}, cashierCancelConflict("payment provider status could not be confirmed; order remains pending")
+	}
+	if queryResult.Paid {
+		return a.reconcileCashierOrderFromProviderQuery(ctx, order, instance, queryResult)
+	}
+	if strings.EqualFold(queryResult.QueryStatus, "closed") {
+		return a.cancelCashierOrderLocally(ctx, userID, order)
+	}
+	if !strings.EqualFold(queryResult.QueryStatus, "pending") {
+		return domainbilling.PaymentOrder{}, cashierCancelConflict("payment provider status does not permit safe cancellation; order remains pending")
+	}
+
+	registry := cashierservice.NewCloseAdapterRegistryWithBuilders(cashierservice.StandardCloseProviderBuilders())
+	closeResult, closeErr := registry.ClosePayment(ctx, cashierservice.ClosePaymentRequest{
+		Order: cashierOrderSnapshot(order), Instance: instance,
+	})
+	if closeResult.AlreadyPaid {
+		confirmed, confirmErr := a.queryCashierOrderStatus(ctx, order, instance)
+		if confirmErr == nil && confirmed.Paid {
+			return a.reconcileCashierOrderFromProviderQuery(ctx, order, instance, confirmed)
+		}
+		return domainbilling.PaymentOrder{}, cashierCancelConflict("payment provider reports payment activity; order remains pending while reconciliation completes")
+	}
+	if closeErr != nil || closeResult.Unsupported || closeResult.OutcomeUncertain || !closeResult.Closed {
+		return domainbilling.PaymentOrder{}, cashierCancelConflict("payment provider close was not confirmed; order remains pending")
+	}
+	return a.cancelCashierOrderLocally(ctx, userID, order)
+}
+
+func (a *API) reconcileCashierOrderFromProviderQuery(ctx context.Context, order domainbilling.PaymentOrder, instance cashierProviderInstance, result cashierservice.QueryOrderStatusResult) (domainbilling.PaymentOrder, *errs.Error) {
+	if strings.TrimSpace(result.AmountCNY) == "" || !cashierSyncAmountMatches(order.AmountCNY, result.AmountCNY) {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
+	}
+	tradeNo := strings.TrimSpace(result.TradeNo)
+	if tradeNo == "" {
+		return domainbilling.PaymentOrder{}, cashierCancelConflict("payment provider did not return a transaction identifier; order remains pending")
+	}
+	if boundTradeNo := strings.TrimSpace(order.TradeNo); boundTradeNo != "" && boundTradeNo != tradeNo {
+		return domainbilling.PaymentOrder{}, cashierCancelConflict("payment provider transaction does not match the initialized order; order remains pending")
+	}
+	providerType := cashierOrderProviderType(order, instance)
+	completed, err := a.billing.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+		Provider: providerType, ProviderInstanceID: instance.ID, TradeNo: tradeNo,
+		OrderNo: order.OrderNo, AmountCNY: result.AmountCNY,
+		ReconciliationSource: domainbilling.PaymentReconciliationSourceProviderQuery,
+	})
+	if err == nil {
+		return completed, nil
+	}
+	latest, getErr := a.billing.GetOrder(ctx, order.UserID, order.ID)
+	if getErr == nil && (latest.Status == "completed" || latest.Status == "paid") {
+		return latest, nil
+	}
+	return domainbilling.PaymentOrder{}, normalizeAppError(err)
+}
+
+func (a *API) cancelCashierOrderLocally(ctx context.Context, userID int64, order domainbilling.PaymentOrder) (domainbilling.PaymentOrder, *errs.Error) {
+	canceled, err := a.billing.CancelOrder(ctx, userID, order.ID)
+	if err == nil {
+		return canceled, nil
+	}
+	latest, getErr := a.billing.GetOrder(ctx, userID, order.ID)
+	if getErr == nil {
+		switch strings.ToLower(strings.TrimSpace(latest.Status)) {
+		case "completed", "paid", "canceled":
+			return latest, nil
+		}
+	}
+	return domainbilling.PaymentOrder{}, normalizeAppError(err)
+}
+
+func cashierCancelConflict(message string) *errs.Error {
+	return errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, message)
 }
 
 func (a *API) HandleCashierOptions(w http.ResponseWriter, r *http.Request) {
@@ -1292,9 +1390,9 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, result)
 	case r.Method == http.MethodPost && action == "cancel":
-		result, err := a.billing.CancelOrder(r.Context(), user.ID, orderID)
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
+		result, cancelErr := a.cancelCashierOrderSafely(r.Context(), user.ID, orderID)
+		if cancelErr != nil {
+			httpx.WriteError(w, r, cancelErr)
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, result)
@@ -1310,6 +1408,10 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		if cashierOrderProviderType(order, cashierProviderInstance{}) != "mock" {
 			httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "mock payment is only available for mock provider orders"))
+			return
+		}
+		if order.Status == "completed" {
+			httpx.WriteSuccess(w, r, http.StatusOK, order)
 			return
 		}
 		result, err := a.billing.CompleteRechargeOrder(r.Context(), domainbilling.CompleteRechargeOrderRequest{
@@ -4227,6 +4329,10 @@ func (a *API) HandleAdminCashierOrderDetail(w http.ResponseWriter, r *http.Reque
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
+		if order.Status != "pending" && order.Status != "completed" {
+			httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodeConflict, "payment order cannot be completed manually"))
+			return
+		}
 		provider := strings.ToLower(strings.TrimSpace(req.Provider))
 		if provider == "" {
 			provider = strings.ToLower(strings.TrimSpace(order.ProviderType))
@@ -4273,9 +4379,9 @@ func (a *API) HandleAdminCashierOrderDetail(w http.ResponseWriter, r *http.Reque
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		result, err := a.billing.CancelOrder(r.Context(), order.UserID, orderID)
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
+		result, cancelErr := a.cancelCashierOrderSafely(r.Context(), order.UserID, orderID)
+		if cancelErr != nil {
+			httpx.WriteError(w, r, cancelErr)
 			return
 		}
 		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.order.close", "payment_order", fmt.Sprintf("%d", result.ID), map[string]any{"order_no": result.OrderNo, "reason": strings.TrimSpace(req.Reason)}); auditErr != nil {
@@ -4534,23 +4640,10 @@ func (a *API) syncAdminCashierOrder(ctx context.Context, orderID int64) (adminCa
 	if syncErr != nil {
 		return adminCashierOrderSyncResponse{}, syncErr
 	}
-	if syncResult.Paid && order.Status == "pending" {
-		if !cashierSyncAmountMatches(order.AmountCNY, syncResult.AmountCNY) {
-			return adminCashierOrderSyncResponse{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
-		}
-		tradeNo := strings.TrimSpace(syncResult.TradeNo)
-		if tradeNo == "" {
-			tradeNo = fmt.Sprintf("SYNC-%s-%d", order.OrderNo, time.Now().UTC().UnixNano())
-			syncResult.TradeNo = tradeNo
-		}
-		completed, completeErr := a.billing.CompleteRechargeOrder(ctx, domainbilling.CompleteRechargeOrderRequest{
-			UserID:   order.UserID,
-			OrderID:  order.ID,
-			Provider: syncResult.ProviderType,
-			TradeNo:  tradeNo,
-		})
-		if completeErr != nil {
-			return adminCashierOrderSyncResponse{}, normalizeAppError(completeErr)
+	if syncResult.Paid && order.Status != "completed" && order.Status != "paid" {
+		completed, reconcileErr := a.reconcileCashierOrderFromProviderQuery(ctx, order, instance, syncResult)
+		if reconcileErr != nil {
+			return adminCashierOrderSyncResponse{}, reconcileErr
 		}
 		order = completed
 		syncResult.Completed = true
@@ -4596,9 +4689,10 @@ func (a *API) cashierProviderInstanceForOrder(ctx context.Context, order domainb
 	}
 	for _, instance := range a.cashierProviderInstances(ctx) {
 		if providerInstanceID > 0 && instance.ID == providerInstanceID {
-			return instance, true
-		}
-		if providerInstanceID == 0 && providerType != "" && strings.ToLower(strings.TrimSpace(instance.ProviderType)) == providerType {
+			instanceProviderType := strings.ToLower(strings.TrimSpace(instance.ProviderType))
+			if providerType != "" && instanceProviderType != providerType {
+				return cashierProviderInstance{}, false
+			}
 			return instance, true
 		}
 	}
