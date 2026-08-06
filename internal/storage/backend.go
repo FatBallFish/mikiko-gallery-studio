@@ -69,45 +69,83 @@ const (
 )
 
 type TemporaryMediaURLs struct {
-	PreviewURL  string
-	DownloadURL string
+	PreviewURL        string
+	DownloadURL       string
+	PreviewExpiresAt  time.Time
+	DownloadExpiresAt time.Time
 }
 
+type TemporaryMediaAccess struct {
+	URL       string
+	ExpiresAt time.Time
+}
+
+const (
+	TemporaryMediaPurposePreview  = "preview"
+	TemporaryMediaPurposeDownload = "download"
+)
+
 func ProjectTemporaryMediaURLs(ctx context.Context, backend Backend, objectKey, contentType, responseFilename string) (TemporaryMediaURLs, bool, error) {
+	preview, supported, err := ProjectTemporaryMediaAccess(ctx, backend, objectKey, contentType, responseFilename, TemporaryMediaPurposePreview)
+	if err != nil || !supported {
+		return TemporaryMediaURLs{}, supported, err
+	}
+	download, _, err := ProjectTemporaryMediaAccess(ctx, backend, objectKey, contentType, responseFilename, TemporaryMediaPurposeDownload)
+	if err != nil {
+		return TemporaryMediaURLs{}, true, err
+	}
+	return TemporaryMediaURLs{
+		PreviewURL: preview.URL, DownloadURL: download.URL,
+		PreviewExpiresAt: preview.ExpiresAt, DownloadExpiresAt: download.ExpiresAt,
+	}, true, nil
+}
+
+func ProjectTemporaryMediaAccess(ctx context.Context, backend Backend, objectKey, contentType, responseFilename, purpose string) (TemporaryMediaAccess, bool, error) {
 	signer, ok := backend.(TemporaryURLSigner)
 	if !ok {
-		return TemporaryMediaURLs{}, false, nil
+		return TemporaryMediaAccess{}, false, nil
 	}
 	objectKey = strings.TrimSpace(objectKey)
 	if objectKey == "" {
-		return TemporaryMediaURLs{}, true, errors.New("temporary media object key is required")
+		return TemporaryMediaAccess{}, true, errors.New("temporary media object key is required")
 	}
-	previewURL, err := signer.TemporaryGetURL(ctx, objectKey, TemporaryGetURLOptions{
-		Expiry:               TemporaryMediaURLExpiry + temporaryMediaPreviewSigningBucket,
-		SigningTimeBucket:    temporaryMediaPreviewSigningBucket,
-		ContentType:          strings.TrimSpace(contentType),
-		ResponseCacheControl: fmt.Sprintf("private, max-age=%d", int64(TemporaryMediaURLExpiry/time.Second)),
-	})
+	options := TemporaryGetURLOptions{ContentType: strings.TrimSpace(contentType)}
+	switch strings.ToLower(strings.TrimSpace(purpose)) {
+	case TemporaryMediaPurposePreview:
+		options.Expiry = TemporaryMediaURLExpiry + temporaryMediaPreviewSigningBucket
+		options.SigningTimeBucket = temporaryMediaPreviewSigningBucket
+		options.ResponseCacheControl = fmt.Sprintf("private, max-age=%d", int64(TemporaryMediaURLExpiry/time.Second))
+	case TemporaryMediaPurposeDownload:
+		options.Expiry = TemporaryMediaURLExpiry
+		options.ResponseFilename = strings.TrimSpace(responseFilename)
+	default:
+		return TemporaryMediaAccess{}, true, errors.New("temporary media purpose must be preview or download")
+	}
+	projectedURL, err := signer.TemporaryGetURL(ctx, objectKey, options)
 	if err != nil {
-		return TemporaryMediaURLs{}, true, fmt.Errorf("sign temporary media preview URL: %w", err)
+		return TemporaryMediaAccess{}, true, fmt.Errorf("sign temporary media %s URL: %w", purpose, err)
 	}
-	previewURL, err = validateTemporaryMediaURL(previewURL)
+	projectedURL, err = validateTemporaryMediaURL(projectedURL)
 	if err != nil {
-		return TemporaryMediaURLs{}, true, fmt.Errorf("validate temporary media preview URL: %w", err)
+		return TemporaryMediaAccess{}, true, fmt.Errorf("validate temporary media %s URL: %w", purpose, err)
 	}
-	downloadURL, err := signer.TemporaryGetURL(ctx, objectKey, TemporaryGetURLOptions{
-		Expiry:           TemporaryMediaURLExpiry,
-		ResponseFilename: strings.TrimSpace(responseFilename),
-		ContentType:      strings.TrimSpace(contentType),
-	})
+	return TemporaryMediaAccess{URL: projectedURL, ExpiresAt: temporaryMediaURLExpiry(projectedURL)}, true, nil
+}
+
+func temporaryMediaURLExpiry(value string) time.Time {
+	target, err := url.Parse(value)
 	if err != nil {
-		return TemporaryMediaURLs{}, true, fmt.Errorf("sign temporary media download URL: %w", err)
+		return time.Time{}
 	}
-	downloadURL, err = validateTemporaryMediaURL(downloadURL)
+	signedAt, err := time.Parse("20060102T150405Z", target.Query().Get("X-Amz-Date"))
 	if err != nil {
-		return TemporaryMediaURLs{}, true, fmt.Errorf("validate temporary media download URL: %w", err)
+		return time.Time{}
 	}
-	return TemporaryMediaURLs{PreviewURL: previewURL, DownloadURL: downloadURL}, true, nil
+	expiresSeconds, err := strconv.ParseInt(target.Query().Get("X-Amz-Expires"), 10, 64)
+	if err != nil || expiresSeconds <= 0 {
+		return time.Time{}
+	}
+	return signedAt.Add(time.Duration(expiresSeconds) * time.Second)
 }
 
 func validateTemporaryMediaURL(value string) (string, error) {

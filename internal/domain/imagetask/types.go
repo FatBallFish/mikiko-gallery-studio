@@ -257,6 +257,8 @@ type GalleryImage struct {
 	ReferenceAssets   []GalleryReferenceAsset `json:"reference_assets,omitempty"`
 	URL               string                  `json:"url,omitempty"`
 	DownloadURL       string                  `json:"download_url,omitempty"`
+	PreviewExpiresAt  *time.Time              `json:"preview_expires_at,omitempty"`
+	DownloadExpiresAt *time.Time              `json:"download_expires_at,omitempty"`
 	MimeType          string                  `json:"mime_type,omitempty"`
 	FileSizeBytes     int64                   `json:"file_size_bytes"`
 	Width             int                     `json:"width"`
@@ -278,9 +280,10 @@ type GalleryImage struct {
 }
 
 type GalleryReferenceAsset struct {
-	ID         string `json:"id"`
-	Name       string `json:"name,omitempty"`
-	PreviewURL string `json:"preview_url,omitempty"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name,omitempty"`
+	PreviewURL       string     `json:"preview_url,omitempty"`
+	PreviewExpiresAt *time.Time `json:"preview_expires_at,omitempty"`
 }
 
 type GalleryListRequest struct {

@@ -411,6 +411,12 @@ func TestProjectTemporaryMediaURLsBucketsPreviewAndFreshlySignsDownload(t *testi
 	if first.DownloadURL == second.DownloadURL {
 		t.Fatal("download URL must be freshly signed instead of sharing the preview bucket")
 	}
+	if want := time.Date(2026, time.August, 6, 12, 40, 0, 0, time.UTC); !first.PreviewExpiresAt.Equal(want) {
+		t.Fatalf("preview expiry metadata = %s, want %s", first.PreviewExpiresAt, want)
+	}
+	if want := time.Date(2026, time.August, 6, 12, 39, 59, 0, time.UTC); !second.DownloadExpiresAt.Equal(want) {
+		t.Fatalf("download expiry metadata = %s, want %s", second.DownloadExpiresAt, want)
+	}
 
 	preview, err := url.Parse(first.PreviewURL)
 	if err != nil {

@@ -281,8 +281,18 @@ func (s *Service) ProjectURLs(ctx context.Context, asset domainassets.ReferenceA
 	}
 	if supported {
 		asset.PreviewURL, asset.DownloadURL = urls.PreviewURL, urls.DownloadURL
+		asset.PreviewExpiresAt = mediaExpiryPointer(urls.PreviewExpiresAt)
+		asset.DownloadExpiresAt = mediaExpiryPointer(urls.DownloadExpiresAt)
 	}
 	return asset, nil
+}
+
+func mediaExpiryPointer(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	value = value.UTC()
+	return &value
 }
 
 func (s *Service) Delete(userID int64, assetID string) error {

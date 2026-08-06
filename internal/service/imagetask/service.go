@@ -1294,6 +1294,17 @@ type ImageResultDelivery struct {
 	TemporaryURL string
 }
 
+func (s *Service) GetOwnedImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	result, err := s.store.GetImageResultByID(ctx, userID, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return provider.ImageResult{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return provider.ImageResult{}, errs.Internal("failed to load image result")
+	}
+	return result, nil
+}
+
 func (s *Service) DeliverImageResult(ctx context.Context, userID int64, imageID string) (ImageResultDelivery, error) {
 	result, err := s.store.GetImageResultByID(ctx, userID, imageID)
 	if err != nil {
@@ -1485,6 +1496,8 @@ func (s *Service) projectImageResultMedia(ctx context.Context, result provider.I
 	}
 	if supported {
 		result.URL, result.DownloadURL = urls.PreviewURL, urls.DownloadURL
+		result.PreviewExpiresAt = imageMediaExpiryPointer(urls.PreviewExpiresAt)
+		result.DownloadExpiresAt = imageMediaExpiryPointer(urls.DownloadExpiresAt)
 		return result, nil
 	}
 	result.URL, result.DownloadURL = fallbackURL, fallbackURL
@@ -1500,6 +1513,7 @@ func (s *Service) projectGalleryImageMedia(ctx context.Context, image domainimag
 		return domainimagetask.GalleryImage{}, err
 	}
 	image.URL, image.DownloadURL = result.URL, result.DownloadURL
+	image.PreviewExpiresAt, image.DownloadExpiresAt = result.PreviewExpiresAt, result.DownloadExpiresAt
 	assetLoader, ok := s.assets.(assetMediaURLLoader)
 	if !ok {
 		return image, nil
@@ -1515,9 +1529,18 @@ func (s *Service) projectGalleryImageMedia(ctx context.Context, image domainimag
 		}
 		if strings.TrimSpace(asset.PreviewURL) != "" {
 			image.ReferenceAssets[index].PreviewURL = asset.PreviewURL
+			image.ReferenceAssets[index].PreviewExpiresAt = asset.PreviewExpiresAt
 		}
 	}
 	return image, nil
+}
+
+func imageMediaExpiryPointer(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	value = value.UTC()
+	return &value
 }
 
 func (s *Service) projectGalleryPageMedia(ctx context.Context, page domainimagetask.GalleryPage, fallback func(string) string) (domainimagetask.GalleryPage, error) {

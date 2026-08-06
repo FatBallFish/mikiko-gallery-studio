@@ -20,6 +20,8 @@ import type {
   ImageTaskType,
   LedgerEntry,
   LoginResult,
+  MediaAccessProjection,
+  MediaAccessPurpose,
   NormalLoginResponse,
   PageResult,
   PaymentOrder,
@@ -374,6 +376,8 @@ export function normalizeCapabilities(raw: any): Capability {
     max_image_count: Number(pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
     reference_image_max_mb: Number(pick(raw, 'reference_image_max_mb', 'ReferenceImageMaxMB') ?? 0) || undefined,
     reference_image_max_bytes: Number(pick(raw, 'reference_image_max_bytes', 'ReferenceImageMaxBytes') ?? 0) || undefined,
+    reference_image_allowed_formats: pick<string[]>(raw, 'reference_image_allowed_formats', 'ReferenceImageAllowedFormats') ?? [],
+    reference_image_allowed_mime_types: pick<string[]>(raw, 'reference_image_allowed_mime_types', 'ReferenceImageAllowedMIMETypes') ?? [],
     task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? Array.from(new Set(normalizedModels.flatMap((item) => item.task_types)))).map(normalizeTaskType),
     ...optionalOutputCapabilities(raw),
   }
@@ -468,6 +472,12 @@ export const userApi = {
     return items.map(toReferenceAsset)
   },
   getReferenceAsset: async (asset_id: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { pathParams: { asset_id } })),
+  refreshReferenceAssetAccess: (asset_id: string, purpose: MediaAccessPurpose = 'preview') =>
+    sharedApiClient.request<MediaAccessProjection>(API_PATHS.agent.referenceAssetAccess, { pathParams: { asset_id }, query: { purpose } }),
+  refreshImageAccess: (image_id: string, purpose: MediaAccessPurpose = 'preview') =>
+    sharedApiClient.request<MediaAccessProjection>(API_PATHS.agent.imageAccess, { pathParams: { image_id }, query: { purpose } }),
+  refreshPublicImageAccess: (image_id: string, purpose: MediaAccessPurpose = 'preview') =>
+    sharedApiClient.request<MediaAccessProjection>(API_PATHS.open.galleryImageAccess, { pathParams: { image_id }, query: { purpose }, auth: false }),
   deleteReferenceAsset: (asset_id: string) => sharedApiClient.request<void>(API_PATHS.agent.referenceAssetDetail, { method: 'DELETE', pathParams: { asset_id } }),
   imageAssetUrl: (url: string, accessToken?: string | null) => mediaAssetURL(url, accessToken),
   createTask: async (req: CreateTaskRequest) => {

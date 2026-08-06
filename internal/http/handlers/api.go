@@ -2384,13 +2384,12 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 
 	items := make([]domainassets.ReferenceAsset, 0, len(ids))
 	for _, imageID := range ids {
-		result, content, err := a.tasks.DownloadImageResult(r.Context(), user.ID, imageID)
+		result, err := a.tasks.GetOwnedImageResult(r.Context(), user.ID, imageID)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		contentType := defaultString(result.MimeType, http.DetectContentType(content))
-		asset, svcErr := a.assets.UploadWithMetadataContext(r.Context(), user.ID, imageDownloadFilename(result), contentType, content, domainassets.UploadMetadata{UploadSource: "gallery_import"})
+		asset, svcErr := a.assets.ImportGalleryImage(r.Context(), user.ID, result)
 		if svcErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(svcErr))
 			return
