@@ -3,6 +3,7 @@ import type { ReferenceAsset } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { Button, Modal } from '../components'
+import { RefreshableMediaImage } from '../ui/mediaRefresh'
 import type { PromptOptimizationState } from './workspacePromptOptimization'
 
 export function PromptEditorActions({ optimizing, canUndo, onExpand, onOptimize, onUndo }: {
@@ -15,7 +16,7 @@ export function PromptEditorActions({ optimizing, canUndo, onExpand, onOptimize,
   return <div className="flex items-center gap-1">{canUndo ? <IconAction label="撤销提示词优化" onClick={onUndo}><Undo2 size={15} /></IconAction> : null}{onExpand ? <IconAction label="展开提示词编辑器" onClick={onExpand}><Maximize2 size={15} /></IconAction> : null}<IconAction label="优化提示词" disabled={optimizing} onClick={onOptimize}><Sparkles size={15} /></IconAction></div>
 }
 
-export function PromptEditorDialog({ prompt, assets, accessToken, optimization, onPromptChange, onClose, onOptimize, onConfirm, onApply, onCancel, onUndo }: {
+export function PromptEditorDialog({ prompt, assets, accessToken, optimization, onPromptChange, onClose, onOptimize, onConfirm, onApply, onCancel, onUndo, onMediaRefresh }: {
   prompt: string
   assets: ReferenceAsset[]
   accessToken?: string | null
@@ -27,6 +28,7 @@ export function PromptEditorDialog({ prompt, assets, accessToken, optimization, 
   onApply: () => void
   onCancel: () => void
   onUndo: () => void
+  onMediaRefresh?: (assetId: string) => string | undefined | void | Promise<string | undefined | void>
 }) {
   const busy = optimization.stage === 'estimating' || optimization.stage === 'optimizing'
   return <Modal title="提示词编辑器" onClose={onClose} className="max-[600px]:h-[calc(100dvh-3rem)] max-[600px]:max-h-[calc(100dvh-3rem)] max-[600px]:w-[calc(100vw-3rem)] max-[600px]:rounded-lg max-[600px]:p-4">
@@ -41,7 +43,7 @@ export function PromptEditorDialog({ prompt, assets, accessToken, optimization, 
         <h3 className="m-0 text-sm">图片编辑来源</h3>
         <p className="m-0 mt-1 text-xs text-[var(--muted)]">这些图片仅用于当前图片任务，不会发送给文本模型。</p>
         <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-1">
-          {assets.map((asset) => { const src = userApi.imageAssetUrl(asset.preview_url || asset.download_url || '', accessToken); return <div key={asset.id || src} className="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2 rounded-md border border-[var(--border)] p-2"><div className="size-[52px] overflow-hidden rounded bg-[var(--bg)]">{src ? <img className="size-full object-cover" src={src} alt="" /> : null}</div><div className="min-w-0"><strong className="block truncate text-xs">{asset.name || '编辑图片'}</strong><span className="block truncate text-[11px] text-[var(--muted)]">{asset.width && asset.height ? `${asset.width} × ${asset.height}` : asset.mime_type || '图片'}</span></div></div> })}
+          {assets.map((asset) => { const src = userApi.imageAssetUrl(asset.preview_url || asset.download_url || '', accessToken); return <div key={asset.id || src} className="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2 rounded-md border border-[var(--border)] p-2"><div className="size-[52px] overflow-hidden rounded bg-[var(--bg)]">{src ? <RefreshableMediaImage className="size-full object-cover" src={src} alt="" onMediaRefresh={asset.id && onMediaRefresh ? () => onMediaRefresh(asset.id) : undefined} /> : null}</div><div className="min-w-0"><strong className="block truncate text-xs">{asset.name || '编辑图片'}</strong><span className="block truncate text-[11px] text-[var(--muted)]">{asset.width && asset.height ? `${asset.width} × ${asset.height}` : asset.mime_type || '图片'}</span></div></div> })}
           {!assets.length ? <div className="col-span-full rounded-md border border-dashed border-[var(--border)] p-4 text-center text-xs text-[var(--muted)]">当前没有图片编辑来源</div> : null}
         </div>
       </aside>

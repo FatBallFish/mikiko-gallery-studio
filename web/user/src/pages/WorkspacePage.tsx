@@ -11,6 +11,7 @@ import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
 import { RefreshableMediaImage } from '../ui/mediaRefresh'
 import { errorMessage } from '../useApiResource'
+import { mediaAccess, type MediaResource } from '../mediaAccess'
 import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
 import { displayPoints, publicUnavailableReason, WORKSPACE_REFERENCE_REQUIRED_MESSAGE } from './workspaceGenerateReadiness'
 import { currentWorkspaceEstimate, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
@@ -100,6 +101,41 @@ function referenceUploadMaxBytes(capability: Capability | null) {
 function referenceAssetPreviewURL(asset: ReferenceAsset, accessToken?: string | null) {
   const raw = asset.preview_url || asset.download_url || ''
   return raw ? userApi.imageAssetUrl(raw, accessToken) : ''
+}
+
+function patchTaskImageAccess(task: ImageTask, imageId: string, url: string) {
+  let changed = false
+  const results = task.results.map((image) => {
+    if (image.id !== imageId) return image
+    changed = true
+    return { ...image, url, download_url: url }
+  })
+  return changed ? { ...task, results } : task
+}
+
+function patchTaskReferenceAccess(task: ImageTask, assetId: string, url: string) {
+  let changed = false
+  const referenceAssets = task.reference_assets.map((asset) => {
+    if (asset.id !== assetId) return asset
+    changed = true
+    return { ...asset, preview_url: url, download_url: url }
+  })
+  return changed ? { ...task, reference_assets: referenceAssets } : task
+}
+
+function workspaceImageFilename(image: Pick<ImageResult, 'id' | 'mime_type'>) {
+  const extension = image.mime_type?.split('/')[1]?.replace('jpeg', 'jpg') || 'png'
+  return `mikiko-image-${image.id}.${extension}`
+}
+
+function startMediaDownload(url: string, filename: string) {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.rel = 'noopener noreferrer'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
 }
 
 function uploadTooLargeMessage(file: File, maxBytes: number) {
@@ -729,26 +765,55 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     [...records].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   ), [records])
 
-  async function refreshWorkspaceMedia() {
-    const tasks = await userApi.listTasks()
-    setRecords((current) => replaceWorkspaceTaskRecords(current, tasks, {
-      limit: 20,
-      preserveIds: selectedTaskIdRef.current ? [selectedTaskIdRef.current] : [],
-    }))
-    setHistoryTaskDialog((current) => current ? tasks.find((task) => task.id === current.id) ?? current : null)
+  async function refreshWorkspaceImage(imageId: string) {
+    const projection = await mediaAccess.preview({ kind: 'image', scope: 'private', id: imageId })
+    setRecords((tasks) => tasks.map((task) => patchTaskImageAccess(task, imageId, projection.url)))
+    setHistoryTaskDialog((task) => task ? patchTaskImageAccess(task, imageId, projection.url) : null)
     setPreviewImage((current) => {
-      const imageID = current?.detailImage?.id
-      if (!current || !imageID) return current
-      const task = tasks.find((item) => item.results.some((image) => image.id === imageID))
-      const image = task?.results.find((item) => item.id === imageID)
-      if (!task || !image) return current
+      if (current?.mediaResource?.kind !== 'image' || current.mediaResource.id !== imageId) return current
       return {
         ...current,
-        url: userApi.imageAssetUrl(image.url, app.session?.token),
-        downloadUrl: userApi.imageAssetUrl(image.download_url ?? image.url, app.session?.token),
-        detailImage: projectWorkspaceImageDetail(image, task, app.profile),
+        url: projection.url,
+        downloadUrl: projection.url,
+        detailImage: current.detailImage ? { ...current.detailImage, url: projection.url, download_url: projection.url } : current.detailImage,
       }
     })
+    return projection.url
+  }
+
+  async function refreshWorkspaceReference(assetId: string) {
+    const projection = await mediaAccess.preview({ kind: 'reference', scope: 'private', id: assetId })
+    setEditRefs((assets) => assets.map((asset) => asset.id === assetId ? { ...asset, preview_url: projection.url, download_url: projection.url } : asset))
+    setRecords((tasks) => tasks.map((task) => patchTaskReferenceAccess(task, assetId, projection.url)))
+    setHistoryTaskDialog((task) => task ? patchTaskReferenceAccess(task, assetId, projection.url) : null)
+    setPreviewImage((current) => current?.mediaResource?.kind === 'reference' && current.mediaResource.id === assetId
+      ? { ...current, url: projection.url, downloadUrl: projection.url }
+      : current)
+    return projection.url
+  }
+
+  async function refreshWorkspaceResource(resource: MediaResource) {
+    return resource.kind === 'reference'
+      ? refreshWorkspaceReference(resource.id)
+      : refreshWorkspaceImage(resource.id)
+  }
+
+  async function downloadWorkspaceResource(resource: MediaResource, filename: string) {
+    try {
+      const projection = await mediaAccess.download(resource)
+      startMediaDownload(projection.url, filename)
+    } catch (err) {
+      app.notify('error', errorMessage(err))
+    }
+  }
+
+  async function downloadWorkspaceImage(image: ImageResult) {
+    try {
+      const projection = await mediaAccess.download({ kind: 'image', scope: 'private', id: image.id })
+      startMediaDownload(projection.url, workspaceImageFilename(image))
+    } catch (err) {
+      app.notify('error', errorMessage(err))
+    }
   }
 
   async function openGalleryImport(target: 'edit') {
@@ -938,21 +1003,17 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setPromptOptimization(initialPromptOptimizationState())
   }
 
-  async function applyAsEditSource(url: string) {
-    const addition = singleReferenceAddition(url, maxReferenceImages, editRefs.length)
+  async function applyAsEditSource(image: ImageResult) {
+    const addition = singleReferenceAddition(image, maxReferenceImages, editRefs.length)
     if (!addition.item) {
       app.notify('error', '当前模型的参考图数量已达上限，请先移除一张。')
       return
     }
     setBusy(true)
     try {
-      const response = await fetch(addition.item)
-      if (!response.ok) throw new Error('图片读取失败，请稍后重试。')
-      const blob = await response.blob()
-      const file = new File([blob], `generated-reference-${Date.now()}.png`, { type: blob.type || 'image/png' })
-      const asset = await userApi.uploadReferenceAsset(file)
-      const nextAsset = { ...asset, preview_url: asset.preview_url || addition.item }
-      setEditRefs((items) => mergeReferenceAssets(items, [nextAsset], maxReferenceImages))
+      const imported = await userApi.importReferenceAssetsFromGallery([addition.item.id])
+      if (!imported.length) throw new Error('图片导入失败，请稍后重试。')
+      setEditRefs((items) => mergeReferenceAssets(items, imported, maxReferenceImages))
       app.notify('success', '已加入图片编辑')
     } catch (err) {
       app.notify('error', errorMessage(err))
@@ -1462,6 +1523,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           onApply={applyOptimization}
           onCancel={cancelOptimization}
           onUndo={undoOptimization}
+          onMediaRefresh={refreshWorkspaceReference}
         />
       ) : null}
       {!promptExpanded && promptOptimization.stage !== 'idle' && promptOptimization.stage !== 'applied' ? (
@@ -1485,7 +1547,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             activeTaskId={latestTask?.id}
             accessToken={app.session?.token}
             onSelectTask={selectRecentTask}
-            onMediaRefresh={() => void refreshWorkspaceMedia()}
+            onMediaRefresh={refreshWorkspaceImage}
           />
         ) : null}
         {latestTask ? (
@@ -1537,10 +1599,12 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                   }
                 }}
                 accessToken={app.session?.token}
-                onMediaRefresh={() => void refreshWorkspaceMedia()}
+                onDownloadImage={downloadWorkspaceImage}
+                onImageMediaRefresh={refreshWorkspaceImage}
+                onReferenceMediaRefresh={refreshWorkspaceReference}
               />
             ) : (
-              <HistoryCreationGrid tasks={historyTasks} profile={app.profile} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} onMediaRefresh={() => void refreshWorkspaceMedia()} />
+              <HistoryCreationGrid tasks={historyTasks} profile={app.profile} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} onMediaRefresh={refreshWorkspaceImage} />
             )}
             <div ref={feedEndRef} />
           </div>
@@ -1559,7 +1623,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           image={previewDetailImage}
           imageUrl={previewImage?.url}
           showPublicStats={false}
-          onDownload={() => window.open(previewImage?.downloadUrl || previewImage?.url, '_blank', 'noopener,noreferrer')}
+          onDownload={() => {
+            if (!previewImage?.mediaResource) return
+            const filename = previewImage.detailImage
+              ? workspaceImageFilename(previewImage.detailImage)
+              : `mikiko-reference-${previewImage.mediaResource.id}.png`
+            void downloadWorkspaceResource(previewImage.mediaResource, filename)
+          }}
           onCopyPrompt={async (prompt) => {
             await copyText(prompt)
             app.notify('success', 'Prompt 已复制')
@@ -1575,14 +1645,16 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             },
           }] : []}
           previewSourceLabel={previewImage?.source || '创作输出'}
-          onMediaRefresh={() => void refreshWorkspaceMedia()}
+          onMediaRefresh={previewImage?.mediaResource ? () => refreshWorkspaceResource(previewImage.mediaResource!) : undefined}
           onClose={() => setPreviewImage(null)}
         />
         {historyTaskDialog ? (
           <HistoryTaskDialog
             task={historyTaskDialog}
             accessToken={app.session?.token}
-            onMediaRefresh={() => void refreshWorkspaceMedia()}
+            onDownloadImage={downloadWorkspaceImage}
+            onImageMediaRefresh={refreshWorkspaceImage}
+            onReferenceMediaRefresh={refreshWorkspaceReference}
             onClose={() => setHistoryTaskDialog(null)}
           />
         ) : null}
@@ -1605,14 +1677,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   )
 }
 
-function ReferenceAssetPreview({ asset, accessToken, onClick, onMediaRefresh }: { asset: ReferenceAsset; accessToken?: string | null; onClick?: (url: string) => void; onMediaRefresh?: () => void | Promise<void> }) {
+function ReferenceAssetPreview({ asset, accessToken, onClick, onMediaRefresh }: { asset: ReferenceAsset; accessToken?: string | null; onClick?: (url: string, asset: ReferenceAsset) => void; onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void> }) {
   const previewURL = referenceAssetPreviewURL(asset, accessToken)
   if (!previewURL) {
     return <div className={workspaceClasses.refPlaceholder}>无法预览</div>
   }
   if (onClick) {
     return (
-      <button className={workspaceClasses.sourceImageButton} type="button" onClick={() => onClick(previewURL)}>
+      <button className={workspaceClasses.sourceImageButton} type="button" onClick={() => onClick(previewURL, asset)}>
         <RefreshableMediaImage className={workspaceClasses.refImage} src={previewURL} alt={asset.name || '参考图'} onMediaRefresh={onMediaRefresh} />
       </button>
     )
@@ -1820,7 +1892,7 @@ function RecentHistoryStrip({ tasks, activeTaskId, accessToken, onSelectTask, on
   activeTaskId?: string
   accessToken?: string
   onSelectTask: (task: ImageTask) => void
-  onMediaRefresh: () => void | Promise<void>
+  onMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
 }) {
   return (
     <section className="border-b border-[var(--border)] px-3 py-2.5 sm:px-5" aria-label="最近创作">
@@ -1840,7 +1912,7 @@ function RecentHistoryStrip({ tasks, activeTaskId, accessToken, onSelectTask, on
               onClick={() => onSelectTask(task)}
             >
               <span className="grid size-[42px] place-items-center overflow-hidden rounded-lg bg-[var(--bg)] text-[10px] text-[var(--muted)]">
-                {image ? <RefreshableMediaImage className="size-full object-cover" src={userApi.imageAssetUrl(image.url, accessToken)} alt="" onMediaRefresh={onMediaRefresh} /> : <span className="px-1 text-center leading-tight">{card.statusLabel}</span>}
+                {image ? <RefreshableMediaImage className="size-full object-cover" src={userApi.imageAssetUrl(image.url, accessToken)} alt="" onMediaRefresh={() => onMediaRefresh(image.id)} /> : <span className="px-1 text-center leading-tight">{card.statusLabel}</span>}
               </span>
               <span className="min-w-0">
                 <strong className="block truncate text-xs text-[var(--fg)]">{card.taskTypeLabel}</strong>
@@ -1877,7 +1949,7 @@ function HistoryCreationGrid({ tasks, profile, accessToken, onPreviewImage, onOp
   accessToken?: string | null
   onPreviewImage: (image: ImagePreviewPayload) => void
   onOpenTaskDialog: (task: ImageTask) => void
-  onMediaRefresh: () => void | Promise<void>
+  onMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
 }) {
   if (!tasks.length) {
     return <EmptyState title="暂无历史创作" detail="完成一次创作后，任务记录会展示在这里。" />
@@ -1905,7 +1977,7 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
   accessToken?: string | null
   onPreviewImage: (image: ImagePreviewPayload) => void
   onOpenTaskDialog: (task: ImageTask) => void
-  onMediaRefresh: () => void | Promise<void>
+  onMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
 }) {
   const slots = generationSlots(task)
   const imageSlot = slots.find((slot): slot is Extract<typeof slot, { kind: 'image' }> => slot.kind === 'image')
@@ -1935,6 +2007,7 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
       source: '历史创作',
       creationDraft: workspaceCreationDraftFromSnapshot(task),
       detailImage: projectWorkspaceImageDetail(imageSlot.image, task, profile),
+      mediaResource: { kind: 'image', scope: 'private', id: imageSlot.image.id },
     })
   }
 
@@ -1945,7 +2018,7 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
         {multi ? <span className={cn(workspaceClasses.historyLayer, workspaceClasses.historyLayerBack1)} aria-hidden="true" /> : null}
         <span className={cn(workspaceClasses.historyLayer, allFailed && workspaceClasses.historyFailed)}>
           {imageSlot && imageUrl ? (
-            <RefreshableMediaImage className={workspaceClasses.historyImage} src={imageUrl} alt={task.title} onMediaRefresh={onMediaRefresh} />
+            <RefreshableMediaImage className={workspaceClasses.historyImage} src={imageUrl} alt={task.title} onMediaRefresh={() => onMediaRefresh(imageSlot.image.id)} />
           ) : running ? (
             <span className={workspaceClasses.historyState}>
               <span className={userState.spinner} />
@@ -1970,10 +2043,12 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
   )
 }
 
-function HistoryTaskDialog({ task, accessToken, onMediaRefresh, onClose }: {
+function HistoryTaskDialog({ task, accessToken, onDownloadImage, onImageMediaRefresh, onReferenceMediaRefresh, onClose }: {
   task: ImageTask
   accessToken?: string | null
-  onMediaRefresh: () => void | Promise<void>
+  onDownloadImage: (image: ImageResult) => Promise<void>
+  onImageMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
+  onReferenceMediaRefresh: (assetId: string) => string | undefined | void | Promise<string | undefined | void>
   onClose: () => void
 }) {
   const app = useApp()
@@ -1999,10 +2074,11 @@ function HistoryTaskDialog({ task, accessToken, onMediaRefresh, onClose }: {
           id: asset.id,
           url,
           alt: asset.name || '原图引用',
+          onMediaRefresh: asset.id ? () => onReferenceMediaRefresh(asset.id) : undefined,
         }
       }).filter((item) => item.url)}
       showPublicStats={false}
-      onDownload={() => window.open(userApi.imageAssetUrl(image.download_url ?? image.url, accessToken), '_blank', 'noopener,noreferrer')}
+      onDownload={() => void onDownloadImage(image)}
       onCopyPrompt={async (value) => {
         await copyText(value)
         app.notify('success', 'Prompt 已复制')
@@ -2013,22 +2089,24 @@ function HistoryTaskDialog({ task, accessToken, onMediaRefresh, onClose }: {
         { key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: reuseConfiguration },
       ]}
       previewSourceLabel="历史创作"
-      onMediaRefresh={onMediaRefresh}
+      onMediaRefresh={() => onImageMediaRefresh(image.id)}
       onClose={onClose}
     />
   )
 }
 
-function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken, onMediaRefresh }: {
+function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken, onDownloadImage, onImageMediaRefresh, onReferenceMediaRefresh }: {
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
   onCopyPrompt: () => Promise<void>
-  onUseReference: (url: string) => Promise<void>
+  onUseReference: (image: ImageResult) => Promise<void>
   onPreviewImage: (image: ImagePreviewPayload) => void
   onRetryTask: (task: ImageTask) => Promise<void>
   onDeleteTask: (task: ImageTask) => Promise<void>
   accessToken?: string
-  onMediaRefresh: () => void | Promise<void>
+  onDownloadImage: (image: ImageResult) => Promise<void>
+  onImageMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
+  onReferenceMediaRefresh: (assetId: string) => string | undefined | void | Promise<string | undefined | void>
 }) {
   const slots = generationSlots(task)
   const activeStage = task.progress_message || task.progress_stage || '等待后端返回任务进度'
@@ -2050,8 +2128,7 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
 
   const downloadAll = () => {
     successImages.forEach((slot, index) => {
-      const url = userApi.imageAssetUrl(slot.image.download_url ?? slot.image.url, accessToken)
-      window.setTimeout(() => window.open(url, '_blank', 'noopener,noreferrer'), index * 120)
+      window.setTimeout(() => void onDownloadImage(slot.image), index * 120)
     })
   }
   return (
@@ -2078,8 +2155,14 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
                   key={asset.id || asset.preview_url || asset.download_url}
                   asset={asset}
                   accessToken={accessToken}
-                  onMediaRefresh={onMediaRefresh}
-                  onClick={(url) => onPreviewImage({ url, alt: asset.name || '原图引用', source: '原图引用' })}
+                  onMediaRefresh={() => onReferenceMediaRefresh(asset.id)}
+                  onClick={(url, selectedAsset) => onPreviewImage({
+                    url,
+                    downloadUrl: url,
+                    alt: selectedAsset.name || '原图引用',
+                    source: '原图引用',
+                    mediaResource: { kind: 'reference', scope: 'private', id: selectedAsset.id },
+                  })}
                 />
               ))}
             </div>
@@ -2098,7 +2181,8 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
                     accessToken={accessToken}
                     onUseReference={onUseReference}
                     onPreview={onPreviewImage}
-                    onMediaRefresh={onMediaRefresh}
+                    onDownload={onDownloadImage}
+                    onMediaRefresh={() => onImageMediaRefresh(slot.image.id)}
                   />
                 )
               }
@@ -2115,7 +2199,7 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
               <button className={workspaceClasses.generatedAction} type="button" title="复制提示词" onClick={() => void onCopyPrompt()}>提示词</button>
               <div className="mx-1 h-4 w-px bg-[var(--border)]" />
               <button className={workspaceClasses.generatedAction} type="button" title="再次编辑" onClick={() => {
-                if (primaryImage.url) void onUseReference(userApi.imageAssetUrl(primaryImage.url, accessToken))
+                void onUseReference(primaryImage)
               }}>编辑</button>
             </div>
           ) : null}
@@ -2209,19 +2293,19 @@ function normalizeAspectRatio(input?: string) {
   return undefined
 }
 
-function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken, onUseReference, onPreview, onMediaRefresh }: {
+function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken, onUseReference, onPreview, onDownload, onMediaRefresh }: {
   image: ImageResult
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
   alt: string
   fallbackRatio?: string
   accessToken?: string
-  onUseReference: (url: string) => Promise<void>
+  onUseReference: (image: ImageResult) => Promise<void>
   onPreview: (image: ImagePreviewPayload) => void
-  onMediaRefresh: () => void | Promise<void>
+  onDownload: (image: ImageResult) => Promise<void>
+  onMediaRefresh: () => string | undefined | void | Promise<string | undefined | void>
 }) {
   const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
-  const downloadUrl = userApi.imageAssetUrl(image.download_url ?? image.url, accessToken)
   const aspectRatio = image.width && image.height ? `${image.width} / ${image.height}` : normalizeAspectRatio(fallbackRatio)
   const ratioStyle = aspectRatio ? { '--generated-ratio': aspectRatio } as CSSProperties : undefined
   const sizeClass = fallbackRatio && Number((fallbackRatio.split(':')[0] || '').trim()) > Number((fallbackRatio.split(':')[1] || '').trim())
@@ -2234,7 +2318,7 @@ function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken,
         className={cn(workspaceClasses.generatedPreview, sizeClass)}
         onClick={() => onPreview({
           url: imageUrl,
-          downloadUrl,
+          downloadUrl: imageUrl,
           alt,
           prompt: image.prompt || alt,
           width: image.width,
@@ -2244,14 +2328,15 @@ function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken,
           source: '创作输出',
           creationDraft: workspaceCreationDraftFromSnapshot(task),
           detailImage: projectWorkspaceImageDetail(image, task, profile),
+          mediaResource: { kind: 'image', scope: 'private', id: image.id },
         })}
         aria-label="预览生成图片"
       >
         <RefreshableMediaImage className={cn(workspaceClasses.generatedImage, sizeClass)} src={imageUrl} alt={alt} onMediaRefresh={onMediaRefresh} />
       </button>
       <figcaption className={workspaceClasses.generatedCaption}>
-        <button className={workspaceClasses.generatedIconAction} type="button" title="编辑" aria-label="编辑图片" onClick={() => void onUseReference(imageUrl)}><EditGlyph /></button>
-        <button className={workspaceClasses.generatedIconAction} type="button" title="下载" aria-label="下载图片" onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}><DownloadGlyph /></button>
+        <button className={workspaceClasses.generatedIconAction} type="button" title="编辑" aria-label="编辑图片" onClick={() => void onUseReference(image)}><EditGlyph /></button>
+        <button className={workspaceClasses.generatedIconAction} type="button" title="下载" aria-label="下载图片" onClick={() => void onDownload(image)}><DownloadGlyph /></button>
       </figcaption>
     </figure>
   )
