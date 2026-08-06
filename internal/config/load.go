@@ -389,7 +389,7 @@ func applyDefaults(cfg *Config) {
 		cfg.GenerationLimits.MaxImageCount = 5
 	}
 	if cfg.GenerationLimits.ReferenceImageMaxMB == 0 {
-		cfg.GenerationLimits.ReferenceImageMaxMB = 10
+		cfg.GenerationLimits.ReferenceImageMaxMB = 20
 	}
 	if cfg.GenerationLimits.ReferenceImageMaxCount == 0 {
 		cfg.GenerationLimits.ReferenceImageMaxCount = 4
@@ -400,6 +400,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.GenerationLimits.NegativePromptMaxChars == 0 {
 		cfg.GenerationLimits.NegativePromptMaxChars = 1000
 	}
+	cfg.AttachmentPolicy = ApplyAttachmentPolicyDefaults(cfg.AttachmentPolicy, cfg.GenerationLimits.ReferenceImageMaxMB)
 	if cfg.Routing.DefaultProvider == "" {
 		cfg.Routing.DefaultProvider = "openai"
 	}

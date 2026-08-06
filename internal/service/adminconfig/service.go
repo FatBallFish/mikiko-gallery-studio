@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
@@ -20,6 +21,8 @@ type tabDefinition struct {
 type Service struct {
 	store       Store
 	definitions []tabDefinition
+	listenersMu sync.RWMutex
+	listeners   []func(tabKey string)
 }
 
 func NewService(cfg config.Config) *Service {
@@ -145,12 +148,36 @@ func (s *Service) UpdateTab(ctx context.Context, req domainadminconfig.UpdateTab
 			return domainadminconfig.Tab{}, errs.BadRequest("unknown config item")
 		}
 	}
+	if req.TabKey == "attachment_policy" {
+		if err := validateAttachmentPolicyItems(req.Items); err != nil {
+			return domainadminconfig.Tab{}, errs.BadRequest(err.Error())
+		}
+	}
 
 	nextVersion := current.Version + 1
 	if err := s.store.SaveByCategory(ctx, req.TabKey, nextVersion, req.UpdatedBy, req.Items); err != nil {
 		return domainadminconfig.Tab{}, err
 	}
+	s.notifyInvalidation(req.TabKey)
 	return s.GetTab(ctx, req.TabKey)
+}
+
+func (s *Service) RegisterInvalidationListener(listener func(tabKey string)) {
+	if listener == nil {
+		return
+	}
+	s.listenersMu.Lock()
+	s.listeners = append(s.listeners, listener)
+	s.listenersMu.Unlock()
+}
+
+func (s *Service) notifyInvalidation(tabKey string) {
+	s.listenersMu.RLock()
+	listeners := append([]func(string){}, s.listeners...)
+	s.listenersMu.RUnlock()
+	for _, listener := range listeners {
+		listener(tabKey)
+	}
 }
 
 func (s *Service) findDefinition(tabKey string) (tabDefinition, bool) {
@@ -183,6 +210,7 @@ func definitionContainsCategory(items []domainadminconfig.Item, configKey, scope
 func defaultDefinitions(cfg config.Config) []tabDefinition {
 	now := time.Now()
 	_ = now // reserved for future defaults that need timestamps
+	attachmentPolicy := config.ApplyAttachmentPolicyDefaults(cfg.AttachmentPolicy, cfg.GenerationLimits.ReferenceImageMaxMB)
 
 	return []tabDefinition{
 		{
@@ -203,6 +231,20 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 				valueItem("generation_limits", "reference_image_max_count", cfg.GenerationLimits.ReferenceImageMaxCount),
 				valueItem("generation_limits", "prompt_max_chars", cfg.GenerationLimits.PromptMaxChars),
 				valueItem("generation_limits", "negative_prompt_max_chars", cfg.GenerationLimits.NegativePromptMaxChars),
+			},
+		},
+		{
+			Key:  "attachment_policy",
+			Name: "Attachment Policy",
+			Items: []domainadminconfig.Item{
+				valueItem("attachment_policy", "image_max_mb", attachmentPolicy.ImageMaxMB),
+				valueItem("attachment_policy", "video_max_mb", attachmentPolicy.VideoMaxMB),
+				valueItem("attachment_policy", "audio_max_mb", attachmentPolicy.AudioMaxMB),
+				valueItem("attachment_policy", "document_max_mb", attachmentPolicy.DocumentMaxMB),
+				valueItem("attachment_policy", "image_allowed_formats", append([]string(nil), attachmentPolicy.ImageAllowedFormats...)),
+				valueItem("attachment_policy", "video_allowed_formats", append([]string(nil), attachmentPolicy.VideoAllowedFormats...)),
+				valueItem("attachment_policy", "audio_allowed_formats", append([]string(nil), attachmentPolicy.AudioAllowedFormats...)),
+				valueItem("attachment_policy", "document_allowed_formats", append([]string(nil), attachmentPolicy.DocumentAllowedFormats...)),
 			},
 		},
 		{

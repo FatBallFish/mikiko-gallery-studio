@@ -5,6 +5,7 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 )
 
 type Item struct {
@@ -17,11 +18,13 @@ type Item struct {
 }
 
 type Response struct {
-	Items                  []Item                       `json:"items,omitempty"`
-	ModelGroups            []modelhub.VisibleRouteModel `json:"model_groups,omitempty"`
-	ReferenceImageMaxMB    int                          `json:"reference_image_max_mb,omitempty"`
-	ReferenceImageMaxBytes int64                        `json:"reference_image_max_bytes,omitempty"`
-	UnavailableReason      *UnavailableReason           `json:"unavailable_reason,omitempty"`
+	Items                          []Item                       `json:"items,omitempty"`
+	ModelGroups                    []modelhub.VisibleRouteModel `json:"model_groups,omitempty"`
+	ReferenceImageMaxMB            int                          `json:"reference_image_max_mb,omitempty"`
+	ReferenceImageMaxBytes         int64                        `json:"reference_image_max_bytes,omitempty"`
+	ReferenceImageAllowedFormats   []string                     `json:"reference_image_allowed_formats,omitempty"`
+	ReferenceImageAllowedMIMETypes []string                     `json:"reference_image_allowed_mime_types,omitempty"`
+	UnavailableReason              *UnavailableReason           `json:"unavailable_reason,omitempty"`
 }
 
 type UnavailableReason struct {
@@ -33,14 +36,21 @@ type Service struct {
 	resolver              *modelhub.Resolver
 	referenceImageMaxMB   int
 	referenceImageMaxByte int64
+	attachmentPolicy      *assetservice.AttachmentPolicyResolver
 }
 
 func NewService(cfg config.Config) *Service {
+	defaults := config.ApplyAttachmentPolicyDefaults(cfg.AttachmentPolicy, cfg.GenerationLimits.ReferenceImageMaxMB)
+	return NewServiceWithAttachmentPolicy(cfg, assetservice.NewAttachmentPolicyResolver(defaults, nil))
+}
+
+func NewServiceWithAttachmentPolicy(cfg config.Config, policy *assetservice.AttachmentPolicyResolver) *Service {
 	maxMB := cfg.GenerationLimits.ReferenceImageMaxMB
 	return &Service{
 		resolver:              modelhub.NewResolver(cfg),
 		referenceImageMaxMB:   maxMB,
 		referenceImageMaxByte: int64(maxMB) * 1024 * 1024,
+		attachmentPolicy:      policy,
 	}
 }
 
@@ -61,7 +71,7 @@ func (s *Service) List() Response {
 			MaxReferenceImageCount: item.MaxReferenceImageCount,
 		})
 	}
-	resp := s.withReferenceUploadLimits(Response{Items: items})
+	resp := s.withReferenceUploadLimits(context.Background(), Response{Items: items})
 	return resp
 }
 
@@ -70,7 +80,7 @@ func (s *Service) ListForGroups(ctx context.Context, groupCodes []string, taskMu
 	if err != nil {
 		return Response{}, err
 	}
-	resp := s.withReferenceUploadLimits(Response{ModelGroups: items})
+	resp := s.withReferenceUploadLimits(ctx, Response{ModelGroups: items})
 	if len(items) == 0 {
 		resp.UnavailableReason = &UnavailableReason{
 			Code:    "NO_ROUTE_MODEL",
@@ -80,7 +90,16 @@ func (s *Service) ListForGroups(ctx context.Context, groupCodes []string, taskMu
 	return resp, nil
 }
 
-func (s *Service) withReferenceUploadLimits(resp Response) Response {
+func (s *Service) withReferenceUploadLimits(ctx context.Context, resp Response) Response {
+	if s.attachmentPolicy != nil {
+		if policy, err := s.attachmentPolicy.Resolve(ctx); err == nil {
+			resp.ReferenceImageMaxMB = policy.Image.MaxMB
+			resp.ReferenceImageMaxBytes = policy.Image.MaxBytes
+			resp.ReferenceImageAllowedFormats = append([]string(nil), policy.Image.AllowedFormats...)
+			resp.ReferenceImageAllowedMIMETypes = append([]string(nil), policy.Image.AllowedMIMETypes...)
+			return resp
+		}
+	}
 	resp.ReferenceImageMaxMB = s.referenceImageMaxMB
 	resp.ReferenceImageMaxBytes = s.referenceImageMaxByte
 	return resp

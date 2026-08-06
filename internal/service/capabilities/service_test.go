@@ -1,12 +1,17 @@
 package capabilities
 
 import (
+	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
+	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 )
 
 func TestVisibleRouteModelJSONUsesSnakeCaseCapabilityFields(t *testing.T) {
@@ -31,6 +36,35 @@ func TestVisibleRouteModelJSONUsesSnakeCaseCapabilityFields(t *testing.T) {
 	}
 	if strings.Contains(encoded, `"SupportsOutputCompression"`) || strings.Contains(encoded, `"CapabilitiesByTaskType"`) || strings.Contains(encoded, `"OutputFormat"`) {
 		t.Fatalf("capability response must not expose Go field names: %s", encoded)
+	}
+}
+
+func TestCapabilitiesExposeDynamicAttachmentPolicy(t *testing.T) {
+	cfg := config.Config{AttachmentPolicy: config.AttachmentPolicyConfig{
+		ImageMaxMB: 20, ImageAllowedFormats: []string{"png", "jpeg", "webp", "gif"},
+	}}
+	admin := adminconfigservice.NewServiceWithStore(cfg, adminconfigservice.NewMemoryStore())
+	policy := assetservice.NewAttachmentPolicyResolver(cfg.AttachmentPolicy, admin)
+	svc := NewServiceWithAttachmentPolicy(cfg, policy)
+
+	first := svc.List()
+	if first.ReferenceImageMaxBytes != 20*1024*1024 || !slices.Equal(first.ReferenceImageAllowedFormats, []string{"png", "jpeg", "webp", "gif"}) {
+		t.Fatalf("unexpected initial capability policy: %#v", first)
+	}
+
+	if _, err := admin.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey: assetservice.AttachmentPolicyTabKey, Version: 1,
+		Items: []domainadminconfig.Item{
+			{ConfigCategory: assetservice.AttachmentPolicyTabKey, ConfigKey: assetservice.AttachmentImageMaxMBKey, ConfigValue: map[string]any{"value": 24}, Scope: "global"},
+			{ConfigCategory: assetservice.AttachmentPolicyTabKey, ConfigKey: assetservice.AttachmentImageAllowedFormatsKey, ConfigValue: map[string]any{"value": []any{"webp"}}, Scope: "global"},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateTab: %v", err)
+	}
+
+	second := svc.List()
+	if second.ReferenceImageMaxBytes != 24*1024*1024 || !slices.Equal(second.ReferenceImageAllowedFormats, []string{"webp"}) || !slices.Equal(second.ReferenceImageAllowedMIMETypes, []string{"image/webp"}) {
+		t.Fatalf("capabilities kept stale attachment policy: %#v", second)
 	}
 }
 
