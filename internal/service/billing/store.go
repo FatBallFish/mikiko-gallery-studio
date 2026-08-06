@@ -154,6 +154,7 @@ type MemoryStore struct {
 	plans         []domainbilling.SubscriptionPlan
 	nextPlanID    int64
 	orders        map[int64]domainbilling.PaymentOrder
+	paymentTrades map[string]int64
 	nextOrderID   int64
 	webhooks      []domainbilling.PaymentWebhookEvent
 	nextWebhookID int64
@@ -198,6 +199,7 @@ func NewMemoryStore(scale int) *MemoryStore {
 		plans:         defaultPlans(),
 		nextPlanID:    3,
 		orders:        map[int64]domainbilling.PaymentOrder{},
+		paymentTrades: map[string]int64{},
 		nextOrderID:   1,
 		webhooks:      []domainbilling.PaymentWebhookEvent{},
 		nextWebhookID: 1,
@@ -803,15 +805,24 @@ func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrd
 		if err := ensurePaymentAmountMatches(order.AmountCNY, req.AmountCNY, s.scale); err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
+		tradeKey := memoryPaymentTradeKey(req.Provider, req.TradeNo)
+		if err := s.validateMemoryPaymentTradeOwner(tradeKey, order.ID); err != nil {
+			return domainbilling.PaymentOrder{}, err
+		}
 		if isCashierRechargeOrder(order) {
-			return s.completeRechargeOrderLocked(order, domainbilling.CompleteRechargeOrderRequest{
+			completed, err := s.completeRechargeOrderLocked(order, domainbilling.CompleteRechargeOrderRequest{
 				UserID:   order.UserID,
 				OrderID:  order.ID,
 				Provider: req.Provider,
 				TradeNo:  req.TradeNo,
 			}, reconciliationSource)
+			if err == nil {
+				s.recordMemoryPaymentTradeOwner(tradeKey, order.ID)
+			}
+			return completed, err
 		}
 		if order.Status == "paid" {
+			s.recordMemoryPaymentTradeOwner(tradeKey, order.ID)
 			return order, nil
 		}
 		now := time.Now().UTC()
@@ -820,6 +831,7 @@ func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrd
 		order.PaidAt = &now
 		order.UpdatedAt = now
 		s.orders[id] = order
+		s.recordMemoryPaymentTradeOwner(tradeKey, order.ID)
 		current := s.balances[order.UserID]
 		points, _ := decimal.NewFromString(order.Points)
 		bonus, _ := decimal.NewFromString(order.BonusPoints)
@@ -846,6 +858,24 @@ func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrd
 		return order, nil
 	}
 	return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
+}
+
+func memoryPaymentTradeKey(provider, tradeNo string) string {
+	return strings.ToLower(strings.TrimSpace(provider)) + "\x00" + strings.TrimSpace(tradeNo)
+}
+
+func (s *MemoryStore) validateMemoryPaymentTradeOwner(tradeKey string, orderID int64) error {
+	if ownerOrderID, exists := s.paymentTrades[tradeKey]; exists && ownerOrderID != orderID {
+		return errs.New(http.StatusConflict, errs.CodeConflict, "payment provider trade belongs to a different order")
+	}
+	return nil
+}
+
+func (s *MemoryStore) recordMemoryPaymentTradeOwner(tradeKey string, orderID int64) {
+	if s.paymentTrades == nil {
+		s.paymentTrades = map[string]int64{}
+	}
+	s.paymentTrades[tradeKey] = orderID
 }
 
 func ValidatePaymentCallbackBinding(orderProviderType, orderProvider string, orderProviderInstanceID int64, req domainbilling.MarkOrderPaidRequest) error {
@@ -1001,7 +1031,15 @@ func (s *MemoryStore) CompleteRechargeOrder(_ context.Context, req domainbilling
 	if !ok || order.UserID != req.UserID {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
 	}
-	return s.completeRechargeOrderLocked(order, req, domainbilling.PaymentReconciliationSourceMockConfirmation)
+	tradeKey := memoryPaymentTradeKey(req.Provider, req.TradeNo)
+	if err := s.validateMemoryPaymentTradeOwner(tradeKey, order.ID); err != nil {
+		return domainbilling.PaymentOrder{}, err
+	}
+	completed, err := s.completeRechargeOrderLocked(order, req, domainbilling.PaymentReconciliationSourceMockConfirmation)
+	if err == nil {
+		s.recordMemoryPaymentTradeOwner(tradeKey, order.ID)
+	}
+	return completed, err
 }
 
 func (s *MemoryStore) RefundPaymentOrder(_ context.Context, req domainbilling.RefundPaymentOrderRequest) (domainbilling.PaymentOrder, error) {

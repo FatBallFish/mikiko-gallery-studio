@@ -3267,6 +3267,8 @@ func isRetryableTxErr(err error) bool {
 		switch string(pqErr.Code) {
 		case "40001", "40P01":
 			return true
+		case "23505":
+			return pqErr.Constraint == "paymentwebhookevent_provider_trade_no"
 		}
 	}
 
@@ -3278,5 +3280,6 @@ func isRetryableTxErr(err error) bool {
 		strings.Contains(message, "sqlite_locked") ||
 		strings.Contains(message, "database is locked") ||
 		strings.Contains(message, "database table is locked") ||
+		(repoent.IsConstraintError(err) && strings.Contains(message, "payment_webhook_events.provider") && strings.Contains(message, "payment_webhook_events.trade_no")) ||
 		(repoent.IsConstraintError(err) && strings.Contains(message, "idempotency"))
 }

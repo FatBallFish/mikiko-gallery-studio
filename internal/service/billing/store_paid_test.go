@@ -131,3 +131,86 @@ func TestMemoryStoreMarkOrderPaidRejectsDifferentTradeForCompletedOrder(t *testi
 		t.Fatalf("mismatched replay must not duplicate credit: ledgers=%d webhooks=%d", len(store.ledgers[order.UserID]), len(store.webhooks))
 	}
 }
+
+func TestMemoryStoreMarkOrderPaidRejectsProviderTradeOwnedByDifferentOrder(t *testing.T) {
+	store := NewMemoryStore(5)
+	createOrder := func(userID int64, orderNo string) domainbilling.PaymentOrder {
+		t.Helper()
+		order, err := store.CreateCustomAmountOrder(t.Context(), domainbilling.CreateCustomAmountOrderRequest{
+			UserID: userID, OrderNo: orderNo, AmountCNY: "10.00000", CNYPerPoint: "0.31250",
+			Provider: "mock", PurchaseType: "custom_amount", VisibleMethod: "mock", ProviderType: "mock",
+		})
+		if err != nil {
+			t.Fatalf("CreateCustomAmountOrder: %v", err)
+		}
+		return order
+	}
+	firstOrder := createOrder(704, "PGO-MEMORY-TRADE-OWNER-FIRST")
+	secondOrder := createOrder(705, "PGO-MEMORY-TRADE-OWNER-SECOND")
+	paid := func(order domainbilling.PaymentOrder) (domainbilling.PaymentOrder, error) {
+		return store.MarkOrderPaid(t.Context(), domainbilling.MarkOrderPaidRequest{
+			Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-SHARED-TRADE", AmountCNY: order.AmountCNY,
+		})
+	}
+	first, err := paid(firstOrder)
+	if err != nil || first.Status != "completed" {
+		t.Fatalf("complete first order: order=%#v err=%v", first, err)
+	}
+	replayed, err := paid(firstOrder)
+	if err != nil || replayed.Status != "completed" || replayed.LedgerID != first.LedgerID {
+		t.Fatalf("same-order replay must remain idempotent: order=%#v err=%v", replayed, err)
+	}
+	if _, err := paid(secondOrder); err == nil {
+		t.Fatal("expected provider trade owned by first order to reject second order")
+	}
+	secondReloaded, err := store.GetOrder(t.Context(), secondOrder.UserID, secondOrder.ID)
+	if err != nil {
+		t.Fatalf("GetOrder second: %v", err)
+	}
+	if secondReloaded.Status != "pending" || secondReloaded.LedgerID != 0 {
+		t.Fatalf("cross-order replay must not mutate second order: %#v", secondReloaded)
+	}
+	if len(store.webhooks) != 1 || len(store.ledgers[firstOrder.UserID]) != 1 || len(store.ledgers[secondOrder.UserID]) != 0 {
+		t.Fatalf("cross-order replay must credit once: webhooks=%d first_ledgers=%d second_ledgers=%d", len(store.webhooks), len(store.ledgers[firstOrder.UserID]), len(store.ledgers[secondOrder.UserID]))
+	}
+}
+
+func TestMemoryStoreCompleteRechargeOrderRejectsProviderTradeOwnedByDifferentOrder(t *testing.T) {
+	store := NewMemoryStore(5)
+	createOrder := func(userID int64, orderNo string) domainbilling.PaymentOrder {
+		t.Helper()
+		order, err := store.CreateCustomAmountOrder(t.Context(), domainbilling.CreateCustomAmountOrderRequest{
+			UserID: userID, OrderNo: orderNo, AmountCNY: "10.00000", CNYPerPoint: "0.31250",
+			Provider: "mock", PurchaseType: "custom_amount", VisibleMethod: "mock", ProviderType: "mock",
+		})
+		if err != nil {
+			t.Fatalf("CreateCustomAmountOrder: %v", err)
+		}
+		return order
+	}
+	firstOrder := createOrder(706, "PGO-MEMORY-COMPLETE-OWNER-FIRST")
+	secondOrder := createOrder(707, "PGO-MEMORY-COMPLETE-OWNER-SECOND")
+	complete := func(order domainbilling.PaymentOrder) (domainbilling.PaymentOrder, error) {
+		return store.CompleteRechargeOrder(t.Context(), domainbilling.CompleteRechargeOrderRequest{
+			UserID: order.UserID, OrderID: order.ID, Provider: "mock", TradeNo: "MOCK-COMPLETE-SHARED-TRADE",
+		})
+	}
+	first, err := complete(firstOrder)
+	if err != nil || first.Status != "completed" {
+		t.Fatalf("complete first order: order=%#v err=%v", first, err)
+	}
+	replayed, err := complete(firstOrder)
+	if err != nil || replayed.Status != "completed" || replayed.LedgerID != first.LedgerID {
+		t.Fatalf("same-order replay must remain idempotent: order=%#v err=%v", replayed, err)
+	}
+	if _, err := complete(secondOrder); err == nil {
+		t.Fatal("expected provider trade owned by first order to reject second order")
+	}
+	secondReloaded, err := store.GetOrder(t.Context(), secondOrder.UserID, secondOrder.ID)
+	if err != nil {
+		t.Fatalf("GetOrder second: %v", err)
+	}
+	if secondReloaded.Status != "pending" || len(store.ledgers[secondOrder.UserID]) != 0 || len(store.webhooks) != 1 {
+		t.Fatalf("cross-order complete must not mutate second order: order=%#v ledgers=%#v webhooks=%#v", secondReloaded, store.ledgers[secondOrder.UserID], store.webhooks)
+	}
+}

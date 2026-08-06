@@ -814,6 +814,17 @@ func TestIsRetryableTxErrRecognizesPostgresSerializationCodes(t *testing.T) {
 	}
 }
 
+func TestIsRetryableTxErrRecognizesPaymentWebhookReplayConstraint(t *testing.T) {
+	webhookReplay := &pq.Error{Code: "23505", Constraint: "paymentwebhookevent_provider_trade_no"}
+	if !isRetryableTxErr(fmt.Errorf("insert payment webhook event: %w", webhookReplay)) {
+		t.Fatal("expected duplicate payment webhook replay insert to retry the transaction")
+	}
+	otherUnique := &pq.Error{Code: "23505", Constraint: "unrelated_unique_constraint"}
+	if isRetryableTxErr(fmt.Errorf("insert unrelated record: %w", otherUnique)) {
+		t.Fatal("unrelated unique violations must not be retried")
+	}
+}
+
 func TestBillingStoreRejectsNegativeFinalizeEstimate(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-negative-finalize?mode=memory&cache=shared&_fk=1")
@@ -1886,6 +1897,57 @@ func TestBillingStoreMarkOrderPaidRejectsDifferentTradeForCompletedOrder(t *test
 	}
 }
 
+func TestBillingStoreMarkOrderPaidRejectsProviderTradeOwnedByDifferentOrder(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-paid-trade-owner?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	createOrder := func(userID int64, orderNo string) domainbilling.PaymentOrder {
+		t.Helper()
+		order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+			UserID: userID, OrderNo: orderNo, AmountCNY: "10.00000", CNYPerPoint: "0.31250",
+			Provider: "mock", PurchaseType: "custom_amount", VisibleMethod: "mock", ProviderType: "mock",
+		})
+		if err != nil {
+			t.Fatalf("CreateCustomAmountOrder: %v", err)
+		}
+		return order
+	}
+	firstOrder := createOrder(940, "PGO-ENT-TRADE-OWNER-FIRST")
+	secondOrder := createOrder(941, "PGO-ENT-TRADE-OWNER-SECOND")
+	markPaid := func(order domainbilling.PaymentOrder) (domainbilling.PaymentOrder, error) {
+		return store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+			Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-ENT-SHARED-TRADE", AmountCNY: order.AmountCNY,
+		})
+	}
+	first, err := markPaid(firstOrder)
+	if err != nil || first.Status != "completed" {
+		t.Fatalf("complete first order: order=%#v err=%v", first, err)
+	}
+	if _, err := markPaid(secondOrder); err == nil {
+		t.Fatal("expected provider trade owned by first order to reject second order")
+	}
+	secondReloaded, err := store.GetOrder(ctx, secondOrder.UserID, secondOrder.ID)
+	if err != nil {
+		t.Fatalf("GetOrder second: %v", err)
+	}
+	if secondReloaded.Status != "pending" || secondReloaded.LedgerID != 0 {
+		t.Fatalf("cross-order replay must not mutate second order: %#v", secondReloaded)
+	}
+	grantCount, _ := client.WalletGrant.Query().Where(walletgrant.SourceTypeEQ("payment_order")).Count(ctx)
+	ledgerCount, _ := client.PointLedger.Query().Where(pointledger.LedgerTypeEQ("recharge")).Count(ctx)
+	webhookCount, _ := client.PaymentWebhookEvent.Query().Count(ctx)
+	if grantCount != 1 || ledgerCount != 1 || webhookCount != 1 {
+		t.Fatalf("cross-order replay must persist once: grants=%d ledgers=%d webhooks=%d", grantCount, ledgerCount, webhookCount)
+	}
+}
+
 func TestBillingStorePostgresCancelAndPaidReconciliationEndsCompleted(t *testing.T) {
 	adminURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
 	if adminURL == "" {
@@ -1974,6 +2036,154 @@ func TestBillingStorePostgresCancelAndPaidReconciliationEndsCompleted(t *testing
 	ledgerCount, _ := client.PointLedger.Query().Where(pointledger.OrderIDEQ(order.ID), pointledger.LedgerTypeEQ("recharge")).Count(ctx)
 	if grantCount != 1 || ledgerCount != 1 {
 		t.Fatalf("expected exactly one credit after race: grants=%d ledgers=%d", grantCount, ledgerCount)
+	}
+}
+
+func TestBillingStorePostgresConcurrentDuplicatePaidCallbacksAreIdempotent(t *testing.T) {
+	adminURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
+	if adminURL == "" {
+		t.Skip("set PIC_GALLERY_TEST_POSTGRES_URL to run PostgreSQL duplicate payment callback race")
+	}
+	ctx := t.Context()
+	schemaName := "billing_paid_duplicate_" + strings.ReplaceAll(fmt.Sprintf("%d", time.Now().UnixNano()), "-", "")
+	database, err := sql.Open("postgres", adminURL)
+	if err != nil {
+		t.Fatalf("open PostgreSQL admin database: %v", err)
+	}
+	defer database.Close()
+	if _, err := database.ExecContext(ctx, `CREATE SCHEMA "`+schemaName+`"`); err != nil {
+		t.Fatalf("create PostgreSQL test schema: %v", err)
+	}
+	defer func() { _, _ = database.ExecContext(context.Background(), `DROP SCHEMA "`+schemaName+`" CASCADE`) }()
+
+	client, err := repoent.Open(dialect.Postgres, billingPostgresURLWithSearchPath(t, adminURL, schemaName))
+	if err != nil {
+		t.Fatalf("open Ent PostgreSQL client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create Ent schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+
+	const attempts = 5
+	for attempt := 0; attempt < attempts; attempt++ {
+		order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+			UserID: int64(960 + attempt), OrderNo: fmt.Sprintf("PGO-POSTGRES-DUPLICATE-%d", attempt),
+			AmountCNY: "10.00000", CNYPerPoint: "0.31250", Provider: "mock",
+			PurchaseType: "custom_amount", VisibleMethod: "mock", ProviderType: "mock",
+		})
+		if err != nil {
+			t.Fatalf("CreateCustomAmountOrder attempt %d: %v", attempt, err)
+		}
+		req := domainbilling.MarkOrderPaidRequest{
+			Provider: "mock", OrderNo: order.OrderNo, TradeNo: fmt.Sprintf("MOCK-POSTGRES-DUPLICATE-%d", attempt), AmountCNY: order.AmountCNY,
+		}
+		start := make(chan struct{})
+		resultCh := make(chan struct {
+			order domainbilling.PaymentOrder
+			err   error
+		}, 2)
+		for range 2 {
+			go func() {
+				<-start
+				completed, paidErr := store.MarkOrderPaid(ctx, req)
+				resultCh <- struct {
+					order domainbilling.PaymentOrder
+					err   error
+				}{order: completed, err: paidErr}
+			}()
+		}
+		close(start)
+		for callback := 0; callback < 2; callback++ {
+			result := <-resultCh
+			if result.err != nil {
+				t.Fatalf("duplicate callback attempt %d.%d: %v", attempt, callback, result.err)
+			}
+			if result.order.Status != "completed" {
+				t.Fatalf("duplicate callback attempt %d.%d returned %#v", attempt, callback, result.order)
+			}
+		}
+		grantCount, err := client.WalletGrant.Query().Where(walletgrant.SourceTypeEQ("payment_order"), walletgrant.SourceIDEQ(order.ID)).Count(ctx)
+		if err != nil {
+			t.Fatalf("count grants attempt %d: %v", attempt, err)
+		}
+		ledgerCount, err := client.PointLedger.Query().Where(pointledger.OrderIDEQ(order.ID), pointledger.LedgerTypeEQ("recharge")).Count(ctx)
+		if err != nil {
+			t.Fatalf("count ledgers attempt %d: %v", attempt, err)
+		}
+		webhookCount, err := client.PaymentWebhookEvent.Query().Where(paymentwebhookevent.PaymentOrderIDEQ(order.ID)).Count(ctx)
+		if err != nil {
+			t.Fatalf("count webhook events attempt %d: %v", attempt, err)
+		}
+		if grantCount != 1 || ledgerCount != 1 || webhookCount != 1 {
+			t.Fatalf("duplicate callback attempt %d must persist once: grants=%d ledgers=%d webhooks=%d", attempt, grantCount, ledgerCount, webhookCount)
+		}
+	}
+
+	firstOrder, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 980, OrderNo: "PGO-POSTGRES-TRADE-OWNER-FIRST", AmountCNY: "10.00000", CNYPerPoint: "0.31250",
+		Provider: "mock", PurchaseType: "custom_amount", VisibleMethod: "mock", ProviderType: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder first trade owner: %v", err)
+	}
+	secondOrder, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 981, OrderNo: "PGO-POSTGRES-TRADE-OWNER-SECOND", AmountCNY: "10.00000", CNYPerPoint: "0.31250",
+		Provider: "mock", PurchaseType: "custom_amount", VisibleMethod: "mock", ProviderType: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder second trade owner: %v", err)
+	}
+	tradeOwnerStart := make(chan struct{})
+	tradeOwnerResults := make(chan struct {
+		order domainbilling.PaymentOrder
+		err   error
+	}, 2)
+	for _, order := range []domainbilling.PaymentOrder{firstOrder, secondOrder} {
+		go func(candidate domainbilling.PaymentOrder) {
+			<-tradeOwnerStart
+			completed, paidErr := store.MarkOrderPaid(ctx, domainbilling.MarkOrderPaidRequest{
+				Provider: "mock", OrderNo: candidate.OrderNo, TradeNo: "MOCK-POSTGRES-SHARED-TRADE", AmountCNY: candidate.AmountCNY,
+			})
+			tradeOwnerResults <- struct {
+				order domainbilling.PaymentOrder
+				err   error
+			}{order: completed, err: paidErr}
+		}(order)
+	}
+	close(tradeOwnerStart)
+	completedCount := 0
+	conflictCount := 0
+	for range 2 {
+		result := <-tradeOwnerResults
+		if result.err == nil {
+			if result.order.Status != "completed" {
+				t.Fatalf("winning cross-order callback returned %#v", result.order)
+			}
+			completedCount++
+			continue
+		}
+		var appErr *errs.Error
+		if !errors.As(result.err, &appErr) || appErr.Code != errs.CodeConflict {
+			t.Fatalf("losing cross-order callback must return conflict, got %T %v", result.err, result.err)
+		}
+		conflictCount++
+	}
+	if completedCount != 1 || conflictCount != 1 {
+		t.Fatalf("shared provider trade must have one owner: completed=%d conflicts=%d", completedCount, conflictCount)
+	}
+	tradeOwnerGrantCount, _ := client.WalletGrant.Query().Where(
+		walletgrant.SourceTypeEQ("payment_order"), walletgrant.SourceIDIn(firstOrder.ID, secondOrder.ID),
+	).Count(ctx)
+	tradeOwnerLedgerCount, _ := client.PointLedger.Query().Where(
+		pointledger.OrderIDIn(firstOrder.ID, secondOrder.ID), pointledger.LedgerTypeEQ("recharge"),
+	).Count(ctx)
+	tradeOwnerWebhookCount, _ := client.PaymentWebhookEvent.Query().Where(
+		paymentwebhookevent.ProviderEQ("mock"), paymentwebhookevent.TradeNoEQ("MOCK-POSTGRES-SHARED-TRADE"),
+	).Count(ctx)
+	if tradeOwnerGrantCount != 1 || tradeOwnerLedgerCount != 1 || tradeOwnerWebhookCount != 1 {
+		t.Fatalf("shared provider trade must persist once: grants=%d ledgers=%d webhooks=%d", tradeOwnerGrantCount, tradeOwnerLedgerCount, tradeOwnerWebhookCount)
 	}
 }
 

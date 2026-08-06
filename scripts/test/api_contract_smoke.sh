@@ -1636,6 +1636,8 @@ start_smoke_middleware
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/entstore -run '^TestTextModelStore.*Postgres' -count=1
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/entstore -run '^TestBillingStorePostgres(CancelAndPaidReconciliationEndsCompleted|ConcurrentDuplicatePaidCallbacksAreIdempotent)$' -count=2
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/db -run '^TestSchemaV2MigratesLegacyRefreshSessions$' -count=1
 start_fake_provider
 write_smoke_config true
@@ -2229,14 +2231,19 @@ canceled_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${
 assert_cashier_order_state "$canceled_order_body" "canceled" "" "" "no" >/dev/null
 assert_json_field "$canceled_order_body" "data.closed_at" >/dev/null
 
-canceled_mock_pay_status="$(curl --silent --output "$TMP_DIR/canceled-mock-pay.json" --write-out "%{http_code}" \
-  -X POST "$BASE_URL/api/agent/cashier/v1/orders/${CANCEL_ORDER_ID}/mock-pay" \
+canceled_recovered_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${CANCEL_ORDER_ID}/mock-pay" \
   -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$canceled_mock_pay_status" == "409" ]]
-[[ "$(assert_json_field "$(cat "$TMP_DIR/canceled-mock-pay.json")" "error.code")" == "CONFLICT" ]]
+assert_cashier_order_state "$canceled_recovered_body" "completed" "" "" "yes" >/dev/null
 
 canceled_detail_body="$(request "$BASE_URL/api/agent/cashier/v1/orders/${CANCEL_ORDER_ID}" -H "Authorization: Bearer $ACCESS_TOKEN")"
-assert_cashier_order_state "$canceled_detail_body" "canceled" "" "" "no" >/dev/null
+assert_cashier_order_state "$canceled_detail_body" "completed" "" "" "yes" >/dev/null
+
+canceled_recovery_refund_trade_no="REFUND-CANCELED-RECOVERY-SMOKE-${SMOKE_ID}"
+canceled_recovery_refund_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${CANCEL_ORDER_ID}/refund" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "{\"refund_trade_no\":\"${canceled_recovery_refund_trade_no}\",\"reason\":\"api smoke rollback canceled payment recovery\"}")"
+assert_cashier_refund_state "$canceled_recovery_refund_body" "refunded" "$canceled_recovery_refund_trade_no" "19.90000" "100.00000" >/dev/null
 
 manual_complete_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \

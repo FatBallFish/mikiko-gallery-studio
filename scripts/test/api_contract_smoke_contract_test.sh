@@ -63,10 +63,11 @@ for marker in \
   'POSTGRES_TEST_URL=' \
   'PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL"' \
   "-run '^TestTextModelStore.*Postgres'" \
+  "-run '^TestBillingStorePostgres(CancelAndPaidReconciliationEndsCompleted|ConcurrentDuplicatePaidCallbacksAreIdempotent)$'" \
   'go test ./internal/repository/db' \
   "-run '^TestSchemaV2MigratesLegacyRefreshSessions$'"; do
   if ! grep -Fq -- "$marker" "$SMOKE"; then
-    echo "API smoke does not execute PostgreSQL text-model concurrency coverage: $marker" >&2
+    echo "API smoke does not execute required PostgreSQL integration coverage: $marker" >&2
     exit 1
   fi
 done
