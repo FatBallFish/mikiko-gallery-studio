@@ -1309,6 +1309,51 @@ func TestCashierJeePayWebhookRejectsAmountMismatch(t *testing.T) {
 	}
 }
 
+func TestCashierJeePayWebhookRejectsMissingOrInvalidAmount(t *testing.T) {
+	tests := []struct {
+		name         string
+		mutateAmount func(url.Values)
+	}{
+		{
+			name: "missing amount",
+			mutateAmount: func(values url.Values) {
+				values.Del("amount")
+			},
+		},
+		{
+			name: "invalid amount",
+			mutateAmount: func(values url.Values) {
+				values.Set("amount", "not-fen")
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-invalid-amount-"+strings.ReplaceAll(test.name, " ", "-")+"@example.com")
+			order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+			values := jeepayWebhookValuesForTest(order, "MCH10001", "merchant-secret", "1250", order.TradeNo)
+			test.mutateAmount(values)
+			values.Set("sign", jeepaySignForTest(values, "merchant-secret"))
+
+			webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/jeepay_alipay", strings.NewReader(values.Encode()))
+			webhookReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			webhookRec := httptest.NewRecorder()
+			handler.ServeHTTP(webhookRec, webhookReq)
+			if webhookRec.Code != http.StatusConflict {
+				t.Fatalf("expected invalid jeepay amount 409, got %d body=%s", webhookRec.Code, webhookRec.Body.String())
+			}
+			if !bytes.Contains(webhookRec.Body.Bytes(), []byte("PAYMENT_AMOUNT_MISMATCH")) {
+				t.Fatalf("expected PAYMENT_AMOUNT_MISMATCH, body=%s", webhookRec.Body.String())
+			}
+			pending := getCashierOrderForTest(t, handler, userToken, order.ID)
+			if pending.Status != "pending" || pending.LedgerID != 0 {
+				t.Fatalf("invalid jeepay amount must not credit order: %#v", pending)
+			}
+		})
+	}
+}
+
 func TestCashierJeePayWebhookRejectsMissingApplicationIdentity(t *testing.T) {
 	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-missing-app-user@example.com")
 	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")

@@ -2033,12 +2033,16 @@ func (a *API) handleJeePayWebhook(r *http.Request, providerCode string) (domainb
 	if tradeNo == "" {
 		tradeNo = strings.TrimSpace(values["trade_no"])
 	}
+	amountCNY := jeepayAmountCNYFromFen(values["amount"])
+	if amountCNY == "" {
+		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment amount does not match order")
+	}
 	result, err := a.billing.MarkOrderPaid(r.Context(), domainbilling.MarkOrderPaidRequest{
 		Provider:           strings.ToLower(strings.TrimSpace(instance.ProviderType)),
 		ProviderInstanceID: instance.ID,
 		OrderNo:            strings.TrimSpace(values["mchOrderNo"]),
 		TradeNo:            tradeNo,
-		AmountCNY:          jeepayAmountCNYFromFen(values["amount"]),
+		AmountCNY:          amountCNY,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
