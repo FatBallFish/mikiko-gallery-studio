@@ -71,4 +71,3 @@ The approved accounting rule is **payment success wins**. A valid provider callb
 9. A 20 MB valid configured image format is accepted; over-limit or disallowed content is rejected consistently by frontend and backend.
 10. Gallery publish and grouping operations do not trigger network reloads for unrelated images.
 11. Reloading a page within the signing bucket reuses the same preview URL and can hit browser cache.
-

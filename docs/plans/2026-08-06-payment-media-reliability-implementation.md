@@ -572,4 +572,3 @@ Run: `./scripts/workflow/review-local.sh --scope committed`
 Run: `./scripts/workflow/check-review-gate.sh`
 
 Expected: `.review/gate.json` is `PASS`, scope is `committed`, and tree SHA matches HEAD.
-

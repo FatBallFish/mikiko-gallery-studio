@@ -127,4 +127,3 @@ Backend tests cover JSON/form JeePay callbacks, duplicate delivery, callback/can
 Frontend contract and component tests cover modal separation, success-only close timing, focus sync, fresh download URLs, edit import by ID, attachment validation, local gallery patching, semantic action tones, and the responsive confirmation layout.
 
 Verification requires the repository verify script, committed-scope review gate, isolated API smoke, and browser checks at desktop and mobile sizes.
-
