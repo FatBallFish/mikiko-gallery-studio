@@ -10,7 +10,7 @@ import { checkoutPaymentMethodEmptyState, checkoutPlanEmptyState, checkoutUnavai
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import { checkoutPaymentErrorMessage } from './checkoutPaymentError'
 import { closePaymentWindow, dispatchPaymentWindow, reservePaymentWindow } from './checkoutPaymentWindow'
-import { checkoutMoney, checkoutOrderActionState, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
+import { checkoutCancelResultState, checkoutMoney, checkoutOrderActionState, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
 import { checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
 import { RedeemCodeForm } from './RedeemCodeForm'
@@ -198,10 +198,24 @@ export function CheckoutPage() {
     setBusy(true)
     try {
       const next = await userApi.cancelCashierOrder(target.id)
+      const cancelResult = checkoutCancelResultState(next.status)
+      const monitoredPayment = monitorOrder?.id === next.id
       setMonitorOrder((current) => current?.id === next.id ? next : current)
       setDetailOrder((current) => current?.id === next.id ? next : current)
+      if (cancelResult === 'paid') {
+        if (!monitoredPayment) {
+          app.notify('success', '支付成功，充值余额已刷新')
+          void app.refreshAccount()
+          void loadRecentOrders()
+        }
+        return
+      }
       void loadRecentOrders()
-      app.notify('success', '订单已取消，可重新创建支付订单')
+      if (cancelResult === 'canceled') {
+        app.notify('success', '订单已取消，可重新创建支付订单')
+      } else {
+        app.notify('info', '订单状态未改变，请刷新支付结果后重试')
+      }
     } catch (caught) {
       app.notify('error', errorMessage(caught))
     } finally {
