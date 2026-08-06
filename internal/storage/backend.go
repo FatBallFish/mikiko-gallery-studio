@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -42,6 +43,12 @@ type Backend interface {
 // asset reads.
 type BoundedGetter interface {
 	GetBounded(ctx context.Context, objectKey string, maxBytes int64) ([]byte, error)
+}
+
+// ObjectCopier is an optional backend capability for copying objects without
+// routing their bytes through the application service.
+type ObjectCopier interface {
+	Copy(ctx context.Context, sourceKey, destinationKey string) error
 }
 
 type TemporaryGetURLOptions struct {
@@ -118,6 +125,8 @@ func validateTemporaryMediaURL(value string) (string, error) {
 var (
 	_ BoundedGetter      = (*LocalBackend)(nil)
 	_ BoundedGetter      = (*S3Backend)(nil)
+	_ ObjectCopier       = (*LocalBackend)(nil)
+	_ ObjectCopier       = (*S3Backend)(nil)
 	_ TemporaryURLSigner = (*S3Backend)(nil)
 )
 
@@ -190,6 +199,64 @@ func (b *LocalBackend) GetBounded(ctx context.Context, objectKey string, maxByte
 		return nil, err
 	}
 	return readBoundedAndClose(ctx, file, maxBytes)
+}
+
+func (b *LocalBackend) Copy(ctx context.Context, sourceKey, destinationKey string) error {
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	sourcePath, ok := b.resolvePath(sourceKey)
+	if !ok {
+		return ErrNotFound
+	}
+	destinationPath, ok := b.resolvePath(destinationKey)
+	if !ok {
+		return fmt.Errorf("invalid local storage destination key %q", destinationKey)
+	}
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("open local storage source %q: %w", sourceKey, err)
+	}
+	defer source.Close()
+
+	destinationDir := filepath.Dir(destinationPath)
+	if err := os.MkdirAll(destinationDir, 0o755); err != nil {
+		return fmt.Errorf("create local storage destination directory: %w", err)
+	}
+	temporary, err := os.CreateTemp(destinationDir, ".copy-*")
+	if err != nil {
+		return fmt.Errorf("create local storage copy target: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+
+	_, copyErr := io.Copy(temporary, contextReader{ctx: ctx, reader: source})
+	closeErr := temporary.Close()
+	if copyErr != nil {
+		return fmt.Errorf("copy local storage object: %w", copyErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close local storage copy target: %w", closeErr)
+	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	if err := os.Chmod(temporaryPath, 0o644); err != nil {
+		return fmt.Errorf("set local storage copy permissions: %w", err)
+	}
+	if err := os.Rename(temporaryPath, destinationPath); err != nil {
+		return fmt.Errorf("commit local storage copy: %w", err)
+	}
+	committed = true
+	return nil
 }
 
 func (b *LocalBackend) Delete(_ context.Context, objectKey string) error {
@@ -427,6 +494,68 @@ func (b *S3Backend) GetBounded(ctx context.Context, objectKey string, maxBytes i
 	}
 }
 
+func (b *S3Backend) Copy(ctx context.Context, sourceKey, destinationKey string) error {
+	sourceKey = b.normalizeKey(sourceKey)
+	if sourceKey == "" {
+		return ErrNotFound
+	}
+	copySource := "/" + b.bucket + "/" + escapePath(sourceKey)
+	req, err := b.newSignedRequestWithCopySource(ctx, destinationKey, copySource)
+	if err != nil {
+		return err
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("copy s3 object: %w", err)
+	}
+	defer resp.Body.Close()
+
+	const maximumCopyResponseBytes = int64(64 << 10)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maximumCopyResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("read s3 copy response: %w", err)
+	}
+	if int64(len(body)) > maximumCopyResponseBytes {
+		return errors.New("s3 copy response exceeds maximum size")
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("copy s3 object %q to %q: status=%d body=%s", sourceKey, destinationKey, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if err := validateS3CopyResponse(body); err != nil {
+		return err
+	}
+	return contextError(ctx)
+}
+
+func validateS3CopyResponse(body []byte) error {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil
+	}
+	var response struct {
+		XMLName xml.Name
+		Code    string `xml:"Code"`
+		Message string `xml:"Message"`
+	}
+	if err := xml.Unmarshal(body, &response); err != nil {
+		return fmt.Errorf("decode s3 copy response: %w", err)
+	}
+	switch response.XMLName.Local {
+	case "CopyObjectResult":
+		return nil
+	case "Error":
+		if response.Code == "NoSuchKey" || response.Code == "NoSuchBucket" {
+			return ErrNotFound
+		}
+		return fmt.Errorf("s3 copy failed: code=%s message=%s", response.Code, response.Message)
+	default:
+		return fmt.Errorf("unexpected s3 copy response %q", response.XMLName.Local)
+	}
+}
+
 func validateBoundedReadLimit(maxBytes int64) error {
 	if maxBytes < 0 || maxBytes == math.MaxInt64 {
 		return errInvalidBoundedReadLimit
@@ -507,6 +636,16 @@ func (b *S3Backend) Delete(ctx context.Context, objectKey string) error {
 }
 
 func (b *S3Backend) newSignedRequest(ctx context.Context, method string, objectKey string, contentType string, content []byte) (*http.Request, error) {
+	return b.newSignedRequestWithHeaders(ctx, method, objectKey, contentType, content, nil)
+}
+
+func (b *S3Backend) newSignedRequestWithCopySource(ctx context.Context, destinationKey, copySource string) (*http.Request, error) {
+	return b.newSignedRequestWithHeaders(ctx, http.MethodPut, destinationKey, "", nil, map[string]string{
+		"X-Amz-Copy-Source": copySource,
+	})
+}
+
+func (b *S3Backend) newSignedRequestWithHeaders(ctx context.Context, method string, objectKey string, contentType string, content []byte, extraHeaders map[string]string) (*http.Request, error) {
 	key := b.normalizeKey(objectKey)
 	if key == "" {
 		return nil, fmt.Errorf("invalid s3 object key %q", objectKey)
@@ -530,8 +669,17 @@ func (b *S3Backend) newSignedRequest(ctx context.Context, method string, objectK
 	req.Header.Set("Host", host)
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
 	req.Header.Set("X-Amz-Date", amzDate)
-	canonicalHeaders := "host:" + host + "\n" + "x-amz-content-sha256:" + payloadHash + "\n" + "x-amz-date:" + amzDate + "\n"
-	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
+	for name, value := range extraHeaders {
+		req.Header.Set(name, strings.TrimSpace(value))
+	}
+	canonicalHeaders := "host:" + host + "\n" + "x-amz-content-sha256:" + payloadHash + "\n"
+	signedHeaders := "host;x-amz-content-sha256"
+	if copySource := req.Header.Get("X-Amz-Copy-Source"); copySource != "" {
+		canonicalHeaders += "x-amz-copy-source:" + copySource + "\n"
+		signedHeaders += ";x-amz-copy-source"
+	}
+	canonicalHeaders += "x-amz-date:" + amzDate + "\n"
+	signedHeaders += ";x-amz-date"
 	canonicalRequest := strings.Join([]string{
 		method,
 		canonicalURI,

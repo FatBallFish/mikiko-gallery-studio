@@ -95,6 +95,54 @@ func TestLocalBackendGetBoundedHonorsLimitAndContext(t *testing.T) {
 	}
 }
 
+func TestLocalBackendCopyCreatesIndependentObject(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	copier, ok := any(backend).(interface {
+		Copy(context.Context, string, string) error
+	})
+	if !ok {
+		t.Fatal("local backend does not expose server-side copy capability")
+	}
+	source := []byte("independent-image-content")
+	if err := backend.Put(t.Context(), "source/image.png", "image/png", source); err != nil {
+		t.Fatalf("Put source: %v", err)
+	}
+	if err := copier.Copy(t.Context(), "source/image.png", "references/copied.png"); err != nil {
+		t.Fatalf("Copy: %v", err)
+	}
+	if err := backend.Delete(t.Context(), "source/image.png"); err != nil {
+		t.Fatalf("Delete source: %v", err)
+	}
+	loaded, err := backend.Get(t.Context(), "references/copied.png")
+	if err != nil || string(loaded) != string(source) {
+		t.Fatalf("copied object after source deletion: content=%q err=%v", loaded, err)
+	}
+}
+
+func TestLocalBackendCopyRejectsInvalidPathsAndCancellation(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	copier, ok := any(backend).(interface {
+		Copy(context.Context, string, string) error
+	})
+	if !ok {
+		t.Fatal("local backend does not expose server-side copy capability")
+	}
+	if err := backend.Put(t.Context(), "source.png", "image/png", []byte("content")); err != nil {
+		t.Fatalf("Put source: %v", err)
+	}
+	if err := copier.Copy(t.Context(), "source.png", "../outside.png"); err == nil {
+		t.Fatal("copy accepted traversal destination")
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := copier.Copy(cancelled, "source.png", "cancelled.png"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled copy error = %v, want context.Canceled", err)
+	}
+	if _, err := backend.Get(t.Context(), "cancelled.png"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cancelled copy left destination behind: %v", err)
+	}
+}
+
 func TestS3BackendRoundTrip(t *testing.T) {
 	store := map[string][]byte{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +277,80 @@ func TestS3BackendTemporaryGetURLUsesBoundedSigV4QueryWithoutNetwork(t *testing.
 	}
 	if strings.Contains(first, "access_token") || strings.Contains(first, "secret-example") {
 		t.Fatalf("presigned URL leaked application token or storage secret: %s", first)
+	}
+}
+
+func TestS3BackendCopyUsesSignedCopyObjectRequest(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodPut || r.URL.Path != "/bucket/prefix/references/copied image.png" {
+			t.Fatalf("copy request = %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("X-Amz-Copy-Source"); got != "/bucket/prefix/generated/source%20image.png" {
+			t.Fatalf("x-amz-copy-source = %q", got)
+		}
+		authorization := r.Header.Get("Authorization")
+		if !strings.Contains(authorization, "SignedHeaders=host;x-amz-content-sha256;x-amz-copy-source;x-amz-date") {
+			t.Fatalf("copy source missing from signed headers: %q", authorization)
+		}
+		if got := r.Header.Get("X-Amz-Content-Sha256"); got != sha256Hex(nil) {
+			t.Fatalf("copy payload hash = %q, want empty payload hash", got)
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = io.WriteString(w, `<CopyObjectResult><ETag>"copied-etag"</ETag></CopyObjectResult>`)
+	}))
+	defer server.Close()
+
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: server.URL, Region: "us-east-1", Bucket: "bucket",
+			AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true, Prefix: "prefix",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+	copier, ok := any(backend).(interface {
+		Copy(context.Context, string, string) error
+	})
+	if !ok {
+		t.Fatal("S3 backend does not expose server-side copy capability")
+	}
+	if err := copier.Copy(t.Context(), "generated/source image.png", "references/copied image.png"); err != nil {
+		t.Fatalf("Copy: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("copy round trips = %d, want 1", calls)
+	}
+}
+
+func TestS3BackendCopyRejectsEmbeddedErrorResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = io.WriteString(w, `<Error><Code>NoSuchKey</Code><Message>source missing</Message></Error>`)
+	}))
+	defer server.Close()
+
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: server.URL, Region: "us-east-1", Bucket: "bucket",
+			AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+	copier, ok := any(backend).(interface {
+		Copy(context.Context, string, string) error
+	})
+	if !ok {
+		t.Fatal("S3 backend does not expose server-side copy capability")
+	}
+	if err := copier.Copy(t.Context(), "missing.png", "copied.png"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("embedded NoSuchKey error = %v, want ErrNotFound", err)
 	}
 }
 
