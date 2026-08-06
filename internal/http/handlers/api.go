@@ -1495,11 +1495,12 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	identity, appErr := a.requireOpenAPIKey(r)
+	identity, cleanup, appErr := a.requireOpenAPIKey(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	defer cleanup()
 	outputCount, queryErr := parsePositiveIntQuery(r, "requested_output_image_count", 1)
 	if queryErr != nil {
 		httpx.WriteError(w, r, queryErr)
@@ -1558,11 +1559,12 @@ func (a *API) HandleOpenCapabilities(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	identity, appErr := a.requireOpenAPIKey(r)
+	identity, cleanup, appErr := a.requireOpenAPIKey(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	defer cleanup()
 	result, err := a.caps.ListForGroups(r.Context(), []string{identity.GroupCode}, a.cfg.Billing.TaskMultipliers)
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
@@ -1576,11 +1578,12 @@ func (a *API) HandleOpenBalance(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	identity, appErr := a.requireOpenAPIKey(r)
+	identity, cleanup, appErr := a.requireOpenAPIKey(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	defer cleanup()
 	summary, err := a.billing.GetBalance(r.Context(), identity.UserID, a.userGroupMultiplier(identity.GroupCode))
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
@@ -2523,11 +2526,12 @@ func (a *API) HandleOpenReferenceAssetUploadSession(w http.ResponseWriter, r *ht
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	identity, appErr := a.requireOpenAPIKey(r)
+	identity, cleanup, appErr := a.requireOpenAPIKey(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	defer cleanup()
 	var req struct {
 		Filename      string `json:"filename"`
 		MimeType      string `json:"mime_type"`
@@ -2573,11 +2577,12 @@ func (a *API) HandleOpenReferenceAssetMultipartUpload(w http.ResponseWriter, r *
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	identity, appErr := a.requireOpenAPIKey(r)
+	identity, cleanup, appErr := a.requireOpenAPIKey(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	defer cleanup()
 	filename, contentType, content, uploadErr := readReferenceAssetUpload(w, r, a.assets)
 	if uploadErr != nil {
 		httpx.WriteError(w, r, uploadErr)
@@ -2605,11 +2610,12 @@ func (a *API) HandleOpenReferenceAssetGet(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	identity, appErr := a.requireOpenAPIKey(r)
+	identity, cleanup, appErr := a.requireOpenAPIKey(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	defer cleanup()
 	assetID := strings.TrimPrefix(r.URL.Path, "/api/open/image/v1/reference-assets/")
 	asset, err := a.assets.GetWithContext(r.Context(), identity.UserID, assetID)
 	if err != nil {
@@ -7370,11 +7376,12 @@ func (a *API) HandleOpenTaskDetail(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	identity, appErr := a.requireOpenAPIKey(r)
+	identity, cleanup, appErr := a.requireOpenAPIKey(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	defer cleanup()
 	taskID := strings.TrimPrefix(r.URL.Path, "/api/open/image/v1/tasks/")
 	task, err := a.tasks.GetByID(r.Context(), identity.UserID, taskID)
 	if err != nil {
@@ -7451,11 +7458,12 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
-	identity, appErr := a.requireOpenAPIKey(r)
+	identity, cleanup, appErr := a.requireOpenAPIKey(r)
 	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	defer cleanup()
 
 	var req struct {
 		TaskType                  string   `json:"task_type"`
@@ -7646,46 +7654,55 @@ func profileThemePreference(theme string) (string, string, bool) {
 	return mode, accent, true
 }
 
-func (a *API) requireOpenAPIKey(r *http.Request) (domainapikey.Identity, *errs.Error) {
+func (a *API) requireOpenAPIKey(r *http.Request) (domainapikey.Identity, func(), *errs.Error) {
 	if strings.TrimSpace(r.Header.Get("X-Access-Key")) == "" ||
 		strings.TrimSpace(r.Header.Get("X-Signature")) == "" ||
 		strings.TrimSpace(r.Header.Get("X-Timestamp")) == "" ||
 		strings.TrimSpace(r.Header.Get("X-Body-SHA256")) == "" {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "missing api key credentials")
+		return domainapikey.Identity{}, nil, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "missing api key credentials")
 	}
 	timestamp, parseErr := parseHMACTimestamp(r.Header.Get("X-Timestamp"))
 	if parseErr != nil {
-		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key timestamp")
+		return domainapikey.Identity{}, nil, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key timestamp")
 	}
-	policy, policyErr := a.assets.AttachmentPolicy(r.Context())
-	if policyErr != nil {
-		return domainapikey.Identity{}, normalizeAppError(fmt.Errorf("resolve attachment policy: %w", policyErr))
-	}
-	bodyLimit := openAPIRequestBodyLimit(r.URL.Path, r.Header.Get("Content-Type"), policy.Image.MaxBytes)
-	body, err := readBoundedBodyBytes(r.Body, bodyLimit)
-	if err != nil {
-		if err.StatusCode == http.StatusRequestEntityTooLarge && isOpenAPIReferenceUploadPath(r.URL.Path) {
-			return domainapikey.Identity{}, referenceAssetTooLargeError(policy.Image, policy.Image.MaxBytes+1)
-		}
-		return domainapikey.Identity{}, err
-	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	identity, verifyErr := a.apiKeys.VerifyCanonicalHMAC(r.Context(), apikeyservice.HMACRequest{
+	prepared, prepareErr := a.apiKeys.PrepareCanonicalHMAC(r.Context(), apikeyservice.HMACRequest{
 		AccessKey:  r.Header.Get("X-Access-Key"),
 		Method:     r.Method,
 		Path:       r.URL.RequestURI(),
 		Timestamp:  timestamp,
-		Body:       body,
 		BodySHA256: r.Header.Get("X-Body-SHA256"),
 		Signature:  r.Header.Get("X-Signature"),
 	})
+	if prepareErr != nil {
+		return domainapikey.Identity{}, nil, normalizeAppError(prepareErr)
+	}
+	policy, policyErr := a.assets.AttachmentPolicy(r.Context())
+	if policyErr != nil {
+		return domainapikey.Identity{}, nil, normalizeAppError(fmt.Errorf("resolve attachment policy: %w", policyErr))
+	}
+	bodyLimit := openAPIRequestBodyLimit(r.URL.Path, r.Header.Get("Content-Type"), policy.Image.MaxBytes)
+	originalBody := r.Body
+	body, actualBodyHash, err := spoolBoundedHMACBody(originalBody, bodyLimit, "")
+	if originalBody != nil {
+		_ = originalBody.Close()
+	}
+	if err != nil {
+		if err.StatusCode == http.StatusRequestEntityTooLarge && isOpenAPIReferenceUploadPath(r.URL.Path) {
+			return domainapikey.Identity{}, nil, referenceAssetTooLargeError(policy.Image, policy.Image.MaxBytes+1)
+		}
+		return domainapikey.Identity{}, nil, err
+	}
+	identity, verifyErr := a.apiKeys.CompleteCanonicalHMAC(r.Context(), prepared, actualBodyHash)
 	if verifyErr != nil {
-		return domainapikey.Identity{}, normalizeAppError(verifyErr)
+		_ = body.Close()
+		return domainapikey.Identity{}, nil, normalizeAppError(verifyErr)
 	}
 	if appErr := a.requireAPIKeyUserActive(identity); appErr != nil {
-		return domainapikey.Identity{}, appErr
+		_ = body.Close()
+		return domainapikey.Identity{}, nil, appErr
 	}
-	return identity, nil
+	r.Body = body
+	return identity, func() { _ = body.Close() }, nil
 }
 
 func readBoundedBody(body io.Reader, referenceImageMaxMB int) ([]byte, *errs.Error) {

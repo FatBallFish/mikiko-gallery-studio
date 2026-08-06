@@ -3,6 +3,7 @@ package apikey
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -253,6 +254,45 @@ func TestVerifyCanonicalHMACChecksTimestampBodyHashAndSignature(t *testing.T) {
 	hashAsSecretSignature := signCanonicalHMACWithKey(created.Key.SecretHash, "POST", "/v1/images?size=1", now, bodyHash)
 	if _, err := svc.VerifyCanonicalHMAC(ctx, HMACRequest{AccessKey: created.Key.AccessKey, Method: "POST", Path: "/v1/images?size=1", Timestamp: now, Body: body, BodySHA256: bodyHash, Signature: hashAsSecretSignature}); err == nil {
 		t.Fatal("expected stored secret hash to be rejected as an HMAC signing credential")
+	}
+}
+
+func TestCanonicalHMACPreparationDefersUsageUntilBodyHashMatches(t *testing.T) {
+	ctx := context.Background()
+	rpmLimit := 1
+	svc := NewService(nil)
+	created, err := svc.CreateKey(ctx, CreateRequest{
+		UserID: 1, Name: "hmac-stream", GroupCode: "plus", Secret: "sk-hmac-stream", RPMLimit: &rpmLimit,
+	})
+	if err != nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+	timestamp := time.Now().UTC()
+	body := []byte(`{"prompt":"stream me"}`)
+	bodyHash := BodySHA256(body)
+	prepared, err := svc.PrepareCanonicalHMAC(ctx, HMACRequest{
+		AccessKey:  created.Key.AccessKey,
+		Method:     http.MethodPost,
+		Path:       "/api/open/image/v1/tasks",
+		Timestamp:  timestamp,
+		BodySHA256: bodyHash,
+		Signature:  SignCanonicalHMAC("sk-hmac-stream", http.MethodPost, "/api/open/image/v1/tasks", timestamp, bodyHash),
+	})
+	if err != nil {
+		t.Fatalf("PrepareCanonicalHMAC: %v", err)
+	}
+	if _, err := svc.CompleteCanonicalHMAC(ctx, prepared, BodySHA256([]byte("tampered"))); err == nil {
+		t.Fatal("expected streamed body hash mismatch")
+	}
+	identity, err := svc.CompleteCanonicalHMAC(ctx, prepared, bodyHash)
+	if err != nil {
+		t.Fatalf("valid completion should retain the first RPM slot: %v", err)
+	}
+	if identity.APIKeyID != created.Key.ID || identity.UserID != created.Key.UserID {
+		t.Fatalf("unexpected identity: %#v", identity)
+	}
+	if _, err := svc.CompleteCanonicalHMAC(ctx, prepared, bodyHash); err == nil {
+		t.Fatal("expected second valid completion to exceed RPM limit")
 	}
 }
 

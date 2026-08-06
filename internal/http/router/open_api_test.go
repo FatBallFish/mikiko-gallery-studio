@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -161,6 +164,37 @@ func TestOpenImageAPIRejectsMissingAuthBeforeReadingLargeBody(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected missing auth to fail with 401 before body validation, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+type failOnReadBody struct {
+	reads int
+}
+
+func (b *failOnReadBody) Read([]byte) (int, error) {
+	b.reads++
+	return 0, errors.New("request body must not be read before access key preflight")
+}
+
+func TestOpenImageAPIRejectsUnknownAccessKeyBeforeReadingBody(t *testing.T) {
+	handler, _, _ := newOpenAPIHandler(t)
+	body := &failOnReadBody{}
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/reference-assets/uploads", body)
+	timestamp := time.Now().UTC()
+	bodyHash := apikeyservice.BodySHA256([]byte("unread"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Access-Key", "ak-does-not-exist")
+	req.Header.Set("X-Timestamp", timestamp.Format(time.RFC3339))
+	req.Header.Set("X-Body-SHA256", bodyHash)
+	req.Header.Set("X-Signature", apikeyservice.SignCanonicalHMAC("unknown-secret", req.Method, req.URL.RequestURI(), timestamp, bodyHash))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unknown key 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if body.reads != 0 {
+		t.Fatalf("unknown access key caused %d request-body reads", body.reads)
 	}
 }
 
@@ -329,6 +363,63 @@ func TestOpenReferenceUploadAcceptsRawStdBase64(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected upload 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestOpenReferenceUploadAcceptsFileBackedHMACSpool(t *testing.T) {
+	spoolDir := t.TempDir()
+	t.Setenv("TMPDIR", spoolDir)
+	handler, creds, _, _ := newOpenAPIHandlerWithAuthAndConfig(t, apikeyservice.CreateRequest{
+		Name:      "openapi",
+		GroupCode: "plus",
+		Secret:    "sk-openapi-secret",
+	}, func(cfg *config.Config) {
+		cfg.AttachmentPolicy = config.AttachmentPolicyConfig{
+			ImageMaxMB:          2,
+			ImageAllowedFormats: []string{"png"},
+		}
+	})
+	raw, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII=")
+	raw = append(raw, bytes.Repeat([]byte{0}, 1024*1024)...)
+	uploadBody := bytes.NewBufferString(`{"filename":"large.png","mime_type":"image/png","content_base64":"` + base64.StdEncoding.EncodeToString(raw) + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/reference-assets/uploads", uploadBody)
+	req.Header.Set("Content-Type", "application/json")
+	signNativeRequest(req, creds)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected file-backed upload 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	entries, err := os.ReadDir(spoolDir)
+	if err != nil {
+		t.Fatalf("read spool directory: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("verified request leaked HMAC spool files: %#v", entries)
+	}
+}
+
+func TestOpenReferenceMultipartUploadConsumesVerifiedSpooledBody(t *testing.T) {
+	handler, creds, _ := newOpenAPIHandler(t)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "tiny.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := part.Write(tinyPNG(t)); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/reference-assets", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	signNativeRequest(req, creds)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected multipart upload 201, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
