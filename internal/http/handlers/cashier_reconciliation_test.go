@@ -97,3 +97,29 @@ func TestCashierProviderInstanceLookupRequiresExactBinding(t *testing.T) {
 		t.Fatalf("unbound real order must not select an arbitrary provider instance: %#v", instance)
 	}
 }
+
+func TestCashierWebhookProviderConfiguredIgnoresSchedulingState(t *testing.T) {
+	for _, providerType := range []string{"stripe", "easypay_alipay", "alipay_direct", "wxpay_direct", "jeepay_alipay"} {
+		t.Run(providerType, func(t *testing.T) {
+			if !cashierWebhookProviderConfigured(domaincashier.ProviderInstance{
+				ProviderType: providerType,
+				Enabled:      false,
+				ConfigStatus: "configured",
+			}) {
+				t.Fatal("disabled but configured provider must remain available for in-flight webhooks")
+			}
+		})
+	}
+	if cashierWebhookProviderConfigured(domaincashier.ProviderInstance{Enabled: true, ConfigStatus: "missing"}) {
+		t.Fatal("provider with missing configuration must remain unavailable for webhooks")
+	}
+}
+
+func TestCashierOrderHasProviderInitializationRecognizesTradeNumber(t *testing.T) {
+	if !cashierOrderHasProviderInitialization(domainbilling.PaymentOrder{TradeNo: "TRADE-10001"}) {
+		t.Fatal("an assigned provider trade number proves upstream initialization")
+	}
+	if cashierOrderHasProviderInitialization(domainbilling.PaymentOrder{}) {
+		t.Fatal("an order without provider artifacts must remain uninitialized")
+	}
+}

@@ -1012,6 +1012,9 @@ func (a *API) cancelCashierOrderSafely(ctx context.Context, userID, orderID int6
 	default:
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order cannot be canceled")
 	}
+	if !cashierOrderHasProviderInitialization(order) {
+		return a.cancelCashierOrderLocally(ctx, userID, order)
+	}
 
 	providerType := cashierOrderProviderType(order, cashierProviderInstance{})
 	if providerType == "mock" || strings.HasPrefix(providerType, "manual") {
@@ -1315,7 +1318,11 @@ func cashierExistingOrderResult(order domainbilling.PaymentOrder) (domainbilling
 }
 
 func cashierOrderHasProviderInitialization(order domainbilling.PaymentOrder) bool {
-	return strings.TrimSpace(order.PaymentURL) != "" || strings.TrimSpace(order.QRCode) != "" || strings.TrimSpace(order.ClientToken) != "" || len(order.PaymentDisplay) > 0
+	return strings.TrimSpace(order.PaymentURL) != "" ||
+		strings.TrimSpace(order.QRCode) != "" ||
+		strings.TrimSpace(order.ClientToken) != "" ||
+		strings.TrimSpace(order.TradeNo) != "" ||
+		len(order.PaymentDisplay) > 0
 }
 
 func (a *API) initializeCashierOrder(ctx context.Context, order domainbilling.PaymentOrder, payment cashierservice.PaymentDisplayResult) (domainbilling.PaymentOrder, *errs.Error) {
@@ -2078,7 +2085,7 @@ func (a *API) handleStripeWebhook(r *http.Request) (domainbilling.PaymentOrder, 
 	verified := false
 	verifiedInstanceID := int64(0)
 	for _, instance := range a.cashierProviderInstances(r.Context()) {
-		if !strings.EqualFold(strings.TrimSpace(instance.ProviderType), "stripe") || !instance.Enabled || instance.ConfigStatus != "configured" {
+		if !strings.EqualFold(strings.TrimSpace(instance.ProviderType), "stripe") || !cashierWebhookProviderConfigured(instance) {
 			continue
 		}
 		webhookSecret := strings.TrimSpace(mapStringValue(instance.Config, "webhook_secret"))
@@ -2235,7 +2242,7 @@ func (a *API) easypayProviderInstanceByPID(ctx context.Context, providerCode str
 		if providerCode != "" && providerCode != "easypay" && providerCode != providerType {
 			continue
 		}
-		if !instance.Enabled || instance.ConfigStatus != "configured" {
+		if !cashierWebhookProviderConfigured(instance) {
 			continue
 		}
 		if strings.TrimSpace(mapStringValue(instance.Config, "pid", "merchant_id", "merchantId")) == pid {
@@ -2254,7 +2261,7 @@ func (a *API) alipayProviderInstanceByAppID(ctx context.Context, appID string) (
 		if strings.ToLower(strings.TrimSpace(instance.ProviderType)) != "alipay_direct" {
 			continue
 		}
-		if !instance.Enabled || instance.ConfigStatus != "configured" {
+		if !cashierWebhookProviderConfigured(instance) {
 			continue
 		}
 		if strings.TrimSpace(mapStringValue(instance.Config, "app_id", "appId")) == appID {
@@ -2273,7 +2280,7 @@ func (a *API) wxpayProviderInstanceBySerial(ctx context.Context, serial string) 
 		if strings.ToLower(strings.TrimSpace(instance.ProviderType)) != "wxpay_direct" {
 			continue
 		}
-		if !instance.Enabled || instance.ConfigStatus != "configured" {
+		if !cashierWebhookProviderConfigured(instance) {
 			continue
 		}
 		instanceSerial := strings.TrimSpace(mapStringValue(instance.Config, "wechat_pay_public_key_id", "wechatpay_serial", "wechatpaySerial", "serial"))
@@ -2302,7 +2309,7 @@ func (a *API) jeepayProviderInstanceByMerchant(ctx context.Context, providerCode
 		if providerCode != "" && providerCode != "jeepay" && providerCode != providerType {
 			continue
 		}
-		if !instance.Enabled || instance.ConfigStatus != "configured" {
+		if !cashierWebhookProviderConfigured(instance) {
 			continue
 		}
 		instanceMchNo := strings.TrimSpace(mapStringValue(instance.Config, "mch_no", "mchNo", "merchant_id", "merchantId"))
@@ -2312,6 +2319,10 @@ func (a *API) jeepayProviderInstanceByMerchant(ctx context.Context, providerCode
 		}
 	}
 	return cashierProviderInstance{}, false
+}
+
+func cashierWebhookProviderConfigured(instance cashierProviderInstance) bool {
+	return strings.EqualFold(strings.TrimSpace(instance.ConfigStatus), "configured")
 }
 
 func (a *API) HandleReferenceAssetUpload(w http.ResponseWriter, r *http.Request) {

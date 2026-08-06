@@ -551,7 +551,7 @@ func TestCashierCancelInitializedOrderRequiresDefinitiveProviderClose(t *testing
 	}
 }
 
-func TestCashierCancelRealOrderWithoutDisplayStillRequiresProviderClose(t *testing.T) {
+func TestCashierCancelUninitializedRealOrderLocallyWithoutProviderQuery(t *testing.T) {
 	queryCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/query" {
@@ -569,10 +569,13 @@ func TestCashierCancelRealOrderWithoutDisplayStillRequiresProviderClose(t *testi
 	defer upstream.Close()
 	handler, billingSvc, session, order := setupSafeCashierCancelTest(t, upstream.URL, false, false)
 
-	cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusConflict)
+	result := cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusOK)
+	if result.Status != "canceled" || result.LedgerID != 0 {
+		t.Fatalf("uninitialized order must cancel locally: %#v", result)
+	}
 	stored, err := billingSvc.GetOrder(context.Background(), order.UserID, order.ID)
-	if err != nil || stored.Status != "pending" || stored.LedgerID != 0 || queryCalls != 1 {
-		t.Fatalf("real order without display must remain pending after unsupported close: order=%#v queries=%d err=%v", stored, queryCalls, err)
+	if err != nil || stored.Status != "canceled" || stored.LedgerID != 0 || queryCalls != 0 {
+		t.Fatalf("uninitialized order must not call its provider: order=%#v queries=%d err=%v", stored, queryCalls, err)
 	}
 }
 
@@ -1425,6 +1428,33 @@ func TestCashierJeePayJSONWebhookCompletesRechargeOrderAndFormReplayIsIdempotent
 	}
 	if balanceResp.Data.RechargePoints != order.Points || balanceResp.Data.AvailablePoints != order.Points {
 		t.Fatalf("expected jeepay webhook to credit recharge bucket once, got %#v", balanceResp.Data)
+	}
+}
+
+func TestCashierJeePayWebhookCompletesOrderAfterProviderInstanceDisabled(t *testing.T) {
+	handler, userToken, adminToken := setupJeePayCashierTest(t, "cashier-jeepay-disabled-provider@example.com")
+	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	disabledProviderBody := `{"provider_type":"jeepay_alipay","name":"JeePay 支付宝","enabled":false,"supported_methods":["alipay"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"gateway_url":"https://pay.example.test","mch_no":"MCH10001","app_id":"APP10001","key":"merchant-secret","notify_url":"https://merchant.example.com/api/open/image/v1/payments/webhooks/jeepay_alipay","return_url":"https://merchant.example.com/checkout/return","way_code":"ALI_PC"}}`
+	disableReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/cashier/provider-instances/"+jsonInt64(order.ProviderInstanceID), bytes.NewBufferString(disabledProviderBody))
+	disableReq.Header.Set("Authorization", "Bearer "+adminToken)
+	disableReq.Header.Set("Content-Type", "application/json")
+	disableRec := httptest.NewRecorder()
+	handler.ServeHTTP(disableRec, disableReq)
+	if disableRec.Code != http.StatusOK {
+		t.Fatalf("expected provider disable 200, got %d body=%s", disableRec.Code, disableRec.Body.String())
+	}
+
+	values := jeepayWebhookValuesForTest(order, "MCH10001", "merchant-secret", "1250", order.TradeNo)
+	webhookReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/jeepay_alipay", strings.NewReader(values.Encode()))
+	webhookReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	webhookRec := httptest.NewRecorder()
+	handler.ServeHTTP(webhookRec, webhookReq)
+	if webhookRec.Code != http.StatusOK || webhookRec.Body.String() != "success" {
+		t.Fatalf("disabled provider must still accept a valid in-flight payment webhook, got %d body=%s", webhookRec.Code, webhookRec.Body.String())
+	}
+	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
+	if completed.Status != "completed" || completed.LedgerID == 0 || completed.TradeNo != order.TradeNo {
+		t.Fatalf("disabled provider webhook must complete the existing order exactly once, got %#v", completed)
 	}
 }
 
