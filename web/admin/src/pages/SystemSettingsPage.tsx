@@ -4,6 +4,7 @@ import { AdminTabs, EmptyBlock, PageHeader } from '../components'
 import { canAdmin } from '../types'
 import { adminPage } from '../ui/classes'
 import { ConfigPage } from './ConfigPage'
+import { AttachmentPolicyPage } from './AttachmentPolicyPage'
 import { SecurityConfigPage } from './SecurityConfigPage'
 import { StorageConfigPage } from './StorageConfigPage'
 import { TextModelsPage } from './TextModelsPage'
@@ -14,6 +15,7 @@ export { isSystemSettingsHash, systemSettingsTabFromHash } from './systemSetting
 const tabItems = [
   { id: 'general', label: '通用配置', description: '文档、公开内容和低风险运行参数', dangerous: false },
   { id: 'point-conversion', label: '积分换算', description: '每积分对应的人民币金额', dangerous: false },
+  { id: 'attachment-policy', label: '附件策略', description: '文件体积与格式限制', dangerous: false },
   { id: 'security', label: '安全配置', description: 'SMTP 与敏感安全项', dangerous: true },
   { id: 'storage', label: '存储配置', description: 'Local / S3 / R2 多实例存储', dangerous: true },
   { id: 'text-models', label: '文本模型', description: '提示词优化账号、模型与价格', dangerous: true },
@@ -27,8 +29,8 @@ export function SystemSettingsPage({
   onFeedback: (title: string, detail?: string) => void
 }) {
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>(() => systemSettingsTabFromHash(window.location.hash))
-  const [dirtyTabs, setDirtyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, security: false, storage: false, 'text-models': false })
-  const [busyTabs, setBusyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, security: false, storage: false, 'text-models': false })
+  const [dirtyTabs, setDirtyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, 'attachment-policy': false, security: false, storage: false, 'text-models': false })
+  const [busyTabs, setBusyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, 'attachment-policy': false, security: false, storage: false, 'text-models': false })
   const activeTabRef = useRef(activeTab)
   const dirtyTabsRef = useRef(dirtyTabs)
   const busyTabsRef = useRef(busyTabs)
@@ -81,10 +83,12 @@ export function SystemSettingsPage({
   }, [])
   const onGeneralDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('general', dirty), [updateDirtyTab])
   const onPointConversionDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('point-conversion', dirty), [updateDirtyTab])
+  const onAttachmentPolicyDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('attachment-policy', dirty), [updateDirtyTab])
   const onSecurityDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('security', dirty), [updateDirtyTab])
   const onStorageDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('storage', dirty), [updateDirtyTab])
   const onGeneralBusyChange = useCallback((busy: boolean) => updateBusyTab('general', busy), [updateBusyTab])
   const onPointConversionBusyChange = useCallback((busy: boolean) => updateBusyTab('point-conversion', busy), [updateBusyTab])
+  const onAttachmentPolicyBusyChange = useCallback((busy: boolean) => updateBusyTab('attachment-policy', busy), [updateBusyTab])
   const onSecurityBusyChange = useCallback((busy: boolean) => updateBusyTab('security', busy), [updateBusyTab])
   const onStorageBusyChange = useCallback((busy: boolean) => updateBusyTab('storage', busy), [updateBusyTab])
   const onTextModelsDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('text-models', dirty), [updateDirtyTab])
@@ -115,6 +119,7 @@ export function SystemSettingsPage({
           compact
         />
       ) : null}
+      {activeTab === 'attachment-policy' ? <AttachmentPolicyPage session={session} onFeedback={onFeedback} onDirtyChange={onAttachmentPolicyDirtyChange} onBusyChange={onAttachmentPolicyBusyChange} compact /> : null}
       {activeTab === 'security' && canManageDangerous ? <SecurityConfigPage onFeedback={onFeedback} onDirtyChange={onSecurityDirtyChange} onBusyChange={onSecurityBusyChange} compact /> : null}
       {activeTab === 'storage' && canManageDangerous ? <StorageConfigPage onFeedback={onFeedback} onDirtyChange={onStorageDirtyChange} onBusyChange={onStorageBusyChange} compact /> : null}
       {activeTab === 'text-models' && canManageDangerous ? <TextModelsPage onFeedback={onFeedback} onDirtyChange={onTextModelsDirtyChange} onBusyChange={onTextModelsBusyChange} /> : null}

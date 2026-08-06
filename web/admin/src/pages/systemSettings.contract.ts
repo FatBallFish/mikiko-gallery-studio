@@ -12,6 +12,12 @@ for (const parentContract of ['dirtyTabs', 'busyTabs', 'busyTabsRef', 'window.co
   }
 }
 
+for (const attachmentContract of ['AttachmentPolicyPage', "'attachment-policy'", 'onAttachmentPolicyDirtyChange', 'onAttachmentPolicyBusyChange']) {
+  if (!systemSettingsSource.includes(attachmentContract)) {
+    throw new Error(`system settings must integrate attachment policy with ${attachmentContract}`)
+  }
+}
+
 for (const editorContract of ['type ConfigEditorState', 'beforeunload', 'onDirtyChange', 'onBusyChange', 'switchConfigTab', 'if (saving) return', '当前类目存在未保存修改，放弃并切换吗？', 'data-admin-config-save-rail', 'InlineFeedback', 'saveError', 'disabled: saving', 'saving || !canEditActiveTab']) {
   if (!generalConfigSource.includes(editorContract)) {
     throw new Error(`general config editor must implement ${editorContract}`)
@@ -50,6 +56,7 @@ const tabCases = new Map([
   ['#/storage-settings', 'storage'],
   ['#/system-settings?tab=security', 'security'],
   ['#/system-settings?tab=storage', 'storage'],
+  ['#/system-settings?tab=attachment-policy', 'attachment-policy'],
 ])
 
 for (const [hash, expected] of tabCases) {
