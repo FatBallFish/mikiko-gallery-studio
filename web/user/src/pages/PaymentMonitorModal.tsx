@@ -7,7 +7,7 @@ import { userApi } from '../../../shared/user-api'
 import { Button, LoadingState, Modal, copyText } from '../components'
 import { errorMessage } from '../useApiResource'
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
-import { dispatchPaymentWindow, reservePaymentWindow } from './checkoutPaymentWindow'
+import { dispatchPaymentWindow, navigatePaymentWindow, reservePaymentWindow } from './checkoutPaymentWindow'
 import { checkoutMoney, checkoutOrderActionState, checkoutOrderRuntimeState, checkoutPaymentMethodLabel } from './checkoutOrderState'
 import { paymentMonitorAutoCloseDelay, shouldAutoClosePaymentMonitor } from './paymentMonitorState'
 
@@ -131,12 +131,12 @@ function PaymentDisplayPanel({ order, busy, onMockPay, onConfirmed }: { order: C
   const paymentHref = display.href ?? ''
   const openPayment = () => {
     const paymentWindow = reservePaymentWindow()
-    if (display.kind === 'form') {
+    if (display.kind === 'form' || display.kind === 'redirect') {
       dispatchPaymentWindow(paymentWindow, display)
       return
     }
     if (display.href && paymentWindow) {
-      paymentWindow.location.replace(display.href)
+      navigatePaymentWindow(paymentWindow, display.href, display.kind === 'qr_code')
       return
     }
     paymentWindow?.close()

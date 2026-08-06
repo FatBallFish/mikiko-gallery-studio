@@ -9,7 +9,7 @@ import { errorMessage } from '../useApiResource'
 import { checkoutPaymentMethodEmptyState, checkoutPlanEmptyState, checkoutUnavailableEmptyState, type CheckoutUnavailableEmptyState } from './checkoutEmptyState'
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import { checkoutPaymentErrorMessage } from './checkoutPaymentError'
-import { closePaymentWindow, dispatchPaymentWindow, reservePaymentWindow } from './checkoutPaymentWindow'
+import { closePaymentWindow, dispatchPaymentWindow, paymentMethodNeedsReservedWindow, reservePaymentWindow } from './checkoutPaymentWindow'
 import { checkoutCancelResultState, checkoutMoney, checkoutOrderActionState, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
 import { checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
@@ -147,7 +147,8 @@ export function CheckoutPage() {
       app.notify('error', normalizedCustomAmount.error ?? '请输入有效金额')
       return
     }
-    const paymentWindow = reservePaymentWindow()
+    const selectedPaymentMethod = methods.find((method) => method.method === selectedMethod)
+    const paymentWindow = paymentMethodNeedsReservedWindow(selectedPaymentMethod) ? reservePaymentWindow() : null
     setBusy(true)
     try {
       const nextOrder = await userApi.createCashierOrder({
