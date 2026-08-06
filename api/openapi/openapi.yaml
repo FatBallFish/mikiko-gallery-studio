@@ -886,6 +886,25 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/CashierOrderResponse
+  /api/agent/cashier/v1/orders/{order_id}/sync:
+    post:
+      tags: [Agent Cashier]
+      summary: Synchronize a cashier order with its payment provider
+      operationId: postAgentCashierOrderSync
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Current cashier order and sanitized provider sync result
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/CashierOrderSyncResponse
   /api/agent/cashier/v1/orders/{order_id}/mock-pay:
     post:
       tags: [Agent Cashier]

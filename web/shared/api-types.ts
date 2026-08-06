@@ -45,6 +45,7 @@ export const API_PATHS = {
     cashierOrders: '/api/agent/cashier/v1/orders',
     cashierOrderDetail: '/api/agent/cashier/v1/orders/{order_id}',
     cashierOrderCancel: '/api/agent/cashier/v1/orders/{order_id}/cancel',
+    cashierOrderSync: '/api/agent/cashier/v1/orders/{order_id}/sync',
     cashierOrderMockPay: '/api/agent/cashier/v1/orders/{order_id}/mock-pay',
     estimate: '/api/agent/billing/v1/estimate',
     promptOptimizationEstimate: '/api/agent/text/v1/prompt-optimizations/estimate',
@@ -465,6 +466,11 @@ export type CashierOrder = Omit<PaymentOrder, 'plan_id' | 'plan_code' | 'plan_na
   provider_type?: PaymentProviderType
   provider_instance_id?: ID
   payment_display?: PaymentDisplay
+}
+export type CashierOrderSyncResult = Omit<PaymentOrderSyncResult, 'raw'>
+export type CashierOrderSyncResponse = {
+  order: CashierOrder
+  sync: CashierOrderSyncResult
 }
 export type LedgerEntry = {
   id: ID

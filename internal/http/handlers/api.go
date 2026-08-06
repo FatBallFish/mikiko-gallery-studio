@@ -80,31 +80,32 @@ import (
 )
 
 type API struct {
-	auth       *authservice.Service
-	adminAuth  *adminauthservice.Service
-	apiKeys    *apikeyservice.Service
-	billing    *billingservice.Service
-	assets     *assetservice.Service
-	caps       *capserv.Service
-	compat     *compatservice.Service
-	tasks      *imagetaskservice.Service
-	admin      *adminconfigservice.Service
-	cashierCfg *cashierservice.ConfigFacade
-	adminUser  *adminuserservice.Service
-	callRecord *admincallrecordservice.Service
-	modelAdmin *modeladminservice.Service
-	textModels *textmodelservice.Service
-	promptOpt  *promptoptimizerservice.Service
-	secureCfg  *secureconfigservice.Service
-	storageCfg *storageconfigservice.Service
-	storageReg *storage.Registry
-	storagePub storage.InvalidationPublisher
-	redeem     *redeemservice.Service
-	audit      *auditservice.Service
-	cluster    *clusterservice.Service
-	adminPerms domainadminauth.PermissionResolver
-	docsReady  DocsReadinessChecker
-	cfg        config.Config
+	auth        *authservice.Service
+	adminAuth   *adminauthservice.Service
+	apiKeys     *apikeyservice.Service
+	billing     *billingservice.Service
+	assets      *assetservice.Service
+	caps        *capserv.Service
+	compat      *compatservice.Service
+	tasks       *imagetaskservice.Service
+	admin       *adminconfigservice.Service
+	cashierCfg  *cashierservice.ConfigFacade
+	adminUser   *adminuserservice.Service
+	callRecord  *admincallrecordservice.Service
+	modelAdmin  *modeladminservice.Service
+	textModels  *textmodelservice.Service
+	promptOpt   *promptoptimizerservice.Service
+	secureCfg   *secureconfigservice.Service
+	storageCfg  *storageconfigservice.Service
+	storageReg  *storage.Registry
+	storagePub  storage.InvalidationPublisher
+	redeem      *redeemservice.Service
+	audit       *auditservice.Service
+	cluster     *clusterservice.Service
+	adminPerms  domainadminauth.PermissionResolver
+	docsReady   DocsReadinessChecker
+	cashierSync cashierOrderSyncCoordinator
+	cfg         config.Config
 }
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
@@ -1396,6 +1397,13 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, result)
+	case r.Method == http.MethodPost && action == "sync":
+		result, syncErr := a.syncUserCashierOrder(r.Context(), user.ID, orderID)
+		if syncErr != nil {
+			httpx.WriteError(w, r, syncErr)
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, result)
 	case r.Method == http.MethodPost && action == "mock-pay":
 		if isProductionAppEnv(a.cfg.App.Env) {
 			httpx.WriteError(w, r, errs.New(http.StatusForbidden, errs.CodeForbidden, "mock payment is disabled in production"))
@@ -1428,6 +1436,54 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeMethodNotAllowed(w, r)
 	}
+}
+
+func (a *API) syncUserCashierOrder(ctx context.Context, userID, orderID int64) (adminCashierOrderSyncResponse, *errs.Error) {
+	order, err := a.billing.GetOrder(ctx, userID, orderID)
+	if err != nil {
+		return adminCashierOrderSyncResponse{}, normalizeAppError(err)
+	}
+	if order.Status == "completed" || order.Status == "paid" {
+		return adminCashierOrderSyncResponse{Order: order, Sync: cashierservice.QueryOrderStatusResult{
+			ProviderType: cashierOrderProviderType(order, cashierProviderInstance{}), ProviderInstanceID: order.ProviderInstanceID,
+			QueryStatus: "paid", Paid: true, Completed: true, TradeNo: order.TradeNo, AmountCNY: order.AmountCNY,
+			Message: "渠道订单已支付", SyncedAt: time.Now().UTC(),
+		}}, nil
+	}
+	instance, ok := a.cashierProviderInstanceForOrder(ctx, order)
+	if !ok {
+		return adminCashierOrderSyncResponse{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+	}
+	syncResult, syncErr := a.cashierSync.Do(ctx, order.ID, func(queryCtx context.Context) (adminCashierOrderSyncResult, *errs.Error) {
+		return a.queryCashierOrderStatus(queryCtx, order, instance)
+	})
+	if syncErr != nil {
+		return adminCashierOrderSyncResponse{}, syncErr
+	}
+	if syncResult.Paid {
+		completed, reconcileErr := a.reconcileCashierOrderFromProviderQuery(ctx, order, instance, syncResult)
+		if reconcileErr != nil {
+			return adminCashierOrderSyncResponse{}, reconcileErr
+		}
+		order = completed
+		syncResult.Completed = true
+	} else {
+		latest, latestErr := a.billing.GetOrder(ctx, userID, orderID)
+		if latestErr != nil {
+			return adminCashierOrderSyncResponse{}, normalizeAppError(latestErr)
+		}
+		order = latest
+		if order.Status == "completed" || order.Status == "paid" {
+			syncResult.QueryStatus = "paid"
+			syncResult.Paid = true
+			syncResult.Completed = true
+			syncResult.TradeNo = order.TradeNo
+			syncResult.AmountCNY = order.AmountCNY
+			syncResult.Message = "渠道订单已支付"
+		}
+	}
+	syncResult.Raw = nil
+	return adminCashierOrderSyncResponse{Order: order, Sync: syncResult}, nil
 }
 
 func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
