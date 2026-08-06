@@ -2577,9 +2577,21 @@ assert_cashier_order_state "$wxpay_limit_order_body" "pending" "10.00000" "20.00
 [[ "$(assert_json_field "$wxpay_limit_order_body" "data.provider_instance_id")" == "$WXPAY_LIMITED_PROVIDER_ID" ]]
 [[ "$(assert_json_field "$wxpay_limit_order_body" "data.payment_display.type")" == "qr_code" ]]
 
-wxpay_limit_cancel_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${WXPAY_LIMIT_ORDER_ID}/cancel" \
+wxpay_limit_cancel_status="$(curl --silent --output "$TMP_DIR/wxpay-limit-cancel.json" --write-out "%{http_code}" \
+  -X POST "$BASE_URL/api/agent/cashier/v1/orders/${WXPAY_LIMIT_ORDER_ID}/cancel" \
   -H "Authorization: Bearer $ACCESS_TOKEN")"
-assert_cashier_order_state "$wxpay_limit_cancel_body" "canceled" "10.00000" "20.00000" "no" >/dev/null
+[[ "$wxpay_limit_cancel_status" == "409" ]]
+[[ "$(assert_json_field "$(cat "$TMP_DIR/wxpay-limit-cancel.json")" "error.code")" == "PAYMENT_PROVIDER_UNAVAILABLE" ]]
+
+wxpay_limit_after_cancel_body="$(request "$BASE_URL/api/agent/cashier/v1/orders/${WXPAY_LIMIT_ORDER_ID}" \
+  -H "Authorization: Bearer $ACCESS_TOKEN")"
+assert_cashier_order_state "$wxpay_limit_after_cancel_body" "pending" "10.00000" "20.00000" "no" >/dev/null
+
+psql_exec -v payment_order_id="$WXPAY_LIMIT_ORDER_ID" <<'SQL'
+UPDATE payment_orders
+SET status = 'canceled', closed_at = CURRENT_TIMESTAMP
+WHERE id = :'payment_order_id' AND status = 'pending';
+SQL
 
 pending_limit_key="cashier-pending-limit-${SMOKE_ID}"
 pending_limit_first_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \

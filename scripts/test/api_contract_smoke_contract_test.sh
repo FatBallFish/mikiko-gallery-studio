@@ -73,6 +73,19 @@ for marker in \
 done
 
 for marker in \
+  'wxpay_limit_cancel_status=' \
+  '[[ "$wxpay_limit_cancel_status" == "409" ]]' \
+  'wxpay_limit_after_cancel_body=' \
+  'assert_cashier_order_state "$wxpay_limit_after_cancel_body" "pending"' \
+  'UPDATE payment_orders' \
+  "SET status = 'canceled', closed_at = CURRENT_TIMESTAMP"; do
+  if ! grep -Fq -- "$marker" "$SMOKE"; then
+    echo "API smoke does not preserve and clean up an uncertain WxPay cancellation: $marker" >&2
+    exit 1
+  fi
+done
+
+for marker in \
   'CONFIG_REVISION=1' \
   'CLUSTER_ENROLLMENT_SEAL_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
   'SMOKE_INSTALL_STATE_PATH="$TMP_DIR/install-state.json"' \
