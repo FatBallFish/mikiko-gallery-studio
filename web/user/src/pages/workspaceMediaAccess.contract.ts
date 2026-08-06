@@ -10,6 +10,10 @@ for (const required of [
   "mediaAccess.download({ kind: 'image', scope: 'private', id: image.id })",
   'userApi.importReferenceAssetsFromGallery([addition.item.id])',
   'onUseReference: (image: ImageResult) => Promise<void>',
+  'setGalleryImages((items) => items.map((image) => image.id === imageId',
+  'onMediaRefresh={() => onMediaRefresh(image.id)}',
+  'onMediaRefresh={() => refreshWorkspaceReference(asset.id)}',
+  'userApi.imageAssetUrl(projection.url, app.session?.token)',
 ]) {
   if (!workspace.includes(required)) {
     throw new Error(`workspace media access must include ${required}`)

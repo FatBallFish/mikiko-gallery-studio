@@ -5,13 +5,14 @@ import { userApi } from '../../../shared/user-api'
 import { cn } from '../../../shared/classnames'
 import { Button, EmptyState, ErrorState, GalleryFilterToolbar, GalleryImageFrame, ImageDetailModal, Modal, PublicDetailIcon, StatusPill, copyText, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
+import { mediaAccess } from '../mediaAccess'
 import { userForm, userState } from '../ui/classes'
 import { rdGallery } from '../ui/redesign-classes'
 import { Check, Copy, Download, Edit, FolderPlus, Globe, RotateCcw, Trash2, X } from '../ui/icons'
 import { stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot } from './workspaceCreationDraft'
 import { runGalleryBatch } from './galleryBatchActions'
 import { areAllVisibleGalleryItemsSelected, galleryImageAspect, selectVisibleGalleryImages, selectedVisibleGalleryItems, toggleGalleryImageSelection } from './galleryExperience'
-import { applyGalleryPage, galleryLoadingForReload, initialGalleryPageState, patchGalleryPageItems, removeGalleryPageItems } from './galleryPagination'
+import { applyGalleryPage, initialGalleryPageState, patchGalleryPageItems, removeGalleryPageItems } from './galleryPagination'
 import { filterGalleryImages, galleryImageCard, galleryPublishActionPresentation, galleryPublishStatus, type GalleryPublishActionPresentation } from './galleryRows'
 
 const GALLERY_PAGE_SIZE = 50
@@ -247,37 +248,6 @@ export function GalleryPage() {
     }
   }
 
-  async function reloadLoadedPages() {
-    const generation = ++loadGenerationRef.current
-    const reloadFlags = galleryLoadingForReload()
-    setLoading(reloadFlags.loading)
-    setLoadingMore(reloadFlags.loadingMore)
-    setLoadError('')
-    try {
-      const lastPage = Math.max(1, galleryPage.page)
-      let refreshed = initialGalleryPageState<GalleryImage>()
-      for (let pageNumber = 1; pageNumber <= lastPage; pageNumber += 1) {
-        const incoming = await userApi.listGalleryImages(pageNumber, GALLERY_PAGE_SIZE)
-        if (generation !== loadGenerationRef.current) return
-        refreshed = applyGalleryPage(refreshed, incoming, {
-          page: pageNumber,
-          pageSize: GALLERY_PAGE_SIZE,
-          mode: pageNumber === 1 ? 'replace' : 'append',
-        })
-        if (!refreshed.hasMore) break
-      }
-      setGalleryPage(refreshed)
-    } catch (err) {
-      if (generation === loadGenerationRef.current) {
-        const message = errorMessage(err)
-        setLoadError(message)
-        app.notify('error', message)
-      }
-    } finally {
-      if (generation === loadGenerationRef.current) setLoading(false)
-    }
-  }
-
   useEffect(() => {
     void loadPage(1, 'replace')
     return () => { loadGenerationRef.current += 1 }
@@ -418,16 +388,41 @@ export function GalleryPage() {
     app.navigate('genpic')
   }
 
-  function downloadImage(image?: Pick<GalleryImage, 'url' | 'download_url' | 'id'>) {
-    const url = image?.download_url ?? image?.url
-    if (!image || !url) return
-    const link = document.createElement('a')
-    link.href = assetUrl(url)
-    link.download = downloadFilename(image)
-    link.rel = 'noopener noreferrer'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+  async function refreshPrivateImage(imageId: string) {
+    const projection = await mediaAccess.preview({ kind: 'image', scope: 'private', id: imageId })
+    const refreshedURL = userApi.imageAssetUrl(projection.url, app.session?.token)
+    setGalleryPage((current) => ({
+      ...current,
+      items: current.items.map((image) => image.id === imageId ? { ...image, url: refreshedURL, download_url: refreshedURL, preview_expires_at: projection.expires_at } : image),
+    }))
+    setSelected((current) => current?.id === imageId ? { ...current, url: refreshedURL, download_url: refreshedURL, preview_expires_at: projection.expires_at } : current)
+    return refreshedURL
+  }
+
+  async function refreshReferenceAsset(assetId: string) {
+    const projection = await mediaAccess.preview({ kind: 'reference', scope: 'private', id: assetId })
+    const refreshedURL = userApi.imageAssetUrl(projection.url, app.session?.token)
+    setSelected((current) => current ? {
+      ...current,
+      reference_assets: current.reference_assets?.map((asset) => asset.id === assetId ? { ...asset, preview_url: refreshedURL, download_url: refreshedURL, preview_expires_at: projection.expires_at } : asset),
+    } : current)
+    return refreshedURL
+  }
+
+  async function downloadImage(image?: Pick<GalleryImage, 'url' | 'download_url' | 'id'>) {
+    if (!image) return
+    try {
+      const projection = await mediaAccess.download({ kind: 'image', scope: 'private', id: image.id })
+      const link = document.createElement('a')
+      link.href = userApi.imageAssetUrl(projection.url, app.session?.token)
+      link.download = downloadFilename(image)
+      link.rel = 'noopener noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch (error) {
+      app.notify('error', errorMessage(error))
+    }
   }
 
   function assetUrl(url: string) {
@@ -436,7 +431,7 @@ export function GalleryPage() {
 
   function downloadImages(images: GalleryImage[]) {
     images.forEach((image, index) => {
-      window.setTimeout(() => downloadImage(image), index * 120)
+      window.setTimeout(() => void downloadImage(image), index * 120)
     })
     app.notify('success', `已开始下载 ${images.length} 张图片`)
   }
@@ -569,11 +564,11 @@ export function GalleryPage() {
           app.notify('success', '提示词已复制')
         }}
         onReuse={reuseConfiguration}
-        onDownload={(image) => downloadImage(image)}
+        onDownload={(image) => void downloadImage(image)}
 			onPublish={handlePublishAction}
         onDelete={(image) => requestDeleteImages([image])}
         onGroup={(image) => openGroupDialog([image])}
-        onMediaRefresh={() => void reloadLoadedPages()}
+        onMediaRefresh={refreshPrivateImage}
       />
 
       <div ref={loadMoreRef} className="flex min-h-16 items-center justify-center py-4 text-sm text-[var(--muted)]" aria-live="polite">
@@ -590,7 +585,7 @@ export function GalleryPage() {
         imageUrl={selected?.url || selected?.download_url ? assetUrl(selected?.url || selected?.download_url || '') : undefined}
         referenceImages={(selected?.reference_assets ?? []).filter((asset) => asset.preview_url).map((asset) => {
           const url = assetUrl(asset.preview_url || '')
-          return { id: asset.id || asset.preview_url || url, url, alt: asset.name || '原图' }
+          return { id: asset.id || asset.preview_url || url, url, alt: asset.name || '原图', mediaExpiresAt: asset.preview_expires_at, onMediaRefresh: asset.id ? () => refreshReferenceAsset(asset.id) : undefined }
         })}
         showPublicStats={false}
         onCopyPrompt={async (prompt) => {
@@ -612,7 +607,7 @@ export function GalleryPage() {
           { key: 'delete', label: '删除图片', icon: <PublicDetailIcon name="delete" />, onClick: () => requestDeleteImages([selected]), tone: 'danger' },
         ] : []}
         previewSourceLabel="历史资产"
-        onMediaRefresh={() => void reloadLoadedPages()}
+        onMediaRefresh={selected ? () => refreshPrivateImage(selected.id) : undefined}
 		onClose={() => setSelected(null)}
 	/>
       {publishDialog ? (
@@ -692,7 +687,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
   onPublish: (image: GalleryImage) => void
   onDelete: (image: GalleryImage) => void
   onGroup: (image: GalleryImage) => void
-  onMediaRefresh: () => void | Promise<void>
+  onMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
 }) {
   return (
     <div className={galleryClasses.grid}>
@@ -703,13 +698,14 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
           <article key={image.id} className={galleryClasses.card}>
             <GalleryImageFrame
               src={card.assetPath ? userApi.imageAssetUrl(card.assetPath, accessToken) : undefined}
+              mediaExpiresAt={image.preview_expires_at}
               alt={card.title}
               width={image.width}
               height={image.height}
               aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
               selected={selectedIds.has(image.id)}
               onOpen={() => onOpen(image)}
-              onMediaRefresh={onMediaRefresh}
+              onMediaRefresh={() => onMediaRefresh(image.id)}
               imageClassName={galleryClasses.thumbImage}
               topAction={(
                 <button

@@ -5,6 +5,7 @@ import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, GalleryFilterToolbar, GalleryImageFrame, ImageDetailModal, PublicDetailIcon, copyText, publicDetailButton, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
+import { mediaAccess } from '../mediaAccess'
 import { ArrowRight, Image as ImageIcon, RefreshCw } from '../ui/icons'
 import { stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot } from './workspaceCreationDraft'
 import { galleryImageAspect } from './galleryExperience'
@@ -225,16 +226,26 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
     setDetailRetryVersion((current) => current + 1)
   }
 
-  function downloadImage(image: ImageResult) {
-    const url = image.download_url ?? image.url
-    if (!url) return
-    const link = document.createElement('a')
-    link.href = assetUrl(url)
-    link.download = downloadFilename(image)
-    link.rel = 'noopener noreferrer'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+  async function refreshPublicImage(imageId: string) {
+    const projection = await mediaAccess.preview({ kind: 'image', scope: 'public', id: imageId })
+    setRows((items) => items.map((item) => item.id === imageId ? { ...item, url: projection.url, download_url: projection.url, preview_expires_at: projection.expires_at } : item))
+    setSelected((current) => current?.id === imageId ? { ...current, url: projection.url, download_url: projection.url, preview_expires_at: projection.expires_at } : current)
+    return projection.url
+  }
+
+  async function downloadImage(image: ImageResult) {
+    try {
+      const projection = await mediaAccess.download({ kind: 'image', scope: 'public', id: image.id })
+      const link = document.createElement('a')
+      link.href = projection.url
+      link.download = downloadFilename(image)
+      link.rel = 'noopener noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch (error) {
+      app.notify('error', errorMessage(error))
+    }
   }
 
   return (
@@ -282,17 +293,18 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
               <article key={image.id} className={publicGalleryClasses.card}>
                 <GalleryImageFrame
                   src={imagePath ? assetUrl(imagePath) : undefined}
+                  mediaExpiresAt={image.preview_expires_at}
                   alt={card.title || image.id}
                   width={image.width}
                   height={image.height}
                   aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
                   onOpen={() => void openDetail(image)}
-                  onMediaRefresh={() => void loadPage(1, 'replace')}
+                  onMediaRefresh={() => refreshPublicImage(image.id)}
                   actions={<div className={publicGalleryClasses.iconActions}>
                     {publicDetailButton('查看详情', <PublicDetailIcon name="eye" />, () => void openDetail(image), '', busyId === `detail:${image.id}`)}
                     {publicDetailButton(`点赞 ${image.like_count ?? 0}`, <PublicDetailIcon name="heart" active={image.liked_by_viewer} />, () => void toggleReaction(image, 'like'), image.liked_by_viewer ? 'liked' : '', busyId === `like:${image.id}`)}
                     {publicDetailButton(`收藏 ${image.favorite_count ?? 0}`, <PublicDetailIcon name="star" active={image.favorited_by_viewer} />, () => void toggleReaction(image, 'favorite'), image.favorited_by_viewer ? 'favorited' : '', busyId === `favorite:${image.id}`)}
-                    {publicDetailButton('下载', <PublicDetailIcon name="download" />, () => downloadImage(image), '', !imagePath)}
+                    {publicDetailButton('下载', <PublicDetailIcon name="download" />, () => void downloadImage(image), '', !imagePath)}
                   </div>}
                 />
                 <div className={publicGalleryClasses.info}>
@@ -316,11 +328,11 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
         imageUrl={selected?.url || selected?.download_url ? assetUrl(selected?.url || selected?.download_url || '') : undefined}
         onLike={(image) => void toggleReaction(image as ImageResult, 'like')}
         onFavorite={(image) => void toggleReaction(image as ImageResult, 'favorite')}
-        onDownload={(image) => downloadImage(image as ImageResult)}
+        onDownload={(image) => void downloadImage(image as ImageResult)}
         onCopyPrompt={(prompt) => void copyPrompt(prompt)}
         actions={selected ? [{ key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: () => reuseConfiguration(selected), disabled: !selected.prompt }] : []}
         previewSourceLabel="公开广场"
-        onMediaRefresh={() => void loadPage(1, 'replace')}
+        onMediaRefresh={selected ? () => refreshPublicImage(selected.id) : undefined}
         onClose={() => setSelected(null)}
       />
     </main>

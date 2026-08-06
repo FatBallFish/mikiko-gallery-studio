@@ -1,42 +1,88 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ImgHTMLAttributes } from 'react'
 import { isAbsoluteHTTPMediaURL } from '../../../shared/media-url'
+import { mediaRefreshDelay, mediaRefreshRetry, temporaryMediaExpiryFromURL } from './mediaRefreshState'
 
-export function useMediaRefreshOnce(src: string | undefined, onMediaRefresh?: () => void | Promise<void>) {
+export type MediaRefreshHandler = () => string | undefined | void | Promise<string | undefined | void>
+
+export function useMediaRefreshOnce(src: string | undefined, onMediaRefresh?: MediaRefreshHandler, expiresAt?: string, proactiveRefresh = false) {
+  const [currentSrc, setCurrentSrc] = useState(src)
+  const [currentExpiresAt, setCurrentExpiresAt] = useState(expiresAt ?? temporaryMediaExpiryFromURL(src))
+  const [retryRevision, setRetryRevision] = useState(0)
   const attemptedRef = useRef(false)
+  const currentSrcRef = useRef(currentSrc)
   const refreshRef = useRef(onMediaRefresh)
+  currentSrcRef.current = currentSrc
   refreshRef.current = onMediaRefresh
+
+  useEffect(() => {
+    setCurrentSrc(src)
+    setCurrentExpiresAt(expiresAt ?? temporaryMediaExpiryFromURL(src))
+    setRetryRevision(0)
+    attemptedRef.current = false
+  }, [expiresAt, src])
 
   const markMediaLoaded = useCallback(() => {
     attemptedRef.current = false
   }, [])
 
-  const refreshFailedMedia = useCallback(() => {
-    if (attemptedRef.current || !src || !isAbsoluteHTTPMediaURL(src)) return false
-    attemptedRef.current = true
-    const refresh = refreshRef.current
-    if (refresh) void Promise.resolve(refresh()).catch(() => undefined)
-    return Boolean(refresh)
-  }, [src])
+  const resetMediaRefresh = useCallback(() => {
+    attemptedRef.current = false
+  }, [])
 
-  return { markMediaLoaded, refreshFailedMedia }
+  const refreshFailedMedia = useCallback(async () => {
+    const failedSrc = currentSrcRef.current
+    const refresh = refreshRef.current
+    if (attemptedRef.current || !failedSrc || !isAbsoluteHTTPMediaURL(failedSrc) || !refresh) return false
+    attemptedRef.current = true
+    try {
+      const nextSrc = await Promise.resolve(refresh())
+      const retry = mediaRefreshRetry(failedSrc, nextSrc, currentSrcRef.current)
+      if (retry.kind === 'replace') {
+        setCurrentSrc(retry.src)
+        setCurrentExpiresAt(temporaryMediaExpiryFromURL(retry.src))
+      } else if (retry.kind === 'reload') {
+        setRetryRevision((current) => current + 1)
+      } else {
+        attemptedRef.current = false
+        return false
+      }
+      return true
+    } catch {
+      attemptedRef.current = false
+      return false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!proactiveRefresh || currentSrc !== src || !refreshRef.current || !currentSrc || !isAbsoluteHTTPMediaURL(currentSrc)) return undefined
+    const delay = mediaRefreshDelay(currentExpiresAt)
+    if (delay === null) return undefined
+    const timer = window.setTimeout(() => { void refreshFailedMedia() }, delay)
+    return () => window.clearTimeout(timer)
+  }, [currentExpiresAt, currentSrc, expiresAt, proactiveRefresh, refreshFailedMedia, src])
+
+  return { currentSrc, mediaRetryKey: retryRevision, markMediaLoaded, refreshFailedMedia, resetMediaRefresh }
 }
 
-export function RefreshableMediaImage({ src, onMediaRefresh, onLoad, onError, ...props }: ImgHTMLAttributes<HTMLImageElement> & {
-  onMediaRefresh?: () => void | Promise<void>
+export function RefreshableMediaImage({ src, mediaExpiresAt, onMediaRefresh, onLoad, onError, ...props }: ImgHTMLAttributes<HTMLImageElement> & {
+  mediaExpiresAt?: string
+  onMediaRefresh?: MediaRefreshHandler
 }) {
-  const { markMediaLoaded, refreshFailedMedia } = useMediaRefreshOnce(src, onMediaRefresh)
+  const { currentSrc, mediaRetryKey, markMediaLoaded, refreshFailedMedia } = useMediaRefreshOnce(src, onMediaRefresh, mediaExpiresAt)
   return (
     <img
+      key={mediaRetryKey}
       {...props}
-      src={src}
+      src={currentSrc}
       onLoad={(event) => {
         markMediaLoaded()
         onLoad?.(event)
       }}
       onError={(event) => {
-        refreshFailedMedia()
-        onError?.(event)
+        void refreshFailedMedia().then((refreshed) => {
+          if (!refreshed) onError?.(event)
+        })
       }}
     />
   )

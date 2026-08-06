@@ -231,7 +231,7 @@ export function AttachmentPolicyPage({
                         <input
                           type="number"
                           min="1"
-                          max="10240"
+                          max={attachmentPolicyMaxMB(field.kind)}
                           value={String(draft[field.key as AttachmentSizeKey])}
                           disabled={saving || !canEdit}
                           onChange={(event) => updateField(field, event.target.value)}
@@ -309,7 +309,8 @@ export function validateAttachmentPolicyDraft(draft: AttachmentPolicyDraft): Par
   for (const field of attachmentPolicyFieldDefinitions) {
     if (field.control === 'number') {
       const value = draft[field.key as AttachmentSizeKey]
-      if (!Number.isInteger(value) || value < 1 || value > 10240) errors[field.key] = '请输入 1-10240 之间的整数 MB。'
+      const maxMB = attachmentPolicyMaxMB(field.kind)
+      if (!Number.isInteger(value) || value < 1 || value > maxMB) errors[field.key] = `请输入 1-${maxMB} 之间的整数 MB。`
       continue
     }
     const formats = normalizeAttachmentFormats(draft[field.key as AttachmentFormatsKey])
@@ -326,6 +327,10 @@ export function validateAttachmentPolicyDraft(draft: AttachmentPolicyDraft): Par
     }
   }
   return errors
+}
+
+export function attachmentPolicyMaxMB(kind: AttachmentKind) {
+  return kind === 'image' ? 100 : 10240
 }
 
 export function attachmentPolicyIsDirty(baseline: AttachmentPolicyDraft, draft: AttachmentPolicyDraft) {

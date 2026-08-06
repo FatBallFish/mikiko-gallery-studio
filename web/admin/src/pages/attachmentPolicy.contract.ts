@@ -4,6 +4,7 @@ import {
   attachmentPolicyDefaults,
   attachmentPolicyFieldDefinitions,
   attachmentPolicyIsDirty,
+  attachmentPolicyMaxMB,
   normalizeAttachmentFormats,
   validateAttachmentPolicyDraft,
 } from './AttachmentPolicyPage'
@@ -44,6 +45,15 @@ if (!validateAttachmentPolicyDraft({ ...validDraft, image_allowed_formats: ['png
 if (!validateAttachmentPolicyDraft({ ...validDraft, video_max_mb: 0 }).video_max_mb) {
   throw new Error('attachment sizes must reject zero')
 }
+if (!validateAttachmentPolicyDraft({ ...validDraft, image_max_mb: 101 }).image_max_mb) {
+  throw new Error('image attachment size must match the backend 100 MB hard limit')
+}
+if (validateAttachmentPolicyDraft({ ...validDraft, video_max_mb: 101 }).video_max_mb) {
+  throw new Error('reserved non-image attachment sizes may remain above the image hard limit')
+}
+if (attachmentPolicyMaxMB('image') !== 100 || attachmentPolicyMaxMB('video') !== 10240) {
+  throw new Error('attachment input maxima must distinguish active image policy from reserved types')
+}
 if (attachmentPolicyIsDirty(validDraft, { ...validDraft })) {
   throw new Error('equal attachment policy drafts must remain pristine')
 }
@@ -52,6 +62,6 @@ if (!attachmentPolicyIsDirty(validDraft, { ...validDraft, image_max_mb: 21 })) {
 }
 
 const source = readFileSync(new URL('./AttachmentPolicyPage.tsx', import.meta.url), 'utf8')
-for (const contract of ['onDirtyChange', 'onBusyChange', 'beforeunload', "updateConfigTab('attachment_policy'", '仅图片策略当前生效', '预留配置', '保存附件策略']) {
+for (const contract of ['onDirtyChange', 'onBusyChange', 'beforeunload', "updateConfigTab('attachment_policy'", 'max={attachmentPolicyMaxMB(field.kind)}', '仅图片策略当前生效', '预留配置', '保存附件策略']) {
   if (!source.includes(contract)) throw new Error(`attachment policy editor must implement ${contract}`)
 }

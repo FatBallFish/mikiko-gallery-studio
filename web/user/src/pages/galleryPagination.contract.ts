@@ -5,7 +5,7 @@ if (!existsSync(modelURL)) {
   throw new Error('private gallery needs an executable paginated collection model')
 }
 
-const { applyGalleryPage, galleryLoadingForReload, initialGalleryPageState, patchGalleryPageItems, removeGalleryPageItems } = await import('./galleryPagination')
+const { applyGalleryPage, initialGalleryPageState, patchGalleryPageItems, removeGalleryPageItems } = await import('./galleryPagination')
 
 type Asset = { id: string; label: string }
 const assets = (start: number, count: number): Asset[] => Array.from(
@@ -29,11 +29,6 @@ if (state.items.length !== 1 || state.items[0]?.id !== 'replacement' || state.pa
   throw new Error(`replace mode must reset stale pages, got ${JSON.stringify(state)}`)
 }
 
-const reloadFlags = galleryLoadingForReload()
-if (!reloadFlags.loading || reloadFlags.loadingMore) {
-  throw new Error(`reload must take ownership and clear stale append loading, got ${JSON.stringify(reloadFlags)}`)
-}
-
 const localPage = applyGalleryPage(initialGalleryPageState<Asset>(), assets(1, 3), { page: 1, pageSize: 50, mode: 'replace' })
 const patchedPage = patchGalleryPageItems(localPage, [{ id: 'asset-2', label: 'Updated' }])
 if (patchedPage === localPage || patchedPage.page !== localPage.page || patchedPage.hasMore !== localPage.hasMore) {
@@ -55,7 +50,6 @@ for (const contract of [
   'loadMoreRef',
   'IntersectionObserver',
   '加载更多资产',
-  'setLoadingMore(reloadFlags.loadingMore)',
   'patchGalleryPageItems',
   'removeGalleryPageItems',
   'publishConfirm',
@@ -66,7 +60,7 @@ for (const contract of [
   }
 }
 
-if (pageSource.includes('await reloadLoadedPages()')) {
+if (pageSource.includes('reloadLoadedPages')) {
   throw new Error('gallery mutations must patch local state instead of reloading every loaded page')
 }
 
