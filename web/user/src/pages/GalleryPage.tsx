@@ -7,12 +7,12 @@ import { Button, EmptyState, ErrorState, GalleryFilterToolbar, GalleryImageFrame
 import { errorMessage } from '../useApiResource'
 import { userForm, userState } from '../ui/classes'
 import { rdGallery } from '../ui/redesign-classes'
-import { Check, Copy, Download, Edit, FolderPlus, Globe, Trash2 } from '../ui/icons'
+import { Check, Copy, Download, Edit, FolderPlus, Globe, RotateCcw, Trash2, X } from '../ui/icons'
 import { stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot } from './workspaceCreationDraft'
 import { runGalleryBatch } from './galleryBatchActions'
 import { areAllVisibleGalleryItemsSelected, galleryImageAspect, selectVisibleGalleryImages, selectedVisibleGalleryItems, toggleGalleryImageSelection } from './galleryExperience'
-import { applyGalleryPage, galleryLoadingForReload, initialGalleryPageState } from './galleryPagination'
-import { filterGalleryImages, galleryImageCard } from './galleryRows'
+import { applyGalleryPage, galleryLoadingForReload, initialGalleryPageState, patchGalleryPageItems, removeGalleryPageItems } from './galleryPagination'
+import { filterGalleryImages, galleryImageCard, galleryPublishActionPresentation, galleryPublishStatus, type GalleryPublishActionPresentation } from './galleryRows'
 
 const GALLERY_PAGE_SIZE = 50
 
@@ -47,7 +47,15 @@ const galleryClasses = {
   groupLabel: 'inline-flex items-center rounded-full border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_7%,transparent)] px-2.5 py-1 font-vault-mono text-[10px] text-[var(--muted)]',
   iconActions: 'flex flex-wrap items-center justify-end gap-1 rounded-xl border border-[var(--image-action-border)] bg-[var(--image-action-bg)] p-1 backdrop-blur',
   iconButton: 'grid size-10 place-items-center rounded-lg p-1 text-[var(--image-action-text)] transition-colors hover:bg-[var(--image-action-hover-bg)] hover:text-[var(--image-action-hover-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:size-4',
+  iconButtonPositive: 'hover:border-[var(--accent-emerald)] hover:bg-[color-mix(in_oklch,var(--accent-emerald)_12%,transparent)] hover:text-[var(--accent-emerald)]',
+  iconButtonWarning: 'hover:border-[var(--pg-accent-amber)] hover:bg-[color-mix(in_oklch,var(--pg-accent-amber)_12%,transparent)] hover:text-[var(--pg-accent-amber)]',
   iconButtonDanger: 'hover:border-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_12%,transparent)] hover:text-[var(--accent-coral)]',
+  publishConfirm: 'grid min-w-0 gap-5',
+  publishConfirmBody: 'grid min-w-0 grid-cols-[42px_minmax(0,1fr)] items-start gap-4 max-[420px]:grid-cols-1',
+  publishConfirmMark: 'grid size-[42px] place-items-center rounded-xl border border-[color-mix(in_oklch,var(--pg-accent-amber)_42%,var(--border))] bg-[color-mix(in_oklch,var(--pg-accent-amber)_14%,transparent)] text-[var(--pg-accent-amber)]',
+  publishConfirmMarkDanger: 'border-[color-mix(in_oklch,var(--accent-coral)_42%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_14%,transparent)] text-[var(--accent-coral)]',
+  publishConfirmCopy: 'min-w-0',
+  publishConfirmActions: 'flex justify-end gap-2 max-[420px]:flex-col max-[420px]:items-stretch',
   deleteConfirm: 'grid grid-cols-[42px_minmax(0,1fr)] items-start gap-4',
   deleteMark: 'grid size-[42px] place-items-center rounded-xl border border-[color-mix(in_oklch,var(--accent-coral)_42%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_14%,transparent)] text-[var(--accent-coral)]',
   deleteTitle: 'm-0 mb-2 text-xl',
@@ -151,11 +159,33 @@ function ActionIcon({ name }: { name: 'download' | 'public' | 'delete' | 'edit' 
   return <FolderPlus {...props} />
 }
 
-function iconButton(label: string, icon: ReactNode, onClick: () => void, disabled?: boolean, busy?: boolean, tone = '') {
+function PublishActionIcon({ icon }: { icon: GalleryPublishActionPresentation['icon'] }) {
+  const props = { size: 14, strokeWidth: 1.5 } as const
+  if (icon === 'withdraw') return <RotateCcw {...props} />
+  if (icon === 'unpublish') return <X {...props} />
+  return <Globe {...props} />
+}
+
+function publishActionPresentation(image: GalleryImage) {
+  return galleryPublishActionPresentation(galleryPublishStatus(image), Boolean(image.url || image.download_url))
+}
+
+function publishActionDetailTone(tone: GalleryPublishActionPresentation['tone']) {
+  if (tone === 'danger') return 'danger'
+  if (tone === 'warning') return 'hover:border-[var(--pg-accent-amber)] hover:bg-[color-mix(in_oklch,var(--pg-accent-amber)_12%,transparent)] hover:text-[var(--pg-accent-amber)]'
+  return 'hover:border-[var(--accent-emerald)] hover:bg-[color-mix(in_oklch,var(--accent-emerald)_12%,transparent)] hover:text-[var(--accent-emerald)]'
+}
+
+function iconButton(label: string, icon: ReactNode, onClick: () => void, disabled?: boolean, busy?: boolean, tone?: GalleryPublishActionPresentation['tone'] | 'danger') {
   return (
     <button
       type="button"
-      className={cn(galleryClasses.iconButton, tone === 'danger' && galleryClasses.iconButtonDanger)}
+      className={cn(
+        galleryClasses.iconButton,
+        tone === 'positive' && galleryClasses.iconButtonPositive,
+        tone === 'warning' && galleryClasses.iconButtonWarning,
+        tone === 'danger' && galleryClasses.iconButtonDanger,
+      )}
       title={label}
       aria-label={label}
       disabled={disabled || busy}
@@ -294,13 +324,23 @@ export function GalleryPage() {
   const selectedImages = useMemo(() => selectedVisibleGalleryItems(filtered, selectedIds), [filtered, selectedIds])
   const allVisibleSelected = useMemo(() => areAllVisibleGalleryItemsSelected(filtered, selectedIds), [filtered, selectedIds])
 
+  function patchImages(updates: GalleryImage[]) {
+    if (!updates.length) return
+    setGalleryPage((current) => patchGalleryPageItems(current, updates))
+    const updatesByID = new Map(updates.map((image) => [image.id, image]))
+    setSelected((current) => {
+      if (!current) return current
+      const update = updatesByID.get(current.id)
+      return update ? { ...current, ...update } : current
+    })
+  }
+
   async function publishImage(image: GalleryImage) {
 	setBusyId(image.id)
 	try {
-		const updated = await userApi.publishImage(image.id)
-		setSelected((current) => current?.id === updated.id ? { ...current, ...updated } : current)
+      const updated = await userApi.publishImage(image.id)
+      patchImages([updated])
       app.notify('success', '已提交公开审核')
-      await reloadLoadedPages()
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -322,10 +362,9 @@ export function GalleryPage() {
     setBusyId(publishDialog.image.id)
     try {
       const updated = await userApi.cancelImagePublish(publishDialog.image.id)
-      setSelected((current) => current?.id === updated.id ? { ...current, ...updated } : current)
+      patchImages([updated])
       setPublishDialog(null)
       app.notify('success', publishDialog.label === '取消公开' ? '已取消公开' : '已取消公开申请')
-      await reloadLoadedPages()
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -343,7 +382,7 @@ export function GalleryPage() {
         return
       }
       const result = await runGalleryBatch(requestable, (image) => userApi.publishImage(image.id))
-      await reloadLoadedPages()
+      patchImages(result.succeeded.map(({ value }) => value))
       const succeeded = new Set(result.succeeded.map(({ item }) => item.id))
       clearSucceededSelection(succeeded)
       reportGalleryBatchResult('提交公开审核', result.succeeded.length, result.failed.length)
@@ -363,9 +402,10 @@ export function GalleryPage() {
     setBusyId(images.length === 1 ? images[0].id : 'batch')
     try {
       const result = await runGalleryBatch(images, (image) => userApi.deleteGalleryImage(image.id))
-      await reloadLoadedPages()
       const succeeded = new Set(result.succeeded.map(({ item }) => item.id))
+      setGalleryPage((current) => removeGalleryPageItems(current, succeeded))
       clearSucceededSelection(succeeded)
+      setSelected((current) => current && succeeded.has(current.id) ? null : current)
       setDeleteDialog(result.failed.length ? { images: result.failed.map(({ item }) => item) } : null)
       reportGalleryBatchResult('永久删除', result.succeeded.length, result.failed.length)
     } finally {
@@ -428,7 +468,7 @@ export function GalleryPage() {
     setBusyId('group')
     try {
       const result = await runGalleryBatch(groupDialog.ids, (id) => userApi.updateGalleryImageGroup(id, name))
-      await reloadLoadedPages()
+      patchImages(result.succeeded.map(({ value }) => value))
       const succeeded = new Set(result.succeeded.map(({ item }) => item))
       clearSucceededSelection(succeeded)
       setGroupDialog(result.failed.length ? { ids: result.failed.map(({ item }) => item) } : null)
@@ -441,7 +481,6 @@ export function GalleryPage() {
 
   function clearSucceededSelection(succeeded: ReadonlySet<string>) {
     setSelectedIds((current) => new Set(Array.from(current).filter((id) => !succeeded.has(id))))
-    setSelected((current) => current && succeeded.has(current.id) ? null : current)
   }
 
   function reportGalleryBatchResult(action: string, succeeded: number, failed: number) {
@@ -558,10 +597,17 @@ export function GalleryPage() {
           await copyText(prompt)
           app.notify('success', 'Prompt 已复制')
         }}
-		actions={selected ? [
+        actions={selected ? [
           { key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: () => reuseConfiguration(selected) },
           { key: 'download', label: '下载图片', icon: <PublicDetailIcon name="download" />, onClick: () => downloadImage(selected), disabled: !selected.url && !selected.download_url },
-			{ key: 'public', label: galleryImageCard(selected).publishActionLabel, icon: <PublicDetailIcon name="public" />, onClick: () => handlePublishAction(selected), disabled: !galleryImageCard(selected).canPublish },
+          {
+            key: 'public',
+            label: publishActionPresentation(selected).label,
+            icon: <PublishActionIcon icon={publishActionPresentation(selected).icon} />,
+            onClick: () => handlePublishAction(selected),
+            disabled: !galleryImageCard(selected).canPublish,
+            tone: publishActionDetailTone(publishActionPresentation(selected).tone),
+          },
           { key: 'group', label: '设置分组', icon: <PublicDetailIcon name="group" />, onClick: () => openGroupDialog([selected]) },
           { key: 'delete', label: '删除图片', icon: <PublicDetailIcon name="delete" />, onClick: () => requestDeleteImages([selected]), tone: 'danger' },
         ] : []}
@@ -569,20 +615,27 @@ export function GalleryPage() {
         onMediaRefresh={() => void reloadLoadedPages()}
 		onClose={() => setSelected(null)}
 	/>
-	{publishDialog ? (
-		<Modal title={publishDialog.label} onClose={() => setPublishDialog(null)}>
-			<div className={galleryClasses.deleteConfirm}>
-				<div>
-					<h3 className={galleryClasses.deleteTitle}>确认{publishDialog.label}？</h3>
-					<p className={galleryClasses.deleteText}>{publishDialog.label === '取消公开' ? '图片将立即从公开画廊移除，并恢复为私有状态。' : '图片将从审核队列移除，并恢复为私有状态。'}</p>
-				</div>
-				<div className={galleryClasses.deleteActions}>
-					<Button tone="ghost" onClick={() => setPublishDialog(null)} disabled={busyId === publishDialog.image.id}>返回</Button>
-					<Button tone="danger" busy={busyId === publishDialog.image.id} onClick={() => void confirmCancelPublish()}>确认</Button>
-				</div>
-			</div>
-		</Modal>
-	) : null}
+      {publishDialog ? (
+        <Modal title={publishDialog.label} onClose={() => setPublishDialog(null)}>
+          <div className={galleryClasses.publishConfirm}>
+            <div className={galleryClasses.publishConfirmBody}>
+              <div className={cn(galleryClasses.publishConfirmMark, publishDialog.label === '取消公开' && galleryClasses.publishConfirmMarkDanger)}>
+                <PublishActionIcon icon={publishDialog.label === '取消公开' ? 'unpublish' : 'withdraw'} />
+              </div>
+              <div className={galleryClasses.publishConfirmCopy}>
+                <h3 className={galleryClasses.deleteTitle}>确认{publishDialog.label}？</h3>
+                <p className={galleryClasses.deleteText}>{publishDialog.label === '取消公开' ? '图片将立即从公开画廊移除，并恢复为私有状态。' : '图片将从审核队列移除，并恢复为私有状态。'}</p>
+              </div>
+            </div>
+            <div className={galleryClasses.publishConfirmActions}>
+              <Button tone="ghost" onClick={() => setPublishDialog(null)} disabled={busyId === publishDialog.image.id}>暂不取消</Button>
+              <Button tone={publishDialog.label === '取消公开' ? 'danger' : 'primary'} busy={busyId === publishDialog.image.id} onClick={() => void confirmCancelPublish()}>
+                {publishDialog.label === '取消公开' ? '确认取消公开' : '确认取消申请'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
       {deleteDialog ? (
         <Modal title="永久删除图片" onClose={() => setDeleteDialog(null)}>
           <div className={galleryClasses.deleteConfirm}>
@@ -645,6 +698,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
     <div className={galleryClasses.grid}>
       {rows.map((image) => {
         const card = galleryImageCard(image)
+        const publishAction = publishActionPresentation(image)
         return (
           <article key={image.id} className={galleryClasses.card}>
             <GalleryImageFrame
@@ -675,7 +729,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
                 {iconButton('复制提示词', <ActionIcon name="copy" />, () => void onCopyPrompt(image), !card.prompt)}
                 {iconButton('复用配置', <ActionIcon name="edit" />, () => onReuse(image))}
                 {iconButton('下载', <ActionIcon name="download" />, () => onDownload(image), !card.canDownload)}
-                {iconButton(card.publishActionLabel, <ActionIcon name="public" />, () => onPublish(image), !card.canPublish, busyId === image.id)}
+                {iconButton(publishAction.label, <PublishActionIcon icon={publishAction.icon} />, () => onPublish(image), !card.canPublish, busyId === image.id, publishAction.tone)}
                 {iconButton('设置分组', <ActionIcon name="group" />, () => onGroup(image))}
                 {iconButton('删除', <ActionIcon name="delete" />, () => onDelete(image), false, busyId === image.id, 'danger')}
               </div>}

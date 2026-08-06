@@ -5,7 +5,7 @@ if (!existsSync(modelURL)) {
   throw new Error('private gallery needs an executable paginated collection model')
 }
 
-const { applyGalleryPage, galleryLoadingForReload, initialGalleryPageState } = await import('./galleryPagination')
+const { applyGalleryPage, galleryLoadingForReload, initialGalleryPageState, patchGalleryPageItems, removeGalleryPageItems } = await import('./galleryPagination')
 
 type Asset = { id: string; label: string }
 const assets = (start: number, count: number): Asset[] => Array.from(
@@ -34,6 +34,19 @@ if (!reloadFlags.loading || reloadFlags.loadingMore) {
   throw new Error(`reload must take ownership and clear stale append loading, got ${JSON.stringify(reloadFlags)}`)
 }
 
+const localPage = applyGalleryPage(initialGalleryPageState<Asset>(), assets(1, 3), { page: 1, pageSize: 50, mode: 'replace' })
+const patchedPage = patchGalleryPageItems(localPage, [{ id: 'asset-2', label: 'Updated' }])
+if (patchedPage === localPage || patchedPage.page !== localPage.page || patchedPage.hasMore !== localPage.hasMore) {
+  throw new Error('local patch must preserve pagination metadata while replacing page state')
+}
+if (patchedPage.items[0] !== localPage.items[0] || patchedPage.items[2] !== localPage.items[2] || patchedPage.items[1]?.label !== 'Updated') {
+  throw new Error('local page patch must preserve untouched image identity')
+}
+const removedPage = removeGalleryPageItems(patchedPage, new Set(['asset-2']))
+if (removedPage.items.length !== 2 || removedPage.items[0] !== localPage.items[0] || removedPage.items[1] !== localPage.items[2]) {
+  throw new Error('local page removal must remove only successful IDs')
+}
+
 const pageSource = readFileSync(new URL('./GalleryPage.tsx', import.meta.url), 'utf8')
 for (const contract of [
   'userApi.listGalleryImages(pageNumber, GALLERY_PAGE_SIZE)',
@@ -43,10 +56,22 @@ for (const contract of [
   'IntersectionObserver',
   '加载更多资产',
   'setLoadingMore(reloadFlags.loadingMore)',
+  'patchGalleryPageItems',
+  'removeGalleryPageItems',
+  'publishConfirm',
+  'PublishActionIcon',
 ]) {
   if (!pageSource.includes(contract)) {
     throw new Error(`private gallery pagination must expose ${contract}`)
   }
+}
+
+if (pageSource.includes('await reloadLoadedPages()')) {
+  throw new Error('gallery mutations must patch local state instead of reloading every loaded page')
+}
+
+if (pageSource.includes('var(--accent-amber)')) {
+  throw new Error('gallery warning actions must use the defined --pg-accent-amber theme token')
 }
 
 if (!pageSource.includes('type="button"') || !pageSource.includes('aria-label="加载更多资产"')) {

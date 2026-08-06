@@ -29,6 +29,13 @@ export type AssetCardModel = {
 }
 export type GalleryImageCardModel = AssetCardModel
 
+export type GalleryPublishActionPresentation = {
+  action: 'request' | 'cancel' | null
+  label: string
+  icon: 'publish' | 'withdraw' | 'unpublish'
+  tone: 'positive' | 'warning' | 'danger'
+}
+
 const publishLabels: Record<string, string> = {
   private: '私有',
   public: '已公开',
@@ -69,6 +76,25 @@ export function galleryImageCard(image: GalleryImage): GalleryImageCardModel {
 		publishAction,
     publishActionLabel: galleryPublishActionLabel(publishStatus, hasAsset),
   }
+}
+
+export function patchGalleryItems<T extends { id: string }>(items: T[], patches: T[]) {
+  if (!patches.length) return items
+  const patchesByID = new Map(patches.map((patch) => [patch.id, patch]))
+  let changed = false
+  const next = items.map((item) => {
+    const patch = patchesByID.get(item.id)
+    if (!patch) return item
+    changed = true
+    return { ...item, ...patch }
+  })
+  return changed ? next : items
+}
+
+export function removeGalleryItems<T extends { id: string }>(items: T[], removedIDs: ReadonlySet<string>) {
+  if (!removedIDs.size) return items
+  const next = items.filter((item) => !removedIDs.has(item.id))
+  return next.length === items.length ? items : next
 }
 
 export function galleryPublishLabel(status?: string | null) {
@@ -134,18 +160,30 @@ function galleryTaskTypeLabel(taskType: string) {
 }
 
 function galleryPublishActionLabel(publishStatus: string, hasAsset: boolean) {
-	const action = galleryPublishAction(publishStatus, hasAsset)
-	if (!action) return '无图片文件'
-	if (publishStatus === 'approved') return '取消公开'
-	if (publishStatus === 'pending_review') return '取消申请'
-	if (publishStatus === 'rejected' || publishStatus === 'unpublished') return '重新申请'
-	return '申请公开'
+  return galleryPublishActionPresentation(publishStatus, hasAsset).label
 }
 
 function galleryPublishAction(publishStatus: string, hasAsset: boolean): 'request' | 'cancel' | null {
-	if (publishStatus === 'approved' || publishStatus === 'pending_review') return 'cancel'
-	if (hasAsset && ['private', 'rejected', 'unpublished'].includes(publishStatus)) return 'request'
-	return null
+  if (publishStatus === 'approved' || publishStatus === 'pending_review') return 'cancel'
+  if (hasAsset && ['private', 'rejected', 'unpublished'].includes(publishStatus)) return 'request'
+  return null
+}
+
+export function galleryPublishActionPresentation(publishStatus: string, hasAsset: boolean): GalleryPublishActionPresentation {
+  const normalized = normalizePublishValue(publishStatus)
+  const action = galleryPublishAction(normalized, hasAsset)
+  if (normalized === 'approved') {
+    return { action, label: '取消公开', icon: 'unpublish', tone: 'danger' }
+  }
+  if (normalized === 'pending_review') {
+    return { action, label: '取消申请', icon: 'withdraw', tone: 'warning' }
+  }
+  return {
+    action,
+    label: action ? (normalized === 'rejected' || normalized === 'unpublished' ? '重新申请' : '申请公开') : '无图片文件',
+    icon: 'publish',
+    tone: 'positive',
+  }
 }
 
 function galleryDateTime(value?: string) {
