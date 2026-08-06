@@ -251,9 +251,16 @@ func newOpenAPIHandlerWithCreateRequest(t *testing.T, createReq apikeyservice.Cr
 }
 
 func newOpenAPIHandlerWithAuth(t *testing.T, createReq apikeyservice.CreateRequest) (http.Handler, openAPICredentials, *authservice.Service, *billingservice.Service) {
+	return newOpenAPIHandlerWithAuthAndConfig(t, createReq, nil)
+}
+
+func newOpenAPIHandlerWithAuthAndConfig(t *testing.T, createReq apikeyservice.CreateRequest, configure func(*config.Config)) (http.Handler, openAPICredentials, *authservice.Service, *billingservice.Service) {
 	t.Helper()
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	cfg.Storage.LocalRoot = t.TempDir()
+	if configure != nil {
+		configure(&cfg)
+	}
 	authSvc := authservice.NewService(config.AuthConfig{
 		AccessTokenTTL:    10 * time.Minute,
 		RefreshTokenTTL:   2 * time.Hour,
@@ -322,5 +329,41 @@ func TestOpenReferenceUploadAcceptsRawStdBase64(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected upload 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestOpenReferenceUploadOverflowUsesImageSizeErrorContract(t *testing.T) {
+	handler, creds, _, _ := newOpenAPIHandlerWithAuthAndConfig(t, apikeyservice.CreateRequest{
+		Name:      "openapi",
+		GroupCode: "plus",
+		Secret:    "sk-openapi-secret",
+	}, func(cfg *config.Config) {
+		cfg.AttachmentPolicy = config.AttachmentPolicyConfig{
+			ImageMaxMB:          1,
+			ImageAllowedFormats: []string{"png"},
+		}
+	})
+	content := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte("x"), 2*1024*1024))
+	body := bytes.NewBufferString(`{"filename":"oversized.png","mime_type":"image/png","content_base64":"` + content + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/reference-assets/uploads", body)
+	req.Header.Set("Content-Type", "application/json")
+	signNativeRequest(req, creds)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected oversized upload 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if payload.Error.Code != "IMAGE_REFERENCE_TOO_LARGE" || payload.Error.Details["max_size_mb"] != float64(1) || payload.Error.Details["max_size_bytes"] != float64(1024*1024) {
+		t.Fatalf("unexpected oversized upload contract: %#v", payload.Error)
 	}
 }

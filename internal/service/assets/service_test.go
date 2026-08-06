@@ -1,17 +1,26 @@
 package assets
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
+	"image"
+	"image/color"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -217,6 +226,147 @@ func TestUploadReturnsTooLargeErrorWithSizeDetails(t *testing.T) {
 	if appErr.Details["actual_size_bytes"] != int64(1024*1024+1) {
 		t.Fatalf("expected actual_size_bytes detail, got %#v", appErr.Details)
 	}
+}
+
+func TestUploadAcceptsExactDefaultTwentyMegabyteImage(t *testing.T) {
+	svc := NewService(config.StorageConfig{LocalRoot: t.TempDir()}, config.GenerationLimitsConfig{})
+	content := encodedTestImage(t, "png")
+	content = append(content, make([]byte, 20*1024*1024-len(content))...)
+
+	asset, err := svc.Upload(103, "twenty-megabytes.png", "image/png", content)
+	if err != nil {
+		t.Fatalf("default 20 MB policy rejected exact-limit image: %v", err)
+	}
+	if asset.FileSizeBytes != 20*1024*1024 || asset.MimeType != "image/png" {
+		t.Fatalf("unexpected exact-limit asset: %#v", asset)
+	}
+}
+
+func TestUploadDetectsSupportedImageFormatsFromContent(t *testing.T) {
+	svc := NewService(config.StorageConfig{LocalRoot: t.TempDir()}, config.GenerationLimitsConfig{ReferenceImageMaxMB: 20})
+	for _, test := range []struct {
+		name     string
+		filename string
+		declared string
+		content  []byte
+		wantMIME string
+	}{
+		{name: "png", filename: "image.bin", declared: "image/png; charset=binary", content: encodedTestImage(t, "png"), wantMIME: "image/png"},
+		{name: "jpeg", filename: "image.dat", declared: "image/jpeg", content: encodedTestImage(t, "jpeg"), wantMIME: "image/jpeg"},
+		{name: "gif", filename: "image.upload", declared: "image/gif", content: encodedTestImage(t, "gif"), wantMIME: "image/gif"},
+		{name: "webp", filename: "image.tmp", declared: "image/webp", content: encodedTestImage(t, "webp"), wantMIME: "image/webp"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			asset, err := svc.Upload(100, test.filename, test.declared, test.content)
+			if err != nil {
+				t.Fatalf("Upload: %v", err)
+			}
+			if asset.MimeType != test.wantMIME || filepath.Ext(asset.ObjectKey) != "."+test.name && !(test.name == "jpeg" && filepath.Ext(asset.ObjectKey) == ".jpg") {
+				t.Fatalf("upload did not use detected format: %#v", asset)
+			}
+		})
+	}
+}
+
+func TestUploadRejectsDeclaredMIMEMismatchSVGAndDisallowedFormat(t *testing.T) {
+	svc := NewService(config.StorageConfig{LocalRoot: t.TempDir()}, config.GenerationLimitsConfig{ReferenceImageMaxMB: 20})
+	for _, test := range []struct {
+		name     string
+		filename string
+		declared string
+		content  []byte
+	}{
+		{name: "declared mismatch", filename: "wrong.jpg", declared: "image/jpeg", content: encodedTestImage(t, "png")},
+		{name: "svg", filename: "vector.svg", declared: "image/svg+xml", content: []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>`)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := svc.Upload(101, test.filename, test.declared, test.content); err == nil {
+				t.Fatal("expected content validation failure")
+			} else if appErr, ok := err.(*errs.Error); !ok || appErr.StatusCode != 400 || appErr.Code != errs.CodeValidationFailed {
+				t.Fatalf("expected 400/%s, got %#v", errs.CodeValidationFailed, err)
+			} else if !slices.Equal(appErr.Details["allowed_formats"].([]string), []string{"png", "jpeg", "webp", "gif"}) {
+				t.Fatalf("format error omitted current allowed formats: %#v", appErr.Details)
+			}
+		})
+	}
+
+	policy := NewAttachmentPolicyResolver(config.AttachmentPolicyConfig{ImageMaxMB: 20, ImageAllowedFormats: []string{"jpeg"}}, nil)
+	svc.SetAttachmentPolicyResolver(policy)
+	if _, err := svc.Upload(101, "not-allowed.png", "image/png", encodedTestImage(t, "png")); err == nil {
+		t.Fatal("expected configured image format to be enforced")
+	} else if appErr, ok := err.(*errs.Error); !ok || appErr.Code != errs.CodeValidationFailed {
+		t.Fatalf("expected local validation error, got %#v", err)
+	}
+}
+
+func TestUploadUsesCurrentAttachmentPolicyWithoutRestart(t *testing.T) {
+	cfg := config.Config{AttachmentPolicy: config.AttachmentPolicyConfig{
+		ImageMaxMB: 1, ImageAllowedFormats: []string{"png"},
+	}}
+	admin := adminconfigservice.NewServiceWithStore(cfg, adminconfigservice.NewMemoryStore())
+	resolver := NewAttachmentPolicyResolver(cfg.AttachmentPolicy, admin)
+	svc := NewService(config.StorageConfig{LocalRoot: t.TempDir()}, config.GenerationLimitsConfig{ReferenceImageMaxMB: 20})
+	svc.SetAttachmentPolicyResolver(resolver)
+
+	largePNG := append(encodedTestImage(t, "png"), make([]byte, 1024*1024)...)
+	if _, err := svc.Upload(102, "large.png", "image/png", largePNG); err == nil {
+		t.Fatal("expected initial 1 MB policy to reject upload")
+	}
+
+	if _, err := admin.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey: AttachmentPolicyTabKey, Version: 1,
+		Items: []domainadminconfig.Item{
+			{ConfigCategory: AttachmentPolicyTabKey, ConfigKey: AttachmentImageMaxMBKey, ConfigValue: map[string]any{"value": 2}, Scope: "global"},
+			{ConfigCategory: AttachmentPolicyTabKey, ConfigKey: AttachmentImageAllowedFormatsKey, ConfigValue: map[string]any{"value": []any{"jpeg"}}, Scope: "global"},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateTab: %v", err)
+	}
+
+	if _, err := svc.Upload(102, "large.png", "image/png", largePNG); err == nil {
+		t.Fatal("expected updated format policy to reject PNG")
+	}
+	largeJPEG := append(encodedTestImage(t, "jpeg"), make([]byte, 1024*1024)...)
+	asset, err := svc.Upload(102, "large.jpeg", "image/jpeg", largeJPEG)
+	if err != nil {
+		t.Fatalf("updated 2 MB JPEG policy should accept upload: %v", err)
+	}
+	if asset.FileSizeBytes <= 1024*1024 || asset.MimeType != "image/jpeg" {
+		t.Fatalf("unexpected dynamically accepted asset: %#v", asset)
+	}
+	current, err := svc.AttachmentPolicy(context.Background())
+	if err != nil || current.Image.MaxMB != 2 || !slices.Equal(current.Image.AllowedFormats, []string{"jpeg"}) {
+		t.Fatalf("unexpected current policy: %#v err=%v", current, err)
+	}
+}
+
+func encodedTestImage(t *testing.T, format string) []byte {
+	t.Helper()
+	if format == "webp" {
+		content, err := base64.StdEncoding.DecodeString("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==")
+		if err != nil {
+			t.Fatalf("decode WebP fixture: %v", err)
+		}
+		return content
+	}
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.RGBA{R: 220, G: 40, B: 80, A: 255})
+	var output bytes.Buffer
+	var err error
+	switch format {
+	case "png":
+		err = png.Encode(&output, img)
+	case "jpeg":
+		err = jpeg.Encode(&output, img, &jpeg.Options{Quality: 85})
+	case "gif":
+		err = gif.Encode(&output, img, nil)
+	default:
+		t.Fatalf("unsupported test format %q", format)
+	}
+	if err != nil {
+		t.Fatalf("encode %s fixture: %v", format, err)
+	}
+	return output.Bytes()
 }
 
 func TestDeleteWithStoreClearsDedupeCache(t *testing.T) {

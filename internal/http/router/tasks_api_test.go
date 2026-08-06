@@ -17,16 +17,97 @@ import (
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	"github.com/fatballfish/pic-gallery/internal/provider"
+	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/internal/worker"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
+
+func TestReferenceAssetUploadUsesDynamicAttachmentPolicy(t *testing.T) {
+	cfg := taskAPIConfig("http://provider.invalid")
+	cfg.Storage.LocalRoot = t.TempDir()
+	cfg.GenerationLimits.ReferenceImageMaxMB = 20
+	cfg.AttachmentPolicy = config.AttachmentPolicyConfig{ImageMaxMB: 1, ImageAllowedFormats: []string{"png"}}
+	adminSvc := adminconfigservice.NewServiceWithStore(cfg, adminconfigservice.NewMemoryStore())
+	authSvc, session := loginTestUser(t, "dynamic-attachment-policy@example.com")
+	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, adminSvc, nil))
+
+	assertReferenceCapabilityLimit(t, handler, session.AccessToken, 1)
+	largePNG := append(tinyPNG(t), make([]byte, 1024*1024)...)
+	request := referenceUploadRequest(t, session.AccessToken, largePNG)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), errs.CodeImageReferenceTooLarge) {
+		t.Fatalf("expected current 1 MB policy to reject upload: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	if _, err := adminSvc.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey: "attachment_policy", Version: 1,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "attachment_policy", ConfigKey: "image_max_mb", ConfigValue: map[string]any{"value": 2}, Scope: "global",
+		}},
+	}); err != nil {
+		t.Fatalf("UpdateTab: %v", err)
+	}
+	assertReferenceCapabilityLimit(t, handler, session.AccessToken, 2)
+
+	request = referenceUploadRequest(t, session.AccessToken, largePNG)
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected updated 2 MB policy to accept upload: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func assertReferenceCapabilityLimit(t *testing.T, handler http.Handler, token string, wantMB int) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/capabilities", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("capabilities status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Data struct {
+			ReferenceImageMaxMB int `json:"reference_image_max_mb"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode capabilities: %v", err)
+	}
+	if payload.Data.ReferenceImageMaxMB != wantMB {
+		t.Fatalf("capabilities image max = %d, want %d body=%s", payload.Data.ReferenceImageMaxMB, wantMB, rec.Body.String())
+	}
+}
+
+func referenceUploadRequest(t *testing.T, token string, content []byte) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "reference.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatalf("write upload: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/reference-assets", &body)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
+}
 
 func TestReferenceAssetDownloadAcceptsQueryToken(t *testing.T) {
 	cfg := taskAPIConfig("http://provider.invalid")

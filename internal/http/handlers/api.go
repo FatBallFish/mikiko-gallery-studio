@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -214,6 +215,9 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 	if adminSvc == nil {
 		adminSvc = adminconfigservice.NewService(cfg)
 	}
+	attachmentDefaults := config.ApplyAttachmentPolicyDefaults(cfg.AttachmentPolicy, cfg.GenerationLimits.ReferenceImageMaxMB)
+	attachmentPolicy := assetservice.NewAttachmentPolicyResolver(attachmentDefaults, adminSvc)
+	assetSvc.SetAttachmentPolicyResolver(attachmentPolicy)
 	billingSvc.SetAdminConfigResolver(adminSvc)
 	if adminAuthSvc == nil {
 		adminAuthSvc = adminauthservice.NewService(cfg.Auth, nil)
@@ -232,7 +236,7 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 		apiKeys:    apiKeySvc,
 		billing:    billingSvc,
 		assets:     assetSvc,
-		caps:       capserv.NewService(cfg),
+		caps:       capserv.NewServiceWithAttachmentPolicy(cfg, attachmentPolicy),
 		compat:     compatservice.NewServiceWithTaskService(cfg, taskSvc),
 		tasks:      taskSvc,
 		admin:      adminSvc,
@@ -599,7 +603,7 @@ func (a *API) HandleAvatar(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, errs.BadRequest("avatar must be <= 2MB"))
 		return
 	}
-	asset, err := a.assets.Upload(user.ID, header.Filename, header.Header.Get("Content-Type"), content)
+	asset, err := a.assets.UploadWithMetadataContext(r.Context(), user.ID, header.Filename, header.Header.Get("Content-Type"), content, domainassets.UploadMetadata{UploadSource: "web"})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -2313,20 +2317,13 @@ func (a *API) HandleReferenceAssetUpload(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		httpx.WriteError(w, r, errs.New(http.StatusBadRequest, errs.CodeImageReferenceRequired, "file is required"))
-		return
-	}
-	defer file.Close()
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		httpx.WriteError(w, r, errs.BadRequest("failed to read upload"))
+	filename, contentType, content, uploadErr := readReferenceAssetUpload(w, r, a.assets)
+	if uploadErr != nil {
+		httpx.WriteError(w, r, uploadErr)
 		return
 	}
 
-	asset, svcErr := a.assets.Upload(user.ID, header.Filename, header.Header.Get("Content-Type"), content)
+	asset, svcErr := a.assets.UploadWithMetadataContext(r.Context(), user.ID, filename, contentType, content, domainassets.UploadMetadata{UploadSource: "web"})
 	if svcErr != nil {
 		httpx.WriteError(w, r, normalizeAppError(svcErr))
 		return
@@ -2386,7 +2383,7 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 			return
 		}
 		contentType := defaultString(result.MimeType, http.DetectContentType(content))
-		asset, svcErr := a.assets.UploadWithMetadata(user.ID, imageDownloadFilename(result), contentType, content, domainassets.UploadMetadata{UploadSource: "gallery_import"})
+		asset, svcErr := a.assets.UploadWithMetadataContext(r.Context(), user.ID, imageDownloadFilename(result), contentType, content, domainassets.UploadMetadata{UploadSource: "gallery_import"})
 		if svcErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(svcErr))
 			return
@@ -2550,7 +2547,7 @@ func (a *API) HandleOpenReferenceAssetUploadSession(w http.ResponseWriter, r *ht
 		return
 	}
 	apiKeyID := identity.APIKeyID
-	asset, svcErr := a.assets.UploadWithMetadata(identity.UserID, req.Filename, req.MimeType, content, domainassets.UploadMetadata{
+	asset, svcErr := a.assets.UploadWithMetadataContext(r.Context(), identity.UserID, req.Filename, req.MimeType, content, domainassets.UploadMetadata{
 		APIKeyID:     &apiKeyID,
 		UploadSource: "openapi",
 	})
@@ -2581,19 +2578,13 @@ func (a *API) HandleOpenReferenceAssetMultipartUpload(w http.ResponseWriter, r *
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		httpx.WriteError(w, r, errs.New(http.StatusBadRequest, errs.CodeImageReferenceRequired, "file is required"))
-		return
-	}
-	defer file.Close()
-	content, err := io.ReadAll(file)
-	if err != nil {
-		httpx.WriteError(w, r, errs.BadRequest("failed to read upload"))
+	filename, contentType, content, uploadErr := readReferenceAssetUpload(w, r, a.assets)
+	if uploadErr != nil {
+		httpx.WriteError(w, r, uploadErr)
 		return
 	}
 	apiKeyID := identity.APIKeyID
-	asset, svcErr := a.assets.UploadWithMetadata(identity.UserID, header.Filename, header.Header.Get("Content-Type"), content, domainassets.UploadMetadata{
+	asset, svcErr := a.assets.UploadWithMetadataContext(r.Context(), identity.UserID, filename, contentType, content, domainassets.UploadMetadata{
 		APIKeyID:     &apiKeyID,
 		UploadSource: "openapi",
 	})
@@ -7666,8 +7657,16 @@ func (a *API) requireOpenAPIKey(r *http.Request) (domainapikey.Identity, *errs.E
 	if parseErr != nil {
 		return domainapikey.Identity{}, errs.New(http.StatusUnauthorized, errs.CodeUnauthorized, "invalid api key timestamp")
 	}
-	body, err := readBoundedBody(r.Body, a.cfg.GenerationLimits.ReferenceImageMaxMB)
+	policy, policyErr := a.assets.AttachmentPolicy(r.Context())
+	if policyErr != nil {
+		return domainapikey.Identity{}, normalizeAppError(fmt.Errorf("resolve attachment policy: %w", policyErr))
+	}
+	bodyLimit := openAPIRequestBodyLimit(r.URL.Path, r.Header.Get("Content-Type"), policy.Image.MaxBytes)
+	body, err := readBoundedBodyBytes(r.Body, bodyLimit)
 	if err != nil {
+		if err.StatusCode == http.StatusRequestEntityTooLarge && isOpenAPIReferenceUploadPath(r.URL.Path) {
+			return domainapikey.Identity{}, referenceAssetTooLargeError(policy.Image, policy.Image.MaxBytes+1)
+		}
 		return domainapikey.Identity{}, err
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
@@ -7695,6 +7694,10 @@ func readBoundedBody(body io.Reader, referenceImageMaxMB int) ([]byte, *errs.Err
 		limit = 16
 	}
 	limit = (limit + 1) * 1024 * 1024
+	return readBoundedBodyBytes(body, limit)
+}
+
+func readBoundedBodyBytes(body io.Reader, limit int64) ([]byte, *errs.Error) {
 	limited := io.LimitReader(body, limit+1)
 	content, err := io.ReadAll(limited)
 	if err != nil {
@@ -7704,6 +7707,24 @@ func readBoundedBody(body io.Reader, referenceImageMaxMB int) ([]byte, *errs.Err
 		return nil, errs.New(http.StatusRequestEntityTooLarge, errs.CodeValidationFailed, "request body too large")
 	}
 	return content, nil
+}
+
+func openAPIRequestBodyLimit(path, contentType string, imageMaxBytes int64) int64 {
+	if imageMaxBytes <= 0 {
+		imageMaxBytes = 20 * 1024 * 1024
+	} else if imageMaxBytes > assetservice.MaxImageAttachmentBytes {
+		imageMaxBytes = assetservice.MaxImageAttachmentBytes
+	}
+	mediaType, _, _ := mime.ParseMediaType(contentType)
+	if path == "/api/open/image/v1/reference-assets/uploads" && mediaType == "application/json" {
+		base64Bytes := ((imageMaxBytes + 2) / 3) * 4
+		return base64Bytes + referenceAssetMultipartOverheadBytes
+	}
+	return imageMaxBytes + referenceAssetMultipartOverheadBytes
+}
+
+func isOpenAPIReferenceUploadPath(path string) bool {
+	return path == "/api/open/image/v1/reference-assets/uploads" || path == "/api/open/image/v1/reference-assets"
 }
 
 func (a *API) requireCompatAPIKey(r *http.Request) (domainapikey.Identity, *errs.Error) {

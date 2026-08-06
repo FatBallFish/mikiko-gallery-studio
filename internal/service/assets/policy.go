@@ -7,22 +7,26 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 )
 
 const (
-	AttachmentPolicyTabKey              = "attachment_policy"
-	AttachmentImageMaxMBKey             = "image_max_mb"
-	AttachmentVideoMaxMBKey             = "video_max_mb"
-	AttachmentAudioMaxMBKey             = "audio_max_mb"
-	AttachmentDocumentMaxMBKey          = "document_max_mb"
-	AttachmentImageAllowedFormatsKey    = "image_allowed_formats"
-	AttachmentVideoAllowedFormatsKey    = "video_allowed_formats"
-	AttachmentAudioAllowedFormatsKey    = "audio_allowed_formats"
-	AttachmentDocumentAllowedFormatsKey = "document_allowed_formats"
-	maxConfiguredAttachmentSizeMB       = 10240
+	AttachmentPolicyTabKey                    = "attachment_policy"
+	AttachmentImageMaxMBKey                   = "image_max_mb"
+	AttachmentVideoMaxMBKey                   = "video_max_mb"
+	AttachmentAudioMaxMBKey                   = "audio_max_mb"
+	AttachmentDocumentMaxMBKey                = "document_max_mb"
+	AttachmentImageAllowedFormatsKey          = "image_allowed_formats"
+	AttachmentVideoAllowedFormatsKey          = "video_allowed_formats"
+	AttachmentAudioAllowedFormatsKey          = "audio_allowed_formats"
+	AttachmentDocumentAllowedFormatsKey       = "document_allowed_formats"
+	maxConfiguredAttachmentSizeMB             = 10240
+	defaultAttachmentPolicyRefreshTTL         = 5 * time.Second
+	MaxImageAttachmentSizeMB                  = config.MaxImageAttachmentSizeMB
+	MaxImageAttachmentBytes             int64 = MaxImageAttachmentSizeMB * 1024 * 1024
 )
 
 type FilePolicy struct {
@@ -51,13 +55,32 @@ type AttachmentPolicyResolver struct {
 	defaults config.AttachmentPolicyConfig
 	source   AttachmentPolicySource
 
-	mu     sync.RWMutex
-	cached *AttachmentPolicy
+	mu           sync.RWMutex
+	cached       *AttachmentPolicy
+	version      int64
+	refreshAfter time.Time
+	refreshTTL   time.Duration
+	now          func() time.Time
 }
 
 func NewAttachmentPolicyResolver(defaults config.AttachmentPolicyConfig, source AttachmentPolicySource) *AttachmentPolicyResolver {
+	return newAttachmentPolicyResolver(defaults, source, defaultAttachmentPolicyRefreshTTL, time.Now)
+}
+
+func newAttachmentPolicyResolver(defaults config.AttachmentPolicyConfig, source AttachmentPolicySource, refreshTTL time.Duration, now func() time.Time) *AttachmentPolicyResolver {
 	defaults = config.ApplyAttachmentPolicyDefaults(defaults, defaults.ImageMaxMB)
-	resolver := &AttachmentPolicyResolver{defaults: cloneAttachmentPolicyConfig(defaults), source: source}
+	if refreshTTL <= 0 {
+		refreshTTL = defaultAttachmentPolicyRefreshTTL
+	}
+	if now == nil {
+		now = time.Now
+	}
+	resolver := &AttachmentPolicyResolver{
+		defaults:   cloneAttachmentPolicyConfig(defaults),
+		source:     source,
+		refreshTTL: refreshTTL,
+		now:        now,
+	}
 	if invalidationSource, ok := source.(attachmentPolicyInvalidationSource); ok {
 		invalidationSource.RegisterInvalidationListener(func(tabKey string) {
 			if tabKey == AttachmentPolicyTabKey {
@@ -69,8 +92,9 @@ func NewAttachmentPolicyResolver(defaults config.AttachmentPolicyConfig, source 
 }
 
 func (r *AttachmentPolicyResolver) Resolve(ctx context.Context) (AttachmentPolicy, error) {
+	now := r.now()
 	r.mu.RLock()
-	if r.cached != nil {
+	if r.cached != nil && (r.source == nil || now.Before(r.refreshAfter)) {
 		policy := cloneAttachmentPolicy(*r.cached)
 		r.mu.RUnlock()
 		return policy, nil
@@ -79,31 +103,52 @@ func (r *AttachmentPolicyResolver) Resolve(ctx context.Context) (AttachmentPolic
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cached != nil {
+	now = r.now()
+	if r.cached != nil && (r.source == nil || now.Before(r.refreshAfter)) {
 		return cloneAttachmentPolicy(*r.cached), nil
 	}
 
 	resolved := cloneAttachmentPolicyConfig(r.defaults)
+	resolvedVersion := r.version
 	if r.source != nil {
 		tab, err := r.source.GetTab(ctx, AttachmentPolicyTabKey)
 		if err != nil {
+			r.refreshAfter = now.Add(r.refreshTTL)
+			if r.cached != nil {
+				return cloneAttachmentPolicy(*r.cached), nil
+			}
 			return AttachmentPolicy{}, fmt.Errorf("load attachment policy: %w", err)
 		}
+		if r.cached != nil && tab.Version == r.version {
+			r.refreshAfter = now.Add(r.refreshTTL)
+			return cloneAttachmentPolicy(*r.cached), nil
+		}
 		if err := applyAttachmentPolicyItems(&resolved, tab.Items); err != nil {
+			r.refreshAfter = now.Add(r.refreshTTL)
+			if r.cached != nil {
+				return cloneAttachmentPolicy(*r.cached), nil
+			}
 			return AttachmentPolicy{}, err
 		}
+		resolvedVersion = tab.Version
 	}
 	policy, err := buildAttachmentPolicy(resolved)
 	if err != nil {
+		r.refreshAfter = now.Add(r.refreshTTL)
+		if r.cached != nil {
+			return cloneAttachmentPolicy(*r.cached), nil
+		}
 		return AttachmentPolicy{}, err
 	}
 	r.cached = &policy
+	r.version = resolvedVersion
+	r.refreshAfter = now.Add(r.refreshTTL)
 	return cloneAttachmentPolicy(policy), nil
 }
 
 func (r *AttachmentPolicyResolver) Invalidate() {
 	r.mu.Lock()
-	r.cached = nil
+	r.refreshAfter = time.Time{}
 	r.mu.Unlock()
 }
 
@@ -125,25 +170,25 @@ func applyAttachmentPolicyItems(target *config.AttachmentPolicyConfig, items []d
 		value := item.ConfigValue["value"]
 		switch item.ConfigKey {
 		case AttachmentImageMaxMBKey:
-			parsed, err := attachmentSizeMB(value)
+			parsed, err := attachmentSizeMB(value, MaxImageAttachmentSizeMB)
 			if err != nil {
 				return fmt.Errorf("%s: %w", item.ConfigKey, err)
 			}
 			target.ImageMaxMB = parsed
 		case AttachmentVideoMaxMBKey:
-			parsed, err := attachmentSizeMB(value)
+			parsed, err := attachmentSizeMB(value, maxConfiguredAttachmentSizeMB)
 			if err != nil {
 				return fmt.Errorf("%s: %w", item.ConfigKey, err)
 			}
 			target.VideoMaxMB = parsed
 		case AttachmentAudioMaxMBKey:
-			parsed, err := attachmentSizeMB(value)
+			parsed, err := attachmentSizeMB(value, maxConfiguredAttachmentSizeMB)
 			if err != nil {
 				return fmt.Errorf("%s: %w", item.ConfigKey, err)
 			}
 			target.AudioMaxMB = parsed
 		case AttachmentDocumentMaxMBKey:
-			parsed, err := attachmentSizeMB(value)
+			parsed, err := attachmentSizeMB(value, maxConfiguredAttachmentSizeMB)
 			if err != nil {
 				return fmt.Errorf("%s: %w", item.ConfigKey, err)
 			}
@@ -194,7 +239,10 @@ func buildAttachmentPolicy(value config.AttachmentPolicyConfig) (AttachmentPolic
 	if err != nil {
 		return AttachmentPolicy{}, fmt.Errorf("document formats: %w", err)
 	}
-	for name, size := range map[string]int{"image": value.ImageMaxMB, "video": value.VideoMaxMB, "audio": value.AudioMaxMB, "document": value.DocumentMaxMB} {
+	if value.ImageMaxMB <= 0 || value.ImageMaxMB > MaxImageAttachmentSizeMB {
+		return AttachmentPolicy{}, fmt.Errorf("image attachment size must be between 1 and %d MB", MaxImageAttachmentSizeMB)
+	}
+	for name, size := range map[string]int{"video": value.VideoMaxMB, "audio": value.AudioMaxMB, "document": value.DocumentMaxMB} {
 		if size <= 0 || size > maxConfiguredAttachmentSizeMB {
 			return AttachmentPolicy{}, fmt.Errorf("%s attachment size must be between 1 and %d MB", name, maxConfiguredAttachmentSizeMB)
 		}
@@ -268,7 +316,7 @@ func normalizeReservedFormats(values []string) ([]string, error) {
 	return formats, nil
 }
 
-func attachmentSizeMB(value any) (int, error) {
+func attachmentSizeMB(value any, maxMB int) (int, error) {
 	var parsed int64
 	switch typed := value.(type) {
 	case int:
@@ -307,8 +355,8 @@ func attachmentSizeMB(value any) (int, error) {
 	default:
 		return 0, fmt.Errorf("size must be a whole number")
 	}
-	if parsed <= 0 || parsed > maxConfiguredAttachmentSizeMB {
-		return 0, fmt.Errorf("size must be between 1 and %d MB", maxConfiguredAttachmentSizeMB)
+	if parsed <= 0 || parsed > int64(maxMB) {
+		return 0, fmt.Errorf("size must be between 1 and %d MB", maxMB)
 	}
 	return int(parsed), nil
 }

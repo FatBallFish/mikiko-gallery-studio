@@ -2,6 +2,8 @@ package config
 
 import "time"
 
+const MaxImageAttachmentSizeMB = 100
+
 type Config struct {
 	Runtime          RuntimeConfig          `yaml:"-"`
 	App              AppConfig              `yaml:"app"`

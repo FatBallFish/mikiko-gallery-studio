@@ -36,6 +36,8 @@ type Service struct {
 	resolver              *modelhub.Resolver
 	referenceImageMaxMB   int
 	referenceImageMaxByte int64
+	referenceImageFormats []string
+	referenceImageMIMEs   []string
 	attachmentPolicy      *assetservice.AttachmentPolicyResolver
 }
 
@@ -45,11 +47,14 @@ func NewService(cfg config.Config) *Service {
 }
 
 func NewServiceWithAttachmentPolicy(cfg config.Config, policy *assetservice.AttachmentPolicyResolver) *Service {
-	maxMB := cfg.GenerationLimits.ReferenceImageMaxMB
+	defaults := config.ApplyAttachmentPolicyDefaults(cfg.AttachmentPolicy, cfg.GenerationLimits.ReferenceImageMaxMB)
+	fallback, _ := assetservice.NewAttachmentPolicyResolver(defaults, nil).Resolve(context.Background())
 	return &Service{
 		resolver:              modelhub.NewResolver(cfg),
-		referenceImageMaxMB:   maxMB,
-		referenceImageMaxByte: int64(maxMB) * 1024 * 1024,
+		referenceImageMaxMB:   fallback.Image.MaxMB,
+		referenceImageMaxByte: fallback.Image.MaxBytes,
+		referenceImageFormats: append([]string(nil), fallback.Image.AllowedFormats...),
+		referenceImageMIMEs:   append([]string(nil), fallback.Image.AllowedMIMETypes...),
 		attachmentPolicy:      policy,
 	}
 }
@@ -102,5 +107,7 @@ func (s *Service) withReferenceUploadLimits(ctx context.Context, resp Response) 
 	}
 	resp.ReferenceImageMaxMB = s.referenceImageMaxMB
 	resp.ReferenceImageMaxBytes = s.referenceImageMaxByte
+	resp.ReferenceImageAllowedFormats = append([]string(nil), s.referenceImageFormats...)
+	resp.ReferenceImageAllowedMIMETypes = append([]string(nil), s.referenceImageMIMEs...)
 	return resp
 }

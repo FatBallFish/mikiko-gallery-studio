@@ -3,6 +3,7 @@ package adminconfig_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,6 +96,24 @@ func TestAttachmentPolicyTabRejectsInvalidValues(t *testing.T) {
 		}); err == nil {
 			t.Fatalf("expected invalid attachment policy item to be rejected: %#v", item)
 		}
+	}
+}
+
+func TestAttachmentPolicyTabRejectsImageSizeAboveMemoryCap(t *testing.T) {
+	svc := adminconfig.NewServiceWithStore(testConfig(), adminconfig.NewMemoryStore())
+	_, err := svc.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey:  "attachment_policy",
+		Version: 1,
+		Items: []domainadminconfig.Item{{
+			ConfigCategory: "attachment_policy",
+			ConfigKey:      "image_max_mb",
+			ConfigValue:    map[string]any{"value": 101},
+			Scope:          "global",
+		}},
+	})
+	appErr, ok := err.(*errs.Error)
+	if !ok || appErr.StatusCode != 400 || !strings.Contains(appErr.Message, "between 1 and 100 MB") {
+		t.Fatalf("expected explicit 100 MB validation error, got %#v", err)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 )
 
@@ -13,8 +14,12 @@ func validateAttachmentPolicyItems(items []domainadminconfig.Item) error {
 	for _, item := range items {
 		value := item.ConfigValue["value"]
 		switch item.ConfigKey {
-		case "image_max_mb", "video_max_mb", "audio_max_mb", "document_max_mb":
-			if err := validateAttachmentSize(value); err != nil {
+		case "image_max_mb":
+			if err := validateAttachmentSize(value, config.MaxImageAttachmentSizeMB); err != nil {
+				return fmt.Errorf("%s %w", item.ConfigKey, err)
+			}
+		case "video_max_mb", "audio_max_mb", "document_max_mb":
+			if err := validateAttachmentSize(value, 10240); err != nil {
 				return fmt.Errorf("%s %w", item.ConfigKey, err)
 			}
 		case "image_allowed_formats":
@@ -39,7 +44,7 @@ func validateAttachmentPolicyItems(items []domainadminconfig.Item) error {
 	return nil
 }
 
-func validateAttachmentSize(value any) error {
+func validateAttachmentSize(value any, maxMB int64) error {
 	var parsed int64
 	switch typed := value.(type) {
 	case int:
@@ -54,14 +59,14 @@ func validateAttachmentSize(value any) error {
 		parsed = typed
 	case uint:
 		if uint64(typed) > math.MaxInt64 {
-			return fmt.Errorf("must be between 1 and 10240 MB")
+			return fmt.Errorf("must be between 1 and %d MB", maxMB)
 		}
 		parsed = int64(typed)
 	case uint32:
 		parsed = int64(typed)
 	case uint64:
 		if typed > math.MaxInt64 {
-			return fmt.Errorf("must be between 1 and 10240 MB")
+			return fmt.Errorf("must be between 1 and %d MB", maxMB)
 		}
 		parsed = int64(typed)
 	case float64:
@@ -78,8 +83,8 @@ func validateAttachmentSize(value any) error {
 	default:
 		return fmt.Errorf("must be a whole number")
 	}
-	if parsed <= 0 || parsed > 10240 {
-		return fmt.Errorf("must be between 1 and 10240 MB")
+	if parsed <= 0 || parsed > maxMB {
+		return fmt.Errorf("must be between 1 and %d MB", maxMB)
 	}
 	return nil
 }

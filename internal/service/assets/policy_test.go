@@ -2,13 +2,30 @@ package assets
 
 import (
 	"context"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 )
+
+type mutableAttachmentPolicySource struct {
+	tab   domainadminconfig.Tab
+	err   error
+	calls int
+}
+
+func (s *mutableAttachmentPolicySource) GetTab(context.Context, string) (domainadminconfig.Tab, error) {
+	s.calls++
+	if s.err != nil {
+		return domainadminconfig.Tab{}, s.err
+	}
+	return s.tab, nil
+}
 
 func TestAttachmentPolicyDefaultsAndNormalizesImageAliases(t *testing.T) {
 	resolver := NewAttachmentPolicyResolver(config.AttachmentPolicyConfig{
@@ -42,6 +59,16 @@ func TestAttachmentPolicyRejectsInvalidSizeAndSVG(t *testing.T) {
 		if err := ValidateAttachmentPolicyItems(items); err == nil {
 			t.Fatalf("expected invalid policy items to be rejected: %#v", items)
 		}
+	}
+}
+
+func TestAttachmentPolicyRejectsImageSizeAboveInMemoryLimit(t *testing.T) {
+	err := ValidateAttachmentPolicyItems([]domainadminconfig.Item{{
+		ConfigKey:   AttachmentImageMaxMBKey,
+		ConfigValue: map[string]any{"value": MaxImageAttachmentSizeMB + 1},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "between 1 and 100 MB") {
+		t.Fatalf("expected explicit image memory limit error, got %v", err)
 	}
 }
 
@@ -81,5 +108,80 @@ func TestAttachmentPolicyInvalidatesAfterAdminConfigUpdate(t *testing.T) {
 	}
 	if second.Image.MaxMB != 32 || !slices.Equal(second.Image.AllowedFormats, []string{"jpeg", "webp"}) {
 		t.Fatalf("resolver kept stale cached policy: %#v", second)
+	}
+}
+
+func TestAttachmentPolicyRefreshesVersionWithoutProcessLocalListener(t *testing.T) {
+	now := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+	source := &mutableAttachmentPolicySource{tab: attachmentPolicyTab(1, 20, []string{"png"})}
+	resolver := newAttachmentPolicyResolver(
+		config.AttachmentPolicyConfig{ImageMaxMB: 20, ImageAllowedFormats: []string{"png"}},
+		source,
+		time.Minute,
+		func() time.Time { return now },
+	)
+
+	first, err := resolver.Resolve(context.Background())
+	if err != nil || first.Image.MaxMB != 20 {
+		t.Fatalf("initial Resolve = %#v, %v", first, err)
+	}
+	source.tab = attachmentPolicyTab(2, 32, []string{"jpeg"})
+
+	withinTTL, err := resolver.Resolve(context.Background())
+	if err != nil || withinTTL.Image.MaxMB != 20 || source.calls != 1 {
+		t.Fatalf("resolver did not retain bounded cache within TTL: policy=%#v calls=%d err=%v", withinTTL, source.calls, err)
+	}
+
+	now = now.Add(time.Minute)
+	refreshed, err := resolver.Resolve(context.Background())
+	if err != nil {
+		t.Fatalf("refresh Resolve: %v", err)
+	}
+	if refreshed.Image.MaxMB != 32 || !slices.Equal(refreshed.Image.AllowedFormats, []string{"jpeg"}) || source.calls != 2 {
+		t.Fatalf("resolver did not refresh remote version: policy=%#v calls=%d", refreshed, source.calls)
+	}
+}
+
+func TestAttachmentPolicyRefreshFailureKeepsLastKnownGood(t *testing.T) {
+	now := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+	source := &mutableAttachmentPolicySource{tab: attachmentPolicyTab(1, 24, []string{"webp"})}
+	resolver := newAttachmentPolicyResolver(
+		config.AttachmentPolicyConfig{ImageMaxMB: 20, ImageAllowedFormats: []string{"png"}},
+		source,
+		time.Minute,
+		func() time.Time { return now },
+	)
+
+	first, err := resolver.Resolve(context.Background())
+	if err != nil {
+		t.Fatalf("initial Resolve: %v", err)
+	}
+	source.err = errors.New("database unavailable")
+	now = now.Add(time.Minute)
+	stale, err := resolver.Resolve(context.Background())
+	if err != nil {
+		t.Fatalf("refresh should serve last-known-good policy: %v", err)
+	}
+	if stale.Image.MaxMB != first.Image.MaxMB || !slices.Equal(stale.Image.AllowedFormats, first.Image.AllowedFormats) {
+		t.Fatalf("refresh failure discarded last-known-good policy: first=%#v stale=%#v", first, stale)
+	}
+
+	source.err = nil
+	source.tab = attachmentPolicyTab(2, 28, []string{"gif"})
+	now = now.Add(time.Minute)
+	recovered, err := resolver.Resolve(context.Background())
+	if err != nil || recovered.Image.MaxMB != 28 || !slices.Equal(recovered.Image.AllowedFormats, []string{"gif"}) {
+		t.Fatalf("resolver did not recover after source returned: policy=%#v err=%v", recovered, err)
+	}
+}
+
+func attachmentPolicyTab(version int64, imageMaxMB int, formats []string) domainadminconfig.Tab {
+	return domainadminconfig.Tab{
+		TabKey:  AttachmentPolicyTabKey,
+		Version: version,
+		Items: []domainadminconfig.Item{
+			{ConfigKey: AttachmentImageMaxMBKey, ConfigValue: map[string]any{"value": imageMaxMB}},
+			{ConfigKey: AttachmentImageAllowedFormatsKey, ConfigValue: map[string]any{"value": formats}},
+		},
 	}
 }
