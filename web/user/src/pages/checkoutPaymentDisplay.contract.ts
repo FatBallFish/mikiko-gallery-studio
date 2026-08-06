@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 
 const checkoutPageSource = readFileSync(new URL('./CheckoutPage.tsx', import.meta.url), 'utf8')
+const paymentMonitorSource = readFileSync(new URL('./PaymentMonitorModal.tsx', import.meta.url), 'utf8')
 const reservationIndex = checkoutPageSource.indexOf('const paymentWindow = reservePaymentWindow()')
 const createIndex = checkoutPageSource.indexOf('await userApi.createCashierOrder')
 const dispatchIndex = checkoutPageSource.indexOf('dispatchPaymentWindow(paymentWindow, checkoutPaymentDisplayModel(nextOrder))')
@@ -12,8 +13,8 @@ if (reservationIndex < 0 || createIndex < 0 || dispatchIndex < 0 || !(reservatio
 if (!/catch \(caught\) \{\s*closePaymentWindow\(paymentWindow\)/.test(checkoutPageSource)) {
   throw new Error('checkout should close the reserved payment window when order creation fails')
 }
-if (!checkoutPageSource.includes('setPaymentModalOpen(true)') || !checkoutPageSource.includes('checkoutOrderRuntimeState(order)')) {
-  throw new Error('automatic payment navigation must preserve the payment modal and order polling')
+if (!checkoutPageSource.includes('setMonitorOrder(nextOrder)') || !paymentMonitorSource.includes('userApi.syncCashierOrder')) {
+  throw new Error('automatic payment navigation must preserve the dedicated payment monitor and active provider sync')
 }
 
 const baseOrder: CashierOrder = {
