@@ -34,7 +34,15 @@ func TestTemporaryMediaURLProjectionSignsPreviewAndDownloadSeparately(t *testing
 	if !supported || urls.PreviewURL != "https://objects.example.test/generated/result.png?mode=preview&sig=secret" || urls.DownloadURL != "https://objects.example.test/generated/result.png?mode=download&sig=secret" {
 		t.Fatalf("unexpected projected URLs %#v supported=%v", urls, supported)
 	}
-	if len(backend.options) != 2 || backend.options[0].Expiry != 5*time.Minute || backend.options[0].ResponseFilename != "" || backend.options[1].ResponseFilename != "result.png" {
+	if len(backend.options) != 2 ||
+		backend.options[0].Expiry != 6*time.Minute ||
+		backend.options[0].SigningTimeBucket != time.Minute ||
+		backend.options[0].ResponseCacheControl != "private, max-age=300" ||
+		backend.options[0].ResponseFilename != "" ||
+		backend.options[1].Expiry != 5*time.Minute ||
+		backend.options[1].SigningTimeBucket != 0 ||
+		backend.options[1].ResponseCacheControl != "" ||
+		backend.options[1].ResponseFilename != "result.png" {
 		t.Fatalf("unexpected signing options %#v", backend.options)
 	}
 	if _, supported, err := ProjectTemporaryMediaURLs(t.Context(), NewLocalBackend(t.TempDir()), "generated/result.png", "image/png", "result.png"); err != nil || supported {
@@ -248,6 +256,80 @@ func TestS3BackendTemporaryGetURLDefaultsToFiveMinutesAndLocalDoesNotSign(t *tes
 	var backendContract Backend = NewLocalBackend(t.TempDir())
 	if _, ok := backendContract.(TemporaryURLSigner); ok {
 		t.Fatal("local storage must retain byte delivery instead of exposing a temporary URL")
+	}
+}
+
+func TestProjectTemporaryMediaURLsBucketsPreviewAndFreshlySignsDownload(t *testing.T) {
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: "https://bucket.example.com", Region: "us-east-1", Bucket: "bucket",
+			AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+
+	now := time.Date(2026, time.August, 6, 12, 34, 5, 0, time.UTC)
+	backend.now = func() time.Time { return now }
+	first, supported, err := ProjectTemporaryMediaURLs(t.Context(), backend, "generated/result.png", "image/png", "result.png")
+	if err != nil || !supported {
+		t.Fatalf("first projection: supported=%v err=%v", supported, err)
+	}
+
+	now = time.Date(2026, time.August, 6, 12, 34, 59, 0, time.UTC)
+	second, _, err := ProjectTemporaryMediaURLs(t.Context(), backend, "generated/result.png", "image/png", "result.png")
+	if err != nil {
+		t.Fatalf("second projection: %v", err)
+	}
+	if first.PreviewURL != second.PreviewURL {
+		t.Fatalf("preview URL changed inside signing bucket:\nfirst:  %s\nsecond: %s", first.PreviewURL, second.PreviewURL)
+	}
+	if first.DownloadURL == second.DownloadURL {
+		t.Fatal("download URL must be freshly signed instead of sharing the preview bucket")
+	}
+
+	preview, err := url.Parse(first.PreviewURL)
+	if err != nil {
+		t.Fatalf("parse preview URL: %v", err)
+	}
+	previewQuery := preview.Query()
+	if got := previewQuery.Get("X-Amz-Date"); got != "20260806T123400Z" {
+		t.Fatalf("preview signing time = %q, want bucket start", got)
+	}
+	if got := previewQuery.Get("X-Amz-Expires"); got != "360" {
+		t.Fatalf("preview expiry = %q, want 360 seconds to preserve five-minute validity at bucket end", got)
+	}
+	if got := previewQuery.Get("response-cache-control"); got != "private, max-age=300" {
+		t.Fatalf("preview cache control = %q, want private five-minute browser cache", got)
+	}
+	if got := previewQuery.Get("response-content-disposition"); got != "" {
+		t.Fatalf("preview unexpectedly forces download disposition %q", got)
+	}
+
+	download, err := url.Parse(second.DownloadURL)
+	if err != nil {
+		t.Fatalf("parse download URL: %v", err)
+	}
+	downloadQuery := download.Query()
+	if got := downloadQuery.Get("X-Amz-Date"); got != "20260806T123459Z" {
+		t.Fatalf("download signing time = %q, want current request time", got)
+	}
+	if disposition := downloadQuery.Get("response-content-disposition"); !strings.Contains(disposition, "attachment") || !strings.Contains(disposition, "result.png") {
+		t.Fatalf("download disposition = %q, want attachment filename", disposition)
+	}
+	if got := downloadQuery.Get("response-cache-control"); got != "" {
+		t.Fatalf("download unexpectedly reused preview cache control %q", got)
+	}
+
+	now = time.Date(2026, time.August, 6, 12, 35, 0, 0, time.UTC)
+	third, _, err := ProjectTemporaryMediaURLs(t.Context(), backend, "generated/result.png", "image/png", "result.png")
+	if err != nil {
+		t.Fatalf("third projection: %v", err)
+	}
+	if second.PreviewURL == third.PreviewURL {
+		t.Fatal("preview URL did not rotate at the next signing bucket")
 	}
 }
 

@@ -45,16 +45,21 @@ type BoundedGetter interface {
 }
 
 type TemporaryGetURLOptions struct {
-	Expiry           time.Duration
-	ResponseFilename string
-	ContentType      string
+	Expiry               time.Duration
+	SigningTimeBucket    time.Duration
+	ResponseFilename     string
+	ContentType          string
+	ResponseCacheControl string
 }
 
 type TemporaryURLSigner interface {
 	TemporaryGetURL(ctx context.Context, objectKey string, options TemporaryGetURLOptions) (string, error)
 }
 
-const TemporaryMediaURLExpiry = 5 * time.Minute
+const (
+	TemporaryMediaURLExpiry            = 5 * time.Minute
+	temporaryMediaPreviewSigningBucket = time.Minute
+)
 
 type TemporaryMediaURLs struct {
 	PreviewURL  string
@@ -71,8 +76,10 @@ func ProjectTemporaryMediaURLs(ctx context.Context, backend Backend, objectKey, 
 		return TemporaryMediaURLs{}, true, errors.New("temporary media object key is required")
 	}
 	previewURL, err := signer.TemporaryGetURL(ctx, objectKey, TemporaryGetURLOptions{
-		Expiry:      TemporaryMediaURLExpiry,
-		ContentType: strings.TrimSpace(contentType),
+		Expiry:               TemporaryMediaURLExpiry + temporaryMediaPreviewSigningBucket,
+		SigningTimeBucket:    temporaryMediaPreviewSigningBucket,
+		ContentType:          strings.TrimSpace(contentType),
+		ResponseCacheControl: fmt.Sprintf("private, max-age=%d", int64(TemporaryMediaURLExpiry/time.Second)),
 	})
 	if err != nil {
 		return TemporaryMediaURLs{}, true, fmt.Errorf("sign temporary media preview URL: %w", err)
@@ -297,6 +304,9 @@ func (b *S3Backend) TemporaryGetURL(ctx context.Context, objectKey string, optio
 	}
 
 	now := b.nowUTC()
+	if bucket := options.SigningTimeBucket; bucket > 0 {
+		now = now.Truncate(bucket)
+	}
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
 	credentialScope := dateStamp + "/" + b.region + "/s3/aws4_request"
@@ -309,6 +319,9 @@ func (b *S3Backend) TemporaryGetURL(ctx context.Context, objectKey string, optio
 	}
 	if contentType := strings.TrimSpace(options.ContentType); contentType != "" {
 		query.Set("response-content-type", contentType)
+	}
+	if cacheControl := strings.TrimSpace(options.ResponseCacheControl); cacheControl != "" {
+		query.Set("response-cache-control", cacheControl)
 	}
 	if filename := strings.TrimSpace(options.ResponseFilename); filename != "" {
 		query.Set("response-content-disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
