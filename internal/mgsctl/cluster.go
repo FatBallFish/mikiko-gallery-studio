@@ -307,6 +307,11 @@ func validateClusterJoinOptions(options ClusterJoinOptions) error {
 	if err := config.ValidateApplicationVersion(options.ApplicationVersion); err != nil {
 		return fmt.Errorf("validate cluster application version: %w", err)
 	}
+	if strings.TrimSpace(options.DocsProbeURL) != "" {
+		if err := validateHTTPBaseURL(options.DocsProbeURL, "documentation probe URL"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -409,6 +414,7 @@ func buildJoinedPlan(options ClusterJoinOptions, role config.DeploymentRole, app
 		Mode: options.Mode, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologyCluster,
 		Role: role, RuntimeDir: filepath.Clean(defaultString(options.RuntimeDir, ".")), StorageDriver: storageDriver,
 		PublicAPIURL: publicAPIURL, InstallationInitialized: true, ApplicationVersion: applicationVersion,
+		DocsProbeURL:  options.DocsProbeURL,
 		ImageRegistry: options.ImageRegistry, ImageTag: options.ImageTag, ReleaseVersion: options.ReleaseVersion,
 		APIPort: options.APIPort, GatewayPort: options.GatewayPort, UserWebPort: options.UserWebPort,
 		AdminWebPort: options.AdminWebPort, DocsWebPort: options.DocsWebPort,
@@ -419,6 +425,10 @@ func joinedRuntimeValues(options ClusterJoinOptions, plan InstallPlan, joined do
 	values := make(map[string]string, len(remote)+24)
 	for key, value := range remote {
 		values[key] = value
+	}
+	delete(values, "PIC_GALLERY_DOCS_PROBE_URL")
+	if strings.TrimSpace(plan.DocsProbeURL) != "" {
+		values["PIC_GALLERY_DOCS_PROBE_URL"] = plan.DocsProbeURL
 	}
 	values["RUNTIME_SCHEMA_VERSION"] = strconv.Itoa(joined.RuntimeSchemaVersion)
 	values["DEPLOYMENT_MODE"] = string(plan.Mode)

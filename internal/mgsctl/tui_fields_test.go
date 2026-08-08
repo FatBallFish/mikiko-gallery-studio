@@ -176,12 +176,18 @@ func TestTUITextFieldAcceptsSpacesForDestructiveConfirmation(t *testing.T) {
 
 func TestTUIInstallRemainsInteractiveAndImportCustomSupportsComponents(t *testing.T) {
 	install := NewTUICommandForm(catalogEntryForTest(t, "install"))
+	if err := install.SetValue("docs-probe-url", "https://gateway.internal.example.test/developer-docs/"); err != nil {
+		t.Fatal(err)
+	}
 	installArgs, err := install.Arguments()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(" "+strings.Join(installArgs, " ")+" ", " --yes ") {
 		t.Fatalf("TUI install unexpectedly became non-interactive: %q", installArgs)
+	}
+	if !strings.Contains(strings.Join(installArgs, " "), "--docs-probe-url https://gateway.internal.example.test/developer-docs/") {
+		t.Fatalf("TUI install documentation probe missing: %q", installArgs)
 	}
 
 	importForm := NewTUICommandForm(catalogEntryForTest(t, "import-config"))
@@ -197,6 +203,24 @@ func TestTUIInstallRemainsInteractiveAndImportCustomSupportsComponents(t *testin
 	}
 	if !strings.Contains(strings.Join(args, " "), "--components api,worker") {
 		t.Fatalf("custom import components missing: %q", args)
+	}
+}
+
+func TestTUIClusterJoinCarriesNodeReachableDocsProbeURL(t *testing.T) {
+	form := NewTUICommandForm(catalogEntryForTest(t, "cluster join"))
+	if err := form.SetValue("docs-probe-url", "https://gateway.internal.example.test/developer-docs/"); err != nil {
+		t.Fatal(err)
+	}
+	args, err := form.Arguments()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := ParseCommand(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.ClusterJoin == nil || command.ClusterJoin.DocsProbeURL != "https://gateway.internal.example.test/developer-docs/" {
+		t.Fatalf("TUI cluster join options = %#v", command.ClusterJoin)
 	}
 }
 

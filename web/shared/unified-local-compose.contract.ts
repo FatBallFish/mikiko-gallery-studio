@@ -50,6 +50,9 @@ if (existsSync(resolve('deployments/docker-compose/bootstrap-local.sql'))) {
 if (!localRuntime.includes('CORS_ALLOWED_ORIGINS=http://localhost:8088,http://127.0.0.1:8088')) {
   throw new Error('unified local runtime must allow both fixed shared nginx origins')
 }
+if (!localRuntime.includes('PIC_GALLERY_DOCS_URL=/developer-docs/') || !localRuntime.includes('PIC_GALLERY_DOCS_PROBE_URL=http://nginx/developer-docs/')) {
+  throw new Error('unified local runtime must separate the browser docs path from the API-reachable Compose probe target')
+}
 if (
   localInstallState.installation_id !== 'pic-gallery-local' ||
   localInstallState.phase !== 'completed' ||

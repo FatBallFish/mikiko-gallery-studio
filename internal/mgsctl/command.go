@@ -71,6 +71,7 @@ type ClusterJoinOptions struct {
 	UserWebPort        string
 	AdminWebPort       string
 	DocsWebPort        string
+	DocsProbeURL       string
 }
 
 func (options ClusterJoinOptions) String() string {
@@ -296,6 +297,7 @@ func parseInstallCommand(args []string) (Command, error) {
 	runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
 	storageDriver := set.String("storage-driver", "", "local or s3")
 	publicAPIURL := set.String("public-api-url", "", "public API URL")
+	docsProbeURL := set.String("docs-probe-url", "", "API-reachable documentation probe URL")
 	imageRegistry := set.String("image-registry", "", "Docker image registry")
 	imageTag := set.String("image-tag", "latest", "Docker image tag or latest")
 	releaseVersion := set.String("release-version", "latest", "native release version or latest")
@@ -330,6 +332,7 @@ func parseInstallCommand(args []string) (Command, error) {
 		Interactive: !*yes, OverwriteExisting: *overwrite, Mode: config.DeploymentMode(*mode), Profile: config.DeploymentProfile(*profile),
 		Topology: config.DeploymentTopology(*topology), Role: resolvedRole, Components: parseComponents(*components),
 		RuntimeDir: *runtimeDir, StorageDriver: *storageDriver, PublicAPIURL: *publicAPIURL,
+		DocsProbeURL:             *docsProbeURL,
 		ExternalGatewayConfirmed: *externalGateway, MigrationRequested: *migrate,
 		ImageRegistry: *imageRegistry, ImageTag: *imageTag, ReleaseVersion: *releaseVersion,
 		APIPort: *apiPort, GatewayPort: *gatewayPort, UserWebPort: *userWebPort, AdminWebPort: *adminWebPort, DocsWebPort: *docsWebPort, MonitoringPort: *monitoringPort,
@@ -405,6 +408,7 @@ func parseClusterCommand(args []string) (Command, error) {
 		userWebPort := set.String("user-web-port", "5173", "user web port")
 		adminWebPort := set.String("admin-web-port", "5174", "admin web port")
 		docsWebPort := set.String("docs-web-port", "5175", "documentation web port")
+		docsProbeURL := set.String("docs-probe-url", "", "API-reachable documentation probe URL")
 		if err := set.Parse(args[1:]); err != nil || set.NArg() != 0 {
 			if err != nil {
 				return Command{}, err
@@ -425,6 +429,7 @@ func parseClusterCommand(args []string) (Command, error) {
 			ApplicationVersion: *applicationVersion, ImageRegistry: *imageRegistry, ImageTag: defaultString(*imageTag, *applicationVersion),
 			ReleaseVersion: defaultString(*releaseVersion, *applicationVersion), APIPort: *apiPort,
 			GatewayPort: *gatewayPort, UserWebPort: *userWebPort, AdminWebPort: *adminWebPort, DocsWebPort: *docsWebPort,
+			DocsProbeURL: *docsProbeURL,
 		}
 		return Command{Kind: CommandClusterJoin, RuntimeDir: *runtimeDir, ClusterJoin: options}, nil
 	}

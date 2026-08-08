@@ -45,6 +45,13 @@ func TestBuildInstallPlanExpandsApprovedPresets(t *testing.T) {
 			if plan.RuntimeDir != testCase.input.RuntimeDir || plan.Mode != testCase.input.Mode || plan.Role != testCase.input.Role {
 				t.Fatalf("plan lost deployment identity: %#v", plan)
 			}
+			wantProbe := "http://gateway/developer-docs/"
+			if plan.Mode == config.DeploymentModeNative {
+				wantProbe = "http://127.0.0.1:80/developer-docs/"
+			}
+			if plan.DocsProbeURL != wantProbe {
+				t.Fatalf("documentation probe URL = %q, want %q", plan.DocsProbeURL, wantProbe)
+			}
 		})
 	}
 }
@@ -94,6 +101,8 @@ func TestBuildInstallPlanRejectsUnsafeDeploymentCombinations(t *testing.T) {
 			input.MigrationRequested = true
 		}},
 		{name: "public api credentials", mutate: func(input *InstallInput) { input.PublicAPIURL = "https://user:secret@api.example.test" }},
+		{name: "docs probe credentials", mutate: func(input *InstallInput) { input.DocsProbeURL = "https://user:secret@docs.example.test" }},
+		{name: "docs probe relative", mutate: func(input *InstallInput) { input.DocsProbeURL = "/developer-docs/" }},
 		{name: "full local storage", mutate: func(input *InstallInput) {
 			input.Profile = config.DeploymentProfileFull
 			input.StorageDriver = "local"

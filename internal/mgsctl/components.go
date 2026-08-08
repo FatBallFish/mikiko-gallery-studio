@@ -45,6 +45,7 @@ type InstallInput struct {
 	RuntimeDir               string
 	StorageDriver            string
 	PublicAPIURL             string
+	DocsProbeURL             string
 	ExternalGatewayConfirmed bool
 	InstallationInitialized  bool
 	MigrationRequested       bool
@@ -84,6 +85,7 @@ type InstallPlan struct {
 	RuntimeDir               string                    `json:"runtime_dir"`
 	StorageDriver            string                    `json:"storage_driver,omitempty"`
 	PublicAPIURL             string                    `json:"public_api_url,omitempty"`
+	DocsProbeURL             string                    `json:"docs_probe_url,omitempty"`
 	ExternalGatewayConfirmed bool                      `json:"external_gateway_confirmed,omitempty"`
 	MigrationRequested       bool                      `json:"migration_requested,omitempty"`
 	ApplicationVersion       string                    `json:"application_version"`
@@ -140,6 +142,11 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 			return InstallPlan{}, err
 		}
 	}
+	if strings.TrimSpace(input.DocsProbeURL) != "" {
+		if err := validateHTTPBaseURL(input.DocsProbeURL, "documentation probe URL"); err != nil {
+			return InstallPlan{}, err
+		}
+	}
 	input.APIPort = defaultString(input.APIPort, "8080")
 	for name, value := range map[string]string{
 		"API": input.APIPort, "Gateway": input.GatewayPort, "user web": input.UserWebPort,
@@ -172,11 +179,16 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 	if err := validateComponents(input, components); err != nil {
 		return InstallPlan{}, err
 	}
+	docsProbeURL := strings.TrimSpace(input.DocsProbeURL)
+	if docsProbeURL == "" {
+		docsProbeURL = defaultDocsProbeURL(input.Mode, components, input.GatewayPort)
+	}
 
 	return InstallPlan{
 		Mode: input.Mode, Profile: input.Profile, Topology: input.Topology, Role: input.Role,
 		Components: components, RuntimeDir: input.RuntimeDir, StorageDriver: input.StorageDriver,
 		PublicAPIURL: strings.TrimSpace(input.PublicAPIURL), ExternalGatewayConfirmed: input.ExternalGatewayConfirmed,
+		DocsProbeURL:       docsProbeURL,
 		MigrationRequested: input.MigrationRequested, ApplicationVersion: input.ApplicationVersion,
 		ImageRegistry: input.ImageRegistry, ImageTag: defaultString(input.ImageTag, input.ApplicationVersion), ImageDigests: cloneImageDigests(input.ImageDigests),
 		ReleaseVersion: defaultString(input.ReleaseVersion, input.ApplicationVersion),
@@ -215,6 +227,11 @@ func ValidateInstallPlan(plan InstallPlan) error {
 			return err
 		}
 	}
+	if strings.TrimSpace(plan.DocsProbeURL) != "" {
+		if err := validateHTTPBaseURL(plan.DocsProbeURL, "documentation probe URL"); err != nil {
+			return err
+		}
+	}
 	for name, value := range map[string]string{
 		"API": plan.APIPort, "Gateway": plan.GatewayPort, "user web": plan.UserWebPort,
 		"admin web": plan.AdminWebPort, "documentation web": plan.DocsWebPort, "monitoring": plan.MonitoringPort,
@@ -227,6 +244,7 @@ func ValidateInstallPlan(plan InstallPlan) error {
 	input := InstallInput{
 		Mode: plan.Mode, Profile: plan.Profile, Topology: plan.Topology, Role: plan.Role,
 		StorageDriver: plan.StorageDriver, PublicAPIURL: plan.PublicAPIURL,
+		DocsProbeURL:             plan.DocsProbeURL,
 		ExternalGatewayConfirmed: plan.ExternalGatewayConfirmed,
 	}
 	if plan.Profile == config.DeploymentProfileCustom {
@@ -254,6 +272,19 @@ func ValidateInstallPlan(plan InstallPlan) error {
 		}
 	}
 	return nil
+}
+
+func defaultDocsProbeURL(mode config.DeploymentMode, components []Component, gatewayPort string) string {
+	if !slices.Contains(components, ComponentAPI) || !slices.Contains(components, ComponentGateway) {
+		return ""
+	}
+	if mode == config.DeploymentModeDocker {
+		return "http://gateway/developer-docs/"
+	}
+	if mode == config.DeploymentModeNative && strings.TrimSpace(gatewayPort) != "" {
+		return "http://127.0.0.1:" + strings.TrimSpace(gatewayPort) + "/developer-docs/"
+	}
+	return ""
 }
 
 func cloneImageDigests(values map[Component]string) map[Component]string {

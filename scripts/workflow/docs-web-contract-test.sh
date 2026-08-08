@@ -26,6 +26,8 @@ done
 
 require_file_text deployments/nginx/default.conf 'location /developer-docs/' 'gateway does not route /developer-docs/'
 require_file_text deployments/nginx/default.conf 'pic_gallery_docs_web' 'gateway does not route to docs-web'
+require_file_text config/runtime.local.env.example 'PIC_GALLERY_DOCS_PROBE_URL=http://nginx/developer-docs/' 'local API does not probe the docs through its Compose gateway'
+require_file_text config/runtime.env.example 'PIC_GALLERY_DOCS_PROBE_URL=' 'runtime schema example does not expose the read-only docs probe target'
 require_file_text web/user/public/env.js 'VITE_DOCS_URL' 'user runtime config does not expose VITE_DOCS_URL'
 require_file_text deployments/devops/frontend-env.template.js 'PIC_GALLERY_DOCS_URL' 'packaged frontend runtime template does not expose the docs URL'
 

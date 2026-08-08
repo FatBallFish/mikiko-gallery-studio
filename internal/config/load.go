@@ -133,7 +133,9 @@ func RuntimeFromBootstrap(bootstrap BootstrapConfig) (Config, error) {
 
 	cfg := configFromRuntimeValues(bootstrap.Values)
 	cfg.Runtime = RuntimeConfig{
+		DeploymentMode:      bootstrap.Deployment.Mode,
 		DeploymentRole:      bootstrap.Deployment.Role,
+		DeploymentModules:   append([]string(nil), bootstrap.DeploymentModules...),
 		Path:                bootstrap.Path,
 		InstallationID:      bootstrap.InstallationID,
 		ClusterNodeID:       bootstrap.ClusterNodeID,
@@ -142,6 +144,8 @@ func RuntimeFromBootstrap(bootstrap BootstrapConfig) (Config, error) {
 		ConfigRevision:      bootstrap.ConfigRevision,
 		PublicAPIURL:        envString(bootstrap.Values, "PUBLIC_API_URL", ""),
 		DocsURL:             envString(bootstrap.Values, "PIC_GALLERY_DOCS_URL", "/developer-docs/"),
+		DocsProbeURL:        envString(bootstrap.Values, "PIC_GALLERY_DOCS_PROBE_URL", ""),
+		GatewayPort:         envString(bootstrap.Values, "GATEWAY_PORT", ""),
 	}
 	applyDefaults(&cfg)
 	if bootstrap.Deployment.Role != DeploymentRoleWeb {

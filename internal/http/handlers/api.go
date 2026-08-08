@@ -178,6 +178,8 @@ type DocsReadinessChecker func(ctx context.Context) DocsReadinessResult
 
 const docsReadinessProbeTimeout = 2 * time.Second
 
+var errDocsProbeURLNotConfigured = errors.New("documentation probe URL is not configured")
+
 func NewAPI(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service) *API {
 	return NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, nil, nil, nil)
 }
@@ -7202,6 +7204,9 @@ func newDocsReadinessChecker(cfg config.Config, client *http.Client, timeout tim
 		}
 		target, err := resolveDocsReadinessTarget(cfg.Runtime)
 		if err != nil {
+			if errors.Is(err, errDocsProbeURLNotConfigured) {
+				return DocsReadinessResult{Status: "fail", Detail: "未配置可探测文档地址"}
+			}
 			return DocsReadinessResult{Status: "fail", Detail: "开发文档部署地址无效"}
 		}
 		targetClass := docsReadinessTargetClass(cfg.Runtime)
@@ -7234,43 +7239,96 @@ func newDocsReadinessChecker(cfg config.Config, client *http.Client, timeout tim
 }
 
 func docsReadinessTargetClass(runtime config.RuntimeConfig) string {
+	if strings.TrimSpace(runtime.DocsProbeURL) != "" {
+		return "部署探测入口"
+	}
 	target, err := url.Parse(strings.TrimSpace(runtime.DocsURL))
 	if err == nil && target.IsAbs() {
 		return "独立部署入口"
 	}
-	return "同源部署入口"
+	return "本机网关入口"
 }
 
 func resolveDocsReadinessTarget(runtime config.RuntimeConfig) (*url.URL, error) {
-	rawTarget := strings.TrimSpace(runtime.DocsURL)
-	if rawTarget == "" || strings.Contains(rawTarget, "\\") {
+	rawDocsURL := strings.TrimSpace(runtime.DocsURL)
+	if rawDocsURL == "" || strings.Contains(rawDocsURL, "\\") {
 		return nil, errors.New("documentation URL is missing or invalid")
 	}
-	target, err := url.Parse(rawTarget)
-	if err != nil || target.Opaque != "" || target.User != nil || target.RawQuery != "" || target.Fragment != "" {
+	docsTarget, err := url.Parse(rawDocsURL)
+	if err != nil || docsTarget.Opaque != "" || docsTarget.User != nil || docsTarget.RawQuery != "" || docsTarget.Fragment != "" {
 		return nil, errors.New("documentation URL is invalid")
 	}
-	if !target.IsAbs() {
-		if target.Host != "" || !strings.HasPrefix(target.Path, "/") {
-			return nil, errors.New("relative documentation URL is invalid")
+	if !docsTarget.IsAbs() && (docsTarget.Host != "" || !strings.HasPrefix(docsTarget.Path, "/")) {
+		return nil, errors.New("relative documentation URL is invalid")
+	}
+
+	var target *url.URL
+	rawProbeURL := strings.TrimSpace(runtime.DocsProbeURL)
+	if rawProbeURL != "" {
+		if strings.Contains(rawProbeURL, "\\") {
+			return nil, errors.New("documentation probe URL is invalid")
 		}
-		base, parseErr := url.Parse(strings.TrimSpace(runtime.PublicAPIURL))
-		if parseErr != nil || !validDocsHTTPURL(base) {
-			return nil, errors.New("public API URL cannot resolve documentation URL")
+		target, err = url.Parse(rawProbeURL)
+		if err != nil || !validDocsHTTPURL(target) {
+			return nil, errors.New("documentation probe URL is invalid")
 		}
-		target = base.ResolveReference(target)
+	} else if docsTarget.IsAbs() {
+		target = docsTarget
+	} else {
+		base, deriveErr := docsProbeBaseFromTopology(runtime)
+		if deriveErr != nil {
+			return nil, deriveErr
+		}
+		target = base.ResolveReference(docsTarget)
 	}
 	if !validDocsHTTPURL(target) {
 		return nil, errors.New("documentation URL must use HTTP or HTTPS")
 	}
+	if target.EscapedPath() != docsTarget.EscapedPath() {
+		return nil, errors.New("documentation probe URL must address the configured documentation path")
+	}
 	return target, nil
 }
 
+func docsProbeBaseFromTopology(runtime config.RuntimeConfig) (*url.URL, error) {
+	hasGateway := false
+	for _, module := range runtime.DeploymentModules {
+		if strings.TrimSpace(module) == "gateway" {
+			hasGateway = true
+			break
+		}
+	}
+	if !hasGateway {
+		return nil, errDocsProbeURLNotConfigured
+	}
+	switch runtime.DeploymentMode {
+	case config.DeploymentModeDocker:
+		return url.Parse("http://gateway/")
+	case config.DeploymentModeNative:
+		port, err := strconv.Atoi(strings.TrimSpace(runtime.GatewayPort))
+		if err != nil || port < 1 || port > 65535 {
+			return nil, errors.New("native gateway port is invalid")
+		}
+		return url.Parse("http://127.0.0.1:" + strconv.Itoa(port) + "/")
+	default:
+		return nil, errDocsProbeURLNotConfigured
+	}
+}
+
 func validDocsHTTPURL(target *url.URL) bool {
-	return target != nil &&
-		(target.Scheme == "http" || target.Scheme == "https") &&
-		target.Host != "" && target.User == nil && target.Opaque == "" &&
-		target.RawQuery == "" && target.Fragment == ""
+	if target == nil ||
+		(target.Scheme != "http" && target.Scheme != "https") ||
+		target.Host == "" || target.Hostname() == "" || target.User != nil || target.Opaque != "" ||
+		target.RawQuery != "" || target.Fragment != "" {
+		return false
+	}
+	if port := target.Port(); port != "" {
+		parsedPort, err := strconv.Atoi(port)
+		if err != nil || parsedPort < 1 || parsedPort > 65535 {
+			return false
+		}
+	}
+	return true
 }
 
 func newDocsReadinessHTTPClient(timeout time.Duration) *http.Client {

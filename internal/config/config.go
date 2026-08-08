@@ -26,7 +26,9 @@ type Config struct {
 // RuntimeConfig is immutable identity metadata loaded from the same runtime.env
 // snapshot as Database.URL. It is intentionally not populated from process env.
 type RuntimeConfig struct {
+	DeploymentMode      DeploymentMode
 	DeploymentRole      DeploymentRole
+	DeploymentModules   []string
 	Path                string
 	InstallationID      string
 	ClusterNodeID       string
@@ -35,6 +37,8 @@ type RuntimeConfig struct {
 	ConfigRevision      int
 	PublicAPIURL        string
 	DocsURL             string
+	DocsProbeURL        string
+	GatewayPort         string
 }
 
 type AppConfig struct {

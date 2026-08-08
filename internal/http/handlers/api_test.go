@@ -32,18 +32,48 @@ func TestResolveDocsReadinessTarget(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "relative target uses public API origin",
-			runtime: config.RuntimeConfig{PublicAPIURL: "https://studio.example.test/api/v1", DocsURL: "/developer-docs/"},
-			want:    "https://studio.example.test/developer-docs/",
+			name: "docker full uses its internal gateway",
+			runtime: config.RuntimeConfig{
+				DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api", "docs-web", "gateway"},
+				DocsURL: "/developer-docs/",
+			},
+			want: "http://gateway/developer-docs/",
 		},
 		{
-			name:    "absolute target is retained",
+			name: "native local gateway uses its loopback port",
+			runtime: config.RuntimeConfig{
+				DeploymentMode: config.DeploymentModeNative, DeploymentModules: []string{"api", "docs-web", "gateway"},
+				GatewayPort: "18000", DocsURL: "/developer-docs/",
+			},
+			want: "http://127.0.0.1:18000/developer-docs/",
+		},
+		{
+			name: "API only node uses explicit probe target instead of public API origin",
+			runtime: config.RuntimeConfig{
+				DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api"},
+				PublicAPIURL: "https://api.example.test/v1", DocsURL: "/developer-docs/",
+				DocsProbeURL: "https://gateway.example.test/developer-docs/",
+			},
+			want: "https://gateway.example.test/developer-docs/",
+		},
+		{
+			name:    "absolute user target is retained when probe target is absent",
 			runtime: config.RuntimeConfig{PublicAPIURL: "https://api.example.test", DocsURL: "https://docs.example.test/reference/"},
 			want:    "https://docs.example.test/reference/",
 		},
-		{name: "relative target requires public origin", runtime: config.RuntimeConfig{DocsURL: "/developer-docs/"}, wantErr: true},
+		{
+			name: "explicit probe separates API and Gateway origins",
+			runtime: config.RuntimeConfig{
+				PublicAPIURL: "https://api.example.test", DocsURL: "/developer-docs/",
+				DocsProbeURL: "https://studio.example.test/developer-docs/",
+			},
+			want: "https://studio.example.test/developer-docs/",
+		},
+		{name: "relative target without local gateway or explicit probe fails", runtime: config.RuntimeConfig{DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api"}, PublicAPIURL: "https://api.example.test", DocsURL: "/developer-docs/"}, wantErr: true},
 		{name: "credentials are rejected", runtime: config.RuntimeConfig{DocsURL: "https://user:secret@docs.example.test/"}, wantErr: true},
 		{name: "non HTTP scheme is rejected", runtime: config.RuntimeConfig{DocsURL: "file:///tmp/docs"}, wantErr: true},
+		{name: "empty host is rejected", runtime: config.RuntimeConfig{DocsURL: "http://:80/developer-docs/"}, wantErr: true},
+		{name: "out of range port is rejected", runtime: config.RuntimeConfig{DocsURL: "http://docs.example.test:99999/developer-docs/"}, wantErr: true},
 		{name: "query is rejected", runtime: config.RuntimeConfig{DocsURL: "https://docs.example.test/?token=secret"}, wantErr: true},
 	}
 
@@ -73,16 +103,33 @@ func TestDocsReadinessCheckerProbesDeployedTarget(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
 	})}
 	cfg := config.Config{Runtime: config.RuntimeConfig{
-		PublicAPIURL: "https://studio.example.test/api/",
-		DocsURL:      "/developer-docs/",
+		DeploymentMode:    config.DeploymentModeDocker,
+		DeploymentModules: []string{"api"},
+		DocsURL:           "/developer-docs/",
+		DocsProbeURL:      "https://studio.example.test/developer-docs/",
 	}}
 
 	result := newDocsReadinessChecker(cfg, client, 100*time.Millisecond)(context.Background())
-	if result.Status != "pass" || !strings.Contains(result.Detail, "同源部署入口") || !strings.Contains(result.Detail, "HTTP 204") {
+	if result.Status != "pass" || !strings.Contains(result.Detail, "部署探测入口") || !strings.Contains(result.Detail, "HTTP 204") {
 		t.Fatalf("readiness result = %#v, want deployed target pass", result)
 	}
 	if requested == nil || requested.String() != "https://studio.example.test/developer-docs/" {
 		t.Fatalf("requested URL = %v", requested)
+	}
+}
+
+func TestDocsReadinessCheckerReportsMissingProbeWithoutUsingPublicAPIOrigin(t *testing.T) {
+	client := &http.Client{Transport: docsReadinessRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		t.Fatalf("relative docs target must not be probed through PUBLIC_API_URL: %s", request.URL)
+		return nil, nil
+	})}
+	cfg := config.Config{Runtime: config.RuntimeConfig{
+		DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api"},
+		PublicAPIURL: "https://api.example.test", DocsURL: "/developer-docs/",
+	}}
+	result := newDocsReadinessChecker(cfg, client, 100*time.Millisecond)(context.Background())
+	if result.Status != "fail" || !strings.Contains(result.Detail, "未配置可探测文档地址") {
+		t.Fatalf("readiness result = %#v, want missing probe diagnostic", result)
 	}
 }
 

@@ -333,15 +333,35 @@ func TestLoadRuntimeCarriesDeploymentDocumentationTarget(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runtime.env")
 	values := completeRuntimeValuesForTest()
 	values["PUBLIC_API_URL"] = "https://studio.example.test/api"
+	values["DEPLOYMENT_MODULES"] = "api,worker,docs-web,gateway"
 	values["PIC_GALLERY_DOCS_URL"] = "/developer-docs/"
+	values["PIC_GALLERY_DOCS_PROBE_URL"] = "http://gateway/developer-docs/"
+	values["GATEWAY_PORT"] = "18000"
 	writeRuntimeValuesForTest(t, path, values)
 
 	cfg, err := LoadRuntime(path)
 	if err != nil {
 		t.Fatalf("LoadRuntime returned error: %v", err)
 	}
-	if cfg.Runtime.PublicAPIURL != values["PUBLIC_API_URL"] || cfg.Runtime.DocsURL != values["PIC_GALLERY_DOCS_URL"] {
+	if cfg.Runtime.PublicAPIURL != values["PUBLIC_API_URL"] || cfg.Runtime.DocsURL != values["PIC_GALLERY_DOCS_URL"] || cfg.Runtime.DocsProbeURL != values["PIC_GALLERY_DOCS_PROBE_URL"] {
 		t.Fatalf("deployment endpoints were not loaded from runtime snapshot: %#v", cfg.Runtime)
+	}
+	if cfg.Runtime.DeploymentMode != DeploymentModeDocker || !slices.Contains(cfg.Runtime.DeploymentModules, "gateway") || cfg.Runtime.GatewayPort != "18000" {
+		t.Fatalf("documentation probe topology was not loaded from runtime snapshot: %#v", cfg.Runtime)
+	}
+}
+
+func TestLoadRuntimeLeavesProbeUnsetForLegacyRuntime(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	values := completeRuntimeValuesForTest()
+	delete(values, "PIC_GALLERY_DOCS_PROBE_URL")
+	writeRuntimeValuesForTest(t, path, values)
+	cfg, err := LoadRuntime(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Runtime.DocsProbeURL != "" {
+		t.Fatalf("legacy runtime received an invented explicit probe URL: %q", cfg.Runtime.DocsProbeURL)
 	}
 }
 
