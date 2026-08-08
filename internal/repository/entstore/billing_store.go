@@ -1724,17 +1724,25 @@ func (s *BillingStore) expireExpiredGrants(ctx context.Context, tx *repoent.Tx, 
 		if err != nil {
 			return err
 		}
-		if _, err := s.insertLedgerWithMetadata(ctx, tx, userID, 0, "", "expire", available.Neg(), state, "expired "+grant.GrantType+" grant", 0, expireGrantLedgerKey(grant.ID), ledgerMetadata{
+		sourceType := domainbilling.NormalizeLedgerSourceType(grant.SourceType)
+		metadata := ledgerMetadata{
 			BalanceBucket:      grant.GrantType,
-			SourceType:         grant.SourceType,
+			SourceType:         sourceType,
 			SourceID:           grant.SourceID,
 			BucketBalanceAfter: balanceBucketAfter(summary, grant.GrantType),
 			ExpiresAt:          grant.ExpiresAt,
-		}); err != nil {
-			if repoent.IsConstraintError(err) {
+		}
+		var insertErr error
+		if sourceType == "payment_order" && grant.SourceID != nil {
+			_, insertErr = s.insertPaymentOrderLedger(ctx, tx, userID, *grant.SourceID, "expire", available.Neg(), state, "expired "+grant.GrantType+" grant", 0, expireGrantLedgerKey(grant.ID), metadata)
+		} else {
+			_, insertErr = s.insertLedgerWithMetadata(ctx, tx, userID, 0, "", "expire", available.Neg(), state, "expired "+grant.GrantType+" grant", 0, expireGrantLedgerKey(grant.ID), metadata)
+		}
+		if insertErr != nil {
+			if repoent.IsConstraintError(insertErr) {
 				continue
 			}
-			return err
+			return insertErr
 		}
 	}
 	return nil

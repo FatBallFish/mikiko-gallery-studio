@@ -72,3 +72,17 @@ const generation = profileLedgerRows([{
 if (generation.generationDetail !== '成功 3 张 · 单价 4.00000 积分/张 · 合计 12.00000 积分 · 部分成功' || generation.taskId !== 'task-partial') {
   throw new Error(`generation ledger must expose count, unit price, total, partial state, and task id, got ${JSON.stringify(generation)}`)
 }
+
+const legacyGiftExpiry = profileLedgerRows([{
+  id: 5,
+  ledger_type: 'expire',
+  balance_bucket: 'gift',
+  change_points: '-5.00000',
+  source_type: 'payment_order_bonus',
+  source_id: 42,
+  order_id: 42,
+  created_at: '2026-06-05T03:00:00Z',
+} as LedgerEntry])[0]
+if (legacyGiftExpiry.sourceLabel !== '支付订单') {
+  throw new Error(`gift expiry must not expose the internal payment_order_bonus source, got ${JSON.stringify(legacyGiftExpiry)}`)
+}

@@ -31,7 +31,7 @@ export function balanceBucketLabel(bucket: string) {
 
 function ledgerSourceLabel(source?: string) {
   if (source === 'signup') return '注册赠送'
-  if (source === 'payment_order') return '支付订单'
+  if (source === 'payment_order' || source === 'payment_order_bonus') return '支付订单'
   if (source === 'redeem_code') return '兑换码'
   if (source === 'task') return '生图任务'
   if (source === 'admin') return '后台调整'

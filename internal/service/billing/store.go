@@ -1141,14 +1141,19 @@ func (s *MemoryStore) refundPaymentOrderLocked(req domainbilling.RefundPaymentOr
 		if !s.memoryRefundAllocationsAvailableLocked(order.UserID, allocations, true) {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 		}
+		projectedFrozen := decimal.Zero
+		now := time.Now().UTC()
 		for _, allocation := range allocations {
 			grant := s.memoryGrantByIDLocked(order.UserID, allocation.GrantID)
+			if grant.Status == "active" && (grant.ExpiresAt == nil || grant.ExpiresAt.After(now)) {
+				projectedFrozen = projectedFrozen.Add(allocation.Points)
+			}
 			grant.Frozen = decimal.Max(grant.Frozen.Sub(allocation.Points), decimal.Zero).Round(s.scale)
 			if grant.Status != "expired" && (plan.FullyRefunded || (!grant.Available.IsPositive() && !grant.Frozen.IsPositive())) {
 				grant.Status = "refunded"
 			}
 		}
-		current.Frozen = decimal.Max(current.Frozen.Sub(plan.RefundPoints), decimal.Zero).Round(s.scale)
+		current.Frozen = decimal.Max(current.Frozen.Sub(projectedFrozen), decimal.Zero).Round(s.scale)
 		delete(s.refundFreezes, order.ID)
 	} else {
 		var ok bool
@@ -1270,7 +1275,7 @@ func (s *MemoryStore) ReleaseRefundPaymentOrder(_ context.Context, req domainbil
 	s.expireMemoryGrantsLocked(order.UserID, time.Now().UTC())
 	current := s.balances[order.UserID]
 	restored := decimal.Zero
-	released := decimal.Zero
+	projectedReleased := decimal.Zero
 	now := time.Now().UTC()
 	for _, allocation := range freeze.Allocations {
 		grant := s.memoryGrantByIDLocked(order.UserID, allocation.GrantID)
@@ -1278,8 +1283,10 @@ func (s *MemoryStore) ReleaseRefundPaymentOrder(_ context.Context, req domainbil
 			continue
 		}
 		points := decimal.Min(grant.Frozen, allocation.Points)
+		if grant.Status == "active" && (grant.ExpiresAt == nil || grant.ExpiresAt.After(now)) {
+			projectedReleased = projectedReleased.Add(points)
+		}
 		grant.Frozen = grant.Frozen.Sub(points).Round(s.scale)
-		released = released.Add(points)
 		if grant.Status == "active" && (grant.ExpiresAt == nil || grant.ExpiresAt.After(now)) {
 			grant.Available = grant.Available.Add(points).Round(s.scale)
 			s.changeMemoryBreakdownLocked(order.UserID, grant.GrantType, points)
@@ -1289,7 +1296,7 @@ func (s *MemoryStore) ReleaseRefundPaymentOrder(_ context.Context, req domainbil
 			grant.Available = decimal.Zero
 		}
 	}
-	current.Frozen = decimal.Max(current.Frozen.Sub(released), decimal.Zero).Round(s.scale)
+	current.Frozen = decimal.Max(current.Frozen.Sub(projectedReleased), decimal.Zero).Round(s.scale)
 	current.Available = current.Available.Add(restored).Round(s.scale)
 	s.balances[order.UserID] = current
 	delete(s.refundFreezes, order.ID)
@@ -1654,11 +1661,11 @@ func (s *MemoryStore) FinalizeTask(_ context.Context, req FinalizeStoreRequest) 
 		actual = reserved
 	}
 	if actual.IsZero() {
-		restored := s.settleMemoryTaskGrantsLocked(req.UserID, state, decimal.Zero)
+		restored, projectedFrozen := s.settleMemoryTaskGrantsLocked(req.UserID, state, decimal.Zero)
 		current.Available = current.Available.Add(restored)
-		current.Frozen = current.Frozen.Sub(reserved)
+		current.Frozen = decimal.Max(current.Frozen.Sub(projectedFrozen), decimal.Zero).Round(s.scale)
 		apiKeyID := firstPositive(req.APIKeyID, state.APIKeyID)
-		s.appendLedger(req.UserID, apiKeyID, req.TaskID, "refund", restored, current, req.Reason)
+		s.appendLedger(req.UserID, apiKeyID, req.TaskID, "refund", reserved, current, req.Reason)
 		s.addAPIKeyUsage(apiKeyID, reserved.Neg(), time.Now().UTC())
 		s.balances[req.UserID] = current
 		state.Active = false
@@ -1668,14 +1675,15 @@ func (s *MemoryStore) FinalizeTask(_ context.Context, req FinalizeStoreRequest) 
 		s.taskState[req.TaskID] = state
 		return s.formatState(req.UserID, current), nil
 	}
-	restored := s.settleMemoryTaskGrantsLocked(req.UserID, state, actual)
-	current.Frozen = current.Frozen.Sub(reserved)
+	restored, projectedFrozen := s.settleMemoryTaskGrantsLocked(req.UserID, state, actual)
+	diff := reserved.Sub(actual).Round(s.scale)
+	current.Available = current.Available.Add(restored)
+	current.Frozen = decimal.Max(current.Frozen.Sub(projectedFrozen), decimal.Zero).Round(s.scale)
 	apiKeyID := firstPositive(req.APIKeyID, state.APIKeyID)
 	s.appendLedger(req.UserID, apiKeyID, req.TaskID, "consume", actual.Neg(), current, req.Reason)
-	if restored.GreaterThan(decimal.Zero) {
-		current.Available = current.Available.Add(restored)
-		s.appendLedger(req.UserID, apiKeyID, req.TaskID, "refund", restored, current, req.Reason)
-		s.addAPIKeyUsage(apiKeyID, restored.Neg(), time.Now().UTC())
+	if diff.GreaterThan(decimal.Zero) {
+		s.appendLedger(req.UserID, apiKeyID, req.TaskID, "refund", diff, current, req.Reason)
+		s.addAPIKeyUsage(apiKeyID, diff.Neg(), time.Now().UTC())
 	}
 	s.balances[req.UserID] = current
 	state.Active = false
@@ -1738,14 +1746,18 @@ func (s *MemoryStore) reserveMemoryGrantsLocked(userID int64, amount decimal.Dec
 	return allocations, remaining, true
 }
 
-func (s *MemoryStore) settleMemoryTaskGrantsLocked(userID int64, state memoryTaskBillingState, actual decimal.Decimal) decimal.Decimal {
+func (s *MemoryStore) settleMemoryTaskGrantsLocked(userID int64, state memoryTaskBillingState, actual decimal.Decimal) (decimal.Decimal, decimal.Decimal) {
 	remainingActual := actual
 	restored := decimal.Zero
+	projectedFrozen := state.UntrackedReserved
 	now := time.Now().UTC()
 	for _, allocation := range state.GrantAllocations {
 		grant := s.memoryGrantByIDLocked(userID, allocation.GrantID)
 		if grant == nil {
 			continue
+		}
+		if grant.Status == "active" && (grant.ExpiresAt == nil || grant.ExpiresAt.After(now)) {
+			projectedFrozen = projectedFrozen.Add(allocation.Points)
 		}
 		consume := decimal.Min(allocation.Points, remainingActual)
 		if consume.IsNegative() {
@@ -1769,7 +1781,7 @@ func (s *MemoryStore) settleMemoryTaskGrantsLocked(userID int64, state memoryTas
 	if untrackedRefund.IsPositive() {
 		restored = restored.Add(untrackedRefund)
 	}
-	return restored.Round(s.scale)
+	return restored.Round(s.scale), projectedFrozen.Round(s.scale)
 }
 
 func (s *MemoryStore) memoryGrantByIDLocked(userID, grantID int64) *memoryWalletGrant {
@@ -1817,14 +1829,16 @@ func (s *MemoryStore) expireMemoryGrantsLocked(userID int64, now time.Time) {
 			continue
 		}
 		expired := grant.Available
+		expiredFrozen := grant.Frozen
 		grant.Available = decimal.Zero
 		grant.Status = "expired"
+		current := s.balances[userID]
+		current.Available = decimal.Max(current.Available.Sub(expired), decimal.Zero).Round(s.scale)
+		current.Frozen = decimal.Max(current.Frozen.Sub(expiredFrozen), decimal.Zero).Round(s.scale)
+		s.balances[userID] = current
 		if !expired.IsPositive() {
 			continue
 		}
-		current := s.balances[userID]
-		current.Available = decimal.Max(current.Available.Sub(expired), decimal.Zero).Round(s.scale)
-		s.balances[userID] = current
 		s.changeMemoryBreakdownLocked(userID, grant.GrantType, expired.Neg())
 		s.appendLedgerWithMetadata(userID, 0, "", grant.OrderID, "expire", expired.Neg(), current, "expired "+grant.GrantType+" grant", grant.GrantType, grant.ExpiresAt)
 	}
@@ -2179,6 +2193,7 @@ func (s *MemoryStore) memoryBucketGrantProjection(userID int64, bucket string, n
 	frozen := decimal.Zero
 	trackedAvailable := decimal.Zero
 	var expiresAt *time.Time
+	policySet := false
 	mixed := false
 	for _, grant := range s.walletGrants[userID] {
 		if grant.GrantType != bucket || grant.Status != "active" || (grant.ExpiresAt != nil && !grant.ExpiresAt.After(now)) {
@@ -2186,8 +2201,12 @@ func (s *MemoryStore) memoryBucketGrantProjection(userID int64, bucket string, n
 		}
 		trackedAvailable = trackedAvailable.Add(grant.Available)
 		frozen = frozen.Add(grant.Frozen)
-		if expiresAt == nil && grant.ExpiresAt != nil && !mixed {
+		if !policySet {
 			expiresAt = cloneMemoryTime(grant.ExpiresAt)
+			policySet = true
+			continue
+		}
+		if mixed {
 			continue
 		}
 		if (expiresAt == nil) != (grant.ExpiresAt == nil) || (expiresAt != nil && grant.ExpiresAt != nil && !expiresAt.Equal(*grant.ExpiresAt)) {

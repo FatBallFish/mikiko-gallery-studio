@@ -142,9 +142,11 @@ func TestMemoryStoreFrozenRefundCrossesGrantExpiry(t *testing.T) {
 		for _, grant := range store.walletGrants[711] {
 			grant.ExpiresAt = &past
 		}
-		if _, err := store.GetBalance(t.Context(), 711); err != nil {
+		pendingBalance, err := store.GetBalance(t.Context(), 711)
+		if err != nil {
 			t.Fatalf("GetBalance: %v", err)
 		}
+		assertMemoryBalanceHasNoFrozenProjection(t, pendingBalance)
 		first, err := store.RefundPaymentOrder(t.Context(), request)
 		if err != nil {
 			t.Fatalf("RefundPaymentOrder after expiry: %v", err)
@@ -171,9 +173,11 @@ func TestMemoryStoreFrozenRefundCrossesGrantExpiry(t *testing.T) {
 		for _, grant := range store.walletGrants[712] {
 			grant.ExpiresAt = &past
 		}
-		if _, err := store.GetBalance(t.Context(), 712); err != nil {
+		pendingBalance, err := store.GetBalance(t.Context(), 712)
+		if err != nil {
 			t.Fatalf("GetBalance: %v", err)
 		}
+		assertMemoryBalanceHasNoFrozenProjection(t, pendingBalance)
 		if _, err := store.ReleaseRefundPaymentOrder(t.Context(), request); err != nil {
 			t.Fatalf("ReleaseRefundPaymentOrder after expiry: %v", err)
 		}
@@ -188,6 +192,202 @@ func TestMemoryStoreFrozenRefundCrossesGrantExpiry(t *testing.T) {
 			t.Fatalf("release after expiry must not restore points, got %#v", balance)
 		}
 	})
+}
+
+func TestMemoryStoreExpiredRefundFreezePreservesOtherFrozenProjection(t *testing.T) {
+	for _, action := range []string{"finalize", "release"} {
+		t.Run(action, func(t *testing.T) {
+			store := NewMemoryStore(5)
+			const userID = int64(717)
+			order := completeMemoryPlanOrder(t, store, userID, "plus-monthly", "memory-expired-refund-with-other-freeze-"+action)
+			request := domainbilling.RefundPaymentOrderRequest{UserID: userID, OrderID: order.ID, RefundTradeNo: "memory-expired-refund-with-other-freeze-" + action}
+			if _, err := store.FreezeRefundPaymentOrder(t.Context(), request); err != nil {
+				t.Fatalf("FreezeRefundPaymentOrder: %v", err)
+			}
+			past := time.Now().UTC().Add(-time.Hour)
+			for _, allocation := range store.refundFreezes[order.ID].Allocations {
+				grant := store.memoryGrantByIDLocked(userID, allocation.GrantID)
+				grant.ExpiresAt = &past
+			}
+			if _, err := store.GetBalance(t.Context(), userID); err != nil {
+				t.Fatalf("GetBalance after expiry: %v", err)
+			}
+			if _, err := store.Adjust(t.Context(), AdjustStoreRequest{
+				UserID: userID, ChangePoints: "50.00000", Reason: "unrelated active balance",
+			}); err != nil {
+				t.Fatalf("Adjust unrelated active balance: %v", err)
+			}
+			if _, err := store.ReserveTask(t.Context(), ReserveStoreRequest{
+				UserID: userID, TaskID: "active-task-" + action, EstimatedPoints: "50.00000",
+			}); err != nil {
+				t.Fatalf("ReserveTask active task: %v", err)
+			}
+
+			var err error
+			if action == "finalize" {
+				_, err = store.RefundPaymentOrder(t.Context(), request)
+			} else {
+				_, err = store.ReleaseRefundPaymentOrder(t.Context(), request)
+			}
+			if err != nil {
+				t.Fatalf("%s expired refund freeze: %v", action, err)
+			}
+			balance, err := store.GetBalance(t.Context(), userID)
+			if err != nil {
+				t.Fatalf("GetBalance after %s: %v", action, err)
+			}
+			if balance.FrozenPoints != "50.00000" {
+				t.Fatalf("%s of an expired refund freeze must preserve unrelated active frozen points, got %#v", action, balance)
+			}
+		})
+	}
+}
+
+func TestMemoryStorePartialSettlementAfterGrantExpiryUsesSemanticRefund(t *testing.T) {
+	store := NewMemoryStore(5)
+	const (
+		userID   = int64(714)
+		apiKeyID = int64(9714)
+		taskID   = "memory-partial-settlement-after-expiry"
+	)
+	_ = completeMemoryPlanOrder(t, store, userID, "plus-monthly", "memory-partial-settlement-after-expiry")
+	if _, err := store.ReserveTask(t.Context(), ReserveStoreRequest{
+		UserID: userID, APIKeyID: apiKeyID, TaskID: taskID, EstimatedPoints: "100.00000", Reason: "reserve before expiry",
+	}); err != nil {
+		t.Fatalf("ReserveTask: %v", err)
+	}
+	past := time.Now().UTC().Add(-time.Hour)
+	for _, grant := range store.walletGrants[userID] {
+		grant.ExpiresAt = &past
+	}
+	if balance, err := store.GetBalance(t.Context(), userID); err != nil {
+		t.Fatalf("GetBalance after expiry: %v", err)
+	} else {
+		assertMemoryBalanceHasNoFrozenProjection(t, balance)
+	}
+
+	settled, err := store.FinalizeTask(t.Context(), FinalizeStoreRequest{
+		UserID: userID, APIKeyID: apiKeyID, TaskID: taskID, EstimatedPoints: "100.00000", ActualPoints: "40.00000", Reason: "partial result",
+	})
+	if err != nil {
+		t.Fatalf("FinalizeTask: %v", err)
+	}
+	if settled.AvailablePoints != "0.00000" || settled.FrozenPoints != "0.00000" {
+		t.Fatalf("expired settlement must not restore spendable points or frozen projection, got %#v", settled)
+	}
+	usage, err := store.APIKeyUsage(t.Context(), apiKeyID, nil)
+	if err != nil {
+		t.Fatalf("APIKeyUsage: %v", err)
+	}
+	if usage != "40.00000" {
+		t.Fatalf("API key usage must settle to actual points after expiry, got %s", usage)
+	}
+	page, err := store.ListLedger(t.Context(), userID, 1, 20)
+	if err != nil {
+		t.Fatalf("ListLedger: %v", err)
+	}
+	entries := map[string]domainbilling.LedgerEntry{}
+	for _, entry := range page.Items {
+		if entry.TaskID == taskID {
+			entries[entry.LedgerType] = entry
+		}
+	}
+	if entries["consume"].ChangePoints != "-40.00000" || entries["consume"].FrozenAfter != "0.00000" {
+		t.Fatalf("consume ledger must record actual settlement after expiry, got %#v", entries["consume"])
+	}
+	if entries["refund"].ChangePoints != "60.00000" || entries["refund"].BalanceAfter != "0.00000" || entries["refund"].FrozenAfter != "0.00000" {
+		t.Fatalf("refund ledger must record the semantic reserved-actual difference without restoring expired points, got %#v", entries["refund"])
+	}
+}
+
+func TestMemoryStoreExpiredTaskSettlementPreservesOtherFrozenProjection(t *testing.T) {
+	store := NewMemoryStore(5)
+	const userID = int64(716)
+	_ = completeMemoryPlanOrder(t, store, userID, "plus-monthly", "memory-expired-task-with-other-freeze")
+	if _, err := store.ReserveTask(t.Context(), ReserveStoreRequest{
+		UserID: userID, TaskID: "expired-task", EstimatedPoints: "100.00000",
+	}); err != nil {
+		t.Fatalf("ReserveTask expired task: %v", err)
+	}
+	past := time.Now().UTC().Add(-time.Hour)
+	for _, allocation := range store.taskState["expired-task"].GrantAllocations {
+		grant := store.memoryGrantByIDLocked(userID, allocation.GrantID)
+		grant.ExpiresAt = &past
+	}
+	if _, err := store.GetBalance(t.Context(), userID); err != nil {
+		t.Fatalf("GetBalance after expiry: %v", err)
+	}
+	if _, err := store.Adjust(t.Context(), AdjustStoreRequest{
+		UserID: userID, ChangePoints: "50.00000", Reason: "unrelated active balance",
+	}); err != nil {
+		t.Fatalf("Adjust unrelated active balance: %v", err)
+	}
+	if _, err := store.ReserveTask(t.Context(), ReserveStoreRequest{
+		UserID: userID, TaskID: "active-task", EstimatedPoints: "50.00000",
+	}); err != nil {
+		t.Fatalf("ReserveTask active task: %v", err)
+	}
+
+	settled, err := store.FinalizeTask(t.Context(), FinalizeStoreRequest{
+		UserID: userID, TaskID: "expired-task", EstimatedPoints: "100.00000", ActualPoints: "40.00000",
+	})
+	if err != nil {
+		t.Fatalf("FinalizeTask expired task: %v", err)
+	}
+	if settled.FrozenPoints != "50.00000" {
+		t.Fatalf("settling an expired task must preserve unrelated active frozen points, got %#v", settled)
+	}
+}
+
+func TestMemoryStoreBucketExpiryAggregationIsOrderIndependent(t *testing.T) {
+	now := time.Now().UTC()
+	firstExpiry := now.Add(24 * time.Hour)
+	secondExpiry := now.Add(48 * time.Hour)
+	tests := []struct {
+		name        string
+		expires     []*time.Time
+		wantMixed   bool
+		wantExpires *time.Time
+	}{
+		{name: "permanent_then_expiring", expires: []*time.Time{nil, &firstExpiry}, wantMixed: true},
+		{name: "expiring_then_permanent", expires: []*time.Time{&firstExpiry, nil}, wantMixed: true},
+		{name: "different_expiries", expires: []*time.Time{&firstExpiry, &secondExpiry}, wantMixed: true},
+		{name: "same_expiry", expires: []*time.Time{&firstExpiry, &firstExpiry}, wantExpires: &firstExpiry},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := NewMemoryStore(5)
+			const userID = int64(715)
+			for index, expiresAt := range test.expires {
+				store.walletGrants[userID] = append(store.walletGrants[userID], &memoryWalletGrant{
+					ID: int64(index + 1), UserID: userID, GrantType: "subscription", Status: "active",
+					Available: mustMemoryDecimal("1.00000"), ExpiresAt: expiresAt,
+				})
+			}
+			_, expiresAt, mixed, tracked := store.memoryBucketGrantProjection(userID, "subscription", now)
+			if mixed != test.wantMixed || tracked.StringFixed(5) != "2.00000" {
+				t.Fatalf("unexpected expiry aggregation: mixed=%v expires=%v tracked=%s", mixed, expiresAt, tracked)
+			}
+			if test.wantExpires == nil && expiresAt != nil {
+				t.Fatalf("mixed expiry must not expose a whole-bucket expiry, got %s", expiresAt)
+			}
+			if test.wantExpires != nil && (expiresAt == nil || !expiresAt.Equal(*test.wantExpires)) {
+				t.Fatalf("uniform expiry must be preserved, got %v want %v", expiresAt, test.wantExpires)
+			}
+		})
+	}
+}
+
+func assertMemoryBalanceHasNoFrozenProjection(t *testing.T, balance BalanceState) {
+	t.Helper()
+	if balance.FrozenPoints != "0.00000" {
+		t.Fatalf("expired grants must not remain in the total frozen projection, got %#v", balance)
+	}
+	for _, bucket := range balance.Buckets {
+		if bucket.FrozenPoints != "0.00000" && bucket.FrozenPoints != "" {
+			t.Fatalf("expired grants must not remain in bucket frozen projections, got %#v", balance.Buckets)
+		}
+	}
 }
 
 func completeMemoryPlanOrder(t *testing.T, store *MemoryStore, userID int64, planCode, tradeNo string) domainbilling.PaymentOrder {

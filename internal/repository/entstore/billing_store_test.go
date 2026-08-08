@@ -1145,6 +1145,47 @@ func TestBillingStoreFixedPackageCompletionSnapshotsExpiryForBothGrants(t *testi
 	}
 }
 
+func TestBillingStoreGiftExpiryLedgerUsesPublicPaymentOrderSource(t *testing.T) {
+	ctx := t.Context()
+	client, store, order := completedBonusPackageOrder(t, "gift-expiry-ledger-source", 8803)
+	past := time.Now().UTC().Add(-time.Hour)
+	if _, err := client.WalletGrant.Update().Where(
+		walletgrant.UserIDEQ(order.UserID),
+		walletgrant.SourceIDEQ(order.ID),
+		walletgrant.GrantTypeEQ("gift"),
+	).SetExpiresAt(past).Save(ctx); err != nil {
+		t.Fatalf("expire gift grant: %v", err)
+	}
+	if _, err := store.GetBalance(ctx, order.UserID); err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	raw, err := client.PointLedger.Query().Where(
+		pointledger.UserIDEQ(order.UserID),
+		pointledger.LedgerTypeEQ("expire"),
+		pointledger.BalanceBucketEQ("gift"),
+	).Only(ctx)
+	if err != nil {
+		t.Fatalf("load gift expiry ledger: %v", err)
+	}
+	if raw.SourceType != "payment_order" || raw.SourceID == nil || *raw.SourceID != order.ID || raw.OrderID == nil || *raw.OrderID != order.ID {
+		t.Fatalf("stored gift expiry ledger must preserve public payment-order identity, got %#v", raw)
+	}
+	page, err := store.ListLedger(ctx, order.UserID, 1, 20)
+	if err != nil {
+		t.Fatalf("ListLedger: %v", err)
+	}
+	for _, entry := range page.Items {
+		if entry.ID != int64(raw.ID) {
+			continue
+		}
+		if entry.SourceType != "payment_order" || entry.SourceID != order.ID || entry.OrderID != order.ID {
+			t.Fatalf("ledger API must expose payment_order source, source_id, and order_id, got %#v", entry)
+		}
+		return
+	}
+	t.Fatalf("gift expiry ledger missing from API projection: %#v", page.Items)
+}
+
 func TestBillingStoreCustomAmountCompletionRemainsPermanentRecharge(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-custom-amount-permanent?mode=memory&cache=shared&_fk=1")

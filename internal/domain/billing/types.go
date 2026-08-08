@@ -300,7 +300,8 @@ func PopulateLedgerDisplayFields(entry LedgerEntry) LedgerEntry {
 	if strings.TrimSpace(entry.BalanceBucket) == "" {
 		entry.BalanceBucket = entry.BucketType
 	}
-	if strings.TrimSpace(entry.SourceType) == "" {
+	entry.SourceType = NormalizeLedgerSourceType(entry.SourceType)
+	if entry.SourceType == "" {
 		entry.SourceType = LedgerSourceType(entry)
 	}
 	if entry.SourceID == nil {
@@ -315,6 +316,14 @@ func PopulateLedgerDisplayFields(entry LedgerEntry) LedgerEntry {
 	entry.Amount = formatLedgerAmount(entry.ChangePoints)
 	entry.Detail = LedgerDetail(entry)
 	return entry
+}
+
+func NormalizeLedgerSourceType(sourceType string) string {
+	sourceType = strings.TrimSpace(sourceType)
+	if sourceType == "payment_order_bonus" {
+		return "payment_order"
+	}
+	return sourceType
 }
 
 func LedgerBucketType(entry LedgerEntry) string {

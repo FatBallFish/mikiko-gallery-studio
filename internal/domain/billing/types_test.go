@@ -39,3 +39,13 @@ func TestPopulateLedgerDisplayFieldsLabelsGiftOrderLedger(t *testing.T) {
 		t.Fatalf("gift order ledger must expose readable amount and detail, got %#v", entry)
 	}
 }
+
+func TestPopulateLedgerDisplayFieldsHidesGiftGrantInternalSource(t *testing.T) {
+	entry := PopulateLedgerDisplayFields(LedgerEntry{
+		LedgerType: "expire", BalanceBucket: "gift", SourceType: "payment_order_bonus",
+		SourceID: int64(42), OrderID: 42, ChangePoints: "-5.00000", CreatedAt: time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC),
+	})
+	if entry.SourceType != "payment_order" || entry.SourceID != int64(42) || entry.OrderID != 42 {
+		t.Fatalf("gift expiry must expose the public payment-order source without losing order identity, got %#v", entry)
+	}
+}
