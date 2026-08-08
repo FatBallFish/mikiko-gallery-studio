@@ -778,6 +778,35 @@ func TestEstimateRouteModelAutoOmitsResolvedSize(t *testing.T) {
 	}
 }
 
+func TestEstimateRouteModelAcceptsEnabledCustomRatio(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint: "0.31250", PointsScale: 5,
+		TaskMultipliers: map[string]string{"text_to_image": "1.00000"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"},
+			SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, SupportsCustomRatio: true,
+			Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+			MinWidth: 16, MaxWidth: 3840, MinHeight: 16, MaxHeight: 3840,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "7:5",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("Estimate custom ratio: %v", err)
+	}
+	if result.ResolvedSize == nil || *result.ResolvedSize != "1488x1056" {
+		t.Fatalf("custom-ratio resolved size = %#v, want 1488x1056", result.ResolvedSize)
+	}
+}
+
 func TestEstimateRouteModelRejectsTransparentJPEG(t *testing.T) {
 	svc := NewService(config.BillingConfig{
 		CNYPerPoint: "0.31250", PointsScale: 5,
@@ -799,8 +828,49 @@ func TestEstimateRouteModelRejectsTransparentJPEG(t *testing.T) {
 		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "auto",
 		Quality: "auto", OutputFormat: "jpeg", Background: "transparent", Moderation: "auto", RequestedOutputImageCount: 1,
 	})
-	if err == nil {
-		t.Fatal("expected transparent JPEG estimate to be rejected")
+	appErr, ok := err.(*errs.Error)
+	if !ok || appErr.StatusCode != 400 || appErr.Code != modelhub.CodeTransparentFormatConflict {
+		t.Fatalf("transparent JPEG estimate error = %#v, want 400/%s", err, modelhub.CodeTransparentFormatConflict)
+	}
+}
+
+func TestEstimateRouteModelPreservesTypedSizeValidationErrors(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint: "0.31250", PointsScale: 5,
+		TaskMultipliers: map[string]string{"text_to_image": "1.00000"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"},
+			SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"ratio", "pixel"}, SupportedAspectRatios: []string{"1:1"},
+			SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+			MinWidth: 512, MaxWidth: 2048, MinHeight: 512, MaxHeight: 2048,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	tests := []struct {
+		name string
+		req  domainbilling.EstimateRequest
+		code string
+	}{
+		{name: "ratio bounds", req: domainbilling.EstimateRequest{SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "4:1"}, code: modelhub.CodeInvalidAspectRatio},
+		{name: "illegal pixels", req: domainbilling.EstimateRequest{SizeMode: "pixel", RequestedSize: "1001x777"}, code: modelhub.CodeInvalidExplicitDimensions},
+		{name: "mixed ratio", req: domainbilling.EstimateRequest{SizeMode: "ratio", BaseResolution: "auto", AspectRatio: "1:1", RequestedSize: "1024x1024"}, code: modelhub.CodeInvalidSizeMode},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.req.TaskType, tt.req.RouteModelCode = "text_to_image", "plus"
+			tt.req.Quality, tt.req.OutputFormat, tt.req.Moderation = "auto", "png", "auto"
+			tt.req.RequestedOutputImageCount = 1
+			_, err := svc.Estimate(tt.req)
+			appErr, ok := err.(*errs.Error)
+			if !ok || appErr.StatusCode != 400 || appErr.Code != tt.code {
+				t.Fatalf("Estimate error = %#v, want 400/%s", err, tt.code)
+			}
+		})
 	}
 }
 

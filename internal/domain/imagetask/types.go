@@ -131,24 +131,26 @@ type TestModelAccountResult struct {
 }
 
 type Attempt struct {
-	Provider          string         `json:"provider,omitempty"`
-	AdapterType       string         `json:"adapter_type,omitempty"`
-	AccountModelID    int64          `json:"account_model_id,omitempty"`
-	ModelAccountID    int64          `json:"model_account_id,omitempty"`
-	ModelCode         string         `json:"model_code,omitempty"`
-	SourceSizeMode    string         `json:"source_size_mode,omitempty"`
-	OutboundSize      string         `json:"outbound_size,omitempty"`
-	ReturnedWidth     int            `json:"returned_width,omitempty"`
-	ReturnedHeight    int            `json:"returned_height,omitempty"`
-	SizeDiagnostic    string         `json:"size_diagnostic,omitempty"`
-	ProviderRequestID string         `json:"provider_request_id,omitempty"`
-	Status            string         `json:"status,omitempty"`
-	Error             string         `json:"error,omitempty"`
-	ErrorCode         string         `json:"error_code,omitempty"`
-	ErrorMessage      string         `json:"error_message,omitempty"`
-	ErrorDetail       map[string]any `json:"error_detail,omitempty"`
-	StartedAt         *time.Time     `json:"started_at,omitempty"`
-	FinishedAt        *time.Time     `json:"finished_at,omitempty"`
+	Provider            string         `json:"provider,omitempty"`
+	AdapterType         string         `json:"adapter_type,omitempty"`
+	AccountModelID      int64          `json:"account_model_id,omitempty"`
+	ModelAccountID      int64          `json:"model_account_id,omitempty"`
+	ModelCode           string         `json:"model_code,omitempty"`
+	SourceSizeMode      string         `json:"source_size_mode,omitempty"`
+	OutboundSize        string         `json:"outbound_size,omitempty"`
+	ReturnedWidth       int            `json:"returned_width,omitempty"`
+	ReturnedHeight      int            `json:"returned_height,omitempty"`
+	SizeDiagnostic      string         `json:"size_diagnostic,omitempty"`
+	ProviderRequestID   string         `json:"provider_request_id,omitempty"`
+	RequestedImageCount int            `json:"requested_image_count,omitempty"`
+	ReturnedImageCount  int            `json:"returned_image_count,omitempty"`
+	Status              string         `json:"status,omitempty"`
+	Error               string         `json:"error,omitempty"`
+	ErrorCode           string         `json:"error_code,omitempty"`
+	ErrorMessage        string         `json:"error_message,omitempty"`
+	ErrorDetail         map[string]any `json:"error_detail,omitempty"`
+	StartedAt           *time.Time     `json:"started_at,omitempty"`
+	FinishedAt          *time.Time     `json:"finished_at,omitempty"`
 }
 
 type ArtifactDiagnostic struct {

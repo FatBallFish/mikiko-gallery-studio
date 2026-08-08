@@ -848,19 +848,13 @@ func CandidateSupportsRequest(candidate ProviderCandidate, req ResolveRequest, r
 			MinWidth: candidate.MinWidth, MaxWidth: candidate.MaxWidth, MinHeight: candidate.MinHeight, MaxHeight: candidate.MaxHeight,
 			OutputFormat: candidate.OutputFormat, SupportedBackgrounds: candidate.SupportedBackgrounds,
 		}
-		baseResolution, aspectRatio, requestedSize := req.BaseResolution, req.AspectRatio, req.RequestedSize
-		if mode == SizeModeAuto {
-			baseResolution, aspectRatio, requestedSize = "", "", ""
-		}
-		if mode == SizeModeRatio {
-			baseResolution, requestedSize = resolvedBaseResolution, ""
-		}
-		if mode == SizeModePixel {
-			baseResolution, aspectRatio = "", ""
-		}
-		if _, err := NormalizeGenerationRequest(capability, GenerationRequest{SizeMode: mode, BaseResolution: baseResolution, AspectRatio: aspectRatio, RequestedSize: requestedSize, Background: req.Background, OutputFormat: outputFormat}); err != nil {
+		if _, err := NormalizeGenerationRequest(capability, GenerationRequest{
+			SizeMode: mode, BaseResolution: req.BaseResolution, AspectRatio: req.AspectRatio,
+			RequestedSize: req.RequestedSize, Background: req.Background, OutputFormat: outputFormat,
+		}); err != nil {
 			return false
 		}
+		return true
 	}
 	switch mode {
 	case SizeModeAuto:
@@ -883,7 +877,7 @@ func CandidateSupportsRequest(candidate ProviderCandidate, req ResolveRequest, r
 		if ratio == "" {
 			return false
 		}
-		if !strings.EqualFold(strings.TrimSpace(req.SizeMode), sizeModeLegacyRatio) && len(candidate.SupportedAspectRatios) > 0 && !containsString(candidate.SupportedAspectRatios, ratio) {
+		if !strings.EqualFold(strings.TrimSpace(req.SizeMode), sizeModeLegacyRatio) && len(candidate.SupportedAspectRatios) > 0 && !candidate.SupportsCustomRatio && !containsString(candidate.SupportedAspectRatios, ratio) {
 			return false
 		}
 		if len(candidate.SupportedBaseResolution) > 0 && !containsString(candidate.SupportedBaseResolution, resolvedBaseResolution) {

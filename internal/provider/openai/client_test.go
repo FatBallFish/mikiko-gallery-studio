@@ -3,6 +3,7 @@ package openai_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -85,6 +86,26 @@ func TestGenerateIncludesValidatedBackground(t *testing.T) {
 	_, err := client.Generate(context.Background(), provider.ImageRequest{Model: "gpt-image-2", Prompt: "safe test", Size: "1280x720", Background: "transparent", OutputFormat: "png", OutputImageCount: 1})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGenerateRejectsTransparentJPEGBeforeHTTP(t *testing.T) {
+	called := false
+	client := openai.NewClient(openai.Config{
+		BaseURL: "https://api.example.test",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			called = true
+			return nil, errors.New("must not be called")
+		})},
+	})
+	_, err := client.Generate(context.Background(), provider.ImageRequest{
+		Model: "gpt-image-2", Prompt: "safe test", Background: "transparent", OutputFormat: "jpeg",
+	})
+	if err == nil {
+		t.Fatal("expected transparent JPEG validation error")
+	}
+	if called {
+		t.Fatal("transparent JPEG must be rejected before HTTP")
 	}
 }
 

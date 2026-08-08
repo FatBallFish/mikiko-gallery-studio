@@ -128,6 +128,7 @@ func TestMemoryStorePreservesModelAccountGenerationCapabilities(t *testing.T) {
 		AccountID: account.ID, ModelCode: "memory-image", DisplayName: "Memory Image",
 		TaskTypes: []string{"image_edit"}, Quality: []string{"high"},
 		SizeModes: []string{"ratio", "pixel"}, SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true,
+		MinWidth: 512, MaxWidth: 3840, MinHeight: 512, MaxHeight: 3840,
 		SupportedRatios: []string{"16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 3,
 		CostPerImage: "0.10000", Currency: "USD", Enabled: true,
 	})

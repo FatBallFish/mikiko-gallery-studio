@@ -129,8 +129,8 @@ func TestModelAdminStoreMapsAccountModelCostToRuntimeOutputCost(t *testing.T) {
 			if candidate.OutputCost != "0.12345" {
 				t.Fatalf("account model cost must be runtime output cost, got %#v", candidate)
 			}
-			if !reflect.DeepEqual(candidate.SupportedAspectRatios, []string{"1:1"}) || candidate.MaxImageCount != 1 || candidate.MaxReferenceImageCount != 0 || candidate.SupportsImageInput {
-				t.Fatalf("account model safe capability defaults were not preserved: %#v", candidate)
+			if len(candidate.SupportedAspectRatios) != 0 || candidate.MaxImageCount != 1 || candidate.MaxReferenceImageCount != 0 || candidate.SupportsImageInput {
+				t.Fatalf("runtime mapping must not invent aspect ratios or lose safe limits: %#v", candidate)
 			}
 			if candidate.ConcurrencyLimit != account.ConcurrencyLimit {
 				t.Fatalf("model account concurrency must be propagated to runtime scheduling, got %#v", candidate)

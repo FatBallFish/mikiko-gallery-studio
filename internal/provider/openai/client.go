@@ -41,6 +41,11 @@ func NewClient(cfg Config) *Client {
 }
 
 func (c *Client) Generate(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+	if strings.EqualFold(strings.TrimSpace(req.Background), "transparent") &&
+		!strings.EqualFold(strings.TrimSpace(req.OutputFormat), "png") &&
+		!strings.EqualFold(strings.TrimSpace(req.OutputFormat), "webp") {
+		return provider.ImageResponse{}, errors.New("transparent background requires png or webp output format")
+	}
 	payload := map[string]any{
 		"model":   req.Model,
 		"prompt":  req.Prompt,

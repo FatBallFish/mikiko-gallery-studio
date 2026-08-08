@@ -72,6 +72,50 @@ func TestNormalizeGenerationRequestRejectsInvalidExplicitInput(t *testing.T) {
 	}
 }
 
+func TestNormalizeResolveRequestRejectsMixedDiscriminatedSizeFields(t *testing.T) {
+	tests := []struct {
+		name string
+		req  ResolveRequest
+		code string
+	}{
+		{name: "auto base", req: ResolveRequest{SizeMode: SizeModeAuto, BaseResolution: "1k"}, code: CodeInvalidSizeMode},
+		{name: "auto aspect", req: ResolveRequest{SizeMode: SizeModeAuto, AspectRatio: "1:1"}, code: CodeInvalidSizeMode},
+		{name: "auto pixels", req: ResolveRequest{SizeMode: SizeModeAuto, RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
+		{name: "ratio auto base", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "auto", AspectRatio: "1:1"}, code: CodeInvalidSizeMode},
+		{name: "ratio requested size", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "1:1", RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
+		{name: "pixel base", req: ResolveRequest{SizeMode: SizeModePixel, BaseResolution: "1k", RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
+		{name: "pixel aspect", req: ResolveRequest{SizeMode: SizeModePixel, AspectRatio: "1:1", RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
+		{name: "ratio hard bound", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "4:1"}, code: CodeInvalidAspectRatio},
+		{name: "illegal pixels", req: ResolveRequest{SizeMode: SizeModePixel, RequestedSize: "1001x777"}, code: CodeInvalidExplicitDimensions},
+		{name: "transparent jpeg", req: ResolveRequest{SizeMode: SizeModeAuto, Background: "transparent", OutputFormat: "jpeg"}, code: CodeTransparentFormatConflict},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NormalizeResolveRequest(tt.req)
+			var appErr *errs.Error
+			if !errors.As(err, &appErr) || appErr.StatusCode != 400 || appErr.Code != tt.code {
+				t.Fatalf("NormalizeResolveRequest() error = %#v, want 400/%s", err, tt.code)
+			}
+		})
+	}
+}
+
+func TestCandidateSupportsLegalCustomRatio(t *testing.T) {
+	candidate := ProviderCandidate{
+		SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"},
+		SizeModes: []string{SizeModeRatio}, SupportedAspectRatios: []string{"1:1"}, SupportsCustomRatio: true,
+		Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		MinWidth: 16, MaxWidth: 3840, MinHeight: 16, MaxHeight: 3840,
+	}
+	req := ResolveRequest{
+		TaskType: "text_to_image", SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "7:5",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	}
+	if !CandidateSupportsRequest(candidate, req, "1k") {
+		t.Fatal("candidate with supports_custom_ratio must accept a legal non-preset ratio")
+	}
+}
+
 func TestNormalizeCapabilityRejectsInvalidNewConfiguration(t *testing.T) {
 	base := generationTestCapability()
 	tests := []struct {
@@ -79,9 +123,17 @@ func TestNormalizeCapabilityRejectsInvalidNewConfiguration(t *testing.T) {
 		edit func(*ImageModelCapability)
 	}{
 		{name: "base auto", edit: func(c *ImageModelCapability) { c.BaseResolution = []string{"auto", "1k"} }},
+		{name: "mixed invalid quality", edit: func(c *ImageModelCapability) { c.Quality = []string{"auto", "ultra"} }},
+		{name: "mixed invalid size mode", edit: func(c *ImageModelCapability) { c.SizeModes = []string{"ratio", "automatic"} }},
+		{name: "mixed invalid ratio", edit: func(c *ImageModelCapability) { c.SupportedRatios = []string{"1:1", "bad"} }},
+		{name: "ratio outside hard bound", edit: func(c *ImageModelCapability) { c.SupportedRatios = []string{"1:1", "4:1"} }},
 		{name: "bad pixel preset", edit: func(c *ImageModelCapability) { c.SupportedPixelSizes = []string{"1001x777"} }},
+		{name: "mixed invalid pixel preset", edit: func(c *ImageModelCapability) { c.SupportedPixelSizes = []string{"1024x1024", "bad"} }},
+		{name: "incomplete pixel bounds", edit: func(c *ImageModelCapability) { c.MinHeight = 0 }},
 		{name: "invalid bounds", edit: func(c *ImageModelCapability) { c.MinWidth, c.MaxWidth = 2048, 1024 }},
 		{name: "bad background", edit: func(c *ImageModelCapability) { c.SupportedBackgrounds = []string{"blue"} }},
+		{name: "mixed invalid output format", edit: func(c *ImageModelCapability) { c.OutputFormat = []string{"png", "jpg"} }},
+		{name: "mixed invalid moderation", edit: func(c *ImageModelCapability) { c.Moderation = []string{"auto", "strict"} }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

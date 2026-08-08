@@ -89,6 +89,7 @@ type openAIFanoutProgress struct {
 	Response provider.ImageResponse
 	Results  []provider.ImageResult
 	Failures []error
+	Attempts []domainimagetask.Attempt
 }
 
 type AssetLoader interface {
@@ -429,9 +430,9 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 		return s.failOwnedTask(ctx, task, owner, err)
 	}
 
-	requestedBaseResolution, requestedAspectRatio, requestedSize := task.BaseResolution, task.AspectRatio, task.RequestedSize
-	if modelhub.PublicSizeMode(task.SizeMode) == modelhub.SizeModeAuto {
-		requestedBaseResolution, requestedAspectRatio, requestedSize = "", "", ""
+	requestedBaseResolution, requestedAspectRatio, requestedSize, snapshotErr := generationResolveFieldsFromTask(task)
+	if snapshotErr != nil {
+		return s.failOwnedTask(ctx, task, owner, snapshotErr)
 	}
 	resolved, err := s.resolveTask(ctx, task.ID, task.AbstractModel, task.RouteModelCode, nil, task.TaskType, task.SizeMode, requestedAspectRatio, requestedBaseResolution, task.Quality, task.OutputFormat, task.Background, task.OutputCompression, task.Moderation, requestedSize, task.OutputImageCount, len(referenceImages), false)
 	if err != nil {
@@ -462,22 +463,34 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 	if !ok {
 		return domainimagetask.TestModelAccountResult{}, errs.New(409, errs.CodeUpstreamUnavailable, "model account provider is not configured")
 	}
-	requestedBaseResolution := defaultString(req.BaseResolution, "1K")
-	requestedSize := req.RequestedSize
-	if strings.TrimSpace(req.SizeMode) == "" || strings.EqualFold(strings.TrimSpace(req.SizeMode), modelhub.SizeModeRatio) {
-		requestedSize = defaultString(requestedSize, "auto")
-	} else {
-		requestedSize = defaultString(requestedSize, "1024x1024")
+	sizeMode := testModelSizeMode(req.SizeMode, candidate.SizeModes)
+	requestedBaseResolution := strings.TrimSpace(req.BaseResolution)
+	requestedAspectRatio := strings.TrimSpace(req.AspectRatio)
+	requestedSize := strings.TrimSpace(req.RequestedSize)
+	switch sizeMode {
+	case modelhub.SizeModeRatio:
+		requestedBaseResolution = defaultString(requestedBaseResolution, firstConfiguredValue(candidate.SupportedBaseResolution, "1k"))
+		requestedAspectRatio = defaultString(requestedAspectRatio, firstConfiguredValue(candidate.SupportedAspectRatios, "1:1"))
+	case modelhub.SizeModePixel:
+		requestedSize = defaultString(requestedSize, firstConfiguredValue(candidate.SupportedPixelSizes, "1024x1024"))
 	}
+	quality := defaultString(req.Quality, firstConfiguredValue(candidate.Quality, "auto"))
+	outputFormatExplicit := strings.TrimSpace(req.OutputFormat) != ""
+	outputFormat := defaultString(req.OutputFormat, firstConfiguredValue(candidate.OutputFormat, "png"))
+	if !outputFormatExplicit && strings.EqualFold(strings.TrimSpace(req.Background), "transparent") && !strings.EqualFold(outputFormat, "png") && !strings.EqualFold(outputFormat, "webp") {
+		outputFormat = firstConfiguredValueMatching(candidate.OutputFormat, []string{"png", "webp"}, outputFormat)
+	}
+	moderation := defaultString(req.Moderation, firstConfiguredValue(candidate.Moderation, "auto"))
 	normalized, normalizeErr := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
 		TaskType:                  string(provider.TaskTypeTextToImage),
-		SizeMode:                  req.SizeMode,
-		AspectRatio:               defaultString(req.AspectRatio, "1:1"),
+		SizeMode:                  sizeMode,
+		AspectRatio:               requestedAspectRatio,
 		BaseResolution:            requestedBaseResolution,
-		Quality:                   req.Quality,
-		OutputFormat:              req.OutputFormat,
+		Quality:                   quality,
+		OutputFormat:              outputFormat,
+		Background:                req.Background,
 		OutputCompression:         req.OutputCompression,
-		Moderation:                req.Moderation,
+		Moderation:                moderation,
 		RequestedSize:             requestedSize,
 		RequestedOutputImageCount: 1,
 	})
@@ -491,7 +504,7 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 			return domainimagetask.TestModelAccountResult{}, baseResolutionErr
 		}
 		resolvedBaseResolution = baseResolution
-	} else if resolvedBaseResolution == "" || resolvedBaseResolution == "auto" {
+	} else if modelhub.PublicSizeMode(normalized.SizeMode) != modelhub.SizeModeAuto && (resolvedBaseResolution == "" || resolvedBaseResolution == "auto") {
 		resolvedBaseResolution = "1k"
 	}
 	if !modelhub.CandidateSupportsRequest(candidate, normalized, resolvedBaseResolution) {
@@ -509,10 +522,11 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 		SizeMode:          modelhub.PublicSizeMode(normalized.SizeMode),
 		RequestedSize:     normalized.RequestedSize,
 		BaseResolution:    resolvedBaseResolution,
-		Quality:           defaultString(modelhub.NormalizeQuality(req.Quality), "auto"),
-		OutputFormat:      defaultString(modelhub.NormalizeOutputFormat(req.OutputFormat), "png"),
+		Quality:           normalized.Quality,
+		OutputFormat:      normalized.OutputFormat,
+		Background:        normalized.Background,
 		OutputCompression: defaultPositive(req.OutputCompression, 100),
-		Moderation:        defaultString(modelhub.NormalizeModeration(req.Moderation), "auto"),
+		Moderation:        normalized.Moderation,
 		AspectRatio:       normalized.AspectRatio,
 		ResponseMode:      "sync",
 		SavePolicy:        "private",
@@ -662,7 +676,11 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			attemptFinished := s.nowUTC()
 			if progressErr != nil {
 				task = s.decorateTaskProvider(task, candidate)
-				task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusFailed, progressErr, attemptStarted, attemptFinished))
+				if len(progress.Attempts) > 0 {
+					task.Attempts = append(task.Attempts, progress.Attempts...)
+				} else {
+					task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusFailed, progressErr, attemptStarted, attemptFinished))
+				}
 				task.FallbackCount = len(task.Attempts)
 				lastErr = progressErr
 				shouldRetry := false
@@ -687,13 +705,14 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 				task.ErrorCode = errorCode(progress.Failures[0])
 				task.ErrorMessage = errorMessage(progress.Failures[0])
 			}
-			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, attemptStarted, attemptFinished); checkpointErr != nil {
+			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, providerReq.Size, progress.Attempts, attemptStarted, attemptFinished); checkpointErr != nil {
 				return s.handleProviderSuccessCheckpointFailure(ctx, task, owner, checkpointErr)
 			}
 			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
 			if persistErr != nil {
 				return s.handleArtifactPersistenceFailure(ctx, task, owner, persistErr)
 			}
+			reconcileAttemptDimensions(&task, persistedResults)
 			finalStatus := domainimagetask.StatusSucceeded
 			if len(persistedResults) < normalizedCount(task.OutputImageCount) {
 				finalStatus = domainimagetask.StatusPartialFailed
@@ -738,13 +757,14 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task, providerReq)
 		attemptFinished := s.nowUTC()
 		if err == nil {
-			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, attemptStarted, attemptFinished); checkpointErr != nil {
+			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, providerReq.Size, nil, attemptStarted, attemptFinished); checkpointErr != nil {
 				return s.handleProviderSuccessCheckpointFailure(ctx, task, owner, checkpointErr)
 			}
 			persistedResults, persistErr := s.persistImageResults(ctx, task, resp.Data)
 			if persistErr != nil {
 				return s.handleArtifactPersistenceFailure(ctx, task, owner, persistErr)
 			}
+			reconcileAttemptDimensions(&task, persistedResults)
 			finalStatus := domainimagetask.StatusSucceeded
 			if len(persistedResults) < normalizedCount(task.OutputImageCount) {
 				finalStatus = domainimagetask.StatusPartialFailed
@@ -847,6 +867,7 @@ func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.Image
 	progress := openAIFanoutProgress{
 		Results:  make([]provider.ImageResult, 0, count),
 		Failures: make([]error, 0),
+		Attempts: make([]domainimagetask.Attempt, 0, len(chunks)),
 	}
 	var mu sync.Mutex
 	group, groupCtx := errgroup.WithContext(ctx)
@@ -859,9 +880,10 @@ func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.Image
 			singleReq.OutputImageCount = chunkCount
 			attrs := fanoutLogAttrs("openai_progress", task, candidate, singleReq, len(chunks), fanoutIndex)
 			slog.Info("image fanout request started", attrs...)
-			startedAt := time.Now()
+			startedAt := s.nowUTC()
 			resp, err := call(groupCtx, singleReq)
-			durationMs := time.Since(startedAt).Milliseconds()
+			finishedAt := s.nowUTC()
+			durationMs := finishedAt.Sub(startedAt).Milliseconds()
 			if err != nil {
 				slog.Warn("image fanout request failed", append(attrs,
 					"duration_ms", durationMs,
@@ -879,14 +901,35 @@ func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.Image
 			}
 			mu.Lock()
 			defer mu.Unlock()
+			attemptErr := err
+			if attemptErr == nil && len(resp.Data) == 0 {
+				attemptErr = errs.New(502, errs.CodeUpstreamUnavailable, "provider returned no images")
+			}
+			status := domainimagetask.StatusSucceeded
+			if attemptErr != nil {
+				status = domainimagetask.StatusFailed
+			}
+			attempt := buildProviderAttempt(candidate, status, attemptErr, startedAt, finishedAt)
+			attempt.SourceSizeMode = task.SizeMode
+			attempt.OutboundSize = singleReq.Size
+			if requestID := strings.TrimSpace(resp.ProviderRequestID); requestID != "" {
+				attempt.ProviderRequestID = requestID
+			}
+			attempt.RequestedImageCount = chunkCount
+			attempt.ReturnedImageCount = len(resp.Data)
+			if len(resp.Data) > 0 {
+				attempt.ReturnedWidth, attempt.ReturnedHeight = resp.Data[0].Width, resp.Data[0].Height
+			}
+			attempt.SizeDiagnostic = classifyImageSize(singleReq.Size, attempt.ReturnedWidth, attempt.ReturnedHeight)
+			progress.Attempts = append(progress.Attempts, attempt)
 			if progress.Response.Created == 0 {
 				progress.Response.Created = resp.Created
 			}
 			if progress.Response.ProviderRequestID == "" {
 				progress.Response.ProviderRequestID = resp.ProviderRequestID
 			}
-			if err != nil {
-				progress.Failures = append(progress.Failures, err)
+			if attemptErr != nil {
+				progress.Failures = append(progress.Failures, attemptErr)
 				return nil
 			}
 			if len(resp.Data) == 0 {
@@ -894,7 +937,6 @@ func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.Image
 					"duration_ms", durationMs,
 					"context_error", contextErrorString(groupCtx),
 				)...)
-				progress.Failures = append(progress.Failures, errs.New(502, errs.CodeUpstreamUnavailable, "provider returned no images"))
 				return nil
 			}
 			progress.Results = append(progress.Results, resp.Data...)
@@ -906,9 +948,9 @@ func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.Image
 	}
 	if len(progress.Results) == 0 {
 		if len(progress.Failures) > 0 {
-			return openAIFanoutProgress{}, progress.Failures[0]
+			return progress, progress.Failures[0]
 		}
-		return openAIFanoutProgress{}, errs.New(502, errs.CodeUpstreamUnavailable, "provider returned no images")
+		return progress, errs.New(502, errs.CodeUpstreamUnavailable, "provider returned no images")
 	}
 	return progress, nil
 }
@@ -951,6 +993,40 @@ func applyOutputCompressionCapability(req *provider.ImageRequest, candidate mode
 	if !candidate.SupportsOutputCompression || !compressibleFormat {
 		req.OutputCompression = 0
 	}
+}
+
+func testModelSizeMode(requested string, configured []string) string {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	if requested != "" {
+		return requested
+	}
+	for _, mode := range configured {
+		normalized := strings.ToLower(strings.TrimSpace(mode))
+		if normalized == modelhub.SizeModeAuto || normalized == modelhub.SizeModeRatio || normalized == modelhub.SizeModePixel {
+			return normalized
+		}
+	}
+	return modelhub.SizeModeRatio
+}
+
+func firstConfiguredValue(values []string, fallback string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return fallback
+}
+
+func firstConfiguredValueMatching(values, allowed []string, fallback string) string {
+	for _, value := range values {
+		for _, candidate := range allowed {
+			if strings.EqualFold(strings.TrimSpace(value), candidate) {
+				return value
+			}
+		}
+	}
+	return fallback
 }
 
 func applyProviderImageSize(req *provider.ImageRequest, task domainimagetask.Task, resolved modelhub.ResolvedRequest) error {
@@ -1047,6 +1123,7 @@ func buildProviderAttempt(candidate modelhub.ProviderCandidate, status string, e
 	if upstream, ok := provider.AsUpstreamError(err); ok {
 		attempt.ErrorCode = upstream.Code
 		attempt.ErrorMessage = defaultString(upstream.Message, err.Error())
+		attempt.ProviderRequestID = strings.TrimSpace(upstream.RequestID)
 		attempt.ErrorDetail = map[string]any{
 			"provider":    string(upstream.Provider),
 			"http_status": upstream.HTTPStatus,
@@ -1076,6 +1153,27 @@ func classifyImageSize(outbound string, actualWidth, actualHeight int) string {
 		return "match"
 	}
 	return "upstream_rewritten"
+}
+
+func reconcileAttemptDimensions(task *domainimagetask.Task, results []provider.ImageResult) {
+	if task == nil || len(results) == 0 {
+		return
+	}
+	resultIndex := 0
+	for index := range task.Attempts {
+		attempt := &task.Attempts[index]
+		if attempt.Status != domainimagetask.StatusSucceeded || attempt.ReturnedImageCount <= 0 {
+			continue
+		}
+		if resultIndex >= len(results) {
+			return
+		}
+		result := results[resultIndex]
+		attempt.ReturnedWidth = result.Width
+		attempt.ReturnedHeight = result.Height
+		attempt.SizeDiagnostic = classifyImageSize(attempt.OutboundSize, result.Width, result.Height)
+		resultIndex += attempt.ReturnedImageCount
+	}
 }
 
 func (s *Service) executeProviderRequest(ctx context.Context, client provider.ImageProvider, candidate modelhub.ProviderCandidate, task domainimagetask.Task, req provider.ImageRequest) (provider.ImageResponse, error) {
@@ -2361,7 +2459,7 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 		Background:           strings.ToLower(strings.TrimSpace(req.Background)),
 		OutputCompression:    defaultPositive(req.OutputCompression, 100),
 		Moderation:           defaultString(modelhub.NormalizeModeration(req.Moderation), "auto"),
-		AspectRatio:          defaultString(req.AspectRatio, "1:1"),
+		AspectRatio:          req.AspectRatio,
 		ResponseMode:         defaultString(req.ResponseMode, "async"),
 		SavePolicy:           defaultString(req.SavePolicy, "private"),
 		OutputImageCount:     normalizedCount(req.OutputImageCount),
@@ -2379,10 +2477,53 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 			task.ResolvedWidth, task.ResolvedHeight, _ = modelhub.ParseImageSize(size)
 		}
 	case modelhub.SizeModePixel:
+		task.AspectRatio = ""
 		task.ResolvedWidth, task.ResolvedHeight, _ = modelhub.ParseImageSize(task.RequestedSize)
 	}
 	setInitialTaskProgress(&task)
 	return task
+}
+
+func generationResolveFieldsFromTask(task domainimagetask.Task) (baseResolution, aspectRatio, requestedSize string, err error) {
+	if strings.TrimSpace(task.SizeMode) == "" {
+		return task.BaseResolution, task.AspectRatio, task.RequestedSize, nil
+	}
+	if strings.EqualFold(strings.TrimSpace(task.Background), "transparent") && !strings.EqualFold(task.OutputFormat, "png") && !strings.EqualFold(task.OutputFormat, "webp") {
+		return "", "", "", errs.New(400, modelhub.CodeTransparentFormatConflict, "transparent background requires png or webp")
+	}
+	switch modelhub.PublicSizeMode(task.SizeMode) {
+	case modelhub.SizeModeAuto:
+		if strings.TrimSpace(task.AspectRatio) != "" || strings.TrimSpace(task.RequestedSize) != "" || task.ResolvedWidth != 0 || task.ResolvedHeight != 0 {
+			return "", "", "", errs.New(400, modelhub.CodeInvalidSizeMode, "auto task snapshot contains size fields")
+		}
+		return "", "", "", nil
+	case modelhub.SizeModeRatio:
+		expected, sizeErr := modelhub.CalculateImageSize(task.BaseResolution, task.AspectRatio)
+		if sizeErr != nil {
+			return "", "", "", errs.New(400, modelhub.CodeInvalidAspectRatio, "ratio task snapshot is invalid")
+		}
+		width, height, _ := modelhub.ParseImageSize(expected)
+		if modelhub.NormalizePixelSize(task.RequestedSize) != expected || task.ResolvedWidth != 0 && task.ResolvedWidth != width || task.ResolvedHeight != 0 && task.ResolvedHeight != height {
+			return "", "", "", errs.New(400, modelhub.CodeInvalidSizeMode, "ratio task snapshot does not match its resolved size")
+		}
+		return task.BaseResolution, task.AspectRatio, "", nil
+	case modelhub.SizeModePixel:
+		if strings.TrimSpace(task.AspectRatio) != "" {
+			return "", "", "", errs.New(400, modelhub.CodeInvalidSizeMode, "pixel task snapshot contains ratio fields")
+		}
+		size := modelhub.NormalizePixelSize(task.RequestedSize)
+		width, height, ok := modelhub.ParseImageSize(size)
+		if !ok || !modelhub.IsLegalCustomImageSize(width, height) || task.ResolvedWidth != 0 && task.ResolvedWidth != width || task.ResolvedHeight != 0 && task.ResolvedHeight != height {
+			return "", "", "", errs.New(400, modelhub.CodeInvalidExplicitDimensions, "pixel task snapshot is invalid")
+		}
+		bucket, bucketErr := modelhub.BaseResolutionByPixelSize(size)
+		if bucketErr != nil || !strings.EqualFold(strings.TrimSpace(task.BaseResolution), bucket) {
+			return "", "", "", errs.New(400, modelhub.CodeInvalidExplicitDimensions, "pixel task pricing bucket does not match its dimensions")
+		}
+		return "", "", size, nil
+	default:
+		return "", "", "", errs.New(400, modelhub.CodeInvalidSizeMode, "task size_mode is unsupported")
+	}
 }
 
 func setInitialTaskProgress(task *domainimagetask.Task) {
@@ -2435,7 +2576,7 @@ func normalizeCreateRequest(req domainimagetask.CreateRequest) (domainimagetask.
 	if err != nil {
 		return req, err
 	}
-	req.SizeMode = modelhub.PublicSizeMode(normalized.SizeMode)
+	req.SizeMode = normalized.SizeMode
 	req.AspectRatio = normalized.AspectRatio
 	req.BaseResolution = normalized.BaseResolution
 	req.Quality = normalized.Quality
@@ -2465,7 +2606,7 @@ func normalizeExecuteRequest(req domainimagetask.ExecuteRequest) (domainimagetas
 	if err != nil {
 		return req, err
 	}
-	req.SizeMode = modelhub.PublicSizeMode(normalized.SizeMode)
+	req.SizeMode = normalized.SizeMode
 	req.AspectRatio = normalized.AspectRatio
 	req.BaseResolution = normalized.BaseResolution
 	req.Quality = normalized.Quality

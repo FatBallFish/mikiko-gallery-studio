@@ -51,6 +51,8 @@ func (s *Service) checkpointProviderSuccess(
 	owner string,
 	candidate modelhub.ProviderCandidate,
 	response provider.ImageResponse,
+	outboundSize string,
+	attempts []domainimagetask.Attempt,
 	startedAt time.Time,
 	finishedAt time.Time,
 ) error {
@@ -67,15 +69,20 @@ func (s *Service) checkpointProviderSuccess(
 	decorated.ProviderRequestID = strings.TrimSpace(response.ProviderRequestID)
 	completedAt := finishedAt.UTC()
 	decorated.UpstreamSucceededAt = &completedAt
-	attempt := buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, startedAt, finishedAt)
-	attempt.SourceSizeMode = task.SizeMode
-	attempt.OutboundSize = task.RequestedSize
-	attempt.ProviderRequestID = strings.TrimSpace(response.ProviderRequestID)
-	if len(response.Data) > 0 {
-		attempt.ReturnedWidth, attempt.ReturnedHeight = response.Data[0].Width, response.Data[0].Height
+	if len(attempts) == 0 {
+		attempt := buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, startedAt, finishedAt)
+		attempt.SourceSizeMode = task.SizeMode
+		attempt.OutboundSize = outboundSize
+		attempt.ProviderRequestID = strings.TrimSpace(response.ProviderRequestID)
+		attempt.RequestedImageCount = normalizedCount(task.OutputImageCount)
+		attempt.ReturnedImageCount = len(response.Data)
+		if len(response.Data) > 0 {
+			attempt.ReturnedWidth, attempt.ReturnedHeight = response.Data[0].Width, response.Data[0].Height
+		}
+		attempt.SizeDiagnostic = classifyImageSize(outboundSize, attempt.ReturnedWidth, attempt.ReturnedHeight)
+		attempts = []domainimagetask.Attempt{attempt}
 	}
-	attempt.SizeDiagnostic = classifyImageSize(task.RequestedSize, attempt.ReturnedWidth, attempt.ReturnedHeight)
-	decorated.Attempts = append(decorated.Attempts, attempt)
+	decorated.Attempts = append(decorated.Attempts, attempts...)
 	decorated.ProviderCost = calculateProviderCost(candidate, len(response.Data))
 	decorated.ArtifactRecovery = domainimagetask.ArtifactRecovery{
 		Status:           artifactRecoveryPersisting,
@@ -117,6 +124,7 @@ func (s *Service) executeArtifactRecovery(ctx context.Context, task domainimaget
 	if err != nil {
 		return s.handleArtifactPersistenceFailure(ctx, task, owner, err)
 	}
+	reconcileAttemptDimensions(&task, persisted)
 	task.Results = append([]provider.ImageResult(nil), persisted...)
 	if err := s.applyActualPoints(&task, len(persisted)); err != nil {
 		return s.failOwnedTask(ctx, task, owner, err)

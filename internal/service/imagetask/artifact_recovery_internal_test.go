@@ -171,7 +171,7 @@ func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.
 	svc.SetHTTPClient(&http.Client{Transport: artifactRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(imageBytes))}, nil
 	})})
-	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{UserID: 502, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover fanout", SizeMode: "ratio", BaseResolution: "1k", Quality: "auto", AspectRatio: "1:1", RequestedSize: "auto", OutputImageCount: 2})
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{UserID: 502, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover fanout", SizeMode: "ratio", BaseResolution: "1k", Quality: "auto", AspectRatio: "1:1", OutputImageCount: 2})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -337,7 +337,7 @@ func artifactRecoveryTestConfig() config.Config {
 }
 
 func artifactRecoveryCreateRequest() domainimagetask.CreateRequest {
-	return domainimagetask.CreateRequest{UserID: 501, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover me", SizeMode: "ratio", BaseResolution: "1k", Quality: "auto", AspectRatio: "1:1", RequestedSize: "auto", OutputImageCount: 1}
+	return domainimagetask.CreateRequest{UserID: 501, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover me", SizeMode: "ratio", BaseResolution: "1k", Quality: "auto", AspectRatio: "1:1", OutputImageCount: 1}
 }
 
 type artifactTestProvider struct {

@@ -1032,10 +1032,6 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 		if model.UpdatedAt.After(latestVersionAt) {
 			latestVersionAt = model.UpdatedAt
 		}
-		supportedRatios := append([]string(nil), model.SupportedRatios...)
-		if len(supportedRatios) == 0 {
-			supportedRatios = []string{"1:1"}
-		}
 		maxImageCount := model.MaxImageCount
 		if maxImageCount <= 0 {
 			maxImageCount = 1
@@ -1053,7 +1049,7 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			SupportedBaseResolution:   append([]string(nil), model.BaseResolution...),
 			Quality:                   append([]string(nil), model.Quality...),
 			SizeModes:                 append([]string(nil), model.SizeModes...),
-			SupportedAspectRatios:     supportedRatios,
+			SupportedAspectRatios:     append([]string(nil), model.SupportedRatios...),
 			SupportedPixelSizes:       append([]string(nil), model.SupportedPixelSizes...),
 			SupportsCustomRatio:       model.SupportsCustomRatio,
 			SupportedBackgrounds:      append([]string(nil), model.SupportedBackgrounds...),

@@ -69,7 +69,10 @@ func TestCandidateSupportsCustomPixelSizeOnlyWhenDeclared(t *testing.T) {
 		t.Fatal("custom-size candidate should accept a legal normalized pixel size")
 	}
 
-	capability, err := NormalizeCapability(ImageModelCapability{MaxImageCount: 1, SizeModes: []string{SizeModePixel}, SupportsCustomSize: true})
+	capability, err := NormalizeCapability(ImageModelCapability{
+		MaxImageCount: 1, SizeModes: []string{SizeModePixel}, SupportsCustomSize: true,
+		MinWidth: 512, MaxWidth: 3840, MinHeight: 512, MaxHeight: 3840,
+	})
 	if err != nil {
 		t.Fatalf("NormalizeCapability custom size: %v", err)
 	}

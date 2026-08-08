@@ -175,10 +175,6 @@ func TestResolveRouteModelFiltersCandidatesByGenerationCapabilitiesWithoutUsingB
 		},
 	}})
 
-	size, err := CalculateImageSize("1k", "16:9")
-	if err != nil {
-		t.Fatalf("CalculateImageSize() error = %v", err)
-	}
 	resolved, err := resolver.ResolveContext(context.Background(), ResolveRequest{
 		RouteModelCode:            "plus",
 		TaskType:                  "image_edit",
@@ -186,7 +182,6 @@ func TestResolveRouteModelFiltersCandidatesByGenerationCapabilitiesWithoutUsingB
 		AspectRatio:               "16:9",
 		BaseResolution:            "1k",
 		Quality:                   "auto",
-		RequestedSize:             size,
 		RequestedOutputImageCount: 2,
 		ReferenceImageCount:       1,
 	})
@@ -245,7 +240,6 @@ func TestResolveRouteModelMatchesSupportedRatioForNonCanonicalSize(t *testing.T)
 		AspectRatio:               "16:9",
 		BaseResolution:            "2k",
 		Quality:                   "high",
-		RequestedSize:             "1536x864",
 		RequestedOutputImageCount: 1,
 	})
 	if err != nil {
@@ -272,7 +266,6 @@ func TestResolveRouteModelMatchesRatioAndRejectsInvalidAspectRatio(t *testing.T)
 		AspectRatio:               "1:1",
 		BaseResolution:            "1k",
 		Quality:                   "auto",
-		RequestedSize:             "auto",
 		RequestedOutputImageCount: 1,
 	})
 	if err != nil || len(resolved.Providers) != 1 {
@@ -286,11 +279,10 @@ func TestResolveRouteModelMatchesRatioAndRejectsInvalidAspectRatio(t *testing.T)
 		AspectRatio:               "not-a-ratio",
 		BaseResolution:            "1k",
 		Quality:                   "auto",
-		RequestedSize:             "auto",
 		RequestedOutputImageCount: 1,
 	})
 	appErr, ok := err.(*errs.Error)
-	if !ok || appErr.Code != errs.CodeImageCapabilityMismatch {
+	if !ok || appErr.Code != CodeInvalidAspectRatio {
 		t.Fatalf("invalid aspect ratio must not bypass configured ratios, got %#v", err)
 	}
 }

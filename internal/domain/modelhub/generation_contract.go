@@ -135,6 +135,13 @@ func FilterEffectiveCapability(raw ImageModelCapability) ImageModelCapability {
 }
 
 func validateConfiguredPixelBounds(capability ImageModelCapability) error {
+	if containsString(capability.SizeModes, SizeModePixel) {
+		for _, value := range []int{capability.MinWidth, capability.MaxWidth, capability.MinHeight, capability.MaxHeight} {
+			if value < imageSizeMultiple {
+				return errs.BadRequest("pixel mode requires complete positive min/max bounds")
+			}
+		}
+	}
 	for _, value := range []int{capability.MinWidth, capability.MaxWidth, capability.MinHeight, capability.MaxHeight} {
 		if value < 0 || value > imageMaxEdge {
 			return errs.BadRequest("pixel bounds exceed hard limits")
