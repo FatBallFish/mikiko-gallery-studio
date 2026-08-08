@@ -234,6 +234,15 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
 
   const selectedAccount = filteredAccounts.find((account) => String(account.id) === expandedAccountId)
   const selectedModels = selectedAccount ? modelsByAccount[String(selectedAccount.id)] ?? [] : []
+	const selectedTestModel = testDialog
+		? (modelsByAccount[String(testDialog.account.id)] ?? []).find((model) => String(model.id) === testDialog.modelId)
+		: undefined
+	const selectedTestSizeModes = testModelSizeModes(selectedTestModel)
+	const selectedTestQualities = testModelOptions(selectedTestModel?.quality, ['auto'])
+	const selectedTestFormats = testModelOptions(selectedTestModel?.output_format, ['png'])
+		.filter((format) => testDialog?.background !== 'transparent' || format === 'png' || format === 'webp')
+	const selectedTestBackgrounds = testModelOptions(selectedTestModel?.supported_backgrounds, [])
+	const selectedTestModeration = testModelOptions(selectedTestModel?.moderation, ['auto'])
 
   return (
     <section className={adminPage.stack}>
@@ -356,15 +365,15 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
       {testDialog ? (
         <Modal title="测试模型账号" detail={testDialog.account.name} onClose={() => setTestDialog(null)} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={testing} onClick={() => setTestDialog(null)}>关闭</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={testing || !testDialog.modelId || !testDialog.prompt.trim()} onClick={() => void runTestImage()}>{testing ? '测试中...' : '开始测试'}</button></>}>
           <div className={adminPage.formGrid}>
-            <Field label="测试模型"><select value={testDialog.modelId} onChange={(event) => setTestDialog({ ...testDialog, modelId: event.target.value, result: undefined, error: undefined })}>{(modelsByAccount[String(testDialog.account.id)] ?? []).filter((model) => model.enabled).map((model) => <option key={String(model.id)} value={String(model.id)}>{model.display_name || model.model_code}</option>)}</select></Field>
+            <Field label="测试模型"><select value={testDialog.modelId} onChange={(event) => { const selected = (modelsByAccount[String(testDialog.account.id)] ?? []).find((model) => String(model.id) === event.target.value); if (selected) setTestDialog(rebuildTestImageDialog(testDialog, selected)) }}>{(modelsByAccount[String(testDialog.account.id)] ?? []).filter((model) => model.enabled).map((model) => <option key={String(model.id)} value={String(model.id)}>{model.display_name || model.model_code}</option>)}</select></Field>
             <Field label="来源模式"><select value={testDialog.sourceMode} onChange={(event) => setTestDialog({ ...testDialog, sourceMode: event.target.value, result: undefined, error: undefined })}><option value="images">Images API</option><option value="codex_responses">Codex Responses</option></select></Field>
-			<Field label="尺寸模式"><select value={testDialog.sizeMode} onChange={(event) => setTestDialog({ ...testDialog, sizeMode: event.target.value, result: undefined, error: undefined })}><option value="auto">自动</option><option value="ratio">按比例</option><option value="pixel">按像素</option></select></Field>
-			{testDialog.sizeMode === 'ratio' ? <><Field label="比例"><input value={testDialog.aspectRatio} onChange={(event) => setTestDialog({ ...testDialog, aspectRatio: event.target.value, result: undefined, error: undefined })} /></Field><Field label="基础分辨率"><input value={testDialog.baseResolution} onChange={(event) => setTestDialog({ ...testDialog, baseResolution: event.target.value, result: undefined, error: undefined })} /></Field></> : testDialog.sizeMode === 'pixel' ? <Field label="像素尺寸"><input value={testDialog.requestedSize} onChange={(event) => setTestDialog({ ...testDialog, requestedSize: event.target.value, result: undefined, error: undefined })} /></Field> : null}
-            <Field label="质量参数"><select value={testDialog.quality} onChange={(event) => setTestDialog({ ...testDialog, quality: event.target.value, result: undefined, error: undefined })}>{qualityOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
-			<Field label="输出格式"><select value={testDialog.outputFormat} onChange={(event) => setTestDialog({ ...testDialog, outputFormat: event.target.value, result: undefined, error: undefined })}>{outputFormatOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
-			<Field label="背景"><select value={testDialog.background} onChange={(event) => setTestDialog({ ...testDialog, background: event.target.value, result: undefined, error: undefined })}><option value="">不传</option>{backgroundOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
-            <Field label="压缩质量"><input type="number" min="0" max="100" value={testDialog.outputCompression} onChange={(event) => setTestDialog({ ...testDialog, outputCompression: event.target.value, result: undefined, error: undefined })} /></Field>
-            <Field label="审核等级"><select value={testDialog.moderation} onChange={(event) => setTestDialog({ ...testDialog, moderation: event.target.value, result: undefined, error: undefined })}>{moderationOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
+			<Field label="尺寸模式"><select value={testDialog.sizeMode} onChange={(event) => setTestDialog({ ...testDialog, sizeMode: event.target.value, result: undefined, error: undefined })}>{selectedTestSizeModes.map((option) => <option key={option} value={option}>{sizeModeLabel(option)}</option>)}</select></Field>
+			{testDialog.sizeMode === 'ratio' ? <><Field label="比例">{selectedTestModel?.supports_custom_ratio ? <><input list="test-model-ratios" value={testDialog.aspectRatio} onChange={(event) => setTestDialog({ ...testDialog, aspectRatio: event.target.value, result: undefined, error: undefined })} /><datalist id="test-model-ratios">{(selectedTestModel.supported_ratios ?? []).map((option) => <option key={option} value={option} />)}</datalist></> : <select value={testDialog.aspectRatio} onChange={(event) => setTestDialog({ ...testDialog, aspectRatio: event.target.value, result: undefined, error: undefined })}>{(selectedTestModel?.supported_ratios ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select>}</Field><Field label="基础分辨率"><select value={testDialog.baseResolution} onChange={(event) => setTestDialog({ ...testDialog, baseResolution: event.target.value, result: undefined, error: undefined })}>{normalizeBaseResolution(selectedTestModel?.base_resolution ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select></Field></> : testDialog.sizeMode === 'pixel' ? <Field label="像素尺寸">{selectedTestModel?.supports_custom_size ? <><input list="test-model-pixel-sizes" value={testDialog.requestedSize} onChange={(event) => setTestDialog({ ...testDialog, requestedSize: event.target.value, result: undefined, error: undefined })} /><datalist id="test-model-pixel-sizes">{(selectedTestModel.supported_pixel_sizes ?? []).map((option) => <option key={option} value={option} />)}</datalist></> : <select value={testDialog.requestedSize} onChange={(event) => setTestDialog({ ...testDialog, requestedSize: event.target.value, result: undefined, error: undefined })}>{(selectedTestModel?.supported_pixel_sizes ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select>}</Field> : null}
+            <Field label="质量参数"><select value={testDialog.quality} onChange={(event) => setTestDialog({ ...testDialog, quality: event.target.value, result: undefined, error: undefined })}>{selectedTestQualities.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
+			<Field label="输出格式"><select value={testDialog.outputFormat} onChange={(event) => setTestDialog({ ...testDialog, outputFormat: event.target.value, result: undefined, error: undefined })}>{selectedTestFormats.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
+			<Field label="背景"><select value={testDialog.background} onChange={(event) => setTestDialog(changeTestImageBackground(testDialog, event.target.value, selectedTestFormats))}><option value="">不传</option>{selectedTestBackgrounds.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
+            {selectedTestModel?.supports_output_compression && (testDialog.outputFormat === 'jpeg' || testDialog.outputFormat === 'webp') ? <Field label="压缩质量"><input type="number" min="1" max="100" value={testDialog.outputCompression} onChange={(event) => setTestDialog({ ...testDialog, outputCompression: event.target.value, result: undefined, error: undefined })} /></Field> : null}
+            <Field label="审核等级"><select value={testDialog.moderation} onChange={(event) => setTestDialog({ ...testDialog, moderation: event.target.value, result: undefined, error: undefined })}>{selectedTestModeration.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
             <Field label="提示词"><textarea value={testDialog.prompt} onChange={(event) => setTestDialog({ ...testDialog, prompt: event.target.value, result: undefined, error: undefined })} rows={4} /></Field>
             {testDialog.error ? <InlineFeedback tone="danger" message={testDialog.error} /> : null}
             {testDialog.result ? (
@@ -523,6 +532,14 @@ function editModelDraft(account: ModelAccount, row: ModelAccountModel): ModelDra
 function newTestImageDialog(account: ModelAccount, models: ModelAccountModel[]): TestImageDialog {
   const enabledModels = models.filter((model) => model.enabled)
   const selected = enabledModels.find((model) => model.model_code === 'gpt-image-2') ?? enabledModels[0] ?? models[0]
+	return buildTestImageDialog(account, selected, defaultTestPrompt, sourceModeFromExtra(account.extra))
+}
+
+function rebuildTestImageDialog(current: TestImageDialog, selected: ModelAccountModel): TestImageDialog {
+	return buildTestImageDialog(current.account, selected, current.prompt, current.sourceMode)
+}
+
+function buildTestImageDialog(account: ModelAccount, selected: ModelAccountModel | undefined, prompt: string, sourceMode: string): TestImageDialog {
   const modes = selected?.size_modes ?? []
   const sizeMode = modes.includes('auto') ? 'auto' : modes.includes('ratio') ? 'ratio' : 'pixel'
   const background = selected?.supported_backgrounds?.[0] ?? ''
@@ -530,7 +547,30 @@ function newTestImageDialog(account: ModelAccount, models: ModelAccountModel[]):
   const outputFormat = background === 'transparent'
     ? configuredFormats.find((format) => format === 'png' || format === 'webp') ?? 'png'
     : configuredFormats[0] ?? 'png'
-  return { account, modelId: selected ? String(selected.id) : '', prompt: defaultTestPrompt, sourceMode: sourceModeFromExtra(account.extra), sizeMode, requestedSize: selected?.supported_pixel_sizes?.[0] ?? '1024x1024', baseResolution: normalizeBaseResolution(selected?.base_resolution ?? ['1K'])[0] ?? '1K', quality: selected?.quality?.[0] ?? 'auto', outputFormat, background, outputCompression: String(selected?.output_compression ?? 100), moderation: selected?.moderation?.[0] ?? 'auto', aspectRatio: selected?.supported_ratios?.[0] ?? '1:1' }
+	return { account, modelId: selected ? String(selected.id) : '', prompt, sourceMode, sizeMode, requestedSize: selected?.supported_pixel_sizes?.[0] ?? '1024x1024', baseResolution: normalizeBaseResolution(selected?.base_resolution ?? ['1K'])[0] ?? '1K', quality: selected?.quality?.[0] ?? 'auto', outputFormat, background, outputCompression: String(selected?.output_compression ?? 100), moderation: selected?.moderation?.[0] ?? 'auto', aspectRatio: selected?.supported_ratios?.[0] ?? '1:1' }
+}
+
+function testModelSizeModes(model?: ModelAccountModel) {
+	const modes = (model?.size_modes ?? []).filter((mode) => mode === 'auto' || mode === 'ratio' || mode === 'pixel')
+	return modes.length ? modes : ['ratio']
+}
+
+function testModelOptions(values: string[] | undefined, fallback: string[]) {
+	const options = normalizeLowerEnums(values ?? [])
+	return options.length ? options : fallback
+}
+
+function sizeModeLabel(mode: string) {
+	if (mode === 'auto') return '自动'
+	if (mode === 'pixel') return '按像素'
+	return '按比例'
+}
+
+function changeTestImageBackground(dialog: TestImageDialog, background: string, availableFormats: string[]): TestImageDialog {
+	const outputFormat = background === 'transparent' && dialog.outputFormat !== 'png' && dialog.outputFormat !== 'webp'
+		? availableFormats.find((format) => format === 'png' || format === 'webp') ?? 'png'
+		: dialog.outputFormat
+	return { ...dialog, background, outputFormat, result: undefined, error: undefined }
 }
 
 function toggleSizeMode(draft: ModelDraft, mode: 'auto' | 'ratio' | 'pixel', checked: boolean): ModelDraft {

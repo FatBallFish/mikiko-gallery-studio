@@ -35,6 +35,20 @@ if (!source.includes("mode === 'pixel' && checked") || !source.includes('support
   throw new Error('enabling pixel mode must seed all default pixel presets')
 }
 
+for (const expected of [
+  'selectedTestModel',
+  'testModelSizeModes(selectedTestModel)',
+  'testModelOptions(selectedTestModel?.quality',
+  'testModelOptions(selectedTestModel?.output_format',
+  'testModelOptions(selectedTestModel?.supported_backgrounds',
+  'testModelOptions(selectedTestModel?.moderation',
+  'rebuildTestImageDialog(testDialog, selected)',
+]) {
+  if (!source.includes(expected)) {
+    throw new Error(`model test dialog must be capability-driven: ${expected}`)
+  }
+}
+
 if (!source.includes("mode === 'pixel' && !checked") || !source.includes('supportsCustomSize: false')) {
   throw new Error('disabling pixel mode must also disable custom pixel sizes')
 }
