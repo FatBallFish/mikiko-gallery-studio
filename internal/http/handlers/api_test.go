@@ -1,14 +1,198 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/fatballfish/pic-gallery/internal/config"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 )
+
+type docsReadinessRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn docsReadinessRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
+
+func TestResolveDocsReadinessTarget(t *testing.T) {
+	tests := []struct {
+		name    string
+		runtime config.RuntimeConfig
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "relative target uses public API origin",
+			runtime: config.RuntimeConfig{PublicAPIURL: "https://studio.example.test/api/v1", DocsURL: "/developer-docs/"},
+			want:    "https://studio.example.test/developer-docs/",
+		},
+		{
+			name:    "absolute target is retained",
+			runtime: config.RuntimeConfig{PublicAPIURL: "https://api.example.test", DocsURL: "https://docs.example.test/reference/"},
+			want:    "https://docs.example.test/reference/",
+		},
+		{name: "relative target requires public origin", runtime: config.RuntimeConfig{DocsURL: "/developer-docs/"}, wantErr: true},
+		{name: "credentials are rejected", runtime: config.RuntimeConfig{DocsURL: "https://user:secret@docs.example.test/"}, wantErr: true},
+		{name: "non HTTP scheme is rejected", runtime: config.RuntimeConfig{DocsURL: "file:///tmp/docs"}, wantErr: true},
+		{name: "query is rejected", runtime: config.RuntimeConfig{DocsURL: "https://docs.example.test/?token=secret"}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target, err := resolveDocsReadinessTarget(tt.runtime)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("resolveDocsReadinessTarget(%#v) succeeded with %v", tt.runtime, target)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveDocsReadinessTarget(%#v): %v", tt.runtime, err)
+			}
+			if target.String() != tt.want {
+				t.Fatalf("target = %q, want %q", target, tt.want)
+			}
+		})
+	}
+}
+
+func TestDocsReadinessCheckerProbesDeployedTarget(t *testing.T) {
+	var requested *url.URL
+	client := &http.Client{Transport: docsReadinessRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requested = request.URL
+		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+	})}
+	cfg := config.Config{Runtime: config.RuntimeConfig{
+		PublicAPIURL: "https://studio.example.test/api/",
+		DocsURL:      "/developer-docs/",
+	}}
+
+	result := newDocsReadinessChecker(cfg, client, 100*time.Millisecond)(context.Background())
+	if result.Status != "pass" || !strings.Contains(result.Detail, "同源部署入口") || !strings.Contains(result.Detail, "HTTP 204") {
+		t.Fatalf("readiness result = %#v, want deployed target pass", result)
+	}
+	if requested == nil || requested.String() != "https://studio.example.test/developer-docs/" {
+		t.Fatalf("requested URL = %v", requested)
+	}
+}
+
+func TestDocsReadinessCheckerRejectsUnhealthyTargetWithoutLeakingURL(t *testing.T) {
+	secretTarget := "https://docs.example.test/?token=must-not-leak"
+	tests := []struct {
+		name      string
+		runtime   config.RuntimeConfig
+		transport docsReadinessRoundTripFunc
+	}{
+		{
+			name:    "invalid target",
+			runtime: config.RuntimeConfig{DocsURL: secretTarget},
+			transport: func(*http.Request) (*http.Response, error) {
+				t.Fatal("invalid target must not be requested")
+				return nil, nil
+			},
+		},
+		{
+			name:    "transport error",
+			runtime: config.RuntimeConfig{DocsURL: "https://docs.example.test/"},
+			transport: func(*http.Request) (*http.Response, error) {
+				return nil, errors.New("dial secret.internal:443 failed")
+			},
+		},
+		{
+			name:    "non 2xx",
+			runtime: config.RuntimeConfig{DocsURL: "https://docs.example.test/"},
+			transport: func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusUnauthorized, Body: io.NopCloser(strings.NewReader("token=body-secret")), Header: make(http.Header)}, nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &http.Client{Transport: tt.transport}
+			result := newDocsReadinessChecker(config.Config{Runtime: tt.runtime}, client, 100*time.Millisecond)(context.Background())
+			if result.Status != "fail" {
+				t.Fatalf("readiness result = %#v, want failure", result)
+			}
+			for _, secret := range []string{"must-not-leak", "secret.internal", "body-secret", "docs.example.test"} {
+				if strings.Contains(result.Detail, secret) {
+					t.Fatalf("readiness detail leaked %q: %q", secret, result.Detail)
+				}
+			}
+		})
+	}
+}
+
+func TestDocsReadinessCheckerBoundsProbeTime(t *testing.T) {
+	client := &http.Client{Transport: docsReadinessRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		<-request.Context().Done()
+		return nil, request.Context().Err()
+	})}
+	started := time.Now()
+	result := newDocsReadinessChecker(config.Config{Runtime: config.RuntimeConfig{DocsURL: "https://docs.example.test/"}}, client, 15*time.Millisecond)(context.Background())
+	if result.Status != "fail" || !strings.Contains(result.Detail, "超时") {
+		t.Fatalf("readiness result = %#v, want timeout failure", result)
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("probe exceeded bounded timeout: %v", elapsed)
+	}
+}
+
+func TestDocsReadinessHTTPClientRestrictsRedirects(t *testing.T) {
+	terminal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer terminal.Close()
+
+	crossHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		http.Redirect(w, request, terminal.URL, http.StatusFound)
+	}))
+	defer crossHost.Close()
+
+	client := newDocsReadinessHTTPClient(100 * time.Millisecond)
+	response, err := client.Get(crossHost.URL)
+	if response != nil {
+		response.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("cross-host redirect must be rejected")
+	}
+
+	checkRedirect := client.CheckRedirect
+	allowedTarget, _ := http.NewRequest(http.MethodGet, "https://docs.example.test/reference/", nil)
+	allowedOrigin, _ := http.NewRequest(http.MethodGet, "https://docs.example.test/", nil)
+	if err := checkRedirect(allowedTarget, []*http.Request{allowedOrigin}); err != nil {
+		t.Fatalf("same-origin public redirect was rejected: %v", err)
+	}
+	for _, tt := range []struct {
+		name   string
+		target string
+		origin string
+	}{
+		{name: "scheme change", target: "https://docs.example.test/", origin: "http://docs.example.test/"},
+		{name: "port change", target: "https://docs.example.test:8443/", origin: "https://docs.example.test/"},
+		{name: "private literal", target: "http://127.0.0.1/next", origin: "http://127.0.0.1/start"},
+		{name: "credentials", target: "https://user:secret@docs.example.test/", origin: "https://docs.example.test/"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			target, _ := http.NewRequest(http.MethodGet, tt.target, nil)
+			origin, _ := http.NewRequest(http.MethodGet, tt.origin, nil)
+			if err := checkRedirect(target, []*http.Request{origin}); err == nil {
+				t.Fatalf("redirect from %q to %q must be rejected", tt.origin, tt.target)
+			}
+		})
+	}
+}
 
 func TestPublicGalleryDetailPreservesReusableCreationConfiguration(t *testing.T) {
 	item := domainimagetask.GalleryImage{

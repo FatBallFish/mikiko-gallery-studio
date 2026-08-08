@@ -15,7 +15,7 @@ type LightboxPayload = {
 
 type BillingPlanId = 'basic' | 'pro' | 'master' | 'custom'
 type PaymentMethodId = 'alipay' | 'wechat'
-type DemoTab = 'home' | 'studio' | 'gallery' | 'billing' | 'apiKeys' | 'profile' | 'docs' | 'settings'
+type DemoTab = 'home' | 'studio' | 'gallery' | 'billing' | 'apiKeys' | 'profile' | 'settings'
 type GalleryAsset = {
   id: string
   title: string
@@ -293,7 +293,6 @@ export function RedesignDemo() {
               {activeTab === 'billing' && <BillingView />}
               {activeTab === 'apiKeys' && <ApiKeysView />}
               {activeTab === 'profile' && <ProfileView />}
-              {activeTab === 'docs' && <DocsView />}
               {activeTab === 'settings' && <SettingsView activeTheme={accentTheme} onThemeChange={setAccentTheme} themeMode={themeMode} onThemeModeChange={setThemeMode} />}
             </div>
 
@@ -306,7 +305,7 @@ export function RedesignDemo() {
                 <div className={rdShell.footerLinks}>
                   <span className={rdShell.footerLink}>服务协议</span>
                   <span className={rdShell.footerLink}>隐私条款</span>
-                  <span className={rdShell.footerLink}>API 文档</span>
+                  <button className={cn(rdShell.footerLink, 'border-0 bg-transparent p-0 text-inherit')} type="button" onClick={() => openDocsEntry('footer')}>API 文档</button>
                 </div>
               </div>
             </footer>
@@ -960,15 +959,6 @@ function ProfileView() {
     <PlaceholderView
       title="个人中心"
       description="这里预留用户资料、头像、邮箱验证和账号安全信息，后续可直接承接正式用户中心。"
-    />
-  )
-}
-
-function DocsView() {
-  return (
-    <PlaceholderView
-      title="开发文档"
-      description="开放接口、错误码、SDK 示例和 OpenAI 兼容协议说明会在这里汇总。"
     />
   )
 }

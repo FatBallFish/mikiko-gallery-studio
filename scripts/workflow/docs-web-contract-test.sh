@@ -21,6 +21,7 @@ for compose in \
   deployments/docker-compose/docker-compose.local.yml \
   deployments/docker-compose/docker-compose.prod.yml; do
   require_file_text "$compose" 'docs-web:' "docs-web service is missing from $compose"
+  require_file_text "$compose" 'PIC_GALLERY_DOCS_URL: ${PIC_GALLERY_DOCS_URL:-/developer-docs/}' "user web does not consume the authoritative docs URL in $compose"
 done
 
 require_file_text deployments/nginx/default.conf 'location /developer-docs/' 'gateway does not route /developer-docs/'

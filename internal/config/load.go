@@ -140,6 +140,8 @@ func RuntimeFromBootstrap(bootstrap BootstrapConfig) (Config, error) {
 		ApplicationVersion:  bootstrap.ApplicationVersion,
 		ConfigSchemaVersion: bootstrap.SchemaVersion,
 		ConfigRevision:      bootstrap.ConfigRevision,
+		PublicAPIURL:        envString(bootstrap.Values, "PUBLIC_API_URL", ""),
+		DocsURL:             envString(bootstrap.Values, "PIC_GALLERY_DOCS_URL", "/developer-docs/"),
 	}
 	applyDefaults(&cfg)
 	if bootstrap.Deployment.Role != DeploymentRoleWeb {

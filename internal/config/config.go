@@ -33,6 +33,8 @@ type RuntimeConfig struct {
 	ApplicationVersion  string
 	ConfigSchemaVersion int
 	ConfigRevision      int
+	PublicAPIURL        string
+	DocsURL             string
 }
 
 type AppConfig struct {

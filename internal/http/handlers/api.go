@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -175,6 +176,8 @@ type DocsReadinessResult struct {
 
 type DocsReadinessChecker func(ctx context.Context) DocsReadinessResult
 
+const docsReadinessProbeTimeout = 2 * time.Second
+
 func NewAPI(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service) *API {
 	return NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, nil, nil, nil)
 }
@@ -246,7 +249,7 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 		redeem:     redeemservice.NewServiceWithStore(nil),
 		audit:      auditSvc,
 		adminPerms: domainadminauth.RolePermissionResolver{},
-		docsReady:  defaultDocsReadinessChecker,
+		docsReady:  newDocsReadinessChecker(cfg, nil, docsReadinessProbeTimeout),
 		cfg:        cfg,
 	}
 }
@@ -261,7 +264,7 @@ func (a *API) SetAdminPermissionResolver(resolver domainadminauth.PermissionReso
 
 func (a *API) SetDocsReadinessChecker(checker DocsReadinessChecker) {
 	if checker == nil {
-		a.docsReady = defaultDocsReadinessChecker
+		a.docsReady = newDocsReadinessChecker(a.cfg, nil, docsReadinessProbeTimeout)
 		return
 	}
 	a.docsReady = checker
@@ -7185,6 +7188,120 @@ func defaultDocsReadinessChecker(_ context.Context) DocsReadinessResult {
 	}
 }
 
+func newDocsReadinessChecker(cfg config.Config, client *http.Client, timeout time.Duration) DocsReadinessChecker {
+	if timeout <= 0 {
+		timeout = docsReadinessProbeTimeout
+	}
+	if client == nil {
+		client = newDocsReadinessHTTPClient(timeout)
+	}
+	return func(ctx context.Context) DocsReadinessResult {
+		local := defaultDocsReadinessChecker(ctx)
+		if local.Status != "pass" || strings.TrimSpace(cfg.Runtime.DocsURL) == "" {
+			return local
+		}
+		target, err := resolveDocsReadinessTarget(cfg.Runtime)
+		if err != nil {
+			return DocsReadinessResult{Status: "fail", Detail: "开发文档部署地址无效"}
+		}
+		targetClass := docsReadinessTargetClass(cfg.Runtime)
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, target.String(), nil)
+		if err != nil {
+			return DocsReadinessResult{Status: "fail", Detail: "开发文档部署地址无效"}
+		}
+		request.Header.Set("User-Agent", "mikiko-gallery-studio-readiness/1")
+		response, err := client.Do(request)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(probeCtx.Err(), context.DeadlineExceeded) {
+				return DocsReadinessResult{Status: "fail", Detail: targetClass + "探测超时"}
+			}
+			return DocsReadinessResult{Status: "fail", Detail: targetClass + "不可访问"}
+		}
+		defer response.Body.Close()
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			return DocsReadinessResult{Status: "fail", Detail: fmt.Sprintf("%s返回 HTTP %d", targetClass, response.StatusCode)}
+		}
+		return DocsReadinessResult{
+			Status: "pass",
+			Detail: fmt.Sprintf("%s；%s HTTP %d", local.Detail, targetClass, response.StatusCode),
+		}
+	}
+}
+
+func docsReadinessTargetClass(runtime config.RuntimeConfig) string {
+	target, err := url.Parse(strings.TrimSpace(runtime.DocsURL))
+	if err == nil && target.IsAbs() {
+		return "独立部署入口"
+	}
+	return "同源部署入口"
+}
+
+func resolveDocsReadinessTarget(runtime config.RuntimeConfig) (*url.URL, error) {
+	rawTarget := strings.TrimSpace(runtime.DocsURL)
+	if rawTarget == "" || strings.Contains(rawTarget, "\\") {
+		return nil, errors.New("documentation URL is missing or invalid")
+	}
+	target, err := url.Parse(rawTarget)
+	if err != nil || target.Opaque != "" || target.User != nil || target.RawQuery != "" || target.Fragment != "" {
+		return nil, errors.New("documentation URL is invalid")
+	}
+	if !target.IsAbs() {
+		if target.Host != "" || !strings.HasPrefix(target.Path, "/") {
+			return nil, errors.New("relative documentation URL is invalid")
+		}
+		base, parseErr := url.Parse(strings.TrimSpace(runtime.PublicAPIURL))
+		if parseErr != nil || !validDocsHTTPURL(base) {
+			return nil, errors.New("public API URL cannot resolve documentation URL")
+		}
+		target = base.ResolveReference(target)
+	}
+	if !validDocsHTTPURL(target) {
+		return nil, errors.New("documentation URL must use HTTP or HTTPS")
+	}
+	return target, nil
+}
+
+func validDocsHTTPURL(target *url.URL) bool {
+	return target != nil &&
+		(target.Scheme == "http" || target.Scheme == "https") &&
+		target.Host != "" && target.User == nil && target.Opaque == "" &&
+		target.RawQuery == "" && target.Fragment == ""
+}
+
+func newDocsReadinessHTTPClient(timeout time.Duration) *http.Client {
+	if timeout <= 0 {
+		timeout = docsReadinessProbeTimeout
+	}
+	return &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(request *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return errors.New("documentation redirect limit exceeded")
+			}
+			if !validDocsHTTPURL(request.URL) || len(via) == 0 ||
+				!strings.EqualFold(request.URL.Scheme, via[0].URL.Scheme) ||
+				!strings.EqualFold(request.URL.Host, via[0].URL.Host) ||
+				docsRedirectHostIsPrivate(request.URL.Hostname()) {
+				return errors.New("documentation redirect target is not allowed")
+			}
+			return nil
+		},
+	}
+}
+
+func docsRedirectHostIsPrivate(host string) bool {
+	if strings.EqualFold(strings.TrimSpace(host), "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.TrimSpace(host))
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast())
+}
+
 func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		a.writeCompatError(w, methodNotAllowedError())
@@ -8415,7 +8532,7 @@ func (a *API) publicGalleryReadinessCheck(ctx context.Context, checkedAt time.Ti
 func (a *API) docsReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
 	checker := a.docsReady
 	if checker == nil {
-		checker = defaultDocsReadinessChecker
+		checker = newDocsReadinessChecker(a.cfg, nil, docsReadinessProbeTimeout)
 	}
 	result := checker(ctx)
 	status := strings.TrimSpace(result.Status)

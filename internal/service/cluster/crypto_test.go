@@ -141,7 +141,7 @@ func TestRuntimeKeysForRoleAreExplicitAndSecretMinimized(t *testing.T) {
 	apiKeys := RuntimeKeysForRole(domaincluster.NodeRoleAPI)
 	workerKeys := RuntimeKeysForRole(domaincluster.NodeRoleWorker)
 	webKeys := RuntimeKeysForRole(domaincluster.NodeRoleWeb)
-	for _, key := range []string{"DATABASE_URL", "REDIS_URL", "AUTH_ACCESS_TOKEN_SECRET", "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY"} {
+	for _, key := range []string{"DATABASE_URL", "REDIS_URL", "AUTH_ACCESS_TOKEN_SECRET", "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY", "CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY", "PUBLIC_API_URL", "PIC_GALLERY_DOCS_URL"} {
 		if !slices.Contains(apiKeys, key) {
 			t.Fatalf("API role is missing %s", key)
 		}
@@ -161,8 +161,10 @@ func TestRuntimeKeysForRoleAreExplicitAndSecretMinimized(t *testing.T) {
 			t.Fatalf("Web role received forbidden key %s", forbidden)
 		}
 	}
-	if !slices.Contains(webKeys, "PUBLIC_API_URL") {
-		t.Fatal("Web role is missing PUBLIC_API_URL")
+	for _, key := range []string{"PUBLIC_API_URL", "PIC_GALLERY_DOCS_URL"} {
+		if !slices.Contains(webKeys, key) {
+			t.Fatalf("Web role is missing %s", key)
+		}
 	}
 }
 

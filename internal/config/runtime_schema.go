@@ -149,6 +149,7 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			secretValidatedField("CLUSTER_ENROLLMENT_SEAL_KEY", "application secrets", "仅控制节点使用的集群入群临时密钥封装密钥；不得下发给 API、Worker 或 Web 加入节点。", "Control-node-only key wrapping ephemeral cluster enrollment keys; never send it to joined API, Worker, or Web nodes.", FieldOwnerMGSCTL, requiredSetupAuthorityRole, validateOptionalBase64URL32),
 
 			field("PUBLIC_API_URL", "public endpoints", "浏览器和 Web 节点可访问的 API 公共基础地址，可使用 HTTP、域名或 IP 加端口。", "Public API base URL reachable by browsers and Web nodes; HTTP, domains, and IP-with-port are supported.", "http://127.0.0.1:8080", "", FieldOwnerSetup, requiredWebNode, validateHTTPURL),
+			field("PIC_GALLERY_DOCS_URL", "public endpoints", "用户端开发文档入口；可填写无凭据的 HTTP(S) 地址或以 / 开头的同源路径。", "User-facing documentation entry; use an HTTP(S) URL without credentials or a same-origin path beginning with /.", "/developer-docs/", "/developer-docs/", FieldOwnerMGSCTL, requiredNever, validateDocsURL),
 			field("CORS_ALLOWED_ORIGINS", "public endpoints", "允许跨域调用 API 的前端来源，多个来源使用逗号分隔；同源部署可留空。", "Frontend origins allowed to call the API, comma-separated; leave empty for same-origin deployments.", "http://127.0.0.1:5173,http://127.0.0.1:5174", "", FieldOwnerSetup, requiredNever, validateOptionalCSV),
 
 			field("API_PORT", "ports", "API 在宿主机或 Gateway 后监听的端口。", "Port on which the API listens on the host or behind the Gateway.", "8080", "8080", FieldOwnerMGSCTL, requiredAPINode, validatePort),
@@ -476,6 +477,29 @@ func validateHTTPURL(value string) error {
 }
 
 func validateOptionalHTTPURL(value string) error { return validateHTTPURL(value) }
+
+func validateDocsURL(value string) error {
+	if value == "" {
+		return nil
+	}
+	if strings.Contains(value, "\\") {
+		return errors.New("documentation URL must not contain backslashes")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Opaque != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("documentation URL is invalid")
+	}
+	if parsed.IsAbs() {
+		if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return errors.New("documentation URL must use HTTP or HTTPS")
+		}
+		return nil
+	}
+	if parsed.Host != "" || !strings.HasPrefix(parsed.Path, "/") {
+		return errors.New("relative documentation URL must begin with /")
+	}
+	return nil
+}
 
 func validateOptionalCSV(value string) error {
 	for _, item := range strings.Split(value, ",") {
