@@ -11,7 +11,7 @@ import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import { checkoutPaymentErrorMessage } from './checkoutPaymentError'
 import { closePaymentWindow, dispatchPaymentWindow, paymentMethodNeedsReservedWindow, reservePaymentWindow } from './checkoutPaymentWindow'
 import { checkoutCancelResultState, checkoutMoney, checkoutOrderActionState, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
-import { checkoutPurchasablePlans } from './checkoutPlans'
+import { checkoutPlanValidityLabel, checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
 import { RedeemCodeForm } from './RedeemCodeForm'
 import { PaymentMonitorModal } from './PaymentMonitorModal'
@@ -31,6 +31,7 @@ const checkoutClasses = {
   optionLabel: 'text-[13px] text-[var(--muted)]',
   planPoints: rdBilling.planPrice,
   planPrice: 'text-[13px] not-italic text-[var(--fg)]',
+  optionMeta: 'text-xs font-semibold text-[var(--muted)]',
   methodGrid: 'grid grid-cols-1 gap-3',
   methodButton: 'group flex min-h-[68px] cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-4 text-left text-[var(--fg)] transition-colors hover:border-[var(--accent)] motion-reduce:transition-none',
   methodIcon: 'grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)]',
@@ -243,7 +244,7 @@ export function CheckoutPage() {
         <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
             <h1 className={checkoutClasses.title}>积分充值</h1>
-            <p className={checkoutClasses.detail}>固定积分包按套餐有效期到账，自定义金额充值积分长期有效。</p>
+            <p className={checkoutClasses.detail}>自定义金额充值积分长期有效。</p>
           </div>
           <Button tone="ghost" onClick={() => void load()}>刷新配置</Button>
         </div>
@@ -420,6 +421,7 @@ function PlanButton({ plan, active, onSelect }: { plan: CashierPlan; active: boo
       <span className={checkoutClasses.optionLabel}>{plan.plan_name}</span>
       <strong className={checkoutClasses.planPoints}>{checkoutPoints(plan.points)} 积分</strong>
       <em className={checkoutClasses.planPrice}>{checkoutMoney(plan.price_cny)}{Number(plan.bonus_points ?? '0') > 0 ? ` / 赠 ${checkoutPoints(plan.bonus_points)}` : ''}</em>
+      <span className={checkoutClasses.optionMeta}>{checkoutPlanValidityLabel(plan)}</span>
     </button>
   )
 }

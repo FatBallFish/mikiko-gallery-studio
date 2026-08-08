@@ -1052,6 +1052,16 @@ func TestBillingStoreFixedPackageCompletionUsesPermanentOrderSnapshot(t *testing
 	if grants[0].TotalPoints != "20.00000" || grants[1].TotalPoints != "100.00000" || grants[0].ExpiresAt != nil || grants[1].ExpiresAt != nil {
 		t.Fatalf("grants must use snapshotted amounts and permanent expiry, got %#v", grants)
 	}
+	ledgers, err := client.PointLedger.Query().
+		Where(pointledger.UserIDEQ(order.UserID), pointledger.OrderIDEQ(order.ID), pointledger.LedgerTypeEQ("order_paid")).
+		Order(repoent.Asc(pointledger.FieldID)).
+		All(ctx)
+	if err != nil {
+		t.Fatalf("query permanent package ledgers: %v", err)
+	}
+	if len(ledgers) != 2 || ledgers[0].BalanceBucket != "subscription" || ledgers[0].ChangePoints != "100.00000" || ledgers[0].ExpiresAt != nil || ledgers[1].BalanceBucket != "gift" || ledgers[1].ChangePoints != "20.00000" || ledgers[1].ExpiresAt != nil {
+		t.Fatalf("permanent package ledgers must preserve split buckets and nil expiry, got %#v", ledgers)
+	}
 }
 
 func TestBillingStoreFixedPackageCompletionSnapshotsExpiryForBothGrants(t *testing.T) {
@@ -1103,6 +1113,35 @@ func TestBillingStoreFixedPackageCompletionSnapshotsExpiryForBothGrants(t *testi
 	}
 	if len(grants) != 2 || grants[0].ExpiresAt == nil || grants[1].ExpiresAt == nil || !grants[0].ExpiresAt.Equal(*grants[1].ExpiresAt) || !grants[0].ExpiresAt.Equal(*completed.CreditExpiresAt) {
 		t.Fatalf("base and gift grants must share the order credit expiry, got %#v", grants)
+	}
+	ledgers, err := client.PointLedger.Query().
+		Where(pointledger.UserIDEQ(order.UserID), pointledger.OrderIDEQ(order.ID), pointledger.LedgerTypeEQ("order_paid")).
+		Order(repoent.Asc(pointledger.FieldID)).
+		All(ctx)
+	if err != nil {
+		t.Fatalf("query package credit ledgers: %v", err)
+	}
+	if len(ledgers) != 2 {
+		t.Fatalf("base and gift credits must create separate ledgers, got %#v", ledgers)
+	}
+	if ledgers[0].ChangePoints != "50.00000" || ledgers[0].BalanceBucket != "subscription" || ledgers[0].BucketBalanceAfter != "50.00000" || ledgers[0].ExpiresAt == nil || !ledgers[0].ExpiresAt.Equal(*completed.CreditExpiresAt) {
+		t.Fatalf("unexpected purchased credit ledger %#v", ledgers[0])
+	}
+	if ledgers[1].ChangePoints != "5.00000" || ledgers[1].BalanceBucket != "gift" || ledgers[1].BucketBalanceAfter != "5.00000" || ledgers[1].ExpiresAt == nil || !ledgers[1].ExpiresAt.Equal(*completed.CreditExpiresAt) {
+		t.Fatalf("unexpected gift credit ledger %#v", ledgers[1])
+	}
+	page, err := store.ListLedger(ctx, order.UserID, 1, 10)
+	if err != nil {
+		t.Fatalf("ListLedger package credits: %v", err)
+	}
+	projected := map[string]domainbilling.LedgerEntry{}
+	for _, entry := range page.Items {
+		if entry.LedgerType == "order_paid" {
+			projected[entry.BalanceBucket] = entry
+		}
+	}
+	if projected["subscription"].Amount != "+50.00000" || projected["subscription"].ExpiresAt == nil || projected["gift"].Amount != "+5.00000" || projected["gift"].ExpiresAt == nil || !strings.Contains(projected["gift"].Detail, "赠送积分") {
+		t.Fatalf("ledger API must preserve split amounts, expiry, and readable gift detail, got %#v", projected)
 	}
 }
 
@@ -1310,8 +1349,8 @@ func TestBillingStoreCompleteRechargeOrderCompletesAndIsIdempotent(t *testing.T)
 	if ledger.BalanceBucket != "subscription" || ledger.SourceType != "payment_order" || ledger.SourceID == nil || *ledger.SourceID != order.ID {
 		t.Fatalf("expected persisted package ledger metadata, got bucket=%q source=%q source_id=%v", ledger.BalanceBucket, ledger.SourceType, ledger.SourceID)
 	}
-	if ledger.BucketBalanceAfter != "100.00000" || ledger.ExpiresAt != nil {
-		t.Fatalf("expected recharge ledger bucket balance 100 and no expiry, got bucket_after=%q expires=%v", ledger.BucketBalanceAfter, ledger.ExpiresAt)
+	if ledger.BucketBalanceAfter != "100.00000" || ledger.ExpiresAt == nil || first.CreditExpiresAt == nil || !ledger.ExpiresAt.Equal(*first.CreditExpiresAt) {
+		t.Fatalf("expected purchased ledger bucket balance 100 and snapshotted expiry, got bucket_after=%q expires=%v order_expiry=%v", ledger.BucketBalanceAfter, ledger.ExpiresAt, first.CreditExpiresAt)
 	}
 	entity, err := client.PaymentOrder.Get(ctx, int(order.ID))
 	if err != nil {
@@ -1459,11 +1498,11 @@ func TestBillingStoreRefundPaymentOrderDeductsRechargeGrantAndIsIdempotent(t *te
 	if refundLedger.ChangePoints != "-100.00000" || refundLedger.BalanceAfter != "0.00000" || refundLedger.OperatorAdminID == nil || *refundLedger.OperatorAdminID != 7001 {
 		t.Fatalf("unexpected refund ledger %#v", refundLedger)
 	}
-	if refundLedger.BalanceBucket != "recharge" || refundLedger.SourceType != "payment_order" || refundLedger.SourceID == nil || *refundLedger.SourceID != order.ID {
+	if refundLedger.BalanceBucket != "subscription" || refundLedger.SourceType != "payment_order" || refundLedger.SourceID == nil || *refundLedger.SourceID != order.ID {
 		t.Fatalf("expected persisted refund ledger metadata, got bucket=%q source=%q source_id=%v", refundLedger.BalanceBucket, refundLedger.SourceType, refundLedger.SourceID)
 	}
-	if refundLedger.BucketBalanceAfter != "0.00000" || refundLedger.ExpiresAt != nil {
-		t.Fatalf("expected refund ledger bucket balance 0 and no expiry, got bucket_after=%q expires=%v", refundLedger.BucketBalanceAfter, refundLedger.ExpiresAt)
+	if refundLedger.BucketBalanceAfter != "0.00000" || refundLedger.ExpiresAt == nil || first.CreditExpiresAt == nil || !refundLedger.ExpiresAt.Equal(*first.CreditExpiresAt) {
+		t.Fatalf("expected refund ledger bucket balance 0 and original grant expiry, got bucket_after=%q expires=%v order_expiry=%v", refundLedger.BucketBalanceAfter, refundLedger.ExpiresAt, first.CreditExpiresAt)
 	}
 
 	second, err := store.RefundPaymentOrder(ctx, domainbilling.RefundPaymentOrderRequest{
@@ -1544,6 +1583,104 @@ func TestBillingStoreBonusPackageFullRefundDeductsAllOrderGrants(t *testing.T) {
 	for _, grant := range grants {
 		if grant.Status != "refunded" || grant.AvailablePoints != "0.00000" || grant.FrozenPoints != "0.00000" {
 			t.Fatalf("full refund must clear every order grant, got %#v", grant)
+		}
+	}
+	refundLedgers, err := client.PointLedger.Query().
+		Where(pointledger.UserIDEQ(291), pointledger.OrderIDEQ(order.ID), pointledger.LedgerTypeEQ("payment_refund")).
+		Order(repoent.Asc(pointledger.FieldID)).
+		All(ctx)
+	if err != nil {
+		t.Fatalf("load refund ledgers: %v", err)
+	}
+	if len(refundLedgers) != 2 {
+		t.Fatalf("refund must create one ledger per affected grant, got %#v", refundLedgers)
+	}
+	if refundLedgers[0].BalanceBucket != "subscription" || refundLedgers[0].ChangePoints != "-300.00000" || refundLedgers[0].ExpiresAt == nil {
+		t.Fatalf("unexpected purchased refund ledger %#v", refundLedgers[0])
+	}
+	if refundLedgers[1].BalanceBucket != "gift" || refundLedgers[1].ChangePoints != "-30.00000" || refundLedgers[1].ExpiresAt == nil {
+		t.Fatalf("unexpected gift refund ledger %#v", refundLedgers[1])
+	}
+}
+
+func TestBillingStoreFrozenRefundCanFinalizeAfterGrantExpiry(t *testing.T) {
+	ctx := t.Context()
+	client, store, order := completedBonusPackageOrder(t, "frozen-expiry-finalize", 299)
+	request := domainbilling.RefundPaymentOrderRequest{UserID: 299, OrderID: order.ID, RefundTradeNo: "frozen-expiry-finalize"}
+	if _, err := store.FreezeRefundPaymentOrder(ctx, request); err != nil {
+		t.Fatalf("FreezeRefundPaymentOrder: %v", err)
+	}
+	past := time.Now().UTC().Add(-time.Hour)
+	if _, err := client.WalletGrant.Update().Where(walletgrant.UserIDEQ(299), walletgrant.SourceIDEQ(order.ID)).SetExpiresAt(past).Save(ctx); err != nil {
+		t.Fatalf("move frozen grants past expiry: %v", err)
+	}
+	if balance, err := store.GetBalance(ctx, 299); err != nil {
+		t.Fatalf("GetBalance expires frozen grants: %v", err)
+	} else if balance.AvailablePoints != "0.00000" {
+		t.Fatalf("expired available points must disappear, got %#v", balance)
+	}
+	expired, err := client.WalletGrant.Query().Where(walletgrant.UserIDEQ(299), walletgrant.SourceIDEQ(order.ID)).All(ctx)
+	if err != nil {
+		t.Fatalf("load expired frozen grants: %v", err)
+	}
+	for _, grant := range expired {
+		if grant.Status != "expired" || grant.AvailablePoints != "0.00000" || grant.FrozenPoints == "0.00000" {
+			t.Fatalf("expiry must remove only available points and preserve refund freeze, got %#v", grant)
+		}
+	}
+	first, err := store.RefundPaymentOrder(ctx, request)
+	if err != nil {
+		t.Fatalf("RefundPaymentOrder after expiry: %v", err)
+	}
+	second, err := store.RefundPaymentOrder(ctx, request)
+	if err != nil || second.Status != first.Status || second.RefundedPoints != first.RefundedPoints {
+		t.Fatalf("expired refund finalize must be idempotent: first=%#v second=%#v err=%v", first, second, err)
+	}
+	finalGrants, err := client.WalletGrant.Query().Where(walletgrant.UserIDEQ(299), walletgrant.SourceIDEQ(order.ID)).All(ctx)
+	if err != nil {
+		t.Fatalf("load finalized expired grants: %v", err)
+	}
+	for _, grant := range finalGrants {
+		if grant.Status != "expired" || grant.AvailablePoints != "0.00000" || grant.FrozenPoints != "0.00000" {
+			t.Fatalf("finalize must preserve expired status and clear frozen points, got %#v", grant)
+		}
+	}
+}
+
+func TestBillingStoreFrozenRefundReleaseAfterGrantExpiryDoesNotRestoreBalance(t *testing.T) {
+	ctx := t.Context()
+	client, store, order := completedBonusPackageOrder(t, "frozen-expiry-release", 300)
+	request := domainbilling.RefundPaymentOrderRequest{UserID: 300, OrderID: order.ID, RefundTradeNo: "frozen-expiry-release"}
+	if _, err := store.FreezeRefundPaymentOrder(ctx, request); err != nil {
+		t.Fatalf("FreezeRefundPaymentOrder: %v", err)
+	}
+	past := time.Now().UTC().Add(-time.Hour)
+	if _, err := client.WalletGrant.Update().Where(walletgrant.UserIDEQ(300), walletgrant.SourceIDEQ(order.ID)).SetExpiresAt(past).Save(ctx); err != nil {
+		t.Fatalf("move frozen grants past expiry: %v", err)
+	}
+	if _, err := store.GetBalance(ctx, 300); err != nil {
+		t.Fatalf("GetBalance expires frozen grants: %v", err)
+	}
+	if _, err := store.ReleaseRefundPaymentOrder(ctx, request); err != nil {
+		t.Fatalf("ReleaseRefundPaymentOrder after expiry: %v", err)
+	}
+	if _, err := store.ReleaseRefundPaymentOrder(ctx, request); err != nil {
+		t.Fatalf("ReleaseRefundPaymentOrder replay: %v", err)
+	}
+	balance, err := store.GetBalance(ctx, 300)
+	if err != nil {
+		t.Fatalf("GetBalance after release: %v", err)
+	}
+	if balance.AvailablePoints != "0.00000" || balance.FrozenPoints != "0.00000" {
+		t.Fatalf("release after natural expiry must not resurrect points, got %#v", balance)
+	}
+	grants, err := client.WalletGrant.Query().Where(walletgrant.UserIDEQ(300), walletgrant.SourceIDEQ(order.ID)).All(ctx)
+	if err != nil {
+		t.Fatalf("load released expired grants: %v", err)
+	}
+	for _, grant := range grants {
+		if grant.Status != "expired" || grant.AvailablePoints != "0.00000" || grant.FrozenPoints != "0.00000" {
+			t.Fatalf("release must leave grant expired and empty, got %#v", grant)
 		}
 	}
 }

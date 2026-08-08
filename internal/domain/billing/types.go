@@ -433,6 +433,8 @@ func bucketLabel(bucket string) string {
 		return "订阅额度"
 	case "recharge":
 		return "充值额度"
+	case "gift":
+		return "赠送积分"
 	case "usage":
 		return "使用中额度"
 	default:

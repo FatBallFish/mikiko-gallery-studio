@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -134,12 +135,31 @@ type Store interface {
 }
 
 type memoryTaskBillingState struct {
-	UserID   int64
-	APIKeyID int64
-	Seen     bool
-	Active   bool
-	Cycle    int
-	Reserved decimal.Decimal
+	UserID            int64
+	APIKeyID          int64
+	Seen              bool
+	Active            bool
+	Cycle             int
+	Reserved          decimal.Decimal
+	GrantAllocations  []memoryGrantAllocation
+	UntrackedReserved decimal.Decimal
+}
+
+type memoryWalletGrant struct {
+	ID        int64
+	UserID    int64
+	OrderID   int64
+	GrantType string
+	Status    string
+	Available decimal.Decimal
+	Frozen    decimal.Decimal
+	Consumed  decimal.Decimal
+	ExpiresAt *time.Time
+}
+
+type memoryGrantAllocation struct {
+	GrantID int64
+	Points  decimal.Decimal
 }
 
 type MemoryStore struct {
@@ -164,6 +184,8 @@ type MemoryStore struct {
 	refundFreezes map[int64]memoryRefundFreeze
 	refundTrades  map[int64]map[string]struct{}
 	refundRetries map[int64]domainbilling.RefundPaymentOrderRequest
+	walletGrants  map[int64][]*memoryWalletGrant
+	nextGrantID   int64
 }
 
 type memoryBreakdown struct {
@@ -182,6 +204,7 @@ type memoryRefundFreeze struct {
 	Subscription    decimal.Decimal
 	Gift            decimal.Decimal
 	Recharge        decimal.Decimal
+	Allocations     []memoryGrantAllocation
 }
 
 type balanceState struct {
@@ -212,12 +235,15 @@ func NewMemoryStore(scale int) *MemoryStore {
 		refundFreezes: map[int64]memoryRefundFreeze{},
 		refundTrades:  map[int64]map[string]struct{}{},
 		refundRetries: map[int64]domainbilling.RefundPaymentOrderRequest{},
+		walletGrants:  map[int64][]*memoryWalletGrant{},
+		nextGrantID:   1,
 	}
 }
 
 func (s *MemoryStore) GetBalance(_ context.Context, userID int64) (BalanceState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.expireMemoryGrantsLocked(userID, time.Now().UTC())
 	return s.formatState(userID, s.balances[userID]), nil
 }
 
@@ -858,6 +884,14 @@ func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrd
 		if order.CreditExpiryEnabled && order.CreditValidDays != nil {
 			order.CreditExpiresAt = &periodEnd
 		}
+		s.createMemoryWalletGrantLocked(order.UserID, order.ID, "subscription", points, order.CreditExpiresAt)
+		if bonus.IsPositive() {
+			s.createMemoryWalletGrantLocked(order.UserID, order.ID, "gift", bonus, order.CreditExpiresAt)
+		}
+		order.LedgerID = s.appendLedgerWithMetadata(order.UserID, 0, "", order.ID, "order_paid", points, current, "payment order "+order.OrderNo+" purchased credits", "subscription", order.CreditExpiresAt)
+		if bonus.IsPositive() {
+			s.appendLedgerWithMetadata(order.UserID, 0, "", order.ID, "order_paid", bonus, current, "payment order "+order.OrderNo+" gift credits", "gift", order.CreditExpiresAt)
+		}
 		s.orders[id] = order
 		s.subs[order.UserID] = &domainbilling.UserSubscriptionSummary{
 			ID:                 order.ID,
@@ -871,7 +905,6 @@ func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrd
 			GrantedPoints:      order.Points,
 			RemainingPoints:    order.Points,
 		}
-		s.appendLedger(order.UserID, 0, "", "order_paid", points.Add(bonus), current, "payment order "+order.OrderNo)
 		return order, nil
 	}
 	return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
@@ -1095,26 +1128,43 @@ func (s *MemoryStore) refundPaymentOrderLocked(req domainbilling.RefundPaymentOr
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
+	s.expireMemoryGrantsLocked(order.UserID, time.Now().UTC())
+	grants := s.memoryOrderGrantsLocked(order)
 	current := s.balances[order.UserID]
-	breakdown := s.breakdown[order.UserID]
 	frozenRefund := s.refundFreezes[order.ID]
+	var allocations []memoryGrantAllocation
 	if frozenRefund.RefundPoints.IsPositive() {
 		if err := ensureMemoryRefundFreezeMatches(frozenRefund, refundTradeNo, plan); err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
-		if current.Frozen.LessThan(plan.RefundPoints) {
+		allocations = append([]memoryGrantAllocation(nil), frozenRefund.Allocations...)
+		if !s.memoryRefundAllocationsAvailableLocked(order.UserID, allocations, true) {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 		}
-		current.Frozen = current.Frozen.Sub(plan.RefundPoints)
+		for _, allocation := range allocations {
+			grant := s.memoryGrantByIDLocked(order.UserID, allocation.GrantID)
+			grant.Frozen = decimal.Max(grant.Frozen.Sub(allocation.Points), decimal.Zero).Round(s.scale)
+			if grant.Status != "expired" && (plan.FullyRefunded || (!grant.Available.IsPositive() && !grant.Frozen.IsPositive())) {
+				grant.Status = "refunded"
+			}
+		}
+		current.Frozen = decimal.Max(current.Frozen.Sub(plan.RefundPoints), decimal.Zero).Round(s.scale)
 		delete(s.refundFreezes, order.ID)
 	} else {
-		updatedBreakdown, _, ok := deductPaymentOrderBreakdown(order, breakdown, plan.RefundPoints)
-		if current.Available.LessThan(plan.RefundPoints) || !ok {
+		var ok bool
+		allocations, ok = allocateMemoryRefundGrants(grants, plan.RefundPoints, false)
+		if !ok || memoryGrantsConsumedOrFrozen(grants) {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 		}
-		current.Available = current.Available.Sub(plan.RefundPoints)
-		breakdown = updatedBreakdown
-		s.breakdown[order.UserID] = breakdown
+		for _, allocation := range allocations {
+			grant := s.memoryGrantByIDLocked(order.UserID, allocation.GrantID)
+			grant.Available = decimal.Max(grant.Available.Sub(allocation.Points), decimal.Zero).Round(s.scale)
+			s.changeMemoryBreakdownLocked(order.UserID, grant.GrantType, allocation.Points.Neg())
+			if grant.Status != "expired" && (plan.FullyRefunded || (!grant.Available.IsPositive() && !grant.Frozen.IsPositive())) {
+				grant.Status = "refunded"
+			}
+		}
+		current.Available = decimal.Max(current.Available.Sub(plan.RefundPoints), decimal.Zero).Round(s.scale)
 	}
 	s.balances[order.UserID] = current
 	now := time.Now().UTC()
@@ -1127,7 +1177,13 @@ func (s *MemoryStore) refundPaymentOrderLocked(req domainbilling.RefundPaymentOr
 	order.RefundedAmountCNY = plan.NextRefundedAmountCNY.StringFixed(s.scale)
 	order.RefundedPoints = plan.NextRefundedPoints.StringFixed(s.scale)
 	order.UpdatedAt = now
-	s.appendLedger(order.UserID, 0, "", "payment_refund", plan.RefundPoints.Neg(), current, strings.TrimSpace(req.Reason))
+	for _, allocation := range allocations {
+		grant := s.memoryGrantByIDLocked(order.UserID, allocation.GrantID)
+		if grant == nil {
+			continue
+		}
+		s.appendLedgerWithMetadata(order.UserID, 0, "", order.ID, "payment_refund", allocation.Points.Neg(), current, strings.TrimSpace(req.Reason), grant.GrantType, grant.ExpiresAt)
+	}
 	s.orders[order.ID] = order
 	s.markMemoryRefundRecord(order.ID, refundTradeNo)
 	return order, nil
@@ -1163,24 +1219,39 @@ func (s *MemoryStore) FreezeRefundPaymentOrder(_ context.Context, req domainbill
 		}
 		return order, nil
 	}
+	s.expireMemoryGrantsLocked(order.UserID, time.Now().UTC())
 	current := s.balances[order.UserID]
-	breakdown := s.breakdown[order.UserID]
-	updatedBreakdown, allocation, ok := deductPaymentOrderBreakdown(order, breakdown, plan.RefundPoints)
-	if current.Available.LessThan(plan.RefundPoints) || !ok {
+	grants := s.memoryOrderGrantsLocked(order)
+	allocations, ok := allocateMemoryRefundGrants(grants, plan.RefundPoints, false)
+	if !ok || memoryGrantsConsumedOrFrozen(grants) {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 	}
-	current.Available = current.Available.Sub(plan.RefundPoints)
+	bucketAllocation := memoryRefundFreeze{}
+	for _, allocation := range allocations {
+		grant := s.memoryGrantByIDLocked(order.UserID, allocation.GrantID)
+		grant.Available = grant.Available.Sub(allocation.Points).Round(s.scale)
+		grant.Frozen = grant.Frozen.Add(allocation.Points).Round(s.scale)
+		s.changeMemoryBreakdownLocked(order.UserID, grant.GrantType, allocation.Points.Neg())
+		switch grant.GrantType {
+		case "subscription":
+			bucketAllocation.Subscription = bucketAllocation.Subscription.Add(allocation.Points)
+		case "recharge":
+			bucketAllocation.Recharge = bucketAllocation.Recharge.Add(allocation.Points)
+		default:
+			bucketAllocation.Gift = bucketAllocation.Gift.Add(allocation.Points)
+		}
+	}
+	current.Available = current.Available.Sub(plan.RefundPoints).Round(s.scale)
 	current.Frozen = current.Frozen.Add(plan.RefundPoints)
-	breakdown = updatedBreakdown
 	s.balances[order.UserID] = current
-	s.breakdown[order.UserID] = breakdown
 	s.refundFreezes[order.ID] = memoryRefundFreeze{
 		RefundTradeNo:   refundTradeNo,
 		RefundAmountCNY: plan.RefundAmountCNY,
 		RefundPoints:    plan.RefundPoints,
-		Subscription:    allocation.Subscription,
-		Gift:            allocation.Gift,
-		Recharge:        allocation.Recharge,
+		Subscription:    bucketAllocation.Subscription,
+		Gift:            bucketAllocation.Gift,
+		Recharge:        bucketAllocation.Recharge,
+		Allocations:     allocations,
 	}
 	return order, nil
 }
@@ -1196,19 +1267,31 @@ func (s *MemoryStore) ReleaseRefundPaymentOrder(_ context.Context, req domainbil
 	if !freeze.RefundPoints.IsPositive() || freeze.RefundTradeNo != strings.TrimSpace(req.RefundTradeNo) {
 		return order, nil
 	}
-	frozen := freeze.RefundPoints
+	s.expireMemoryGrantsLocked(order.UserID, time.Now().UTC())
 	current := s.balances[order.UserID]
-	breakdown := s.breakdown[order.UserID]
-	if current.Frozen.LessThan(frozen) {
-		frozen = current.Frozen
+	restored := decimal.Zero
+	released := decimal.Zero
+	now := time.Now().UTC()
+	for _, allocation := range freeze.Allocations {
+		grant := s.memoryGrantByIDLocked(order.UserID, allocation.GrantID)
+		if grant == nil {
+			continue
+		}
+		points := decimal.Min(grant.Frozen, allocation.Points)
+		grant.Frozen = grant.Frozen.Sub(points).Round(s.scale)
+		released = released.Add(points)
+		if grant.Status == "active" && (grant.ExpiresAt == nil || grant.ExpiresAt.After(now)) {
+			grant.Available = grant.Available.Add(points).Round(s.scale)
+			s.changeMemoryBreakdownLocked(order.UserID, grant.GrantType, points)
+			restored = restored.Add(points)
+		} else {
+			grant.Status = "expired"
+			grant.Available = decimal.Zero
+		}
 	}
-	current.Frozen = current.Frozen.Sub(frozen)
-	current.Available = current.Available.Add(frozen)
-	breakdown.Subscription = breakdown.Subscription.Add(freeze.Subscription)
-	breakdown.Gift = breakdown.Gift.Add(freeze.Gift)
-	breakdown.Recharge = breakdown.Recharge.Add(freeze.Recharge)
+	current.Frozen = decimal.Max(current.Frozen.Sub(released), decimal.Zero).Round(s.scale)
+	current.Available = current.Available.Add(restored).Round(s.scale)
 	s.balances[order.UserID] = current
-	s.breakdown[order.UserID] = breakdown
 	delete(s.refundFreezes, order.ID)
 	return order, nil
 }
@@ -1249,12 +1332,12 @@ func (s *MemoryStore) CheckRefundPaymentOrder(_ context.Context, req domainbilli
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
-	current := s.balances[order.UserID]
-	breakdown := s.breakdown[order.UserID]
+	s.expireMemoryGrantsLocked(order.UserID, time.Now().UTC())
 	frozenRefund := s.refundFreezes[order.ID]
 	if !frozenRefund.RefundPoints.IsPositive() {
-		_, _, ok := deductPaymentOrderBreakdown(order, breakdown, plan.RefundPoints)
-		if current.Available.LessThan(plan.RefundPoints) || !ok {
+		grants := s.memoryOrderGrantsLocked(order)
+		_, ok := allocateMemoryRefundGrants(grants, plan.RefundPoints, false)
+		if !ok || memoryGrantsConsumedOrFrozen(grants) {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 		}
 		return order, nil
@@ -1262,7 +1345,7 @@ func (s *MemoryStore) CheckRefundPaymentOrder(_ context.Context, req domainbilli
 	if err := ensureMemoryRefundFreezeMatches(frozenRefund, refundTradeNo, plan); err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
-	if current.Frozen.LessThan(plan.RefundPoints) {
+	if !s.memoryRefundAllocationsAvailableLocked(order.UserID, frozenRefund.Allocations, true) {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 	}
 	return order, nil
@@ -1288,6 +1371,76 @@ func deductPaymentOrderBreakdown(order domainbilling.PaymentOrder, breakdown mem
 	allocation.Subscription = fromSubscription
 	remaining = remaining.Sub(fromSubscription)
 	return breakdown, allocation, !remaining.IsPositive()
+}
+
+func (s *MemoryStore) memoryOrderGrantsLocked(order domainbilling.PaymentOrder) []*memoryWalletGrant {
+	grants := make([]*memoryWalletGrant, 0, len(s.walletGrants[order.UserID]))
+	for _, grant := range s.walletGrants[order.UserID] {
+		if grant.OrderID != order.ID || (grant.Status != "active" && grant.Status != "expired") {
+			continue
+		}
+		if order.PurchaseType == "custom_amount" || order.PlanID == 0 {
+			if grant.GrantType == "recharge" {
+				grants = append(grants, grant)
+			}
+			continue
+		}
+		if grant.GrantType == "subscription" || grant.GrantType == "gift" || grant.GrantType == "recharge" {
+			grants = append(grants, grant)
+		}
+	}
+	sort.SliceStable(grants, func(i, j int) bool { return grants[i].ID < grants[j].ID })
+	return grants
+}
+
+func allocateMemoryRefundGrants(grants []*memoryWalletGrant, amount decimal.Decimal, useFrozen bool) ([]memoryGrantAllocation, bool) {
+	remaining := amount
+	allocations := make([]memoryGrantAllocation, 0, len(grants))
+	for _, grant := range grants {
+		available := grant.Available
+		if useFrozen {
+			available = grant.Frozen
+		}
+		if !available.IsPositive() {
+			continue
+		}
+		points := decimal.Min(available, remaining)
+		allocations = append(allocations, memoryGrantAllocation{GrantID: grant.ID, Points: points})
+		remaining = remaining.Sub(points)
+		if !remaining.IsPositive() {
+			return allocations, true
+		}
+	}
+	return nil, false
+}
+
+func memoryGrantsConsumedOrFrozen(grants []*memoryWalletGrant) bool {
+	for _, grant := range grants {
+		if grant.Consumed.IsPositive() || grant.Frozen.IsPositive() {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *MemoryStore) memoryRefundAllocationsAvailableLocked(userID int64, allocations []memoryGrantAllocation, useFrozen bool) bool {
+	if len(allocations) == 0 {
+		return false
+	}
+	for _, allocation := range allocations {
+		grant := s.memoryGrantByIDLocked(userID, allocation.GrantID)
+		if grant == nil {
+			return false
+		}
+		available := grant.Available
+		if useFrozen {
+			available = grant.Frozen
+		}
+		if available.LessThan(allocation.Points) {
+			return false
+		}
+	}
+	return true
 }
 
 func ensureMemoryRefundFreezeMatches(freeze memoryRefundFreeze, refundTradeNo string, plan memoryPaymentOrderRefundPlan) error {
@@ -1340,14 +1493,47 @@ func (s *MemoryStore) completeRechargeOrderLocked(order domainbilling.PaymentOrd
 	breakdown := s.breakdown[order.UserID]
 	if order.PurchaseType == "custom_amount" || order.PlanID == 0 {
 		breakdown.Recharge = breakdown.Recharge.Add(total)
+		s.createMemoryWalletGrantLocked(order.UserID, order.ID, "recharge", total, nil)
 	} else {
 		breakdown.Subscription = breakdown.Subscription.Add(points)
 		breakdown.Gift = breakdown.Gift.Add(bonus)
+		s.createMemoryWalletGrantLocked(order.UserID, order.ID, "subscription", points, order.CreditExpiresAt)
+		if bonus.IsPositive() {
+			s.createMemoryWalletGrantLocked(order.UserID, order.ID, "gift", bonus, order.CreditExpiresAt)
+		}
 	}
 	s.breakdown[order.UserID] = breakdown
-	order.LedgerID = s.appendLedger(order.UserID, 0, "", "recharge", total, current, "cashier order "+order.OrderNo)
+	if order.PurchaseType == "custom_amount" || order.PlanID == 0 {
+		order.LedgerID = s.appendLedgerWithMetadata(order.UserID, 0, "", order.ID, "recharge", total, current, "cashier order "+order.OrderNo, "recharge", order.CreditExpiresAt)
+	} else {
+		order.LedgerID = s.appendLedgerWithMetadata(order.UserID, 0, "", order.ID, "order_paid", points, current, "payment order "+order.OrderNo+" purchased credits", "subscription", order.CreditExpiresAt)
+		if bonus.IsPositive() {
+			s.appendLedgerWithMetadata(order.UserID, 0, "", order.ID, "order_paid", bonus, current, "payment order "+order.OrderNo+" gift credits", "gift", order.CreditExpiresAt)
+		}
+	}
 	s.orders[order.ID] = order
 	return order, nil
+}
+
+func (s *MemoryStore) createMemoryWalletGrantLocked(userID, orderID int64, grantType string, amount decimal.Decimal, expiresAt *time.Time) *memoryWalletGrant {
+	if !amount.IsPositive() {
+		return nil
+	}
+	grant := &memoryWalletGrant{
+		ID: s.nextGrantID, UserID: userID, OrderID: orderID, GrantType: grantType, Status: "active",
+		Available: amount.Round(s.scale), ExpiresAt: cloneMemoryTime(expiresAt),
+	}
+	s.nextGrantID++
+	s.walletGrants[userID] = append(s.walletGrants[userID], grant)
+	return grant
+}
+
+func cloneMemoryTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func isCashierRechargeOrder(order domainbilling.PaymentOrder) bool {
@@ -1388,6 +1574,7 @@ func mustMemoryJSON(value any) []byte {
 func (s *MemoryStore) ReserveTask(_ context.Context, req ReserveStoreRequest) (BalanceState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.expireMemoryGrantsLocked(req.UserID, time.Now().UTC())
 	state := s.taskState[req.TaskID]
 	if state.Seen && state.UserID != req.UserID {
 		return BalanceState{}, errs.New(409, errs.CodeConflict, "image task points belong to a different user")
@@ -1416,6 +1603,10 @@ func (s *MemoryStore) ReserveTask(_ context.Context, req ReserveStoreRequest) (B
 	if err := s.checkAPIKeyQuotaLocked(req, estimated); err != nil {
 		return BalanceState{}, err
 	}
+	allocations, untracked, ok := s.reserveMemoryGrantsLocked(req.UserID, estimated)
+	if !ok {
+		return BalanceState{}, errs.New(400, errs.CodeInsufficientPoints, "insufficient points")
+	}
 	current.Available = current.Available.Sub(estimated)
 	current.Frozen = current.Frozen.Add(estimated)
 	s.balances[req.UserID] = current
@@ -1423,6 +1614,8 @@ func (s *MemoryStore) ReserveTask(_ context.Context, req ReserveStoreRequest) (B
 	s.addAPIKeyUsage(req.APIKeyID, estimated, time.Now().UTC())
 	state.Active = true
 	state.Reserved = estimated
+	state.GrantAllocations = allocations
+	state.UntrackedReserved = untracked
 	s.taskState[req.TaskID] = state
 	return s.formatState(req.UserID, current), nil
 }
@@ -1430,6 +1623,7 @@ func (s *MemoryStore) ReserveTask(_ context.Context, req ReserveStoreRequest) (B
 func (s *MemoryStore) FinalizeTask(_ context.Context, req FinalizeStoreRequest) (BalanceState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.expireMemoryGrantsLocked(req.UserID, time.Now().UTC())
 	estimated, err := decimal.NewFromString(req.EstimatedPoints)
 	if err != nil {
 		return BalanceState{}, err
@@ -1460,32 +1654,180 @@ func (s *MemoryStore) FinalizeTask(_ context.Context, req FinalizeStoreRequest) 
 		actual = reserved
 	}
 	if actual.IsZero() {
-		current.Available = current.Available.Add(reserved)
+		restored := s.settleMemoryTaskGrantsLocked(req.UserID, state, decimal.Zero)
+		current.Available = current.Available.Add(restored)
 		current.Frozen = current.Frozen.Sub(reserved)
 		apiKeyID := firstPositive(req.APIKeyID, state.APIKeyID)
-		s.appendLedger(req.UserID, apiKeyID, req.TaskID, "refund", reserved, current, req.Reason)
+		s.appendLedger(req.UserID, apiKeyID, req.TaskID, "refund", restored, current, req.Reason)
 		s.addAPIKeyUsage(apiKeyID, reserved.Neg(), time.Now().UTC())
 		s.balances[req.UserID] = current
 		state.Active = false
 		state.Reserved = decimal.Zero
+		state.GrantAllocations = nil
+		state.UntrackedReserved = decimal.Zero
 		s.taskState[req.TaskID] = state
 		return s.formatState(req.UserID, current), nil
 	}
-	current.Frozen = current.Frozen.Sub(actual)
+	restored := s.settleMemoryTaskGrantsLocked(req.UserID, state, actual)
+	current.Frozen = current.Frozen.Sub(reserved)
 	apiKeyID := firstPositive(req.APIKeyID, state.APIKeyID)
 	s.appendLedger(req.UserID, apiKeyID, req.TaskID, "consume", actual.Neg(), current, req.Reason)
-	diff := reserved.Sub(actual)
-	if diff.GreaterThan(decimal.Zero) {
-		current.Available = current.Available.Add(diff)
-		current.Frozen = current.Frozen.Sub(diff)
-		s.appendLedger(req.UserID, apiKeyID, req.TaskID, "refund", diff, current, req.Reason)
-		s.addAPIKeyUsage(apiKeyID, diff.Neg(), time.Now().UTC())
+	if restored.GreaterThan(decimal.Zero) {
+		current.Available = current.Available.Add(restored)
+		s.appendLedger(req.UserID, apiKeyID, req.TaskID, "refund", restored, current, req.Reason)
+		s.addAPIKeyUsage(apiKeyID, restored.Neg(), time.Now().UTC())
 	}
 	s.balances[req.UserID] = current
 	state.Active = false
 	state.Reserved = decimal.Zero
+	state.GrantAllocations = nil
+	state.UntrackedReserved = decimal.Zero
 	s.taskState[req.TaskID] = state
 	return s.formatState(req.UserID, current), nil
+}
+
+func (s *MemoryStore) reserveMemoryGrantsLocked(userID int64, amount decimal.Decimal) ([]memoryGrantAllocation, decimal.Decimal, bool) {
+	grants := append([]*memoryWalletGrant(nil), s.walletGrants[userID]...)
+	now := time.Now().UTC()
+	sort.SliceStable(grants, func(i, j int) bool {
+		leftPriority := memoryGrantPriority(grants[i].GrantType)
+		rightPriority := memoryGrantPriority(grants[j].GrantType)
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+		if grants[i].ExpiresAt == nil {
+			return false
+		}
+		if grants[j].ExpiresAt == nil {
+			return true
+		}
+		if !grants[i].ExpiresAt.Equal(*grants[j].ExpiresAt) {
+			return grants[i].ExpiresAt.Before(*grants[j].ExpiresAt)
+		}
+		return grants[i].ID < grants[j].ID
+	})
+	remaining := amount
+	allocations := make([]memoryGrantAllocation, 0, len(grants))
+	for _, grant := range grants {
+		if !remaining.IsPositive() {
+			break
+		}
+		if grant.Status != "active" || !grant.Available.IsPositive() || (grant.ExpiresAt != nil && !grant.ExpiresAt.After(now)) {
+			continue
+		}
+		take := decimal.Min(grant.Available, remaining).Round(s.scale)
+		grant.Available = grant.Available.Sub(take).Round(s.scale)
+		grant.Frozen = grant.Frozen.Add(take).Round(s.scale)
+		s.changeMemoryBreakdownLocked(userID, grant.GrantType, take.Neg())
+		allocations = append(allocations, memoryGrantAllocation{GrantID: grant.ID, Points: take})
+		remaining = remaining.Sub(take).Round(s.scale)
+	}
+	untrackedAvailable := s.balances[userID].Available.Sub(amount.Sub(remaining))
+	if remaining.GreaterThan(untrackedAvailable) {
+		for _, allocation := range allocations {
+			grant := s.memoryGrantByIDLocked(userID, allocation.GrantID)
+			if grant == nil {
+				continue
+			}
+			grant.Available = grant.Available.Add(allocation.Points).Round(s.scale)
+			grant.Frozen = grant.Frozen.Sub(allocation.Points).Round(s.scale)
+			s.changeMemoryBreakdownLocked(userID, grant.GrantType, allocation.Points)
+		}
+		return nil, decimal.Zero, false
+	}
+	return allocations, remaining, true
+}
+
+func (s *MemoryStore) settleMemoryTaskGrantsLocked(userID int64, state memoryTaskBillingState, actual decimal.Decimal) decimal.Decimal {
+	remainingActual := actual
+	restored := decimal.Zero
+	now := time.Now().UTC()
+	for _, allocation := range state.GrantAllocations {
+		grant := s.memoryGrantByIDLocked(userID, allocation.GrantID)
+		if grant == nil {
+			continue
+		}
+		consume := decimal.Min(allocation.Points, remainingActual)
+		if consume.IsNegative() {
+			consume = decimal.Zero
+		}
+		remainingActual = remainingActual.Sub(consume)
+		refund := allocation.Points.Sub(consume)
+		grant.Frozen = decimal.Max(grant.Frozen.Sub(allocation.Points), decimal.Zero).Round(s.scale)
+		grant.Consumed = grant.Consumed.Add(consume).Round(s.scale)
+		if refund.IsPositive() && grant.Status == "active" && (grant.ExpiresAt == nil || grant.ExpiresAt.After(now)) {
+			grant.Available = grant.Available.Add(refund).Round(s.scale)
+			s.changeMemoryBreakdownLocked(userID, grant.GrantType, refund)
+			restored = restored.Add(refund)
+		}
+	}
+	untrackedConsume := decimal.Min(state.UntrackedReserved, remainingActual)
+	if untrackedConsume.IsNegative() {
+		untrackedConsume = decimal.Zero
+	}
+	untrackedRefund := state.UntrackedReserved.Sub(untrackedConsume)
+	if untrackedRefund.IsPositive() {
+		restored = restored.Add(untrackedRefund)
+	}
+	return restored.Round(s.scale)
+}
+
+func (s *MemoryStore) memoryGrantByIDLocked(userID, grantID int64) *memoryWalletGrant {
+	for _, grant := range s.walletGrants[userID] {
+		if grant.ID == grantID {
+			return grant
+		}
+	}
+	return nil
+}
+
+func memoryGrantPriority(grantType string) int {
+	switch grantType {
+	case "trial":
+		return 1
+	case "subscription":
+		return 2
+	case "gift":
+		return 3
+	case "recharge":
+		return 4
+	default:
+		return 9
+	}
+}
+
+func (s *MemoryStore) changeMemoryBreakdownLocked(userID int64, grantType string, change decimal.Decimal) {
+	breakdown := s.breakdown[userID]
+	switch grantType {
+	case "trial":
+		breakdown.Trial = decimal.Max(breakdown.Trial.Add(change), decimal.Zero)
+	case "subscription":
+		breakdown.Subscription = decimal.Max(breakdown.Subscription.Add(change), decimal.Zero)
+	case "recharge":
+		breakdown.Recharge = decimal.Max(breakdown.Recharge.Add(change), decimal.Zero)
+	default:
+		breakdown.Gift = decimal.Max(breakdown.Gift.Add(change), decimal.Zero)
+	}
+	s.breakdown[userID] = breakdown
+}
+
+func (s *MemoryStore) expireMemoryGrantsLocked(userID int64, now time.Time) {
+	for _, grant := range s.walletGrants[userID] {
+		if grant.Status != "active" || grant.ExpiresAt == nil || grant.ExpiresAt.After(now) {
+			continue
+		}
+		expired := grant.Available
+		grant.Available = decimal.Zero
+		grant.Status = "expired"
+		if !expired.IsPositive() {
+			continue
+		}
+		current := s.balances[userID]
+		current.Available = decimal.Max(current.Available.Sub(expired), decimal.Zero).Round(s.scale)
+		s.balances[userID] = current
+		s.changeMemoryBreakdownLocked(userID, grant.GrantType, expired.Neg())
+		s.appendLedgerWithMetadata(userID, 0, "", grant.OrderID, "expire", expired.Neg(), current, "expired "+grant.GrantType+" grant", grant.GrantType, grant.ExpiresAt)
+	}
 }
 
 func (s *MemoryStore) Adjust(_ context.Context, req AdjustStoreRequest) (BalanceState, error) {
@@ -1517,10 +1859,18 @@ func (s *MemoryStore) Adjust(_ context.Context, req AdjustStoreRequest) (Balance
 	breakdown := s.breakdown[req.UserID]
 	if change.IsPositive() {
 		breakdown.Gift = breakdown.Gift.Add(change)
+		s.breakdown[req.UserID] = breakdown
+		s.createMemoryWalletGrantLocked(req.UserID, 0, "gift", change, nil)
 	} else if change.IsNegative() {
-		breakdown = deductMemoryBreakdownForAdminAdjustment(breakdown, change.Abs())
+		remaining := s.deductMemoryGrantsForAdminLocked(req.UserID, change.Abs())
+		breakdown = s.breakdown[req.UserID]
+		if remaining.IsPositive() {
+			breakdown = deductMemoryBreakdownForAdminAdjustment(breakdown, remaining)
+			s.breakdown[req.UserID] = breakdown
+		}
+	} else {
+		s.breakdown[req.UserID] = breakdown
 	}
-	s.breakdown[req.UserID] = breakdown
 	s.appendLedger(req.UserID, 0, "", "admin_adjust", change, current, req.Reason)
 	if idempotencyKey != "" {
 		stored := req
@@ -1553,6 +1903,48 @@ func deductMemoryBreakdownForAdminAdjustment(breakdown memoryBreakdown, amount d
 	return breakdown
 }
 
+func (s *MemoryStore) deductMemoryGrantsForAdminLocked(userID int64, amount decimal.Decimal) decimal.Decimal {
+	grants := append([]*memoryWalletGrant(nil), s.walletGrants[userID]...)
+	sort.SliceStable(grants, func(i, j int) bool {
+		leftPriority := memoryAdminGrantPriority(grants[i].GrantType)
+		rightPriority := memoryAdminGrantPriority(grants[j].GrantType)
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+		return grants[i].ID < grants[j].ID
+	})
+	remaining := amount
+	now := time.Now().UTC()
+	for _, grant := range grants {
+		if !remaining.IsPositive() {
+			break
+		}
+		if grant.Status != "active" || !grant.Available.IsPositive() || (grant.ExpiresAt != nil && !grant.ExpiresAt.After(now)) {
+			continue
+		}
+		deduct := decimal.Min(grant.Available, remaining)
+		grant.Available = grant.Available.Sub(deduct).Round(s.scale)
+		s.changeMemoryBreakdownLocked(userID, grant.GrantType, deduct.Neg())
+		remaining = remaining.Sub(deduct).Round(s.scale)
+	}
+	return remaining
+}
+
+func memoryAdminGrantPriority(grantType string) int {
+	switch grantType {
+	case "recharge":
+		return 1
+	case "gift":
+		return 2
+	case "subscription":
+		return 3
+	case "trial":
+		return 4
+	default:
+		return 9
+	}
+}
+
 func (s *MemoryStore) EnsureSignupTrialGrant(_ context.Context, req SignupTrialGrantStoreRequest) (SignupTrialGrantStoreResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1583,10 +1975,10 @@ func (s *MemoryStore) EnsureSignupTrialGrant(_ context.Context, req SignupTrialG
 	s.balances[req.UserID] = current
 	breakdown := s.breakdown[req.UserID]
 	breakdown.Trial = breakdown.Trial.Add(amount)
-	breakdown.Gift = breakdown.Gift.Add(amount)
 	breakdown.TrialExpires = &expiresAt
 	breakdown.TrialReminderDays = req.ExpiryReminderDays
 	s.breakdown[req.UserID] = breakdown
+	s.createMemoryWalletGrantLocked(req.UserID, 0, "trial", amount, &expiresAt)
 	s.appendLedger(req.UserID, 0, "", "trial_grant", amount, current, "signup trial grant")
 	s.trialGrants[key] = req
 	return SignupTrialGrantStoreResult{Granted: true, Balance: s.formatState(req.UserID, current)}, nil
@@ -1657,22 +2049,53 @@ func (s *MemoryStore) APIKeyUsage(_ context.Context, apiKeyID int64, since *time
 }
 
 func (s *MemoryStore) appendLedger(userID, apiKeyID int64, taskID, ledgerType string, change decimal.Decimal, current balanceState, reason string) int64 {
+	return s.appendLedgerWithMetadata(userID, apiKeyID, taskID, 0, ledgerType, change, current, reason, "", nil)
+}
+
+func (s *MemoryStore) appendLedgerWithMetadata(userID, apiKeyID int64, taskID string, orderID int64, ledgerType string, change decimal.Decimal, current balanceState, reason, bucket string, expiresAt *time.Time) int64 {
 	entry := domainbilling.LedgerEntry{
-		ID:           s.nextID,
-		UserID:       userID,
-		APIKeyID:     apiKeyID,
-		TaskID:       taskID,
-		LedgerType:   ledgerType,
-		ChangePoints: change.Round(s.scale).StringFixed(s.scale),
-		BalanceAfter: current.Available.Round(s.scale).StringFixed(s.scale),
-		FrozenAfter:  current.Frozen.Round(s.scale).StringFixed(s.scale),
-		Reason:       reason,
-		CreatedAt:    time.Now().UTC(),
+		ID:            s.nextID,
+		UserID:        userID,
+		APIKeyID:      apiKeyID,
+		TaskID:        taskID,
+		OrderID:       orderID,
+		LedgerType:    ledgerType,
+		ChangePoints:  change.Round(s.scale).StringFixed(s.scale),
+		BalanceAfter:  current.Available.Round(s.scale).StringFixed(s.scale),
+		FrozenAfter:   current.Frozen.Round(s.scale).StringFixed(s.scale),
+		BalanceBucket: bucket,
+		Reason:        reason,
+		CreatedAt:     time.Now().UTC(),
+	}
+	if orderID > 0 {
+		entry.SourceType = "payment_order"
+		entry.SourceID = orderID
+	}
+	if bucket != "" {
+		entry.BucketBalanceAfter = s.memoryBucketBalanceAfter(userID, bucket)
+	}
+	if expiresAt != nil {
+		value := expiresAt.Format(time.RFC3339)
+		entry.ExpiresAt = &value
 	}
 	entry = domainbilling.PopulateLedgerDisplayFields(entry)
 	s.nextID++
 	s.ledgers[userID] = append([]domainbilling.LedgerEntry{entry}, s.ledgers[userID]...)
 	return entry.ID
+}
+
+func (s *MemoryStore) memoryBucketBalanceAfter(userID int64, bucket string) string {
+	breakdown := s.breakdown[userID]
+	value := breakdown.Gift
+	switch bucket {
+	case "trial":
+		value = breakdown.Trial
+	case "subscription":
+		value = breakdown.Subscription
+	case "recharge":
+		value = breakdown.Recharge
+	}
+	return value.Round(s.scale).StringFixed(s.scale)
 }
 
 func (s *MemoryStore) addAPIKeyUsage(apiKeyID int64, change decimal.Decimal, at time.Time) {
@@ -1702,35 +2125,28 @@ func firstPositive(values ...int64) int64 {
 
 func (s *MemoryStore) formatState(userID int64, current balanceState) BalanceState {
 	breakdown := s.breakdown[userID]
-	buckets := make([]domainbilling.BalanceBucket, 0, 3)
-	if breakdown.Trial.IsPositive() {
+	now := time.Now().UTC()
+	buckets := make([]domainbilling.BalanceBucket, 0, 4)
+	for _, bucketType := range []string{"trial", "subscription", "gift", "recharge"} {
+		available := memoryBreakdownBucket(breakdown, bucketType)
+		frozen, expiresAt, mixedExpiry, trackedAvailable := s.memoryBucketGrantProjection(userID, bucketType, now)
+		if available.GreaterThan(trackedAvailable) && expiresAt != nil {
+			mixedExpiry = true
+			expiresAt = nil
+		}
+		if !available.IsPositive() && !frozen.IsPositive() {
+			continue
+		}
+		reminderDays := 2
+		if bucketType == "trial" {
+			reminderDays = breakdown.TrialReminderDays
+		}
 		buckets = append(buckets, domainbilling.BalanceBucket{
-			Bucket:          "trial",
-			Label:           "体验额度",
-			AvailablePoints: breakdown.Trial.Round(s.scale).StringFixed(s.scale),
-			FrozenPoints:    decimal.Zero.Round(s.scale).StringFixed(s.scale),
-			ExpiresAt:       breakdown.TrialExpires,
-			ExpireWarning:   memoryExpireWarning(time.Now().UTC(), breakdown.TrialExpires, breakdown.TrialReminderDays),
-			SourceType:      "signup",
-			SortOrder:       1,
-		})
-	}
-	if breakdown.Subscription.IsPositive() {
-		buckets = append(buckets, domainbilling.BalanceBucket{
-			Bucket:          "subscription",
-			Label:           "套餐积分",
-			AvailablePoints: breakdown.Subscription.Round(s.scale).StringFixed(s.scale),
-			FrozenPoints:    decimal.Zero.Round(s.scale).StringFixed(s.scale),
-			SortOrder:       2,
-		})
-	}
-	if breakdown.Recharge.IsPositive() {
-		buckets = append(buckets, domainbilling.BalanceBucket{
-			Bucket:          "recharge",
-			Label:           "充值积分",
-			AvailablePoints: breakdown.Recharge.Round(s.scale).StringFixed(s.scale),
-			FrozenPoints:    decimal.Zero.Round(s.scale).StringFixed(s.scale),
-			SortOrder:       4,
+			Bucket: bucketType, Label: memoryBucketLabel(bucketType),
+			AvailablePoints: available.Round(s.scale).StringFixed(s.scale),
+			FrozenPoints:    frozen.Round(s.scale).StringFixed(s.scale),
+			ExpiresAt:       expiresAt, ExpireWarning: memoryExpireWarning(now, expiresAt, reminderDays), MixedExpiry: mixedExpiry,
+			SourceType: memoryBucketSource(bucketType), SortOrder: memoryGrantPriority(bucketType),
 		})
 	}
 	return BalanceState{
@@ -1742,7 +2158,94 @@ func (s *MemoryStore) formatState(userID int64, current balanceState) BalanceSta
 		RechargePoints:     breakdown.Recharge.Round(s.scale).StringFixed(s.scale),
 		Buckets:            buckets,
 		ActiveSubscription: s.subs[userID],
+		NextExpiringGrant:  s.memoryNextExpiringGrant(userID, now),
 	}
+}
+
+func memoryBreakdownBucket(breakdown memoryBreakdown, bucket string) decimal.Decimal {
+	switch bucket {
+	case "trial":
+		return breakdown.Trial
+	case "subscription":
+		return breakdown.Subscription
+	case "recharge":
+		return breakdown.Recharge
+	default:
+		return breakdown.Gift
+	}
+}
+
+func (s *MemoryStore) memoryBucketGrantProjection(userID int64, bucket string, now time.Time) (decimal.Decimal, *time.Time, bool, decimal.Decimal) {
+	frozen := decimal.Zero
+	trackedAvailable := decimal.Zero
+	var expiresAt *time.Time
+	mixed := false
+	for _, grant := range s.walletGrants[userID] {
+		if grant.GrantType != bucket || grant.Status != "active" || (grant.ExpiresAt != nil && !grant.ExpiresAt.After(now)) {
+			continue
+		}
+		trackedAvailable = trackedAvailable.Add(grant.Available)
+		frozen = frozen.Add(grant.Frozen)
+		if expiresAt == nil && grant.ExpiresAt != nil && !mixed {
+			expiresAt = cloneMemoryTime(grant.ExpiresAt)
+			continue
+		}
+		if (expiresAt == nil) != (grant.ExpiresAt == nil) || (expiresAt != nil && grant.ExpiresAt != nil && !expiresAt.Equal(*grant.ExpiresAt)) {
+			mixed = true
+			expiresAt = nil
+		}
+	}
+	return frozen, expiresAt, mixed, trackedAvailable
+}
+
+func (s *MemoryStore) memoryNextExpiringGrant(userID int64, now time.Time) *domainbilling.GrantExpirySummary {
+	var next *domainbilling.GrantExpirySummary
+	for _, grant := range s.walletGrants[userID] {
+		if grant.Status != "active" || !grant.Available.IsPositive() || grant.ExpiresAt == nil || !grant.ExpiresAt.After(now) {
+			continue
+		}
+		if next == nil || grant.ExpiresAt.Before(*next.ExpiresAt) {
+			expiresAt := *grant.ExpiresAt
+			next = &domainbilling.GrantExpirySummary{GrantID: grant.ID, GrantType: grant.GrantType, AvailablePoints: grant.Available.Round(s.scale).StringFixed(s.scale), ExpiresAt: &expiresAt}
+			continue
+		}
+		if next.ExpiresAt != nil && grant.ExpiresAt.Equal(*next.ExpiresAt) {
+			next.AvailablePoints = mustMemoryDecimal(next.AvailablePoints).Add(grant.Available).Round(s.scale).StringFixed(s.scale)
+			next.GrantID = 0
+			if next.GrantType != grant.GrantType {
+				next.GrantType = "mixed"
+			}
+		}
+	}
+	return next
+}
+
+func memoryBucketLabel(bucket string) string {
+	switch bucket {
+	case "trial":
+		return "体验额度"
+	case "subscription":
+		return "套餐积分"
+	case "gift":
+		return "赠送积分"
+	default:
+		return "充值积分"
+	}
+}
+
+func memoryBucketSource(bucket string) string {
+	if bucket == "trial" {
+		return "signup"
+	}
+	if bucket == "gift" {
+		return "gift"
+	}
+	return "payment_order"
+}
+
+func mustMemoryDecimal(value string) decimal.Decimal {
+	parsed, _ := decimal.NewFromString(value)
+	return parsed
 }
 
 func memoryExpireWarning(now time.Time, expiresAt *time.Time, reminderDays int) bool {
