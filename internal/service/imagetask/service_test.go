@@ -1091,6 +1091,45 @@ func TestExecuteLeasedTaskRejectsForgedSizeSnapshotsBeforeProviderCall(t *testin
 	}
 }
 
+func TestExecuteLeasedTaskRejectsForgedStaticRatioSnapshotBeforeProviderCall(t *testing.T) {
+	cfg := taskTestConfig()
+	var providerCalls atomic.Int32
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(context.Context, provider.ImageRequest) (provider.ImageResponse, error) {
+			providerCalls.Add(1)
+			return provider.ImageResponse{}, nil
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID: 195, AbstractModel: "plus", TaskType: "text_to_image", Prompt: "static forged snapshot",
+		SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1", Quality: "auto", OutputFormat: "png", Moderation: "auto", OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if created.RequestedSize != "1024x1024" || created.ResolvedWidth != 1024 || created.ResolvedHeight != 1024 {
+		t.Fatalf("created static ratio snapshot = %#v, want 1024x1024", created)
+	}
+	leased, ok, err := svc.AcquireNextTask(context.Background(), "worker-static-forged", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("AcquireNextTask ok=%v err=%v", ok, err)
+	}
+	leased.RequestedSize, leased.ResolvedWidth, leased.ResolvedHeight = "1008x1008", 1008, 1008
+	if err := store.SaveIfOwned(context.Background(), leased, "worker-static-forged", time.Now().UTC()); err != nil {
+		t.Fatalf("persist forged snapshot: %v", err)
+	}
+	_, err = svc.ExecuteLeasedTask(context.Background(), leased, "worker-static-forged", []string{"openai"})
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.Code != modelhub.CodeInvalidSizeMode {
+		t.Fatalf("ExecuteLeasedTask error = %#v, want %s", err, modelhub.CodeInvalidSizeMode)
+	}
+	if providerCalls.Load() != 0 {
+		t.Fatalf("provider calls = %d, want 0", providerCalls.Load())
+	}
+}
+
 func TestExecuteLeasedTaskCalculatesGPTImage2CodexSizeFromQualityAndAspectRatio(t *testing.T) {
 	cfg := taskTestConfig()
 	captured := make(chan provider.ImageRequest, 1)

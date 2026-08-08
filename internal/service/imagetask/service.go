@@ -2579,6 +2579,17 @@ func validateResolvedSizeSnapshot(task domainimagetask.Task, resolved modelhub.R
 	mode := modelhub.PublicSizeMode(task.SizeMode)
 	currentSize := modelhub.NormalizePixelSize(task.RequestedSize)
 	if strings.TrimSpace(resolved.ResolvedSize) == "" {
+		if mode != modelhub.SizeModeRatio {
+			return nil
+		}
+		expectedSize, err := modelhub.CalculateImageSize(task.BaseResolution, task.AspectRatio)
+		if err != nil {
+			return errs.New(400, modelhub.CodeInvalidAspectRatio, "ratio task snapshot cannot be resolved")
+		}
+		width, height, _ := modelhub.ParseImageSize(expectedSize)
+		if currentSize != expectedSize || task.ResolvedWidth != width || task.ResolvedHeight != height {
+			return errs.New(400, modelhub.CodeInvalidSizeMode, "ratio task snapshot does not match the nominal size")
+		}
 		return nil
 	}
 	if strings.TrimSpace(task.PricingSnapshot.SizeMode) != "" && currentSize != modelhub.NormalizePixelSize(task.PricingSnapshot.RequestedSize) {
