@@ -222,6 +222,56 @@ func TestOpenAICompatGenerationPreservesDynamicRouteQuality(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatGenerationUsesAuthoritativePixelValidationForExplicitSize(t *testing.T) {
+	tests := []struct {
+		name         string
+		size         string
+		wantStatus   int
+		wantProvider bool
+	}{
+		{name: "illegal explicit pixels", size: "1001x777", wantStatus: http.StatusBadRequest},
+		{name: "legal explicit pixels", size: "1024x768", wantStatus: http.StatusOK, wantProvider: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			providerCalls := 0
+			captured := map[string]any{}
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				providerCalls++
+				if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+					t.Fatalf("decode upstream payload: %v", err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"created":1770000046,"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="}]}`)
+			}))
+			defer upstream.Close()
+			handler, apiSecret := newGPTImageCompatHandler(t, upstream.URL)
+
+			body := fmt.Sprintf(`{"model":"basic","prompt":"pixel contract","size":%q,"n":1}`, tt.size)
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(body))
+			req.Header.Set("Authorization", "Bearer "+apiSecret)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d provider_calls=%d provider_size=%#v body=%s", rec.Code, tt.wantStatus, providerCalls, captured["size"], rec.Body.String())
+			}
+			if tt.wantProvider {
+				if providerCalls != 1 || captured["size"] != tt.size {
+					t.Fatalf("provider calls=%d size=%#v, want one call with %q", providerCalls, captured["size"], tt.size)
+				}
+				return
+			}
+			if providerCalls != 0 {
+				t.Fatalf("invalid explicit pixels reached provider %d times", providerCalls)
+			}
+			if !bytes.Contains(rec.Body.Bytes(), []byte("invalid_explicit_dimensions")) {
+				t.Fatalf("expected typed explicit-dimensions error, got body=%s", rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestOpenAICompatGenerationRejectsTransparentJPEGBeforeProvider(t *testing.T) {
 	providerCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -575,7 +625,10 @@ func newRouteModelCompatHandler(t *testing.T, cfg config.Config, upstreamURL str
 	}
 	accountModel, err := modelAdminSvc.CreateModelAccountModel(context.Background(), domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "openrouter/vision", DisplayName: "Route image model",
-		TaskTypes: []string{"text_to_image"}, BaseResolution: []string{"1k"}, Quality: []string{"auto"}, MaxImageCount: 1, CostPerImage: "0.00000", Currency: "USD", Enabled: true,
+		TaskTypes: []string{"text_to_image"}, BaseResolution: []string{"1k"}, Quality: []string{"auto"}, MaxImageCount: 1,
+		SizeModes: []string{"pixel"}, SupportedPixelSizes: []string{"1024x1024"},
+		MinWidth: 1024, MaxWidth: 1024, MinHeight: 1024, MaxHeight: 1024,
+		CostPerImage: "0.00000", Currency: "USD", Enabled: true,
 	})
 	if err != nil {
 		t.Fatalf("CreateModelAccountModel: %v", err)
@@ -634,8 +687,11 @@ func newGPTImageCompatHandler(t *testing.T, upstreamURL string) (http.Handler, s
 	accountModel, err := modelAdminSvc.CreateModelAccountModel(context.Background(), domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "gpt-image-2", DisplayName: "GPT Image 2", TaskTypes: []string{"text_to_image"},
 		BaseResolution: []string{"1k"}, Quality: []string{"auto", "low", "medium", "high"}, MaxImageCount: 1,
-		SizeModes: []string{"auto"}, SupportedBackgrounds: []string{"auto", "opaque", "transparent"},
-		OutputFormat: []string{"png", "webp", "jpeg"}, OutputCompression: 100, SupportsOutputCompression: true,
+		SizeModes: []string{"auto", "ratio", "pixel"}, SupportedRatios: []string{"1:1"}, SupportsCustomRatio: true,
+		SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true,
+		MinWidth: 512, MaxWidth: 1024, MinHeight: 512, MaxHeight: 1024,
+		SupportedBackgrounds: []string{"auto", "opaque", "transparent"},
+		OutputFormat:         []string{"png", "webp", "jpeg"}, OutputCompression: 100, SupportsOutputCompression: true,
 		Moderation: []string{"auto", "low"}, CostPerImage: "0.00000", Currency: "USD", Enabled: true,
 	})
 	if err != nil {

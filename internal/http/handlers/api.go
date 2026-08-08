@@ -7677,7 +7677,7 @@ func compatGenerationSizeFields(rawSize string) (sizeMode, baseResolution, reque
 	if size == "" || strings.EqualFold(size, "auto") {
 		return domainmodelhub.SizeModeAuto, "", ""
 	}
-	return "", "auto", size
+	return domainmodelhub.SizeModePixel, "", size
 }
 
 func compatGenerationQuality(value string) string {
