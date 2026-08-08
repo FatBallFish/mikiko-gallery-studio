@@ -75,7 +75,7 @@ func NormalizeGenerationRequest(capability ImageModelCapability, req GenerationR
 		if !containsString(capability.SupportedRatios, ratio) && !capability.SupportsCustomRatio {
 			return NormalizedGenerationRequest{}, errs.New(400, CodeInvalidAspectRatio, "custom aspect_ratio is unsupported")
 		}
-		size, err := CalculateImageSize(base, ratio)
+		size, err := CalculateImageSizeWithinCapability(base, ratio, capability)
 		if err != nil {
 			return NormalizedGenerationRequest{}, errs.New(400, CodeInvalidAspectRatio, "aspect_ratio cannot be resolved")
 		}
@@ -132,6 +132,73 @@ func FilterEffectiveCapability(raw ImageModelCapability) ImageModelCapability {
 		}
 	}
 	result.SupportedBackgrounds = normalizeEnumStrings(raw.SupportedBackgrounds, map[string]struct{}{"auto": {}, "opaque": {}, "transparent": {}})
+	filterResolvableRatioCapability(&result)
+	return result
+}
+
+func filterResolvableRatioCapability(capability *ImageModelCapability) {
+	if capability == nil || !containsString(capability.SizeModes, SizeModeRatio) {
+		return
+	}
+	originalBases := cloneStrings(capability.BaseResolution)
+	usableBases := make([]string, 0, len(originalBases))
+	for _, base := range originalBases {
+		usable := capability.SupportsCustomRatio && baseSupportsAnyRatioSize(base, *capability)
+		for _, ratio := range capability.SupportedRatios {
+			if _, err := CalculateImageSizeWithinCapability(base, ratio, *capability); err == nil {
+				usable = true
+				break
+			}
+		}
+		if usable {
+			usableBases = append(usableBases, base)
+		}
+	}
+	usableRatios := make([]string, 0, len(capability.SupportedRatios))
+	for _, ratio := range capability.SupportedRatios {
+		usable := len(usableBases) > 0
+		for _, base := range usableBases {
+			if _, err := CalculateImageSizeWithinCapability(base, ratio, *capability); err != nil {
+				usable = false
+				break
+			}
+		}
+		if usable {
+			usableRatios = append(usableRatios, ratio)
+		}
+	}
+	capability.SupportedRatios = usableRatios
+	if len(usableBases) == 0 || len(usableRatios) == 0 && !capability.SupportsCustomRatio {
+		capability.SizeModes = removeString(capability.SizeModes, SizeModeRatio)
+		capability.BaseResolution = nil
+		capability.SupportedRatios = nil
+		return
+	}
+	capability.BaseResolution = usableBases
+}
+
+func baseSupportsAnyRatioSize(baseResolution string, capability ImageModelCapability) bool {
+	resolution := normalizeSizeBaseResolution(baseResolution)
+	pixelBudget := minInt(imageTierPixelBudget[resolution], imageMaxPixels)
+	minWidth, maxWidth := effectiveRatioDimensionBounds(capability.MinWidth, capability.MaxWidth)
+	minHeight, maxHeight := effectiveRatioDimensionBounds(capability.MinHeight, capability.MaxHeight)
+	for width := minWidth; width <= maxWidth; width += imageSizeMultiple {
+		lower := roundUpToImageGrid(maxInt(minHeight, maxInt(ceilDiv(imageMinPixels, width), ceilDiv(width, imageMaxAspectRatioInt))))
+		upper := roundDownToImageGrid(minInt(maxHeight, minInt(pixelBudget/width, width*imageMaxAspectRatioInt)))
+		if lower <= upper {
+			return true
+		}
+	}
+	return false
+}
+
+func removeString(values []string, target string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != target {
+			result = append(result, value)
+		}
+	}
 	return result
 }
 

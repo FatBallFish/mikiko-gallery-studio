@@ -114,6 +114,15 @@ func NormalizeCapability(raw ImageModelCapability) (ImageModelCapability, error)
 	if err := validateConfiguredPixelBounds(capability); err != nil {
 		return capability, err
 	}
+	if containsString(capability.SizeModes, SizeModeRatio) {
+		for _, baseResolution := range capability.BaseResolution {
+			for _, ratio := range capability.SupportedRatios {
+				if _, err := CalculateImageSizeWithinCapability(baseResolution, ratio, capability); err != nil {
+					return capability, errs.BadRequest("base_resolution and supported_ratios contain an unsatisfiable combination")
+				}
+			}
+		}
+	}
 	for _, size := range capability.SupportedPixelSizes {
 		width, height, ok := ParseImageSize(size)
 		if !ok || !legalExplicitDimensions(width, height, capability) {

@@ -457,6 +457,9 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 	if err != nil {
 		return s.failOwnedTask(ctx, task, owner, err)
 	}
+	if snapshotErr := validateResolvedSizeSnapshot(task, resolved); snapshotErr != nil {
+		return s.failOwnedTask(ctx, task, owner, snapshotErr)
+	}
 
 	task.LeaseOwner = owner
 	return s.executeResolvedTask(ctx, task, owner, resolved, executionOptions{
@@ -529,6 +532,10 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 	if !modelhub.CandidateSupportsRequest(candidate, normalized, resolvedBaseResolution) {
 		return domainimagetask.TestModelAccountResult{}, errs.New(409, errs.CodeImageCapabilityMismatch, "当前配置暂不支持生成，请更换类似配置。")
 	}
+	normalizedGeneration, generationErr := modelhub.NormalizeCandidateGenerationRequest(candidate, normalized)
+	if generationErr != nil {
+		return domainimagetask.TestModelAccountResult{}, generationErr
+	}
 	taskID := uuid.NewString()
 	task := domainimagetask.Task{
 		UserID:            0,
@@ -539,7 +546,9 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 		TaskType:          string(provider.TaskTypeTextToImage),
 		Prompt:            prompt,
 		SizeMode:          modelhub.PublicSizeMode(normalized.SizeMode),
-		RequestedSize:     normalized.RequestedSize,
+		RequestedSize:     normalizedGeneration.OutboundSize,
+		ResolvedWidth:     normalizedGeneration.Width,
+		ResolvedHeight:    normalizedGeneration.Height,
 		BaseResolution:    resolvedBaseResolution,
 		Quality:           normalized.Quality,
 		OutputFormat:      normalized.OutputFormat,
@@ -559,6 +568,7 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 	}
 	resolved := modelhub.ResolvedRequest{
 		BaseResolution: resolvedBaseResolution,
+		ResolvedSize:   normalizedGeneration.OutboundSize,
 		Providers:      []modelhub.ProviderCandidate{candidate},
 	}
 	providerReq := provider.ImageRequest{
@@ -2507,7 +2517,11 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 	case modelhub.SizeModeAuto:
 		task.RequestedSize, task.AspectRatio = "", ""
 	case modelhub.SizeModeRatio:
-		if size, err := modelhub.CalculateImageSize(resolved.BaseResolution, req.AspectRatio); err == nil {
+		size := strings.TrimSpace(resolved.ResolvedSize)
+		if size == "" {
+			size, _ = modelhub.CalculateImageSize(resolved.BaseResolution, req.AspectRatio)
+		}
+		if size != "" {
 			task.RequestedSize = size
 			task.ResolvedWidth, task.ResolvedHeight, _ = modelhub.ParseImageSize(size)
 		}
@@ -2533,13 +2547,13 @@ func generationResolveFieldsFromTask(task domainimagetask.Task) (baseResolution,
 		}
 		return "", "", "", nil
 	case modelhub.SizeModeRatio:
-		expected, sizeErr := modelhub.CalculateImageSize(task.BaseResolution, task.AspectRatio)
-		if sizeErr != nil {
-			return "", "", "", errs.New(400, modelhub.CodeInvalidAspectRatio, "ratio task snapshot is invalid")
-		}
-		width, height, _ := modelhub.ParseImageSize(expected)
-		if modelhub.NormalizePixelSize(task.RequestedSize) != expected || task.ResolvedWidth != 0 && task.ResolvedWidth != width || task.ResolvedHeight != 0 && task.ResolvedHeight != height {
+		expected := modelhub.NormalizePixelSize(task.RequestedSize)
+		width, height, ok := modelhub.ParseImageSize(expected)
+		if ok && (task.ResolvedWidth != 0 && task.ResolvedWidth != width || task.ResolvedHeight != 0 && task.ResolvedHeight != height) {
 			return "", "", "", errs.New(400, modelhub.CodeInvalidSizeMode, "ratio task snapshot does not match its resolved size")
+		}
+		if !modelhub.IsLegalResolvedRatioSize(task.BaseResolution, task.AspectRatio, expected) {
+			return "", "", "", errs.New(400, modelhub.CodeInvalidAspectRatio, "ratio task snapshot is invalid")
 		}
 		return task.BaseResolution, task.AspectRatio, "", nil
 	case modelhub.SizeModePixel:
@@ -2559,6 +2573,33 @@ func generationResolveFieldsFromTask(task domainimagetask.Task) (baseResolution,
 	default:
 		return "", "", "", errs.New(400, modelhub.CodeInvalidSizeMode, "task size_mode is unsupported")
 	}
+}
+
+func validateResolvedSizeSnapshot(task domainimagetask.Task, resolved modelhub.ResolvedRequest) error {
+	mode := modelhub.PublicSizeMode(task.SizeMode)
+	currentSize := modelhub.NormalizePixelSize(task.RequestedSize)
+	if strings.TrimSpace(resolved.ResolvedSize) == "" {
+		return nil
+	}
+	if strings.TrimSpace(task.PricingSnapshot.SizeMode) != "" && currentSize != modelhub.NormalizePixelSize(task.PricingSnapshot.RequestedSize) {
+		return errs.New(400, modelhub.CodeInvalidSizeMode, "task size snapshot does not match its pricing snapshot")
+	}
+	switch mode {
+	case modelhub.SizeModeAuto:
+		if currentSize != "" || strings.TrimSpace(resolved.ResolvedSize) != "" {
+			return errs.New(400, modelhub.CodeInvalidSizeMode, "auto task snapshot contains a resolved size")
+		}
+	case modelhub.SizeModeRatio, modelhub.SizeModePixel:
+		expectedSize := modelhub.NormalizePixelSize(resolved.ResolvedSize)
+		if expectedSize == "" || currentSize != expectedSize {
+			return errs.New(400, modelhub.CodeInvalidSizeMode, "task size snapshot does not match the resolved size")
+		}
+		width, height, _ := modelhub.ParseImageSize(expectedSize)
+		if task.ResolvedWidth != 0 && task.ResolvedWidth != width || task.ResolvedHeight != 0 && task.ResolvedHeight != height {
+			return errs.New(400, modelhub.CodeInvalidSizeMode, "task dimensions do not match the resolved size")
+		}
+	}
+	return nil
 }
 
 func setInitialTaskProgress(task *domainimagetask.Task) {

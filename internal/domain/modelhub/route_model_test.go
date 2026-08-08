@@ -570,6 +570,75 @@ func TestVisibleRouteModelLimitsUsesSafeCandidateIntersection(t *testing.T) {
 	}
 }
 
+func TestRouteListAndResolveUseSameBoundedRatioCapability(t *testing.T) {
+	routing := ModelRoutingSnapshot{
+		RouteModels: []RouteModelConfig{{ID: 1, Code: "tight", Name: "Tight", Visibility: "public", Enabled: true}},
+		Prices:      []RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true}},
+		ProviderModels: []ProviderCandidate{{
+			AccountModelID: 11, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"},
+			SizeModes: []string{SizeModeRatio}, SupportedAspectRatios: []string{"1:1", "16:9"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+			MinWidth: 512, MaxWidth: 900, MinHeight: 512, MaxHeight: 900,
+		}},
+		Candidates: []RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 11, Enabled: true}},
+	}
+	resolver := NewResolver(config.Config{GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 4}})
+	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: routing})
+	visible, err := resolver.ListVisibleRouteModels(t.Context(), nil, nil)
+	if err != nil || len(visible) != 1 {
+		t.Fatalf("ListVisibleRouteModels() = %#v, %v", visible, err)
+	}
+	capability := visible[0].CapabilitiesByTaskType["text_to_image"]
+	if !reflect.DeepEqual(capability.AspectRatios, []string{"1:1"}) {
+		t.Fatalf("visible bounded ratios = %v, want only 1:1", capability.AspectRatios)
+	}
+	resolved, err := resolver.ResolveContext(t.Context(), ResolveRequest{
+		RouteModelCode: "tight", TaskType: "text_to_image", SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "1:1",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil || resolved.ResolvedSize != "896x896" {
+		t.Fatalf("bounded route resolve = %#v, %v; want resolved size 896x896", resolved, err)
+	}
+	_, err = resolver.ResolveContext(t.Context(), ResolveRequest{
+		RouteModelCode: "tight", TaskType: "text_to_image", SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "16:9",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.StatusCode != 400 || appErr.Code != CodeInvalidAspectRatio {
+		t.Fatalf("filtered ratio resolve error = %#v, want 400/%s", err, CodeInvalidAspectRatio)
+	}
+}
+
+func TestVisibleRouteModelFiltersRatioUnsolvableAfterBoundsIntersection(t *testing.T) {
+	routing := ModelRoutingSnapshot{
+		RouteModels: []RouteModelConfig{{ID: 1, Code: "intersection", Name: "Intersection", Visibility: "public", Enabled: true}},
+		Prices:      []RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true}},
+		ProviderModels: []ProviderCandidate{
+			{AccountModelID: 11, SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"}, SizeModes: []string{SizeModeRatio}, SupportedAspectRatios: []string{"2:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MinWidth: 1100, MaxWidth: 2000, MinHeight: 576, MaxHeight: 600, MaxImageCount: 1},
+			{AccountModelID: 12, SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"}, SizeModes: []string{SizeModeRatio}, SupportedAspectRatios: []string{"2:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MinWidth: 1280, MaxWidth: 1400, MinHeight: 576, MaxHeight: 1000, MaxImageCount: 1},
+		},
+		Candidates: []RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 11, Enabled: true}, {RouteModelID: 1, AccountModelID: 12, Enabled: true}},
+	}
+	resolver := NewResolver(config.Config{GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 1}})
+	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: routing})
+	visible, err := resolver.ListVisibleRouteModels(t.Context(), nil, nil)
+	if err != nil || len(visible) != 1 {
+		t.Fatalf("ListVisibleRouteModels() = %#v, %v", visible, err)
+	}
+	capability := visible[0].CapabilitiesByTaskType["text_to_image"]
+	if containsString(capability.SizeModes, SizeModeRatio) || len(capability.AspectRatios) != 0 || len(capability.BaseResolution) != 0 {
+		t.Fatalf("aggregate unsatisfiable ratio capability was advertised: %#v", capability)
+	}
+}
+
+func TestNormalizeProviderCandidateDoesNotRestoreFilteredLegacyRatioDefaults(t *testing.T) {
+	got := normalizeProviderCandidate(ProviderCandidate{
+		SupportedTaskTypes: []string{"text_to_image"}, MinWidth: 512, MaxWidth: 700, MinHeight: 512, MaxHeight: 700,
+	})
+	if containsString(got.SizeModes, SizeModeRatio) || len(got.SupportedAspectRatios) != 0 || len(got.SupportedBaseResolution) != 0 {
+		t.Fatalf("filtered legacy ratio defaults were restored: %#v", got)
+	}
+}
+
 func TestResolveRouteModelRejectsUnsupportedExplicitBaseResolution(t *testing.T) {
 	resolver := NewResolver(config.Config{GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 4, ReferenceImageMaxCount: 2}})
 	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: ModelRoutingSnapshot{

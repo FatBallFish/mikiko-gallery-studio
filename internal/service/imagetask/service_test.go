@@ -261,6 +261,37 @@ func TestTestModelAccountUsesDirectCandidateWithoutBilling(t *testing.T) {
 	}
 }
 
+func TestTestModelAccountUsesBoundedRatioResolution(t *testing.T) {
+	captured := make(chan provider.ImageRequest, 1)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			captured <- req
+			return provider.ImageResponse{Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+		}},
+	}
+	svc := imagetask.NewServiceWithProvidersAndStore(taskTestConfig(), providers, imagetask.NewMemoryStore())
+
+	result, err := svc.TestModelAccount(context.Background(), domainimagetask.TestModelAccountRequest{
+		ModelCode: "gpt-image-2", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1",
+	}, modelhub.ProviderCandidate{
+		AccountModelID: 301, ModelAccountID: 201, Provider: "openai", ModelCode: "gpt-image-2",
+		SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"},
+		SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"},
+		OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		MinWidth: 512, MaxWidth: 900, MinHeight: 512, MaxHeight: 900,
+	})
+	if err != nil {
+		t.Fatalf("TestModelAccount: %v", err)
+	}
+	providerRequest := <-captured
+	if providerRequest.Size != "896x896" {
+		t.Fatalf("provider size = %q, want 896x896", providerRequest.Size)
+	}
+	if result.Task.RequestedSize != "896x896" || result.Task.ResolvedWidth != 896 || result.Task.ResolvedHeight != 896 {
+		t.Fatalf("bounded test task = %#v, want 896x896 snapshot", result.Task)
+	}
+}
+
 type modelTestTemporaryURLBackend struct {
 	objects map[string][]byte
 }
@@ -943,7 +974,7 @@ func TestExecuteLeasedTaskRejectsForgedRatioSnapshotBeforeProviderCall(t *testin
 			AccountModelID: 402, ModelAccountID: 302, Provider: "openai", ModelCode: "gpt-image-2",
 			SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"ratio"},
 			SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"},
-			MinWidth: 16, MaxWidth: 3840, MinHeight: 16, MaxHeight: 3840, MaxImageCount: 1, HealthStatus: "enabled",
+			MinWidth: 512, MaxWidth: 900, MinHeight: 512, MaxHeight: 900, MaxImageCount: 1, HealthStatus: "enabled",
 		}},
 		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 402, Enabled: true}},
 		Prices:     []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true}},
@@ -964,7 +995,9 @@ func TestExecuteLeasedTaskRejectsForgedRatioSnapshotBeforeProviderCall(t *testin
 	if err != nil || !ok {
 		t.Fatalf("AcquireNextTask ok=%v err=%v", ok, err)
 	}
-	leased.RequestedSize = "1280x720"
+	leased.RequestedSize = "880x880"
+	leased.ResolvedWidth = 880
+	leased.ResolvedHeight = 880
 	if err := store.SaveIfOwned(context.Background(), leased, "worker-forged", time.Now().UTC()); err != nil {
 		t.Fatalf("persist forged snapshot: %v", err)
 	}
@@ -975,6 +1008,86 @@ func TestExecuteLeasedTaskRejectsForgedRatioSnapshotBeforeProviderCall(t *testin
 	}
 	if providerCalls.Load() != 0 {
 		t.Fatalf("provider calls = %d, want 0", providerCalls.Load())
+	}
+}
+
+func TestExecuteLeasedTaskRejectsForgedSizeSnapshotsBeforeProviderCall(t *testing.T) {
+	tests := []struct {
+		name        string
+		userID      int64
+		candidate   modelhub.ProviderCandidate
+		create      domainimagetask.CreateRequest
+		forgeSize   string
+		forgeWidth  int
+		forgeHeight int
+	}{
+		{
+			name: "custom ratio", userID: 192,
+			candidate: modelhub.ProviderCandidate{SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, SupportsCustomRatio: true, MinWidth: 512, MaxWidth: 2000, MinHeight: 512, MaxHeight: 2000},
+			create:    domainimagetask.CreateRequest{SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "7:5"},
+			forgeSize: "1472x1056", forgeWidth: 1472, forgeHeight: 1056,
+		},
+		{
+			name: "auto", userID: 193,
+			candidate: modelhub.ProviderCandidate{SizeModes: []string{"auto"}},
+			create:    domainimagetask.CreateRequest{SizeMode: "auto"},
+			forgeSize: "1024x1024", forgeWidth: 1024, forgeHeight: 1024,
+		},
+		{
+			name: "pixel", userID: 194,
+			candidate: modelhub.ProviderCandidate{SizeModes: []string{"pixel"}, SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true, MinWidth: 512, MaxWidth: 1200, MinHeight: 512, MaxHeight: 1200},
+			create:    domainimagetask.CreateRequest{SizeMode: "pixel", RequestedSize: "1024x1024"},
+			forgeSize: "896x896", forgeWidth: 896, forgeHeight: 896,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var providerCalls atomic.Int32
+			providers := map[string]provider.ImageProvider{"openai": fakeProvider{generateFunc: func(context.Context, provider.ImageRequest) (provider.ImageResponse, error) {
+				providerCalls.Add(1)
+				return provider.ImageResponse{}, nil
+			}}}
+			candidate := tt.candidate
+			candidate.AccountModelID, candidate.ModelAccountID = 402, 302
+			candidate.Provider, candidate.ModelCode = "openai", "gpt-image-2"
+			candidate.SupportedTaskTypes = []string{"text_to_image"}
+			candidate.SupportedBaseResolution = []string{"1k"}
+			candidate.Quality, candidate.OutputFormat, candidate.Moderation = []string{"auto"}, []string{"png"}, []string{"auto"}
+			candidate.MaxImageCount, candidate.HealthStatus = 1, "enabled"
+			routing := &staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+				RouteModels:    []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+				ProviderModels: []modelhub.ProviderCandidate{candidate},
+				Candidates:     []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 402, Enabled: true}},
+				Prices:         []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true}},
+			}}
+			cfg := taskTestConfig()
+			billingSvc := billingservice.NewService(cfg.Billing)
+			billingSvc.SetModelRoutingSource(routing)
+			seedBalance(t, billingSvc, tt.userID, "10.00000")
+			store := imagetask.NewMemoryStore()
+			svc := imagetask.NewServiceWithProvidersStoreAssetsAndBilling(cfg, providers, store, nil, billingSvc)
+			svc.SetModelRoutingSource(routing)
+			create := tt.create
+			create.UserID, create.RouteModelCode, create.TaskType, create.Prompt = tt.userID, "plus", "text_to_image", "forged snapshot"
+			create.Quality, create.OutputFormat, create.Moderation, create.OutputImageCount = "auto", "png", "auto", 1
+			if _, err := svc.CreateTask(context.Background(), create); err != nil {
+				t.Fatalf("CreateTask: %v", err)
+			}
+			leased, ok, err := svc.AcquireNextTask(context.Background(), "worker-forged", time.Minute)
+			if err != nil || !ok {
+				t.Fatalf("AcquireNextTask ok=%v err=%v", ok, err)
+			}
+			leased.RequestedSize, leased.ResolvedWidth, leased.ResolvedHeight = tt.forgeSize, tt.forgeWidth, tt.forgeHeight
+			if err := store.SaveIfOwned(context.Background(), leased, "worker-forged", time.Now().UTC()); err != nil {
+				t.Fatalf("persist forged snapshot: %v", err)
+			}
+			if _, err := svc.ExecuteLeasedTask(context.Background(), leased, "worker-forged", nil); err == nil {
+				t.Fatal("forged size snapshot was accepted")
+			}
+			if providerCalls.Load() != 0 {
+				t.Fatalf("provider calls = %d, want 0", providerCalls.Load())
+			}
+		})
 	}
 }
 
@@ -2945,6 +3058,7 @@ func TestCreateTaskUsesOneRoutingSnapshotWhenCapabilityVersionIsOmitted(t *testi
 		ProviderModels: []modelhub.ProviderCandidate{{
 			AccountModelID: 11, Provider: "openai", ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"},
 			SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+			MinWidth: 512, MaxWidth: 900, MinHeight: 512, MaxHeight: 900,
 		}},
 		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 11, Enabled: true}},
 	}
@@ -2968,7 +3082,7 @@ func TestCreateTaskUsesOneRoutingSnapshotWhenCapabilityVersionIsOmitted(t *testi
 	if source.reads != 1 {
 		t.Fatalf("routing source reads = %d, want one atomic resolve-and-estimate snapshot", source.reads)
 	}
-	if task.RouteSnapshotVersion != "routing-a" || task.EstimatedPoints != "1.00000" {
+	if task.RouteSnapshotVersion != "routing-a" || task.EstimatedPoints != "1.00000" || task.RequestedSize != "896x896" || task.ResolvedWidth != 896 || task.ResolvedHeight != 896 {
 		t.Fatalf("task mixed routing snapshots: %#v", task)
 	}
 }

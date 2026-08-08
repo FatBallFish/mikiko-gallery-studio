@@ -57,6 +57,7 @@ func TestNormalizeGenerationRequestRejectsInvalidExplicitInput(t *testing.T) {
 		{name: "auto stale size", in: GenerationRequest{SizeMode: "auto", RequestedSize: "1024x1024", OutputFormat: "png"}, code: CodeInvalidSizeMode},
 		{name: "ratio custom disabled", in: GenerationRequest{SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "7:5", OutputFormat: "png"}, code: CodeInvalidAspectRatio},
 		{name: "pixel is never rounded", in: GenerationRequest{SizeMode: "pixel", RequestedSize: "1001x777", OutputFormat: "png"}, code: CodeInvalidExplicitDimensions},
+		{name: "pixel inside bounds is still never rounded", in: GenerationRequest{SizeMode: "pixel", RequestedSize: "899x899", OutputFormat: "png"}, code: CodeInvalidExplicitDimensions},
 		{name: "pixel outside bounds", in: GenerationRequest{SizeMode: "pixel", RequestedSize: "3840x2160", OutputFormat: "png"}, code: CodeInvalidExplicitDimensions},
 		{name: "transparent jpeg", in: GenerationRequest{SizeMode: "auto", Background: "transparent", OutputFormat: "jpeg"}, code: CodeTransparentFormatConflict},
 		{name: "unsupported background", in: GenerationRequest{SizeMode: "auto", Background: "opaque", OutputFormat: "png"}, code: errs.CodeImageCapabilityMismatch},
@@ -69,6 +70,31 @@ func TestNormalizeGenerationRequestRejectsInvalidExplicitInput(t *testing.T) {
 				t.Fatalf("error = %#v, want code %s", err, tt.code)
 			}
 		})
+	}
+}
+
+func TestNormalizeGenerationRequestResolvesRatioInsideCapabilityBounds(t *testing.T) {
+	capability := generationTestCapability()
+	capability.MinWidth, capability.MaxWidth = 512, 900
+	capability.MinHeight, capability.MaxHeight = 512, 900
+	got, err := NormalizeGenerationRequest(capability, GenerationRequest{
+		SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "1:1", OutputFormat: "png",
+	})
+	if err != nil || got.OutboundSize != "896x896" || got.RequestedSize != "896x896" || got.Width != 896 || got.Height != 896 {
+		t.Fatalf("bounded ratio normalization = %#v, %v; want 896x896", got, err)
+	}
+}
+
+func TestNormalizeGenerationRequestReturnsTypedErrorWhenRatioHasNoBoundedSolution(t *testing.T) {
+	capability := generationTestCapability()
+	capability.MinWidth, capability.MaxWidth = 512, 700
+	capability.MinHeight, capability.MaxHeight = 512, 700
+	_, err := NormalizeGenerationRequest(capability, GenerationRequest{
+		SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "1:1", OutputFormat: "png",
+	})
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.StatusCode != 400 || appErr.Code != CodeInvalidAspectRatio {
+		t.Fatalf("bounded ratio error = %#v, want 400/%s", err, CodeInvalidAspectRatio)
 	}
 }
 
@@ -167,5 +193,35 @@ func TestFilterEffectiveCapabilityDropsLegacyInvalidOptions(t *testing.T) {
 	}
 	if len(got.SupportedPixelSizes) != 1 || got.SupportedPixelSizes[0] != "1024x1024" {
 		t.Fatalf("pixel sizes = %#v", got.SupportedPixelSizes)
+	}
+}
+
+func TestFilterEffectiveCapabilityDropsRatiosWithoutBoundedSolutions(t *testing.T) {
+	got := FilterEffectiveCapability(ImageModelCapability{
+		MaxImageCount: 1, SizeModes: []string{SizeModeRatio}, BaseResolution: []string{"1k"}, SupportedRatios: []string{"1:1", "16:9"},
+		MinWidth: 512, MaxWidth: 900, MinHeight: 512, MaxHeight: 900,
+	})
+	if !containsString(got.SizeModes, SizeModeRatio) || len(got.SupportedRatios) != 1 || got.SupportedRatios[0] != "1:1" {
+		t.Fatalf("effective bounded ratio capability = %#v, want ratio mode with only 1:1", got)
+	}
+
+	noSolution := FilterEffectiveCapability(ImageModelCapability{
+		MaxImageCount: 1, SizeModes: []string{SizeModeRatio}, BaseResolution: []string{"1k"}, SupportedRatios: []string{"1:1"},
+		MinWidth: 512, MaxWidth: 700, MinHeight: 512, MaxHeight: 700,
+	})
+	if containsString(noSolution.SizeModes, SizeModeRatio) || len(noSolution.SupportedRatios) != 0 {
+		t.Fatalf("unsatisfiable ratio mode must be removed from effective capability: %#v", noSolution)
+	}
+}
+
+func TestNormalizeCapabilityRejectsRatioConfigurationWithoutBoundedSolution(t *testing.T) {
+	capability := generationTestCapability()
+	capability.SizeModes = []string{SizeModeRatio}
+	capability.BaseResolution = []string{"1k"}
+	capability.SupportedRatios = []string{"1:1"}
+	capability.MinWidth, capability.MaxWidth = 512, 700
+	capability.MinHeight, capability.MaxHeight = 512, 700
+	if _, err := NormalizeCapability(capability); err == nil {
+		t.Fatal("configuration with no legal bounded ratio size must be rejected")
 	}
 }

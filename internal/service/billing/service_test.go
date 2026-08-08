@@ -827,6 +827,27 @@ func TestEstimateRouteModelAcceptsEnabledCustomRatio(t *testing.T) {
 	}
 }
 
+func TestEstimateRouteModelReturnsBoundedRatioSize(t *testing.T) {
+	svc := NewService(config.BillingConfig{TaskMultipliers: map[string]string{"text_to_image": "1.00000"}})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "tight", Name: "Tight", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"},
+			SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+			MinWidth: 512, MaxWidth: 900, MinHeight: 512, MaxHeight: 900,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Enabled: true}},
+	}})
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "tight", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil || result.ResolvedSize == nil || *result.ResolvedSize != "896x896" || result.PricingSnapshot.RequestedSize != "896x896" {
+		t.Fatalf("bounded estimate = %#v, %v; want resolved/requested size 896x896", result, err)
+	}
+}
+
 func TestEstimateRouteModelRejectsTransparentJPEG(t *testing.T) {
 	svc := NewService(config.BillingConfig{
 		CNYPerPoint: "0.31250", PointsScale: 5,

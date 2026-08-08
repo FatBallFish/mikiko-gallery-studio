@@ -181,7 +181,7 @@ func (s *Service) ResolveAndEstimateRouteTask(ctx context.Context, req domainbil
 			Background:                resolveReq.Background,
 			OutputCompression:         resolveReq.OutputCompression,
 			Moderation:                resolveReq.Moderation,
-			RequestedSize:             resolveReq.RequestedSize,
+			RequestedSize:             resolved.ResolvedSize,
 			RequestedOutputImageCount: count,
 			ReferenceImageCount:       req.ReferenceImageCount,
 			UserGroupCode:             strings.Join(groupCodes, ","),
@@ -193,12 +193,8 @@ func (s *Service) ResolveAndEstimateRouteTask(ctx context.Context, req domainbil
 		}
 		var resolvedSize *string
 		switch modelhub.PublicSizeMode(resolveReq.SizeMode) {
-		case modelhub.SizeModeRatio:
-			if value, sizeErr := modelhub.CalculateImageSize(resolved.BaseResolution, resolveReq.AspectRatio); sizeErr == nil {
-				resolvedSize = &value
-			}
-		case modelhub.SizeModePixel:
-			value := resolveReq.RequestedSize
+		case modelhub.SizeModeRatio, modelhub.SizeModePixel:
+			value := resolved.ResolvedSize
 			resolvedSize = &value
 		}
 		return resolved, domainbilling.EstimateResult{
