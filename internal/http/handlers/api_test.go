@@ -116,6 +116,7 @@ func TestResolveDocsReadinessProbeTargetUsesEffectiveDocsURLAndProvenance(t *tes
 		runtime        config.RuntimeConfig
 		wantURL        string
 		wantProvenance docsReadinessTargetProvenance
+		wantErr        bool
 	}{
 		{
 			name: "absolute docs URL ignores an internal probe",
@@ -133,12 +134,47 @@ func TestResolveDocsReadinessProbeTargetUsesEffectiveDocsURLAndProvenance(t *tes
 			wantURL: "http://gateway/developer-docs/", wantProvenance: docsReadinessTargetTrustedTopology,
 		},
 		{
-			name: "local Compose nginx is trusted only for a local Docker gateway topology",
+			name: "real local Compose nginx is trusted for its declared Docker topology",
 			runtime: config.RuntimeConfig{
-				DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api", "gateway"},
+				DeploymentMode: config.DeploymentModeDocker,
+				DeploymentModules: []string{
+					"postgres", "redis", "minio", "mailpit", "api", "worker", "user-web", "admin-web", "docs-web", "nginx",
+				},
 				DocsURL: "/developer-docs/", DocsProbeURL: "http://nginx/developer-docs/",
 			},
 			wantURL: "http://nginx/developer-docs/", wantProvenance: docsReadinessTargetTrustedTopology,
+		},
+		{
+			name: "nginx host without nginx module uses public policy",
+			runtime: config.RuntimeConfig{
+				DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api", "docs-web"},
+				DocsURL: "/developer-docs/", DocsProbeURL: "http://nginx/developer-docs/",
+			},
+			wantURL: "http://nginx/developer-docs/", wantProvenance: docsReadinessTargetConfiguredPublic,
+		},
+		{
+			name: "nginx module does not trust an external host",
+			runtime: config.RuntimeConfig{
+				DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api", "docs-web", "nginx"},
+				DocsURL: "/developer-docs/", DocsProbeURL: "https://docs.example.test/developer-docs/",
+			},
+			wantURL: "https://docs.example.test/developer-docs/", wantProvenance: docsReadinessTargetConfiguredPublic,
+		},
+		{
+			name: "nginx module does not trust a non-documentation path",
+			runtime: config.RuntimeConfig{
+				DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api", "docs-web", "nginx"},
+				DocsURL: "/healthz", DocsProbeURL: "http://nginx/healthz",
+			},
+			wantURL: "http://nginx/healthz", wantProvenance: docsReadinessTargetConfiguredPublic,
+		},
+		{
+			name: "nginx probe with a different path is rejected",
+			runtime: config.RuntimeConfig{
+				DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api", "docs-web", "nginx"},
+				DocsURL: "/developer-docs/", DocsProbeURL: "http://nginx/healthz",
+			},
+			wantErr: true,
 		},
 		{
 			name: "external relative probe uses public policy",
@@ -150,6 +186,12 @@ func TestResolveDocsReadinessProbeTargetUsesEffectiveDocsURLAndProvenance(t *tes
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			target, err := resolveDocsReadinessProbeTarget(tt.runtime)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("resolveDocsReadinessProbeTarget(%#v) succeeded with %#v", tt.runtime, target)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}

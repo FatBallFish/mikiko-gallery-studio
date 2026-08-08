@@ -7350,21 +7350,27 @@ func docsReadinessTargetMatchesTopology(runtime config.RuntimeConfig, target *ur
 	if target == nil || !validDocsHTTPURL(target) {
 		return false
 	}
-	hasGateway := false
-	for _, module := range runtime.DeploymentModules {
-		if strings.TrimSpace(module) == "gateway" {
-			hasGateway = true
-			break
-		}
-	}
-	if !hasGateway || target.Scheme != "http" {
+	if target.Scheme != "http" {
 		return false
 	}
 	switch runtime.DeploymentMode {
 	case config.DeploymentModeDocker:
 		port := target.Port()
-		return (port == "" || port == "80") && (target.Hostname() == "gateway" || target.Hostname() == "nginx")
+		if port != "" && port != "80" {
+			return false
+		}
+		switch target.Hostname() {
+		case "gateway":
+			return runtimeHasDeploymentModule(runtime, "gateway")
+		case "nginx":
+			return runtimeHasDeploymentModule(runtime, "nginx") && target.EscapedPath() == "/developer-docs/"
+		default:
+			return false
+		}
 	case config.DeploymentModeNative:
+		if !runtimeHasDeploymentModule(runtime, "gateway") {
+			return false
+		}
 		port, err := strconv.Atoi(strings.TrimSpace(runtime.GatewayPort))
 		if err != nil || port < 1 || port > 65535 {
 			return false
@@ -7373,6 +7379,15 @@ func docsReadinessTargetMatchesTopology(runtime config.RuntimeConfig, target *ur
 	default:
 		return false
 	}
+}
+
+func runtimeHasDeploymentModule(runtime config.RuntimeConfig, expected string) bool {
+	for _, module := range runtime.DeploymentModules {
+		if strings.TrimSpace(module) == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func validDocsHTTPURL(target *url.URL) bool {
