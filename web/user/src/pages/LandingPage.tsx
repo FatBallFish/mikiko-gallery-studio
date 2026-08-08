@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { cn } from '../../../shared/classnames'
 import { BrandMark, siteBrand } from '../brand'
 import { useApp } from '../components'
+import { openDocsEntry } from '../docsUrl'
 import {
   ArrowRight,
   Edit,
@@ -119,7 +120,7 @@ export function LandingPage() {
                 type="button"
                 className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-[#f6f2eb] bg-[#f6f2eb] px-7 text-base font-bold text-[#111218] transition-all duration-200 hover:-translate-y-1 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6f2eb] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--bg)] active:translate-y-0 active:scale-[0.98]"
                 style={{ color: landingActionInk }}
-                onClick={() => app.navigate('docs')}
+                onClick={() => openDocsEntry('home')}
               >
                 {landingChapters.hero.actions[1].label}
                 <ExternalLink size={17} aria-hidden="true" />
@@ -290,7 +291,7 @@ export function LandingPage() {
               <button
                 type="button"
                 className="mt-10 inline-flex min-h-12 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-5 text-sm font-bold text-[var(--fg)] transition-all duration-200 hover:-translate-y-1 hover:border-[var(--border-strong)] hover:bg-[var(--elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98]"
-                onClick={() => app.navigate('docs')}
+                onClick={() => openDocsEntry('home')}
               >
                 查看接入方式
                 <ExternalLink size={16} aria-hidden="true" />
@@ -358,7 +359,7 @@ export function LandingPage() {
               <button
                 type="button"
                 className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface)] px-7 text-base font-bold text-[var(--fg)] transition-all duration-200 hover:-translate-y-1 hover:bg-[var(--elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98]"
-                onClick={() => app.navigate('docs')}
+                onClick={() => openDocsEntry('home')}
               >
                 阅读 API 文档
                 <ExternalLink size={17} aria-hidden="true" />
@@ -375,7 +376,7 @@ export function LandingPage() {
             <p className="mt-5 max-w-[440px] leading-6">连接图片生成、任务状态、积分计费与历史资产的一体化平台。</p>
           </div>
           <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
-            <button type="button" className="border-0 bg-transparent p-0 text-inherit transition-colors hover:text-[var(--fg)] focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" onClick={() => app.navigate('docs')}>API 文档</button>
+            <button type="button" className="border-0 bg-transparent p-0 text-inherit transition-colors hover:text-[var(--fg)] focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" onClick={() => openDocsEntry('footer')}>API 文档</button>
             <button type="button" className="border-0 bg-transparent p-0 text-inherit transition-colors hover:text-[var(--fg)] focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" onClick={() => app.navigate('public-gallery')}>公开画廊</button>
             <span>© 2026 {siteBrand.name}</span>
           </div>

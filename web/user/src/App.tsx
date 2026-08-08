@@ -12,7 +12,6 @@ import { PublicGalleryPage } from './pages/PublicGalleryPage'
 import { CheckoutPage } from './pages/CheckoutPage'
 import { ApiKeysPage } from './pages/ApiKeysPage'
 import { ProfilePage } from './pages/ProfilePage'
-import { DocsPage } from './pages/DocsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { parseUserHashState, userHashForRoute, type UserRouteOptions } from './routeState'
 import { applyThemePreference, readLocalThemePreference, serializeThemePreference, themePreferenceFromProfile, writeLocalThemePreference } from './themePreferences'
@@ -337,8 +336,6 @@ function UserApplication() {
         return <Shell><ApiKeysPage /></Shell>
       case 'profile':
         return <Shell scrollMode="document"><ProfilePage /></Shell>
-      case 'docs':
-        return <DocsPage />
       case 'settings':
         return <Shell><SettingsPage /></Shell>
       case 'landing':

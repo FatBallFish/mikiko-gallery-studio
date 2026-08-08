@@ -8413,9 +8413,6 @@ func (a *API) publicGalleryReadinessCheck(ctx context.Context, checkedAt time.Ti
 }
 
 func (a *API) docsReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
-	if strings.TrimSpace(a.cfg.Docs.Title) == "" || strings.TrimSpace(a.cfg.Docs.BasePath) == "" {
-		return readinessCheck("docs", "开发文档", "warn", "开发文档标题或 base path 未配置", "config", "去配置", checkedAt)
-	}
 	checker := a.docsReady
 	if checker == nil {
 		checker = defaultDocsReadinessChecker
@@ -8429,7 +8426,7 @@ func (a *API) docsReadinessCheck(ctx context.Context, checkedAt time.Time) admin
 	if detail == "" {
 		detail = "OpenAPI、示例和错误码文档可解析"
 	}
-	return readinessCheck("docs", "开发文档", status, detail, "config", "去配置", checkedAt)
+	return readinessCheck("docs", "开发文档", status, detail, "monitoring", "查看诊断", checkedAt)
 }
 
 func (a *API) moderatePublishRequest(ctx context.Context, prompt string) (bool, string, error) {

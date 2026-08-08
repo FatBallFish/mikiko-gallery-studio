@@ -40,7 +40,7 @@ const primaryNavigation = [
 if (shellActiveNavIndex('genpic', primaryNavigation) !== 1) {
   throw new Error('primary navigation routes should resolve to their real indicator position')
 }
-for (const route of ['profile', 'public-gallery', 'docs'] as const) {
+for (const route of ['profile', 'public-gallery'] as const) {
   if (shellActiveNavIndex(route, primaryNavigation) !== -1) {
     throw new Error(`${route} must not display a false primary-navigation indicator`)
   }

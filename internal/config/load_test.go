@@ -323,6 +323,12 @@ func TestRuntimeIgnoresLegacyPlaintextAdministratorExtensions(t *testing.T) {
 	}
 }
 
+func TestConfigDoesNotExposeObsoleteDocumentationSettings(t *testing.T) {
+	if _, exists := reflect.TypeOf(Config{}).FieldByName("Docs"); exists {
+		t.Fatal("runtime config must not expose obsolete documentation title/base-path settings")
+	}
+}
+
 func TestLoadRuntimeCarriesIdentityFromTheSameRuntimeSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runtime.env")
 	t.Setenv("DEPLOYMENT_ROLE", string(DeploymentRoleWorker))

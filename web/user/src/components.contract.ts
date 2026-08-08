@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { componentPrimitiveNames, formatDate, imageFrameActionsClass, imagePixelsLabel, imageRatioLabel, navItems, protectedRoutes } from './components'
 import { siteBrand } from './brand'
 
@@ -55,8 +56,15 @@ if (JSON.stringify(componentPrimitiveNames) !== JSON.stringify(expectedPrimitive
   throw new Error(`shared component primitive inventory drifted, got ${JSON.stringify(componentPrimitiveNames)}`)
 }
 
-if (protectedRoutes.includes('docs')) {
+if ((protectedRoutes as readonly string[]).includes('docs')) {
   throw new Error('the external documentation route must not require a user session')
+}
+
+for (const file of ['./components.tsx', './pages/RedesignDemo.tsx']) {
+  const source = readFileSync(new URL(file, import.meta.url), 'utf8')
+  if (/京ICP备20261024号-1|ICP备/.test(source)) {
+    throw new Error(`${file} must not display an unregistered ICP filing number`)
+  }
 }
 
 if (imageFrameActionsClass !== 'pg-image-frame-actions') {

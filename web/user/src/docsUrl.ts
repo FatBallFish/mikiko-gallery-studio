@@ -7,7 +7,7 @@ export type DocsUrlEnv = {
 
 type DocsWindowOpen = (url?: string | URL, target?: string, features?: string) => WindowProxy | null
 
-export const docsEntryPoints = ['home', 'api-keys', 'account-menu', 'footer', 'legacy-route'] as const
+export const docsEntryPoints = ['home', 'api-keys', 'account-menu', 'footer'] as const
 export type DocsEntryPoint = typeof docsEntryPoints[number]
 
 export type OpenDocsOptions = {

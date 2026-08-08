@@ -254,7 +254,5 @@ func adminConfigAPIConfig() config.Config {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	cfg.Auth.Issuer = "test"
 	cfg.Auth.AccessTokenSecret = "secret"
-	cfg.Docs.Title = "Pic Gallery API Docs"
-	cfg.Docs.BasePath = "/docs"
 	return cfg
 }

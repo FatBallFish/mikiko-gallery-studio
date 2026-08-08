@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ArrowLeft, ArrowRight, ChevronUp, SlidersHorizontal } from 'lucide-react'
+import { ChevronUp, SlidersHorizontal } from 'lucide-react'
 import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
@@ -1204,7 +1204,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             <label className={workspaceClasses.fieldLabel}>提示词</label>
             <div className={cn(rdWorkspace.promptWrapper, 'relative')}>
               <textarea
-                className={cn(rdWorkspace.textarea, 'redesign-prompt-input pb-11 pr-20')}
+                className={cn(rdWorkspace.textarea, 'redesign-prompt-input pb-11')}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={5}
@@ -1638,6 +1638,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           title="图片详情"
           image={previewDetailImage}
           imageUrl={previewImage?.url}
+          referenceImages={previewImage?.referenceImages}
           showPublicStats={false}
           onDownload={() => {
             if (!previewImage?.mediaResource) return
@@ -1657,6 +1658,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             onClick: () => {
               stageWorkspaceCreationDraft(previewImage.creationDraft!, window.sessionStorage, window.history)
               setPreviewImage(null)
+              setHistoryTaskDialog(null)
               app.navigate('genpic')
             },
           }] : []}
@@ -1664,11 +1666,11 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           onMediaRefresh={previewImage?.mediaResource ? () => refreshWorkspaceResource(previewImage.mediaResource!) : undefined}
           onClose={() => setPreviewImage(null)}
         />
-        {historyTaskDialog ? (
-          <HistoryTaskDialog
+        {historyTaskDialog && !previewImage ? (
+          <HistoryTaskGalleryModal
             task={historyTaskDialog}
             accessToken={app.session?.token}
-            onDownloadImage={downloadWorkspaceImage}
+            onPreviewImage={setPreviewImage}
             onImageMediaRefresh={refreshWorkspaceImage}
             onReferenceMediaRefresh={refreshWorkspaceReference}
             onClose={() => setHistoryTaskDialog(null)}
@@ -2070,56 +2072,71 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
   )
 }
 
-function HistoryTaskDialog({ task, accessToken, onDownloadImage, onImageMediaRefresh, onReferenceMediaRefresh, onClose }: {
+function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMediaRefresh, onReferenceMediaRefresh, onClose }: {
   task: ImageTask
   accessToken?: string | null
-  onDownloadImage: (image: ImageResult) => Promise<void>
+  onPreviewImage: (image: ImagePreviewPayload) => void
   onImageMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
   onReferenceMediaRefresh: (assetId: string) => string | undefined | void | Promise<string | undefined | void>
   onClose: () => void
 }) {
   const app = useApp()
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  useEffect(() => setSelectedIndex(0), [task.id])
-  const image = task.results[selectedIndex] ?? task.results[0]
-  if (!image) return null
-  const detailImage = projectWorkspaceImageDetail(image, task, app.profile)
-  const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
-  const reuseConfiguration = () => {
-    stageWorkspaceCreationDraft(workspaceCreationDraftFromSnapshot(task), window.sessionStorage, window.history)
-    onClose()
-    app.navigate('genpic')
-  }
+  if (!task.results.length) return null
+  const requested = Math.max(Number(task.image_count || 1), task.results.length)
+  const referenceImages = task.reference_assets.map((asset) => ({
+    id: asset.id,
+    url: referenceAssetPreviewURL(asset, accessToken),
+    alt: asset.name || '原图引用',
+    mediaExpiresAt: asset.preview_expires_at,
+    onMediaRefresh: asset.id ? () => onReferenceMediaRefresh(asset.id) : undefined,
+  })).filter((item) => item.url)
+
   return (
-    <ImageDetailModal
-      title={`历史创作图片 ${selectedIndex + 1}/${task.results.length}`}
-      image={detailImage}
-      imageUrl={imageUrl}
-      referenceImages={task.reference_assets.map((asset) => {
-        const url = referenceAssetPreviewURL(asset, accessToken)
-        return {
-          id: asset.id,
-          url,
-          alt: asset.name || '原图引用',
-          mediaExpiresAt: asset.preview_expires_at,
-          onMediaRefresh: asset.id ? () => onReferenceMediaRefresh(asset.id) : undefined,
-        }
-      }).filter((item) => item.url)}
-      showPublicStats={false}
-      onDownload={() => void onDownloadImage(image)}
-      onCopyPrompt={async (value) => {
-        await copyText(value)
-        app.notify('success', 'Prompt 已复制')
-      }}
-      actions={[
-        { key: 'previous', label: '上一张', icon: <ArrowLeft size={18} strokeWidth={1.5} aria-hidden="true" />, onClick: () => setSelectedIndex((current) => Math.max(0, current - 1)), disabled: selectedIndex === 0 },
-        { key: 'next', label: '下一张', icon: <ArrowRight size={18} strokeWidth={1.5} aria-hidden="true" />, onClick: () => setSelectedIndex((current) => Math.min(task.results.length - 1, current + 1)), disabled: selectedIndex >= task.results.length - 1 },
-        { key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: reuseConfiguration },
-      ]}
-      previewSourceLabel="历史创作"
-      onMediaRefresh={() => onImageMediaRefresh(image.id)}
-      onClose={onClose}
-    />
+    <Modal title="历史创作总览" onClose={onClose} className="max-h-[90vh] w-[min(960px,calc(100vw-2rem))] max-w-none overflow-y-auto">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-[var(--border)] py-3 text-xs text-[var(--muted)]">
+        <span className="min-w-0 flex-1 truncate" title={task.prompt || task.title}>{task.prompt || task.title || '未命名创作'}</span>
+        <span>{task.results.length}/{requested} 张</span>
+        <span>{formatHistoryTime(task.created_at)}</span>
+      </div>
+      <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+        {task.results.map((image, index) => {
+          const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
+          return (
+            <button
+              key={image.id}
+              type="button"
+              className="group grid min-w-0 gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-2 text-left transition hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]"
+              aria-label={`查看第 ${index + 1} 张图片详情`}
+              onClick={() => onPreviewImage({
+                url: imageUrl,
+                downloadUrl: userApi.imageAssetUrl(image.download_url ?? image.url, accessToken),
+                alt: image.prompt || `${task.title || '历史创作'} ${index + 1}`,
+                prompt: image.prompt || task.prompt,
+                width: image.width,
+                height: image.height,
+                ratio: task.aspect_ratio,
+                model: image.route_model_code || task.route_model_code || task.model_group,
+                source: '历史创作',
+                creationDraft: workspaceCreationDraftFromSnapshot(task),
+                detailImage: projectWorkspaceImageDetail(image, task, app.profile),
+                mediaResource: { kind: 'image', scope: 'private', id: image.id },
+                mediaExpiresAt: image.preview_expires_at,
+                referenceImages,
+              })}
+            >
+              <RefreshableMediaImage
+                className="aspect-square w-full rounded-lg bg-[var(--surface)] object-cover"
+                src={imageUrl}
+                mediaExpiresAt={image.preview_expires_at}
+                alt={image.prompt || `${task.title || '历史创作'} ${index + 1}`}
+                onMediaRefresh={() => onImageMediaRefresh(image.id)}
+              />
+              <span className="truncate text-xs font-semibold text-[var(--fg)]">第 {index + 1} 张</span>
+            </button>
+          )
+        })}
+      </div>
+    </Modal>
   )
 }
 

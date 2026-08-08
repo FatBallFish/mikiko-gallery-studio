@@ -21,7 +21,6 @@ type Config struct {
 	AttachmentPolicy AttachmentPolicyConfig `yaml:"attachment_policy"`
 	Providers        ProvidersConfig        `yaml:"providers"`
 	Routing          RoutingConfig          `yaml:"routing"`
-	Docs             DocsConfig             `yaml:"docs"`
 }
 
 // RuntimeConfig is immutable identity metadata loaded from the same runtime.env
@@ -236,9 +235,4 @@ type ProviderCapabilityConfig struct {
 	SupportsImageInput      bool     `yaml:"supports_image_input"`
 	SupportsMask            bool     `yaml:"supports_mask"`
 	Priority                int      `yaml:"priority"`
-}
-
-type DocsConfig struct {
-	Title    string `yaml:"title"`
-	BasePath string `yaml:"base_path"`
 }

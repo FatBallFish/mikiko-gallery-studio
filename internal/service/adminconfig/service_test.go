@@ -51,6 +51,7 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 		t.Fatalf("expected cny_per_point item in billing tab")
 	}
 	assertTabMissing(t, tabs, "routing_models")
+	assertTabMissing(t, tabs, "docs")
 	assertTabKeys(t, tabs, "billing_pricing", []string{
 		"auto_base_resolution_default_by_group",
 		"cny_per_point",
@@ -409,10 +410,6 @@ func testConfig() config.Config {
 			DefaultProvider:      "openai",
 			FallbackProviders:    []string{"openrouter"},
 			OpenAICompatModelMap: map[string]string{"gpt-image-2": "plus"},
-		},
-		Docs: config.DocsConfig{
-			Title:    "Pic Gallery API Docs",
-			BasePath: "/docs",
 		},
 	}
 }

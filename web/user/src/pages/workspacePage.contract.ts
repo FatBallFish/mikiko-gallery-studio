@@ -150,6 +150,36 @@ if (!source.includes("task.size_mode === 'pixel' ? `尺寸: ${task.requested_siz
   throw new Error('pixel-mode task results must display requested pixel size instead of an aspect-ratio label')
 }
 
+if (!source.includes("'redesign-prompt-input pb-11'")) {
+  throw new Error('the outer prompt textarea must reserve only bottom clearance for floating actions')
+}
+if (source.includes("'redesign-prompt-input pb-11 pr-20'")) {
+  throw new Error('the outer prompt textarea must use its full width instead of reserving a right-side text column')
+}
+for (const required of [
+  'function HistoryTaskGalleryModal',
+  '历史创作总览',
+  'onPreviewImage',
+  'setHistoryTaskDialog(null)',
+]) {
+  if (!source.includes(required)) throw new Error(`multi-image history must open an overview before image detail: missing ${required}`)
+}
+const historyOverviewStart = source.indexOf('function HistoryTaskGalleryModal')
+const generationOutputStart = source.indexOf('function GenerationOutput', historyOverviewStart)
+const historyOverviewSource = source.slice(historyOverviewStart, generationOutputStart)
+if (historyOverviewSource.includes('<ImageDetailModal')) {
+  throw new Error('the multi-image history overview must not duplicate the shared image detail modal')
+}
+for (const stateContract of [
+  'historyTaskDialog && !previewImage',
+  'onPreviewImage={setPreviewImage}',
+  'onClose={() => setPreviewImage(null)}',
+]) {
+  if (!source.includes(stateContract)) {
+    throw new Error(`closing shared image detail must restore the task overview: missing ${stateContract}`)
+  }
+}
+
 const recentHandlerStart = source.indexOf('function selectRecentTask')
 const dialogHandlerStart = source.indexOf('function openHistoryTaskDialog')
 const gestureHandlerStart = source.indexOf('function handleSheetPointerDown', dialogHandlerStart)

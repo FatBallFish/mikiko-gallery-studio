@@ -302,7 +302,6 @@ export function RedesignDemo() {
                 <div className="flex flex-col md:flex-row items-center gap-2">
                   <span>© 2026 Mikiko Studio. All rights reserved.</span>
                   <span className="hidden md:inline text-[var(--border)]">|</span>
-                  <span>京ICP备20261024号-1</span>
                 </div>
                 <div className={rdShell.footerLinks}>
                   <span className={rdShell.footerLink}>服务协议</span>

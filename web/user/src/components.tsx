@@ -42,6 +42,7 @@ export type ImagePreviewPayload = {
   mediaResource?: MediaResource
   mediaExpiresAt?: string
   onMediaRefresh?: MediaRefreshHandler
+  referenceImages?: Array<{ id: string; url: string; alt: string; mediaExpiresAt?: string; onMediaRefresh?: MediaRefreshHandler }>
 }
 
 export function imagePixelsLabel(width?: number, height?: number) {
@@ -593,8 +594,6 @@ export function Shell({ children, scrollMode = 'app' }: { children: React.ReactN
             <div className={rdShell.footerContent}>
               <div className="flex flex-col items-center gap-2 md:flex-row">
                 <span>© 2026 {siteBrand.name}. All rights reserved.</span>
-                <span className="hidden text-[var(--border)] md:inline">|</span>
-                <span>京ICP备20261024号-1</span>
               </div>
               <div className={rdShell.footerLinks}>
                 <span className={rdShell.footerLink}>服务协议</span>

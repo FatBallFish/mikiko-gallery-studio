@@ -167,9 +167,5 @@ func testAdminConfig() config.Config {
 			DefaultProvider:   "openai",
 			FallbackProviders: []string{"openrouter"},
 		},
-		Docs: config.DocsConfig{
-			Title:    "Pic Gallery API Docs",
-			BasePath: "/docs",
-		},
 	}
 }

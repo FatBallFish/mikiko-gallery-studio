@@ -243,9 +243,6 @@ func configFromRuntimeValues(fileEnv map[string]string) Config {
 	cfg.Providers.OpenRouter.BaseURL = envString(fileEnv, "OPENROUTER_BASE_URL", "")
 	cfg.Providers.OpenRouter.APIKey = envString(fileEnv, "OPENROUTER_API_KEY", "")
 
-	cfg.Docs.Title = envString(fileEnv, "DOCS_TITLE", "")
-	cfg.Docs.BasePath = envString(fileEnv, "DOCS_BASE_PATH", "")
-
 	return cfg
 }
 

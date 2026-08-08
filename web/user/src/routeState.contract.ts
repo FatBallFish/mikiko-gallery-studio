@@ -50,6 +50,11 @@ if (settingsHash !== '/settings') {
   throw new Error(`settings route should have a stable hash, got ${settingsHash}`)
 }
 
+const retiredDocsRoute = parseUserHashState('#/docs')
+if (retiredDocsRoute.route !== 'landing') {
+  throw new Error(`retired docs route must not redirect or remain registered, got ${JSON.stringify(retiredDocsRoute)}`)
+}
+
 const retiredDemoRoute = parseUserHashState('#/redesign-demo')
 if (retiredDemoRoute.route !== 'landing') {
   throw new Error(`redesign demo route should not be part of the production user router, got ${JSON.stringify(retiredDemoRoute)}`)
