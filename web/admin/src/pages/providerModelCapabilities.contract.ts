@@ -15,6 +15,16 @@ for (const expected of [
   '是否支持压缩质量',
   'checked={modelDialog.supportsOutputCompression}',
   'row.supports_output_compression',
+  "const baseResolutionOptions = ['1K', '2K', '4K']",
+  "toggleSizeMode(modelDialog, 'auto'",
+  'supportsCustomRatio: boolean',
+  'supports_custom_ratio: modelDialog.supportsCustomRatio',
+  'supported_backgrounds: modelDialog.supportedBackgrounds',
+  'min_width: Number(modelDialog.minWidth)',
+  'max_width: Number(modelDialog.maxWidth)',
+  'min_height: Number(modelDialog.minHeight)',
+  'max_height: Number(modelDialog.maxHeight)',
+  'max="10" value={modelDialog.maxImageCount}',
 ]) {
   if (!source.includes(expected)) {
     throw new Error(`real-model editor must include ${expected}`)

@@ -521,7 +521,7 @@ export type CapabilityItem = {
   qualities?: string[]
   base_resolution?: string[]
   auto_base_resolution_by_task_type?: Partial<Record<ImageTaskType, string>>
-  size_modes?: Array<'ratio' | 'pixel' | string>
+  size_modes?: Array<'auto' | 'ratio' | 'pixel' | string>
   aspect_ratios: string[]
   pixel_sizes?: string[]
   max_output_image_count: number
@@ -530,19 +530,31 @@ export type CapabilityItem = {
   output_format?: string[]
   supports_output_compression?: boolean
   supports_custom_size?: boolean
+  supports_custom_ratio?: boolean
+  supported_backgrounds?: string[]
+  min_width?: number
+  max_width?: number
+  min_height?: number
+  max_height?: number
   capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
   moderation?: string[]
 }
 export type CapabilityTaskOptions = {
   base_resolution?: string[]
   auto_base_resolution?: string
-  size_modes?: Array<'ratio' | 'pixel' | string>
+  size_modes?: Array<'auto' | 'ratio' | 'pixel' | string>
   aspect_ratios?: string[]
   pixel_sizes?: string[]
   quality?: string[]
   output_format?: string[]
   supports_output_compression?: boolean
   supports_custom_size?: boolean
+  supports_custom_ratio?: boolean
+  supported_backgrounds?: string[]
+  min_width?: number
+  max_width?: number
+  min_height?: number
+  max_height?: number
   moderation?: string[]
   max_output_image_count?: number
   max_reference_image_count?: number
@@ -565,7 +577,7 @@ export type CapabilityModelGroup = {
   qualities?: string[]
   base_resolution?: string[]
   auto_base_resolution_by_task_type?: Partial<Record<ImageTaskType, string>>
-  size_modes?: Array<'ratio' | 'pixel' | string>
+  size_modes?: Array<'auto' | 'ratio' | 'pixel' | string>
   aspect_ratios?: string[]
   pixel_sizes?: string[]
   max_output_image_count?: number
@@ -574,6 +586,12 @@ export type CapabilityModelGroup = {
   output_format?: string[]
   supports_output_compression?: boolean
   supports_custom_size?: boolean
+  supports_custom_ratio?: boolean
+  supported_backgrounds?: string[]
+  min_width?: number
+  max_width?: number
+  min_height?: number
+  max_height?: number
   capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
   moderation?: string[]
   effective_multiplier?: string
@@ -588,13 +606,19 @@ export type Capability = {
   model_groups: CapabilityModelGroup[]
   qualities?: string[]
   base_resolution?: string[]
-  size_modes?: Array<'ratio' | 'pixel' | string>
+  size_modes?: Array<'auto' | 'ratio' | 'pixel' | string>
   aspect_ratios: string[]
   pixel_sizes?: string[]
   quality?: string[]
   output_format?: string[]
   supports_output_compression?: boolean
   supports_custom_size?: boolean
+  supports_custom_ratio?: boolean
+  supported_backgrounds?: string[]
+  min_width?: number
+  max_width?: number
+  min_height?: number
+  max_height?: number
   moderation?: string[]
   max_image_count: number
   reference_image_max_mb?: number
@@ -603,14 +627,15 @@ export type Capability = {
   reference_image_allowed_mime_types?: string[]
   task_types: ImageTaskType[]
 }
-export type EstimateRequest = { task_type: ImageTaskType; route_model_code: string; size_mode?: 'ratio' | 'pixel' | string; base_resolution: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; aspect_ratio: string; pixel_size?: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
+export type EstimateRequest = { task_type: ImageTaskType; route_model_code: string; size_mode?: 'auto' | 'ratio' | 'pixel' | string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; aspect_ratio?: string; pixel_size?: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
 export type BackendImageTaskType = ImageTaskType
-export type BackendEstimateRequest = { task_type: BackendImageTaskType; route_model_code: string; size_mode?: string; aspect_ratio?: string; base_resolution: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; requested_size: string; requested_output_image_count: number; reference_image_count?: number }
+export type BackendEstimateRequest = { task_type: BackendImageTaskType; route_model_code: string; size_mode?: string; aspect_ratio?: string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; requested_size?: string; requested_output_image_count: number; reference_image_count?: number }
 export type EstimateResult = {
   resolved_quality_bucket?: string
   base_resolution?: string
   size_mode?: string
   requested_size?: string
+  resolved_size?: string | null
   estimated_points?: string
   charged_points?: string
   display_points?: string
@@ -687,6 +712,7 @@ export type ImageResult = {
   quality?: string
   aspect_ratio?: string
   output_format?: string
+  background?: string
   output_compression?: number
   moderation?: string
   requested_output_image_count?: number
@@ -722,8 +748,11 @@ export type ImageTask = {
   size_mode?: string
   quality?: string
   requested_size?: string
+  resolved_width?: number
+  resolved_height?: number
   aspect_ratio: string
   output_format?: string
+  background?: string
   output_compression?: number
   moderation?: string
   requested_output_image_count?: number
@@ -1038,7 +1067,7 @@ export type ModelAccountModel = {
   created_at: string
   updated_at: string
 }
-export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; base_resolution: string[]; quality: string[]; max_reference_image_count: number; max_image_count: number; size_modes: string[]; supported_ratios: string[]; supported_pixel_sizes: string[]; output_format: string[]; supports_output_compression: boolean; supports_custom_size?: boolean; moderation: string[]; cost_per_image: string; currency: string; enabled: boolean }
+export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; base_resolution: string[]; quality: string[]; max_reference_image_count: number; max_image_count: number; size_modes: string[]; supported_ratios: string[]; supported_pixel_sizes: string[]; supports_custom_ratio: boolean; supported_backgrounds: string[]; min_width: number; max_width: number; min_height: number; max_height: number; output_format: string[]; supports_output_compression: boolean; supports_custom_size?: boolean; moderation: string[]; cost_per_image: string; currency: string; enabled: boolean }
 
 export type ObjectDeletionJobState = 'pending' | 'running' | 'retry' | 'done' | 'blocked'
 export type ObjectDeletionJob = {
@@ -1056,7 +1085,7 @@ export type ObjectDeletionJob = {
   created_at: string
   updated_at: string
 }
-export type ModelAccountTestImageRequest = { model_id?: ID; model_code?: string; prompt?: string; source_mode?: 'images' | 'codex_responses' | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; aspect_ratio?: string }
+export type ModelAccountTestImageRequest = { model_id?: ID; model_code?: string; prompt?: string; source_mode?: 'images' | 'codex_responses' | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; aspect_ratio?: string }
 export type ModelAccountTestImageResult = {
   status: string
   image_url?: string

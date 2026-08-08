@@ -196,20 +196,20 @@ export function toTask(raw: any): ImageTask {
 }
 
 export function buildEstimateWireRequest(req: EstimateRequest): BackendEstimateRequest {
-  const sizeMode = req.size_mode === 'pixel' ? 'pixel' : 'ratio'
-  return {
-    task_type: toBackendTaskType(req.task_type),
-    route_model_code: req.route_model_code,
-    size_mode: sizeMode,
-    aspect_ratio: sizeMode === 'ratio' ? req.aspect_ratio : undefined,
-    base_resolution: sizeMode === 'ratio' ? req.base_resolution : 'auto',
-    quality: req.quality ?? 'auto',
-    output_format: req.output_format ?? 'png',
-    output_compression: req.output_compression ?? 100,
-    moderation: req.moderation ?? 'auto',
-    requested_size: sizeMode === 'pixel' ? req.pixel_size ?? '' : 'auto',
-    requested_output_image_count: req.image_count,
-    reference_image_count: req.reference_asset_ids?.length ?? 0,
+	const sizeMode = req.size_mode === 'auto' ? 'auto' : req.size_mode === 'pixel' ? 'pixel' : 'ratio'
+	return {
+		task_type: toBackendTaskType(req.task_type),
+		route_model_code: req.route_model_code,
+		size_mode: sizeMode,
+		...(sizeMode === 'ratio' ? { aspect_ratio: req.aspect_ratio, base_resolution: req.base_resolution } : {}),
+		...(sizeMode === 'pixel' ? { requested_size: req.pixel_size ?? '' } : {}),
+		quality: req.quality ?? 'auto',
+		output_format: req.output_format ?? 'png',
+		...(req.background ? { background: req.background } : {}),
+		output_compression: req.output_compression ?? 100,
+		moderation: req.moderation ?? 'auto',
+		requested_output_image_count: req.image_count,
+		reference_image_count: req.reference_asset_ids?.length ?? 0,
   }
 }
 
@@ -270,24 +270,41 @@ export function toGalleryImage(raw: any): GalleryImage {
 }
 
 function optionalOutputCapabilities(source: any) {
-  const result: {
-    quality?: string[]
-    output_format?: string[]
-    supports_output_compression: boolean
-    supports_custom_size: boolean
-    capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
-    moderation?: string[]
-  } = { supports_output_compression: false, supports_custom_size: false }
+	const result: {
+		quality?: string[]
+		output_format?: string[]
+		supports_output_compression: boolean
+		supports_custom_size: boolean
+		supports_custom_ratio: boolean
+		supported_backgrounds?: string[]
+		min_width?: number
+		max_width?: number
+		min_height?: number
+		max_height?: number
+		capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
+		moderation?: string[]
+	} = { supports_output_compression: false, supports_custom_size: false, supports_custom_ratio: false }
   const quality = pick<string[]>(source, 'quality', 'Quality')
   const outputFormat = pick<string[]>(source, 'output_format', 'OutputFormat')
   const supportsCompression = pick<boolean>(source, 'supports_output_compression', 'SupportsOutputCompression')
-  const supportsCustomSize = pick<boolean>(source, 'supports_custom_size', 'SupportsCustomSize')
+	const supportsCustomSize = pick<boolean>(source, 'supports_custom_size', 'SupportsCustomSize')
+	const supportsCustomRatio = pick<boolean>(source, 'supports_custom_ratio', 'SupportsCustomRatio')
+	const supportedBackgrounds = pick<string[]>(source, 'supported_backgrounds', 'SupportedBackgrounds')
   const capabilitiesByTaskType = pick<Record<string, unknown>>(source, 'capabilities_by_task_type', 'CapabilitiesByTaskType')
   const moderation = pick<string[]>(source, 'moderation', 'Moderation')
   if (quality !== undefined) result.quality = quality
   if (outputFormat !== undefined) result.output_format = outputFormat
   if (supportsCompression !== undefined) result.supports_output_compression = supportsCompression
-  if (supportsCustomSize !== undefined) result.supports_custom_size = supportsCustomSize
+	if (supportsCustomSize !== undefined) result.supports_custom_size = supportsCustomSize
+	if (supportsCustomRatio !== undefined) result.supports_custom_ratio = supportsCustomRatio
+	if (supportedBackgrounds !== undefined) result.supported_backgrounds = supportedBackgrounds
+	for (const [key, aliases] of Object.entries({
+		min_width: ['min_width', 'MinWidth'], max_width: ['max_width', 'MaxWidth'],
+		min_height: ['min_height', 'MinHeight'], max_height: ['max_height', 'MaxHeight'],
+	})) {
+		const value = Number(pick(source, ...aliases) ?? 0)
+		if (value > 0) Object.assign(result, { [key]: value })
+	}
   if (capabilitiesByTaskType !== undefined) {
     result.capabilities_by_task_type = Object.fromEntries(
       Object.entries(capabilitiesByTaskType).map(([taskType, capability]) => [normalizeTaskType(taskType), normalizeTaskCapability(capability)]),
@@ -298,16 +315,22 @@ function optionalOutputCapabilities(source: any) {
 }
 
 function normalizeTaskCapability(source: unknown): CapabilityTaskOptions {
-  return {
-    base_resolution: pick<string[]>(source, 'base_resolution', 'BaseResolution') ?? [],
+	return {
+		base_resolution: normalizeBaseResolutions(pick<string[]>(source, 'base_resolution', 'BaseResolution') ?? []),
     auto_base_resolution: String(pick(source, 'auto_base_resolution', 'AutoBaseResolution') ?? '').trim().toLowerCase() || undefined,
-    size_modes: pick<Array<'ratio' | 'pixel' | string>>(source, 'size_modes', 'SizeModes') ?? [],
+    size_modes: pick<Array<'auto' | 'ratio' | 'pixel' | string>>(source, 'size_modes', 'SizeModes') ?? [],
     aspect_ratios: pick<string[]>(source, 'aspect_ratios', 'AspectRatios') ?? [],
     pixel_sizes: pick<string[]>(source, 'pixel_sizes', 'PixelSizes') ?? [],
     quality: pick<string[]>(source, 'quality', 'Quality') ?? [],
     output_format: pick<string[]>(source, 'output_format', 'OutputFormat') ?? [],
     supports_output_compression: Boolean(pick(source, 'supports_output_compression', 'SupportsOutputCompression')),
-    supports_custom_size: Boolean(pick(source, 'supports_custom_size', 'SupportsCustomSize')),
+		supports_custom_size: Boolean(pick(source, 'supports_custom_size', 'SupportsCustomSize')),
+		supports_custom_ratio: Boolean(pick(source, 'supports_custom_ratio', 'SupportsCustomRatio')),
+		supported_backgrounds: pick<string[]>(source, 'supported_backgrounds', 'SupportedBackgrounds') ?? [],
+		min_width: positiveNumber(pick(source, 'min_width', 'MinWidth')),
+		max_width: positiveNumber(pick(source, 'max_width', 'MaxWidth')),
+		min_height: positiveNumber(pick(source, 'min_height', 'MinHeight')),
+		max_height: positiveNumber(pick(source, 'max_height', 'MaxHeight')),
     moderation: pick<string[]>(source, 'moderation', 'Moderation') ?? [],
     max_output_image_count: Number(pick(source, 'max_output_image_count', 'MaxOutputImageCount') ?? 0),
     max_reference_image_count: Number(pick(source, 'max_reference_image_count', 'MaxReferenceImageCount') ?? 0),
@@ -322,7 +345,7 @@ export function normalizeCapabilities(raw: any): Capability {
     const qualities = pick<string[]>(item, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
       ?? pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
       ?? ['auto']
-    const baseResolution = pick<string[]>(item, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? qualities
+		const baseResolution = normalizeBaseResolutions(pick<string[]>(item, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? qualities)
     const autoBaseResolutionByTaskType = pick<Record<string, string>>(item, 'auto_base_resolution_by_task_type', 'AutoBaseResolutionByTaskType')
     const prices = (pick<any[]>(item, 'prices', 'Prices') ?? []).map((price: any) => {
       const quality = String(pick(price, 'quality', 'Quality', 'base_resolution', 'BaseResolution') ?? 'auto')
@@ -351,7 +374,7 @@ export function normalizeCapabilities(raw: any): Capability {
       auto_base_resolution_by_task_type: autoBaseResolutionByTaskType
         ? Object.fromEntries(Object.entries(autoBaseResolutionByTaskType).map(([taskType, resolution]) => [normalizeTaskType(taskType), String(resolution).trim().toLowerCase()]))
         : undefined,
-      size_modes: pick<Array<'ratio' | 'pixel' | string>>(item, 'size_modes', 'SizeModes') ?? ['ratio'],
+      size_modes: pick<Array<'auto' | 'ratio' | 'pixel' | string>>(item, 'size_modes', 'SizeModes') ?? ['ratio'],
       aspect_ratios: pick<string[]>(item, 'aspect_ratios', 'AspectRatios') ?? pick<string[]>(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? [],
       pixel_sizes: pick<string[]>(item, 'pixel_sizes', 'PixelSizes', 'supported_pixel_sizes', 'SupportedPixelSizes') ?? [],
       max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
@@ -369,8 +392,8 @@ export function normalizeCapabilities(raw: any): Capability {
     unavailable_reason: pick(raw, 'unavailable_reason', 'UnavailableReason') ?? null,
     model_groups: normalizedModels,
     qualities,
-    base_resolution: pick<string[]>(raw, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? normalizedModels[0]?.base_resolution ?? qualities,
-    size_modes: pick<Array<'ratio' | 'pixel' | string>>(raw, 'size_modes', 'SizeModes') ?? ['ratio'],
+		base_resolution: normalizeBaseResolutions(pick<string[]>(raw, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? normalizedModels[0]?.base_resolution ?? qualities),
+    size_modes: pick<Array<'auto' | 'ratio' | 'pixel' | string>>(raw, 'size_modes', 'SizeModes') ?? ['ratio'],
     aspect_ratios: pick<string[]>(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? normalizedModels[0]?.aspect_ratios ?? ['1:1', '16:9', '9:16', '4:3'],
     pixel_sizes: pick<string[]>(raw, 'pixel_sizes', 'PixelSizes', 'supported_pixel_sizes', 'SupportedPixelSizes') ?? [],
     max_image_count: Number(pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
@@ -381,6 +404,15 @@ export function normalizeCapabilities(raw: any): Capability {
     task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? Array.from(new Set(normalizedModels.flatMap((item) => item.task_types)))).map(normalizeTaskType),
     ...optionalOutputCapabilities(raw),
   }
+}
+
+function normalizeBaseResolutions(values: string[]) {
+	return Array.from(new Set(values.map((value) => value.trim().toLowerCase()).filter((value) => value === '1k' || value === '2k' || value === '4k')))
+}
+
+function positiveNumber(value: unknown) {
+	const parsed = Number(value ?? 0)
+	return parsed > 0 ? parsed : undefined
 }
 
 export function normalizeTaskList(raw: any): ImageTask[] {

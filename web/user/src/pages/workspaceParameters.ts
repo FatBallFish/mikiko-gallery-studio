@@ -1,5 +1,5 @@
 import type { CapabilityModelGroup, ImageTaskType } from '../../../shared/api-types'
-import { calculateImageSizeForBaseResolution, normalizeCustomImageSize, type CustomImageSizeNormalization } from '../../../shared/image-size'
+import { calculateImageSizeForBaseResolution, validateCustomImageSize, type CustomImageSizeNormalization } from '../../../shared/image-size'
 
 export type WorkspaceOutputParameters = {
   quality: string
@@ -8,11 +8,16 @@ export type WorkspaceOutputParameters = {
   moderation: string
 }
 
-export function normalizeWorkspaceCustomSize(width: string, height: string): CustomImageSizeNormalization {
-  if (!/^\d+$/.test(width.trim()) || !/^\d+$/.test(height.trim())) {
-    return normalizeCustomImageSize(Number.NaN, Number.NaN)
-  }
-  return normalizeCustomImageSize(Number(width), Number(height))
+export function normalizeWorkspaceCustomSize(width: string, height: string, model?: CapabilityModelGroup): CustomImageSizeNormalization {
+	if (!/^\d+$/.test(width.trim()) || !/^\d+$/.test(height.trim())) {
+		return validateCustomImageSize(Number.NaN, Number.NaN)
+	}
+	return validateCustomImageSize(Number(width), Number(height), {
+		minWidth: model?.min_width,
+		maxWidth: model?.max_width,
+		minHeight: model?.min_height,
+		maxHeight: model?.max_height,
+	})
 }
 
 export function workspaceModelForTask(model: CapabilityModelGroup | undefined, taskType: ImageTaskType) {
@@ -31,7 +36,13 @@ export function workspaceModelForTask(model: CapabilityModelGroup | undefined, t
     quality: scoped.quality ?? model.quality,
     output_format: scoped.output_format ?? model.output_format,
     supports_output_compression: scoped.supports_output_compression ?? model.supports_output_compression,
-    supports_custom_size: scoped.supports_custom_size ?? model.supports_custom_size,
+		supports_custom_size: scoped.supports_custom_size ?? model.supports_custom_size,
+		supports_custom_ratio: scoped.supports_custom_ratio ?? model.supports_custom_ratio,
+		supported_backgrounds: scoped.supported_backgrounds ?? model.supported_backgrounds,
+		min_width: scoped.min_width ?? model.min_width,
+		max_width: scoped.max_width ?? model.max_width,
+		min_height: scoped.min_height ?? model.min_height,
+		max_height: scoped.max_height ?? model.max_height,
     moderation: scoped.moderation ?? model.moderation,
     max_output_image_count: scoped.max_output_image_count ?? model.max_output_image_count,
     max_reference_image_count: scoped.max_reference_image_count ?? model.max_reference_image_count,
@@ -41,6 +52,32 @@ export function workspaceModelForTask(model: CapabilityModelGroup | undefined, t
 export function workspaceCustomSizeSupported(model: CapabilityModelGroup | undefined) {
   if (!model) return false
   return Boolean(model.supports_custom_size)
+}
+
+export function workspaceCustomRatioSupported(model: CapabilityModelGroup | undefined) {
+	return Boolean(model?.supports_custom_ratio)
+}
+
+export function workspaceBackgroundOptions(model: CapabilityModelGroup | undefined) {
+	return normalizedOptions(model?.supported_backgrounds, [])
+}
+
+export function workspaceBackgroundForFormat(model: CapabilityModelGroup | undefined, current: string, outputFormat: string) {
+	const options = workspaceBackgroundOptions(model)
+	let selected = options.includes(current) ? current : options[0] ?? ''
+	if (selected === 'transparent' && !['png', 'webp'].includes(outputFormat.toLowerCase())) {
+		selected = options.find((value) => value !== 'transparent') ?? ''
+	}
+	return selected
+}
+
+export function workspaceCustomRatioValid(value: string) {
+	const match = value.trim().match(/^(\d+)\s*:\s*(\d+)$/)
+	if (!match) return false
+	const width = Number(match[1])
+	const height = Number(match[2])
+	if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false
+	return Math.max(width / height, height / width) <= 3
 }
 
 export function workspaceRatioPixelEstimate(baseResolution: string, ratio: string, autoBaseResolution = '') {

@@ -18,12 +18,13 @@ import {
 } from './providerModelRows'
 
 type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string }
-type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportedPixelSizes: string[]; pixelInput: string; supportsCustomSize: boolean; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
-type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string; sourceMode: string; sizeMode: string; requestedSize: string; baseResolution: string; quality: string; outputFormat: string; outputCompression: string; moderation: string; aspectRatio: string; result?: ModelAccountTestImageResult; error?: string }
+type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportsCustomRatio: boolean; supportedPixelSizes: string[]; pixelInput: string; supportsCustomSize: boolean; minWidth: string; maxWidth: string; minHeight: string; maxHeight: string; supportedBackgrounds: string[]; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
+type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string; sourceMode: string; sizeMode: string; requestedSize: string; baseResolution: string; quality: string; outputFormat: string; background: string; outputCompression: string; moderation: string; aspectRatio: string; result?: ModelAccountTestImageResult; error?: string }
 
-const baseResolutionOptions = ['auto', '1K', '2K', '4K']
+const baseResolutionOptions = ['1K', '2K', '4K']
 const qualityOptions = ['auto', 'low', 'medium', 'high']
 const outputFormatOptions = ['png', 'jpeg', 'webp']
+const backgroundOptions = ['auto', 'opaque', 'transparent']
 const moderationOptions = ['auto', 'low']
 const defaultRatios = ['1:1', '16:9', '9:16', '4:3', '3:4']
 const defaultPixelSizes = ['1024x1024', '1536x1024', '1024x1536', '1280x720', '720x1280', '1024x768', '768x1024']
@@ -155,9 +156,15 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
         max_reference_image_count: Number(modelDialog.maxReferenceImageCount),
         max_image_count: Number(modelDialog.maxImageCount),
         size_modes: modelDialog.sizeModes,
-        supported_ratios: modelDialog.supportedRatios,
-        supported_pixel_sizes: modelDialog.supportedPixelSizes,
-        supports_custom_size: modelDialog.supportsCustomSize,
+		supported_ratios: modelDialog.supportedRatios,
+		supported_pixel_sizes: modelDialog.supportedPixelSizes,
+		supports_custom_ratio: modelDialog.supportsCustomRatio,
+		supported_backgrounds: modelDialog.supportedBackgrounds,
+		supports_custom_size: modelDialog.supportsCustomSize,
+		min_width: Number(modelDialog.minWidth),
+		max_width: Number(modelDialog.maxWidth),
+		min_height: Number(modelDialog.minHeight),
+		max_height: Number(modelDialog.maxHeight),
         output_format: modelDialog.outputFormat,
         supports_output_compression: modelDialog.supportsOutputCompression,
         moderation: modelDialog.moderation,
@@ -206,13 +213,13 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
         prompt: testDialog.prompt,
         source_mode: testDialog.sourceMode,
         size_mode: testDialog.sizeMode,
-        requested_size: testDialog.sizeMode === 'pixel' ? testDialog.requestedSize : 'auto',
-        base_resolution: testDialog.sizeMode === 'ratio' ? testDialog.baseResolution : 'auto',
+		...(testDialog.sizeMode === 'pixel' ? { requested_size: testDialog.requestedSize } : {}),
+		...(testDialog.sizeMode === 'ratio' ? { base_resolution: testDialog.baseResolution, aspect_ratio: testDialog.aspectRatio } : {}),
         quality: testDialog.quality,
-        output_format: testDialog.outputFormat,
+		output_format: testDialog.outputFormat,
+		background: testDialog.background || undefined,
         output_compression: Number(testDialog.outputCompression),
         moderation: testDialog.moderation,
-        aspect_ratio: testDialog.aspectRatio,
       })
       setTestDialog((current) => current ? { ...current, result } : current)
     } catch (caught) {
@@ -322,16 +329,21 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
             <Field label="基础分辨率"><BaseResolutionTagInput draft={modelDialog} onChange={setModelDialog} /></Field>
             <Field label="质量参数"><TagInput values={modelDialog.quality} input={modelDialog.qualityInput} placeholder="auto / low / medium / high" options={qualityOptions} normalize={normalizeLowerEnum} onInput={(qualityInput) => setModelDialog({ ...modelDialog, qualityInput })} onChange={(quality, qualityInput = '') => setModelDialog({ ...modelDialog, quality, qualityInput })} /></Field>
             <Field label="最大参考图"><input type="number" min="0" max="64" value={modelDialog.maxReferenceImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxReferenceImageCount: event.target.value })} /></Field>
-            <Field label="最大出图数"><input type="number" min="1" max="64" value={modelDialog.maxImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxImageCount: event.target.value })} /></Field>
-            <Field label="尺寸模式">
-              <div className={providerModelTaskTypeGridClass}>
-                <label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.sizeModes.includes('ratio')} onChange={(event) => setModelDialog(toggleSizeMode(modelDialog, 'ratio', event.target.checked))} /><span>支持图片比例</span></label>
+			<Field label="最大出图数"><input type="number" min="1" max="10" value={modelDialog.maxImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxImageCount: event.target.value })} /></Field>
+			<Field label="尺寸模式">
+			  <div className={providerModelTaskTypeGridClass}>
+				<label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.sizeModes.includes('auto')} onChange={(event) => setModelDialog(toggleSizeMode(modelDialog, 'auto', event.target.checked))} /><span>支持自动尺寸</span></label>
+				<label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.sizeModes.includes('ratio')} onChange={(event) => setModelDialog(toggleSizeMode(modelDialog, 'ratio', event.target.checked))} /><span>支持图片比例</span></label>
                 <label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.sizeModes.includes('pixel')} onChange={(event) => setModelDialog(toggleSizeMode(modelDialog, 'pixel', event.target.checked))} /><span>支持像素大小</span></label>
               </div>
             </Field>
-            {modelDialog.sizeModes.includes('ratio') ? <Field label="支持比例"><TagInput values={modelDialog.supportedRatios} input={modelDialog.ratioInput} placeholder="例如 3:2，回车添加" options={defaultRatios} normalize={normalizeRatio} onInput={(ratioInput) => setModelDialog({ ...modelDialog, ratioInput })} onChange={(supportedRatios, ratioInput = '') => setModelDialog({ ...modelDialog, supportedRatios, ratioInput })} /></Field> : null}
-            {modelDialog.sizeModes.includes('pixel') ? <Field label="支持像素"><TagInput values={modelDialog.supportedPixelSizes} input={modelDialog.pixelInput} placeholder="例如 2048x2048，回车添加" options={defaultPixelSizes} normalize={normalizePixelSize} onInput={(pixelInput) => setModelDialog({ ...modelDialog, pixelInput })} onChange={(supportedPixelSizes, pixelInput = '') => setModelDialog({ ...modelDialog, supportedPixelSizes, pixelInput })} /></Field> : null}
-            {modelDialog.sizeModes.includes('pixel') ? <Field label="允许用户自定义尺寸" hint="启用后，用户可以输入 Width 和 Height，最终尺寸由后端自动规整为模型支持的合法尺寸。"><label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportsCustomSize} onChange={(event) => setModelDialog({ ...modelDialog, supportsCustomSize: event.target.checked })} /><span>{modelDialog.supportsCustomSize ? '允许' : '不允许'}</span></label></Field> : null}
+			{modelDialog.sizeModes.includes('ratio') ? <Field label="支持比例"><TagInput values={modelDialog.supportedRatios} input={modelDialog.ratioInput} placeholder="例如 3:2，回车添加" options={defaultRatios} normalize={normalizeRatio} onInput={(ratioInput) => setModelDialog({ ...modelDialog, ratioInput })} onChange={(supportedRatios, ratioInput = '') => setModelDialog({ ...modelDialog, supportedRatios, ratioInput })} /></Field> : null}
+			{modelDialog.sizeModes.includes('ratio') ? <Field label="允许自定义比例"><label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportsCustomRatio} onChange={(event) => setModelDialog({ ...modelDialog, supportsCustomRatio: event.target.checked })} /><span>{modelDialog.supportsCustomRatio ? '允许' : '不允许'}</span></label></Field> : null}
+			{modelDialog.sizeModes.includes('pixel') ? <Field label="支持像素"><TagInput values={modelDialog.supportedPixelSizes} input={modelDialog.pixelInput} placeholder="例如 2048x2048，回车添加" options={defaultPixelSizes} normalize={normalizePixelSize} onInput={(pixelInput) => setModelDialog({ ...modelDialog, pixelInput })} onChange={(supportedPixelSizes, pixelInput = '') => setModelDialog({ ...modelDialog, supportedPixelSizes, pixelInput })} /></Field> : null}
+			{modelDialog.sizeModes.includes('pixel') ? <Field label="允许用户自定义尺寸" hint="启用后，用户输入的 Width 和 Height 必须严格满足以下范围及平台尺寸规则。"><label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportsCustomSize} onChange={(event) => setModelDialog({ ...modelDialog, supportsCustomSize: event.target.checked })} /><span>{modelDialog.supportsCustomSize ? '允许' : '不允许'}</span></label></Field> : null}
+			{modelDialog.sizeModes.includes('pixel') ? <Field label="像素宽度范围"><div className="grid grid-cols-2 gap-2"><input aria-label="最小宽度" type="number" min="16" max="3840" step="16" value={modelDialog.minWidth} onChange={(event) => setModelDialog({ ...modelDialog, minWidth: event.target.value })} /><input aria-label="最大宽度" type="number" min="16" max="3840" step="16" value={modelDialog.maxWidth} onChange={(event) => setModelDialog({ ...modelDialog, maxWidth: event.target.value })} /></div></Field> : null}
+			{modelDialog.sizeModes.includes('pixel') ? <Field label="像素高度范围"><div className="grid grid-cols-2 gap-2"><input aria-label="最小高度" type="number" min="16" max="3840" step="16" value={modelDialog.minHeight} onChange={(event) => setModelDialog({ ...modelDialog, minHeight: event.target.value })} /><input aria-label="最大高度" type="number" min="16" max="3840" step="16" value={modelDialog.maxHeight} onChange={(event) => setModelDialog({ ...modelDialog, maxHeight: event.target.value })} /></div></Field> : null}
+			<Field label="支持背景"><div className={providerModelTaskTypeGridClass}>{backgroundOptions.map((value) => <label key={value} className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportedBackgrounds.includes(value)} onChange={(event) => setModelDialog({ ...modelDialog, supportedBackgrounds: event.target.checked ? [...modelDialog.supportedBackgrounds, value] : modelDialog.supportedBackgrounds.filter((item) => item !== value) })} /><span>{value}</span></label>)}</div></Field>
             <Field label="输出格式"><TagInput values={modelDialog.outputFormat} input={modelDialog.outputFormatInput} placeholder="png / jpeg / webp" options={outputFormatOptions} normalize={normalizeLowerEnum} onInput={(outputFormatInput) => setModelDialog({ ...modelDialog, outputFormatInput })} onChange={(outputFormat, outputFormatInput = '') => setModelDialog({ ...modelDialog, outputFormat, outputFormatInput })} /></Field>
             <Field label="是否支持压缩质量" hint="启用后，用户可在 JPEG/WebP 输出格式下配置 1-100 的压缩质量。"><label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportsOutputCompression} onChange={(event) => setModelDialog({ ...modelDialog, supportsOutputCompression: event.target.checked })} /><span>{modelDialog.supportsOutputCompression ? '支持' : '不支持'}</span></label></Field>
             <Field label="审核等级"><TagInput values={modelDialog.moderation} input={modelDialog.moderationInput} placeholder="auto / low" options={moderationOptions} normalize={normalizeLowerEnum} onInput={(moderationInput) => setModelDialog({ ...modelDialog, moderationInput })} onChange={(moderation, moderationInput = '') => setModelDialog({ ...modelDialog, moderation, moderationInput })} /></Field>
@@ -346,10 +358,11 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
           <div className={adminPage.formGrid}>
             <Field label="测试模型"><select value={testDialog.modelId} onChange={(event) => setTestDialog({ ...testDialog, modelId: event.target.value, result: undefined, error: undefined })}>{(modelsByAccount[String(testDialog.account.id)] ?? []).filter((model) => model.enabled).map((model) => <option key={String(model.id)} value={String(model.id)}>{model.display_name || model.model_code}</option>)}</select></Field>
             <Field label="来源模式"><select value={testDialog.sourceMode} onChange={(event) => setTestDialog({ ...testDialog, sourceMode: event.target.value, result: undefined, error: undefined })}><option value="images">Images API</option><option value="codex_responses">Codex Responses</option></select></Field>
-            <Field label="尺寸模式"><select value={testDialog.sizeMode} onChange={(event) => setTestDialog({ ...testDialog, sizeMode: event.target.value, result: undefined, error: undefined })}><option value="ratio">按比例</option><option value="pixel">按像素</option></select></Field>
-            {testDialog.sizeMode === 'ratio' ? <><Field label="比例"><input value={testDialog.aspectRatio} onChange={(event) => setTestDialog({ ...testDialog, aspectRatio: event.target.value, result: undefined, error: undefined })} /></Field><Field label="基础分辨率"><input value={testDialog.baseResolution} onChange={(event) => setTestDialog({ ...testDialog, baseResolution: event.target.value, result: undefined, error: undefined })} /></Field></> : <Field label="像素尺寸"><input value={testDialog.requestedSize} onChange={(event) => setTestDialog({ ...testDialog, requestedSize: event.target.value, result: undefined, error: undefined })} /></Field>}
+			<Field label="尺寸模式"><select value={testDialog.sizeMode} onChange={(event) => setTestDialog({ ...testDialog, sizeMode: event.target.value, result: undefined, error: undefined })}><option value="auto">自动</option><option value="ratio">按比例</option><option value="pixel">按像素</option></select></Field>
+			{testDialog.sizeMode === 'ratio' ? <><Field label="比例"><input value={testDialog.aspectRatio} onChange={(event) => setTestDialog({ ...testDialog, aspectRatio: event.target.value, result: undefined, error: undefined })} /></Field><Field label="基础分辨率"><input value={testDialog.baseResolution} onChange={(event) => setTestDialog({ ...testDialog, baseResolution: event.target.value, result: undefined, error: undefined })} /></Field></> : testDialog.sizeMode === 'pixel' ? <Field label="像素尺寸"><input value={testDialog.requestedSize} onChange={(event) => setTestDialog({ ...testDialog, requestedSize: event.target.value, result: undefined, error: undefined })} /></Field> : null}
             <Field label="质量参数"><select value={testDialog.quality} onChange={(event) => setTestDialog({ ...testDialog, quality: event.target.value, result: undefined, error: undefined })}>{qualityOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
-            <Field label="输出格式"><select value={testDialog.outputFormat} onChange={(event) => setTestDialog({ ...testDialog, outputFormat: event.target.value, result: undefined, error: undefined })}>{outputFormatOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
+			<Field label="输出格式"><select value={testDialog.outputFormat} onChange={(event) => setTestDialog({ ...testDialog, outputFormat: event.target.value, result: undefined, error: undefined })}>{outputFormatOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
+			<Field label="背景"><select value={testDialog.background} onChange={(event) => setTestDialog({ ...testDialog, background: event.target.value, result: undefined, error: undefined })}><option value="">不传</option>{backgroundOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
             <Field label="压缩质量"><input type="number" min="0" max="100" value={testDialog.outputCompression} onChange={(event) => setTestDialog({ ...testDialog, outputCompression: event.target.value, result: undefined, error: undefined })} /></Field>
             <Field label="审核等级"><select value={testDialog.moderation} onChange={(event) => setTestDialog({ ...testDialog, moderation: event.target.value, result: undefined, error: undefined })}>{moderationOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
             <Field label="提示词"><textarea value={testDialog.prompt} onChange={(event) => setTestDialog({ ...testDialog, prompt: event.target.value, result: undefined, error: undefined })} rows={4} /></Field>
@@ -500,29 +513,38 @@ function editAccountDraft(row: ModelAccount): AccountDraft {
 }
 
 function newModelDraft(account: ModelAccount): ModelDraft {
-  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], base_resolution: ['auto', '1K', '2K'], baseResolutionInput: '', quality: ['auto'], qualityInput: '', maxReferenceImageCount: '5', maxImageCount: '1', sizeModes: ['ratio'], supportedRatios: defaultRatios, ratioInput: '', supportedPixelSizes: defaultPixelSizes, pixelInput: '', supportsCustomSize: false, outputFormat: ['png'], outputFormatInput: '', supportsOutputCompression: false, moderation: ['auto'], moderationInput: '', costPerImage: '0.00000', currency: 'USD', enabled: true }
+  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], base_resolution: ['1K', '2K'], baseResolutionInput: '', quality: ['auto'], qualityInput: '', maxReferenceImageCount: '5', maxImageCount: '1', sizeModes: ['ratio'], supportedRatios: defaultRatios, ratioInput: '', supportsCustomRatio: false, supportedPixelSizes: defaultPixelSizes, pixelInput: '', supportsCustomSize: false, minWidth: '512', maxWidth: '3840', minHeight: '512', maxHeight: '3840', supportedBackgrounds: ['auto'], outputFormat: ['png'], outputFormatInput: '', supportsOutputCompression: false, moderation: ['auto'], moderationInput: '', costPerImage: '0.00000', currency: 'USD', enabled: true }
 }
 
 function editModelDraft(account: ModelAccount, row: ModelAccountModel): ModelDraft {
-  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, base_resolution: normalizeBaseResolution(row.base_resolution), baseResolutionInput: '', quality: normalizeLowerEnums(row.quality ?? ['auto']), qualityInput: '', maxReferenceImageCount: String(row.max_reference_image_count ?? 5), maxImageCount: String(row.max_image_count ?? 1), sizeModes: row.size_modes?.length ? row.size_modes : ['ratio'], supportedRatios: row.supported_ratios?.length ? row.supported_ratios : defaultRatios, ratioInput: '', supportedPixelSizes: row.supported_pixel_sizes?.length ? row.supported_pixel_sizes : defaultPixelSizes, pixelInput: '', supportsCustomSize: Boolean(row.supports_custom_size), outputFormat: normalizeLowerEnums(row.output_format ?? ['png']), outputFormatInput: '', supportsOutputCompression: Boolean(row.supports_output_compression), moderation: normalizeLowerEnums(row.moderation ?? ['auto']), moderationInput: '', costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
+  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, base_resolution: normalizeBaseResolution(row.base_resolution), baseResolutionInput: '', quality: normalizeLowerEnums(row.quality ?? ['auto']), qualityInput: '', maxReferenceImageCount: String(row.max_reference_image_count ?? 5), maxImageCount: String(row.max_image_count ?? 1), sizeModes: row.size_modes?.length ? row.size_modes : ['ratio'], supportedRatios: row.supported_ratios?.length ? row.supported_ratios : defaultRatios, ratioInput: '', supportsCustomRatio: Boolean(row.supports_custom_ratio), supportedPixelSizes: row.supported_pixel_sizes?.length ? row.supported_pixel_sizes : defaultPixelSizes, pixelInput: '', supportsCustomSize: Boolean(row.supports_custom_size), minWidth: String(row.min_width ?? 512), maxWidth: String(row.max_width ?? 3840), minHeight: String(row.min_height ?? 512), maxHeight: String(row.max_height ?? 3840), supportedBackgrounds: normalizeLowerEnums(row.supported_backgrounds ?? []), outputFormat: normalizeLowerEnums(row.output_format ?? ['png']), outputFormatInput: '', supportsOutputCompression: Boolean(row.supports_output_compression), moderation: normalizeLowerEnums(row.moderation ?? ['auto']), moderationInput: '', costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
 }
 
 function newTestImageDialog(account: ModelAccount, models: ModelAccountModel[]): TestImageDialog {
   const enabledModels = models.filter((model) => model.enabled)
   const selected = enabledModels.find((model) => model.model_code === 'gpt-image-2') ?? enabledModels[0] ?? models[0]
-  const sizeMode = selected?.size_modes?.includes('pixel') ? 'pixel' : 'ratio'
-  return { account, modelId: selected ? String(selected.id) : '', prompt: defaultTestPrompt, sourceMode: sourceModeFromExtra(account.extra), sizeMode, requestedSize: selected?.supported_pixel_sizes?.[0] ?? '1024x1024', baseResolution: normalizeBaseResolution(selected?.base_resolution ?? ['1K']).find((item) => item !== 'auto') ?? '1K', quality: selected?.quality?.[0] ?? 'auto', outputFormat: selected?.output_format?.[0] ?? 'png', outputCompression: String(selected?.output_compression ?? 100), moderation: selected?.moderation?.[0] ?? 'auto', aspectRatio: selected?.supported_ratios?.[0] ?? '1:1' }
+  const modes = selected?.size_modes ?? []
+  const sizeMode = modes.includes('auto') ? 'auto' : modes.includes('ratio') ? 'ratio' : 'pixel'
+  const background = selected?.supported_backgrounds?.[0] ?? ''
+  const configuredFormats = normalizeLowerEnums(selected?.output_format ?? ['png'])
+  const outputFormat = background === 'transparent'
+    ? configuredFormats.find((format) => format === 'png' || format === 'webp') ?? 'png'
+    : configuredFormats[0] ?? 'png'
+  return { account, modelId: selected ? String(selected.id) : '', prompt: defaultTestPrompt, sourceMode: sourceModeFromExtra(account.extra), sizeMode, requestedSize: selected?.supported_pixel_sizes?.[0] ?? '1024x1024', baseResolution: normalizeBaseResolution(selected?.base_resolution ?? ['1K'])[0] ?? '1K', quality: selected?.quality?.[0] ?? 'auto', outputFormat, background, outputCompression: String(selected?.output_compression ?? 100), moderation: selected?.moderation?.[0] ?? 'auto', aspectRatio: selected?.supported_ratios?.[0] ?? '1:1' }
 }
 
-function toggleSizeMode(draft: ModelDraft, mode: 'ratio' | 'pixel', checked: boolean): ModelDraft {
+function toggleSizeMode(draft: ModelDraft, mode: 'auto' | 'ratio' | 'pixel', checked: boolean): ModelDraft {
   const next = checked ? Array.from(new Set([...draft.sizeModes, mode])) : draft.sizeModes.filter((item) => item !== mode)
   if (mode === 'pixel' && checked) {
     return { ...draft, sizeModes: next, supportedPixelSizes: draft.supportedPixelSizes.length ? draft.supportedPixelSizes : defaultPixelSizes }
   }
   if (mode === 'pixel' && !checked) {
-    return { ...draft, sizeModes: next.length ? next : ['ratio'], supportsCustomSize: false }
+    return { ...draft, sizeModes: next.length ? next : ['pixel'], supportsCustomSize: false }
   }
-  return { ...draft, sizeModes: next.length ? next : ['ratio'] }
+  if (mode === 'ratio' && !checked) {
+    return { ...draft, sizeModes: next.length ? next : ['ratio'], supportsCustomRatio: false }
+  }
+  return { ...draft, sizeModes: next.length ? next : ['auto'] }
 }
 
 function TagInput({
@@ -604,7 +626,7 @@ function normalizeBaseResolution(values: string[]) {
 function normalizeBaseResolutionValue(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return ''
-  if (trimmed.toLowerCase() === 'auto') return 'auto'
+  if (trimmed.toLowerCase() === 'auto') return ''
   return trimmed.toUpperCase()
 }
 
@@ -625,8 +647,8 @@ function normalizeRatio(value: string) {
 
 function normalizePixelSize(value: string) {
   const parts = value.trim().toLowerCase().replace('×', 'x').split('x').map((item) => Number(item))
-  if (parts.length !== 2 || parts.some((item) => !Number.isFinite(item) || item <= 0)) return ''
-  return `${Math.round(parts[0])}x${Math.round(parts[1])}`
+  if (parts.length !== 2 || parts.some((item) => !Number.isInteger(item) || item <= 0)) return ''
+  return `${parts[0]}x${parts[1]}`
 }
 
 function gcd(a: number, b: number): number {

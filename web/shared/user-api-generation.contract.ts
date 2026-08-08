@@ -84,7 +84,7 @@ const capability = normalizeCapabilities({
 
 const model = capability.model_groups[0]
 if (!model) throw new Error('Go-style capability should expose its model group')
-assertDeepEqual(model.base_resolution, ['auto', '1k', '2k'], 'quality buckets should become base-resolution options')
+assertDeepEqual(model.base_resolution, ['1k', '2k'], 'base-resolution options must omit legacy auto')
 assertDeepEqual(model.auto_base_resolution_by_task_type, { text_to_image: '2k', image_edit: '1k' }, 'resolved auto buckets should survive capability normalization')
 assertDeepEqual(model.qualities, ['auto', '1k', '2k'], 'legacy quality aliases should remain available')
 assertDeepEqual(model.aspect_ratios, ['1:1', '16:9'], 'Go aspect ratios should survive normalization')
@@ -96,13 +96,15 @@ assertDeepEqual(model.supports_output_compression, false, 'missing compression s
 assertDeepEqual(model.supports_custom_size, true, 'Go custom-size support should survive normalization')
 assertDeepEqual(model.capabilities_by_task_type, {
   text_to_image: {
-    base_resolution: ['auto', '2k'], auto_base_resolution: '2k', size_modes: ['ratio'], aspect_ratios: ['1:1'], pixel_sizes: [],
-    quality: ['high'], output_format: ['jpeg'], supports_output_compression: true, supports_custom_size: false,
+    base_resolution: ['2k'], auto_base_resolution: '2k', size_modes: ['ratio'], aspect_ratios: ['1:1'], pixel_sizes: [],
+    quality: ['high'], output_format: ['jpeg'], supports_output_compression: true, supports_custom_size: false, supports_custom_ratio: false, supported_backgrounds: [],
+    min_width: undefined, max_width: undefined, min_height: undefined, max_height: undefined,
     moderation: ['auto'], max_output_image_count: 2, max_reference_image_count: 0,
   },
   image_edit: {
-    base_resolution: ['auto', '1k'], auto_base_resolution: '1k', size_modes: ['pixel'], aspect_ratios: [], pixel_sizes: ['1024x1024'],
-    quality: ['low'], output_format: ['webp'], supports_output_compression: false, supports_custom_size: true,
+    base_resolution: ['1k'], auto_base_resolution: '1k', size_modes: ['pixel'], aspect_ratios: [], pixel_sizes: ['1024x1024'],
+    quality: ['low'], output_format: ['webp'], supports_output_compression: false, supports_custom_size: true, supports_custom_ratio: false, supported_backgrounds: [],
+    min_width: undefined, max_width: undefined, min_height: undefined, max_height: undefined,
     moderation: ['low'], max_output_image_count: 1, max_reference_image_count: 3,
   },
 }, 'complete task-scoped capabilities should survive normalization')
@@ -110,6 +112,27 @@ assertAbsent(model, ['quality', 'output_format', 'moderation'], 'normalization m
 
 const legacyCapability = normalizeCapabilities({ ModelGroups: [{ Code: 'legacy', TaskTypes: ['text_to_image'] }] })
 assertDeepEqual(legacyCapability.model_groups[0]?.supports_custom_size, false, 'missing custom-size support should default to false')
+
+const generationContractCapability = normalizeCapabilities({ ModelGroups: [{
+  Code: 'generation-contract', TaskTypes: ['text_to_image'], BaseResolution: ['1k'], SizeModes: ['auto', 'ratio', 'pixel'],
+  SupportsCustomRatio: true, SupportedBackgrounds: ['auto', 'transparent'], MinWidth: 512, MaxWidth: 2048, MinHeight: 512, MaxHeight: 1536,
+}] })
+const generationContractModel = generationContractCapability.model_groups[0]
+assertDeepEqual(generationContractModel?.size_modes, ['auto', 'ratio', 'pixel'], 'auto size mode must survive capability normalization')
+assertDeepEqual(generationContractModel?.supported_backgrounds, ['auto', 'transparent'], 'background capability must survive normalization')
+if (!generationContractModel?.supports_custom_ratio || generationContractModel.min_width !== 512 || generationContractModel.max_height !== 1536) {
+  throw new Error(`custom ratio and pixel bounds must survive normalization: ${JSON.stringify(generationContractModel)}`)
+}
+
+const autoWire = buildEstimateWireRequest({
+  task_type: 'text_to_image', route_model_code: 'generation-contract', size_mode: 'auto',
+  quality: 'auto', output_format: 'png', background: 'auto', moderation: 'auto', image_count: 1,
+})
+assertDeepEqual(autoWire, {
+  task_type: 'text_to_image', route_model_code: 'generation-contract', size_mode: 'auto', quality: 'auto',
+  output_format: 'png', background: 'auto', output_compression: 100, moderation: 'auto', requested_output_image_count: 1, reference_image_count: 0,
+}, 'auto mode must omit every size field from the wire request')
+assertAbsent(autoWire, ['base_resolution', 'aspect_ratio', 'requested_size'], 'auto mode must not serialize stale size fields')
 
 const ratioRequest = {
   task_type: 'image_edit',
@@ -120,6 +143,7 @@ const ratioRequest = {
   aspect_ratio: '16:9',
   pixel_size: '999x999',
   output_format: 'webp',
+  background: 'transparent',
   output_compression: 42,
   moderation: 'low',
   image_count: 2,
@@ -144,9 +168,9 @@ assertDeepEqual(estimateWire, {
   base_resolution: '2K',
   quality: 'high',
   output_format: 'webp',
+  background: 'transparent',
   output_compression: 42,
   moderation: 'low',
-  requested_size: 'auto',
   requested_output_image_count: 2,
   reference_image_count: 1,
 }, 'estimate conversion should emit the complete current Go wire contract')
@@ -171,9 +195,9 @@ assertDeepEqual(createWire, {
     base_resolution: '2K',
     quality: 'high',
     output_format: 'webp',
+    background: 'transparent',
     output_compression: 42,
     moderation: 'low',
-    requested_size: 'auto',
     requested_output_image_count: 2,
     reference_asset_ids: ['ref-1'],
     response_mode: 'async',

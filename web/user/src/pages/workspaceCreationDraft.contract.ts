@@ -26,13 +26,24 @@ if (normalized.notices.length < 4) throw new Error('every unsupported restored f
 
 const customSizeCapability: Capability = {
   task_types: ['text_to_image'], aspect_ratios: ['1:1'], pixel_sizes: ['1024x1024'], max_image_count: 1,
-  model_groups: [{ id: 'custom', code: 'custom', name: 'Custom', task_types: ['text_to_image'], base_resolution: ['1K'], size_modes: ['pixel'], pixel_sizes: ['1024x1024'], supports_custom_size: true, quality: ['auto'], output_format: ['png'], moderation: ['auto'], supports_output_compression: false, max_output_image_count: 1, max_reference_image_count: 0, prices: [], supports_reference: false }],
+  model_groups: [{ id: 'custom', code: 'custom', name: 'Custom', task_types: ['text_to_image'], base_resolution: ['1K'], size_modes: ['pixel'], pixel_sizes: ['1024x1024'], supports_custom_size: true, min_width: 512, max_width: 2048, min_height: 512, max_height: 1536, quality: ['auto'], output_format: ['png'], moderation: ['auto'], supports_output_compression: false, max_output_image_count: 1, max_reference_image_count: 0, prices: [], supports_reference: false }],
 }
 const restoredCustomSize = normalizeWorkspaceCreationDraft({
   version: 1, prompt: 'custom dimensions', task_type: 'text_to_image', route_model_code: 'custom', size_mode: 'pixel', pixel_size: '1001x777',
 }, customSizeCapability)
-if (restoredCustomSize.values.pixel_size !== '1008x784') {
-  throw new Error(`custom-enabled drafts must preserve their normalized size, got ${JSON.stringify(restoredCustomSize)}`)
+if (restoredCustomSize.values.pixel_size !== '1024x1024') {
+  throw new Error(`invalid custom dimensions must fall back without rounding, got ${JSON.stringify(restoredCustomSize)}`)
+}
+
+const autoDraft = normalizeWorkspaceCreationDraft({
+  version: 1, prompt: 'automatic dimensions', task_type: 'text_to_image', route_model_code: 'auto-model', size_mode: 'auto',
+  base_resolution: '1K', aspect_ratio: '16:9', pixel_size: '1024x1024', output_format: 'jpeg', background: 'transparent',
+}, {
+  task_types: ['text_to_image'], aspect_ratios: ['1:1'], max_image_count: 1,
+  model_groups: [{ id: 'auto-model', code: 'auto-model', name: 'Auto', task_types: ['text_to_image'], base_resolution: ['1K'], size_modes: ['auto', 'ratio'], aspect_ratios: ['1:1'], supports_custom_ratio: true, quality: ['auto'], output_format: ['png', 'jpeg'], supported_backgrounds: ['auto', 'transparent'], moderation: ['auto'], supports_output_compression: false, max_output_image_count: 1, max_reference_image_count: 0, prices: [], supports_reference: false }],
+})
+if (autoDraft.values.size_mode !== 'auto' || autoDraft.values.base_resolution || autoDraft.values.aspect_ratio || autoDraft.values.pixel_size || autoDraft.values.background !== 'auto') {
+  throw new Error(`auto mode must clear size fields and resolve transparent JPEG conflict: ${JSON.stringify(autoDraft)}`)
 }
 
 const presetOnlySize = normalizeWorkspaceCreationDraft({

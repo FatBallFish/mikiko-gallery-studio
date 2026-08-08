@@ -4,7 +4,11 @@ import { normalizeCapabilities, toTask } from '../../../shared/user-api'
 import {
   normalizeWorkspaceOutputParameters,
   normalizeWorkspaceCustomSize,
+  workspaceBackgroundForFormat,
+  workspaceBackgroundOptions,
   workspaceCustomSizeSupported,
+  workspaceCustomRatioSupported,
+  workspaceCustomRatioValid,
   workspaceCompressionVisible,
   workspaceModelForTask,
   workspaceOutputOptions,
@@ -18,8 +22,13 @@ for (const expected of [
   'Width',
   'Height',
   'effectivePixelSize',
-  "pixel_size: sizeMode === 'pixel' ? effectivePixelSize : undefined",
-  '由于模型限制，最终输出会自动规整到合法尺寸：宽高均为 16 的倍数，最大边长 3840px，宽高比不超过 3:1，总像素限制为 655360-8294400。',
+  "sizeMode === 'auto' ? true",
+  '自定义比例',
+  'workspace-custom-ratio',
+  'backgroundOptions.map',
+  "value === 'transparent'",
+  "...(sizeMode === 'pixel' ? { pixel_size: effectivePixelSize } : {})",
+  '宽高必须为 16 的倍数',
 ]) {
   if (!workspaceSource.includes(expected)) throw new Error(`workspace custom size UI must include ${expected}`)
 }
@@ -137,8 +146,20 @@ if (clamped.outputCompression !== 100) {
 }
 
 const customSize = normalizeWorkspaceCustomSize('1001', '777')
-if (!customSize.valid || customSize.size !== '1008x784') {
-  throw new Error(`custom workspace size should use shared normalization, got ${JSON.stringify(customSize)}`)
+if (customSize.valid) {
+  throw new Error(`custom workspace size must reject rather than normalize, got ${JSON.stringify(customSize)}`)
+}
+
+const exactCustomSize = normalizeWorkspaceCustomSize('1008', '784', { ...model, min_width: 512, max_width: 2048, min_height: 512, max_height: 1536 })
+if (!exactCustomSize.valid || exactCustomSize.size !== '1008x784') throw new Error(`legal custom size should remain exact: ${JSON.stringify(exactCustomSize)}`)
+
+const backgroundModel = { ...model, size_modes: ['auto', 'ratio'], supports_custom_ratio: true, supported_backgrounds: ['auto', 'opaque', 'transparent'] } satisfies CapabilityModelGroup
+if (!workspaceCustomRatioSupported(backgroundModel) || !workspaceCustomRatioValid('7:5') || workspaceCustomRatioValid('4:1') || workspaceCustomRatioValid('1.5:1')) {
+  throw new Error('custom ratio capability or validation drifted')
+}
+if (workspaceBackgroundOptions(backgroundModel).join(',') !== 'auto,opaque,transparent') throw new Error('background options must be capability-driven')
+if (workspaceBackgroundForFormat(backgroundModel, 'transparent', 'jpeg') !== 'auto' || workspaceBackgroundForFormat(backgroundModel, 'transparent', 'webp') !== 'transparent') {
+  throw new Error('transparent background must require PNG or WebP')
 }
 
 if (normalizeWorkspaceCustomSize('1001.5', '777').valid || normalizeWorkspaceCustomSize('', '777').valid) {

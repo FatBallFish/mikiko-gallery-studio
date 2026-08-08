@@ -1,6 +1,5 @@
 import type { Capability, CapabilityModelGroup, ImageTaskType } from '../../../shared/api-types'
-import { normalizeCustomImageSize } from '../../../shared/image-size'
-import { workspaceCustomSizeSupported, workspaceModelForTask } from './workspaceParameters'
+import { workspaceBackgroundForFormat, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, normalizeWorkspaceCustomSize } from './workspaceParameters'
 
 export const workspaceCreationDraftStorageKey = 'pic-gallery-workspace-creation-draft-v1'
 const workspaceCreationDraftHistoryKey = '__picGalleryWorkspaceCreationDraft'
@@ -10,12 +9,13 @@ export type WorkspaceCreationDraft = {
   prompt: string
   task_type: ImageTaskType
   route_model_code?: string
-  size_mode?: 'ratio' | 'pixel' | string
+	size_mode?: 'auto' | 'ratio' | 'pixel' | string
   base_resolution?: string
   aspect_ratio?: string
   pixel_size?: string
   quality?: string
-  output_format?: string
+	output_format?: string
+	background?: string
   output_compression?: number
   moderation?: string
   image_count?: number
@@ -25,7 +25,7 @@ export type WorkspaceCreationDraft = {
 export type NormalizedWorkspaceCreationDraft = {
   values: Required<Pick<WorkspaceCreationDraft,
     'version' | 'prompt' | 'task_type' | 'route_model_code' | 'size_mode' | 'base_resolution' |
-    'aspect_ratio' | 'pixel_size' | 'quality' | 'output_format' | 'output_compression' |
+		'aspect_ratio' | 'pixel_size' | 'quality' | 'output_format' | 'background' | 'output_compression' |
     'moderation' | 'image_count' | 'reference_asset_ids'>>
   notices: string[]
 }
@@ -40,7 +40,8 @@ export type WorkspaceCreationSnapshot = {
   base_resolution?: string | null
   quality?: string | null
   aspect_ratio?: string | null
-  output_format?: string | null
+	output_format?: string | null
+	background?: string | null
   output_compression?: number | null
   moderation?: string | null
   requested_output_image_count?: number | null
@@ -63,7 +64,8 @@ export function workspaceCreationDraftFromSnapshot(snapshot: WorkspaceCreationSn
     aspect_ratio: clean(snapshot.aspect_ratio),
     pixel_size: sizeMode === 'pixel' ? clean(snapshot.requested_size ?? snapshot.aspect_ratio) : undefined,
     quality: clean(snapshot.quality),
-    output_format: clean(snapshot.output_format),
+		output_format: clean(snapshot.output_format),
+		background: clean(snapshot.background),
     output_compression: typeof snapshot.output_compression === 'number' ? snapshot.output_compression : undefined,
     moderation: clean(snapshot.moderation),
     image_count: snapshot.requested_output_image_count ?? snapshot.image_count ?? 1,
@@ -118,15 +120,19 @@ export function normalizeWorkspaceCreationDraft(
   if (!model) throw new Error('当前没有可用于该任务类型的模型。')
   if (model.code !== clean(draft.route_model_code)) notices.push(`模型 ${clean(draft.route_model_code) || '未指定'} 当前不可用，已切换为 ${model.name || model.code}。`)
 
-  const sizeModes = unique(model.size_modes?.filter((item) => item === 'ratio' || item === 'pixel') ?? [])
-  const sizeMode = chooseOption(sizeModes.length ? sizeModes : ['ratio'], draft.size_mode, '尺寸模式', notices)
-  const baseResolution = chooseOption(model.base_resolution ?? capability.base_resolution ?? [], draft.base_resolution, '基础分辨率', notices)
+	const sizeModes = unique(model.size_modes?.filter((item) => item === 'auto' || item === 'ratio' || item === 'pixel') ?? [])
+	const sizeMode = chooseOption(sizeModes.length ? sizeModes : ['ratio'], draft.size_mode, '尺寸模式', notices)
+	const baseResolution = sizeMode === 'ratio' ? chooseOption(model.base_resolution ?? capability.base_resolution ?? [], draft.base_resolution, '基础分辨率', notices) : ''
   const aspectRatios = model.aspect_ratios?.length ? model.aspect_ratios : capability.aspect_ratios
   const pixelSizes = model.pixel_sizes?.length ? model.pixel_sizes : capability.pixel_sizes ?? []
-  const aspectRatio = sizeMode === 'ratio' ? chooseOption(aspectRatios, draft.aspect_ratio, '画面比例', notices) : ''
+	const requestedRatio = clean(draft.aspect_ratio)
+	const customRatio = sizeMode === 'ratio' && workspaceCustomRatioSupported(model) && requestedRatio && workspaceCustomRatioValid(requestedRatio)
+	const aspectRatio = sizeMode === 'ratio' ? customRatio ? requestedRatio : chooseOption(aspectRatios, draft.aspect_ratio, '画面比例', notices) : ''
   const pixelSize = sizeMode === 'pixel' ? normalizeDraftPixelSize(model, pixelSizes, draft.pixel_size, notices) : ''
   const quality = chooseOption(model.quality ?? model.qualities ?? capability.quality ?? capability.qualities ?? ['auto'], draft.quality, '质量', notices)
-  const outputFormat = chooseOption(model.output_format ?? capability.output_format ?? ['png'], draft.output_format, '输出格式', notices)
+	const outputFormat = chooseOption(model.output_format ?? capability.output_format ?? ['png'], draft.output_format, '输出格式', notices)
+	const background = workspaceBackgroundForFormat(model, clean(draft.background) ?? '', outputFormat)
+	if (clean(draft.background) && background !== clean(draft.background)) notices.push(`背景 ${clean(draft.background)} 与当前输出格式不兼容，已调整为 ${background || '不传'}。`)
   const moderation = chooseOption(model.moderation ?? capability.moderation ?? ['auto'], draft.moderation, '内容审核', notices)
 
   const requestedCount = finiteInteger(draft.image_count, 1)
@@ -155,7 +161,8 @@ export function normalizeWorkspaceCreationDraft(
       aspect_ratio: aspectRatio,
       pixel_size: pixelSize,
       quality,
-      output_format: outputFormat,
+			output_format: outputFormat,
+			background,
       output_compression: outputCompression,
       moderation,
       image_count: imageCount,
@@ -179,7 +186,7 @@ function parseWorkspaceCreationDraft(value: unknown): WorkspaceCreationDraft | n
   const draft = value as Partial<WorkspaceCreationDraft>
   if (draft.version !== 1 || typeof draft.prompt !== 'string') return null
   if (draft.task_type !== 'text_to_image' && draft.task_type !== 'image_edit') return null
-  const optionalStrings = [draft.route_model_code, draft.size_mode, draft.base_resolution, draft.aspect_ratio, draft.pixel_size, draft.quality, draft.output_format, draft.moderation]
+	const optionalStrings = [draft.route_model_code, draft.size_mode, draft.base_resolution, draft.aspect_ratio, draft.pixel_size, draft.quality, draft.output_format, draft.background, draft.moderation]
   if (optionalStrings.some((item) => item !== undefined && typeof item !== 'string')) return null
   if (draft.output_compression !== undefined && typeof draft.output_compression !== 'number') return null
   if (draft.image_count !== undefined && typeof draft.image_count !== 'number') return null
@@ -194,7 +201,8 @@ function parseWorkspaceCreationDraft(value: unknown): WorkspaceCreationDraft | n
     aspect_ratio: clean(draft.aspect_ratio),
     pixel_size: clean(draft.pixel_size),
     quality: clean(draft.quality),
-    output_format: clean(draft.output_format),
+		output_format: clean(draft.output_format),
+		background: clean(draft.background),
     output_compression: typeof draft.output_compression === 'number' ? draft.output_compression : undefined,
     moderation: clean(draft.moderation),
     image_count: typeof draft.image_count === 'number' ? draft.image_count : undefined,
@@ -226,10 +234,9 @@ function normalizeDraftPixelSize(model: CapabilityModelGroup, presets: string[],
   if (workspaceCustomSizeSupported(model) && requestedSize) {
     const match = requestedSize.match(/^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/)
     if (match) {
-      const normalized = normalizeCustomImageSize(Number(match[1]), Number(match[2]))
-      if (normalized.valid) {
-        if (normalized.size !== requestedSize) notices.push(`像素尺寸 ${requestedSize} 已规整为 ${normalized.size}。`)
-        return normalized.size
+		const normalized = normalizeWorkspaceCustomSize(match[1], match[2], model)
+		if (normalized.valid) {
+			return normalized.size
       }
     }
   }

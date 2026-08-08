@@ -27,12 +27,12 @@ import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHi
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
 import { projectWorkspaceImageDetail } from './workspaceImageDetail'
 import { referenceImageAccept, referenceImagePolicy, validateReferenceImageFile } from './referenceImageUpload'
-import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspaceRatioPixelEstimate } from './workspaceParameters'
+import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceBackgroundForFormat, workspaceBackgroundOptions, workspaceCompressionVisible, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspaceRatioPixelEstimate } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 
 type OutputTab = 'current' | 'history'
-type WorkspaceSizeMode = 'ratio' | 'pixel'
+type WorkspaceSizeMode = 'auto' | 'ratio' | 'pixel'
 type WorkspacePixelSelection = 'preset' | 'custom'
 type RestoreParameters = {
   routeModelCode?: string
@@ -41,7 +41,8 @@ type RestoreParameters = {
   aspectRatio?: string
   pixelSize?: string
   quality?: string
-  outputFormat?: string
+	outputFormat?: string
+	background?: string
   outputCompression?: number
   moderation?: string
   imageCount?: number
@@ -64,7 +65,7 @@ function ratioOptions(model: CapabilityModelGroup | undefined, capability: Capab
 }
 
 function sizeModeOptions(model: CapabilityModelGroup | undefined): WorkspaceSizeMode[] {
-  const modes = model?.size_modes?.filter((mode): mode is WorkspaceSizeMode => mode === 'ratio' || mode === 'pixel') ?? []
+	const modes = model?.size_modes?.filter((mode): mode is WorkspaceSizeMode => mode === 'auto' || mode === 'ratio' || mode === 'pixel') ?? []
   return modes.length ? Array.from(new Set(modes)) : ['ratio']
 }
 
@@ -290,14 +291,16 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [model, setModel] = useState('')
   const [sizeMode, setSizeMode] = useState<WorkspaceSizeMode>('ratio')
   const [baseResolution, setBaseResolution] = useState('')
-  const [ratio, setRatio] = useState('')
+	const [ratio, setRatio] = useState('')
+	const [customRatio, setCustomRatio] = useState('')
   const [pixelSize, setPixelSize] = useState('')
   const [pixelSelection, setPixelSelection] = useState<WorkspacePixelSelection>('preset')
   const [customWidth, setCustomWidth] = useState('')
   const [customHeight, setCustomHeight] = useState('')
   const [count, setCount] = useState(1)
   const [quality, setQuality] = useState('auto')
-  const [outputFormat, setOutputFormat] = useState('png')
+	const [outputFormat, setOutputFormat] = useState('png')
+	const [background, setBackground] = useState('')
   const [outputCompression, setOutputCompression] = useState(100)
   const [moderation, setModeration] = useState('auto')
   const [estimateSnapshot, setEstimateSnapshot] = useState<WorkspaceEstimateSnapshot>({ key: '', estimate: null, error: '' })
@@ -554,12 +557,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const values = normalized.values
     restoreParametersRef.current = {
       routeModelCode: values.route_model_code,
-      sizeMode: values.size_mode === 'pixel' ? 'pixel' : 'ratio',
+		sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio',
       baseResolution: values.base_resolution,
       aspectRatio: values.aspect_ratio,
       pixelSize: values.pixel_size,
       quality: values.quality,
-      outputFormat: values.output_format,
+		outputFormat: values.output_format,
+		background: values.background,
       outputCompression: values.output_compression,
       moderation: values.moderation,
       imageCount: values.image_count,
@@ -567,12 +571,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setPrompt(values.prompt)
     setNegative('')
     setModel(values.route_model_code)
-    setSizeMode(values.size_mode === 'pixel' ? 'pixel' : 'ratio')
+	setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
     setBaseResolution(values.base_resolution)
     setRatio(values.aspect_ratio)
     setPixelSize(values.pixel_size)
     setQuality(values.quality)
-    setOutputFormat(values.output_format)
+	setOutputFormat(values.output_format)
+	setBackground(values.background)
     setOutputCompression(values.output_compression)
     setModeration(values.moderation)
     setCount(values.image_count)
@@ -622,16 +627,19 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const baseResolutionOptionsForModel = useMemo(() => baseResolutionOptions(selectedModel), [selectedModel])
   const ratios = useMemo(() => ratioOptions(selectedModel, capability), [selectedModel, capability])
   const pixelSizes = useMemo(() => pixelOptions(selectedModel, capability), [selectedModel, capability])
-  const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
+	const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
+	const backgroundOptions = useMemo(() => workspaceBackgroundOptions(selectedModel), [selectedModel])
   const compressionVisible = workspaceCompressionVisible(selectedModel, outputFormat)
   const customSizeSupported = workspaceCustomSizeSupported(selectedModel) && sizeModes.includes('pixel')
-  const customSizeNormalization = useMemo(() => normalizeWorkspaceCustomSize(customWidth, customHeight), [customWidth, customHeight])
+	const customSizeNormalization = useMemo(() => normalizeWorkspaceCustomSize(customWidth, customHeight, selectedModel), [customWidth, customHeight, selectedModel])
   const effectivePixelSize = pixelSelection === 'custom' && customSizeSupported
     ? customSizeNormalization.valid ? customSizeNormalization.size : ''
-    : pixelSize
-  const ratioPixelEstimate = useMemo(
-    () => workspaceRatioPixelEstimate(baseResolution, ratio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
-    [baseResolution, ratio, selectedModel, taskType],
+		: pixelSize
+	const customRatioSupported = workspaceCustomRatioSupported(selectedModel) && sizeModes.includes('ratio')
+	const effectiveRatio = ratio === 'custom' ? customRatio : ratio
+	const ratioPixelEstimate = useMemo(
+		() => workspaceRatioPixelEstimate(baseResolution, effectiveRatio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
+		[baseResolution, effectiveRatio, selectedModel, taskType],
   )
 
   useEffect(() => {
@@ -646,7 +654,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
     setSizeMode((current) => restoreParameters?.sizeMode && sizeModes.includes(restoreParameters.sizeMode) ? restoreParameters.sizeMode : sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
     setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
-    setRatio(restoreParameters?.aspectRatio && ratios.includes(restoreParameters.aspectRatio) ? restoreParameters.aspectRatio : ratios[0] ?? '')
+	const restoredRatio = restoreParameters?.aspectRatio
+	if (customRatioSupported && restoredRatio && !ratios.includes(restoredRatio) && workspaceCustomRatioValid(restoredRatio)) {
+		setRatio('custom')
+		setCustomRatio(restoredRatio)
+	} else {
+		setRatio(restoredRatio && ratios.includes(restoredRatio) ? restoredRatio : ratios[0] ?? '')
+		setCustomRatio('')
+	}
     const restoredPixelSize = restoreParameters?.pixelSize
     const restoredCustomDimensions = customSizeSupported && restoredPixelSize && !pixelSizes.includes(restoredPixelSize)
       ? parsePixelDimensions(restoredPixelSize)
@@ -662,12 +677,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
     setPixelSize(restoredPixelSize && pixelSizes.includes(restoredPixelSize) ? restoredPixelSize : pixelSizes[0] ?? '')
     setQuality(matchWorkspaceCapabilityOption(outputOptions.quality, restoreParameters?.quality) ?? outputOptions.quality[0])
-    setOutputFormat(matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0])
+	setOutputFormat(matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0])
+	setBackground(workspaceBackgroundForFormat(selectedModel, restoreParameters?.background ?? background, matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0]))
     setOutputCompression(restoreParameters?.outputCompression ?? 100)
     setModeration(matchWorkspaceCapabilityOption(outputOptions.moderation, restoreParameters?.moderation) ?? outputOptions.moderation[0])
     setCount((current) => normalizeWorkspaceImageCount(restoreParameters?.imageCount ?? current))
     restoreParametersRef.current = null
-  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions, customSizeSupported])
+  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions, customSizeSupported, customRatioSupported])
 
   useEffect(() => {
     if (!selectedModel) return
@@ -675,12 +691,17 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (normalized.quality !== quality) setQuality(normalized.quality)
     if (normalized.outputFormat !== outputFormat) setOutputFormat(normalized.outputFormat)
     if (normalized.outputCompression !== outputCompression) setOutputCompression(normalized.outputCompression)
-    if (normalized.moderation !== moderation) setModeration(normalized.moderation)
+	if (normalized.moderation !== moderation) setModeration(normalized.moderation)
   }, [selectedModel, quality, outputFormat, outputCompression, moderation])
 
-  const sizeParametersReady = sizeMode === 'pixel'
-    ? Boolean(effectivePixelSize && (pixelSelection === 'custom' ? customSizeSupported && customSizeNormalization.valid : pixelSizes.includes(pixelSize)))
-    : Boolean(baseResolution && ratio && baseResolutionOptionsForModel.includes(baseResolution) && ratios.includes(ratio))
+	useEffect(() => {
+		const next = workspaceBackgroundForFormat(selectedModel, background, outputFormat)
+		if (next !== background) setBackground(next)
+	}, [selectedModel, background, outputFormat])
+
+	const sizeParametersReady = sizeMode === 'auto' ? true : sizeMode === 'pixel'
+		? Boolean(effectivePixelSize && (pixelSelection === 'custom' ? customSizeSupported && customSizeNormalization.valid : pixelSizes.includes(pixelSize)))
+		: Boolean(baseResolution && effectiveRatio && baseResolutionOptionsForModel.includes(baseResolution) && (ratios.includes(effectiveRatio) || customRatioSupported && workspaceCustomRatioValid(effectiveRatio)))
 
   const parametersReady = Boolean(
     selectedModel
@@ -690,25 +711,26 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	&& outputOptions.quality.includes(quality)
 	&& outputOptions.outputFormat.includes(outputFormat)
 	&& outputOptions.moderation.includes(moderation)
+	&& (!background || backgroundOptions.includes(background))
 	&& (!compressionVisible || (outputCompression >= 1 && outputCompression <= 100))
     && count >= 1
     && requiredReferencesReady,
   )
 
   const estimatePayload = useMemo<EstimateRequest>(() => ({
-    task_type: taskType,
-    route_model_code: model,
-	size_mode: sizeMode,
-	base_resolution: sizeMode === 'ratio' ? baseResolution : 'auto',
+		task_type: taskType,
+		route_model_code: model,
+		size_mode: sizeMode,
+		...(sizeMode === 'ratio' ? { base_resolution: baseResolution, aspect_ratio: effectiveRatio } : {}),
+		...(sizeMode === 'pixel' ? { pixel_size: effectivePixelSize } : {}),
 	quality,
 	output_format: outputFormat,
+	...(background ? { background } : {}),
 	output_compression: compressionVisible ? outputCompression : 100,
 	moderation,
-	aspect_ratio: sizeMode === 'ratio' ? ratio : '',
-	pixel_size: sizeMode === 'pixel' ? effectivePixelSize : undefined,
     image_count: count,
     reference_asset_ids: taskType === 'image_edit' ? editRefs.map((item) => item.id) : [],
-  }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, effectivePixelSize, count, editRefs])
+  }), [taskType, model, sizeMode, baseResolution, effectiveRatio, quality, outputFormat, background, compressionVisible, outputCompression, moderation, effectivePixelSize, count, editRefs])
   const estimateKey = useMemo(() => workspaceEstimateKey(estimatePayload), [estimatePayload])
   const currentEstimate = currentWorkspaceEstimate(estimateKey, estimateSnapshot)
   const estimate = currentEstimate.estimate
@@ -1301,7 +1323,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                         className={cn(workspaceClasses.selectItem, sizeMode === value && workspaceClasses.selectItemActive)}
                         onClick={() => setSizeMode(value)}
                       >
-                        <span className={rdWorkspace.itemLabel}>{value === 'pixel' ? '按像素' : '按比例'}</span>
+						<span className={rdWorkspace.itemLabel}>{value === 'auto' ? '自动' : value === 'pixel' ? '按像素' : '按比例'}</span>
                       </button>
                     ))}
                   </div>
@@ -1332,7 +1354,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel}>比例</label>
                   <div className={workspaceClasses.selectGridThree}>
-                    {ratios.map((r) => (
+					{ratios.map((r) => (
                       <button
                         key={r}
                         type="button"
@@ -1342,9 +1364,25 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                         <AspectRatioIcon ratio={r} active={ratio === r} />
                         <span className={rdWorkspace.itemLabel}>{r}</span>
                       </button>
-                    ))}
-                  </div>
-                </div>
+					))}
+					{customRatioSupported ? (
+						<button
+							type="button"
+							className={cn(workspaceClasses.selectItem, ratio === 'custom' && workspaceClasses.selectItemActive)}
+							onClick={() => setRatio('custom')}
+						>
+							<span className={rdWorkspace.itemLabel}>自定义比例</span>
+						</button>
+					) : null}
+				  </div>
+				  {customRatioSupported && ratio === 'custom' ? (
+					<label className="mt-3 grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-ratio">
+						比例
+						<input id="workspace-custom-ratio" className={userForm.input} value={customRatio} placeholder="例如 7:5" onChange={(event) => setCustomRatio(event.target.value)} />
+						<span role="status">{workspaceCustomRatioValid(customRatio) ? `预计比例：${customRatio}` : '请输入 1:3 至 3:1 范围内的有效比例。'}</span>
+					</label>
+				  ) : null}
+				</div>
               ) : null}
 
               {sizeMode === 'ratio' && ratioPixelEstimate ? (
@@ -1382,17 +1420,17 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                       <div className="grid grid-cols-2 gap-3">
                         <label className="grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-width">
                           Width
-                          <input id="workspace-custom-width" className={userForm.input} type="number" inputMode="numeric" min="1" max="3840" step="1" value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
+						  <input id="workspace-custom-width" className={userForm.input} type="number" inputMode="numeric" min={selectedModel.min_width ?? 16} max={selectedModel.max_width ?? 3840} step="16" value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
                         </label>
                         <label className="grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-height">
                           Height
-                          <input id="workspace-custom-height" className={userForm.input} type="number" inputMode="numeric" min="1" max="3840" step="1" value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
+						  <input id="workspace-custom-height" className={userForm.input} type="number" inputMode="numeric" min={selectedModel.min_height ?? 16} max={selectedModel.max_height ?? 3840} step="16" value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
                         </label>
                       </div>
                       <p className="text-xs leading-5 text-[var(--muted)]" role="status">
-                        {customSizeNormalization.valid ? <>最终输出：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : '请输入有效的 Width 和 Height。'}
-                      </p>
-                      <p className="text-xs leading-5 text-[var(--muted)]">由于模型限制，最终输出会自动规整到合法尺寸：宽高均为 16 的倍数，最大边长 3840px，宽高比不超过 3:1，总像素限制为 655360-8294400。</p>
+						{customSizeNormalization.valid ? <>输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : '尺寸不符合当前模型限制，请直接修改 Width 和 Height。'}
+					  </p>
+					  <p className="text-xs leading-5 text-[var(--muted)]">宽高必须为 16 的倍数，并满足当前模型配置区间、1:3 至 3:1 比例及平台像素上限。</p>
                     </div>
                   ) : null}
                 </div>
@@ -1434,7 +1472,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 </div>
               ) : null}
 
-              {compressionVisible ? (
+			  {compressionVisible ? (
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel} htmlFor="workspace-output-compression">压缩质量</label>
                   <div className="grid grid-cols-[minmax(0,1fr)_5rem] items-center gap-3">
@@ -1457,7 +1495,25 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                     />
                   </div>
                 </div>
-              ) : null}
+			  ) : null}
+
+			  {backgroundOptions.length ? (
+				<div className={workspaceClasses.fieldBlock}>
+				  <label className={workspaceClasses.fieldLabel}>背景</label>
+				  <div className={workspaceClasses.selectGridThree}>
+					{backgroundOptions.map((value) => (
+					  <button key={value} type="button" className={cn(workspaceClasses.selectItem, background === value && workspaceClasses.selectItemActive)} onClick={() => {
+						if (value === 'transparent' && !['png', 'webp'].includes(outputFormat)) {
+						  setOutputFormat(outputOptions.outputFormat.find((format) => format === 'png' || format === 'webp') ?? outputFormat)
+						}
+						setBackground(value)
+					  }}>
+						<span className={rdWorkspace.itemLabel}>{value === 'auto' ? '自动' : value === 'opaque' ? '不透明' : '透明'}</span>
+					  </button>
+					))}
+				  </div>
+				</div>
+			  ) : null}
 
               {outputOptions.moderation.length > 1 ? (
                 <div className={workspaceClasses.fieldBlock}>
