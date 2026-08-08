@@ -51,6 +51,7 @@ type ExecuteRequest struct {
 	BaseResolution      string
 	Quality             string
 	OutputFormat        string
+	Background          string
 	OutputCompression   int
 	Moderation          string
 	AspectRatio         string
@@ -77,6 +78,7 @@ type CreateRequest struct {
 	BaseResolution      string
 	Quality             string
 	OutputFormat        string
+	Background          string
 	OutputCompression   int
 	Moderation          string
 	AspectRatio         string
@@ -110,6 +112,7 @@ type TestModelAccountRequest struct {
 	BaseResolution    string
 	Quality           string
 	OutputFormat      string
+	Background        string
 	OutputCompression int
 	Moderation        string
 	AspectRatio       string
@@ -128,18 +131,24 @@ type TestModelAccountResult struct {
 }
 
 type Attempt struct {
-	Provider       string         `json:"provider,omitempty"`
-	AdapterType    string         `json:"adapter_type,omitempty"`
-	AccountModelID int64          `json:"account_model_id,omitempty"`
-	ModelAccountID int64          `json:"model_account_id,omitempty"`
-	ModelCode      string         `json:"model_code,omitempty"`
-	Status         string         `json:"status,omitempty"`
-	Error          string         `json:"error,omitempty"`
-	ErrorCode      string         `json:"error_code,omitempty"`
-	ErrorMessage   string         `json:"error_message,omitempty"`
-	ErrorDetail    map[string]any `json:"error_detail,omitempty"`
-	StartedAt      *time.Time     `json:"started_at,omitempty"`
-	FinishedAt     *time.Time     `json:"finished_at,omitempty"`
+	Provider          string         `json:"provider,omitempty"`
+	AdapterType       string         `json:"adapter_type,omitempty"`
+	AccountModelID    int64          `json:"account_model_id,omitempty"`
+	ModelAccountID    int64          `json:"model_account_id,omitempty"`
+	ModelCode         string         `json:"model_code,omitempty"`
+	SourceSizeMode    string         `json:"source_size_mode,omitempty"`
+	OutboundSize      string         `json:"outbound_size,omitempty"`
+	ReturnedWidth     int            `json:"returned_width,omitempty"`
+	ReturnedHeight    int            `json:"returned_height,omitempty"`
+	SizeDiagnostic    string         `json:"size_diagnostic,omitempty"`
+	ProviderRequestID string         `json:"provider_request_id,omitempty"`
+	Status            string         `json:"status,omitempty"`
+	Error             string         `json:"error,omitempty"`
+	ErrorCode         string         `json:"error_code,omitempty"`
+	ErrorMessage      string         `json:"error_message,omitempty"`
+	ErrorDetail       map[string]any `json:"error_detail,omitempty"`
+	StartedAt         *time.Time     `json:"started_at,omitempty"`
+	FinishedAt        *time.Time     `json:"finished_at,omitempty"`
 }
 
 type ArtifactDiagnostic struct {
@@ -200,9 +209,12 @@ type Task struct {
 	SizeMode             string                        `json:"size_mode,omitempty"`
 	AspectRatio          string                        `json:"aspect_ratio,omitempty"`
 	RequestedSize        string                        `json:"requested_size,omitempty"`
+	ResolvedWidth        int                           `json:"resolved_width,omitempty"`
+	ResolvedHeight       int                           `json:"resolved_height,omitempty"`
 	BaseResolution       string                        `json:"base_resolution"`
 	Quality              string                        `json:"quality"`
 	OutputFormat         string                        `json:"output_format,omitempty"`
+	Background           string                        `json:"background,omitempty"`
 	OutputCompression    int                           `json:"output_compression,omitempty"`
 	Moderation           string                        `json:"moderation,omitempty"`
 	ResponseMode         string                        `json:"response_mode,omitempty"`

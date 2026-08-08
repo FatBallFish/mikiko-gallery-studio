@@ -121,6 +121,7 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 		BaseResolution:            req.BaseResolution,
 		Quality:                   req.Quality,
 		OutputFormat:              req.OutputFormat,
+		Background:                req.Background,
 		OutputCompression:         req.OutputCompression,
 		Moderation:                req.Moderation,
 		RequestedSize:             req.RequestedSize,
@@ -170,6 +171,7 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 				BaseResolution:            price.BaseResolution,
 				Quality:                   resolveReq.Quality,
 				OutputFormat:              resolveReq.OutputFormat,
+				Background:                resolveReq.Background,
 				OutputCompression:         resolveReq.OutputCompression,
 				Moderation:                resolveReq.Moderation,
 				RequestedSize:             resolveReq.RequestedSize,
@@ -182,8 +184,19 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 				ReferenceExtraMultiplier:  "0.00000",
 				EstimatedPoints:           total.StringFixed(5),
 			}
+			var resolvedSize *string
+			switch modelhub.PublicSizeMode(resolveReq.SizeMode) {
+			case modelhub.SizeModeRatio:
+				if value, sizeErr := modelhub.CalculateImageSize(resolved.BaseResolution, resolveReq.AspectRatio); sizeErr == nil {
+					resolvedSize = &value
+				}
+			case modelhub.SizeModePixel:
+				value := resolveReq.RequestedSize
+				resolvedSize = &value
+			}
 			return domainbilling.EstimateResult{
 				BaseResolution:            price.BaseResolution,
+				ResolvedSize:              resolvedSize,
 				EstimatedPoints:           snapshot.EstimatedPoints,
 				ChargedPoints:             snapshot.EstimatedPoints,
 				DisplayPoints:             total.Round(2).StringFixed(2),

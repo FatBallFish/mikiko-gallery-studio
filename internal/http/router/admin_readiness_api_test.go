@@ -152,7 +152,7 @@ func TestAdminReadinessCountsEnabledModelAccountModelsAsRealModels(t *testing.T)
 		ModelCode:      "gpt-image-1",
 		DisplayName:    "GPT Image 1",
 		TaskTypes:      []string{"text_to_image"},
-		BaseResolution: []string{"auto", "1K"},
+		BaseResolution: []string{"1K"},
 		MaxImageCount:  1,
 		CostPerImage:   "0.04000",
 		Currency:       "USD",

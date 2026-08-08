@@ -21,6 +21,66 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+func TestGenerateOmitsGPTImageOptionalFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"size", "response_format", "background", "stream", "partial_images"} {
+			if _, ok := body[key]; ok {
+				t.Fatalf("payload must omit %q: %#v", key, body)
+			}
+		}
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	}))
+	defer server.Close()
+	client := openai.NewClient(openai.Config{BaseURL: server.URL, HTTPClient: server.Client()})
+	_, err := client.Generate(context.Background(), provider.ImageRequest{Model: "gpt-image-2", Prompt: "safe test", Quality: "auto", OutputFormat: "png", Moderation: "auto", OutputImageCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGenerateIncludesValidatedBackground(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["background"] != "transparent" || body["size"] != "1280x720" {
+			t.Fatalf("payload = %#v", body)
+		}
+		if _, ok := body["response_format"]; ok {
+			t.Fatalf("GPT Image payload includes response_format: %#v", body)
+		}
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	}))
+	defer server.Close()
+	client := openai.NewClient(openai.Config{BaseURL: server.URL, HTTPClient: server.Client()})
+	_, err := client.Generate(context.Background(), provider.ImageRequest{Model: "gpt-image-2", Prompt: "safe test", Size: "1280x720", Background: "transparent", OutputFormat: "png", OutputImageCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGenerateDecodesReturnedImageDimensions(t *testing.T) {
+	const onePixelPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[{"b64_json":"`+onePixelPNG+`"}]}`)
+	}))
+	defer server.Close()
+	client := openai.NewClient(openai.Config{BaseURL: server.URL, HTTPClient: server.Client()})
+
+	resp, err := client.Generate(context.Background(), provider.ImageRequest{Model: "gpt-image-2", Prompt: "dimension test", OutputFormat: "png", OutputImageCount: 1})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if len(resp.Data) != 1 || resp.Data[0].Width != 1 || resp.Data[0].Height != 1 {
+		t.Fatalf("decoded dimensions = %#v", resp.Data)
+	}
+}
+
 func TestGenerateUsesImagesEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/images/generations" {
@@ -39,8 +99,8 @@ func TestGenerateUsesImagesEndpoint(t *testing.T) {
 		if got := body["n"]; got != float64(3) {
 			t.Fatalf("unexpected n %#v", got)
 		}
-		if got := body["response_format"]; got != "b64_json" {
-			t.Fatalf("unexpected response_format %#v", got)
+		if _, ok := body["response_format"]; ok {
+			t.Fatalf("GPT Image must omit response_format: %#v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("x-request-id", "openai-req-1")

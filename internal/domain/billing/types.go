@@ -16,6 +16,7 @@ type EstimateRequest struct {
 	BaseResolution            string
 	Quality                   string
 	OutputFormat              string
+	Background                string
 	OutputCompression         int
 	Moderation                string
 	RequestedSize             string
@@ -28,6 +29,7 @@ type EstimateRequest struct {
 
 type EstimateResult struct {
 	BaseResolution            string          `json:"base_resolution"`
+	ResolvedSize              *string         `json:"resolved_size"`
 	EstimatedPoints           string          `json:"estimated_points"`
 	ChargedPoints             string          `json:"charged_points,omitempty"`
 	DisplayPoints             string          `json:"display_points,omitempty"`
@@ -49,6 +51,7 @@ type PricingSnapshot struct {
 	BaseResolution            string `json:"base_resolution"`
 	Quality                   string `json:"quality,omitempty"`
 	OutputFormat              string `json:"output_format,omitempty"`
+	Background                string `json:"background,omitempty"`
 	OutputCompression         int    `json:"output_compression,omitempty"`
 	Moderation                string `json:"moderation,omitempty"`
 	RequestedSize             string `json:"requested_size,omitempty"`

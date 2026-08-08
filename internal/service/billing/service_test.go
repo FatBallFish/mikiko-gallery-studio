@@ -749,6 +749,61 @@ func TestEstimateRouteModelPixelModeUsesPixelCapabilityWithoutQualityFilter(t *t
 	}
 }
 
+func TestEstimateRouteModelAutoOmitsResolvedSize(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint: "0.31250", PointsScale: 5,
+		TaskMultipliers:                  map[string]string{"text_to_image": "1.00000"},
+		AutoBaseResolutionDefaultByGroup: map[string]string{"plus": "1k"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"},
+			SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"auto", "ratio"}, SupportedAspectRatios: []string{"1:1"},
+			Quality: []string{"auto"}, OutputFormat: []string{"png", "jpeg"}, SupportedBackgrounds: []string{"auto", "transparent"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "auto",
+		Quality: "auto", OutputFormat: "png", Background: "auto", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("Estimate auto: %v", err)
+	}
+	if result.ResolvedSize != nil || result.PricingSnapshot.RequestedSize != "" || result.PricingSnapshot.SizeMode != "auto" {
+		t.Fatalf("auto estimate must omit resolved size, got %#v", result)
+	}
+}
+
+func TestEstimateRouteModelRejectsTransparentJPEG(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint: "0.31250", PointsScale: 5,
+		TaskMultipliers:                  map[string]string{"text_to_image": "1.00000"},
+		AutoBaseResolutionDefaultByGroup: map[string]string{"plus": "1k"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"},
+			SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"auto"}, Quality: []string{"auto"},
+			OutputFormat: []string{"png", "jpeg"}, SupportedBackgrounds: []string{"transparent"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	_, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "auto",
+		Quality: "auto", OutputFormat: "jpeg", Background: "transparent", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err == nil {
+		t.Fatal("expected transparent JPEG estimate to be rejected")
+	}
+}
+
 func TestEstimateRouteModelRejectsWhenNoCandidateSupportsResolvedBaseResolution(t *testing.T) {
 	svc := NewService(config.BillingConfig{
 		CNYPerPoint:                      "0.31250",

@@ -67,7 +67,15 @@ func (s *Service) checkpointProviderSuccess(
 	decorated.ProviderRequestID = strings.TrimSpace(response.ProviderRequestID)
 	completedAt := finishedAt.UTC()
 	decorated.UpstreamSucceededAt = &completedAt
-	decorated.Attempts = append(decorated.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, startedAt, finishedAt))
+	attempt := buildProviderAttempt(candidate, domainimagetask.StatusSucceeded, nil, startedAt, finishedAt)
+	attempt.SourceSizeMode = task.SizeMode
+	attempt.OutboundSize = task.RequestedSize
+	attempt.ProviderRequestID = strings.TrimSpace(response.ProviderRequestID)
+	if len(response.Data) > 0 {
+		attempt.ReturnedWidth, attempt.ReturnedHeight = response.Data[0].Width, response.Data[0].Height
+	}
+	attempt.SizeDiagnostic = classifyImageSize(task.RequestedSize, attempt.ReturnedWidth, attempt.ReturnedHeight)
+	decorated.Attempts = append(decorated.Attempts, attempt)
 	decorated.ProviderCost = calculateProviderCost(candidate, len(response.Data))
 	decorated.ArtifactRecovery = domainimagetask.ArtifactRecovery{
 		Status:           artifactRecoveryPersisting,

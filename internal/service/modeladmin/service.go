@@ -438,10 +438,16 @@ func normalizeModelAccountModelWrite(req domainmodeladmin.ModelAccountModelWrite
 		SizeModes:                 req.SizeModes,
 		SupportedRatios:           req.SupportedRatios,
 		SupportedPixelSizes:       req.SupportedPixelSizes,
+		SupportsCustomRatio:       req.SupportsCustomRatio,
+		SupportedBackgrounds:      req.SupportedBackgrounds,
 		OutputFormat:              req.OutputFormat,
 		OutputCompression:         req.OutputCompression,
 		SupportsOutputCompression: req.SupportsOutputCompression,
 		SupportsCustomSize:        req.SupportsCustomSize,
+		MinWidth:                  req.MinWidth,
+		MaxWidth:                  req.MaxWidth,
+		MinHeight:                 req.MinHeight,
+		MaxHeight:                 req.MaxHeight,
 		Moderation:                req.Moderation,
 	})
 	if err != nil {
@@ -454,10 +460,14 @@ func normalizeModelAccountModelWrite(req domainmodeladmin.ModelAccountModelWrite
 	req.SizeModes = capability.SizeModes
 	req.SupportedRatios = capability.SupportedRatios
 	req.SupportedPixelSizes = capability.SupportedPixelSizes
+	req.SupportsCustomRatio = capability.SupportsCustomRatio
+	req.SupportedBackgrounds = capability.SupportedBackgrounds
 	req.OutputFormat = capability.OutputFormat
 	req.OutputCompression = capability.OutputCompression
 	req.SupportsOutputCompression = capability.SupportsOutputCompression
 	req.SupportsCustomSize = capability.SupportsCustomSize
+	req.MinWidth, req.MaxWidth = capability.MinWidth, capability.MaxWidth
+	req.MinHeight, req.MaxHeight = capability.MinHeight, capability.MaxHeight
 	req.Moderation = capability.Moderation
 	if req.Extra == nil {
 		req.Extra = map[string]any{}

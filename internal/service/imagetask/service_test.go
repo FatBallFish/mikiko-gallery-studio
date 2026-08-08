@@ -756,6 +756,68 @@ func TestExecuteLeasedTaskCalculatesGPTImage2CodexSizeFromQualityAndAspectRatio(
 	}
 }
 
+func TestExecuteLeasedAutoTaskOmitsSizeAndPersistsDiagnostics(t *testing.T) {
+	captured := make(chan provider.ImageRequest, 1)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(_ context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			captured <- req
+			return provider.ImageResponse{
+				Created: 1770000042, ProviderRequestID: "req-auto-size",
+				Data: []provider.ImageResult{{B64JSON: tinyPNGBase64, Width: 1672, Height: 941}},
+			}, nil
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(taskTestConfig(), providers, store)
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "5.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 306, ModelAccountID: 206, Provider: "openai", ModelCode: "gpt-image-2",
+			SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"auto"},
+			Quality: []string{"auto"}, OutputFormat: []string{"png"}, SupportedBackgrounds: []string{"auto"}, Moderation: []string{"auto"},
+			MaxImageCount: 1, HealthStatus: "enabled",
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 306, Enabled: true}},
+	}})
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID: 82, RouteModelCode: "plus", TaskType: "text_to_image", Prompt: "provider-selected dimensions",
+		SizeMode: "auto", Quality: "auto", OutputFormat: "png", Background: "auto", Moderation: "auto", OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if created.RequestedSize != "" || created.ResolvedWidth != 0 || created.ResolvedHeight != 0 {
+		t.Fatalf("auto task must persist absent dimensions, got %#v", created)
+	}
+	leased, ok, err := svc.AcquireNextTask(context.Background(), "worker-auto", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("AcquireNextTask ok=%v err=%v", ok, err)
+	}
+	result, err := svc.ExecuteLeasedTask(context.Background(), leased, "worker-auto", []string{"openai"})
+	if err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	if req := <-captured; req.Size != "" || req.Background != "auto" {
+		t.Fatalf("unexpected auto provider request %#v", req)
+	}
+	if len(result.Task.Attempts) != 1 {
+		t.Fatalf("expected one persisted attempt, got %#v", result.Task.Attempts)
+	}
+	attempt := result.Task.Attempts[0]
+	if attempt.SourceSizeMode != "auto" || attempt.OutboundSize != "" || attempt.ReturnedWidth != 1672 || attempt.ReturnedHeight != 941 || attempt.ProviderRequestID != "req-auto-size" || attempt.SizeDiagnostic != "missing_outbound_size" {
+		t.Fatalf("unexpected size diagnostics %#v", attempt)
+	}
+	loaded, err := svc.GetByID(context.Background(), 82, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if len(loaded.Attempts) != 1 || !reflect.DeepEqual(loaded.Attempts[0], attempt) {
+		t.Fatalf("diagnostic attempt was not persisted: %#v", loaded.Attempts)
+	}
+}
+
 func TestExecuteLeasedTaskRequestsB64ForGPTImage2CodexMultiOutput(t *testing.T) {
 	cfg := taskTestConfig()
 	captured := make(chan provider.ImageRequest, 3)
@@ -1633,6 +1695,50 @@ func TestExecuteOpenAIFormatMultiImageFansOutAndChargesActualSuccesses(t *testin
 	}
 	if result.Task.ActualPoints != "16.00000" {
 		t.Fatalf("expected actual charge for 2 successful images, got %s", result.Task.ActualPoints)
+	}
+}
+
+func TestExecuteOpenAIFormatFansOutTwelveImagesByCandidateMaxFour(t *testing.T) {
+	cfg := taskTestConfig()
+	capability := cfg.Routing.ProviderCapabilities["openai"]
+	capability.MaxImageCount = 4
+	cfg.Routing.ProviderCapabilities["openai"] = capability
+
+	var (
+		mu      sync.Mutex
+		batches []int
+	)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(_ context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			mu.Lock()
+			batches = append(batches, req.OutputImageCount)
+			mu.Unlock()
+			results := make([]provider.ImageResult, req.OutputImageCount)
+			for i := range results {
+				results[i] = provider.ImageResult{B64JSON: tinyPNGBase64}
+			}
+			return provider.ImageResponse{Created: 1770000100, Data: results}, nil
+		}},
+	}
+	svc := imagetask.NewServiceWithProviders(cfg, providers)
+
+	result, err := svc.Execute(context.Background(), domainimagetask.ExecuteRequest{
+		UserID: 83, AbstractModel: "plus", TaskType: "text_to_image", Prompt: "twelve images",
+		SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1", Quality: "auto", OutputFormat: "png", Moderation: "auto",
+		OutputImageCount: 12, ResponseFormat: string(provider.ResponseFormatB64JSON), PreferredProviders: []string{"openai"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	mu.Lock()
+	sort.Ints(batches)
+	gotBatches := append([]int(nil), batches...)
+	mu.Unlock()
+	if !reflect.DeepEqual(gotBatches, []int{4, 4, 4}) {
+		t.Fatalf("fan-out batches = %#v, want three calls of four", gotBatches)
+	}
+	if len(result.Task.Results) != 12 {
+		t.Fatalf("persisted result count = %d, want 12", len(result.Task.Results))
 	}
 }
 

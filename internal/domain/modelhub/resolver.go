@@ -24,6 +24,7 @@ type ResolveRequest struct {
 	BaseResolution            string
 	Quality                   string
 	OutputFormat              string
+	Background                string
 	OutputCompression         int
 	Moderation                string
 	RequestedSize             string
@@ -132,7 +133,8 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 				}
 			}
 			taskCapability := r.visibleRouteModelLimits(routeModel, routing, taskType)
-			taskCapability.BaseResolution = append([]string{"auto"}, sortedSet(taskBaseResolution)...)
+			intersectCapabilitySet(taskBaseResolution, taskCapability.BaseResolution, false)
+			taskCapability.BaseResolution = sortedSet(taskBaseResolution)
 			taskCapability.AutoBaseResolution = autoBaseResolution
 			capabilitiesByTaskType[taskType] = taskCapability
 		}
@@ -143,7 +145,7 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			Name:                         routeModel.Name,
 			Description:                  routeModel.Description,
 			TaskTypes:                    taskTypeList,
-			BaseResolution:               append([]string{"auto"}, sortedSet(baseResolution)...),
+			BaseResolution:               sortedSet(baseResolution),
 			AutoBaseResolutionByTaskType: autoBaseResolutionByTaskType,
 			Quality:                      aggregateCapability.Quality,
 			SizeModes:                    aggregateCapability.SizeModes,
@@ -152,6 +154,12 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			OutputFormat:                 aggregateCapability.OutputFormat,
 			SupportsOutputCompression:    aggregateCapability.SupportsOutputCompression,
 			SupportsCustomSize:           aggregateCapability.SupportsCustomSize,
+			SupportsCustomRatio:          aggregateCapability.SupportsCustomRatio,
+			SupportedBackgrounds:         aggregateCapability.SupportedBackgrounds,
+			MinWidth:                     aggregateCapability.MinWidth,
+			MaxWidth:                     aggregateCapability.MaxWidth,
+			MinHeight:                    aggregateCapability.MinHeight,
+			MaxHeight:                    aggregateCapability.MaxHeight,
 			Moderation:                   aggregateCapability.Moderation,
 			MaxOutputImageCount:          aggregateCapability.MaxOutputImageCount,
 			MaxReferenceImageCount:       aggregateCapability.MaxReferenceImageCount,
@@ -169,15 +177,19 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 		candidateByID[candidate.AccountModelID] = candidate
 	}
 	sizeModes := map[string]struct{}{}
+	baseResolution := map[string]struct{}{}
 	ratios := map[string]struct{}{}
 	pixelSizes := map[string]struct{}{}
 	quality := map[string]struct{}{}
 	outputFormat := map[string]struct{}{}
 	moderation := map[string]struct{}{}
+	backgrounds := map[string]struct{}{}
 	maxOutputCount := 0
 	maxReferenceCount := 0
 	supportsOutputCompression := false
 	supportsCustomSize := false
+	supportsCustomRatio := false
+	minWidth, maxWidth, minHeight, maxHeight := 0, 0, 0, 0
 	hasCandidate := false
 	for _, route := range routing.Candidates {
 		if !route.Enabled || route.RouteModelID != routeModel.ID {
@@ -191,42 +203,37 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 		if taskType != "" && len(candidate.SupportedTaskTypes) > 0 && !containsString(candidate.SupportedTaskTypes, taskType) {
 			continue
 		}
+		firstCandidate := !hasCandidate
 		hasCandidate = true
-		for _, mode := range candidate.SizeModes {
-			if trimmed := strings.TrimSpace(mode); trimmed != "" {
-				sizeModes[trimmed] = struct{}{}
+		intersectCapabilitySet(sizeModes, candidate.SizeModes, firstCandidate)
+		intersectCapabilitySet(baseResolution, candidate.SupportedBaseResolution, firstCandidate)
+		intersectCapabilitySet(ratios, candidate.SupportedAspectRatios, firstCandidate)
+		intersectCapabilitySet(pixelSizes, candidate.SupportedPixelSizes, firstCandidate)
+		intersectCapabilitySet(quality, candidate.Quality, firstCandidate)
+		intersectCapabilitySet(outputFormat, candidate.OutputFormat, firstCandidate)
+		intersectCapabilitySet(moderation, candidate.Moderation, firstCandidate)
+		intersectCapabilitySet(backgrounds, candidate.SupportedBackgrounds, firstCandidate)
+		if firstCandidate {
+			supportsOutputCompression = candidate.SupportsOutputCompression
+			supportsCustomSize = candidate.SupportsCustomSize && containsString(candidate.SizeModes, SizeModePixel)
+			supportsCustomRatio = candidate.SupportsCustomRatio && containsString(candidate.SizeModes, SizeModeRatio)
+			minWidth, maxWidth, minHeight, maxHeight = candidate.MinWidth, candidate.MaxWidth, candidate.MinHeight, candidate.MaxHeight
+		} else {
+			supportsOutputCompression = supportsOutputCompression && candidate.SupportsOutputCompression
+			supportsCustomSize = supportsCustomSize && candidate.SupportsCustomSize && containsString(candidate.SizeModes, SizeModePixel)
+			supportsCustomRatio = supportsCustomRatio && candidate.SupportsCustomRatio && containsString(candidate.SizeModes, SizeModeRatio)
+			if candidate.MinWidth > minWidth {
+				minWidth = candidate.MinWidth
 			}
-		}
-		for _, ratio := range candidate.SupportedAspectRatios {
-			if trimmed := strings.TrimSpace(ratio); trimmed != "" {
-				ratios[trimmed] = struct{}{}
+			if maxWidth == 0 || candidate.MaxWidth > 0 && candidate.MaxWidth < maxWidth {
+				maxWidth = candidate.MaxWidth
 			}
-		}
-		for _, size := range candidate.SupportedPixelSizes {
-			if trimmed := strings.TrimSpace(size); trimmed != "" {
-				pixelSizes[trimmed] = struct{}{}
+			if candidate.MinHeight > minHeight {
+				minHeight = candidate.MinHeight
 			}
-		}
-		for _, item := range candidate.Quality {
-			if trimmed := strings.TrimSpace(item); trimmed != "" {
-				quality[trimmed] = struct{}{}
+			if maxHeight == 0 || candidate.MaxHeight > 0 && candidate.MaxHeight < maxHeight {
+				maxHeight = candidate.MaxHeight
 			}
-		}
-		for _, item := range candidate.OutputFormat {
-			if trimmed := strings.TrimSpace(item); trimmed != "" {
-				outputFormat[trimmed] = struct{}{}
-			}
-		}
-		for _, item := range candidate.Moderation {
-			if trimmed := strings.TrimSpace(item); trimmed != "" {
-				moderation[trimmed] = struct{}{}
-			}
-		}
-		if candidate.SupportsOutputCompression {
-			supportsOutputCompression = true
-		}
-		if candidate.SupportsCustomSize && containsString(candidate.SizeModes, SizeModePixel) {
-			supportsCustomSize = true
 		}
 		if candidate.MaxImageCount > maxOutputCount {
 			maxOutputCount = candidate.MaxImageCount
@@ -241,22 +248,43 @@ func (r *Resolver) visibleRouteModelLimits(routeModel RouteModelConfig, routing 
 	if !hasCandidate && maxReferenceCount <= 0 {
 		maxReferenceCount = r.cfg.GenerationLimits.ReferenceImageMaxCount
 	}
-	if len(sizeModes) == 0 {
+	if !hasCandidate && len(sizeModes) == 0 {
 		sizeModes[SizeModeRatio] = struct{}{}
 	}
-	if len(quality) == 0 {
+	if !hasCandidate && len(quality) == 0 {
 		quality["auto"] = struct{}{}
 	}
-	if len(outputFormat) == 0 {
+	if !hasCandidate && len(outputFormat) == 0 {
 		outputFormat["png"] = struct{}{}
 	}
-	if len(moderation) == 0 {
+	if !hasCandidate && len(moderation) == 0 {
 		moderation["auto"] = struct{}{}
 	}
 	return VisibleRouteModelTaskCapability{
-		Quality: sortedSet(quality), SizeModes: sortedSet(sizeModes), AspectRatios: sortedSet(ratios), PixelSizes: sortedSet(pixelSizes),
-		OutputFormat: sortedSet(outputFormat), SupportsOutputCompression: supportsOutputCompression, SupportsCustomSize: supportsCustomSize,
-		Moderation: sortedSet(moderation), MaxOutputImageCount: maxOutputCount, MaxReferenceImageCount: maxReferenceCount,
+		BaseResolution: sortedSet(baseResolution), Quality: sortedSet(quality), SizeModes: sortedSet(sizeModes), AspectRatios: sortedSet(ratios), PixelSizes: sortedSet(pixelSizes),
+		OutputFormat: sortedSet(outputFormat), SupportsOutputCompression: supportsOutputCompression, SupportsCustomSize: supportsCustomSize, SupportsCustomRatio: supportsCustomRatio,
+		MinWidth: minWidth, MaxWidth: maxWidth, MinHeight: minHeight, MaxHeight: maxHeight,
+		SupportedBackgrounds: sortedSet(backgrounds), Moderation: sortedSet(moderation), MaxOutputImageCount: maxOutputCount, MaxReferenceImageCount: maxReferenceCount,
+	}
+}
+
+func intersectCapabilitySet(target map[string]struct{}, values []string, first bool) {
+	current := map[string]struct{}{}
+	for _, value := range values {
+		if item := strings.ToLower(strings.TrimSpace(value)); item != "" {
+			current[item] = struct{}{}
+		}
+	}
+	if first {
+		for item := range current {
+			target[item] = struct{}{}
+		}
+		return
+	}
+	for item := range target {
+		if _, ok := current[item]; !ok {
+			delete(target, item)
+		}
 	}
 }
 
@@ -347,10 +375,16 @@ type ProviderCandidate struct {
 	SizeModes                 []string
 	SupportedAspectRatios     []string
 	SupportedPixelSizes       []string
+	SupportsCustomRatio       bool
+	SupportedBackgrounds      []string
 	OutputFormat              []string
 	OutputCompression         int
 	SupportsOutputCompression bool
 	SupportsCustomSize        bool
+	MinWidth                  int
+	MaxWidth                  int
+	MinHeight                 int
+	MaxHeight                 int
 	Moderation                []string
 	MaxImageCount             int
 	ConcurrencyLimit          int
@@ -490,6 +524,12 @@ type VisibleRouteModel struct {
 	OutputFormat                 []string                                   `json:"output_format"`
 	SupportsOutputCompression    bool                                       `json:"supports_output_compression"`
 	SupportsCustomSize           bool                                       `json:"supports_custom_size"`
+	SupportsCustomRatio          bool                                       `json:"supports_custom_ratio"`
+	SupportedBackgrounds         []string                                   `json:"supported_backgrounds"`
+	MinWidth                     int                                        `json:"min_width,omitempty"`
+	MaxWidth                     int                                        `json:"max_width,omitempty"`
+	MinHeight                    int                                        `json:"min_height,omitempty"`
+	MaxHeight                    int                                        `json:"max_height,omitempty"`
 	Moderation                   []string                                   `json:"moderation"`
 	MaxOutputImageCount          int                                        `json:"max_output_image_count"`
 	MaxReferenceImageCount       int                                        `json:"max_reference_image_count"`
@@ -508,6 +548,12 @@ type VisibleRouteModelTaskCapability struct {
 	OutputFormat              []string `json:"output_format"`
 	SupportsOutputCompression bool     `json:"supports_output_compression"`
 	SupportsCustomSize        bool     `json:"supports_custom_size"`
+	SupportsCustomRatio       bool     `json:"supports_custom_ratio"`
+	SupportedBackgrounds      []string `json:"supported_backgrounds"`
+	MinWidth                  int      `json:"min_width,omitempty"`
+	MaxWidth                  int      `json:"max_width,omitempty"`
+	MinHeight                 int      `json:"min_height,omitempty"`
+	MaxHeight                 int      `json:"max_height,omitempty"`
 	Moderation                []string `json:"moderation"`
 	MaxOutputImageCount       int      `json:"max_output_image_count"`
 	MaxReferenceImageCount    int      `json:"max_reference_image_count"`
@@ -794,7 +840,31 @@ func CandidateSupportsRequest(candidate ProviderCandidate, req ResolveRequest, r
 	if !containsString(candidate.SizeModes, mode) {
 		return false
 	}
+	if !strings.EqualFold(strings.TrimSpace(req.SizeMode), sizeModeLegacyRatio) {
+		capability := ImageModelCapability{
+			SizeModes: candidate.SizeModes, BaseResolution: candidate.SupportedBaseResolution,
+			SupportedRatios: candidate.SupportedAspectRatios, SupportedPixelSizes: candidate.SupportedPixelSizes,
+			SupportsCustomRatio: candidate.SupportsCustomRatio, SupportsCustomSize: candidate.SupportsCustomSize,
+			MinWidth: candidate.MinWidth, MaxWidth: candidate.MaxWidth, MinHeight: candidate.MinHeight, MaxHeight: candidate.MaxHeight,
+			OutputFormat: candidate.OutputFormat, SupportedBackgrounds: candidate.SupportedBackgrounds,
+		}
+		baseResolution, aspectRatio, requestedSize := req.BaseResolution, req.AspectRatio, req.RequestedSize
+		if mode == SizeModeAuto {
+			baseResolution, aspectRatio, requestedSize = "", "", ""
+		}
+		if mode == SizeModeRatio {
+			baseResolution, requestedSize = resolvedBaseResolution, ""
+		}
+		if mode == SizeModePixel {
+			baseResolution, aspectRatio = "", ""
+		}
+		if _, err := NormalizeGenerationRequest(capability, GenerationRequest{SizeMode: mode, BaseResolution: baseResolution, AspectRatio: aspectRatio, RequestedSize: requestedSize, Background: req.Background, OutputFormat: outputFormat}); err != nil {
+			return false
+		}
+	}
 	switch mode {
+	case SizeModeAuto:
+		return true
 	case SizeModePixel:
 		size := NormalizePixelSize(req.RequestedSize)
 		if size == "" {
@@ -828,7 +898,7 @@ func normalizeProviderCandidate(candidate ProviderCandidate) ProviderCandidate {
 	if maxImageCount == 0 {
 		maxImageCount = 1
 	}
-	capability, err := NormalizeCapability(ImageModelCapability{
+	capability := FilterEffectiveCapability(ImageModelCapability{
 		MaxReferenceImageCount:    candidate.MaxReferenceImageCount,
 		MaxImageCount:             maxImageCount,
 		BaseResolution:            candidate.SupportedBaseResolution,
@@ -836,14 +906,32 @@ func normalizeProviderCandidate(candidate ProviderCandidate) ProviderCandidate {
 		SizeModes:                 candidate.SizeModes,
 		SupportedRatios:           candidate.SupportedAspectRatios,
 		SupportedPixelSizes:       candidate.SupportedPixelSizes,
+		SupportsCustomRatio:       candidate.SupportsCustomRatio,
+		SupportedBackgrounds:      candidate.SupportedBackgrounds,
 		OutputFormat:              candidate.OutputFormat,
 		OutputCompression:         candidate.OutputCompression,
 		SupportsOutputCompression: candidate.SupportsOutputCompression,
 		SupportsCustomSize:        candidate.SupportsCustomSize,
+		MinWidth:                  candidate.MinWidth,
+		MaxWidth:                  candidate.MaxWidth,
+		MinHeight:                 candidate.MinHeight,
+		MaxHeight:                 candidate.MaxHeight,
 		Moderation:                candidate.Moderation,
 	})
-	if err != nil {
-		return candidate
+	capability.Quality = normalizeEnumStrings(defaultStrings(candidate.Quality, DefaultQuality), map[string]struct{}{"auto": {}, "low": {}, "medium": {}, "high": {}})
+	capability.OutputFormat = normalizeEnumStrings(defaultStrings(candidate.OutputFormat, DefaultOutputFormat), map[string]struct{}{"png": {}, "jpeg": {}, "webp": {}})
+	capability.Moderation = normalizeEnumStrings(defaultStrings(candidate.Moderation, DefaultModeration), map[string]struct{}{"auto": {}, "low": {}})
+	if len(capability.SizeModes) == 0 {
+		capability.SizeModes = cloneStrings(DefaultSizeModes)
+	}
+	if containsString(capability.SizeModes, SizeModeRatio) && len(capability.SupportedRatios) == 0 {
+		capability.SupportedRatios = cloneStrings(DefaultSupportedRatios)
+	}
+	if len(capability.BaseResolution) == 0 {
+		capability.BaseResolution = []string{"1k", "2k", "4k"}
+	}
+	if containsString(capability.SizeModes, SizeModePixel) && len(capability.SupportedPixelSizes) == 0 {
+		capability.SupportedPixelSizes = cloneStrings(DefaultSupportedPixelSizes)
 	}
 	candidate.MaxReferenceImageCount = capability.MaxReferenceImageCount
 	candidate.MaxImageCount = capability.MaxImageCount
@@ -852,10 +940,14 @@ func normalizeProviderCandidate(candidate ProviderCandidate) ProviderCandidate {
 	candidate.SizeModes = capability.SizeModes
 	candidate.SupportedAspectRatios = capability.SupportedRatios
 	candidate.SupportedPixelSizes = capability.SupportedPixelSizes
+	candidate.SupportsCustomRatio = capability.SupportsCustomRatio
+	candidate.SupportedBackgrounds = capability.SupportedBackgrounds
 	candidate.OutputFormat = capability.OutputFormat
 	candidate.OutputCompression = capability.OutputCompression
 	candidate.SupportsOutputCompression = capability.SupportsOutputCompression
 	candidate.SupportsCustomSize = capability.SupportsCustomSize
+	candidate.MinWidth, candidate.MaxWidth = capability.MinWidth, capability.MaxWidth
+	candidate.MinHeight, candidate.MaxHeight = capability.MinHeight, capability.MaxHeight
 	candidate.Moderation = capability.Moderation
 	if candidate.MaxReferenceImageCount > 0 {
 		candidate.SupportsImageInput = true
@@ -992,7 +1084,7 @@ func (r *Resolver) ListCapabilities() []CapabilityItem {
 		items = append(items, CapabilityItem{
 			AbstractModel:          model,
 			TaskTypes:              unionStrings(r.taskTypesForModel(model)),
-			BaseResolution:         append([]string{"auto"}, sortedKeys(r.cfg.Billing.BaseResolutionPointsByModel[model])...),
+			BaseResolution:         sortedKeys(r.cfg.Billing.BaseResolutionPointsByModel[model]),
 			Quality:                cloneStrings(DefaultQuality),
 			SizeModes:              cloneStrings(DefaultSizeModes),
 			AspectRatios:           unionStrings(r.aspectRatiosForModel(model)),

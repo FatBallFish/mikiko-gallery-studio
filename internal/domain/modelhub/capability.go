@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	SizeModeAuto            = "auto"
 	SizeModeRatio           = "ratio"
 	SizeModePixel           = "pixel"
 	sizeModeLegacyRatio     = "legacy_ratio_size"
@@ -18,7 +19,6 @@ var (
 	DefaultSizeModes           = []string{SizeModeRatio}
 	DefaultSupportedRatios     = []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
 	DefaultSupportedPixelSizes = []string{"1024x1024"}
-	DefaultBaseResolution      = []string{"auto", "1k"}
 	DefaultQuality             = []string{"auto"}
 	DefaultOutputFormat        = []string{"png"}
 	DefaultModeration          = []string{"auto"}
@@ -32,10 +32,16 @@ type ImageModelCapability struct {
 	SizeModes                 []string
 	SupportedRatios           []string
 	SupportedPixelSizes       []string
+	SupportsCustomRatio       bool
+	SupportedBackgrounds      []string
 	OutputFormat              []string
 	OutputCompression         int
 	SupportsOutputCompression bool
 	SupportsCustomSize        bool
+	MinWidth                  int
+	MaxWidth                  int
+	MinHeight                 int
+	MaxHeight                 int
 	Moderation                []string
 }
 
@@ -47,7 +53,12 @@ func NormalizeCapability(raw ImageModelCapability) (ImageModelCapability, error)
 	if capability.MaxImageCount < 1 || capability.MaxImageCount > 10 {
 		return capability, errs.BadRequest("max_image_count must be between 1 and 10")
 	}
-	capability.BaseResolution = normalizeBaseResolution(defaultStrings(capability.BaseResolution, DefaultBaseResolution))
+	for _, item := range raw.BaseResolution {
+		if strings.EqualFold(strings.TrimSpace(item), SizeModeAuto) {
+			return capability, errs.BadRequest("base_resolution must not contain auto")
+		}
+	}
+	capability.BaseResolution = normalizeBaseResolution(defaultStrings(capability.BaseResolution, []string{"1k"}))
 	if len(capability.BaseResolution) == 0 {
 		return capability, errs.BadRequest("base_resolution is required")
 	}
@@ -77,6 +88,19 @@ func NormalizeCapability(raw ImageModelCapability) (ImageModelCapability, error)
 		}
 	} else {
 		capability.SupportedPixelSizes = nil
+	}
+	if err := validateConfiguredPixelBounds(capability); err != nil {
+		return capability, err
+	}
+	for _, size := range capability.SupportedPixelSizes {
+		width, height, ok := ParseImageSize(size)
+		if !ok || !legalExplicitDimensions(width, height, capability) {
+			return capability, errs.BadRequest("supported_pixel_sizes contains an invalid size")
+		}
+	}
+	capability.SupportedBackgrounds = normalizeEnumStrings(capability.SupportedBackgrounds, map[string]struct{}{"auto": {}, "opaque": {}, "transparent": {}})
+	if len(raw.SupportedBackgrounds) != len(capability.SupportedBackgrounds) {
+		return capability, errs.BadRequest("supported_backgrounds contains an unsupported value")
 	}
 	capability.OutputFormat = normalizeEnumStrings(defaultStrings(capability.OutputFormat, DefaultOutputFormat), map[string]struct{}{"png": {}, "jpeg": {}, "webp": {}})
 	if len(capability.OutputFormat) == 0 {
@@ -133,6 +157,12 @@ func NormalizeResolveRequest(req ResolveRequest) (ResolveRequest, error) {
 		mode = SizeModeRatio
 	}
 	switch mode {
+	case SizeModeAuto:
+		if strings.TrimSpace(req.BaseResolution) != "" || strings.TrimSpace(req.AspectRatio) != "" || strings.TrimSpace(req.RequestedSize) != "" {
+			return req, errs.New(400, CodeInvalidSizeMode, "auto size_mode does not accept size fields")
+		}
+		req.SizeMode = SizeModeAuto
+		return req, nil
 	case sizeModeLegacyRatio:
 		size := NormalizePixelSize(req.RequestedSize)
 		if size == "" {
@@ -165,10 +195,10 @@ func NormalizeResolveRequest(req ResolveRequest) (ResolveRequest, error) {
 		if !ok {
 			return req, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
 		}
-		size, err := NormalizeCustomImageSize(width, height)
-		if err != nil {
+		if !IsLegalCustomImageSize(width, height) {
 			return req, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
 		}
+		size := fmt.Sprintf("%dx%d", width, height)
 		req.SizeMode = SizeModePixel
 		req.RequestedSize = size
 		req.BaseResolution = normalizeBaseResolutionValue(req.BaseResolution)
@@ -220,6 +250,9 @@ func PublicSizeMode(mode string) string {
 		return SizeModeRatio
 	}
 	normalized := strings.ToLower(strings.TrimSpace(mode))
+	if normalized == SizeModeAuto {
+		return SizeModeAuto
+	}
 	if normalized == SizeModePixel {
 		return SizeModePixel
 	}
@@ -278,7 +311,7 @@ func normalizeSizeModes(values []string) []string {
 	result := []string{}
 	for _, value := range values {
 		mode := strings.ToLower(strings.TrimSpace(value))
-		if mode != SizeModeRatio && mode != SizeModePixel {
+		if mode != SizeModeAuto && mode != SizeModeRatio && mode != SizeModePixel {
 			continue
 		}
 		if _, ok := seen[mode]; ok {

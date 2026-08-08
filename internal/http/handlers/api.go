@@ -840,6 +840,7 @@ func (a *API) HandleEstimate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution:            r.URL.Query().Get("base_resolution"),
 		Quality:                   r.URL.Query().Get("quality"),
 		OutputFormat:              r.URL.Query().Get("output_format"),
+		Background:                r.URL.Query().Get("background"),
 		OutputCompression:         parseOptionalIntQueryValue(r.URL.Query().Get("output_compression")),
 		Moderation:                r.URL.Query().Get("moderation"),
 		RequestedSize:             r.URL.Query().Get("requested_size"),
@@ -1534,6 +1535,7 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution:            r.URL.Query().Get("base_resolution"),
 		Quality:                   r.URL.Query().Get("quality"),
 		OutputFormat:              r.URL.Query().Get("output_format"),
+		Background:                r.URL.Query().Get("background"),
 		OutputCompression:         parseOptionalIntQueryValue(r.URL.Query().Get("output_compression")),
 		Moderation:                r.URL.Query().Get("moderation"),
 		RequestedSize:             r.URL.Query().Get("requested_size"),
@@ -7803,6 +7805,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution            string   `json:"base_resolution"`
 		Quality                   string   `json:"quality"`
 		OutputFormat              string   `json:"output_format"`
+		Background                string   `json:"background"`
 		OutputCompression         int      `json:"output_compression"`
 		Moderation                string   `json:"moderation"`
 		RequestedSize             string   `json:"requested_size"`
@@ -7832,6 +7835,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution:      req.BaseResolution,
 		Quality:             req.Quality,
 		OutputFormat:        req.OutputFormat,
+		Background:          req.Background,
 		OutputCompression:   req.OutputCompression,
 		Moderation:          req.Moderation,
 		OutputImageCount:    req.RequestedOutputImageCount,
@@ -7869,6 +7873,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution            string   `json:"base_resolution"`
 		Quality                   string   `json:"quality"`
 		OutputFormat              string   `json:"output_format"`
+		Background                string   `json:"background"`
 		OutputCompression         int      `json:"output_compression"`
 		Moderation                string   `json:"moderation"`
 		RequestedSize             string   `json:"requested_size"`
@@ -7898,6 +7903,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution:            req.BaseResolution,
 		Quality:                   req.Quality,
 		OutputFormat:              req.OutputFormat,
+		Background:                req.Background,
 		OutputCompression:         req.OutputCompression,
 		Moderation:                req.Moderation,
 		RequestedSize:             req.RequestedSize,
@@ -7930,6 +7936,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution:      req.BaseResolution,
 		Quality:             req.Quality,
 		OutputFormat:        req.OutputFormat,
+		Background:          req.Background,
 		OutputCompression:   req.OutputCompression,
 		Moderation:          req.Moderation,
 		OutputImageCount:    req.RequestedOutputImageCount,
@@ -9062,6 +9069,12 @@ func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request,
 		SizeModes                 []string       `json:"size_modes"`
 		SupportedRatios           []string       `json:"supported_ratios"`
 		SupportedPixelSizes       []string       `json:"supported_pixel_sizes"`
+		SupportsCustomRatio       bool           `json:"supports_custom_ratio"`
+		SupportedBackgrounds      []string       `json:"supported_backgrounds"`
+		MinWidth                  int            `json:"min_width"`
+		MaxWidth                  int            `json:"max_width"`
+		MinHeight                 int            `json:"min_height"`
+		MaxHeight                 int            `json:"max_height"`
 		OutputFormat              []string       `json:"output_format"`
 		OutputCompression         *int           `json:"output_compression"`
 		SupportsOutputCompression bool           `json:"supports_output_compression"`
@@ -9088,7 +9101,7 @@ func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request,
 	if req.OutputCompression != nil {
 		outputCompression = *req.OutputCompression
 	}
-	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, BaseResolution: req.BaseResolution, Quality: req.Quality, MaxReferenceImageCount: maxReferenceCount, MaxImageCount: maxImageCount, SizeModes: req.SizeModes, SupportedRatios: req.SupportedRatios, SupportedPixelSizes: req.SupportedPixelSizes, OutputFormat: req.OutputFormat, OutputCompression: outputCompression, SupportsOutputCompression: req.SupportsOutputCompression, SupportsCustomSize: req.SupportsCustomSize, Moderation: req.Moderation, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
+	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, BaseResolution: req.BaseResolution, Quality: req.Quality, MaxReferenceImageCount: maxReferenceCount, MaxImageCount: maxImageCount, SizeModes: req.SizeModes, SupportedRatios: req.SupportedRatios, SupportedPixelSizes: req.SupportedPixelSizes, SupportsCustomRatio: req.SupportsCustomRatio, SupportedBackgrounds: req.SupportedBackgrounds, MinWidth: req.MinWidth, MaxWidth: req.MaxWidth, MinHeight: req.MinHeight, MaxHeight: req.MaxHeight, OutputFormat: req.OutputFormat, OutputCompression: outputCompression, SupportsOutputCompression: req.SupportsOutputCompression, SupportsCustomSize: req.SupportsCustomSize, Moderation: req.Moderation, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
 }
 
 func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) (domainimagetask.TestModelAccountRequest, bool) {
@@ -9102,6 +9115,7 @@ func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) 
 		BaseResolution    string `json:"base_resolution"`
 		Quality           string `json:"quality"`
 		OutputFormat      string `json:"output_format"`
+		Background        string `json:"background"`
 		OutputCompression int    `json:"output_compression"`
 		Moderation        string `json:"moderation"`
 		AspectRatio       string `json:"aspect_ratio"`
@@ -9120,6 +9134,7 @@ func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) 
 		BaseResolution:    req.BaseResolution,
 		Quality:           req.Quality,
 		OutputFormat:      req.OutputFormat,
+		Background:        req.Background,
 		OutputCompression: req.OutputCompression,
 		Moderation:        req.Moderation,
 		AspectRatio:       req.AspectRatio,

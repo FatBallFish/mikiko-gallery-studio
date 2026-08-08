@@ -1011,7 +1011,10 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetOutputFormat(defaultString(task.OutputFormat, "png")).
 		SetOutputCompression(defaultPositive(task.OutputCompression, 100)).
 		SetModeration(defaultString(task.Moderation, "auto")).
-		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
+		SetRequestedSize(task.RequestedSize).
+		SetResolvedWidth(task.ResolvedWidth).
+		SetResolvedHeight(task.ResolvedHeight).
+		SetBackground(task.Background).
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
 		SetReferenceImageCount(task.ReferenceImageCount).
@@ -1108,7 +1111,10 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
 		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
 		SetModeration(defaultString(task.Moderation, entity.Moderation)).
-		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
+		SetRequestedSize(task.RequestedSize).
+		SetResolvedWidth(task.ResolvedWidth).
+		SetResolvedHeight(task.ResolvedHeight).
+		SetBackground(task.Background).
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
 		SetReferenceImageCount(task.ReferenceImageCount).
@@ -1255,7 +1261,10 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
 		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
 		SetModeration(defaultString(task.Moderation, entity.Moderation)).
-		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
+		SetRequestedSize(task.RequestedSize).
+		SetResolvedWidth(task.ResolvedWidth).
+		SetResolvedHeight(task.ResolvedHeight).
+		SetBackground(task.Background).
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
 		SetReferenceImageCount(task.ReferenceImageCount).
@@ -1387,7 +1396,10 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
 		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
 		SetModeration(defaultString(task.Moderation, entity.Moderation)).
-		SetRequestedSize(defaultString(task.RequestedSize, "auto")).
+		SetRequestedSize(task.RequestedSize).
+		SetResolvedWidth(task.ResolvedWidth).
+		SetResolvedHeight(task.ResolvedHeight).
+		SetBackground(task.Background).
 		SetRequestedOutputImageCount(defaultPositive(task.OutputImageCount, 1)).
 		SetSuccessOutputImageCount(len(task.Results)).
 		SetReferenceImageCount(task.ReferenceImageCount).
@@ -1674,10 +1686,13 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		NegativePrompt:       nullableString(entity.NegativePrompt),
 		AspectRatio:          entity.AspectRatio,
 		RequestedSize:        nullableString(entity.RequestedSize),
+		ResolvedWidth:        nullableInt(entity.ResolvedWidth),
+		ResolvedHeight:       nullableInt(entity.ResolvedHeight),
 		SizeMode:             entity.SizeMode,
 		BaseResolution:       entity.BaseResolution,
 		Quality:              entity.Quality,
 		OutputFormat:         entity.OutputFormat,
+		Background:           nullableString(entity.Background),
 		OutputCompression:    entity.OutputCompression,
 		Moderation:           entity.Moderation,
 		ResponseMode:         entity.ResponseMode,

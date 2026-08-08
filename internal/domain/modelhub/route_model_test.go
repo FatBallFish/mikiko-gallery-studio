@@ -433,36 +433,12 @@ func TestResolveRouteModelPixelModeUsesPixelCapabilityWithoutQualityFilter(t *te
 }
 
 func TestResolveRouteModelCustomPixelSizeRequiresDeclaredCapability(t *testing.T) {
-	resolver := NewResolver(config.Config{GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 4, ReferenceImageMaxCount: 2}})
-	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: ModelRoutingSnapshot{
-		RouteModels: []RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
-		Prices:      []RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true}},
-		ProviderModels: []ProviderCandidate{
-			{AccountModelID: 11, ModelAccountID: 101, ModelCode: "preset-only", SupportedTaskTypes: []string{"text_to_image"}, SizeModes: []string{SizeModePixel}, SupportedPixelSizes: []string{"1024x1024"}},
-			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "custom-size", SupportedTaskTypes: []string{"text_to_image"}, SizeModes: []string{SizeModePixel}, SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true},
-		},
-		Candidates: []RouteCandidateConfig{
-			{RouteModelID: 1, AccountModelID: 11, Priority: 1, Enabled: true},
-			{RouteModelID: 1, AccountModelID: 12, Priority: 2, Enabled: true},
-		},
-	}})
-
-	request, err := NormalizeResolveRequest(ResolveRequest{
+	_, err := NormalizeResolveRequest(ResolveRequest{
 		RouteModelCode: "plus", TaskType: "text_to_image", SizeMode: SizeModePixel,
 		RequestedSize: "1001x1001", RequestedOutputImageCount: 1,
 	})
-	if err != nil {
-		t.Fatalf("NormalizeResolveRequest() custom pixel mode: %v", err)
-	}
-	if request.RequestedSize != "1008x1008" {
-		t.Fatalf("expected authoritative normalization to 1008x1008, got %q", request.RequestedSize)
-	}
-	resolved, err := resolver.ResolveContext(context.Background(), request)
-	if err != nil {
-		t.Fatalf("ResolveContext() custom pixel mode: %v", err)
-	}
-	if len(resolved.Providers) != 1 || resolved.Providers[0].ModelCode != "custom-size" {
-		t.Fatalf("expected only custom-size candidate, got %#v", resolved.Providers)
+	if err == nil {
+		t.Fatal("explicit dimensions must be rejected instead of rounded")
 	}
 }
 
@@ -526,20 +502,75 @@ func TestVisibleRouteModelScopesCapabilitiesByTaskType(t *testing.T) {
 	}
 	want := map[string]VisibleRouteModelTaskCapability{
 		"text_to_image": {
-			BaseResolution: []string{"auto", "1k", "2k"}, AutoBaseResolution: "2k",
+			BaseResolution: []string{"1k", "2k"}, AutoBaseResolution: "2k",
 			Quality: []string{"high"}, SizeModes: []string{"ratio"}, AspectRatios: []string{"1:1"}, PixelSizes: []string{},
-			OutputFormat: []string{"jpeg"}, SupportsOutputCompression: true, Moderation: []string{"auto"},
+			OutputFormat: []string{"jpeg"}, SupportsOutputCompression: true, SupportedBackgrounds: []string{}, Moderation: []string{"auto"},
 			MaxOutputImageCount: 2,
 		},
 		"image_edit": {
-			BaseResolution: []string{"auto", "4k"}, AutoBaseResolution: "4k",
+			BaseResolution: []string{"4k"}, AutoBaseResolution: "4k",
 			Quality: []string{"low"}, SizeModes: []string{"pixel"}, AspectRatios: []string{}, PixelSizes: []string{"1536x1024"},
-			OutputFormat: []string{"webp"}, SupportsCustomSize: true, Moderation: []string{"low"},
+			OutputFormat: []string{"webp"}, SupportsCustomSize: true, SupportedBackgrounds: []string{}, Moderation: []string{"low"},
 			MaxOutputImageCount: 1, MaxReferenceImageCount: 3,
 		},
 	}
 	if !reflect.DeepEqual(items[0].CapabilitiesByTaskType, want) {
 		t.Fatalf("task capabilities = %#v, want %#v", items[0].CapabilitiesByTaskType, want)
+	}
+}
+
+func TestVisibleRouteModelLimitsUsesSafeCandidateIntersection(t *testing.T) {
+	resolver := NewResolver(config.Config{GenerationLimits: config.GenerationLimitsConfig{MaxImageCount: 8}})
+	routing := ModelRoutingSnapshot{
+		ProviderModels: []ProviderCandidate{
+			{
+				AccountModelID: 11, SupportedTaskTypes: []string{"text_to_image"},
+				SupportedBaseResolution: []string{"1k", "2k"}, SizeModes: []string{"auto", "ratio", "pixel"},
+				SupportedAspectRatios: []string{"1:1", "16:9"}, SupportedPixelSizes: []string{"1024x1024", "2048x1024"},
+				Quality: []string{"auto", "high"}, OutputFormat: []string{"png", "webp"}, Moderation: []string{"auto", "low"},
+				SupportedBackgrounds: []string{"auto", "transparent"}, SupportsOutputCompression: true,
+				SupportsCustomRatio: true, SupportsCustomSize: true, MinWidth: 512, MaxWidth: 2048, MinHeight: 512, MaxHeight: 2048,
+				MaxImageCount: 4,
+			},
+			{
+				AccountModelID: 12, SupportedTaskTypes: []string{"text_to_image"},
+				SupportedBaseResolution: []string{"1k", "4k"}, SizeModes: []string{"ratio", "pixel"},
+				SupportedAspectRatios: []string{"1:1", "4:3"}, SupportedPixelSizes: []string{"1024x1024", "1536x1024"},
+				Quality: []string{"auto", "low"}, OutputFormat: []string{"png", "jpeg"}, Moderation: []string{"auto"},
+				SupportedBackgrounds: []string{"auto", "opaque"}, SupportsOutputCompression: false,
+				SupportsCustomRatio: true, SupportsCustomSize: false, MinWidth: 768, MaxWidth: 1536, MinHeight: 640, MaxHeight: 1440,
+				MaxImageCount: 2,
+			},
+		},
+		Candidates: []RouteCandidateConfig{
+			{RouteModelID: 1, AccountModelID: 11, Enabled: true},
+			{RouteModelID: 1, AccountModelID: 12, Enabled: true},
+		},
+	}
+
+	got := resolver.visibleRouteModelLimits(RouteModelConfig{ID: 1}, routing, "text_to_image")
+	if !reflect.DeepEqual(got.BaseResolution, []string{"1k"}) || !reflect.DeepEqual(got.SizeModes, []string{"pixel", "ratio"}) || !reflect.DeepEqual(got.AspectRatios, []string{"1:1"}) || !reflect.DeepEqual(got.PixelSizes, []string{"1024x1024"}) {
+		t.Fatalf("size capability intersection = %#v", got)
+	}
+	if !reflect.DeepEqual(got.Quality, []string{"auto"}) || !reflect.DeepEqual(got.OutputFormat, []string{"png"}) || !reflect.DeepEqual(got.SupportedBackgrounds, []string{"auto"}) || !reflect.DeepEqual(got.Moderation, []string{"auto"}) {
+		t.Fatalf("enum capability intersection = %#v", got)
+	}
+	if got.SupportsOutputCompression || got.SupportsCustomSize || !got.SupportsCustomRatio {
+		t.Fatalf("boolean capability intersection = %#v", got)
+	}
+	if got.MinWidth != 768 || got.MaxWidth != 1536 || got.MinHeight != 640 || got.MaxHeight != 1440 {
+		t.Fatalf("pixel bounds intersection = %#v", got)
+	}
+
+	routing.ProviderModels[0].SizeModes = []string{"auto", "ratio"}
+	routing.ProviderModels[1].SizeModes = []string{"pixel"}
+	routing.ProviderModels[0].Moderation = []string{"auto"}
+	routing.ProviderModels[1].Quality = []string{"low"}
+	routing.ProviderModels[1].OutputFormat = []string{"jpeg"}
+	routing.ProviderModels[1].Moderation = []string{"low"}
+	got = resolver.visibleRouteModelLimits(RouteModelConfig{ID: 1}, routing, "text_to_image")
+	if len(got.SizeModes) != 0 || len(got.Quality) != 0 || len(got.OutputFormat) != 0 || len(got.Moderation) != 0 {
+		t.Fatalf("disjoint candidate capabilities must remain empty, got %#v", got)
 	}
 }
 

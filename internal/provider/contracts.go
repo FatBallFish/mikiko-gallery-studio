@@ -45,6 +45,7 @@ type ImageRequest struct {
 	TaskType          TaskType
 	Prompt            string
 	Size              string
+	Background        string
 	Quality           string
 	OutputFormat      string
 	OutputCompression int

@@ -183,10 +183,16 @@ func (s *ModelAdminStore) CreateModelAccountModel(ctx context.Context, req domai
 		SetSizeModes(req.SizeModes).
 		SetSupportedRatios(req.SupportedRatios).
 		SetSupportedPixelSizes(req.SupportedPixelSizes).
+		SetSupportsCustomRatio(req.SupportsCustomRatio).
+		SetSupportedBackgrounds(req.SupportedBackgrounds).
 		SetOutputFormat(req.OutputFormat).
 		SetOutputCompression(req.OutputCompression).
 		SetSupportsOutputCompression(req.SupportsOutputCompression).
 		SetSupportsCustomSize(req.SupportsCustomSize).
+		SetMinWidth(req.MinWidth).
+		SetMaxWidth(req.MaxWidth).
+		SetMinHeight(req.MinHeight).
+		SetMaxHeight(req.MaxHeight).
 		SetModeration(req.Moderation).
 		SetCostPerImage(req.CostPerImage).
 		SetCurrency(req.Currency).
@@ -215,10 +221,16 @@ func (s *ModelAdminStore) UpdateModelAccountModel(ctx context.Context, accountMo
 		SetSizeModes(req.SizeModes).
 		SetSupportedRatios(req.SupportedRatios).
 		SetSupportedPixelSizes(req.SupportedPixelSizes).
+		SetSupportsCustomRatio(req.SupportsCustomRatio).
+		SetSupportedBackgrounds(req.SupportedBackgrounds).
 		SetOutputFormat(req.OutputFormat).
 		SetOutputCompression(req.OutputCompression).
 		SetSupportsOutputCompression(req.SupportsOutputCompression).
 		SetSupportsCustomSize(req.SupportsCustomSize).
+		SetMinWidth(req.MinWidth).
+		SetMaxWidth(req.MaxWidth).
+		SetMinHeight(req.MinHeight).
+		SetMaxHeight(req.MaxHeight).
 		SetModeration(req.Moderation).
 		SetCostPerImage(req.CostPerImage).
 		SetCurrency(req.Currency).
@@ -1043,6 +1055,8 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			SizeModes:                 append([]string(nil), model.SizeModes...),
 			SupportedAspectRatios:     supportedRatios,
 			SupportedPixelSizes:       append([]string(nil), model.SupportedPixelSizes...),
+			SupportsCustomRatio:       model.SupportsCustomRatio,
+			SupportedBackgrounds:      append([]string(nil), model.SupportedBackgrounds...),
 			MaxImageCount:             maxImageCount,
 			ConcurrencyLimit:          account.ConcurrencyLimit,
 			MaxReferenceImageCount:    model.MaxReferenceImageCount,
@@ -1051,6 +1065,10 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			OutputCompression:         model.OutputCompression,
 			SupportsOutputCompression: model.SupportsOutputCompression,
 			SupportsCustomSize:        model.SupportsCustomSize,
+			MinWidth:                  model.MinWidth,
+			MaxWidth:                  model.MaxWidth,
+			MinHeight:                 model.MinHeight,
+			MaxHeight:                 model.MaxHeight,
 			Moderation:                append([]string(nil), model.Moderation...),
 			HealthStatus:              account.Status,
 			TimeoutMS:                 account.TimeoutMs,
@@ -1254,10 +1272,16 @@ func (s *ModelAdminStore) mapModelAccountModel(ctx context.Context, entity *repo
 		SizeModes:                 append([]string(nil), entity.SizeModes...),
 		SupportedRatios:           append([]string(nil), entity.SupportedRatios...),
 		SupportedPixelSizes:       append([]string(nil), entity.SupportedPixelSizes...),
+		SupportsCustomRatio:       entity.SupportsCustomRatio,
+		SupportedBackgrounds:      append([]string(nil), entity.SupportedBackgrounds...),
 		OutputFormat:              append([]string(nil), entity.OutputFormat...),
 		OutputCompression:         entity.OutputCompression,
 		SupportsOutputCompression: entity.SupportsOutputCompression,
 		SupportsCustomSize:        entity.SupportsCustomSize,
+		MinWidth:                  entity.MinWidth,
+		MaxWidth:                  entity.MaxWidth,
+		MinHeight:                 entity.MinHeight,
+		MaxHeight:                 entity.MaxHeight,
 		Moderation:                append([]string(nil), entity.Moderation...),
 		CostPerImage:              entity.CostPerImage,
 		Currency:                  entity.Currency,
