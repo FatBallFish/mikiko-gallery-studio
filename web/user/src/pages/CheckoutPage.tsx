@@ -205,7 +205,7 @@ export function CheckoutPage() {
       setDetailOrder((current) => current?.id === next.id ? next : current)
       if (cancelResult === 'paid') {
         if (!monitoredPayment) {
-          app.notify('success', '支付成功，充值余额已刷新')
+          app.notify('success', '支付成功，积分余额已刷新')
           void app.refreshAccount()
           void loadRecentOrders()
         }
@@ -243,7 +243,7 @@ export function CheckoutPage() {
         <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
             <h1 className={checkoutClasses.title}>积分充值</h1>
-            <p className={checkoutClasses.detail}>固定积分包和自定义金额统一通过收银台创建订单，支付成功后进入充值余额桶且不过期。</p>
+            <p className={checkoutClasses.detail}>固定积分包按套餐有效期到账，自定义金额充值积分长期有效。</p>
           </div>
           <Button tone="ghost" onClick={() => void load()}>刷新配置</Button>
         </div>
@@ -374,7 +374,7 @@ export function CheckoutPage() {
           onOrderChange={setMonitorOrder}
           onSuccess={(next) => {
             setMonitorOrder(next)
-            app.notify('success', '支付成功，充值余额已刷新')
+            app.notify('success', '支付成功，积分余额已刷新')
             void app.refreshAccount()
             void loadRecentOrders()
           }}

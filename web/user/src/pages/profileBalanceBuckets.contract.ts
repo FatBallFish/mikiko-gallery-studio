@@ -1,5 +1,5 @@
 import type { Balance } from '../../../shared/api-types'
-import { normalizeBalanceBuckets } from './profileBalanceModel'
+import { nextExpiringCreditText, normalizeBalanceBuckets } from './profileBalanceModel'
 
 const zeroBalance: Balance = {
   available_points: '0.00000',
@@ -29,4 +29,21 @@ const recharge = partialBuckets.find((bucket) => bucket.bucket === 'recharge')
 
 if (partialBuckets.length !== 4 || trial?.available_points !== '5.00000' || recharge?.available_points !== '0.00000') {
   throw new Error('profile balance buckets should preserve server buckets and fill missing defaults')
+}
+
+const mixedExpiryBalance: Balance = {
+  ...zeroBalance,
+  next_expiring_grant: {
+    grant_id: 0,
+    grant_type: 'mixed',
+    available_points: '330.00000',
+    expires_at: '2026-07-05T10:05:00Z',
+  },
+}
+const mixedExpiryBuckets = normalizeBalanceBuckets(mixedExpiryBalance)
+if (mixedExpiryBuckets.some((bucket) => bucket.expires_at || bucket.expire_warning)) {
+  throw new Error(`next-expiry summary must not mark an entire balance bucket as expiring, got ${JSON.stringify(mixedExpiryBuckets)}`)
+}
+if (nextExpiringCreditText(mixedExpiryBalance) !== '最近失效：330.00000 积分 · 2026/07/05 10:05') {
+  throw new Error(`profile must explicitly show next-expiring amount and time, got ${nextExpiringCreditText(mixedExpiryBalance)}`)
 }

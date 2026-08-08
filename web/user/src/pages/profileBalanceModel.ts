@@ -9,12 +9,16 @@ export function normalizeBalanceBuckets(balance: Balance | null): BalanceBucket[
       bucket: 'trial',
       label: '体验额度',
       available_points: balance?.trial_points ?? '0.00000',
-      expire_warning: Boolean(balance?.next_expiring_grant?.grant_type === 'trial'),
-      expires_at: balance?.next_expiring_grant?.expires_at,
     },
   ]
   const serverBuckets = new Map((balance?.buckets ?? []).map((bucket) => [bucket.bucket, bucket]))
   return defaults.map((bucket) => ({ ...bucket, ...serverBuckets.get(bucket.bucket) }))
+}
+
+export function nextExpiringCreditText(balance: Balance | null) {
+  const next = balance?.next_expiring_grant
+  if (!next?.expires_at || !next.available_points) return null
+  return `最近失效：${next.available_points} 积分 · ${ledgerDateTime(next.expires_at)}`
 }
 
 export function balanceBucketLabel(bucket: string) {

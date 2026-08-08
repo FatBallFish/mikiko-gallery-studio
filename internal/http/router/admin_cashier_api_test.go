@@ -65,6 +65,17 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 		t.Fatalf("legacy create response must expose default expiry policy: %s", createBody)
 	}
 
+	invalidCreateReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/plans", bytes.NewBufferString(
+		`{"plan_code":"invalid-expiry","plan_name":"无效有效期","plan_type":"points_package","purchase_enabled":false,"status":"disabled","price_cny":"20.00000","points":"50.00000","bonus_points":"0.00000","credit_expiry_enabled":true}`,
+	))
+	invalidCreateReq.Header.Set("Authorization", "Bearer "+adminToken)
+	invalidCreateReq.Header.Set("Content-Type", "application/json")
+	invalidCreateRec := httptest.NewRecorder()
+	handler.ServeHTTP(invalidCreateRec, invalidCreateReq)
+	if invalidCreateRec.Code != http.StatusBadRequest {
+		t.Fatalf("explicit expiry create without duration must fail: status=%d body=%s", invalidCreateRec.Code, invalidCreateRec.Body.String())
+	}
+
 	transition := func(action string, wantStatus string, wantPurchase bool) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/ops/admin/v1/cashier/plans/%d/%s", created.Data.ID, action), nil)
@@ -109,6 +120,16 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	}
 	if !updated.Data.CreditExpiryEnabled || updated.Data.DurationDays == nil || *updated.Data.DurationDays != 30 || !bytes.Contains(updateBody, []byte(`"credit_expiry_enabled":true`)) {
 		t.Fatalf("legacy update response must expose default expiry policy: %s", updateBody)
+	}
+	invalidUpdateReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/ops/admin/v1/cashier/plans/%d", created.Data.ID), bytes.NewBufferString(
+		`{"plan_name":"生命周期套餐已编辑","plan_type":"points_package","purchase_enabled":true,"status":"active","price_cny":"21.00000","points":"51.00000","bonus_points":"0.00000","credit_expiry_enabled":true,"duration_days":0}`,
+	))
+	invalidUpdateReq.Header.Set("Authorization", "Bearer "+adminToken)
+	invalidUpdateReq.Header.Set("Content-Type", "application/json")
+	invalidUpdateRec := httptest.NewRecorder()
+	handler.ServeHTTP(invalidUpdateRec, invalidUpdateReq)
+	if invalidUpdateRec.Code != http.StatusBadRequest {
+		t.Fatalf("explicit expiry update with zero duration must fail: status=%d body=%s", invalidUpdateRec.Code, invalidUpdateRec.Body.String())
 	}
 	transition("archive", "archived", false)
 

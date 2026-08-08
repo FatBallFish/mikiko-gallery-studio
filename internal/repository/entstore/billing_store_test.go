@@ -1490,6 +1490,233 @@ func TestBillingStoreRefundPaymentOrderDeductsRechargeGrantAndIsIdempotent(t *te
 	}
 }
 
+func TestBillingStoreBonusPackageFullRefundDeductsAllOrderGrants(t *testing.T) {
+	ctx := t.Context()
+	client, store, order := completedBonusPackageOrder(t, "full-refund", 291)
+	request := domainbilling.RefundPaymentOrderRequest{
+		UserID: 291, OrderID: order.ID, RefundTradeNo: "bonus-full-refund",
+	}
+
+	if _, err := store.FreezeRefundPaymentOrder(ctx, request); err != nil {
+		t.Fatalf("FreezeRefundPaymentOrder: %v", err)
+	}
+	frozenGrants, err := client.WalletGrant.Query().
+		Where(walletgrant.UserIDEQ(291), walletgrant.SourceIDEQ(order.ID)).
+		Order(repoent.Asc(walletgrant.FieldID)).
+		All(ctx)
+	if err != nil {
+		t.Fatalf("load frozen order grants: %v", err)
+	}
+	if len(frozenGrants) != 2 || frozenGrants[0].FrozenPoints != "300.00000" || frozenGrants[1].FrozenPoints != "30.00000" {
+		t.Fatalf("refund freeze must span purchased and gift grants, got %#v", frozenGrants)
+	}
+	if _, err := store.ReleaseRefundPaymentOrder(ctx, request); err != nil {
+		t.Fatalf("ReleaseRefundPaymentOrder: %v", err)
+	}
+	releasedGrants, err := client.WalletGrant.Query().
+		Where(walletgrant.UserIDEQ(291), walletgrant.SourceIDEQ(order.ID)).
+		Order(repoent.Asc(walletgrant.FieldID)).
+		All(ctx)
+	if err != nil {
+		t.Fatalf("load released order grants: %v", err)
+	}
+	if len(releasedGrants) != 2 || releasedGrants[0].AvailablePoints != "300.00000" || releasedGrants[0].FrozenPoints != "0.00000" || releasedGrants[1].AvailablePoints != "30.00000" || releasedGrants[1].FrozenPoints != "0.00000" {
+		t.Fatalf("refund release must restore purchased and gift grants, got %#v", releasedGrants)
+	}
+
+	refunded, err := store.RefundPaymentOrder(ctx, request)
+	if err != nil {
+		t.Fatalf("RefundPaymentOrder: %v", err)
+	}
+	if refunded.Status != "refunded" || refunded.RefundedPoints != "330.00000" {
+		t.Fatalf("unexpected full refund result %#v", refunded)
+	}
+	grants, err := client.WalletGrant.Query().
+		Where(walletgrant.UserIDEQ(291), walletgrant.SourceIDEQ(order.ID)).
+		Order(repoent.Asc(walletgrant.FieldID)).
+		All(ctx)
+	if err != nil {
+		t.Fatalf("load order grants: %v", err)
+	}
+	if len(grants) != 2 || grants[0].GrantType != "subscription" || grants[1].GrantType != "gift" {
+		t.Fatalf("expected purchased and gift grants, got %#v", grants)
+	}
+	for _, grant := range grants {
+		if grant.Status != "refunded" || grant.AvailablePoints != "0.00000" || grant.FrozenPoints != "0.00000" {
+			t.Fatalf("full refund must clear every order grant, got %#v", grant)
+		}
+	}
+}
+
+func TestBillingStoreBonusPackageSupportsSequentialPartialRefunds(t *testing.T) {
+	ctx := t.Context()
+	client, store, order := completedBonusPackageOrder(t, "partial-refund", 292)
+
+	first, err := store.RefundPaymentOrder(ctx, domainbilling.RefundPaymentOrderRequest{
+		UserID: 292, OrderID: order.ID, RefundTradeNo: "bonus-partial-1", RefundAmountCNY: "10.00000",
+	})
+	if err != nil {
+		t.Fatalf("first RefundPaymentOrder: %v", err)
+	}
+	if first.Status != "partially_refunded" || first.RefundedPoints != "66.13226" {
+		t.Fatalf("unexpected first partial refund %#v", first)
+	}
+	grants, err := client.WalletGrant.Query().
+		Where(walletgrant.UserIDEQ(292), walletgrant.SourceIDEQ(order.ID), walletgrant.StatusEQ("active")).
+		Order(repoent.Asc(walletgrant.FieldID)).
+		All(ctx)
+	if err != nil {
+		t.Fatalf("load active order grants: %v", err)
+	}
+	if len(grants) != 2 || grants[0].GrantType != "subscription" || grants[0].AvailablePoints != "233.86774" || grants[1].GrantType != "gift" || grants[1].AvailablePoints != "30.00000" {
+		t.Fatalf("partial refund must allocate deterministically by grant id, got %#v", grants)
+	}
+
+	second, err := store.RefundPaymentOrder(ctx, domainbilling.RefundPaymentOrderRequest{
+		UserID: 292, OrderID: order.ID, RefundTradeNo: "bonus-partial-2",
+	})
+	if err != nil {
+		t.Fatalf("second RefundPaymentOrder: %v", err)
+	}
+	if second.Status != "refunded" || second.RefundedPoints != "330.00000" {
+		t.Fatalf("unexpected final refund %#v", second)
+	}
+	activeCount, err := client.WalletGrant.Query().
+		Where(walletgrant.UserIDEQ(292), walletgrant.SourceIDEQ(order.ID), walletgrant.StatusEQ("active")).
+		Count(ctx)
+	if err != nil {
+		t.Fatalf("count active order grants: %v", err)
+	}
+	if activeCount != 0 {
+		t.Fatalf("final refund must retire every order grant, got %d active", activeCount)
+	}
+}
+
+func TestBillingStoreBonusPackageRefundRejectsConsumedOrderGrant(t *testing.T) {
+	ctx := t.Context()
+	client, store, order := completedBonusPackageOrder(t, "consumed-refund", 293)
+	subscriptionGrant, err := client.WalletGrant.Query().
+		Where(walletgrant.UserIDEQ(293), walletgrant.SourceIDEQ(order.ID), walletgrant.GrantTypeEQ("subscription")).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("load subscription grant: %v", err)
+	}
+	if _, err := client.WalletGrant.UpdateOneID(subscriptionGrant.ID).
+		SetAvailablePoints("299.00000").
+		SetConsumedPoints("1.00000").
+		Save(ctx); err != nil {
+		t.Fatalf("mark grant consumed: %v", err)
+	}
+
+	_, err = store.RefundPaymentOrder(ctx, domainbilling.RefundPaymentOrderRequest{
+		UserID: 293, OrderID: order.ID, RefundTradeNo: "bonus-consumed-refund", RefundAmountCNY: "1.00000",
+	})
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.Code != errs.CodeConflict {
+		t.Fatalf("consumed order grant must reject even a small refund, got %T %v", err, err)
+	}
+	reloaded, err := store.GetOrder(ctx, 293, order.ID)
+	if err != nil {
+		t.Fatalf("GetOrder: %v", err)
+	}
+	if reloaded.Status != "completed" {
+		t.Fatalf("rejected refund must not mutate order, got %#v", reloaded)
+	}
+}
+
+func TestBillingStoreNextExpiryAggregatesSameTimestampWithoutMislabelingMixedBucket(t *testing.T) {
+	ctx := t.Context()
+	client, store, completed := completedBonusPackageOrder(t, "next-expiry", 294)
+	if completed.CreditExpiresAt == nil {
+		t.Fatal("bonus package must have a snapshotted expiry")
+	}
+	if _, err := client.WalletGrant.Create().
+		SetUserID(294).
+		SetGrantType("subscription").
+		SetSourceType("legacy_permanent").
+		SetStatus("active").
+		SetTotalPoints("5.00000").
+		SetAvailablePoints("5.00000").
+		SetFrozenPoints("0.00000").
+		SetConsumedPoints("0.00000").
+		Save(ctx); err != nil {
+		t.Fatalf("create permanent package grant: %v", err)
+	}
+
+	balance, err := store.GetBalance(ctx, 294)
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if balance.NextExpiringGrant == nil || balance.NextExpiringGrant.AvailablePoints != "330.00000" || balance.NextExpiringGrant.GrantType != "mixed" || balance.NextExpiringGrant.GrantID != 0 || balance.NextExpiringGrant.ExpiresAt == nil || !balance.NextExpiringGrant.ExpiresAt.Equal(*completed.CreditExpiresAt) {
+		t.Fatalf("same-time purchased and gift grants must aggregate into next expiry, got %#v", balance.NextExpiringGrant)
+	}
+	for _, bucket := range balance.Buckets {
+		if bucket.Bucket == "subscription" && bucket.ExpiresAt != nil {
+			t.Fatalf("mixed permanent/expiring subscription bucket must not label the whole bucket as expiring: %#v", bucket)
+		}
+	}
+}
+
+func TestBillingStoreFixedPackageOrderAlwaysSnapshotsCNY(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-cny-order-snapshot?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	if err := store.ensureDefaultPlans(ctx); err != nil {
+		t.Fatalf("ensureDefaultPlans: %v", err)
+	}
+	plan, err := client.SubscriptionPlan.Query().First(ctx)
+	if err != nil {
+		t.Fatalf("load legacy plan: %v", err)
+	}
+	if _, err := client.SubscriptionPlan.UpdateOneID(plan.ID).SetCurrency("USD").Save(ctx); err != nil {
+		t.Fatalf("set legacy plan currency: %v", err)
+	}
+	order, err := store.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 295, PlanCode: plan.PlanCode, Provider: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	if order.Currency != "CNY" {
+		t.Fatalf("fixed package order must snapshot CNY despite legacy plan currency, got %q", order.Currency)
+	}
+}
+
+func completedBonusPackageOrder(t *testing.T, name string, userID int64) (*repoent.Client, *BillingStore, domainbilling.PaymentOrder) {
+	t.Helper()
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-bonus-"+name+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: userID, PlanCode: "plus-monthly", Provider: "mock", PurchaseType: "plan",
+		VisibleMethod: "mock", ProviderType: "mock", PaymentDisplay: map[string]any{"type": "mock"},
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	completed, err := store.CompleteRechargeOrder(ctx, domainbilling.CompleteRechargeOrderRequest{
+		UserID: userID, OrderID: order.ID, Provider: "mock", TradeNo: "trade-" + name,
+	})
+	if err != nil {
+		t.Fatalf("CompleteRechargeOrder: %v", err)
+	}
+	return client, store, completed
+}
+
 func TestBillingStoreRefundPaymentOrderSupportsPartialRefunds(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-partial-refund-payment-order?mode=memory&cache=shared&_fk=1")

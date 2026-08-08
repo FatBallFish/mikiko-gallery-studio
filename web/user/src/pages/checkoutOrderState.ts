@@ -201,7 +201,7 @@ export function checkoutOrderRuntimeState(order: CashierOrder | null, nowMs = Da
   }
   const status = order.status.toLowerCase()
   if (status === 'completed' || status === 'paid') {
-    return { step: 'success', shouldPoll: false, label: '支付成功', detail: '充值积分已进入充值余额桶，可立即用于生成图片。' }
+    return { step: 'success', shouldPoll: false, label: '支付成功', detail: '积分已到账，可立即用于生成图片。' }
   }
   if (status === 'expired') {
     return { step: 'expired', shouldPoll: false, label: '订单已过期', detail: '该订单已超过支付有效期，请重新创建订单。' }

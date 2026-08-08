@@ -661,7 +661,7 @@ func (s *MemoryStore) CreateOrder(_ context.Context, req domainbilling.CreateOrd
 		PaymentDisplay:      cloneMap(req.PaymentDisplay),
 		IdempotencyKey:      idempotencyKey,
 		Status:              "pending",
-		Currency:            plan.Currency,
+		Currency:            "CNY",
 		AmountCNY:           plan.PriceCNY,
 		Points:              plan.Points,
 		BonusPoints:         plan.BonusPoints,

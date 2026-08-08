@@ -429,12 +429,15 @@ func normalizePlanWrite(req domainbilling.CreateSubscriptionPlanRequest) (domain
 	req.PriceCNY = price
 	req.Points = points
 	req.BonusPoints = bonus
-	if req.CreditExpiryEnabled == nil {
+	expiryPolicyExplicit := req.CreditExpiryEnabled != nil
+	if !expiryPolicyExplicit {
 		enabled := true
 		req.CreditExpiryEnabled = &enabled
 	}
 	if !*req.CreditExpiryEnabled {
 		req.DurationDays = nil
+	} else if expiryPolicyExplicit && (req.DurationDays == nil || *req.DurationDays <= 0) {
+		return req, errs.BadRequest("duration_days must be positive when credit expiry is enabled")
 	} else if req.DurationDays == nil || *req.DurationDays <= 0 {
 		days := 30
 		req.DurationDays = &days

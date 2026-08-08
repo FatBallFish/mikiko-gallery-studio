@@ -251,6 +251,59 @@ func TestPlanExpiryPolicyCreateListAndUpdateTransitions(t *testing.T) {
 	}
 }
 
+func TestPlanExpiryPolicyRequiresPositiveDurationWhenExplicitlyEnabled(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	enabled := true
+
+	for name, days := range map[string]*int{
+		"missing":  nil,
+		"zero":     intPointer(0),
+		"negative": intPointer(-1),
+	} {
+		t.Run("create "+name, func(t *testing.T) {
+			_, err := svc.CreatePlan(t.Context(), domainbilling.CreateSubscriptionPlanRequest{
+				PlanCode: "invalid-expiry-" + name, PlanName: "Invalid Expiry", PlanType: "points_package",
+				Status: "active", PriceCNY: "10.00000", Points: "20.00000", BonusPoints: "0.00000",
+				CreditExpiryEnabled: &enabled, DurationDays: days,
+			})
+			if err == nil {
+				t.Fatalf("explicit expiry with %s duration must be rejected", name)
+			}
+		})
+	}
+
+	created, err := svc.CreatePlan(t.Context(), domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "valid-expiry-update", PlanName: "Valid Expiry", PlanType: "points_package",
+		Status: "active", PriceCNY: "10.00000", Points: "20.00000", BonusPoints: "0.00000",
+	})
+	if err != nil {
+		t.Fatalf("legacy CreatePlan: %v", err)
+	}
+	_, err = svc.UpdatePlan(t.Context(), domainbilling.UpdateSubscriptionPlanRequest{
+		PlanID: created.ID, PlanName: created.PlanName, PlanType: created.PlanType, Status: created.Status,
+		PriceCNY: created.PriceCNY, Points: created.Points, BonusPoints: created.BonusPoints,
+		CreditExpiryEnabled: &enabled,
+	})
+	if err == nil {
+		t.Fatal("explicit expiry update without duration must be rejected")
+	}
+}
+
+func TestMemoryStoreFixedPackageOrderAlwaysSnapshotsCNY(t *testing.T) {
+	store := NewMemoryStore(5)
+	store.plans[0].Currency = "USD"
+
+	order, err := store.CreateOrder(t.Context(), domainbilling.CreateOrderRequest{
+		UserID: 903, PlanCode: store.plans[0].PlanCode, Provider: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	if order.Currency != "CNY" {
+		t.Fatalf("fixed package order must snapshot CNY despite legacy plan currency, got %q", order.Currency)
+	}
+}
+
 func boolPointerTest(value bool) *bool { return &value }
 
 func TestPlanHistoricalOrderUsesSnapshotAfterArchive(t *testing.T) {

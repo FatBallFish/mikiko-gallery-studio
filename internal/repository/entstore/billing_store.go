@@ -556,7 +556,7 @@ func (s *BillingStore) CreateOrder(ctx context.Context, req domainbilling.Create
 		SetProviderType(providerType).
 		SetProviderSnapshot(providerSnapshot).
 		SetStatus("pending").
-		SetCurrency(plan.Currency).
+		SetCurrency("CNY").
 		SetAmountCny(plan.PriceCny).
 		SetPoints(plan.Points).
 		SetBonusPoints(plan.BonusPoints).
@@ -791,43 +791,45 @@ func (s *BillingStore) RefundPaymentOrder(ctx context.Context, req domainbilling
 		if err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
-		grant, err := s.refundableRechargeGrantInTx(ctx, tx, order)
+		grants, err := s.refundableRechargeGrantsInTx(ctx, tx, order)
 		if err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
-		available := mustDecimal(grant.AvailablePoints)
-		frozen := mustDecimal(grant.FrozenPoints)
-		consumed := mustDecimal(grant.ConsumedPoints)
-		refundFrozen := refundFreezeAmount(grant.Metadata, refundTradeNo, s.scale)
-		if refundFrozen.IsPositive() {
-			if err := ensureRefundFreezeMatches(grant.Metadata, refundTradeNo, plan.RefundAmountCNY, plan.RefundPoints, s.scale); err != nil {
+		grantState := summarizeRefundGrants(grants, refundTradeNo, s.scale)
+		usesFreeze := grantState.RefundFrozen.IsPositive()
+		if usesFreeze {
+			if err := ensureRefundFreezeSetMatches(grants, refundTradeNo, plan.RefundAmountCNY, plan.RefundPoints, s.scale); err != nil {
 				return domainbilling.PaymentOrder{}, err
 			}
 		}
-		if consumed.IsPositive() || (refundFrozen.IsZero() && (frozen.IsPositive() || available.LessThan(plan.RefundPoints))) || (refundFrozen.IsPositive() && frozen.LessThan(plan.RefundPoints)) {
+		if grantState.Consumed.IsPositive() || (!usesFreeze && (grantState.Frozen.IsPositive() || grantState.Available.LessThan(plan.RefundPoints))) || (usesFreeze && (!grantState.Frozen.Equal(grantState.RefundFrozen) || grantState.RefundFrozen.LessThan(plan.RefundPoints))) {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 		}
-		nextAvailable := available.Sub(plan.RefundPoints)
-		nextFrozen := decimal.Zero
-		if refundFrozen.IsPositive() {
-			nextAvailable = available
-			nextFrozen = frozen.Sub(plan.RefundPoints)
-			if nextFrozen.IsNegative() {
-				nextFrozen = decimal.Zero
-			}
-		}
-		grantStatus := "active"
-		if plan.FullyRefunded {
-			grantStatus = "refunded"
-			nextAvailable = decimal.Zero
-			nextFrozen = decimal.Zero
-		}
-		if _, err := tx.WalletGrant.UpdateOneID(grant.ID).
-			SetAvailablePoints(nextAvailable.Round(s.scale).StringFixed(s.scale)).
-			SetFrozenPoints(nextFrozen.Round(s.scale).StringFixed(s.scale)).
-			SetStatus(grantStatus).
-			Save(ctx); err != nil {
+		allocations, err := allocateRefundAcrossGrants(grants, plan.RefundPoints, usesFreeze, refundTradeNo, s.scale)
+		if err != nil {
 			return domainbilling.PaymentOrder{}, err
+		}
+		for _, allocation := range allocations {
+			available := mustDecimal(allocation.Grant.AvailablePoints)
+			frozen := mustDecimal(allocation.Grant.FrozenPoints)
+			if usesFreeze {
+				frozen = frozen.Sub(allocation.Points)
+			} else {
+				available = available.Sub(allocation.Points)
+			}
+			status := "active"
+			if plan.FullyRefunded || (available.IsZero() && frozen.IsZero()) {
+				status = "refunded"
+			}
+			metadata := clearRefundFreezeMetadata(allocation.Grant.Metadata)
+			if _, err := tx.WalletGrant.UpdateOneID(allocation.Grant.ID).
+				SetAvailablePoints(available.Round(s.scale).StringFixed(s.scale)).
+				SetFrozenPoints(frozen.Round(s.scale).StringFixed(s.scale)).
+				SetStatus(status).
+				SetMetadata(metadata).
+				Save(ctx); err != nil {
+				return domainbilling.PaymentOrder{}, err
+			}
 		}
 		state, _, err := s.currentStateWithDetails(ctx, tx.Client(), order.UserID)
 		if err != nil {
@@ -893,39 +895,45 @@ func (s *BillingStore) FreezeRefundPaymentOrder(ctx context.Context, req domainb
 		if err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
-		grant, err := s.refundableRechargeGrantInTx(ctx, tx, order)
+		grants, err := s.refundableRechargeGrantsInTx(ctx, tx, order)
 		if err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
-		existingFreeze := refundFreezeAmount(grant.Metadata, refundTradeNo, s.scale)
-		if existingFreeze.IsPositive() {
-			if err := ensureRefundFreezeMatches(grant.Metadata, refundTradeNo, plan.RefundAmountCNY, plan.RefundPoints, s.scale); err != nil {
+		grantState := summarizeRefundGrants(grants, refundTradeNo, s.scale)
+		if grantState.RefundFrozen.IsPositive() {
+			if err := ensureRefundFreezeSetMatches(grants, refundTradeNo, plan.RefundAmountCNY, plan.RefundPoints, s.scale); err != nil {
 				return domainbilling.PaymentOrder{}, err
 			}
 			return s.mapPaymentOrder(ctx, order), nil
 		}
-		available := mustDecimal(grant.AvailablePoints)
-		frozen := mustDecimal(grant.FrozenPoints)
-		consumed := mustDecimal(grant.ConsumedPoints)
-		if consumed.IsPositive() || frozen.IsPositive() || available.LessThan(plan.RefundPoints) {
+		if grantState.Consumed.IsPositive() || grantState.Frozen.IsPositive() || grantState.Available.LessThan(plan.RefundPoints) {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 		}
-		metadata := cloneMap(grant.Metadata)
-		if metadata == nil {
-			metadata = map[string]any{}
-		}
-		metadata["refund_freeze_trade_no"] = refundTradeNo
-		metadata["refund_freeze_amount_cny"] = plan.RefundAmountCNY.StringFixed(s.scale)
-		metadata["refund_freeze_points"] = plan.RefundPoints.StringFixed(s.scale)
-		metadata["refund_freeze_reason"] = strings.TrimSpace(req.Reason)
-		metadata["refund_freeze_operator_admin_id"] = req.OperatorAdminID
-		metadata["refund_freeze_at"] = time.Now().UTC().Format(time.RFC3339Nano)
-		if _, err := tx.WalletGrant.UpdateOneID(grant.ID).
-			SetAvailablePoints(available.Sub(plan.RefundPoints).Round(s.scale).StringFixed(s.scale)).
-			SetFrozenPoints(frozen.Add(plan.RefundPoints).Round(s.scale).StringFixed(s.scale)).
-			SetMetadata(metadata).
-			Save(ctx); err != nil {
+		allocations, err := allocateRefundAcrossGrants(grants, plan.RefundPoints, false, refundTradeNo, s.scale)
+		if err != nil {
 			return domainbilling.PaymentOrder{}, err
+		}
+		for _, allocation := range allocations {
+			available := mustDecimal(allocation.Grant.AvailablePoints)
+			frozen := mustDecimal(allocation.Grant.FrozenPoints)
+			metadata := cloneMap(allocation.Grant.Metadata)
+			if metadata == nil {
+				metadata = map[string]any{}
+			}
+			metadata["refund_freeze_trade_no"] = refundTradeNo
+			metadata["refund_freeze_amount_cny"] = plan.RefundAmountCNY.StringFixed(s.scale)
+			metadata["refund_freeze_points"] = allocation.Points.StringFixed(s.scale)
+			metadata["refund_freeze_total_points"] = plan.RefundPoints.StringFixed(s.scale)
+			metadata["refund_freeze_reason"] = strings.TrimSpace(req.Reason)
+			metadata["refund_freeze_operator_admin_id"] = req.OperatorAdminID
+			metadata["refund_freeze_at"] = time.Now().UTC().Format(time.RFC3339Nano)
+			if _, err := tx.WalletGrant.UpdateOneID(allocation.Grant.ID).
+				SetAvailablePoints(available.Sub(allocation.Points).Round(s.scale).StringFixed(s.scale)).
+				SetFrozenPoints(frozen.Add(allocation.Points).Round(s.scale).StringFixed(s.scale)).
+				SetMetadata(metadata).
+				Save(ctx); err != nil {
+				return domainbilling.PaymentOrder{}, err
+			}
 		}
 		return s.mapPaymentOrder(ctx, order), nil
 	})
@@ -949,32 +957,27 @@ func (s *BillingStore) ReleaseRefundPaymentOrder(ctx context.Context, req domain
 		if order.Status == "refunded" {
 			return s.mapPaymentOrder(ctx, order), nil
 		}
-		grant, err := s.refundableRechargeGrantInTx(ctx, tx, order)
+		grants, err := s.refundableRechargeGrantsInTx(ctx, tx, order)
 		if err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
-		frozenRefund := refundFreezeAmount(grant.Metadata, refundTradeNo, s.scale)
-		if !frozenRefund.IsPositive() {
-			return s.mapPaymentOrder(ctx, order), nil
-		}
-		available := mustDecimal(grant.AvailablePoints)
-		frozen := mustDecimal(grant.FrozenPoints)
-		if frozen.LessThan(frozenRefund) {
-			frozenRefund = frozen
-		}
-		metadata := cloneMap(grant.Metadata)
-		delete(metadata, "refund_freeze_trade_no")
-		delete(metadata, "refund_freeze_amount_cny")
-		delete(metadata, "refund_freeze_points")
-		delete(metadata, "refund_freeze_reason")
-		delete(metadata, "refund_freeze_operator_admin_id")
-		delete(metadata, "refund_freeze_at")
-		if _, err := tx.WalletGrant.UpdateOneID(grant.ID).
-			SetAvailablePoints(available.Add(frozenRefund).Round(s.scale).StringFixed(s.scale)).
-			SetFrozenPoints(frozen.Sub(frozenRefund).Round(s.scale).StringFixed(s.scale)).
-			SetMetadata(metadata).
-			Save(ctx); err != nil {
-			return domainbilling.PaymentOrder{}, err
+		for _, grant := range grants {
+			frozenRefund := refundFreezeAmount(grant.Metadata, refundTradeNo, s.scale)
+			if !frozenRefund.IsPositive() {
+				continue
+			}
+			available := mustDecimal(grant.AvailablePoints)
+			frozen := mustDecimal(grant.FrozenPoints)
+			if frozen.LessThan(frozenRefund) {
+				frozenRefund = frozen
+			}
+			if _, err := tx.WalletGrant.UpdateOneID(grant.ID).
+				SetAvailablePoints(available.Add(frozenRefund).Round(s.scale).StringFixed(s.scale)).
+				SetFrozenPoints(frozen.Sub(frozenRefund).Round(s.scale).StringFixed(s.scale)).
+				SetMetadata(clearRefundFreezeMetadata(grant.Metadata)).
+				Save(ctx); err != nil {
+				return domainbilling.PaymentOrder{}, err
+			}
 		}
 		return s.mapPaymentOrder(ctx, order), nil
 	})
@@ -1048,20 +1051,19 @@ func (s *BillingStore) CheckRefundPaymentOrder(ctx context.Context, req domainbi
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
-	grant, err := s.refundableRechargeGrant(ctx, order)
+	grants, err := s.refundableRechargeGrants(ctx, order)
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
-	available := mustDecimal(grant.AvailablePoints)
-	frozen := mustDecimal(grant.FrozenPoints)
-	consumed := mustDecimal(grant.ConsumedPoints)
-	refundFrozen := refundFreezeAmount(grant.Metadata, strings.TrimSpace(req.RefundTradeNo), s.scale)
-	if refundFrozen.IsPositive() {
-		if err := ensureRefundFreezeMatches(grant.Metadata, strings.TrimSpace(req.RefundTradeNo), plan.RefundAmountCNY, plan.RefundPoints, s.scale); err != nil {
+	refundTradeNo := strings.TrimSpace(req.RefundTradeNo)
+	grantState := summarizeRefundGrants(grants, refundTradeNo, s.scale)
+	usesFreeze := grantState.RefundFrozen.IsPositive()
+	if usesFreeze {
+		if err := ensureRefundFreezeSetMatches(grants, refundTradeNo, plan.RefundAmountCNY, plan.RefundPoints, s.scale); err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
 	}
-	if consumed.IsPositive() || (refundFrozen.IsZero() && (frozen.IsPositive() || available.LessThan(plan.RefundPoints))) || (refundFrozen.IsPositive() && frozen.LessThan(plan.RefundPoints)) {
+	if grantState.Consumed.IsPositive() || (!usesFreeze && (grantState.Frozen.IsPositive() || grantState.Available.LessThan(plan.RefundPoints))) || (usesFreeze && (!grantState.Frozen.Equal(grantState.RefundFrozen) || grantState.RefundFrozen.LessThan(plan.RefundPoints))) {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 	}
 	return s.mapPaymentOrder(ctx, order), nil
@@ -1631,6 +1633,13 @@ func (s *BillingStore) currentStateWithDetails(ctx context.Context, client *repo
 					AvailablePoints: available.Round(s.scale).StringFixed(s.scale),
 					ExpiresAt:       &expiresAt,
 				}
+			} else if nextGrant.ExpiresAt != nil && grant.ExpiresAt.Equal(*nextGrant.ExpiresAt) {
+				nextAmount := mustDecimal(nextGrant.AvailablePoints).Add(available)
+				nextGrant.AvailablePoints = nextAmount.Round(s.scale).StringFixed(s.scale)
+				nextGrant.GrantID = 0
+				if nextGrant.GrantType != grant.GrantType {
+					nextGrant.GrantType = "mixed"
+				}
 			}
 		}
 	}
@@ -1718,6 +1727,8 @@ type balanceBucketAccumulator struct {
 	Frozen       decimal.Decimal
 	ExpiresAt    *time.Time
 	ReminderDays int
+	HasBalance   bool
+	MixedExpiry  bool
 }
 
 func accumulateBalanceBucket(buckets map[string]*balanceBucketAccumulator, bucket, source string, available, frozen decimal.Decimal, expiresAt *time.Time, reminderDays int) {
@@ -1735,12 +1746,21 @@ func accumulateBalanceBucket(buckets map[string]*balanceBucketAccumulator, bucke
 	if current.Source == "" {
 		current.Source = source
 	}
-	if expiresAt != nil {
-		expires := *expiresAt
-		if current.ExpiresAt == nil || expires.Before(*current.ExpiresAt) {
+	if !available.IsPositive() && !frozen.IsPositive() {
+		return
+	}
+	if !current.HasBalance {
+		current.HasBalance = true
+		if expiresAt != nil {
+			expires := *expiresAt
 			current.ExpiresAt = &expires
 			current.ReminderDays = reminderDays
 		}
+		return
+	}
+	if current.MixedExpiry || (current.ExpiresAt == nil) != (expiresAt == nil) || (current.ExpiresAt != nil && expiresAt != nil && !current.ExpiresAt.Equal(*expiresAt)) {
+		current.MixedExpiry = true
+		current.ExpiresAt = nil
 	}
 }
 
@@ -2653,42 +2673,134 @@ func (s *BillingStore) paymentOrderRefundPlan(order *repoent.PaymentOrder, req d
 	}, nil
 }
 
-func (s *BillingStore) refundableRechargeGrant(ctx context.Context, order *repoent.PaymentOrder) (*repoent.WalletGrant, error) {
-	grant, err := s.client.WalletGrant.Query().
+func (s *BillingStore) refundableRechargeGrants(ctx context.Context, order *repoent.PaymentOrder) ([]*repoent.WalletGrant, error) {
+	grants, err := s.client.WalletGrant.Query().
 		Where(
 			walletgrant.UserIDEQ(order.UserID),
 			walletgrant.GrantTypeIn("recharge", "subscription", "gift"),
 			walletgrant.SourceIDEQ(int64(order.ID)),
 			walletgrant.StatusEQ("active"),
 		).
-		Order(repoent.Asc(walletgrant.FieldGrantType)).
-		First(ctx)
+		Order(repoent.Asc(walletgrant.FieldID)).
+		All(ctx)
 	if err != nil {
-		if repoent.IsNotFound(err) {
-			return nil, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
-		}
 		return nil, err
 	}
-	return grant, nil
+	if len(grants) == 0 {
+		return nil, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
+	}
+	return grants, nil
 }
 
-func (s *BillingStore) refundableRechargeGrantInTx(ctx context.Context, tx *repoent.Tx, order *repoent.PaymentOrder) (*repoent.WalletGrant, error) {
-	grant, err := tx.WalletGrant.Query().
+func (s *BillingStore) refundableRechargeGrantsInTx(ctx context.Context, tx *repoent.Tx, order *repoent.PaymentOrder) ([]*repoent.WalletGrant, error) {
+	grants, err := tx.WalletGrant.Query().
 		Where(
 			walletgrant.UserIDEQ(order.UserID),
 			walletgrant.GrantTypeIn("recharge", "subscription", "gift"),
 			walletgrant.SourceIDEQ(int64(order.ID)),
 			walletgrant.StatusEQ("active"),
 		).
-		Order(repoent.Asc(walletgrant.FieldGrantType)).
-		First(ctx)
+		Order(repoent.Asc(walletgrant.FieldID)).
+		All(ctx)
 	if err != nil {
-		if repoent.IsNotFound(err) {
-			return nil, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
-		}
 		return nil, err
 	}
-	return grant, nil
+	if len(grants) == 0 {
+		return nil, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
+	}
+	return grants, nil
+}
+
+type refundGrantSetState struct {
+	Available    decimal.Decimal
+	Frozen       decimal.Decimal
+	Consumed     decimal.Decimal
+	RefundFrozen decimal.Decimal
+}
+
+func summarizeRefundGrants(grants []*repoent.WalletGrant, refundTradeNo string, scale int32) refundGrantSetState {
+	state := refundGrantSetState{
+		Available: decimal.Zero, Frozen: decimal.Zero, Consumed: decimal.Zero, RefundFrozen: decimal.Zero,
+	}
+	for _, grant := range grants {
+		state.Available = state.Available.Add(mustDecimal(grant.AvailablePoints))
+		state.Frozen = state.Frozen.Add(mustDecimal(grant.FrozenPoints))
+		state.Consumed = state.Consumed.Add(mustDecimal(grant.ConsumedPoints))
+		state.RefundFrozen = state.RefundFrozen.Add(refundFreezeAmount(grant.Metadata, refundTradeNo, scale))
+	}
+	return state
+}
+
+type refundGrantAllocation struct {
+	Grant  *repoent.WalletGrant
+	Points decimal.Decimal
+}
+
+func allocateRefundAcrossGrants(grants []*repoent.WalletGrant, total decimal.Decimal, useFreeze bool, refundTradeNo string, scale int32) ([]refundGrantAllocation, error) {
+	remaining := total.Round(scale)
+	allocations := make([]refundGrantAllocation, 0, len(grants))
+	for _, grant := range grants {
+		available := mustDecimal(grant.AvailablePoints)
+		if useFreeze {
+			available = refundFreezeAmount(grant.Metadata, refundTradeNo, scale)
+		}
+		if !available.IsPositive() {
+			continue
+		}
+		points := available
+		if points.GreaterThan(remaining) {
+			points = remaining
+		}
+		allocations = append(allocations, refundGrantAllocation{Grant: grant, Points: points.Round(scale)})
+		remaining = remaining.Sub(points).Round(scale)
+		if !remaining.IsPositive() {
+			break
+		}
+	}
+	if remaining.IsPositive() {
+		return nil, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
+	}
+	return allocations, nil
+}
+
+func ensureRefundFreezeSetMatches(grants []*repoent.WalletGrant, refundTradeNo string, refundAmountCNY, refundPoints decimal.Decimal, scale int32) error {
+	frozenPoints := decimal.Zero
+	for _, grant := range grants {
+		allocation := refundFreezeAmount(grant.Metadata, refundTradeNo, scale)
+		if !allocation.IsPositive() {
+			continue
+		}
+		if mustDecimal(grant.FrozenPoints).LessThan(allocation) {
+			return errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment refund amount does not match the pending refund")
+		}
+		rawAmount := strings.TrimSpace(fmt.Sprint(grant.Metadata["refund_freeze_amount_cny"]))
+		if rawAmount != "" && rawAmount != "<nil>" {
+			amount, err := decimal.NewFromString(rawAmount)
+			if err != nil || !amount.Round(scale).Equal(refundAmountCNY.Round(scale)) {
+				return errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment refund amount does not match the pending refund")
+			}
+		}
+		frozenPoints = frozenPoints.Add(allocation)
+	}
+	if !frozenPoints.Round(scale).Equal(refundPoints.Round(scale)) {
+		return errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment refund amount does not match the pending refund")
+	}
+	return nil
+}
+
+func clearRefundFreezeMetadata(value map[string]any) map[string]any {
+	metadata := cloneMap(value)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	delete(metadata, "refund_freeze_trade_no")
+	delete(metadata, "refund_freeze_amount_cny")
+	delete(metadata, "refund_freeze_points")
+	delete(metadata, "refund_freeze_total_points")
+	delete(metadata, "refund_freeze_reason")
+	delete(metadata, "refund_freeze_operator_admin_id")
+	delete(metadata, "refund_freeze_at")
+	return metadata
 }
 
 func refundFreezeAmount(metadata map[string]any, refundTradeNo string, scale int32) decimal.Decimal {
@@ -2704,22 +2816,6 @@ func refundFreezeAmount(metadata map[string]any, refundTradeNo string, scale int
 		return decimal.Zero
 	}
 	return amount.Round(scale)
-}
-
-func ensureRefundFreezeMatches(metadata map[string]any, refundTradeNo string, refundAmountCNY, refundPoints decimal.Decimal, scale int32) error {
-	frozenPoints := refundFreezeAmount(metadata, refundTradeNo, scale)
-	if !frozenPoints.IsPositive() || !frozenPoints.Equal(refundPoints.Round(scale)) {
-		return errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment refund amount does not match the pending refund")
-	}
-	rawAmount := strings.TrimSpace(fmt.Sprint(metadata["refund_freeze_amount_cny"]))
-	if rawAmount == "" || rawAmount == "<nil>" {
-		return nil
-	}
-	frozenAmount, err := decimal.NewFromString(rawAmount)
-	if err != nil || !frozenAmount.Round(scale).Equal(refundAmountCNY.Round(scale)) {
-		return errs.New(http.StatusConflict, errs.CodePaymentAmountMismatch, "payment refund amount does not match the pending refund")
-	}
-	return nil
 }
 
 func decimalFromPayload(payload map[string]any, key string, scale int32) decimal.Decimal {
