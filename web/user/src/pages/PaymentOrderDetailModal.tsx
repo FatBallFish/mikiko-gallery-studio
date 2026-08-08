@@ -1,6 +1,6 @@
 import type { CashierOrder } from '../../../shared/api-types'
 import { Button, Modal } from '../components'
-import { checkoutDateTime, checkoutMoney, checkoutOrderActionState, checkoutOrderStatusLabel, checkoutPaymentMethodLabel, checkoutPoints } from './checkoutOrderState'
+import { checkoutDateTime, checkoutMoney, checkoutOrderActionState, checkoutOrderCreditValidity, checkoutOrderStatusLabel, checkoutPaymentMethodLabel, checkoutPoints } from './checkoutOrderState'
 
 export function PaymentOrderDetailModal({ order, busy, onCancel, onClose }: {
   order: CashierOrder
@@ -20,7 +20,9 @@ export function PaymentOrderDetailModal({ order, busy, onCancel, onClose }: {
         </header>
         <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
           <OrderFact label="支付金额" value={checkoutMoney(order.amount_cny)} />
-          <OrderFact label="到账积分" value={`${checkoutPoints(order.points)} 积分`} />
+          <OrderFact label={order.purchase_type === 'custom_amount' ? '到账积分' : '套餐积分'} value={`${checkoutPoints(order.points)} 积分`} />
+          {order.purchase_type !== 'custom_amount' ? <OrderFact label="赠送积分" value={`${checkoutPoints(order.bonus_points)} 积分`} /> : null}
+          <OrderFact label="积分有效期" value={checkoutOrderCreditValidity(order)} />
           <OrderFact label="支付方式" value={checkoutPaymentMethodLabel(order)} />
           <OrderFact label="创建时间" value={checkoutDateTime(order.created_at)} />
           <OrderFact label="更新时间" value={checkoutDateTime(order.updated_at)} />

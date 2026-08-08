@@ -569,8 +569,8 @@ func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBalance: %v", err)
 	}
-	if balance.RechargePoints != "100.00000" || balance.AvailablePoints != "100.00000" {
-		t.Fatalf("expected manual complete to credit recharge balance, got %#v", balance)
+	if balance.SubscriptionPoints != "100.00000" || balance.RechargePoints != "0.00000" || balance.AvailablePoints != "100.00000" {
+		t.Fatalf("expected manual complete to credit purchased package balance, got %#v", balance)
 	}
 
 	replayReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(createResp.Data.ID)+"/complete", bytes.NewBufferString(`{"provider":"manual_alipay","trade_no":"MANUAL-TRADE-001","reason":"confirmed in provider console"}`))
@@ -585,7 +585,7 @@ func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBalance after replay: %v", err)
 	}
-	if balanceAfterReplay.RechargePoints != "100.00000" || balanceAfterReplay.AvailablePoints != "100.00000" {
+	if balanceAfterReplay.SubscriptionPoints != "100.00000" || balanceAfterReplay.RechargePoints != "0.00000" || balanceAfterReplay.AvailablePoints != "100.00000" {
 		t.Fatalf("expected replay not to double credit, got %#v", balanceAfterReplay)
 	}
 }
@@ -720,8 +720,8 @@ func TestAdminCashierOrderRefundDeductsUnusedRechargeBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBalance: %v", err)
 	}
-	if balance.RechargePoints != "100.00000" {
-		t.Fatalf("expected completed order to credit recharge balance, got %#v", balance)
+	if balance.SubscriptionPoints != "100.00000" || balance.RechargePoints != "0.00000" {
+		t.Fatalf("expected completed order to credit purchased package balance, got %#v", balance)
 	}
 
 	refundReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(createResp.Data.ID)+"/refund", bytes.NewBufferString(`{"refund_trade_no":"REFUND-TRADE-001","reason":"customer requested refund"}`))
@@ -1990,8 +1990,8 @@ func TestAdminCashierOrderSyncCompletesPaidProviderOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBalance after sync: %v", err)
 	}
-	if balance.RechargePoints != "100.00000" || balance.AvailablePoints != "100.00000" {
-		t.Fatalf("expected sync to credit recharge balance, got %#v", balance)
+	if balance.SubscriptionPoints != "100.00000" || balance.RechargePoints != "0.00000" || balance.AvailablePoints != "100.00000" {
+		t.Fatalf("expected sync to credit purchased package balance, got %#v", balance)
 	}
 }
 

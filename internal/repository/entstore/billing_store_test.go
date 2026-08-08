@@ -136,6 +136,57 @@ func TestBillingStoreReserveFinalizeAndLedger(t *testing.T) {
 	}
 }
 
+func TestBillingStoreGenerationLedgerProjectsTaskChargeBreakdown(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-ledger-task-projection?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	taskID := uuid.MustParse("12121212-1212-1212-1212-121212121212")
+	if _, err := client.ImageTask.Create().
+		SetID(taskID).
+		SetUserID(8121).
+		SetTaskType("generate").
+		SetStatus("partial_failed").
+		SetPrompt("ledger projection").
+		SetAbstractModel("gpt-image").
+		SetRequestedOutputImageCount(5).
+		SetSuccessOutputImageCount(3).
+		SetEstimatedPoints("20.00000").
+		SetActualPoints("12.00000").
+		Save(ctx); err != nil {
+		t.Fatalf("create image task: %v", err)
+	}
+	if _, err := store.Adjust(ctx, billingservice.AdjustStoreRequest{UserID: 8121, ChangePoints: "100.00000", Reason: "seed"}); err != nil {
+		t.Fatalf("Adjust: %v", err)
+	}
+	if _, err := store.ReserveTask(ctx, billingservice.ReserveStoreRequest{UserID: 8121, TaskID: taskID.String(), EstimatedPoints: "20.00000", Reason: "reserve"}); err != nil {
+		t.Fatalf("ReserveTask: %v", err)
+	}
+	if _, err := store.FinalizeTask(ctx, billingservice.FinalizeStoreRequest{UserID: 8121, TaskID: taskID.String(), EstimatedPoints: "20.00000", ActualPoints: "12.00000", Reason: "finalize"}); err != nil {
+		t.Fatalf("FinalizeTask: %v", err)
+	}
+	page, err := store.ListLedger(ctx, 8121, 1, 10)
+	if err != nil {
+		t.Fatalf("ListLedger: %v", err)
+	}
+	var consume domainbilling.LedgerEntry
+	for _, entry := range page.Items {
+		if entry.LedgerType == "consume" {
+			consume = entry
+			break
+		}
+	}
+	if consume.SuccessfulImageCount != 3 || consume.EffectiveUnitPoints != "4.00000" || consume.TotalChargedPoints != "12.00000" || !consume.PartialSuccess || consume.TaskID != taskID.String() {
+		t.Fatalf("unexpected generation ledger projection %#v", consume)
+	}
+}
+
 func TestBillingStoreBalanceBucketsAndTrialReservePriority(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-trial-buckets?mode=memory&cache=shared&_fk=1")
@@ -180,7 +231,7 @@ func TestBillingStoreBalanceBucketsAndTrialReservePriority(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBalance: %v", err)
 	}
-	if balance.TrialPoints != "20.00000" || balance.RechargePoints != "50.00000" || balance.GiftPoints != "20.00000" {
+	if balance.TrialPoints != "20.00000" || balance.RechargePoints != "50.00000" || balance.GiftPoints != "0.00000" {
 		t.Fatalf("expected trial and recharge bucket totals, got %#v", balance)
 	}
 	if len(balance.Buckets) != 2 {
@@ -938,6 +989,156 @@ func TestBillingStorePersistsPaymentOrderChannelFields(t *testing.T) {
 	}
 }
 
+func TestBillingStoreFixedPackageCompletionUsesPermanentOrderSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-permanent-package-snapshot?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	disabled := false
+	plan, err := store.CreatePlan(ctx, domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "permanent-package", PlanName: "Permanent Package", PlanType: "points_package", PurchaseEnabled: true,
+		Status: "active", PriceCNY: "10.00000", Points: "100.00000", BonusPoints: "20.00000",
+		CreditExpiryEnabled: &disabled, Currency: "CNY",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	order, err := store.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 8801, PlanCode: plan.PlanCode, Provider: "mock", PurchaseType: "plan", VisibleMethod: "mock", ProviderType: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	if order.CreditExpiryEnabled || order.CreditValidDays != nil || order.CreditExpiresAt != nil || order.CreditedAt != nil {
+		t.Fatalf("permanent package order must snapshot a permanent pending credit policy, got %#v", order)
+	}
+
+	enabled := true
+	days := 7
+	if _, err := store.UpdatePlan(ctx, domainbilling.UpdateSubscriptionPlanRequest{
+		PlanID: plan.ID, PlanName: plan.PlanName, PlanType: plan.PlanType, PurchaseEnabled: true, Status: "active",
+		PriceCNY: plan.PriceCNY, Points: "999.00000", BonusPoints: "99.00000", CreditExpiryEnabled: &enabled,
+		DurationDays: &days, Currency: "CNY",
+	}); err != nil {
+		t.Fatalf("UpdatePlan after order creation: %v", err)
+	}
+
+	completed, err := store.CompleteRechargeOrder(ctx, domainbilling.CompleteRechargeOrderRequest{
+		UserID: order.UserID, OrderID: order.ID, Provider: "mock", TradeNo: "permanent-package-trade",
+	})
+	if err != nil {
+		t.Fatalf("CompleteRechargeOrder: %v", err)
+	}
+	if completed.CreditedAt == nil || completed.CreditExpiresAt != nil || completed.CreditExpiryEnabled || completed.CreditValidDays != nil {
+		t.Fatalf("completed order must retain permanent creation-time policy, got %#v", completed)
+	}
+	grants, err := client.WalletGrant.Query().
+		Where(walletgrant.UserIDEQ(order.UserID), walletgrant.SourceIDEQ(order.ID)).
+		Order(repoent.Asc(walletgrant.FieldGrantType)).
+		All(ctx)
+	if err != nil {
+		t.Fatalf("query package grants: %v", err)
+	}
+	if len(grants) != 2 || grants[0].GrantType != "gift" || grants[1].GrantType != "subscription" {
+		t.Fatalf("fixed package must create separate purchased and gift grants, got %#v", grants)
+	}
+	if grants[0].TotalPoints != "20.00000" || grants[1].TotalPoints != "100.00000" || grants[0].ExpiresAt != nil || grants[1].ExpiresAt != nil {
+		t.Fatalf("grants must use snapshotted amounts and permanent expiry, got %#v", grants)
+	}
+}
+
+func TestBillingStoreFixedPackageCompletionSnapshotsExpiryForBothGrants(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-expiring-package-snapshot?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	days := 12
+	plan, err := store.CreatePlan(ctx, domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "expiring-package", PlanName: "Expiring Package", PlanType: "points_package", PurchaseEnabled: true,
+		Status: "active", PriceCNY: "10.00000", Points: "50.00000", BonusPoints: "5.00000",
+		DurationDays: &days, Currency: "CNY",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	order, err := store.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 8802, PlanCode: plan.PlanCode, Provider: "mock", PurchaseType: "plan", VisibleMethod: "mock", ProviderType: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	if !order.CreditExpiryEnabled || order.CreditValidDays == nil || *order.CreditValidDays != days {
+		t.Fatalf("order must snapshot enabled expiry and valid days, got %#v", order)
+	}
+	completed, err := store.CompleteRechargeOrder(ctx, domainbilling.CompleteRechargeOrderRequest{
+		UserID: order.UserID, OrderID: order.ID, Provider: "mock", TradeNo: "expiring-package-trade",
+	})
+	if err != nil {
+		t.Fatalf("CompleteRechargeOrder: %v", err)
+	}
+	if completed.CreditedAt == nil || completed.CreditExpiresAt == nil {
+		t.Fatalf("completed expiring order must expose actual credit timestamps, got %#v", completed)
+	}
+	wantExpiry := completed.CreditedAt.Add(time.Duration(days) * 24 * time.Hour)
+	if !completed.CreditExpiresAt.Equal(wantExpiry) {
+		t.Fatalf("credit expiry must be based on credited_at plus snapshotted days: got %s want %s", completed.CreditExpiresAt, wantExpiry)
+	}
+	grants, err := client.WalletGrant.Query().Where(walletgrant.UserIDEQ(order.UserID), walletgrant.SourceIDEQ(order.ID)).All(ctx)
+	if err != nil {
+		t.Fatalf("query package grants: %v", err)
+	}
+	if len(grants) != 2 || grants[0].ExpiresAt == nil || grants[1].ExpiresAt == nil || !grants[0].ExpiresAt.Equal(*grants[1].ExpiresAt) || !grants[0].ExpiresAt.Equal(*completed.CreditExpiresAt) {
+		t.Fatalf("base and gift grants must share the order credit expiry, got %#v", grants)
+	}
+}
+
+func TestBillingStoreCustomAmountCompletionRemainsPermanentRecharge(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-custom-amount-permanent?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 8803, AmountCNY: "10.00000", CNYPerPoint: "0.10000", Provider: "mock", PurchaseType: "custom_amount", VisibleMethod: "mock", ProviderType: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateCustomAmountOrder: %v", err)
+	}
+	completed, err := store.CompleteRechargeOrder(ctx, domainbilling.CompleteRechargeOrderRequest{UserID: order.UserID, OrderID: order.ID, Provider: "mock", TradeNo: "custom-permanent-trade"})
+	if err != nil {
+		t.Fatalf("CompleteRechargeOrder: %v", err)
+	}
+	if completed.CreditExpiryEnabled || completed.CreditValidDays != nil || completed.CreditExpiresAt != nil || completed.CreditedAt == nil {
+		t.Fatalf("custom recharge must remain permanent while exposing credit time, got %#v", completed)
+	}
+	grants, err := client.WalletGrant.Query().Where(walletgrant.UserIDEQ(order.UserID), walletgrant.SourceIDEQ(order.ID)).All(ctx)
+	if err != nil {
+		t.Fatalf("query custom recharge grant: %v", err)
+	}
+	if len(grants) != 1 || grants[0].GrantType != "recharge" || grants[0].ExpiresAt != nil {
+		t.Fatalf("custom amount must create one permanent recharge grant, got %#v", grants)
+	}
+}
+
 func TestBillingStoreCreateOrderReusesIdempotencyKey(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-payment-order-idempotency?mode=memory&cache=shared&_fk=1")
@@ -1088,26 +1289,26 @@ func TestBillingStoreCompleteRechargeOrderCompletesAndIsIdempotent(t *testing.T)
 	if err != nil {
 		t.Fatalf("GetBalance: %v", err)
 	}
-	if balance.RechargePoints != "100.00000" || balance.AvailablePoints != "100.00000" {
-		t.Fatalf("expected one recharge grant after repeated completion, got %#v", balance)
+	if balance.SubscriptionPoints != "100.00000" || balance.RechargePoints != "0.00000" || balance.AvailablePoints != "100.00000" {
+		t.Fatalf("expected one purchased package grant after repeated completion, got %#v", balance)
 	}
 	ledgerCount, err := client.PointLedger.Query().
-		Where(pointledger.UserIDEQ(89), pointledger.LedgerTypeEQ("recharge")).
+		Where(pointledger.UserIDEQ(89), pointledger.LedgerTypeEQ("order_paid")).
 		Count(ctx)
 	if err != nil {
 		t.Fatalf("count recharge ledger: %v", err)
 	}
 	if ledgerCount != 1 {
-		t.Fatalf("expected one recharge ledger, got %d", ledgerCount)
+		t.Fatalf("expected one package ledger, got %d", ledgerCount)
 	}
 	ledger, err := client.PointLedger.Query().
-		Where(pointledger.UserIDEQ(89), pointledger.LedgerTypeEQ("recharge")).
+		Where(pointledger.UserIDEQ(89), pointledger.LedgerTypeEQ("order_paid")).
 		Only(ctx)
 	if err != nil {
 		t.Fatalf("load recharge ledger: %v", err)
 	}
-	if ledger.BalanceBucket != "recharge" || ledger.SourceType != "payment_order" || ledger.SourceID == nil || *ledger.SourceID != order.ID {
-		t.Fatalf("expected persisted recharge ledger metadata, got bucket=%q source=%q source_id=%v", ledger.BalanceBucket, ledger.SourceType, ledger.SourceID)
+	if ledger.BalanceBucket != "subscription" || ledger.SourceType != "payment_order" || ledger.SourceID == nil || *ledger.SourceID != order.ID {
+		t.Fatalf("expected persisted package ledger metadata, got bucket=%q source=%q source_id=%v", ledger.BalanceBucket, ledger.SourceType, ledger.SourceID)
 	}
 	if ledger.BucketBalanceAfter != "100.00000" || ledger.ExpiresAt != nil {
 		t.Fatalf("expected recharge ledger bucket balance 100 and no expiry, got bucket_after=%q expires=%v", ledger.BucketBalanceAfter, ledger.ExpiresAt)
@@ -1739,17 +1940,17 @@ func TestBillingStoreMarkOrderPaidCompletesCashierRechargeOrderIdempotently(t *t
 	if err != nil {
 		t.Fatalf("GetBalance: %v", err)
 	}
-	if balance.RechargePoints != "100.00000" || balance.SubscriptionPoints != "0.00000" || balance.AvailablePoints != "100.00000" {
-		t.Fatalf("expected webhook to credit recharge bucket once, got %#v", balance)
+	if balance.RechargePoints != "0.00000" || balance.SubscriptionPoints != "100.00000" || balance.AvailablePoints != "100.00000" {
+		t.Fatalf("expected webhook to credit purchased package bucket once, got %#v", balance)
 	}
 	ledgerCount, err := client.PointLedger.Query().
-		Where(pointledger.UserIDEQ(90), pointledger.LedgerTypeEQ("recharge")).
+		Where(pointledger.UserIDEQ(90), pointledger.LedgerTypeEQ("order_paid")).
 		Count(ctx)
 	if err != nil {
 		t.Fatalf("count recharge ledger: %v", err)
 	}
 	if ledgerCount != 1 {
-		t.Fatalf("expected one recharge ledger, got %d", ledgerCount)
+		t.Fatalf("expected one package ledger, got %d", ledgerCount)
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
@@ -61,7 +62,46 @@ func (s *BillingStore) ListLedger(ctx context.Context, userID int64, page, pageS
 	for _, entry := range entries {
 		items = append(items, mapLedgerEntry(entry))
 	}
+	if err := s.projectGenerationLedgerDetails(ctx, userID, items); err != nil {
+		return domainbilling.LedgerPage{}, err
+	}
 	return domainbilling.LedgerPage{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+func (s *BillingStore) projectGenerationLedgerDetails(ctx context.Context, userID int64, items []domainbilling.LedgerEntry) error {
+	taskIDs := make([]uuid.UUID, 0, len(items))
+	for _, item := range items {
+		if item.LedgerType != "consume" || item.TaskID == "" {
+			continue
+		}
+		if taskID, err := uuid.Parse(item.TaskID); err == nil {
+			taskIDs = append(taskIDs, taskID)
+		}
+	}
+	if len(taskIDs) == 0 {
+		return nil
+	}
+	tasks, err := s.client.ImageTask.Query().Where(imagetask.UserIDEQ(userID), imagetask.IDIn(taskIDs...)).All(ctx)
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]*repoent.ImageTask, len(tasks))
+	for _, task := range tasks {
+		byID[task.ID.String()] = task
+	}
+	for index := range items {
+		task := byID[items[index].TaskID]
+		if task == nil || items[index].LedgerType != "consume" {
+			continue
+		}
+		items[index].SuccessfulImageCount = task.SuccessOutputImageCount
+		items[index].TotalChargedPoints = mustDecimal(task.ActualPoints).Round(s.scale).StringFixed(s.scale)
+		if task.SuccessOutputImageCount > 0 {
+			items[index].EffectiveUnitPoints = mustDecimal(task.ActualPoints).Div(decimal.NewFromInt(int64(task.SuccessOutputImageCount))).Round(s.scale).StringFixed(s.scale)
+		}
+		items[index].PartialSuccess = task.SuccessOutputImageCount > 0 && task.SuccessOutputImageCount < task.RequestedOutputImageCount
+	}
+	return nil
 }
 
 func (s *BillingStore) ListPlans(ctx context.Context, req domainbilling.SubscriptionPlanListRequest) ([]domainbilling.SubscriptionPlan, error) {
@@ -102,7 +142,7 @@ func (s *BillingStore) CreatePlan(ctx context.Context, req domainbilling.CreateS
 		SetBonusPoints(strings.TrimSpace(req.BonusPoints)).
 		SetCreditExpiryEnabled(expiryEnabled).
 		SetNillableDurationDays(req.DurationDays).
-		SetCurrency(strings.TrimSpace(req.Currency)).
+		SetCurrency("CNY").
 		SetDescription(strings.TrimSpace(req.Description)).
 		SetSortOrder(req.SortOrder).
 		SetMetadata(metadata).
@@ -136,7 +176,7 @@ func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateS
 		SetBonusPoints(strings.TrimSpace(req.BonusPoints)).
 		SetCreditExpiryEnabled(expiryEnabled).
 		SetNillableDurationDays(req.DurationDays).
-		SetCurrency(strings.TrimSpace(req.Currency)).
+		SetCurrency("CNY").
 		SetDescription(strings.TrimSpace(req.Description)).
 		SetSortOrder(req.SortOrder).
 		SetMetadata(metadata).
@@ -520,8 +560,12 @@ func (s *BillingStore) CreateOrder(ctx context.Context, req domainbilling.Create
 		SetAmountCny(plan.PriceCny).
 		SetPoints(plan.Points).
 		SetBonusPoints(plan.BonusPoints).
+		SetCreditExpiryEnabled(plan.CreditExpiryEnabled).
 		SetExpiresAt(now.Add(15 * time.Minute)).
 		SetProviderPayload(providerPayload)
+	if plan.CreditExpiryEnabled {
+		create.SetCreditValidDays(plan.DurationDays)
+	}
 	if len(req.PaymentDisplay) > 0 {
 		create.SetPaymentDisplay(cloneMap(req.PaymentDisplay))
 	}
@@ -1570,7 +1614,6 @@ func (s *BillingStore) currentStateWithDetails(ctx context.Context, client *repo
 		switch grant.GrantType {
 		case "trial":
 			trialAvailable = trialAvailable.Add(available)
-			giftAvailable = giftAvailable.Add(available)
 		case "subscription":
 			subscriptionAvailable = subscriptionAvailable.Add(available)
 		case "recharge":
@@ -1626,7 +1669,7 @@ func (s *BillingStore) expireExpiredGrants(ctx context.Context, tx *repoent.Tx, 
 		Where(
 			walletgrant.UserIDEQ(userID),
 			walletgrant.StatusEQ("active"),
-			walletgrant.GrantTypeIn("trial", "subscription"),
+			walletgrant.GrantTypeIn("trial", "subscription", "gift"),
 			walletgrant.ExpiresAtNotNil(),
 			walletgrant.ExpiresAtLTE(now),
 		).
@@ -1752,11 +1795,11 @@ func balanceBucketLabel(bucket string) string {
 	case "trial":
 		return "体验额度"
 	case "subscription":
-		return "订阅额度"
+		return "套餐积分"
 	case "recharge":
-		return "充值额度"
+		return "充值积分"
 	case "gift":
-		return "赠送额度"
+		return "赠送积分"
 	default:
 		return bucket
 	}
@@ -2283,41 +2326,42 @@ func (s *BillingStore) ensureLegacyGrant(ctx context.Context, tx *repoent.Tx, us
 }
 
 func (s *BillingStore) grantOrderCredits(ctx context.Context, tx *repoent.Tx, order *repoent.PaymentOrder) (decimalState, error) {
-	plan, err := tx.SubscriptionPlan.Query().Where(subscriptionplan.IDEQ(int(order.PlanID))).Only(ctx)
-	if err != nil {
-		return decimalState{}, err
-	}
 	now := time.Now().UTC()
-	expiresAt := now.Add(time.Duration(plan.DurationDays) * 24 * time.Hour)
-	subscriptionGrant, err := s.createWalletGrant(ctx, tx, order.UserID, "subscription", "payment_order", pointerInt64(int64(order.ID)), mustDecimal(order.Points), &expiresAt, map[string]any{"plan_code": plan.PlanCode})
+	expiresAt := orderCreditExpiry(order, now)
+	_, err := s.createWalletGrant(ctx, tx, order.UserID, "subscription", "payment_order", pointerInt64(int64(order.ID)), mustDecimal(order.Points), expiresAt, map[string]any{"order_no": order.OrderNo, "grant_purpose": "purchased"})
 	if err != nil {
 		return decimalState{}, err
 	}
 	if mustDecimal(order.BonusPoints).IsPositive() {
-		if _, err := s.createWalletGrant(ctx, tx, order.UserID, "gift", "payment_order_bonus", pointerInt64(int64(order.ID)), mustDecimal(order.BonusPoints), &expiresAt, map[string]any{"plan_code": plan.PlanCode}); err != nil {
+		if _, err := s.createWalletGrant(ctx, tx, order.UserID, "gift", "payment_order_bonus", pointerInt64(int64(order.ID)), mustDecimal(order.BonusPoints), expiresAt, map[string]any{"order_no": order.OrderNo, "grant_purpose": "gift"}); err != nil {
 			return decimalState{}, err
 		}
-	}
-	if _, err := tx.UserSubscription.Create().
-		SetUserID(order.UserID).
-		SetPlanID(order.PlanID).
-		SetWalletGrantID(int64(subscriptionGrant.ID)).
-		SetPaymentOrderID(int64(order.ID)).
-		SetStatus("active").
-		SetStartedAt(now).
-		SetCurrentPeriodStart(now).
-		SetCurrentPeriodEnd(expiresAt).
-		Save(ctx); err != nil {
-		return decimalState{}, err
 	}
 	state, _, err := s.currentStateWithDetails(ctx, tx.Client(), order.UserID)
 	if err != nil {
 		return decimalState{}, err
 	}
-	if _, err := s.insertLedger(ctx, tx, order.UserID, 0, "", "order_paid", mustDecimal(order.Points).Add(mustDecimal(order.BonusPoints)), state, "payment order "+order.OrderNo, 0, "order:"+order.OrderNo+":paid"); err != nil {
+	if _, err := s.insertPaymentOrderLedger(ctx, tx, order.UserID, int64(order.ID), "order_paid", mustDecimal(order.Points).Add(mustDecimal(order.BonusPoints)), state, "payment order "+order.OrderNo, 0, "order:"+order.OrderNo+":paid"); err != nil {
+		return decimalState{}, err
+	}
+	update := tx.PaymentOrder.UpdateOneID(order.ID).SetCreditedAt(now)
+	if expiresAt != nil {
+		update.SetCreditExpiresAt(*expiresAt)
+	} else {
+		update.ClearCreditExpiresAt()
+	}
+	if _, err := update.Save(ctx); err != nil {
 		return decimalState{}, err
 	}
 	return state, nil
+}
+
+func orderCreditExpiry(order *repoent.PaymentOrder, creditedAt time.Time) *time.Time {
+	if !order.CreditExpiryEnabled || order.CreditValidDays == nil || *order.CreditValidDays <= 0 {
+		return nil
+	}
+	expiresAt := creditedAt.Add(time.Duration(*order.CreditValidDays) * 24 * time.Hour)
+	return &expiresAt
 }
 
 func (s *BillingStore) grantRechargeOrderCredits(ctx context.Context, tx *repoent.Tx, order *repoent.PaymentOrder) (decimalState, int64, error) {
@@ -2373,11 +2417,26 @@ func (s *BillingStore) completeRechargeOrderInTx(ctx context.Context, tx *repoen
 	if err := s.ensureWebhookEvent(ctx, tx, provider, tradeNo, int64(order.ID), payload); err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
-	_, ledgerID, err := s.grantRechargeOrderCredits(ctx, tx, order)
+	var ledgerID int64
+	var err error
+	isCustomAmount := strings.TrimSpace(order.PurchaseType) == "custom_amount" || order.PlanID == 0
+	if isCustomAmount {
+		_, ledgerID, err = s.grantRechargeOrderCredits(ctx, tx, order)
+	} else {
+		_, err = s.grantOrderCredits(ctx, tx, order)
+		if err == nil {
+			ledger, ledgerErr := tx.PointLedger.Query().Where(pointledger.IdempotencyKeyEQ("order:" + order.OrderNo + ":paid")).Only(ctx)
+			if ledgerErr != nil {
+				err = ledgerErr
+			} else {
+				ledgerID = int64(ledger.ID)
+			}
+		}
+	}
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
-	if _, err := tx.PaymentOrder.UpdateOneID(order.ID).
+	update := tx.PaymentOrder.UpdateOneID(order.ID).
 		SetStatus("completed").
 		SetProvider(provider).
 		SetTradeNo(tradeNo).
@@ -2385,8 +2444,12 @@ func (s *BillingStore) completeRechargeOrderInTx(ctx context.Context, tx *repoen
 		SetCompletedAt(now).
 		SetLedgerID(ledgerID).
 		ClearClosedAt().
-		ClearFailureReason().
-		Save(ctx); err != nil {
+		ClearFailureReason()
+	if isCustomAmount {
+		update.SetCreditedAt(now)
+		update.ClearCreditExpiresAt()
+	}
+	if _, err := update.Save(ctx); err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
 	updated, err := tx.PaymentOrder.Query().Where(paymentorder.IDEQ(order.ID)).Only(ctx)
@@ -2594,12 +2657,12 @@ func (s *BillingStore) refundableRechargeGrant(ctx context.Context, order *repoe
 	grant, err := s.client.WalletGrant.Query().
 		Where(
 			walletgrant.UserIDEQ(order.UserID),
-			walletgrant.GrantTypeEQ("recharge"),
-			walletgrant.SourceTypeEQ("payment_order"),
+			walletgrant.GrantTypeIn("recharge", "subscription", "gift"),
 			walletgrant.SourceIDEQ(int64(order.ID)),
 			walletgrant.StatusEQ("active"),
 		).
-		Only(ctx)
+		Order(repoent.Asc(walletgrant.FieldGrantType)).
+		First(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return nil, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
@@ -2613,12 +2676,12 @@ func (s *BillingStore) refundableRechargeGrantInTx(ctx context.Context, tx *repo
 	grant, err := tx.WalletGrant.Query().
 		Where(
 			walletgrant.UserIDEQ(order.UserID),
-			walletgrant.GrantTypeEQ("recharge"),
-			walletgrant.SourceTypeEQ("payment_order"),
+			walletgrant.GrantTypeIn("recharge", "subscription", "gift"),
 			walletgrant.SourceIDEQ(int64(order.ID)),
 			walletgrant.StatusEQ("active"),
 		).
-		Only(ctx)
+		Order(repoent.Asc(walletgrant.FieldGrantType)).
+		First(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return nil, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
@@ -2729,27 +2792,31 @@ func boolString(ok bool, yes string, no string) string {
 
 func (s *BillingStore) mapPaymentOrder(ctx context.Context, order *repoent.PaymentOrder) domainbilling.PaymentOrder {
 	item := domainbilling.PaymentOrder{
-		ID:             int64(order.ID),
-		OrderNo:        order.OrderNo,
-		UserID:         order.UserID,
-		PlanID:         order.PlanID,
-		Provider:       order.Provider,
-		PurchaseType:   order.PurchaseType,
-		VisibleMethod:  order.VisibleMethod,
-		ProviderType:   order.ProviderType,
-		PaymentDisplay: cloneMap(order.PaymentDisplay),
-		Status:         order.Status,
-		Currency:       order.Currency,
-		AmountCNY:      order.AmountCny,
-		Points:         order.Points,
-		BonusPoints:    order.BonusPoints,
-		ExpiresAt:      order.ExpiresAt,
-		PaidAt:         order.PaidAt,
-		CompletedAt:    order.CompletedAt,
-		ClosedAt:       order.ClosedAt,
-		RefundedAt:     order.RefundedAt,
-		CreatedAt:      order.CreatedAt,
-		UpdatedAt:      order.UpdatedAt,
+		ID:                  int64(order.ID),
+		OrderNo:             order.OrderNo,
+		UserID:              order.UserID,
+		PlanID:              order.PlanID,
+		Provider:            order.Provider,
+		PurchaseType:        order.PurchaseType,
+		VisibleMethod:       order.VisibleMethod,
+		ProviderType:        order.ProviderType,
+		PaymentDisplay:      cloneMap(order.PaymentDisplay),
+		Status:              order.Status,
+		Currency:            order.Currency,
+		AmountCNY:           order.AmountCny,
+		Points:              order.Points,
+		BonusPoints:         order.BonusPoints,
+		CreditExpiryEnabled: order.CreditExpiryEnabled,
+		CreditValidDays:     order.CreditValidDays,
+		CreditedAt:          order.CreditedAt,
+		CreditExpiresAt:     order.CreditExpiresAt,
+		ExpiresAt:           order.ExpiresAt,
+		PaidAt:              order.PaidAt,
+		CompletedAt:         order.CompletedAt,
+		ClosedAt:            order.ClosedAt,
+		RefundedAt:          order.RefundedAt,
+		CreatedAt:           order.CreatedAt,
+		UpdatedAt:           order.UpdatedAt,
 	}
 	if order.ProviderInstanceID != nil {
 		item.ProviderInstanceID = *order.ProviderInstanceID

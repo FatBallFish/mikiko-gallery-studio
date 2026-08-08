@@ -144,7 +144,7 @@ type CreateSubscriptionPlanRequest struct {
 	BonusPoints         string `json:"bonus_points"`
 	CreditExpiryEnabled *bool  `json:"credit_expiry_enabled,omitempty"`
 	DurationDays        *int   `json:"duration_days,omitempty"`
-	Currency            string `json:"currency"`
+	Currency            string `json:"-"`
 	SortOrder           int    `json:"sort_order"`
 	Description         string `json:"description"`
 }
@@ -160,7 +160,7 @@ type UpdateSubscriptionPlanRequest struct {
 	BonusPoints         string `json:"bonus_points"`
 	CreditExpiryEnabled *bool  `json:"credit_expiry_enabled,omitempty"`
 	DurationDays        *int   `json:"duration_days,omitempty"`
-	Currency            string `json:"currency"`
+	Currency            string `json:"-"`
 	SortOrder           int    `json:"sort_order"`
 	Description         string `json:"description"`
 }
@@ -258,29 +258,33 @@ type PaymentWebhookEventPage struct {
 }
 
 type LedgerEntry struct {
-	ID                 int64     `json:"id"`
-	UserID             int64     `json:"user_id,omitempty"`
-	APIKeyID           int64     `json:"api_key_id,omitempty"`
-	TaskID             string    `json:"task_id,omitempty"`
-	OrderID            int64     `json:"order_id,omitempty"`
-	RedeemCodeID       int64     `json:"redeem_code_id,omitempty"`
-	LedgerType         string    `json:"ledger_type"`
-	ChangePoints       string    `json:"change_points"`
-	BalanceAfter       string    `json:"balance_after"`
-	FrozenAfter        string    `json:"frozen_after,omitempty"`
-	BalanceBucket      string    `json:"balance_bucket,omitempty"`
-	BucketType         string    `json:"bucket_type,omitempty"`
-	SourceType         string    `json:"source_type,omitempty"`
-	SourceID           any       `json:"source_id,omitempty"`
-	BucketBalanceAfter string    `json:"bucket_balance_after,omitempty"`
-	ExpiresAt          *string   `json:"expires_at,omitempty"`
-	Reason             string    `json:"reason,omitempty"`
-	CreatedAt          time.Time `json:"created_at"`
-	Title              string    `json:"title,omitempty"`
-	OccurredAt         string    `json:"occurred_at,omitempty"`
-	Amount             string    `json:"amount,omitempty"`
-	Type               string    `json:"type,omitempty"`
-	Detail             string    `json:"detail,omitempty"`
+	ID                   int64     `json:"id"`
+	UserID               int64     `json:"user_id,omitempty"`
+	APIKeyID             int64     `json:"api_key_id,omitempty"`
+	TaskID               string    `json:"task_id,omitempty"`
+	OrderID              int64     `json:"order_id,omitempty"`
+	RedeemCodeID         int64     `json:"redeem_code_id,omitempty"`
+	LedgerType           string    `json:"ledger_type"`
+	ChangePoints         string    `json:"change_points"`
+	BalanceAfter         string    `json:"balance_after"`
+	FrozenAfter          string    `json:"frozen_after,omitempty"`
+	BalanceBucket        string    `json:"balance_bucket,omitempty"`
+	BucketType           string    `json:"bucket_type,omitempty"`
+	SourceType           string    `json:"source_type,omitempty"`
+	SourceID             any       `json:"source_id,omitempty"`
+	BucketBalanceAfter   string    `json:"bucket_balance_after,omitempty"`
+	ExpiresAt            *string   `json:"expires_at,omitempty"`
+	Reason               string    `json:"reason,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
+	Title                string    `json:"title,omitempty"`
+	OccurredAt           string    `json:"occurred_at,omitempty"`
+	Amount               string    `json:"amount,omitempty"`
+	Type                 string    `json:"type,omitempty"`
+	Detail               string    `json:"detail,omitempty"`
+	SuccessfulImageCount int       `json:"successful_image_count,omitempty"`
+	EffectiveUnitPoints  string    `json:"effective_unit_points,omitempty"`
+	TotalChargedPoints   string    `json:"total_charged_points,omitempty"`
+	PartialSuccess       bool      `json:"partial_success,omitempty"`
 }
 
 func PopulateLedgerDisplayFields(entry LedgerEntry) LedgerEntry {
@@ -372,9 +376,9 @@ func LedgerTitle(ledgerType string) string {
 	case "trial_grant":
 		return "体验额度发放"
 	case "order_paid":
-		return "订阅额度到账"
+		return "套餐积分到账"
 	case "recharge":
-		return "充值额度到账"
+		return "充值积分到账"
 	case "payment_refund":
 		return "充值退款"
 	case "redeem":

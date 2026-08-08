@@ -2,6 +2,9 @@ import type { Balance, BalanceBucket, ID, LedgerEntry } from '../../../shared/ap
 
 export function normalizeBalanceBuckets(balance: Balance | null): BalanceBucket[] {
   const defaults: BalanceBucket[] = [
+    { bucket: 'subscription', label: '套餐积分', available_points: balance?.subscription_points ?? '0.00000' },
+    { bucket: 'recharge', label: '充值积分', available_points: balance?.recharge_points ?? '0.00000' },
+    { bucket: 'gift', label: '赠送积分', available_points: balance?.gift_points ?? '0.00000' },
     {
       bucket: 'trial',
       label: '体验额度',
@@ -9,8 +12,6 @@ export function normalizeBalanceBuckets(balance: Balance | null): BalanceBucket[
       expire_warning: Boolean(balance?.next_expiring_grant?.grant_type === 'trial'),
       expires_at: balance?.next_expiring_grant?.expires_at,
     },
-    { bucket: 'subscription', label: '订阅额度', available_points: balance?.subscription_points ?? '0.00000' },
-    { bucket: 'recharge', label: '充值额度', available_points: balance?.recharge_points ?? '0.00000' },
   ]
   const serverBuckets = new Map((balance?.buckets ?? []).map((bucket) => [bucket.bucket, bucket]))
   return defaults.map((bucket) => ({ ...bucket, ...serverBuckets.get(bucket.bucket) }))
@@ -18,9 +19,9 @@ export function normalizeBalanceBuckets(balance: Balance | null): BalanceBucket[
 
 export function balanceBucketLabel(bucket: string) {
   if (bucket === 'trial') return '体验额度'
-  if (bucket === 'subscription') return '订阅额度'
-  if (bucket === 'recharge') return '充值额度'
-  if (bucket === 'gift') return '赠送额度'
+  if (bucket === 'subscription') return '套餐积分'
+  if (bucket === 'recharge') return '充值积分'
+  if (bucket === 'gift') return '赠送积分'
   return bucket
 }
 
@@ -36,8 +37,8 @@ function ledgerSourceLabel(source?: string) {
 
 function ledgerTitle(type?: string) {
   if (type === 'trial_grant') return '体验额度发放'
-  if (type === 'order_paid') return '充值额度到账'
-  if (type === 'recharge') return '充值额度到账'
+  if (type === 'order_paid') return '套餐积分到账'
+  if (type === 'recharge') return '充值积分到账'
   if (type === 'payment_refund') return '支付退款'
   if (type === 'redeem') return '兑换码到账'
   if (type === 'reserve') return '生成预冻结'
@@ -65,6 +66,8 @@ export type ProfileLedgerRow = {
   detail: string
   amount: string
   amountTone: 'credit' | 'debit'
+  taskId?: string
+  generationDetail?: string
 }
 
 export function profileLedgerRows(entries: LedgerEntry[]): ProfileLedgerRow[] {
@@ -85,8 +88,18 @@ export function profileLedgerRows(entries: LedgerEntry[]): ProfileLedgerRow[] {
       detail,
       amount,
       amountTone,
+      taskId: entry.task_id,
+      generationDetail: generationLedgerDetail(entry),
     }
   })
+}
+
+function generationLedgerDetail(entry: LedgerEntry) {
+  if (entry.ledger_type !== 'consume' || !entry.task_id) return undefined
+  const count = entry.successful_image_count ?? 0
+  const unit = entry.effective_unit_points ?? '0.00000'
+  const total = entry.total_charged_points ?? (entry.change_points ?? '0.00000').replace(/^-/, '')
+  return `成功 ${count} 张 · 单价 ${unit} 积分/张 · 合计 ${total} 积分${entry.partial_success ? ' · 部分成功' : ''}`
 }
 
 function ledgerExpiryText(expiresAt?: string | null) {

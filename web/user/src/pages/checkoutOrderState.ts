@@ -23,6 +23,9 @@ export type CheckoutRecentOrderRow = {
   status: string
   amount: string
   points: string
+  basePoints: string
+  bonusPoints: string
+  creditValidity: string
   method: string
   createdAt: string
   createdAtLabel: string
@@ -84,6 +87,10 @@ type CheckoutRecentOrder = {
   purchase_type?: CashierPurchaseType
   currency?: string
   bonus_points?: string
+  credit_expiry_enabled?: boolean
+  credit_valid_days?: number | null
+  credited_at?: string | null
+  credit_expires_at?: string | null
   expires_at?: string
   updated_at?: string
 }
@@ -133,11 +140,21 @@ export function checkoutRecentOrderRows(orders: CheckoutRecentOrder[], limit = 1
       status: checkoutOrderStatusLabel(order.status),
       amount: checkoutMoney(order.amount_cny),
       points: checkoutPoints(order.points),
+      basePoints: checkoutPoints(order.points),
+      bonusPoints: checkoutPoints(order.bonus_points),
+      creditValidity: checkoutOrderCreditValidity(order),
       method: checkoutPaymentMethodLabel(order),
       createdAt: order.created_at,
       createdAtLabel: checkoutDateTime(order.created_at),
       order: toCashierOrder(order),
     }))
+}
+
+export function checkoutOrderCreditValidity(order: CheckoutRecentOrder) {
+  if (order.purchase_type === 'custom_amount' || order.credit_expiry_enabled === false) return '积分长期有效'
+  if (order.credit_expires_at) return `有效期至 ${checkoutDateTime(order.credit_expires_at)}`
+  if (order.credit_valid_days && order.credit_valid_days > 0) return `到账后 ${order.credit_valid_days} 天内有效`
+  return '积分长期有效'
 }
 
 function toCashierOrder(order: CheckoutRecentOrder): CashierOrder {

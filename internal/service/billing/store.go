@@ -179,6 +179,9 @@ type memoryRefundFreeze struct {
 	RefundTradeNo   string
 	RefundAmountCNY decimal.Decimal
 	RefundPoints    decimal.Decimal
+	Subscription    decimal.Decimal
+	Gift            decimal.Decimal
+	Recharge        decimal.Decimal
 }
 
 type balanceState struct {
@@ -280,7 +283,7 @@ func (s *MemoryStore) CreatePlan(_ context.Context, req domainbilling.CreateSubs
 		BonusPoints:         strings.TrimSpace(req.BonusPoints),
 		CreditExpiryEnabled: expiryEnabled,
 		DurationDays:        effectivePlanDurationDays(expiryEnabled, req.DurationDays),
-		Currency:            normalizeCurrency(req.Currency),
+		Currency:            "CNY",
 		SortOrder:           req.SortOrder,
 		Description:         strings.TrimSpace(req.Description),
 		CreatedAt:           now,
@@ -309,7 +312,7 @@ func (s *MemoryStore) UpdatePlan(_ context.Context, req domainbilling.UpdateSubs
 		expiryEnabled := effectiveCreditExpiryEnabled(req.CreditExpiryEnabled)
 		item.CreditExpiryEnabled = expiryEnabled
 		item.DurationDays = effectivePlanDurationDays(expiryEnabled, req.DurationDays)
-		item.Currency = normalizeCurrency(req.Currency)
+		item.Currency = "CNY"
 		item.SortOrder = req.SortOrder
 		item.Description = strings.TrimSpace(req.Description)
 		item.UpdatedAt = time.Now().UTC()
@@ -644,30 +647,32 @@ func (s *MemoryStore) CreateOrder(_ context.Context, req domainbilling.CreateOrd
 	}
 	paymentURL := strings.TrimSpace(req.PaymentURL)
 	order := domainbilling.PaymentOrder{
-		ID:                 s.nextOrderID,
-		OrderNo:            orderNo,
-		UserID:             req.UserID,
-		PlanID:             plan.ID,
-		PlanCode:           plan.PlanCode,
-		PlanName:           plan.PlanName,
-		Provider:           strings.TrimSpace(req.Provider),
-		PurchaseType:       defaultString(strings.TrimSpace(req.PurchaseType), "plan"),
-		VisibleMethod:      strings.TrimSpace(req.VisibleMethod),
-		ProviderType:       defaultString(strings.TrimSpace(req.ProviderType), strings.TrimSpace(req.Provider)),
-		ProviderInstanceID: req.ProviderInstanceID,
-		PaymentDisplay:     cloneMap(req.PaymentDisplay),
-		IdempotencyKey:     idempotencyKey,
-		Status:             "pending",
-		Currency:           plan.Currency,
-		AmountCNY:          plan.PriceCNY,
-		Points:             plan.Points,
-		BonusPoints:        plan.BonusPoints,
-		PaymentURL:         paymentURL,
-		QRCode:             strings.TrimSpace(req.QRCode),
-		ClientToken:        strings.TrimSpace(req.ClientToken),
-		ExpiresAt:          now.Add(15 * time.Minute),
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		ID:                  s.nextOrderID,
+		OrderNo:             orderNo,
+		UserID:              req.UserID,
+		PlanID:              plan.ID,
+		PlanCode:            plan.PlanCode,
+		PlanName:            plan.PlanName,
+		Provider:            strings.TrimSpace(req.Provider),
+		PurchaseType:        defaultString(strings.TrimSpace(req.PurchaseType), "plan"),
+		VisibleMethod:       strings.TrimSpace(req.VisibleMethod),
+		ProviderType:        defaultString(strings.TrimSpace(req.ProviderType), strings.TrimSpace(req.Provider)),
+		ProviderInstanceID:  req.ProviderInstanceID,
+		PaymentDisplay:      cloneMap(req.PaymentDisplay),
+		IdempotencyKey:      idempotencyKey,
+		Status:              "pending",
+		Currency:            plan.Currency,
+		AmountCNY:           plan.PriceCNY,
+		Points:              plan.Points,
+		BonusPoints:         plan.BonusPoints,
+		CreditExpiryEnabled: plan.CreditExpiryEnabled,
+		CreditValidDays:     effectivePlanDurationDays(plan.CreditExpiryEnabled, plan.DurationDays),
+		PaymentURL:          paymentURL,
+		QRCode:              strings.TrimSpace(req.QRCode),
+		ClientToken:         strings.TrimSpace(req.ClientToken),
+		ExpiresAt:           now.Add(15 * time.Minute),
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 	s.orders[order.ID] = order
 	s.nextOrderID++
@@ -845,7 +850,15 @@ func (s *MemoryStore) MarkOrderPaid(_ context.Context, req domainbilling.MarkOrd
 		breakdown.Subscription = breakdown.Subscription.Add(points)
 		breakdown.Gift = breakdown.Gift.Add(bonus)
 		s.breakdown[order.UserID] = breakdown
-		periodEnd := now.Add(30 * 24 * time.Hour)
+		periodEnd := now
+		if order.CreditValidDays != nil {
+			periodEnd = now.Add(time.Duration(*order.CreditValidDays) * 24 * time.Hour)
+		}
+		order.CreditedAt = &now
+		if order.CreditExpiryEnabled && order.CreditValidDays != nil {
+			order.CreditExpiresAt = &periodEnd
+		}
+		s.orders[id] = order
 		s.subs[order.UserID] = &domainbilling.UserSubscriptionSummary{
 			ID:                 order.ID,
 			PlanID:             order.PlanID,
@@ -1095,15 +1108,13 @@ func (s *MemoryStore) refundPaymentOrderLocked(req domainbilling.RefundPaymentOr
 		current.Frozen = current.Frozen.Sub(plan.RefundPoints)
 		delete(s.refundFreezes, order.ID)
 	} else {
-		if current.Available.LessThan(plan.RefundPoints) || breakdown.Recharge.LessThan(plan.RefundPoints) {
+		updatedBreakdown, _, ok := deductPaymentOrderBreakdown(order, breakdown, plan.RefundPoints)
+		if current.Available.LessThan(plan.RefundPoints) || !ok {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 		}
 		current.Available = current.Available.Sub(plan.RefundPoints)
-		breakdown.Recharge = breakdown.Recharge.Sub(plan.RefundPoints)
+		breakdown = updatedBreakdown
 		s.breakdown[order.UserID] = breakdown
-	}
-	if breakdown.Recharge.IsNegative() {
-		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 	}
 	s.balances[order.UserID] = current
 	now := time.Now().UTC()
@@ -1154,18 +1165,22 @@ func (s *MemoryStore) FreezeRefundPaymentOrder(_ context.Context, req domainbill
 	}
 	current := s.balances[order.UserID]
 	breakdown := s.breakdown[order.UserID]
-	if current.Available.LessThan(plan.RefundPoints) || breakdown.Recharge.LessThan(plan.RefundPoints) {
+	updatedBreakdown, allocation, ok := deductPaymentOrderBreakdown(order, breakdown, plan.RefundPoints)
+	if current.Available.LessThan(plan.RefundPoints) || !ok {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 	}
 	current.Available = current.Available.Sub(plan.RefundPoints)
 	current.Frozen = current.Frozen.Add(plan.RefundPoints)
-	breakdown.Recharge = breakdown.Recharge.Sub(plan.RefundPoints)
+	breakdown = updatedBreakdown
 	s.balances[order.UserID] = current
 	s.breakdown[order.UserID] = breakdown
 	s.refundFreezes[order.ID] = memoryRefundFreeze{
 		RefundTradeNo:   refundTradeNo,
 		RefundAmountCNY: plan.RefundAmountCNY,
 		RefundPoints:    plan.RefundPoints,
+		Subscription:    allocation.Subscription,
+		Gift:            allocation.Gift,
+		Recharge:        allocation.Recharge,
 	}
 	return order, nil
 }
@@ -1189,7 +1204,9 @@ func (s *MemoryStore) ReleaseRefundPaymentOrder(_ context.Context, req domainbil
 	}
 	current.Frozen = current.Frozen.Sub(frozen)
 	current.Available = current.Available.Add(frozen)
-	breakdown.Recharge = breakdown.Recharge.Add(frozen)
+	breakdown.Subscription = breakdown.Subscription.Add(freeze.Subscription)
+	breakdown.Gift = breakdown.Gift.Add(freeze.Gift)
+	breakdown.Recharge = breakdown.Recharge.Add(freeze.Recharge)
 	s.balances[order.UserID] = current
 	s.breakdown[order.UserID] = breakdown
 	delete(s.refundFreezes, order.ID)
@@ -1236,7 +1253,8 @@ func (s *MemoryStore) CheckRefundPaymentOrder(_ context.Context, req domainbilli
 	breakdown := s.breakdown[order.UserID]
 	frozenRefund := s.refundFreezes[order.ID]
 	if !frozenRefund.RefundPoints.IsPositive() {
-		if current.Available.LessThan(plan.RefundPoints) || breakdown.Recharge.LessThan(plan.RefundPoints) {
+		_, _, ok := deductPaymentOrderBreakdown(order, breakdown, plan.RefundPoints)
+		if current.Available.LessThan(plan.RefundPoints) || !ok {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 		}
 		return order, nil
@@ -1248,6 +1266,28 @@ func (s *MemoryStore) CheckRefundPaymentOrder(_ context.Context, req domainbilli
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 	}
 	return order, nil
+}
+
+func deductPaymentOrderBreakdown(order domainbilling.PaymentOrder, breakdown memoryBreakdown, amount decimal.Decimal) (memoryBreakdown, memoryRefundFreeze, bool) {
+	allocation := memoryRefundFreeze{}
+	remaining := amount
+	if order.PurchaseType == "custom_amount" || order.PlanID == 0 {
+		if breakdown.Recharge.LessThan(remaining) {
+			return breakdown, allocation, false
+		}
+		breakdown.Recharge = breakdown.Recharge.Sub(remaining)
+		allocation.Recharge = remaining
+		return breakdown, allocation, true
+	}
+	fromGift := decimal.Min(breakdown.Gift, remaining)
+	breakdown.Gift = breakdown.Gift.Sub(fromGift)
+	allocation.Gift = fromGift
+	remaining = remaining.Sub(fromGift)
+	fromSubscription := decimal.Min(breakdown.Subscription, remaining)
+	breakdown.Subscription = breakdown.Subscription.Sub(fromSubscription)
+	allocation.Subscription = fromSubscription
+	remaining = remaining.Sub(fromSubscription)
+	return breakdown, allocation, !remaining.IsPositive()
 }
 
 func ensureMemoryRefundFreezeMatches(freeze memoryRefundFreeze, refundTradeNo string, plan memoryPaymentOrderRefundPlan) error {
@@ -1280,6 +1320,13 @@ func (s *MemoryStore) completeRechargeOrderLocked(order domainbilling.PaymentOrd
 	order.TradeNo = strings.TrimSpace(req.TradeNo)
 	order.PaidAt = &now
 	order.CompletedAt = &now
+	order.CreditedAt = &now
+	if order.CreditExpiryEnabled && order.CreditValidDays != nil {
+		expiresAt := now.Add(time.Duration(*order.CreditValidDays) * 24 * time.Hour)
+		order.CreditExpiresAt = &expiresAt
+	} else {
+		order.CreditExpiresAt = nil
+	}
 	order.ClosedAt = nil
 	order.FailureReason = ""
 	order.UpdatedAt = now
@@ -1291,7 +1338,12 @@ func (s *MemoryStore) completeRechargeOrderLocked(order domainbilling.PaymentOrd
 	current.Available = current.Available.Add(total)
 	s.balances[order.UserID] = current
 	breakdown := s.breakdown[order.UserID]
-	breakdown.Recharge = breakdown.Recharge.Add(total)
+	if order.PurchaseType == "custom_amount" || order.PlanID == 0 {
+		breakdown.Recharge = breakdown.Recharge.Add(total)
+	} else {
+		breakdown.Subscription = breakdown.Subscription.Add(points)
+		breakdown.Gift = breakdown.Gift.Add(bonus)
+	}
 	s.breakdown[order.UserID] = breakdown
 	order.LedgerID = s.appendLedger(order.UserID, 0, "", "recharge", total, current, "cashier order "+order.OrderNo)
 	s.orders[order.ID] = order
@@ -1666,7 +1718,7 @@ func (s *MemoryStore) formatState(userID int64, current balanceState) BalanceSta
 	if breakdown.Subscription.IsPositive() {
 		buckets = append(buckets, domainbilling.BalanceBucket{
 			Bucket:          "subscription",
-			Label:           "订阅额度",
+			Label:           "套餐积分",
 			AvailablePoints: breakdown.Subscription.Round(s.scale).StringFixed(s.scale),
 			FrozenPoints:    decimal.Zero.Round(s.scale).StringFixed(s.scale),
 			SortOrder:       2,
@@ -1675,7 +1727,7 @@ func (s *MemoryStore) formatState(userID int64, current balanceState) BalanceSta
 	if breakdown.Recharge.IsPositive() {
 		buckets = append(buckets, domainbilling.BalanceBucket{
 			Bucket:          "recharge",
-			Label:           "充值额度",
+			Label:           "充值积分",
 			AvailablePoints: breakdown.Recharge.Round(s.scale).StringFixed(s.scale),
 			FrozenPoints:    decimal.Zero.Round(s.scale).StringFixed(s.scale),
 			SortOrder:       4,

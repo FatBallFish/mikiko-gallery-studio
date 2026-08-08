@@ -101,8 +101,8 @@ func TestBillingPlansOrdersWebhookAndSubscriptionFlow(t *testing.T) {
 	if balanceRec.Code != http.StatusOK {
 		t.Fatalf("balance: %d body=%s", balanceRec.Code, balanceRec.Body.String())
 	}
-	if !bytes.Contains(balanceRec.Body.Bytes(), []byte(`"recharge_points":"100.00000"`)) {
-		t.Fatalf("expected recharge points body=%s", balanceRec.Body.String())
+	if !bytes.Contains(balanceRec.Body.Bytes(), []byte(`"subscription_points":"100.00000"`)) || !bytes.Contains(balanceRec.Body.Bytes(), []byte(`"gift_points":"5.00000"`)) {
+		t.Fatalf("expected purchased and gift package points body=%s", balanceRec.Body.String())
 	}
 }
 

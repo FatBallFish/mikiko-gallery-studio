@@ -27,8 +27,8 @@ export function CashierPlanEditorDialog({ draft, saving, error, onChange, onClos
         <Field label="售价 CNY"><input value={draft.price_cny} onChange={(event) => onChange({ ...draft, price_cny: event.target.value })} inputMode="decimal" placeholder="19.90000" /></Field>
         <Field label="基础积分"><input value={draft.points} onChange={(event) => onChange({ ...draft, points: event.target.value })} inputMode="decimal" placeholder="100.00000" /></Field>
         <Field label="赠送积分"><input value={draft.bonus_points} onChange={(event) => onChange({ ...draft, bonus_points: event.target.value })} inputMode="decimal" placeholder="0.00000" /></Field>
-        <Field label="有效天数"><input value={draft.duration_days} onChange={(event) => onChange({ ...draft, duration_days: event.target.value })} type="number" min="1" /></Field>
-        <Field label="币种"><input value={draft.currency} onChange={(event) => onChange({ ...draft, currency: event.target.value })} /></Field>
+        <Field label="积分有效期"><label className="flex min-h-10 items-center gap-2"><input type="checkbox" role="switch" checked={draft.credit_expiry_enabled} onChange={(event) => onChange({ ...draft, credit_expiry_enabled: event.target.checked, duration_days: event.target.checked ? draft.duration_days || '30' : '' })} /><span>{draft.credit_expiry_enabled ? '按有效天数过期' : '积分长期有效'}</span></label></Field>
+        {draft.credit_expiry_enabled ? <Field label="有效天数"><input value={draft.duration_days} onChange={(event) => onChange({ ...draft, duration_days: event.target.value })} type="number" min="1" required /></Field> : null}
         <Field label="排序"><input value={draft.sort_order} onChange={(event) => onChange({ ...draft, sort_order: event.target.value })} type="number" /></Field>
         <Field label="描述"><input value={draft.description} onChange={(event) => onChange({ ...draft, description: event.target.value })} placeholder="适合轻量体验" /></Field>
       </div>

@@ -14,8 +14,8 @@ const zeroBalance: Balance = {
 const zeroBuckets = normalizeBalanceBuckets(zeroBalance)
 const zeroBucketKeys = zeroBuckets.map((bucket) => bucket.bucket).join(',')
 
-if (zeroBucketKeys !== 'trial,subscription,recharge') {
-  throw new Error(`profile balance buckets should always show trial, subscription and recharge buckets, got ${zeroBucketKeys}`)
+if (zeroBucketKeys !== 'subscription,recharge,gift,trial') {
+  throw new Error(`profile balance buckets should always show purchased, recharge, gift and trial buckets, got ${zeroBucketKeys}`)
 }
 
 const partialBalance: Balance = {
@@ -27,6 +27,6 @@ const partialBuckets = normalizeBalanceBuckets(partialBalance)
 const trial = partialBuckets.find((bucket) => bucket.bucket === 'trial')
 const recharge = partialBuckets.find((bucket) => bucket.bucket === 'recharge')
 
-if (partialBuckets.length !== 3 || trial?.available_points !== '5.00000' || recharge?.available_points !== '0.00000') {
+if (partialBuckets.length !== 4 || trial?.available_points !== '5.00000' || recharge?.available_points !== '0.00000') {
   throw new Error('profile balance buckets should preserve server buckets and fill missing defaults')
 }

@@ -335,7 +335,8 @@ export function CheckoutPage() {
                 </span>
                 <span className={checkoutClasses.recentCell}>
                   <strong className={checkoutClasses.recentStrong}>{row.amount}</strong>
-                  <em className={checkoutClasses.recentMeta}>{row.points} 积分</em>
+                  <em className={checkoutClasses.recentMeta}>{row.order.purchase_type === 'custom_amount' ? `到账 ${row.points} 积分` : `套餐 ${row.basePoints} · 赠送 ${row.bonusPoints}`}</em>
+                  <em className={checkoutClasses.recentMeta}>{row.creditValidity}</em>
                 </span>
                 <span className={checkoutClasses.recentCell}>
                   <strong className={checkoutClasses.recentStrong}>{row.status}</strong>

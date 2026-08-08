@@ -508,6 +508,10 @@ export type LedgerEntry = {
   amount?: string
   type?: 'credit' | 'debit'
   detail?: string
+  successful_image_count?: number
+  effective_unit_points?: string
+  total_charged_points?: string
+  partial_success?: boolean
 }
 
 export type CapabilityItem = {

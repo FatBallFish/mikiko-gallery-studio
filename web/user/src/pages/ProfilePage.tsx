@@ -151,6 +151,8 @@ export function ProfilePage() {
                       <span className={cn(profileClasses.ledgerTag, profileClasses.ledgerSourceTag)}>{entry.expiryText}</span>
                     </div>
                     <div className={profileClasses.ledgerMeta}>{entry.occurredAt} · {entry.detail}</div>
+                    {entry.generationDetail ? <div className={profileClasses.ledgerMeta}>{entry.generationDetail}</div> : null}
+                    {entry.taskId ? <div className={profileClasses.ledgerMeta}>任务 {entry.taskId}</div> : null}
                   </div>
                   <div className={cn(profileClasses.ledgerAmount, entry.amountTone === 'credit' && profileClasses.ledgerAmountCredit)}>{entry.amount}</div>
                 </div>

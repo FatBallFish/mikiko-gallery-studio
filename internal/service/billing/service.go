@@ -439,13 +439,7 @@ func normalizePlanWrite(req domainbilling.CreateSubscriptionPlanRequest) (domain
 		days := 30
 		req.DurationDays = &days
 	}
-	req.Currency = strings.ToUpper(strings.TrimSpace(req.Currency))
-	if req.Currency == "" {
-		req.Currency = "CNY"
-	}
-	if req.Currency != "CNY" {
-		return req, errs.BadRequest("currency must be CNY")
-	}
+	req.Currency = "CNY"
 	req.Description = strings.TrimSpace(req.Description)
 	return req, nil
 }

@@ -9,8 +9,8 @@ export type CashierPlanDraftInput = {
   price_cny: string
   points: string
   bonus_points: string
+  credit_expiry_enabled: boolean
   duration_days: string
-  currency: string
   sort_order: string
   description: string
 }
@@ -69,8 +69,8 @@ export function cashierPlanSavePayload(draft: CashierPlanDraftInput): Partial<Ca
     price_cny: draft.price_cny,
     points: draft.points,
     bonus_points: draft.bonus_points,
-    duration_days: Number(draft.duration_days) || 30,
-    currency: draft.currency,
+    credit_expiry_enabled: draft.credit_expiry_enabled,
+    duration_days: draft.credit_expiry_enabled ? Number(draft.duration_days) : null,
     sort_order: Number(draft.sort_order) || 0,
     description: draft.description,
   }
