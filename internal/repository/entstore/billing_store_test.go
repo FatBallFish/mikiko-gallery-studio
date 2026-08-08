@@ -1710,6 +1710,138 @@ func TestBillingStoreRefundIgnoresRedeemGiftWithCollidingSourceID(t *testing.T) 
 	assertCollisionGrant(consumedCollision.ID, "9.00000", "1.00000")
 }
 
+func TestBillingStoreRefundSupportsLegacyFixedPackageRechargeGrant(t *testing.T) {
+	t.Run("full refund freeze and release", func(t *testing.T) {
+		ctx := t.Context()
+		client, store, order, grant := legacyCompletedFixedPackageOrder(t, "full", 297)
+		request := domainbilling.RefundPaymentOrderRequest{
+			UserID: 297, OrderID: order.ID, RefundTradeNo: "legacy-fixed-full-refund",
+		}
+		if _, err := store.CheckRefundPaymentOrder(ctx, request); err != nil {
+			t.Fatalf("CheckRefundPaymentOrder: %v", err)
+		}
+		if _, err := store.FreezeRefundPaymentOrder(ctx, request); err != nil {
+			t.Fatalf("FreezeRefundPaymentOrder: %v", err)
+		}
+		frozen, err := client.WalletGrant.Get(ctx, grant.ID)
+		if err != nil {
+			t.Fatalf("load frozen legacy grant: %v", err)
+		}
+		if frozen.AvailablePoints != "0.00000" || frozen.FrozenPoints != "330.00000" {
+			t.Fatalf("legacy fixed grant must freeze in full, got %#v", frozen)
+		}
+		if _, err := store.ReleaseRefundPaymentOrder(ctx, request); err != nil {
+			t.Fatalf("ReleaseRefundPaymentOrder: %v", err)
+		}
+		released, err := client.WalletGrant.Get(ctx, grant.ID)
+		if err != nil {
+			t.Fatalf("load released legacy grant: %v", err)
+		}
+		if released.AvailablePoints != "330.00000" || released.FrozenPoints != "0.00000" {
+			t.Fatalf("legacy fixed grant must restore after release, got %#v", released)
+		}
+		refunded, err := store.RefundPaymentOrder(ctx, request)
+		if err != nil {
+			t.Fatalf("RefundPaymentOrder: %v", err)
+		}
+		if refunded.Status != "refunded" || refunded.RefundedPoints != "330.00000" {
+			t.Fatalf("unexpected legacy full refund %#v", refunded)
+		}
+		finalGrant, err := client.WalletGrant.Get(ctx, grant.ID)
+		if err != nil {
+			t.Fatalf("load refunded legacy grant: %v", err)
+		}
+		if finalGrant.Status != "refunded" || finalGrant.AvailablePoints != "0.00000" || finalGrant.FrozenPoints != "0.00000" {
+			t.Fatalf("legacy fixed grant must be retired after full refund, got %#v", finalGrant)
+		}
+	})
+
+	t.Run("sequential partial refund", func(t *testing.T) {
+		ctx := t.Context()
+		client, store, order, grant := legacyCompletedFixedPackageOrder(t, "partial", 298)
+		firstRequest := domainbilling.RefundPaymentOrderRequest{
+			UserID: 298, OrderID: order.ID, RefundTradeNo: "legacy-fixed-partial-1", RefundAmountCNY: "10.00000",
+		}
+		if _, err := store.FreezeRefundPaymentOrder(ctx, firstRequest); err != nil {
+			t.Fatalf("FreezeRefundPaymentOrder partial: %v", err)
+		}
+		if _, err := store.ReleaseRefundPaymentOrder(ctx, firstRequest); err != nil {
+			t.Fatalf("ReleaseRefundPaymentOrder partial: %v", err)
+		}
+		first, err := store.RefundPaymentOrder(ctx, firstRequest)
+		if err != nil {
+			t.Fatalf("first RefundPaymentOrder: %v", err)
+		}
+		if first.Status != "partially_refunded" || first.RefundedPoints != "66.13226" {
+			t.Fatalf("unexpected legacy partial refund %#v", first)
+		}
+		afterFirst, err := client.WalletGrant.Get(ctx, grant.ID)
+		if err != nil {
+			t.Fatalf("load partially refunded legacy grant: %v", err)
+		}
+		if afterFirst.Status != "active" || afterFirst.AvailablePoints != "263.86774" {
+			t.Fatalf("legacy grant must retain the unrefunded remainder, got %#v", afterFirst)
+		}
+		second, err := store.RefundPaymentOrder(ctx, domainbilling.RefundPaymentOrderRequest{
+			UserID: 298, OrderID: order.ID, RefundTradeNo: "legacy-fixed-partial-2",
+		})
+		if err != nil {
+			t.Fatalf("second RefundPaymentOrder: %v", err)
+		}
+		if second.Status != "refunded" || second.RefundedPoints != "330.00000" {
+			t.Fatalf("unexpected final legacy refund %#v", second)
+		}
+	})
+}
+
+func legacyCompletedFixedPackageOrder(t *testing.T, name string, userID int64) (*repoent.Client, *BillingStore, domainbilling.PaymentOrder, *repoent.WalletGrant) {
+	t.Helper()
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-legacy-fixed-"+name+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: userID, PlanCode: "plus-monthly", Provider: "mock", PurchaseType: "plan",
+		VisibleMethod: "mock", ProviderType: "mock", PaymentDisplay: map[string]any{"type": "mock"},
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	grant, err := client.WalletGrant.Create().
+		SetUserID(userID).
+		SetGrantType("recharge").
+		SetSourceType("payment_order").
+		SetSourceID(order.ID).
+		SetStatus("active").
+		SetTotalPoints("330.00000").
+		SetAvailablePoints("330.00000").
+		SetFrozenPoints("0.00000").
+		SetConsumedPoints("0.00000").
+		SetMetadata(map[string]any{"order_no": order.OrderNo}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create legacy recharge grant: %v", err)
+	}
+	now := time.Now().UTC()
+	updated, err := client.PaymentOrder.UpdateOneID(int(order.ID)).
+		SetStatus("completed").
+		SetProvider("mock").
+		SetTradeNo("legacy-trade-" + name).
+		SetPaidAt(now).
+		SetCompletedAt(now).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("complete legacy payment order: %v", err)
+	}
+	return client, store, store.mapPaymentOrder(ctx, updated), grant
+}
+
 func TestBillingStoreNextExpiryAggregatesSameTimestampWithoutMislabelingMixedBucket(t *testing.T) {
 	ctx := t.Context()
 	client, store, completed := completedBonusPackageOrder(t, "next-expiry", 294)

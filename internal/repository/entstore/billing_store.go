@@ -2687,6 +2687,7 @@ func (s *BillingStore) refundableRechargeGrants(ctx context.Context, order *repo
 		query.Where(walletgrant.Or(
 			walletgrant.And(walletgrant.GrantTypeEQ("subscription"), walletgrant.SourceTypeEQ("payment_order")),
 			walletgrant.And(walletgrant.GrantTypeEQ("gift"), walletgrant.SourceTypeEQ("payment_order_bonus")),
+			walletgrant.And(walletgrant.GrantTypeEQ("recharge"), walletgrant.SourceTypeEQ("payment_order")),
 		))
 	}
 	grants, err := query.
@@ -2714,6 +2715,7 @@ func (s *BillingStore) refundableRechargeGrantsInTx(ctx context.Context, tx *rep
 		query.Where(walletgrant.Or(
 			walletgrant.And(walletgrant.GrantTypeEQ("subscription"), walletgrant.SourceTypeEQ("payment_order")),
 			walletgrant.And(walletgrant.GrantTypeEQ("gift"), walletgrant.SourceTypeEQ("payment_order_bonus")),
+			walletgrant.And(walletgrant.GrantTypeEQ("recharge"), walletgrant.SourceTypeEQ("payment_order")),
 		))
 	}
 	grants, err := query.
