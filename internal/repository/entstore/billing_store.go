@@ -1270,6 +1270,10 @@ func (s *BillingStore) FinalizeTask(ctx context.Context, req billingservice.Fina
 	}
 
 	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (billingservice.BalanceState, error) {
+		settledAt := time.Now().UTC()
+		if err := s.expireExpiredGrants(ctx, tx, req.UserID, settledAt); err != nil {
+			return billingservice.BalanceState{}, err
+		}
 		ledgerState, err := s.taskLedgerState(ctx, tx, req.TaskID, req.UserID)
 		if err != nil {
 			return billingservice.BalanceState{}, err
@@ -1346,7 +1350,7 @@ func (s *BillingStore) FinalizeTask(ctx context.Context, req billingservice.Fina
 			actual = reservedAmount
 		}
 		if actual.IsZero() {
-			if err := s.settleAllocations(ctx, tx, allocations, decimal.Zero); err != nil {
+			if err := s.settleAllocations(ctx, tx, allocations, decimal.Zero, settledAt); err != nil {
 				return billingservice.BalanceState{}, err
 			}
 			state, summary, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
@@ -1359,7 +1363,7 @@ func (s *BillingStore) FinalizeTask(ctx context.Context, req billingservice.Fina
 			return summary, nil
 		}
 
-		if err := s.settleAllocations(ctx, tx, allocations, actual); err != nil {
+		if err := s.settleAllocations(ctx, tx, allocations, actual, settledAt); err != nil {
 			return billingservice.BalanceState{}, err
 		}
 		diff := reservedAmount.Sub(actual)
@@ -2182,7 +2186,7 @@ func (s *BillingStore) reserveAcrossGrants(ctx context.Context, tx *repoent.Tx, 
 	return allocations, nil
 }
 
-func (s *BillingStore) settleAllocations(ctx context.Context, tx *repoent.Tx, allocations []*repoent.WalletReservationAllocation, actual decimal.Decimal) error {
+func (s *BillingStore) settleAllocations(ctx context.Context, tx *repoent.Tx, allocations []*repoent.WalletReservationAllocation, actual decimal.Decimal, settledAt time.Time) error {
 	remainingActual := actual
 	for _, allocation := range allocations {
 		grant, err := tx.WalletGrant.Query().Where(walletgrant.IDEQ(int(allocation.WalletGrantID))).Only(ctx)
@@ -2215,7 +2219,10 @@ func (s *BillingStore) settleAllocations(ctx context.Context, tx *repoent.Tx, al
 		if err != nil {
 			return err
 		}
-		nextAvailable := available.Add(refund)
+		nextAvailable := available
+		if grant.Status == "active" && (grant.ExpiresAt == nil || grant.ExpiresAt.After(settledAt)) {
+			nextAvailable = nextAvailable.Add(refund)
+		}
 		nextFrozen := frozen.Sub(reserved)
 		if nextFrozen.IsNegative() {
 			nextFrozen = decimal.Zero

@@ -201,9 +201,6 @@ type memoryRefundFreeze struct {
 	RefundTradeNo   string
 	RefundAmountCNY decimal.Decimal
 	RefundPoints    decimal.Decimal
-	Subscription    decimal.Decimal
-	Gift            decimal.Decimal
-	Recharge        decimal.Decimal
 	Allocations     []memoryGrantAllocation
 }
 
@@ -1231,20 +1228,11 @@ func (s *MemoryStore) FreezeRefundPaymentOrder(_ context.Context, req domainbill
 	if !ok || memoryGrantsConsumedOrFrozen(grants) {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 	}
-	bucketAllocation := memoryRefundFreeze{}
 	for _, allocation := range allocations {
 		grant := s.memoryGrantByIDLocked(order.UserID, allocation.GrantID)
 		grant.Available = grant.Available.Sub(allocation.Points).Round(s.scale)
 		grant.Frozen = grant.Frozen.Add(allocation.Points).Round(s.scale)
 		s.changeMemoryBreakdownLocked(order.UserID, grant.GrantType, allocation.Points.Neg())
-		switch grant.GrantType {
-		case "subscription":
-			bucketAllocation.Subscription = bucketAllocation.Subscription.Add(allocation.Points)
-		case "recharge":
-			bucketAllocation.Recharge = bucketAllocation.Recharge.Add(allocation.Points)
-		default:
-			bucketAllocation.Gift = bucketAllocation.Gift.Add(allocation.Points)
-		}
 	}
 	current.Available = current.Available.Sub(plan.RefundPoints).Round(s.scale)
 	current.Frozen = current.Frozen.Add(plan.RefundPoints)
@@ -1253,9 +1241,6 @@ func (s *MemoryStore) FreezeRefundPaymentOrder(_ context.Context, req domainbill
 		RefundTradeNo:   refundTradeNo,
 		RefundAmountCNY: plan.RefundAmountCNY,
 		RefundPoints:    plan.RefundPoints,
-		Subscription:    bucketAllocation.Subscription,
-		Gift:            bucketAllocation.Gift,
-		Recharge:        bucketAllocation.Recharge,
 		Allocations:     allocations,
 	}
 	return order, nil
@@ -1356,28 +1341,6 @@ func (s *MemoryStore) CheckRefundPaymentOrder(_ context.Context, req domainbilli
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order recharge balance is insufficient for refund")
 	}
 	return order, nil
-}
-
-func deductPaymentOrderBreakdown(order domainbilling.PaymentOrder, breakdown memoryBreakdown, amount decimal.Decimal) (memoryBreakdown, memoryRefundFreeze, bool) {
-	allocation := memoryRefundFreeze{}
-	remaining := amount
-	if order.PurchaseType == "custom_amount" || order.PlanID == 0 {
-		if breakdown.Recharge.LessThan(remaining) {
-			return breakdown, allocation, false
-		}
-		breakdown.Recharge = breakdown.Recharge.Sub(remaining)
-		allocation.Recharge = remaining
-		return breakdown, allocation, true
-	}
-	fromGift := decimal.Min(breakdown.Gift, remaining)
-	breakdown.Gift = breakdown.Gift.Sub(fromGift)
-	allocation.Gift = fromGift
-	remaining = remaining.Sub(fromGift)
-	fromSubscription := decimal.Min(breakdown.Subscription, remaining)
-	breakdown.Subscription = breakdown.Subscription.Sub(fromSubscription)
-	allocation.Subscription = fromSubscription
-	remaining = remaining.Sub(fromSubscription)
-	return breakdown, allocation, !remaining.IsPositive()
 }
 
 func (s *MemoryStore) memoryOrderGrantsLocked(order domainbilling.PaymentOrder) []*memoryWalletGrant {

@@ -368,6 +368,206 @@ func TestBillingStoreGetBalanceExpiresOldTrialAndSubscriptionGrants(t *testing.T
 	}
 }
 
+func TestBillingStoreExpiredTaskSettlementIsIndependentOfBalanceReadOrder(t *testing.T) {
+	tests := []struct {
+		name                 string
+		actual               string
+		wantConsumed         string
+		wantRefunded         string
+		wantAllocationStatus string
+		wantConsumeLedger    string
+		wantAPIKeyUsage      string
+	}{
+		{
+			name: "partial", actual: "40.00000", wantConsumed: "40.00000", wantRefunded: "60.00000",
+			wantAllocationStatus: "settled", wantConsumeLedger: "-40.00000", wantAPIKeyUsage: "40.00000",
+		},
+		{
+			name: "zero", actual: "0.00000", wantConsumed: "0.00000", wantRefunded: "100.00000",
+			wantAllocationStatus: "refunded", wantAPIKeyUsage: "0.00000",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			balanceFirst := runBillingStoreExpiredTaskSettlement(t, test.actual, true)
+			finalizeFirst := runBillingStoreExpiredTaskSettlement(t, test.actual, false)
+
+			want := expiredTaskSettlementSnapshot{
+				GrantStatus: "expired", GrantAvailable: "0.00000", GrantFrozen: "0.00000", GrantConsumed: test.wantConsumed,
+				AllocationStatus: test.wantAllocationStatus, AllocationConsumed: test.wantConsumed, AllocationRefunded: test.wantRefunded,
+				BalanceAvailable: "0.00000", BalanceFrozen: "50.00000", OtherGrantFrozen: "50.00000",
+				ExpireChange: "-50.00000", ExpireBalanceAfter: "0.00000", ExpireFrozenAfter: "50.00000",
+				RefundChange: test.wantRefunded, RefundBalanceAfter: "0.00000", RefundFrozenAfter: "50.00000",
+				ConsumeChange: test.wantConsumeLedger, APIKeyUsage: test.wantAPIKeyUsage,
+			}
+			if balanceFirst != want {
+				t.Errorf("GetBalance then FinalizeTask produced an invalid expiry settlement:\n got %#v\nwant %#v", balanceFirst, want)
+			}
+			if finalizeFirst != want {
+				t.Errorf("FinalizeTask then GetBalance produced an invalid expiry settlement:\n got %#v\nwant %#v", finalizeFirst, want)
+			}
+			if finalizeFirst != balanceFirst {
+				t.Errorf("settlement must not depend on balance-read order:\n balance-first %#v\nfinalize-first %#v", balanceFirst, finalizeFirst)
+			}
+		})
+	}
+}
+
+type expiredTaskSettlementSnapshot struct {
+	GrantStatus        string
+	GrantAvailable     string
+	GrantFrozen        string
+	GrantConsumed      string
+	AllocationStatus   string
+	AllocationConsumed string
+	AllocationRefunded string
+	BalanceAvailable   string
+	BalanceFrozen      string
+	OtherGrantFrozen   string
+	ExpireChange       string
+	ExpireBalanceAfter string
+	ExpireFrozenAfter  string
+	RefundChange       string
+	RefundBalanceAfter string
+	RefundFrozenAfter  string
+	ConsumeChange      string
+	APIKeyUsage        string
+}
+
+func runBillingStoreExpiredTaskSettlement(t *testing.T, actual string, balanceFirst bool) expiredTaskSettlementSnapshot {
+	t.Helper()
+	ctx := t.Context()
+	databaseName := strings.NewReplacer("/", "-", " ", "-").Replace(t.Name())
+	if balanceFirst {
+		databaseName += "-balance-first"
+	} else {
+		databaseName += "-finalize-first"
+	}
+	client, err := repoent.Open(dialect.SQLite, "file:"+databaseName+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	const (
+		userID      = int64(8177)
+		apiKeyID    = int64(98177)
+		expiredTask = "81770000-0000-0000-0000-000000000001"
+		activeTask  = "81770000-0000-0000-0000-000000000002"
+	)
+	future := time.Now().UTC().Add(time.Hour)
+	expiringGrant, err := client.WalletGrant.Create().
+		SetUserID(userID).
+		SetGrantType("trial").
+		SetSourceType("signup").
+		SetStatus("active").
+		SetTotalPoints("150.00000").
+		SetAvailablePoints("150.00000").
+		SetFrozenPoints("0.00000").
+		SetConsumedPoints("0.00000").
+		SetExpiresAt(future).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create expiring grant: %v", err)
+	}
+	otherGrant, err := client.WalletGrant.Create().
+		SetUserID(userID).
+		SetGrantType("recharge").
+		SetSourceType("admin").
+		SetStatus("active").
+		SetTotalPoints("50.00000").
+		SetAvailablePoints("50.00000").
+		SetFrozenPoints("0.00000").
+		SetConsumedPoints("0.00000").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create permanent grant: %v", err)
+	}
+	if _, err := store.ReserveTask(ctx, billingservice.ReserveStoreRequest{
+		UserID: userID, APIKeyID: apiKeyID, TaskID: expiredTask, EstimatedPoints: "100.00000", Reason: "reserve expiring task",
+	}); err != nil {
+		t.Fatalf("ReserveTask expiring task: %v", err)
+	}
+	past := time.Now().UTC().Add(-time.Hour)
+	if _, err := client.WalletGrant.UpdateOneID(expiringGrant.ID).SetExpiresAt(past).Save(ctx); err != nil {
+		t.Fatalf("move grant past expiry: %v", err)
+	}
+	if _, err := store.ReserveTask(ctx, billingservice.ReserveStoreRequest{
+		UserID: userID, TaskID: activeTask, EstimatedPoints: "50.00000", Reason: "reserve unrelated active task",
+	}); err != nil {
+		t.Fatalf("ReserveTask active task: %v", err)
+	}
+	if balanceFirst {
+		if _, err := store.GetBalance(ctx, userID); err != nil {
+			t.Fatalf("GetBalance before finalize: %v", err)
+		}
+	}
+	if _, err := store.FinalizeTask(ctx, billingservice.FinalizeStoreRequest{
+		UserID: userID, APIKeyID: apiKeyID, TaskID: expiredTask, EstimatedPoints: "100.00000", ActualPoints: actual, Reason: "settle expired task",
+	}); err != nil {
+		t.Fatalf("FinalizeTask: %v", err)
+	}
+	balance, err := store.GetBalance(ctx, userID)
+	if err != nil {
+		t.Fatalf("GetBalance after finalize: %v", err)
+	}
+
+	settledGrant, err := client.WalletGrant.Get(ctx, expiringGrant.ID)
+	if err != nil {
+		t.Fatalf("load settled grant: %v", err)
+	}
+	activeGrant, err := client.WalletGrant.Get(ctx, otherGrant.ID)
+	if err != nil {
+		t.Fatalf("load other grant: %v", err)
+	}
+	allocation, err := client.WalletReservationAllocation.Query().
+		Where(walletreservationallocation.TaskIDEQ(uuid.MustParse(expiredTask))).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("load settlement allocation: %v", err)
+	}
+	expireLedger, err := client.PointLedger.Query().
+		Where(pointledger.UserIDEQ(userID), pointledger.LedgerTypeEQ("expire")).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("load expiry ledger: %v", err)
+	}
+	taskLedgers, err := client.PointLedger.Query().
+		Where(pointledger.UserIDEQ(userID), pointledger.TaskIDEQ(uuid.MustParse(expiredTask))).
+		All(ctx)
+	if err != nil {
+		t.Fatalf("load task ledgers: %v", err)
+	}
+	ledgersByType := make(map[string]*repoent.PointLedger, len(taskLedgers))
+	for _, ledger := range taskLedgers {
+		ledgersByType[ledger.LedgerType] = ledger
+	}
+	refundLedger := ledgersByType["refund"]
+	if refundLedger == nil {
+		t.Fatal("refund ledger missing")
+	}
+	consumeChange := ""
+	if consumeLedger := ledgersByType["consume"]; consumeLedger != nil {
+		consumeChange = consumeLedger.ChangePoints
+	}
+	usage, err := store.APIKeyUsage(ctx, apiKeyID, nil)
+	if err != nil {
+		t.Fatalf("APIKeyUsage: %v", err)
+	}
+	return expiredTaskSettlementSnapshot{
+		GrantStatus: settledGrant.Status, GrantAvailable: settledGrant.AvailablePoints,
+		GrantFrozen: settledGrant.FrozenPoints, GrantConsumed: settledGrant.ConsumedPoints,
+		AllocationStatus: allocation.Status, AllocationConsumed: allocation.ConsumedPoints, AllocationRefunded: allocation.RefundedPoints,
+		BalanceAvailable: balance.AvailablePoints, BalanceFrozen: balance.FrozenPoints, OtherGrantFrozen: activeGrant.FrozenPoints,
+		ExpireChange: expireLedger.ChangePoints, ExpireBalanceAfter: expireLedger.BalanceAfter, ExpireFrozenAfter: expireLedger.FrozenAfter,
+		RefundChange: refundLedger.ChangePoints, RefundBalanceAfter: refundLedger.BalanceAfter, RefundFrozenAfter: refundLedger.FrozenAfter,
+		ConsumeChange: consumeChange, APIKeyUsage: usage,
+	}
+}
+
 func TestBillingStoreEnsureSignupTrialGrantIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-signup-trial?mode=memory&cache=shared&_fk=1")
