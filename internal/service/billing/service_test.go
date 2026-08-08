@@ -196,6 +196,63 @@ func TestPlanStateTransitionsAreSafeAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestPlanExpiryPolicyCreateListAndUpdateTransitions(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	created, err := svc.CreatePlan(t.Context(), domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "expiry-policy", PlanName: "Expiry Policy", PlanType: "points_package", PurchaseEnabled: true,
+		Status: "active", PriceCNY: "10.00000", Points: "20.00000", BonusPoints: "2.00000", Currency: "CNY",
+	})
+	if err != nil {
+		t.Fatalf("legacy CreatePlan: %v", err)
+	}
+	if !created.CreditExpiryEnabled || created.DurationDays == nil || *created.DurationDays != 30 {
+		t.Fatalf("legacy create must default to 30-day expiry: %#v", created)
+	}
+
+	update := func(enabled *bool, days *int) domainbilling.SubscriptionPlan {
+		t.Helper()
+		updated, err := svc.UpdatePlan(t.Context(), domainbilling.UpdateSubscriptionPlanRequest{
+			PlanID: created.ID, PlanName: created.PlanName, PlanType: created.PlanType, PurchaseEnabled: created.PurchaseEnabled,
+			Status: created.Status, PriceCNY: created.PriceCNY, Points: created.Points, BonusPoints: created.BonusPoints,
+			CreditExpiryEnabled: enabled, DurationDays: days, Currency: created.Currency,
+		})
+		if err != nil {
+			t.Fatalf("UpdatePlan enabled=%v days=%v: %v", enabled, days, err)
+		}
+		created = updated
+		return updated
+	}
+
+	if updated := update(boolPointerTest(true), intPointer(60)); !updated.CreditExpiryEnabled || updated.DurationDays == nil || *updated.DurationDays != 60 {
+		t.Fatalf("expiring -> expiring lost policy: %#v", updated)
+	}
+	if updated := update(boolPointerTest(false), nil); updated.CreditExpiryEnabled || updated.DurationDays != nil {
+		t.Fatalf("expiring -> permanent lost policy: %#v", updated)
+	}
+	if updated := update(boolPointerTest(true), intPointer(45)); !updated.CreditExpiryEnabled || updated.DurationDays == nil || *updated.DurationDays != 45 {
+		t.Fatalf("permanent -> expiring lost policy: %#v", updated)
+	}
+	if updated := update(nil, nil); !updated.CreditExpiryEnabled || updated.DurationDays == nil || *updated.DurationDays != 30 {
+		t.Fatalf("legacy update must default to 30-day expiry: %#v", updated)
+	}
+
+	items, err := svc.ListPlans(t.Context(), domainbilling.SubscriptionPlanListRequest{})
+	if err != nil {
+		t.Fatalf("ListPlans: %v", err)
+	}
+	found := false
+	for _, item := range items {
+		if item.ID == created.ID {
+			found = item.CreditExpiryEnabled && item.DurationDays != nil && *item.DurationDays == 30
+		}
+	}
+	if !found {
+		t.Fatalf("list did not preserve final expiry policy: %#v", items)
+	}
+}
+
+func boolPointerTest(value bool) *bool { return &value }
+
 func TestPlanHistoricalOrderUsesSnapshotAfterArchive(t *testing.T) {
 	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
 	order, err := svc.CreateOrder(t.Context(), domainbilling.CreateOrderRequest{

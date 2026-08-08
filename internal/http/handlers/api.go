@@ -8886,21 +8886,22 @@ func pagedPayload[T any](items []T, page, pageSize, total int) map[string]any {
 
 func cashierPlanPayload(plan domainbilling.SubscriptionPlan) map[string]any {
 	return map[string]any{
-		"id":               plan.ID,
-		"plan_code":        plan.PlanCode,
-		"plan_name":        plan.PlanName,
-		"status":           plan.Status,
-		"price_cny":        plan.PriceCNY,
-		"points":           plan.Points,
-		"bonus_points":     plan.BonusPoints,
-		"duration_days":    plan.DurationDays,
-		"currency":         plan.Currency,
-		"sort_order":       plan.SortOrder,
-		"description":      plan.Description,
-		"created_at":       plan.CreatedAt,
-		"updated_at":       plan.UpdatedAt,
-		"plan_type":        plan.PlanType,
-		"purchase_enabled": plan.PurchaseEnabled,
+		"id":                    plan.ID,
+		"plan_code":             plan.PlanCode,
+		"plan_name":             plan.PlanName,
+		"status":                plan.Status,
+		"price_cny":             plan.PriceCNY,
+		"points":                plan.Points,
+		"bonus_points":          plan.BonusPoints,
+		"credit_expiry_enabled": plan.CreditExpiryEnabled,
+		"duration_days":         plan.DurationDays,
+		"currency":              plan.Currency,
+		"sort_order":            plan.SortOrder,
+		"description":           plan.Description,
+		"created_at":            plan.CreatedAt,
+		"updated_at":            plan.UpdatedAt,
+		"plan_type":             plan.PlanType,
+		"purchase_enabled":      plan.PurchaseEnabled,
 	}
 }
 

@@ -90,6 +90,7 @@ func (s *BillingStore) ListPlans(ctx context.Context, req domainbilling.Subscrip
 
 func (s *BillingStore) CreatePlan(ctx context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
 	metadata := subscriptionPlanMetadata(req.PlanType, req.PurchaseEnabled)
+	expiryEnabled := effectivePlanCreditExpiryEnabled(req.CreditExpiryEnabled)
 	plan, err := s.client.SubscriptionPlan.Create().
 		SetPlanCode(strings.TrimSpace(req.PlanCode)).
 		SetPlanName(strings.TrimSpace(req.PlanName)).
@@ -99,7 +100,7 @@ func (s *BillingStore) CreatePlan(ctx context.Context, req domainbilling.CreateS
 		SetPriceCny(strings.TrimSpace(req.PriceCNY)).
 		SetPoints(strings.TrimSpace(req.Points)).
 		SetBonusPoints(strings.TrimSpace(req.BonusPoints)).
-		SetCreditExpiryEnabled(req.CreditExpiryEnabled).
+		SetCreditExpiryEnabled(expiryEnabled).
 		SetNillableDurationDays(req.DurationDays).
 		SetCurrency(strings.TrimSpace(req.Currency)).
 		SetDescription(strings.TrimSpace(req.Description)).
@@ -125,6 +126,7 @@ func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateS
 	}
 	purchaseEnabled := current.PurchaseEnabled && strings.TrimSpace(req.PlanType) == "points_package"
 	metadata := subscriptionPlanMetadata(req.PlanType, purchaseEnabled)
+	expiryEnabled := effectivePlanCreditExpiryEnabled(req.CreditExpiryEnabled)
 	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(req.PlanID)).
 		SetPlanName(strings.TrimSpace(req.PlanName)).
 		SetPlanType(strings.TrimSpace(req.PlanType)).
@@ -132,7 +134,7 @@ func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateS
 		SetPriceCny(strings.TrimSpace(req.PriceCNY)).
 		SetPoints(strings.TrimSpace(req.Points)).
 		SetBonusPoints(strings.TrimSpace(req.BonusPoints)).
-		SetCreditExpiryEnabled(req.CreditExpiryEnabled).
+		SetCreditExpiryEnabled(expiryEnabled).
 		SetNillableDurationDays(req.DurationDays).
 		SetCurrency(strings.TrimSpace(req.Currency)).
 		SetDescription(strings.TrimSpace(req.Description)).
@@ -2482,6 +2484,10 @@ func nullablePlanDurationDays(expiryEnabled bool, days int) *int {
 		return nil
 	}
 	return &days
+}
+
+func effectivePlanCreditExpiryEnabled(value *bool) bool {
+	return value == nil || *value
 }
 
 func subscriptionPlanType(value string, metadata map[string]any) string {

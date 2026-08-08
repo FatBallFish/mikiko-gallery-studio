@@ -54,11 +54,15 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	if createRec.Code != http.StatusCreated {
 		t.Fatalf("create lifecycle plan: status=%d body=%s", createRec.Code, createRec.Body.String())
 	}
+	createBody := append([]byte(nil), createRec.Body.Bytes()...)
 	var created struct {
 		Data domainbilling.SubscriptionPlan `json:"data"`
 	}
 	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
 		t.Fatalf("decode created plan: %v", err)
+	}
+	if !created.Data.CreditExpiryEnabled || created.Data.DurationDays == nil || *created.Data.DurationDays != 30 || !bytes.Contains(createBody, []byte(`"credit_expiry_enabled":true`)) {
+		t.Fatalf("legacy create response must expose default expiry policy: %s", createBody)
 	}
 
 	transition := func(action string, wantStatus string, wantPurchase bool) {
@@ -93,6 +97,7 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	if updateRec.Code != http.StatusOK {
 		t.Fatalf("edit disabled plan: status=%d body=%s", updateRec.Code, updateRec.Body.String())
 	}
+	updateBody := append([]byte(nil), updateRec.Body.Bytes()...)
 	var updated struct {
 		Data domainbilling.SubscriptionPlan `json:"data"`
 	}
@@ -101,6 +106,9 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	}
 	if updated.Data.Status != "disabled" || updated.Data.PurchaseEnabled {
 		t.Fatalf("plan edit must not bypass lifecycle transition: %#v", updated.Data)
+	}
+	if !updated.Data.CreditExpiryEnabled || updated.Data.DurationDays == nil || *updated.Data.DurationDays != 30 || !bytes.Contains(updateBody, []byte(`"credit_expiry_enabled":true`)) {
+		t.Fatalf("legacy update response must expose default expiry policy: %s", updateBody)
 	}
 	transition("archive", "archived", false)
 
@@ -124,7 +132,7 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	disabledReq.Header.Set("Authorization", "Bearer "+adminToken)
 	disabledRec := httptest.NewRecorder()
 	handler.ServeHTTP(disabledRec, disabledReq)
-	if disabledRec.Code != http.StatusOK || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"lifecycle-plan"`)) {
+	if disabledRec.Code != http.StatusOK || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"lifecycle-plan"`)) || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"credit_expiry_enabled":true`)) {
 		t.Fatalf("disabled filter must return restored plan: status=%d body=%s", disabledRec.Code, disabledRec.Body.String())
 	}
 

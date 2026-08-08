@@ -12,8 +12,8 @@ func TestRemediationBillingTypesExposeCreditExpiryJSONContract(t *testing.T) {
 	expiresAt := creditedAt.Add(30 * 24 * time.Hour)
 
 	assertJSONKeys(t, SubscriptionPlan{CreditExpiryEnabled: true}, "credit_expiry_enabled")
-	assertJSONKeys(t, CreateSubscriptionPlanRequest{CreditExpiryEnabled: true}, "credit_expiry_enabled")
-	assertJSONKeys(t, UpdateSubscriptionPlanRequest{CreditExpiryEnabled: true}, "credit_expiry_enabled")
+	assertJSONKeys(t, CreateSubscriptionPlanRequest{CreditExpiryEnabled: boolPointer(true)}, "credit_expiry_enabled")
+	assertJSONKeys(t, UpdateSubscriptionPlanRequest{CreditExpiryEnabled: boolPointer(true)}, "credit_expiry_enabled")
 	assertJSONKeys(t, PaymentOrder{
 		CreditExpiryEnabled: true,
 		CreditValidDays:     &validDays,
@@ -36,15 +36,26 @@ func TestPermanentFixedPackageOmitsDurationDays(t *testing.T) {
 	if _, ok := planPayload["duration_days"]; ok {
 		t.Fatalf("permanent SubscriptionPlan must omit duration_days: %#v", planPayload)
 	}
-	requestPayload := marshalJSONObject(t, CreateSubscriptionPlanRequest{CreditExpiryEnabled: false, DurationDays: nil})
+	requestPayload := marshalJSONObject(t, CreateSubscriptionPlanRequest{CreditExpiryEnabled: boolPointer(false), DurationDays: nil})
 	if _, ok := requestPayload["duration_days"]; ok {
 		t.Fatalf("permanent create request must omit duration_days: %#v", requestPayload)
 	}
-	updatePayload := marshalJSONObject(t, UpdateSubscriptionPlanRequest{CreditExpiryEnabled: false, DurationDays: nil})
+	updatePayload := marshalJSONObject(t, UpdateSubscriptionPlanRequest{CreditExpiryEnabled: boolPointer(false), DurationDays: nil})
 	if _, ok := updatePayload["duration_days"]; ok {
 		t.Fatalf("permanent update request must omit duration_days: %#v", updatePayload)
 	}
 }
+
+func TestLegacyPlanWriteOmitsExpiryFlagForServiceDefaulting(t *testing.T) {
+	for _, value := range []any{CreateSubscriptionPlanRequest{}, UpdateSubscriptionPlanRequest{}} {
+		payload := marshalJSONObject(t, value)
+		if _, ok := payload["credit_expiry_enabled"]; ok {
+			t.Fatalf("%T unexpectedly serialized omitted credit_expiry_enabled: %#v", value, payload)
+		}
+	}
+}
+
+func boolPointer(value bool) *bool { return &value }
 
 func TestExpiringFixedPackageIncludesDurationDays(t *testing.T) {
 	days := 30

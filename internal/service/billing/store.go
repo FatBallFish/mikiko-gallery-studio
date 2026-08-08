@@ -267,6 +267,7 @@ func (s *MemoryStore) CreatePlan(_ context.Context, req domainbilling.CreateSubs
 		}
 	}
 	now := time.Now().UTC()
+	expiryEnabled := effectiveCreditExpiryEnabled(req.CreditExpiryEnabled)
 	plan := domainbilling.SubscriptionPlan{
 		ID:                  s.nextPlanID,
 		PlanCode:            code,
@@ -277,8 +278,8 @@ func (s *MemoryStore) CreatePlan(_ context.Context, req domainbilling.CreateSubs
 		PriceCNY:            strings.TrimSpace(req.PriceCNY),
 		Points:              strings.TrimSpace(req.Points),
 		BonusPoints:         strings.TrimSpace(req.BonusPoints),
-		CreditExpiryEnabled: req.CreditExpiryEnabled,
-		DurationDays:        effectivePlanDurationDays(req.CreditExpiryEnabled, req.DurationDays),
+		CreditExpiryEnabled: expiryEnabled,
+		DurationDays:        effectivePlanDurationDays(expiryEnabled, req.DurationDays),
 		Currency:            normalizeCurrency(req.Currency),
 		SortOrder:           req.SortOrder,
 		Description:         strings.TrimSpace(req.Description),
@@ -305,8 +306,9 @@ func (s *MemoryStore) UpdatePlan(_ context.Context, req domainbilling.UpdateSubs
 		item.PriceCNY = strings.TrimSpace(req.PriceCNY)
 		item.Points = strings.TrimSpace(req.Points)
 		item.BonusPoints = strings.TrimSpace(req.BonusPoints)
-		item.CreditExpiryEnabled = req.CreditExpiryEnabled
-		item.DurationDays = effectivePlanDurationDays(req.CreditExpiryEnabled, req.DurationDays)
+		expiryEnabled := effectiveCreditExpiryEnabled(req.CreditExpiryEnabled)
+		item.CreditExpiryEnabled = expiryEnabled
+		item.DurationDays = effectivePlanDurationDays(expiryEnabled, req.DurationDays)
 		item.Currency = normalizeCurrency(req.Currency)
 		item.SortOrder = req.SortOrder
 		item.Description = strings.TrimSpace(req.Description)
@@ -1755,6 +1757,10 @@ func effectivePlanDurationDays(expiryEnabled bool, value *int) *int {
 		return intPointer(*value)
 	}
 	return intPointer(30)
+}
+
+func effectiveCreditExpiryEnabled(value *bool) bool {
+	return value == nil || *value
 }
 
 func intPointer(value int) *int { return &value }

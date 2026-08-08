@@ -346,35 +346,37 @@ func (s *Service) UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscr
 		return domainbilling.SubscriptionPlan{}, errs.BadRequest("plan_id is required")
 	}
 	normalizedCreate, err := normalizePlanWrite(domainbilling.CreateSubscriptionPlanRequest{
-		PlanCode:        "existing",
-		PlanName:        req.PlanName,
-		PlanType:        req.PlanType,
-		PurchaseEnabled: req.PurchaseEnabled,
-		Status:          req.Status,
-		PriceCNY:        req.PriceCNY,
-		Points:          req.Points,
-		BonusPoints:     req.BonusPoints,
-		DurationDays:    req.DurationDays,
-		Currency:        req.Currency,
-		SortOrder:       req.SortOrder,
-		Description:     req.Description,
+		PlanCode:            "existing",
+		PlanName:            req.PlanName,
+		PlanType:            req.PlanType,
+		PurchaseEnabled:     req.PurchaseEnabled,
+		Status:              req.Status,
+		PriceCNY:            req.PriceCNY,
+		Points:              req.Points,
+		BonusPoints:         req.BonusPoints,
+		CreditExpiryEnabled: req.CreditExpiryEnabled,
+		DurationDays:        req.DurationDays,
+		Currency:            req.Currency,
+		SortOrder:           req.SortOrder,
+		Description:         req.Description,
 	})
 	if err != nil {
 		return domainbilling.SubscriptionPlan{}, err
 	}
 	item, err := s.store.UpdatePlan(ctx, domainbilling.UpdateSubscriptionPlanRequest{
-		PlanID:          req.PlanID,
-		PlanName:        normalizedCreate.PlanName,
-		PlanType:        normalizedCreate.PlanType,
-		PurchaseEnabled: normalizedCreate.PurchaseEnabled,
-		Status:          normalizedCreate.Status,
-		PriceCNY:        normalizedCreate.PriceCNY,
-		Points:          normalizedCreate.Points,
-		BonusPoints:     normalizedCreate.BonusPoints,
-		DurationDays:    normalizedCreate.DurationDays,
-		Currency:        normalizedCreate.Currency,
-		SortOrder:       normalizedCreate.SortOrder,
-		Description:     normalizedCreate.Description,
+		PlanID:              req.PlanID,
+		PlanName:            normalizedCreate.PlanName,
+		PlanType:            normalizedCreate.PlanType,
+		PurchaseEnabled:     normalizedCreate.PurchaseEnabled,
+		Status:              normalizedCreate.Status,
+		PriceCNY:            normalizedCreate.PriceCNY,
+		Points:              normalizedCreate.Points,
+		BonusPoints:         normalizedCreate.BonusPoints,
+		CreditExpiryEnabled: normalizedCreate.CreditExpiryEnabled,
+		DurationDays:        normalizedCreate.DurationDays,
+		Currency:            normalizedCreate.Currency,
+		SortOrder:           normalizedCreate.SortOrder,
+		Description:         normalizedCreate.Description,
 	})
 	if err != nil {
 		return domainbilling.SubscriptionPlan{}, err
@@ -427,7 +429,11 @@ func normalizePlanWrite(req domainbilling.CreateSubscriptionPlanRequest) (domain
 	req.PriceCNY = price
 	req.Points = points
 	req.BonusPoints = bonus
-	if !req.CreditExpiryEnabled {
+	if req.CreditExpiryEnabled == nil {
+		enabled := true
+		req.CreditExpiryEnabled = &enabled
+	}
+	if !*req.CreditExpiryEnabled {
 		req.DurationDays = nil
 	} else if req.DurationDays == nil || *req.DurationDays <= 0 {
 		days := 30

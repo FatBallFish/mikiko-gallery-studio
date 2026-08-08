@@ -142,7 +142,7 @@ type CreateSubscriptionPlanRequest struct {
 	PriceCNY            string `json:"price_cny"`
 	Points              string `json:"points"`
 	BonusPoints         string `json:"bonus_points"`
-	CreditExpiryEnabled bool   `json:"credit_expiry_enabled"`
+	CreditExpiryEnabled *bool  `json:"credit_expiry_enabled,omitempty"`
 	DurationDays        *int   `json:"duration_days,omitempty"`
 	Currency            string `json:"currency"`
 	SortOrder           int    `json:"sort_order"`
@@ -158,7 +158,7 @@ type UpdateSubscriptionPlanRequest struct {
 	PriceCNY            string `json:"price_cny"`
 	Points              string `json:"points"`
 	BonusPoints         string `json:"bonus_points"`
-	CreditExpiryEnabled bool   `json:"credit_expiry_enabled"`
+	CreditExpiryEnabled *bool  `json:"credit_expiry_enabled,omitempty"`
 	DurationDays        *int   `json:"duration_days,omitempty"`
 	Currency            string `json:"currency"`
 	SortOrder           int    `json:"sort_order"`
