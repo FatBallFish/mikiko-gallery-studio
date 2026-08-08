@@ -52,6 +52,9 @@ func (c *Client) Generate(ctx context.Context, req provider.ImageRequest) (provi
 	if req.Background != "" {
 		payload["background"] = req.Background
 	}
+	if req.ResponseFormat != "" && !isGPTImageModel(req.Model) {
+		payload["response_format"] = string(req.ResponseFormat)
+	}
 	if req.OutputImageCount > 0 {
 		payload["n"] = req.OutputImageCount
 	}
@@ -68,6 +71,10 @@ func (c *Client) Generate(ctx context.Context, req provider.ImageRequest) (provi
 		payload["user"] = req.User
 	}
 	return c.doJSON(ctx, http.MethodPost, "/v1/images/generations", payload)
+}
+
+func isGPTImageModel(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-image-")
 }
 
 func (c *Client) Edit(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {

@@ -42,6 +42,30 @@ func TestGenerateOmitsGPTImageOptionalFields(t *testing.T) {
 	}
 }
 
+func TestGenerateRetainsResponseFormatForLegacyImageModels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if got := body["response_format"]; got != string(provider.ResponseFormatB64JSON) {
+			t.Fatalf("legacy image payload response_format = %#v, want b64_json: %#v", got, body)
+		}
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	}))
+	defer server.Close()
+
+	client := openai.NewClient(openai.Config{BaseURL: server.URL, HTTPClient: server.Client()})
+	_, err := client.Generate(context.Background(), provider.ImageRequest{
+		Model:          "dall-e-3",
+		Prompt:         "safe test",
+		ResponseFormat: provider.ResponseFormatB64JSON,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGenerateIncludesValidatedBackground(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any

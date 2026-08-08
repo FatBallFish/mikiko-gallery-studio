@@ -344,6 +344,15 @@ type artifactTestProvider struct {
 	generate func(context.Context, provider.ImageRequest) (provider.ImageResponse, error)
 }
 
+func TestClassifyImageSizeIdentifiesObservedUpstreamRewrite(t *testing.T) {
+	if got := classifyImageSize("1280x720", 1672, 941); got != "upstream_rewritten" {
+		t.Fatalf("classifyImageSize() = %q, want upstream_rewritten", got)
+	}
+	if got := classifyImageSize("1280x720", 1280, 720); got != "match" {
+		t.Fatalf("classifyImageSize() = %q, want match", got)
+	}
+}
+
 func (p artifactTestProvider) Generate(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
 	return p.generate(ctx, req)
 }

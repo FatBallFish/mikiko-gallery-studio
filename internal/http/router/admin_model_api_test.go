@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -77,7 +78,7 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		t.Fatalf("decode model account response: %v", err)
 	}
 
-	createAccountModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models", bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image","image_edit"],"qualities":["1k","2k"],"size_modes":["ratio","pixel"],"supported_ratios":["1:1","16:9"],"supported_pixel_sizes":["1024x1024"],"supports_custom_size":true,"max_image_count":2,"max_reference_image_count":3,"cost_per_image":"0.04000","currency":"USD","enabled":true}`))
+	createAccountModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models", bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image","image_edit"],"base_resolution":["1k","2k"],"quality":["auto","high"],"size_modes":["auto","ratio","pixel"],"supported_ratios":["1:1","16:9"],"supported_pixel_sizes":["1024x1024"],"supports_custom_ratio":true,"supported_backgrounds":["auto","opaque","transparent"],"supports_custom_size":true,"min_width":512,"max_width":2048,"min_height":640,"max_height":1536,"max_image_count":2,"max_reference_image_count":3,"cost_per_image":"0.04000","currency":"USD","enabled":true}`))
 	createAccountModelReq.Header.Set("Authorization", "Bearer "+adminToken)
 	createAccountModelReq.Header.Set("Content-Type", "application/json")
 	createAccountModelRec := httptest.NewRecorder()
@@ -88,7 +89,16 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	var accountModelResp struct {
 		Data struct {
 			ID                     int64    `json:"id"`
+			BaseResolution         []string `json:"base_resolution"`
+			SizeModes              []string `json:"size_modes"`
 			SupportedRatios        []string `json:"supported_ratios"`
+			SupportedPixelSizes    []string `json:"supported_pixel_sizes"`
+			SupportsCustomRatio    bool     `json:"supports_custom_ratio"`
+			SupportedBackgrounds   []string `json:"supported_backgrounds"`
+			MinWidth               int      `json:"min_width"`
+			MaxWidth               int      `json:"max_width"`
+			MinHeight              int      `json:"min_height"`
+			MaxHeight              int      `json:"max_height"`
 			MaxImageCount          int      `json:"max_image_count"`
 			MaxReferenceImageCount int      `json:"max_reference_image_count"`
 			SupportsCustomSize     bool     `json:"supports_custom_size"`
@@ -97,7 +107,11 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	if err := json.NewDecoder(createAccountModelRec.Body).Decode(&accountModelResp); err != nil {
 		t.Fatalf("decode account model response: %v", err)
 	}
-	if len(accountModelResp.Data.SupportedRatios) != 2 || accountModelResp.Data.SupportedRatios[1] != "16:9" || accountModelResp.Data.MaxImageCount != 2 || accountModelResp.Data.MaxReferenceImageCount != 3 || !accountModelResp.Data.SupportsCustomSize {
+	if !reflect.DeepEqual(accountModelResp.Data.BaseResolution, []string{"1k", "2k"}) || !reflect.DeepEqual(accountModelResp.Data.SizeModes, []string{"auto", "ratio", "pixel"}) ||
+		!reflect.DeepEqual(accountModelResp.Data.SupportedRatios, []string{"1:1", "16:9"}) || !reflect.DeepEqual(accountModelResp.Data.SupportedPixelSizes, []string{"1024x1024"}) ||
+		!accountModelResp.Data.SupportsCustomRatio || !reflect.DeepEqual(accountModelResp.Data.SupportedBackgrounds, []string{"auto", "opaque", "transparent"}) ||
+		accountModelResp.Data.MinWidth != 512 || accountModelResp.Data.MaxWidth != 2048 || accountModelResp.Data.MinHeight != 640 || accountModelResp.Data.MaxHeight != 1536 ||
+		accountModelResp.Data.MaxImageCount != 2 || accountModelResp.Data.MaxReferenceImageCount != 3 || !accountModelResp.Data.SupportsCustomSize {
 		t.Fatalf("account model capabilities were not preserved: %#v", accountModelResp.Data)
 	}
 
@@ -112,7 +126,16 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		Data struct {
 			Items []struct {
 				ID                     int64    `json:"id"`
+				BaseResolution         []string `json:"base_resolution"`
+				SizeModes              []string `json:"size_modes"`
 				SupportedRatios        []string `json:"supported_ratios"`
+				SupportedPixelSizes    []string `json:"supported_pixel_sizes"`
+				SupportsCustomRatio    bool     `json:"supports_custom_ratio"`
+				SupportedBackgrounds   []string `json:"supported_backgrounds"`
+				MinWidth               int      `json:"min_width"`
+				MaxWidth               int      `json:"max_width"`
+				MinHeight              int      `json:"min_height"`
+				MaxHeight              int      `json:"max_height"`
 				MaxImageCount          int      `json:"max_image_count"`
 				MaxReferenceImageCount int      `json:"max_reference_image_count"`
 				SupportsCustomSize     bool     `json:"supports_custom_size"`
@@ -122,11 +145,16 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	if err := json.NewDecoder(listAccountModelsRec.Body).Decode(&accountModelListResp); err != nil {
 		t.Fatalf("decode account model list response: %v", err)
 	}
-	if len(accountModelListResp.Data.Items) != 1 || accountModelListResp.Data.Items[0].ID != accountModelResp.Data.ID || len(accountModelListResp.Data.Items[0].SupportedRatios) != 2 || accountModelListResp.Data.Items[0].MaxImageCount != 2 || accountModelListResp.Data.Items[0].MaxReferenceImageCount != 3 || !accountModelListResp.Data.Items[0].SupportsCustomSize {
+	if len(accountModelListResp.Data.Items) != 1 || accountModelListResp.Data.Items[0].ID != accountModelResp.Data.ID ||
+		!reflect.DeepEqual(accountModelListResp.Data.Items[0].BaseResolution, []string{"1k", "2k"}) || !reflect.DeepEqual(accountModelListResp.Data.Items[0].SizeModes, []string{"auto", "ratio", "pixel"}) ||
+		!reflect.DeepEqual(accountModelListResp.Data.Items[0].SupportedRatios, []string{"1:1", "16:9"}) || !reflect.DeepEqual(accountModelListResp.Data.Items[0].SupportedPixelSizes, []string{"1024x1024"}) ||
+		!accountModelListResp.Data.Items[0].SupportsCustomRatio || !reflect.DeepEqual(accountModelListResp.Data.Items[0].SupportedBackgrounds, []string{"auto", "opaque", "transparent"}) ||
+		accountModelListResp.Data.Items[0].MinWidth != 512 || accountModelListResp.Data.Items[0].MaxWidth != 2048 || accountModelListResp.Data.Items[0].MinHeight != 640 || accountModelListResp.Data.Items[0].MaxHeight != 1536 ||
+		accountModelListResp.Data.Items[0].MaxImageCount != 2 || accountModelListResp.Data.Items[0].MaxReferenceImageCount != 3 || !accountModelListResp.Data.Items[0].SupportsCustomSize {
 		t.Fatalf("account model list lost capabilities: %#v", accountModelListResp.Data.Items)
 	}
 
-	updateAccountModelReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models/"+jsonNumber(accountModelResp.Data.ID), bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image"],"qualities":["2k"],"supported_ratios":["9:16"],"max_image_count":1,"max_reference_image_count":0,"cost_per_image":"0.05000","currency":"USD","enabled":true}`))
+	updateAccountModelReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models/"+jsonNumber(accountModelResp.Data.ID), bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image"],"base_resolution":["1k"],"quality":["auto"],"size_modes":["ratio","pixel"],"supported_ratios":["9:16"],"supported_pixel_sizes":["1024x1024"],"supported_backgrounds":["auto","opaque"],"supports_custom_size":true,"min_width":768,"max_width":1920,"min_height":512,"max_height":1600,"max_image_count":1,"max_reference_image_count":0,"cost_per_image":"0.05000","currency":"USD","enabled":true}`))
 	updateAccountModelReq.Header.Set("Authorization", "Bearer "+adminToken)
 	updateAccountModelReq.Header.Set("Content-Type", "application/json")
 	updateAccountModelRec := httptest.NewRecorder()
@@ -136,7 +164,16 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	}
 	var updatedAccountModelResp struct {
 		Data struct {
+			BaseResolution         []string `json:"base_resolution"`
+			SizeModes              []string `json:"size_modes"`
 			SupportedRatios        []string `json:"supported_ratios"`
+			SupportedPixelSizes    []string `json:"supported_pixel_sizes"`
+			SupportsCustomRatio    bool     `json:"supports_custom_ratio"`
+			SupportedBackgrounds   []string `json:"supported_backgrounds"`
+			MinWidth               int      `json:"min_width"`
+			MaxWidth               int      `json:"max_width"`
+			MinHeight              int      `json:"min_height"`
+			MaxHeight              int      `json:"max_height"`
 			MaxImageCount          int      `json:"max_image_count"`
 			MaxReferenceImageCount int      `json:"max_reference_image_count"`
 			SupportsCustomSize     bool     `json:"supports_custom_size"`
@@ -145,7 +182,11 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	if err := json.NewDecoder(updateAccountModelRec.Body).Decode(&updatedAccountModelResp); err != nil {
 		t.Fatalf("decode updated account model response: %v", err)
 	}
-	if len(updatedAccountModelResp.Data.SupportedRatios) != 1 || updatedAccountModelResp.Data.SupportedRatios[0] != "9:16" || updatedAccountModelResp.Data.MaxImageCount != 1 || updatedAccountModelResp.Data.MaxReferenceImageCount != 0 || updatedAccountModelResp.Data.SupportsCustomSize {
+	if !reflect.DeepEqual(updatedAccountModelResp.Data.BaseResolution, []string{"1k"}) || !reflect.DeepEqual(updatedAccountModelResp.Data.SizeModes, []string{"ratio", "pixel"}) ||
+		!reflect.DeepEqual(updatedAccountModelResp.Data.SupportedRatios, []string{"9:16"}) || !reflect.DeepEqual(updatedAccountModelResp.Data.SupportedPixelSizes, []string{"1024x1024"}) ||
+		updatedAccountModelResp.Data.SupportsCustomRatio || !reflect.DeepEqual(updatedAccountModelResp.Data.SupportedBackgrounds, []string{"auto", "opaque"}) ||
+		updatedAccountModelResp.Data.MinWidth != 768 || updatedAccountModelResp.Data.MaxWidth != 1920 || updatedAccountModelResp.Data.MinHeight != 512 || updatedAccountModelResp.Data.MaxHeight != 1600 ||
+		updatedAccountModelResp.Data.MaxImageCount != 1 || updatedAccountModelResp.Data.MaxReferenceImageCount != 0 || !updatedAccountModelResp.Data.SupportsCustomSize {
 		t.Fatalf("account model update lost capabilities: %#v", updatedAccountModelResp.Data)
 	}
 
