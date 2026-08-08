@@ -85,35 +85,49 @@ func (s *Service) SetAdminConfigResolver(resolver adminConfigResolver) {
 	s.admin = resolver
 }
 
+func (s *Service) CurrentBillingConfig(ctx context.Context) config.BillingConfig {
+	return s.currentBillingConfig(ctx)
+}
+
 func (s *Service) Estimate(req domainbilling.EstimateRequest) (domainbilling.EstimateResult, error) {
+	return s.EstimateContext(context.Background(), req)
+}
+
+func (s *Service) EstimateContext(ctx context.Context, req domainbilling.EstimateRequest) (domainbilling.EstimateResult, error) {
 	if !provider.IsSupportedTaskType(req.TaskType) {
 		return domainbilling.EstimateResult{}, errs.BadRequest("unsupported task_type")
 	}
 	if strings.TrimSpace(req.RouteModelCode) != "" {
-		return s.estimateRouteModel(req)
+		_, estimate, err := s.ResolveAndEstimateRouteTask(ctx, req, config.GenerationLimitsConfig{
+			MaxImageCount:          1 << 30,
+			ReferenceImageMaxCount: 1 << 30,
+		})
+		return estimate, err
 	}
-	cfg := s.currentBillingConfig(context.Background())
+	cfg := s.currentBillingConfig(ctx)
 	return domainbilling.NewCalculator(cfg).Estimate(req)
 }
 
-func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainbilling.EstimateResult, error) {
+func (s *Service) ResolveAndEstimateRouteTask(ctx context.Context, req domainbilling.EstimateRequest, limits config.GenerationLimitsConfig) (modelhub.ResolvedRequest, domainbilling.EstimateResult, error) {
 	if s.routing == nil {
-		return domainbilling.EstimateResult{}, errs.New(409, errs.CodeConflict, "model routing is not configured")
+		return modelhub.ResolvedRequest{}, domainbilling.EstimateResult{}, errs.New(409, errs.CodeConflict, "model routing is not configured")
 	}
-	cfg := s.currentBillingConfig(context.Background())
+	cfg := s.currentBillingConfig(ctx)
+	routing, err := s.routing.ModelRoutingConfig(ctx)
+	if err != nil {
+		return modelhub.ResolvedRequest{}, domainbilling.EstimateResult{}, errs.Internal("failed to load model routing config")
+	}
 	resolver := modelhub.NewResolver(config.Config{
-		Billing: cfg,
-		GenerationLimits: config.GenerationLimitsConfig{
-			MaxImageCount:          1 << 30,
-			ReferenceImageMaxCount: 1 << 30,
-		},
+		Billing:          cfg,
+		GenerationLimits: limits,
 	})
-	resolver.SetModelRoutingSource(s.routing)
+	resolver.SetModelRoutingSource(immutableRoutingSource{snapshot: routing})
 	groupCodes := append([]string(nil), req.UserGroupCodes...)
 	if len(groupCodes) == 0 && strings.TrimSpace(req.UserGroupCode) != "" {
 		groupCodes = append(groupCodes, req.UserGroupCode)
 	}
 	resolveReq, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
+		RouteKey:                  req.RouteKey,
 		RouteModelCode:            req.RouteModelCode,
 		TaskType:                  req.TaskType,
 		SizeMode:                  req.SizeMode,
@@ -127,87 +141,88 @@ func (s *Service) estimateRouteModel(req domainbilling.EstimateRequest) (domainb
 		RequestedSize:             req.RequestedSize,
 		RequestedOutputImageCount: req.RequestedOutputImageCount,
 		ReferenceImageCount:       req.ReferenceImageCount,
+		MaskPresent:               req.MaskPresent,
 		UserGroupCodes:            groupCodes,
+		ExpectedCapabilityVersion: req.CapabilityVersion,
 	})
 	if err != nil {
-		return domainbilling.EstimateResult{}, err
+		return modelhub.ResolvedRequest{}, domainbilling.EstimateResult{}, err
 	}
-	resolved, err := resolver.ResolveContext(context.Background(), resolveReq)
+	resolved, err := resolver.ResolveContext(ctx, resolveReq)
 	if err != nil {
-		return domainbilling.EstimateResult{}, err
+		return resolved, domainbilling.EstimateResult{}, err
 	}
 	baseResolution := resolved.BaseResolution
-	models, err := resolver.ListVisibleRouteModels(context.Background(), groupCodes, cfg.TaskMultipliers)
-	if err != nil {
-		return domainbilling.EstimateResult{}, err
-	}
-	routeCode := strings.ToLower(strings.TrimSpace(req.RouteModelCode))
-	for _, model := range models {
-		if !strings.EqualFold(model.Code, routeCode) {
+	for _, price := range routing.Prices {
+		if !price.Enabled || price.RouteModelID != resolved.RouteModelID || !strings.EqualFold(price.TaskType, req.TaskType) || !strings.EqualFold(price.BaseResolution, baseResolution) {
 			continue
 		}
-		for _, price := range model.Prices {
-			if !strings.EqualFold(price.TaskType, req.TaskType) {
-				continue
-			}
-			if !strings.EqualFold(price.BaseResolution, baseResolution) {
-				continue
-			}
-			count := req.RequestedOutputImageCount
-			if count <= 0 {
-				count = 1
-			}
-			charged, err := decimal.NewFromString(price.ChargedPoints)
-			if err != nil {
-				return domainbilling.EstimateResult{}, errs.Internal("invalid route model price")
-			}
-			total := charged.Mul(decimal.NewFromInt(int64(count))).Round(5)
-			snapshot := domainbilling.PricingSnapshot{
-				RouteModelCode:            model.Code,
-				AbstractModel:             model.Code,
-				TaskType:                  req.TaskType,
-				SizeMode:                  modelhub.PublicSizeMode(resolveReq.SizeMode),
-				AspectRatio:               resolveReq.AspectRatio,
-				BaseResolution:            price.BaseResolution,
-				Quality:                   resolveReq.Quality,
-				OutputFormat:              resolveReq.OutputFormat,
-				Background:                resolveReq.Background,
-				OutputCompression:         resolveReq.OutputCompression,
-				Moderation:                resolveReq.Moderation,
-				RequestedSize:             resolveReq.RequestedSize,
-				RequestedOutputImageCount: count,
-				ReferenceImageCount:       req.ReferenceImageCount,
-				UserGroupCode:             strings.Join(groupCodes, ","),
-				UserGroupMultiplier:       model.EffectiveMultiplier,
-				BaseUnitPoints:            price.BasePoints,
-				TaskMultiplier:            defaultBillingString(cfg.TaskMultipliers[req.TaskType], "1.00000"),
-				ReferenceExtraMultiplier:  "0.00000",
-				EstimatedPoints:           total.StringFixed(5),
-			}
-			var resolvedSize *string
-			switch modelhub.PublicSizeMode(resolveReq.SizeMode) {
-			case modelhub.SizeModeRatio:
-				if value, sizeErr := modelhub.CalculateImageSize(resolved.BaseResolution, resolveReq.AspectRatio); sizeErr == nil {
-					resolvedSize = &value
-				}
-			case modelhub.SizeModePixel:
-				value := resolveReq.RequestedSize
+		count := req.RequestedOutputImageCount
+		if count <= 0 {
+			count = 1
+		}
+		basePoints, baseErr := decimal.NewFromString(price.BasePoints)
+		groupMultiplier, groupErr := decimal.NewFromString(resolved.EffectiveMultiplier)
+		taskMultiplier, taskErr := decimal.NewFromString(defaultBillingString(cfg.TaskMultipliers[req.TaskType], "1.00000"))
+		if baseErr != nil || groupErr != nil || taskErr != nil {
+			return resolved, domainbilling.EstimateResult{}, errs.Internal("invalid route model price")
+		}
+		charged := basePoints.Mul(groupMultiplier).Mul(taskMultiplier).Round(5)
+		total := charged.Mul(decimal.NewFromInt(int64(count))).Round(5)
+		snapshot := domainbilling.PricingSnapshot{
+			RouteModelCode:            resolved.RouteModelCode,
+			AbstractModel:             resolved.RouteModelCode,
+			TaskType:                  req.TaskType,
+			SizeMode:                  modelhub.PublicSizeMode(resolveReq.SizeMode),
+			AspectRatio:               resolveReq.AspectRatio,
+			BaseResolution:            strings.ToLower(strings.TrimSpace(price.BaseResolution)),
+			Quality:                   resolveReq.Quality,
+			OutputFormat:              resolveReq.OutputFormat,
+			Background:                resolveReq.Background,
+			OutputCompression:         resolveReq.OutputCompression,
+			Moderation:                resolveReq.Moderation,
+			RequestedSize:             resolveReq.RequestedSize,
+			RequestedOutputImageCount: count,
+			ReferenceImageCount:       req.ReferenceImageCount,
+			UserGroupCode:             strings.Join(groupCodes, ","),
+			UserGroupMultiplier:       resolved.EffectiveMultiplier,
+			BaseUnitPoints:            basePoints.StringFixed(5),
+			TaskMultiplier:            defaultBillingString(cfg.TaskMultipliers[req.TaskType], "1.00000"),
+			ReferenceExtraMultiplier:  "0.00000",
+			EstimatedPoints:           total.StringFixed(5),
+		}
+		var resolvedSize *string
+		switch modelhub.PublicSizeMode(resolveReq.SizeMode) {
+		case modelhub.SizeModeRatio:
+			if value, sizeErr := modelhub.CalculateImageSize(resolved.BaseResolution, resolveReq.AspectRatio); sizeErr == nil {
 				resolvedSize = &value
 			}
-			return domainbilling.EstimateResult{
-				BaseResolution:            price.BaseResolution,
-				ResolvedSize:              resolvedSize,
-				EstimatedPoints:           snapshot.EstimatedPoints,
-				ChargedPoints:             snapshot.EstimatedPoints,
-				DisplayPoints:             total.Round(2).StringFixed(2),
-				UserGroupMultiplier:       model.EffectiveMultiplier,
-				RequestedOutputImageCount: count,
-				ReferenceImageCount:       req.ReferenceImageCount,
-				PricingSnapshot:           snapshot,
-			}, nil
+		case modelhub.SizeModePixel:
+			value := resolveReq.RequestedSize
+			resolvedSize = &value
 		}
+		return resolved, domainbilling.EstimateResult{
+			CapabilityVersion:         resolved.CapabilityVersion,
+			BaseResolution:            strings.ToLower(strings.TrimSpace(price.BaseResolution)),
+			ResolvedSize:              resolvedSize,
+			EstimatedPoints:           snapshot.EstimatedPoints,
+			ChargedPoints:             snapshot.EstimatedPoints,
+			DisplayPoints:             total.Round(2).StringFixed(2),
+			UserGroupMultiplier:       resolved.EffectiveMultiplier,
+			RequestedOutputImageCount: count,
+			ReferenceImageCount:       req.ReferenceImageCount,
+			PricingSnapshot:           snapshot,
+		}, nil
 	}
-	return domainbilling.EstimateResult{}, errs.New(403, errs.CodeForbidden, "route model is not visible")
+	return resolved, domainbilling.EstimateResult{}, errs.New(409, errs.CodeRouteModelPriceMissing, "model pricing not found")
+}
+
+type immutableRoutingSource struct {
+	snapshot modelhub.ModelRoutingSnapshot
+}
+
+func (s immutableRoutingSource) ModelRoutingConfig(context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	return s.snapshot, nil
 }
 
 func defaultBillingString(value, fallback string) string {

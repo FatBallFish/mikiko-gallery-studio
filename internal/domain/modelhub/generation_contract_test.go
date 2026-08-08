@@ -83,6 +83,7 @@ func TestNormalizeResolveRequestRejectsMixedDiscriminatedSizeFields(t *testing.T
 		{name: "auto pixels", req: ResolveRequest{SizeMode: SizeModeAuto, RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
 		{name: "ratio auto base", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "auto", AspectRatio: "1:1"}, code: CodeInvalidSizeMode},
 		{name: "ratio requested size", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "1:1", RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
+		{name: "ratio missing aspect", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k"}, code: CodeInvalidAspectRatio},
 		{name: "pixel base", req: ResolveRequest{SizeMode: SizeModePixel, BaseResolution: "1k", RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
 		{name: "pixel aspect", req: ResolveRequest{SizeMode: SizeModePixel, AspectRatio: "1:1", RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
 		{name: "ratio hard bound", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "4:1"}, code: CodeInvalidAspectRatio},
@@ -97,6 +98,16 @@ func TestNormalizeResolveRequestRejectsMixedDiscriminatedSizeFields(t *testing.T
 				t.Fatalf("NormalizeResolveRequest() error = %#v, want 400/%s", err, tt.code)
 			}
 		})
+	}
+}
+
+func TestNormalizeResolveRequestLegacyRatioDefaultsMissingAspect(t *testing.T) {
+	got, err := NormalizeResolveRequest(ResolveRequest{BaseResolution: "1k"})
+	if err != nil {
+		t.Fatalf("NormalizeResolveRequest() error = %v", err)
+	}
+	if got.SizeMode != sizeModeLegacyRatio || got.AspectRatio != "1:1" {
+		t.Fatalf("legacy normalized request = %#v, want legacy ratio with 1:1 aspect", got)
 	}
 }
 

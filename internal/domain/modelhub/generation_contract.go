@@ -12,6 +12,7 @@ const (
 	CodeInvalidExplicitDimensions = "invalid_explicit_dimensions"
 	CodeInvalidAspectRatio        = "invalid_aspect_ratio"
 	CodeTransparentFormatConflict = "transparent_format_conflict"
+	CodeCapabilityChanged         = "capability_changed"
 )
 
 type GenerationRequest struct {

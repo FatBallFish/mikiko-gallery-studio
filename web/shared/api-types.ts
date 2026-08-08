@@ -631,6 +631,7 @@ export type EstimateRequest = { task_type: ImageTaskType; route_model_code: stri
 export type BackendImageTaskType = ImageTaskType
 export type BackendEstimateRequest = { task_type: BackendImageTaskType; route_model_code: string; size_mode?: string; aspect_ratio?: string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; requested_size?: string; requested_output_image_count: number; reference_image_count?: number }
 export type EstimateResult = {
+	capability_version?: string
   resolved_quality_bucket?: string
   base_resolution?: string
   size_mode?: string
@@ -781,8 +782,8 @@ export type ImageTask = {
   reference_assets: ReferenceAsset[]
   results: ImageResult[]
 }
-export type BackendCreateTaskRequest = Omit<BackendEstimateRequest, 'reference_image_count'> & { prompt: string; reference_asset_ids?: string[]; response_mode: 'async' }
-export type CreateTaskRequest = EstimateRequest & { prompt: string; negative_prompt?: string; idempotency_key?: string; response_mode?: 'sync' | 'async' | string }
+export type BackendCreateTaskRequest = Omit<BackendEstimateRequest, 'reference_image_count'> & { prompt: string; reference_asset_ids?: string[]; response_mode: 'async'; capability_version?: string }
+export type CreateTaskRequest = EstimateRequest & { prompt: string; negative_prompt?: string; idempotency_key?: string; response_mode?: 'sync' | 'async' | string; capability_version?: string }
 export type LoginResult = LoginResponse
 
 export type ApiKey = {

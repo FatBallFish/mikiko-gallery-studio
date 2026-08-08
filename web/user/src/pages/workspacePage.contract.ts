@@ -66,6 +66,9 @@ for (const required of [
   'output_format: outputFormat',
   'output_compression: compressionVisible ? outputCompression : 100',
   'moderation,',
+  'capability_version: estimate?.capability_version',
+  "err.code === 'capability_changed'",
+  'userApi.estimate(estimatePayload)',
 ]) {
   if (!source.includes(required)) throw new Error(`creative workspace should include ${required}`)
 }
@@ -109,6 +112,21 @@ const referenceGuard = createTaskSource.indexOf('if (!requiredReferencesReady)')
 const createRequest = createTaskSource.indexOf('userApi.createTask')
 if (!(referenceGuard >= 0 && createRequest > referenceGuard)) {
   throw new Error('createTask must defensively reject missing references before issuing the API request')
+}
+const capabilityChangedStart = createTaskSource.indexOf("err.code === 'capability_changed'")
+const capabilityChangedEnd = createTaskSource.indexOf("app.notify('error'", capabilityChangedStart)
+const capabilityChangedSource = createTaskSource.slice(capabilityChangedStart, capabilityChangedEnd)
+for (const required of [
+	'await userApi.getCapabilities()',
+	'setCapability(nextCapability)',
+	"setEstimateSnapshot({ key: '', estimate: null, error: '' })",
+]) {
+  if (!capabilityChangedSource.includes(required)) {
+    throw new Error(`capability_changed recovery must refresh capabilities and invalidate the stale estimate: missing ${required}`)
+  }
+}
+if (capabilityChangedSource.includes('userApi.estimate(')) {
+  throw new Error('capability_changed recovery must let normalized capability state drive the next estimate instead of reusing the stale payload')
 }
 
 const historyEditStart = source.indexOf('async function applyAsEditSource')

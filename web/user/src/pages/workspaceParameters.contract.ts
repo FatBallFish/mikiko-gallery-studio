@@ -12,6 +12,9 @@ import {
   workspaceCompressionVisible,
   workspaceModelForTask,
   workspaceOutputOptions,
+  workspacePixelOptions,
+  workspaceRatioOptions,
+  workspaceSizeModeOptions,
 } from './workspaceParameters'
 
 const workspaceSource = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')
@@ -128,6 +131,38 @@ if (editModel.size_modes?.join(',') !== 'pixel' || editModel.pixel_sizes?.join('
 }
 if (!workspaceCustomSizeSupported({ ...model, supports_custom_size: true })) {
   throw new Error('legacy capability payloads must fall back to the aggregate custom-size flag')
+}
+
+const emptyScopedModel = workspaceModelForTask({
+  ...model,
+  size_modes: ['ratio'],
+  aspect_ratios: ['1:1'],
+  pixel_sizes: ['1024x1024'],
+  quality: ['auto'],
+  output_format: ['png'],
+  supported_backgrounds: ['auto'],
+  moderation: ['auto'],
+  capabilities_by_task_type: {
+    text_to_image: {
+      size_modes: [], aspect_ratios: [], pixel_sizes: [], quality: [], output_format: [], supported_backgrounds: [], moderation: [],
+    },
+  },
+}, 'text_to_image')
+if (!emptyScopedModel) throw new Error('empty scoped capability projection must retain the model')
+const emptyOutputOptions = workspaceOutputOptions(emptyScopedModel)
+if (workspaceSizeModeOptions(emptyScopedModel).length || workspaceRatioOptions(emptyScopedModel, ['1:1']).length || workspacePixelOptions(emptyScopedModel, ['1024x1024']).length) {
+  throw new Error(`explicit empty size capability must not inherit aggregate defaults: ${JSON.stringify(emptyScopedModel)}`)
+}
+if (emptyOutputOptions.quality.length || emptyOutputOptions.outputFormat.length || emptyOutputOptions.moderation.length || workspaceBackgroundOptions(emptyScopedModel).length) {
+  throw new Error(`explicit empty output capability must not receive defaults: ${JSON.stringify(emptyOutputOptions)}`)
+}
+const legacySizeModel = { ...model, size_modes: undefined, aspect_ratios: undefined, pixel_sizes: undefined, quality: undefined, output_format: undefined, moderation: undefined } satisfies CapabilityModelGroup
+if (workspaceSizeModeOptions(legacySizeModel).join(',') !== 'ratio' || workspaceRatioOptions(legacySizeModel, ['1:1']).join(',') !== '1:1' || workspacePixelOptions(legacySizeModel, ['1024x1024']).join(',') !== '1024x1024') {
+  throw new Error('undefined legacy size fields must retain compatibility fallbacks')
+}
+const legacyOutputOptions = workspaceOutputOptions(legacySizeModel)
+if (legacyOutputOptions.quality.join(',') !== 'auto' || legacyOutputOptions.outputFormat.join(',') !== 'png' || legacyOutputOptions.moderation.join(',') !== 'auto') {
+  throw new Error(`undefined legacy output fields must retain compatibility fallbacks: ${JSON.stringify(legacyOutputOptions)}`)
 }
 
 const unsupportedModel = { ...model, supports_output_compression: false } satisfies CapabilityModelGroup

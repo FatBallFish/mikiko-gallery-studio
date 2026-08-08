@@ -98,6 +98,7 @@ function toOpenTaskBody(req: CreateTaskRequest) {
     prompt: req.prompt,
     reference_asset_ids: req.reference_asset_ids ?? [],
     response_mode: 'async',
+    ...(req.capability_version ? { capability_version: req.capability_version } : {}),
   }
 }
 

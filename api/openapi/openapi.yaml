@@ -1030,6 +1030,12 @@ paths:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '409':
+          description: Capability snapshot changed (`capability_changed`); refresh capabilities and estimate before retrying
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/agent/image/v1/tasks/{task_id}:
     get:
       tags: [Agent Image]
@@ -1225,6 +1231,12 @@ paths:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
         '400':
           description: Invalid task request, including unsupported sync response_mode
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '409':
+          description: Capability snapshot changed (`capability_changed`); refresh capabilities and estimate before retrying
           content:
             application/json:
               schema:

@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,25 @@ type staticRoutingSource struct {
 }
 
 func (s staticRoutingSource) ModelRoutingConfig(context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	return s.snapshot, nil
+}
+
+type countingRoutingSource struct {
+	snapshot modelhub.ModelRoutingSnapshot
+	reads    int
+}
+
+type contextObservingRoutingSource struct {
+	err error
+}
+
+func (s *contextObservingRoutingSource) ModelRoutingConfig(ctx context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	s.err = ctx.Err()
+	return modelhub.ModelRoutingSnapshot{}, ctx.Err()
+}
+
+func (s *countingRoutingSource) ModelRoutingConfig(context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	s.reads++
 	return s.snapshot, nil
 }
 
@@ -686,7 +706,7 @@ func TestEstimateRouteModelAutoBaseResolutionUsesExplicitSize(t *testing.T) {
 			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "4k", BasePoints: "8.00000", Enabled: true},
 		},
 		ProviderModels: []modelhub.ProviderCandidate{
-			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"2k"}},
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"2k"}, SupportedAspectRatios: []string{"3:2"}},
 		},
 		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
 	}})
@@ -874,6 +894,71 @@ func TestEstimateRouteModelPreservesTypedSizeValidationErrors(t *testing.T) {
 	}
 }
 
+func TestEstimateRouteModelUsesOneRoutingSnapshotAndReturnsCapabilityVersion(t *testing.T) {
+	source := &countingRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{ID: 1, RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"},
+			SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Enabled: true}},
+	}}
+	svc := NewService(config.BillingConfig{TaskMultipliers: map[string]string{"text_to_image": "1.00000"}})
+	svc.SetModelRoutingSource(source)
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("Estimate: %v", err)
+	}
+	if source.reads != 1 {
+		t.Fatalf("routing source reads = %d, want exactly one immutable snapshot", source.reads)
+	}
+	if result.CapabilityVersion == "" {
+		t.Fatal("estimate must return capability_version")
+	}
+}
+
+func TestResolveAndEstimateRouteTaskPropagatesCanceledContext(t *testing.T) {
+	source := &contextObservingRoutingSource{}
+	svc := NewService(config.BillingConfig{})
+	svc.SetModelRoutingSource(source)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, _, _ = svc.ResolveAndEstimateRouteTask(ctx, domainbilling.EstimateRequest{RouteModelCode: "plus", TaskType: "text_to_image"}, config.GenerationLimitsConfig{})
+	if !errors.Is(source.err, context.Canceled) {
+		t.Fatalf("routing source context error = %v, want context.Canceled", source.err)
+	}
+}
+
+func TestEstimateRouteModelIgnoresInvalidPricesOnUnrelatedRoutes(t *testing.T) {
+	svc := NewService(config.BillingConfig{TaskMultipliers: map[string]string{"text_to_image": "1.00000"}})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{
+			{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true},
+			{ID: 2, Code: "unrelated", Name: "Unrelated", Visibility: "public", Enabled: true},
+		},
+		Prices: []modelhub.RoutePriceConfig{
+			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true},
+			{RouteModelID: 2, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "not-a-decimal", Enabled: true},
+		},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"},
+			SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Enabled: true}},
+	}})
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil || result.EstimatedPoints != "2.00000" {
+		t.Fatalf("target route estimate = %#v, %v", result, err)
+	}
+}
+
 func TestEstimateRouteModelRejectsWhenNoCandidateSupportsResolvedBaseResolution(t *testing.T) {
 	svc := NewService(config.BillingConfig{
 		CNYPerPoint:                      "0.31250",
@@ -897,7 +982,7 @@ func TestEstimateRouteModelRejectsWhenNoCandidateSupportsResolvedBaseResolution(
 		RequestedOutputImageCount: 1,
 	})
 	appErr, ok := err.(*errs.Error)
-	if !ok || appErr.StatusCode != 409 || appErr.Code != errs.CodeImageCapabilityMismatch {
+	if !ok || appErr.StatusCode != 400 || appErr.Code != errs.CodeImageCapabilityMismatch {
 		t.Fatalf("expected estimate to reject route model without matching candidate, got %#v", err)
 	}
 }

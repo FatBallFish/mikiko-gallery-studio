@@ -221,6 +221,7 @@ export function buildCreateTaskWireRequest(req: CreateTaskRequest): { body: Back
       prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
       reference_asset_ids: req.reference_asset_ids ?? [],
       response_mode: 'async',
+      ...(req.capability_version ? { capability_version: req.capability_version } : {}),
     },
     headers: req.idempotency_key ? { 'Idempotency-Key': req.idempotency_key } : {},
   }
@@ -315,26 +316,35 @@ function optionalOutputCapabilities(source: any) {
 }
 
 function normalizeTaskCapability(source: unknown): CapabilityTaskOptions {
-	return {
-		base_resolution: normalizeBaseResolutions(pick<string[]>(source, 'base_resolution', 'BaseResolution') ?? []),
+	const result: CapabilityTaskOptions = {
     auto_base_resolution: String(pick(source, 'auto_base_resolution', 'AutoBaseResolution') ?? '').trim().toLowerCase() || undefined,
-    size_modes: pick<Array<'auto' | 'ratio' | 'pixel' | string>>(source, 'size_modes', 'SizeModes') ?? [],
-    aspect_ratios: pick<string[]>(source, 'aspect_ratios', 'AspectRatios') ?? [],
-    pixel_sizes: pick<string[]>(source, 'pixel_sizes', 'PixelSizes') ?? [],
-    quality: pick<string[]>(source, 'quality', 'Quality') ?? [],
-    output_format: pick<string[]>(source, 'output_format', 'OutputFormat') ?? [],
     supports_output_compression: Boolean(pick(source, 'supports_output_compression', 'SupportsOutputCompression')),
 		supports_custom_size: Boolean(pick(source, 'supports_custom_size', 'SupportsCustomSize')),
 		supports_custom_ratio: Boolean(pick(source, 'supports_custom_ratio', 'SupportsCustomRatio')),
-		supported_backgrounds: pick<string[]>(source, 'supported_backgrounds', 'SupportedBackgrounds') ?? [],
 		min_width: positiveNumber(pick(source, 'min_width', 'MinWidth')),
 		max_width: positiveNumber(pick(source, 'max_width', 'MaxWidth')),
 		min_height: positiveNumber(pick(source, 'min_height', 'MinHeight')),
 		max_height: positiveNumber(pick(source, 'max_height', 'MaxHeight')),
-    moderation: pick<string[]>(source, 'moderation', 'Moderation') ?? [],
     max_output_image_count: Number(pick(source, 'max_output_image_count', 'MaxOutputImageCount') ?? 0),
     max_reference_image_count: Number(pick(source, 'max_reference_image_count', 'MaxReferenceImageCount') ?? 0),
   }
+	const baseResolution = pick<string[]>(source, 'base_resolution', 'BaseResolution')
+	const sizeModes = pick<Array<'auto' | 'ratio' | 'pixel' | string>>(source, 'size_modes', 'SizeModes')
+	const aspectRatios = pick<string[]>(source, 'aspect_ratios', 'AspectRatios')
+	const pixelSizes = pick<string[]>(source, 'pixel_sizes', 'PixelSizes')
+	const quality = pick<string[]>(source, 'quality', 'Quality')
+	const outputFormat = pick<string[]>(source, 'output_format', 'OutputFormat')
+	const backgrounds = pick<string[]>(source, 'supported_backgrounds', 'SupportedBackgrounds')
+	const moderation = pick<string[]>(source, 'moderation', 'Moderation')
+	if (baseResolution !== undefined) result.base_resolution = normalizeBaseResolutions(baseResolution)
+	if (sizeModes !== undefined) result.size_modes = sizeModes
+	if (aspectRatios !== undefined) result.aspect_ratios = aspectRatios
+	if (pixelSizes !== undefined) result.pixel_sizes = pixelSizes
+	if (quality !== undefined) result.quality = quality
+	if (outputFormat !== undefined) result.output_format = outputFormat
+	if (backgrounds !== undefined) result.supported_backgrounds = backgrounds
+	if (moderation !== undefined) result.moderation = moderation
+	return result
 }
 
 export function normalizeCapabilities(raw: any): Capability {

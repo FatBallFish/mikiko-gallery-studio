@@ -93,6 +93,7 @@ type CreateRequest struct {
 	MaskPresent         bool
 	ResponseMode        string
 	SavePolicy          string
+	CapabilityVersion   string
 }
 
 type RetryRequest struct {

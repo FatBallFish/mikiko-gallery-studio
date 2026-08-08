@@ -107,6 +107,10 @@ type BillingManager interface {
 	FinalizeTask(ctx context.Context, req domainbilling.FinalizeRequest) (domainbilling.BalanceSummary, error)
 }
 
+type routeTaskPreflightManager interface {
+	ResolveAndEstimateRouteTask(ctx context.Context, req domainbilling.EstimateRequest, limits config.GenerationLimitsConfig) (modelhub.ResolvedRequest, domainbilling.EstimateResult, error)
+}
+
 type APIKeyUsageManager interface {
 	CheckTaskAllowed(ctx context.Context, apiKeyID, userID int64, estimatedPoints string, now time.Time) (domainbilling.APIKeyQuota, error)
 }
@@ -239,7 +243,17 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 		}
 	}
 
-	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent)
+	var prefetchedEstimate *domainbilling.EstimateResult
+	var resolved modelhub.ResolvedRequest
+	if manager, ok := s.billing.(routeTaskPreflightManager); ok && strings.TrimSpace(req.RouteModelCode) != "" {
+		resolvedEstimate, estimate, resolveErr := manager.ResolveAndEstimateRouteTask(ctx, taskEstimateRequest(req, normalizedCount(req.OutputImageCount)), s.cfg.GenerationLimits)
+		resolved, err = resolvedEstimate, resolveErr
+		if resolveErr == nil {
+			prefetchedEstimate = &estimate
+		}
+	} else {
+		resolved, err = s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent, req.CapabilityVersion)
+	}
 	if err != nil {
 		_ = s.persistPreflightFailedRequest(ctx, req, resolved, err)
 		return domainimagetask.Task{}, err
@@ -249,7 +263,12 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 	}
 
 	task := buildTask(req, resolved, domainimagetask.StatusQueued)
-	if err := s.applyTaskEstimate(ctx, &task, req); err != nil {
+	if prefetchedEstimate != nil {
+		err = s.applyTaskEstimateResult(ctx, &task, req, *prefetchedEstimate)
+	} else {
+		err = s.applyTaskEstimate(ctx, &task, req)
+	}
+	if err != nil {
 		_ = s.persistPreflightFailedTask(ctx, task, err)
 		return domainimagetask.Task{}, err
 	}
@@ -320,7 +339,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		return domainimagetask.ExecuteResult{}, err
 	}
 	req = normalizedReq
-	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, len(req.ReferenceImages), req.Mask != nil)
+	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, len(req.ReferenceImages), req.Mask != nil, "")
 	if err != nil {
 		return domainimagetask.ExecuteResult{}, err
 	}
@@ -434,7 +453,7 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 	if snapshotErr != nil {
 		return s.failOwnedTask(ctx, task, owner, snapshotErr)
 	}
-	resolved, err := s.resolveTask(ctx, task.ID, task.AbstractModel, task.RouteModelCode, nil, task.TaskType, task.SizeMode, requestedAspectRatio, requestedBaseResolution, task.Quality, task.OutputFormat, task.Background, task.OutputCompression, task.Moderation, requestedSize, task.OutputImageCount, len(referenceImages), false)
+	resolved, err := s.resolveTask(ctx, task.ID, task.AbstractModel, task.RouteModelCode, nil, task.TaskType, task.SizeMode, requestedAspectRatio, requestedBaseResolution, task.Quality, task.OutputFormat, task.Background, task.OutputCompression, task.Moderation, requestedSize, task.OutputImageCount, len(referenceImages), false, "")
 	if err != nil {
 		return s.failOwnedTask(ctx, task, owner, err)
 	}
@@ -641,7 +660,10 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 	}
 
 	var lastErr error
+	attemptedCandidates := 0
 	for _, candidate := range orderedProviders {
+		fallbackCount := attemptedCandidates
+		attemptedCandidates++
 		providerClient, ok := s.providerClientForCandidate(candidate)
 		if !ok {
 			continue
@@ -681,7 +703,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 				} else {
 					task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusFailed, progressErr, attemptStarted, attemptFinished))
 				}
-				task.FallbackCount = len(task.Attempts)
+				task.FallbackCount = fallbackCount
 				lastErr = progressErr
 				shouldRetry := false
 				if upstream, ok := provider.AsUpstreamError(progressErr); ok && upstream.Action == provider.UpstreamErrorActionRetry {
@@ -722,7 +744,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 				}
 			}
 			task.Status = domainimagetask.StatusRunning
-			task.FallbackCount = len(task.Attempts)
+			task.FallbackCount = fallbackCount
 			task.Results = persistedResults
 			task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
 			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
@@ -772,7 +794,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 				task.ErrorMessage = "部分上游批次未返回有效图片"
 			}
 			task.Status = domainimagetask.StatusRunning
-			task.FallbackCount = len(task.Attempts)
+			task.FallbackCount = fallbackCount
 			task.Results = append([]provider.ImageResult(nil), persistedResults...)
 			task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
 			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
@@ -814,6 +836,7 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		task.UpstreamModelCode = candidate.ModelCode
 		task.RouteSnapshotVersion = candidate.RouteSnapshotVersion
 		task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusFailed, err, attemptStarted, attemptFinished))
+		task.FallbackCount = fallbackCount
 		shouldRetry := false
 		if upstream, ok := provider.AsUpstreamError(err); ok && upstream.Action == provider.UpstreamErrorActionRetry {
 			shouldRetry = true
@@ -1378,7 +1401,7 @@ func (s *Service) resumeTerminalization(ctx context.Context, task domainimagetas
 	return domainimagetask.ExecuteResult{Task: task}, true, errs.New(500, defaultString(task.ErrorCode, errs.CodeInternal), defaultString(task.ErrorMessage, "image task failed"))
 }
 
-func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, routeModelCode string, userGroupCodes []string, taskType, sizeMode, aspectRatio, baseResolution, quality, outputFormat, background string, outputCompression int, moderation, requestedSize string, outputImageCount, referenceImageCount int, maskPresent bool) (modelhub.ResolvedRequest, error) {
+func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, routeModelCode string, userGroupCodes []string, taskType, sizeMode, aspectRatio, baseResolution, quality, outputFormat, background string, outputCompression int, moderation, requestedSize string, outputImageCount, referenceImageCount int, maskPresent bool, capabilityVersion string) (modelhub.ResolvedRequest, error) {
 	return s.resolver.ResolveContext(ctx, modelhub.ResolveRequest{
 		AbstractModel:             abstractModel,
 		RouteModelCode:            routeModelCode,
@@ -1397,6 +1420,7 @@ func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, rout
 		MaskPresent:               maskPresent,
 		RouteKey:                  routeKey,
 		UserGroupCodes:            append([]string(nil), userGroupCodes...),
+		ExpectedCapabilityVersion: capabilityVersion,
 	})
 }
 
@@ -2335,7 +2359,16 @@ func (s *Service) applyTaskEstimate(ctx context.Context, task *domainimagetask.T
 		return nil
 	}
 
-	estimate, err := s.billing.Estimate(domainbilling.EstimateRequest{
+	estimate, err := s.billing.Estimate(taskEstimateRequest(req, task.OutputImageCount))
+	if err != nil {
+		return err
+	}
+	return s.applyTaskEstimateResult(ctx, task, req, estimate)
+}
+
+func taskEstimateRequest(req domainimagetask.CreateRequest, outputImageCount int) domainbilling.EstimateRequest {
+	return domainbilling.EstimateRequest{
+		RouteKey:                  req.TaskID,
 		TaskType:                  req.TaskType,
 		AbstractModel:             req.AbstractModel,
 		RouteModelCode:            req.RouteModelCode,
@@ -2344,19 +2377,21 @@ func (s *Service) applyTaskEstimate(ctx context.Context, task *domainimagetask.T
 		BaseResolution:            req.BaseResolution,
 		Quality:                   req.Quality,
 		OutputFormat:              req.OutputFormat,
+		Background:                req.Background,
 		OutputCompression:         req.OutputCompression,
 		Moderation:                req.Moderation,
 		RequestedSize:             req.RequestedSize,
-		RequestedOutputImageCount: task.OutputImageCount,
+		RequestedOutputImageCount: outputImageCount,
 		ReferenceImageCount:       req.ReferenceImageCount,
+		MaskPresent:               req.MaskPresent,
 		UserGroupCode:             req.UserGroupCode,
 		UserGroupCodes:            append([]string(nil), req.UserGroupCodes...),
 		UserGroupMultiplier:       req.UserGroupMultiplier,
-	})
-	if err != nil {
-		return err
+		CapabilityVersion:         req.CapabilityVersion,
 	}
+}
 
+func (s *Service) applyTaskEstimateResult(ctx context.Context, task *domainimagetask.Task, req domainimagetask.CreateRequest, estimate domainbilling.EstimateResult) error {
 	task.BaseResolution = estimate.BaseResolution
 	task.EstimatedPoints = estimate.EstimatedPoints
 	task.ChargedPoints = defaultString(estimate.ChargedPoints, estimate.EstimatedPoints)
@@ -2636,6 +2671,9 @@ func splitOutputImageCount(total, maxPerRequest int) []int {
 	total = normalizedCount(total)
 	if maxPerRequest <= 0 {
 		maxPerRequest = 1
+	}
+	if maxPerRequest > 10 {
+		maxPerRequest = 10
 	}
 	chunks := make([]int, 0, (total-1)/maxPerRequest+1)
 	remaining := total

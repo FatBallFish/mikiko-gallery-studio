@@ -67,6 +67,31 @@ func TestNormalPreflightFailsClosedWithoutValidatedRouteContract(t *testing.T) {
 	}
 }
 
+func TestImageTaskCreateOpenAPIResponsesDocumentCapabilityChanged(t *testing.T) {
+	var spec struct {
+		Paths map[string]struct {
+			Post struct {
+				Responses map[string]struct {
+					Description string `yaml:"description"`
+				} `yaml:"responses"`
+			} `yaml:"post"`
+		} `yaml:"paths"`
+	}
+	openAPI, err := os.ReadFile("../../../api/openapi/openapi.yaml")
+	if err != nil {
+		t.Fatalf("read OpenAPI: %v", err)
+	}
+	if err := yaml.Unmarshal(openAPI, &spec); err != nil {
+		t.Fatalf("parse OpenAPI: %v", err)
+	}
+	for _, path := range []string{"/api/agent/image/v1/tasks", "/api/open/image/v1/tasks"} {
+		response, ok := spec.Paths[path].Post.Responses["409"]
+		if !ok || !strings.Contains(response.Description, "capability_changed") {
+			t.Errorf("POST %s must document 409 capability_changed, got %#v", path, response)
+		}
+	}
+}
+
 func normalMuxPatternHasPreflightMetadata(pattern string, openAPIPaths map[string]any) bool {
 	if separator := strings.IndexByte(pattern, ' '); separator >= 0 {
 		pattern = pattern[separator+1:]

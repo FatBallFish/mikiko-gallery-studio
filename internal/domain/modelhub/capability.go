@@ -232,10 +232,7 @@ func NormalizeResolveRequest(req ResolveRequest) (ResolveRequest, error) {
 		}
 		ratio := NormalizeRatio(req.AspectRatio)
 		if ratio == "" {
-			if strings.TrimSpace(req.AspectRatio) != "" {
-				return req, errs.New(400, CodeInvalidAspectRatio, "aspect_ratio is invalid")
-			}
-			ratio = "1:1"
+			return req, errs.New(400, CodeInvalidAspectRatio, "aspect_ratio is required")
 		}
 		widthRatio, heightRatio, ok := parseRatio(ratio)
 		if !ok || maxFloat(float64(widthRatio)/float64(heightRatio), float64(heightRatio)/float64(widthRatio)) > imageMaxAspectRatio {

@@ -551,6 +551,10 @@ Stable error codes include:
 
 Provider rejection keeps a sanitized provider code/message and correlated attempt ID. Cleanup failures are not exposed as successful physical deletion; the asset remains business-deleted and the retry is visible to operations.
 
+Estimate returns an optional `capability_version` generated from a canonical SHA-256 projection of the effective route/task contract: active ordered candidates and their effective generation fields, the public capability intersection, enabled task prices, effective user-group multiplier, effective task multiplier, and auto-resolution result. The projection sorts and deduplicates capability lists and excludes timestamps, map iteration order, health telemetry details, display metadata, and ineffective billing values. Create accepts the token optionally for backward compatibility and returns `409 capability_changed` before capability validation when it no longer matches. Capabilities, Estimate, and Create resolve against the current dynamic billing configuration rather than the startup snapshot. Billing loads routing once per request and uses that immutable snapshot for both resolution and price projection. Estimate and route-model Create use the same atomic resolve-and-estimate preflight, so provider, capability version, and price cannot come from different routing reads; clients that omit the token retain compatibility without weakening this single-snapshot rule.
+
+Custom pixel capability is advertised only when every legal resolution bucket reachable through the effective width/height intersection has an enabled task price. Reachability uses a one-dimensional bounded scan over the fixed 1K/2K/4K buckets: for each 16-pixel longest-edge candidate it derives the legal short-edge interval from configured bounds, the `1:3..3:1` ratio, the `655360..8294400` pixel-area range, and the 3840-pixel hard edge. The scan has a fixed upper bound and never enumerates width/height pairs. Presets remain filtered independently. A partially priced range disables custom entry instead of exposing values that Estimate or Create would reject. The top-level compatibility capability exposes only the preset intersection shared by all pixel-capable task types and enables custom pixels only when every task-scoped pixel capability supports them, so prices from different task types cannot be combined to overstate support.
+
 ## 12. Migration And Compatibility
 
 ### 12.1 Schema rollout
@@ -571,6 +575,7 @@ Provider rejection keeps a sanitized provider code/message and correlated attemp
 - Remove documentation title/base-path fields from admin UI and public write contracts. Stored legacy keys may remain inert until a later storage cleanup migration.
 - Base-resolution `auto` is no longer accepted on new configuration writes; `size_modes` owns auto behavior.
 - `max_image_count` values outside `1..10` must be repaired before affected account models can be enabled/saved. Existing running configuration should be surfaced as invalid rather than silently changed.
+- As a temporary runtime safety boundary for legacy rows that predate write validation, fan-out limits every upstream call to `n <= 10` while preserving the platform task's requested total. This does not mutate stored configuration; administration continues to surface the row as invalid until repaired.
 
 ### 12.3 Compatibility scenarios
 
@@ -584,6 +589,7 @@ Provider rejection keeps a sanitized provider code/message and correlated attemp
 | Historical grant has no expiry | Remains long-lived; UI does not infer current plan duration. |
 | Legacy task has `base_resolution=auto` | Historical display remains readable; replay/new write maps to `size_mode=auto` and omits size after capability validation. |
 | Platform task requests 12 outputs with max `n=4` | Existing planner emits multiple calls; no API validation caps platform total at 10. |
+| Legacy account model stores max `n=11` or `12` | New saves remain blocked; runtime fan-out emits calls of at most 10 and preserves the total output request until the configuration is repaired. |
 | Stale client sends transparent JPEG | Server rejects consistently even if old UI allowed it. |
 | Deleted model configuration appears in history | Snapshot/fallback identity and price remain visible without joining only to active config. |
 

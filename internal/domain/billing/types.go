@@ -8,6 +8,7 @@ import (
 )
 
 type EstimateRequest struct {
+	RouteKey                  string
 	TaskType                  string
 	AbstractModel             string
 	RouteModelCode            string
@@ -22,12 +23,15 @@ type EstimateRequest struct {
 	RequestedSize             string
 	RequestedOutputImageCount int
 	ReferenceImageCount       int
+	MaskPresent               bool
 	UserGroupCode             string
 	UserGroupCodes            []string
 	UserGroupMultiplier       string
+	CapabilityVersion         string
 }
 
 type EstimateResult struct {
+	CapabilityVersion         string          `json:"capability_version,omitempty"`
 	BaseResolution            string          `json:"base_resolution"`
 	ResolvedSize              *string         `json:"resolved_size"`
 	EstimatedPoints           string          `json:"estimated_points"`

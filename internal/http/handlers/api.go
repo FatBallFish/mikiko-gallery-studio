@@ -237,13 +237,15 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 		adminUserSvc = adminuserservice.NewServiceWithStore(nil, billingSvc)
 	}
 	callRecordSvc := admincallrecordservice.NewServiceWithStore(nil)
+	capsSvc := capserv.NewServiceWithAttachmentPolicy(cfg, attachmentPolicy)
+	capsSvc.SetBillingConfigResolver(billingSvc)
 	return &API{
 		auth:       authSvc,
 		adminAuth:  adminAuthSvc,
 		apiKeys:    apiKeySvc,
 		billing:    billingSvc,
 		assets:     assetSvc,
-		caps:       capserv.NewServiceWithAttachmentPolicy(cfg, attachmentPolicy),
+		caps:       capsSvc,
 		compat:     compatservice.NewServiceWithTaskService(cfg, taskSvc),
 		tasks:      taskSvc,
 		admin:      adminSvc,
@@ -831,7 +833,7 @@ func (a *API) HandleEstimate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	result, err := a.billing.Estimate(domainbilling.EstimateRequest{
+	result, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
 		RouteModelCode:            r.URL.Query().Get("route_model_code"),
@@ -1526,7 +1528,7 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	result, err := a.billing.Estimate(domainbilling.EstimateRequest{
+	result, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
 		RouteModelCode:            r.URL.Query().Get("route_model_code"),
@@ -1562,7 +1564,7 @@ func (a *API) HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	result, err := a.caps.ListForGroups(r.Context(), userGroupCodes(user), a.cfg.Billing.TaskMultipliers)
+	result, err := a.caps.ListForGroups(r.Context(), userGroupCodes(user))
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -1581,7 +1583,7 @@ func (a *API) HandleOpenCapabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer cleanup()
-	result, err := a.caps.ListForGroups(r.Context(), []string{identity.GroupCode}, a.cfg.Billing.TaskMultipliers)
+	result, err := a.caps.ListForGroups(r.Context(), []string{identity.GroupCode})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -7608,7 +7610,7 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		a.writeCompatError(w, compatservice.MapError(err))
 		return
 	}
-	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
+	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeTextToImage),
 		AbstractModel:             modelSelection.AbstractModel,
 		RouteModelCode:            modelSelection.RouteModelCode,
@@ -7705,7 +7707,7 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 		a.writeCompatError(w, compatservice.MapError(err))
 		return
 	}
-	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
+	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeImageEdit),
 		AbstractModel:             modelSelection.AbstractModel,
 		RouteModelCode:            modelSelection.RouteModelCode,
@@ -7819,6 +7821,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		RequestedOutputImageCount int      `json:"requested_output_image_count"`
 		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
 		ResponseMode              string   `json:"response_mode"`
+		CapabilityVersion         string   `json:"capability_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -7853,6 +7856,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		UserGroupMultiplier: user.GroupMultiplier,
 		ResponseMode:        req.ResponseMode,
 		SavePolicy:          "private",
+		CapabilityVersion:   req.CapabilityVersion,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, compatservice.MapError(err))
@@ -7887,6 +7891,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		RequestedOutputImageCount int      `json:"requested_output_image_count"`
 		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
 		ResponseMode              string   `json:"response_mode"`
+		CapabilityVersion         string   `json:"capability_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -7901,7 +7906,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if taskID == "" {
 		taskID = uuid.NewString()
 	}
-	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
+	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  req.TaskType,
 		AbstractModel:             req.AbstractModel,
 		RouteModelCode:            req.RouteModelCode,
@@ -7919,6 +7924,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		UserGroupCode:             identity.GroupCode,
 		UserGroupCodes:            []string{identity.GroupCode},
 		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
+		CapabilityVersion:         req.CapabilityVersion,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, compatservice.MapError(err))
@@ -7954,6 +7960,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
 		ResponseMode:        req.ResponseMode,
 		SavePolicy:          "private",
+		CapabilityVersion:   firstNonEmptyString(req.CapabilityVersion, estimate.CapabilityVersion),
 	})
 	if err != nil {
 		a.apiKeys.ReleaseQuota(r.Context(), identity, taskID)

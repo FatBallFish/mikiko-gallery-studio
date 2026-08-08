@@ -27,12 +27,11 @@ import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHi
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
 import { projectWorkspaceImageDetail } from './workspaceImageDetail'
 import { referenceImageAccept, referenceImagePolicy, validateReferenceImageFile } from './referenceImageUpload'
-import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceBackgroundForFormat, workspaceBackgroundOptions, workspaceCompressionVisible, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspaceRatioPixelEstimate } from './workspaceParameters'
+import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceBackgroundForFormat, workspaceBackgroundOptions, workspaceCompressionVisible, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspacePixelOptions, workspaceRatioOptions, workspaceRatioPixelEstimate, workspaceSizeModeOptions, type WorkspaceSizeMode } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 
 type OutputTab = 'current' | 'history'
-type WorkspaceSizeMode = 'auto' | 'ratio' | 'pixel'
 type WorkspacePixelSelection = 'preset' | 'custom'
 type RestoreParameters = {
   routeModelCode?: string
@@ -57,21 +56,6 @@ function selectableModels(capability: Capability, taskType: ImageTaskType) {
 
 function baseResolutionOptions(model: CapabilityModelGroup | undefined) {
   return model?.base_resolution?.length ? model.base_resolution : []
-}
-
-function ratioOptions(model: CapabilityModelGroup | undefined, capability: Capability | null) {
-  if (!model) return []
-  return model.aspect_ratios?.length ? model.aspect_ratios : capability?.aspect_ratios ?? []
-}
-
-function sizeModeOptions(model: CapabilityModelGroup | undefined): WorkspaceSizeMode[] {
-	const modes = model?.size_modes?.filter((mode): mode is WorkspaceSizeMode => mode === 'auto' || mode === 'ratio' || mode === 'pixel') ?? []
-  return modes.length ? Array.from(new Set(modes)) : ['ratio']
-}
-
-function pixelOptions(model: CapabilityModelGroup | undefined, capability: Capability | null) {
-  if (!model) return []
-  return model.pixel_sizes?.length ? model.pixel_sizes : capability?.pixel_sizes ?? []
 }
 
 function isTerminalStatus(status: ImageTaskStatus | string) {
@@ -623,10 +607,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const availableModels = useMemo(() => capability ? selectableModels(capability, taskType) : [], [capability, taskType])
   const rawSelectedModel = useMemo(() => availableModels.find((item) => item.code === model), [availableModels, model])
   const selectedModel = useMemo(() => workspaceModelForTask(rawSelectedModel, taskType), [rawSelectedModel, taskType])
-  const sizeModes = useMemo(() => sizeModeOptions(selectedModel), [selectedModel])
+	const sizeModes = useMemo(() => workspaceSizeModeOptions(selectedModel), [selectedModel])
   const baseResolutionOptionsForModel = useMemo(() => baseResolutionOptions(selectedModel), [selectedModel])
-  const ratios = useMemo(() => ratioOptions(selectedModel, capability), [selectedModel, capability])
-  const pixelSizes = useMemo(() => pixelOptions(selectedModel, capability), [selectedModel, capability])
+	const ratios = useMemo(() => workspaceRatioOptions(selectedModel, capability?.aspect_ratios ?? []), [selectedModel, capability])
+	const pixelSizes = useMemo(() => workspacePixelOptions(selectedModel, capability?.pixel_sizes ?? []), [selectedModel, capability])
 	const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
 	const backgroundOptions = useMemo(() => workspaceBackgroundOptions(selectedModel), [selectedModel])
   const compressionVisible = workspaceCompressionVisible(selectedModel, outputFormat)
@@ -676,11 +660,11 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       setCustomHeight('')
     }
     setPixelSize(restoredPixelSize && pixelSizes.includes(restoredPixelSize) ? restoredPixelSize : pixelSizes[0] ?? '')
-    setQuality(matchWorkspaceCapabilityOption(outputOptions.quality, restoreParameters?.quality) ?? outputOptions.quality[0])
-	setOutputFormat(matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0])
-	setBackground(workspaceBackgroundForFormat(selectedModel, restoreParameters?.background ?? background, matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0]))
+	setQuality(matchWorkspaceCapabilityOption(outputOptions.quality, restoreParameters?.quality) ?? outputOptions.quality[0] ?? '')
+	setOutputFormat(matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0] ?? '')
+	setBackground(workspaceBackgroundForFormat(selectedModel, restoreParameters?.background ?? background, matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0] ?? ''))
     setOutputCompression(restoreParameters?.outputCompression ?? 100)
-    setModeration(matchWorkspaceCapabilityOption(outputOptions.moderation, restoreParameters?.moderation) ?? outputOptions.moderation[0])
+	setModeration(matchWorkspaceCapabilityOption(outputOptions.moderation, restoreParameters?.moderation) ?? outputOptions.moderation[0] ?? '')
     setCount((current) => normalizeWorkspaceImageCount(restoreParameters?.imageCount ?? current))
     restoreParametersRef.current = null
   }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions, customSizeSupported, customRatioSupported])
@@ -978,7 +962,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const editSourceAssets = activeTaskType === 'image_edit' ? [...editRefs] : []
     setBusy(true)
     try {
-      const task = await userApi.createTask({ ...estimatePayload, prompt, negative_prompt: negative, idempotency_key: crypto.randomUUID() })
+      const task = await userApi.createTask({ ...estimatePayload, prompt, negative_prompt: negative, capability_version: estimate?.capability_version, idempotency_key: crypto.randomUUID() })
       const nextTask = editSourceAssets.length ? { ...task, reference_assets: editSourceAssets } : task
       setRecords((items) => mergeWorkspaceTaskRecords(items, nextTask, {
         limit: 20,
@@ -995,6 +979,15 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       app.notify('info', '任务已进入队列，正在等待实时状态')
       await app.refreshAccount()
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'capability_changed') {
+        try {
+          const nextCapability = await userApi.getCapabilities()
+          setCapability(nextCapability)
+          setEstimateSnapshot({ key: '', estimate: null, error: '' })
+        } catch (refreshError) {
+          setEstimateSnapshot({ key: '', estimate: null, error: errorMessage(refreshError) })
+        }
+      }
       app.notify('error', errorMessage(err))
     } finally {
       setBusy(false)

@@ -33,12 +33,19 @@ type UnavailableReason struct {
 }
 
 type Service struct {
+	cfg                   config.Config
 	resolver              *modelhub.Resolver
+	routing               modelhub.ModelRoutingSource
+	billing               billingConfigResolver
 	referenceImageMaxMB   int
 	referenceImageMaxByte int64
 	referenceImageFormats []string
 	referenceImageMIMEs   []string
 	attachmentPolicy      *assetservice.AttachmentPolicyResolver
+}
+
+type billingConfigResolver interface {
+	CurrentBillingConfig(ctx context.Context) config.BillingConfig
 }
 
 func NewService(cfg config.Config) *Service {
@@ -50,6 +57,7 @@ func NewServiceWithAttachmentPolicy(cfg config.Config, policy *assetservice.Atta
 	defaults := config.ApplyAttachmentPolicyDefaults(cfg.AttachmentPolicy, cfg.GenerationLimits.ReferenceImageMaxMB)
 	fallback, _ := assetservice.NewAttachmentPolicyResolver(defaults, nil).Resolve(context.Background())
 	return &Service{
+		cfg:                   cfg,
 		resolver:              modelhub.NewResolver(cfg),
 		referenceImageMaxMB:   fallback.Image.MaxMB,
 		referenceImageMaxByte: fallback.Image.MaxBytes,
@@ -60,7 +68,12 @@ func NewServiceWithAttachmentPolicy(cfg config.Config, policy *assetservice.Atta
 }
 
 func (s *Service) SetModelRoutingSource(source modelhub.ModelRoutingSource) {
+	s.routing = source
 	s.resolver.SetModelRoutingSource(source)
+}
+
+func (s *Service) SetBillingConfigResolver(resolver billingConfigResolver) {
+	s.billing = resolver
 }
 
 func (s *Service) List() Response {
@@ -80,8 +93,16 @@ func (s *Service) List() Response {
 	return resp
 }
 
-func (s *Service) ListForGroups(ctx context.Context, groupCodes []string, taskMultipliers map[string]string) (Response, error) {
-	items, err := s.resolver.ListVisibleRouteModels(ctx, groupCodes, taskMultipliers)
+func (s *Service) ListForGroups(ctx context.Context, groupCodes []string) (Response, error) {
+	cfg := s.cfg
+	if s.billing != nil {
+		cfg.Billing = s.billing.CurrentBillingConfig(ctx)
+	}
+	resolver := modelhub.NewResolver(cfg)
+	if s.routing != nil {
+		resolver.SetModelRoutingSource(s.routing)
+	}
+	items, err := resolver.ListVisibleRouteModels(ctx, groupCodes, cfg.Billing.TaskMultipliers)
 	if err != nil {
 		return Response{}, err
 	}

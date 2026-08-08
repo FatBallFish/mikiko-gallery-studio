@@ -8,6 +8,8 @@ export type WorkspaceOutputParameters = {
   moderation: string
 }
 
+export type WorkspaceSizeMode = 'auto' | 'ratio' | 'pixel'
+
 export function normalizeWorkspaceCustomSize(width: string, height: string, model?: CapabilityModelGroup): CustomImageSizeNormalization {
 	if (!/^\d+$/.test(width.trim()) || !/^\d+$/.test(height.trim())) {
 		return validateCustomImageSize(Number.NaN, Number.NaN)
@@ -58,6 +60,22 @@ export function workspaceCustomRatioSupported(model: CapabilityModelGroup | unde
 	return Boolean(model?.supports_custom_ratio)
 }
 
+export function workspaceSizeModeOptions(model: CapabilityModelGroup | undefined): WorkspaceSizeMode[] {
+	const values = model?.size_modes
+	if (values === undefined) return model ? ['ratio'] : []
+	return Array.from(new Set(values.filter((mode): mode is WorkspaceSizeMode => mode === 'auto' || mode === 'ratio' || mode === 'pixel')))
+}
+
+export function workspaceRatioOptions(model: CapabilityModelGroup | undefined, legacyFallback: string[]) {
+	if (!model) return []
+	return model.aspect_ratios === undefined ? legacyFallback : model.aspect_ratios
+}
+
+export function workspacePixelOptions(model: CapabilityModelGroup | undefined, legacyFallback: string[]) {
+	if (!model) return []
+	return model.pixel_sizes === undefined ? legacyFallback : model.pixel_sizes
+}
+
 export function workspaceBackgroundOptions(model: CapabilityModelGroup | undefined) {
 	return normalizedOptions(model?.supported_backgrounds, [])
 }
@@ -104,16 +122,17 @@ export function normalizeWorkspaceOutputParameters(
   current: WorkspaceOutputParameters,
 ): WorkspaceOutputParameters {
   const options = workspaceOutputOptions(model)
-  const outputFormat = options.outputFormat.includes(current.outputFormat) ? current.outputFormat : options.outputFormat[0]
-  return {
-    quality: options.quality.includes(current.quality) ? current.quality : options.quality[0],
+	const outputFormat = options.outputFormat.includes(current.outputFormat) ? current.outputFormat : options.outputFormat[0] ?? ''
+	return {
+		quality: options.quality.includes(current.quality) ? current.quality : options.quality[0] ?? '',
     outputFormat,
     outputCompression: Math.max(1, Math.min(100, Math.round(current.outputCompression) || 100)),
-    moderation: options.moderation.includes(current.moderation) ? current.moderation : options.moderation[0],
+		moderation: options.moderation.includes(current.moderation) ? current.moderation : options.moderation[0] ?? '',
   }
 }
 
 function normalizedOptions(values: string[] | undefined, fallback: string[]) {
-  const normalized = Array.from(new Set((values ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean)))
-  return normalized.length ? normalized : fallback
+	if (values === undefined) return fallback
+	const normalized = Array.from(new Set((values ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean)))
+	return normalized
 }

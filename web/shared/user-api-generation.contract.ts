@@ -96,19 +96,36 @@ assertDeepEqual(model.supports_output_compression, false, 'missing compression s
 assertDeepEqual(model.supports_custom_size, true, 'Go custom-size support should survive normalization')
 assertDeepEqual(model.capabilities_by_task_type, {
   text_to_image: {
-    base_resolution: ['2k'], auto_base_resolution: '2k', size_modes: ['ratio'], aspect_ratios: ['1:1'], pixel_sizes: [],
-    quality: ['high'], output_format: ['jpeg'], supports_output_compression: true, supports_custom_size: false, supports_custom_ratio: false, supported_backgrounds: [],
-    min_width: undefined, max_width: undefined, min_height: undefined, max_height: undefined,
+    base_resolution: ['2k'], auto_base_resolution: '2k', size_modes: ['ratio'], aspect_ratios: ['1:1'],
+    quality: ['high'], output_format: ['jpeg'], supports_output_compression: true, supports_custom_size: false, supports_custom_ratio: false,
     moderation: ['auto'], max_output_image_count: 2, max_reference_image_count: 0,
   },
   image_edit: {
-    base_resolution: ['1k'], auto_base_resolution: '1k', size_modes: ['pixel'], aspect_ratios: [], pixel_sizes: ['1024x1024'],
-    quality: ['low'], output_format: ['webp'], supports_output_compression: false, supports_custom_size: true, supports_custom_ratio: false, supported_backgrounds: [],
-    min_width: undefined, max_width: undefined, min_height: undefined, max_height: undefined,
+    base_resolution: ['1k'], auto_base_resolution: '1k', size_modes: ['pixel'], pixel_sizes: ['1024x1024'],
+    quality: ['low'], output_format: ['webp'], supports_output_compression: false, supports_custom_size: true, supports_custom_ratio: false,
     moderation: ['low'], max_output_image_count: 1, max_reference_image_count: 3,
   },
 }, 'complete task-scoped capabilities should survive normalization')
 assertAbsent(model, ['quality', 'output_format', 'moderation'], 'normalization must not advertise unsupported option sets')
+
+const explicitEmptyCapability = normalizeCapabilities({ ModelGroups: [{
+  Code: 'explicit-empty', TaskTypes: ['text_to_image'], CapabilitiesByTaskType: { text_to_image: {
+    BaseResolution: [], SizeModes: [], AspectRatios: [], PixelSizes: [], Quality: [], OutputFormat: [], SupportedBackgrounds: [], Moderation: [],
+  } },
+}] })
+const explicitEmptyTask = explicitEmptyCapability.model_groups[0]?.capabilities_by_task_type?.text_to_image
+assertDeepEqual({
+  base_resolution: explicitEmptyTask?.base_resolution,
+  size_modes: explicitEmptyTask?.size_modes,
+  aspect_ratios: explicitEmptyTask?.aspect_ratios,
+  pixel_sizes: explicitEmptyTask?.pixel_sizes,
+  quality: explicitEmptyTask?.quality,
+  output_format: explicitEmptyTask?.output_format,
+  supported_backgrounds: explicitEmptyTask?.supported_backgrounds,
+  moderation: explicitEmptyTask?.moderation,
+}, {
+  base_resolution: [], size_modes: [], aspect_ratios: [], pixel_sizes: [], quality: [], output_format: [], supported_backgrounds: [], moderation: [],
+}, 'explicit empty task-scoped option sets must remain empty')
 
 const legacyCapability = normalizeCapabilities({ ModelGroups: [{ Code: 'legacy', TaskTypes: ['text_to_image'] }] })
 assertDeepEqual(legacyCapability.model_groups[0]?.supports_custom_size, false, 'missing custom-size support should default to false')
@@ -182,6 +199,7 @@ const createWire = buildCreateTaskWireRequest({
   ...ratioRequest,
   prompt: 'Paint a quiet harbor',
   negative_prompt: 'text, watermark',
+  capability_version: 'capability-v1',
   response_mode: 'sync',
   idempotency_key: 'generation-idem-1',
 })
@@ -201,6 +219,7 @@ assertDeepEqual(createWire, {
     requested_output_image_count: 2,
     reference_asset_ids: ['ref-1'],
     response_mode: 'async',
+    capability_version: 'capability-v1',
   },
   headers: { 'Idempotency-Key': 'generation-idem-1' },
 }, 'create conversion should preserve negative prompts and emit the native async Go contract')

@@ -316,6 +316,9 @@ components:
         data:
           type: object
           properties:
+            capability_version:
+              type: string
+              description: Effective route capability snapshot token. Send it with task creation to detect configuration drift.
             base_resolution:
               type: string
             estimated_points:
@@ -867,7 +870,7 @@ components:
           $ref: ./common.yaml#/components/schemas/ReferenceAsset
     CreateImageTaskRequest:
       type: object
-      required: [task_type, prompt, route_model_code, base_resolution, requested_output_image_count]
+      required: [task_type, prompt, route_model_code, requested_output_image_count]
       properties:
         task_type:
           type: string
@@ -888,16 +891,19 @@ components:
           description: Legacy static model selector retained for older clients.
         size_mode:
           type: string
-          enum: [ratio, pixel]
+          enum: [auto, ratio, pixel]
         base_resolution:
           type: string
-          enum: [auto, 1k, 2k, 4k]
+          enum: [1k, 2k, 4k]
         quality:
           type: string
           enum: [auto, low, medium, high]
         output_format:
           type: string
           enum: [png, jpeg, webp]
+        background:
+          type: string
+          enum: [auto, opaque, transparent]
         output_compression:
           type: integer
           minimum: 0
@@ -929,6 +935,9 @@ components:
           type: string
           enum: [async]
           description: Native Agent/Open API task creation is async-only; omit the field or send async, then poll task detail.
+        capability_version:
+          type: string
+          description: Optional token returned by estimate. A stale token is rejected with capability_changed.
     ImageTaskResponse:
       type: object
       properties:
