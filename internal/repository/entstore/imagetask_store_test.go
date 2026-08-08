@@ -68,9 +68,13 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 		OutputImageCount:    2,
 		ReferenceImageCount: 2,
 		ReferenceAssetIDs:   []string{"asset-a", "asset-b"},
-		EstimatedPoints:     "16.00000",
-		ActualPoints:        "8.00000",
-		Results:             []provider.ImageResult{{URL: "https://cdn.example.com/task.png"}},
+		GenerationSnapshot: domainimagetask.GenerationSnapshot{
+			CapabilityVersion: "capability-v1", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1",
+			ResolvedSize: "896x896", ResolvedWidth: 896, ResolvedHeight: 896,
+		},
+		EstimatedPoints: "16.00000",
+		ActualPoints:    "8.00000",
+		Results:         []provider.ImageResult{{URL: "https://cdn.example.com/task.png"}},
 	}
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -91,6 +95,9 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 	}
 	if len(loaded.ReferenceAssetIDs) != 2 || loaded.ReferenceAssetIDs[0] != "asset-a" || loaded.ReferenceAssetIDs[1] != "asset-b" {
 		t.Fatalf("expected reference asset ids to round-trip, got %#v", loaded.ReferenceAssetIDs)
+	}
+	if loaded.GenerationSnapshot != task.GenerationSnapshot {
+		t.Fatalf("expected immutable generation snapshot to round-trip, got %#v", loaded.GenerationSnapshot)
 	}
 	if len(loaded.Results) != 1 {
 		t.Fatalf("expected persisted image result, got %#v", loaded.Results)

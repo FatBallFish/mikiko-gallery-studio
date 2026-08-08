@@ -16,6 +16,7 @@ import (
 const (
 	modelAccountCapabilityMigrationCategory = "system_migration"
 	modelAccountCapabilityMigrationKey      = "model_account_capability_defaults_v1"
+	modelAccountSizeBoundsMigrationKey      = "model_account_size_bounds_v1"
 )
 
 var legacyModelAccountSupportedRatios = []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
@@ -298,6 +299,82 @@ func BackfillLegacyModelAccountCapabilities(ctx context.Context, client *repoent
 		return 0, fmt.Errorf("commit model account capability migration: %w", err)
 	}
 	return updated, nil
+}
+
+func BackfillLegacyModelAccountSizeBounds(ctx context.Context, client *repoent.Client) (int, error) {
+	if client == nil {
+		return 0, fmt.Errorf("model account size bounds migration client is required")
+	}
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("start model account size bounds migration: %w", err)
+	}
+	rollback := func(cause error) (int, error) {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return 0, fmt.Errorf("%w (rollback: %v)", cause, rollbackErr)
+		}
+		return 0, cause
+	}
+
+	applied, err := tx.ConfigItem.Query().Where(
+		configitem.ConfigCategoryEQ(modelAccountCapabilityMigrationCategory),
+		configitem.ConfigKeyEQ(modelAccountSizeBoundsMigrationKey),
+		configitem.ScopeEQ("global"),
+	).Exist(ctx)
+	if err != nil {
+		return rollback(fmt.Errorf("check model account size bounds migration marker: %w", err))
+	}
+	if applied {
+		_ = tx.Rollback()
+		return 0, nil
+	}
+	if _, err := tx.ConfigItem.Create().
+		SetConfigCategory(modelAccountCapabilityMigrationCategory).
+		SetConfigKey(modelAccountSizeBoundsMigrationKey).
+		SetConfigValue(map[string]any{"applied": true}).
+		SetScope("global").
+		SetUpdatedAt(time.Now().UTC()).
+		Save(ctx); err != nil {
+		_, rollbackErr := rollback(fmt.Errorf("create model account size bounds migration marker: %w", err))
+		if repoent.IsConstraintError(err) {
+			markerExists, queryErr := client.ConfigItem.Query().Where(
+				configitem.ConfigCategoryEQ(modelAccountCapabilityMigrationCategory),
+				configitem.ConfigKeyEQ(modelAccountSizeBoundsMigrationKey),
+				configitem.ScopeEQ("global"),
+			).Exist(ctx)
+			if queryErr == nil && markerExists {
+				return 0, nil
+			}
+		}
+		return 0, rollbackErr
+	}
+
+	models, err := tx.ModelAccountModel.Query().Where(
+		modelaccountmodel.DeletedAtIsNil(),
+		modelaccountmodel.Or(
+			modelaccountmodel.MaxWidthEQ(4096),
+			modelaccountmodel.MaxHeightEQ(4096),
+		),
+	).All(ctx)
+	if err != nil {
+		return rollback(fmt.Errorf("query legacy model account size bounds: %w", err))
+	}
+	for _, model := range models {
+		update := tx.ModelAccountModel.UpdateOneID(model.ID)
+		if model.MaxWidth == 4096 {
+			update.SetMaxWidth(3840)
+		}
+		if model.MaxHeight == 4096 {
+			update.SetMaxHeight(3840)
+		}
+		if _, err := update.Save(ctx); err != nil {
+			return rollback(fmt.Errorf("backfill model account %d size bounds: %w", model.ID, err))
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit model account size bounds migration: %w", err)
+	}
+	return len(models), nil
 }
 
 func isPostgresURL(url string) bool {

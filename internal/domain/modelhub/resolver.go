@@ -37,6 +37,7 @@ type ResolveRequest struct {
 	RouteKey                  string
 	UserGroupCodes            []string
 	ExpectedCapabilityVersion string
+	TrustedResolvedSize       string
 }
 
 func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []string, taskMultiplierByType map[string]string) ([]VisibleRouteModel, error) {
@@ -1169,7 +1170,10 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 	}
 	req = normalizedReq
 	var normalizedGeneration NormalizedGenerationRequest
-	if !strings.EqualFold(strings.TrimSpace(req.SizeMode), sizeModeLegacyRatio) {
+	trustedResolvedSize := NormalizePixelSize(req.TrustedResolvedSize)
+	if trustedResolvedSize != "" {
+		partial.ResolvedSize = trustedResolvedSize
+	} else if !strings.EqualFold(strings.TrimSpace(req.SizeMode), sizeModeLegacyRatio) {
 		normalizedGeneration, err = normalizeVisibleRouteRequest(visibleCapability, req)
 		if err != nil {
 			return partial, err
@@ -1188,7 +1192,7 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		return partial, err
 	}
 	partial.BaseResolution = baseResolution
-	if strings.EqualFold(strings.TrimSpace(req.SizeMode), sizeModeLegacyRatio) {
+	if trustedResolvedSize == "" && strings.EqualFold(strings.TrimSpace(req.SizeMode), sizeModeLegacyRatio) {
 		legacyValidation := req
 		legacyValidation.SizeMode = SizeModeRatio
 		legacyValidation.BaseResolution = baseResolution
@@ -1217,6 +1221,9 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		candidate, ok := accountModels[item.AccountModelID]
 		if !ok {
 			continue
+		}
+		if trustedResolvedSize != "" {
+			candidate = candidateWithTrustedSizeCapability(candidate, req, baseResolution, trustedResolvedSize)
 		}
 		if !CandidateSupportsRequest(candidate, req, baseResolution) {
 			continue
@@ -1254,6 +1261,25 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 		CapabilityVersion:      capabilityVersion,
 		EffectiveMultiplier:    multiplier.StringFixed(5),
 	}, nil
+}
+
+func candidateWithTrustedSizeCapability(candidate ProviderCandidate, req ResolveRequest, baseResolution, resolvedSize string) ProviderCandidate {
+	mode := PublicSizeMode(req.SizeMode)
+	candidate.SizeModes = appendUnique(candidate.SizeModes, mode)
+	switch mode {
+	case SizeModeRatio:
+		candidate.SupportedBaseResolution = appendUnique(candidate.SupportedBaseResolution, strings.ToLower(strings.TrimSpace(baseResolution)))
+		candidate.SupportedAspectRatios = appendUnique(candidate.SupportedAspectRatios, NormalizeRatio(req.AspectRatio))
+		candidate.SupportsCustomRatio = true
+		candidate.MinWidth, candidate.MaxWidth = 0, 0
+		candidate.MinHeight, candidate.MaxHeight = 0, 0
+	case SizeModePixel:
+		candidate.SupportedPixelSizes = appendUnique(candidate.SupportedPixelSizes, resolvedSize)
+		candidate.SupportsCustomSize = true
+		candidate.MinWidth, candidate.MaxWidth = 0, 0
+		candidate.MinHeight, candidate.MaxHeight = 0, 0
+	}
+	return candidate
 }
 
 type capabilityVersionCandidate struct {

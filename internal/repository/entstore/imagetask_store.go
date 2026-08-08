@@ -1739,6 +1739,13 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 			return domainimagetask.Task{}, err
 		}
 	}
+	if entity.RoutingSnapshot != nil {
+		if snapshot, err := decodeGenerationSnapshot(entity.RoutingSnapshot["generation_snapshot"]); err == nil {
+			task.GenerationSnapshot = snapshot
+		} else {
+			return domainimagetask.Task{}, err
+		}
+	}
 
 	if entity.ProviderTrace != nil {
 		trace := entity.ProviderTrace
@@ -1782,6 +1789,24 @@ func buildRoutingSnapshot(task domainimagetask.Task) (map[string]any, error) {
 		"provider_model_id":      task.ProviderModelID,
 		"route_snapshot_version": task.RouteSnapshotVersion,
 		"fallback_count":         task.FallbackCount,
+	}
+	if strings.TrimSpace(task.GenerationSnapshot.CapabilityVersion) != "" {
+		generationSnapshot, err := jsonRoundTrip(task.GenerationSnapshot)
+		if err != nil {
+			return nil, err
+		}
+		snapshot["generation_snapshot"] = generationSnapshot
+	}
+	return snapshot, nil
+}
+
+func decodeGenerationSnapshot(value any) (domainimagetask.GenerationSnapshot, error) {
+	var snapshot domainimagetask.GenerationSnapshot
+	if value == nil {
+		return snapshot, nil
+	}
+	if err := decodeJSONValue(value, &snapshot); err != nil {
+		return domainimagetask.GenerationSnapshot{}, err
 	}
 	return snapshot, nil
 }

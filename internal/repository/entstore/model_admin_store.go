@@ -1062,9 +1062,9 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 			SupportsOutputCompression: model.SupportsOutputCompression,
 			SupportsCustomSize:        model.SupportsCustomSize,
 			MinWidth:                  model.MinWidth,
-			MaxWidth:                  model.MaxWidth,
+			MaxWidth:                  normalizeLegacyModelAccountMaxBound(model.MaxWidth),
 			MinHeight:                 model.MinHeight,
-			MaxHeight:                 model.MaxHeight,
+			MaxHeight:                 normalizeLegacyModelAccountMaxBound(model.MaxHeight),
 			Moderation:                append([]string(nil), model.Moderation...),
 			HealthStatus:              account.Status,
 			TimeoutMS:                 account.TimeoutMs,
@@ -1275,9 +1275,9 @@ func (s *ModelAdminStore) mapModelAccountModel(ctx context.Context, entity *repo
 		SupportsOutputCompression: entity.SupportsOutputCompression,
 		SupportsCustomSize:        entity.SupportsCustomSize,
 		MinWidth:                  entity.MinWidth,
-		MaxWidth:                  entity.MaxWidth,
+		MaxWidth:                  normalizeLegacyModelAccountMaxBound(entity.MaxWidth),
 		MinHeight:                 entity.MinHeight,
-		MaxHeight:                 entity.MaxHeight,
+		MaxHeight:                 normalizeLegacyModelAccountMaxBound(entity.MaxHeight),
 		Moderation:                append([]string(nil), entity.Moderation...),
 		CostPerImage:              entity.CostPerImage,
 		Currency:                  entity.Currency,
@@ -1286,6 +1286,13 @@ func (s *ModelAdminStore) mapModelAccountModel(ctx context.Context, entity *repo
 		CreatedAt:                 entity.CreatedAt,
 		UpdatedAt:                 entity.UpdatedAt,
 	}
+}
+
+func normalizeLegacyModelAccountMaxBound(value int) int {
+	if value == 4096 {
+		return 3840
+	}
+	return value
 }
 
 func mapRouteModel(entity *repoent.RouteModel, groupIDs []int64) domainmodeladmin.RouteModel {

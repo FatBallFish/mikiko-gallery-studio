@@ -453,7 +453,18 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 	if snapshotErr != nil {
 		return s.failOwnedTask(ctx, task, owner, snapshotErr)
 	}
-	resolved, err := s.resolveTask(ctx, task.ID, task.AbstractModel, task.RouteModelCode, nil, task.TaskType, task.SizeMode, requestedAspectRatio, requestedBaseResolution, task.Quality, task.OutputFormat, task.Background, task.OutputCompression, task.Moderation, requestedSize, task.OutputImageCount, len(referenceImages), false, "")
+	trustedResolvedSize, snapshotErr := validateImmutableGenerationSnapshot(task)
+	if snapshotErr != nil {
+		return s.failOwnedTask(ctx, task, owner, snapshotErr)
+	}
+	resolved, err := s.resolver.ResolveContext(ctx, modelhub.ResolveRequest{
+		AbstractModel: task.AbstractModel, RouteModelCode: task.RouteModelCode, TaskType: task.TaskType,
+		SizeMode: task.SizeMode, AspectRatio: requestedAspectRatio, BaseResolution: requestedBaseResolution,
+		Quality: task.Quality, OutputFormat: task.OutputFormat, Background: task.Background,
+		OutputCompression: task.OutputCompression, Moderation: task.Moderation, RequestedSize: requestedSize,
+		RequestedOutputImageCount: task.OutputImageCount, ReferenceImageCount: len(referenceImages),
+		RouteKey: task.ID, TrustedResolvedSize: trustedResolvedSize,
+	})
 	if err != nil {
 		return s.failOwnedTask(ctx, task, owner, err)
 	}
@@ -2529,6 +2540,17 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 		task.AspectRatio = ""
 		task.ResolvedWidth, task.ResolvedHeight, _ = modelhub.ParseImageSize(task.RequestedSize)
 	}
+	if strings.TrimSpace(resolved.CapabilityVersion) != "" {
+		task.GenerationSnapshot = domainimagetask.GenerationSnapshot{
+			CapabilityVersion: resolved.CapabilityVersion,
+			SizeMode:          task.SizeMode,
+			BaseResolution:    task.BaseResolution,
+			AspectRatio:       task.AspectRatio,
+			ResolvedSize:      task.RequestedSize,
+			ResolvedWidth:     task.ResolvedWidth,
+			ResolvedHeight:    task.ResolvedHeight,
+		}
+	}
 	setInitialTaskProgress(&task)
 	return task
 }
@@ -2576,6 +2598,10 @@ func generationResolveFieldsFromTask(task domainimagetask.Task) (baseResolution,
 }
 
 func validateResolvedSizeSnapshot(task domainimagetask.Task, resolved modelhub.ResolvedRequest) error {
+	if strings.TrimSpace(task.GenerationSnapshot.CapabilityVersion) != "" {
+		_, err := validateImmutableGenerationSnapshot(task)
+		return err
+	}
 	mode := modelhub.PublicSizeMode(task.SizeMode)
 	currentSize := modelhub.NormalizePixelSize(task.RequestedSize)
 	if strings.TrimSpace(resolved.ResolvedSize) == "" {
@@ -2611,6 +2637,27 @@ func validateResolvedSizeSnapshot(task domainimagetask.Task, resolved modelhub.R
 		}
 	}
 	return nil
+}
+
+func validateImmutableGenerationSnapshot(task domainimagetask.Task) (string, error) {
+	snapshot := task.GenerationSnapshot
+	if strings.TrimSpace(snapshot.CapabilityVersion) == "" {
+		return "", nil
+	}
+	mode := modelhub.PublicSizeMode(task.SizeMode)
+	if mode != modelhub.PublicSizeMode(snapshot.SizeMode) ||
+		!strings.EqualFold(strings.TrimSpace(task.BaseResolution), strings.TrimSpace(snapshot.BaseResolution)) ||
+		modelhub.NormalizeRatio(task.AspectRatio) != modelhub.NormalizeRatio(snapshot.AspectRatio) ||
+		modelhub.NormalizePixelSize(task.RequestedSize) != modelhub.NormalizePixelSize(snapshot.ResolvedSize) ||
+		task.ResolvedWidth != snapshot.ResolvedWidth || task.ResolvedHeight != snapshot.ResolvedHeight {
+		return "", errs.New(400, modelhub.CodeInvalidSizeMode, "task size fields do not match the immutable generation snapshot")
+	}
+	if strings.TrimSpace(task.PricingSnapshot.SizeMode) != "" &&
+		(mode != modelhub.PublicSizeMode(task.PricingSnapshot.SizeMode) ||
+			modelhub.NormalizePixelSize(task.RequestedSize) != modelhub.NormalizePixelSize(task.PricingSnapshot.RequestedSize)) {
+		return "", errs.New(400, modelhub.CodeInvalidSizeMode, "task size snapshot does not match its pricing snapshot")
+	}
+	return modelhub.NormalizePixelSize(snapshot.ResolvedSize), nil
 }
 
 func setInitialTaskProgress(task *domainimagetask.Task) {

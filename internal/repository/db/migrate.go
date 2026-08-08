@@ -216,11 +216,15 @@ func migrateLocked(ctx context.Context, database *sql.DB, req MigrationRequest) 
 	if err != nil {
 		return MigrationResult{}, fmt.Errorf("backfill legacy model account capabilities: %w", err)
 	}
+	sizeBoundsBackfilled, err := BackfillLegacyModelAccountSizeBounds(ctx, client)
+	if err != nil {
+		return MigrationResult{}, fmt.Errorf("backfill legacy model account size bounds: %w", err)
+	}
 	result, err := recordInstallationMigration(ctx, client, req)
 	if err != nil {
 		return MigrationResult{}, err
 	}
-	result.BackfilledRows = backfilled
+	result.BackfilledRows = backfilled + sizeBoundsBackfilled
 	return result, nil
 }
 

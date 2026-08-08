@@ -1011,6 +1011,59 @@ func TestExecuteLeasedTaskRejectsForgedRatioSnapshotBeforeProviderCall(t *testin
 	}
 }
 
+func TestExecuteLeasedTaskPreservesQueuedRatioSizeAfterCapabilityBoundsChange(t *testing.T) {
+	captured := make(chan provider.ImageRequest, 1)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(_ context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			captured <- req
+			return provider.ImageResponse{
+				Created: 1770000043,
+				Data:    []provider.ImageResult{{B64JSON: tinyPNGBase64}},
+			}, nil
+		}},
+	}
+	routing := &staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		Version:     "bounds-v1",
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 403, ModelAccountID: 303, Provider: "openai", ModelCode: "gpt-image-2",
+			SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"ratio"},
+			SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"},
+			MinWidth: 512, MaxWidth: 900, MinHeight: 512, MaxHeight: 900, MaxImageCount: 1, HealthStatus: "enabled",
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 403, Enabled: true}},
+		Prices:     []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true}},
+	}}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(taskTestConfig(), providers, store)
+	svc.SetModelRoutingSource(routing)
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID: 95, RouteModelCode: "plus", TaskType: "text_to_image", Prompt: "immutable queued size",
+		SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1", Quality: "auto", OutputFormat: "png", Moderation: "auto", OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if created.RequestedSize != "896x896" || created.ResolvedWidth != 896 || created.ResolvedHeight != 896 {
+		t.Fatalf("created snapshot = %#v, want 896x896", created)
+	}
+
+	routing.snapshot.Version = "bounds-v2"
+	routing.snapshot.ProviderModels[0].MaxWidth = 800
+	routing.snapshot.ProviderModels[0].MaxHeight = 800
+	leased, ok, err := svc.AcquireNextTask(context.Background(), "worker-immutable-size", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("AcquireNextTask ok=%v err=%v", ok, err)
+	}
+	if _, err := svc.ExecuteLeasedTask(context.Background(), leased, "worker-immutable-size", nil); err != nil {
+		t.Fatalf("ExecuteLeasedTask after capability change: %v", err)
+	}
+	if req := <-captured; req.Size != "896x896" {
+		t.Fatalf("provider size = %q, want immutable 896x896", req.Size)
+	}
+}
+
 func TestExecuteLeasedTaskRejectsForgedSizeSnapshotsBeforeProviderCall(t *testing.T) {
 	tests := []struct {
 		name        string

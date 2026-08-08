@@ -350,3 +350,80 @@ func TestBackfillLegacyModelAccountCapabilitiesRunsOnce(t *testing.T) {
 		t.Fatalf("post-migration explicit capabilities must survive restart: %#v", legacy)
 	}
 }
+
+func TestBackfillLegacyModelAccountSizeBoundsRunsOnce(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:legacy-model-size-bounds?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	legacy, err := client.ModelAccountModel.Create().
+		SetAccountID(1).
+		SetModelCode("legacy-size-bounds").
+		SetMaxWidth(4096).
+		SetMaxHeight(4096).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create legacy model: %v", err)
+	}
+	legacyWidthOnly, err := client.ModelAccountModel.Create().
+		SetAccountID(1).
+		SetModelCode("legacy-width-only").
+		SetMaxWidth(4096).
+		SetMaxHeight(3000).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create legacy width-only model: %v", err)
+	}
+	explicitInvalid, err := client.ModelAccountModel.Create().
+		SetAccountID(1).
+		SetModelCode("explicit-invalid-size-bounds").
+		SetMaxWidth(4000).
+		SetMaxHeight(4000).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create explicit invalid model: %v", err)
+	}
+
+	updated, err := BackfillLegacyModelAccountSizeBounds(ctx, client)
+	if err != nil {
+		t.Fatalf("BackfillLegacyModelAccountSizeBounds: %v", err)
+	}
+	if updated != 2 {
+		t.Fatalf("expected two legacy rows to be normalized, got %d", updated)
+	}
+	legacy, err = client.ModelAccountModel.Get(ctx, legacy.ID)
+	if err != nil {
+		t.Fatalf("reload legacy model: %v", err)
+	}
+	if legacy.MaxWidth != 3840 || legacy.MaxHeight != 3840 {
+		t.Fatalf("legacy defaults were not normalized: %#v", legacy)
+	}
+	legacyWidthOnly, err = client.ModelAccountModel.Get(ctx, legacyWidthOnly.ID)
+	if err != nil {
+		t.Fatalf("reload legacy width-only model: %v", err)
+	}
+	if legacyWidthOnly.MaxWidth != 3840 || legacyWidthOnly.MaxHeight != 3000 {
+		t.Fatalf("legacy width must be normalized independently: %#v", legacyWidthOnly)
+	}
+	explicitInvalid, err = client.ModelAccountModel.Get(ctx, explicitInvalid.ID)
+	if err != nil {
+		t.Fatalf("reload explicit invalid model: %v", err)
+	}
+	if explicitInvalid.MaxWidth != 4000 || explicitInvalid.MaxHeight != 4000 {
+		t.Fatalf("non-default invalid bounds must remain visible: %#v", explicitInvalid)
+	}
+
+	updated, err = BackfillLegacyModelAccountSizeBounds(ctx, client)
+	if err != nil {
+		t.Fatalf("second BackfillLegacyModelAccountSizeBounds: %v", err)
+	}
+	if updated != 0 {
+		t.Fatalf("migration must be idempotent, second update count=%d", updated)
+	}
+}

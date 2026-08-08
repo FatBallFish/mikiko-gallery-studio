@@ -184,6 +184,16 @@ type ArtifactRecovery struct {
 	StorageVersion   int64                `json:"storage_version,omitempty"`
 }
 
+type GenerationSnapshot struct {
+	CapabilityVersion string `json:"capability_version"`
+	SizeMode          string `json:"size_mode"`
+	BaseResolution    string `json:"base_resolution,omitempty"`
+	AspectRatio       string `json:"aspect_ratio,omitempty"`
+	ResolvedSize      string `json:"resolved_size,omitempty"`
+	ResolvedWidth     int    `json:"resolved_width,omitempty"`
+	ResolvedHeight    int    `json:"resolved_height,omitempty"`
+}
+
 type Task struct {
 	UserID               int64                         `json:"-"`
 	APIKeyID             int64                         `json:"-"`
@@ -239,6 +249,7 @@ type Task struct {
 	ArtifactRecovery     ArtifactRecovery              `json:"artifact_recovery,omitempty"`
 	Results              []provider.ImageResult        `json:"results,omitempty"`
 	PricingSnapshot      domainbilling.PricingSnapshot `json:"-"`
+	GenerationSnapshot   GenerationSnapshot            `json:"-"`
 	CreatedAt            time.Time                     `json:"created_at"`
 	UpdatedAt            time.Time                     `json:"updated_at"`
 }

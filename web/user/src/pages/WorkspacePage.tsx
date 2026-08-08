@@ -14,7 +14,7 @@ import { errorMessage } from '../useApiResource'
 import { mediaAccess, type MediaResource } from '../mediaAccess'
 import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
 import { displayPoints, publicUnavailableReason, WORKSPACE_REFERENCE_REQUIRED_MESSAGE } from './workspaceGenerateReadiness'
-import { currentWorkspaceEstimate, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
+import { currentWorkspaceEstimate, workspaceDisplayedResolvedSize, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
 import { defaultGalleryImportFilter, filterGalleryImportImages, galleryImportOptions, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
 import { WorkspaceStatusRail } from './WorkspaceStatusRail'
 import { workspaceTaskCardView, workspaceTaskFailureView } from './workspaceTaskFailure'
@@ -719,6 +719,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const currentEstimate = currentWorkspaceEstimate(estimateKey, estimateSnapshot)
   const estimate = currentEstimate.estimate
   const estimateError = currentEstimate.error
+  const displayedResolvedSize = workspaceDisplayedResolvedSize(estimateKey, estimateSnapshot, ratioPixelEstimate)
 
   useEffect(() => {
     if (!capability || !model || !parametersReady) {
@@ -1378,9 +1379,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 				</div>
               ) : null}
 
-              {sizeMode === 'ratio' && ratioPixelEstimate ? (
+              {sizeMode === 'ratio' && displayedResolvedSize ? (
                 <p className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]/45 px-3 py-2 text-xs leading-5 text-[var(--muted)]" role="status">
-                  预计输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{ratioPixelEstimate}</strong>
+                  预计输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{displayedResolvedSize}</strong>
                 </p>
               ) : null}
 

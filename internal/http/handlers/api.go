@@ -7588,13 +7588,17 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		Model          string `json:"model"`
-		Prompt         string `json:"prompt"`
-		Size           string `json:"size"`
-		N              int    `json:"n"`
-		Quality        string `json:"quality"`
-		ResponseFormat string `json:"response_format"`
-		User           string `json:"user"`
+		Model             string `json:"model"`
+		Prompt            string `json:"prompt"`
+		Size              string `json:"size"`
+		N                 int    `json:"n"`
+		Quality           string `json:"quality"`
+		OutputFormat      string `json:"output_format"`
+		Background        string `json:"background"`
+		OutputCompression int    `json:"output_compression"`
+		Moderation        string `json:"moderation"`
+		ResponseFormat    string `json:"response_format"`
+		User              string `json:"user"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		a.writeCompatError(w, errs.BadRequest("invalid json body"))
@@ -7610,13 +7614,19 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		a.writeCompatError(w, compatservice.MapError(err))
 		return
 	}
+	sizeMode, baseResolution, requestedSize := compatGenerationSizeFields(req.Size)
 	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeTextToImage),
 		AbstractModel:             modelSelection.AbstractModel,
 		RouteModelCode:            modelSelection.RouteModelCode,
-		BaseResolution:            "auto",
+		SizeMode:                  sizeMode,
+		BaseResolution:            baseResolution,
 		Quality:                   compatQuality(req.Quality),
-		RequestedSize:             req.Size,
+		OutputFormat:              req.OutputFormat,
+		Background:                req.Background,
+		OutputCompression:         req.OutputCompression,
+		Moderation:                req.Moderation,
+		RequestedSize:             requestedSize,
 		RequestedOutputImageCount: req.N,
 		UserGroupCode:             identity.GroupCode,
 		UserGroupCodes:            []string{identity.GroupCode},
@@ -7641,9 +7651,15 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		AbstractModel:       modelSelection.AbstractModel,
 		RouteModelCode:      modelSelection.RouteModelCode,
 		Prompt:              req.Prompt,
-		Size:                req.Size,
+		SizeMode:            sizeMode,
+		BaseResolution:      baseResolution,
+		Size:                requestedSize,
 		N:                   req.N,
 		Quality:             req.Quality,
+		OutputFormat:        req.OutputFormat,
+		Background:          req.Background,
+		OutputCompression:   req.OutputCompression,
+		Moderation:          req.Moderation,
 		ResponseFormat:      req.ResponseFormat,
 		User:                req.User,
 	})
@@ -7653,6 +7669,14 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func compatGenerationSizeFields(rawSize string) (sizeMode, baseResolution, requestedSize string) {
+	size := strings.TrimSpace(rawSize)
+	if size == "" || strings.EqualFold(size, "auto") {
+		return domainmodelhub.SizeModeAuto, "", ""
+	}
+	return "", "auto", size
 }
 
 func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {

@@ -21,8 +21,24 @@ const capability: Capability = {
   model_groups: [{ id: 'plus', code: 'plus', name: 'Plus', task_types: ['text_to_image', 'image_edit'], base_resolution: ['1K', '2K'], size_modes: ['ratio'], aspect_ratios: ['1:1'], quality: ['auto'], output_format: ['png'], moderation: ['auto'], supports_output_compression: false, max_output_image_count: 2, max_reference_image_count: 2, prices: [], supports_reference: true }],
 }
 const normalized = normalizeWorkspaceCreationDraft(consumed, capability)
-if (normalized.values.route_model_code !== 'plus' || normalized.values.base_resolution !== '1K' || normalized.values.aspect_ratio !== '1:1' || normalized.values.quality !== 'auto' || normalized.values.output_format !== 'png' || normalized.values.image_count !== 2) throw new Error(`creation draft fallbacks drifted: ${JSON.stringify(normalized)}`)
+if (normalized.values.route_model_code !== 'plus' || normalized.values.base_resolution !== '1K' || normalized.values.aspect_ratio !== '1:1' || normalized.values.quality !== 'auto' || normalized.values.output_format !== 'png' || normalized.values.image_count !== 3) throw new Error(`creation draft fallbacks drifted: ${JSON.stringify(normalized)}`)
 if (normalized.notices.length < 4) throw new Error('every unsupported restored field should produce a fallback notice')
+
+const fanOutCount = normalizeWorkspaceCreationDraft({
+  version: 1, prompt: 'fan out twelve images', task_type: 'text_to_image', route_model_code: 'plus',
+  size_mode: 'ratio', base_resolution: '1K', aspect_ratio: '1:1', image_count: 12,
+}, capability)
+if (fanOutCount.values.image_count !== 12) {
+  throw new Error(`platform output count must not be clamped by upstream max n, got ${JSON.stringify(fanOutCount)}`)
+}
+
+const safetyLimitedCount = normalizeWorkspaceCreationDraft({
+  version: 1, prompt: 'bound the platform task', task_type: 'text_to_image', route_model_code: 'plus',
+  size_mode: 'ratio', base_resolution: '1K', aspect_ratio: '1:1', image_count: 1001,
+}, capability)
+if (safetyLimitedCount.values.image_count !== 1000) {
+  throw new Error(`platform output count must use the independent 1000-image safety ceiling, got ${JSON.stringify(safetyLimitedCount)}`)
+}
 
 const customSizeCapability: Capability = {
   task_types: ['text_to_image'], aspect_ratios: ['1:1'], pixel_sizes: ['1024x1024'], max_image_count: 1,
@@ -68,7 +84,7 @@ const taskScopedDraft = normalizeWorkspaceCreationDraft({
     },
   }],
 })
-if (taskScopedDraft.values.size_mode !== 'pixel' || taskScopedDraft.values.pixel_size !== '1536x1024' || taskScopedDraft.values.quality !== 'low' || taskScopedDraft.values.output_format !== 'webp' || taskScopedDraft.values.image_count !== 1) {
+if (taskScopedDraft.values.size_mode !== 'pixel' || taskScopedDraft.values.pixel_size !== '1536x1024' || taskScopedDraft.values.quality !== 'low' || taskScopedDraft.values.output_format !== 'webp' || taskScopedDraft.values.image_count !== 3) {
   throw new Error(`creation draft must normalize against the selected task capability: ${JSON.stringify(taskScopedDraft)}`)
 }
 

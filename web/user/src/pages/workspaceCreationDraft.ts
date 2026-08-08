@@ -1,5 +1,6 @@
 import type { Capability, CapabilityModelGroup, ImageTaskType } from '../../../shared/api-types'
 import { workspaceBackgroundForFormat, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, normalizeWorkspaceCustomSize } from './workspaceParameters'
+import { normalizeWorkspaceImageCount } from './workspaceViewModel'
 
 export const workspaceCreationDraftStorageKey = 'pic-gallery-workspace-creation-draft-v1'
 const workspaceCreationDraftHistoryKey = '__picGalleryWorkspaceCreationDraft'
@@ -136,9 +137,8 @@ export function normalizeWorkspaceCreationDraft(
   const moderation = chooseOption(model.moderation ?? capability.moderation ?? ['auto'], draft.moderation, '内容审核', notices)
 
   const requestedCount = finiteInteger(draft.image_count, 1)
-  const maxCount = Math.max(1, Math.min(capability.max_image_count || 1, model.max_output_image_count || capability.max_image_count || 1))
-  const imageCount = Math.min(maxCount, Math.max(1, requestedCount))
-  if (imageCount !== requestedCount) notices.push(`生成数量 ${requestedCount} 超出当前模型范围，已调整为 ${imageCount}。`)
+  const imageCount = normalizeWorkspaceImageCount(requestedCount)
+  if (imageCount !== requestedCount) notices.push(`生成数量 ${requestedCount} 超出平台任务范围，已调整为 ${imageCount}。`)
 
   const compressionSupported = Boolean(model.supports_output_compression && ['jpeg', 'jpg', 'webp'].includes(outputFormat.toLowerCase()))
   const requestedCompression = finiteInteger(draft.output_compression, 100)

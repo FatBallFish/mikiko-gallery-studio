@@ -9,6 +9,7 @@ import (
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -189,4 +190,98 @@ func TestModelAdminStoreMapsAccountModelGenerationLimitsToRuntimeSnapshot(t *tes
 		return
 	}
 	t.Fatalf("runtime snapshot missing account model %d: %#v", model.ID, snapshot.ProviderModels)
+}
+
+func TestModelAdminStoreNormalizesOnlyLegacyDefaultSizeBoundsForEditing(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:modeladmin-legacy-size-bounds?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := entstore.NewModelAdminStore(client)
+	account, err := store.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name: "legacy-bounds", AdapterType: "openai_compatible", AuthType: "api_key",
+		BaseURL: "https://example.com", Status: "disabled", ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	legacy, err := client.ModelAccountModel.Create().
+		SetAccountID(account.ID).
+		SetModelCode("legacy-4096").
+		SetDisplayName("Legacy 4096").
+		SetTaskTypes([]string{"text_to_image"}).
+		SetMaxImageCount(1).
+		SetMaxWidth(4096).
+		SetMaxHeight(4096).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create legacy model: %v", err)
+	}
+	explicitInvalid, err := client.ModelAccountModel.Create().
+		SetAccountID(account.ID).
+		SetModelCode("explicit-4000").
+		SetDisplayName("Explicit 4000").
+		SetTaskTypes([]string{"text_to_image"}).
+		SetMaxImageCount(1).
+		SetMaxWidth(4000).
+		SetMaxHeight(4000).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create explicit invalid model: %v", err)
+	}
+
+	svc := modeladminservice.NewServiceWithStore(store)
+	read, err := svc.GetModelAccountModel(ctx, int64(legacy.ID))
+	if err != nil {
+		t.Fatalf("read legacy model: %v", err)
+	}
+	if read.MaxWidth != 3840 || read.MaxHeight != 3840 {
+		t.Fatalf("legacy defaults must be exposed as editable legal bounds: %#v", read)
+	}
+	updated, err := svc.UpdateModelAccountModel(ctx, int64(legacy.ID), modelAccountModelWriteRequest(read))
+	if err != nil {
+		t.Fatalf("update normalized legacy model: %v", err)
+	}
+	if updated.MaxWidth != 3840 || updated.MaxHeight != 3840 {
+		t.Fatalf("updated legacy model has illegal bounds: %#v", updated)
+	}
+	persisted, err := client.ModelAccountModel.Get(ctx, legacy.ID)
+	if err != nil {
+		t.Fatalf("reload updated legacy model: %v", err)
+	}
+	if persisted.MaxWidth != 3840 || persisted.MaxHeight != 3840 {
+		t.Fatalf("normalized bounds were not persisted: %#v", persisted)
+	}
+
+	invalidRead, err := svc.GetModelAccountModel(ctx, int64(explicitInvalid.ID))
+	if err != nil {
+		t.Fatalf("read explicit invalid model: %v", err)
+	}
+	if invalidRead.MaxWidth != 4000 || invalidRead.MaxHeight != 4000 {
+		t.Fatalf("non-default invalid bounds must remain visible: %#v", invalidRead)
+	}
+	if _, err := svc.UpdateModelAccountModel(ctx, int64(explicitInvalid.ID), modelAccountModelWriteRequest(invalidRead)); err == nil {
+		t.Fatal("explicit invalid bounds must fail validation instead of being silently clamped")
+	}
+}
+
+func modelAccountModelWriteRequest(model domainmodeladmin.ModelAccountModel) domainmodeladmin.ModelAccountModelWriteRequest {
+	return domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: model.AccountID, ModelCode: model.ModelCode, DisplayName: model.DisplayName,
+		TaskTypes: model.TaskTypes, BaseResolution: model.BaseResolution, Quality: model.Quality,
+		MaxReferenceImageCount: model.MaxReferenceImageCount, MaxImageCount: model.MaxImageCount,
+		SizeModes: model.SizeModes, SupportedRatios: model.SupportedRatios,
+		SupportedPixelSizes: model.SupportedPixelSizes, SupportsCustomRatio: model.SupportsCustomRatio,
+		OutputFormat: model.OutputFormat, SupportedBackgrounds: model.SupportedBackgrounds,
+		OutputCompression: model.OutputCompression, SupportsOutputCompression: model.SupportsOutputCompression,
+		SupportsCustomSize: model.SupportsCustomSize, MinWidth: model.MinWidth, MaxWidth: model.MaxWidth,
+		MinHeight: model.MinHeight, MaxHeight: model.MaxHeight, Moderation: model.Moderation,
+		CostPerImage: model.CostPerImage, Currency: model.Currency, Enabled: model.Enabled, Extra: model.Extra,
+	}
 }
