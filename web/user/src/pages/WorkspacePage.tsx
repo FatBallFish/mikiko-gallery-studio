@@ -325,6 +325,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   } : null)
   const [outputTab, setOutputTab] = useState<OutputTab>('current')
   const [historyTaskDialog, setHistoryTaskDialog] = useState<ImageTask | null>(null)
+  const [historyPreviewReturnTarget, setHistoryPreviewReturnTarget] = useState<{ taskId: string; imageId: string } | null>(null)
   const [galleryImportTarget, setGalleryImportTarget] = useState<'edit' | null>(null)
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
   const [galleryImportLoading, setGalleryImportLoading] = useState(false)
@@ -361,6 +362,18 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   useEffect(() => {
     selectedTaskIdRef.current = selectedTaskId
   }, [selectedTaskId])
+
+  useEffect(() => {
+    if (!historyPreviewReturnTarget || previewImage || historyTaskDialog?.id !== historyPreviewReturnTarget.taskId) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      const target = Array.from(document.querySelectorAll<HTMLElement>('[data-history-image-id]')).find((element) => (
+        element.dataset.historyImageId === historyPreviewReturnTarget.imageId
+      ))
+      target?.focus()
+      setHistoryPreviewReturnTarget((current) => current?.taskId === historyPreviewReturnTarget.taskId && current.imageId === historyPreviewReturnTarget.imageId ? null : current)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [historyPreviewReturnTarget, historyTaskDialog?.id, previewImage])
 
   // Load capability and refs on mount only (not on mode change)
   useEffect(() => {
@@ -1048,11 +1061,27 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (interaction.navigateHash) app.navigate('genpic', { taskId: task.id })
     if (interaction.outputTab === 'current') setOutputTab('current')
     setHistoryTaskDialog(null)
+    setHistoryPreviewReturnTarget(null)
   }
 
   function openHistoryTaskDialog(task: ImageTask) {
     const interaction = workspaceTaskHistoryInteraction({ surface: 'history', status: task.status, resultCount: task.results.length })
-    if (interaction.openDialog) setHistoryTaskDialog(task)
+    if (interaction.openDialog) {
+      setHistoryPreviewReturnTarget(null)
+      setHistoryTaskDialog(task)
+    }
+  }
+
+  function openHistoryPreview(image: ImagePreviewPayload) {
+    if (historyTaskDialog && image.mediaResource?.kind === 'image') {
+      setHistoryPreviewReturnTarget({ taskId: historyTaskDialog.id, imageId: image.mediaResource.id })
+    }
+    setPreviewImage(image)
+  }
+
+  function closeHistoryTaskDialog() {
+    setHistoryPreviewReturnTarget(null)
+    setHistoryTaskDialog(null)
   }
 
   function handleSheetPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
@@ -1659,6 +1688,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
               stageWorkspaceCreationDraft(previewImage.creationDraft!, window.sessionStorage, window.history)
               setPreviewImage(null)
               setHistoryTaskDialog(null)
+              setHistoryPreviewReturnTarget(null)
               app.navigate('genpic')
             },
           }] : []}
@@ -1670,10 +1700,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           <HistoryTaskGalleryModal
             task={historyTaskDialog}
             accessToken={app.session?.token}
-            onPreviewImage={setPreviewImage}
+            onPreviewImage={openHistoryPreview}
             onImageMediaRefresh={refreshWorkspaceImage}
             onReferenceMediaRefresh={refreshWorkspaceReference}
-            onClose={() => setHistoryTaskDialog(null)}
+            onClose={closeHistoryTaskDialog}
           />
         ) : null}
         {galleryImportTarget ? (
@@ -2105,6 +2135,7 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
             <button
               key={image.id}
               type="button"
+              data-history-image-id={image.id}
               className="group grid min-w-0 gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-2 text-left transition hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]"
               aria-label={`查看第 ${index + 1} 张图片详情`}
               onClick={() => onPreviewImage({

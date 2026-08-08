@@ -120,6 +120,28 @@ func TestBuildRuntimeArtifactsPersistsNativeGatewayProbe(t *testing.T) {
 	}
 }
 
+func TestBuildRuntimeArtifactsPersistsAbsoluteDocsWithoutInternalProbe(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{
+		Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologySingle,
+		Role: config.DeploymentRoleSingle, RuntimeDir: "runtime", StorageDriver: "local", ApplicationVersion: "v1",
+		DocsURL: "https://docs.example.test/reference/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := BuildRuntimeArtifacts(plan, bytes.NewReader(bytes.Repeat([]byte{0x26}, 128)), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := config.ParseRuntimeEnv(artifacts.RuntimeEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Values["PIC_GALLERY_DOCS_URL"] != plan.DocsURL || document.Values["PIC_GALLERY_DOCS_PROBE_URL"] != "" {
+		t.Fatalf("runtime docs = user %q probe %q", document.Values["PIC_GALLERY_DOCS_URL"], document.Values["PIC_GALLERY_DOCS_PROBE_URL"])
+	}
+}
+
 func TestBuildRuntimeArtifactsPrepopulatesOnlySelectedDockerCustomMiddleware(t *testing.T) {
 	plan, err := BuildInstallPlan(InstallInput{
 		Mode: "docker", Profile: "custom", Topology: "single", Role: "single", RuntimeDir: ".",

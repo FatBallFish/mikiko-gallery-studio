@@ -106,6 +106,7 @@ func BuildRuntimeArtifacts(plan InstallPlan, random io.Reader, now time.Time) (R
 		"ADMIN_WEB_PORT": plan.AdminWebPort, "DOCS_WEB_PORT": plan.DocsWebPort,
 		"MONITORING_PORT":                          plan.MonitoringPort,
 		"PUBLIC_API_URL":                           plan.PublicAPIURL,
+		"PIC_GALLERY_DOCS_URL":                     defaultString(plan.DocsURL, "/developer-docs/"),
 		"PIC_GALLERY_DOCS_PROBE_URL":               plan.DocsProbeURL,
 		"AUTH_ACCESS_TOKEN_SECRET":                 derivedSecret(root, "auth-access-token"),
 		"API_KEY_SIGNING_SECRET_ENCRYPTION_KEY":    derivedSecret(root, "api-key-encryption"),
@@ -185,6 +186,9 @@ func BuildPendingRuntimeArtifacts(plan InstallPlan, snapshot pendingInstallSnaps
 	values["DOCS_WEB_PORT"] = plan.DocsWebPort
 	values["MONITORING_PORT"] = plan.MonitoringPort
 	values["PUBLIC_API_URL"] = plan.PublicAPIURL
+	if strings.TrimSpace(plan.DocsURL) != "" {
+		values["PIC_GALLERY_DOCS_URL"] = plan.DocsURL
+	}
 	values["PIC_GALLERY_DOCS_PROBE_URL"] = plan.DocsProbeURL
 	if plan.Mode == config.DeploymentModeDocker {
 		values["IMAGE_REGISTRY"] = plan.ImageRegistry

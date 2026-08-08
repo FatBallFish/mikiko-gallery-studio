@@ -169,12 +169,13 @@ func TestParseCommandSeparatesInteractiveAndNonInteractiveInstall(t *testing.T) 
 	withPorts, err := ParseCommand([]string{
 		"install", "--mode", "docker", "--profile", "core", "--topology", "single", "--yes",
 		"--api-port", "18080", "--gateway-port", "18000", "--user-web-port", "15173", "--admin-web-port", "15174", "--docs-web-port", "15175", "--monitoring-port", "19090",
+		"--docs-url", "/developer-docs/",
 		"--docs-probe-url", "https://gateway.example.test/developer-docs/",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if withPorts.Install.APIPort != "18080" || withPorts.Install.GatewayPort != "18000" || withPorts.Install.DocsWebPort != "15175" || withPorts.Install.MonitoringPort != "19090" || withPorts.Install.DocsProbeURL != "https://gateway.example.test/developer-docs/" {
+	if withPorts.Install.APIPort != "18080" || withPorts.Install.GatewayPort != "18000" || withPorts.Install.DocsWebPort != "15175" || withPorts.Install.MonitoringPort != "19090" || withPorts.Install.DocsURL != "/developer-docs/" || withPorts.Install.DocsProbeURL != "https://gateway.example.test/developer-docs/" {
 		t.Fatalf("install ports parsed incorrectly: %#v", withPorts.Install)
 	}
 

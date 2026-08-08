@@ -297,6 +297,7 @@ func parseInstallCommand(args []string) (Command, error) {
 	runtimeDir := set.String("runtime-dir", ".", "portable runtime directory")
 	storageDriver := set.String("storage-driver", "", "local or s3")
 	publicAPIURL := set.String("public-api-url", "", "public API URL")
+	docsURL := set.String("docs-url", "/developer-docs/", "browser-facing documentation URL")
 	docsProbeURL := set.String("docs-probe-url", "", "API-reachable documentation probe URL")
 	imageRegistry := set.String("image-registry", "", "Docker image registry")
 	imageTag := set.String("image-tag", "latest", "Docker image tag or latest")
@@ -331,7 +332,7 @@ func parseInstallCommand(args []string) (Command, error) {
 	input := &InstallInput{
 		Interactive: !*yes, OverwriteExisting: *overwrite, Mode: config.DeploymentMode(*mode), Profile: config.DeploymentProfile(*profile),
 		Topology: config.DeploymentTopology(*topology), Role: resolvedRole, Components: parseComponents(*components),
-		RuntimeDir: *runtimeDir, StorageDriver: *storageDriver, PublicAPIURL: *publicAPIURL,
+		RuntimeDir: *runtimeDir, StorageDriver: *storageDriver, PublicAPIURL: *publicAPIURL, DocsURL: *docsURL,
 		DocsProbeURL:             *docsProbeURL,
 		ExternalGatewayConfirmed: *externalGateway, MigrationRequested: *migrate,
 		ImageRegistry: *imageRegistry, ImageTag: *imageTag, ReleaseVersion: *releaseVersion,

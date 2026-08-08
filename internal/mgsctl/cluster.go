@@ -118,7 +118,9 @@ func ExecuteClusterJoin(ctx context.Context, options ClusterJoinOptions, depende
 	if err := validateRemoteChallenge(challenge, challengeRequest, dependencies.Now()); err != nil {
 		return ClusterJoinResult{}, err
 	}
-	preflightPlan, err := buildJoinedPlan(options, config.DeploymentRole(challenge.Role), challenge.ApplicationVersion, challenge.NodeID, "s3", options.Server)
+	preflightOptions := options
+	preflightOptions.DocsProbeURL = ""
+	preflightPlan, err := buildJoinedPlan(preflightOptions, config.DeploymentRole(challenge.Role), challenge.ApplicationVersion, challenge.NodeID, "s3", options.Server, "/developer-docs/")
 	if err != nil {
 		return ClusterJoinResult{}, err
 	}
@@ -162,7 +164,8 @@ func ExecuteClusterJoin(ctx context.Context, options ClusterJoinOptions, depende
 	}
 	storageDriver := payload.Values["STORAGE_DRIVER"]
 	publicAPIURL := payload.Values["PUBLIC_API_URL"]
-	plan, err := buildJoinedPlan(options, config.DeploymentRole(joined.Role), joined.ApplicationVersion, nodeID, storageDriver, publicAPIURL)
+	docsURL := payload.Values["PIC_GALLERY_DOCS_URL"]
+	plan, err := buildJoinedPlan(options, config.DeploymentRole(joined.Role), joined.ApplicationVersion, nodeID, storageDriver, publicAPIURL, docsURL)
 	if err != nil {
 		return ClusterJoinResult{}, err
 	}
@@ -403,7 +406,7 @@ func validateRemoteRuntimeValues(role domaincluster.NodeRole, values map[string]
 	return nil
 }
 
-func buildJoinedPlan(options ClusterJoinOptions, role config.DeploymentRole, applicationVersion, nodeID, storageDriver, publicAPIURL string) (InstallPlan, error) {
+func buildJoinedPlan(options ClusterJoinOptions, role config.DeploymentRole, applicationVersion, nodeID, storageDriver, publicAPIURL, docsURL string) (InstallPlan, error) {
 	if role != config.DeploymentRoleAPI && role != config.DeploymentRoleWorker && role != config.DeploymentRoleWeb {
 		return InstallPlan{}, fmt.Errorf("unsupported joined role %q", role)
 	}
@@ -413,7 +416,7 @@ func buildJoinedPlan(options ClusterJoinOptions, role config.DeploymentRole, app
 	return BuildInstallPlan(InstallInput{
 		Mode: options.Mode, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologyCluster,
 		Role: role, RuntimeDir: filepath.Clean(defaultString(options.RuntimeDir, ".")), StorageDriver: storageDriver,
-		PublicAPIURL: publicAPIURL, InstallationInitialized: true, ApplicationVersion: applicationVersion,
+		PublicAPIURL: publicAPIURL, DocsURL: docsURL, InstallationInitialized: true, ApplicationVersion: applicationVersion,
 		DocsProbeURL:  options.DocsProbeURL,
 		ImageRegistry: options.ImageRegistry, ImageTag: options.ImageTag, ReleaseVersion: options.ReleaseVersion,
 		APIPort: options.APIPort, GatewayPort: options.GatewayPort, UserWebPort: options.UserWebPort,
@@ -427,6 +430,9 @@ func joinedRuntimeValues(options ClusterJoinOptions, plan InstallPlan, joined do
 		values[key] = value
 	}
 	delete(values, "PIC_GALLERY_DOCS_PROBE_URL")
+	if strings.TrimSpace(plan.DocsURL) != "" {
+		values["PIC_GALLERY_DOCS_URL"] = plan.DocsURL
+	}
 	if strings.TrimSpace(plan.DocsProbeURL) != "" {
 		values["PIC_GALLERY_DOCS_PROBE_URL"] = plan.DocsProbeURL
 	}

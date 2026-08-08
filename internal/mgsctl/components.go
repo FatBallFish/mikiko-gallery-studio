@@ -3,6 +3,7 @@ package mgsctl
 import (
 	"fmt"
 	"net/url"
+	pathpkg "path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -45,6 +46,7 @@ type InstallInput struct {
 	RuntimeDir               string
 	StorageDriver            string
 	PublicAPIURL             string
+	DocsURL                  string
 	DocsProbeURL             string
 	ExternalGatewayConfirmed bool
 	InstallationInitialized  bool
@@ -85,6 +87,7 @@ type InstallPlan struct {
 	RuntimeDir               string                    `json:"runtime_dir"`
 	StorageDriver            string                    `json:"storage_driver,omitempty"`
 	PublicAPIURL             string                    `json:"public_api_url,omitempty"`
+	DocsURL                  string                    `json:"docs_url,omitempty"`
 	DocsProbeURL             string                    `json:"docs_probe_url,omitempty"`
 	ExternalGatewayConfirmed bool                      `json:"external_gateway_confirmed,omitempty"`
 	MigrationRequested       bool                      `json:"migration_requested,omitempty"`
@@ -142,11 +145,6 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 			return InstallPlan{}, err
 		}
 	}
-	if strings.TrimSpace(input.DocsProbeURL) != "" {
-		if err := validateHTTPBaseURL(input.DocsProbeURL, "documentation probe URL"); err != nil {
-			return InstallPlan{}, err
-		}
-	}
 	input.APIPort = defaultString(input.APIPort, "8080")
 	for name, value := range map[string]string{
 		"API": input.APIPort, "Gateway": input.GatewayPort, "user web": input.UserWebPort,
@@ -179,15 +177,16 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 	if err := validateComponents(input, components); err != nil {
 		return InstallPlan{}, err
 	}
-	docsProbeURL := strings.TrimSpace(input.DocsProbeURL)
-	if docsProbeURL == "" {
-		docsProbeURL = defaultDocsProbeURL(input.Mode, components, input.GatewayPort)
+	docsURL, docsProbeURL, err := resolveInstallDocumentationTargets(input.DocsURL, input.DocsProbeURL, input.Mode, components, input.GatewayPort)
+	if err != nil {
+		return InstallPlan{}, err
 	}
 
 	return InstallPlan{
 		Mode: input.Mode, Profile: input.Profile, Topology: input.Topology, Role: input.Role,
 		Components: components, RuntimeDir: input.RuntimeDir, StorageDriver: input.StorageDriver,
 		PublicAPIURL: strings.TrimSpace(input.PublicAPIURL), ExternalGatewayConfirmed: input.ExternalGatewayConfirmed,
+		DocsURL:            docsURL,
 		DocsProbeURL:       docsProbeURL,
 		MigrationRequested: input.MigrationRequested, ApplicationVersion: input.ApplicationVersion,
 		ImageRegistry: input.ImageRegistry, ImageTag: defaultString(input.ImageTag, input.ApplicationVersion), ImageDigests: cloneImageDigests(input.ImageDigests),
@@ -227,10 +226,8 @@ func ValidateInstallPlan(plan InstallPlan) error {
 			return err
 		}
 	}
-	if strings.TrimSpace(plan.DocsProbeURL) != "" {
-		if err := validateHTTPBaseURL(plan.DocsProbeURL, "documentation probe URL"); err != nil {
-			return err
-		}
+	if err := validateInstallDocumentationTargets(plan.DocsURL, plan.DocsProbeURL); err != nil {
+		return err
 	}
 	for name, value := range map[string]string{
 		"API": plan.APIPort, "Gateway": plan.GatewayPort, "user web": plan.UserWebPort,
@@ -243,7 +240,7 @@ func ValidateInstallPlan(plan InstallPlan) error {
 
 	input := InstallInput{
 		Mode: plan.Mode, Profile: plan.Profile, Topology: plan.Topology, Role: plan.Role,
-		StorageDriver: plan.StorageDriver, PublicAPIURL: plan.PublicAPIURL,
+		StorageDriver: plan.StorageDriver, PublicAPIURL: plan.PublicAPIURL, DocsURL: plan.DocsURL,
 		DocsProbeURL:             plan.DocsProbeURL,
 		ExternalGatewayConfirmed: plan.ExternalGatewayConfirmed,
 	}
@@ -285,6 +282,79 @@ func defaultDocsProbeURL(mode config.DeploymentMode, components []Component, gat
 		return "http://127.0.0.1:" + strings.TrimSpace(gatewayPort) + "/developer-docs/"
 	}
 	return ""
+}
+
+func resolveInstallDocumentationTargets(rawDocsURL, rawProbeURL string, mode config.DeploymentMode, components []Component, gatewayPort string) (string, string, error) {
+	docsURL := defaultString(rawDocsURL, "/developer-docs/")
+	parsedDocs, err := validateInstallDocsURL(docsURL)
+	if err != nil {
+		return "", "", err
+	}
+	probeURL := strings.TrimSpace(rawProbeURL)
+	if parsedDocs.IsAbs() {
+		if probeURL != "" {
+			return "", "", fmt.Errorf("documentation probe URL is allowed only with a relative documentation URL")
+		}
+		return docsURL, "", nil
+	}
+	if probeURL == "" {
+		probeURL = defaultDocsProbeURL(mode, components, gatewayPort)
+	}
+	if err := validateInstallDocumentationTargets(docsURL, probeURL); err != nil {
+		return "", "", err
+	}
+	return docsURL, probeURL, nil
+}
+
+func validateInstallDocumentationTargets(rawDocsURL, rawProbeURL string) error {
+	docsURL := defaultString(rawDocsURL, "/developer-docs/")
+	parsedDocs, err := validateInstallDocsURL(docsURL)
+	if err != nil {
+		return err
+	}
+	probeURL := strings.TrimSpace(rawProbeURL)
+	if parsedDocs.IsAbs() {
+		if probeURL != "" {
+			return fmt.Errorf("documentation probe URL is allowed only with a relative documentation URL")
+		}
+		return nil
+	}
+	if probeURL == "" {
+		return nil
+	}
+	if err := validateHTTPBaseURL(probeURL, "documentation probe URL"); err != nil {
+		return err
+	}
+	parsedProbe, err := url.Parse(probeURL)
+	if err != nil || parsedProbe.EscapedPath() != parsedDocs.EscapedPath() {
+		return fmt.Errorf("documentation URL and probe URL path must match")
+	}
+	return nil
+}
+
+func validateInstallDocsURL(value string) (*url.URL, error) {
+	raw := strings.TrimSpace(value)
+	if raw == "" || strings.Contains(raw, "\\") {
+		return nil, fmt.Errorf("documentation URL is invalid")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Opaque != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return nil, fmt.Errorf("documentation URL must be an absolute HTTP(S) URL or a path beginning with / without credentials, query, fragment, or backslashes")
+	}
+	cleanedPath := pathpkg.Clean(parsed.Path)
+	if parsed.Path != "" && parsed.Path != cleanedPath && !(strings.HasSuffix(parsed.Path, "/") && strings.TrimSuffix(parsed.Path, "/") == cleanedPath) {
+		return nil, fmt.Errorf("documentation URL path must not contain traversal or duplicate separators")
+	}
+	if parsed.IsAbs() {
+		if err := validateHTTPBaseURL(raw, "documentation URL"); err != nil {
+			return nil, err
+		}
+		return parsed, nil
+	}
+	if parsed.Host != "" || !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(parsed.Path, "//") {
+		return nil, fmt.Errorf("documentation URL must be an absolute HTTP(S) URL or a path beginning with /")
+	}
+	return parsed, nil
 }
 
 func cloneImageDigests(values map[Component]string) map[Component]string {

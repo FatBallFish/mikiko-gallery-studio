@@ -53,6 +53,7 @@ func NewTUICommandFormLocalized(entry CommandCatalogEntry, language string) TUIC
 		"runtime-dir": ".", "storage-driver": "s3", "image-tag": "latest",
 		"api-port": "8080", "gateway-port": "80", "user-web-port": "5173",
 		"admin-web-port": "5174", "docs-web-port": "5175", "monitoring-port": "9090",
+		"docs-url":         "/developer-docs/",
 		"docs-probe-url":   "",
 		"external-gateway": "false", "migrate": "false", "overwrite": "false", "yes": "false",
 	}
@@ -332,6 +333,7 @@ func (form *TUICommandForm) rebuildInstallFields(focusName string) {
 		choice("role", form.installValues["role"], "single", "control"), components,
 		text("runtime-dir", form.installValues["runtime-dir"]),
 		choice("storage-driver", form.installValues["storage-driver"], "local", "s3"),
+		text("docs-url", form.installValues["docs-url"]),
 		text("docs-probe-url", form.installValues["docs-probe-url"]),
 	}
 	if form.installValues["mode"] == "docker" {

@@ -24,8 +24,10 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -7194,33 +7196,34 @@ func newDocsReadinessChecker(cfg config.Config, client *http.Client, timeout tim
 	if timeout <= 0 {
 		timeout = docsReadinessProbeTimeout
 	}
-	if client == nil {
-		client = newDocsReadinessHTTPClient(timeout)
-	}
 	return func(ctx context.Context) DocsReadinessResult {
 		local := defaultDocsReadinessChecker(ctx)
 		if local.Status != "pass" || strings.TrimSpace(cfg.Runtime.DocsURL) == "" {
 			return local
 		}
-		target, err := resolveDocsReadinessTarget(cfg.Runtime)
+		target, err := resolveDocsReadinessProbeTarget(cfg.Runtime)
 		if err != nil {
 			if errors.Is(err, errDocsProbeURLNotConfigured) {
 				return DocsReadinessResult{Status: "fail", Detail: "未配置可探测文档地址"}
 			}
 			return DocsReadinessResult{Status: "fail", Detail: "开发文档部署地址无效"}
 		}
-		targetClass := docsReadinessTargetClass(cfg.Runtime)
+		targetClass := docsReadinessTargetClass(target)
 		if ctx == nil {
 			ctx = context.Background()
 		}
 		probeCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, target.String(), nil)
+		request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, target.URL.String(), nil)
 		if err != nil {
 			return DocsReadinessResult{Status: "fail", Detail: "开发文档部署地址无效"}
 		}
 		request.Header.Set("User-Agent", "mikiko-gallery-studio-readiness/1")
-		response, err := client.Do(request)
+		probeClient := client
+		if probeClient == nil {
+			probeClient = newDocsReadinessHTTPClient(timeout, target, nil, nil)
+		}
+		response, err := probeClient.Do(request)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(probeCtx.Err(), context.DeadlineExceeded) {
 				return DocsReadinessResult{Status: "fail", Detail: targetClass + "探测超时"}
@@ -7238,56 +7241,84 @@ func newDocsReadinessChecker(cfg config.Config, client *http.Client, timeout tim
 	}
 }
 
-func docsReadinessTargetClass(runtime config.RuntimeConfig) string {
-	if strings.TrimSpace(runtime.DocsProbeURL) != "" {
-		return "部署探测入口"
+type docsReadinessTargetProvenance string
+
+const (
+	docsReadinessTargetConfiguredPublic docsReadinessTargetProvenance = "configured_public"
+	docsReadinessTargetTrustedTopology  docsReadinessTargetProvenance = "trusted_topology"
+)
+
+type docsReadinessResolvedTarget struct {
+	URL        *url.URL
+	Provenance docsReadinessTargetProvenance
+	Probe      bool
+}
+
+func docsReadinessTargetClass(target docsReadinessResolvedTarget) string {
+	if target.Provenance == docsReadinessTargetTrustedTopology {
+		return "本机网关入口"
 	}
-	target, err := url.Parse(strings.TrimSpace(runtime.DocsURL))
-	if err == nil && target.IsAbs() {
+	if !target.Probe && target.URL != nil && target.URL.IsAbs() {
 		return "独立部署入口"
 	}
-	return "本机网关入口"
+	return "部署探测入口"
 }
 
 func resolveDocsReadinessTarget(runtime config.RuntimeConfig) (*url.URL, error) {
+	target, err := resolveDocsReadinessProbeTarget(runtime)
+	if err != nil {
+		return nil, err
+	}
+	return target.URL, nil
+}
+
+func resolveDocsReadinessProbeTarget(runtime config.RuntimeConfig) (docsReadinessResolvedTarget, error) {
 	rawDocsURL := strings.TrimSpace(runtime.DocsURL)
 	if rawDocsURL == "" || strings.Contains(rawDocsURL, "\\") {
-		return nil, errors.New("documentation URL is missing or invalid")
+		return docsReadinessResolvedTarget{}, errors.New("documentation URL is missing or invalid")
 	}
 	docsTarget, err := url.Parse(rawDocsURL)
 	if err != nil || docsTarget.Opaque != "" || docsTarget.User != nil || docsTarget.RawQuery != "" || docsTarget.Fragment != "" {
-		return nil, errors.New("documentation URL is invalid")
+		return docsReadinessResolvedTarget{}, errors.New("documentation URL is invalid")
 	}
 	if !docsTarget.IsAbs() && (docsTarget.Host != "" || !strings.HasPrefix(docsTarget.Path, "/")) {
-		return nil, errors.New("relative documentation URL is invalid")
+		return docsReadinessResolvedTarget{}, errors.New("relative documentation URL is invalid")
+	}
+	if docsTarget.IsAbs() {
+		if !validDocsHTTPURL(docsTarget) {
+			return docsReadinessResolvedTarget{}, errors.New("documentation URL must use HTTP or HTTPS")
+		}
+		return docsReadinessResolvedTarget{URL: docsTarget, Provenance: docsReadinessTargetConfiguredPublic}, nil
 	}
 
 	var target *url.URL
 	rawProbeURL := strings.TrimSpace(runtime.DocsProbeURL)
 	if rawProbeURL != "" {
 		if strings.Contains(rawProbeURL, "\\") {
-			return nil, errors.New("documentation probe URL is invalid")
+			return docsReadinessResolvedTarget{}, errors.New("documentation probe URL is invalid")
 		}
 		target, err = url.Parse(rawProbeURL)
 		if err != nil || !validDocsHTTPURL(target) {
-			return nil, errors.New("documentation probe URL is invalid")
+			return docsReadinessResolvedTarget{}, errors.New("documentation probe URL is invalid")
 		}
-	} else if docsTarget.IsAbs() {
-		target = docsTarget
 	} else {
 		base, deriveErr := docsProbeBaseFromTopology(runtime)
 		if deriveErr != nil {
-			return nil, deriveErr
+			return docsReadinessResolvedTarget{}, deriveErr
 		}
 		target = base.ResolveReference(docsTarget)
 	}
 	if !validDocsHTTPURL(target) {
-		return nil, errors.New("documentation URL must use HTTP or HTTPS")
+		return docsReadinessResolvedTarget{}, errors.New("documentation URL must use HTTP or HTTPS")
 	}
 	if target.EscapedPath() != docsTarget.EscapedPath() {
-		return nil, errors.New("documentation probe URL must address the configured documentation path")
+		return docsReadinessResolvedTarget{}, errors.New("documentation probe URL must address the configured documentation path")
 	}
-	return target, nil
+	provenance := docsReadinessTargetConfiguredPublic
+	if docsReadinessTargetMatchesTopology(runtime, target) {
+		provenance = docsReadinessTargetTrustedTopology
+	}
+	return docsReadinessResolvedTarget{URL: target, Provenance: provenance, Probe: true}, nil
 }
 
 func docsProbeBaseFromTopology(runtime config.RuntimeConfig) (*url.URL, error) {
@@ -7315,11 +7346,40 @@ func docsProbeBaseFromTopology(runtime config.RuntimeConfig) (*url.URL, error) {
 	}
 }
 
+func docsReadinessTargetMatchesTopology(runtime config.RuntimeConfig, target *url.URL) bool {
+	if target == nil || !validDocsHTTPURL(target) {
+		return false
+	}
+	hasGateway := false
+	for _, module := range runtime.DeploymentModules {
+		if strings.TrimSpace(module) == "gateway" {
+			hasGateway = true
+			break
+		}
+	}
+	if !hasGateway || target.Scheme != "http" {
+		return false
+	}
+	switch runtime.DeploymentMode {
+	case config.DeploymentModeDocker:
+		port := target.Port()
+		return (port == "" || port == "80") && (target.Hostname() == "gateway" || target.Hostname() == "nginx")
+	case config.DeploymentModeNative:
+		port, err := strconv.Atoi(strings.TrimSpace(runtime.GatewayPort))
+		if err != nil || port < 1 || port > 65535 {
+			return false
+		}
+		return target.Hostname() == "127.0.0.1" && target.Port() == strconv.Itoa(port)
+	default:
+		return false
+	}
+}
+
 func validDocsHTTPURL(target *url.URL) bool {
 	if target == nil ||
 		(target.Scheme != "http" && target.Scheme != "https") ||
 		target.Host == "" || target.Hostname() == "" || target.User != nil || target.Opaque != "" ||
-		target.RawQuery != "" || target.Fragment != "" {
+		target.RawQuery != "" || target.Fragment != "" || !docsReadinessCanonicalPath(target) {
 		return false
 	}
 	if port := target.Port(); port != "" {
@@ -7331,20 +7391,84 @@ func validDocsHTTPURL(target *url.URL) bool {
 	return true
 }
 
-func newDocsReadinessHTTPClient(timeout time.Duration) *http.Client {
+type docsReadinessResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
+
+type docsReadinessContextDialer interface {
+	DialContext(context.Context, string, string) (net.Conn, error)
+}
+
+type docsReadinessPinnedRoundTripper struct {
+	target   docsReadinessResolvedTarget
+	resolver docsReadinessResolver
+	dialer   docsReadinessContextDialer
+}
+
+func (transport docsReadinessPinnedRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request == nil || request.URL == nil || transport.target.URL == nil || !sameDocsOrigin(request.URL, transport.target.URL) || !docsReadinessRedirectPathAllowed(request.URL, transport.target.URL) {
+		return nil, errors.New("documentation request target is not allowed")
+	}
+	addresses, err := resolveDocsReadinessAddresses(request.Context(), request.URL.Hostname(), transport.resolver)
+	if err != nil || len(addresses) == 0 {
+		return nil, errors.New("documentation target address is unavailable")
+	}
+	for _, address := range addresses {
+		if !docsReadinessAddressAllowed(address, transport.target.Provenance) {
+			return nil, errors.New("documentation target address is not allowed")
+		}
+	}
+	port := request.URL.Port()
+	if port == "" {
+		if request.URL.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	base.Proxy = nil
+	base.DisableKeepAlives = true
+	base.DialContext = func(ctx context.Context, network, rawAddress string) (net.Conn, error) {
+		host, requestedPort, splitErr := net.SplitHostPort(rawAddress)
+		if splitErr != nil || !strings.EqualFold(strings.TrimSuffix(host, "."), strings.TrimSuffix(request.URL.Hostname(), ".")) || requestedPort != port {
+			return nil, errors.New("documentation dial target is not allowed")
+		}
+		var dialErr error
+		for _, address := range addresses {
+			pinned := net.JoinHostPort(address.String(), port)
+			connection, currentErr := transport.dialer.DialContext(ctx, network, pinned)
+			if currentErr == nil {
+				return connection, nil
+			}
+			dialErr = currentErr
+		}
+		if dialErr == nil {
+			dialErr = errors.New("documentation target address is unavailable")
+		}
+		return nil, dialErr
+	}
+	return base.RoundTrip(request)
+}
+
+func newDocsReadinessHTTPClient(timeout time.Duration, target docsReadinessResolvedTarget, resolver docsReadinessResolver, dialer docsReadinessContextDialer) *http.Client {
 	if timeout <= 0 {
 		timeout = docsReadinessProbeTimeout
 	}
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	if dialer == nil {
+		dialer = &net.Dialer{Timeout: timeout}
+	}
 	return &http.Client{
-		Timeout: timeout,
+		Timeout:   timeout,
+		Transport: docsReadinessPinnedRoundTripper{target: target, resolver: resolver, dialer: dialer},
 		CheckRedirect: func(request *http.Request, via []*http.Request) error {
 			if len(via) >= 3 {
 				return errors.New("documentation redirect limit exceeded")
 			}
-			if !validDocsHTTPURL(request.URL) || len(via) == 0 ||
-				!strings.EqualFold(request.URL.Scheme, via[0].URL.Scheme) ||
-				!strings.EqualFold(request.URL.Host, via[0].URL.Host) ||
-				docsRedirectHostIsPrivate(request.URL.Hostname()) {
+			if !validDocsHTTPURL(request.URL) || len(via) == 0 || !sameDocsOrigin(request.URL, target.URL) || !sameDocsOrigin(request.URL, via[0].URL) || !docsReadinessRedirectPathAllowed(request.URL, target.URL) {
 				return errors.New("documentation redirect target is not allowed")
 			}
 			return nil
@@ -7352,12 +7476,78 @@ func newDocsReadinessHTTPClient(timeout time.Duration) *http.Client {
 	}
 }
 
-func docsRedirectHostIsPrivate(host string) bool {
-	if strings.EqualFold(strings.TrimSpace(host), "localhost") {
+func sameDocsOrigin(left, right *url.URL) bool {
+	return left != nil && right != nil && strings.EqualFold(left.Scheme, right.Scheme) && strings.EqualFold(left.Host, right.Host)
+}
+
+func docsReadinessRedirectPathAllowed(candidate, configured *url.URL) bool {
+	if candidate == nil || configured == nil || !docsReadinessCanonicalPath(candidate) || !docsReadinessCanonicalPath(configured) {
+		return false
+	}
+	configuredPath := pathpkg.Clean(configured.Path)
+	candidatePath := pathpkg.Clean(candidate.Path)
+	if strings.HasSuffix(configured.Path, "/") {
+		return candidatePath == configuredPath || strings.HasPrefix(candidatePath, configuredPath+"/")
+	}
+	return candidatePath == configuredPath
+}
+
+func docsReadinessCanonicalPath(target *url.URL) bool {
+	if target == nil || target.Path == "" {
 		return true
 	}
-	ip := net.ParseIP(strings.TrimSpace(host))
-	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast())
+	cleaned := pathpkg.Clean(target.Path)
+	return target.Path == cleaned || (strings.HasSuffix(target.Path, "/") && strings.TrimSuffix(target.Path, "/") == cleaned)
+}
+
+func resolveDocsReadinessAddresses(ctx context.Context, host string, resolver docsReadinessResolver) ([]netip.Addr, error) {
+	if literal, err := netip.ParseAddr(strings.TrimSpace(host)); err == nil {
+		return []netip.Addr{literal.Unmap()}, nil
+	}
+	resolved, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	addresses := make([]netip.Addr, 0, len(resolved))
+	for _, value := range resolved {
+		address, ok := netip.AddrFromSlice(value.IP)
+		if !ok {
+			return nil, errors.New("documentation target resolved an invalid address")
+		}
+		addresses = append(addresses, address.Unmap())
+	}
+	return addresses, nil
+}
+
+var docsReadinessNonPublicNetworks = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"), netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"), netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"), netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("64:ff9b:1::/48"), netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001:db8::/32"),
+}
+
+func docsReadinessAddressAllowed(address netip.Addr, provenance docsReadinessTargetProvenance) bool {
+	address = address.Unmap()
+	if !address.IsValid() || address.IsUnspecified() || address.IsMulticast() || address.IsLinkLocalUnicast() {
+		return false
+	}
+	if provenance == docsReadinessTargetTrustedTopology {
+		return address.IsPrivate() || address.IsLoopback()
+	}
+	if !address.IsGlobalUnicast() || address.IsPrivate() || address.IsLoopback() {
+		return false
+	}
+	if address == netip.MustParseAddr("168.63.129.16") {
+		return false
+	}
+	for _, network := range docsReadinessNonPublicNetworks {
+		if network.Contains(address) {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request) {

@@ -172,12 +172,23 @@ if (historyOverviewSource.includes('<ImageDetailModal')) {
 }
 for (const stateContract of [
   'historyTaskDialog && !previewImage',
-  'onPreviewImage={setPreviewImage}',
+  'onPreviewImage={openHistoryPreview}',
   'onClose={() => setPreviewImage(null)}',
+  'historyPreviewReturnTarget',
+  'data-history-image-id={image.id}',
+  "document.querySelectorAll<HTMLElement>('[data-history-image-id]')",
+  'window.requestAnimationFrame',
+  'setHistoryPreviewReturnTarget(null)',
 ]) {
   if (!source.includes(stateContract)) {
     throw new Error(`closing shared image detail must restore the task overview: missing ${stateContract}`)
   }
+}
+
+const focusRestoreEffect = source.indexOf("document.querySelectorAll<HTMLElement>('[data-history-image-id]')")
+const historyOverviewRender = source.indexOf('{historyTaskDialog && !previewImage ? (')
+if (!(focusRestoreEffect >= 0 && focusRestoreEffect < historyOverviewRender)) {
+  throw new Error('closing image detail must restore focus after the history overview remounts')
 }
 
 const recentHandlerStart = source.indexOf('function selectRecentTask')

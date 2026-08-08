@@ -2,6 +2,7 @@ package mgsctl
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
@@ -103,6 +104,7 @@ func TestBuildInstallPlanRejectsUnsafeDeploymentCombinations(t *testing.T) {
 		{name: "public api credentials", mutate: func(input *InstallInput) { input.PublicAPIURL = "https://user:secret@api.example.test" }},
 		{name: "docs probe credentials", mutate: func(input *InstallInput) { input.DocsProbeURL = "https://user:secret@docs.example.test" }},
 		{name: "docs probe relative", mutate: func(input *InstallInput) { input.DocsProbeURL = "/developer-docs/" }},
+		{name: "docs URL encoded traversal", mutate: func(input *InstallInput) { input.DocsURL = "https://docs.example.test/developer-docs/%2e%2e/healthz" }},
 		{name: "full local storage", mutate: func(input *InstallInput) {
 			input.Profile = config.DeploymentProfileFull
 			input.StorageDriver = "local"
@@ -143,6 +145,44 @@ func TestBuildInstallPlanRejectsUnsafeDeploymentCombinations(t *testing.T) {
 				t.Fatalf("unsafe input accepted: %#v", input)
 			}
 		})
+	}
+}
+
+func TestBuildInstallPlanResolvesDocumentationTargetsAtomically(t *testing.T) {
+	base := InstallInput{
+		Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologySingle,
+		Role: config.DeploymentRoleSingle, RuntimeDir: ".", StorageDriver: "local", ApplicationVersion: "v1",
+	}
+
+	relative, err := BuildInstallPlan(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relative.DocsURL != "/developer-docs/" || relative.DocsProbeURL != "http://gateway/developer-docs/" {
+		t.Fatalf("relative docs plan = user %q probe %q", relative.DocsURL, relative.DocsProbeURL)
+	}
+
+	absoluteInput := base
+	absoluteInput.DocsURL = "https://docs.example.test/reference/"
+	absolute, err := BuildInstallPlan(absoluteInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if absolute.DocsURL != absoluteInput.DocsURL || absolute.DocsProbeURL != "" {
+		t.Fatalf("absolute docs plan = user %q probe %q; internal probe must not override it", absolute.DocsURL, absolute.DocsProbeURL)
+	}
+
+	mismatch := base
+	mismatch.DocsURL = "/developer-docs/"
+	mismatch.DocsProbeURL = "https://gateway.example.test/not-the-docs/"
+	if _, err := BuildInstallPlan(mismatch); err == nil || !strings.Contains(err.Error(), "path") {
+		t.Fatalf("mismatched documentation paths error = %v", err)
+	}
+
+	absoluteWithProbe := absoluteInput
+	absoluteWithProbe.DocsProbeURL = "https://gateway.example.test/reference/"
+	if _, err := BuildInstallPlan(absoluteWithProbe); err == nil {
+		t.Fatal("absolute documentation URL must reject an unused explicit probe")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,6 +23,18 @@ type docsReadinessRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn docsReadinessRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return fn(request)
+}
+
+type docsReadinessResolverFunc func(context.Context, string) ([]net.IPAddr, error)
+
+func (fn docsReadinessResolverFunc) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
+	return fn(ctx, host)
+}
+
+type docsReadinessDialFunc func(context.Context, string, string) (net.Conn, error)
+
+func (fn docsReadinessDialFunc) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return fn(ctx, network, address)
 }
 
 func TestResolveDocsReadinessTarget(t *testing.T) {
@@ -74,6 +87,7 @@ func TestResolveDocsReadinessTarget(t *testing.T) {
 		{name: "non HTTP scheme is rejected", runtime: config.RuntimeConfig{DocsURL: "file:///tmp/docs"}, wantErr: true},
 		{name: "empty host is rejected", runtime: config.RuntimeConfig{DocsURL: "http://:80/developer-docs/"}, wantErr: true},
 		{name: "out of range port is rejected", runtime: config.RuntimeConfig{DocsURL: "http://docs.example.test:99999/developer-docs/"}, wantErr: true},
+		{name: "encoded path traversal is rejected", runtime: config.RuntimeConfig{DocsURL: "https://docs.example.test/developer-docs/%2e%2e/healthz"}, wantErr: true},
 		{name: "query is rejected", runtime: config.RuntimeConfig{DocsURL: "https://docs.example.test/?token=secret"}, wantErr: true},
 	}
 
@@ -92,6 +106,205 @@ func TestResolveDocsReadinessTarget(t *testing.T) {
 			if target.String() != tt.want {
 				t.Fatalf("target = %q, want %q", target, tt.want)
 			}
+		})
+	}
+}
+
+func TestResolveDocsReadinessProbeTargetUsesEffectiveDocsURLAndProvenance(t *testing.T) {
+	tests := []struct {
+		name           string
+		runtime        config.RuntimeConfig
+		wantURL        string
+		wantProvenance docsReadinessTargetProvenance
+	}{
+		{
+			name: "absolute docs URL ignores an internal probe",
+			runtime: config.RuntimeConfig{
+				DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api", "gateway"},
+				DocsURL: "https://docs.example.test/reference/", DocsProbeURL: "http://gateway/developer-docs/",
+			},
+			wantURL: "https://docs.example.test/reference/", wantProvenance: docsReadinessTargetConfiguredPublic,
+		},
+		{
+			name: "derived Docker gateway is trusted topology",
+			runtime: config.RuntimeConfig{
+				DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api", "gateway"}, DocsURL: "/developer-docs/",
+			},
+			wantURL: "http://gateway/developer-docs/", wantProvenance: docsReadinessTargetTrustedTopology,
+		},
+		{
+			name: "local Compose nginx is trusted only for a local Docker gateway topology",
+			runtime: config.RuntimeConfig{
+				DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api", "gateway"},
+				DocsURL: "/developer-docs/", DocsProbeURL: "http://nginx/developer-docs/",
+			},
+			wantURL: "http://nginx/developer-docs/", wantProvenance: docsReadinessTargetTrustedTopology,
+		},
+		{
+			name: "external relative probe uses public policy",
+			runtime: config.RuntimeConfig{DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api"},
+				DocsURL: "/developer-docs/", DocsProbeURL: "https://gateway.example.test/developer-docs/"},
+			wantURL: "https://gateway.example.test/developer-docs/", wantProvenance: docsReadinessTargetConfiguredPublic,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target, err := resolveDocsReadinessProbeTarget(tt.runtime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if target.URL.String() != tt.wantURL || target.Provenance != tt.wantProvenance {
+				t.Fatalf("target = %#v, want URL %q provenance %q", target, tt.wantURL, tt.wantProvenance)
+			}
+		})
+	}
+}
+
+func TestDocsReadinessAbsoluteTargetOutageCannotPassThroughInternalProbe(t *testing.T) {
+	var requested string
+	client := &http.Client{Transport: docsReadinessRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requested = request.URL.String()
+		return nil, errors.New("external docs unavailable")
+	})}
+	cfg := config.Config{Runtime: config.RuntimeConfig{
+		DeploymentMode: config.DeploymentModeDocker, DeploymentModules: []string{"api", "gateway"},
+		DocsURL: "https://docs.example.test/reference/", DocsProbeURL: "http://gateway/developer-docs/",
+	}}
+	result := newDocsReadinessChecker(cfg, client, 100*time.Millisecond)(context.Background())
+	if result.Status != "fail" || requested != cfg.Runtime.DocsURL {
+		t.Fatalf("readiness = %#v requested %q, want external target failure", result, requested)
+	}
+}
+
+func TestDocsReadinessHTTPClientPinsValidatedAddresses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	serverAddress := server.Listener.Addr().String()
+	publicIP := net.ParseIP("93.184.216.34")
+	resolverCalls := 0
+	resolver := docsReadinessResolverFunc(func(_ context.Context, host string) ([]net.IPAddr, error) {
+		resolverCalls++
+		if host != "docs.example.test" {
+			t.Fatalf("resolved host = %q", host)
+		}
+		if resolverCalls > 1 {
+			return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+		}
+		return []net.IPAddr{{IP: publicIP}}, nil
+	})
+	var dialed string
+	dialer := docsReadinessDialFunc(func(ctx context.Context, network, address string) (net.Conn, error) {
+		dialed = address
+		return (&net.Dialer{}).DialContext(ctx, network, serverAddress)
+	})
+	targetURL, _ := url.Parse("http://docs.example.test/developer-docs/")
+	client := newDocsReadinessHTTPClient(200*time.Millisecond, docsReadinessResolvedTarget{
+		URL: targetURL, Provenance: docsReadinessTargetConfiguredPublic,
+	}, resolver, dialer)
+	response, err := client.Get(targetURL.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if resolverCalls != 1 || dialed != "93.184.216.34:80" {
+		t.Fatalf("resolver calls = %d, dialed = %q; want one lookup and pinned public IP", resolverCalls, dialed)
+	}
+}
+
+func TestDocsReadinessHTTPClientRejectsUnsafePublicTargets(t *testing.T) {
+	tests := []struct {
+		name     string
+		target   string
+		resolved []net.IPAddr
+	}{
+		{name: "literal private", target: "http://127.0.0.1/developer-docs/"},
+		{name: "DNS private", target: "http://docs.example.test/developer-docs/", resolved: []net.IPAddr{{IP: net.ParseIP("10.0.0.8")}}},
+		{name: "DNS CGNAT metadata", target: "http://docs.example.test/developer-docs/", resolved: []net.IPAddr{{IP: net.ParseIP("100.100.100.200")}}},
+		{name: "mixed public and private", target: "http://docs.example.test/developer-docs/", resolved: []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}, {IP: net.ParseIP("169.254.169.254")}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			targetURL, _ := url.Parse(tt.target)
+			resolver := docsReadinessResolverFunc(func(context.Context, string) ([]net.IPAddr, error) { return tt.resolved, nil })
+			dialer := docsReadinessDialFunc(func(context.Context, string, string) (net.Conn, error) {
+				t.Fatal("unsafe address must be rejected before dial")
+				return nil, nil
+			})
+			client := newDocsReadinessHTTPClient(100*time.Millisecond, docsReadinessResolvedTarget{
+				URL: targetURL, Provenance: docsReadinessTargetConfiguredPublic,
+			}, resolver, dialer)
+			response, err := client.Get(tt.target)
+			if response != nil {
+				response.Body.Close()
+			}
+			if err == nil {
+				t.Fatal("unsafe public target must fail")
+			}
+		})
+	}
+}
+
+func TestDocsReadinessHTTPClientRevalidatesRedirectDNS(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/developer-docs/" {
+			http.Redirect(w, request, "/developer-docs/index.html", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	serverAddress := server.Listener.Addr().String()
+	resolverCalls := 0
+	resolver := docsReadinessResolverFunc(func(context.Context, string) ([]net.IPAddr, error) {
+		resolverCalls++
+		if resolverCalls == 1 {
+			return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+		}
+		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+	})
+	dialCalls := 0
+	dialer := docsReadinessDialFunc(func(ctx context.Context, network, _ string) (net.Conn, error) {
+		dialCalls++
+		return (&net.Dialer{}).DialContext(ctx, network, serverAddress)
+	})
+	targetURL, _ := url.Parse("http://docs.example.test/developer-docs/")
+	client := newDocsReadinessHTTPClient(200*time.Millisecond, docsReadinessResolvedTarget{URL: targetURL, Provenance: docsReadinessTargetConfiguredPublic}, resolver, dialer)
+	response, err := client.Get(targetURL.String())
+	if response != nil {
+		response.Body.Close()
+	}
+	if err == nil || resolverCalls != 2 || dialCalls != 1 {
+		t.Fatalf("redirect error = %v, resolver calls = %d, dial calls = %d; want second DNS policy rejection", err, resolverCalls, dialCalls)
+	}
+}
+
+func TestDocsReadinessHTTPClientAllowsTrustedTopologyTargets(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	defer server.Close()
+	serverAddress := server.Listener.Addr().String()
+	tests := []struct {
+		name     string
+		target   string
+		resolved []net.IPAddr
+	}{
+		{name: "Docker gateway", target: "http://gateway/developer-docs/", resolved: []net.IPAddr{{IP: net.ParseIP("172.18.0.8")}}},
+		{name: "native loopback", target: "http://127.0.0.1:18000/developer-docs/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			targetURL, _ := url.Parse(tt.target)
+			resolver := docsReadinessResolverFunc(func(context.Context, string) ([]net.IPAddr, error) { return tt.resolved, nil })
+			dialer := docsReadinessDialFunc(func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, serverAddress)
+			})
+			client := newDocsReadinessHTTPClient(200*time.Millisecond, docsReadinessResolvedTarget{URL: targetURL, Provenance: docsReadinessTargetTrustedTopology}, resolver, dialer)
+			response, err := client.Get(tt.target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
 		})
 	}
 }
@@ -196,28 +409,11 @@ func TestDocsReadinessCheckerBoundsProbeTime(t *testing.T) {
 }
 
 func TestDocsReadinessHTTPClientRestrictsRedirects(t *testing.T) {
-	terminal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer terminal.Close()
-
-	crossHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		http.Redirect(w, request, terminal.URL, http.StatusFound)
-	}))
-	defer crossHost.Close()
-
-	client := newDocsReadinessHTTPClient(100 * time.Millisecond)
-	response, err := client.Get(crossHost.URL)
-	if response != nil {
-		response.Body.Close()
-	}
-	if err == nil {
-		t.Fatal("cross-host redirect must be rejected")
-	}
-
+	targetURL, _ := url.Parse("https://docs.example.test/developer-docs/")
+	client := newDocsReadinessHTTPClient(100*time.Millisecond, docsReadinessResolvedTarget{URL: targetURL, Provenance: docsReadinessTargetConfiguredPublic}, nil, nil)
 	checkRedirect := client.CheckRedirect
-	allowedTarget, _ := http.NewRequest(http.MethodGet, "https://docs.example.test/reference/", nil)
-	allowedOrigin, _ := http.NewRequest(http.MethodGet, "https://docs.example.test/", nil)
+	allowedTarget, _ := http.NewRequest(http.MethodGet, "https://docs.example.test/developer-docs/reference/", nil)
+	allowedOrigin, _ := http.NewRequest(http.MethodGet, "https://docs.example.test/developer-docs/", nil)
 	if err := checkRedirect(allowedTarget, []*http.Request{allowedOrigin}); err != nil {
 		t.Fatalf("same-origin public redirect was rejected: %v", err)
 	}
@@ -228,7 +424,9 @@ func TestDocsReadinessHTTPClientRestrictsRedirects(t *testing.T) {
 	}{
 		{name: "scheme change", target: "https://docs.example.test/", origin: "http://docs.example.test/"},
 		{name: "port change", target: "https://docs.example.test:8443/", origin: "https://docs.example.test/"},
-		{name: "private literal", target: "http://127.0.0.1/next", origin: "http://127.0.0.1/start"},
+		{name: "cross host", target: "https://other.example.test/", origin: "https://docs.example.test/"},
+		{name: "outside docs path", target: "https://docs.example.test/healthz", origin: "https://docs.example.test/developer-docs/"},
+		{name: "encoded path traversal", target: "https://docs.example.test/developer-docs/%2e%2e/healthz", origin: "https://docs.example.test/developer-docs/"},
 		{name: "credentials", target: "https://user:secret@docs.example.test/", origin: "https://docs.example.test/"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

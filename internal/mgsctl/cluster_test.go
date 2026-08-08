@@ -182,6 +182,28 @@ func TestJoinedRuntimeUsesNodeProbeAndDropsControlNodeLocalProbe(t *testing.T) {
 	}
 }
 
+func TestJoinedRuntimePreservesAuthoritativeAbsoluteDocsURLWithoutLocalProbe(t *testing.T) {
+	joined := domaincluster.JoinResponse{
+		RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion,
+		InstallationID:       "019d0000-0000-7000-8000-000000000331",
+		NodeID:               "019d0000-0000-7000-8000-000000000332",
+		ConfigRevision:       4,
+		ApplicationVersion:   "v1",
+	}
+	remote := map[string]string{
+		"PIC_GALLERY_DOCS_URL":       "https://docs.example.test/reference/",
+		"PIC_GALLERY_DOCS_PROBE_URL": "http://gateway/developer-docs/",
+	}
+	plan := InstallPlan{Mode: config.DeploymentModeDocker, Role: config.DeploymentRoleAPI, Components: []Component{ComponentAPI}}
+	values := joinedRuntimeValues(ClusterJoinOptions{ImageTag: "v1"}, plan, joined, remote)
+	if values["PIC_GALLERY_DOCS_URL"] != remote["PIC_GALLERY_DOCS_URL"] {
+		t.Fatalf("joined docs URL = %q, want authoritative %q", values["PIC_GALLERY_DOCS_URL"], remote["PIC_GALLERY_DOCS_URL"])
+	}
+	if _, exists := values["PIC_GALLERY_DOCS_PROBE_URL"]; exists {
+		t.Fatalf("joined API retained control-node local probe: %#v", values)
+	}
+}
+
 func TestPostClusterJSONRejectsRedirectsAndTrailingOuterJSON(t *testing.T) {
 	t.Run("redirect", func(t *testing.T) {
 		redirected := false
