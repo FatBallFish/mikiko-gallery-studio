@@ -27,6 +27,8 @@ type ImageTask struct {
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID int64 `json:"user_id,omitempty"`
+	// ProjectID holds the value of the "project_id" field.
+	ProjectID *uuid.UUID `json:"project_id,omitempty"`
 	// APIKeyID holds the value of the "api_key_id" field.
 	APIKeyID *int64 `json:"api_key_id,omitempty"`
 	// SourceChannel holds the value of the "source_channel" field.
@@ -61,6 +63,8 @@ type ImageTask struct {
 	AspectRatio string `json:"aspect_ratio,omitempty"`
 	// OutputFormat holds the value of the "output_format" field.
 	OutputFormat string `json:"output_format,omitempty"`
+	// Background holds the value of the "background" field.
+	Background *string `json:"background,omitempty"`
 	// OutputCompression holds the value of the "output_compression" field.
 	OutputCompression int `json:"output_compression,omitempty"`
 	// Moderation holds the value of the "moderation" field.
@@ -155,7 +159,7 @@ func (*ImageTask) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case imagetask.FieldArtifactStorageConfigID:
+		case imagetask.FieldProjectID, imagetask.FieldArtifactStorageConfigID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
 		case imagetask.FieldPricingSnapshot, imagetask.FieldRoutingSnapshot, imagetask.FieldErrorPolicySnapshot, imagetask.FieldProviderTrace, imagetask.FieldArtifactLastDiagnostic:
 			values[i] = new([]byte)
@@ -163,7 +167,7 @@ func (*ImageTask) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldOutputCompression, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed, imagetask.FieldRouteModelID, imagetask.FieldAccountModelID, imagetask.FieldModelAccountID, imagetask.FieldProviderModelID, imagetask.FieldFallbackCount, imagetask.FieldArtifactAttemptCount, imagetask.FieldArtifactStorageVersion:
 			values[i] = new(sql.NullInt64)
-		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldProgressStage, imagetask.FieldProgressMessage, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldSizeMode, imagetask.FieldBaseResolution, imagetask.FieldQuality, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldOutputFormat, imagetask.FieldModeration, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldProviderRequestID, imagetask.FieldArtifactRecoveryStatus, imagetask.FieldArtifactRecoveryPayload, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
+		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldProgressStage, imagetask.FieldProgressMessage, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldSizeMode, imagetask.FieldBaseResolution, imagetask.FieldQuality, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldOutputFormat, imagetask.FieldBackground, imagetask.FieldModeration, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldProviderRequestID, imagetask.FieldArtifactRecoveryStatus, imagetask.FieldArtifactRecoveryPayload, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
 			values[i] = new(sql.NullString)
 		case imagetask.FieldCreatedAt, imagetask.FieldUpdatedAt, imagetask.FieldDeletedAt, imagetask.FieldUpstreamSucceededAt, imagetask.FieldArtifactNextRetryAt, imagetask.FieldLeaseExpiresAt, imagetask.FieldStartedAt, imagetask.FieldFinishedAt:
 			values[i] = new(sql.NullTime)
@@ -214,6 +218,13 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
 				_m.UserID = value.Int64
+			}
+		case imagetask.FieldProjectID:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field project_id", values[i])
+			} else if value.Valid {
+				_m.ProjectID = new(uuid.UUID)
+				*_m.ProjectID = *value.S.(*uuid.UUID)
 			}
 		case imagetask.FieldAPIKeyID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -321,6 +332,13 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field output_format", values[i])
 			} else if value.Valid {
 				_m.OutputFormat = value.String
+			}
+		case imagetask.FieldBackground:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field background", values[i])
+			} else if value.Valid {
+				_m.Background = new(string)
+				*_m.Background = value.String
 			}
 		case imagetask.FieldOutputCompression:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -657,6 +675,11 @@ func (_m *ImageTask) String() string {
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
 	builder.WriteString(", ")
+	if v := _m.ProjectID; v != nil {
+		builder.WriteString("project_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
 	if v := _m.APIKeyID; v != nil {
 		builder.WriteString("api_key_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
@@ -717,6 +740,11 @@ func (_m *ImageTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("output_format=")
 	builder.WriteString(_m.OutputFormat)
+	builder.WriteString(", ")
+	if v := _m.Background; v != nil {
+		builder.WriteString("background=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("output_compression=")
 	builder.WriteString(fmt.Sprintf("%v", _m.OutputCompression))

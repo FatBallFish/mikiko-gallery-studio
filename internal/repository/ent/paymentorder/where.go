@@ -129,6 +129,26 @@ func BonusPoints(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldBonusPoints, v))
 }
 
+// CreditExpiryEnabled applies equality check predicate on the "credit_expiry_enabled" field. It's identical to CreditExpiryEnabledEQ.
+func CreditExpiryEnabled(v bool) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCreditExpiryEnabled, v))
+}
+
+// CreditValidDays applies equality check predicate on the "credit_valid_days" field. It's identical to CreditValidDaysEQ.
+func CreditValidDays(v int) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCreditValidDays, v))
+}
+
+// CreditedAt applies equality check predicate on the "credited_at" field. It's identical to CreditedAtEQ.
+func CreditedAt(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCreditedAt, v))
+}
+
+// CreditExpiresAt applies equality check predicate on the "credit_expires_at" field. It's identical to CreditExpiresAtEQ.
+func CreditExpiresAt(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCreditExpiresAt, v))
+}
+
 // TradeNo applies equality check predicate on the "trade_no" field. It's identical to TradeNoEQ.
 func TradeNo(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldTradeNo, v))
@@ -1067,6 +1087,166 @@ func BonusPointsEqualFold(v string) predicate.PaymentOrder {
 // BonusPointsContainsFold applies the ContainsFold predicate on the "bonus_points" field.
 func BonusPointsContainsFold(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldContainsFold(FieldBonusPoints, v))
+}
+
+// CreditExpiryEnabledEQ applies the EQ predicate on the "credit_expiry_enabled" field.
+func CreditExpiryEnabledEQ(v bool) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCreditExpiryEnabled, v))
+}
+
+// CreditExpiryEnabledNEQ applies the NEQ predicate on the "credit_expiry_enabled" field.
+func CreditExpiryEnabledNEQ(v bool) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCreditExpiryEnabled, v))
+}
+
+// CreditValidDaysEQ applies the EQ predicate on the "credit_valid_days" field.
+func CreditValidDaysEQ(v int) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCreditValidDays, v))
+}
+
+// CreditValidDaysNEQ applies the NEQ predicate on the "credit_valid_days" field.
+func CreditValidDaysNEQ(v int) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCreditValidDays, v))
+}
+
+// CreditValidDaysIn applies the In predicate on the "credit_valid_days" field.
+func CreditValidDaysIn(vs ...int) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCreditValidDays, vs...))
+}
+
+// CreditValidDaysNotIn applies the NotIn predicate on the "credit_valid_days" field.
+func CreditValidDaysNotIn(vs ...int) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCreditValidDays, vs...))
+}
+
+// CreditValidDaysGT applies the GT predicate on the "credit_valid_days" field.
+func CreditValidDaysGT(v int) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldCreditValidDays, v))
+}
+
+// CreditValidDaysGTE applies the GTE predicate on the "credit_valid_days" field.
+func CreditValidDaysGTE(v int) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldCreditValidDays, v))
+}
+
+// CreditValidDaysLT applies the LT predicate on the "credit_valid_days" field.
+func CreditValidDaysLT(v int) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldCreditValidDays, v))
+}
+
+// CreditValidDaysLTE applies the LTE predicate on the "credit_valid_days" field.
+func CreditValidDaysLTE(v int) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldCreditValidDays, v))
+}
+
+// CreditValidDaysIsNil applies the IsNil predicate on the "credit_valid_days" field.
+func CreditValidDaysIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldCreditValidDays))
+}
+
+// CreditValidDaysNotNil applies the NotNil predicate on the "credit_valid_days" field.
+func CreditValidDaysNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldCreditValidDays))
+}
+
+// CreditedAtEQ applies the EQ predicate on the "credited_at" field.
+func CreditedAtEQ(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCreditedAt, v))
+}
+
+// CreditedAtNEQ applies the NEQ predicate on the "credited_at" field.
+func CreditedAtNEQ(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCreditedAt, v))
+}
+
+// CreditedAtIn applies the In predicate on the "credited_at" field.
+func CreditedAtIn(vs ...time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCreditedAt, vs...))
+}
+
+// CreditedAtNotIn applies the NotIn predicate on the "credited_at" field.
+func CreditedAtNotIn(vs ...time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCreditedAt, vs...))
+}
+
+// CreditedAtGT applies the GT predicate on the "credited_at" field.
+func CreditedAtGT(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldCreditedAt, v))
+}
+
+// CreditedAtGTE applies the GTE predicate on the "credited_at" field.
+func CreditedAtGTE(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldCreditedAt, v))
+}
+
+// CreditedAtLT applies the LT predicate on the "credited_at" field.
+func CreditedAtLT(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldCreditedAt, v))
+}
+
+// CreditedAtLTE applies the LTE predicate on the "credited_at" field.
+func CreditedAtLTE(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldCreditedAt, v))
+}
+
+// CreditedAtIsNil applies the IsNil predicate on the "credited_at" field.
+func CreditedAtIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldCreditedAt))
+}
+
+// CreditedAtNotNil applies the NotNil predicate on the "credited_at" field.
+func CreditedAtNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldCreditedAt))
+}
+
+// CreditExpiresAtEQ applies the EQ predicate on the "credit_expires_at" field.
+func CreditExpiresAtEQ(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCreditExpiresAt, v))
+}
+
+// CreditExpiresAtNEQ applies the NEQ predicate on the "credit_expires_at" field.
+func CreditExpiresAtNEQ(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCreditExpiresAt, v))
+}
+
+// CreditExpiresAtIn applies the In predicate on the "credit_expires_at" field.
+func CreditExpiresAtIn(vs ...time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCreditExpiresAt, vs...))
+}
+
+// CreditExpiresAtNotIn applies the NotIn predicate on the "credit_expires_at" field.
+func CreditExpiresAtNotIn(vs ...time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCreditExpiresAt, vs...))
+}
+
+// CreditExpiresAtGT applies the GT predicate on the "credit_expires_at" field.
+func CreditExpiresAtGT(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldCreditExpiresAt, v))
+}
+
+// CreditExpiresAtGTE applies the GTE predicate on the "credit_expires_at" field.
+func CreditExpiresAtGTE(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldCreditExpiresAt, v))
+}
+
+// CreditExpiresAtLT applies the LT predicate on the "credit_expires_at" field.
+func CreditExpiresAtLT(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldCreditExpiresAt, v))
+}
+
+// CreditExpiresAtLTE applies the LTE predicate on the "credit_expires_at" field.
+func CreditExpiresAtLTE(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldCreditExpiresAt, v))
+}
+
+// CreditExpiresAtIsNil applies the IsNil predicate on the "credit_expires_at" field.
+func CreditExpiresAtIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldCreditExpiresAt))
+}
+
+// CreditExpiresAtNotNil applies the NotNil predicate on the "credit_expires_at" field.
+func CreditExpiresAtNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldCreditExpiresAt))
 }
 
 // TradeNoEQ applies the EQ predicate on the "trade_no" field.

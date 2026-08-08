@@ -130,6 +130,16 @@ func Sha256(v string) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldEQ(FieldSha256, v))
 }
 
+// SourceImageResultID applies equality check predicate on the "source_image_result_id" field. It's identical to SourceImageResultIDEQ.
+func SourceImageResultID(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldSourceImageResultID, v))
+}
+
+// OwnsObject applies equality check predicate on the "owns_object" field. It's identical to OwnsObjectEQ.
+func OwnsObject(v bool) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldOwnsObject, v))
+}
+
 // BoundTaskID applies equality check predicate on the "bound_task_id" field. It's identical to BoundTaskIDEQ.
 func BoundTaskID(v uuid.UUID) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldEQ(FieldBoundTaskID, v))
@@ -938,6 +948,66 @@ func Sha256EqualFold(v string) predicate.ReferenceAsset {
 // Sha256ContainsFold applies the ContainsFold predicate on the "sha256" field.
 func Sha256ContainsFold(v string) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldContainsFold(FieldSha256, v))
+}
+
+// SourceImageResultIDEQ applies the EQ predicate on the "source_image_result_id" field.
+func SourceImageResultIDEQ(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldSourceImageResultID, v))
+}
+
+// SourceImageResultIDNEQ applies the NEQ predicate on the "source_image_result_id" field.
+func SourceImageResultIDNEQ(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNEQ(FieldSourceImageResultID, v))
+}
+
+// SourceImageResultIDIn applies the In predicate on the "source_image_result_id" field.
+func SourceImageResultIDIn(vs ...uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldIn(FieldSourceImageResultID, vs...))
+}
+
+// SourceImageResultIDNotIn applies the NotIn predicate on the "source_image_result_id" field.
+func SourceImageResultIDNotIn(vs ...uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNotIn(FieldSourceImageResultID, vs...))
+}
+
+// SourceImageResultIDGT applies the GT predicate on the "source_image_result_id" field.
+func SourceImageResultIDGT(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldGT(FieldSourceImageResultID, v))
+}
+
+// SourceImageResultIDGTE applies the GTE predicate on the "source_image_result_id" field.
+func SourceImageResultIDGTE(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldGTE(FieldSourceImageResultID, v))
+}
+
+// SourceImageResultIDLT applies the LT predicate on the "source_image_result_id" field.
+func SourceImageResultIDLT(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldLT(FieldSourceImageResultID, v))
+}
+
+// SourceImageResultIDLTE applies the LTE predicate on the "source_image_result_id" field.
+func SourceImageResultIDLTE(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldLTE(FieldSourceImageResultID, v))
+}
+
+// SourceImageResultIDIsNil applies the IsNil predicate on the "source_image_result_id" field.
+func SourceImageResultIDIsNil() predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldIsNull(FieldSourceImageResultID))
+}
+
+// SourceImageResultIDNotNil applies the NotNil predicate on the "source_image_result_id" field.
+func SourceImageResultIDNotNil() predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNotNull(FieldSourceImageResultID))
+}
+
+// OwnsObjectEQ applies the EQ predicate on the "owns_object" field.
+func OwnsObjectEQ(v bool) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldOwnsObject, v))
+}
+
+// OwnsObjectNEQ applies the NEQ predicate on the "owns_object" field.
+func OwnsObjectNEQ(v bool) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNEQ(FieldOwnsObject, v))
 }
 
 // BoundTaskIDEQ applies the EQ predicate on the "bound_task_id" field.

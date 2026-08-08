@@ -267,6 +267,87 @@ func (_u *PaymentOrderUpdate) SetNillableBonusPoints(v *string) *PaymentOrderUpd
 	return _u
 }
 
+// SetCreditExpiryEnabled sets the "credit_expiry_enabled" field.
+func (_u *PaymentOrderUpdate) SetCreditExpiryEnabled(v bool) *PaymentOrderUpdate {
+	_u.mutation.SetCreditExpiryEnabled(v)
+	return _u
+}
+
+// SetNillableCreditExpiryEnabled sets the "credit_expiry_enabled" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCreditExpiryEnabled(v *bool) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCreditExpiryEnabled(*v)
+	}
+	return _u
+}
+
+// SetCreditValidDays sets the "credit_valid_days" field.
+func (_u *PaymentOrderUpdate) SetCreditValidDays(v int) *PaymentOrderUpdate {
+	_u.mutation.ResetCreditValidDays()
+	_u.mutation.SetCreditValidDays(v)
+	return _u
+}
+
+// SetNillableCreditValidDays sets the "credit_valid_days" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCreditValidDays(v *int) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCreditValidDays(*v)
+	}
+	return _u
+}
+
+// AddCreditValidDays adds value to the "credit_valid_days" field.
+func (_u *PaymentOrderUpdate) AddCreditValidDays(v int) *PaymentOrderUpdate {
+	_u.mutation.AddCreditValidDays(v)
+	return _u
+}
+
+// ClearCreditValidDays clears the value of the "credit_valid_days" field.
+func (_u *PaymentOrderUpdate) ClearCreditValidDays() *PaymentOrderUpdate {
+	_u.mutation.ClearCreditValidDays()
+	return _u
+}
+
+// SetCreditedAt sets the "credited_at" field.
+func (_u *PaymentOrderUpdate) SetCreditedAt(v time.Time) *PaymentOrderUpdate {
+	_u.mutation.SetCreditedAt(v)
+	return _u
+}
+
+// SetNillableCreditedAt sets the "credited_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCreditedAt(v *time.Time) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCreditedAt(*v)
+	}
+	return _u
+}
+
+// ClearCreditedAt clears the value of the "credited_at" field.
+func (_u *PaymentOrderUpdate) ClearCreditedAt() *PaymentOrderUpdate {
+	_u.mutation.ClearCreditedAt()
+	return _u
+}
+
+// SetCreditExpiresAt sets the "credit_expires_at" field.
+func (_u *PaymentOrderUpdate) SetCreditExpiresAt(v time.Time) *PaymentOrderUpdate {
+	_u.mutation.SetCreditExpiresAt(v)
+	return _u
+}
+
+// SetNillableCreditExpiresAt sets the "credit_expires_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCreditExpiresAt(v *time.Time) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCreditExpiresAt(*v)
+	}
+	return _u
+}
+
+// ClearCreditExpiresAt clears the value of the "credit_expires_at" field.
+func (_u *PaymentOrderUpdate) ClearCreditExpiresAt() *PaymentOrderUpdate {
+	_u.mutation.ClearCreditExpiresAt()
+	return _u
+}
+
 // SetTradeNo sets the "trade_no" field.
 func (_u *PaymentOrderUpdate) SetTradeNo(v string) *PaymentOrderUpdate {
 	_u.mutation.SetTradeNo(v)
@@ -709,6 +790,30 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	if value, ok := _u.mutation.BonusPoints(); ok {
 		_spec.SetField(paymentorder.FieldBonusPoints, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.CreditExpiryEnabled(); ok {
+		_spec.SetField(paymentorder.FieldCreditExpiryEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.CreditValidDays(); ok {
+		_spec.SetField(paymentorder.FieldCreditValidDays, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedCreditValidDays(); ok {
+		_spec.AddField(paymentorder.FieldCreditValidDays, field.TypeInt, value)
+	}
+	if _u.mutation.CreditValidDaysCleared() {
+		_spec.ClearField(paymentorder.FieldCreditValidDays, field.TypeInt)
+	}
+	if value, ok := _u.mutation.CreditedAt(); ok {
+		_spec.SetField(paymentorder.FieldCreditedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CreditedAtCleared() {
+		_spec.ClearField(paymentorder.FieldCreditedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreditExpiresAt(); ok {
+		_spec.SetField(paymentorder.FieldCreditExpiresAt, field.TypeTime, value)
+	}
+	if _u.mutation.CreditExpiresAtCleared() {
+		_spec.ClearField(paymentorder.FieldCreditExpiresAt, field.TypeTime)
+	}
 	if value, ok := _u.mutation.TradeNo(); ok {
 		_spec.SetField(paymentorder.FieldTradeNo, field.TypeString, value)
 	}
@@ -1043,6 +1148,87 @@ func (_u *PaymentOrderUpdateOne) SetNillableBonusPoints(v *string) *PaymentOrder
 	if v != nil {
 		_u.SetBonusPoints(*v)
 	}
+	return _u
+}
+
+// SetCreditExpiryEnabled sets the "credit_expiry_enabled" field.
+func (_u *PaymentOrderUpdateOne) SetCreditExpiryEnabled(v bool) *PaymentOrderUpdateOne {
+	_u.mutation.SetCreditExpiryEnabled(v)
+	return _u
+}
+
+// SetNillableCreditExpiryEnabled sets the "credit_expiry_enabled" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCreditExpiryEnabled(v *bool) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCreditExpiryEnabled(*v)
+	}
+	return _u
+}
+
+// SetCreditValidDays sets the "credit_valid_days" field.
+func (_u *PaymentOrderUpdateOne) SetCreditValidDays(v int) *PaymentOrderUpdateOne {
+	_u.mutation.ResetCreditValidDays()
+	_u.mutation.SetCreditValidDays(v)
+	return _u
+}
+
+// SetNillableCreditValidDays sets the "credit_valid_days" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCreditValidDays(v *int) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCreditValidDays(*v)
+	}
+	return _u
+}
+
+// AddCreditValidDays adds value to the "credit_valid_days" field.
+func (_u *PaymentOrderUpdateOne) AddCreditValidDays(v int) *PaymentOrderUpdateOne {
+	_u.mutation.AddCreditValidDays(v)
+	return _u
+}
+
+// ClearCreditValidDays clears the value of the "credit_valid_days" field.
+func (_u *PaymentOrderUpdateOne) ClearCreditValidDays() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCreditValidDays()
+	return _u
+}
+
+// SetCreditedAt sets the "credited_at" field.
+func (_u *PaymentOrderUpdateOne) SetCreditedAt(v time.Time) *PaymentOrderUpdateOne {
+	_u.mutation.SetCreditedAt(v)
+	return _u
+}
+
+// SetNillableCreditedAt sets the "credited_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCreditedAt(v *time.Time) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCreditedAt(*v)
+	}
+	return _u
+}
+
+// ClearCreditedAt clears the value of the "credited_at" field.
+func (_u *PaymentOrderUpdateOne) ClearCreditedAt() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCreditedAt()
+	return _u
+}
+
+// SetCreditExpiresAt sets the "credit_expires_at" field.
+func (_u *PaymentOrderUpdateOne) SetCreditExpiresAt(v time.Time) *PaymentOrderUpdateOne {
+	_u.mutation.SetCreditExpiresAt(v)
+	return _u
+}
+
+// SetNillableCreditExpiresAt sets the "credit_expires_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCreditExpiresAt(v *time.Time) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCreditExpiresAt(*v)
+	}
+	return _u
+}
+
+// ClearCreditExpiresAt clears the value of the "credit_expires_at" field.
+func (_u *PaymentOrderUpdateOne) ClearCreditExpiresAt() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCreditExpiresAt()
 	return _u
 }
 
@@ -1517,6 +1703,30 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if value, ok := _u.mutation.BonusPoints(); ok {
 		_spec.SetField(paymentorder.FieldBonusPoints, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.CreditExpiryEnabled(); ok {
+		_spec.SetField(paymentorder.FieldCreditExpiryEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.CreditValidDays(); ok {
+		_spec.SetField(paymentorder.FieldCreditValidDays, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedCreditValidDays(); ok {
+		_spec.AddField(paymentorder.FieldCreditValidDays, field.TypeInt, value)
+	}
+	if _u.mutation.CreditValidDaysCleared() {
+		_spec.ClearField(paymentorder.FieldCreditValidDays, field.TypeInt)
+	}
+	if value, ok := _u.mutation.CreditedAt(); ok {
+		_spec.SetField(paymentorder.FieldCreditedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CreditedAtCleared() {
+		_spec.ClearField(paymentorder.FieldCreditedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreditExpiresAt(); ok {
+		_spec.SetField(paymentorder.FieldCreditExpiresAt, field.TypeTime, value)
+	}
+	if _u.mutation.CreditExpiresAtCleared() {
+		_spec.ClearField(paymentorder.FieldCreditExpiresAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.TradeNo(); ok {
 		_spec.SetField(paymentorder.FieldTradeNo, field.TypeString, value)

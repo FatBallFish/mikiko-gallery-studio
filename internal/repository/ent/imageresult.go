@@ -28,6 +28,8 @@ type ImageResult struct {
 	TaskID uuid.UUID `json:"task_id,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID int64 `json:"user_id,omitempty"`
+	// ProjectID holds the value of the "project_id" field.
+	ProjectID *uuid.UUID `json:"project_id,omitempty"`
 	// ImageRole holds the value of the "image_role" field.
 	ImageRole string `json:"image_role,omitempty"`
 	// StorageConfigID holds the value of the "storage_config_id" field.
@@ -62,7 +64,7 @@ func (*ImageResult) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case imageresult.FieldStorageConfigID:
+		case imageresult.FieldProjectID, imageresult.FieldStorageConfigID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
 		case imageresult.FieldUserID, imageresult.FieldFileSizeBytes, imageresult.FieldWidth, imageresult.FieldHeight:
 			values[i] = new(sql.NullInt64)
@@ -123,6 +125,13 @@ func (_m *ImageResult) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
 				_m.UserID = value.Int64
+			}
+		case imageresult.FieldProjectID:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field project_id", values[i])
+			} else if value.Valid {
+				_m.ProjectID = new(uuid.UUID)
+				*_m.ProjectID = *value.S.(*uuid.UUID)
 			}
 		case imageresult.FieldImageRole:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -257,6 +266,11 @@ func (_m *ImageResult) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
+	builder.WriteString(", ")
+	if v := _m.ProjectID; v != nil {
+		builder.WriteString("project_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("image_role=")
 	builder.WriteString(_m.ImageRole)

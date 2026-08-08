@@ -27,11 +27,13 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/promptoptimizationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
@@ -129,11 +131,13 @@ func checkColumn(t, c string) error {
 			modelaccountmodel.Table:           modelaccountmodel.ValidColumn,
 			modelprovider.Table:               modelprovider.ValidColumn,
 			modelroute.Table:                  modelroute.ValidColumn,
+			objectdeletionjob.Table:           objectdeletionjob.ValidColumn,
 			objectstorageconfig.Table:         objectstorageconfig.ValidColumn,
 			paymentorder.Table:                paymentorder.ValidColumn,
 			paymentproviderinstance.Table:     paymentproviderinstance.ValidColumn,
 			paymentwebhookevent.Table:         paymentwebhookevent.ValidColumn,
 			pointledger.Table:                 pointledger.ValidColumn,
+			project.Table:                     project.ValidColumn,
 			promptoptimizationrun.Table:       promptoptimizationrun.ValidColumn,
 			providererrorpolicy.Table:         providererrorpolicy.ValidColumn,
 			providermodel.Table:               providermodel.ValidColumn,

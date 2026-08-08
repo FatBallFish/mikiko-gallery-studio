@@ -22,6 +22,8 @@ const (
 	FieldDeletedAt = "deleted_at"
 	// FieldUserID holds the string denoting the user_id field in the database.
 	FieldUserID = "user_id"
+	// FieldProjectID holds the string denoting the project_id field in the database.
+	FieldProjectID = "project_id"
 	// FieldAPIKeyID holds the string denoting the api_key_id field in the database.
 	FieldAPIKeyID = "api_key_id"
 	// FieldSourceChannel holds the string denoting the source_channel field in the database.
@@ -56,6 +58,8 @@ const (
 	FieldAspectRatio = "aspect_ratio"
 	// FieldOutputFormat holds the string denoting the output_format field in the database.
 	FieldOutputFormat = "output_format"
+	// FieldBackground holds the string denoting the background field in the database.
+	FieldBackground = "background"
 	// FieldOutputCompression holds the string denoting the output_compression field in the database.
 	FieldOutputCompression = "output_compression"
 	// FieldModeration holds the string denoting the moderation field in the database.
@@ -153,6 +157,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldDeletedAt,
 	FieldUserID,
+	FieldProjectID,
 	FieldAPIKeyID,
 	FieldSourceChannel,
 	FieldTaskType,
@@ -170,6 +175,7 @@ var Columns = []string{
 	FieldResolvedHeight,
 	FieldAspectRatio,
 	FieldOutputFormat,
+	FieldBackground,
 	FieldOutputCompression,
 	FieldModeration,
 	FieldRequestedOutputImageCount,
@@ -272,6 +278,8 @@ var (
 	DefaultOutputFormat string
 	// OutputFormatValidator is a validator for the "output_format" field. It is called by the builders before save.
 	OutputFormatValidator func(string) error
+	// BackgroundValidator is a validator for the "background" field. It is called by the builders before save.
+	BackgroundValidator func(string) error
 	// DefaultOutputCompression holds the default value on creation for the "output_compression" field.
 	DefaultOutputCompression int
 	// DefaultModeration holds the default value on creation for the "moderation" field.
@@ -366,6 +374,11 @@ func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserID, opts...).ToFunc()
 }
 
+// ByProjectID orders the results by the project_id field.
+func ByProjectID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProjectID, opts...).ToFunc()
+}
+
 // ByAPIKeyID orders the results by the api_key_id field.
 func ByAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAPIKeyID, opts...).ToFunc()
@@ -449,6 +462,11 @@ func ByAspectRatio(opts ...sql.OrderTermOption) OrderOption {
 // ByOutputFormat orders the results by the output_format field.
 func ByOutputFormat(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldOutputFormat, opts...).ToFunc()
+}
+
+// ByBackground orders the results by the background field.
+func ByBackground(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBackground, opts...).ToFunc()
 }
 
 // ByOutputCompression orders the results by the output_compression field.

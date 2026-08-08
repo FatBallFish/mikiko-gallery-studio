@@ -254,6 +254,20 @@ func (_u *ModelAccountModelUpdate) ClearSupportedPixelSizes() *ModelAccountModel
 	return _u
 }
 
+// SetSupportsCustomRatio sets the "supports_custom_ratio" field.
+func (_u *ModelAccountModelUpdate) SetSupportsCustomRatio(v bool) *ModelAccountModelUpdate {
+	_u.mutation.SetSupportsCustomRatio(v)
+	return _u
+}
+
+// SetNillableSupportsCustomRatio sets the "supports_custom_ratio" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableSupportsCustomRatio(v *bool) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetSupportsCustomRatio(*v)
+	}
+	return _u
+}
+
 // SetOutputFormat sets the "output_format" field.
 func (_u *ModelAccountModelUpdate) SetOutputFormat(v []string) *ModelAccountModelUpdate {
 	_u.mutation.SetOutputFormat(v)
@@ -269,6 +283,24 @@ func (_u *ModelAccountModelUpdate) AppendOutputFormat(v []string) *ModelAccountM
 // ClearOutputFormat clears the value of the "output_format" field.
 func (_u *ModelAccountModelUpdate) ClearOutputFormat() *ModelAccountModelUpdate {
 	_u.mutation.ClearOutputFormat()
+	return _u
+}
+
+// SetSupportedBackgrounds sets the "supported_backgrounds" field.
+func (_u *ModelAccountModelUpdate) SetSupportedBackgrounds(v []string) *ModelAccountModelUpdate {
+	_u.mutation.SetSupportedBackgrounds(v)
+	return _u
+}
+
+// AppendSupportedBackgrounds appends value to the "supported_backgrounds" field.
+func (_u *ModelAccountModelUpdate) AppendSupportedBackgrounds(v []string) *ModelAccountModelUpdate {
+	_u.mutation.AppendSupportedBackgrounds(v)
+	return _u
+}
+
+// ClearSupportedBackgrounds clears the value of the "supported_backgrounds" field.
+func (_u *ModelAccountModelUpdate) ClearSupportedBackgrounds() *ModelAccountModelUpdate {
+	_u.mutation.ClearSupportedBackgrounds()
 	return _u
 }
 
@@ -318,6 +350,90 @@ func (_u *ModelAccountModelUpdate) SetNillableSupportsCustomSize(v *bool) *Model
 	if v != nil {
 		_u.SetSupportsCustomSize(*v)
 	}
+	return _u
+}
+
+// SetMinWidth sets the "min_width" field.
+func (_u *ModelAccountModelUpdate) SetMinWidth(v int) *ModelAccountModelUpdate {
+	_u.mutation.ResetMinWidth()
+	_u.mutation.SetMinWidth(v)
+	return _u
+}
+
+// SetNillableMinWidth sets the "min_width" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableMinWidth(v *int) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetMinWidth(*v)
+	}
+	return _u
+}
+
+// AddMinWidth adds value to the "min_width" field.
+func (_u *ModelAccountModelUpdate) AddMinWidth(v int) *ModelAccountModelUpdate {
+	_u.mutation.AddMinWidth(v)
+	return _u
+}
+
+// SetMaxWidth sets the "max_width" field.
+func (_u *ModelAccountModelUpdate) SetMaxWidth(v int) *ModelAccountModelUpdate {
+	_u.mutation.ResetMaxWidth()
+	_u.mutation.SetMaxWidth(v)
+	return _u
+}
+
+// SetNillableMaxWidth sets the "max_width" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableMaxWidth(v *int) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetMaxWidth(*v)
+	}
+	return _u
+}
+
+// AddMaxWidth adds value to the "max_width" field.
+func (_u *ModelAccountModelUpdate) AddMaxWidth(v int) *ModelAccountModelUpdate {
+	_u.mutation.AddMaxWidth(v)
+	return _u
+}
+
+// SetMinHeight sets the "min_height" field.
+func (_u *ModelAccountModelUpdate) SetMinHeight(v int) *ModelAccountModelUpdate {
+	_u.mutation.ResetMinHeight()
+	_u.mutation.SetMinHeight(v)
+	return _u
+}
+
+// SetNillableMinHeight sets the "min_height" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableMinHeight(v *int) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetMinHeight(*v)
+	}
+	return _u
+}
+
+// AddMinHeight adds value to the "min_height" field.
+func (_u *ModelAccountModelUpdate) AddMinHeight(v int) *ModelAccountModelUpdate {
+	_u.mutation.AddMinHeight(v)
+	return _u
+}
+
+// SetMaxHeight sets the "max_height" field.
+func (_u *ModelAccountModelUpdate) SetMaxHeight(v int) *ModelAccountModelUpdate {
+	_u.mutation.ResetMaxHeight()
+	_u.mutation.SetMaxHeight(v)
+	return _u
+}
+
+// SetNillableMaxHeight sets the "max_height" field if the given value is not nil.
+func (_u *ModelAccountModelUpdate) SetNillableMaxHeight(v *int) *ModelAccountModelUpdate {
+	if v != nil {
+		_u.SetMaxHeight(*v)
+	}
+	return _u
+}
+
+// AddMaxHeight adds value to the "max_height" field.
+func (_u *ModelAccountModelUpdate) AddMaxHeight(v int) *ModelAccountModelUpdate {
+	_u.mutation.AddMaxHeight(v)
 	return _u
 }
 
@@ -565,6 +681,9 @@ func (_u *ModelAccountModelUpdate) sqlSave(ctx context.Context) (_node int, err 
 	if _u.mutation.SupportedPixelSizesCleared() {
 		_spec.ClearField(modelaccountmodel.FieldSupportedPixelSizes, field.TypeJSON)
 	}
+	if value, ok := _u.mutation.SupportsCustomRatio(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportsCustomRatio, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.OutputFormat(); ok {
 		_spec.SetField(modelaccountmodel.FieldOutputFormat, field.TypeJSON, value)
 	}
@@ -575,6 +694,17 @@ func (_u *ModelAccountModelUpdate) sqlSave(ctx context.Context) (_node int, err 
 	}
 	if _u.mutation.OutputFormatCleared() {
 		_spec.ClearField(modelaccountmodel.FieldOutputFormat, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.SupportedBackgrounds(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedBackgrounds, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSupportedBackgrounds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldSupportedBackgrounds, value)
+		})
+	}
+	if _u.mutation.SupportedBackgroundsCleared() {
+		_spec.ClearField(modelaccountmodel.FieldSupportedBackgrounds, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.OutputCompression(); ok {
 		_spec.SetField(modelaccountmodel.FieldOutputCompression, field.TypeInt, value)
@@ -587,6 +717,30 @@ func (_u *ModelAccountModelUpdate) sqlSave(ctx context.Context) (_node int, err 
 	}
 	if value, ok := _u.mutation.SupportsCustomSize(); ok {
 		_spec.SetField(modelaccountmodel.FieldSupportsCustomSize, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.MinWidth(); ok {
+		_spec.SetField(modelaccountmodel.FieldMinWidth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMinWidth(); ok {
+		_spec.AddField(modelaccountmodel.FieldMinWidth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MaxWidth(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxWidth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxWidth(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxWidth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MinHeight(); ok {
+		_spec.SetField(modelaccountmodel.FieldMinHeight, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMinHeight(); ok {
+		_spec.AddField(modelaccountmodel.FieldMinHeight, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MaxHeight(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxHeight, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxHeight(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxHeight, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.Moderation(); ok {
 		_spec.SetField(modelaccountmodel.FieldModeration, field.TypeJSON, value)
@@ -859,6 +1013,20 @@ func (_u *ModelAccountModelUpdateOne) ClearSupportedPixelSizes() *ModelAccountMo
 	return _u
 }
 
+// SetSupportsCustomRatio sets the "supports_custom_ratio" field.
+func (_u *ModelAccountModelUpdateOne) SetSupportsCustomRatio(v bool) *ModelAccountModelUpdateOne {
+	_u.mutation.SetSupportsCustomRatio(v)
+	return _u
+}
+
+// SetNillableSupportsCustomRatio sets the "supports_custom_ratio" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableSupportsCustomRatio(v *bool) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetSupportsCustomRatio(*v)
+	}
+	return _u
+}
+
 // SetOutputFormat sets the "output_format" field.
 func (_u *ModelAccountModelUpdateOne) SetOutputFormat(v []string) *ModelAccountModelUpdateOne {
 	_u.mutation.SetOutputFormat(v)
@@ -874,6 +1042,24 @@ func (_u *ModelAccountModelUpdateOne) AppendOutputFormat(v []string) *ModelAccou
 // ClearOutputFormat clears the value of the "output_format" field.
 func (_u *ModelAccountModelUpdateOne) ClearOutputFormat() *ModelAccountModelUpdateOne {
 	_u.mutation.ClearOutputFormat()
+	return _u
+}
+
+// SetSupportedBackgrounds sets the "supported_backgrounds" field.
+func (_u *ModelAccountModelUpdateOne) SetSupportedBackgrounds(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.SetSupportedBackgrounds(v)
+	return _u
+}
+
+// AppendSupportedBackgrounds appends value to the "supported_backgrounds" field.
+func (_u *ModelAccountModelUpdateOne) AppendSupportedBackgrounds(v []string) *ModelAccountModelUpdateOne {
+	_u.mutation.AppendSupportedBackgrounds(v)
+	return _u
+}
+
+// ClearSupportedBackgrounds clears the value of the "supported_backgrounds" field.
+func (_u *ModelAccountModelUpdateOne) ClearSupportedBackgrounds() *ModelAccountModelUpdateOne {
+	_u.mutation.ClearSupportedBackgrounds()
 	return _u
 }
 
@@ -923,6 +1109,90 @@ func (_u *ModelAccountModelUpdateOne) SetNillableSupportsCustomSize(v *bool) *Mo
 	if v != nil {
 		_u.SetSupportsCustomSize(*v)
 	}
+	return _u
+}
+
+// SetMinWidth sets the "min_width" field.
+func (_u *ModelAccountModelUpdateOne) SetMinWidth(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.ResetMinWidth()
+	_u.mutation.SetMinWidth(v)
+	return _u
+}
+
+// SetNillableMinWidth sets the "min_width" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableMinWidth(v *int) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetMinWidth(*v)
+	}
+	return _u
+}
+
+// AddMinWidth adds value to the "min_width" field.
+func (_u *ModelAccountModelUpdateOne) AddMinWidth(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.AddMinWidth(v)
+	return _u
+}
+
+// SetMaxWidth sets the "max_width" field.
+func (_u *ModelAccountModelUpdateOne) SetMaxWidth(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.ResetMaxWidth()
+	_u.mutation.SetMaxWidth(v)
+	return _u
+}
+
+// SetNillableMaxWidth sets the "max_width" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableMaxWidth(v *int) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetMaxWidth(*v)
+	}
+	return _u
+}
+
+// AddMaxWidth adds value to the "max_width" field.
+func (_u *ModelAccountModelUpdateOne) AddMaxWidth(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.AddMaxWidth(v)
+	return _u
+}
+
+// SetMinHeight sets the "min_height" field.
+func (_u *ModelAccountModelUpdateOne) SetMinHeight(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.ResetMinHeight()
+	_u.mutation.SetMinHeight(v)
+	return _u
+}
+
+// SetNillableMinHeight sets the "min_height" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableMinHeight(v *int) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetMinHeight(*v)
+	}
+	return _u
+}
+
+// AddMinHeight adds value to the "min_height" field.
+func (_u *ModelAccountModelUpdateOne) AddMinHeight(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.AddMinHeight(v)
+	return _u
+}
+
+// SetMaxHeight sets the "max_height" field.
+func (_u *ModelAccountModelUpdateOne) SetMaxHeight(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.ResetMaxHeight()
+	_u.mutation.SetMaxHeight(v)
+	return _u
+}
+
+// SetNillableMaxHeight sets the "max_height" field if the given value is not nil.
+func (_u *ModelAccountModelUpdateOne) SetNillableMaxHeight(v *int) *ModelAccountModelUpdateOne {
+	if v != nil {
+		_u.SetMaxHeight(*v)
+	}
+	return _u
+}
+
+// AddMaxHeight adds value to the "max_height" field.
+func (_u *ModelAccountModelUpdateOne) AddMaxHeight(v int) *ModelAccountModelUpdateOne {
+	_u.mutation.AddMaxHeight(v)
 	return _u
 }
 
@@ -1200,6 +1470,9 @@ func (_u *ModelAccountModelUpdateOne) sqlSave(ctx context.Context) (_node *Model
 	if _u.mutation.SupportedPixelSizesCleared() {
 		_spec.ClearField(modelaccountmodel.FieldSupportedPixelSizes, field.TypeJSON)
 	}
+	if value, ok := _u.mutation.SupportsCustomRatio(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportsCustomRatio, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.OutputFormat(); ok {
 		_spec.SetField(modelaccountmodel.FieldOutputFormat, field.TypeJSON, value)
 	}
@@ -1210,6 +1483,17 @@ func (_u *ModelAccountModelUpdateOne) sqlSave(ctx context.Context) (_node *Model
 	}
 	if _u.mutation.OutputFormatCleared() {
 		_spec.ClearField(modelaccountmodel.FieldOutputFormat, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.SupportedBackgrounds(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedBackgrounds, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSupportedBackgrounds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, modelaccountmodel.FieldSupportedBackgrounds, value)
+		})
+	}
+	if _u.mutation.SupportedBackgroundsCleared() {
+		_spec.ClearField(modelaccountmodel.FieldSupportedBackgrounds, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.OutputCompression(); ok {
 		_spec.SetField(modelaccountmodel.FieldOutputCompression, field.TypeInt, value)
@@ -1222,6 +1506,30 @@ func (_u *ModelAccountModelUpdateOne) sqlSave(ctx context.Context) (_node *Model
 	}
 	if value, ok := _u.mutation.SupportsCustomSize(); ok {
 		_spec.SetField(modelaccountmodel.FieldSupportsCustomSize, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.MinWidth(); ok {
+		_spec.SetField(modelaccountmodel.FieldMinWidth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMinWidth(); ok {
+		_spec.AddField(modelaccountmodel.FieldMinWidth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MaxWidth(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxWidth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxWidth(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxWidth, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MinHeight(); ok {
+		_spec.SetField(modelaccountmodel.FieldMinHeight, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMinHeight(); ok {
+		_spec.AddField(modelaccountmodel.FieldMinHeight, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MaxHeight(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxHeight, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxHeight(); ok {
+		_spec.AddField(modelaccountmodel.FieldMaxHeight, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.Moderation(); ok {
 		_spec.SetField(modelaccountmodel.FieldModeration, field.TypeJSON, value)

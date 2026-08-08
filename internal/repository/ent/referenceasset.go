@@ -48,6 +48,10 @@ type ReferenceAsset struct {
 	Height *int `json:"height,omitempty"`
 	// Sha256 holds the value of the "sha256" field.
 	Sha256 string `json:"sha256,omitempty"`
+	// SourceImageResultID holds the value of the "source_image_result_id" field.
+	SourceImageResultID *uuid.UUID `json:"source_image_result_id,omitempty"`
+	// OwnsObject holds the value of the "owns_object" field.
+	OwnsObject bool `json:"owns_object,omitempty"`
 	// BoundTaskID holds the value of the "bound_task_id" field.
 	BoundTaskID *uuid.UUID `json:"bound_task_id,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
@@ -60,8 +64,10 @@ func (*ReferenceAsset) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case referenceasset.FieldStorageConfigID, referenceasset.FieldBoundTaskID:
+		case referenceasset.FieldStorageConfigID, referenceasset.FieldSourceImageResultID, referenceasset.FieldBoundTaskID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
+		case referenceasset.FieldOwnsObject:
+			values[i] = new(sql.NullBool)
 		case referenceasset.FieldUserID, referenceasset.FieldAPIKeyID, referenceasset.FieldFileSizeBytes, referenceasset.FieldWidth, referenceasset.FieldHeight:
 			values[i] = new(sql.NullInt64)
 		case referenceasset.FieldUploadSource, referenceasset.FieldStatus, referenceasset.FieldStorageDriver, referenceasset.FieldObjectKey, referenceasset.FieldMimeType, referenceasset.FieldSha256:
@@ -186,6 +192,19 @@ func (_m *ReferenceAsset) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Sha256 = value.String
 			}
+		case referenceasset.FieldSourceImageResultID:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field source_image_result_id", values[i])
+			} else if value.Valid {
+				_m.SourceImageResultID = new(uuid.UUID)
+				*_m.SourceImageResultID = *value.S.(*uuid.UUID)
+			}
+		case referenceasset.FieldOwnsObject:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field owns_object", values[i])
+			} else if value.Valid {
+				_m.OwnsObject = value.Bool
+			}
 		case referenceasset.FieldBoundTaskID:
 			if value, ok := values[i].(*sql.NullScanner); !ok {
 				return fmt.Errorf("unexpected type %T for field bound_task_id", values[i])
@@ -289,6 +308,14 @@ func (_m *ReferenceAsset) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("sha256=")
 	builder.WriteString(_m.Sha256)
+	builder.WriteString(", ")
+	if v := _m.SourceImageResultID; v != nil {
+		builder.WriteString("source_image_result_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("owns_object=")
+	builder.WriteString(fmt.Sprintf("%v", _m.OwnsObject))
 	builder.WriteString(", ")
 	if v := _m.BoundTaskID; v != nil {
 		builder.WriteString("bound_task_id=")

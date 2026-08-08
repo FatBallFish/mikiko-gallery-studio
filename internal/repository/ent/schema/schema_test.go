@@ -33,6 +33,8 @@ func TestCoreSchemaFilesExist(t *testing.T) {
 		"referenceasset.go",
 		"imagetask.go",
 		"imageresult.go",
+		"project.go",
+		"objectdeletionjob.go",
 		"auditlog.go",
 		"textmodelaccount.go",
 		"textmodel.go",
@@ -207,6 +209,66 @@ func TestSubscriptionPlanSchemaCarriesPurchaseTypeContract(t *testing.T) {
 	}
 	if !hasPlanType || !hasPurchaseEnabled {
 		t.Fatalf("subscription_plans should expose plan_type and purchase_enabled fields, got plan_type=%v purchase_enabled=%v", hasPlanType, hasPurchaseEnabled)
+	}
+}
+
+func TestSubscriptionPlanSchemaCarriesCreditExpiryPolicy(t *testing.T) {
+	fields := schemaFieldDescriptors(SubscriptionPlan{}.Fields())
+	expiryEnabled, ok := fields["credit_expiry_enabled"]
+	if !ok {
+		t.Fatal("subscription_plans should expose credit_expiry_enabled")
+	}
+	if expiryEnabled.Default == nil {
+		t.Fatal("credit_expiry_enabled should default to true for existing and new plans")
+	}
+}
+
+func TestPaymentOrderSchemaSnapshotsCreditPolicy(t *testing.T) {
+	fields := schemaFieldDescriptors(PaymentOrder{}.Fields())
+	for _, name := range []string{
+		"credit_expiry_enabled",
+		"credit_valid_days",
+		"credited_at",
+		"credit_expires_at",
+	} {
+		if _, ok := fields[name]; !ok {
+			t.Fatalf("payment_orders should expose %s", name)
+		}
+	}
+}
+
+func TestImageSchemasCarryProjectAndCapabilityContracts(t *testing.T) {
+	accountModelFields := schemaFieldDescriptors(ModelAccountModel{}.Fields())
+	for _, name := range []string{
+		"supports_custom_ratio",
+		"min_width",
+		"max_width",
+		"min_height",
+		"max_height",
+		"supported_backgrounds",
+	} {
+		if _, ok := accountModelFields[name]; !ok {
+			t.Fatalf("model_account_models should expose %s", name)
+		}
+	}
+
+	for schemaName, fields := range map[string]map[string]*field.Descriptor{
+		"image_tasks": schemaFieldDescriptors(ImageTask{}.Fields()),
+		"task_images": schemaFieldDescriptors(ImageResult{}.Fields()),
+	} {
+		if _, ok := fields["project_id"]; !ok {
+			t.Fatalf("%s should expose project_id", schemaName)
+		}
+	}
+	if _, ok := schemaFieldDescriptors(ImageTask{}.Fields())["background"]; !ok {
+		t.Fatal("image_tasks should expose background")
+	}
+
+	referenceFields := schemaFieldDescriptors(ReferenceAsset{}.Fields())
+	for _, name := range []string{"source_image_result_id", "owns_object"} {
+		if _, ok := referenceFields[name]; !ok {
+			t.Fatalf("reference_assets should expose %s", name)
+		}
 	}
 }
 

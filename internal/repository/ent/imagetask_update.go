@@ -76,6 +76,26 @@ func (_u *ImageTaskUpdate) AddUserID(v int64) *ImageTaskUpdate {
 	return _u
 }
 
+// SetProjectID sets the "project_id" field.
+func (_u *ImageTaskUpdate) SetProjectID(v uuid.UUID) *ImageTaskUpdate {
+	_u.mutation.SetProjectID(v)
+	return _u
+}
+
+// SetNillableProjectID sets the "project_id" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableProjectID(v *uuid.UUID) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetProjectID(*v)
+	}
+	return _u
+}
+
+// ClearProjectID clears the value of the "project_id" field.
+func (_u *ImageTaskUpdate) ClearProjectID() *ImageTaskUpdate {
+	_u.mutation.ClearProjectID()
+	return _u
+}
+
 // SetAPIKeyID sets the "api_key_id" field.
 func (_u *ImageTaskUpdate) SetAPIKeyID(v int64) *ImageTaskUpdate {
 	_u.mutation.ResetAPIKeyID()
@@ -362,6 +382,26 @@ func (_u *ImageTaskUpdate) SetNillableOutputFormat(v *string) *ImageTaskUpdate {
 	if v != nil {
 		_u.SetOutputFormat(*v)
 	}
+	return _u
+}
+
+// SetBackground sets the "background" field.
+func (_u *ImageTaskUpdate) SetBackground(v string) *ImageTaskUpdate {
+	_u.mutation.SetBackground(v)
+	return _u
+}
+
+// SetNillableBackground sets the "background" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableBackground(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetBackground(*v)
+	}
+	return _u
+}
+
+// ClearBackground clears the value of the "background" field.
+func (_u *ImageTaskUpdate) ClearBackground() *ImageTaskUpdate {
+	_u.mutation.ClearBackground()
 	return _u
 }
 
@@ -1248,6 +1288,11 @@ func (_u *ImageTaskUpdate) check() error {
 			return &ValidationError{Name: "output_format", err: fmt.Errorf(`ent: validator failed for field "ImageTask.output_format": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Background(); ok {
+		if err := imagetask.BackgroundValidator(v); err != nil {
+			return &ValidationError{Name: "background", err: fmt.Errorf(`ent: validator failed for field "ImageTask.background": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Moderation(); ok {
 		if err := imagetask.ModerationValidator(v); err != nil {
 			return &ValidationError{Name: "moderation", err: fmt.Errorf(`ent: validator failed for field "ImageTask.moderation": %w`, err)}
@@ -1328,6 +1373,12 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(imagetask.FieldUserID, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.ProjectID(); ok {
+		_spec.SetField(imagetask.FieldProjectID, field.TypeUUID, value)
+	}
+	if _u.mutation.ProjectIDCleared() {
+		_spec.ClearField(imagetask.FieldProjectID, field.TypeUUID)
+	}
 	if value, ok := _u.mutation.APIKeyID(); ok {
 		_spec.SetField(imagetask.FieldAPIKeyID, field.TypeInt64, value)
 	}
@@ -1402,6 +1453,12 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.OutputFormat(); ok {
 		_spec.SetField(imagetask.FieldOutputFormat, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Background(); ok {
+		_spec.SetField(imagetask.FieldBackground, field.TypeString, value)
+	}
+	if _u.mutation.BackgroundCleared() {
+		_spec.ClearField(imagetask.FieldBackground, field.TypeString)
 	}
 	if value, ok := _u.mutation.OutputCompression(); ok {
 		_spec.SetField(imagetask.FieldOutputCompression, field.TypeInt, value)
@@ -1704,6 +1761,26 @@ func (_u *ImageTaskUpdateOne) AddUserID(v int64) *ImageTaskUpdateOne {
 	return _u
 }
 
+// SetProjectID sets the "project_id" field.
+func (_u *ImageTaskUpdateOne) SetProjectID(v uuid.UUID) *ImageTaskUpdateOne {
+	_u.mutation.SetProjectID(v)
+	return _u
+}
+
+// SetNillableProjectID sets the "project_id" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableProjectID(v *uuid.UUID) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetProjectID(*v)
+	}
+	return _u
+}
+
+// ClearProjectID clears the value of the "project_id" field.
+func (_u *ImageTaskUpdateOne) ClearProjectID() *ImageTaskUpdateOne {
+	_u.mutation.ClearProjectID()
+	return _u
+}
+
 // SetAPIKeyID sets the "api_key_id" field.
 func (_u *ImageTaskUpdateOne) SetAPIKeyID(v int64) *ImageTaskUpdateOne {
 	_u.mutation.ResetAPIKeyID()
@@ -1990,6 +2067,26 @@ func (_u *ImageTaskUpdateOne) SetNillableOutputFormat(v *string) *ImageTaskUpdat
 	if v != nil {
 		_u.SetOutputFormat(*v)
 	}
+	return _u
+}
+
+// SetBackground sets the "background" field.
+func (_u *ImageTaskUpdateOne) SetBackground(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetBackground(v)
+	return _u
+}
+
+// SetNillableBackground sets the "background" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableBackground(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetBackground(*v)
+	}
+	return _u
+}
+
+// ClearBackground clears the value of the "background" field.
+func (_u *ImageTaskUpdateOne) ClearBackground() *ImageTaskUpdateOne {
+	_u.mutation.ClearBackground()
 	return _u
 }
 
@@ -2889,6 +2986,11 @@ func (_u *ImageTaskUpdateOne) check() error {
 			return &ValidationError{Name: "output_format", err: fmt.Errorf(`ent: validator failed for field "ImageTask.output_format": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Background(); ok {
+		if err := imagetask.BackgroundValidator(v); err != nil {
+			return &ValidationError{Name: "background", err: fmt.Errorf(`ent: validator failed for field "ImageTask.background": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Moderation(); ok {
 		if err := imagetask.ModerationValidator(v); err != nil {
 			return &ValidationError{Name: "moderation", err: fmt.Errorf(`ent: validator failed for field "ImageTask.moderation": %w`, err)}
@@ -2986,6 +3088,12 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(imagetask.FieldUserID, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.ProjectID(); ok {
+		_spec.SetField(imagetask.FieldProjectID, field.TypeUUID, value)
+	}
+	if _u.mutation.ProjectIDCleared() {
+		_spec.ClearField(imagetask.FieldProjectID, field.TypeUUID)
+	}
 	if value, ok := _u.mutation.APIKeyID(); ok {
 		_spec.SetField(imagetask.FieldAPIKeyID, field.TypeInt64, value)
 	}
@@ -3060,6 +3168,12 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	}
 	if value, ok := _u.mutation.OutputFormat(); ok {
 		_spec.SetField(imagetask.FieldOutputFormat, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Background(); ok {
+		_spec.SetField(imagetask.FieldBackground, field.TypeString, value)
+	}
+	if _u.mutation.BackgroundCleared() {
+		_spec.ClearField(imagetask.FieldBackground, field.TypeString)
 	}
 	if value, ok := _u.mutation.OutputCompression(); ok {
 		_spec.SetField(imagetask.FieldOutputCompression, field.TypeInt, value)

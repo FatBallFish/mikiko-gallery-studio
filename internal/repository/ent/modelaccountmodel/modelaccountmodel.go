@@ -41,14 +41,26 @@ const (
 	FieldSupportedRatios = "supported_ratios"
 	// FieldSupportedPixelSizes holds the string denoting the supported_pixel_sizes field in the database.
 	FieldSupportedPixelSizes = "supported_pixel_sizes"
+	// FieldSupportsCustomRatio holds the string denoting the supports_custom_ratio field in the database.
+	FieldSupportsCustomRatio = "supports_custom_ratio"
 	// FieldOutputFormat holds the string denoting the output_format field in the database.
 	FieldOutputFormat = "output_format"
+	// FieldSupportedBackgrounds holds the string denoting the supported_backgrounds field in the database.
+	FieldSupportedBackgrounds = "supported_backgrounds"
 	// FieldOutputCompression holds the string denoting the output_compression field in the database.
 	FieldOutputCompression = "output_compression"
 	// FieldSupportsOutputCompression holds the string denoting the supports_output_compression field in the database.
 	FieldSupportsOutputCompression = "supports_output_compression"
 	// FieldSupportsCustomSize holds the string denoting the supports_custom_size field in the database.
 	FieldSupportsCustomSize = "supports_custom_size"
+	// FieldMinWidth holds the string denoting the min_width field in the database.
+	FieldMinWidth = "min_width"
+	// FieldMaxWidth holds the string denoting the max_width field in the database.
+	FieldMaxWidth = "max_width"
+	// FieldMinHeight holds the string denoting the min_height field in the database.
+	FieldMinHeight = "min_height"
+	// FieldMaxHeight holds the string denoting the max_height field in the database.
+	FieldMaxHeight = "max_height"
 	// FieldModeration holds the string denoting the moderation field in the database.
 	FieldModeration = "moderation"
 	// FieldCostPerImage holds the string denoting the cost_per_image field in the database.
@@ -80,10 +92,16 @@ var Columns = []string{
 	FieldSizeModes,
 	FieldSupportedRatios,
 	FieldSupportedPixelSizes,
+	FieldSupportsCustomRatio,
 	FieldOutputFormat,
+	FieldSupportedBackgrounds,
 	FieldOutputCompression,
 	FieldSupportsOutputCompression,
 	FieldSupportsCustomSize,
+	FieldMinWidth,
+	FieldMaxWidth,
+	FieldMinHeight,
+	FieldMaxHeight,
 	FieldModeration,
 	FieldCostPerImage,
 	FieldCurrency,
@@ -118,12 +136,22 @@ var (
 	DefaultMaxReferenceImageCount int
 	// DefaultMaxImageCount holds the default value on creation for the "max_image_count" field.
 	DefaultMaxImageCount int
+	// DefaultSupportsCustomRatio holds the default value on creation for the "supports_custom_ratio" field.
+	DefaultSupportsCustomRatio bool
 	// DefaultOutputCompression holds the default value on creation for the "output_compression" field.
 	DefaultOutputCompression int
 	// DefaultSupportsOutputCompression holds the default value on creation for the "supports_output_compression" field.
 	DefaultSupportsOutputCompression bool
 	// DefaultSupportsCustomSize holds the default value on creation for the "supports_custom_size" field.
 	DefaultSupportsCustomSize bool
+	// DefaultMinWidth holds the default value on creation for the "min_width" field.
+	DefaultMinWidth int
+	// DefaultMaxWidth holds the default value on creation for the "max_width" field.
+	DefaultMaxWidth int
+	// DefaultMinHeight holds the default value on creation for the "min_height" field.
+	DefaultMinHeight int
+	// DefaultMaxHeight holds the default value on creation for the "max_height" field.
+	DefaultMaxHeight int
 	// DefaultCostPerImage holds the default value on creation for the "cost_per_image" field.
 	DefaultCostPerImage string
 	// DefaultCurrency holds the default value on creation for the "currency" field.
@@ -182,6 +210,11 @@ func ByMaxImageCount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMaxImageCount, opts...).ToFunc()
 }
 
+// BySupportsCustomRatio orders the results by the supports_custom_ratio field.
+func BySupportsCustomRatio(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSupportsCustomRatio, opts...).ToFunc()
+}
+
 // ByOutputCompression orders the results by the output_compression field.
 func ByOutputCompression(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldOutputCompression, opts...).ToFunc()
@@ -195,6 +228,26 @@ func BySupportsOutputCompression(opts ...sql.OrderTermOption) OrderOption {
 // BySupportsCustomSize orders the results by the supports_custom_size field.
 func BySupportsCustomSize(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSupportsCustomSize, opts...).ToFunc()
+}
+
+// ByMinWidth orders the results by the min_width field.
+func ByMinWidth(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMinWidth, opts...).ToFunc()
+}
+
+// ByMaxWidth orders the results by the max_width field.
+func ByMaxWidth(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMaxWidth, opts...).ToFunc()
+}
+
+// ByMinHeight orders the results by the min_height field.
+func ByMinHeight(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMinHeight, opts...).ToFunc()
+}
+
+// ByMaxHeight orders the results by the max_height field.
+func ByMaxHeight(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMaxHeight, opts...).ToFunc()
 }
 
 // ByCostPerImage orders the results by the cost_per_image field.

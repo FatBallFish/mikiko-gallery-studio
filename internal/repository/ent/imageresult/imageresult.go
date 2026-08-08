@@ -24,6 +24,8 @@ const (
 	FieldTaskID = "task_id"
 	// FieldUserID holds the string denoting the user_id field in the database.
 	FieldUserID = "user_id"
+	// FieldProjectID holds the string denoting the project_id field in the database.
+	FieldProjectID = "project_id"
 	// FieldImageRole holds the string denoting the image_role field in the database.
 	FieldImageRole = "image_role"
 	// FieldStorageConfigID holds the string denoting the storage_config_id field in the database.
@@ -62,6 +64,7 @@ var Columns = []string{
 	FieldDeletedAt,
 	FieldTaskID,
 	FieldUserID,
+	FieldProjectID,
 	FieldImageRole,
 	FieldStorageConfigID,
 	FieldStorageDriver,
@@ -159,6 +162,11 @@ func ByTaskID(opts ...sql.OrderTermOption) OrderOption {
 // ByUserID orders the results by the user_id field.
 func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserID, opts...).ToFunc()
+}
+
+// ByProjectID orders the results by the project_id field.
+func ByProjectID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProjectID, opts...).ToFunc()
 }
 
 // ByImageRole orders the results by the image_role field.

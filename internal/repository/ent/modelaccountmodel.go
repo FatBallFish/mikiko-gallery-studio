@@ -46,14 +46,26 @@ type ModelAccountModel struct {
 	SupportedRatios []string `json:"supported_ratios,omitempty"`
 	// SupportedPixelSizes holds the value of the "supported_pixel_sizes" field.
 	SupportedPixelSizes []string `json:"supported_pixel_sizes,omitempty"`
+	// SupportsCustomRatio holds the value of the "supports_custom_ratio" field.
+	SupportsCustomRatio bool `json:"supports_custom_ratio,omitempty"`
 	// OutputFormat holds the value of the "output_format" field.
 	OutputFormat []string `json:"output_format,omitempty"`
+	// SupportedBackgrounds holds the value of the "supported_backgrounds" field.
+	SupportedBackgrounds []string `json:"supported_backgrounds,omitempty"`
 	// OutputCompression holds the value of the "output_compression" field.
 	OutputCompression int `json:"output_compression,omitempty"`
 	// SupportsOutputCompression holds the value of the "supports_output_compression" field.
 	SupportsOutputCompression bool `json:"supports_output_compression,omitempty"`
 	// SupportsCustomSize holds the value of the "supports_custom_size" field.
 	SupportsCustomSize bool `json:"supports_custom_size,omitempty"`
+	// MinWidth holds the value of the "min_width" field.
+	MinWidth int `json:"min_width,omitempty"`
+	// MaxWidth holds the value of the "max_width" field.
+	MaxWidth int `json:"max_width,omitempty"`
+	// MinHeight holds the value of the "min_height" field.
+	MinHeight int `json:"min_height,omitempty"`
+	// MaxHeight holds the value of the "max_height" field.
+	MaxHeight int `json:"max_height,omitempty"`
 	// Moderation holds the value of the "moderation" field.
 	Moderation []string `json:"moderation,omitempty"`
 	// CostPerImage holds the value of the "cost_per_image" field.
@@ -72,11 +84,11 @@ func (*ModelAccountModel) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case modelaccountmodel.FieldTaskTypes, modelaccountmodel.FieldBaseResolution, modelaccountmodel.FieldQuality, modelaccountmodel.FieldSizeModes, modelaccountmodel.FieldSupportedRatios, modelaccountmodel.FieldSupportedPixelSizes, modelaccountmodel.FieldOutputFormat, modelaccountmodel.FieldModeration, modelaccountmodel.FieldExtra:
+		case modelaccountmodel.FieldTaskTypes, modelaccountmodel.FieldBaseResolution, modelaccountmodel.FieldQuality, modelaccountmodel.FieldSizeModes, modelaccountmodel.FieldSupportedRatios, modelaccountmodel.FieldSupportedPixelSizes, modelaccountmodel.FieldOutputFormat, modelaccountmodel.FieldSupportedBackgrounds, modelaccountmodel.FieldModeration, modelaccountmodel.FieldExtra:
 			values[i] = new([]byte)
-		case modelaccountmodel.FieldSupportsOutputCompression, modelaccountmodel.FieldSupportsCustomSize, modelaccountmodel.FieldEnabled:
+		case modelaccountmodel.FieldSupportsCustomRatio, modelaccountmodel.FieldSupportsOutputCompression, modelaccountmodel.FieldSupportsCustomSize, modelaccountmodel.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case modelaccountmodel.FieldID, modelaccountmodel.FieldAccountID, modelaccountmodel.FieldMaxReferenceImageCount, modelaccountmodel.FieldMaxImageCount, modelaccountmodel.FieldOutputCompression:
+		case modelaccountmodel.FieldID, modelaccountmodel.FieldAccountID, modelaccountmodel.FieldMaxReferenceImageCount, modelaccountmodel.FieldMaxImageCount, modelaccountmodel.FieldOutputCompression, modelaccountmodel.FieldMinWidth, modelaccountmodel.FieldMaxWidth, modelaccountmodel.FieldMinHeight, modelaccountmodel.FieldMaxHeight:
 			values[i] = new(sql.NullInt64)
 		case modelaccountmodel.FieldModelCode, modelaccountmodel.FieldDisplayName, modelaccountmodel.FieldCostPerImage, modelaccountmodel.FieldCurrency:
 			values[i] = new(sql.NullString)
@@ -200,12 +212,26 @@ func (_m *ModelAccountModel) assignValues(columns []string, values []any) error 
 					return fmt.Errorf("unmarshal field supported_pixel_sizes: %w", err)
 				}
 			}
+		case modelaccountmodel.FieldSupportsCustomRatio:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field supports_custom_ratio", values[i])
+			} else if value.Valid {
+				_m.SupportsCustomRatio = value.Bool
+			}
 		case modelaccountmodel.FieldOutputFormat:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field output_format", values[i])
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &_m.OutputFormat); err != nil {
 					return fmt.Errorf("unmarshal field output_format: %w", err)
+				}
+			}
+		case modelaccountmodel.FieldSupportedBackgrounds:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field supported_backgrounds", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.SupportedBackgrounds); err != nil {
+					return fmt.Errorf("unmarshal field supported_backgrounds: %w", err)
 				}
 			}
 		case modelaccountmodel.FieldOutputCompression:
@@ -225,6 +251,30 @@ func (_m *ModelAccountModel) assignValues(columns []string, values []any) error 
 				return fmt.Errorf("unexpected type %T for field supports_custom_size", values[i])
 			} else if value.Valid {
 				_m.SupportsCustomSize = value.Bool
+			}
+		case modelaccountmodel.FieldMinWidth:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field min_width", values[i])
+			} else if value.Valid {
+				_m.MinWidth = int(value.Int64)
+			}
+		case modelaccountmodel.FieldMaxWidth:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field max_width", values[i])
+			} else if value.Valid {
+				_m.MaxWidth = int(value.Int64)
+			}
+		case modelaccountmodel.FieldMinHeight:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field min_height", values[i])
+			} else if value.Valid {
+				_m.MinHeight = int(value.Int64)
+			}
+		case modelaccountmodel.FieldMaxHeight:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field max_height", values[i])
+			} else if value.Valid {
+				_m.MaxHeight = int(value.Int64)
 			}
 		case modelaccountmodel.FieldModeration:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -340,8 +390,14 @@ func (_m *ModelAccountModel) String() string {
 	builder.WriteString("supported_pixel_sizes=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SupportedPixelSizes))
 	builder.WriteString(", ")
+	builder.WriteString("supports_custom_ratio=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SupportsCustomRatio))
+	builder.WriteString(", ")
 	builder.WriteString("output_format=")
 	builder.WriteString(fmt.Sprintf("%v", _m.OutputFormat))
+	builder.WriteString(", ")
+	builder.WriteString("supported_backgrounds=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SupportedBackgrounds))
 	builder.WriteString(", ")
 	builder.WriteString("output_compression=")
 	builder.WriteString(fmt.Sprintf("%v", _m.OutputCompression))
@@ -351,6 +407,18 @@ func (_m *ModelAccountModel) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("supports_custom_size=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SupportsCustomSize))
+	builder.WriteString(", ")
+	builder.WriteString("min_width=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MinWidth))
+	builder.WriteString(", ")
+	builder.WriteString("max_width=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MaxWidth))
+	builder.WriteString(", ")
+	builder.WriteString("min_height=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MinHeight))
+	builder.WriteString(", ")
+	builder.WriteString("max_height=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MaxHeight))
 	builder.WriteString(", ")
 	builder.WriteString("moderation=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Moderation))

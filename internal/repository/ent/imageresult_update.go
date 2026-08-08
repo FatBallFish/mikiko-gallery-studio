@@ -90,6 +90,26 @@ func (_u *ImageResultUpdate) AddUserID(v int64) *ImageResultUpdate {
 	return _u
 }
 
+// SetProjectID sets the "project_id" field.
+func (_u *ImageResultUpdate) SetProjectID(v uuid.UUID) *ImageResultUpdate {
+	_u.mutation.SetProjectID(v)
+	return _u
+}
+
+// SetNillableProjectID sets the "project_id" field if the given value is not nil.
+func (_u *ImageResultUpdate) SetNillableProjectID(v *uuid.UUID) *ImageResultUpdate {
+	if v != nil {
+		_u.SetProjectID(*v)
+	}
+	return _u
+}
+
+// ClearProjectID clears the value of the "project_id" field.
+func (_u *ImageResultUpdate) ClearProjectID() *ImageResultUpdate {
+	_u.mutation.ClearProjectID()
+	return _u
+}
+
 // SetImageRole sets the "image_role" field.
 func (_u *ImageResultUpdate) SetImageRole(v string) *ImageResultUpdate {
 	_u.mutation.SetImageRole(v)
@@ -427,6 +447,12 @@ func (_u *ImageResultUpdate) sqlSave(ctx context.Context) (_node int, err error)
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(imageresult.FieldUserID, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.ProjectID(); ok {
+		_spec.SetField(imageresult.FieldProjectID, field.TypeUUID, value)
+	}
+	if _u.mutation.ProjectIDCleared() {
+		_spec.ClearField(imageresult.FieldProjectID, field.TypeUUID)
+	}
 	if value, ok := _u.mutation.ImageRole(); ok {
 		_spec.SetField(imageresult.FieldImageRole, field.TypeString, value)
 	}
@@ -562,6 +588,26 @@ func (_u *ImageResultUpdateOne) SetNillableUserID(v *int64) *ImageResultUpdateOn
 // AddUserID adds value to the "user_id" field.
 func (_u *ImageResultUpdateOne) AddUserID(v int64) *ImageResultUpdateOne {
 	_u.mutation.AddUserID(v)
+	return _u
+}
+
+// SetProjectID sets the "project_id" field.
+func (_u *ImageResultUpdateOne) SetProjectID(v uuid.UUID) *ImageResultUpdateOne {
+	_u.mutation.SetProjectID(v)
+	return _u
+}
+
+// SetNillableProjectID sets the "project_id" field if the given value is not nil.
+func (_u *ImageResultUpdateOne) SetNillableProjectID(v *uuid.UUID) *ImageResultUpdateOne {
+	if v != nil {
+		_u.SetProjectID(*v)
+	}
+	return _u
+}
+
+// ClearProjectID clears the value of the "project_id" field.
+func (_u *ImageResultUpdateOne) ClearProjectID() *ImageResultUpdateOne {
+	_u.mutation.ClearProjectID()
 	return _u
 }
 
@@ -931,6 +977,12 @@ func (_u *ImageResultUpdateOne) sqlSave(ctx context.Context) (_node *ImageResult
 	}
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(imageresult.FieldUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.ProjectID(); ok {
+		_spec.SetField(imageresult.FieldProjectID, field.TypeUUID, value)
+	}
+	if _u.mutation.ProjectIDCleared() {
+		_spec.ClearField(imageresult.FieldProjectID, field.TypeUUID)
 	}
 	if value, ok := _u.mutation.ImageRole(); ok {
 		_spec.SetField(imageresult.FieldImageRole, field.TypeString, value)

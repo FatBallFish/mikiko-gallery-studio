@@ -282,6 +282,40 @@ func (_u *ReferenceAssetUpdate) SetNillableSha256(v *string) *ReferenceAssetUpda
 	return _u
 }
 
+// SetSourceImageResultID sets the "source_image_result_id" field.
+func (_u *ReferenceAssetUpdate) SetSourceImageResultID(v uuid.UUID) *ReferenceAssetUpdate {
+	_u.mutation.SetSourceImageResultID(v)
+	return _u
+}
+
+// SetNillableSourceImageResultID sets the "source_image_result_id" field if the given value is not nil.
+func (_u *ReferenceAssetUpdate) SetNillableSourceImageResultID(v *uuid.UUID) *ReferenceAssetUpdate {
+	if v != nil {
+		_u.SetSourceImageResultID(*v)
+	}
+	return _u
+}
+
+// ClearSourceImageResultID clears the value of the "source_image_result_id" field.
+func (_u *ReferenceAssetUpdate) ClearSourceImageResultID() *ReferenceAssetUpdate {
+	_u.mutation.ClearSourceImageResultID()
+	return _u
+}
+
+// SetOwnsObject sets the "owns_object" field.
+func (_u *ReferenceAssetUpdate) SetOwnsObject(v bool) *ReferenceAssetUpdate {
+	_u.mutation.SetOwnsObject(v)
+	return _u
+}
+
+// SetNillableOwnsObject sets the "owns_object" field if the given value is not nil.
+func (_u *ReferenceAssetUpdate) SetNillableOwnsObject(v *bool) *ReferenceAssetUpdate {
+	if v != nil {
+		_u.SetOwnsObject(*v)
+	}
+	return _u
+}
+
 // SetBoundTaskID sets the "bound_task_id" field.
 func (_u *ReferenceAssetUpdate) SetBoundTaskID(v uuid.UUID) *ReferenceAssetUpdate {
 	_u.mutation.SetBoundTaskID(v)
@@ -475,6 +509,15 @@ func (_u *ReferenceAssetUpdate) sqlSave(ctx context.Context) (_node int, err err
 	}
 	if value, ok := _u.mutation.Sha256(); ok {
 		_spec.SetField(referenceasset.FieldSha256, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SourceImageResultID(); ok {
+		_spec.SetField(referenceasset.FieldSourceImageResultID, field.TypeUUID, value)
+	}
+	if _u.mutation.SourceImageResultIDCleared() {
+		_spec.ClearField(referenceasset.FieldSourceImageResultID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.OwnsObject(); ok {
+		_spec.SetField(referenceasset.FieldOwnsObject, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.BoundTaskID(); ok {
 		_spec.SetField(referenceasset.FieldBoundTaskID, field.TypeUUID, value)
@@ -758,6 +801,40 @@ func (_u *ReferenceAssetUpdateOne) SetNillableSha256(v *string) *ReferenceAssetU
 	return _u
 }
 
+// SetSourceImageResultID sets the "source_image_result_id" field.
+func (_u *ReferenceAssetUpdateOne) SetSourceImageResultID(v uuid.UUID) *ReferenceAssetUpdateOne {
+	_u.mutation.SetSourceImageResultID(v)
+	return _u
+}
+
+// SetNillableSourceImageResultID sets the "source_image_result_id" field if the given value is not nil.
+func (_u *ReferenceAssetUpdateOne) SetNillableSourceImageResultID(v *uuid.UUID) *ReferenceAssetUpdateOne {
+	if v != nil {
+		_u.SetSourceImageResultID(*v)
+	}
+	return _u
+}
+
+// ClearSourceImageResultID clears the value of the "source_image_result_id" field.
+func (_u *ReferenceAssetUpdateOne) ClearSourceImageResultID() *ReferenceAssetUpdateOne {
+	_u.mutation.ClearSourceImageResultID()
+	return _u
+}
+
+// SetOwnsObject sets the "owns_object" field.
+func (_u *ReferenceAssetUpdateOne) SetOwnsObject(v bool) *ReferenceAssetUpdateOne {
+	_u.mutation.SetOwnsObject(v)
+	return _u
+}
+
+// SetNillableOwnsObject sets the "owns_object" field if the given value is not nil.
+func (_u *ReferenceAssetUpdateOne) SetNillableOwnsObject(v *bool) *ReferenceAssetUpdateOne {
+	if v != nil {
+		_u.SetOwnsObject(*v)
+	}
+	return _u
+}
+
 // SetBoundTaskID sets the "bound_task_id" field.
 func (_u *ReferenceAssetUpdateOne) SetBoundTaskID(v uuid.UUID) *ReferenceAssetUpdateOne {
 	_u.mutation.SetBoundTaskID(v)
@@ -981,6 +1058,15 @@ func (_u *ReferenceAssetUpdateOne) sqlSave(ctx context.Context) (_node *Referenc
 	}
 	if value, ok := _u.mutation.Sha256(); ok {
 		_spec.SetField(referenceasset.FieldSha256, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SourceImageResultID(); ok {
+		_spec.SetField(referenceasset.FieldSourceImageResultID, field.TypeUUID, value)
+	}
+	if _u.mutation.SourceImageResultIDCleared() {
+		_spec.ClearField(referenceasset.FieldSourceImageResultID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.OwnsObject(); ok {
+		_spec.SetField(referenceasset.FieldOwnsObject, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.BoundTaskID(); ok {
 		_spec.SetField(referenceasset.FieldBoundTaskID, field.TypeUUID, value)

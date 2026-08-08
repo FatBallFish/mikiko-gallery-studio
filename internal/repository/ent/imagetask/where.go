@@ -75,6 +75,11 @@ func UserID(v int64) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldUserID, v))
 }
 
+// ProjectID applies equality check predicate on the "project_id" field. It's identical to ProjectIDEQ.
+func ProjectID(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProjectID, v))
+}
+
 // APIKeyID applies equality check predicate on the "api_key_id" field. It's identical to APIKeyIDEQ.
 func APIKeyID(v int64) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldAPIKeyID, v))
@@ -158,6 +163,11 @@ func AspectRatio(v string) predicate.ImageTask {
 // OutputFormat applies equality check predicate on the "output_format" field. It's identical to OutputFormatEQ.
 func OutputFormat(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldOutputFormat, v))
+}
+
+// Background applies equality check predicate on the "background" field. It's identical to BackgroundEQ.
+func Background(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldBackground, v))
 }
 
 // OutputCompression applies equality check predicate on the "output_compression" field. It's identical to OutputCompressionEQ.
@@ -518,6 +528,56 @@ func UserIDLT(v int64) predicate.ImageTask {
 // UserIDLTE applies the LTE predicate on the "user_id" field.
 func UserIDLTE(v int64) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldLTE(FieldUserID, v))
+}
+
+// ProjectIDEQ applies the EQ predicate on the "project_id" field.
+func ProjectIDEQ(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProjectID, v))
+}
+
+// ProjectIDNEQ applies the NEQ predicate on the "project_id" field.
+func ProjectIDNEQ(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldProjectID, v))
+}
+
+// ProjectIDIn applies the In predicate on the "project_id" field.
+func ProjectIDIn(vs ...uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldProjectID, vs...))
+}
+
+// ProjectIDNotIn applies the NotIn predicate on the "project_id" field.
+func ProjectIDNotIn(vs ...uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldProjectID, vs...))
+}
+
+// ProjectIDGT applies the GT predicate on the "project_id" field.
+func ProjectIDGT(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldProjectID, v))
+}
+
+// ProjectIDGTE applies the GTE predicate on the "project_id" field.
+func ProjectIDGTE(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldProjectID, v))
+}
+
+// ProjectIDLT applies the LT predicate on the "project_id" field.
+func ProjectIDLT(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldProjectID, v))
+}
+
+// ProjectIDLTE applies the LTE predicate on the "project_id" field.
+func ProjectIDLTE(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldProjectID, v))
+}
+
+// ProjectIDIsNil applies the IsNil predicate on the "project_id" field.
+func ProjectIDIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldProjectID))
+}
+
+// ProjectIDNotNil applies the NotNil predicate on the "project_id" field.
+func ProjectIDNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldProjectID))
 }
 
 // APIKeyIDEQ applies the EQ predicate on the "api_key_id" field.
@@ -1598,6 +1658,81 @@ func OutputFormatEqualFold(v string) predicate.ImageTask {
 // OutputFormatContainsFold applies the ContainsFold predicate on the "output_format" field.
 func OutputFormatContainsFold(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldContainsFold(FieldOutputFormat, v))
+}
+
+// BackgroundEQ applies the EQ predicate on the "background" field.
+func BackgroundEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldBackground, v))
+}
+
+// BackgroundNEQ applies the NEQ predicate on the "background" field.
+func BackgroundNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldBackground, v))
+}
+
+// BackgroundIn applies the In predicate on the "background" field.
+func BackgroundIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldBackground, vs...))
+}
+
+// BackgroundNotIn applies the NotIn predicate on the "background" field.
+func BackgroundNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldBackground, vs...))
+}
+
+// BackgroundGT applies the GT predicate on the "background" field.
+func BackgroundGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldBackground, v))
+}
+
+// BackgroundGTE applies the GTE predicate on the "background" field.
+func BackgroundGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldBackground, v))
+}
+
+// BackgroundLT applies the LT predicate on the "background" field.
+func BackgroundLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldBackground, v))
+}
+
+// BackgroundLTE applies the LTE predicate on the "background" field.
+func BackgroundLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldBackground, v))
+}
+
+// BackgroundContains applies the Contains predicate on the "background" field.
+func BackgroundContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldBackground, v))
+}
+
+// BackgroundHasPrefix applies the HasPrefix predicate on the "background" field.
+func BackgroundHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldBackground, v))
+}
+
+// BackgroundHasSuffix applies the HasSuffix predicate on the "background" field.
+func BackgroundHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldBackground, v))
+}
+
+// BackgroundIsNil applies the IsNil predicate on the "background" field.
+func BackgroundIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldBackground))
+}
+
+// BackgroundNotNil applies the NotNil predicate on the "background" field.
+func BackgroundNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldBackground))
+}
+
+// BackgroundEqualFold applies the EqualFold predicate on the "background" field.
+func BackgroundEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldBackground, v))
+}
+
+// BackgroundContainsFold applies the ContainsFold predicate on the "background" field.
+func BackgroundContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldBackground, v))
 }
 
 // OutputCompressionEQ applies the EQ predicate on the "output_compression" field.

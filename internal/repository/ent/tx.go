@@ -42,6 +42,8 @@ type Tx struct {
 	ModelProvider *ModelProviderClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
 	ModelRoute *ModelRouteClient
+	// ObjectDeletionJob is the client for interacting with the ObjectDeletionJob builders.
+	ObjectDeletionJob *ObjectDeletionJobClient
 	// ObjectStorageConfig is the client for interacting with the ObjectStorageConfig builders.
 	ObjectStorageConfig *ObjectStorageConfigClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -52,6 +54,8 @@ type Tx struct {
 	PaymentWebhookEvent *PaymentWebhookEventClient
 	// PointLedger is the client for interacting with the PointLedger builders.
 	PointLedger *PointLedgerClient
+	// Project is the client for interacting with the Project builders.
+	Project *ProjectClient
 	// PromptOptimizationRun is the client for interacting with the PromptOptimizationRun builders.
 	PromptOptimizationRun *PromptOptimizationRunClient
 	// ProviderErrorPolicy is the client for interacting with the ProviderErrorPolicy builders.
@@ -242,11 +246,13 @@ func (tx *Tx) init() {
 	tx.ModelAccountModel = NewModelAccountModelClient(tx.config)
 	tx.ModelProvider = NewModelProviderClient(tx.config)
 	tx.ModelRoute = NewModelRouteClient(tx.config)
+	tx.ObjectDeletionJob = NewObjectDeletionJobClient(tx.config)
 	tx.ObjectStorageConfig = NewObjectStorageConfigClient(tx.config)
 	tx.PaymentOrder = NewPaymentOrderClient(tx.config)
 	tx.PaymentProviderInstance = NewPaymentProviderInstanceClient(tx.config)
 	tx.PaymentWebhookEvent = NewPaymentWebhookEventClient(tx.config)
 	tx.PointLedger = NewPointLedgerClient(tx.config)
+	tx.Project = NewProjectClient(tx.config)
 	tx.PromptOptimizationRun = NewPromptOptimizationRunClient(tx.config)
 	tx.ProviderErrorPolicy = NewProviderErrorPolicyClient(tx.config)
 	tx.ProviderModel = NewProviderModelClient(tx.config)

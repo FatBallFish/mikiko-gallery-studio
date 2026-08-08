@@ -75,6 +75,20 @@ func (_c *ImageResultCreate) SetUserID(v int64) *ImageResultCreate {
 	return _c
 }
 
+// SetProjectID sets the "project_id" field.
+func (_c *ImageResultCreate) SetProjectID(v uuid.UUID) *ImageResultCreate {
+	_c.mutation.SetProjectID(v)
+	return _c
+}
+
+// SetNillableProjectID sets the "project_id" field if the given value is not nil.
+func (_c *ImageResultCreate) SetNillableProjectID(v *uuid.UUID) *ImageResultCreate {
+	if v != nil {
+		_c.SetProjectID(*v)
+	}
+	return _c
+}
+
 // SetImageRole sets the "image_role" field.
 func (_c *ImageResultCreate) SetImageRole(v string) *ImageResultCreate {
 	_c.mutation.SetImageRole(v)
@@ -462,6 +476,10 @@ func (_c *ImageResultCreate) createSpec() (*ImageResult, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.UserID(); ok {
 		_spec.SetField(imageresult.FieldUserID, field.TypeInt64, value)
 		_node.UserID = value
+	}
+	if value, ok := _c.mutation.ProjectID(); ok {
+		_spec.SetField(imageresult.FieldProjectID, field.TypeUUID, value)
+		_node.ProjectID = &value
 	}
 	if value, ok := _c.mutation.ImageRole(); ok {
 		_spec.SetField(imageresult.FieldImageRole, field.TypeString, value)

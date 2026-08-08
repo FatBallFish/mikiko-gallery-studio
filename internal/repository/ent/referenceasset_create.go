@@ -199,6 +199,34 @@ func (_c *ReferenceAssetCreate) SetSha256(v string) *ReferenceAssetCreate {
 	return _c
 }
 
+// SetSourceImageResultID sets the "source_image_result_id" field.
+func (_c *ReferenceAssetCreate) SetSourceImageResultID(v uuid.UUID) *ReferenceAssetCreate {
+	_c.mutation.SetSourceImageResultID(v)
+	return _c
+}
+
+// SetNillableSourceImageResultID sets the "source_image_result_id" field if the given value is not nil.
+func (_c *ReferenceAssetCreate) SetNillableSourceImageResultID(v *uuid.UUID) *ReferenceAssetCreate {
+	if v != nil {
+		_c.SetSourceImageResultID(*v)
+	}
+	return _c
+}
+
+// SetOwnsObject sets the "owns_object" field.
+func (_c *ReferenceAssetCreate) SetOwnsObject(v bool) *ReferenceAssetCreate {
+	_c.mutation.SetOwnsObject(v)
+	return _c
+}
+
+// SetNillableOwnsObject sets the "owns_object" field if the given value is not nil.
+func (_c *ReferenceAssetCreate) SetNillableOwnsObject(v *bool) *ReferenceAssetCreate {
+	if v != nil {
+		_c.SetOwnsObject(*v)
+	}
+	return _c
+}
+
 // SetBoundTaskID sets the "bound_task_id" field.
 func (_c *ReferenceAssetCreate) SetBoundTaskID(v uuid.UUID) *ReferenceAssetCreate {
 	_c.mutation.SetBoundTaskID(v)
@@ -300,6 +328,10 @@ func (_c *ReferenceAssetCreate) defaults() {
 		v := referenceasset.DefaultFileSizeBytes
 		_c.mutation.SetFileSizeBytes(v)
 	}
+	if _, ok := _c.mutation.OwnsObject(); !ok {
+		v := referenceasset.DefaultOwnsObject
+		_c.mutation.SetOwnsObject(v)
+	}
 	if _, ok := _c.mutation.ExpiresAt(); !ok {
 		v := referenceasset.DefaultExpiresAt()
 		_c.mutation.SetExpiresAt(v)
@@ -371,6 +403,9 @@ func (_c *ReferenceAssetCreate) check() error {
 		if err := referenceasset.Sha256Validator(v); err != nil {
 			return &ValidationError{Name: "sha256", err: fmt.Errorf(`ent: validator failed for field "ReferenceAsset.sha256": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.OwnsObject(); !ok {
+		return &ValidationError{Name: "owns_object", err: errors.New(`ent: missing required field "ReferenceAsset.owns_object"`)}
 	}
 	if _, ok := _c.mutation.ExpiresAt(); !ok {
 		return &ValidationError{Name: "expires_at", err: errors.New(`ent: missing required field "ReferenceAsset.expires_at"`)}
@@ -469,6 +504,14 @@ func (_c *ReferenceAssetCreate) createSpec() (*ReferenceAsset, *sqlgraph.CreateS
 	if value, ok := _c.mutation.Sha256(); ok {
 		_spec.SetField(referenceasset.FieldSha256, field.TypeString, value)
 		_node.Sha256 = value
+	}
+	if value, ok := _c.mutation.SourceImageResultID(); ok {
+		_spec.SetField(referenceasset.FieldSourceImageResultID, field.TypeUUID, value)
+		_node.SourceImageResultID = &value
+	}
+	if value, ok := _c.mutation.OwnsObject(); ok {
+		_spec.SetField(referenceasset.FieldOwnsObject, field.TypeBool, value)
+		_node.OwnsObject = value
 	}
 	if value, ok := _c.mutation.BoundTaskID(); ok {
 		_spec.SetField(referenceasset.FieldBoundTaskID, field.TypeUUID, value)

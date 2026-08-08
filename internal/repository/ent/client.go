@@ -30,11 +30,13 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/promptoptimizationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
@@ -94,6 +96,8 @@ type Client struct {
 	ModelProvider *ModelProviderClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
 	ModelRoute *ModelRouteClient
+	// ObjectDeletionJob is the client for interacting with the ObjectDeletionJob builders.
+	ObjectDeletionJob *ObjectDeletionJobClient
 	// ObjectStorageConfig is the client for interacting with the ObjectStorageConfig builders.
 	ObjectStorageConfig *ObjectStorageConfigClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -104,6 +108,8 @@ type Client struct {
 	PaymentWebhookEvent *PaymentWebhookEventClient
 	// PointLedger is the client for interacting with the PointLedger builders.
 	PointLedger *PointLedgerClient
+	// Project is the client for interacting with the Project builders.
+	Project *ProjectClient
 	// PromptOptimizationRun is the client for interacting with the PromptOptimizationRun builders.
 	PromptOptimizationRun *PromptOptimizationRunClient
 	// ProviderErrorPolicy is the client for interacting with the ProviderErrorPolicy builders.
@@ -174,11 +180,13 @@ func (c *Client) init() {
 	c.ModelAccountModel = NewModelAccountModelClient(c.config)
 	c.ModelProvider = NewModelProviderClient(c.config)
 	c.ModelRoute = NewModelRouteClient(c.config)
+	c.ObjectDeletionJob = NewObjectDeletionJobClient(c.config)
 	c.ObjectStorageConfig = NewObjectStorageConfigClient(c.config)
 	c.PaymentOrder = NewPaymentOrderClient(c.config)
 	c.PaymentProviderInstance = NewPaymentProviderInstanceClient(c.config)
 	c.PaymentWebhookEvent = NewPaymentWebhookEventClient(c.config)
 	c.PointLedger = NewPointLedgerClient(c.config)
+	c.Project = NewProjectClient(c.config)
 	c.PromptOptimizationRun = NewPromptOptimizationRunClient(c.config)
 	c.ProviderErrorPolicy = NewProviderErrorPolicyClient(c.config)
 	c.ProviderModel = NewProviderModelClient(c.config)
@@ -308,11 +316,13 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
+		ObjectDeletionJob:           NewObjectDeletionJobClient(cfg),
 		ObjectStorageConfig:         NewObjectStorageConfigClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
 		PaymentWebhookEvent:         NewPaymentWebhookEventClient(cfg),
 		PointLedger:                 NewPointLedgerClient(cfg),
+		Project:                     NewProjectClient(cfg),
 		PromptOptimizationRun:       NewPromptOptimizationRunClient(cfg),
 		ProviderErrorPolicy:         NewProviderErrorPolicyClient(cfg),
 		ProviderModel:               NewProviderModelClient(cfg),
@@ -369,11 +379,13 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
+		ObjectDeletionJob:           NewObjectDeletionJobClient(cfg),
 		ObjectStorageConfig:         NewObjectStorageConfigClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
 		PaymentWebhookEvent:         NewPaymentWebhookEventClient(cfg),
 		PointLedger:                 NewPointLedgerClient(cfg),
+		Project:                     NewProjectClient(cfg),
 		PromptOptimizationRun:       NewPromptOptimizationRunClient(cfg),
 		ProviderErrorPolicy:         NewProviderErrorPolicyClient(cfg),
 		ProviderModel:               NewProviderModelClient(cfg),
@@ -428,11 +440,11 @@ func (c *Client) Use(hooks ...Hook) {
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
 		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask,
 		c.Installation, c.ModelAccount, c.ModelAccountModel, c.ModelProvider,
-		c.ModelRoute, c.ObjectStorageConfig, c.PaymentOrder, c.PaymentProviderInstance,
-		c.PaymentWebhookEvent, c.PointLedger, c.PromptOptimizationRun,
-		c.ProviderErrorPolicy, c.ProviderModel, c.PublicImageInteraction,
-		c.PublicImageStat, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
-		c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.ModelRoute, c.ObjectDeletionJob, c.ObjectStorageConfig, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
+		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
+		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
 		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
 		c.WalletGrant, c.WalletReservationAllocation,
@@ -448,11 +460,11 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
 		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask,
 		c.Installation, c.ModelAccount, c.ModelAccountModel, c.ModelProvider,
-		c.ModelRoute, c.ObjectStorageConfig, c.PaymentOrder, c.PaymentProviderInstance,
-		c.PaymentWebhookEvent, c.PointLedger, c.PromptOptimizationRun,
-		c.ProviderErrorPolicy, c.ProviderModel, c.PublicImageInteraction,
-		c.PublicImageStat, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
-		c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.ModelRoute, c.ObjectDeletionJob, c.ObjectStorageConfig, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
+		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
+		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
 		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
 		c.WalletGrant, c.WalletReservationAllocation,
@@ -494,6 +506,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ModelProvider.mutate(ctx, m)
 	case *ModelRouteMutation:
 		return c.ModelRoute.mutate(ctx, m)
+	case *ObjectDeletionJobMutation:
+		return c.ObjectDeletionJob.mutate(ctx, m)
 	case *ObjectStorageConfigMutation:
 		return c.ObjectStorageConfig.mutate(ctx, m)
 	case *PaymentOrderMutation:
@@ -504,6 +518,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PaymentWebhookEvent.mutate(ctx, m)
 	case *PointLedgerMutation:
 		return c.PointLedger.mutate(ctx, m)
+	case *ProjectMutation:
+		return c.Project.mutate(ctx, m)
 	case *PromptOptimizationRunMutation:
 		return c.PromptOptimizationRun.mutate(ctx, m)
 	case *ProviderErrorPolicyMutation:
@@ -2548,6 +2564,139 @@ func (c *ModelRouteClient) mutate(ctx context.Context, m *ModelRouteMutation) (V
 	}
 }
 
+// ObjectDeletionJobClient is a client for the ObjectDeletionJob schema.
+type ObjectDeletionJobClient struct {
+	config
+}
+
+// NewObjectDeletionJobClient returns a client for the ObjectDeletionJob from the given config.
+func NewObjectDeletionJobClient(c config) *ObjectDeletionJobClient {
+	return &ObjectDeletionJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `objectdeletionjob.Hooks(f(g(h())))`.
+func (c *ObjectDeletionJobClient) Use(hooks ...Hook) {
+	c.hooks.ObjectDeletionJob = append(c.hooks.ObjectDeletionJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `objectdeletionjob.Intercept(f(g(h())))`.
+func (c *ObjectDeletionJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ObjectDeletionJob = append(c.inters.ObjectDeletionJob, interceptors...)
+}
+
+// Create returns a builder for creating a ObjectDeletionJob entity.
+func (c *ObjectDeletionJobClient) Create() *ObjectDeletionJobCreate {
+	mutation := newObjectDeletionJobMutation(c.config, OpCreate)
+	return &ObjectDeletionJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ObjectDeletionJob entities.
+func (c *ObjectDeletionJobClient) CreateBulk(builders ...*ObjectDeletionJobCreate) *ObjectDeletionJobCreateBulk {
+	return &ObjectDeletionJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ObjectDeletionJobClient) MapCreateBulk(slice any, setFunc func(*ObjectDeletionJobCreate, int)) *ObjectDeletionJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ObjectDeletionJobCreateBulk{err: fmt.Errorf("calling to ObjectDeletionJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ObjectDeletionJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ObjectDeletionJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ObjectDeletionJob.
+func (c *ObjectDeletionJobClient) Update() *ObjectDeletionJobUpdate {
+	mutation := newObjectDeletionJobMutation(c.config, OpUpdate)
+	return &ObjectDeletionJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ObjectDeletionJobClient) UpdateOne(_m *ObjectDeletionJob) *ObjectDeletionJobUpdateOne {
+	mutation := newObjectDeletionJobMutation(c.config, OpUpdateOne, withObjectDeletionJob(_m))
+	return &ObjectDeletionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ObjectDeletionJobClient) UpdateOneID(id uuid.UUID) *ObjectDeletionJobUpdateOne {
+	mutation := newObjectDeletionJobMutation(c.config, OpUpdateOne, withObjectDeletionJobID(id))
+	return &ObjectDeletionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ObjectDeletionJob.
+func (c *ObjectDeletionJobClient) Delete() *ObjectDeletionJobDelete {
+	mutation := newObjectDeletionJobMutation(c.config, OpDelete)
+	return &ObjectDeletionJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ObjectDeletionJobClient) DeleteOne(_m *ObjectDeletionJob) *ObjectDeletionJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ObjectDeletionJobClient) DeleteOneID(id uuid.UUID) *ObjectDeletionJobDeleteOne {
+	builder := c.Delete().Where(objectdeletionjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ObjectDeletionJobDeleteOne{builder}
+}
+
+// Query returns a query builder for ObjectDeletionJob.
+func (c *ObjectDeletionJobClient) Query() *ObjectDeletionJobQuery {
+	return &ObjectDeletionJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeObjectDeletionJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ObjectDeletionJob entity by its id.
+func (c *ObjectDeletionJobClient) Get(ctx context.Context, id uuid.UUID) (*ObjectDeletionJob, error) {
+	return c.Query().Where(objectdeletionjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ObjectDeletionJobClient) GetX(ctx context.Context, id uuid.UUID) *ObjectDeletionJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ObjectDeletionJobClient) Hooks() []Hook {
+	return c.hooks.ObjectDeletionJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *ObjectDeletionJobClient) Interceptors() []Interceptor {
+	return c.inters.ObjectDeletionJob
+}
+
+func (c *ObjectDeletionJobClient) mutate(ctx context.Context, m *ObjectDeletionJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ObjectDeletionJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ObjectDeletionJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ObjectDeletionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ObjectDeletionJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ObjectDeletionJob mutation op: %q", m.Op())
+	}
+}
+
 // ObjectStorageConfigClient is a client for the ObjectStorageConfig schema.
 type ObjectStorageConfigClient struct {
 	config
@@ -3210,6 +3359,139 @@ func (c *PointLedgerClient) mutate(ctx context.Context, m *PointLedgerMutation) 
 		return (&PointLedgerDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown PointLedger mutation op: %q", m.Op())
+	}
+}
+
+// ProjectClient is a client for the Project schema.
+type ProjectClient struct {
+	config
+}
+
+// NewProjectClient returns a client for the Project from the given config.
+func NewProjectClient(c config) *ProjectClient {
+	return &ProjectClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `project.Hooks(f(g(h())))`.
+func (c *ProjectClient) Use(hooks ...Hook) {
+	c.hooks.Project = append(c.hooks.Project, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `project.Intercept(f(g(h())))`.
+func (c *ProjectClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Project = append(c.inters.Project, interceptors...)
+}
+
+// Create returns a builder for creating a Project entity.
+func (c *ProjectClient) Create() *ProjectCreate {
+	mutation := newProjectMutation(c.config, OpCreate)
+	return &ProjectCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Project entities.
+func (c *ProjectClient) CreateBulk(builders ...*ProjectCreate) *ProjectCreateBulk {
+	return &ProjectCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ProjectClient) MapCreateBulk(slice any, setFunc func(*ProjectCreate, int)) *ProjectCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ProjectCreateBulk{err: fmt.Errorf("calling to ProjectClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ProjectCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ProjectCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Project.
+func (c *ProjectClient) Update() *ProjectUpdate {
+	mutation := newProjectMutation(c.config, OpUpdate)
+	return &ProjectUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ProjectClient) UpdateOne(_m *Project) *ProjectUpdateOne {
+	mutation := newProjectMutation(c.config, OpUpdateOne, withProject(_m))
+	return &ProjectUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ProjectClient) UpdateOneID(id uuid.UUID) *ProjectUpdateOne {
+	mutation := newProjectMutation(c.config, OpUpdateOne, withProjectID(id))
+	return &ProjectUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Project.
+func (c *ProjectClient) Delete() *ProjectDelete {
+	mutation := newProjectMutation(c.config, OpDelete)
+	return &ProjectDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ProjectClient) DeleteOne(_m *Project) *ProjectDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ProjectClient) DeleteOneID(id uuid.UUID) *ProjectDeleteOne {
+	builder := c.Delete().Where(project.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ProjectDeleteOne{builder}
+}
+
+// Query returns a query builder for Project.
+func (c *ProjectClient) Query() *ProjectQuery {
+	return &ProjectQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeProject},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Project entity by its id.
+func (c *ProjectClient) Get(ctx context.Context, id uuid.UUID) (*Project, error) {
+	return c.Query().Where(project.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ProjectClient) GetX(ctx context.Context, id uuid.UUID) *Project {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ProjectClient) Hooks() []Hook {
+	return c.hooks.Project
+}
+
+// Interceptors returns the client interceptors.
+func (c *ProjectClient) Interceptors() []Interceptor {
+	return c.inters.Project
+}
+
+func (c *ProjectClient) mutate(ctx context.Context, m *ProjectMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ProjectCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ProjectUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ProjectUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ProjectDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Project mutation op: %q", m.Op())
 	}
 }
 
@@ -6144,11 +6426,11 @@ type (
 	hooks struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
 		ClusterNode, ClusterToken, ConfigItem, ImageResult, ImageTask, Installation,
-		ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
+		ModelAccount, ModelAccountModel, ModelProvider, ModelRoute, ObjectDeletionJob,
 		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, PromptOptimizationRun, ProviderErrorPolicy,
-		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
-		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
+		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
+		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
 		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
 		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
 		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Hook
@@ -6156,11 +6438,11 @@ type (
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
 		ClusterNode, ClusterToken, ConfigItem, ImageResult, ImageTask, Installation,
-		ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
+		ModelAccount, ModelAccountModel, ModelProvider, ModelRoute, ObjectDeletionJob,
 		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, PromptOptimizationRun, ProviderErrorPolicy,
-		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
-		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
+		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
+		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
 		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
 		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
 		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Interceptor

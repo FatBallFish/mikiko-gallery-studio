@@ -210,6 +210,62 @@ func (_c *PaymentOrderCreate) SetNillableBonusPoints(v *string) *PaymentOrderCre
 	return _c
 }
 
+// SetCreditExpiryEnabled sets the "credit_expiry_enabled" field.
+func (_c *PaymentOrderCreate) SetCreditExpiryEnabled(v bool) *PaymentOrderCreate {
+	_c.mutation.SetCreditExpiryEnabled(v)
+	return _c
+}
+
+// SetNillableCreditExpiryEnabled sets the "credit_expiry_enabled" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCreditExpiryEnabled(v *bool) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCreditExpiryEnabled(*v)
+	}
+	return _c
+}
+
+// SetCreditValidDays sets the "credit_valid_days" field.
+func (_c *PaymentOrderCreate) SetCreditValidDays(v int) *PaymentOrderCreate {
+	_c.mutation.SetCreditValidDays(v)
+	return _c
+}
+
+// SetNillableCreditValidDays sets the "credit_valid_days" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCreditValidDays(v *int) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCreditValidDays(*v)
+	}
+	return _c
+}
+
+// SetCreditedAt sets the "credited_at" field.
+func (_c *PaymentOrderCreate) SetCreditedAt(v time.Time) *PaymentOrderCreate {
+	_c.mutation.SetCreditedAt(v)
+	return _c
+}
+
+// SetNillableCreditedAt sets the "credited_at" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCreditedAt(v *time.Time) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCreditedAt(*v)
+	}
+	return _c
+}
+
+// SetCreditExpiresAt sets the "credit_expires_at" field.
+func (_c *PaymentOrderCreate) SetCreditExpiresAt(v time.Time) *PaymentOrderCreate {
+	_c.mutation.SetCreditExpiresAt(v)
+	return _c
+}
+
+// SetNillableCreditExpiresAt sets the "credit_expires_at" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCreditExpiresAt(v *time.Time) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCreditExpiresAt(*v)
+	}
+	return _c
+}
+
 // SetTradeNo sets the "trade_no" field.
 func (_c *PaymentOrderCreate) SetTradeNo(v string) *PaymentOrderCreate {
 	_c.mutation.SetTradeNo(v)
@@ -451,6 +507,10 @@ func (_c *PaymentOrderCreate) defaults() {
 		v := paymentorder.DefaultBonusPoints
 		_c.mutation.SetBonusPoints(v)
 	}
+	if _, ok := _c.mutation.CreditExpiryEnabled(); !ok {
+		v := paymentorder.DefaultCreditExpiryEnabled
+		_c.mutation.SetCreditExpiryEnabled(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -531,6 +591,9 @@ func (_c *PaymentOrderCreate) check() error {
 	}
 	if _, ok := _c.mutation.BonusPoints(); !ok {
 		return &ValidationError{Name: "bonus_points", err: errors.New(`ent: missing required field "PaymentOrder.bonus_points"`)}
+	}
+	if _, ok := _c.mutation.CreditExpiryEnabled(); !ok {
+		return &ValidationError{Name: "credit_expiry_enabled", err: errors.New(`ent: missing required field "PaymentOrder.credit_expiry_enabled"`)}
 	}
 	if v, ok := _c.mutation.TradeNo(); ok {
 		if err := paymentorder.TradeNoValidator(v); err != nil {
@@ -658,6 +721,22 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.BonusPoints(); ok {
 		_spec.SetField(paymentorder.FieldBonusPoints, field.TypeString, value)
 		_node.BonusPoints = value
+	}
+	if value, ok := _c.mutation.CreditExpiryEnabled(); ok {
+		_spec.SetField(paymentorder.FieldCreditExpiryEnabled, field.TypeBool, value)
+		_node.CreditExpiryEnabled = value
+	}
+	if value, ok := _c.mutation.CreditValidDays(); ok {
+		_spec.SetField(paymentorder.FieldCreditValidDays, field.TypeInt, value)
+		_node.CreditValidDays = &value
+	}
+	if value, ok := _c.mutation.CreditedAt(); ok {
+		_spec.SetField(paymentorder.FieldCreditedAt, field.TypeTime, value)
+		_node.CreditedAt = &value
+	}
+	if value, ok := _c.mutation.CreditExpiresAt(); ok {
+		_spec.SetField(paymentorder.FieldCreditExpiresAt, field.TypeTime, value)
+		_node.CreditExpiresAt = &value
 	}
 	if value, ok := _c.mutation.TradeNo(); ok {
 		_spec.SetField(paymentorder.FieldTradeNo, field.TypeString, value)

@@ -51,6 +51,9 @@ type ModelProvider func(*sql.Selector)
 // ModelRoute is the predicate function for modelroute builders.
 type ModelRoute func(*sql.Selector)
 
+// ObjectDeletionJob is the predicate function for objectdeletionjob builders.
+type ObjectDeletionJob func(*sql.Selector)
+
 // ObjectStorageConfig is the predicate function for objectstorageconfig builders.
 type ObjectStorageConfig func(*sql.Selector)
 
@@ -65,6 +68,9 @@ type PaymentWebhookEvent func(*sql.Selector)
 
 // PointLedger is the predicate function for pointledger builders.
 type PointLedger func(*sql.Selector)
+
+// Project is the predicate function for project builders.
+type Project func(*sql.Selector)
 
 // PromptOptimizationRun is the predicate function for promptoptimizationrun builders.
 type PromptOptimizationRun func(*sql.Selector)

@@ -33,6 +33,8 @@ const (
 	FieldPoints = "points"
 	// FieldBonusPoints holds the string denoting the bonus_points field in the database.
 	FieldBonusPoints = "bonus_points"
+	// FieldCreditExpiryEnabled holds the string denoting the credit_expiry_enabled field in the database.
+	FieldCreditExpiryEnabled = "credit_expiry_enabled"
 	// FieldDurationDays holds the string denoting the duration_days field in the database.
 	FieldDurationDays = "duration_days"
 	// FieldCurrency holds the string denoting the currency field in the database.
@@ -60,6 +62,7 @@ var Columns = []string{
 	FieldPriceCny,
 	FieldPoints,
 	FieldBonusPoints,
+	FieldCreditExpiryEnabled,
 	FieldDurationDays,
 	FieldCurrency,
 	FieldDescription,
@@ -104,6 +107,8 @@ var (
 	DefaultPoints string
 	// DefaultBonusPoints holds the default value on creation for the "bonus_points" field.
 	DefaultBonusPoints string
+	// DefaultCreditExpiryEnabled holds the default value on creation for the "credit_expiry_enabled" field.
+	DefaultCreditExpiryEnabled bool
 	// DefaultDurationDays holds the default value on creation for the "duration_days" field.
 	DefaultDurationDays int
 	// DefaultCurrency holds the default value on creation for the "currency" field.
@@ -174,6 +179,11 @@ func ByPoints(opts ...sql.OrderTermOption) OrderOption {
 // ByBonusPoints orders the results by the bonus_points field.
 func ByBonusPoints(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBonusPoints, opts...).ToFunc()
+}
+
+// ByCreditExpiryEnabled orders the results by the credit_expiry_enabled field.
+func ByCreditExpiryEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditExpiryEnabled, opts...).ToFunc()
 }
 
 // ByDurationDays orders the results by the duration_days field.

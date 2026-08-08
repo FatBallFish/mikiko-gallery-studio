@@ -52,6 +52,14 @@ type PaymentOrder struct {
 	Points string `json:"points,omitempty"`
 	// BonusPoints holds the value of the "bonus_points" field.
 	BonusPoints string `json:"bonus_points,omitempty"`
+	// CreditExpiryEnabled holds the value of the "credit_expiry_enabled" field.
+	CreditExpiryEnabled bool `json:"credit_expiry_enabled,omitempty"`
+	// CreditValidDays holds the value of the "credit_valid_days" field.
+	CreditValidDays *int `json:"credit_valid_days,omitempty"`
+	// CreditedAt holds the value of the "credited_at" field.
+	CreditedAt *time.Time `json:"credited_at,omitempty"`
+	// CreditExpiresAt holds the value of the "credit_expires_at" field.
+	CreditExpiresAt *time.Time `json:"credit_expires_at,omitempty"`
 	// TradeNo holds the value of the "trade_no" field.
 	TradeNo *string `json:"trade_no,omitempty"`
 	// PaymentURL holds the value of the "payment_url" field.
@@ -88,11 +96,13 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case paymentorder.FieldProviderSnapshot, paymentorder.FieldPaymentDisplay, paymentorder.FieldProviderPayload:
 			values[i] = new([]byte)
-		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldProviderInstanceID, paymentorder.FieldLedgerID:
+		case paymentorder.FieldCreditExpiryEnabled:
+			values[i] = new(sql.NullBool)
+		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldProviderInstanceID, paymentorder.FieldCreditValidDays, paymentorder.FieldLedgerID:
 			values[i] = new(sql.NullInt64)
 		case paymentorder.FieldOrderNo, paymentorder.FieldProvider, paymentorder.FieldPurchaseType, paymentorder.FieldVisibleMethod, paymentorder.FieldProviderType, paymentorder.FieldStatus, paymentorder.FieldCurrency, paymentorder.FieldAmountCny, paymentorder.FieldPoints, paymentorder.FieldBonusPoints, paymentorder.FieldTradeNo, paymentorder.FieldPaymentURL, paymentorder.FieldQrCode, paymentorder.FieldClientToken, paymentorder.FieldFailureReason, paymentorder.FieldIdempotencyKey:
 			values[i] = new(sql.NullString)
-		case paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldClosedAt, paymentorder.FieldRefundedAt:
+		case paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt, paymentorder.FieldCreditedAt, paymentorder.FieldCreditExpiresAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldClosedAt, paymentorder.FieldRefundedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -221,6 +231,33 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field bonus_points", values[i])
 			} else if value.Valid {
 				_m.BonusPoints = value.String
+			}
+		case paymentorder.FieldCreditExpiryEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_expiry_enabled", values[i])
+			} else if value.Valid {
+				_m.CreditExpiryEnabled = value.Bool
+			}
+		case paymentorder.FieldCreditValidDays:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_valid_days", values[i])
+			} else if value.Valid {
+				_m.CreditValidDays = new(int)
+				*_m.CreditValidDays = int(value.Int64)
+			}
+		case paymentorder.FieldCreditedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field credited_at", values[i])
+			} else if value.Valid {
+				_m.CreditedAt = new(time.Time)
+				*_m.CreditedAt = value.Time
+			}
+		case paymentorder.FieldCreditExpiresAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_expires_at", values[i])
+			} else if value.Valid {
+				_m.CreditExpiresAt = new(time.Time)
+				*_m.CreditExpiresAt = value.Time
 			}
 		case paymentorder.FieldTradeNo:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -401,6 +438,24 @@ func (_m *PaymentOrder) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("bonus_points=")
 	builder.WriteString(_m.BonusPoints)
+	builder.WriteString(", ")
+	builder.WriteString("credit_expiry_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CreditExpiryEnabled))
+	builder.WriteString(", ")
+	if v := _m.CreditValidDays; v != nil {
+		builder.WriteString("credit_valid_days=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.CreditedAt; v != nil {
+		builder.WriteString("credited_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.CreditExpiresAt; v != nil {
+		builder.WriteString("credit_expires_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteString(", ")
 	if v := _m.TradeNo; v != nil {
 		builder.WriteString("trade_no=")

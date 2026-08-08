@@ -44,6 +44,10 @@ const (
 	FieldHeight = "height"
 	// FieldSha256 holds the string denoting the sha256 field in the database.
 	FieldSha256 = "sha256"
+	// FieldSourceImageResultID holds the string denoting the source_image_result_id field in the database.
+	FieldSourceImageResultID = "source_image_result_id"
+	// FieldOwnsObject holds the string denoting the owns_object field in the database.
+	FieldOwnsObject = "owns_object"
 	// FieldBoundTaskID holds the string denoting the bound_task_id field in the database.
 	FieldBoundTaskID = "bound_task_id"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
@@ -70,6 +74,8 @@ var Columns = []string{
 	FieldWidth,
 	FieldHeight,
 	FieldSha256,
+	FieldSourceImageResultID,
+	FieldOwnsObject,
 	FieldBoundTaskID,
 	FieldExpiresAt,
 }
@@ -111,6 +117,8 @@ var (
 	DefaultFileSizeBytes int64
 	// Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
 	Sha256Validator func(string) error
+	// DefaultOwnsObject holds the default value on creation for the "owns_object" field.
+	DefaultOwnsObject bool
 	// DefaultExpiresAt holds the default value on creation for the "expires_at" field.
 	DefaultExpiresAt func() time.Time
 	// DefaultID holds the default value on creation for the "id" field.
@@ -198,6 +206,16 @@ func ByHeight(opts ...sql.OrderTermOption) OrderOption {
 // BySha256 orders the results by the sha256 field.
 func BySha256(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSha256, opts...).ToFunc()
+}
+
+// BySourceImageResultID orders the results by the source_image_result_id field.
+func BySourceImageResultID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceImageResultID, opts...).ToFunc()
+}
+
+// ByOwnsObject orders the results by the owns_object field.
+func ByOwnsObject(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOwnsObject, opts...).ToFunc()
 }
 
 // ByBoundTaskID orders the results by the bound_task_id field.

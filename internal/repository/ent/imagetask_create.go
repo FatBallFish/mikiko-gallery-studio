@@ -69,6 +69,20 @@ func (_c *ImageTaskCreate) SetUserID(v int64) *ImageTaskCreate {
 	return _c
 }
 
+// SetProjectID sets the "project_id" field.
+func (_c *ImageTaskCreate) SetProjectID(v uuid.UUID) *ImageTaskCreate {
+	_c.mutation.SetProjectID(v)
+	return _c
+}
+
+// SetNillableProjectID sets the "project_id" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableProjectID(v *uuid.UUID) *ImageTaskCreate {
+	if v != nil {
+		_c.SetProjectID(*v)
+	}
+	return _c
+}
+
 // SetAPIKeyID sets the "api_key_id" field.
 func (_c *ImageTaskCreate) SetAPIKeyID(v int64) *ImageTaskCreate {
 	_c.mutation.SetAPIKeyID(v)
@@ -279,6 +293,20 @@ func (_c *ImageTaskCreate) SetOutputFormat(v string) *ImageTaskCreate {
 func (_c *ImageTaskCreate) SetNillableOutputFormat(v *string) *ImageTaskCreate {
 	if v != nil {
 		_c.SetOutputFormat(*v)
+	}
+	return _c
+}
+
+// SetBackground sets the "background" field.
+func (_c *ImageTaskCreate) SetBackground(v string) *ImageTaskCreate {
+	_c.mutation.SetBackground(v)
+	return _c
+}
+
+// SetNillableBackground sets the "background" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableBackground(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetBackground(*v)
 	}
 	return _c
 }
@@ -1130,6 +1158,11 @@ func (_c *ImageTaskCreate) check() error {
 			return &ValidationError{Name: "output_format", err: fmt.Errorf(`ent: validator failed for field "ImageTask.output_format": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.Background(); ok {
+		if err := imagetask.BackgroundValidator(v); err != nil {
+			return &ValidationError{Name: "background", err: fmt.Errorf(`ent: validator failed for field "ImageTask.background": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.OutputCompression(); !ok {
 		return &ValidationError{Name: "output_compression", err: errors.New(`ent: missing required field "ImageTask.output_compression"`)}
 	}
@@ -1294,6 +1327,10 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 		_spec.SetField(imagetask.FieldUserID, field.TypeInt64, value)
 		_node.UserID = value
 	}
+	if value, ok := _c.mutation.ProjectID(); ok {
+		_spec.SetField(imagetask.FieldProjectID, field.TypeUUID, value)
+		_node.ProjectID = &value
+	}
 	if value, ok := _c.mutation.APIKeyID(); ok {
 		_spec.SetField(imagetask.FieldAPIKeyID, field.TypeInt64, value)
 		_node.APIKeyID = &value
@@ -1361,6 +1398,10 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.OutputFormat(); ok {
 		_spec.SetField(imagetask.FieldOutputFormat, field.TypeString, value)
 		_node.OutputFormat = value
+	}
+	if value, ok := _c.mutation.Background(); ok {
+		_spec.SetField(imagetask.FieldBackground, field.TypeString, value)
+		_node.Background = &value
 	}
 	if value, ok := _c.mutation.OutputCompression(); ok {
 		_spec.SetField(imagetask.FieldOutputCompression, field.TypeInt, value)

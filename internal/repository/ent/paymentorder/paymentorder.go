@@ -47,6 +47,14 @@ const (
 	FieldPoints = "points"
 	// FieldBonusPoints holds the string denoting the bonus_points field in the database.
 	FieldBonusPoints = "bonus_points"
+	// FieldCreditExpiryEnabled holds the string denoting the credit_expiry_enabled field in the database.
+	FieldCreditExpiryEnabled = "credit_expiry_enabled"
+	// FieldCreditValidDays holds the string denoting the credit_valid_days field in the database.
+	FieldCreditValidDays = "credit_valid_days"
+	// FieldCreditedAt holds the string denoting the credited_at field in the database.
+	FieldCreditedAt = "credited_at"
+	// FieldCreditExpiresAt holds the string denoting the credit_expires_at field in the database.
+	FieldCreditExpiresAt = "credit_expires_at"
 	// FieldTradeNo holds the string denoting the trade_no field in the database.
 	FieldTradeNo = "trade_no"
 	// FieldPaymentURL holds the string denoting the payment_url field in the database.
@@ -97,6 +105,10 @@ var Columns = []string{
 	FieldAmountCny,
 	FieldPoints,
 	FieldBonusPoints,
+	FieldCreditExpiryEnabled,
+	FieldCreditValidDays,
+	FieldCreditedAt,
+	FieldCreditExpiresAt,
 	FieldTradeNo,
 	FieldPaymentURL,
 	FieldQrCode,
@@ -159,6 +171,8 @@ var (
 	DefaultPoints string
 	// DefaultBonusPoints holds the default value on creation for the "bonus_points" field.
 	DefaultBonusPoints string
+	// DefaultCreditExpiryEnabled holds the default value on creation for the "credit_expiry_enabled" field.
+	DefaultCreditExpiryEnabled bool
 	// TradeNoValidator is a validator for the "trade_no" field. It is called by the builders before save.
 	TradeNoValidator func(string) error
 	// PaymentURLValidator is a validator for the "payment_url" field. It is called by the builders before save.
@@ -254,6 +268,26 @@ func ByPoints(opts ...sql.OrderTermOption) OrderOption {
 // ByBonusPoints orders the results by the bonus_points field.
 func ByBonusPoints(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBonusPoints, opts...).ToFunc()
+}
+
+// ByCreditExpiryEnabled orders the results by the credit_expiry_enabled field.
+func ByCreditExpiryEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditExpiryEnabled, opts...).ToFunc()
+}
+
+// ByCreditValidDays orders the results by the credit_valid_days field.
+func ByCreditValidDays(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditValidDays, opts...).ToFunc()
+}
+
+// ByCreditedAt orders the results by the credited_at field.
+func ByCreditedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditedAt, opts...).ToFunc()
+}
+
+// ByCreditExpiresAt orders the results by the credit_expires_at field.
+func ByCreditExpiresAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditExpiresAt, opts...).ToFunc()
 }
 
 // ByTradeNo orders the results by the trade_no field.
