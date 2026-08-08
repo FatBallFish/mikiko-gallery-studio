@@ -34,6 +34,8 @@ export const API_PATHS = {
     avatar: '/api/agent/user/v1/avatar',
     closeAccount: '/api/agent/user/v1/account/close',
     accountClose: '/api/agent/user/v1/account/close',
+	projects: '/api/agent/project/v1/projects',
+	projectDetail: '/api/agent/project/v1/projects/{project_id}',
     balance: '/api/agent/billing/v1/balance',
     ledger: '/api/agent/billing/v1/ledger',
     plans: '/api/agent/billing/v1/plans',
@@ -660,9 +662,12 @@ export type Project = {
   is_default: boolean
   status: ProjectStatus
   version: number
+	task_count?: number
+	asset_count?: number
   created_at: string
   updated_at: string
 }
+export type ProjectSnapshot = Pick<Project, 'id' | 'name' | 'is_default'>
 export type ReferenceAsset = {
   id: string
   name?: string
@@ -687,7 +692,7 @@ export type ReferenceAsset = {
 export type ImageResult = {
   id: string
   project_id?: string | null
-  project?: Project
+  project?: ProjectSnapshot
   url: string
   download_url?: string
   preview_expires_at?: string
@@ -731,7 +736,7 @@ export type ImageResult = {
 export type ImageTask = {
   id: string
   project_id?: string | null
-  project?: Project
+  project?: ProjectSnapshot
   title: string
   prompt: string
   negative_prompt?: string
@@ -782,8 +787,8 @@ export type ImageTask = {
   reference_assets: ReferenceAsset[]
   results: ImageResult[]
 }
-export type BackendCreateTaskRequest = Omit<BackendEstimateRequest, 'reference_image_count'> & { prompt: string; reference_asset_ids?: string[]; response_mode: 'async'; capability_version?: string }
-export type CreateTaskRequest = EstimateRequest & { prompt: string; negative_prompt?: string; idempotency_key?: string; response_mode?: 'sync' | 'async' | string; capability_version?: string }
+export type BackendCreateTaskRequest = Omit<BackendEstimateRequest, 'reference_image_count'> & { project_id?: string; prompt: string; reference_asset_ids?: string[]; response_mode: 'async'; capability_version?: string }
+export type CreateTaskRequest = EstimateRequest & { project_id?: string; prompt: string; negative_prompt?: string; idempotency_key?: string; response_mode?: 'sync' | 'async' | string; capability_version?: string }
 export type LoginResult = LoginResponse
 
 export type ApiKey = {
@@ -1005,7 +1010,7 @@ export type ModelRoute = {
 }
 export type ModelRouteWriteRequest = { group_code: string; task_type: string; provider_model_id: number; provider_code: string; priority: number; weight_percent: number; fallback_order: number; enabled: boolean }
 export type PriceRow = { id: string; group: string; q1k: string; q2k: string; q4k: string; reference_multiplier: string; version: number; state: 'active' | 'draft' }
-export type GalleryImage = { id: string; task_id: string; user_id?: number; project_id?: string | null; project?: Project; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; aspect_ratio?: string; output_format?: string; output_compression?: number; moderation?: string; requested_output_image_count?: number; image_count?: number; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; preview_expires_at?: string; download_expires_at?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; storage_config_id?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
+export type GalleryImage = { id: string; task_id: string; user_id?: number; project_id?: string | null; project?: ProjectSnapshot; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; aspect_ratio?: string; output_format?: string; output_compression?: number; moderation?: string; requested_output_image_count?: number; image_count?: number; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; preview_expires_at?: string; download_expires_at?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; storage_config_id?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
 export type ReviewItem = { id: string; image_id?: string; title: string; owner: string; task_type: ImageTaskType; image_url: string; status: 'pending' | 'pending_review' | 'approved' | 'rejected' | 'unpublished' | string; reason: string; created_at: string; review_reason?: string; visibility_status?: string }
 export type AdminUser = { id: string; email: string; display_name: string; nickname?: string; status: 'active' | 'disabled' | 'pending' | 'closed' | string; group: string; user_group_code?: string; user_group_codes?: string[]; user_groups?: UserGroup[]; balance: string; token_version?: number; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string; closed_at?: string | null; created_at: string; updated_at?: string; last_seen_at: string }
 export type AdminUserDetail = { user: AdminUser; balance: Balance; recent_ledger: LedgerEntry[]; recent_orders?: PaymentOrder[]; recent_tasks?: ImageTask[]; api_keys?: ApiKey[] }

@@ -71,6 +71,7 @@ import (
 	compatservice "github.com/fatballfish/pic-gallery/internal/service/compat"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
@@ -106,6 +107,7 @@ type API struct {
 	redeem      *redeemservice.Service
 	audit       *auditservice.Service
 	cluster     *clusterservice.Service
+	projects    *projectservice.Service
 	adminPerms  domainadminauth.PermissionResolver
 	docsReady   DocsReadinessChecker
 	cashierSync cashierOrderSyncCoordinator
@@ -239,6 +241,8 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 	callRecordSvc := admincallrecordservice.NewServiceWithStore(nil)
 	capsSvc := capserv.NewServiceWithAttachmentPolicy(cfg, attachmentPolicy)
 	capsSvc.SetBillingConfigResolver(billingSvc)
+	projects := projectservice.NewService(nil)
+	taskSvc.SetProjectResolver(projects)
 	return &API{
 		auth:       authSvc,
 		adminAuth:  adminAuthSvc,
@@ -256,6 +260,7 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 		audit:      auditSvc,
 		adminPerms: domainadminauth.RolePermissionResolver{},
 		docsReady:  newDocsReadinessChecker(cfg, nil, docsReadinessProbeTimeout),
+		projects:   projects,
 		cfg:        cfg,
 	}
 }
@@ -297,6 +302,13 @@ func (a *API) SetStorageConfigService(service *storageconfigservice.Service, reg
 
 func (a *API) SetClusterService(service *clusterservice.Service) {
 	a.cluster = service
+}
+
+func (a *API) SetProjectService(service *projectservice.Service) {
+	if service != nil {
+		a.projects = service
+		a.tasks.SetProjectResolver(service)
+	}
 }
 
 func (a *API) cashierConfigFacade() *cashierservice.ConfigFacade {
@@ -2377,6 +2389,7 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 	}
 	var req struct {
 		GalleryImageIDs []string `json:"gallery_image_ids"`
+		ProjectID       string   `json:"project_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -2403,12 +2416,21 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 		httpx.WriteError(w, r, errs.BadRequest("gallery_image_ids exceeds limit"))
 		return
 	}
+	selectedProject, err := a.projects.ResolveForWrite(r.Context(), user.ID, req.ProjectID)
+	if err != nil {
+		httpx.WriteError(w, r, projectAppError(err))
+		return
+	}
 
 	items := make([]domainassets.ReferenceAsset, 0, len(ids))
 	for _, imageID := range ids {
 		result, err := a.tasks.GetOwnedImageResult(r.Context(), user.ID, imageID)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if result.ProjectID != selectedProject.ID {
+			httpx.WriteError(w, r, projectAppError(projectservice.ErrNotFound))
 			return
 		}
 		asset, svcErr := a.assets.ImportGalleryImage(r.Context(), user.ID, result)
@@ -2981,9 +3003,10 @@ func (a *API) HandleAgentGalleryImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := a.tasks.ListGalleryByUser(r.Context(), user.ID, domainimagetask.GalleryListRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Status:   r.URL.Query().Get("visibility_status"),
+		Page:      page,
+		PageSize:  pageSize,
+		ProjectID: r.URL.Query().Get("project_id"),
+		Status:    r.URL.Query().Get("visibility_status"),
 	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
@@ -7838,6 +7861,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
+		ProjectID                 string   `json:"project_id"`
 		TaskType                  string   `json:"task_type"`
 		Prompt                    string   `json:"prompt"`
 		AbstractModel             string   `json:"abstract_model"`
@@ -7868,6 +7892,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 	result, err := a.tasks.CreateTask(r.Context(), domainimagetask.CreateRequest{
 		TaskID:              idempotentTaskID(user.ID, r.Header.Get("Idempotency-Key"), req),
 		UserID:              user.ID,
+		ProjectID:           req.ProjectID,
 		AbstractModel:       req.AbstractModel,
 		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
@@ -7908,6 +7933,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	defer cleanup()
 
 	var req struct {
+		ProjectID                 string   `json:"project_id"`
 		TaskType                  string   `json:"task_type"`
 		Prompt                    string   `json:"prompt"`
 		AbstractModel             string   `json:"abstract_model"`
@@ -7970,6 +7996,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	result, err := a.tasks.CreateTask(r.Context(), domainimagetask.CreateRequest{
 		TaskID:              taskID,
 		UserID:              identity.UserID,
+		ProjectID:           req.ProjectID,
 		APIKeyID:            identity.APIKeyID,
 		SourceChannel:       "openapi",
 		AbstractModel:       req.AbstractModel,
@@ -8010,7 +8037,7 @@ func (a *API) handleAgentTaskList(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	tasks, err := a.tasks.ListByUser(r.Context(), user.ID)
+	tasks, err := a.tasks.ListByUserProject(r.Context(), user.ID, r.URL.Query().Get("project_id"))
 	if err != nil {
 		httpx.WriteError(w, r, err.(*errs.Error))
 		return

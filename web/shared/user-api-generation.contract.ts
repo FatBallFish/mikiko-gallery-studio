@@ -197,6 +197,7 @@ assertAbsent(estimateWire, [
 
 const createWire = buildCreateTaskWireRequest({
   ...ratioRequest,
+  project_id: 'project-a',
   prompt: 'Paint a quiet harbor',
   negative_prompt: 'text, watermark',
   capability_version: 'capability-v1',
@@ -205,6 +206,7 @@ const createWire = buildCreateTaskWireRequest({
 })
 assertDeepEqual(createWire, {
   body: {
+    project_id: 'project-a',
     task_type: 'image_edit',
     prompt: 'Paint a quiet harbor\n\nNegative prompt: text, watermark',
     route_model_code: 'plus-image',

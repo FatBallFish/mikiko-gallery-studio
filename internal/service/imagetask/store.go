@@ -206,12 +206,20 @@ func (s *MemoryStore) GetImageResultForAdmin(_ context.Context, imageID string) 
 }
 
 func (s *MemoryStore) ListByUser(_ context.Context, userID int64) ([]domainimagetask.Task, error) {
+	return s.listByUserProject(userID, "")
+}
+
+func (s *MemoryStore) ListByUserProject(_ context.Context, userID int64, projectID string) ([]domainimagetask.Task, error) {
+	return s.listByUserProject(userID, projectID)
+}
+
+func (s *MemoryStore) listByUserProject(userID int64, projectID string) ([]domainimagetask.Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	list := make([]domainimagetask.Task, 0, len(s.tasksByID))
 	for _, task := range s.tasksByID {
-		if task.UserID != userID {
+		if task.UserID != userID || (projectID != "" && task.ProjectID != projectID) {
 			continue
 		}
 		list = append(list, cloneTask(task))
@@ -354,7 +362,7 @@ func (s *MemoryStore) ListGalleryByUser(_ context.Context, userID int64, req dom
 	page, pageSize := normalizeGalleryPage(req.Page, req.PageSize)
 	items := make([]domainimagetask.GalleryImage, 0)
 	for _, task := range s.tasksByID {
-		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted || (req.ProjectID != "" && task.ProjectID != req.ProjectID) {
 			continue
 		}
 		for _, result := range task.Results {
@@ -717,6 +725,8 @@ func galleryImageFromMemoryTask(task domainimagetask.Task, result provider.Image
 		ID:                result.ID,
 		TaskID:            task.ID,
 		UserID:            task.UserID,
+		ProjectID:         task.ProjectID,
+		Project:           cloneProjectSnapshot(task.Project),
 		Prompt:            task.Prompt,
 		AbstractModel:     task.AbstractModel,
 		RouteModelCode:    task.RouteModelCode,
@@ -749,6 +759,14 @@ func galleryImageFromMemoryTask(task domainimagetask.Task, result provider.Image
 		ReviewReason:      result.ReviewReason,
 		PublishedAt:       result.PublishedAt,
 	}
+}
+
+func cloneProjectSnapshot(value *domainimagetask.ProjectSnapshot) *domainimagetask.ProjectSnapshot {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func galleryReferenceAssets(assetIDs []string) []domainimagetask.GalleryReferenceAsset {

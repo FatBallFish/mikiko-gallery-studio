@@ -25,14 +25,49 @@ import (
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
+	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	"github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
+
+func TestCreateTaskResolvesOwnedProjectAndRejectsForeignProject(t *testing.T) {
+	ctx := context.Background()
+	projectSvc := projectservice.NewService(projectservice.NewMemoryStore())
+	defaultProject, err := projectSvc.EnsureDefault(ctx, 501)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := projectSvc.Create(ctx, 502, domainproject.CreateRequest{Name: "Foreign"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithStore(taskTestConfig(), store)
+	svc.SetProjectResolver(projectSvc)
+
+	created, err := svc.CreateTask(ctx, domainimagetask.CreateRequest{
+		UserID: 501, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage),
+		Prompt: "project fallback", SizeMode: "auto", OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask omitted project: %v", err)
+	}
+	if created.ProjectID != defaultProject.ID || created.Project == nil || created.Project.ID != defaultProject.ID {
+		t.Fatalf("created task project = %q %#v, want default %#v", created.ProjectID, created.Project, defaultProject)
+	}
+	if _, err := svc.CreateTask(ctx, domainimagetask.CreateRequest{
+		UserID: 501, ProjectID: foreign.ID, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage),
+		Prompt: "foreign project", SizeMode: "auto", OutputImageCount: 1,
+	}); err == nil {
+		t.Fatal("CreateTask accepted a foreign explicit project")
+	}
+}
 
 type fakeAssetLoader struct {
 	inputs map[string]provider.ImageInput

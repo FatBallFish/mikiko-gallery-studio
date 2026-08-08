@@ -34,6 +34,7 @@ import (
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
@@ -314,7 +315,9 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
 	billingSvc.SetAdminConfigResolver(adminSvc)
 	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, entstore.NewAssetsStore(client), storageRegistry)
+	projectSvc := projectservice.NewService(entstore.NewProjectStore(client))
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, entstore.NewImageTaskStore(client), assetSvc, billingSvc, storageRegistry)
+	taskSvc.SetProjectResolver(projectSvc)
 	modelAdminStore := entstore.NewModelAdminStore(client)
 	taskSvc.SetModelRoutingSource(modelAdminStore)
 	if redisClient != nil {
@@ -348,6 +351,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	api.SetTextModelServices(textModelSvc, promptOptimizerSvc)
 	api.SetStorageConfigService(storageConfigSvc, storageRegistry, storageInvalidationBus)
 	api.SetClusterService(clusterSvc)
+	api.SetProjectService(projectSvc)
 	heartbeat, err := startRuntimeHeartbeat(metricsContext, cfg, clusterStore)
 	if err != nil {
 		return err

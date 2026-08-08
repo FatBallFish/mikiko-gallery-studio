@@ -16,6 +16,7 @@ tags:
   - name: Agent User
   - name: Agent Billing
   - name: Agent Cashier
+  - name: Agent Projects
   - name: Agent Image
   - name: Agent Text
   - name: Open Image API
@@ -952,6 +953,132 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/EstimateResponse
+  /api/agent/project/v1/projects:
+    get:
+      tags: [Agent Projects]
+      summary: List active projects for the current user
+      operationId: listAgentProjects
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active projects and the immutable default project ID
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ProjectListResponse
+    post:
+      tags: [Agent Projects]
+      summary: Create a project for the current user
+      operationId: createAgentProject
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/ProjectCreateRequest
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ProjectResponse
+        '409':
+          description: Active project name already exists
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/project/v1/projects/{project_id}:
+    patch:
+      tags: [Agent Projects]
+      summary: Rename a non-default active project
+      operationId: renameAgentProject
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/ProjectRenameRequest
+      responses:
+        '200':
+          description: Project renamed
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ProjectResponse
+        '403':
+          description: Default project is immutable (`default_project_immutable`)
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '404':
+          description: Project is missing or belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '409':
+          description: Project version changed (`project_changed`) or name already exists
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+    delete:
+      tags: [Agent Projects]
+      summary: Delete an empty project or atomically transfer its contents before deletion
+      operationId: deleteAgentProject
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/ProjectDeleteRequest
+      responses:
+        '200':
+          description: Project soft-deleted, with transferred ownership counts
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ProjectDeleteResponse
+        '403':
+          description: Default project is immutable (`default_project_immutable`)
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '404':
+          description: Source or target project is missing or belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '409':
+          description: Transfer target required (`project_not_empty`) or project version changed (`project_changed`)
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/agent/image/v1/capabilities:
     get:
       tags: [Agent Image]
@@ -986,6 +1113,32 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetResponse
+  /api/agent/image/v1/reference-assets:import-from-gallery:
+    post:
+      tags: [Agent Image]
+      summary: Create reference aliases for owned gallery images without copying objects
+      operationId: importAgentReferenceAssetsFromGallery
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetsImportFromGalleryRequest
+      responses:
+        '201':
+          description: Reference aliases created
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetsImportFromGalleryResponse
+        '404':
+          description: Project or source image is missing or belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/agent/image/v1/tasks:
     get:
       tags: [Agent Image]
@@ -993,6 +1146,11 @@ paths:
       operationId: listAgentImageTasks
       security:
         - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: query
+          description: Owned project to list. Omission uses the service's compatibility behavior.
+          schema: { type: string }
       responses:
         '200':
           description: Task list
@@ -1142,6 +1300,11 @@ paths:
       operationId: listAgentHistoryTasks
       security:
         - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: query
+          description: Owned project to list. Omission uses the service's compatibility behavior.
+          schema: { type: string }
       responses:
         '200':
           description: History task list
@@ -1272,6 +1435,40 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/EstimateResponse
+  /api/agent/gallery/v1/images:
+    get:
+      tags: [Agent Image]
+      summary: List generated assets in an owned project
+      operationId: listAgentGalleryImages
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: project_id
+          in: query
+          description: Owned project to list. Omission resolves the current user's default project.
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: visibility_status
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Project-scoped generated assets
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryImageListResponse
+        '404':
+          description: Project is missing or belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/agent/gallery/v1/images/{image_id}/publish:
     post:
       tags: [Agent Image]

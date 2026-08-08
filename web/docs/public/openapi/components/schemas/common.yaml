@@ -41,6 +41,45 @@ components:
           type: integer
         total:
           type: integer
+    ProjectSnapshot:
+      type: object
+      required: [id, name, is_default]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        is_default:
+          type: boolean
+    Project:
+      type: object
+      required: [id, name, is_default, status, version, task_count, asset_count, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        is_default:
+          type: boolean
+        status:
+          type: string
+          enum: [active, transferring, deleted]
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        task_count:
+          type: integer
+          minimum: 0
+        asset_count:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     ReferenceAsset:
       type: object
       properties:
@@ -69,6 +108,10 @@ components:
         id:
           type: string
           format: uuid
+        project_id:
+          type: string
+        project:
+          $ref: '#/components/schemas/ProjectSnapshot'
         url:
           type: string
           description: Frontend-usable image URL. For local generated images this may be the authenticated download endpoint.
@@ -111,6 +154,10 @@ components:
         id:
           type: string
           format: uuid
+        project_id:
+          type: string
+        project:
+          $ref: '#/components/schemas/ProjectSnapshot'
         task_type:
           type: string
         status:
@@ -175,6 +222,10 @@ components:
         id:
           type: string
           format: uuid
+        project_id:
+          type: string
+        project:
+          $ref: '#/components/schemas/ProjectSnapshot'
         task_id:
           type: string
           format: uuid

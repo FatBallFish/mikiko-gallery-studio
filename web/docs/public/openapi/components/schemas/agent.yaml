@@ -863,6 +863,108 @@ components:
         file:
           type: string
           format: binary
+    ProjectCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+    ProjectRenameRequest:
+      type: object
+      required: [name, expected_version]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        expected_version:
+          type: integer
+          format: int64
+          minimum: 1
+    ProjectDeleteRequest:
+      type: object
+      required: [expected_version]
+      properties:
+        expected_version:
+          type: integer
+          format: int64
+          minimum: 1
+        target_project_id:
+          type: string
+          description: Required when the source project owns tasks or assets.
+    ProjectResponse:
+      type: object
+      properties:
+        data:
+          $ref: ./common.yaml#/components/schemas/Project
+    ProjectListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [items, default_project_id]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: ./common.yaml#/components/schemas/Project
+            default_project_id:
+              type: string
+    ProjectDeleteResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [project, transferred]
+          properties:
+            project:
+              $ref: ./common.yaml#/components/schemas/Project
+            transferred:
+              type: object
+              required: [tasks, assets]
+              properties:
+                tasks: { type: integer, minimum: 0 }
+                assets: { type: integer, minimum: 0 }
+    ReferenceAssetsImportFromGalleryRequest:
+      type: object
+      required: [gallery_image_ids]
+      properties:
+        gallery_image_ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        project_id:
+          type: string
+          description: Current owned project. Omission resolves the caller's default project.
+    ReferenceAssetsImportFromGalleryResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: ./common.yaml#/components/schemas/ReferenceAsset
+    GalleryImageListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: ./common.yaml#/components/schemas/GalleryImage
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
     ReferenceAssetResponse:
       type: object
       properties:
@@ -872,6 +974,9 @@ components:
       type: object
       required: [task_type, prompt, route_model_code, requested_output_image_count]
       properties:
+        project_id:
+          type: string
+          description: Owned project for the task and outputs. Omission resolves the caller's default project.
         task_type:
           type: string
           enum: [text_to_image, image_edit]

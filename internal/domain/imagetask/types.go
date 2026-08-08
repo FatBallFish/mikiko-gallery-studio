@@ -4,6 +4,7 @@ import (
 	"time"
 
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 )
 
@@ -37,6 +38,7 @@ const (
 type ExecuteRequest struct {
 	TaskID              string
 	UserID              int64
+	ProjectID           string
 	APIKeyID            int64
 	SourceChannel       string
 	UserGroupCode       string
@@ -66,6 +68,7 @@ type ExecuteRequest struct {
 type CreateRequest struct {
 	TaskID              string
 	UserID              int64
+	ProjectID           string
 	APIKeyID            int64
 	SourceChannel       string
 	AbstractModel       string
@@ -196,6 +199,8 @@ type GenerationSnapshot struct {
 
 type Task struct {
 	UserID               int64                         `json:"-"`
+	ProjectID            string                        `json:"project_id"`
+	Project              *domainproject.Snapshot       `json:"project,omitempty"`
 	APIKeyID             int64                         `json:"-"`
 	SourceChannel        string                        `json:"-"`
 	ID                   string                        `json:"id"`
@@ -263,6 +268,8 @@ type GalleryImage struct {
 	ID                string                  `json:"id"`
 	TaskID            string                  `json:"task_id"`
 	UserID            int64                   `json:"user_id,omitempty"`
+	ProjectID         string                  `json:"project_id"`
+	Project           *domainproject.Snapshot `json:"project,omitempty"`
 	Prompt            string                  `json:"prompt,omitempty"`
 	PromptExcerpt     string                  `json:"prompt_excerpt,omitempty"`
 	AbstractModel     string                  `json:"abstract_model,omitempty"`
@@ -315,6 +322,7 @@ type GalleryReferenceAsset struct {
 type GalleryListRequest struct {
 	Page           int
 	PageSize       int
+	ProjectID      string
 	Status         string
 	ReviewOnly     bool
 	Sort           string
@@ -337,6 +345,8 @@ type GalleryListRequest struct {
 	LikedOnly      bool
 	FavoritedOnly  bool
 }
+
+type ProjectSnapshot = domainproject.Snapshot
 
 type GalleryPage struct {
 	Items    []GalleryImage `json:"items"`

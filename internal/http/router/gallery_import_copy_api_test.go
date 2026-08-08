@@ -11,10 +11,12 @@ import (
 	"testing"
 
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
@@ -23,19 +25,26 @@ func TestGalleryImportRouteUsesStorageCopyWithoutReadingImageBytes(t *testing.T)
 	hash := sha256.Sum256(content)
 	backend := &galleryImportCopyBackend{objects: map[string][]byte{"generated/source.png": content}}
 	router := storage.NewStaticRouter(backend)
+	projectSvc := projectservice.NewService(projectservice.NewMemoryStore())
+	defaultProject, err := projectSvc.EnsureDefault(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
 	imageStore := imagetaskservice.NewMemoryStore()
 	result := provider.ImageResult{
-		ID: "copy-route-image", StorageDriver: "s3", ObjectKey: "generated/source.png", MimeType: "image/png",
+		ID: "copy-route-image", ProjectID: defaultProject.ID, StorageDriver: "s3", ObjectKey: "generated/source.png", MimeType: "image/png",
 		FileSizeBytes: int64(len(content)), Width: 1, Height: 1, SHA256: hex.EncodeToString(hash[:]),
 	}
-	if err := imageStore.Save(t.Context(), domainimagetask.Task{ID: "copy-route-task", UserID: 1, Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{result}}); err != nil {
+	if err := imageStore.Save(t.Context(), domainimagetask.Task{ID: "copy-route-task", UserID: 1, ProjectID: defaultProject.ID, Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{result}}); err != nil {
 		t.Fatalf("save image result: %v", err)
 	}
 	cfg := taskAPIConfig("http://provider.invalid")
 	authSvc, session := loginTestUser(t, "gallery-copy-route@example.com")
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, imageStore, nil, nil, router)
 	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, nil, router)
-	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, nil, nil))
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, nil, nil)
+	api.SetProjectService(projectSvc)
+	handler := NewWithAPI(api)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/reference-assets:import-from-gallery", bytes.NewBufferString(`{"gallery_image_ids":["copy-route-image"]}`))
 	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
@@ -47,6 +56,50 @@ func TestGalleryImportRouteUsesStorageCopyWithoutReadingImageBytes(t *testing.T)
 	}
 	if backend.copyCalls.Load() != 1 || backend.getCalls.Load() != 0 || backend.putCalls.Load() != 0 {
 		t.Fatalf("route must copy without reading bytes: copy=%d get=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.putCalls.Load())
+	}
+}
+
+func TestGalleryImportRejectsImageFromAnotherProject(t *testing.T) {
+	content := tinyPNG(t)
+	hash := sha256.Sum256(content)
+	backend := &galleryImportCopyBackend{objects: map[string][]byte{"generated/source.png": content}}
+	storageRouter := storage.NewStaticRouter(backend)
+	projectSvc := projectservice.NewService(projectservice.NewMemoryStore())
+	sourceProject, err := projectSvc.Create(t.Context(), 1, domainproject.CreateRequest{Name: "Source"})
+	if err != nil {
+		t.Fatalf("create source project: %v", err)
+	}
+	targetProject, err := projectSvc.Create(t.Context(), 1, domainproject.CreateRequest{Name: "Target"})
+	if err != nil {
+		t.Fatalf("create target project: %v", err)
+	}
+	imageStore := imagetaskservice.NewMemoryStore()
+	result := provider.ImageResult{
+		ID: "cross-project-image", ProjectID: sourceProject.ID, StorageDriver: "s3", ObjectKey: "generated/source.png", MimeType: "image/png",
+		FileSizeBytes: int64(len(content)), Width: 1, Height: 1, SHA256: hex.EncodeToString(hash[:]),
+	}
+	if err := imageStore.Save(t.Context(), domainimagetask.Task{ID: "cross-project-task", UserID: 1, ProjectID: sourceProject.ID, Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{result}}); err != nil {
+		t.Fatalf("save image result: %v", err)
+	}
+	cfg := taskAPIConfig("http://provider.invalid")
+	authSvc, session := loginTestUser(t, "gallery-cross-project@example.com")
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, imageStore, nil, nil, storageRouter)
+	taskSvc.SetProjectResolver(projectSvc)
+	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, nil, storageRouter)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, nil, nil)
+	api.SetProjectService(projectSvc)
+	handler := NewWithAPI(api)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/reference-assets:import-from-gallery", bytes.NewBufferString(`{"gallery_image_ids":["cross-project-image"],"project_id":"`+targetProject.ID+`"}`))
+	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("cross-project import status=%d body=%s, want 404", rec.Code, rec.Body.String())
+	}
+	if backend.copyCalls.Load() != 0 {
+		t.Fatalf("cross-project import copied %d objects, want 0", backend.copyCalls.Load())
 	}
 }
 

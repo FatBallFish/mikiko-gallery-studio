@@ -125,6 +125,20 @@ func (_c *ProjectCreate) SetNillableVersion(v *int64) *ProjectCreate {
 	return _c
 }
 
+// SetCreateKey sets the "create_key" field.
+func (_c *ProjectCreate) SetCreateKey(v string) *ProjectCreate {
+	_c.mutation.SetCreateKey(v)
+	return _c
+}
+
+// SetNillableCreateKey sets the "create_key" field if the given value is not nil.
+func (_c *ProjectCreate) SetNillableCreateKey(v *string) *ProjectCreate {
+	if v != nil {
+		_c.SetCreateKey(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *ProjectCreate) SetID(v uuid.UUID) *ProjectCreate {
 	_c.mutation.SetID(v)
@@ -271,6 +285,11 @@ func (_c *ProjectCreate) check() error {
 	if _, ok := _c.mutation.Version(); !ok {
 		return &ValidationError{Name: "version", err: errors.New(`ent: missing required field "Project.version"`)}
 	}
+	if v, ok := _c.mutation.CreateKey(); ok {
+		if err := project.CreateKeyValidator(v); err != nil {
+			return &ValidationError{Name: "create_key", err: fmt.Errorf(`ent: validator failed for field "Project.create_key": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -341,6 +360,10 @@ func (_c *ProjectCreate) createSpec() (*Project, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Version(); ok {
 		_spec.SetField(project.FieldVersion, field.TypeInt64, value)
 		_node.Version = value
+	}
+	if value, ok := _c.mutation.CreateKey(); ok {
+		_spec.SetField(project.FieldCreateKey, field.TypeString, value)
+		_node.CreateKey = &value
 	}
 	if nodes := _c.mutation.ImageTasksIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

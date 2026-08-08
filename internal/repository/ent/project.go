@@ -36,6 +36,8 @@ type Project struct {
 	Status string `json:"status,omitempty"`
 	// Version holds the value of the "version" field.
 	Version int64 `json:"version,omitempty"`
+	// CreateKey holds the value of the "create_key" field.
+	CreateKey *string `json:"create_key,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the ProjectQuery when eager-loading is set.
 	Edges        ProjectEdges `json:"edges"`
@@ -80,7 +82,7 @@ func (*Project) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case project.FieldUserID, project.FieldVersion:
 			values[i] = new(sql.NullInt64)
-		case project.FieldName, project.FieldNameKey, project.FieldStatus:
+		case project.FieldName, project.FieldNameKey, project.FieldStatus, project.FieldCreateKey:
 			values[i] = new(sql.NullString)
 		case project.FieldCreatedAt, project.FieldUpdatedAt, project.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
@@ -162,6 +164,13 @@ func (_m *Project) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Version = value.Int64
 			}
+		case project.FieldCreateKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field create_key", values[i])
+			} else if value.Valid {
+				_m.CreateKey = new(string)
+				*_m.CreateKey = value.String
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -236,6 +245,11 @@ func (_m *Project) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("version=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Version))
+	builder.WriteString(", ")
+	if v := _m.CreateKey; v != nil {
+		builder.WriteString("create_key=")
+		builder.WriteString(*v)
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

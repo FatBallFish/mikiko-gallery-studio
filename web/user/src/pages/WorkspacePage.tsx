@@ -30,6 +30,7 @@ import { referenceImageAccept, referenceImagePolicy, validateReferenceImageFile 
 import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceBackgroundForFormat, workspaceBackgroundOptions, workspaceCompressionVisible, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspacePixelOptions, workspaceRatioOptions, workspaceRatioPixelEstimate, workspaceSizeModeOptions, type WorkspaceSizeMode } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
+import { ProjectSelector, useProjects } from '../ProjectContext'
 
 type OutputTab = 'current' | 'history'
 type WorkspacePixelSelection = 'preset' | 'custom'
@@ -264,6 +265,7 @@ const workspaceClasses = {
 
 export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const app = useApp()
+  const { selectedProjectID } = useProjects()
   const compactViewport = useCompactWorkspaceViewport()
 
   const [capability, setCapability] = useState<Capability | null>(null)
@@ -349,6 +351,15 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   useEffect(() => {
     selectedTaskIdRef.current = selectedTaskId
   }, [selectedTaskId])
+
+  useEffect(() => {
+    setRecords((items) => items.filter((task) => task.project_id === selectedProjectID))
+    setHistoryTaskDialog(null)
+    setHistoryPreviewReturnTarget(null)
+    setPreviewImage(null)
+    setGalleryImages([])
+    setGalleryImportTarget(null)
+  }, [selectedProjectID])
 
   useEffect(() => {
     if (!historyPreviewReturnTarget || previewImage || historyTaskDialog?.id !== historyPreviewReturnTarget.taskId) return undefined
@@ -446,7 +457,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     source.addEventListener('open', () => { markStreamHealthy() })
     source.addEventListener('history', (event) => {
       if (!workspaceStreamEventIsCurrent(generation, streamGenerationRef.current)) return
-      const tasks = JSON.parse((event as MessageEvent).data).map(toTask) as ImageTask[]
+      const tasks = (JSON.parse((event as MessageEvent).data).map(toTask) as ImageTask[])
+        .filter((task) => task.project_id === selectedProjectID)
       markStreamHealthy()
       setRecords((current) => replaceWorkspaceTaskRecords(current, tasks, {
         limit: 20,
@@ -457,15 +469,16 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       if (!workspaceStreamEventIsCurrent(generation, streamGenerationRef.current)) return
       const next = toTask(JSON.parse((event as MessageEvent).data))
       markStreamHealthy()
+      if (isTerminalStatus(next.status) && next.status === 'succeeded' && !completedNoticeRef.current.has(next.id)) {
+        completedNoticeRef.current.add(next.id)
+        if (selectedProjectID && next.project_id === selectedProjectID) notifyRef.current('success', '任务已完成，结果已同步到历史资产')
+        void refreshAccountRef.current()
+      }
+      if (!selectedProjectID || next.project_id !== selectedProjectID) return
       setRecords((items) => mergeWorkspaceTaskRecords(items, next, {
         limit: 20,
         preserveIds: selectedTaskIdRef.current ? [selectedTaskIdRef.current] : [],
       }))
-      if (isTerminalStatus(next.status) && next.status === 'succeeded' && !completedNoticeRef.current.has(next.id)) {
-        completedNoticeRef.current.add(next.id)
-        notifyRef.current('success', '任务已完成，结果已同步到历史资产')
-        void refreshAccountRef.current()
-      }
     })
     let recovering = false
     async function recoverStream() {
@@ -488,7 +501,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         notifyRef.current('info', '任务状态连接已断开，正在自动恢复。')
       }
       try {
-        const tasks = await userApi.listTasks()
+        const tasks = await userApi.listTasks({ project_id: selectedProjectID })
         if (!workspaceStreamRecoveryIsCurrent(generation, streamGenerationRef.current)) return
         setRecords((current) => replaceWorkspaceTaskRecords(current, tasks, {
           limit: 20,
@@ -516,7 +529,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       closeWorkspaceStreamGeneration(generation)
       if (workspaceStreamRecoveryIsCurrent(generation, streamGenerationRef.current)) streamGenerationRef.current = null
     }
-  }, [app.session?.token, streamRetryKey])
+  }, [app.session?.token, selectedProjectID, streamRetryKey])
 
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
@@ -851,7 +864,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setGalleryImportFilter(defaultGalleryImportFilter)
     setGalleryImportLoading(true)
     try {
-      setGalleryImages(await userApi.listGalleryImages())
+      setGalleryImages(await userApi.listGalleryImages(1, 100, selectedProjectID))
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -870,7 +883,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (!limited.accepted.length) return
     setGalleryImportBusy(true)
     try {
-      const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted)
+      const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted, selectedProjectID)
       setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
       setGalleryImportTarget(null)
       app.notify('success', `已从资产导入 ${assets.length} 张参考图`)
@@ -963,7 +976,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const editSourceAssets = activeTaskType === 'image_edit' ? [...editRefs] : []
     setBusy(true)
     try {
-      const task = await userApi.createTask({ ...estimatePayload, prompt, negative_prompt: negative, capability_version: estimate?.capability_version, idempotency_key: crypto.randomUUID() })
+      const task = await userApi.createTask({ ...estimatePayload, project_id: selectedProjectID, prompt, negative_prompt: negative, capability_version: estimate?.capability_version, idempotency_key: crypto.randomUUID() })
       const nextTask = editSourceAssets.length ? { ...task, reference_assets: editSourceAssets } : task
       setRecords((items) => mergeWorkspaceTaskRecords(items, nextTask, {
         limit: 20,
@@ -1050,7 +1063,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
     setBusy(true)
     try {
-      const imported = await userApi.importReferenceAssetsFromGallery([addition.item.id])
+      const imported = await userApi.importReferenceAssetsFromGallery([addition.item.id], selectedProjectID)
       if (!imported.length) throw new Error('图片导入失败，请稍后重试。')
       setEditRefs((items) => mergeReferenceAssets(items, imported, maxReferenceImages))
       app.notify('success', '已加入图片编辑')
@@ -1629,6 +1642,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
       {/* Right Canvas */}
       <section className={workspaceClasses.canvas}>
+        <div className="flex shrink-0 justify-end border-b border-[var(--border)] px-4 py-3 sm:px-5">
+          <ProjectSelector className="w-full sm:w-auto" />
+        </div>
         {initialTaskLoading ? <div className="border-b border-[var(--border)] px-5 py-3"><LoadingState label="正在读取指定任务..." /></div> : null}
         {initialTaskError ? (
           <div className="border-b border-[var(--border)] px-5 py-3">

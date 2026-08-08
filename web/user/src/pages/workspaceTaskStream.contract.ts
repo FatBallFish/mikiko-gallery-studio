@@ -87,8 +87,14 @@ const taskHandler = pageSource.slice(taskHandlerStart, errorHandlerStart)
 if (!historyHandler.includes('markStreamHealthy()') || !taskHandler.includes('markStreamHealthy()')) {
   throw new Error('valid history and task events must mark the current stream healthy')
 }
+if (taskHandler.indexOf('markStreamHealthy()') > taskHandler.indexOf("next.project_id !== selectedProjectID")) {
+  throw new Error('valid events from another project must still mark the SSE connection healthy before list filtering')
+}
+if (taskHandler.indexOf('refreshAccountRef.current()') > taskHandler.indexOf("next.project_id !== selectedProjectID")) {
+  throw new Error('terminal events from another project must still refresh the global account balance')
+}
 
-const restRecoveryStart = pageSource.indexOf('const tasks = await userApi.listTasks()')
+const restRecoveryStart = pageSource.indexOf('const tasks = await userApi.listTasks({ project_id: selectedProjectID })')
 const restRecoveryEnd = pageSource.indexOf('} catch {', restRecoveryStart)
 if (pageSource.slice(restRecoveryStart, restRecoveryEnd).includes('markStreamHealthy')) {
   throw new Error('REST compensation success must not reset the SSE recovery budget')

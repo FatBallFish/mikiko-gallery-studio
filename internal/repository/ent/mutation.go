@@ -30751,6 +30751,7 @@ type ProjectMutation struct {
 	status               *string
 	version              *int64
 	addversion           *int64
+	create_key           *string
 	clearedFields        map[string]struct{}
 	image_tasks          map[uuid.UUID]struct{}
 	removedimage_tasks   map[uuid.UUID]struct{}
@@ -31244,6 +31245,55 @@ func (m *ProjectMutation) ResetVersion() {
 	m.addversion = nil
 }
 
+// SetCreateKey sets the "create_key" field.
+func (m *ProjectMutation) SetCreateKey(s string) {
+	m.create_key = &s
+}
+
+// CreateKey returns the value of the "create_key" field in the mutation.
+func (m *ProjectMutation) CreateKey() (r string, exists bool) {
+	v := m.create_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreateKey returns the old "create_key" field's value of the Project entity.
+// If the Project object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProjectMutation) OldCreateKey(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreateKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreateKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreateKey: %w", err)
+	}
+	return oldValue.CreateKey, nil
+}
+
+// ClearCreateKey clears the value of the "create_key" field.
+func (m *ProjectMutation) ClearCreateKey() {
+	m.create_key = nil
+	m.clearedFields[project.FieldCreateKey] = struct{}{}
+}
+
+// CreateKeyCleared returns if the "create_key" field was cleared in this mutation.
+func (m *ProjectMutation) CreateKeyCleared() bool {
+	_, ok := m.clearedFields[project.FieldCreateKey]
+	return ok
+}
+
+// ResetCreateKey resets all changes to the "create_key" field.
+func (m *ProjectMutation) ResetCreateKey() {
+	m.create_key = nil
+	delete(m.clearedFields, project.FieldCreateKey)
+}
+
 // AddImageTaskIDs adds the "image_tasks" edge to the ImageTask entity by ids.
 func (m *ProjectMutation) AddImageTaskIDs(ids ...uuid.UUID) {
 	if m.image_tasks == nil {
@@ -31386,7 +31436,7 @@ func (m *ProjectMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ProjectMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	if m.created_at != nil {
 		fields = append(fields, project.FieldCreatedAt)
 	}
@@ -31414,6 +31464,9 @@ func (m *ProjectMutation) Fields() []string {
 	if m.version != nil {
 		fields = append(fields, project.FieldVersion)
 	}
+	if m.create_key != nil {
+		fields = append(fields, project.FieldCreateKey)
+	}
 	return fields
 }
 
@@ -31440,6 +31493,8 @@ func (m *ProjectMutation) Field(name string) (ent.Value, bool) {
 		return m.Status()
 	case project.FieldVersion:
 		return m.Version()
+	case project.FieldCreateKey:
+		return m.CreateKey()
 	}
 	return nil, false
 }
@@ -31467,6 +31522,8 @@ func (m *ProjectMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldStatus(ctx)
 	case project.FieldVersion:
 		return m.OldVersion(ctx)
+	case project.FieldCreateKey:
+		return m.OldCreateKey(ctx)
 	}
 	return nil, fmt.Errorf("unknown Project field %s", name)
 }
@@ -31539,6 +31596,13 @@ func (m *ProjectMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetVersion(v)
 		return nil
+	case project.FieldCreateKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreateKey(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Project field %s", name)
 }
@@ -31599,6 +31663,9 @@ func (m *ProjectMutation) ClearedFields() []string {
 	if m.FieldCleared(project.FieldDeletedAt) {
 		fields = append(fields, project.FieldDeletedAt)
 	}
+	if m.FieldCleared(project.FieldCreateKey) {
+		fields = append(fields, project.FieldCreateKey)
+	}
 	return fields
 }
 
@@ -31615,6 +31682,9 @@ func (m *ProjectMutation) ClearField(name string) error {
 	switch name {
 	case project.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case project.FieldCreateKey:
+		m.ClearCreateKey()
 		return nil
 	}
 	return fmt.Errorf("unknown Project nullable field %s", name)
@@ -31650,6 +31720,9 @@ func (m *ProjectMutation) ResetField(name string) error {
 		return nil
 	case project.FieldVersion:
 		m.ResetVersion()
+		return nil
+	case project.FieldCreateKey:
+		m.ResetCreateKey()
 		return nil
 	}
 	return fmt.Errorf("unknown Project field %s", name)

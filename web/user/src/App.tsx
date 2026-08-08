@@ -13,6 +13,8 @@ import { CheckoutPage } from './pages/CheckoutPage'
 import { ApiKeysPage } from './pages/ApiKeysPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { SettingsPage } from './pages/SettingsPage'
+import { ProjectsPage } from './pages/ProjectsPage'
+import { ProjectProvider } from './ProjectContext'
 import { parseUserHashState, userHashForRoute, type UserRouteOptions } from './routeState'
 import { applyThemePreference, readLocalThemePreference, serializeThemePreference, themePreferenceFromProfile, writeLocalThemePreference } from './themePreferences'
 
@@ -328,6 +330,8 @@ function UserApplication() {
         return <Shell><WorkspacePage initialTaskId={routeTaskId} /></Shell>
       case 'gallery':
         return <Shell><GalleryPage /></Shell>
+      case 'projects':
+        return <Shell scrollMode="document"><ProjectsPage /></Shell>
       case 'public-gallery':
         return <Shell><PublicGalleryPage imageId={routeImageId} /></Shell>
       case 'checkout':
@@ -348,9 +352,13 @@ function UserApplication() {
     }
   }, [route, returnTo, routeImageId, routeTaskId, session])
 
+  const projectUserID = String(profile?.id || session?.profile.id || '')
+
   return (
     <AppContext.Provider value={appValue}>
-      {page}
+      {session && projectUserID ? (
+        <ProjectProvider key={projectUserID} userID={projectUserID}>{page}</ProjectProvider>
+      ) : page}
       <ToastViewport toasts={toasts} onExpire={(id) => setToasts((items) => items.filter((toast) => toast.id !== id))} />
     </AppContext.Provider>
   )

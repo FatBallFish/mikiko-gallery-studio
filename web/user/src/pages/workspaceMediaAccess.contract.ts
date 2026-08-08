@@ -8,7 +8,7 @@ for (const required of [
   "mediaAccess.preview({ kind: 'image', scope: 'private', id: imageId })",
   "mediaAccess.preview({ kind: 'reference', scope: 'private', id: assetId })",
   "mediaAccess.download({ kind: 'image', scope: 'private', id: image.id })",
-  'userApi.importReferenceAssetsFromGallery([addition.item.id])',
+  'userApi.importReferenceAssetsFromGallery([addition.item.id], selectedProjectID)',
   'onUseReference: (image: ImageResult) => Promise<void>',
   'setGalleryImages((items) => items.map((image) => image.id === imageId',
   'onMediaRefresh={() => onMediaRefresh(image.id)}',

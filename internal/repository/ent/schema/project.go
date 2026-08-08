@@ -22,6 +22,7 @@ func (Project) Fields() []ent.Field {
 		field.Bool("is_default").Default(false),
 		field.String("status").MaxLen(16).Default("active"),
 		field.Int64("version").Default(int64(1)),
+		field.String("create_key").MaxLen(128).Optional().Nillable(),
 	}
 }
 
@@ -38,5 +39,6 @@ func (Project) Indexes() []ent.Index {
 		index.Fields("user_id", "status", "updated_at"),
 		index.Fields("user_id").StorageKey("project_active_default").Unique().Annotations(entsql.IndexWhere("is_default = true AND status = 'active' AND deleted_at IS NULL")),
 		index.Fields("user_id", "name_key").StorageKey("project_active_name").Unique().Annotations(entsql.IndexWhere("status = 'active' AND deleted_at IS NULL")),
+		index.Fields("user_id", "create_key").StorageKey("project_create_key").Unique(),
 	}
 }

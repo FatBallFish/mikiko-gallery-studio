@@ -25,6 +25,7 @@ import type {
   NormalLoginResponse,
   PageResult,
   PaymentOrder,
+	Project,
   PromptOptimizationEstimate,
   PromptOptimizationResult,
   ReferenceAsset,
@@ -218,6 +219,7 @@ export function buildCreateTaskWireRequest(req: CreateTaskRequest): { body: Back
   return {
     body: {
       ...estimateFields,
+	  ...(req.project_id ? { project_id: req.project_id } : {}),
       prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
       reference_asset_ids: req.reference_asset_ids ?? [],
       response_mode: 'async',
@@ -468,6 +470,10 @@ export const userApi = {
     return toUserProfile(await sharedApiClient.request(API_PATHS.agent.avatar, { method: 'POST', formData }))
   },
   closeAccount: () => sharedApiClient.request<void>(API_PATHS.agent.accountClose, { method: 'POST' }),
+	listProjects: async () => (await sharedApiClient.request<{ items: Project[]; default_project_id: string }>(API_PATHS.agent.projects)).items ?? [],
+	createProject: (name: string, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<Project>(API_PATHS.agent.projects, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { name } }),
+	renameProject: (project_id: string, name: string, expected_version: number) => sharedApiClient.request<Project>(API_PATHS.agent.projectDetail, { method: 'PATCH', pathParams: { project_id }, body: { name, expected_version } }),
+	deleteProject: (project_id: string, expected_version: number, target_project_id?: string) => sharedApiClient.request<{ project: Project; transferred: { tasks: number; assets: number } }>(API_PATHS.agent.projectDetail, { method: 'DELETE', pathParams: { project_id }, body: { expected_version, target_project_id } }),
   getBalance: async () => toBalance(await sharedApiClient.request(API_PATHS.agent.balance)),
   getLedger: async (page = 1, page_size = 20) => {
     const result = normalizePage<LedgerEntry>(await sharedApiClient.request(API_PATHS.agent.ledger, { query: { page, page_size } }))
@@ -505,10 +511,10 @@ export const userApi = {
     return toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssets, { method: 'POST', formData }))
   },
   listReferenceAssets: async () => [] as ReferenceAsset[],
-  importReferenceAssetsFromGallery: async (galleryImageIds: string[]) => {
+  importReferenceAssetsFromGallery: async (galleryImageIds: string[], projectID?: string) => {
     const response = await sharedApiClient.request<{ items?: any[]; assets?: any[]; references?: any[] } | any[]>(API_PATHS.agent.importReferenceAssetsFromGallery, {
       method: 'POST',
-      body: { gallery_image_ids: galleryImageIds },
+	  body: { gallery_image_ids: galleryImageIds, project_id: projectID },
     })
     const items = Array.isArray(response) ? response : response.items ?? response.assets ?? response.references ?? []
     return items.map(toReferenceAsset)
@@ -529,19 +535,19 @@ export const userApi = {
   getTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.taskDetail, { pathParams: { task_id } })),
   taskEventsUrl: (task_id: string, accessToken?: string | null) => apiEventUrl(fillPath(API_PATHS.agent.taskEvents, { task_id }), accessToken),
   taskStreamUrl: (accessToken?: string | null) => apiEventUrl(API_PATHS.agent.taskStream, accessToken),
-  listTasks: async (filters?: { query?: string; status?: string; type?: string }) => {
+  listTasks: async (filters?: { query?: string; status?: string; type?: string; project_id?: string }) => {
     const response = await sharedApiClient.request(API_PATHS.agent.tasks, {
-      query: { status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
+	  query: { project_id: filters?.project_id, status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
     })
     return normalizeTaskList(response)
   },
-  listHistoryTasks: async (filters?: { query?: string; status?: string; type?: string }) => {
+  listHistoryTasks: async (filters?: { query?: string; status?: string; type?: string; project_id?: string }) => {
     const response = await sharedApiClient.request(API_PATHS.agent.historyTasks, {
-      query: { status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
+	  query: { project_id: filters?.project_id, status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
     })
     return normalizeTaskList(response)
   },
-  listGalleryImages: async (page = 1, page_size = 100) => normalizePage<GalleryImage>(await sharedApiClient.request(API_PATHS.agent.galleryImages, { query: { page, page_size } })).items.map(toGalleryImage),
+	listGalleryImages: async (page = 1, page_size = 100, project_id?: string) => normalizePage<GalleryImage>(await sharedApiClient.request(API_PATHS.agent.galleryImages, { query: { page, page_size, project_id } })).items.map(toGalleryImage),
   retryTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.historyTaskRetry, { method: 'POST', pathParams: { task_id } })),
   deleteTask: (task_id: string) => sharedApiClient.request<void>(API_PATHS.agent.historyTaskDetail, { method: 'DELETE', pathParams: { task_id } }),
   deleteGalleryImage: (image_id: string) => sharedApiClient.request<void>(API_PATHS.agent.galleryImageDetail, { method: 'DELETE', pathParams: { image_id } }),

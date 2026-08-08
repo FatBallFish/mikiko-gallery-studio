@@ -155,6 +155,26 @@ func (_u *ProjectUpdate) AddVersion(v int64) *ProjectUpdate {
 	return _u
 }
 
+// SetCreateKey sets the "create_key" field.
+func (_u *ProjectUpdate) SetCreateKey(v string) *ProjectUpdate {
+	_u.mutation.SetCreateKey(v)
+	return _u
+}
+
+// SetNillableCreateKey sets the "create_key" field if the given value is not nil.
+func (_u *ProjectUpdate) SetNillableCreateKey(v *string) *ProjectUpdate {
+	if v != nil {
+		_u.SetCreateKey(*v)
+	}
+	return _u
+}
+
+// ClearCreateKey clears the value of the "create_key" field.
+func (_u *ProjectUpdate) ClearCreateKey() *ProjectUpdate {
+	_u.mutation.ClearCreateKey()
+	return _u
+}
+
 // AddImageTaskIDs adds the "image_tasks" edge to the ImageTask entity by IDs.
 func (_u *ProjectUpdate) AddImageTaskIDs(ids ...uuid.UUID) *ProjectUpdate {
 	_u.mutation.AddImageTaskIDs(ids...)
@@ -285,6 +305,11 @@ func (_u *ProjectUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Project.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.CreateKey(); ok {
+		if err := project.CreateKeyValidator(v); err != nil {
+			return &ValidationError{Name: "create_key", err: fmt.Errorf(`ent: validator failed for field "Project.create_key": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -332,6 +357,12 @@ func (_u *ProjectUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedVersion(); ok {
 		_spec.AddField(project.FieldVersion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.CreateKey(); ok {
+		_spec.SetField(project.FieldCreateKey, field.TypeString, value)
+	}
+	if _u.mutation.CreateKeyCleared() {
+		_spec.ClearField(project.FieldCreateKey, field.TypeString)
 	}
 	if _u.mutation.ImageTasksCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -567,6 +598,26 @@ func (_u *ProjectUpdateOne) AddVersion(v int64) *ProjectUpdateOne {
 	return _u
 }
 
+// SetCreateKey sets the "create_key" field.
+func (_u *ProjectUpdateOne) SetCreateKey(v string) *ProjectUpdateOne {
+	_u.mutation.SetCreateKey(v)
+	return _u
+}
+
+// SetNillableCreateKey sets the "create_key" field if the given value is not nil.
+func (_u *ProjectUpdateOne) SetNillableCreateKey(v *string) *ProjectUpdateOne {
+	if v != nil {
+		_u.SetCreateKey(*v)
+	}
+	return _u
+}
+
+// ClearCreateKey clears the value of the "create_key" field.
+func (_u *ProjectUpdateOne) ClearCreateKey() *ProjectUpdateOne {
+	_u.mutation.ClearCreateKey()
+	return _u
+}
+
 // AddImageTaskIDs adds the "image_tasks" edge to the ImageTask entity by IDs.
 func (_u *ProjectUpdateOne) AddImageTaskIDs(ids ...uuid.UUID) *ProjectUpdateOne {
 	_u.mutation.AddImageTaskIDs(ids...)
@@ -710,6 +761,11 @@ func (_u *ProjectUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Project.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.CreateKey(); ok {
+		if err := project.CreateKeyValidator(v); err != nil {
+			return &ValidationError{Name: "create_key", err: fmt.Errorf(`ent: validator failed for field "Project.create_key": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -774,6 +830,12 @@ func (_u *ProjectUpdateOne) sqlSave(ctx context.Context) (_node *Project, err er
 	}
 	if value, ok := _u.mutation.AddedVersion(); ok {
 		_spec.AddField(project.FieldVersion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.CreateKey(); ok {
+		_spec.SetField(project.FieldCreateKey, field.TypeString, value)
+	}
+	if _u.mutation.CreateKeyCleared() {
+		_spec.ClearField(project.FieldCreateKey, field.TypeString)
 	}
 	if _u.mutation.ImageTasksCleared() {
 		edge := &sqlgraph.EdgeSpec{

@@ -22,8 +22,8 @@ import (
 )
 
 func TestSchemaV2MigratesLegacyRefreshSessions(t *testing.T) {
-	if repositorydb.CurrentDatabaseSchemaVersion != 2 {
-		t.Fatalf("database schema version = %d, want 2 for refresh session token_version", repositorydb.CurrentDatabaseSchemaVersion)
+	if repositorydb.CurrentDatabaseSchemaVersion < 2 {
+		t.Fatalf("database schema version = %d, want at least 2 for refresh session token_version", repositorydb.CurrentDatabaseSchemaVersion)
 	}
 
 	adminURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))

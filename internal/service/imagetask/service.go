@@ -31,6 +31,7 @@ import (
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
+	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	openaiprovider "github.com/fatballfish/pic-gallery/internal/provider/openai"
 	openrouterprovider "github.com/fatballfish/pic-gallery/internal/provider/openrouter"
@@ -53,6 +54,11 @@ type Service struct {
 	httpClient      *http.Client
 	now             func() time.Time
 	concurrencyGate ConcurrencyGate
+	projects        ProjectResolver
+}
+
+type ProjectResolver interface {
+	ResolveForWrite(context.Context, int64, string) (domainproject.Project, error)
 }
 
 type ConcurrencyGate interface {
@@ -208,6 +214,10 @@ func (s *Service) SetConcurrencyGate(gate ConcurrencyGate) {
 	}
 }
 
+func (s *Service) SetProjectResolver(resolver ProjectResolver) {
+	s.projects = resolver
+}
+
 func (s *Service) SetHTTPClient(client *http.Client) {
 	if client == nil {
 		return
@@ -232,6 +242,15 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 		return domainimagetask.Task{}, err
 	}
 	req = normalizedReq
+	var selectedProject *domainproject.Project
+	if s.projects != nil {
+		project, projectErr := s.projects.ResolveForWrite(ctx, req.UserID, req.ProjectID)
+		if projectErr != nil {
+			return domainimagetask.Task{}, errs.New(404, errs.CodeNotFound, "project not found")
+		}
+		req.ProjectID = project.ID
+		selectedProject = &project
+	}
 	if strings.TrimSpace(req.TaskID) != "" {
 		existing, err := s.store.GetByID(ctx, req.UserID, req.TaskID)
 		switch {
@@ -263,6 +282,10 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 	}
 
 	task := buildTask(req, resolved, domainimagetask.StatusQueued)
+	if selectedProject != nil {
+		snapshot := selectedProject.Snapshot()
+		task.Project = &snapshot
+	}
 	if prefetchedEstimate != nil {
 		err = s.applyTaskEstimateResult(ctx, &task, req, *prefetchedEstimate)
 	} else {
@@ -339,6 +362,15 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		return domainimagetask.ExecuteResult{}, err
 	}
 	req = normalizedReq
+	var selectedProject *domainproject.Project
+	if s.projects != nil {
+		project, projectErr := s.projects.ResolveForWrite(ctx, req.UserID, req.ProjectID)
+		if projectErr != nil {
+			return domainimagetask.ExecuteResult{}, errs.New(404, errs.CodeNotFound, "project not found")
+		}
+		req.ProjectID = project.ID
+		selectedProject = &project
+	}
 	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, len(req.ReferenceImages), req.Mask != nil, "")
 	if err != nil {
 		return domainimagetask.ExecuteResult{}, err
@@ -347,6 +379,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 	task := buildTask(domainimagetask.CreateRequest{
 		TaskID:              req.TaskID,
 		UserID:              req.UserID,
+		ProjectID:           req.ProjectID,
 		APIKeyID:            req.APIKeyID,
 		SourceChannel:       req.SourceChannel,
 		UserGroupCode:       req.UserGroupCode,
@@ -372,6 +405,10 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		ResponseMode:        "sync",
 		SavePolicy:          "private",
 	}, resolved, domainimagetask.StatusRunning)
+	if selectedProject != nil {
+		snapshot := selectedProject.Snapshot()
+		task.Project = &snapshot
+	}
 	leaseOwner := "inline-executor"
 	leaseExpiresAt := s.nowUTC().Add(2 * time.Minute)
 	task.LeaseOwner = leaseOwner
@@ -1627,7 +1664,45 @@ func (s *Service) DownloadPublicImageResult(ctx context.Context, imageID string)
 }
 
 func (s *Service) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
-	list, err := s.store.ListByUser(ctx, userID)
+	return s.listByUserProject(ctx, userID, "")
+}
+
+type projectTaskLister interface {
+	ListByUserProject(context.Context, int64, string) ([]domainimagetask.Task, error)
+}
+
+func (s *Service) ListByUserProject(ctx context.Context, userID int64, projectID string) ([]domainimagetask.Task, error) {
+	if s.projects != nil {
+		project, err := s.projects.ResolveForWrite(ctx, userID, projectID)
+		if err != nil {
+			return nil, errs.New(404, errs.CodeNotFound, "project not found")
+		}
+		projectID = project.ID
+	}
+	return s.listByUserProject(ctx, userID, strings.TrimSpace(projectID))
+}
+
+func (s *Service) listByUserProject(ctx context.Context, userID int64, projectID string) ([]domainimagetask.Task, error) {
+	var list []domainimagetask.Task
+	var err error
+	if projectID != "" {
+		if lister, ok := s.store.(projectTaskLister); ok {
+			list, err = lister.ListByUserProject(ctx, userID, projectID)
+		} else {
+			list, err = s.store.ListByUser(ctx, userID)
+			if err == nil {
+				filtered := list[:0]
+				for _, task := range list {
+					if task.ProjectID == projectID {
+						filtered = append(filtered, task)
+					}
+				}
+				list = filtered
+			}
+		}
+	} else {
+		list, err = s.store.ListByUser(ctx, userID)
+	}
 	if err != nil {
 		if errors.Is(err, repoerr.ErrNotFound) {
 			return nil, errs.New(404, errs.CodeNotFound, "image task not found")
@@ -1894,6 +1969,13 @@ func (s *Service) ListGallery(ctx context.Context, req domainimagetask.GalleryLi
 func (s *Service) ListGalleryByUser(ctx context.Context, userID int64, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
 	req.Page, req.PageSize = normalizeListPage(req.Page, req.PageSize)
 	req.Status = strings.TrimSpace(req.Status)
+	if s.projects != nil {
+		project, err := s.projects.ResolveForWrite(ctx, userID, req.ProjectID)
+		if err != nil {
+			return domainimagetask.GalleryPage{}, errs.New(404, errs.CodeNotFound, "project not found")
+		}
+		req.ProjectID = project.ID
+	}
 	page, err := s.store.ListGalleryByUser(ctx, userID, req)
 	if err != nil {
 		return domainimagetask.GalleryPage{}, errs.Internal("failed to list user gallery images")
@@ -2496,6 +2578,7 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 	}
 	task := domainimagetask.Task{
 		UserID:               req.UserID,
+		ProjectID:            req.ProjectID,
 		APIKeyID:             req.APIKeyID,
 		SourceChannel:        defaultString(req.SourceChannel, "web"),
 		ID:                   taskID,
@@ -3016,6 +3099,23 @@ func cloneTask(task domainimagetask.Task) domainimagetask.Task {
 	task.Results = append([]provider.ImageResult(nil), task.Results...)
 	task.ArtifactRecovery.Diagnostics = append([]domainimagetask.ArtifactDiagnostic(nil), task.ArtifactRecovery.Diagnostics...)
 	task.ReferenceAssetIDs = append([]string(nil), task.ReferenceAssetIDs...)
+	if task.Project != nil {
+		snapshot := *task.Project
+		task.Project = &snapshot
+	}
+	for index := range task.Results {
+		if task.Results[index].ProjectID == "" {
+			task.Results[index].ProjectID = task.ProjectID
+		}
+		if task.Results[index].Project == nil && task.Project != nil {
+			snapshot := *task.Project
+			task.Results[index].Project = &snapshot
+		}
+		if task.Results[index].Project != nil {
+			snapshot := *task.Results[index].Project
+			task.Results[index].Project = &snapshot
+		}
+	}
 	if task.Seed != nil {
 		seed := *task.Seed
 		task.Seed = &seed

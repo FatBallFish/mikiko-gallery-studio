@@ -19,7 +19,7 @@ export const shellChromeClasses = {
   topbar: 'sticky top-0 z-10 flex h-[76px] shrink-0 items-center justify-center border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--bg)_84%,transparent)] backdrop-blur-2xl',
   topbarInner: 'flex w-full max-w-[2560px] items-center justify-between gap-6 px-4 sm:px-6 md:px-10',
   contentConstrain: 'mx-auto flex w-full max-w-[2560px] flex-1 flex-col pb-16 md:pb-0',
-  mobileNav: 'fixed inset-x-0 bottom-0 z-50 grid h-16 grid-cols-6 items-stretch border-t border-[var(--border)] bg-[color-mix(in_oklch,var(--bg)_90%,transparent)] px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl md:hidden',
+  mobileNav: 'fixed inset-x-0 bottom-0 z-50 grid h-16 grid-cols-7 items-stretch border-t border-[var(--border)] bg-[color-mix(in_oklch,var(--bg)_90%,transparent)] px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl md:hidden',
   mobileNavLink: 'flex min-w-0 flex-col items-center justify-center gap-1 border-0 bg-transparent px-1 text-[var(--muted)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus-ring)]',
   mobileNavLinkActive: 'text-[var(--accent)]',
 } as const

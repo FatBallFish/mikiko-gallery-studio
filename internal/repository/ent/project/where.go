@@ -101,6 +101,11 @@ func Version(v int64) predicate.Project {
 	return predicate.Project(sql.FieldEQ(FieldVersion, v))
 }
 
+// CreateKey applies equality check predicate on the "create_key" field. It's identical to CreateKeyEQ.
+func CreateKey(v string) predicate.Project {
+	return predicate.Project(sql.FieldEQ(FieldCreateKey, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.Project {
 	return predicate.Project(sql.FieldEQ(FieldCreatedAt, v))
@@ -514,6 +519,81 @@ func VersionLT(v int64) predicate.Project {
 // VersionLTE applies the LTE predicate on the "version" field.
 func VersionLTE(v int64) predicate.Project {
 	return predicate.Project(sql.FieldLTE(FieldVersion, v))
+}
+
+// CreateKeyEQ applies the EQ predicate on the "create_key" field.
+func CreateKeyEQ(v string) predicate.Project {
+	return predicate.Project(sql.FieldEQ(FieldCreateKey, v))
+}
+
+// CreateKeyNEQ applies the NEQ predicate on the "create_key" field.
+func CreateKeyNEQ(v string) predicate.Project {
+	return predicate.Project(sql.FieldNEQ(FieldCreateKey, v))
+}
+
+// CreateKeyIn applies the In predicate on the "create_key" field.
+func CreateKeyIn(vs ...string) predicate.Project {
+	return predicate.Project(sql.FieldIn(FieldCreateKey, vs...))
+}
+
+// CreateKeyNotIn applies the NotIn predicate on the "create_key" field.
+func CreateKeyNotIn(vs ...string) predicate.Project {
+	return predicate.Project(sql.FieldNotIn(FieldCreateKey, vs...))
+}
+
+// CreateKeyGT applies the GT predicate on the "create_key" field.
+func CreateKeyGT(v string) predicate.Project {
+	return predicate.Project(sql.FieldGT(FieldCreateKey, v))
+}
+
+// CreateKeyGTE applies the GTE predicate on the "create_key" field.
+func CreateKeyGTE(v string) predicate.Project {
+	return predicate.Project(sql.FieldGTE(FieldCreateKey, v))
+}
+
+// CreateKeyLT applies the LT predicate on the "create_key" field.
+func CreateKeyLT(v string) predicate.Project {
+	return predicate.Project(sql.FieldLT(FieldCreateKey, v))
+}
+
+// CreateKeyLTE applies the LTE predicate on the "create_key" field.
+func CreateKeyLTE(v string) predicate.Project {
+	return predicate.Project(sql.FieldLTE(FieldCreateKey, v))
+}
+
+// CreateKeyContains applies the Contains predicate on the "create_key" field.
+func CreateKeyContains(v string) predicate.Project {
+	return predicate.Project(sql.FieldContains(FieldCreateKey, v))
+}
+
+// CreateKeyHasPrefix applies the HasPrefix predicate on the "create_key" field.
+func CreateKeyHasPrefix(v string) predicate.Project {
+	return predicate.Project(sql.FieldHasPrefix(FieldCreateKey, v))
+}
+
+// CreateKeyHasSuffix applies the HasSuffix predicate on the "create_key" field.
+func CreateKeyHasSuffix(v string) predicate.Project {
+	return predicate.Project(sql.FieldHasSuffix(FieldCreateKey, v))
+}
+
+// CreateKeyIsNil applies the IsNil predicate on the "create_key" field.
+func CreateKeyIsNil() predicate.Project {
+	return predicate.Project(sql.FieldIsNull(FieldCreateKey))
+}
+
+// CreateKeyNotNil applies the NotNil predicate on the "create_key" field.
+func CreateKeyNotNil() predicate.Project {
+	return predicate.Project(sql.FieldNotNull(FieldCreateKey))
+}
+
+// CreateKeyEqualFold applies the EqualFold predicate on the "create_key" field.
+func CreateKeyEqualFold(v string) predicate.Project {
+	return predicate.Project(sql.FieldEqualFold(FieldCreateKey, v))
+}
+
+// CreateKeyContainsFold applies the ContainsFold predicate on the "create_key" field.
+func CreateKeyContainsFold(v string) predicate.Project {
+	return predicate.Project(sql.FieldContainsFold(FieldCreateKey, v))
 }
 
 // HasImageTasks applies the HasEdge predicate on the "image_tasks" edge.

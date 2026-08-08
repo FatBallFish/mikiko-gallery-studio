@@ -50,6 +50,11 @@ if (settingsHash !== '/settings') {
   throw new Error(`settings route should have a stable hash, got ${settingsHash}`)
 }
 
+const projects = parseUserHashState('#/projects')
+if (projects.route !== 'projects' || userHashForRoute('projects') !== '/projects') {
+  throw new Error(`projects route should have a stable hash, got ${JSON.stringify(projects)}`)
+}
+
 const retiredDocsRoute = parseUserHashState('#/docs')
 if (retiredDocsRoute.route !== 'landing') {
   throw new Error(`retired docs route must not redirect or remain registered, got ${JSON.stringify(retiredDocsRoute)}`)

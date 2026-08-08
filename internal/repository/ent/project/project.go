@@ -33,6 +33,8 @@ const (
 	FieldStatus = "status"
 	// FieldVersion holds the string denoting the version field in the database.
 	FieldVersion = "version"
+	// FieldCreateKey holds the string denoting the create_key field in the database.
+	FieldCreateKey = "create_key"
 	// EdgeImageTasks holds the string denoting the image_tasks edge name in mutations.
 	EdgeImageTasks = "image_tasks"
 	// EdgeImageResults holds the string denoting the image_results edge name in mutations.
@@ -67,6 +69,7 @@ var Columns = []string{
 	FieldIsDefault,
 	FieldStatus,
 	FieldVersion,
+	FieldCreateKey,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -98,6 +101,8 @@ var (
 	StatusValidator func(string) error
 	// DefaultVersion holds the default value on creation for the "version" field.
 	DefaultVersion int64
+	// CreateKeyValidator is a validator for the "create_key" field. It is called by the builders before save.
+	CreateKeyValidator func(string) error
 	// DefaultID holds the default value on creation for the "id" field.
 	DefaultID func() uuid.UUID
 )
@@ -153,6 +158,11 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 // ByVersion orders the results by the version field.
 func ByVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVersion, opts...).ToFunc()
+}
+
+// ByCreateKey orders the results by the create_key field.
+func ByCreateKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreateKey, opts...).ToFunc()
 }
 
 // ByImageTasksCount orders the results by image_tasks count.

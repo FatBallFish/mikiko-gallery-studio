@@ -10,7 +10,7 @@ import type { AppContextValue, RouteId, Toast } from './types'
 import { userShell, userButton, userForm, userState, userPill, userCard, userText } from './ui/classes'
 import { focusableElements, focusTrapTargetIndex } from './ui/focusTrap'
 import { overlayLayers, rdShell } from './ui/redesign-classes'
-import { Home, Sparkles, LayoutGrid, User, KeyRound, CreditCard, Settings, FileText, Sun, Moon, LogOut, ChevronDown, Eye, Heart, Star, Download, Copy, Edit, Globe, FolderPlus, Trash2, X } from './ui/icons'
+import { Home, Sparkles, LayoutGrid, User, KeyRound, CreditCard, Settings, FileText, Sun, Moon, LogOut, ChevronDown, Eye, Heart, Star, Download, Copy, Edit, Globe, FolderPlus, FolderKanban, Trash2, X } from './ui/icons'
 import { OverlayPortal } from './ui/overlayPortal'
 import { imageMediaTransition, initialImageMediaState } from './ui/imageMediaModel'
 import { shouldStartZoomDrag } from './ui/zoomPointer'
@@ -443,11 +443,12 @@ function DetailImageMedia({ src, mediaExpiresAt, alt, onOpen, onMediaRefresh }: 
   )
 }
 
-export const protectedRoutes: RouteId[] = ['home', 'genpic', 'gallery', 'checkout', 'api-keys', 'profile', 'settings']
+export const protectedRoutes: RouteId[] = ['home', 'genpic', 'gallery', 'projects', 'checkout', 'api-keys', 'profile', 'settings']
 
 function HomeIcon() { return <Home size={22} strokeWidth={1.5} /> }
 function SparklesIcon() { return <Sparkles size={22} strokeWidth={1.5} /> }
 function GridIcon() { return <LayoutGrid size={22} strokeWidth={1.5} /> }
+function ProjectsIcon() { return <FolderKanban size={22} strokeWidth={1.5} /> }
 function UserIcon() { return <User size={22} strokeWidth={1.5} /> }
 function KeyIcon() { return <KeyRound size={18} strokeWidth={1.5} /> }
 function CreditCardIcon() { return <CreditCard size={22} strokeWidth={1.5} /> }
@@ -470,6 +471,7 @@ export const navItems: Array<{ route: RouteId; label: string; icon: React.ReactN
   { route: 'home', label: '首页', icon: <HomeIcon /> },
   { route: 'genpic', label: '创作', icon: <SparklesIcon /> },
   { route: 'gallery', label: '资产', icon: <GridIcon /> },
+  { route: 'projects', label: '项目', icon: <ProjectsIcon /> },
   { route: 'checkout', label: '积分', icon: <CreditCardIcon /> },
   { route: 'api-keys', label: '密钥', icon: <KeyIcon /> },
   { route: 'settings', label: '设置', icon: <SettingsIcon /> },

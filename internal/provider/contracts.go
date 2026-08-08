@@ -1,8 +1,11 @@
 package provider
 
-import "time"
+import (
+	"context"
+	"time"
 
-import "context"
+	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
+)
 
 type ProviderType string
 
@@ -58,26 +61,28 @@ type ImageRequest struct {
 }
 
 type ImageResult struct {
-	ID                string     `json:"id,omitempty"`
-	URL               string     `json:"url,omitempty"`
-	DownloadURL       string     `json:"download_url,omitempty"`
-	PreviewExpiresAt  *time.Time `json:"preview_expires_at,omitempty"`
-	DownloadExpiresAt *time.Time `json:"download_expires_at,omitempty"`
-	B64JSON           string     `json:"b64_json,omitempty"`
-	RevisedPrompt     string     `json:"revised_prompt,omitempty"`
-	Format            string     `json:"format,omitempty"`
-	MimeType          string     `json:"mime_type,omitempty"`
-	FileSizeBytes     int64      `json:"file_size_bytes"`
-	Width             int        `json:"width"`
-	Height            int        `json:"height"`
-	SHA256            string     `json:"sha256,omitempty"`
-	StorageConfigID   string     `json:"storage_config_id,omitempty"`
-	ObjectKey         string     `json:"object_key,omitempty"`
-	StorageDriver     string     `json:"storage_driver,omitempty"`
-	ImageGroup        string     `json:"image_group,omitempty"`
-	VisibilityStatus  string     `json:"visibility_status,omitempty"`
-	ReviewReason      string     `json:"review_reason,omitempty"`
-	PublishedAt       *time.Time `json:"published_at,omitempty"`
+	ID                string                  `json:"id,omitempty"`
+	ProjectID         string                  `json:"project_id,omitempty"`
+	Project           *domainproject.Snapshot `json:"project,omitempty"`
+	URL               string                  `json:"url,omitempty"`
+	DownloadURL       string                  `json:"download_url,omitempty"`
+	PreviewExpiresAt  *time.Time              `json:"preview_expires_at,omitempty"`
+	DownloadExpiresAt *time.Time              `json:"download_expires_at,omitempty"`
+	B64JSON           string                  `json:"b64_json,omitempty"`
+	RevisedPrompt     string                  `json:"revised_prompt,omitempty"`
+	Format            string                  `json:"format,omitempty"`
+	MimeType          string                  `json:"mime_type,omitempty"`
+	FileSizeBytes     int64                   `json:"file_size_bytes"`
+	Width             int                     `json:"width"`
+	Height            int                     `json:"height"`
+	SHA256            string                  `json:"sha256,omitempty"`
+	StorageConfigID   string                  `json:"storage_config_id,omitempty"`
+	ObjectKey         string                  `json:"object_key,omitempty"`
+	StorageDriver     string                  `json:"storage_driver,omitempty"`
+	ImageGroup        string                  `json:"image_group,omitempty"`
+	VisibilityStatus  string                  `json:"visibility_status,omitempty"`
+	ReviewReason      string                  `json:"review_reason,omitempty"`
+	PublishedAt       *time.Time              `json:"published_at,omitempty"`
 }
 
 type ImageResponse struct {

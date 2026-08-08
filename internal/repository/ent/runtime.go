@@ -2276,6 +2276,10 @@ func init() {
 	projectDescVersion := projectFields[6].Descriptor()
 	// project.DefaultVersion holds the default value on creation for the version field.
 	project.DefaultVersion = projectDescVersion.Default.(int64)
+	// projectDescCreateKey is the schema descriptor for create_key field.
+	projectDescCreateKey := projectFields[7].Descriptor()
+	// project.CreateKeyValidator is a validator for the "create_key" field. It is called by the builders before save.
+	project.CreateKeyValidator = projectDescCreateKey.Validators[0].(func(string) error)
 	// projectDescID is the schema descriptor for id field.
 	projectDescID := projectFields[0].Descriptor()
 	// project.DefaultID holds the default value on creation for the id field.

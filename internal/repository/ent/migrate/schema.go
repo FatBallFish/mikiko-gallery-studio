@@ -1177,6 +1177,7 @@ var (
 		{Name: "is_default", Type: field.TypeBool, Default: false},
 		{Name: "status", Type: field.TypeString, Size: 16, Default: "active"},
 		{Name: "version", Type: field.TypeInt64, Default: 1},
+		{Name: "create_key", Type: field.TypeString, Nullable: true, Size: 128},
 	}
 	// ProjectsTable holds the schema information for the "projects" table.
 	ProjectsTable = &schema.Table{
@@ -1209,6 +1210,11 @@ var (
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status = 'active' AND deleted_at IS NULL",
 				},
+			},
+			{
+				Name:    "project_create_key",
+				Unique:  true,
+				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[10]},
 			},
 		},
 	}

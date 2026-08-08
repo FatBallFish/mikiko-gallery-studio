@@ -14,6 +14,7 @@ import { runGalleryBatch } from './galleryBatchActions'
 import { areAllVisibleGalleryItemsSelected, galleryImageAspect, selectVisibleGalleryImages, selectedVisibleGalleryItems, toggleGalleryImageSelection } from './galleryExperience'
 import { applyGalleryPage, initialGalleryPageState, patchGalleryPageItems, removeGalleryPageItems } from './galleryPagination'
 import { filterGalleryImages, galleryImageCard, galleryPublishActionPresentation, galleryPublishStatus, type GalleryPublishActionPresentation } from './galleryRows'
+import { ProjectSelector, useProjects } from '../ProjectContext'
 
 const GALLERY_PAGE_SIZE = 50
 
@@ -202,6 +203,7 @@ function iconButton(label: string, icon: ReactNode, onClick: () => void, disable
 
 export function GalleryPage() {
   const app = useApp()
+  const { selectedProjectID } = useProjects()
   const [galleryPage, setGalleryPage] = useState(() => initialGalleryPageState<GalleryImage>())
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -223,11 +225,17 @@ export function GalleryPage() {
 
   async function loadPage(pageNumber: number, mode: 'replace' | 'append') {
     const generation = ++loadGenerationRef.current
+    if (!selectedProjectID) {
+      setGalleryPage(initialGalleryPageState<GalleryImage>())
+      setLoading(false)
+      setLoadingMore(false)
+      return
+    }
     if (mode === 'replace') setLoading(true)
     else setLoadingMore(true)
     setLoadError('')
     try {
-      const incoming = await userApi.listGalleryImages(pageNumber, GALLERY_PAGE_SIZE)
+      const incoming = await userApi.listGalleryImages(pageNumber, GALLERY_PAGE_SIZE, selectedProjectID)
       if (generation !== loadGenerationRef.current) return
       setGalleryPage((current) => applyGalleryPage(current, incoming, {
         page: pageNumber,
@@ -249,9 +257,15 @@ export function GalleryPage() {
   }
 
   useEffect(() => {
+    setGalleryPage(initialGalleryPageState<GalleryImage>())
+    setSelectedIds(new Set())
+    setSelected(null)
+    setGroupDialog(null)
+    setDeleteDialog(null)
+    setPublishDialog(null)
     void loadPage(1, 'replace')
     return () => { loadGenerationRef.current += 1 }
-  }, [])
+  }, [selectedProjectID])
 
   useEffect(() => {
     if (!galleryPage.hasMore || loading || loadingMore || loadError) return undefined
@@ -497,6 +511,7 @@ export function GalleryPage() {
           <h1 className={galleryClasses.title}>历史资产</h1>
           <p className="mb-0 mt-3 max-w-[56ch] text-sm leading-6 text-[var(--muted)]">筛选、分组和重用已生成的图片，每一张资产都保留原始参数与公开状态。</p>
         </div>
+        <ProjectSelector className="w-full sm:w-auto" />
       </div>
 
       <div className={galleryClasses.filterToolbar}>

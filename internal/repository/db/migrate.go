@@ -20,7 +20,7 @@ import (
 const (
 	// CurrentDatabaseSchemaVersion is advanced whenever an application release
 	// requires a database migration before ordinary nodes may start.
-	CurrentDatabaseSchemaVersion = 2
+	CurrentDatabaseSchemaVersion = 3
 
 	// A fixed signed 64-bit key coordinates every explicit migrator for one
 	// PostgreSQL database. Session locks are scoped by database, so installations
@@ -220,11 +220,15 @@ func migrateLocked(ctx context.Context, database *sql.DB, req MigrationRequest) 
 	if err != nil {
 		return MigrationResult{}, fmt.Errorf("backfill legacy model account size bounds: %w", err)
 	}
+	projectBackfilled, err := BackfillLegacyProjectOwnership(ctx, client, 100)
+	if err != nil {
+		return MigrationResult{}, fmt.Errorf("backfill legacy project ownership: %w", err)
+	}
 	result, err := recordInstallationMigration(ctx, client, req)
 	if err != nil {
 		return MigrationResult{}, err
 	}
-	result.BackfilledRows = backfilled + sizeBoundsBackfilled
+	result.BackfilledRows = backfilled + sizeBoundsBackfilled + projectBackfilled
 	return result, nil
 }
 

@@ -20,6 +20,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
+	projectent "github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimagestat"
 	entuser "github.com/fatballfish/pic-gallery/internal/repository/ent/user"
@@ -87,7 +88,7 @@ func (s *ImageTaskStore) Save(ctx context.Context, task domainimagetask.Task) er
 		return err
 	}
 	for idx, result := range task.Results {
-		if err := createImageResult(ctx, tx, taskUUID, task.UserID, idx, result); err != nil {
+		if err := createImageResult(ctx, tx, taskUUID, task.UserID, task.ProjectID, idx, result); err != nil {
 			return err
 		}
 	}
@@ -144,7 +145,7 @@ func (s *ImageTaskStore) SaveIfOwned(ctx context.Context, task domainimagetask.T
 		return err
 	}
 	for idx, result := range task.Results {
-		if err := createImageResult(ctx, tx, taskUUID, task.UserID, idx, result); err != nil {
+		if err := createImageResult(ctx, tx, taskUUID, task.UserID, task.ProjectID, idx, result); err != nil {
 			return err
 		}
 	}
@@ -198,7 +199,7 @@ func (s *ImageTaskStore) SaveTerminalState(ctx context.Context, task domainimage
 		return err
 	}
 	for idx, result := range task.Results {
-		if err := createImageResult(ctx, tx, taskUUID, task.UserID, idx, result); err != nil {
+		if err := createImageResult(ctx, tx, taskUUID, task.UserID, task.ProjectID, idx, result); err != nil {
 			return err
 		}
 	}
@@ -240,6 +241,7 @@ func (s *ImageTaskStore) GetByID(ctx context.Context, userID int64, taskID strin
 
 	entity, err := s.client.ImageTask.Query().
 		Where(imagetask.IDEQ(taskUUID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+		WithProject().
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -310,8 +312,24 @@ func (s *ImageTaskStore) GetImageResultForAdmin(ctx context.Context, imageID str
 }
 
 func (s *ImageTaskStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
-	entities, err := s.client.ImageTask.Query().
-		Where(imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+	return s.listByUserProject(ctx, userID, "")
+}
+
+func (s *ImageTaskStore) ListByUserProject(ctx context.Context, userID int64, projectID string) ([]domainimagetask.Task, error) {
+	return s.listByUserProject(ctx, userID, projectID)
+}
+
+func (s *ImageTaskStore) listByUserProject(ctx context.Context, userID int64, projectID string) ([]domainimagetask.Task, error) {
+	query := s.client.ImageTask.Query().Where(imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil())
+	if projectID = strings.TrimSpace(projectID); projectID != "" {
+		parsedProjectID, err := uuid.Parse(projectID)
+		if err != nil {
+			return nil, repoerr.ErrNotFound
+		}
+		query.Where(imagetask.ProjectIDEQ(parsedProjectID))
+	}
+	entities, err := query.
+		WithProject().
 		Order(repoent.Desc(imagetask.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
@@ -609,6 +627,13 @@ func (s *ImageTaskStore) ListGalleryByUser(ctx context.Context, userID int64, re
 	query := s.client.ImageResult.Query().
 		Where(imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
 		Order(repoent.Desc(imageresult.FieldCreatedAt), repoent.Desc(imageresult.FieldID))
+	if projectID := strings.TrimSpace(req.ProjectID); projectID != "" {
+		parsedProjectID, err := uuid.Parse(projectID)
+		if err != nil {
+			return domainimagetask.GalleryPage{}, repoerr.ErrNotFound
+		}
+		query.Where(imageresult.ProjectIDEQ(parsedProjectID))
+	}
 	if status := strings.TrimSpace(req.Status); status != "" {
 		query.Where(imageresult.VisibilityStatusEQ(status))
 	}
@@ -1037,6 +1062,20 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetArtifactAttemptCount(task.ArtifactRecovery.AttemptCount).
 		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
+	if projectID := strings.TrimSpace(task.ProjectID); projectID != "" {
+		parsedProjectID, parseErr := uuid.Parse(projectID)
+		if parseErr != nil {
+			return repoerr.ErrNotFound
+		}
+		owned, ownedErr := tx.Project.Query().Where(projectent.IDEQ(parsedProjectID), projectent.UserIDEQ(task.UserID), projectent.StatusEQ("active"), projectent.DeletedAtIsNil()).Exist(ctx)
+		if ownedErr != nil {
+			return ownedErr
+		}
+		if !owned {
+			return repoerr.ErrNotFound
+		}
+		builder.SetProjectID(parsedProjectID)
+	}
 	setImageTaskCreateArtifactFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
@@ -1598,7 +1637,7 @@ func decodeArtifactDiagnostics(value map[string]any) (domainimagetask.ArtifactDi
 	return decoded.Last, decoded.Attempts
 }
 
-func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, userID int64, index int, result provider.ImageResult) error {
+func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, userID int64, projectID string, index int, result provider.ImageResult) error {
 	resultID, err := imageResultUUID(result.ID)
 	if err != nil {
 		return err
@@ -1635,6 +1674,13 @@ func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, 
 		SetSha256(shaValue).
 		SetImageGroup(strings.TrimSpace(result.ImageGroup)).
 		SetVisibilityStatus(defaultString(result.VisibilityStatus, "private"))
+	if projectID = strings.TrimSpace(projectID); projectID != "" {
+		parsedProjectID, parseErr := uuid.Parse(projectID)
+		if parseErr != nil {
+			return repoerr.ErrNotFound
+		}
+		builder.SetProjectID(parsedProjectID)
+	}
 	if strings.TrimSpace(result.StorageConfigID) != "" {
 		storageConfigID, parseErr := uuid.Parse(strings.TrimSpace(result.StorageConfigID))
 		if parseErr != nil {
@@ -1725,6 +1771,14 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		CreatedAt: entity.CreatedAt,
 		UpdatedAt: entity.UpdatedAt,
 	}
+	if entity.ProjectID != nil {
+		task.ProjectID = entity.ProjectID.String()
+		task.Project = &domainimagetask.ProjectSnapshot{ID: task.ProjectID}
+		if entity.Edges.Project != nil {
+			task.Project.Name = entity.Edges.Project.Name
+			task.Project.IsDefault = entity.Edges.Project.IsDefault
+		}
+	}
 	task.ArtifactRecovery.LastDiagnostic, task.ArtifactRecovery.Diagnostics = decodeArtifactDiagnostics(entity.ArtifactLastDiagnostic)
 	if entity.ArtifactStorageConfigID != nil {
 		task.ArtifactRecovery.StorageConfigID = entity.ArtifactStorageConfigID.String()
@@ -1757,6 +1811,13 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		}
 	}
 	task.Results = mapFallbackResults(resultEntities)
+	for index := range task.Results {
+		task.Results[index].ProjectID = task.ProjectID
+		if task.Project != nil {
+			snapshot := *task.Project
+			task.Results[index].Project = &snapshot
+		}
+	}
 	return task, nil
 }
 
@@ -1908,6 +1969,10 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 		ReviewReason:     nullableString(entity.ReviewReason),
 		PublishedAt:      entity.PublishedAt,
 	}
+	if entity.ProjectID != nil {
+		item.ProjectID = entity.ProjectID.String()
+		item.Project = &domainimagetask.ProjectSnapshot{ID: item.ProjectID}
+	}
 	if entity.StorageConfigID != nil {
 		item.StorageConfigID = entity.StorageConfigID.String()
 	}
@@ -1937,6 +2002,7 @@ func (s *ImageTaskStore) loadGalleryImageWithTask(ctx context.Context, imageID u
 	}
 	taskEntity, err := s.client.ImageTask.Query().
 		Where(imagetask.IDEQ(entity.TaskID), imagetask.DeletedAtIsNil()).
+		WithProject().
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -1975,7 +2041,7 @@ func (s *ImageTaskStore) galleryImagesFromEntities(ctx context.Context, entities
 	}
 	taskMap := map[uuid.UUID]*repoent.ImageTask{}
 	if len(taskIDs) > 0 {
-		tasks, err := s.client.ImageTask.Query().Where(imagetask.IDIn(taskIDs...), imagetask.DeletedAtIsNil()).All(ctx)
+		tasks, err := s.client.ImageTask.Query().Where(imagetask.IDIn(taskIDs...), imagetask.DeletedAtIsNil()).WithProject().All(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -2108,6 +2174,8 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		ID:                entity.ID.String(),
 		TaskID:            entity.TaskID.String(),
 		UserID:            taskEntity.UserID,
+		ProjectID:         item.ProjectID,
+		Project:           projectSnapshotFromTaskEntity(taskEntity),
 		Prompt:            taskEntity.Prompt,
 		AbstractModel:     taskEntity.AbstractModel,
 		RouteModelCode:    taskEntity.RouteModelCode,
@@ -2141,6 +2209,18 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		PublishedAt:       entity.PublishedAt,
 		CreatedAt:         entity.CreatedAt,
 	}
+}
+
+func projectSnapshotFromTaskEntity(entity *repoent.ImageTask) *domainimagetask.ProjectSnapshot {
+	if entity == nil || entity.ProjectID == nil {
+		return nil
+	}
+	snapshot := &domainimagetask.ProjectSnapshot{ID: entity.ProjectID.String()}
+	if entity.Edges.Project != nil {
+		snapshot.Name = entity.Edges.Project.Name
+		snapshot.IsDefault = entity.Edges.Project.IsDefault
+	}
+	return snapshot
 }
 
 func galleryReferenceAssets(assetIDs []string) []domainimagetask.GalleryReferenceAsset {
