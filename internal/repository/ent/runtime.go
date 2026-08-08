@@ -1491,6 +1491,8 @@ func init() {
 	modelaccountmodelDescMaxImageCount := modelaccountmodelFields[7].Descriptor()
 	// modelaccountmodel.DefaultMaxImageCount holds the default value on creation for the max_image_count field.
 	modelaccountmodel.DefaultMaxImageCount = modelaccountmodelDescMaxImageCount.Default.(int)
+	// modelaccountmodel.MaxImageCountValidator is a validator for the "max_image_count" field. It is called by the builders before save.
+	modelaccountmodel.MaxImageCountValidator = modelaccountmodelDescMaxImageCount.Validators[0].(func(int) error)
 	// modelaccountmodelDescSupportsCustomRatio is the schema descriptor for supports_custom_ratio field.
 	modelaccountmodelDescSupportsCustomRatio := modelaccountmodelFields[11].Descriptor()
 	// modelaccountmodel.DefaultSupportsCustomRatio holds the default value on creation for the supports_custom_ratio field.

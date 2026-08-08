@@ -44,8 +44,8 @@ func NormalizeCapability(raw ImageModelCapability) (ImageModelCapability, error)
 	if capability.MaxReferenceImageCount < 0 {
 		return capability, errs.BadRequest("max_reference_image_count must be greater than or equal to 0")
 	}
-	if capability.MaxImageCount < 0 {
-		return capability, errs.BadRequest("max_image_count must be greater than or equal to 0")
+	if capability.MaxImageCount < 0 || capability.MaxImageCount > 10 {
+		return capability, errs.BadRequest("max_image_count must be between 1 and 10")
 	}
 	if capability.MaxImageCount == 0 {
 		capability.MaxImageCount = 1

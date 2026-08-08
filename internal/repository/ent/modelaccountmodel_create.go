@@ -464,6 +464,11 @@ func (_c *ModelAccountModelCreate) check() error {
 	if _, ok := _c.mutation.MaxImageCount(); !ok {
 		return &ValidationError{Name: "max_image_count", err: errors.New(`ent: missing required field "ModelAccountModel.max_image_count"`)}
 	}
+	if v, ok := _c.mutation.MaxImageCount(); ok {
+		if err := modelaccountmodel.MaxImageCountValidator(v); err != nil {
+			return &ValidationError{Name: "max_image_count", err: fmt.Errorf(`ent: validator failed for field "ModelAccountModel.max_image_count": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.SupportsCustomRatio(); !ok {
 		return &ValidationError{Name: "supports_custom_ratio", err: errors.New(`ent: missing required field "ModelAccountModel.supports_custom_ratio"`)}
 	}

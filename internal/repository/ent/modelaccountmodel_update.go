@@ -562,6 +562,11 @@ func (_u *ModelAccountModelUpdate) check() error {
 			return &ValidationError{Name: "display_name", err: fmt.Errorf(`ent: validator failed for field "ModelAccountModel.display_name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.MaxImageCount(); ok {
+		if err := modelaccountmodel.MaxImageCountValidator(v); err != nil {
+			return &ValidationError{Name: "max_image_count", err: fmt.Errorf(`ent: validator failed for field "ModelAccountModel.max_image_count": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Currency(); ok {
 		if err := modelaccountmodel.CurrencyValidator(v); err != nil {
 			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "ModelAccountModel.currency": %w`, err)}
@@ -1332,6 +1337,11 @@ func (_u *ModelAccountModelUpdateOne) check() error {
 	if v, ok := _u.mutation.DisplayName(); ok {
 		if err := modelaccountmodel.DisplayNameValidator(v); err != nil {
 			return &ValidationError{Name: "display_name", err: fmt.Errorf(`ent: validator failed for field "ModelAccountModel.display_name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.MaxImageCount(); ok {
+		if err := modelaccountmodel.MaxImageCountValidator(v); err != nil {
+			return &ValidationError{Name: "max_image_count", err: fmt.Errorf(`ent: validator failed for field "ModelAccountModel.max_image_count": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.Currency(); ok {

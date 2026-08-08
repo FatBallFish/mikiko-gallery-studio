@@ -22,7 +22,7 @@ func (ModelAccountModel) Fields() []ent.Field {
 		field.JSON("base_resolution", []string{}).Optional(),
 		field.JSON("quality", []string{"auto"}).Optional(),
 		field.Int("max_reference_image_count").Default(0),
-		field.Int("max_image_count").Default(1),
+		field.Int("max_image_count").Default(1).Range(1, 10),
 		field.JSON("size_modes", []string{"ratio"}).Optional(),
 		field.JSON("supported_ratios", []string{"1:1"}).Optional(),
 		field.JSON("supported_pixel_sizes", []string{"1024x1024"}).Optional(),

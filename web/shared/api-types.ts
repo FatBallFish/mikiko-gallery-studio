@@ -322,6 +322,7 @@ export type SubscriptionPlan = {
   price_cny: string
   points: string
   bonus_points: string
+  credit_expiry_enabled?: boolean
   duration_days: number
   currency: string
   description?: string
@@ -389,6 +390,10 @@ export type PaymentOrder = {
   amount_cny: string
   points: string
   bonus_points: string
+  credit_expiry_enabled?: boolean
+  credit_valid_days?: number | null
+  credited_at?: string | null
+  credit_expires_at?: string | null
   trade_no?: string
   refund_trade_no?: string
   refunded_amount_cny?: string
@@ -615,6 +620,18 @@ export type EstimateResult = {
   sufficient: boolean
 }
 
+export type ProjectStatus = 'active' | 'transferring' | 'deleted' | string
+export type Project = {
+  id: string
+  user_id?: number
+  name: string
+  name_key?: string
+  is_default: boolean
+  status: ProjectStatus
+  version: number
+  created_at: string
+  updated_at: string
+}
 export type ReferenceAsset = {
   id: string
   name?: string
@@ -632,10 +649,14 @@ export type ReferenceAsset = {
   storage_config_id?: string
   storage_driver?: string
   object_key?: string
+  source_image_result_id?: string | null
+  owns_object?: boolean
   created_at: string
 }
 export type ImageResult = {
   id: string
+  project_id?: string | null
+  project?: Project
   url: string
   download_url?: string
   preview_expires_at?: string
@@ -677,6 +698,8 @@ export type ImageResult = {
 }
 export type ImageTask = {
   id: string
+  project_id?: string | null
+  project?: Project
   title: string
   prompt: string
   negative_prompt?: string
@@ -947,7 +970,7 @@ export type ModelRoute = {
 }
 export type ModelRouteWriteRequest = { group_code: string; task_type: string; provider_model_id: number; provider_code: string; priority: number; weight_percent: number; fallback_order: number; enabled: boolean }
 export type PriceRow = { id: string; group: string; q1k: string; q2k: string; q4k: string; reference_multiplier: string; version: number; state: 'active' | 'draft' }
-export type GalleryImage = { id: string; task_id: string; user_id?: number; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; aspect_ratio?: string; output_format?: string; output_compression?: number; moderation?: string; requested_output_image_count?: number; image_count?: number; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; preview_expires_at?: string; download_expires_at?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; storage_config_id?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
+export type GalleryImage = { id: string; task_id: string; user_id?: number; project_id?: string | null; project?: Project; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; aspect_ratio?: string; output_format?: string; output_compression?: number; moderation?: string; requested_output_image_count?: number; image_count?: number; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; preview_expires_at?: string; download_expires_at?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; storage_config_id?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
 export type ReviewItem = { id: string; image_id?: string; title: string; owner: string; task_type: ImageTaskType; image_url: string; status: 'pending' | 'pending_review' | 'approved' | 'rejected' | 'unpublished' | string; reason: string; created_at: string; review_reason?: string; visibility_status?: string }
 export type AdminUser = { id: string; email: string; display_name: string; nickname?: string; status: 'active' | 'disabled' | 'pending' | 'closed' | string; group: string; user_group_code?: string; user_group_codes?: string[]; user_groups?: UserGroup[]; balance: string; token_version?: number; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string; closed_at?: string | null; created_at: string; updated_at?: string; last_seen_at: string }
 export type AdminUserDetail = { user: AdminUser; balance: Balance; recent_ledger: LedgerEntry[]; recent_orders?: PaymentOrder[]; recent_tasks?: ImageTask[]; api_keys?: ApiKey[] }
@@ -992,10 +1015,16 @@ export type ModelAccountModel = {
   size_modes: string[]
   supported_ratios: string[]
   supported_pixel_sizes: string[]
+  supports_custom_ratio?: boolean
   output_format: string[]
+  supported_backgrounds?: string[]
   output_compression?: number
   supports_output_compression: boolean
   supports_custom_size: boolean
+  min_width?: number
+  max_width?: number
+  min_height?: number
+  max_height?: number
   moderation: string[]
   cost_per_image: string
   currency: string
@@ -1005,6 +1034,23 @@ export type ModelAccountModel = {
   updated_at: string
 }
 export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; base_resolution: string[]; quality: string[]; max_reference_image_count: number; max_image_count: number; size_modes: string[]; supported_ratios: string[]; supported_pixel_sizes: string[]; output_format: string[]; supports_output_compression: boolean; supports_custom_size?: boolean; moderation: string[]; cost_per_image: string; currency: string; enabled: boolean }
+
+export type ObjectDeletionJobState = 'pending' | 'running' | 'retry' | 'done' | 'blocked'
+export type ObjectDeletionJob = {
+  id: string
+  storage_config_id?: string | null
+  storage_driver: string
+  bucket: string
+  object_key: string
+  state: ObjectDeletionJobState
+  attempt_count: number
+  next_attempt_at?: string | null
+  last_error_code?: string | null
+  last_error_message?: string | null
+  completed_at?: string | null
+  created_at: string
+  updated_at: string
+}
 export type ModelAccountTestImageRequest = { model_id?: ID; model_code?: string; prompt?: string; source_mode?: 'images' | 'codex_responses' | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; output_format?: string; output_compression?: number; moderation?: string; aspect_ratio?: string }
 export type ModelAccountTestImageResult = {
   status: string

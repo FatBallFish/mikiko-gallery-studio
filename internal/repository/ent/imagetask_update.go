@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/google/uuid"
 )
 
@@ -1190,9 +1191,20 @@ func (_u *ImageTaskUpdate) ClearFinishedAt() *ImageTaskUpdate {
 	return _u
 }
 
+// SetProject sets the "project" edge to the Project entity.
+func (_u *ImageTaskUpdate) SetProject(v *Project) *ImageTaskUpdate {
+	return _u.SetProjectID(v.ID)
+}
+
 // Mutation returns the ImageTaskMutation object of the builder.
 func (_u *ImageTaskUpdate) Mutation() *ImageTaskMutation {
 	return _u.mutation
+}
+
+// ClearProject clears the "project" edge to the Project entity.
+func (_u *ImageTaskUpdate) ClearProject() *ImageTaskUpdate {
+	_u.mutation.ClearProject()
+	return _u
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -1372,12 +1384,6 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(imagetask.FieldUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.ProjectID(); ok {
-		_spec.SetField(imagetask.FieldProjectID, field.TypeUUID, value)
-	}
-	if _u.mutation.ProjectIDCleared() {
-		_spec.ClearField(imagetask.FieldProjectID, field.TypeUUID)
 	}
 	if value, ok := _u.mutation.APIKeyID(); ok {
 		_spec.SetField(imagetask.FieldAPIKeyID, field.TypeInt64, value)
@@ -1693,6 +1699,35 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.FinishedAtCleared() {
 		_spec.ClearField(imagetask.FieldFinishedAt, field.TypeTime)
+	}
+	if _u.mutation.ProjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   imagetask.ProjectTable,
+			Columns: []string{imagetask.ProjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(project.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ProjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   imagetask.ProjectTable,
+			Columns: []string{imagetask.ProjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(project.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -2875,9 +2910,20 @@ func (_u *ImageTaskUpdateOne) ClearFinishedAt() *ImageTaskUpdateOne {
 	return _u
 }
 
+// SetProject sets the "project" edge to the Project entity.
+func (_u *ImageTaskUpdateOne) SetProject(v *Project) *ImageTaskUpdateOne {
+	return _u.SetProjectID(v.ID)
+}
+
 // Mutation returns the ImageTaskMutation object of the builder.
 func (_u *ImageTaskUpdateOne) Mutation() *ImageTaskMutation {
 	return _u.mutation
+}
+
+// ClearProject clears the "project" edge to the Project entity.
+func (_u *ImageTaskUpdateOne) ClearProject() *ImageTaskUpdateOne {
+	_u.mutation.ClearProject()
+	return _u
 }
 
 // Where appends a list predicates to the ImageTaskUpdate builder.
@@ -3087,12 +3133,6 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	}
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(imagetask.FieldUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.ProjectID(); ok {
-		_spec.SetField(imagetask.FieldProjectID, field.TypeUUID, value)
-	}
-	if _u.mutation.ProjectIDCleared() {
-		_spec.ClearField(imagetask.FieldProjectID, field.TypeUUID)
 	}
 	if value, ok := _u.mutation.APIKeyID(); ok {
 		_spec.SetField(imagetask.FieldAPIKeyID, field.TypeInt64, value)
@@ -3408,6 +3448,35 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	}
 	if _u.mutation.FinishedAtCleared() {
 		_spec.ClearField(imagetask.FieldFinishedAt, field.TypeTime)
+	}
+	if _u.mutation.ProjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   imagetask.ProjectTable,
+			Columns: []string{imagetask.ProjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(project.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ProjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   imagetask.ProjectTable,
+			Columns: []string{imagetask.ProjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(project.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &ImageTask{config: _u.config}
 	_spec.Assign = _node.assignValues

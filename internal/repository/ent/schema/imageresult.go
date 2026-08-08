@@ -4,6 +4,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
@@ -33,6 +34,13 @@ func (ImageResult) Fields() []ent.Field {
 		field.Time("published_at").Optional().Nillable(),
 	}
 }
+
+func (ImageResult) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("project", Project.Type).Ref("image_results").Field("project_id").Unique(),
+	}
+}
+
 func (ImageResult) Indexes() []ent.Index {
 	return []ent.Index{index.Fields("task_id"), index.Fields("user_id"), index.Fields("project_id"), index.Fields("user_id", "project_id", "created_at"), index.Fields("image_role"), index.Fields("storage_config_id"), index.Fields("object_key").Unique(), index.Fields("sha256"), index.Fields("visibility_status")}
 }

@@ -333,7 +333,6 @@ var (
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "task_id", Type: field.TypeUUID},
 		{Name: "user_id", Type: field.TypeInt64},
-		{Name: "project_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "image_role", Type: field.TypeString, Size: 16, Default: "output"},
 		{Name: "storage_config_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: "local"},
@@ -347,12 +346,21 @@ var (
 		{Name: "visibility_status", Type: field.TypeString, Size: 32, Default: "private"},
 		{Name: "review_reason", Type: field.TypeString, Nullable: true, Size: 255},
 		{Name: "published_at", Type: field.TypeTime, Nullable: true},
+		{Name: "project_id", Type: field.TypeUUID, Nullable: true},
 	}
 	// TaskImagesTable holds the schema information for the "task_images" table.
 	TaskImagesTable = &schema.Table{
 		Name:       "task_images",
 		Columns:    TaskImagesColumns,
 		PrimaryKey: []*schema.Column{TaskImagesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "task_images_projects_image_results",
+				Columns:    []*schema.Column{TaskImagesColumns[19]},
+				RefColumns: []*schema.Column{ProjectsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
 		Indexes: []*schema.Index{
 			{
 				Name:    "imageresult_task_id",
@@ -367,37 +375,37 @@ var (
 			{
 				Name:    "imageresult_project_id",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[6]},
+				Columns: []*schema.Column{TaskImagesColumns[19]},
 			},
 			{
 				Name:    "imageresult_user_id_project_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[5], TaskImagesColumns[6], TaskImagesColumns[1]},
+				Columns: []*schema.Column{TaskImagesColumns[5], TaskImagesColumns[19], TaskImagesColumns[1]},
 			},
 			{
 				Name:    "imageresult_image_role",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[7]},
+				Columns: []*schema.Column{TaskImagesColumns[6]},
 			},
 			{
 				Name:    "imageresult_storage_config_id",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[8]},
+				Columns: []*schema.Column{TaskImagesColumns[7]},
 			},
 			{
 				Name:    "imageresult_object_key",
 				Unique:  true,
-				Columns: []*schema.Column{TaskImagesColumns[10]},
+				Columns: []*schema.Column{TaskImagesColumns[9]},
 			},
 			{
 				Name:    "imageresult_sha256",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[15]},
+				Columns: []*schema.Column{TaskImagesColumns[14]},
 			},
 			{
 				Name:    "imageresult_visibility_status",
 				Unique:  false,
-				Columns: []*schema.Column{TaskImagesColumns[17]},
+				Columns: []*schema.Column{TaskImagesColumns[16]},
 			},
 		},
 	}
@@ -408,7 +416,6 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "user_id", Type: field.TypeInt64},
-		{Name: "project_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "source_channel", Type: field.TypeString, Size: 16, Default: "web"},
 		{Name: "task_type", Type: field.TypeString, Size: 32},
@@ -470,12 +477,21 @@ var (
 		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "started_at", Type: field.TypeTime, Nullable: true},
 		{Name: "finished_at", Type: field.TypeTime, Nullable: true},
+		{Name: "project_id", Type: field.TypeUUID, Nullable: true},
 	}
 	// ImageTasksTable holds the schema information for the "image_tasks" table.
 	ImageTasksTable = &schema.Table{
 		Name:       "image_tasks",
 		Columns:    ImageTasksColumns,
 		PrimaryKey: []*schema.Column{ImageTasksColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "image_tasks_projects_image_tasks",
+				Columns:    []*schema.Column{ImageTasksColumns[66]},
+				RefColumns: []*schema.Column{ProjectsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
 		Indexes: []*schema.Index{
 			{
 				Name:    "imagetask_user_id",
@@ -485,82 +501,82 @@ var (
 			{
 				Name:    "imagetask_project_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[5]},
+				Columns: []*schema.Column{ImageTasksColumns[66]},
 			},
 			{
 				Name:    "imagetask_user_id_project_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[4], ImageTasksColumns[5], ImageTasksColumns[1]},
+				Columns: []*schema.Column{ImageTasksColumns[4], ImageTasksColumns[66], ImageTasksColumns[1]},
 			},
 			{
 				Name:    "imagetask_api_key_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[6]},
+				Columns: []*schema.Column{ImageTasksColumns[5]},
 			},
 			{
 				Name:    "imagetask_source_channel",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[7]},
+				Columns: []*schema.Column{ImageTasksColumns[6]},
 			},
 			{
 				Name:    "imagetask_task_type",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[8]},
+				Columns: []*schema.Column{ImageTasksColumns[7]},
 			},
 			{
 				Name:    "imagetask_status",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[9]},
+				Columns: []*schema.Column{ImageTasksColumns[8]},
 			},
 			{
 				Name:    "imagetask_abstract_model",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[14]},
+				Columns: []*schema.Column{ImageTasksColumns[13]},
 			},
 			{
 				Name:    "imagetask_route_model_code",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[37]},
+				Columns: []*schema.Column{ImageTasksColumns[36]},
 			},
 			{
 				Name:    "imagetask_base_resolution",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[16]},
+				Columns: []*schema.Column{ImageTasksColumns[15]},
 			},
 			{
 				Name:    "imagetask_provider_model_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[43]},
+				Columns: []*schema.Column{ImageTasksColumns[42]},
 			},
 			{
 				Name:    "imagetask_account_model_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[38]},
+				Columns: []*schema.Column{ImageTasksColumns[37]},
 			},
 			{
 				Name:    "imagetask_model_account_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[39]},
+				Columns: []*schema.Column{ImageTasksColumns[38]},
 			},
 			{
 				Name:    "imagetask_lease_owner",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[61]},
+				Columns: []*schema.Column{ImageTasksColumns[60]},
 			},
 			{
 				Name:    "imagetask_lease_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[62]},
+				Columns: []*schema.Column{ImageTasksColumns[61]},
 			},
 			{
 				Name:    "imagetask_artifact_recovery_status_artifact_next_retry_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[54], ImageTasksColumns[57]},
+				Columns: []*schema.Column{ImageTasksColumns[53], ImageTasksColumns[56]},
 			},
 			{
 				Name:    "imagetask_error_code",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[63]},
+				Columns: []*schema.Column{ImageTasksColumns[62]},
 			},
 			{
 				Name:    "imagetask_created_at",
@@ -800,6 +816,22 @@ var (
 				Name:    "objectdeletionjob_storage_config_id_bucket_object_key",
 				Unique:  false,
 				Columns: []*schema.Column{ObjectDeletionJobsColumns[3], ObjectDeletionJobsColumns[5], ObjectDeletionJobsColumns[6]},
+			},
+			{
+				Name:    "object_cleanup_config_live",
+				Unique:  true,
+				Columns: []*schema.Column{ObjectDeletionJobsColumns[3], ObjectDeletionJobsColumns[5], ObjectDeletionJobsColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "storage_config_id IS NOT NULL AND state IN ('pending', 'running', 'retry', 'blocked')",
+				},
+			},
+			{
+				Name:    "object_cleanup_driver_live",
+				Unique:  true,
+				Columns: []*schema.Column{ObjectDeletionJobsColumns[4], ObjectDeletionJobsColumns[5], ObjectDeletionJobsColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "storage_config_id IS NULL AND state IN ('pending', 'running', 'retry', 'blocked')",
+				},
 			},
 		},
 	}
@@ -1163,14 +1195,20 @@ var (
 				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[8], ProjectsColumns[2]},
 			},
 			{
-				Name:    "project_user_id_is_default",
-				Unique:  false,
-				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[7]},
+				Name:    "project_active_default",
+				Unique:  true,
+				Columns: []*schema.Column{ProjectsColumns[4]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "is_default = true AND status = 'active' AND deleted_at IS NULL",
+				},
 			},
 			{
-				Name:    "project_user_id_name_key_status",
-				Unique:  false,
-				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[6], ProjectsColumns[8]},
+				Name:    "project_active_name",
+				Unique:  true,
+				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'active' AND deleted_at IS NULL",
+				},
 			},
 		},
 	}
@@ -2090,9 +2128,11 @@ func init() {
 	SystemConfigsTable.Annotation = &entsql.Annotation{
 		Table: "system_configs",
 	}
+	TaskImagesTable.ForeignKeys[0].RefTable = ProjectsTable
 	TaskImagesTable.Annotation = &entsql.Annotation{
 		Table: "task_images",
 	}
+	ImageTasksTable.ForeignKeys[0].RefTable = ProjectsTable
 	InstallationsTable.Annotation = &entsql.Annotation{
 		Table: "installations",
 		Check: "singleton_key = 'installation'",

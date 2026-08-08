@@ -136,6 +136,8 @@ var (
 	DefaultMaxReferenceImageCount int
 	// DefaultMaxImageCount holds the default value on creation for the "max_image_count" field.
 	DefaultMaxImageCount int
+	// MaxImageCountValidator is a validator for the "max_image_count" field. It is called by the builders before save.
+	MaxImageCountValidator func(int) error
 	// DefaultSupportsCustomRatio holds the default value on creation for the "supports_custom_ratio" field.
 	DefaultSupportsCustomRatio bool
 	// DefaultOutputCompression holds the default value on creation for the "output_compression" field.

@@ -13,16 +13,18 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/google/uuid"
 )
 
 // ImageTaskQuery is the builder for querying ImageTask entities.
 type ImageTaskQuery struct {
 	config
-	ctx        *QueryContext
-	order      []imagetask.OrderOption
-	inters     []Interceptor
-	predicates []predicate.ImageTask
+	ctx         *QueryContext
+	order       []imagetask.OrderOption
+	inters      []Interceptor
+	predicates  []predicate.ImageTask
+	withProject *ProjectQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -57,6 +59,28 @@ func (_q *ImageTaskQuery) Unique(unique bool) *ImageTaskQuery {
 func (_q *ImageTaskQuery) Order(o ...imagetask.OrderOption) *ImageTaskQuery {
 	_q.order = append(_q.order, o...)
 	return _q
+}
+
+// QueryProject chains the current query on the "project" edge.
+func (_q *ImageTaskQuery) QueryProject() *ProjectQuery {
+	query := (&ProjectClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(imagetask.Table, imagetask.FieldID, selector),
+			sqlgraph.To(project.Table, project.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, imagetask.ProjectTable, imagetask.ProjectColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
 }
 
 // First returns the first ImageTask entity from the query.
@@ -246,15 +270,27 @@ func (_q *ImageTaskQuery) Clone() *ImageTaskQuery {
 		return nil
 	}
 	return &ImageTaskQuery{
-		config:     _q.config,
-		ctx:        _q.ctx.Clone(),
-		order:      append([]imagetask.OrderOption{}, _q.order...),
-		inters:     append([]Interceptor{}, _q.inters...),
-		predicates: append([]predicate.ImageTask{}, _q.predicates...),
+		config:      _q.config,
+		ctx:         _q.ctx.Clone(),
+		order:       append([]imagetask.OrderOption{}, _q.order...),
+		inters:      append([]Interceptor{}, _q.inters...),
+		predicates:  append([]predicate.ImageTask{}, _q.predicates...),
+		withProject: _q.withProject.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
 	}
+}
+
+// WithProject tells the query-builder to eager-load the nodes that are connected to
+// the "project" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *ImageTaskQuery) WithProject(opts ...func(*ProjectQuery)) *ImageTaskQuery {
+	query := (&ProjectClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withProject = query
+	return _q
 }
 
 // GroupBy is used to group vertices by one or more fields/columns.
@@ -333,8 +369,11 @@ func (_q *ImageTaskQuery) prepareQuery(ctx context.Context) error {
 
 func (_q *ImageTaskQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*ImageTask, error) {
 	var (
-		nodes = []*ImageTask{}
-		_spec = _q.querySpec()
+		nodes       = []*ImageTask{}
+		_spec       = _q.querySpec()
+		loadedTypes = [1]bool{
+			_q.withProject != nil,
+		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
 		return (*ImageTask).scanValues(nil, columns)
@@ -342,6 +381,7 @@ func (_q *ImageTaskQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Im
 	_spec.Assign = func(columns []string, values []any) error {
 		node := &ImageTask{config: _q.config}
 		nodes = append(nodes, node)
+		node.Edges.loadedTypes = loadedTypes
 		return node.assignValues(columns, values)
 	}
 	for i := range hooks {
@@ -353,7 +393,46 @@ func (_q *ImageTaskQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Im
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	if query := _q.withProject; query != nil {
+		if err := _q.loadProject(ctx, query, nodes, nil,
+			func(n *ImageTask, e *Project) { n.Edges.Project = e }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
+}
+
+func (_q *ImageTaskQuery) loadProject(ctx context.Context, query *ProjectQuery, nodes []*ImageTask, init func(*ImageTask), assign func(*ImageTask, *Project)) error {
+	ids := make([]uuid.UUID, 0, len(nodes))
+	nodeids := make(map[uuid.UUID][]*ImageTask)
+	for i := range nodes {
+		if nodes[i].ProjectID == nil {
+			continue
+		}
+		fk := *nodes[i].ProjectID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(project.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "project_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
 }
 
 func (_q *ImageTaskQuery) sqlCount(ctx context.Context) (int, error) {
@@ -380,6 +459,9 @@ func (_q *ImageTaskQuery) querySpec() *sqlgraph.QuerySpec {
 			if fields[i] != imagetask.FieldID {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
+		}
+		if _q.withProject != nil {
+			_spec.Node.AddColumnOnce(imagetask.FieldProjectID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

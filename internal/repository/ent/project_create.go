@@ -10,6 +10,8 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/google/uuid"
 )
@@ -135,6 +137,36 @@ func (_c *ProjectCreate) SetNillableID(v *uuid.UUID) *ProjectCreate {
 		_c.SetID(*v)
 	}
 	return _c
+}
+
+// AddImageTaskIDs adds the "image_tasks" edge to the ImageTask entity by IDs.
+func (_c *ProjectCreate) AddImageTaskIDs(ids ...uuid.UUID) *ProjectCreate {
+	_c.mutation.AddImageTaskIDs(ids...)
+	return _c
+}
+
+// AddImageTasks adds the "image_tasks" edges to the ImageTask entity.
+func (_c *ProjectCreate) AddImageTasks(v ...*ImageTask) *ProjectCreate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddImageTaskIDs(ids...)
+}
+
+// AddImageResultIDs adds the "image_results" edge to the ImageResult entity by IDs.
+func (_c *ProjectCreate) AddImageResultIDs(ids ...uuid.UUID) *ProjectCreate {
+	_c.mutation.AddImageResultIDs(ids...)
+	return _c
+}
+
+// AddImageResults adds the "image_results" edges to the ImageResult entity.
+func (_c *ProjectCreate) AddImageResults(v ...*ImageResult) *ProjectCreate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddImageResultIDs(ids...)
 }
 
 // Mutation returns the ProjectMutation object of the builder.
@@ -309,6 +341,38 @@ func (_c *ProjectCreate) createSpec() (*Project, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Version(); ok {
 		_spec.SetField(project.FieldVersion, field.TypeInt64, value)
 		_node.Version = value
+	}
+	if nodes := _c.mutation.ImageTasksIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.ImageTasksTable,
+			Columns: []string{project.ImageTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(imagetask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ImageResultsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.ImageResultsTable,
+			Columns: []string{project.ImageResultsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(imageresult.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

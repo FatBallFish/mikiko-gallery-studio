@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
@@ -31,5 +32,7 @@ func (ObjectDeletionJob) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("state", "next_attempt_at"),
 		index.Fields("storage_config_id", "bucket", "object_key"),
+		index.Fields("storage_config_id", "bucket", "object_key").StorageKey("object_cleanup_config_live").Unique().Annotations(entsql.IndexWhere("storage_config_id IS NOT NULL AND state IN ('pending', 'running', 'retry', 'blocked')")),
+		index.Fields("storage_driver", "bucket", "object_key").StorageKey("object_cleanup_driver_live").Unique().Annotations(entsql.IndexWhere("storage_config_id IS NULL AND state IN ('pending', 'running', 'retry', 'blocked')")),
 	}
 }

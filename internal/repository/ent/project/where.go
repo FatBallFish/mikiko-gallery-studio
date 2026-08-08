@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/google/uuid"
 )
@@ -513,6 +514,52 @@ func VersionLT(v int64) predicate.Project {
 // VersionLTE applies the LTE predicate on the "version" field.
 func VersionLTE(v int64) predicate.Project {
 	return predicate.Project(sql.FieldLTE(FieldVersion, v))
+}
+
+// HasImageTasks applies the HasEdge predicate on the "image_tasks" edge.
+func HasImageTasks() predicate.Project {
+	return predicate.Project(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ImageTasksTable, ImageTasksColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasImageTasksWith applies the HasEdge predicate on the "image_tasks" edge with a given conditions (other predicates).
+func HasImageTasksWith(preds ...predicate.ImageTask) predicate.Project {
+	return predicate.Project(func(s *sql.Selector) {
+		step := newImageTasksStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasImageResults applies the HasEdge predicate on the "image_results" edge.
+func HasImageResults() predicate.Project {
+	return predicate.Project(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ImageResultsTable, ImageResultsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasImageResultsWith applies the HasEdge predicate on the "image_results" edge with a given conditions (other predicates).
+func HasImageResultsWith(preds ...predicate.ImageResult) predicate.Project {
+	return predicate.Project(func(s *sql.Selector) {
+		step := newImageResultsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.

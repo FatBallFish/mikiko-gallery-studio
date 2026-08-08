@@ -7808,7 +7808,6 @@ type ImageResultMutation struct {
 	task_id            *uuid.UUID
 	user_id            *int64
 	adduser_id         *int64
-	project_id         *uuid.UUID
 	image_role         *string
 	storage_config_id  *uuid.UUID
 	storage_driver     *string
@@ -7826,6 +7825,8 @@ type ImageResultMutation struct {
 	review_reason      *string
 	published_at       *time.Time
 	clearedFields      map[string]struct{}
+	project            *uuid.UUID
+	clearedproject     bool
 	done               bool
 	oldValue           func(context.Context) (*ImageResult, error)
 	predicates         []predicate.ImageResult
@@ -8150,12 +8151,12 @@ func (m *ImageResultMutation) ResetUserID() {
 
 // SetProjectID sets the "project_id" field.
 func (m *ImageResultMutation) SetProjectID(u uuid.UUID) {
-	m.project_id = &u
+	m.project = &u
 }
 
 // ProjectID returns the value of the "project_id" field in the mutation.
 func (m *ImageResultMutation) ProjectID() (r uuid.UUID, exists bool) {
-	v := m.project_id
+	v := m.project
 	if v == nil {
 		return
 	}
@@ -8181,7 +8182,7 @@ func (m *ImageResultMutation) OldProjectID(ctx context.Context) (v *uuid.UUID, e
 
 // ClearProjectID clears the value of the "project_id" field.
 func (m *ImageResultMutation) ClearProjectID() {
-	m.project_id = nil
+	m.project = nil
 	m.clearedFields[imageresult.FieldProjectID] = struct{}{}
 }
 
@@ -8193,7 +8194,7 @@ func (m *ImageResultMutation) ProjectIDCleared() bool {
 
 // ResetProjectID resets all changes to the "project_id" field.
 func (m *ImageResultMutation) ResetProjectID() {
-	m.project_id = nil
+	m.project = nil
 	delete(m.clearedFields, imageresult.FieldProjectID)
 }
 
@@ -8764,6 +8765,33 @@ func (m *ImageResultMutation) ResetPublishedAt() {
 	delete(m.clearedFields, imageresult.FieldPublishedAt)
 }
 
+// ClearProject clears the "project" edge to the Project entity.
+func (m *ImageResultMutation) ClearProject() {
+	m.clearedproject = true
+	m.clearedFields[imageresult.FieldProjectID] = struct{}{}
+}
+
+// ProjectCleared reports if the "project" edge to the Project entity was cleared.
+func (m *ImageResultMutation) ProjectCleared() bool {
+	return m.ProjectIDCleared() || m.clearedproject
+}
+
+// ProjectIDs returns the "project" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ProjectID instead. It exists only for internal usage by the builders.
+func (m *ImageResultMutation) ProjectIDs() (ids []uuid.UUID) {
+	if id := m.project; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetProject resets all changes to the "project" edge.
+func (m *ImageResultMutation) ResetProject() {
+	m.project = nil
+	m.clearedproject = false
+}
+
 // Where appends a list predicates to the ImageResultMutation builder.
 func (m *ImageResultMutation) Where(ps ...predicate.ImageResult) {
 	m.predicates = append(m.predicates, ps...)
@@ -8814,7 +8842,7 @@ func (m *ImageResultMutation) Fields() []string {
 	if m.user_id != nil {
 		fields = append(fields, imageresult.FieldUserID)
 	}
-	if m.project_id != nil {
+	if m.project != nil {
 		fields = append(fields, imageresult.FieldProjectID)
 	}
 	if m.image_role != nil {
@@ -9287,19 +9315,28 @@ func (m *ImageResultMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *ImageResultMutation) AddedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.project != nil {
+		edges = append(edges, imageresult.EdgeProject)
+	}
 	return edges
 }
 
 // AddedIDs returns all IDs (to other nodes) that were added for the given edge
 // name in this mutation.
 func (m *ImageResultMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case imageresult.EdgeProject:
+		if id := m.project; id != nil {
+			return []ent.Value{*id}
+		}
+	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *ImageResultMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
 	return edges
 }
 
@@ -9311,25 +9348,42 @@ func (m *ImageResultMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *ImageResultMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.clearedproject {
+		edges = append(edges, imageresult.EdgeProject)
+	}
 	return edges
 }
 
 // EdgeCleared returns a boolean which indicates if the edge with the given name
 // was cleared in this mutation.
 func (m *ImageResultMutation) EdgeCleared(name string) bool {
+	switch name {
+	case imageresult.EdgeProject:
+		return m.clearedproject
+	}
 	return false
 }
 
 // ClearEdge clears the value of the edge with the given name. It returns an error
 // if that edge is not defined in the schema.
 func (m *ImageResultMutation) ClearEdge(name string) error {
+	switch name {
+	case imageresult.EdgeProject:
+		m.ClearProject()
+		return nil
+	}
 	return fmt.Errorf("unknown ImageResult unique edge %s", name)
 }
 
 // ResetEdge resets all changes to the edge with the given name in this mutation.
 // It returns an error if the edge is not defined in the schema.
 func (m *ImageResultMutation) ResetEdge(name string) error {
+	switch name {
+	case imageresult.EdgeProject:
+		m.ResetProject()
+		return nil
+	}
 	return fmt.Errorf("unknown ImageResult edge %s", name)
 }
 
@@ -9344,7 +9398,6 @@ type ImageTaskMutation struct {
 	deleted_at                      *time.Time
 	user_id                         *int64
 	adduser_id                      *int64
-	project_id                      *uuid.UUID
 	api_key_id                      *int64
 	addapi_key_id                   *int64
 	source_channel                  *string
@@ -9423,6 +9476,8 @@ type ImageTaskMutation struct {
 	started_at                      *time.Time
 	finished_at                     *time.Time
 	clearedFields                   map[string]struct{}
+	project                         *uuid.UUID
+	clearedproject                  bool
 	done                            bool
 	oldValue                        func(context.Context) (*ImageTask, error)
 	predicates                      []predicate.ImageTask
@@ -9711,12 +9766,12 @@ func (m *ImageTaskMutation) ResetUserID() {
 
 // SetProjectID sets the "project_id" field.
 func (m *ImageTaskMutation) SetProjectID(u uuid.UUID) {
-	m.project_id = &u
+	m.project = &u
 }
 
 // ProjectID returns the value of the "project_id" field in the mutation.
 func (m *ImageTaskMutation) ProjectID() (r uuid.UUID, exists bool) {
-	v := m.project_id
+	v := m.project
 	if v == nil {
 		return
 	}
@@ -9742,7 +9797,7 @@ func (m *ImageTaskMutation) OldProjectID(ctx context.Context) (v *uuid.UUID, err
 
 // ClearProjectID clears the value of the "project_id" field.
 func (m *ImageTaskMutation) ClearProjectID() {
-	m.project_id = nil
+	m.project = nil
 	m.clearedFields[imagetask.FieldProjectID] = struct{}{}
 }
 
@@ -9754,7 +9809,7 @@ func (m *ImageTaskMutation) ProjectIDCleared() bool {
 
 // ResetProjectID resets all changes to the "project_id" field.
 func (m *ImageTaskMutation) ResetProjectID() {
-	m.project_id = nil
+	m.project = nil
 	delete(m.clearedFields, imagetask.FieldProjectID)
 }
 
@@ -12647,6 +12702,33 @@ func (m *ImageTaskMutation) ResetFinishedAt() {
 	delete(m.clearedFields, imagetask.FieldFinishedAt)
 }
 
+// ClearProject clears the "project" edge to the Project entity.
+func (m *ImageTaskMutation) ClearProject() {
+	m.clearedproject = true
+	m.clearedFields[imagetask.FieldProjectID] = struct{}{}
+}
+
+// ProjectCleared reports if the "project" edge to the Project entity was cleared.
+func (m *ImageTaskMutation) ProjectCleared() bool {
+	return m.ProjectIDCleared() || m.clearedproject
+}
+
+// ProjectIDs returns the "project" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ProjectID instead. It exists only for internal usage by the builders.
+func (m *ImageTaskMutation) ProjectIDs() (ids []uuid.UUID) {
+	if id := m.project; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetProject resets all changes to the "project" edge.
+func (m *ImageTaskMutation) ResetProject() {
+	m.project = nil
+	m.clearedproject = false
+}
+
 // Where appends a list predicates to the ImageTaskMutation builder.
 func (m *ImageTaskMutation) Where(ps ...predicate.ImageTask) {
 	m.predicates = append(m.predicates, ps...)
@@ -12694,7 +12776,7 @@ func (m *ImageTaskMutation) Fields() []string {
 	if m.user_id != nil {
 		fields = append(fields, imagetask.FieldUserID)
 	}
-	if m.project_id != nil {
+	if m.project != nil {
 		fields = append(fields, imagetask.FieldProjectID)
 	}
 	if m.api_key_id != nil {
@@ -14275,19 +14357,28 @@ func (m *ImageTaskMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *ImageTaskMutation) AddedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.project != nil {
+		edges = append(edges, imagetask.EdgeProject)
+	}
 	return edges
 }
 
 // AddedIDs returns all IDs (to other nodes) that were added for the given edge
 // name in this mutation.
 func (m *ImageTaskMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case imagetask.EdgeProject:
+		if id := m.project; id != nil {
+			return []ent.Value{*id}
+		}
+	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *ImageTaskMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
 	return edges
 }
 
@@ -14299,25 +14390,42 @@ func (m *ImageTaskMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *ImageTaskMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.clearedproject {
+		edges = append(edges, imagetask.EdgeProject)
+	}
 	return edges
 }
 
 // EdgeCleared returns a boolean which indicates if the edge with the given name
 // was cleared in this mutation.
 func (m *ImageTaskMutation) EdgeCleared(name string) bool {
+	switch name {
+	case imagetask.EdgeProject:
+		return m.clearedproject
+	}
 	return false
 }
 
 // ClearEdge clears the value of the edge with the given name. It returns an error
 // if that edge is not defined in the schema.
 func (m *ImageTaskMutation) ClearEdge(name string) error {
+	switch name {
+	case imagetask.EdgeProject:
+		m.ClearProject()
+		return nil
+	}
 	return fmt.Errorf("unknown ImageTask unique edge %s", name)
 }
 
 // ResetEdge resets all changes to the edge with the given name in this mutation.
 // It returns an error if the edge is not defined in the schema.
 func (m *ImageTaskMutation) ResetEdge(name string) error {
+	switch name {
+	case imagetask.EdgeProject:
+		m.ResetProject()
+		return nil
+	}
 	return fmt.Errorf("unknown ImageTask edge %s", name)
 }
 
@@ -30629,24 +30737,30 @@ func (m *PointLedgerMutation) ResetEdge(name string) error {
 // ProjectMutation represents an operation that mutates the Project nodes in the graph.
 type ProjectMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *uuid.UUID
-	created_at    *time.Time
-	updated_at    *time.Time
-	deleted_at    *time.Time
-	user_id       *int64
-	adduser_id    *int64
-	name          *string
-	name_key      *string
-	is_default    *bool
-	status        *string
-	version       *int64
-	addversion    *int64
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*Project, error)
-	predicates    []predicate.Project
+	op                   Op
+	typ                  string
+	id                   *uuid.UUID
+	created_at           *time.Time
+	updated_at           *time.Time
+	deleted_at           *time.Time
+	user_id              *int64
+	adduser_id           *int64
+	name                 *string
+	name_key             *string
+	is_default           *bool
+	status               *string
+	version              *int64
+	addversion           *int64
+	clearedFields        map[string]struct{}
+	image_tasks          map[uuid.UUID]struct{}
+	removedimage_tasks   map[uuid.UUID]struct{}
+	clearedimage_tasks   bool
+	image_results        map[uuid.UUID]struct{}
+	removedimage_results map[uuid.UUID]struct{}
+	clearedimage_results bool
+	done                 bool
+	oldValue             func(context.Context) (*Project, error)
+	predicates           []predicate.Project
 }
 
 var _ ent.Mutation = (*ProjectMutation)(nil)
@@ -31130,6 +31244,114 @@ func (m *ProjectMutation) ResetVersion() {
 	m.addversion = nil
 }
 
+// AddImageTaskIDs adds the "image_tasks" edge to the ImageTask entity by ids.
+func (m *ProjectMutation) AddImageTaskIDs(ids ...uuid.UUID) {
+	if m.image_tasks == nil {
+		m.image_tasks = make(map[uuid.UUID]struct{})
+	}
+	for i := range ids {
+		m.image_tasks[ids[i]] = struct{}{}
+	}
+}
+
+// ClearImageTasks clears the "image_tasks" edge to the ImageTask entity.
+func (m *ProjectMutation) ClearImageTasks() {
+	m.clearedimage_tasks = true
+}
+
+// ImageTasksCleared reports if the "image_tasks" edge to the ImageTask entity was cleared.
+func (m *ProjectMutation) ImageTasksCleared() bool {
+	return m.clearedimage_tasks
+}
+
+// RemoveImageTaskIDs removes the "image_tasks" edge to the ImageTask entity by IDs.
+func (m *ProjectMutation) RemoveImageTaskIDs(ids ...uuid.UUID) {
+	if m.removedimage_tasks == nil {
+		m.removedimage_tasks = make(map[uuid.UUID]struct{})
+	}
+	for i := range ids {
+		delete(m.image_tasks, ids[i])
+		m.removedimage_tasks[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedImageTasks returns the removed IDs of the "image_tasks" edge to the ImageTask entity.
+func (m *ProjectMutation) RemovedImageTasksIDs() (ids []uuid.UUID) {
+	for id := range m.removedimage_tasks {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ImageTasksIDs returns the "image_tasks" edge IDs in the mutation.
+func (m *ProjectMutation) ImageTasksIDs() (ids []uuid.UUID) {
+	for id := range m.image_tasks {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetImageTasks resets all changes to the "image_tasks" edge.
+func (m *ProjectMutation) ResetImageTasks() {
+	m.image_tasks = nil
+	m.clearedimage_tasks = false
+	m.removedimage_tasks = nil
+}
+
+// AddImageResultIDs adds the "image_results" edge to the ImageResult entity by ids.
+func (m *ProjectMutation) AddImageResultIDs(ids ...uuid.UUID) {
+	if m.image_results == nil {
+		m.image_results = make(map[uuid.UUID]struct{})
+	}
+	for i := range ids {
+		m.image_results[ids[i]] = struct{}{}
+	}
+}
+
+// ClearImageResults clears the "image_results" edge to the ImageResult entity.
+func (m *ProjectMutation) ClearImageResults() {
+	m.clearedimage_results = true
+}
+
+// ImageResultsCleared reports if the "image_results" edge to the ImageResult entity was cleared.
+func (m *ProjectMutation) ImageResultsCleared() bool {
+	return m.clearedimage_results
+}
+
+// RemoveImageResultIDs removes the "image_results" edge to the ImageResult entity by IDs.
+func (m *ProjectMutation) RemoveImageResultIDs(ids ...uuid.UUID) {
+	if m.removedimage_results == nil {
+		m.removedimage_results = make(map[uuid.UUID]struct{})
+	}
+	for i := range ids {
+		delete(m.image_results, ids[i])
+		m.removedimage_results[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedImageResults returns the removed IDs of the "image_results" edge to the ImageResult entity.
+func (m *ProjectMutation) RemovedImageResultsIDs() (ids []uuid.UUID) {
+	for id := range m.removedimage_results {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ImageResultsIDs returns the "image_results" edge IDs in the mutation.
+func (m *ProjectMutation) ImageResultsIDs() (ids []uuid.UUID) {
+	for id := range m.image_results {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetImageResults resets all changes to the "image_results" edge.
+func (m *ProjectMutation) ResetImageResults() {
+	m.image_results = nil
+	m.clearedimage_results = false
+	m.removedimage_results = nil
+}
+
 // Where appends a list predicates to the ProjectMutation builder.
 func (m *ProjectMutation) Where(ps ...predicate.Project) {
 	m.predicates = append(m.predicates, ps...)
@@ -31435,49 +31657,111 @@ func (m *ProjectMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *ProjectMutation) AddedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 2)
+	if m.image_tasks != nil {
+		edges = append(edges, project.EdgeImageTasks)
+	}
+	if m.image_results != nil {
+		edges = append(edges, project.EdgeImageResults)
+	}
 	return edges
 }
 
 // AddedIDs returns all IDs (to other nodes) that were added for the given edge
 // name in this mutation.
 func (m *ProjectMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case project.EdgeImageTasks:
+		ids := make([]ent.Value, 0, len(m.image_tasks))
+		for id := range m.image_tasks {
+			ids = append(ids, id)
+		}
+		return ids
+	case project.EdgeImageResults:
+		ids := make([]ent.Value, 0, len(m.image_results))
+		for id := range m.image_results {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *ProjectMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 2)
+	if m.removedimage_tasks != nil {
+		edges = append(edges, project.EdgeImageTasks)
+	}
+	if m.removedimage_results != nil {
+		edges = append(edges, project.EdgeImageResults)
+	}
 	return edges
 }
 
 // RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
 // the given name in this mutation.
 func (m *ProjectMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case project.EdgeImageTasks:
+		ids := make([]ent.Value, 0, len(m.removedimage_tasks))
+		for id := range m.removedimage_tasks {
+			ids = append(ids, id)
+		}
+		return ids
+	case project.EdgeImageResults:
+		ids := make([]ent.Value, 0, len(m.removedimage_results))
+		for id := range m.removedimage_results {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *ProjectMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 2)
+	if m.clearedimage_tasks {
+		edges = append(edges, project.EdgeImageTasks)
+	}
+	if m.clearedimage_results {
+		edges = append(edges, project.EdgeImageResults)
+	}
 	return edges
 }
 
 // EdgeCleared returns a boolean which indicates if the edge with the given name
 // was cleared in this mutation.
 func (m *ProjectMutation) EdgeCleared(name string) bool {
+	switch name {
+	case project.EdgeImageTasks:
+		return m.clearedimage_tasks
+	case project.EdgeImageResults:
+		return m.clearedimage_results
+	}
 	return false
 }
 
 // ClearEdge clears the value of the edge with the given name. It returns an error
 // if that edge is not defined in the schema.
 func (m *ProjectMutation) ClearEdge(name string) error {
+	switch name {
+	}
 	return fmt.Errorf("unknown Project unique edge %s", name)
 }
 
 // ResetEdge resets all changes to the edge with the given name in this mutation.
 // It returns an error if the edge is not defined in the schema.
 func (m *ProjectMutation) ResetEdge(name string) error {
+	switch name {
+	case project.EdgeImageTasks:
+		m.ResetImageTasks()
+		return nil
+	case project.EdgeImageResults:
+		m.ResetImageResults()
+		return nil
+	}
 	return fmt.Errorf("unknown Project edge %s", name)
 }
 

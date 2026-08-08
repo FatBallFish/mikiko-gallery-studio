@@ -15,6 +15,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/adminuser"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
@@ -1741,6 +1742,22 @@ func (c *ImageResultClient) GetX(ctx context.Context, id uuid.UUID) *ImageResult
 	return obj
 }
 
+// QueryProject queries the project edge of a ImageResult.
+func (c *ImageResultClient) QueryProject(_m *ImageResult) *ProjectQuery {
+	query := (&ProjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(imageresult.Table, imageresult.FieldID, id),
+			sqlgraph.To(project.Table, project.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, imageresult.ProjectTable, imageresult.ProjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *ImageResultClient) Hooks() []Hook {
 	return c.hooks.ImageResult
@@ -1872,6 +1889,22 @@ func (c *ImageTaskClient) GetX(ctx context.Context, id uuid.UUID) *ImageTask {
 		panic(err)
 	}
 	return obj
+}
+
+// QueryProject queries the project edge of a ImageTask.
+func (c *ImageTaskClient) QueryProject(_m *ImageTask) *ProjectQuery {
+	query := (&ProjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(imagetask.Table, imagetask.FieldID, id),
+			sqlgraph.To(project.Table, project.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, imagetask.ProjectTable, imagetask.ProjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
 }
 
 // Hooks returns the client hooks.
@@ -3468,6 +3501,38 @@ func (c *ProjectClient) GetX(ctx context.Context, id uuid.UUID) *Project {
 		panic(err)
 	}
 	return obj
+}
+
+// QueryImageTasks queries the image_tasks edge of a Project.
+func (c *ProjectClient) QueryImageTasks(_m *Project) *ImageTaskQuery {
+	query := (&ImageTaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(project.Table, project.FieldID, id),
+			sqlgraph.To(imagetask.Table, imagetask.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, project.ImageTasksTable, project.ImageTasksColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryImageResults queries the image_results edge of a Project.
+func (c *ProjectClient) QueryImageResults(_m *Project) *ImageResultQuery {
+	query := (&ImageResultClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(project.Table, project.FieldID, id),
+			sqlgraph.To(imageresult.Table, imageresult.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, project.ImageResultsTable, project.ImageResultsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
 }
 
 // Hooks returns the client hooks.

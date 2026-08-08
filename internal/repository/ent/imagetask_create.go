@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/google/uuid"
 )
 
@@ -887,6 +888,11 @@ func (_c *ImageTaskCreate) SetNillableID(v *uuid.UUID) *ImageTaskCreate {
 	return _c
 }
 
+// SetProject sets the "project" edge to the Project entity.
+func (_c *ImageTaskCreate) SetProject(v *Project) *ImageTaskCreate {
+	return _c.SetProjectID(v.ID)
+}
+
 // Mutation returns the ImageTaskMutation object of the builder.
 func (_c *ImageTaskCreate) Mutation() *ImageTaskMutation {
 	return _c.mutation
@@ -1327,10 +1333,6 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 		_spec.SetField(imagetask.FieldUserID, field.TypeInt64, value)
 		_node.UserID = value
 	}
-	if value, ok := _c.mutation.ProjectID(); ok {
-		_spec.SetField(imagetask.FieldProjectID, field.TypeUUID, value)
-		_node.ProjectID = &value
-	}
 	if value, ok := _c.mutation.APIKeyID(); ok {
 		_spec.SetField(imagetask.FieldAPIKeyID, field.TypeInt64, value)
 		_node.APIKeyID = &value
@@ -1574,6 +1576,23 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.FinishedAt(); ok {
 		_spec.SetField(imagetask.FieldFinishedAt, field.TypeTime, value)
 		_node.FinishedAt = &value
+	}
+	if nodes := _c.mutation.ProjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   imagetask.ProjectTable,
+			Columns: []string{imagetask.ProjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(project.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.ProjectID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

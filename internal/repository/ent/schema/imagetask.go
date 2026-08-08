@@ -3,6 +3,7 @@ package schema
 import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
@@ -79,6 +80,13 @@ func (ImageTask) Fields() []ent.Field {
 		field.Time("finished_at").Optional().Nillable(),
 	}
 }
+
+func (ImageTask) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("project", Project.Type).Ref("image_tasks").Field("project_id").Unique(),
+	}
+}
+
 func (ImageTask) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("user_id"), index.Fields("project_id"), index.Fields("user_id", "project_id", "created_at"), index.Fields("api_key_id"), index.Fields("source_channel"), index.Fields("task_type"),

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/google/uuid"
 )
 
@@ -32,8 +33,26 @@ const (
 	FieldStatus = "status"
 	// FieldVersion holds the string denoting the version field in the database.
 	FieldVersion = "version"
+	// EdgeImageTasks holds the string denoting the image_tasks edge name in mutations.
+	EdgeImageTasks = "image_tasks"
+	// EdgeImageResults holds the string denoting the image_results edge name in mutations.
+	EdgeImageResults = "image_results"
 	// Table holds the table name of the project in the database.
 	Table = "projects"
+	// ImageTasksTable is the table that holds the image_tasks relation/edge.
+	ImageTasksTable = "image_tasks"
+	// ImageTasksInverseTable is the table name for the ImageTask entity.
+	// It exists in this package in order to avoid circular dependency with the "imagetask" package.
+	ImageTasksInverseTable = "image_tasks"
+	// ImageTasksColumn is the table column denoting the image_tasks relation/edge.
+	ImageTasksColumn = "project_id"
+	// ImageResultsTable is the table that holds the image_results relation/edge.
+	ImageResultsTable = "task_images"
+	// ImageResultsInverseTable is the table name for the ImageResult entity.
+	// It exists in this package in order to avoid circular dependency with the "imageresult" package.
+	ImageResultsInverseTable = "task_images"
+	// ImageResultsColumn is the table column denoting the image_results relation/edge.
+	ImageResultsColumn = "project_id"
 )
 
 // Columns holds all SQL columns for project fields.
@@ -134,4 +153,46 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 // ByVersion orders the results by the version field.
 func ByVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVersion, opts...).ToFunc()
+}
+
+// ByImageTasksCount orders the results by image_tasks count.
+func ByImageTasksCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newImageTasksStep(), opts...)
+	}
+}
+
+// ByImageTasks orders the results by image_tasks terms.
+func ByImageTasks(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newImageTasksStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByImageResultsCount orders the results by image_results count.
+func ByImageResultsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newImageResultsStep(), opts...)
+	}
+}
+
+// ByImageResults orders the results by image_results terms.
+func ByImageResults(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newImageResultsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+func newImageTasksStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ImageTasksInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ImageTasksTable, ImageTasksColumn),
+	)
+}
+func newImageResultsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ImageResultsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ImageResultsTable, ImageResultsColumn),
+	)
 }

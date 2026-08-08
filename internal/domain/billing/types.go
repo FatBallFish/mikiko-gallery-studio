@@ -95,21 +95,22 @@ type GrantExpirySummary struct {
 }
 
 type SubscriptionPlan struct {
-	ID              int64     `json:"id"`
-	PlanCode        string    `json:"plan_code"`
-	PlanName        string    `json:"plan_name"`
-	PlanType        string    `json:"plan_type,omitempty"`
-	PurchaseEnabled bool      `json:"purchase_enabled"`
-	Status          string    `json:"status"`
-	PriceCNY        string    `json:"price_cny"`
-	Points          string    `json:"points"`
-	BonusPoints     string    `json:"bonus_points"`
-	DurationDays    int       `json:"duration_days"`
-	Currency        string    `json:"currency"`
-	SortOrder       int       `json:"sort_order,omitempty"`
-	Description     string    `json:"description,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                  int64     `json:"id"`
+	PlanCode            string    `json:"plan_code"`
+	PlanName            string    `json:"plan_name"`
+	PlanType            string    `json:"plan_type,omitempty"`
+	PurchaseEnabled     bool      `json:"purchase_enabled"`
+	Status              string    `json:"status"`
+	PriceCNY            string    `json:"price_cny"`
+	Points              string    `json:"points"`
+	BonusPoints         string    `json:"bonus_points"`
+	CreditExpiryEnabled bool      `json:"credit_expiry_enabled"`
+	DurationDays        int       `json:"duration_days"`
+	Currency            string    `json:"currency"`
+	SortOrder           int       `json:"sort_order,omitempty"`
+	Description         string    `json:"description,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 const (
@@ -133,33 +134,35 @@ type TransitionSubscriptionPlanRequest struct {
 }
 
 type CreateSubscriptionPlanRequest struct {
-	PlanCode        string `json:"plan_code"`
-	PlanName        string `json:"plan_name"`
-	PlanType        string `json:"plan_type"`
-	PurchaseEnabled bool   `json:"purchase_enabled"`
-	Status          string `json:"status"`
-	PriceCNY        string `json:"price_cny"`
-	Points          string `json:"points"`
-	BonusPoints     string `json:"bonus_points"`
-	DurationDays    int    `json:"duration_days"`
-	Currency        string `json:"currency"`
-	SortOrder       int    `json:"sort_order"`
-	Description     string `json:"description"`
+	PlanCode            string `json:"plan_code"`
+	PlanName            string `json:"plan_name"`
+	PlanType            string `json:"plan_type"`
+	PurchaseEnabled     bool   `json:"purchase_enabled"`
+	Status              string `json:"status"`
+	PriceCNY            string `json:"price_cny"`
+	Points              string `json:"points"`
+	BonusPoints         string `json:"bonus_points"`
+	CreditExpiryEnabled bool   `json:"credit_expiry_enabled"`
+	DurationDays        int    `json:"duration_days"`
+	Currency            string `json:"currency"`
+	SortOrder           int    `json:"sort_order"`
+	Description         string `json:"description"`
 }
 
 type UpdateSubscriptionPlanRequest struct {
-	PlanID          int64
-	PlanName        string `json:"plan_name"`
-	PlanType        string `json:"plan_type"`
-	PurchaseEnabled bool   `json:"purchase_enabled"`
-	Status          string `json:"status"`
-	PriceCNY        string `json:"price_cny"`
-	Points          string `json:"points"`
-	BonusPoints     string `json:"bonus_points"`
-	DurationDays    int    `json:"duration_days"`
-	Currency        string `json:"currency"`
-	SortOrder       int    `json:"sort_order"`
-	Description     string `json:"description"`
+	PlanID              int64
+	PlanName            string `json:"plan_name"`
+	PlanType            string `json:"plan_type"`
+	PurchaseEnabled     bool   `json:"purchase_enabled"`
+	Status              string `json:"status"`
+	PriceCNY            string `json:"price_cny"`
+	Points              string `json:"points"`
+	BonusPoints         string `json:"bonus_points"`
+	CreditExpiryEnabled bool   `json:"credit_expiry_enabled"`
+	DurationDays        int    `json:"duration_days"`
+	Currency            string `json:"currency"`
+	SortOrder           int    `json:"sort_order"`
+	Description         string `json:"description"`
 }
 
 type UserSubscriptionSummary struct {
@@ -196,6 +199,10 @@ type PaymentOrder struct {
 	AmountCNY           string         `json:"amount_cny"`
 	Points              string         `json:"points"`
 	BonusPoints         string         `json:"bonus_points"`
+	CreditExpiryEnabled bool           `json:"credit_expiry_enabled"`
+	CreditValidDays     *int           `json:"credit_valid_days,omitempty"`
+	CreditedAt          *time.Time     `json:"credited_at,omitempty"`
+	CreditExpiresAt     *time.Time     `json:"credit_expires_at,omitempty"`
 	TradeNo             string         `json:"trade_no,omitempty"`
 	RefundTradeNo       string         `json:"refund_trade_no,omitempty"`
 	ChannelRefundNo     string         `json:"channel_refund_no,omitempty"`
