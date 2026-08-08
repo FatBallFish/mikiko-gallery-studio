@@ -83,6 +83,7 @@ type BalanceBucket struct {
 	FrozenPoints    string     `json:"frozen_points,omitempty"`
 	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
 	ExpireWarning   bool       `json:"expire_warning"`
+	MixedExpiry     bool       `json:"mixed_expiry,omitempty"`
 	SourceType      string     `json:"source_type,omitempty"`
 	SortOrder       int        `json:"sort_order,omitempty"`
 }

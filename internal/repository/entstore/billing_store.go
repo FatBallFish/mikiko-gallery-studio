@@ -1777,6 +1777,7 @@ func formatBalanceBuckets(buckets map[string]*balanceBucketAccumulator, scale in
 			FrozenPoints:    bucket.Frozen.Round(scale).StringFixed(scale),
 			ExpiresAt:       bucket.ExpiresAt,
 			ExpireWarning:   balanceBucketExpireWarning(now, bucket.ExpiresAt, bucket.ReminderDays),
+			MixedExpiry:     bucket.MixedExpiry,
 			SourceType:      bucket.Source,
 			SortOrder:       grantPriority(bucket.Bucket),
 		}
@@ -2674,13 +2675,21 @@ func (s *BillingStore) paymentOrderRefundPlan(order *repoent.PaymentOrder, req d
 }
 
 func (s *BillingStore) refundableRechargeGrants(ctx context.Context, order *repoent.PaymentOrder) ([]*repoent.WalletGrant, error) {
-	grants, err := s.client.WalletGrant.Query().
+	query := s.client.WalletGrant.Query().
 		Where(
 			walletgrant.UserIDEQ(order.UserID),
-			walletgrant.GrantTypeIn("recharge", "subscription", "gift"),
 			walletgrant.SourceIDEQ(int64(order.ID)),
 			walletgrant.StatusEQ("active"),
-		).
+		)
+	if strings.TrimSpace(order.PurchaseType) == "custom_amount" || order.PlanID == 0 {
+		query.Where(walletgrant.GrantTypeEQ("recharge"), walletgrant.SourceTypeEQ("payment_order"))
+	} else {
+		query.Where(walletgrant.Or(
+			walletgrant.And(walletgrant.GrantTypeEQ("subscription"), walletgrant.SourceTypeEQ("payment_order")),
+			walletgrant.And(walletgrant.GrantTypeEQ("gift"), walletgrant.SourceTypeEQ("payment_order_bonus")),
+		))
+	}
+	grants, err := query.
 		Order(repoent.Asc(walletgrant.FieldID)).
 		All(ctx)
 	if err != nil {
@@ -2693,13 +2702,21 @@ func (s *BillingStore) refundableRechargeGrants(ctx context.Context, order *repo
 }
 
 func (s *BillingStore) refundableRechargeGrantsInTx(ctx context.Context, tx *repoent.Tx, order *repoent.PaymentOrder) ([]*repoent.WalletGrant, error) {
-	grants, err := tx.WalletGrant.Query().
+	query := tx.WalletGrant.Query().
 		Where(
 			walletgrant.UserIDEQ(order.UserID),
-			walletgrant.GrantTypeIn("recharge", "subscription", "gift"),
 			walletgrant.SourceIDEQ(int64(order.ID)),
 			walletgrant.StatusEQ("active"),
-		).
+		)
+	if strings.TrimSpace(order.PurchaseType) == "custom_amount" || order.PlanID == 0 {
+		query.Where(walletgrant.GrantTypeEQ("recharge"), walletgrant.SourceTypeEQ("payment_order"))
+	} else {
+		query.Where(walletgrant.Or(
+			walletgrant.And(walletgrant.GrantTypeEQ("subscription"), walletgrant.SourceTypeEQ("payment_order")),
+			walletgrant.And(walletgrant.GrantTypeEQ("gift"), walletgrant.SourceTypeEQ("payment_order_bonus")),
+		))
+	}
+	grants, err := query.
 		Order(repoent.Asc(walletgrant.FieldID)).
 		All(ctx)
 	if err != nil {

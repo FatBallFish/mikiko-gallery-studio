@@ -112,6 +112,7 @@ function ledgerExpiryText(expiresAt?: string | null) {
 }
 
 export function bucketExpiryText(bucket: BalanceBucket) {
+  if (bucket.mixed_expiry) return '包含不同有效期积分'
   if (!bucket.expires_at) return '长期有效'
   const formatted = ledgerDate(bucket.expires_at)
   return bucket.expire_warning ? `即将过期：${formatted}` : `有效期至 ${formatted}`

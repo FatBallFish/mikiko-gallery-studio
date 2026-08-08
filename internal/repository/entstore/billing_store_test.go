@@ -1624,6 +1624,92 @@ func TestBillingStoreBonusPackageRefundRejectsConsumedOrderGrant(t *testing.T) {
 	}
 }
 
+func TestBillingStoreRefundIgnoresRedeemGiftWithCollidingSourceID(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-refund-source-collision?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 296, PlanCode: "plus-monthly", Provider: "mock", PurchaseType: "plan",
+		VisibleMethod: "mock", ProviderType: "mock", PaymentDisplay: map[string]any{"type": "mock"},
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	availableCollision, err := client.WalletGrant.Create().
+		SetUserID(296).
+		SetGrantType("gift").
+		SetSourceType("redeem_code").
+		SetSourceID(order.ID).
+		SetStatus("active").
+		SetTotalPoints("40.00000").
+		SetAvailablePoints("40.00000").
+		SetFrozenPoints("0.00000").
+		SetConsumedPoints("0.00000").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create available collision grant: %v", err)
+	}
+	consumedCollision, err := client.WalletGrant.Create().
+		SetUserID(296).
+		SetGrantType("gift").
+		SetSourceType("redeem_code").
+		SetSourceID(order.ID).
+		SetStatus("active").
+		SetTotalPoints("10.00000").
+		SetAvailablePoints("9.00000").
+		SetFrozenPoints("0.00000").
+		SetConsumedPoints("1.00000").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create consumed collision grant: %v", err)
+	}
+	if _, err := store.CompleteRechargeOrder(ctx, domainbilling.CompleteRechargeOrderRequest{
+		UserID: 296, OrderID: order.ID, Provider: "mock", TradeNo: "trade-source-collision",
+	}); err != nil {
+		t.Fatalf("CompleteRechargeOrder: %v", err)
+	}
+	request := domainbilling.RefundPaymentOrderRequest{
+		UserID: 296, OrderID: order.ID, RefundTradeNo: "refund-source-collision",
+	}
+	if _, err := store.CheckRefundPaymentOrder(ctx, request); err != nil {
+		t.Fatalf("CheckRefundPaymentOrder must ignore redeem collision: %v", err)
+	}
+	if _, err := store.FreezeRefundPaymentOrder(ctx, request); err != nil {
+		t.Fatalf("FreezeRefundPaymentOrder must ignore redeem collision: %v", err)
+	}
+	assertCollisionGrant := func(id int, wantAvailable, wantConsumed string) {
+		t.Helper()
+		grant, err := client.WalletGrant.Get(ctx, id)
+		if err != nil {
+			t.Fatalf("load collision grant %d: %v", id, err)
+		}
+		if grant.Status != "active" || grant.AvailablePoints != wantAvailable || grant.FrozenPoints != "0.00000" || grant.ConsumedPoints != wantConsumed || grant.Metadata["refund_freeze_trade_no"] != nil {
+			t.Fatalf("refund lifecycle must not mutate redeem collision grant: %#v", grant)
+		}
+	}
+	assertCollisionGrant(availableCollision.ID, "40.00000", "0.00000")
+	assertCollisionGrant(consumedCollision.ID, "9.00000", "1.00000")
+	if _, err := store.ReleaseRefundPaymentOrder(ctx, request); err != nil {
+		t.Fatalf("ReleaseRefundPaymentOrder: %v", err)
+	}
+	refunded, err := store.RefundPaymentOrder(ctx, request)
+	if err != nil {
+		t.Fatalf("RefundPaymentOrder must ignore redeem collision: %v", err)
+	}
+	if refunded.Status != "refunded" || refunded.RefundedPoints != "330.00000" {
+		t.Fatalf("unexpected refunded order %#v", refunded)
+	}
+	assertCollisionGrant(availableCollision.ID, "40.00000", "0.00000")
+	assertCollisionGrant(consumedCollision.ID, "9.00000", "1.00000")
+}
+
 func TestBillingStoreNextExpiryAggregatesSameTimestampWithoutMislabelingMixedBucket(t *testing.T) {
 	ctx := t.Context()
 	client, store, completed := completedBonusPackageOrder(t, "next-expiry", 294)
@@ -1650,10 +1736,24 @@ func TestBillingStoreNextExpiryAggregatesSameTimestampWithoutMislabelingMixedBuc
 	if balance.NextExpiringGrant == nil || balance.NextExpiringGrant.AvailablePoints != "330.00000" || balance.NextExpiringGrant.GrantType != "mixed" || balance.NextExpiringGrant.GrantID != 0 || balance.NextExpiringGrant.ExpiresAt == nil || !balance.NextExpiringGrant.ExpiresAt.Equal(*completed.CreditExpiresAt) {
 		t.Fatalf("same-time purchased and gift grants must aggregate into next expiry, got %#v", balance.NextExpiringGrant)
 	}
+	foundMixedBucket := false
 	for _, bucket := range balance.Buckets {
-		if bucket.Bucket == "subscription" && bucket.ExpiresAt != nil {
-			t.Fatalf("mixed permanent/expiring subscription bucket must not label the whole bucket as expiring: %#v", bucket)
+		if bucket.Bucket == "subscription" {
+			foundMixedBucket = bucket.MixedExpiry
+			if bucket.ExpiresAt != nil || !bucket.MixedExpiry {
+				t.Fatalf("mixed permanent/expiring subscription bucket must expose mixed expiry without a whole-bucket date: %#v", bucket)
+			}
 		}
+	}
+	if !foundMixedBucket {
+		t.Fatalf("subscription bucket must expose mixed expiry: %#v", balance.Buckets)
+	}
+	payload, err := json.Marshal(balance)
+	if err != nil {
+		t.Fatalf("marshal balance: %v", err)
+	}
+	if !strings.Contains(string(payload), `"mixed_expiry":true`) {
+		t.Fatalf("balance JSON must project mixed expiry explicitly: %s", payload)
 	}
 }
 

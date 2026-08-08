@@ -271,6 +271,7 @@ export type BalanceBucket = {
   expires_at?: string | null
   next_expiring_at?: string | null
   expire_warning?: boolean
+  mixed_expiry?: boolean
   source_type?: 'signup' | 'payment_order' | 'redeem_code' | 'admin_adjust' | 'subscription' | string
   sort_order?: number
 }
