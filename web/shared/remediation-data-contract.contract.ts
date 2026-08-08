@@ -21,6 +21,14 @@ const project: Project = {
 }
 
 const plan = { credit_expiry_enabled: false } satisfies Partial<SubscriptionPlan>
+const permanentPlan = {
+  credit_expiry_enabled: false,
+  duration_days: null,
+} satisfies Pick<SubscriptionPlan, 'credit_expiry_enabled' | 'duration_days'>
+const permanentPlanWire = JSON.parse(JSON.stringify(permanentPlan)) as Record<string, unknown>
+if (permanentPlanWire.credit_expiry_enabled !== false || permanentPlanWire.duration_days !== null) {
+  throw new Error(`permanent plan expiry contract was not preserved: ${JSON.stringify(permanentPlanWire)}`)
+}
 const order = {
   credit_expiry_enabled: true,
   credit_valid_days: 30,
@@ -52,4 +60,4 @@ const cleanup = {
   updated_at: '2026-08-08T00:00:00Z',
 } satisfies ObjectDeletionJob
 
-void [plan, order, model, modelWrite, reference, task, result, cleanup]
+void [plan, permanentPlan, order, model, modelWrite, reference, task, result, cleanup]

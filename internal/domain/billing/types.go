@@ -105,7 +105,7 @@ type SubscriptionPlan struct {
 	Points              string    `json:"points"`
 	BonusPoints         string    `json:"bonus_points"`
 	CreditExpiryEnabled bool      `json:"credit_expiry_enabled"`
-	DurationDays        int       `json:"duration_days"`
+	DurationDays        *int      `json:"duration_days,omitempty"`
 	Currency            string    `json:"currency"`
 	SortOrder           int       `json:"sort_order,omitempty"`
 	Description         string    `json:"description,omitempty"`
@@ -143,7 +143,7 @@ type CreateSubscriptionPlanRequest struct {
 	Points              string `json:"points"`
 	BonusPoints         string `json:"bonus_points"`
 	CreditExpiryEnabled bool   `json:"credit_expiry_enabled"`
-	DurationDays        int    `json:"duration_days"`
+	DurationDays        *int   `json:"duration_days,omitempty"`
 	Currency            string `json:"currency"`
 	SortOrder           int    `json:"sort_order"`
 	Description         string `json:"description"`
@@ -159,7 +159,7 @@ type UpdateSubscriptionPlanRequest struct {
 	Points              string `json:"points"`
 	BonusPoints         string `json:"bonus_points"`
 	CreditExpiryEnabled bool   `json:"credit_expiry_enabled"`
-	DurationDays        int    `json:"duration_days"`
+	DurationDays        *int   `json:"duration_days,omitempty"`
 	Currency            string `json:"currency"`
 	SortOrder           int    `json:"sort_order"`
 	Description         string `json:"description"`

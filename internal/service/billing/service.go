@@ -427,8 +427,11 @@ func normalizePlanWrite(req domainbilling.CreateSubscriptionPlanRequest) (domain
 	req.PriceCNY = price
 	req.Points = points
 	req.BonusPoints = bonus
-	if req.DurationDays <= 0 {
-		req.DurationDays = 30
+	if !req.CreditExpiryEnabled {
+		req.DurationDays = nil
+	} else if req.DurationDays == nil || *req.DurationDays <= 0 {
+		days := 30
+		req.DurationDays = &days
 	}
 	req.Currency = strings.ToUpper(strings.TrimSpace(req.Currency))
 	if req.Currency == "" {

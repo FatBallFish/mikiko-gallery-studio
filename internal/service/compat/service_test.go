@@ -455,7 +455,7 @@ func newRouteModelCompatHandler(t *testing.T, cfg config.Config, upstreamURL str
 	}
 	accountModel, err := modelAdminSvc.CreateModelAccountModel(context.Background(), domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "openrouter/vision", DisplayName: "Route image model",
-		TaskTypes: []string{"text_to_image"}, BaseResolution: []string{"1k"}, Quality: []string{"auto"}, CostPerImage: "0.00000", Currency: "USD", Enabled: true,
+		TaskTypes: []string{"text_to_image"}, BaseResolution: []string{"1k"}, Quality: []string{"auto"}, MaxImageCount: 1, CostPerImage: "0.00000", Currency: "USD", Enabled: true,
 	})
 	if err != nil {
 		t.Fatalf("CreateModelAccountModel: %v", err)

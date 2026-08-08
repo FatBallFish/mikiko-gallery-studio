@@ -555,9 +555,6 @@ func normalizeProviderModelWrite(req domainmodeladmin.ProviderModelWriteRequest)
 	if req.Currency == "" {
 		req.Currency = "CNY"
 	}
-	if req.MaxImageCount <= 0 {
-		req.MaxImageCount = 1
-	}
 	if req.MaxReferenceImageCount < 0 {
 		return domainmodeladmin.ProviderModelWriteRequest{}, errs.BadRequest("max_reference_image_count must be non-negative")
 	}

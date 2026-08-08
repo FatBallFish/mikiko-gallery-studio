@@ -2,6 +2,7 @@ package modeladmin_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
@@ -58,6 +59,29 @@ func TestServiceValidatesProviderAndRouteCRUD(t *testing.T) {
 	}
 	if page.Total != 1 || len(page.Items) != 1 {
 		t.Fatalf("unexpected route page %#v", page)
+	}
+}
+
+func TestModelWriteBoundariesRejectInvalidUpstreamMaxImageCount(t *testing.T) {
+	ctx := context.Background()
+	svc := modeladmin.NewServiceWithStore(nil)
+	account, err := svc.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name: "max-n-account", AdapterType: "openrouter", AuthType: "api_key", BaseURL: "https://example.com", Status: "disabled",
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccount: %v", err)
+	}
+	for _, count := range []int{0, 11} {
+		if _, err := svc.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+			AccountID: account.ID, ModelCode: "model", TaskTypes: []string{"text_to_image"}, MaxImageCount: count,
+		}); err == nil || !strings.Contains(err.Error(), "max_image_count") {
+			t.Fatalf("CreateModelAccountModel max_image_count=%d error = %v, want max_image_count validation", count, err)
+		}
+		if _, err := svc.CreateProviderModel(ctx, domainmodeladmin.ProviderModelWriteRequest{
+			ProviderCode: "openrouter", ModelCode: "provider-model", MaxImageCount: count,
+		}); err == nil || !strings.Contains(err.Error(), "max_image_count") {
+			t.Fatalf("CreateProviderModel max_image_count=%d error = %v, want max_image_count validation", count, err)
+		}
 	}
 }
 

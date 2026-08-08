@@ -3,7 +3,7 @@ package modelhub
 import "testing"
 
 func TestNormalizeCapabilityEnforcesUpstreamMaxImageCountRange(t *testing.T) {
-	for _, count := range []int{-1, 11, 64} {
+	for _, count := range []int{-1, 0, 11, 64} {
 		if _, err := NormalizeCapability(ImageModelCapability{MaxImageCount: count}); err == nil {
 			t.Fatalf("NormalizeCapability accepted max_image_count=%d, want range error", count)
 		}

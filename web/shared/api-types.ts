@@ -323,7 +323,7 @@ export type SubscriptionPlan = {
   points: string
   bonus_points: string
   credit_expiry_enabled?: boolean
-  duration_days: number
+  duration_days?: number | null
   currency: string
   description?: string
   created_at: string

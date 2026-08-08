@@ -268,21 +268,22 @@ func (s *MemoryStore) CreatePlan(_ context.Context, req domainbilling.CreateSubs
 	}
 	now := time.Now().UTC()
 	plan := domainbilling.SubscriptionPlan{
-		ID:              s.nextPlanID,
-		PlanCode:        code,
-		PlanName:        strings.TrimSpace(req.PlanName),
-		PlanType:        normalizePlanType(req.PlanType),
-		PurchaseEnabled: req.PurchaseEnabled,
-		Status:          normalizePlanStatus(req.Status),
-		PriceCNY:        strings.TrimSpace(req.PriceCNY),
-		Points:          strings.TrimSpace(req.Points),
-		BonusPoints:     strings.TrimSpace(req.BonusPoints),
-		DurationDays:    normalizeDurationDays(req.DurationDays),
-		Currency:        normalizeCurrency(req.Currency),
-		SortOrder:       req.SortOrder,
-		Description:     strings.TrimSpace(req.Description),
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                  s.nextPlanID,
+		PlanCode:            code,
+		PlanName:            strings.TrimSpace(req.PlanName),
+		PlanType:            normalizePlanType(req.PlanType),
+		PurchaseEnabled:     req.PurchaseEnabled,
+		Status:              normalizePlanStatus(req.Status),
+		PriceCNY:            strings.TrimSpace(req.PriceCNY),
+		Points:              strings.TrimSpace(req.Points),
+		BonusPoints:         strings.TrimSpace(req.BonusPoints),
+		CreditExpiryEnabled: req.CreditExpiryEnabled,
+		DurationDays:        effectivePlanDurationDays(req.CreditExpiryEnabled, req.DurationDays),
+		Currency:            normalizeCurrency(req.Currency),
+		SortOrder:           req.SortOrder,
+		Description:         strings.TrimSpace(req.Description),
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 	s.nextPlanID++
 	s.plans = append(s.plans, plan)
@@ -304,7 +305,8 @@ func (s *MemoryStore) UpdatePlan(_ context.Context, req domainbilling.UpdateSubs
 		item.PriceCNY = strings.TrimSpace(req.PriceCNY)
 		item.Points = strings.TrimSpace(req.Points)
 		item.BonusPoints = strings.TrimSpace(req.BonusPoints)
-		item.DurationDays = normalizeDurationDays(req.DurationDays)
+		item.CreditExpiryEnabled = req.CreditExpiryEnabled
+		item.DurationDays = effectivePlanDurationDays(req.CreditExpiryEnabled, req.DurationDays)
 		item.Currency = normalizeCurrency(req.Currency)
 		item.SortOrder = req.SortOrder
 		item.Description = strings.TrimSpace(req.Description)
@@ -1724,8 +1726,8 @@ func cloneMap(value map[string]any) map[string]any {
 func defaultPlans() []domainbilling.SubscriptionPlan {
 	now := time.Now().UTC()
 	return []domainbilling.SubscriptionPlan{
-		{ID: 1, PlanCode: "basic-monthly", PlanName: "Basic Monthly", PlanType: "points_package", PurchaseEnabled: true, Status: "active", PriceCNY: "19.90000", Points: "100.00000", BonusPoints: "0.00000", DurationDays: 30, Currency: "CNY", SortOrder: 1, CreatedAt: now, UpdatedAt: now},
-		{ID: 2, PlanCode: "plus-monthly", PlanName: "Plus Monthly", PlanType: "points_package", PurchaseEnabled: true, Status: "active", PriceCNY: "49.90000", Points: "300.00000", BonusPoints: "30.00000", DurationDays: 30, Currency: "CNY", SortOrder: 2, CreatedAt: now, UpdatedAt: now},
+		{ID: 1, PlanCode: "basic-monthly", PlanName: "Basic Monthly", PlanType: "points_package", PurchaseEnabled: true, Status: "active", PriceCNY: "19.90000", Points: "100.00000", BonusPoints: "0.00000", CreditExpiryEnabled: true, DurationDays: intPointer(30), Currency: "CNY", SortOrder: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: 2, PlanCode: "plus-monthly", PlanName: "Plus Monthly", PlanType: "points_package", PurchaseEnabled: true, Status: "active", PriceCNY: "49.90000", Points: "300.00000", BonusPoints: "30.00000", CreditExpiryEnabled: true, DurationDays: intPointer(30), Currency: "CNY", SortOrder: 2, CreatedAt: now, UpdatedAt: now},
 	}
 }
 
@@ -1745,12 +1747,17 @@ func normalizePlanStatus(value string) string {
 	return "active"
 }
 
-func normalizeDurationDays(value int) int {
-	if value > 0 {
-		return value
+func effectivePlanDurationDays(expiryEnabled bool, value *int) *int {
+	if !expiryEnabled {
+		return nil
 	}
-	return 30
+	if value != nil && *value > 0 {
+		return intPointer(*value)
+	}
+	return intPointer(30)
 }
+
+func intPointer(value int) *int { return &value }
 
 func normalizeCurrency(value string) string {
 	value = strings.ToUpper(strings.TrimSpace(value))

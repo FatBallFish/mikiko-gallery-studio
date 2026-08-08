@@ -178,10 +178,11 @@ func TestPlanStateTransitionsAreSafeAndIdempotent(t *testing.T) {
 		t.Fatalf("restored plan must require explicit enable: %#v", restored)
 	}
 
+	durationDays := 30
 	subscription, err := svc.CreatePlan(t.Context(), domainbilling.CreateSubscriptionPlanRequest{
 		PlanCode: "subscription-placeholder", PlanName: "Subscription", PlanType: "subscription",
 		PurchaseEnabled: false, Status: "disabled", PriceCNY: "99.00000", Points: "500.00000",
-		Currency: "CNY", DurationDays: 30,
+		Currency: "CNY", DurationDays: &durationDays,
 	})
 	if err != nil {
 		t.Fatalf("CreatePlan subscription: %v", err)

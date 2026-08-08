@@ -171,10 +171,6 @@ func (s *ModelAdminStore) GetModelAccountModel(ctx context.Context, accountModel
 }
 
 func (s *ModelAdminStore) CreateModelAccountModel(ctx context.Context, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error) {
-	maxImageCount := req.MaxImageCount
-	if maxImageCount == 0 {
-		maxImageCount = 1
-	}
 	entity, err := s.client.ModelAccountModel.Create().
 		SetAccountID(req.AccountID).
 		SetModelCode(req.ModelCode).
@@ -183,7 +179,7 @@ func (s *ModelAdminStore) CreateModelAccountModel(ctx context.Context, req domai
 		SetBaseResolution(req.BaseResolution).
 		SetQuality(req.Quality).
 		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
-		SetMaxImageCount(maxImageCount).
+		SetMaxImageCount(req.MaxImageCount).
 		SetSizeModes(req.SizeModes).
 		SetSupportedRatios(req.SupportedRatios).
 		SetSupportedPixelSizes(req.SupportedPixelSizes).
@@ -207,10 +203,6 @@ func (s *ModelAdminStore) CreateModelAccountModel(ctx context.Context, req domai
 }
 
 func (s *ModelAdminStore) UpdateModelAccountModel(ctx context.Context, accountModelID int64, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error) {
-	maxImageCount := req.MaxImageCount
-	if maxImageCount == 0 {
-		maxImageCount = 1
-	}
 	entity, err := s.client.ModelAccountModel.UpdateOneID(int(accountModelID)).
 		SetAccountID(req.AccountID).
 		SetModelCode(req.ModelCode).
@@ -219,7 +211,7 @@ func (s *ModelAdminStore) UpdateModelAccountModel(ctx context.Context, accountMo
 		SetBaseResolution(req.BaseResolution).
 		SetQuality(req.Quality).
 		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
-		SetMaxImageCount(maxImageCount).
+		SetMaxImageCount(req.MaxImageCount).
 		SetSizeModes(req.SizeModes).
 		SetSupportedRatios(req.SupportedRatios).
 		SetSupportedPixelSizes(req.SupportedPixelSizes).

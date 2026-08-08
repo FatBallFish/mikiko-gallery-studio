@@ -42,7 +42,7 @@ func TestCandidateSupportsCustomCompressionOnlyWhenDeclared(t *testing.T) {
 }
 
 func TestNormalizeCapabilityPreservesCompressionSupport(t *testing.T) {
-	capability, err := NormalizeCapability(ImageModelCapability{SupportsOutputCompression: true})
+	capability, err := NormalizeCapability(ImageModelCapability{MaxImageCount: 1, SupportsOutputCompression: true})
 	if err != nil {
 		t.Fatalf("NormalizeCapability: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestCandidateSupportsCustomPixelSizeOnlyWhenDeclared(t *testing.T) {
 		t.Fatal("custom-size candidate should accept a legal normalized pixel size")
 	}
 
-	capability, err := NormalizeCapability(ImageModelCapability{SizeModes: []string{SizeModePixel}, SupportsCustomSize: true})
+	capability, err := NormalizeCapability(ImageModelCapability{MaxImageCount: 1, SizeModes: []string{SizeModePixel}, SupportsCustomSize: true})
 	if err != nil {
 		t.Fatalf("NormalizeCapability custom size: %v", err)
 	}

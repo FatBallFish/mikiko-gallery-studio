@@ -116,7 +116,7 @@ func TestModelAdminStoreMapsAccountModelCostToRuntimeOutputCost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create account: %v", err)
 	}
-	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{AccountID: account.ID, ModelCode: "paid/image", DisplayName: "Paid Image", TaskTypes: []string{"text_to_image"}, Quality: []string{"auto"}, CostPerImage: "0.12345", Currency: "USD", Enabled: true})
+	model, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{AccountID: account.ID, ModelCode: "paid/image", DisplayName: "Paid Image", TaskTypes: []string{"text_to_image"}, Quality: []string{"auto"}, MaxImageCount: 1, CostPerImage: "0.12345", Currency: "USD", Enabled: true})
 	if err != nil {
 		t.Fatalf("create account model: %v", err)
 	}

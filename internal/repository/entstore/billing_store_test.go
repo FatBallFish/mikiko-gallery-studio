@@ -40,10 +40,11 @@ func TestBillingStorePlanListAndStateTransitions(t *testing.T) {
 	}
 
 	store := NewBillingStore(client, 5)
+	durationDays := 30
 	disabled, err := store.CreatePlan(ctx, domainbilling.CreateSubscriptionPlanRequest{
 		PlanCode: "disabled-plan", PlanName: "Disabled", PlanType: "points_package", Status: "disabled",
 		PurchaseEnabled: false, PriceCNY: "10.00000", Points: "20.00000", BonusPoints: "0.00000",
-		DurationDays: 30, Currency: "CNY",
+		DurationDays: &durationDays, Currency: "CNY",
 	})
 	if err != nil {
 		t.Fatalf("CreatePlan disabled: %v", err)
@@ -51,7 +52,7 @@ func TestBillingStorePlanListAndStateTransitions(t *testing.T) {
 	archived, err := store.CreatePlan(ctx, domainbilling.CreateSubscriptionPlanRequest{
 		PlanCode: "archived-plan", PlanName: "Archived", PlanType: "points_package", Status: "archived",
 		PurchaseEnabled: false, PriceCNY: "12.00000", Points: "24.00000", BonusPoints: "0.00000",
-		DurationDays: 30, Currency: "CNY",
+		DurationDays: &durationDays, Currency: "CNY",
 	})
 	if err != nil {
 		t.Fatalf("CreatePlan archived: %v", err)

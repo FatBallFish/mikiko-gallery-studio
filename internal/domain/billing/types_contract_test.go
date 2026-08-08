@@ -31,6 +31,29 @@ func TestPaymentOrderNullableCreditSnapshotsAreOmittedWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestPermanentFixedPackageOmitsDurationDays(t *testing.T) {
+	planPayload := marshalJSONObject(t, SubscriptionPlan{CreditExpiryEnabled: false, DurationDays: nil})
+	if _, ok := planPayload["duration_days"]; ok {
+		t.Fatalf("permanent SubscriptionPlan must omit duration_days: %#v", planPayload)
+	}
+	requestPayload := marshalJSONObject(t, CreateSubscriptionPlanRequest{CreditExpiryEnabled: false, DurationDays: nil})
+	if _, ok := requestPayload["duration_days"]; ok {
+		t.Fatalf("permanent create request must omit duration_days: %#v", requestPayload)
+	}
+	updatePayload := marshalJSONObject(t, UpdateSubscriptionPlanRequest{CreditExpiryEnabled: false, DurationDays: nil})
+	if _, ok := updatePayload["duration_days"]; ok {
+		t.Fatalf("permanent update request must omit duration_days: %#v", updatePayload)
+	}
+}
+
+func TestExpiringFixedPackageIncludesDurationDays(t *testing.T) {
+	days := 30
+	payload := marshalJSONObject(t, SubscriptionPlan{CreditExpiryEnabled: true, DurationDays: &days})
+	if payload["duration_days"] != float64(days) {
+		t.Fatalf("expiring SubscriptionPlan duration_days = %#v, want %d", payload["duration_days"], days)
+	}
+}
+
 func assertJSONKeys(t *testing.T, value any, keys ...string) {
 	t.Helper()
 	payload := marshalJSONObject(t, value)

@@ -99,7 +99,8 @@ func (s *BillingStore) CreatePlan(ctx context.Context, req domainbilling.CreateS
 		SetPriceCny(strings.TrimSpace(req.PriceCNY)).
 		SetPoints(strings.TrimSpace(req.Points)).
 		SetBonusPoints(strings.TrimSpace(req.BonusPoints)).
-		SetDurationDays(req.DurationDays).
+		SetCreditExpiryEnabled(req.CreditExpiryEnabled).
+		SetNillableDurationDays(req.DurationDays).
 		SetCurrency(strings.TrimSpace(req.Currency)).
 		SetDescription(strings.TrimSpace(req.Description)).
 		SetSortOrder(req.SortOrder).
@@ -131,7 +132,8 @@ func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateS
 		SetPriceCny(strings.TrimSpace(req.PriceCNY)).
 		SetPoints(strings.TrimSpace(req.Points)).
 		SetBonusPoints(strings.TrimSpace(req.BonusPoints)).
-		SetDurationDays(req.DurationDays).
+		SetCreditExpiryEnabled(req.CreditExpiryEnabled).
+		SetNillableDurationDays(req.DurationDays).
 		SetCurrency(strings.TrimSpace(req.Currency)).
 		SetDescription(strings.TrimSpace(req.Description)).
 		SetSortOrder(req.SortOrder).
@@ -1991,8 +1993,8 @@ func (s *BillingStore) ensureDefaultPlans(ctx context.Context) error {
 	}
 	now := time.Now().UTC()
 	defaults := []domainbilling.SubscriptionPlan{
-		{PlanCode: "basic-monthly", PlanName: "Basic Monthly", Status: "active", PriceCNY: "19.90000", Points: "100.00000", BonusPoints: "0.00000", DurationDays: 30, Currency: "CNY", PlanType: "points_package", PurchaseEnabled: true, SortOrder: 1, CreatedAt: now, UpdatedAt: now},
-		{PlanCode: "plus-monthly", PlanName: "Plus Monthly", Status: "active", PriceCNY: "49.90000", Points: "300.00000", BonusPoints: "30.00000", DurationDays: 30, Currency: "CNY", PlanType: "points_package", PurchaseEnabled: true, SortOrder: 2, CreatedAt: now, UpdatedAt: now},
+		{PlanCode: "basic-monthly", PlanName: "Basic Monthly", Status: "active", PriceCNY: "19.90000", Points: "100.00000", BonusPoints: "0.00000", CreditExpiryEnabled: true, DurationDays: nullablePlanDurationDays(true, 30), Currency: "CNY", PlanType: "points_package", PurchaseEnabled: true, SortOrder: 1, CreatedAt: now, UpdatedAt: now},
+		{PlanCode: "plus-monthly", PlanName: "Plus Monthly", Status: "active", PriceCNY: "49.90000", Points: "300.00000", BonusPoints: "30.00000", CreditExpiryEnabled: true, DurationDays: nullablePlanDurationDays(true, 30), Currency: "CNY", PlanType: "points_package", PurchaseEnabled: true, SortOrder: 2, CreatedAt: now, UpdatedAt: now},
 	}
 	for index, item := range defaults {
 		sortOrder := item.SortOrder
@@ -2008,7 +2010,8 @@ func (s *BillingStore) ensureDefaultPlans(ctx context.Context) error {
 			SetPriceCny(item.PriceCNY).
 			SetPoints(item.Points).
 			SetBonusPoints(item.BonusPoints).
-			SetDurationDays(item.DurationDays).
+			SetCreditExpiryEnabled(item.CreditExpiryEnabled).
+			SetNillableDurationDays(item.DurationDays).
 			SetCurrency(item.Currency).
 			SetSortOrder(sortOrder).
 			SetMetadata(subscriptionPlanMetadata(item.PlanType, item.PurchaseEnabled)).
@@ -2455,22 +2458,30 @@ func (s *BillingStore) mapActiveSubscription(ctx context.Context, subscription *
 
 func mapSubscriptionPlan(plan *repoent.SubscriptionPlan) domainbilling.SubscriptionPlan {
 	return domainbilling.SubscriptionPlan{
-		ID:              int64(plan.ID),
-		PlanCode:        plan.PlanCode,
-		PlanName:        plan.PlanName,
-		PlanType:        subscriptionPlanType(plan.PlanType, plan.Metadata),
-		PurchaseEnabled: subscriptionPlanPurchaseEnabled(plan.PurchaseEnabled, plan.Metadata),
-		Status:          plan.Status,
-		PriceCNY:        plan.PriceCny,
-		Points:          plan.Points,
-		BonusPoints:     plan.BonusPoints,
-		DurationDays:    plan.DurationDays,
-		Currency:        plan.Currency,
-		SortOrder:       plan.SortOrder,
-		Description:     plan.Description,
-		CreatedAt:       plan.CreatedAt,
-		UpdatedAt:       plan.UpdatedAt,
+		ID:                  int64(plan.ID),
+		PlanCode:            plan.PlanCode,
+		PlanName:            plan.PlanName,
+		PlanType:            subscriptionPlanType(plan.PlanType, plan.Metadata),
+		PurchaseEnabled:     subscriptionPlanPurchaseEnabled(plan.PurchaseEnabled, plan.Metadata),
+		Status:              plan.Status,
+		PriceCNY:            plan.PriceCny,
+		Points:              plan.Points,
+		BonusPoints:         plan.BonusPoints,
+		CreditExpiryEnabled: plan.CreditExpiryEnabled,
+		DurationDays:        nullablePlanDurationDays(plan.CreditExpiryEnabled, plan.DurationDays),
+		Currency:            plan.Currency,
+		SortOrder:           plan.SortOrder,
+		Description:         plan.Description,
+		CreatedAt:           plan.CreatedAt,
+		UpdatedAt:           plan.UpdatedAt,
 	}
+}
+
+func nullablePlanDurationDays(expiryEnabled bool, days int) *int {
+	if !expiryEnabled {
+		return nil
+	}
+	return &days
 }
 
 func subscriptionPlanType(value string, metadata map[string]any) string {

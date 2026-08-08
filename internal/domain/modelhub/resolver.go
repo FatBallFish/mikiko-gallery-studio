@@ -824,9 +824,13 @@ func CandidateSupportsRequest(candidate ProviderCandidate, req ResolveRequest, r
 }
 
 func normalizeProviderCandidate(candidate ProviderCandidate) ProviderCandidate {
+	maxImageCount := candidate.MaxImageCount
+	if maxImageCount == 0 {
+		maxImageCount = 1
+	}
 	capability, err := NormalizeCapability(ImageModelCapability{
 		MaxReferenceImageCount:    candidate.MaxReferenceImageCount,
-		MaxImageCount:             candidate.MaxImageCount,
+		MaxImageCount:             maxImageCount,
 		BaseResolution:            candidate.SupportedBaseResolution,
 		Quality:                   candidate.Quality,
 		SizeModes:                 candidate.SizeModes,
