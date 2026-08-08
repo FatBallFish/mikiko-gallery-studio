@@ -7615,13 +7615,14 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		return
 	}
 	sizeMode, baseResolution, requestedSize := compatGenerationSizeFields(req.Size)
+	quality := compatGenerationQuality(req.Quality)
 	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeTextToImage),
 		AbstractModel:             modelSelection.AbstractModel,
 		RouteModelCode:            modelSelection.RouteModelCode,
 		SizeMode:                  sizeMode,
 		BaseResolution:            baseResolution,
-		Quality:                   compatQuality(req.Quality),
+		Quality:                   quality,
 		OutputFormat:              req.OutputFormat,
 		Background:                req.Background,
 		OutputCompression:         req.OutputCompression,
@@ -7655,7 +7656,7 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		BaseResolution:      baseResolution,
 		Size:                requestedSize,
 		N:                   req.N,
-		Quality:             req.Quality,
+		Quality:             quality,
 		OutputFormat:        req.OutputFormat,
 		Background:          req.Background,
 		OutputCompression:   req.OutputCompression,
@@ -7677,6 +7678,14 @@ func compatGenerationSizeFields(rawSize string) (sizeMode, baseResolution, reque
 		return domainmodelhub.SizeModeAuto, "", ""
 	}
 	return "", "auto", size
+}
+
+func compatGenerationQuality(value string) string {
+	quality := strings.ToLower(strings.TrimSpace(value))
+	if quality == "" {
+		return "auto"
+	}
+	return quality
 }
 
 func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {

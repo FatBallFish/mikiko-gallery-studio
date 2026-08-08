@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -184,6 +185,38 @@ func TestOpenAICompatGenerationMapsCurrentGPTImageFieldsToProvider(t *testing.T)
 				if _, exists := payload[unsupported]; exists {
 					t.Fatalf("payload must omit %q: %#v", unsupported, payload)
 				}
+			}
+		})
+	}
+}
+
+func TestOpenAICompatGenerationPreservesDynamicRouteQuality(t *testing.T) {
+	for _, quality := range []string{"low", "medium", "high"} {
+		t.Run(quality, func(t *testing.T) {
+			captured := make(chan map[string]any, 1)
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatalf("decode upstream payload: %v", err)
+				}
+				captured <- payload
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"created":1770000045,"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="}]}`)
+			}))
+			defer upstream.Close()
+			handler, apiSecret := newGPTImageCompatHandler(t, upstream.URL)
+
+			body := fmt.Sprintf(`{"model":"basic","prompt":"quality contract","quality":%q,"n":1}`, quality)
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(body))
+			req.Header.Set("Authorization", "Bearer "+apiSecret)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			if got := (<-captured)["quality"]; got != quality {
+				t.Fatalf("provider quality = %#v, want %q", got, quality)
 			}
 		})
 	}
