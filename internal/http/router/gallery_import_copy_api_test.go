@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 
+	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
@@ -20,7 +22,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
-func TestGalleryImportRouteUsesStorageCopyWithoutReadingImageBytes(t *testing.T) {
+func TestGalleryImportRouteCreatesAliasWithoutStorageIO(t *testing.T) {
 	content := tinyPNG(t)
 	hash := sha256.Sum256(content)
 	backend := &galleryImportCopyBackend{objects: map[string][]byte{"generated/source.png": content}}
@@ -54,8 +56,20 @@ func TestGalleryImportRouteUsesStorageCopyWithoutReadingImageBytes(t *testing.T)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("import status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if backend.copyCalls.Load() != 1 || backend.getCalls.Load() != 0 || backend.putCalls.Load() != 0 {
-		t.Fatalf("route must copy without reading bytes: copy=%d get=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.putCalls.Load())
+	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.putCalls.Load() != 0 {
+		t.Fatalf("route must create alias without storage IO: copy=%d get=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.putCalls.Load())
+	}
+	var response struct {
+		Data struct {
+			Items []domainassets.ReferenceAsset `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || len(response.Data.Items) != 1 {
+		t.Fatalf("decode alias response: %v body=%s", err, rec.Body.String())
+	}
+	asset := response.Data.Items[0]
+	if asset.SourceImageResultID != result.ID || asset.OwnsObject || asset.ObjectKey != result.ObjectKey {
+		t.Fatalf("alias response=%#v", asset)
 	}
 }
 

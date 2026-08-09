@@ -96,12 +96,51 @@ components:
           type: integer
         height:
           type: integer
+        source_image_result_id:
+          type: string
+          format: uuid
+          nullable: true
+        owns_object:
+          type: boolean
+        generation_snapshot:
+          $ref: '#/components/schemas/ReferenceGenerationSnapshot'
         preview_expires_at:
           type: string
           format: date-time
         download_expires_at:
           type: string
           format: date-time
+    ReferenceGenerationSnapshot:
+      type: object
+      properties:
+        task_type:
+          type: string
+        abstract_model:
+          type: string
+        route_model_code:
+          type: string
+        capability_version:
+          type: string
+        size_mode:
+          type: string
+        requested_size:
+          type: string
+        base_resolution:
+          type: string
+        aspect_ratio:
+          type: string
+        quality:
+          type: string
+        background:
+          type: string
+        output_format:
+          type: string
+        output_compression:
+          type: integer
+        moderation:
+          type: string
+        image_count:
+          type: integer
     ImageResult:
       type: object
       properties:

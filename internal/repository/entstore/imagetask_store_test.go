@@ -34,6 +34,76 @@ func TestTaskProjectOwnershipCheckUsesCompatibleRowLock(t *testing.T) {
 	}
 }
 
+func TestCleanupClaimUsesSkipLockedOnPostgres(t *testing.T) {
+	table := entsql.Table("object_deletion_jobs")
+	selector := entsql.Dialect(dialect.Postgres).Select().From(table)
+	lockCleanupJobForClaim()(selector)
+	query, _ := selector.Query()
+	if !strings.Contains(query, "FOR UPDATE SKIP LOCKED") {
+		t.Fatalf("cleanup claim query=%q", query)
+	}
+}
+
+func TestDeleteImageResultSoftDeletesAndEnqueuesCleanupAtomically(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-delete-cleanup?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	task, err := client.ImageTask.Create().SetUserID(81).SetTaskType("text_to_image").SetPrompt("cleanup").SetAbstractModel("plus").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(81).SetStorageDriver("local").SetObjectKey("generated/delete-me.png").SetMimeType("image/png").SetSha256("delete-hash").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := NewImageTaskStore(client).DeleteImageResult(ctx, 81, image.ID.String())
+	if err != nil || deleted.ID != image.ID.String() {
+		t.Fatalf("deleted=%#v err=%v", deleted, err)
+	}
+	row, err := client.ImageResult.Query().Where(imageresult.IDEQ(image.ID)).Only(ctx)
+	if err != nil || row.DeletedAt == nil {
+		t.Fatalf("row=%#v err=%v", row, err)
+	}
+	job, err := client.ObjectDeletionJob.Query().Only(ctx)
+	if err != nil || job.ObjectKey != image.ObjectKey || job.State != "pending" {
+		t.Fatalf("job=%#v err=%v", job, err)
+	}
+}
+
+func TestDeleteTaskEnqueuesEveryGeneratedObject(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-task-delete-cleanup?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	task, err := client.ImageTask.Create().SetUserID(82).SetTaskType("text_to_image").SetPrompt("cleanup all").SetAbstractModel("plus").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range 2 {
+		if _, err := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(82).SetStorageDriver("local").SetObjectKey(fmt.Sprintf("generated/task-%d.png", index)).SetMimeType("image/png").SetSha256(fmt.Sprintf("hash-%d", index)).Save(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := NewImageTaskStore(client).DeleteByID(ctx, 82, task.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := client.ObjectDeletionJob.Query().Count(ctx); err != nil || count != 2 {
+		t.Fatalf("jobs=%d err=%v", count, err)
+	}
+}
+
 func TestImageTaskStoreRecentProjectQueryFiltersBeforeLimit(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, fmt.Sprintf("file:imagetask-project-recent-%s?mode=memory&cache=shared&_fk=1", uuid.NewString()))

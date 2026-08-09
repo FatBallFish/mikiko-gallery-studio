@@ -1916,22 +1916,6 @@ func (s *Service) RetryTask(ctx context.Context, userID int64, taskID string, re
 }
 
 func (s *Service) DeleteImageResult(ctx context.Context, userID int64, imageID string) error {
-	result, err := s.store.GetImageResultByID(ctx, userID, imageID)
-	if err != nil {
-		if errors.Is(err, repoerr.ErrNotFound) {
-			return errs.New(404, errs.CodeNotFound, "image not found")
-		}
-		return errs.Internal("failed to load image result")
-	}
-	if result.StorageDriver != "remote" && strings.TrimSpace(result.ObjectKey) != "" {
-		backend, routeErr := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
-		if routeErr != nil {
-			return errs.Internal("failed to resolve image storage")
-		}
-		if err := backend.Backend.Delete(ctx, result.ObjectKey); err != nil {
-			return errs.Internal("failed to delete image file")
-		}
-	}
 	if _, err := s.store.DeleteImageResult(ctx, userID, imageID); err != nil {
 		if errors.Is(err, repoerr.ErrNotFound) {
 			return errs.New(404, errs.CodeNotFound, "image not found")

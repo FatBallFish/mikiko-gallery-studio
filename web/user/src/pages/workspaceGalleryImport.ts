@@ -1,4 +1,5 @@
-import type { GalleryImage } from '../../../shared/api-types'
+import type { Capability, GalleryImage, ReferenceAsset } from '../../../shared/api-types'
+import { normalizeWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot } from './workspaceCreationDraft'
 
 export type GalleryImportFilter = {
   query: string
@@ -54,6 +55,16 @@ export function mergeReferenceAssets<T extends { id: string }>(current: T[], inc
     byId.set(item.id, item)
   }
   return Array.from(byId.values()).slice(0, Math.max(0, limit))
+}
+
+export function firstGalleryReferenceReuse(currentReferenceCount: number, imported: ReferenceAsset[], capability: Capability) {
+  if (currentReferenceCount !== 0 || !imported.length || !imported[0].generation_snapshot) return null
+  const snapshot = imported[0].generation_snapshot
+  return normalizeWorkspaceCreationDraft(workspaceCreationDraftFromSnapshot({
+    ...snapshot,
+    requested_output_image_count: snapshot.image_count,
+    reference_asset_ids: [imported[0].id],
+  }), capability)
 }
 
 function uniqueValues(values: string[]) {

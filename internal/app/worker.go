@@ -17,6 +17,7 @@ import (
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	objectcleanupservice "github.com/fatballfish/pic-gallery/internal/service/objectcleanup"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/internal/worker"
@@ -143,6 +144,7 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 		},
 	})
 	runner.SetCompensationService(billingSvc)
+	runner.SetCleanupService(objectcleanupservice.NewProcessor(entstore.NewObjectCleanupStore(client), storageRegistry, objectcleanupservice.ProcessorOptions{}))
 
 	slog.Info("starting pic-gallery worker")
 	err = runner.Run(ctx)

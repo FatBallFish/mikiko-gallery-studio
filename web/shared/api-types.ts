@@ -687,7 +687,24 @@ export type ReferenceAsset = {
   object_key?: string
   source_image_result_id?: string | null
   owns_object?: boolean
+  generation_snapshot?: ReferenceGenerationSnapshot
   created_at: string
+}
+export type ReferenceGenerationSnapshot = {
+  task_type?: ImageTaskType
+  abstract_model?: string
+  route_model_code?: string
+  capability_version?: string
+  size_mode?: string
+  requested_size?: string
+  base_resolution?: string
+  aspect_ratio?: string
+  quality?: string
+  background?: string
+  output_format?: string
+  output_compression?: number
+  moderation?: string
+  image_count?: number
 }
 export type ImageResult = {
   id: string

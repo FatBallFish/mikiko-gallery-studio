@@ -2491,7 +2491,7 @@ func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
-		if err := a.assets.Delete(user.ID, assetID); err != nil {
+		if err := a.assets.DeleteWithContext(r.Context(), user.ID, assetID); err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}

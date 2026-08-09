@@ -21,6 +21,24 @@ type fakeProvider struct {
 	generateFunc func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error)
 }
 
+type fakeCleanupService struct{ calls atomic.Int32 }
+
+func (s *fakeCleanupService) ProcessOnce(context.Context) (bool, error) {
+	s.calls.Add(1)
+	return true, nil
+}
+func (*fakeCleanupService) Reconcile(context.Context, int) (int, error) { return 0, nil }
+
+func TestRunnerProcessesCleanupBeforeLookingForImageTask(t *testing.T) {
+	cleanup := &fakeCleanupService{}
+	runner := NewRunner(fakeTaskService{}, Config{Owner: "cleanup-worker"})
+	runner.SetCleanupService(cleanup)
+	processed, err := runner.ProcessOnce(t.Context())
+	if err != nil || !processed || cleanup.calls.Load() != 1 {
+		t.Fatalf("processed=%v err=%v calls=%d", processed, err, cleanup.calls.Load())
+	}
+}
+
 func (f fakeProvider) Generate(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
 	return f.generateFunc(ctx, req)
 }

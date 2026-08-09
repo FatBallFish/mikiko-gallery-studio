@@ -34,14 +34,15 @@ type storedAsset struct {
 }
 
 type Service struct {
-	mu           sync.Mutex
-	store        Store
-	router       storage.Router
-	fallback     AttachmentPolicy
-	policyMu     sync.RWMutex
-	policy       *AttachmentPolicyResolver
-	assetsByID   map[string]storedAsset
-	assetsByHash map[string]string
+	mu             sync.Mutex
+	store          Store
+	router         storage.Router
+	fallback       AttachmentPolicy
+	policyMu       sync.RWMutex
+	policy         *AttachmentPolicyResolver
+	assetsByID     map[string]storedAsset
+	assetsByHash   map[string]string
+	assetsBySource map[string]string
 }
 
 func NewService(cfg config.StorageConfig, limits config.GenerationLimitsConfig) *Service {
@@ -69,7 +70,7 @@ func NewServiceWithStoreAndRouter(limits config.GenerationLimitsConfig, store St
 	}
 	defaults := config.ApplyAttachmentPolicyDefaults(config.AttachmentPolicyConfig{}, limits.ReferenceImageMaxMB)
 	fallback, _ := NewAttachmentPolicyResolver(defaults, nil).Resolve(context.Background())
-	return &Service{store: store, router: router, fallback: fallback, assetsByID: map[string]storedAsset{}, assetsByHash: map[string]string{}}
+	return &Service{store: store, router: router, fallback: fallback, assetsByID: map[string]storedAsset{}, assetsByHash: map[string]string{}, assetsBySource: map[string]string{}}
 }
 
 func (s *Service) SetAttachmentPolicyResolver(resolver *AttachmentPolicyResolver) {
@@ -157,7 +158,7 @@ func (s *Service) UploadWithMetadataContext(ctx context.Context, userID int64, f
 	if err := writer.Backend.Put(ctx, objectKey, detectedMIME, content); err != nil {
 		return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store reference asset")
 	}
-	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", StorageConfigID: writer.ConfigID, StorageDriver: writer.Driver, MimeType: detectedMIME, FileSizeBytes: int64(len(content)), Width: imageConfig.Width, Height: imageConfig.Height, SHA256: sha, ObjectKey: objectKey, CreatedAt: time.Now()}
+	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", StorageConfigID: writer.ConfigID, StorageDriver: writer.Driver, MimeType: detectedMIME, FileSizeBytes: int64(len(content)), Width: imageConfig.Width, Height: imageConfig.Height, SHA256: sha, ObjectKey: objectKey, OwnsObject: true, CreatedAt: time.Now()}
 	if s.store != nil {
 		if metadataStore, ok := s.store.(MetadataStore); ok {
 			err = metadataStore.SaveWithMetadata(ctx, userID, asset, metadata)
@@ -296,17 +297,21 @@ func mediaExpiryPointer(value time.Time) *time.Time {
 }
 
 func (s *Service) Delete(userID int64, assetID string) error {
+	return s.DeleteWithContext(context.Background(), userID, assetID)
+}
+
+func (s *Service) DeleteWithContext(ctx context.Context, userID int64, assetID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.store != nil {
-		asset, err := s.store.GetByUserAndID(context.Background(), userID, assetID)
+		asset, err := s.store.GetByUserAndID(ctx, userID, assetID)
 		if err != nil {
 			if err == repoerr.ErrNotFound {
 				return errs.New(404, errs.CodeNotFound, "reference asset not found")
 			}
 			return err
 		}
-		if err := s.store.DeleteByUserAndID(context.Background(), userID, assetID); err != nil {
+		if err := s.store.DeleteByUserAndID(ctx, userID, assetID); err != nil {
 			if err == repoerr.ErrNotFound {
 				return errs.New(404, errs.CodeNotFound, "reference asset not found")
 			}

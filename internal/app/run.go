@@ -34,6 +34,7 @@ import (
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	objectcleanupservice "github.com/fatballfish/pic-gallery/internal/service/objectcleanup"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
@@ -302,6 +303,8 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	if err := probeDefaultStorageAtStartup(startupContext, storageConfigSvc, storageRegistry); err != nil {
 		return err
 	}
+	cleanupRuntime := startObjectCleanupLoop(metricsContext, objectcleanupservice.NewProcessor(entstore.NewObjectCleanupStore(client), storageRegistry, objectcleanupservice.ProcessorOptions{}), 2*time.Second, 6*time.Hour)
+	defer cleanupRuntime.Stop()
 	var storageInvalidationBus *storage.RedisInvalidationBus
 	if redisClient != nil {
 		storageInvalidationBus = storage.NewRedisInvalidationBus(redisClient, cfg.Redis.KeyPrefix)

@@ -22,12 +22,17 @@ type Config struct {
 	MaxConcurrentTasks          int
 	MaxConcurrentTasksResolver  func(context.Context) (int, error)
 	ConfigRefreshInterval       time.Duration
+	CleanupReconcileInterval    time.Duration
+	CleanupReconcileBatchSize   int
 }
 
 type Runner struct {
-	tasks        taskService
-	compensation compensationService
-	cfg          Config
+	tasks                taskService
+	compensation         compensationService
+	cleanup              cleanupService
+	cfg                  Config
+	cleanupMu            sync.Mutex
+	lastCleanupReconcile time.Time
 }
 
 type executeOutcome struct {
@@ -43,6 +48,11 @@ type taskService interface {
 
 type compensationService interface {
 	ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error)
+}
+
+type cleanupService interface {
+	ProcessOnce(context.Context) (bool, error)
+	Reconcile(context.Context, int) (int, error)
 }
 
 func NewRunner(tasks taskService, cfg Config) *Runner {
@@ -70,8 +80,16 @@ func NewRunner(tasks taskService, cfg Config) *Runner {
 	if cfg.ConfigRefreshInterval <= 0 {
 		cfg.ConfigRefreshInterval = 5 * time.Second
 	}
+	if cfg.CleanupReconcileInterval <= 0 {
+		cfg.CleanupReconcileInterval = 6 * time.Hour
+	}
+	if cfg.CleanupReconcileBatchSize <= 0 {
+		cfg.CleanupReconcileBatchSize = 100
+	}
 	return &Runner{tasks: tasks, cfg: cfg}
 }
+
+func (r *Runner) SetCleanupService(service cleanupService) { r.cleanup = service }
 
 func (r *Runner) SetCompensationService(service compensationService) {
 	r.compensation = service
@@ -250,6 +268,23 @@ func normalizeMaxConcurrentTasks(value int) int {
 }
 
 func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
+	if r.cleanup != nil {
+		r.cleanupMu.Lock()
+		due := r.lastCleanupReconcile.IsZero() || time.Since(r.lastCleanupReconcile) >= r.cfg.CleanupReconcileInterval
+		if due {
+			r.lastCleanupReconcile = time.Now()
+		}
+		r.cleanupMu.Unlock()
+		if due {
+			if _, err := r.cleanup.Reconcile(ctx, r.cfg.CleanupReconcileBatchSize); err != nil {
+				return false, err
+			}
+		}
+		processed, err := r.cleanup.ProcessOnce(ctx)
+		if err != nil || processed {
+			return processed, err
+		}
+	}
 	if r.compensation != nil {
 		processed, err := r.compensation.ProcessRefundFinalizeFailures(ctx, r.cfg.RefundCompensationBatchSize)
 		if err != nil {

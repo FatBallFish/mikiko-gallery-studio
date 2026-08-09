@@ -510,8 +510,13 @@ func (s *ImageTaskStore) DeleteImageResult(ctx context.Context, userID int64, im
 	if err != nil {
 		return provider.ImageResult{}, repoerr.ErrNotFound
 	}
-	entity, err := s.client.ImageResult.Query().
-		Where(imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return provider.ImageResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	entity, err := tx.ImageResult.Query().
+		Where(imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil(), lockImageResultForCleanup()).
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -519,7 +524,7 @@ func (s *ImageTaskStore) DeleteImageResult(ctx context.Context, userID int64, im
 		}
 		return provider.ImageResult{}, err
 	}
-	if _, err := s.client.ImageTask.Query().
+	if _, err := tx.ImageTask.Query().
 		Where(imagetask.IDEQ(entity.TaskID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
 		Only(ctx); err != nil {
 		if repoent.IsNotFound(err) {
@@ -528,10 +533,28 @@ func (s *ImageTaskStore) DeleteImageResult(ctx context.Context, userID int64, im
 		return provider.ImageResult{}, err
 	}
 	result := mapImageResultEntity(entity)
-	if err := s.client.ImageResult.DeleteOneID(entity.ID).Exec(ctx); err != nil {
+	if err := tx.ImageResult.UpdateOneID(entity.ID).SetDeletedAt(time.Now().UTC()).Exec(ctx); err != nil {
+		return provider.ImageResult{}, err
+	}
+	configID := ""
+	if entity.StorageConfigID != nil {
+		configID = entity.StorageConfigID.String()
+	}
+	if _, err := enqueueObjectDeletionJob(ctx, tx.Client(), cleanupIdentity(configID, entity.StorageDriver, entity.ObjectKey)); err != nil {
+		return provider.ImageResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return provider.ImageResult{}, err
 	}
 	return result, nil
+}
+
+func lockImageResultForCleanup() predicate.ImageResult {
+	return predicate.ImageResult(func(selector *entsql.Selector) {
+		if selector.Dialect() == dialect.Postgres {
+			selector.ForUpdate()
+		}
+	})
 }
 
 func (s *ImageTaskStore) ListGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {
@@ -884,7 +907,7 @@ func (s *ImageTaskStore) DeleteByID(ctx context.Context, userID int64, taskID st
 	}()
 
 	entity, err := tx.ImageTask.Query().
-		Where(imagetask.IDEQ(taskUUID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+		Where(imagetask.IDEQ(taskUUID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil(), lockImageTaskForWorkerUpdate()).
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -893,6 +916,10 @@ func (s *ImageTaskStore) DeleteByID(ctx context.Context, userID int64, taskID st
 		return err
 	}
 
+	results, err := tx.ImageResult.Query().Where(imageresult.TaskIDEQ(taskUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).All(ctx)
+	if err != nil {
+		return err
+	}
 	deletedAt := time.Now().UTC()
 	if err := tx.ImageTask.UpdateOneID(entity.ID).SetDeletedAt(deletedAt).Exec(ctx); err != nil {
 		return err
@@ -902,6 +929,15 @@ func (s *ImageTaskStore) DeleteByID(ctx context.Context, userID int64, taskID st
 		SetDeletedAt(deletedAt).
 		Save(ctx); err != nil {
 		return err
+	}
+	for _, result := range results {
+		configID := ""
+		if result.StorageConfigID != nil {
+			configID = result.StorageConfigID.String()
+		}
+		if _, err := enqueueObjectDeletionJob(ctx, tx.Client(), cleanupIdentity(configID, result.StorageDriver, result.ObjectKey)); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()

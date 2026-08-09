@@ -15,7 +15,7 @@ import { mediaAccess, type MediaResource } from '../mediaAccess'
 import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
 import { displayPoints, publicUnavailableReason, WORKSPACE_REFERENCE_REQUIRED_MESSAGE } from './workspaceGenerateReadiness'
 import { currentWorkspaceEstimate, workspaceDisplayedResolvedSize, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
-import { defaultGalleryImportFilter, filterGalleryImportImages, galleryImportOptions, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
+import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
 import { WorkspaceStatusRail } from './WorkspaceStatusRail'
 import { workspaceTaskCardView, workspaceTaskFailureView } from './workspaceTaskFailure'
 import { generationSlots, workspaceBaseResolutionLabel } from './workspaceTaskProgress'
@@ -927,7 +927,23 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setGalleryImportBusy(true)
     try {
       const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted, selectedProjectID)
+	  const reused = capability ? firstGalleryReferenceReuse(editRefs.length, assets, capability) : null
       setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
+	  if (reused) {
+		const values = reused.values
+		restoreParametersRef.current = { routeModelCode: values.route_model_code, sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio', baseResolution: values.base_resolution, aspectRatio: values.aspect_ratio, pixelSize: values.pixel_size, quality: values.quality, outputFormat: values.output_format, background: values.background, outputCompression: values.output_compression, moderation: values.moderation, imageCount: values.image_count }
+		setModel(values.route_model_code)
+		setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
+		setBaseResolution(values.base_resolution)
+		setRatio(values.aspect_ratio)
+		setPixelSize(values.pixel_size)
+		setQuality(values.quality)
+		setOutputFormat(values.output_format)
+		setBackground(values.background)
+		setOutputCompression(values.output_compression)
+		setModeration(values.moderation)
+		setCount(values.image_count)
+	  }
       setGalleryImportTarget(null)
       app.notify('success', `已从资产导入 ${assets.length} 张参考图`)
     } catch (err) {
