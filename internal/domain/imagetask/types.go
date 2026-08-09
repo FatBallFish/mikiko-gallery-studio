@@ -315,6 +315,22 @@ type GalleryImage struct {
 	CreatedAt         time.Time               `json:"created_at"`
 }
 
+type GalleryBatchSuccess struct {
+	ID     string       `json:"id"`
+	Entity GalleryImage `json:"entity"`
+}
+
+type GalleryBatchFailure struct {
+	ID      string `json:"id"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type GalleryBatchResult struct {
+	Succeeded []GalleryBatchSuccess `json:"succeeded"`
+	Failed    []GalleryBatchFailure `json:"failed"`
+}
+
 type GalleryReferenceAsset struct {
 	ID               string     `json:"id"`
 	Name             string     `json:"name,omitempty"`

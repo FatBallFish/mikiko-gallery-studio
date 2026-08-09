@@ -13,6 +13,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
@@ -862,6 +863,73 @@ func init() {
 	configitemDescUpdatedBy := configitemFields[5].Descriptor()
 	// configitem.DefaultUpdatedBy holds the default value on creation for the updated_by field.
 	configitem.DefaultUpdatedBy = configitemDescUpdatedBy.Default.(int64)
+	galleryexportjobMixin := schema.GalleryExportJob{}.Mixin()
+	galleryexportjobMixinFields0 := galleryexportjobMixin[0].Fields()
+	_ = galleryexportjobMixinFields0
+	galleryexportjobFields := schema.GalleryExportJob{}.Fields()
+	_ = galleryexportjobFields
+	// galleryexportjobDescCreatedAt is the schema descriptor for created_at field.
+	galleryexportjobDescCreatedAt := galleryexportjobMixinFields0[0].Descriptor()
+	// galleryexportjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	galleryexportjob.DefaultCreatedAt = galleryexportjobDescCreatedAt.Default.(func() time.Time)
+	// galleryexportjobDescUpdatedAt is the schema descriptor for updated_at field.
+	galleryexportjobDescUpdatedAt := galleryexportjobMixinFields0[1].Descriptor()
+	// galleryexportjob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	galleryexportjob.DefaultUpdatedAt = galleryexportjobDescUpdatedAt.Default.(func() time.Time)
+	// galleryexportjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	galleryexportjob.UpdateDefaultUpdatedAt = galleryexportjobDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// galleryexportjobDescState is the schema descriptor for state field.
+	galleryexportjobDescState := galleryexportjobFields[4].Descriptor()
+	// galleryexportjob.DefaultState holds the default value on creation for the state field.
+	galleryexportjob.DefaultState = galleryexportjobDescState.Default.(string)
+	// galleryexportjob.StateValidator is a validator for the "state" field. It is called by the builders before save.
+	galleryexportjob.StateValidator = galleryexportjobDescState.Validators[0].(func(string) error)
+	// galleryexportjobDescEstimatedBytes is the schema descriptor for estimated_bytes field.
+	galleryexportjobDescEstimatedBytes := galleryexportjobFields[5].Descriptor()
+	// galleryexportjob.DefaultEstimatedBytes holds the default value on creation for the estimated_bytes field.
+	galleryexportjob.DefaultEstimatedBytes = galleryexportjobDescEstimatedBytes.Default.(int64)
+	// galleryexportjobDescArchiveSizeBytes is the schema descriptor for archive_size_bytes field.
+	galleryexportjobDescArchiveSizeBytes := galleryexportjobFields[6].Descriptor()
+	// galleryexportjob.DefaultArchiveSizeBytes holds the default value on creation for the archive_size_bytes field.
+	galleryexportjob.DefaultArchiveSizeBytes = galleryexportjobDescArchiveSizeBytes.Default.(int64)
+	// galleryexportjobDescStorageDriver is the schema descriptor for storage_driver field.
+	galleryexportjobDescStorageDriver := galleryexportjobFields[8].Descriptor()
+	// galleryexportjob.DefaultStorageDriver holds the default value on creation for the storage_driver field.
+	galleryexportjob.DefaultStorageDriver = galleryexportjobDescStorageDriver.Default.(string)
+	// galleryexportjob.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
+	galleryexportjob.StorageDriverValidator = galleryexportjobDescStorageDriver.Validators[0].(func(string) error)
+	// galleryexportjobDescBucket is the schema descriptor for bucket field.
+	galleryexportjobDescBucket := galleryexportjobFields[9].Descriptor()
+	// galleryexportjob.DefaultBucket holds the default value on creation for the bucket field.
+	galleryexportjob.DefaultBucket = galleryexportjobDescBucket.Default.(string)
+	// galleryexportjob.BucketValidator is a validator for the "bucket" field. It is called by the builders before save.
+	galleryexportjob.BucketValidator = galleryexportjobDescBucket.Validators[0].(func(string) error)
+	// galleryexportjobDescObjectKey is the schema descriptor for object_key field.
+	galleryexportjobDescObjectKey := galleryexportjobFields[10].Descriptor()
+	// galleryexportjob.DefaultObjectKey holds the default value on creation for the object_key field.
+	galleryexportjob.DefaultObjectKey = galleryexportjobDescObjectKey.Default.(string)
+	// galleryexportjob.ObjectKeyValidator is a validator for the "object_key" field. It is called by the builders before save.
+	galleryexportjob.ObjectKeyValidator = galleryexportjobDescObjectKey.Validators[0].(func(string) error)
+	// galleryexportjobDescAttemptCount is the schema descriptor for attempt_count field.
+	galleryexportjobDescAttemptCount := galleryexportjobFields[11].Descriptor()
+	// galleryexportjob.DefaultAttemptCount holds the default value on creation for the attempt_count field.
+	galleryexportjob.DefaultAttemptCount = galleryexportjobDescAttemptCount.Default.(int)
+	// galleryexportjobDescLeaseOwner is the schema descriptor for lease_owner field.
+	galleryexportjobDescLeaseOwner := galleryexportjobFields[12].Descriptor()
+	// galleryexportjob.LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
+	galleryexportjob.LeaseOwnerValidator = galleryexportjobDescLeaseOwner.Validators[0].(func(string) error)
+	// galleryexportjobDescLastErrorCode is the schema descriptor for last_error_code field.
+	galleryexportjobDescLastErrorCode := galleryexportjobFields[16].Descriptor()
+	// galleryexportjob.LastErrorCodeValidator is a validator for the "last_error_code" field. It is called by the builders before save.
+	galleryexportjob.LastErrorCodeValidator = galleryexportjobDescLastErrorCode.Validators[0].(func(string) error)
+	// galleryexportjobDescLastErrorMessage is the schema descriptor for last_error_message field.
+	galleryexportjobDescLastErrorMessage := galleryexportjobFields[17].Descriptor()
+	// galleryexportjob.LastErrorMessageValidator is a validator for the "last_error_message" field. It is called by the builders before save.
+	galleryexportjob.LastErrorMessageValidator = galleryexportjobDescLastErrorMessage.Validators[0].(func(string) error)
+	// galleryexportjobDescID is the schema descriptor for id field.
+	galleryexportjobDescID := galleryexportjobFields[0].Descriptor()
+	// galleryexportjob.DefaultID holds the default value on creation for the id field.
+	galleryexportjob.DefaultID = galleryexportjobDescID.Default.(func() uuid.UUID)
 	imageresultMixin := schema.ImageResult{}.Mixin()
 	imageresultMixinFields0 := imageresultMixin[0].Fields()
 	_ = imageresultMixinFields0

@@ -31,6 +31,11 @@ func TestMethodNotAllowedResponsesUseJSONEnvelope(t *testing.T) {
 		{name: "history task detail", method: http.MethodPatch, path: "/api/agent/image/v1/history/tasks/task-id"},
 		{name: "compat generations", method: http.MethodGet, path: "/v1/images/generations"},
 		{name: "compat edits", method: http.MethodGet, path: "/v1/images/edits"},
+		{name: "batch publish", method: http.MethodGet, path: "/api/agent/gallery/v1/images:batch-publish"},
+		{name: "batch group", method: http.MethodGet, path: "/api/agent/gallery/v1/images:batch-group"},
+		{name: "batch delete", method: http.MethodGet, path: "/api/agent/gallery/v1/images:batch-delete"},
+		{name: "batch transfer project", method: http.MethodGet, path: "/api/agent/gallery/v1/images:batch-transfer-project"},
+		{name: "batch download", method: http.MethodGet, path: "/api/agent/gallery/v1/images:batch-download"},
 		{name: "compat models", method: http.MethodPost, path: "/v1/models"},
 	}
 

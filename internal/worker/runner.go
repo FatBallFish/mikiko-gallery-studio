@@ -30,13 +30,15 @@ type Runner struct {
 	tasks                taskService
 	compensation         compensationService
 	cleanup              cleanupService
+	galleryExport        galleryExportService
 	cfg                  Config
 	cleanupMu            sync.Mutex
-	cleanupStreak        int
+	backgroundStreak     int
+	nextBackgroundExport bool
 	lastCleanupReconcile time.Time
 }
 
-const maxCleanupStreak = 1
+const maxBackgroundStreak = 1
 
 type executeOutcome struct {
 	result domainimagetask.ExecuteResult
@@ -56,6 +58,10 @@ type compensationService interface {
 type cleanupService interface {
 	ProcessOnce(context.Context) (bool, error)
 	Reconcile(context.Context, int) (int, error)
+}
+
+type galleryExportService interface {
+	ProcessOnce(context.Context) (bool, error)
 }
 
 func NewRunner(tasks taskService, cfg Config) *Runner {
@@ -93,6 +99,8 @@ func NewRunner(tasks taskService, cfg Config) *Runner {
 }
 
 func (r *Runner) SetCleanupService(service cleanupService) { r.cleanup = service }
+
+func (r *Runner) SetGalleryExportService(service galleryExportService) { r.galleryExport = service }
 
 func (r *Runner) SetCompensationService(service compensationService) {
 	r.compensation = service
@@ -271,31 +279,15 @@ func normalizeMaxConcurrentTasks(value int) int {
 }
 
 func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
-	if r.takeCleanupFairnessTurn() {
+	if r.takeBackgroundFairnessTurn() {
 		processed, err := r.processTaskOnce(ctx)
 		if err != nil || processed {
 			return processed, err
 		}
 	}
-	if r.cleanup != nil {
-		r.cleanupMu.Lock()
-		due := r.lastCleanupReconcile.IsZero() || time.Since(r.lastCleanupReconcile) >= r.cfg.CleanupReconcileInterval
-		if due {
-			r.lastCleanupReconcile = time.Now()
-		}
-		r.cleanupMu.Unlock()
-		if due {
-			if _, err := r.cleanup.Reconcile(ctx, r.cfg.CleanupReconcileBatchSize); err != nil {
-				return false, err
-			}
-		}
-		processed, err := r.cleanup.ProcessOnce(ctx)
-		if err != nil || processed {
-			if processed {
-				r.noteCleanupProcessed()
-			}
-			return processed, err
-		}
+	processed, err := r.processBackgroundOnce(ctx)
+	if err != nil || processed {
+		return processed, err
 	}
 	if r.compensation != nil {
 		processed, err := r.compensation.ProcessRefundFinalizeFailures(ctx, r.cfg.RefundCompensationBatchSize)
@@ -309,36 +301,85 @@ func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
 			return true, nil
 		}
 	}
-
-	processed, err := r.processTaskOnce(ctx)
+	processed, err = r.processTaskOnce(ctx)
 	if processed {
-		r.resetCleanupStreak()
+		r.resetBackgroundStreak()
 	}
 	return processed, err
 }
 
-func (r *Runner) takeCleanupFairnessTurn() bool {
+func (r *Runner) processBackgroundOnce(ctx context.Context) (bool, error) {
+	r.cleanupMu.Lock()
+	exportFirst := r.nextBackgroundExport
+	r.cleanupMu.Unlock()
+	if exportFirst {
+		if processed, err := r.processGalleryExportOnce(ctx); err != nil || processed {
+			return processed, err
+		}
+		return r.processCleanupOnce(ctx)
+	}
+	if processed, err := r.processCleanupOnce(ctx); err != nil || processed {
+		return processed, err
+	}
+	return r.processGalleryExportOnce(ctx)
+}
+
+func (r *Runner) processCleanupOnce(ctx context.Context) (bool, error) {
 	if r.cleanup == nil {
+		return false, nil
+	}
+	r.cleanupMu.Lock()
+	due := r.lastCleanupReconcile.IsZero() || time.Since(r.lastCleanupReconcile) >= r.cfg.CleanupReconcileInterval
+	if due {
+		r.lastCleanupReconcile = time.Now()
+	}
+	r.cleanupMu.Unlock()
+	if due {
+		if _, err := r.cleanup.Reconcile(ctx, r.cfg.CleanupReconcileBatchSize); err != nil {
+			return false, err
+		}
+	}
+	processed, err := r.cleanup.ProcessOnce(ctx)
+	if processed {
+		r.noteBackgroundProcessed(true)
+	}
+	return processed, err
+}
+
+func (r *Runner) processGalleryExportOnce(ctx context.Context) (bool, error) {
+	if r.galleryExport == nil {
+		return false, nil
+	}
+	processed, err := r.galleryExport.ProcessOnce(ctx)
+	if processed {
+		r.noteBackgroundProcessed(false)
+	}
+	return processed, err
+}
+
+func (r *Runner) takeBackgroundFairnessTurn() bool {
+	if r.cleanup == nil && r.galleryExport == nil {
 		return false
 	}
 	r.cleanupMu.Lock()
 	defer r.cleanupMu.Unlock()
-	if r.cleanupStreak < maxCleanupStreak {
+	if r.backgroundStreak < maxBackgroundStreak {
 		return false
 	}
-	r.cleanupStreak = 0
+	r.backgroundStreak = 0
 	return true
 }
 
-func (r *Runner) noteCleanupProcessed() {
+func (r *Runner) noteBackgroundProcessed(cleanup bool) {
 	r.cleanupMu.Lock()
-	r.cleanupStreak++
+	r.backgroundStreak++
+	r.nextBackgroundExport = cleanup
 	r.cleanupMu.Unlock()
 }
 
-func (r *Runner) resetCleanupStreak() {
+func (r *Runner) resetBackgroundStreak() {
 	r.cleanupMu.Lock()
-	r.cleanupStreak = 0
+	r.backgroundStreak = 0
 	r.cleanupMu.Unlock()
 }
 

@@ -317,6 +317,25 @@ func TestObjectDeletionJobSchemaDeduplicatesLiveObjectIdentity(t *testing.T) {
 	assertPartialUniqueIndex(t, ObjectDeletionJob{}.Indexes(), []string{"storage_driver", "bucket", "object_key"}, "storage_config_id IS NULL", liveStates)
 }
 
+func TestGalleryExportJobSchemaSupportsDurableLeasesAndTemporaryArchiveCleanup(t *testing.T) {
+	fields := schemaFieldDescriptors(GalleryExportJob{}.Fields())
+	for _, name := range []string{
+		"user_id", "project_id", "image_ids", "state", "estimated_bytes", "archive_size_bytes",
+		"storage_config_id", "storage_driver", "bucket", "object_key", "attempt_count",
+		"lease_owner", "lease_expires_at", "next_attempt_at", "expires_at", "last_error_code",
+	} {
+		if _, ok := fields[name]; !ok {
+			t.Fatalf("gallery_export_jobs is missing %q", name)
+		}
+	}
+	if !hasIndexFields(GalleryExportJob{}.Indexes(), []string{"state", "next_attempt_at"}, false) {
+		t.Fatal("gallery export jobs need a claim index")
+	}
+	if !hasIndexFields(GalleryExportJob{}.Indexes(), []string{"state", "expires_at"}, false) {
+		t.Fatal("gallery export jobs need an expiry cleanup index")
+	}
+}
+
 func TestObjectReconcileCheckpointSchemaPersistsRestartProgress(t *testing.T) {
 	fields := schemaFieldDescriptors(ObjectReconcileCheckpoint{}.Fields())
 	for _, name := range []string{"storage_identity", "namespace", "prefix", "cursor", "generation"} {

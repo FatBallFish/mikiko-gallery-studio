@@ -105,6 +105,18 @@ func (f ConfigItemFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ConfigItemMutation", m)
 }
 
+// The GalleryExportJobFunc type is an adapter to allow the use of ordinary
+// function as GalleryExportJob mutator.
+type GalleryExportJobFunc func(context.Context, *ent.GalleryExportJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f GalleryExportJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.GalleryExportJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GalleryExportJobMutation", m)
+}
+
 // The ImageResultFunc type is an adapter to allow the use of ordinary
 // function as ImageResult mutator.
 type ImageResultFunc func(context.Context, *ent.ImageResultMutation) (ent.Value, error)

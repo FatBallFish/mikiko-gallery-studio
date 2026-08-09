@@ -30,6 +30,9 @@ type ClusterToken func(*sql.Selector)
 // ConfigItem is the predicate function for configitem builders.
 type ConfigItem func(*sql.Selector)
 
+// GalleryExportJob is the predicate function for galleryexportjob builders.
+type GalleryExportJob func(*sql.Selector)
+
 // ImageResult is the predicate function for imageresult builders.
 type ImageResult func(*sql.Selector)
 

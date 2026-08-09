@@ -71,6 +71,13 @@ export const API_PATHS = {
     galleryImages: '/api/agent/gallery/v1/images',
     galleryImageDetail: '/api/agent/gallery/v1/images/{image_id}',
     galleryImageGroup: '/api/agent/gallery/v1/images/{image_id}/group',
+	galleryBatchPublish: '/api/agent/gallery/v1/images:batch-publish',
+	galleryBatchGroup: '/api/agent/gallery/v1/images:batch-group',
+	galleryBatchDelete: '/api/agent/gallery/v1/images:batch-delete',
+	galleryBatchTransferProject: '/api/agent/gallery/v1/images:batch-transfer-project',
+	galleryBatchDownload: '/api/agent/gallery/v1/images:batch-download',
+	galleryExportJob: '/api/agent/gallery/v1/export-jobs/{job_id}',
+	galleryExportDownload: '/api/agent/gallery/v1/export-jobs/{job_id}/download',
     publishImage: '/api/agent/gallery/v1/images/{image_id}/publish',
     likePublicImage: '/api/agent/gallery/v1/images/{image_id}/like',
     favoritePublicImage: '/api/agent/gallery/v1/images/{image_id}/favorite',
@@ -1028,6 +1035,23 @@ export type ModelRoute = {
 export type ModelRouteWriteRequest = { group_code: string; task_type: string; provider_model_id: number; provider_code: string; priority: number; weight_percent: number; fallback_order: number; enabled: boolean }
 export type PriceRow = { id: string; group: string; q1k: string; q2k: string; q4k: string; reference_multiplier: string; version: number; state: 'active' | 'draft' }
 export type GalleryImage = { id: string; task_id: string; user_id?: number; project_id?: string | null; project?: ProjectSnapshot; prompt?: string; abstract_model?: string; route_model_code?: string; task_type?: ImageTaskType; task_status?: ImageTaskStatus | string; size_mode?: string; requested_size?: string; base_resolution?: string; quality?: string; aspect_ratio?: string; output_format?: string; output_compression?: number; moderation?: string; requested_output_image_count?: number; image_count?: number; actual_points?: string; reference_asset_ids?: string[]; reference_assets?: ReferenceAsset[]; url?: string; download_url?: string; preview_expires_at?: string; download_expires_at?: string; mime_type?: string; file_size_bytes: number; width: number; height: number; sha256?: string; storage_config_id?: string; object_key?: string; storage_driver?: string; image_group?: string; visibility_status: PublishStatus; review_reason?: string; published_at?: string | null; author_name?: string; like_count?: number; favorite_count?: number; liked_by_viewer?: boolean; favorited_by_viewer?: boolean; created_at: string }
+export type GalleryBatchFailure = { id: string; code: string; message: string }
+export type GalleryBatchMutationResult = { succeeded: Array<{ id: string; entity: GalleryImage }>; failed: GalleryBatchFailure[] }
+export type GalleryExportJob = {
+  id: string
+  project_id: string
+  image_ids: string[]
+  state: 'queued' | 'running' | 'succeeded' | 'failed' | 'expired' | string
+  estimated_bytes: number
+  archive_size_bytes?: number
+  attempt_count?: number
+  expires_at?: string
+  error_code?: string
+  error_message?: string
+  created_at: string
+  updated_at: string
+}
+export type GalleryExportStatus = { job: GalleryExportJob; status_url?: string; download_url?: string }
 export type ReviewItem = { id: string; image_id?: string; title: string; owner: string; task_type: ImageTaskType; image_url: string; status: 'pending' | 'pending_review' | 'approved' | 'rejected' | 'unpublished' | string; reason: string; created_at: string; review_reason?: string; visibility_status?: string }
 export type AdminUser = { id: string; email: string; display_name: string; nickname?: string; status: 'active' | 'disabled' | 'pending' | 'closed' | string; group: string; user_group_code?: string; user_group_codes?: string[]; user_groups?: UserGroup[]; balance: string; token_version?: number; rpm_limit?: number; concurrency_limit?: number; default_locale?: string; theme?: string; closed_at?: string | null; created_at: string; updated_at?: string; last_seen_at: string }
 export type AdminUserDetail = { user: AdminUser; balance: Balance; recent_ledger: LedgerEntry[]; recent_orders?: PaymentOrder[]; recent_tasks?: ImageTask[]; api_keys?: ApiKey[] }

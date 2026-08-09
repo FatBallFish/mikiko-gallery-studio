@@ -20,6 +20,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
@@ -126,6 +127,7 @@ func checkColumn(t, c string) error {
 			clusternode.Table:                 clusternode.ValidColumn,
 			clustertoken.Table:                clustertoken.ValidColumn,
 			configitem.Table:                  configitem.ValidColumn,
+			galleryexportjob.Table:            galleryexportjob.ValidColumn,
 			imageresult.Table:                 imageresult.ValidColumn,
 			imagetask.Table:                   imagetask.ValidColumn,
 			installation.Table:                installation.ValidColumn,

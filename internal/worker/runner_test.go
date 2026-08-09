@@ -24,6 +24,13 @@ type fakeProvider struct {
 
 type fakeCleanupService struct{ calls atomic.Int32 }
 
+type fakeGalleryExportService struct{ calls atomic.Int32 }
+
+func (s *fakeGalleryExportService) ProcessOnce(context.Context) (bool, error) {
+	s.calls.Add(1)
+	return true, nil
+}
+
 func (s *fakeCleanupService) ProcessOnce(context.Context) (bool, error) {
 	s.calls.Add(1)
 	return true, nil
@@ -37,6 +44,46 @@ func TestRunnerProcessesCleanupBeforeLookingForImageTask(t *testing.T) {
 	processed, err := runner.ProcessOnce(t.Context())
 	if err != nil || !processed || cleanup.calls.Load() != 1 {
 		t.Fatalf("processed=%v err=%v calls=%d", processed, err, cleanup.calls.Load())
+	}
+}
+
+func TestRunnerProcessesGalleryExportBeforeLookingForImageTask(t *testing.T) {
+	exports := &fakeGalleryExportService{}
+	runner := NewRunner(fakeTaskService{}, Config{Owner: "export-worker"})
+	runner.SetGalleryExportService(exports)
+	processed, err := runner.ProcessOnce(t.Context())
+	if err != nil || !processed || exports.calls.Load() != 1 {
+		t.Fatalf("processed=%v err=%v calls=%d", processed, err, exports.calls.Load())
+	}
+}
+
+func TestRunnerRoundRobinsCleanupExportAndGenerationBacklogs(t *testing.T) {
+	cleanup := &fakeCleanupService{}
+	exports := &fakeGalleryExportService{}
+	var generated atomic.Int32
+	tasks := fakeTaskService{
+		acquireFunc: func(context.Context, string, time.Duration) (domainimagetask.Task, bool, error) {
+			return domainimagetask.Task{ID: fmt.Sprintf("task-%d", generated.Load()+1)}, true, nil
+		},
+		heartbeatFunc: func(context.Context, string, string, time.Duration) (domainimagetask.Task, error) {
+			return domainimagetask.Task{}, nil
+		},
+		executeFunc: func(context.Context, domainimagetask.Task, string, []string) (domainimagetask.ExecuteResult, error) {
+			generated.Add(1)
+			return domainimagetask.ExecuteResult{}, nil
+		},
+	}
+	runner := NewRunner(tasks, Config{Owner: "round-robin-worker"})
+	runner.SetCleanupService(cleanup)
+	runner.SetGalleryExportService(exports)
+	for range 12 {
+		processed, err := runner.ProcessOnce(t.Context())
+		if err != nil || !processed {
+			t.Fatalf("ProcessOnce processed=%v err=%v", processed, err)
+		}
+	}
+	if cleanup.calls.Load() < 2 || exports.calls.Load() < 2 || generated.Load() < 4 {
+		t.Fatalf("backlog starvation: cleanup=%d exports=%d generated=%d", cleanup.calls.Load(), exports.calls.Load(), generated.Load())
 	}
 }
 

@@ -1470,6 +1470,184 @@ paths:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/gallery/v1/images:batch-publish:
+    post:
+      tags: [Agent Image]
+      summary: Publish or unpublish an explicit project-scoped asset selection
+      operationId: postAgentGalleryBatchPublish
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryBatchPublishRequest
+      responses:
+        '200':
+          description: Per-item mutation results; failed items remain retryable
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryBatchMutationResponse
+  /api/agent/gallery/v1/images:batch-group:
+    post:
+      tags: [Agent Image]
+      summary: Set the group for an explicit project-scoped asset selection
+      operationId: postAgentGalleryBatchGroup
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryBatchGroupRequest
+      responses:
+        '200':
+          description: Per-item mutation results; failed items remain retryable
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryBatchMutationResponse
+  /api/agent/gallery/v1/images:batch-delete:
+    post:
+      tags: [Agent Image]
+      summary: Soft-delete an explicit project-scoped asset selection
+      operationId: postAgentGalleryBatchDelete
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryBatchDeleteRequest
+      responses:
+        '200':
+          description: Per-item mutation results; object cleanup is queued for successful items
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryBatchMutationResponse
+  /api/agent/gallery/v1/images:batch-transfer-project:
+    post:
+      tags: [Agent Image]
+      summary: Transfer an explicit asset selection to another owned project
+      operationId: postAgentGalleryBatchTransferProject
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryBatchTransferProjectRequest
+      responses:
+        '200':
+          description: Per-item mutation results; failed items remain in the source project
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryBatchMutationResponse
+        '404':
+          description: Target project is missing or belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/gallery/v1/images:batch-download:
+    post:
+      tags: [Agent Image]
+      summary: Download one ZIP for an authorized explicit asset selection
+      operationId: postAgentGalleryBatchDownload
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryBatchDownloadRequest
+      responses:
+        '200':
+          description: Direct ZIP containing available files and manifest.json
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        '202':
+          description: Selection promoted to a durable asynchronous export job
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryExportCreateResponse
+        '404':
+          description: At least one selected asset is missing or not owned by the caller
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '413':
+          description: Selection exceeds the configured batch limit
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/gallery/v1/export-jobs/{job_id}:
+    get:
+      tags: [Agent Image]
+      summary: Get an owned asynchronous gallery export job
+      operationId: getAgentGalleryExportJob
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Export status, with a download URL only for an unexpired completed archive
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/GalleryExportStatusResponse
+        '404':
+          description: Export job is missing or belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/gallery/v1/export-jobs/{job_id}/download:
+    get:
+      tags: [Agent Image]
+      summary: Download an owned completed and unexpired gallery export
+      operationId: getAgentGalleryExportDownload
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Completed gallery export ZIP
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        '404':
+          description: Export job is missing or belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+        '409':
+          description: Export is still queued/running, failed, or has expired
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/agent/gallery/v1/images/{image_id}/publish:
     post:
       tags: [Agent Image]

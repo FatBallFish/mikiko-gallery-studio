@@ -19,6 +19,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
@@ -78,6 +79,7 @@ const (
 	TypeClusterNode                 = "ClusterNode"
 	TypeClusterToken                = "ClusterToken"
 	TypeConfigItem                  = "ConfigItem"
+	TypeGalleryExportJob            = "GalleryExportJob"
 	TypeImageResult                 = "ImageResult"
 	TypeImageTask                   = "ImageTask"
 	TypeInstallation                = "Installation"
@@ -7798,6 +7800,1597 @@ func (m *ConfigItemMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ConfigItemMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown ConfigItem edge %s", name)
+}
+
+// GalleryExportJobMutation represents an operation that mutates the GalleryExportJob nodes in the graph.
+type GalleryExportJobMutation struct {
+	config
+	op                    Op
+	typ                   string
+	id                    *uuid.UUID
+	created_at            *time.Time
+	updated_at            *time.Time
+	user_id               *int64
+	adduser_id            *int64
+	project_id            *uuid.UUID
+	image_ids             *[]string
+	appendimage_ids       []string
+	state                 *string
+	estimated_bytes       *int64
+	addestimated_bytes    *int64
+	archive_size_bytes    *int64
+	addarchive_size_bytes *int64
+	storage_config_id     *uuid.UUID
+	storage_driver        *string
+	bucket                *string
+	object_key            *string
+	attempt_count         *int
+	addattempt_count      *int
+	lease_owner           *string
+	lease_expires_at      *time.Time
+	next_attempt_at       *time.Time
+	expires_at            *time.Time
+	last_error_code       *string
+	last_error_message    *string
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*GalleryExportJob, error)
+	predicates            []predicate.GalleryExportJob
+}
+
+var _ ent.Mutation = (*GalleryExportJobMutation)(nil)
+
+// galleryexportjobOption allows management of the mutation configuration using functional options.
+type galleryexportjobOption func(*GalleryExportJobMutation)
+
+// newGalleryExportJobMutation creates new mutation for the GalleryExportJob entity.
+func newGalleryExportJobMutation(c config, op Op, opts ...galleryexportjobOption) *GalleryExportJobMutation {
+	m := &GalleryExportJobMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeGalleryExportJob,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withGalleryExportJobID sets the ID field of the mutation.
+func withGalleryExportJobID(id uuid.UUID) galleryexportjobOption {
+	return func(m *GalleryExportJobMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *GalleryExportJob
+		)
+		m.oldValue = func(ctx context.Context) (*GalleryExportJob, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().GalleryExportJob.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withGalleryExportJob sets the old GalleryExportJob of the mutation.
+func withGalleryExportJob(node *GalleryExportJob) galleryexportjobOption {
+	return func(m *GalleryExportJobMutation) {
+		m.oldValue = func(context.Context) (*GalleryExportJob, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m GalleryExportJobMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m GalleryExportJobMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of GalleryExportJob entities.
+func (m *GalleryExportJobMutation) SetID(id uuid.UUID) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *GalleryExportJobMutation) ID() (id uuid.UUID, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *GalleryExportJobMutation) IDs(ctx context.Context) ([]uuid.UUID, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []uuid.UUID{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().GalleryExportJob.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *GalleryExportJobMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *GalleryExportJobMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *GalleryExportJobMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *GalleryExportJobMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *GalleryExportJobMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *GalleryExportJobMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *GalleryExportJobMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *GalleryExportJobMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *GalleryExportJobMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *GalleryExportJobMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *GalleryExportJobMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetProjectID sets the "project_id" field.
+func (m *GalleryExportJobMutation) SetProjectID(u uuid.UUID) {
+	m.project_id = &u
+}
+
+// ProjectID returns the value of the "project_id" field in the mutation.
+func (m *GalleryExportJobMutation) ProjectID() (r uuid.UUID, exists bool) {
+	v := m.project_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProjectID returns the old "project_id" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldProjectID(ctx context.Context) (v uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProjectID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProjectID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProjectID: %w", err)
+	}
+	return oldValue.ProjectID, nil
+}
+
+// ResetProjectID resets all changes to the "project_id" field.
+func (m *GalleryExportJobMutation) ResetProjectID() {
+	m.project_id = nil
+}
+
+// SetImageIds sets the "image_ids" field.
+func (m *GalleryExportJobMutation) SetImageIds(s []string) {
+	m.image_ids = &s
+	m.appendimage_ids = nil
+}
+
+// ImageIds returns the value of the "image_ids" field in the mutation.
+func (m *GalleryExportJobMutation) ImageIds() (r []string, exists bool) {
+	v := m.image_ids
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImageIds returns the old "image_ids" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldImageIds(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImageIds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImageIds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImageIds: %w", err)
+	}
+	return oldValue.ImageIds, nil
+}
+
+// AppendImageIds adds s to the "image_ids" field.
+func (m *GalleryExportJobMutation) AppendImageIds(s []string) {
+	m.appendimage_ids = append(m.appendimage_ids, s...)
+}
+
+// AppendedImageIds returns the list of values that were appended to the "image_ids" field in this mutation.
+func (m *GalleryExportJobMutation) AppendedImageIds() ([]string, bool) {
+	if len(m.appendimage_ids) == 0 {
+		return nil, false
+	}
+	return m.appendimage_ids, true
+}
+
+// ResetImageIds resets all changes to the "image_ids" field.
+func (m *GalleryExportJobMutation) ResetImageIds() {
+	m.image_ids = nil
+	m.appendimage_ids = nil
+}
+
+// SetState sets the "state" field.
+func (m *GalleryExportJobMutation) SetState(s string) {
+	m.state = &s
+}
+
+// State returns the value of the "state" field in the mutation.
+func (m *GalleryExportJobMutation) State() (r string, exists bool) {
+	v := m.state
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldState returns the old "state" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldState(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldState is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldState requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldState: %w", err)
+	}
+	return oldValue.State, nil
+}
+
+// ResetState resets all changes to the "state" field.
+func (m *GalleryExportJobMutation) ResetState() {
+	m.state = nil
+}
+
+// SetEstimatedBytes sets the "estimated_bytes" field.
+func (m *GalleryExportJobMutation) SetEstimatedBytes(i int64) {
+	m.estimated_bytes = &i
+	m.addestimated_bytes = nil
+}
+
+// EstimatedBytes returns the value of the "estimated_bytes" field in the mutation.
+func (m *GalleryExportJobMutation) EstimatedBytes() (r int64, exists bool) {
+	v := m.estimated_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEstimatedBytes returns the old "estimated_bytes" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldEstimatedBytes(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEstimatedBytes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEstimatedBytes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEstimatedBytes: %w", err)
+	}
+	return oldValue.EstimatedBytes, nil
+}
+
+// AddEstimatedBytes adds i to the "estimated_bytes" field.
+func (m *GalleryExportJobMutation) AddEstimatedBytes(i int64) {
+	if m.addestimated_bytes != nil {
+		*m.addestimated_bytes += i
+	} else {
+		m.addestimated_bytes = &i
+	}
+}
+
+// AddedEstimatedBytes returns the value that was added to the "estimated_bytes" field in this mutation.
+func (m *GalleryExportJobMutation) AddedEstimatedBytes() (r int64, exists bool) {
+	v := m.addestimated_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetEstimatedBytes resets all changes to the "estimated_bytes" field.
+func (m *GalleryExportJobMutation) ResetEstimatedBytes() {
+	m.estimated_bytes = nil
+	m.addestimated_bytes = nil
+}
+
+// SetArchiveSizeBytes sets the "archive_size_bytes" field.
+func (m *GalleryExportJobMutation) SetArchiveSizeBytes(i int64) {
+	m.archive_size_bytes = &i
+	m.addarchive_size_bytes = nil
+}
+
+// ArchiveSizeBytes returns the value of the "archive_size_bytes" field in the mutation.
+func (m *GalleryExportJobMutation) ArchiveSizeBytes() (r int64, exists bool) {
+	v := m.archive_size_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArchiveSizeBytes returns the old "archive_size_bytes" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldArchiveSizeBytes(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArchiveSizeBytes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArchiveSizeBytes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArchiveSizeBytes: %w", err)
+	}
+	return oldValue.ArchiveSizeBytes, nil
+}
+
+// AddArchiveSizeBytes adds i to the "archive_size_bytes" field.
+func (m *GalleryExportJobMutation) AddArchiveSizeBytes(i int64) {
+	if m.addarchive_size_bytes != nil {
+		*m.addarchive_size_bytes += i
+	} else {
+		m.addarchive_size_bytes = &i
+	}
+}
+
+// AddedArchiveSizeBytes returns the value that was added to the "archive_size_bytes" field in this mutation.
+func (m *GalleryExportJobMutation) AddedArchiveSizeBytes() (r int64, exists bool) {
+	v := m.addarchive_size_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetArchiveSizeBytes resets all changes to the "archive_size_bytes" field.
+func (m *GalleryExportJobMutation) ResetArchiveSizeBytes() {
+	m.archive_size_bytes = nil
+	m.addarchive_size_bytes = nil
+}
+
+// SetStorageConfigID sets the "storage_config_id" field.
+func (m *GalleryExportJobMutation) SetStorageConfigID(u uuid.UUID) {
+	m.storage_config_id = &u
+}
+
+// StorageConfigID returns the value of the "storage_config_id" field in the mutation.
+func (m *GalleryExportJobMutation) StorageConfigID() (r uuid.UUID, exists bool) {
+	v := m.storage_config_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStorageConfigID returns the old "storage_config_id" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldStorageConfigID(ctx context.Context) (v *uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStorageConfigID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStorageConfigID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStorageConfigID: %w", err)
+	}
+	return oldValue.StorageConfigID, nil
+}
+
+// ClearStorageConfigID clears the value of the "storage_config_id" field.
+func (m *GalleryExportJobMutation) ClearStorageConfigID() {
+	m.storage_config_id = nil
+	m.clearedFields[galleryexportjob.FieldStorageConfigID] = struct{}{}
+}
+
+// StorageConfigIDCleared returns if the "storage_config_id" field was cleared in this mutation.
+func (m *GalleryExportJobMutation) StorageConfigIDCleared() bool {
+	_, ok := m.clearedFields[galleryexportjob.FieldStorageConfigID]
+	return ok
+}
+
+// ResetStorageConfigID resets all changes to the "storage_config_id" field.
+func (m *GalleryExportJobMutation) ResetStorageConfigID() {
+	m.storage_config_id = nil
+	delete(m.clearedFields, galleryexportjob.FieldStorageConfigID)
+}
+
+// SetStorageDriver sets the "storage_driver" field.
+func (m *GalleryExportJobMutation) SetStorageDriver(s string) {
+	m.storage_driver = &s
+}
+
+// StorageDriver returns the value of the "storage_driver" field in the mutation.
+func (m *GalleryExportJobMutation) StorageDriver() (r string, exists bool) {
+	v := m.storage_driver
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStorageDriver returns the old "storage_driver" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldStorageDriver(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStorageDriver is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStorageDriver requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStorageDriver: %w", err)
+	}
+	return oldValue.StorageDriver, nil
+}
+
+// ResetStorageDriver resets all changes to the "storage_driver" field.
+func (m *GalleryExportJobMutation) ResetStorageDriver() {
+	m.storage_driver = nil
+}
+
+// SetBucket sets the "bucket" field.
+func (m *GalleryExportJobMutation) SetBucket(s string) {
+	m.bucket = &s
+}
+
+// Bucket returns the value of the "bucket" field in the mutation.
+func (m *GalleryExportJobMutation) Bucket() (r string, exists bool) {
+	v := m.bucket
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBucket returns the old "bucket" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldBucket(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBucket is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBucket requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBucket: %w", err)
+	}
+	return oldValue.Bucket, nil
+}
+
+// ResetBucket resets all changes to the "bucket" field.
+func (m *GalleryExportJobMutation) ResetBucket() {
+	m.bucket = nil
+}
+
+// SetObjectKey sets the "object_key" field.
+func (m *GalleryExportJobMutation) SetObjectKey(s string) {
+	m.object_key = &s
+}
+
+// ObjectKey returns the value of the "object_key" field in the mutation.
+func (m *GalleryExportJobMutation) ObjectKey() (r string, exists bool) {
+	v := m.object_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldObjectKey returns the old "object_key" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldObjectKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldObjectKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldObjectKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldObjectKey: %w", err)
+	}
+	return oldValue.ObjectKey, nil
+}
+
+// ResetObjectKey resets all changes to the "object_key" field.
+func (m *GalleryExportJobMutation) ResetObjectKey() {
+	m.object_key = nil
+}
+
+// SetAttemptCount sets the "attempt_count" field.
+func (m *GalleryExportJobMutation) SetAttemptCount(i int) {
+	m.attempt_count = &i
+	m.addattempt_count = nil
+}
+
+// AttemptCount returns the value of the "attempt_count" field in the mutation.
+func (m *GalleryExportJobMutation) AttemptCount() (r int, exists bool) {
+	v := m.attempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAttemptCount returns the old "attempt_count" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldAttemptCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAttemptCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAttemptCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAttemptCount: %w", err)
+	}
+	return oldValue.AttemptCount, nil
+}
+
+// AddAttemptCount adds i to the "attempt_count" field.
+func (m *GalleryExportJobMutation) AddAttemptCount(i int) {
+	if m.addattempt_count != nil {
+		*m.addattempt_count += i
+	} else {
+		m.addattempt_count = &i
+	}
+}
+
+// AddedAttemptCount returns the value that was added to the "attempt_count" field in this mutation.
+func (m *GalleryExportJobMutation) AddedAttemptCount() (r int, exists bool) {
+	v := m.addattempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAttemptCount resets all changes to the "attempt_count" field.
+func (m *GalleryExportJobMutation) ResetAttemptCount() {
+	m.attempt_count = nil
+	m.addattempt_count = nil
+}
+
+// SetLeaseOwner sets the "lease_owner" field.
+func (m *GalleryExportJobMutation) SetLeaseOwner(s string) {
+	m.lease_owner = &s
+}
+
+// LeaseOwner returns the value of the "lease_owner" field in the mutation.
+func (m *GalleryExportJobMutation) LeaseOwner() (r string, exists bool) {
+	v := m.lease_owner
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLeaseOwner returns the old "lease_owner" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldLeaseOwner(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLeaseOwner is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLeaseOwner requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLeaseOwner: %w", err)
+	}
+	return oldValue.LeaseOwner, nil
+}
+
+// ClearLeaseOwner clears the value of the "lease_owner" field.
+func (m *GalleryExportJobMutation) ClearLeaseOwner() {
+	m.lease_owner = nil
+	m.clearedFields[galleryexportjob.FieldLeaseOwner] = struct{}{}
+}
+
+// LeaseOwnerCleared returns if the "lease_owner" field was cleared in this mutation.
+func (m *GalleryExportJobMutation) LeaseOwnerCleared() bool {
+	_, ok := m.clearedFields[galleryexportjob.FieldLeaseOwner]
+	return ok
+}
+
+// ResetLeaseOwner resets all changes to the "lease_owner" field.
+func (m *GalleryExportJobMutation) ResetLeaseOwner() {
+	m.lease_owner = nil
+	delete(m.clearedFields, galleryexportjob.FieldLeaseOwner)
+}
+
+// SetLeaseExpiresAt sets the "lease_expires_at" field.
+func (m *GalleryExportJobMutation) SetLeaseExpiresAt(t time.Time) {
+	m.lease_expires_at = &t
+}
+
+// LeaseExpiresAt returns the value of the "lease_expires_at" field in the mutation.
+func (m *GalleryExportJobMutation) LeaseExpiresAt() (r time.Time, exists bool) {
+	v := m.lease_expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLeaseExpiresAt returns the old "lease_expires_at" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldLeaseExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLeaseExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLeaseExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLeaseExpiresAt: %w", err)
+	}
+	return oldValue.LeaseExpiresAt, nil
+}
+
+// ClearLeaseExpiresAt clears the value of the "lease_expires_at" field.
+func (m *GalleryExportJobMutation) ClearLeaseExpiresAt() {
+	m.lease_expires_at = nil
+	m.clearedFields[galleryexportjob.FieldLeaseExpiresAt] = struct{}{}
+}
+
+// LeaseExpiresAtCleared returns if the "lease_expires_at" field was cleared in this mutation.
+func (m *GalleryExportJobMutation) LeaseExpiresAtCleared() bool {
+	_, ok := m.clearedFields[galleryexportjob.FieldLeaseExpiresAt]
+	return ok
+}
+
+// ResetLeaseExpiresAt resets all changes to the "lease_expires_at" field.
+func (m *GalleryExportJobMutation) ResetLeaseExpiresAt() {
+	m.lease_expires_at = nil
+	delete(m.clearedFields, galleryexportjob.FieldLeaseExpiresAt)
+}
+
+// SetNextAttemptAt sets the "next_attempt_at" field.
+func (m *GalleryExportJobMutation) SetNextAttemptAt(t time.Time) {
+	m.next_attempt_at = &t
+}
+
+// NextAttemptAt returns the value of the "next_attempt_at" field in the mutation.
+func (m *GalleryExportJobMutation) NextAttemptAt() (r time.Time, exists bool) {
+	v := m.next_attempt_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNextAttemptAt returns the old "next_attempt_at" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldNextAttemptAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNextAttemptAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNextAttemptAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNextAttemptAt: %w", err)
+	}
+	return oldValue.NextAttemptAt, nil
+}
+
+// ClearNextAttemptAt clears the value of the "next_attempt_at" field.
+func (m *GalleryExportJobMutation) ClearNextAttemptAt() {
+	m.next_attempt_at = nil
+	m.clearedFields[galleryexportjob.FieldNextAttemptAt] = struct{}{}
+}
+
+// NextAttemptAtCleared returns if the "next_attempt_at" field was cleared in this mutation.
+func (m *GalleryExportJobMutation) NextAttemptAtCleared() bool {
+	_, ok := m.clearedFields[galleryexportjob.FieldNextAttemptAt]
+	return ok
+}
+
+// ResetNextAttemptAt resets all changes to the "next_attempt_at" field.
+func (m *GalleryExportJobMutation) ResetNextAttemptAt() {
+	m.next_attempt_at = nil
+	delete(m.clearedFields, galleryexportjob.FieldNextAttemptAt)
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *GalleryExportJobMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *GalleryExportJobMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ClearExpiresAt clears the value of the "expires_at" field.
+func (m *GalleryExportJobMutation) ClearExpiresAt() {
+	m.expires_at = nil
+	m.clearedFields[galleryexportjob.FieldExpiresAt] = struct{}{}
+}
+
+// ExpiresAtCleared returns if the "expires_at" field was cleared in this mutation.
+func (m *GalleryExportJobMutation) ExpiresAtCleared() bool {
+	_, ok := m.clearedFields[galleryexportjob.FieldExpiresAt]
+	return ok
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *GalleryExportJobMutation) ResetExpiresAt() {
+	m.expires_at = nil
+	delete(m.clearedFields, galleryexportjob.FieldExpiresAt)
+}
+
+// SetLastErrorCode sets the "last_error_code" field.
+func (m *GalleryExportJobMutation) SetLastErrorCode(s string) {
+	m.last_error_code = &s
+}
+
+// LastErrorCode returns the value of the "last_error_code" field in the mutation.
+func (m *GalleryExportJobMutation) LastErrorCode() (r string, exists bool) {
+	v := m.last_error_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastErrorCode returns the old "last_error_code" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldLastErrorCode(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastErrorCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastErrorCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastErrorCode: %w", err)
+	}
+	return oldValue.LastErrorCode, nil
+}
+
+// ClearLastErrorCode clears the value of the "last_error_code" field.
+func (m *GalleryExportJobMutation) ClearLastErrorCode() {
+	m.last_error_code = nil
+	m.clearedFields[galleryexportjob.FieldLastErrorCode] = struct{}{}
+}
+
+// LastErrorCodeCleared returns if the "last_error_code" field was cleared in this mutation.
+func (m *GalleryExportJobMutation) LastErrorCodeCleared() bool {
+	_, ok := m.clearedFields[galleryexportjob.FieldLastErrorCode]
+	return ok
+}
+
+// ResetLastErrorCode resets all changes to the "last_error_code" field.
+func (m *GalleryExportJobMutation) ResetLastErrorCode() {
+	m.last_error_code = nil
+	delete(m.clearedFields, galleryexportjob.FieldLastErrorCode)
+}
+
+// SetLastErrorMessage sets the "last_error_message" field.
+func (m *GalleryExportJobMutation) SetLastErrorMessage(s string) {
+	m.last_error_message = &s
+}
+
+// LastErrorMessage returns the value of the "last_error_message" field in the mutation.
+func (m *GalleryExportJobMutation) LastErrorMessage() (r string, exists bool) {
+	v := m.last_error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastErrorMessage returns the old "last_error_message" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldLastErrorMessage(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastErrorMessage: %w", err)
+	}
+	return oldValue.LastErrorMessage, nil
+}
+
+// ClearLastErrorMessage clears the value of the "last_error_message" field.
+func (m *GalleryExportJobMutation) ClearLastErrorMessage() {
+	m.last_error_message = nil
+	m.clearedFields[galleryexportjob.FieldLastErrorMessage] = struct{}{}
+}
+
+// LastErrorMessageCleared returns if the "last_error_message" field was cleared in this mutation.
+func (m *GalleryExportJobMutation) LastErrorMessageCleared() bool {
+	_, ok := m.clearedFields[galleryexportjob.FieldLastErrorMessage]
+	return ok
+}
+
+// ResetLastErrorMessage resets all changes to the "last_error_message" field.
+func (m *GalleryExportJobMutation) ResetLastErrorMessage() {
+	m.last_error_message = nil
+	delete(m.clearedFields, galleryexportjob.FieldLastErrorMessage)
+}
+
+// Where appends a list predicates to the GalleryExportJobMutation builder.
+func (m *GalleryExportJobMutation) Where(ps ...predicate.GalleryExportJob) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the GalleryExportJobMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *GalleryExportJobMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.GalleryExportJob, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *GalleryExportJobMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *GalleryExportJobMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (GalleryExportJob).
+func (m *GalleryExportJobMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *GalleryExportJobMutation) Fields() []string {
+	fields := make([]string, 0, 19)
+	if m.created_at != nil {
+		fields = append(fields, galleryexportjob.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, galleryexportjob.FieldUpdatedAt)
+	}
+	if m.user_id != nil {
+		fields = append(fields, galleryexportjob.FieldUserID)
+	}
+	if m.project_id != nil {
+		fields = append(fields, galleryexportjob.FieldProjectID)
+	}
+	if m.image_ids != nil {
+		fields = append(fields, galleryexportjob.FieldImageIds)
+	}
+	if m.state != nil {
+		fields = append(fields, galleryexportjob.FieldState)
+	}
+	if m.estimated_bytes != nil {
+		fields = append(fields, galleryexportjob.FieldEstimatedBytes)
+	}
+	if m.archive_size_bytes != nil {
+		fields = append(fields, galleryexportjob.FieldArchiveSizeBytes)
+	}
+	if m.storage_config_id != nil {
+		fields = append(fields, galleryexportjob.FieldStorageConfigID)
+	}
+	if m.storage_driver != nil {
+		fields = append(fields, galleryexportjob.FieldStorageDriver)
+	}
+	if m.bucket != nil {
+		fields = append(fields, galleryexportjob.FieldBucket)
+	}
+	if m.object_key != nil {
+		fields = append(fields, galleryexportjob.FieldObjectKey)
+	}
+	if m.attempt_count != nil {
+		fields = append(fields, galleryexportjob.FieldAttemptCount)
+	}
+	if m.lease_owner != nil {
+		fields = append(fields, galleryexportjob.FieldLeaseOwner)
+	}
+	if m.lease_expires_at != nil {
+		fields = append(fields, galleryexportjob.FieldLeaseExpiresAt)
+	}
+	if m.next_attempt_at != nil {
+		fields = append(fields, galleryexportjob.FieldNextAttemptAt)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, galleryexportjob.FieldExpiresAt)
+	}
+	if m.last_error_code != nil {
+		fields = append(fields, galleryexportjob.FieldLastErrorCode)
+	}
+	if m.last_error_message != nil {
+		fields = append(fields, galleryexportjob.FieldLastErrorMessage)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *GalleryExportJobMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case galleryexportjob.FieldCreatedAt:
+		return m.CreatedAt()
+	case galleryexportjob.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case galleryexportjob.FieldUserID:
+		return m.UserID()
+	case galleryexportjob.FieldProjectID:
+		return m.ProjectID()
+	case galleryexportjob.FieldImageIds:
+		return m.ImageIds()
+	case galleryexportjob.FieldState:
+		return m.State()
+	case galleryexportjob.FieldEstimatedBytes:
+		return m.EstimatedBytes()
+	case galleryexportjob.FieldArchiveSizeBytes:
+		return m.ArchiveSizeBytes()
+	case galleryexportjob.FieldStorageConfigID:
+		return m.StorageConfigID()
+	case galleryexportjob.FieldStorageDriver:
+		return m.StorageDriver()
+	case galleryexportjob.FieldBucket:
+		return m.Bucket()
+	case galleryexportjob.FieldObjectKey:
+		return m.ObjectKey()
+	case galleryexportjob.FieldAttemptCount:
+		return m.AttemptCount()
+	case galleryexportjob.FieldLeaseOwner:
+		return m.LeaseOwner()
+	case galleryexportjob.FieldLeaseExpiresAt:
+		return m.LeaseExpiresAt()
+	case galleryexportjob.FieldNextAttemptAt:
+		return m.NextAttemptAt()
+	case galleryexportjob.FieldExpiresAt:
+		return m.ExpiresAt()
+	case galleryexportjob.FieldLastErrorCode:
+		return m.LastErrorCode()
+	case galleryexportjob.FieldLastErrorMessage:
+		return m.LastErrorMessage()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *GalleryExportJobMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case galleryexportjob.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case galleryexportjob.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case galleryexportjob.FieldUserID:
+		return m.OldUserID(ctx)
+	case galleryexportjob.FieldProjectID:
+		return m.OldProjectID(ctx)
+	case galleryexportjob.FieldImageIds:
+		return m.OldImageIds(ctx)
+	case galleryexportjob.FieldState:
+		return m.OldState(ctx)
+	case galleryexportjob.FieldEstimatedBytes:
+		return m.OldEstimatedBytes(ctx)
+	case galleryexportjob.FieldArchiveSizeBytes:
+		return m.OldArchiveSizeBytes(ctx)
+	case galleryexportjob.FieldStorageConfigID:
+		return m.OldStorageConfigID(ctx)
+	case galleryexportjob.FieldStorageDriver:
+		return m.OldStorageDriver(ctx)
+	case galleryexportjob.FieldBucket:
+		return m.OldBucket(ctx)
+	case galleryexportjob.FieldObjectKey:
+		return m.OldObjectKey(ctx)
+	case galleryexportjob.FieldAttemptCount:
+		return m.OldAttemptCount(ctx)
+	case galleryexportjob.FieldLeaseOwner:
+		return m.OldLeaseOwner(ctx)
+	case galleryexportjob.FieldLeaseExpiresAt:
+		return m.OldLeaseExpiresAt(ctx)
+	case galleryexportjob.FieldNextAttemptAt:
+		return m.OldNextAttemptAt(ctx)
+	case galleryexportjob.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	case galleryexportjob.FieldLastErrorCode:
+		return m.OldLastErrorCode(ctx)
+	case galleryexportjob.FieldLastErrorMessage:
+		return m.OldLastErrorMessage(ctx)
+	}
+	return nil, fmt.Errorf("unknown GalleryExportJob field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *GalleryExportJobMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case galleryexportjob.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case galleryexportjob.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case galleryexportjob.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case galleryexportjob.FieldProjectID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProjectID(v)
+		return nil
+	case galleryexportjob.FieldImageIds:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImageIds(v)
+		return nil
+	case galleryexportjob.FieldState:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetState(v)
+		return nil
+	case galleryexportjob.FieldEstimatedBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEstimatedBytes(v)
+		return nil
+	case galleryexportjob.FieldArchiveSizeBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArchiveSizeBytes(v)
+		return nil
+	case galleryexportjob.FieldStorageConfigID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStorageConfigID(v)
+		return nil
+	case galleryexportjob.FieldStorageDriver:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStorageDriver(v)
+		return nil
+	case galleryexportjob.FieldBucket:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBucket(v)
+		return nil
+	case galleryexportjob.FieldObjectKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetObjectKey(v)
+		return nil
+	case galleryexportjob.FieldAttemptCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAttemptCount(v)
+		return nil
+	case galleryexportjob.FieldLeaseOwner:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLeaseOwner(v)
+		return nil
+	case galleryexportjob.FieldLeaseExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLeaseExpiresAt(v)
+		return nil
+	case galleryexportjob.FieldNextAttemptAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNextAttemptAt(v)
+		return nil
+	case galleryexportjob.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	case galleryexportjob.FieldLastErrorCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastErrorCode(v)
+		return nil
+	case galleryexportjob.FieldLastErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastErrorMessage(v)
+		return nil
+	}
+	return fmt.Errorf("unknown GalleryExportJob field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *GalleryExportJobMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, galleryexportjob.FieldUserID)
+	}
+	if m.addestimated_bytes != nil {
+		fields = append(fields, galleryexportjob.FieldEstimatedBytes)
+	}
+	if m.addarchive_size_bytes != nil {
+		fields = append(fields, galleryexportjob.FieldArchiveSizeBytes)
+	}
+	if m.addattempt_count != nil {
+		fields = append(fields, galleryexportjob.FieldAttemptCount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *GalleryExportJobMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case galleryexportjob.FieldUserID:
+		return m.AddedUserID()
+	case galleryexportjob.FieldEstimatedBytes:
+		return m.AddedEstimatedBytes()
+	case galleryexportjob.FieldArchiveSizeBytes:
+		return m.AddedArchiveSizeBytes()
+	case galleryexportjob.FieldAttemptCount:
+		return m.AddedAttemptCount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *GalleryExportJobMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case galleryexportjob.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case galleryexportjob.FieldEstimatedBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddEstimatedBytes(v)
+		return nil
+	case galleryexportjob.FieldArchiveSizeBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddArchiveSizeBytes(v)
+		return nil
+	case galleryexportjob.FieldAttemptCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAttemptCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown GalleryExportJob numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *GalleryExportJobMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(galleryexportjob.FieldStorageConfigID) {
+		fields = append(fields, galleryexportjob.FieldStorageConfigID)
+	}
+	if m.FieldCleared(galleryexportjob.FieldLeaseOwner) {
+		fields = append(fields, galleryexportjob.FieldLeaseOwner)
+	}
+	if m.FieldCleared(galleryexportjob.FieldLeaseExpiresAt) {
+		fields = append(fields, galleryexportjob.FieldLeaseExpiresAt)
+	}
+	if m.FieldCleared(galleryexportjob.FieldNextAttemptAt) {
+		fields = append(fields, galleryexportjob.FieldNextAttemptAt)
+	}
+	if m.FieldCleared(galleryexportjob.FieldExpiresAt) {
+		fields = append(fields, galleryexportjob.FieldExpiresAt)
+	}
+	if m.FieldCleared(galleryexportjob.FieldLastErrorCode) {
+		fields = append(fields, galleryexportjob.FieldLastErrorCode)
+	}
+	if m.FieldCleared(galleryexportjob.FieldLastErrorMessage) {
+		fields = append(fields, galleryexportjob.FieldLastErrorMessage)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *GalleryExportJobMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *GalleryExportJobMutation) ClearField(name string) error {
+	switch name {
+	case galleryexportjob.FieldStorageConfigID:
+		m.ClearStorageConfigID()
+		return nil
+	case galleryexportjob.FieldLeaseOwner:
+		m.ClearLeaseOwner()
+		return nil
+	case galleryexportjob.FieldLeaseExpiresAt:
+		m.ClearLeaseExpiresAt()
+		return nil
+	case galleryexportjob.FieldNextAttemptAt:
+		m.ClearNextAttemptAt()
+		return nil
+	case galleryexportjob.FieldExpiresAt:
+		m.ClearExpiresAt()
+		return nil
+	case galleryexportjob.FieldLastErrorCode:
+		m.ClearLastErrorCode()
+		return nil
+	case galleryexportjob.FieldLastErrorMessage:
+		m.ClearLastErrorMessage()
+		return nil
+	}
+	return fmt.Errorf("unknown GalleryExportJob nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *GalleryExportJobMutation) ResetField(name string) error {
+	switch name {
+	case galleryexportjob.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case galleryexportjob.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case galleryexportjob.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case galleryexportjob.FieldProjectID:
+		m.ResetProjectID()
+		return nil
+	case galleryexportjob.FieldImageIds:
+		m.ResetImageIds()
+		return nil
+	case galleryexportjob.FieldState:
+		m.ResetState()
+		return nil
+	case galleryexportjob.FieldEstimatedBytes:
+		m.ResetEstimatedBytes()
+		return nil
+	case galleryexportjob.FieldArchiveSizeBytes:
+		m.ResetArchiveSizeBytes()
+		return nil
+	case galleryexportjob.FieldStorageConfigID:
+		m.ResetStorageConfigID()
+		return nil
+	case galleryexportjob.FieldStorageDriver:
+		m.ResetStorageDriver()
+		return nil
+	case galleryexportjob.FieldBucket:
+		m.ResetBucket()
+		return nil
+	case galleryexportjob.FieldObjectKey:
+		m.ResetObjectKey()
+		return nil
+	case galleryexportjob.FieldAttemptCount:
+		m.ResetAttemptCount()
+		return nil
+	case galleryexportjob.FieldLeaseOwner:
+		m.ResetLeaseOwner()
+		return nil
+	case galleryexportjob.FieldLeaseExpiresAt:
+		m.ResetLeaseExpiresAt()
+		return nil
+	case galleryexportjob.FieldNextAttemptAt:
+		m.ResetNextAttemptAt()
+		return nil
+	case galleryexportjob.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	case galleryexportjob.FieldLastErrorCode:
+		m.ResetLastErrorCode()
+		return nil
+	case galleryexportjob.FieldLastErrorMessage:
+		m.ResetLastErrorMessage()
+		return nil
+	}
+	return fmt.Errorf("unknown GalleryExportJob field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *GalleryExportJobMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *GalleryExportJobMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *GalleryExportJobMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *GalleryExportJobMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *GalleryExportJobMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *GalleryExportJobMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *GalleryExportJobMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown GalleryExportJob unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *GalleryExportJobMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown GalleryExportJob edge %s", name)
 }
 
 // ImageResultMutation represents an operation that mutates the ImageResult nodes in the graph.

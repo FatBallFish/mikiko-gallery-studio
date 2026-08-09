@@ -325,6 +325,57 @@ var (
 			},
 		},
 	}
+	// GalleryExportJobsColumns holds the columns for the "gallery_export_jobs" table.
+	GalleryExportJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "project_id", Type: field.TypeUUID},
+		{Name: "image_ids", Type: field.TypeJSON},
+		{Name: "state", Type: field.TypeString, Size: 16, Default: "queued"},
+		{Name: "estimated_bytes", Type: field.TypeInt64, Default: 0},
+		{Name: "archive_size_bytes", Type: field.TypeInt64, Default: 0},
+		{Name: "storage_config_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: ""},
+		{Name: "bucket", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "object_key", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "attempt_count", Type: field.TypeInt, Default: 0},
+		{Name: "lease_owner", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "lease_expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "next_attempt_at", Type: field.TypeTime, Nullable: true},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "last_error_message", Type: field.TypeString, Nullable: true, Size: 512},
+	}
+	// GalleryExportJobsTable holds the schema information for the "gallery_export_jobs" table.
+	GalleryExportJobsTable = &schema.Table{
+		Name:       "gallery_export_jobs",
+		Columns:    GalleryExportJobsColumns,
+		PrimaryKey: []*schema.Column{GalleryExportJobsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "galleryexportjob_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{GalleryExportJobsColumns[3], GalleryExportJobsColumns[1]},
+			},
+			{
+				Name:    "galleryexportjob_state_next_attempt_at",
+				Unique:  false,
+				Columns: []*schema.Column{GalleryExportJobsColumns[6], GalleryExportJobsColumns[16]},
+			},
+			{
+				Name:    "galleryexportjob_state_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{GalleryExportJobsColumns[6], GalleryExportJobsColumns[17]},
+			},
+			{
+				Name:    "galleryexportjob_storage_config_id_object_key",
+				Unique:  false,
+				Columns: []*schema.Column{GalleryExportJobsColumns[9], GalleryExportJobsColumns[12]},
+			},
+		},
+	}
 	// TaskImagesColumns holds the columns for the "task_images" table.
 	TaskImagesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUUID},
@@ -2161,6 +2212,7 @@ var (
 		ClusterNodesTable,
 		ClusterTokensTable,
 		SystemConfigsTable,
+		GalleryExportJobsTable,
 		TaskImagesTable,
 		ImageTasksTable,
 		InstallationsTable,
@@ -2214,6 +2266,9 @@ func init() {
 	}
 	SystemConfigsTable.Annotation = &entsql.Annotation{
 		Table: "system_configs",
+	}
+	GalleryExportJobsTable.Annotation = &entsql.Annotation{
+		Table: "gallery_export_jobs",
 	}
 	TaskImagesTable.ForeignKeys[0].RefTable = ProjectsTable
 	TaskImagesTable.Annotation = &entsql.Annotation{

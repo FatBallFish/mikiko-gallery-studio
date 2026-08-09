@@ -11,6 +11,7 @@ import (
 
 	domaincleanup "github.com/fatballfish/pic-gallery/internal/domain/objectcleanup"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
@@ -254,6 +255,17 @@ func hasLiveObjectReferences(ctx context.Context, client *repoent.Client, identi
 		return exists, err
 	}
 	if exists, err := assetQuery.Exist(ctx); err != nil || exists {
+		return exists, err
+	}
+	exportQuery := client.GalleryExportJob.Query().Where(
+		galleryexportjob.StateEQ("succeeded"), galleryexportjob.ObjectKeyEQ(identity.ObjectKey),
+	)
+	if parsed, err := uuid.Parse(identity.StorageConfigID); err == nil {
+		exportQuery.Where(galleryexportjob.StorageConfigIDEQ(parsed))
+	} else {
+		exportQuery.Where(galleryexportjob.StorageConfigIDIsNil(), galleryexportjob.StorageDriverEQ(defaultString(identity.StorageDriver, "local")))
+	}
+	if exists, err := exportQuery.Exist(ctx); err != nil || exists {
 		return exists, err
 	}
 	recoveryQuery := client.ImageTask.Query().Where(

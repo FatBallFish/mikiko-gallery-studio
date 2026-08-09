@@ -1936,6 +1936,40 @@ func (s *Service) RequestPublish(ctx context.Context, userID int64, imageID stri
 	return s.projectGalleryImageMedia(ctx, image, "/api/agent/image/v1/images/"+url.PathEscape(image.ID))
 }
 
+func (s *Service) RequestPublishInProject(ctx context.Context, userID int64, imageID, projectID string) (domainimagetask.GalleryImage, error) {
+	store, ok := s.store.(interface {
+		RequestPublishInProject(context.Context, int64, string, string) (domainimagetask.GalleryImage, error)
+	})
+	if !ok {
+		return domainimagetask.GalleryImage{}, errs.Internal("project-scoped gallery publication is unavailable")
+	}
+	image, err := store.RequestPublishInProject(ctx, userID, imageID, projectID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return domainimagetask.GalleryImage{}, errs.Internal("failed to request image publish")
+	}
+	return s.projectGalleryImageMedia(ctx, image, "/api/agent/image/v1/images/"+url.PathEscape(image.ID))
+}
+
+func (s *Service) RejectPublishInProject(ctx context.Context, userID int64, imageID, projectID, reason string) (domainimagetask.GalleryImage, error) {
+	store, ok := s.store.(interface {
+		ReviewImageInProject(context.Context, int64, string, string, string, string, *time.Time) (domainimagetask.GalleryImage, error)
+	})
+	if !ok {
+		return domainimagetask.GalleryImage{}, errs.Internal("project-scoped gallery review is unavailable")
+	}
+	image, err := store.ReviewImageInProject(ctx, userID, imageID, projectID, domainimagetask.VisibilityRejected, reason, nil)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return domainimagetask.GalleryImage{}, errs.Internal("failed to reject image publish")
+	}
+	return s.projectGalleryImageMedia(ctx, image, "/api/agent/image/v1/images/"+url.PathEscape(image.ID))
+}
+
 func (s *Service) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
 	image, err := s.store.CancelPublish(ctx, userID, imageID)
 	if err != nil {

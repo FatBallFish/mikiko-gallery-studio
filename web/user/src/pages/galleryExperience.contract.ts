@@ -121,11 +121,10 @@ for (const selectionControlContract of [
   "assetSelectHitArea: 'group/select grid size-10",
   'assetSelectVisual:',
   'size-[22px]',
-  'opacity-0',
+	'opacity-80',
   'group-hover/asset:opacity-100',
   'group-hover/select:opacity-100',
   'group-focus-visible/select:opacity-100',
-  '[@media(pointer:coarse)]:opacity-60',
   'aria-pressed={selectedIds.has(image.id)}',
   '<Check',
 ]) {

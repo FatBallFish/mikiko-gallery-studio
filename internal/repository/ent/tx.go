@@ -28,6 +28,8 @@ type Tx struct {
 	ClusterToken *ClusterTokenClient
 	// ConfigItem is the client for interacting with the ConfigItem builders.
 	ConfigItem *ConfigItemClient
+	// GalleryExportJob is the client for interacting with the GalleryExportJob builders.
+	GalleryExportJob *GalleryExportJobClient
 	// ImageResult is the client for interacting with the ImageResult builders.
 	ImageResult *ImageResultClient
 	// ImageTask is the client for interacting with the ImageTask builders.
@@ -243,6 +245,7 @@ func (tx *Tx) init() {
 	tx.ClusterNode = NewClusterNodeClient(tx.config)
 	tx.ClusterToken = NewClusterTokenClient(tx.config)
 	tx.ConfigItem = NewConfigItemClient(tx.config)
+	tx.GalleryExportJob = NewGalleryExportJobClient(tx.config)
 	tx.ImageResult = NewImageResultClient(tx.config)
 	tx.ImageTask = NewImageTaskClient(tx.config)
 	tx.Installation = NewInstallationClient(tx.config)

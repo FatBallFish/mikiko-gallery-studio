@@ -56,6 +56,7 @@ import (
 	domainsecureconfig "github.com/fatballfish/pic-gallery/internal/domain/secureconfig"
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/provider"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
@@ -69,6 +70,7 @@ import (
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	compatservice "github.com/fatballfish/pic-gallery/internal/service/compat"
+	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
@@ -85,34 +87,35 @@ import (
 )
 
 type API struct {
-	auth         *authservice.Service
-	adminAuth    *adminauthservice.Service
-	apiKeys      *apikeyservice.Service
-	billing      *billingservice.Service
-	assets       *assetservice.Service
-	aliasRollout assetservice.AliasRolloutStore
-	caps         *capserv.Service
-	compat       *compatservice.Service
-	tasks        *imagetaskservice.Service
-	admin        *adminconfigservice.Service
-	cashierCfg   *cashierservice.ConfigFacade
-	adminUser    *adminuserservice.Service
-	callRecord   *admincallrecordservice.Service
-	modelAdmin   *modeladminservice.Service
-	textModels   *textmodelservice.Service
-	promptOpt    *promptoptimizerservice.Service
-	secureCfg    *secureconfigservice.Service
-	storageCfg   *storageconfigservice.Service
-	storageReg   *storage.Registry
-	storagePub   storage.InvalidationPublisher
-	redeem       *redeemservice.Service
-	audit        *auditservice.Service
-	cluster      *clusterservice.Service
-	projects     *projectservice.Service
-	adminPerms   domainadminauth.PermissionResolver
-	docsReady    DocsReadinessChecker
-	cashierSync  cashierOrderSyncCoordinator
-	cfg          config.Config
+	auth          *authservice.Service
+	adminAuth     *adminauthservice.Service
+	apiKeys       *apikeyservice.Service
+	billing       *billingservice.Service
+	assets        *assetservice.Service
+	aliasRollout  assetservice.AliasRolloutStore
+	caps          *capserv.Service
+	compat        *compatservice.Service
+	tasks         *imagetaskservice.Service
+	admin         *adminconfigservice.Service
+	cashierCfg    *cashierservice.ConfigFacade
+	adminUser     *adminuserservice.Service
+	callRecord    *admincallrecordservice.Service
+	modelAdmin    *modeladminservice.Service
+	textModels    *textmodelservice.Service
+	promptOpt     *promptoptimizerservice.Service
+	secureCfg     *secureconfigservice.Service
+	storageCfg    *storageconfigservice.Service
+	storageReg    *storage.Registry
+	storagePub    storage.InvalidationPublisher
+	redeem        *redeemservice.Service
+	audit         *auditservice.Service
+	cluster       *clusterservice.Service
+	projects      *projectservice.Service
+	galleryExport *galleryexportservice.Service
+	adminPerms    domainadminauth.PermissionResolver
+	docsReady     DocsReadinessChecker
+	cashierSync   cashierOrderSyncCoordinator
+	cfg           config.Config
 }
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
@@ -315,6 +318,10 @@ func (a *API) SetProjectService(service *projectservice.Service) {
 		a.projects = service
 		a.tasks.SetProjectResolver(service)
 	}
+}
+
+func (a *API) SetGalleryExportService(service *galleryexportservice.Service) {
+	a.galleryExport = service
 }
 
 func (a *API) cashierConfigFacade() *cashierservice.ConfigFacade {
@@ -3030,6 +3037,170 @@ func (a *API) HandleAgentGalleryImages(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *API) HandleAgentGalleryBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	var payload struct {
+		ImageIDs        []string `json:"image_ids"`
+		IDs             []string `json:"ids"`
+		ProjectID       string   `json:"project_id"`
+		TargetProjectID string   `json:"target_project_id"`
+		ImageGroup      string   `json:"image_group"`
+		Publish         *bool    `json:"publish"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	imageIDs := payload.ImageIDs
+	if len(imageIDs) == 0 {
+		imageIDs = payload.IDs
+	}
+	action := strings.TrimPrefix(r.URL.Path, "/api/agent/gallery/v1/images:batch-")
+	var (
+		result domainimagetask.GalleryBatchResult
+		err    error
+	)
+	switch action {
+	case "publish":
+		publish := true
+		if payload.Publish != nil {
+			publish = *payload.Publish
+		}
+		if publish {
+			result, err = a.tasks.BatchPublishImagesWithAction(r.Context(), user.ID, payload.ProjectID, imageIDs, func(ctx context.Context, imageID, projectID string) (domainimagetask.GalleryImage, error) {
+				image, _, publishErr := a.publishGalleryImage(ctx, r, user.ID, imageID, projectID)
+				return image, publishErr
+			})
+		} else {
+			result, err = a.tasks.BatchPublishImages(r.Context(), user.ID, payload.ProjectID, imageIDs, false)
+		}
+	case "group":
+		result, err = a.tasks.BatchSetImageGroup(r.Context(), user.ID, payload.ProjectID, imageIDs, payload.ImageGroup)
+	case "delete":
+		result, err = a.tasks.BatchDeleteImages(r.Context(), user.ID, payload.ProjectID, imageIDs)
+	case "transfer-project":
+		result, err = a.tasks.BatchTransferImages(r.Context(), user.ID, payload.ProjectID, payload.TargetProjectID, imageIDs)
+	case "download":
+		a.handleAgentGalleryBatchDownload(w, r, user.ID, payload.ProjectID, imageIDs)
+		return
+	default:
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery batch route not found"))
+		return
+	}
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.batch_"+strings.ReplaceAll(action, "-", "_"), "image_result", "batch", map[string]any{
+		"project_id": payload.ProjectID, "target_project_id": payload.TargetProjectID,
+		"succeeded": len(result.Succeeded), "failed": len(result.Failed),
+	})
+	httpx.WriteSuccess(w, r, http.StatusOK, result)
+}
+
+func (a *API) handleAgentGalleryBatchDownload(w http.ResponseWriter, r *http.Request, userID int64, projectID string, imageIDs []string) {
+	if a.galleryExport == nil {
+		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeInternal, "gallery export is unavailable"))
+		return
+	}
+	result, err := a.galleryExport.CreateDownload(r.Context(), galleryexportservice.CreateDownloadRequest{
+		UserID: userID, ProjectID: projectID, ImageIDs: imageIDs,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, galleryexportservice.ErrBatchEmpty):
+			httpx.WriteError(w, r, errs.BadRequest("image_ids is required"))
+		case errors.Is(err, galleryexportservice.ErrBatchTooLarge):
+			httpx.WriteError(w, r, errs.New(http.StatusRequestEntityTooLarge, errs.CodeBadRequest, "gallery export selection exceeds the batch limit"))
+		case errors.Is(err, repoerr.ErrNotFound):
+			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "one or more gallery images were not found"))
+		default:
+			httpx.WriteError(w, r, normalizeAppError(err))
+		}
+		return
+	}
+	if result.Job != nil {
+		httpx.WriteSuccess(w, r, http.StatusAccepted, map[string]any{
+			"job": result.Job, "status_url": "/api/agent/gallery/v1/export-jobs/" + result.Job.ID,
+		})
+		return
+	}
+	if result.Archive == nil {
+		httpx.WriteError(w, r, errs.Internal("gallery export did not produce an archive"))
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="gallery-assets.zip"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(result.Archive.Content)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(result.Archive.Content)
+}
+
+func (a *API) HandleAgentGalleryExportJob(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if a.galleryExport == nil {
+		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeInternal, "gallery export is unavailable"))
+		return
+	}
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/agent/gallery/v1/export-jobs/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" || len(parts) > 2 || (len(parts) == 2 && parts[1] != "download") {
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery export route not found"))
+		return
+	}
+	jobID := parts[0]
+	if len(parts) == 2 {
+		archive, err := a.galleryExport.DownloadJob(r.Context(), user.ID, jobID)
+		if err != nil {
+			switch {
+			case errors.Is(err, repoerr.ErrNotFound):
+				httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery export was not found"))
+			case errors.Is(err, galleryexportservice.ErrExportNotReady):
+				httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodeConflict, "gallery export is not ready or has expired"))
+			default:
+				httpx.WriteError(w, r, normalizeAppError(err))
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", `attachment; filename="gallery-assets.zip"`)
+		w.Header().Set("Content-Length", strconv.Itoa(len(archive.Content)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(archive.Content)
+		return
+	}
+	job, err := a.galleryExport.GetJob(r.Context(), user.ID, jobID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery export was not found"))
+		} else {
+			httpx.WriteError(w, r, normalizeAppError(err))
+		}
+		return
+	}
+	payload := map[string]any{"job": job}
+	if job.State == galleryexportservice.StateSucceeded && job.ExpiresAt != nil && job.ExpiresAt.After(time.Now().UTC()) {
+		payload["download_url"] = "/api/agent/gallery/v1/export-jobs/" + job.ID + "/download"
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, payload)
+}
+
 func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet && strings.TrimSuffix(r.URL.Path, "/") == "/api/agent/gallery/v1/images" {
 		a.HandleAgentGalleryImages(w, r)
@@ -3122,34 +3293,49 @@ func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Reque
 		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery image route not found"))
 		return
 	}
-	ownedImage, err := a.findOwnedGalleryImage(r.Context(), user.ID, imageID)
+	image, rejected, err := a.publishGalleryImage(r.Context(), r, user.ID, imageID, "")
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
-	allowed, reason, err := a.moderatePublishRequest(r.Context(), ownedImage.Prompt)
+	if rejected {
+		httpx.WriteSuccess(w, r, http.StatusOK, image)
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusAccepted, image)
+}
+
+func (a *API) publishGalleryImage(ctx context.Context, r *http.Request, userID int64, imageID, expectedProjectID string) (domainimagetask.GalleryImage, bool, error) {
+	ownedImage, err := a.findOwnedGalleryImage(ctx, userID, imageID)
 	if err != nil {
-		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_moderation_skipped", "image_result", imageID, map[string]any{"reason": err.Error()})
+		return domainimagetask.GalleryImage{}, false, err
+	}
+	projectID := ownedImage.ProjectID
+	if expectedProjectID != "" {
+		if projectID != expectedProjectID {
+			return domainimagetask.GalleryImage{}, false, errs.New(http.StatusNotFound, errs.CodeNotFound, "image not found")
+		}
+		projectID = expectedProjectID
+	}
+	allowed, reason, moderationErr := a.moderatePublishRequest(ctx, ownedImage.Prompt)
+	if moderationErr != nil {
+		a.recordAudit(r, "user", fmt.Sprintf("%d", userID), "gallery.publish_moderation_skipped", "image_result", imageID, map[string]any{"reason": moderationErr.Error()})
 		allowed = true
 	}
 	if !allowed {
-		rejected, reviewErr := a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityRejected, defaultString(reason, "auto_moderation_blocked"), nil)
-		if reviewErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(reviewErr))
-			return
+		rejected, rejectErr := a.tasks.RejectPublishInProject(ctx, userID, imageID, projectID, defaultString(reason, "auto_moderation_blocked"))
+		if rejectErr != nil {
+			return domainimagetask.GalleryImage{}, false, rejectErr
 		}
-		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_rejected", "image_result", imageID, map[string]any{"reason": rejected.ReviewReason})
-		httpx.WriteSuccess(w, r, http.StatusOK, rejected)
-		return
+		a.recordAudit(r, "user", fmt.Sprintf("%d", userID), "gallery.publish_rejected", "image_result", imageID, map[string]any{"reason": rejected.ReviewReason})
+		return rejected, true, nil
 	}
-
-	image, err := a.tasks.RequestPublish(r.Context(), user.ID, imageID)
+	image, err := a.tasks.RequestPublishInProject(ctx, userID, imageID, projectID)
 	if err != nil {
-		httpx.WriteError(w, r, normalizeAppError(err))
-		return
+		return domainimagetask.GalleryImage{}, false, err
 	}
-	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_request", "image_result", imageID, map[string]any{"status": image.VisibilityStatus})
-	httpx.WriteSuccess(w, r, http.StatusAccepted, image)
+	a.recordAudit(r, "user", fmt.Sprintf("%d", userID), "gallery.publish_request", "image_result", imageID, map[string]any{"status": image.VisibilityStatus})
+	return image, false, nil
 }
 
 func (a *API) HandleAgentHistoryTasks(w http.ResponseWriter, r *http.Request) {
@@ -9021,6 +9207,7 @@ func (a *API) findOwnedGalleryImage(ctx context.Context, userID int64, imageID s
 				ID:                result.ID,
 				TaskID:            task.ID,
 				UserID:            task.UserID,
+				ProjectID:         defaultString(result.ProjectID, task.ProjectID),
 				Prompt:            task.Prompt,
 				AbstractModel:     task.AbstractModel,
 				TaskType:          task.TaskType,

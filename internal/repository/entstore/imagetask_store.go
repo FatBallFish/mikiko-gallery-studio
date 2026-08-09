@@ -380,6 +380,10 @@ func (s *ImageTaskStore) listByUserProject(ctx context.Context, userID int64, pr
 }
 
 func (s *ImageTaskStore) RequestPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.RequestPublishInProject(ctx, userID, imageID, "")
+}
+
+func (s *ImageTaskStore) RequestPublishInProject(ctx context.Context, userID int64, imageID, projectID string) (domainimagetask.GalleryImage, error) {
 	imageUUID, err := uuid.Parse(imageID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
@@ -388,19 +392,29 @@ func (s *ImageTaskStore) RequestPublish(ctx context.Context, userID int64, image
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	if taskEntity.UserID != userID {
+	if taskEntity.UserID != userID || (projectID != "" && (entity.ProjectID == nil || entity.ProjectID.String() != projectID)) {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
 	currentStatus := defaultString(entity.VisibilityStatus, domainimagetask.VisibilityPrivate)
-	switch currentStatus {
-	case domainimagetask.VisibilityPendingReview, domainimagetask.VisibilityApproved:
-		return mapGalleryImageEntity(entity, taskEntity), nil
+	update := s.client.ImageResult.Update().Where(imageresult.IDEQ(entity.ID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil(), imageresult.VisibilityStatusEQ(entity.VisibilityStatus))
+	if projectID != "" {
+		parsed, parseErr := uuid.Parse(projectID)
+		if parseErr != nil {
+			return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+		}
+		update.Where(imageresult.ProjectIDEQ(parsed))
 	}
-	updated, err := s.client.ImageResult.UpdateOneID(entity.ID).
-		SetVisibilityStatus(domainimagetask.VisibilityPendingReview).
-		ClearReviewReason().
-		ClearPublishedAt().
-		Save(ctx)
+	if currentStatus != domainimagetask.VisibilityPendingReview && currentStatus != domainimagetask.VisibilityApproved {
+		update.SetVisibilityStatus(domainimagetask.VisibilityPendingReview).ClearReviewReason().ClearPublishedAt()
+	}
+	count, err := update.Save(ctx)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	if count != 1 {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	updated, taskEntity, err := s.loadGalleryImageWithTask(ctx, imageUUID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
@@ -408,21 +422,32 @@ func (s *ImageTaskStore) RequestPublish(ctx context.Context, userID int64, image
 }
 
 func (s *ImageTaskStore) CancelPublish(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.CancelPublishInProject(ctx, userID, imageID, "")
+}
+
+func (s *ImageTaskStore) CancelPublishInProject(ctx context.Context, userID int64, imageID, projectID string) (domainimagetask.GalleryImage, error) {
 	imageUUID, err := uuid.Parse(imageID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
-	updated, err := s.client.ImageResult.Update().
-		Where(
-			imageresult.IDEQ(imageUUID),
-			imageresult.UserIDEQ(userID),
-			imageresult.DeletedAtIsNil(),
-			imageresult.VisibilityStatusIn(
-				domainimagetask.VisibilityPrivate,
-				domainimagetask.VisibilityPendingReview,
-				domainimagetask.VisibilityApproved,
-			),
-		).
+	predicates := []predicate.ImageResult{
+		imageresult.IDEQ(imageUUID),
+		imageresult.UserIDEQ(userID),
+		imageresult.DeletedAtIsNil(),
+		imageresult.VisibilityStatusIn(
+			domainimagetask.VisibilityPrivate,
+			domainimagetask.VisibilityPendingReview,
+			domainimagetask.VisibilityApproved,
+		),
+	}
+	if projectID != "" {
+		parsed, parseErr := uuid.Parse(projectID)
+		if parseErr != nil {
+			return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+		}
+		predicates = append(predicates, imageresult.ProjectIDEQ(parsed))
+	}
+	updated, err := s.client.ImageResult.Update().Where(predicates...).
 		SetVisibilityStatus(domainimagetask.VisibilityPrivate).
 		ClearReviewReason().
 		ClearPublishedAt().
@@ -444,28 +469,64 @@ func (s *ImageTaskStore) CancelPublish(ctx context.Context, userID int64, imageI
 }
 
 func (s *ImageTaskStore) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
+	return s.SetImageGroupInProject(ctx, userID, imageID, "", imageGroup)
+}
+
+func (s *ImageTaskStore) SetImageGroupInProject(ctx context.Context, userID int64, imageID, projectID, imageGroup string) (domainimagetask.GalleryImage, error) {
 	imageUUID, err := uuid.Parse(imageID)
 	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	imageGroup = strings.TrimSpace(imageGroup)
+	predicates := []predicate.ImageResult{imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()}
+	if projectID != "" {
+		parsed, parseErr := uuid.Parse(projectID)
+		if parseErr != nil {
+			return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+		}
+		predicates = append(predicates, imageresult.ProjectIDEQ(parsed))
+	}
+	count, err := s.client.ImageResult.Update().Where(predicates...).SetImageGroup(imageGroup).Save(ctx)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	if count != 1 {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	updated, taskEntity, err := s.loadGalleryImageWithTask(ctx, imageUUID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	return mapGalleryImageEntity(updated, taskEntity), nil
+}
+
+func (s *ImageTaskStore) TransferImageProject(ctx context.Context, userID int64, imageID, sourceProjectID, targetProjectID string) (domainimagetask.GalleryImage, error) {
+	imageUUID, err := uuid.Parse(imageID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	sourceID, err := uuid.Parse(sourceProjectID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	targetID, err := uuid.Parse(targetProjectID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	updated, err := s.client.ImageResult.Update().Where(
+		imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.ProjectIDEQ(sourceID), imageresult.DeletedAtIsNil(),
+	).SetProjectID(targetID).Save(ctx)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	if updated != 1 {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
 	entity, taskEntity, err := s.loadGalleryImageWithTask(ctx, imageUUID)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	if taskEntity.UserID != userID {
-		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
-	}
-	imageGroup = strings.TrimSpace(imageGroup)
-	if entity.ImageGroup == imageGroup {
-		return mapGalleryImageEntity(entity, taskEntity), nil
-	}
-	updated, err := s.client.ImageResult.UpdateOneID(entity.ID).
-		SetImageGroup(imageGroup).
-		Save(ctx)
-	if err != nil {
-		return domainimagetask.GalleryImage{}, err
-	}
-	return mapGalleryImageEntity(updated, taskEntity), nil
+	return mapGalleryImageEntity(entity, taskEntity), nil
 }
 
 func (s *ImageTaskStore) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
@@ -505,7 +566,43 @@ func (s *ImageTaskStore) ReviewImage(ctx context.Context, imageID, nextStatus, r
 	return mapGalleryImageEntity(updated, taskEntity), nil
 }
 
+func (s *ImageTaskStore) ReviewImageInProject(ctx context.Context, userID int64, imageID, projectID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
+	imageUUID, err := uuid.Parse(imageID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	projectUUID, err := uuid.Parse(projectID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	update := s.client.ImageResult.Update().Where(imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.ProjectIDEQ(projectUUID), imageresult.DeletedAtIsNil()).SetVisibilityStatus(nextStatus)
+	if nextStatus == domainimagetask.VisibilityRejected || nextStatus == domainimagetask.VisibilityUnpublished {
+		update.SetReviewReason(strings.TrimSpace(reviewReason)).ClearPublishedAt()
+	} else if nextStatus == domainimagetask.VisibilityApproved {
+		update.ClearReviewReason()
+		if publishedAt != nil {
+			update.SetPublishedAt(*publishedAt)
+		}
+	}
+	count, err := update.Save(ctx)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	if count != 1 {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	entity, task, err := s.loadGalleryImageWithTask(ctx, imageUUID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	return mapGalleryImageEntity(entity, task), nil
+}
+
 func (s *ImageTaskStore) DeleteImageResult(ctx context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	return s.DeleteImageResultInProject(ctx, userID, imageID, "")
+}
+
+func (s *ImageTaskStore) DeleteImageResultInProject(ctx context.Context, userID int64, imageID, projectID string) (provider.ImageResult, error) {
 	imageUUID, err := uuid.Parse(imageID)
 	if err != nil {
 		return provider.ImageResult{}, repoerr.ErrNotFound
@@ -515,8 +612,17 @@ func (s *ImageTaskStore) DeleteImageResult(ctx context.Context, userID int64, im
 		return provider.ImageResult{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	writePredicates := []predicate.ImageResult{imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()}
+	if projectID != "" {
+		parsed, parseErr := uuid.Parse(projectID)
+		if parseErr != nil {
+			return provider.ImageResult{}, repoerr.ErrNotFound
+		}
+		writePredicates = append(writePredicates, imageresult.ProjectIDEQ(parsed))
+	}
+	queryPredicates := append(append([]predicate.ImageResult(nil), writePredicates...), lockImageResultForCleanup())
 	entity, err := tx.ImageResult.Query().
-		Where(imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil(), lockImageResultForCleanup()).
+		Where(queryPredicates...).
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -533,8 +639,12 @@ func (s *ImageTaskStore) DeleteImageResult(ctx context.Context, userID int64, im
 		return provider.ImageResult{}, err
 	}
 	result := mapImageResultEntity(entity)
-	if err := tx.ImageResult.UpdateOneID(entity.ID).SetDeletedAt(time.Now().UTC()).Exec(ctx); err != nil {
+	updated, err := tx.ImageResult.Update().Where(writePredicates...).SetDeletedAt(time.Now().UTC()).Save(ctx)
+	if err != nil {
 		return provider.ImageResult{}, err
+	}
+	if updated != 1 {
+		return provider.ImageResult{}, repoerr.ErrNotFound
 	}
 	configID := ""
 	if entity.StorageConfigID != nil {

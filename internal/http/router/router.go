@@ -62,6 +62,12 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/project/v1/projects", api.HandleProjects)
 		mux.HandleFunc("/api/agent/project/v1/projects/", api.HandleProjectDetail)
 		mux.HandleFunc("/api/agent/gallery/v1/images", api.HandleAgentGalleryImages)
+		mux.HandleFunc("/api/agent/gallery/v1/images:batch-publish", api.HandleAgentGalleryBatch)
+		mux.HandleFunc("/api/agent/gallery/v1/images:batch-group", api.HandleAgentGalleryBatch)
+		mux.HandleFunc("/api/agent/gallery/v1/images:batch-delete", api.HandleAgentGalleryBatch)
+		mux.HandleFunc("/api/agent/gallery/v1/images:batch-transfer-project", api.HandleAgentGalleryBatch)
+		mux.HandleFunc("/api/agent/gallery/v1/images:batch-download", api.HandleAgentGalleryBatch)
+		mux.HandleFunc("/api/agent/gallery/v1/export-jobs/", api.HandleAgentGalleryExportJob)
 		mux.HandleFunc("/api/agent/gallery/v1/images/", api.HandleAgentGalleryImageDetail)
 		mux.HandleFunc("/api/agent/billing/v1/balance", api.HandleBalance)
 		mux.HandleFunc("/api/agent/billing/v1/ledger", api.HandleLedger)
@@ -308,6 +314,13 @@ var supplementalNormalTemplateRoutes = map[string]map[string]bool{
 	"/api/agent/gallery/v1/images/{image_id}/like":           {http.MethodPost: true},
 	"/api/agent/gallery/v1/images/{image_id}/favorite":       {http.MethodPost: true},
 	"/api/agent/gallery/v1/images/{image_id}/publish":        {http.MethodPost: true, http.MethodDelete: true},
+	"/api/agent/gallery/v1/images:batch-publish":             {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-group":               {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-delete":              {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-transfer-project":    {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-download":            {http.MethodPost: true},
+	"/api/agent/gallery/v1/export-jobs/{job_id}":             {http.MethodGet: true},
+	"/api/agent/gallery/v1/export-jobs/{job_id}/download":    {http.MethodGet: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:approve":     {http.MethodPost: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:reject":      {http.MethodPost: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:unpublish":   {http.MethodPost: true},

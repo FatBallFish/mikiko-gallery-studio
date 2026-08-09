@@ -32,6 +32,7 @@ import (
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
+	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	objectcleanupservice "github.com/fatballfish/pic-gallery/internal/service/objectcleanup"
@@ -353,6 +354,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	slog.Info("database-backed stores enabled")
 
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
+	api.SetGalleryExportService(galleryexportservice.NewService(entstore.NewGalleryExportStore(client), storageRegistry, galleryexportservice.Options{}))
 	api.SetAliasRolloutStore(aliasRolloutStore)
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)

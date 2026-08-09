@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -221,6 +222,7 @@ func TestReconcileScansOnlyOwnedPrefixesWithPaginationGraceAndRestart(t *testing
 				Objects: []storage.ObjectInfo{{ObjectKey: "reference-assets/orphan.png", ModifiedAt: now.Add(-4 * time.Hour)}},
 			},
 		},
+		"gallery-exports/": {"": {}},
 	}}
 	options := ProcessorOptions{
 		Now:                func() time.Time { return now },
@@ -242,7 +244,7 @@ func TestReconcileScansOnlyOwnedPrefixesWithPaginationGraceAndRestart(t *testing
 		}
 	}
 	for _, prefix := range backend.prefixes {
-		if prefix != "generated-images/" && prefix != "reference-assets/" {
+		if prefix != "generated-images/" && prefix != "reference-assets/" && prefix != "gallery-exports/" {
 			t.Fatalf("listed non-owned prefix %q in %v", prefix, backend.prefixes)
 		}
 	}
@@ -265,10 +267,12 @@ func TestReconcileScansHistoricalReadableStorageAfterDefaultSwitch(t *testing.T)
 	oldBackend := &listingCleanupBackend{pages: map[string]map[string]storage.ObjectPage{
 		"generated-images/": {"": {Objects: []storage.ObjectInfo{{ObjectKey: objectKey, ModifiedAt: now.Add(-2 * time.Hour)}}}},
 		"reference-assets/": {"": {}},
+		"gallery-exports/":  {"": {}},
 	}}
 	newBackend := &listingCleanupBackend{pages: map[string]map[string]storage.ObjectPage{
 		"generated-images/": {"": {Objects: []storage.ObjectInfo{{ObjectKey: objectKey, ModifiedAt: now.Add(-2 * time.Hour)}}}},
 		"reference-assets/": {"": {}},
+		"gallery-exports/":  {"": {}},
 	}}
 	oldRef := storage.BackendRef{ConfigID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Driver: "local", Namespace: "old", Backend: oldBackend}
 	newRef := storage.BackendRef{ConfigID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", Driver: "local", Namespace: "new", Backend: newBackend}
@@ -303,6 +307,7 @@ func TestReconcilePersistsObjectCursorAcrossProcessorRestart(t *testing.T) {
 			"next-page": {Objects: []storage.ObjectInfo{{ObjectKey: orphanKey, ModifiedAt: now.Add(-2 * time.Hour)}}, NextCursor: ""},
 		},
 		"reference-assets/": {"": {}},
+		"gallery-exports/":  {"": {}},
 	}}
 	ref := storage.BackendRef{ConfigID: "cccccccc-cccc-cccc-cccc-cccccccccccc", Driver: "local", Namespace: "stable-c", Backend: backend}
 	store := NewMemoryStore()
@@ -321,7 +326,7 @@ func TestReconcilePersistsObjectCursorAcrossProcessorRestart(t *testing.T) {
 	if len(jobs) != 1 || jobs[0].Identity.ObjectKey != orphanKey {
 		t.Fatalf("restart jobs=%#v cursor calls=%v", jobs, backend.cursors)
 	}
-	if len(backend.cursors) < 3 || backend.cursors[2] != "next-page" {
+	if !slices.Contains(backend.cursors, "next-page") {
 		t.Fatalf("restart did not continue persisted cursor: %v", backend.cursors)
 	}
 }

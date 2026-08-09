@@ -24,6 +24,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
@@ -85,6 +86,8 @@ type Client struct {
 	ClusterToken *ClusterTokenClient
 	// ConfigItem is the client for interacting with the ConfigItem builders.
 	ConfigItem *ConfigItemClient
+	// GalleryExportJob is the client for interacting with the GalleryExportJob builders.
+	GalleryExportJob *GalleryExportJobClient
 	// ImageResult is the client for interacting with the ImageResult builders.
 	ImageResult *ImageResultClient
 	// ImageTask is the client for interacting with the ImageTask builders.
@@ -180,6 +183,7 @@ func (c *Client) init() {
 	c.ClusterNode = NewClusterNodeClient(c.config)
 	c.ClusterToken = NewClusterTokenClient(c.config)
 	c.ConfigItem = NewConfigItemClient(c.config)
+	c.GalleryExportJob = NewGalleryExportJobClient(c.config)
 	c.ImageResult = NewImageResultClient(c.config)
 	c.ImageTask = NewImageTaskClient(c.config)
 	c.Installation = NewInstallationClient(c.config)
@@ -318,6 +322,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ClusterNode:                 NewClusterNodeClient(cfg),
 		ClusterToken:                NewClusterTokenClient(cfg),
 		ConfigItem:                  NewConfigItemClient(cfg),
+		GalleryExportJob:            NewGalleryExportJobClient(cfg),
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
 		Installation:                NewInstallationClient(cfg),
@@ -383,6 +388,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ClusterNode:                 NewClusterNodeClient(cfg),
 		ClusterToken:                NewClusterTokenClient(cfg),
 		ConfigItem:                  NewConfigItemClient(cfg),
+		GalleryExportJob:            NewGalleryExportJobClient(cfg),
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
 		Installation:                NewInstallationClient(cfg),
@@ -451,9 +457,9 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
-		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask,
-		c.Installation, c.MigrationCheckpoint, c.ModelAccount, c.ModelAccountModel,
-		c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
+		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.GalleryExportJob, c.ImageResult,
+		c.ImageTask, c.Installation, c.MigrationCheckpoint, c.ModelAccount,
+		c.ModelAccountModel, c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
 		c.ObjectReconcileCheckpoint, c.ObjectStorageConfig, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
 		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
@@ -472,9 +478,9 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
-		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask,
-		c.Installation, c.MigrationCheckpoint, c.ModelAccount, c.ModelAccountModel,
-		c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
+		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.GalleryExportJob, c.ImageResult,
+		c.ImageTask, c.Installation, c.MigrationCheckpoint, c.ModelAccount,
+		c.ModelAccountModel, c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
 		c.ObjectReconcileCheckpoint, c.ObjectStorageConfig, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
 		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
@@ -507,6 +513,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ClusterToken.mutate(ctx, m)
 	case *ConfigItemMutation:
 		return c.ConfigItem.mutate(ctx, m)
+	case *GalleryExportJobMutation:
+		return c.GalleryExportJob.mutate(ctx, m)
 	case *ImageResultMutation:
 		return c.ImageResult.mutate(ctx, m)
 	case *ImageTaskMutation:
@@ -1649,6 +1657,139 @@ func (c *ConfigItemClient) mutate(ctx context.Context, m *ConfigItemMutation) (V
 		return (&ConfigItemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ConfigItem mutation op: %q", m.Op())
+	}
+}
+
+// GalleryExportJobClient is a client for the GalleryExportJob schema.
+type GalleryExportJobClient struct {
+	config
+}
+
+// NewGalleryExportJobClient returns a client for the GalleryExportJob from the given config.
+func NewGalleryExportJobClient(c config) *GalleryExportJobClient {
+	return &GalleryExportJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `galleryexportjob.Hooks(f(g(h())))`.
+func (c *GalleryExportJobClient) Use(hooks ...Hook) {
+	c.hooks.GalleryExportJob = append(c.hooks.GalleryExportJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `galleryexportjob.Intercept(f(g(h())))`.
+func (c *GalleryExportJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.GalleryExportJob = append(c.inters.GalleryExportJob, interceptors...)
+}
+
+// Create returns a builder for creating a GalleryExportJob entity.
+func (c *GalleryExportJobClient) Create() *GalleryExportJobCreate {
+	mutation := newGalleryExportJobMutation(c.config, OpCreate)
+	return &GalleryExportJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of GalleryExportJob entities.
+func (c *GalleryExportJobClient) CreateBulk(builders ...*GalleryExportJobCreate) *GalleryExportJobCreateBulk {
+	return &GalleryExportJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *GalleryExportJobClient) MapCreateBulk(slice any, setFunc func(*GalleryExportJobCreate, int)) *GalleryExportJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &GalleryExportJobCreateBulk{err: fmt.Errorf("calling to GalleryExportJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*GalleryExportJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &GalleryExportJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for GalleryExportJob.
+func (c *GalleryExportJobClient) Update() *GalleryExportJobUpdate {
+	mutation := newGalleryExportJobMutation(c.config, OpUpdate)
+	return &GalleryExportJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *GalleryExportJobClient) UpdateOne(_m *GalleryExportJob) *GalleryExportJobUpdateOne {
+	mutation := newGalleryExportJobMutation(c.config, OpUpdateOne, withGalleryExportJob(_m))
+	return &GalleryExportJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *GalleryExportJobClient) UpdateOneID(id uuid.UUID) *GalleryExportJobUpdateOne {
+	mutation := newGalleryExportJobMutation(c.config, OpUpdateOne, withGalleryExportJobID(id))
+	return &GalleryExportJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for GalleryExportJob.
+func (c *GalleryExportJobClient) Delete() *GalleryExportJobDelete {
+	mutation := newGalleryExportJobMutation(c.config, OpDelete)
+	return &GalleryExportJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *GalleryExportJobClient) DeleteOne(_m *GalleryExportJob) *GalleryExportJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *GalleryExportJobClient) DeleteOneID(id uuid.UUID) *GalleryExportJobDeleteOne {
+	builder := c.Delete().Where(galleryexportjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &GalleryExportJobDeleteOne{builder}
+}
+
+// Query returns a query builder for GalleryExportJob.
+func (c *GalleryExportJobClient) Query() *GalleryExportJobQuery {
+	return &GalleryExportJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeGalleryExportJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a GalleryExportJob entity by its id.
+func (c *GalleryExportJobClient) Get(ctx context.Context, id uuid.UUID) (*GalleryExportJob, error) {
+	return c.Query().Where(galleryexportjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *GalleryExportJobClient) GetX(ctx context.Context, id uuid.UUID) *GalleryExportJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *GalleryExportJobClient) Hooks() []Hook {
+	return c.hooks.GalleryExportJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *GalleryExportJobClient) Interceptors() []Interceptor {
+	return c.inters.GalleryExportJob
+}
+
+func (c *GalleryExportJobClient) mutate(ctx context.Context, m *GalleryExportJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&GalleryExportJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&GalleryExportJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&GalleryExportJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&GalleryExportJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown GalleryExportJob mutation op: %q", m.Op())
 	}
 }
 
@@ -6774,28 +6915,28 @@ func (c *WalletReservationAllocationClient) mutate(ctx context.Context, m *Walle
 type (
 	hooks struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
-		ClusterNode, ClusterToken, ConfigItem, ImageResult, ImageTask, Installation,
-		MigrationCheckpoint, ModelAccount, ModelAccountModel, ModelProvider,
-		ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint, ObjectStorageConfig,
-		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
-		Project, PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
-		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
-		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
-		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
-		TextModelAccount, User, UserGroup, UserGroupMember, UserSubscription,
-		WalletGrant, WalletReservationAllocation []ent.Hook
+		ClusterNode, ClusterToken, ConfigItem, GalleryExportJob, ImageResult,
+		ImageTask, Installation, MigrationCheckpoint, ModelAccount, ModelAccountModel,
+		ModelProvider, ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint,
+		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
+		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
+		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
+		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
+		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
+		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
-		ClusterNode, ClusterToken, ConfigItem, ImageResult, ImageTask, Installation,
-		MigrationCheckpoint, ModelAccount, ModelAccountModel, ModelProvider,
-		ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint, ObjectStorageConfig,
-		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
-		Project, PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
-		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
-		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
-		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
-		TextModelAccount, User, UserGroup, UserGroupMember, UserSubscription,
-		WalletGrant, WalletReservationAllocation []ent.Interceptor
+		ClusterNode, ClusterToken, ConfigItem, GalleryExportJob, ImageResult,
+		ImageTask, Installation, MigrationCheckpoint, ModelAccount, ModelAccountModel,
+		ModelProvider, ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint,
+		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
+		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
+		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
+		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
+		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
+		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Interceptor
 	}
 )
