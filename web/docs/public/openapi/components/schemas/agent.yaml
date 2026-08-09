@@ -1054,7 +1054,7 @@ components:
                   message: { type: string }
     GalleryExportJob:
       type: object
-      required: [id, project_id, image_ids, state, estimated_bytes, created_at, updated_at]
+      required: [id, project_id, image_ids, state, estimated_bytes, deadline_at, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -1066,8 +1066,10 @@ components:
         estimated_bytes: { type: integer, format: int64, minimum: 0 }
         archive_size_bytes: { type: integer, format: int64, minimum: 0 }
         attempt_count: { type: integer, minimum: 0 }
-        processing_timeout_seconds: { type: integer, minimum: 1 }
-        deadline_at: { type: string, format: date-time }
+        deadline_at:
+          type: string
+          format: date-time
+          description: Immutable lifecycle deadline shared by queueing, retries, processing, and polling.
         expires_at: { type: string, format: date-time }
         error_code: { type: string }
         error_message: { type: string }

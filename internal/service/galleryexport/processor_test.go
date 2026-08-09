@@ -34,6 +34,9 @@ func TestProcessorBuildsQueuedArchiveAndPersistsExpiringCleanupIdentity(t *testi
 	if !store.completed.ExpiresAt.Equal(now.Add(2 * time.Hour)) {
 		t.Fatalf("archive expiry = %s", store.completed.ExpiresAt)
 	}
+	if !store.completed.CompletedAt.Equal(now) {
+		t.Fatalf("completion time = %s", store.completed.CompletedAt)
+	}
 	if _, ok := backend.objects[store.completed.ObjectKey]; !ok {
 		t.Fatalf("temporary archive was not persisted: %#v", backend.objects)
 	}
@@ -48,7 +51,7 @@ type processorStoreStub struct {
 	mu        sync.Mutex
 }
 
-func (s *processorStoreStub) AcquireNextJob(context.Context, string, time.Time, time.Duration, time.Duration) (Job, bool, error) {
+func (s *processorStoreStub) AcquireNextJob(context.Context, string, time.Time, time.Duration) (Job, bool, error) {
 	return s.claimed, s.claimed.ID != "", nil
 }
 func (s *processorStoreStub) CompleteJob(_ context.Context, req CompleteJobRequest) (Job, error) {
@@ -119,13 +122,14 @@ func (b *blockingExportBackend) Get(ctx context.Context, _ string) ([]byte, erro
 func (*blockingExportBackend) Delete(context.Context, string) error { return nil }
 
 func TestProcessorAppliesAsyncDeadline(t *testing.T) {
+	deadline := time.Now().UTC().Add(20 * time.Millisecond)
 	backend := &blockingExportBackend{started: make(chan struct{})}
 	store := &processorStoreStub{
 		exportStoreStub: exportStoreStub{assets: []Asset{{ID: "one", ObjectKey: "source.png", MIMEType: "image/png"}}},
-		claimed:         Job{ID: "job-timeout", UserID: 7, ProjectID: "project-1", ImageIDs: []string{"one"}, State: StateRunning, LeaseOwner: "worker-1", AttemptCount: 1},
+		claimed:         Job{ID: "job-timeout", UserID: 7, ProjectID: "project-1", ImageIDs: []string{"one"}, State: StateRunning, LeaseOwner: "worker-1", AttemptCount: 1, DeadlineAt: &deadline},
 		renewOK:         true,
 	}
-	processor := NewProcessor(store, storage.NewStaticRouter(backend), ProcessorOptions{Owner: "worker-1", LeaseTTL: time.Second, AsyncTimeout: 20 * time.Millisecond})
+	processor := NewProcessor(store, storage.NewStaticRouter(backend), ProcessorOptions{Owner: "worker-1", LeaseTTL: time.Second, AsyncTimeout: time.Hour})
 	processed, err := processor.ProcessOnce(t.Context())
 	if !processed || err != nil {
 		t.Fatalf("timeout result processed=%v err=%v", processed, err)
@@ -238,7 +242,7 @@ func (s *attemptStore) AuthorizeAssets(context.Context, int64, string, []string)
 	return append([]Asset(nil), s.assets...), nil
 }
 func (*attemptStore) CreateJob(context.Context, CreateJobRequest) (Job, error) { return Job{}, nil }
-func (*attemptStore) AcquireNextJob(context.Context, string, time.Time, time.Duration, time.Duration) (Job, bool, error) {
+func (*attemptStore) AcquireNextJob(context.Context, string, time.Time, time.Duration) (Job, bool, error) {
 	return Job{}, false, nil
 }
 func (*attemptStore) RenewJobLease(context.Context, string, string, int, time.Time, time.Duration) (bool, error) {
@@ -256,7 +260,7 @@ func (s *attemptStore) CompleteJob(_ context.Context, req CompleteJobRequest) (J
 	now := time.Now().UTC().Add(time.Hour)
 	return Job{ID: req.JobID, UserID: 7, State: StateSucceeded, ObjectKey: req.ObjectKey, ArchiveSizeBytes: req.ArchiveSizeBytes, ExpiresAt: &now}, nil
 }
-func (s *attemptStore) GetJob(_ context.Context, _ int64, jobID string) (Job, error) {
+func (s *attemptStore) GetJob(_ context.Context, _ int64, jobID string, _ time.Time) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.completed.JobID != jobID {

@@ -46,6 +46,8 @@ const (
 	FieldLeaseExpiresAt = "lease_expires_at"
 	// FieldNextAttemptAt holds the string denoting the next_attempt_at field in the database.
 	FieldNextAttemptAt = "next_attempt_at"
+	// FieldLifecycleDeadlineAt holds the string denoting the lifecycle_deadline_at field in the database.
+	FieldLifecycleDeadlineAt = "lifecycle_deadline_at"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
 	FieldExpiresAt = "expires_at"
 	// FieldLastErrorCode holds the string denoting the last_error_code field in the database.
@@ -75,6 +77,7 @@ var Columns = []string{
 	FieldLeaseOwner,
 	FieldLeaseExpiresAt,
 	FieldNextAttemptAt,
+	FieldLifecycleDeadlineAt,
 	FieldExpiresAt,
 	FieldLastErrorCode,
 	FieldLastErrorMessage,
@@ -210,6 +213,11 @@ func ByLeaseExpiresAt(opts ...sql.OrderTermOption) OrderOption {
 // ByNextAttemptAt orders the results by the next_attempt_at field.
 func ByNextAttemptAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldNextAttemptAt, opts...).ToFunc()
+}
+
+// ByLifecycleDeadlineAt orders the results by the lifecycle_deadline_at field.
+func ByLifecycleDeadlineAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLifecycleDeadlineAt, opts...).ToFunc()
 }
 
 // ByExpiresAt orders the results by the expires_at field.

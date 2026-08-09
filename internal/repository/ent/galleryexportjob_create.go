@@ -221,6 +221,20 @@ func (_c *GalleryExportJobCreate) SetNillableNextAttemptAt(v *time.Time) *Galler
 	return _c
 }
 
+// SetLifecycleDeadlineAt sets the "lifecycle_deadline_at" field.
+func (_c *GalleryExportJobCreate) SetLifecycleDeadlineAt(v time.Time) *GalleryExportJobCreate {
+	_c.mutation.SetLifecycleDeadlineAt(v)
+	return _c
+}
+
+// SetNillableLifecycleDeadlineAt sets the "lifecycle_deadline_at" field if the given value is not nil.
+func (_c *GalleryExportJobCreate) SetNillableLifecycleDeadlineAt(v *time.Time) *GalleryExportJobCreate {
+	if v != nil {
+		_c.SetLifecycleDeadlineAt(*v)
+	}
+	return _c
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (_c *GalleryExportJobCreate) SetExpiresAt(v time.Time) *GalleryExportJobCreate {
 	_c.mutation.SetExpiresAt(v)
@@ -525,6 +539,10 @@ func (_c *GalleryExportJobCreate) createSpec() (*GalleryExportJob, *sqlgraph.Cre
 	if value, ok := _c.mutation.NextAttemptAt(); ok {
 		_spec.SetField(galleryexportjob.FieldNextAttemptAt, field.TypeTime, value)
 		_node.NextAttemptAt = &value
+	}
+	if value, ok := _c.mutation.LifecycleDeadlineAt(); ok {
+		_spec.SetField(galleryexportjob.FieldLifecycleDeadlineAt, field.TypeTime, value)
+		_node.LifecycleDeadlineAt = &value
 	}
 	if value, ok := _c.mutation.ExpiresAt(); ok {
 		_spec.SetField(galleryexportjob.FieldExpiresAt, field.TypeTime, value)

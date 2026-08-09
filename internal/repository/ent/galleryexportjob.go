@@ -51,6 +51,8 @@ type GalleryExportJob struct {
 	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
 	// NextAttemptAt holds the value of the "next_attempt_at" field.
 	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
+	// LifecycleDeadlineAt holds the value of the "lifecycle_deadline_at" field.
+	LifecycleDeadlineAt *time.Time `json:"lifecycle_deadline_at,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// LastErrorCode holds the value of the "last_error_code" field.
@@ -73,7 +75,7 @@ func (*GalleryExportJob) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case galleryexportjob.FieldState, galleryexportjob.FieldStorageDriver, galleryexportjob.FieldBucket, galleryexportjob.FieldObjectKey, galleryexportjob.FieldLeaseOwner, galleryexportjob.FieldLastErrorCode, galleryexportjob.FieldLastErrorMessage:
 			values[i] = new(sql.NullString)
-		case galleryexportjob.FieldCreatedAt, galleryexportjob.FieldUpdatedAt, galleryexportjob.FieldLeaseExpiresAt, galleryexportjob.FieldNextAttemptAt, galleryexportjob.FieldExpiresAt:
+		case galleryexportjob.FieldCreatedAt, galleryexportjob.FieldUpdatedAt, galleryexportjob.FieldLeaseExpiresAt, galleryexportjob.FieldNextAttemptAt, galleryexportjob.FieldLifecycleDeadlineAt, galleryexportjob.FieldExpiresAt:
 			values[i] = new(sql.NullTime)
 		case galleryexportjob.FieldID, galleryexportjob.FieldProjectID:
 			values[i] = new(uuid.UUID)
@@ -200,6 +202,13 @@ func (_m *GalleryExportJob) assignValues(columns []string, values []any) error {
 				_m.NextAttemptAt = new(time.Time)
 				*_m.NextAttemptAt = value.Time
 			}
+		case galleryexportjob.FieldLifecycleDeadlineAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field lifecycle_deadline_at", values[i])
+			} else if value.Valid {
+				_m.LifecycleDeadlineAt = new(time.Time)
+				*_m.LifecycleDeadlineAt = value.Time
+			}
 		case galleryexportjob.FieldExpiresAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field expires_at", values[i])
@@ -310,6 +319,11 @@ func (_m *GalleryExportJob) String() string {
 	builder.WriteString(", ")
 	if v := _m.NextAttemptAt; v != nil {
 		builder.WriteString("next_attempt_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.LifecycleDeadlineAt; v != nil {
+		builder.WriteString("lifecycle_deadline_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")

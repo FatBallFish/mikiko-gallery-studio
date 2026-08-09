@@ -22,7 +22,7 @@ if (!invertLoadedGallerySelection || !reconcileGalleryBatchSelection || !pollGal
   throw new Error('gallery batch actions need selection reconciliation and bounded export polling')
 }
 
-type ExportStatus = { job: { id: string; state: string; error_message?: string; processing_timeout_seconds?: number; deadline_at?: string } }
+type ExportStatus = { job: { id: string; state: string; error_message?: string; deadline_at?: string } }
 
 const inverted = invertLoadedGallerySelection(new Set(['loaded-1', 'hidden']), ['loaded-1', 'loaded-2'])
 if (inverted.has('loaded-1') || !inverted.has('loaded-2') || inverted.has('hidden')) {
@@ -58,10 +58,10 @@ if (allFailed.succeeded.length !== 0 || allFailed.failed.length !== 2) {
 }
 
 const polledStates = ['running', 'succeeded']
-const completedExport = await pollGalleryExportJob(
-	{ job: { id: 'export-1', state: 'queued', processing_timeout_seconds: 600 } },
-  async (jobID) => ({ job: { id: jobID, state: polledStates.shift() ?? 'failed' } }),
-  { maxAttempts: 3, wait: async () => undefined },
+	const completedExport = await pollGalleryExportJob(
+		{ job: { id: 'export-1', state: 'queued', deadline_at: '2026-08-09T00:20:00Z' } },
+	  async (jobID) => ({ job: { id: jobID, state: polledStates.shift() ?? 'failed', deadline_at: '2026-08-09T00:20:00Z' } }),
+	  { maxAttempts: 3, now: () => Date.parse('2026-08-09T00:00:00Z'), wait: async () => undefined },
 )
 if (completedExport.job.state !== 'succeeded' || polledStates.length !== 0) {
   throw new Error('async export polling must continue through queued/running states until success')
@@ -70,43 +70,59 @@ if (completedExport.job.state !== 'succeeded' || polledStates.length !== 0) {
 let virtualNow = Date.parse('2026-08-09T00:00:00Z')
 let longPolls = 0
 const longRunningExport = await pollGalleryExportJob(
-	{ job: { id: 'export-long', state: 'queued', processing_timeout_seconds: 600 } },
-	async (jobID) => ({ job: { id: jobID, state: ++longPolls > 70 ? 'succeeded' : 'running', processing_timeout_seconds: 600 } }),
+	{ job: { id: 'export-long', state: 'queued', deadline_at: '2026-08-09T00:20:00Z' } },
+	async (jobID) => ({ job: { id: jobID, state: ++longPolls > 112 ? 'succeeded' : 'running', deadline_at: '2026-08-09T00:20:00Z' } }),
 	{ now: () => virtualNow, marginMs: 60_000, wait: async () => { virtualNow += 8_000 } },
 )
-if (longRunningExport.job.state !== 'succeeded' || virtualNow - Date.parse('2026-08-09T00:00:00Z') <= 120_000) {
-	throw new Error('gallery export polling must cover the backend ten-minute processing window')
+if (longRunningExport.job.state !== 'succeeded' || virtualNow - Date.parse('2026-08-09T00:00:00Z') <= 10 * 60_000) {
+	throw new Error('gallery export polling must cover long queueing within the server lifecycle deadline')
 }
 
 virtualNow = Date.parse('2026-08-09T00:00:00Z')
 let deadlineMessage = ''
 try {
 	await pollGalleryExportJob(
-		{ job: { id: 'export-deadline', state: 'running', processing_timeout_seconds: 600, deadline_at: '2026-08-09T00:00:10Z' } },
-		async (jobID) => ({ job: { id: jobID, state: 'running', processing_timeout_seconds: 600, deadline_at: '2026-08-09T00:00:10Z' } }),
+			{ job: { id: 'export-deadline', state: 'running', deadline_at: '2026-08-09T00:00:10Z' } },
+			async (jobID) => ({ job: { id: jobID, state: 'running', deadline_at: '2026-08-09T00:00:10Z' } }),
 		{ now: () => virtualNow, marginMs: 1_000, wait: async () => { virtualNow += 6_000 } },
 	)
 } catch (error) { deadlineMessage = error instanceof Error ? error.message : String(error) }
 if (!deadlineMessage.includes('timed out')) throw new Error(`server export deadline must bound polling, got ${deadlineMessage}`)
-let timeoutMessage = ''
+virtualNow = Date.parse('2026-08-09T00:00:00Z')
+let refreshedDeadlineFetches = 0
+let refreshedDeadlineMessage = ''
+try {
+	await pollGalleryExportJob(
+		{ job: { id: 'export-refresh', state: 'queued', deadline_at: '2026-08-09T00:20:00Z' } },
+		async (jobID) => {
+			refreshedDeadlineFetches += 1
+			return { job: { id: jobID, state: 'running', deadline_at: '2026-08-09T00:00:04Z' } }
+		},
+		{ now: () => virtualNow, marginMs: 0, wait: async () => { virtualNow += 3_000 } },
+	)
+} catch (error) { refreshedDeadlineMessage = error instanceof Error ? error.message : String(error) }
+if (!refreshedDeadlineMessage.includes('timed out') || refreshedDeadlineFetches !== 1) {
+	throw new Error(`polling must refresh the authoritative deadline from every response, message=${refreshedDeadlineMessage} fetches=${refreshedDeadlineFetches}`)
+}
+let missingDeadlineMessage = ''
 try {
   await pollGalleryExportJob(
     { job: { id: 'export-2', state: 'queued' } },
     async (jobID) => ({ job: { id: jobID, state: 'running' } }),
-    { maxAttempts: 2, wait: async () => undefined },
+		{ maxAttempts: 2, wait: async () => undefined },
   )
 } catch (error) {
-  timeoutMessage = error instanceof Error ? error.message : String(error)
+	missingDeadlineMessage = error instanceof Error ? error.message : String(error)
 }
-if (!timeoutMessage.includes('timed out')) {
-  throw new Error(`async export polling must stop with an explicit timeout, got ${timeoutMessage}`)
+if (!missingDeadlineMessage.includes('missing deadline')) {
+	throw new Error(`async export polling must require the authoritative server deadline, got ${missingDeadlineMessage}`)
 }
 const controller = new AbortController()
 let abortedFetches = 0
 const abortedPoll = pollGalleryExportJob(
-  { job: { id: 'export-abort', state: 'queued' } },
-  async () => { abortedFetches += 1; return { job: { id: 'export-abort', state: 'succeeded' } } },
-  { signal: controller.signal, wait: async (signal) => { controller.abort(); signal?.throwIfAborted() } },
+	{ job: { id: 'export-abort', state: 'queued', deadline_at: '2026-08-09T00:20:00Z' } },
+	async () => { abortedFetches += 1; return { job: { id: 'export-abort', state: 'succeeded', deadline_at: '2026-08-09T00:20:00Z' } } },
+	{ signal: controller.signal, now: () => Date.parse('2026-08-09T00:00:00Z'), wait: async (signal) => { controller.abort(); signal?.throwIfAborted() } },
 )
 let abortName = ''
 try { await abortedPoll } catch (error) { abortName = error instanceof Error ? error.name : '' }

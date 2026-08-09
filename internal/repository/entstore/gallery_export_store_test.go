@@ -2,7 +2,9 @@ package entstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,8 +50,10 @@ func TestGalleryExportStoreCreatesAndClaimsDurableJobWithLease(t *testing.T) {
 	projectID := uuid.New()
 	seedGalleryExportProject(t, client, projectID, 7, "owned")
 	store := NewGalleryExportStore(client)
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	deadline := now.Add(20 * time.Minute)
 	created, err := store.CreateJob(t.Context(), galleryexportservice.CreateJobRequest{
-		UserID: 7, ProjectID: projectID.String(), ImageIDs: []string{"one", "two"}, EstimatedBytes: 27,
+		UserID: 7, ProjectID: projectID.String(), ImageIDs: []string{"one", "two"}, EstimatedBytes: 27, LifecycleDeadlineAt: deadline,
 	})
 	if err != nil {
 		t.Fatalf("create job: %v", err)
@@ -58,15 +62,23 @@ func TestGalleryExportStoreCreatesAndClaimsDurableJobWithLease(t *testing.T) {
 		t.Fatalf("created job = %#v", created)
 	}
 
-	now := time.Now().UTC()
-	claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-1", now, time.Minute, 10*time.Minute)
+	persistedCreated, err := client.GalleryExportJob.Get(t.Context(), uuid.MustParse(created.ID))
+	if err != nil || persistedCreated.LifecycleDeadlineAt == nil || !persistedCreated.LifecycleDeadlineAt.Equal(deadline) {
+		t.Fatalf("persisted lifecycle deadline=%v err=%v", persistedCreated.LifecycleDeadlineAt, err)
+	}
+	payload, err := json.Marshal(created)
+	if err != nil || !strings.Contains(string(payload), `"deadline_at":"2026-08-09T10:20:00Z"`) {
+		t.Fatalf("job JSON=%s err=%v", payload, err)
+	}
+
+	claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-1", now, time.Minute)
 	if err != nil || !ok {
 		t.Fatalf("acquire job: ok=%v err=%v", ok, err)
 	}
 	if claimed.ID != created.ID || claimed.State != galleryexportservice.StateRunning || claimed.AttemptCount != 1 || claimed.LeaseOwner != "worker-1" {
 		t.Fatalf("claimed job = %#v", claimed)
 	}
-	if _, ok, err := store.AcquireNextJob(t.Context(), "worker-2", now, time.Minute, 10*time.Minute); err != nil || ok {
+	if _, ok, err := store.AcquireNextJob(t.Context(), "worker-2", now, time.Minute); err != nil || ok {
 		t.Fatalf("leased job was claimed twice: ok=%v err=%v", ok, err)
 	}
 	if renewed, err := store.RenewJobLease(t.Context(), claimed.ID, "worker-2", claimed.AttemptCount, now.Add(10*time.Second), 2*time.Minute); err != nil || renewed {
@@ -79,8 +91,80 @@ func TestGalleryExportStoreCreatesAndClaimsDurableJobWithLease(t *testing.T) {
 	if err != nil || persisted.LeaseExpiresAt == nil || !persisted.LeaseExpiresAt.Equal(now.Add(130*time.Second)) {
 		t.Fatalf("renewed lease=%v err=%v", persisted.LeaseExpiresAt, err)
 	}
-	if persisted.ExpiresAt == nil || !persisted.ExpiresAt.Equal(now.Add(10*time.Minute)) {
-		t.Fatalf("processing deadline moved during renewal: %v", persisted.ExpiresAt)
+	if persisted.LifecycleDeadlineAt == nil || !persisted.LifecycleDeadlineAt.Equal(deadline) || persisted.ExpiresAt != nil {
+		t.Fatalf("heartbeat changed lifecycle=%v archive expiry=%v", persisted.LifecycleDeadlineAt, persisted.ExpiresAt)
+	}
+}
+
+func TestGalleryExportStoreRetriesWithinLifecycleAndStopsBeyondDeadline(t *testing.T) {
+	client := openGalleryExportTestClient(t)
+	projectID := uuid.New()
+	seedGalleryExportProject(t, client, projectID, 7, "owned")
+	store := NewGalleryExportStore(client)
+	start := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	deadline := start.Add(20 * time.Minute)
+	created, err := store.CreateJob(t.Context(), galleryexportservice.CreateJobRequest{UserID: 7, ProjectID: projectID.String(), ImageIDs: []string{"one"}, LifecycleDeadlineAt: deadline})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-1", start, time.Minute)
+		if err != nil || !ok || claimed.AttemptCount != attempt {
+			t.Fatalf("claim attempt %d: job=%#v ok=%v err=%v", attempt, claimed, ok, err)
+		}
+		if err := store.FailJob(t.Context(), claimed, start, "archive_store_failed", "retry"); err != nil {
+			t.Fatalf("fail attempt %d: %v", attempt, err)
+		}
+		start = start.Add(time.Duration(attempt) * time.Minute)
+	}
+	third, ok, err := store.AcquireNextJob(t.Context(), "worker-1", start, time.Minute)
+	if err != nil || !ok || third.AttemptCount != 3 || third.DeadlineAt == nil || !third.DeadlineAt.Equal(deadline) {
+		t.Fatalf("third claim before deadline: job=%#v ok=%v err=%v", third, ok, err)
+	}
+
+	shortDeadline := start.Add(30 * time.Second)
+	short, err := store.CreateJob(t.Context(), galleryexportservice.CreateJobRequest{UserID: 7, ProjectID: projectID.String(), ImageIDs: []string{"two"}, LifecycleDeadlineAt: shortDeadline})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-2", start, time.Minute)
+	if err != nil || !ok || claimed.ID != short.ID {
+		t.Fatalf("short claim=%#v ok=%v err=%v", claimed, ok, err)
+	}
+	if err := store.FailJob(t.Context(), claimed, start, "archive_store_failed", "retry"); err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := store.GetJob(t.Context(), 7, short.ID, start)
+	if err != nil || terminal.State != galleryexportservice.StateFailed || terminal.ErrorCode != galleryexportservice.ErrorLifecycleDeadlineExceeded {
+		t.Fatalf("terminal retry job=%#v err=%v", terminal, err)
+	}
+	if _, ok, err := store.AcquireNextJob(t.Context(), "worker-3", shortDeadline.Add(time.Second), time.Minute); err != nil || ok {
+		t.Fatalf("claim beyond lifecycle ok=%v err=%v", ok, err)
+	}
+	_ = created
+}
+
+func TestGalleryExportStoreTerminalizesQueuedJobAtImmutableLifecycleDeadline(t *testing.T) {
+	client := openGalleryExportTestClient(t)
+	projectID := uuid.New()
+	seedGalleryExportProject(t, client, projectID, 7, "owned")
+	store := NewGalleryExportStore(client)
+	deadline := time.Date(2026, 8, 9, 10, 20, 0, 0, time.UTC)
+	created, err := store.CreateJob(t.Context(), galleryexportservice.CreateJobRequest{
+		UserID: 7, ProjectID: projectID.String(), ImageIDs: []string{"one"}, LifecycleDeadlineAt: deadline,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := store.AcquireNextJob(t.Context(), "worker-1", deadline, time.Minute); err != nil || ok {
+		t.Fatalf("claim at lifecycle deadline ok=%v err=%v", ok, err)
+	}
+	terminal, err := store.GetJob(t.Context(), 7, created.ID, deadline)
+	if err != nil || terminal.State != galleryexportservice.StateFailed || terminal.ErrorCode != galleryexportservice.ErrorLifecycleDeadlineExceeded {
+		t.Fatalf("terminal queued job=%#v err=%v", terminal, err)
+	}
+	if terminal.DeadlineAt == nil || !terminal.DeadlineAt.Equal(deadline) {
+		t.Fatalf("terminal job changed lifecycle deadline: %v", terminal.DeadlineAt)
 	}
 }
 
@@ -89,12 +173,12 @@ func TestGalleryExportCompletionAndExpiryDriveTransactionalArchiveCleanup(t *tes
 	projectID := uuid.New()
 	seedGalleryExportProject(t, client, projectID, 7, "owned")
 	store := NewGalleryExportStore(client)
-	created, err := store.CreateJob(t.Context(), galleryexportservice.CreateJobRequest{UserID: 7, ProjectID: projectID.String(), ImageIDs: []string{"one"}})
+	now := time.Now().UTC()
+	created, err := store.CreateJob(t.Context(), galleryexportservice.CreateJobRequest{UserID: 7, ProjectID: projectID.String(), ImageIDs: []string{"one"}, LifecycleDeadlineAt: now.Add(20 * time.Minute)})
 	if err != nil {
 		t.Fatalf("create job: %v", err)
 	}
-	now := time.Now().UTC()
-	claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-1", now, time.Minute, 10*time.Minute)
+	claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-1", now, time.Minute)
 	if err != nil || !ok {
 		t.Fatalf("claim job: ok=%v err=%v", ok, err)
 	}
@@ -102,7 +186,7 @@ func TestGalleryExportCompletionAndExpiryDriveTransactionalArchiveCleanup(t *tes
 	objectKey := "gallery-exports/7/" + created.ID + ".zip"
 	completed, err := store.CompleteJob(t.Context(), galleryexportservice.CompleteJobRequest{
 		JobID: claimed.ID, Owner: "worker-1", AttemptCount: claimed.AttemptCount,
-		StorageDriver: "local", ObjectKey: objectKey, ArchiveSizeBytes: 123, ExpiresAt: expiresAt,
+		StorageDriver: "local", ObjectKey: objectKey, ArchiveSizeBytes: 123, ExpiresAt: expiresAt, CompletedAt: now,
 	})
 	if err != nil || completed.State != galleryexportservice.StateSucceeded {
 		t.Fatalf("complete job: %#v err=%v", completed, err)

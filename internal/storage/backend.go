@@ -822,6 +822,12 @@ func (b *S3Backend) PutReader(ctx context.Context, objectKey, contentType string
 	}
 	resp, err := b.client.Do(req)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		if sized.remaining != 0 {
 			return fmt.Errorf("%w: %v", ErrSizeMismatch, err)
 		}

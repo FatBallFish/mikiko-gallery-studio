@@ -320,6 +320,8 @@ The initial selection contract sends explicit loaded IDs. The UI says `selected 
 
 For bounded ZIPs, `POST .../download` authorizes IDs, creates a deterministic sanitized filename manifest, and streams `application/zip`. It records per-file failures in `manifest.json` unless authorization fails, in which case the whole request fails without leaking existence. Above configured byte/count thresholds it returns an export job and status endpoint. Temporary archives have expiry and enqueue their own cleanup job.
 
+Async export jobs receive an immutable `lifecycle_deadline_at` when created. The default lifecycle budget is 20 minutes: 10 minutes for queueing and retry backoff plus the worker's 10-minute processing limit. Claims, lease heartbeats, retry scheduling, worker contexts, and client polling all enforce this same deadline; archive `expires_at` remains reserved for successful download retention.
+
 ### 7.3 Generation capability and request APIs
 
 Capability responses add:

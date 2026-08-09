@@ -30,6 +30,7 @@ func (GalleryExportJob) Fields() []ent.Field {
 		field.String("lease_owner").MaxLen(128).Optional().Nillable(),
 		field.Time("lease_expires_at").Optional().Nillable(),
 		field.Time("next_attempt_at").Optional().Nillable(),
+		field.Time("lifecycle_deadline_at").Optional().Nillable(),
 		field.Time("expires_at").Optional().Nillable(),
 		field.String("last_error_code").MaxLen(64).Optional().Nillable(),
 		field.String("last_error_message").MaxLen(512).Optional().Nillable(),
@@ -40,6 +41,7 @@ func (GalleryExportJob) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("user_id", "created_at"),
 		index.Fields("state", "next_attempt_at"),
+		index.Fields("state", "lifecycle_deadline_at"),
 		index.Fields("state", "expires_at"),
 		index.Fields("storage_config_id", "object_key"),
 	}

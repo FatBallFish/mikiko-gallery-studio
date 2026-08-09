@@ -25,11 +25,12 @@ type CompleteJobRequest struct {
 	ObjectKey        string
 	ArchiveSizeBytes int64
 	ExpiresAt        time.Time
+	CompletedAt      time.Time
 }
 
 type ProcessorStore interface {
 	Store
-	AcquireNextJob(ctx context.Context, owner string, now time.Time, leaseTTL, processingTTL time.Duration) (Job, bool, error)
+	AcquireNextJob(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (Job, bool, error)
 	RenewJobLease(ctx context.Context, jobID, owner string, attempt int, now time.Time, leaseTTL time.Duration) (bool, error)
 	CompleteJob(ctx context.Context, req CompleteJobRequest) (Job, error)
 	FailJob(ctx context.Context, job Job, now time.Time, code, message string) error
@@ -85,11 +86,18 @@ func (p *Processor) ProcessOnce(ctx context.Context) (bool, error) {
 	if expired > 0 {
 		return true, nil
 	}
-	job, ok, err := p.store.AcquireNextJob(ctx, p.opts.Owner, now, p.opts.LeaseTTL, p.opts.AsyncTimeout)
+	job, ok, err := p.store.AcquireNextJob(ctx, p.opts.Owner, now, p.opts.LeaseTTL)
 	if err != nil || !ok {
 		return false, err
 	}
 	processCtx, cancelProcess := context.WithTimeout(ctx, p.opts.AsyncTimeout)
+	if job.DeadlineAt != nil {
+		workerDeadline := time.Now().UTC().Add(p.opts.AsyncTimeout)
+		if job.DeadlineAt.Before(workerDeadline) {
+			cancelProcess()
+			processCtx, cancelProcess = context.WithDeadline(ctx, job.DeadlineAt.UTC())
+		}
+	}
 	defer cancelProcess()
 	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
 	heartbeatDone := make(chan leaseHeartbeatResult, 1)
@@ -148,10 +156,11 @@ func (p *Processor) processJob(ctx context.Context, job Job, now time.Time) *job
 		_ = writer.Backend.Delete(context.WithoutCancel(ctx), objectKey)
 		return &jobProcessError{code: "archive_store_failed", message: "archive could not be stored"}
 	}
+	completedAt := p.opts.Now().UTC()
 	_, err = p.store.CompleteJob(ctx, CompleteJobRequest{
 		JobID: job.ID, Owner: p.opts.Owner, AttemptCount: job.AttemptCount,
 		StorageConfigID: writer.ConfigID, StorageDriver: writer.Driver, Bucket: writer.Bucket,
-		ObjectKey: objectKey, ArchiveSizeBytes: archive.Size, ExpiresAt: now.Add(p.opts.ArchiveTTL),
+		ObjectKey: objectKey, ArchiveSizeBytes: archive.Size, ExpiresAt: completedAt.Add(p.opts.ArchiveTTL), CompletedAt: completedAt,
 	})
 	if err != nil {
 		_ = writer.Backend.Delete(context.WithoutCancel(ctx), objectKey)

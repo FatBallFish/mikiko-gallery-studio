@@ -125,6 +125,60 @@ func TestS3BackendStreamingRequestUsesKnownLengthAndClosesBoundedResponse(t *tes
 	}
 }
 
+func TestS3BackendPutReaderPreservesContextErrorsBeforeSizeMismatch(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		context func(t *testing.T) (context.Context, context.CancelFunc)
+		want    error
+	}{
+		{name: "canceled", context: func(t *testing.T) (context.Context, context.CancelFunc) { return context.WithCancel(t.Context()) }, want: context.Canceled},
+		{name: "deadline", context: func(t *testing.T) (context.Context, context.CancelFunc) {
+			return context.WithTimeout(t.Context(), 20*time.Millisecond)
+		}, want: context.DeadlineExceeded},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := test.context(t)
+			defer cancel()
+			backend := newS3StreamingTestBackend(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				buffer := make([]byte, 2)
+				if _, err := io.ReadFull(req.Body, buffer); err != nil {
+					return nil, err
+				}
+				if errors.Is(test.want, context.Canceled) {
+					cancel()
+				}
+				<-req.Context().Done()
+				return nil, req.Context().Err()
+			}))
+			err := backend.PutReader(ctx, "gallery-exports/job/partial.zip", "application/zip", strings.NewReader("archive"), 7)
+			if !errors.Is(err, test.want) || errors.Is(err, ErrSizeMismatch) {
+				t.Fatalf("partial upload error=%v, want %v without ErrSizeMismatch", err, test.want)
+			}
+		})
+	}
+}
+
+func TestS3BackendPutReaderReportsGenuineShortSourceAsSizeMismatch(t *testing.T) {
+	backend := newS3StreamingTestBackend(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		_, err := io.ReadAll(req.Body)
+		return nil, err
+	}))
+	err := backend.PutReader(t.Context(), "gallery-exports/job/short.zip", "application/zip", strings.NewReader("abc"), 7)
+	if !errors.Is(err, ErrSizeMismatch) {
+		t.Fatalf("short source error=%v, want ErrSizeMismatch", err)
+	}
+}
+
+func newS3StreamingTestBackend(t *testing.T, transport http.RoundTripper) *S3Backend {
+	t.Helper()
+	backend, err := NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{Endpoint: "https://s3.example.test", Region: "us-east-1", Bucket: "bucket", AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.client = &http.Client{Transport: transport}
+	return backend
+}
+
 func TestS3OpenReaderRejectsKnownOversizeAndClosesResponse(t *testing.T) {
 	body := &trackingReadCloser{Reader: strings.NewReader("oversize")}
 	backend, err := NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{Endpoint: "https://s3.example.test", Region: "us-east-1", Bucket: "bucket", AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true}})

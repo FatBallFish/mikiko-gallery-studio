@@ -168,7 +168,7 @@ func TestGalleryAsyncExportStatusAndDownloadAreOwnerScopedAndExpire(t *testing.T
 	if err := json.NewDecoder(create.Body).Decode(&created); err != nil || created.Data.Job.ID == "" || created.Data.Job.State != galleryexportservice.StateQueued {
 		t.Fatalf("async export create payload=%#v err=%v", created, err)
 	}
-	if created.Data.Job.ProcessingTimeoutSeconds != 600 || created.Data.Job.DeadlineAt != nil {
+	if created.Data.Job.DeadlineAt == nil {
 		t.Fatalf("queued export timing metadata=%#v", created.Data.Job)
 	}
 	statusPath := "/api/agent/gallery/v1/export-jobs/" + created.Data.Job.ID
@@ -186,11 +186,11 @@ func TestGalleryAsyncExportStatusAndDownloadAreOwnerScopedAndExpire(t *testing.T
 	}
 
 	now := time.Now().UTC()
-	claimed, ok, err := exportStore.AcquireNextJob(t.Context(), "api-test-worker", now, time.Minute, galleryexportservice.DefaultAsyncTimeout)
+	claimed, ok, err := exportStore.AcquireNextJob(t.Context(), "api-test-worker", now, time.Minute)
 	if err != nil || !ok {
 		t.Fatalf("claim async export ok=%v err=%v", ok, err)
 	}
-	if running := galleryExportGetRequest(handler, owner.AccessToken, statusPath); running.Code != http.StatusOK || !bytes.Contains(running.Body.Bytes(), []byte(`"processing_timeout_seconds":600`)) || !bytes.Contains(running.Body.Bytes(), []byte(`"deadline_at"`)) {
+	if running := galleryExportGetRequest(handler, owner.AccessToken, statusPath); running.Code != http.StatusOK || bytes.Contains(running.Body.Bytes(), []byte(`"processing_timeout_seconds"`)) || !bytes.Contains(running.Body.Bytes(), []byte(`"deadline_at"`)) {
 		t.Fatalf("running timing metadata status=%d body=%s", running.Code, running.Body.String())
 	}
 	objectKey := "gallery-exports/1/" + claimed.ID + ".zip"
@@ -201,7 +201,7 @@ func TestGalleryAsyncExportStatusAndDownloadAreOwnerScopedAndExpire(t *testing.T
 	expiresAt := now.Add(time.Hour)
 	if _, err := exportStore.CompleteJob(t.Context(), galleryexportservice.CompleteJobRequest{
 		JobID: claimed.ID, Owner: "api-test-worker", AttemptCount: claimed.AttemptCount,
-		StorageDriver: "local", ObjectKey: objectKey, ArchiveSizeBytes: int64(len(archive)), ExpiresAt: expiresAt,
+		StorageDriver: "local", ObjectKey: objectKey, ArchiveSizeBytes: int64(len(archive)), ExpiresAt: expiresAt, CompletedAt: now,
 	}); err != nil {
 		t.Fatal(err)
 	}

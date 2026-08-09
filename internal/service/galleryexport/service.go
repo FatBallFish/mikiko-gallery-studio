@@ -26,6 +26,11 @@ const (
 
 	FileStatusSucceeded = "succeeded"
 	FileStatusFailed    = "failed"
+
+	ErrorLifecycleDeadlineExceeded = "lifecycle_deadline_exceeded"
+
+	DefaultQueueTimeout     = 10 * time.Minute
+	DefaultLifecycleTimeout = DefaultQueueTimeout + DefaultAsyncTimeout
 )
 
 var (
@@ -88,37 +93,36 @@ func (a *Archive) Close() error {
 }
 
 type Job struct {
-	ID                       string     `json:"id"`
-	UserID                   int64      `json:"-"`
-	ProjectID                string     `json:"project_id"`
-	ImageIDs                 []string   `json:"image_ids"`
-	State                    string     `json:"state"`
-	EstimatedBytes           int64      `json:"estimated_bytes"`
-	ArchiveSizeBytes         int64      `json:"archive_size_bytes,omitempty"`
-	StorageConfigID          string     `json:"-"`
-	StorageDriver            string     `json:"-"`
-	Bucket                   string     `json:"-"`
-	ObjectKey                string     `json:"-"`
-	AttemptCount             int        `json:"attempt_count,omitempty"`
-	LeaseOwner               string     `json:"-"`
-	LeaseExpiresAt           *time.Time `json:"-"`
-	ExpiresAt                *time.Time `json:"expires_at,omitempty"`
-	ErrorCode                string     `json:"error_code,omitempty"`
-	ErrorMessage             string     `json:"error_message,omitempty"`
-	CreatedAt                time.Time  `json:"created_at"`
-	UpdatedAt                time.Time  `json:"updated_at"`
-	DeadlineAt               *time.Time `json:"deadline_at,omitempty"`
-	ProcessingTimeoutSeconds int64      `json:"processing_timeout_seconds"`
+	ID               string     `json:"id"`
+	UserID           int64      `json:"-"`
+	ProjectID        string     `json:"project_id"`
+	ImageIDs         []string   `json:"image_ids"`
+	State            string     `json:"state"`
+	EstimatedBytes   int64      `json:"estimated_bytes"`
+	ArchiveSizeBytes int64      `json:"archive_size_bytes,omitempty"`
+	StorageConfigID  string     `json:"-"`
+	StorageDriver    string     `json:"-"`
+	Bucket           string     `json:"-"`
+	ObjectKey        string     `json:"-"`
+	AttemptCount     int        `json:"attempt_count,omitempty"`
+	LeaseOwner       string     `json:"-"`
+	LeaseExpiresAt   *time.Time `json:"-"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	ErrorCode        string     `json:"error_code,omitempty"`
+	ErrorMessage     string     `json:"error_message,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	DeadlineAt       *time.Time `json:"deadline_at,omitempty"`
 }
 
 func (s *Service) GetJob(ctx context.Context, userID int64, jobID string) (Job, error) {
 	store, ok := s.store.(interface {
-		GetJob(context.Context, int64, string) (Job, error)
+		GetJob(context.Context, int64, string, time.Time) (Job, error)
 	})
 	if !ok {
 		return Job{}, errors.New("gallery export status is unavailable")
 	}
-	job, err := store.GetJob(ctx, userID, strings.TrimSpace(jobID))
+	job, err := store.GetJob(ctx, userID, strings.TrimSpace(jobID), s.now())
 	if err != nil {
 		return Job{}, err
 	}
@@ -152,10 +156,11 @@ func (s *Service) DownloadJob(ctx context.Context, userID int64, jobID string) (
 }
 
 type CreateJobRequest struct {
-	UserID         int64
-	ProjectID      string
-	ImageIDs       []string
-	EstimatedBytes int64
+	UserID              int64
+	ProjectID           string
+	ImageIDs            []string
+	EstimatedBytes      int64
+	LifecycleDeadlineAt time.Time
 }
 
 type Store interface {
@@ -171,7 +176,9 @@ type Options struct {
 	MaxSourceBytes          int64
 	MaxArchiveBytes         int64
 	DirectTimeout           time.Duration
+	LifecycleTimeout        time.Duration
 	TempDir                 string
+	Now                     func() time.Time
 }
 
 type Service struct {
@@ -213,12 +220,18 @@ func NewService(store Store, router storage.Router, opts Options) *Service {
 	if opts.DirectTimeout <= 0 {
 		opts.DirectTimeout = 2 * time.Minute
 	}
+	if opts.LifecycleTimeout <= 0 {
+		opts.LifecycleTimeout = DefaultLifecycleTimeout
+	}
+	if opts.Now == nil {
+		opts.Now = time.Now
+	}
 	return &Service{store: store, router: router, opts: opts}
 }
 
 func (s *Service) CreateDownload(ctx context.Context, req CreateDownloadRequest) (CreateDownloadResult, error) {
 	deadline := time.Now().Add(s.opts.DirectTimeout)
-	ctx, cancel := context.WithDeadline(ctx, deadline)
+	ctx, cancel := context.WithTimeout(ctx, s.opts.DirectTimeout)
 	defer cancel()
 	ids, err := normalizeIDs(req.ImageIDs, s.opts.MaxBatchSize)
 	if err != nil {
@@ -237,6 +250,7 @@ func (s *Service) CreateDownload(ctx context.Context, req CreateDownloadRequest)
 	if len(assets) > s.opts.DirectMaxCount || estimatedBytes > s.opts.DirectMaxEstimatedBytes {
 		job, err := s.store.CreateJob(ctx, CreateJobRequest{
 			UserID: req.UserID, ProjectID: strings.TrimSpace(req.ProjectID), ImageIDs: ids, EstimatedBytes: estimatedBytes,
+			LifecycleDeadlineAt: s.now().Add(s.opts.LifecycleTimeout),
 		})
 		if err != nil {
 			return CreateDownloadResult{}, err
@@ -253,13 +267,15 @@ func (s *Service) CreateDownload(ctx context.Context, req CreateDownloadRequest)
 }
 
 func (s *Service) decorateJob(job Job) Job {
-	job.ProcessingTimeoutSeconds = int64(DefaultAsyncTimeout / time.Second)
-	if job.State == StateRunning && job.ExpiresAt != nil {
-		deadline := job.ExpiresAt.UTC()
+	if job.DeadlineAt != nil {
+		deadline := job.DeadlineAt.UTC()
 		job.DeadlineAt = &deadline
-		job.ExpiresAt = nil
 	}
 	return job
+}
+
+func (s *Service) now() time.Time {
+	return s.opts.Now().UTC()
 }
 
 func normalizeIDs(values []string, max int) ([]string, error) {

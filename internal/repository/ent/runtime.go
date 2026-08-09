@@ -919,11 +919,11 @@ func init() {
 	// galleryexportjob.LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
 	galleryexportjob.LeaseOwnerValidator = galleryexportjobDescLeaseOwner.Validators[0].(func(string) error)
 	// galleryexportjobDescLastErrorCode is the schema descriptor for last_error_code field.
-	galleryexportjobDescLastErrorCode := galleryexportjobFields[16].Descriptor()
+	galleryexportjobDescLastErrorCode := galleryexportjobFields[17].Descriptor()
 	// galleryexportjob.LastErrorCodeValidator is a validator for the "last_error_code" field. It is called by the builders before save.
 	galleryexportjob.LastErrorCodeValidator = galleryexportjobDescLastErrorCode.Validators[0].(func(string) error)
 	// galleryexportjobDescLastErrorMessage is the schema descriptor for last_error_message field.
-	galleryexportjobDescLastErrorMessage := galleryexportjobFields[17].Descriptor()
+	galleryexportjobDescLastErrorMessage := galleryexportjobFields[18].Descriptor()
 	// galleryexportjob.LastErrorMessageValidator is a validator for the "last_error_message" field. It is called by the builders before save.
 	galleryexportjob.LastErrorMessageValidator = galleryexportjobDescLastErrorMessage.Validators[0].(func(string) error)
 	// galleryexportjobDescID is the schema descriptor for id field.

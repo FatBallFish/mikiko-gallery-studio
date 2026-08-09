@@ -28,6 +28,7 @@ func TestNormalizeIDsDeduplicatesAndCapsExplicitSelection(t *testing.T) {
 }
 
 func TestCreateDownloadPromotesLargeSelectionsToDurableJob(t *testing.T) {
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
 	store := &exportStoreStub{assets: []Asset{
 		{ID: "one", FileSizeBytes: 6},
 		{ID: "two", FileSizeBytes: 6},
@@ -36,6 +37,8 @@ func TestCreateDownloadPromotesLargeSelectionsToDurableJob(t *testing.T) {
 		MaxBatchSize:            10,
 		DirectMaxCount:          10,
 		DirectMaxEstimatedBytes: 10,
+		LifecycleTimeout:        20 * time.Minute,
+		Now:                     func() time.Time { return now },
 	})
 
 	result, err := service.CreateDownload(context.Background(), CreateDownloadRequest{
@@ -49,6 +52,9 @@ func TestCreateDownloadPromotesLargeSelectionsToDurableJob(t *testing.T) {
 	}
 	if store.created.UserID != 7 || joinIDs(store.created.ImageIDs) != "one,two" || store.created.EstimatedBytes != 12 {
 		t.Fatalf("persisted job = %#v", store.created)
+	}
+	if !store.created.LifecycleDeadlineAt.Equal(now.Add(20*time.Minute)) || result.Job.DeadlineAt == nil || !result.Job.DeadlineAt.Equal(store.created.LifecycleDeadlineAt) {
+		t.Fatalf("lifecycle deadline request=%s response=%v", store.created.LifecycleDeadlineAt, result.Job.DeadlineAt)
 	}
 }
 
@@ -165,7 +171,8 @@ func (s *exportStoreStub) AuthorizeAssets(context.Context, int64, string, []stri
 
 func (s *exportStoreStub) CreateJob(_ context.Context, req CreateJobRequest) (Job, error) {
 	s.created = req
-	return Job{ID: "job-1", UserID: req.UserID, ProjectID: req.ProjectID, ImageIDs: req.ImageIDs, State: StateQueued}, nil
+	deadline := req.LifecycleDeadlineAt
+	return Job{ID: "job-1", UserID: req.UserID, ProjectID: req.ProjectID, ImageIDs: req.ImageIDs, State: StateQueued, DeadlineAt: &deadline}, nil
 }
 
 type exportBackend struct {

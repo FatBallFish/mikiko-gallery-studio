@@ -344,6 +344,7 @@ var (
 		{Name: "lease_owner", Type: field.TypeString, Nullable: true, Size: 128},
 		{Name: "lease_expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "next_attempt_at", Type: field.TypeTime, Nullable: true},
+		{Name: "lifecycle_deadline_at", Type: field.TypeTime, Nullable: true},
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "last_error_code", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "last_error_message", Type: field.TypeString, Nullable: true, Size: 512},
@@ -365,9 +366,14 @@ var (
 				Columns: []*schema.Column{GalleryExportJobsColumns[6], GalleryExportJobsColumns[16]},
 			},
 			{
-				Name:    "galleryexportjob_state_expires_at",
+				Name:    "galleryexportjob_state_lifecycle_deadline_at",
 				Unique:  false,
 				Columns: []*schema.Column{GalleryExportJobsColumns[6], GalleryExportJobsColumns[17]},
+			},
+			{
+				Name:    "galleryexportjob_state_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{GalleryExportJobsColumns[6], GalleryExportJobsColumns[18]},
 			},
 			{
 				Name:    "galleryexportjob_storage_config_id_object_key",

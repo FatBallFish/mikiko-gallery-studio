@@ -7829,6 +7829,7 @@ type GalleryExportJobMutation struct {
 	lease_owner           *string
 	lease_expires_at      *time.Time
 	next_attempt_at       *time.Time
+	lifecycle_deadline_at *time.Time
 	expires_at            *time.Time
 	last_error_code       *string
 	last_error_message    *string
@@ -8665,6 +8666,55 @@ func (m *GalleryExportJobMutation) ResetNextAttemptAt() {
 	delete(m.clearedFields, galleryexportjob.FieldNextAttemptAt)
 }
 
+// SetLifecycleDeadlineAt sets the "lifecycle_deadline_at" field.
+func (m *GalleryExportJobMutation) SetLifecycleDeadlineAt(t time.Time) {
+	m.lifecycle_deadline_at = &t
+}
+
+// LifecycleDeadlineAt returns the value of the "lifecycle_deadline_at" field in the mutation.
+func (m *GalleryExportJobMutation) LifecycleDeadlineAt() (r time.Time, exists bool) {
+	v := m.lifecycle_deadline_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLifecycleDeadlineAt returns the old "lifecycle_deadline_at" field's value of the GalleryExportJob entity.
+// If the GalleryExportJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GalleryExportJobMutation) OldLifecycleDeadlineAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLifecycleDeadlineAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLifecycleDeadlineAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLifecycleDeadlineAt: %w", err)
+	}
+	return oldValue.LifecycleDeadlineAt, nil
+}
+
+// ClearLifecycleDeadlineAt clears the value of the "lifecycle_deadline_at" field.
+func (m *GalleryExportJobMutation) ClearLifecycleDeadlineAt() {
+	m.lifecycle_deadline_at = nil
+	m.clearedFields[galleryexportjob.FieldLifecycleDeadlineAt] = struct{}{}
+}
+
+// LifecycleDeadlineAtCleared returns if the "lifecycle_deadline_at" field was cleared in this mutation.
+func (m *GalleryExportJobMutation) LifecycleDeadlineAtCleared() bool {
+	_, ok := m.clearedFields[galleryexportjob.FieldLifecycleDeadlineAt]
+	return ok
+}
+
+// ResetLifecycleDeadlineAt resets all changes to the "lifecycle_deadline_at" field.
+func (m *GalleryExportJobMutation) ResetLifecycleDeadlineAt() {
+	m.lifecycle_deadline_at = nil
+	delete(m.clearedFields, galleryexportjob.FieldLifecycleDeadlineAt)
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (m *GalleryExportJobMutation) SetExpiresAt(t time.Time) {
 	m.expires_at = &t
@@ -8846,7 +8896,7 @@ func (m *GalleryExportJobMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GalleryExportJobMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 20)
 	if m.created_at != nil {
 		fields = append(fields, galleryexportjob.FieldCreatedAt)
 	}
@@ -8894,6 +8944,9 @@ func (m *GalleryExportJobMutation) Fields() []string {
 	}
 	if m.next_attempt_at != nil {
 		fields = append(fields, galleryexportjob.FieldNextAttemptAt)
+	}
+	if m.lifecycle_deadline_at != nil {
+		fields = append(fields, galleryexportjob.FieldLifecycleDeadlineAt)
 	}
 	if m.expires_at != nil {
 		fields = append(fields, galleryexportjob.FieldExpiresAt)
@@ -8944,6 +8997,8 @@ func (m *GalleryExportJobMutation) Field(name string) (ent.Value, bool) {
 		return m.LeaseExpiresAt()
 	case galleryexportjob.FieldNextAttemptAt:
 		return m.NextAttemptAt()
+	case galleryexportjob.FieldLifecycleDeadlineAt:
+		return m.LifecycleDeadlineAt()
 	case galleryexportjob.FieldExpiresAt:
 		return m.ExpiresAt()
 	case galleryexportjob.FieldLastErrorCode:
@@ -8991,6 +9046,8 @@ func (m *GalleryExportJobMutation) OldField(ctx context.Context, name string) (e
 		return m.OldLeaseExpiresAt(ctx)
 	case galleryexportjob.FieldNextAttemptAt:
 		return m.OldNextAttemptAt(ctx)
+	case galleryexportjob.FieldLifecycleDeadlineAt:
+		return m.OldLifecycleDeadlineAt(ctx)
 	case galleryexportjob.FieldExpiresAt:
 		return m.OldExpiresAt(ctx)
 	case galleryexportjob.FieldLastErrorCode:
@@ -9118,6 +9175,13 @@ func (m *GalleryExportJobMutation) SetField(name string, value ent.Value) error 
 		}
 		m.SetNextAttemptAt(v)
 		return nil
+	case galleryexportjob.FieldLifecycleDeadlineAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLifecycleDeadlineAt(v)
+		return nil
 	case galleryexportjob.FieldExpiresAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -9232,6 +9296,9 @@ func (m *GalleryExportJobMutation) ClearedFields() []string {
 	if m.FieldCleared(galleryexportjob.FieldNextAttemptAt) {
 		fields = append(fields, galleryexportjob.FieldNextAttemptAt)
 	}
+	if m.FieldCleared(galleryexportjob.FieldLifecycleDeadlineAt) {
+		fields = append(fields, galleryexportjob.FieldLifecycleDeadlineAt)
+	}
 	if m.FieldCleared(galleryexportjob.FieldExpiresAt) {
 		fields = append(fields, galleryexportjob.FieldExpiresAt)
 	}
@@ -9266,6 +9333,9 @@ func (m *GalleryExportJobMutation) ClearField(name string) error {
 		return nil
 	case galleryexportjob.FieldNextAttemptAt:
 		m.ClearNextAttemptAt()
+		return nil
+	case galleryexportjob.FieldLifecycleDeadlineAt:
+		m.ClearLifecycleDeadlineAt()
 		return nil
 	case galleryexportjob.FieldExpiresAt:
 		m.ClearExpiresAt()
@@ -9331,6 +9401,9 @@ func (m *GalleryExportJobMutation) ResetField(name string) error {
 		return nil
 	case galleryexportjob.FieldNextAttemptAt:
 		m.ResetNextAttemptAt()
+		return nil
+	case galleryexportjob.FieldLifecycleDeadlineAt:
+		m.ResetLifecycleDeadlineAt()
 		return nil
 	case galleryexportjob.FieldExpiresAt:
 		m.ResetExpiresAt()

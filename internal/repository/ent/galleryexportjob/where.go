@@ -130,6 +130,11 @@ func NextAttemptAt(v time.Time) predicate.GalleryExportJob {
 	return predicate.GalleryExportJob(sql.FieldEQ(FieldNextAttemptAt, v))
 }
 
+// LifecycleDeadlineAt applies equality check predicate on the "lifecycle_deadline_at" field. It's identical to LifecycleDeadlineAtEQ.
+func LifecycleDeadlineAt(v time.Time) predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldEQ(FieldLifecycleDeadlineAt, v))
+}
+
 // ExpiresAt applies equality check predicate on the "expires_at" field. It's identical to ExpiresAtEQ.
 func ExpiresAt(v time.Time) predicate.GalleryExportJob {
 	return predicate.GalleryExportJob(sql.FieldEQ(FieldExpiresAt, v))
@@ -908,6 +913,56 @@ func NextAttemptAtIsNil() predicate.GalleryExportJob {
 // NextAttemptAtNotNil applies the NotNil predicate on the "next_attempt_at" field.
 func NextAttemptAtNotNil() predicate.GalleryExportJob {
 	return predicate.GalleryExportJob(sql.FieldNotNull(FieldNextAttemptAt))
+}
+
+// LifecycleDeadlineAtEQ applies the EQ predicate on the "lifecycle_deadline_at" field.
+func LifecycleDeadlineAtEQ(v time.Time) predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldEQ(FieldLifecycleDeadlineAt, v))
+}
+
+// LifecycleDeadlineAtNEQ applies the NEQ predicate on the "lifecycle_deadline_at" field.
+func LifecycleDeadlineAtNEQ(v time.Time) predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldNEQ(FieldLifecycleDeadlineAt, v))
+}
+
+// LifecycleDeadlineAtIn applies the In predicate on the "lifecycle_deadline_at" field.
+func LifecycleDeadlineAtIn(vs ...time.Time) predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldIn(FieldLifecycleDeadlineAt, vs...))
+}
+
+// LifecycleDeadlineAtNotIn applies the NotIn predicate on the "lifecycle_deadline_at" field.
+func LifecycleDeadlineAtNotIn(vs ...time.Time) predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldNotIn(FieldLifecycleDeadlineAt, vs...))
+}
+
+// LifecycleDeadlineAtGT applies the GT predicate on the "lifecycle_deadline_at" field.
+func LifecycleDeadlineAtGT(v time.Time) predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldGT(FieldLifecycleDeadlineAt, v))
+}
+
+// LifecycleDeadlineAtGTE applies the GTE predicate on the "lifecycle_deadline_at" field.
+func LifecycleDeadlineAtGTE(v time.Time) predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldGTE(FieldLifecycleDeadlineAt, v))
+}
+
+// LifecycleDeadlineAtLT applies the LT predicate on the "lifecycle_deadline_at" field.
+func LifecycleDeadlineAtLT(v time.Time) predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldLT(FieldLifecycleDeadlineAt, v))
+}
+
+// LifecycleDeadlineAtLTE applies the LTE predicate on the "lifecycle_deadline_at" field.
+func LifecycleDeadlineAtLTE(v time.Time) predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldLTE(FieldLifecycleDeadlineAt, v))
+}
+
+// LifecycleDeadlineAtIsNil applies the IsNil predicate on the "lifecycle_deadline_at" field.
+func LifecycleDeadlineAtIsNil() predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldIsNull(FieldLifecycleDeadlineAt))
+}
+
+// LifecycleDeadlineAtNotNil applies the NotNil predicate on the "lifecycle_deadline_at" field.
+func LifecycleDeadlineAtNotNil() predicate.GalleryExportJob {
+	return predicate.GalleryExportJob(sql.FieldNotNull(FieldLifecycleDeadlineAt))
 }
 
 // ExpiresAtEQ applies the EQ predicate on the "expires_at" field.

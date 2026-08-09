@@ -82,6 +82,7 @@ func (s *GalleryExportStore) CreateJob(ctx context.Context, req galleryexportser
 		SetImageIds(append([]string(nil), req.ImageIDs...)).
 		SetState(galleryexportservice.StateQueued).
 		SetEstimatedBytes(req.EstimatedBytes).
+		SetLifecycleDeadlineAt(req.LifecycleDeadlineAt.UTC()).
 		Save(ctx)
 	if err != nil {
 		return galleryexportservice.Job{}, fmt.Errorf("create gallery export job: %w", err)
@@ -89,17 +90,19 @@ func (s *GalleryExportStore) CreateJob(ctx context.Context, req galleryexportser
 	return mapGalleryExportJob(entity), nil
 }
 
-func (s *GalleryExportStore) AcquireNextJob(ctx context.Context, owner string, now time.Time, leaseTTL, processingTTL time.Duration) (galleryexportservice.Job, bool, error) {
+func (s *GalleryExportStore) AcquireNextJob(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (galleryexportservice.Job, bool, error) {
 	if leaseTTL <= 0 {
 		leaseTTL = time.Minute
 	}
-	if processingTTL <= 0 {
-		processingTTL = galleryexportservice.DefaultAsyncTimeout
+	now = now.UTC()
+	if err := s.expireLifecycleJobs(ctx, now); err != nil {
+		return galleryexportservice.Job{}, false, err
 	}
 	eligible := galleryexportjob.Or(
 		galleryexportjob.And(galleryexportjob.StateEQ(galleryexportservice.StateQueued), galleryexportjob.Or(galleryexportjob.NextAttemptAtIsNil(), galleryexportjob.NextAttemptAtLTE(now))),
 		galleryexportjob.And(galleryexportjob.StateEQ(galleryexportservice.StateRunning), galleryexportjob.LeaseExpiresAtNotNil(), galleryexportjob.LeaseExpiresAtLTE(now)),
 	)
+	eligible = galleryexportjob.And(eligible, galleryexportjob.LifecycleDeadlineAtNotNil(), galleryexportjob.LifecycleDeadlineAtGT(now))
 	candidate, err := s.client.GalleryExportJob.Query().Where(eligible).Order(repoent.Asc(galleryexportjob.FieldCreatedAt)).First(ctx)
 	if repoent.IsNotFound(err) {
 		return galleryexportservice.Job{}, false, nil
@@ -111,7 +114,6 @@ func (s *GalleryExportStore) AcquireNextJob(ctx context.Context, owner string, n
 		SetState(galleryexportservice.StateRunning).
 		SetLeaseOwner(strings.TrimSpace(owner)).
 		SetLeaseExpiresAt(now.Add(leaseTTL)).
-		SetExpiresAt(now.Add(processingTTL)).
 		AddAttemptCount(1).
 		ClearNextAttemptAt().
 		Save(ctx)
@@ -141,6 +143,8 @@ func (s *GalleryExportStore) RenewJobLease(ctx context.Context, jobID, owner str
 		galleryexportjob.StateEQ(galleryexportservice.StateRunning),
 		galleryexportjob.LeaseOwnerEQ(strings.TrimSpace(owner)),
 		galleryexportjob.AttemptCountEQ(attempt),
+		galleryexportjob.LifecycleDeadlineAtNotNil(),
+		galleryexportjob.LifecycleDeadlineAtGT(now.UTC()),
 	).SetLeaseExpiresAt(now.UTC().Add(leaseTTL)).Save(ctx)
 	if err != nil {
 		return false, fmt.Errorf("renew gallery export lease: %w", err)
@@ -148,10 +152,21 @@ func (s *GalleryExportStore) RenewJobLease(ctx context.Context, jobID, owner str
 	return updated == 1, nil
 }
 
-func (s *GalleryExportStore) GetJob(ctx context.Context, userID int64, jobID string) (galleryexportservice.Job, error) {
+func (s *GalleryExportStore) GetJob(ctx context.Context, userID int64, jobID string, now time.Time) (galleryexportservice.Job, error) {
 	id, err := uuid.Parse(strings.TrimSpace(jobID))
 	if err != nil {
 		return galleryexportservice.Job{}, repoerr.ErrNotFound
+	}
+	_, err = s.client.GalleryExportJob.Update().Where(
+		galleryexportjob.IDEQ(id), galleryexportjob.UserIDEQ(userID),
+		galleryexportjob.StateIn(galleryexportservice.StateQueued, galleryexportservice.StateRunning),
+		galleryexportjob.LifecycleDeadlineAtNotNil(), galleryexportjob.LifecycleDeadlineAtLTE(now.UTC()),
+	).SetState(galleryexportservice.StateFailed).
+		ClearLeaseOwner().ClearLeaseExpiresAt().ClearNextAttemptAt().
+		SetLastErrorCode(galleryexportservice.ErrorLifecycleDeadlineExceeded).
+		SetLastErrorMessage("gallery export lifecycle deadline exceeded").Save(ctx)
+	if err != nil {
+		return galleryexportservice.Job{}, fmt.Errorf("expire gallery export job status: %w", err)
 	}
 	entity, err := s.client.GalleryExportJob.Query().Where(galleryexportjob.IDEQ(id), galleryexportjob.UserIDEQ(userID)).Only(ctx)
 	if repoent.IsNotFound(err) {
@@ -176,6 +191,7 @@ func (s *GalleryExportStore) CompleteJob(ctx context.Context, req galleryexports
 	update := tx.GalleryExportJob.Update().Where(
 		galleryexportjob.IDEQ(id), galleryexportjob.StateEQ(galleryexportservice.StateRunning),
 		galleryexportjob.LeaseOwnerEQ(strings.TrimSpace(req.Owner)), galleryexportjob.AttemptCountEQ(req.AttemptCount),
+		galleryexportjob.LifecycleDeadlineAtNotNil(), galleryexportjob.LifecycleDeadlineAtGT(req.CompletedAt.UTC()),
 	).SetState(galleryexportservice.StateSucceeded).
 		SetStorageDriver(strings.TrimSpace(req.StorageDriver)).SetBucket(strings.TrimSpace(req.Bucket)).SetObjectKey(strings.TrimSpace(req.ObjectKey)).
 		SetArchiveSizeBytes(req.ArchiveSizeBytes).SetExpiresAt(req.ExpiresAt.UTC()).ClearLeaseOwner().ClearLeaseExpiresAt().ClearLastErrorCode().ClearLastErrorMessage()
@@ -213,14 +229,19 @@ func (s *GalleryExportStore) FailJob(ctx context.Context, job galleryexportservi
 	if err != nil {
 		return repoerr.ErrNotFound
 	}
+	nextAttemptAt := now.UTC().Add(time.Duration(job.AttemptCount) * time.Minute)
 	update := s.client.GalleryExportJob.Update().Where(
 		galleryexportjob.IDEQ(id), galleryexportjob.StateEQ(galleryexportservice.StateRunning),
 		galleryexportjob.LeaseOwnerEQ(job.LeaseOwner), galleryexportjob.AttemptCountEQ(job.AttemptCount),
-	).ClearLeaseOwner().ClearLeaseExpiresAt().ClearExpiresAt().SetLastErrorCode(limitGalleryExportError(code, 64)).SetLastErrorMessage(limitGalleryExportError(message, 512))
-	if job.AttemptCount >= 3 {
+	).ClearLeaseOwner().ClearLeaseExpiresAt().SetLastErrorCode(limitGalleryExportError(code, 64)).SetLastErrorMessage(limitGalleryExportError(message, 512))
+	if job.DeadlineAt != nil && !nextAttemptAt.Before(job.DeadlineAt.UTC()) {
+		update.SetState(galleryexportservice.StateFailed).ClearNextAttemptAt().
+			SetLastErrorCode(galleryexportservice.ErrorLifecycleDeadlineExceeded).
+			SetLastErrorMessage("gallery export lifecycle deadline exceeded")
+	} else if job.AttemptCount >= 3 {
 		update.SetState(galleryexportservice.StateFailed).ClearNextAttemptAt()
 	} else {
-		update.SetState(galleryexportservice.StateQueued).SetNextAttemptAt(now.UTC().Add(time.Duration(job.AttemptCount) * time.Minute))
+		update.SetState(galleryexportservice.StateQueued).SetNextAttemptAt(nextAttemptAt)
 	}
 	updated, err := update.Save(ctx)
 	if err != nil {
@@ -228,6 +249,20 @@ func (s *GalleryExportStore) FailJob(ctx context.Context, job galleryexportservi
 	}
 	if updated != 1 {
 		return repoerr.ErrConflict
+	}
+	return nil
+}
+
+func (s *GalleryExportStore) expireLifecycleJobs(ctx context.Context, now time.Time) error {
+	_, err := s.client.GalleryExportJob.Update().Where(
+		galleryexportjob.StateIn(galleryexportservice.StateQueued, galleryexportservice.StateRunning),
+		galleryexportjob.LifecycleDeadlineAtNotNil(), galleryexportjob.LifecycleDeadlineAtLTE(now.UTC()),
+	).SetState(galleryexportservice.StateFailed).
+		ClearLeaseOwner().ClearLeaseExpiresAt().ClearNextAttemptAt().
+		SetLastErrorCode(galleryexportservice.ErrorLifecycleDeadlineExceeded).
+		SetLastErrorMessage("gallery export lifecycle deadline exceeded").Save(ctx)
+	if err != nil {
+		return fmt.Errorf("expire gallery export lifecycle jobs: %w", err)
 	}
 	return nil
 }
@@ -291,7 +326,7 @@ func mapGalleryExportJob(entity *repoent.GalleryExportJob) galleryexportservice.
 		State: entity.State, EstimatedBytes: entity.EstimatedBytes, ArchiveSizeBytes: entity.ArchiveSizeBytes,
 		StorageConfigID: optionalUUIDString(entity.StorageConfigID), StorageDriver: entity.StorageDriver, Bucket: entity.Bucket, ObjectKey: entity.ObjectKey,
 		AttemptCount: entity.AttemptCount, LeaseOwner: valueOrEmpty(entity.LeaseOwner), LeaseExpiresAt: entity.LeaseExpiresAt,
-		ExpiresAt: entity.ExpiresAt, ErrorCode: valueOrEmpty(entity.LastErrorCode), ErrorMessage: valueOrEmpty(entity.LastErrorMessage), CreatedAt: entity.CreatedAt, UpdatedAt: entity.UpdatedAt,
+		DeadlineAt: entity.LifecycleDeadlineAt, ExpiresAt: entity.ExpiresAt, ErrorCode: valueOrEmpty(entity.LastErrorCode), ErrorMessage: valueOrEmpty(entity.LastErrorMessage), CreatedAt: entity.CreatedAt, UpdatedAt: entity.UpdatedAt,
 	}
 }
 

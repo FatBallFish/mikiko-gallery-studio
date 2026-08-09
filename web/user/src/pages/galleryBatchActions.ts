@@ -31,7 +31,7 @@ export function reconcileGalleryBatchSelection(current: ReadonlySet<string>, suc
 }
 
 type GalleryExportStatusLike = {
-	job: { id: string; state: string; error_message?: string; processing_timeout_seconds?: number; deadline_at?: string }
+	job: { id: string; state: string; error_message?: string; deadline_at?: string }
 }
 
 export async function pollGalleryExportJob<T extends GalleryExportStatusLike>(
@@ -40,11 +40,10 @@ export async function pollGalleryExportJob<T extends GalleryExportStatusLike>(
 	options: { maxAttempts?: number; wait?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal; now?: () => number; marginMs?: number } = {},
 ): Promise<T> {
 	const now = options.now ?? Date.now
-	const marginMs = options.marginMs ?? 60_000
+	const marginMs = options.marginMs ?? 15_000
 	const wait = options.wait ?? abortableGalleryExportDelay
 	let status = initial
-	const fallbackDeadline = now() + Math.max(1, status.job.processing_timeout_seconds ?? 600) * 1000 + marginMs
-	let deadline = galleryExportServerDeadline(status, marginMs) ?? fallbackDeadline
+	let deadline = requiredGalleryExportServerDeadline(status, marginMs)
 	let attempt = 0
 	while (status.job.state === 'queued' || status.job.state === 'running') {
 		if (options.maxAttempts !== undefined && attempt >= options.maxAttempts) throw new Error('gallery export polling timed out')
@@ -54,7 +53,7 @@ export async function pollGalleryExportJob<T extends GalleryExportStatusLike>(
 		options.signal?.throwIfAborted()
 		if (now() >= deadline) throw new Error('gallery export polling timed out')
 		status = await getStatus(status.job.id, options.signal)
-		deadline = galleryExportServerDeadline(status, marginMs) ?? deadline
+		deadline = requiredGalleryExportServerDeadline(status, marginMs)
 		attempt += 1
 	}
 	if (status.job.state !== 'succeeded') {
@@ -63,12 +62,10 @@ export async function pollGalleryExportJob<T extends GalleryExportStatusLike>(
   return status
 }
 
-function galleryExportServerDeadline(status: GalleryExportStatusLike, marginMs: number) {
-	if (status.job.deadline_at) {
-		const serverDeadline = Date.parse(status.job.deadline_at)
-		if (Number.isFinite(serverDeadline)) return serverDeadline + marginMs
-	}
-	return undefined
+function requiredGalleryExportServerDeadline(status: GalleryExportStatusLike, marginMs: number) {
+	const serverDeadline = Date.parse(status.job.deadline_at ?? '')
+	if (!Number.isFinite(serverDeadline)) throw new Error('gallery export status is missing deadline')
+	return serverDeadline + marginMs
 }
 
 function abortableGalleryExportDelay(signal?: AbortSignal) {

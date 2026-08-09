@@ -322,7 +322,7 @@ func TestGalleryExportJobSchemaSupportsDurableLeasesAndTemporaryArchiveCleanup(t
 	for _, name := range []string{
 		"user_id", "project_id", "image_ids", "state", "estimated_bytes", "archive_size_bytes",
 		"storage_config_id", "storage_driver", "bucket", "object_key", "attempt_count",
-		"lease_owner", "lease_expires_at", "next_attempt_at", "expires_at", "last_error_code",
+		"lease_owner", "lease_expires_at", "next_attempt_at", "lifecycle_deadline_at", "expires_at", "last_error_code",
 	} {
 		if _, ok := fields[name]; !ok {
 			t.Fatalf("gallery_export_jobs is missing %q", name)
@@ -333,6 +333,12 @@ func TestGalleryExportJobSchemaSupportsDurableLeasesAndTemporaryArchiveCleanup(t
 	}
 	if !hasIndexFields(GalleryExportJob{}.Indexes(), []string{"state", "expires_at"}, false) {
 		t.Fatal("gallery export jobs need an expiry cleanup index")
+	}
+	if !hasIndexFields(GalleryExportJob{}.Indexes(), []string{"state", "lifecycle_deadline_at"}, false) {
+		t.Fatal("gallery export jobs need a lifecycle deadline index")
+	}
+	if deadline := fields["lifecycle_deadline_at"]; !deadline.Optional || !deadline.Nillable {
+		t.Fatal("gallery export lifecycle deadline must be nullable during migration")
 	}
 }
 

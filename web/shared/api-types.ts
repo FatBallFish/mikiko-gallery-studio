@@ -1045,8 +1045,7 @@ export type GalleryExportJob = {
   estimated_bytes: number
   archive_size_bytes?: number
   attempt_count?: number
-	processing_timeout_seconds: number
-	deadline_at?: string
+	deadline_at: string
   expires_at?: string
   error_code?: string
   error_message?: string

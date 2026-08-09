@@ -282,6 +282,26 @@ func (_u *GalleryExportJobUpdate) ClearNextAttemptAt() *GalleryExportJobUpdate {
 	return _u
 }
 
+// SetLifecycleDeadlineAt sets the "lifecycle_deadline_at" field.
+func (_u *GalleryExportJobUpdate) SetLifecycleDeadlineAt(v time.Time) *GalleryExportJobUpdate {
+	_u.mutation.SetLifecycleDeadlineAt(v)
+	return _u
+}
+
+// SetNillableLifecycleDeadlineAt sets the "lifecycle_deadline_at" field if the given value is not nil.
+func (_u *GalleryExportJobUpdate) SetNillableLifecycleDeadlineAt(v *time.Time) *GalleryExportJobUpdate {
+	if v != nil {
+		_u.SetLifecycleDeadlineAt(*v)
+	}
+	return _u
+}
+
+// ClearLifecycleDeadlineAt clears the value of the "lifecycle_deadline_at" field.
+func (_u *GalleryExportJobUpdate) ClearLifecycleDeadlineAt() *GalleryExportJobUpdate {
+	_u.mutation.ClearLifecycleDeadlineAt()
+	return _u
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (_u *GalleryExportJobUpdate) SetExpiresAt(v time.Time) *GalleryExportJobUpdate {
 	_u.mutation.SetExpiresAt(v)
@@ -508,6 +528,12 @@ func (_u *GalleryExportJobUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if _u.mutation.NextAttemptAtCleared() {
 		_spec.ClearField(galleryexportjob.FieldNextAttemptAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.LifecycleDeadlineAt(); ok {
+		_spec.SetField(galleryexportjob.FieldLifecycleDeadlineAt, field.TypeTime, value)
+	}
+	if _u.mutation.LifecycleDeadlineAtCleared() {
+		_spec.ClearField(galleryexportjob.FieldLifecycleDeadlineAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.ExpiresAt(); ok {
 		_spec.SetField(galleryexportjob.FieldExpiresAt, field.TypeTime, value)
@@ -799,6 +825,26 @@ func (_u *GalleryExportJobUpdateOne) ClearNextAttemptAt() *GalleryExportJobUpdat
 	return _u
 }
 
+// SetLifecycleDeadlineAt sets the "lifecycle_deadline_at" field.
+func (_u *GalleryExportJobUpdateOne) SetLifecycleDeadlineAt(v time.Time) *GalleryExportJobUpdateOne {
+	_u.mutation.SetLifecycleDeadlineAt(v)
+	return _u
+}
+
+// SetNillableLifecycleDeadlineAt sets the "lifecycle_deadline_at" field if the given value is not nil.
+func (_u *GalleryExportJobUpdateOne) SetNillableLifecycleDeadlineAt(v *time.Time) *GalleryExportJobUpdateOne {
+	if v != nil {
+		_u.SetLifecycleDeadlineAt(*v)
+	}
+	return _u
+}
+
+// ClearLifecycleDeadlineAt clears the value of the "lifecycle_deadline_at" field.
+func (_u *GalleryExportJobUpdateOne) ClearLifecycleDeadlineAt() *GalleryExportJobUpdateOne {
+	_u.mutation.ClearLifecycleDeadlineAt()
+	return _u
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (_u *GalleryExportJobUpdateOne) SetExpiresAt(v time.Time) *GalleryExportJobUpdateOne {
 	_u.mutation.SetExpiresAt(v)
@@ -1055,6 +1101,12 @@ func (_u *GalleryExportJobUpdateOne) sqlSave(ctx context.Context) (_node *Galler
 	}
 	if _u.mutation.NextAttemptAtCleared() {
 		_spec.ClearField(galleryexportjob.FieldNextAttemptAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.LifecycleDeadlineAt(); ok {
+		_spec.SetField(galleryexportjob.FieldLifecycleDeadlineAt, field.TypeTime, value)
+	}
+	if _u.mutation.LifecycleDeadlineAtCleared() {
+		_spec.ClearField(galleryexportjob.FieldLifecycleDeadlineAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.ExpiresAt(); ok {
 		_spec.SetField(galleryexportjob.FieldExpiresAt, field.TypeTime, value)
