@@ -39,6 +39,39 @@ func enqueueObjectDeletionJob(ctx context.Context, client *repoent.Client, ident
 	if strings.TrimSpace(identity.ObjectKey) == "" || strings.EqualFold(identity.StorageDriver, "remote") {
 		return nil, nil
 	}
+	existing, err := liveObjectDeletionJobQuery(client, identity).First(ctx)
+	if err == nil {
+		return reactivateObjectDeletionJob(ctx, existing)
+	}
+	if !repoent.IsNotFound(err) {
+		return nil, err
+	}
+	create := client.ObjectDeletionJob.Create().
+		SetStorageDriver(defaultString(identity.StorageDriver, "local")).
+		SetBucket(identity.Bucket).
+		SetObjectKey(identity.ObjectKey).
+		SetState(domaincleanup.StatePending)
+	if parsed, err := uuid.Parse(identity.StorageConfigID); err == nil {
+		create.SetStorageConfigID(parsed)
+	}
+	created, err := create.Save(ctx)
+	if err == nil || !repoent.IsConstraintError(err) {
+		return created, err
+	}
+
+	// Another enqueue committed the same live identity after our initial read.
+	// Merge into that authoritative row using the normal reactivation semantics.
+	existing, lookupErr := liveObjectDeletionJobQuery(client, identity).First(ctx)
+	if lookupErr != nil {
+		if repoent.IsNotFound(lookupErr) {
+			return nil, err
+		}
+		return nil, lookupErr
+	}
+	return reactivateObjectDeletionJob(ctx, existing)
+}
+
+func liveObjectDeletionJobQuery(client *repoent.Client, identity domaincleanup.Identity) *repoent.ObjectDeletionJobQuery {
 	query := client.ObjectDeletionJob.Query().Where(
 		objectdeletionjob.ObjectKeyEQ(identity.ObjectKey),
 		objectdeletionjob.StateIn(domaincleanup.StatePending, domaincleanup.StateRunning, domaincleanup.StateRetry, domaincleanup.StateBlocked),
@@ -52,22 +85,11 @@ func enqueueObjectDeletionJob(ctx context.Context, client *repoent.Client, ident
 			objectdeletionjob.BucketEQ(identity.Bucket),
 		)
 	}
-	existing, err := query.First(ctx)
-	if err == nil {
-		return existing.Update().SetState(domaincleanup.StatePending).ClearNextAttemptAt().ClearCompletedAt().ClearLastErrorCode().ClearLastErrorMessage().Save(ctx)
-	}
-	if !repoent.IsNotFound(err) {
-		return nil, err
-	}
-	create := client.ObjectDeletionJob.Create().
-		SetStorageDriver(defaultString(identity.StorageDriver, "local")).
-		SetBucket(identity.Bucket).
-		SetObjectKey(identity.ObjectKey).
-		SetState(domaincleanup.StatePending)
-	if parsed, err := uuid.Parse(identity.StorageConfigID); err == nil {
-		create.SetStorageConfigID(parsed)
-	}
-	return create.Save(ctx)
+	return query
+}
+
+func reactivateObjectDeletionJob(ctx context.Context, existing *repoent.ObjectDeletionJob) (*repoent.ObjectDeletionJob, error) {
+	return existing.Update().SetState(domaincleanup.StatePending).ClearNextAttemptAt().ClearCompletedAt().ClearLastErrorCode().ClearLastErrorMessage().Save(ctx)
 }
 
 func (s *ObjectCleanupStore) Enqueue(ctx context.Context, identity domaincleanup.Identity) (domaincleanup.Job, error) {

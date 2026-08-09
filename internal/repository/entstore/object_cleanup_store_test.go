@@ -1,8 +1,11 @@
 package entstore
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,6 +16,67 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+func TestObjectCleanupStoreConcurrentEnqueueCoalescesLiveIdentity(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-concurrent-enqueue-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1&_busy_timeout=5000&_journal_mode=WAL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	var creates atomic.Int32
+	release := make(chan struct{})
+	client.Use(func(next repoent.Mutator) repoent.Mutator {
+		return repoent.MutateFunc(func(ctx context.Context, mutation repoent.Mutation) (repoent.Value, error) {
+			if _, ok := mutation.(*repoent.ObjectDeletionJobMutation); ok && creates.Add(1) <= 2 {
+				if creates.Load() == 2 {
+					close(release)
+				}
+				<-release
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+	identity := domaincleanup.Identity{StorageDriver: "local", ObjectKey: "generated/concurrent.png"}
+	store := NewObjectCleanupStore(client)
+	start := make(chan struct{})
+	results := make(chan domaincleanup.Job, 2)
+	errorsCh := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			job, enqueueErr := store.Enqueue(t.Context(), identity)
+			results <- job
+			errorsCh <- enqueueErr
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errorsCh)
+	for enqueueErr := range errorsCh {
+		if enqueueErr != nil {
+			t.Fatalf("concurrent Enqueue: %v", enqueueErr)
+		}
+	}
+	var firstID string
+	for job := range results {
+		if firstID == "" {
+			firstID = job.ID
+		} else if job.ID != firstID {
+			t.Fatalf("concurrent enqueue returned different jobs: %q != %q", job.ID, firstID)
+		}
+	}
+	if count, err := client.ObjectDeletionJob.Query().Count(t.Context()); err != nil || count != 1 {
+		t.Fatalf("live cleanup jobs=%d err=%v", count, err)
+	}
+}
 
 func TestObjectCleanupStoreRejectsStaleClaimAfterIdentityBackfill(t *testing.T) {
 	client, err := repoent.Open(dialect.SQLite, "file:cleanup-stale-identity-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
