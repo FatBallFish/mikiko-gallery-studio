@@ -7,6 +7,17 @@ import (
 	"time"
 )
 
+type PlanLifecycleAudit struct {
+	ActorType  string
+	ActorID    string
+	Action     string
+	TargetType string
+	TargetID   string
+	RequestID  string
+	IPAddr     string
+	UserAgent  string
+}
+
 type EstimateRequest struct {
 	RouteKey                  string
 	TaskType                  string

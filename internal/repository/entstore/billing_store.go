@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/shopspring/decimal"
@@ -23,6 +25,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
@@ -198,7 +201,21 @@ func (s *BillingStore) DeletePlan(ctx context.Context, planID int64) (domainbill
 }
 
 func (s *BillingStore) TransitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
-	current, err := s.client.SubscriptionPlan.Get(ctx, int(req.PlanID))
+	return s.transitionPlan(ctx, req, nil)
+}
+
+func (s *BillingStore) TransitionPlanAudited(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest, audit domainbilling.PlanLifecycleAudit) (domainbilling.SubscriptionPlan, error) {
+	return s.transitionPlan(ctx, req, &audit)
+}
+
+func (s *BillingStore) transitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest, audit *domainbilling.PlanLifecycleAudit) (domainbilling.SubscriptionPlan, error) {
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainbilling.SubscriptionPlan{}, fmt.Errorf("begin subscription plan lifecycle transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	txClient := tx.Client()
+	current, err := txClient.SubscriptionPlan.Query().Where(subscriptionplan.IDEQ(int(req.PlanID)), lockSubscriptionPlanRow()).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
@@ -212,7 +229,13 @@ func (s *BillingStore) TransitionPlan(ctx context.Context, req domainbilling.Tra
 	if err != nil {
 		return domainbilling.SubscriptionPlan{}, err
 	}
-	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(req.PlanID)).
+	if currentPlan.Status == status && currentPlan.PurchaseEnabled == purchaseEnabled {
+		if err := tx.Commit(); err != nil {
+			return domainbilling.SubscriptionPlan{}, fmt.Errorf("commit subscription plan lifecycle transaction: %w", err)
+		}
+		return currentPlan, nil
+	}
+	plan, err := txClient.SubscriptionPlan.UpdateOne(current).
 		SetStatus(status).
 		SetPurchaseEnabled(purchaseEnabled).
 		SetMetadata(subscriptionPlanMetadata(planType, purchaseEnabled)).
@@ -223,7 +246,49 @@ func (s *BillingStore) TransitionPlan(ctx context.Context, req domainbilling.Tra
 		}
 		return domainbilling.SubscriptionPlan{}, err
 	}
-	return mapSubscriptionPlan(plan), nil
+	updated := mapSubscriptionPlan(plan)
+	updated.PlanType = planType
+	if audit != nil {
+		_, err = txClient.AuditLog.Create().
+			SetActorType(audit.ActorType).
+			SetActorID(audit.ActorID).
+			SetAction(audit.Action).
+			SetTargetType(audit.TargetType).
+			SetTargetID(audit.TargetID).
+			SetResult("success").
+			SetMetadata(map[string]any{
+				"before":     subscriptionPlanLifecycleState(currentPlan),
+				"after":      subscriptionPlanLifecycleState(updated),
+				"request_id": audit.RequestID,
+			}).
+			SetIPAddr(audit.IPAddr).
+			SetUserAgent(audit.UserAgent).
+			Save(ctx)
+		if err != nil {
+			return domainbilling.SubscriptionPlan{}, fmt.Errorf("record subscription plan lifecycle audit: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return domainbilling.SubscriptionPlan{}, fmt.Errorf("commit subscription plan lifecycle transaction: %w", err)
+	}
+	return updated, nil
+}
+
+func lockSubscriptionPlanRow() predicate.SubscriptionPlan {
+	return func(selector *entsql.Selector) {
+		if selector.Dialect() != dialect.SQLite {
+			selector.ForUpdate()
+		}
+	}
+}
+
+func subscriptionPlanLifecycleState(plan domainbilling.SubscriptionPlan) map[string]any {
+	return map[string]any{
+		"id":               plan.ID,
+		"plan_code":        plan.PlanCode,
+		"status":           plan.Status,
+		"purchase_enabled": plan.PurchaseEnabled,
+	}
 }
 
 func (s *BillingStore) GetActiveSubscription(ctx context.Context, userID int64) (*domainbilling.UserSubscriptionSummary, error) {

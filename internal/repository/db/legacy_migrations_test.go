@@ -179,6 +179,79 @@ func TestPrepareLegacyDataSQLPurgesRemovedReferenceGeneration(t *testing.T) {
 	}
 }
 
+func TestPrepareLegacyDataSQLBackfillsLifecycleColumns(t *testing.T) {
+	for _, fragment := range []string{
+		"ALTER TABLE route_model_candidates ADD COLUMN created_at",
+		"ALTER TABLE route_model_candidates ADD COLUMN updated_at",
+		"ALTER TABLE route_model_candidates ADD COLUMN deleted_at",
+		"UPDATE route_model_candidates SET created_at = CURRENT_TIMESTAMP",
+		"ALTER TABLE route_model_candidates ALTER COLUMN created_at SET NOT NULL",
+		"ALTER TABLE route_model_candidates ALTER COLUMN updated_at SET NOT NULL",
+		"ALTER TABLE route_model_prices ADD COLUMN created_at",
+		"ALTER TABLE route_model_prices ADD COLUMN updated_at",
+		"ALTER TABLE route_model_prices ADD COLUMN deleted_at",
+		"UPDATE route_model_prices SET created_at = CURRENT_TIMESTAMP",
+		"ALTER TABLE route_model_prices ALTER COLUMN created_at SET NOT NULL",
+		"ALTER TABLE route_model_prices ALTER COLUMN updated_at SET NOT NULL",
+	} {
+		if !strings.Contains(prepareLegacyDataSQL, fragment) {
+			t.Fatalf("lifecycle column compatibility migration is missing %q", fragment)
+		}
+	}
+}
+
+func TestPrepareLegacyDataBackfillsLifecycleColumnsForExistingRows(t *testing.T) {
+	database, databaseURL := openLegacyMigrationPostgres(t)
+	ctx := context.Background()
+	if _, err := database.ExecContext(ctx, `
+		CREATE TABLE route_model_candidates (
+			id bigint PRIMARY KEY,
+			route_model_id bigint NOT NULL,
+			account_model_id bigint NOT NULL,
+			priority integer NOT NULL DEFAULT 0,
+			weight integer NOT NULL DEFAULT 100,
+			fallback_order integer NOT NULL DEFAULT 0,
+			enabled boolean NOT NULL DEFAULT true
+		);
+		CREATE TABLE route_model_prices (
+			id bigint PRIMARY KEY,
+			route_model_id bigint NOT NULL,
+			task_type varchar(64) NOT NULL,
+			base_resolution varchar(32) NOT NULL,
+			base_points numeric(18,5) NOT NULL DEFAULT 0.00000,
+			reference_multiplier numeric(18,5) NOT NULL DEFAULT 1.00000,
+			enabled boolean NOT NULL DEFAULT true
+		);
+		INSERT INTO route_model_candidates (id, route_model_id, account_model_id)
+		VALUES (1, 10, 20);
+		INSERT INTO route_model_prices (id, route_model_id, task_type, base_resolution)
+		VALUES (1, 10, 'text_to_image', '1k');
+	`); err != nil {
+		t.Fatalf("create lifecycle compatibility fixtures: %v", err)
+	}
+
+	if err := PrepareLegacyData(ctx, databaseURL); err != nil {
+		t.Fatalf("PrepareLegacyData: %v", err)
+	}
+	if err := PrepareLegacyData(ctx, databaseURL); err != nil {
+		t.Fatalf("second PrepareLegacyData: %v", err)
+	}
+
+	for _, tableName := range []string{"route_model_candidates", "route_model_prices"} {
+		assertLifecycleColumn(t, database, tableName, "created_at", false)
+		assertLifecycleColumn(t, database, tableName, "updated_at", false)
+		assertLifecycleColumn(t, database, tableName, "deleted_at", true)
+		var timestampsPresent bool
+		query := fmt.Sprintf(`SELECT created_at IS NOT NULL AND updated_at IS NOT NULL FROM %s WHERE id = 1`, pq.QuoteIdentifier(tableName))
+		if err := database.QueryRowContext(ctx, query).Scan(&timestampsPresent); err != nil {
+			t.Fatalf("query %s lifecycle timestamps: %v", tableName, err)
+		}
+		if !timestampsPresent {
+			t.Fatalf("%s lifecycle timestamps were not backfilled", tableName)
+		}
+	}
+}
+
 func openLegacyMigrationPostgres(t *testing.T) (*sql.DB, string) {
 	t.Helper()
 	rawURL := os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL")
@@ -249,6 +322,27 @@ func assertIndexExists(t *testing.T, database *sql.DB, indexName string, expecte
 	}
 	if exists != expected {
 		t.Fatalf("index %q exists=%t, expected %t", indexName, exists, expected)
+	}
+}
+
+func assertLifecycleColumn(t *testing.T, database *sql.DB, tableName, columnName string, nullable bool) {
+	t.Helper()
+	var isNullable string
+	if err := database.QueryRow(`
+		SELECT is_nullable
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = $1
+		  AND column_name = $2
+	`, tableName, columnName).Scan(&isNullable); err != nil {
+		t.Fatalf("query %s.%s: %v", tableName, columnName, err)
+	}
+	want := "NO"
+	if nullable {
+		want = "YES"
+	}
+	if isNullable != want {
+		t.Fatalf("%s.%s nullable=%s, expected %s", tableName, columnName, isNullable, want)
 	}
 }
 

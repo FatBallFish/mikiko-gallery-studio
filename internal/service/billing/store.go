@@ -103,6 +103,7 @@ type Store interface {
 	CreatePlan(ctx context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
 	UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
 	TransitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
+	TransitionPlanAudited(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest, audit domainbilling.PlanLifecycleAudit) (domainbilling.SubscriptionPlan, error)
 	DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error)
 	GetActiveSubscription(ctx context.Context, userID int64) (*domainbilling.UserSubscriptionSummary, error)
 	ListOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.PaymentOrderPage, error)
@@ -370,6 +371,10 @@ func (s *MemoryStore) TransitionPlan(_ context.Context, req domainbilling.Transi
 		return item, nil
 	}
 	return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
+}
+
+func (s *MemoryStore) TransitionPlanAudited(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest, _ domainbilling.PlanLifecycleAudit) (domainbilling.SubscriptionPlan, error) {
+	return s.TransitionPlan(ctx, req)
 }
 
 func planMatchesListRequest(plan domainbilling.SubscriptionPlan, req domainbilling.SubscriptionPlanListRequest) bool {

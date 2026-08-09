@@ -338,8 +338,24 @@ func (s *Service) ListPlans(ctx context.Context, req domainbilling.SubscriptionP
 }
 
 func (s *Service) TransitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
+	normalized, err := normalizePlanTransition(req)
+	if err != nil {
+		return domainbilling.SubscriptionPlan{}, err
+	}
+	return s.store.TransitionPlan(ctx, normalized)
+}
+
+func (s *Service) TransitionPlanAudited(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest, audit domainbilling.PlanLifecycleAudit) (domainbilling.SubscriptionPlan, error) {
+	normalized, err := normalizePlanTransition(req)
+	if err != nil {
+		return domainbilling.SubscriptionPlan{}, err
+	}
+	return s.store.TransitionPlanAudited(ctx, normalized, audit)
+}
+
+func normalizePlanTransition(req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.TransitionSubscriptionPlanRequest, error) {
 	if req.PlanID <= 0 {
-		return domainbilling.SubscriptionPlan{}, errs.BadRequest("plan_id is required")
+		return req, errs.BadRequest("plan_id is required")
 	}
 	req.Action = strings.ToLower(strings.TrimSpace(req.Action))
 	switch req.Action {
@@ -348,9 +364,9 @@ func (s *Service) TransitionPlan(ctx context.Context, req domainbilling.Transiti
 		domainbilling.SubscriptionPlanActionArchive,
 		domainbilling.SubscriptionPlanActionRestore:
 	default:
-		return domainbilling.SubscriptionPlan{}, errs.BadRequest("invalid subscription plan action")
+		return req, errs.BadRequest("invalid subscription plan action")
 	}
-	return s.store.TransitionPlan(ctx, req)
+	return req, nil
 }
 
 func (s *Service) CreatePlan(ctx context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {

@@ -416,6 +416,116 @@ func TestModelAdminStoreNormalizesOnlyLegacyDefaultSizeBoundsForEditing(t *testi
 	}
 }
 
+func TestModelAdminStoreRejectsDeletedParentsAndTombstoneUpdates(t *testing.T) {
+	ctx := t.Context()
+	client := openModelAdminTestClient(t, "model-admin-deleted-parent-writes")
+	store := entstore.NewModelAdminStore(client)
+	accountRequest := domainmodeladmin.ModelAccountWriteRequest{
+		Name: "account", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: "https://example.com", Status: "enabled", ConcurrencyLimit: 1, TimeoutMS: 30000,
+	}
+	sourceAccount, err := store.CreateModelAccount(ctx, accountRequest)
+	if err != nil {
+		t.Fatalf("create source account: %v", err)
+	}
+	targetAccount, err := store.CreateModelAccount(ctx, accountRequest)
+	if err != nil {
+		t.Fatalf("create target account: %v", err)
+	}
+	if err := store.DeleteModelAccount(ctx, targetAccount.ID); err != nil {
+		t.Fatalf("delete target account: %v", err)
+	}
+	accountRequest.Name = "updated deleted account"
+	if _, err := store.UpdateModelAccount(ctx, targetAccount.ID, accountRequest); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("update deleted account = %v, want not found", err)
+	}
+
+	modelRequest := domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: sourceAccount.ID, ModelCode: "gpt-image-parent-lock", DisplayName: "Parent lock", TaskTypes: []string{"text_to_image"}, SizeModes: []string{"auto"}, MaxImageCount: 1, CostPerImage: "0.10000", Currency: "USD", Enabled: true,
+	}
+	model, err := store.CreateModelAccountModel(ctx, modelRequest)
+	if err != nil {
+		t.Fatalf("create source model: %v", err)
+	}
+	createOnDeleted := modelRequest
+	createOnDeleted.AccountID = targetAccount.ID
+	createOnDeleted.ModelCode = "gpt-image-deleted-parent"
+	if _, err := store.CreateModelAccountModel(ctx, createOnDeleted); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("create model on deleted account = %v, want conflict", err)
+	}
+	moveToDeleted := modelAccountModelWriteRequest(model)
+	moveToDeleted.AccountID = targetAccount.ID
+	if _, err := store.UpdateModelAccountModel(ctx, model.ID, moveToDeleted); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("move model to deleted account = %v, want conflict", err)
+	}
+	reloadedModel, err := store.GetModelAccountModel(ctx, model.ID)
+	if err != nil || reloadedModel.AccountID != sourceAccount.ID {
+		t.Fatalf("failed model move changed parent: %#v err=%v", reloadedModel, err)
+	}
+
+	disposableModelRequest := modelRequest
+	disposableModelRequest.ModelCode = "gpt-image-tombstone"
+	disposableModel, err := store.CreateModelAccountModel(ctx, disposableModelRequest)
+	if err != nil {
+		t.Fatalf("create disposable model: %v", err)
+	}
+	if err := store.DeleteModelAccountModel(ctx, disposableModel.ID); err != nil {
+		t.Fatalf("delete disposable model: %v", err)
+	}
+	if _, err := store.UpdateModelAccountModel(ctx, disposableModel.ID, disposableModelRequest); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("update deleted model = %v, want not found", err)
+	}
+
+	routeRequest := domainmodeladmin.RouteModelWriteRequest{Code: "source-route", Name: "Source route", Visibility: "public", Enabled: true}
+	sourceRoute, err := store.CreateRouteModel(ctx, routeRequest)
+	if err != nil {
+		t.Fatalf("create source route: %v", err)
+	}
+	targetRoute, err := store.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{Code: "target-route", Name: "Target route", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatalf("create target route: %v", err)
+	}
+	if err := store.DeleteRouteModel(ctx, targetRoute.ID); err != nil {
+		t.Fatalf("delete target route: %v", err)
+	}
+	if _, err := store.UpdateRouteModel(ctx, targetRoute.ID, domainmodeladmin.RouteModelWriteRequest{Code: "deleted-route", Name: "Deleted", Visibility: "public"}); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("update deleted route = %v, want not found", err)
+	}
+
+	candidateRequest := domainmodeladmin.RouteModelCandidateWriteRequest{RouteModelID: sourceRoute.ID, AccountModelID: model.ID, Weight: 100, Enabled: true}
+	candidate, err := store.CreateRouteModelCandidate(ctx, candidateRequest)
+	if err != nil {
+		t.Fatalf("create candidate: %v", err)
+	}
+	moveCandidate := candidateRequest
+	moveCandidate.RouteModelID = targetRoute.ID
+	if _, err := store.UpdateRouteModelCandidate(ctx, candidate.ID, moveCandidate); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("move candidate to deleted route = %v, want conflict", err)
+	}
+	if err := store.DeleteRouteModelCandidate(ctx, candidate.ID); err != nil {
+		t.Fatalf("delete candidate: %v", err)
+	}
+	if _, err := store.UpdateRouteModelCandidate(ctx, candidate.ID, candidateRequest); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("update deleted candidate = %v, want not found", err)
+	}
+
+	priceRequest := domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: sourceRoute.ID, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", ReferenceMultiplier: "1.00000", Enabled: true}
+	price, err := store.CreateRouteModelPrice(ctx, priceRequest)
+	if err != nil {
+		t.Fatalf("create price: %v", err)
+	}
+	movePrice := priceRequest
+	movePrice.RouteModelID = targetRoute.ID
+	if _, err := store.UpdateRouteModelPrice(ctx, price.ID, movePrice); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("move price to deleted route = %v, want conflict", err)
+	}
+	if err := store.DeleteRouteModelPrice(ctx, price.ID); err != nil {
+		t.Fatalf("delete price: %v", err)
+	}
+	if _, err := store.UpdateRouteModelPrice(ctx, price.ID, priceRequest); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("update deleted price = %v, want not found", err)
+	}
+}
+
 func modelAccountModelWriteRequest(model domainmodeladmin.ModelAccountModel) domainmodeladmin.ModelAccountModelWriteRequest {
 	return domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: model.AccountID, ModelCode: model.ModelCode, DisplayName: model.DisplayName,

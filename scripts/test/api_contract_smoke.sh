@@ -1650,6 +1650,10 @@ PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/db -run '^TestSchemaV2MigratesLegacyRefreshSessions$' -count=1
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/db -run '^TestListLegacyStorageDriversIgnoresPostgresJSONNullArtifactKeys$' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/db -run '^TestPrepareLegacyDataBackfillsLifecycleColumnsForExistingRows$' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/entstore -run '^TestModelAdminParentLocksPreventWritesAcrossDeletionPostgres$' -count=1
 start_fake_provider
 write_smoke_config true
 assert_api_port_free

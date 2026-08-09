@@ -91,6 +91,78 @@ func TestBillingStorePlanListAndStateTransitions(t *testing.T) {
 	}
 }
 
+func TestBillingStoreAuditedPlanTransitionIsAtomicAndIdempotent(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-plan-audit?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	store := NewBillingStore(client, 5)
+	durationDays := 30
+	plan, err := store.CreatePlan(ctx, domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "audited-plan", PlanName: "Audited", PlanType: "points_package", Status: "disabled",
+		PurchaseEnabled: false, PriceCNY: "10.00000", Points: "20.00000", BonusPoints: "0.00000",
+		DurationDays: &durationDays, Currency: "CNY",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	audit := domainbilling.PlanLifecycleAudit{
+		ActorType: "admin", ActorID: "7", Action: "cashier.plan.enable", TargetType: "cashier_plan", TargetID: fmt.Sprintf("%d", plan.ID),
+		RequestID: "plan-audit-request", IPAddr: "127.0.0.1", UserAgent: "test-agent",
+	}
+	request := domainbilling.TransitionSubscriptionPlanRequest{PlanID: plan.ID, Action: domainbilling.SubscriptionPlanActionEnable}
+	for attempt := 0; attempt < 2; attempt++ {
+		updated, err := store.TransitionPlanAudited(ctx, request, audit)
+		if err != nil {
+			t.Fatalf("TransitionPlanAudited attempt %d: %v", attempt+1, err)
+		}
+		if updated.Status != domainbilling.SubscriptionPlanStatusActive || !updated.PurchaseEnabled {
+			t.Fatalf("unexpected enabled plan: %#v", updated)
+		}
+	}
+	logs, err := client.AuditLog.Query().All(ctx)
+	if err != nil {
+		t.Fatalf("query lifecycle audits: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("repeated transition created %d audits, want 1", len(logs))
+	}
+	metadata := logs[0].Metadata
+	before, beforeOK := metadata["before"].(map[string]any)
+	after, afterOK := metadata["after"].(map[string]any)
+	if !beforeOK || !afterOK || before["status"] != domainbilling.SubscriptionPlanStatusDisabled || after["status"] != domainbilling.SubscriptionPlanStatusActive || metadata["request_id"] != "plan-audit-request" {
+		t.Fatalf("unexpected lifecycle audit metadata: %#v", metadata)
+	}
+
+	client.AuditLog.Use(func(repoent.Mutator) repoent.Mutator {
+		return repoent.MutateFunc(func(context.Context, repoent.Mutation) (repoent.Value, error) {
+			return nil, errors.New("injected plan audit failure")
+		})
+	})
+	_, err = store.TransitionPlanAudited(ctx,
+		domainbilling.TransitionSubscriptionPlanRequest{PlanID: plan.ID, Action: domainbilling.SubscriptionPlanActionDisable},
+		domainbilling.PlanLifecycleAudit{
+			ActorType: "admin", ActorID: "7", Action: "cashier.plan.disable", TargetType: "cashier_plan", TargetID: fmt.Sprintf("%d", plan.ID), RequestID: "rollback-request",
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "injected plan audit failure") {
+		t.Fatalf("expected injected audit failure, got %v", err)
+	}
+	reloaded, err := client.SubscriptionPlan.Get(ctx, int(plan.ID))
+	if err != nil {
+		t.Fatalf("reload plan after audit failure: %v", err)
+	}
+	if reloaded.Status != domainbilling.SubscriptionPlanStatusActive || !reloaded.PurchaseEnabled {
+		t.Fatalf("plan transition was not rolled back after audit failure: %#v", reloaded)
+	}
+}
+
 func TestBillingStoreReserveFinalizeAndLedger(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore?mode=memory&cache=shared&_fk=1")

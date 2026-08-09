@@ -3,6 +3,7 @@ package entstore
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -76,19 +77,62 @@ func lockRouteModelPriceRow() predicate.RouteModelPrice {
 }
 
 func (s *ModelAdminStore) lockLiveRouteModel(ctx context.Context, routeModelID int64) error {
-	_, err := s.client.RouteModel.Query().Where(routemodel.IDEQ(int(routeModelID)), routemodel.DeletedAtIsNil(), lockRouteModelRow()).Only(ctx)
-	if repoent.IsNotFound(err) {
-		return repoerr.ErrConflict
-	}
-	return err
+	return s.lockLiveRouteModels(ctx, routeModelID)
 }
 
 func (s *ModelAdminStore) lockLiveAccountModel(ctx context.Context, accountModelID int64) error {
-	_, err := s.client.ModelAccountModel.Query().Where(modelaccountmodel.IDEQ(int(accountModelID)), modelaccountmodel.DeletedAtIsNil(), lockModelAccountModelRow()).Only(ctx)
-	if repoent.IsNotFound(err) {
+	return s.lockLiveAccountModels(ctx, accountModelID)
+}
+
+func (s *ModelAdminStore) lockLiveModelAccounts(ctx context.Context, accountIDs ...int64) error {
+	ids := stableModelAdminIDs(accountIDs...)
+	entities, err := s.client.ModelAccount.Query().Where(modelaccount.IDIn(ids...), modelaccount.DeletedAtIsNil(), lockModelAccountRow()).Order(repoent.Asc(modelaccount.FieldID)).All(ctx)
+	if err != nil {
+		return err
+	}
+	if len(entities) != len(ids) {
 		return repoerr.ErrConflict
 	}
-	return err
+	return nil
+}
+
+func (s *ModelAdminStore) lockLiveAccountModels(ctx context.Context, accountModelIDs ...int64) error {
+	ids := stableModelAdminIDs(accountModelIDs...)
+	entities, err := s.client.ModelAccountModel.Query().Where(modelaccountmodel.IDIn(ids...), modelaccountmodel.DeletedAtIsNil(), lockModelAccountModelRow()).Order(repoent.Asc(modelaccountmodel.FieldID)).All(ctx)
+	if err != nil {
+		return err
+	}
+	if len(entities) != len(ids) {
+		return repoerr.ErrConflict
+	}
+	return nil
+}
+
+func (s *ModelAdminStore) lockLiveRouteModels(ctx context.Context, routeModelIDs ...int64) error {
+	ids := stableModelAdminIDs(routeModelIDs...)
+	entities, err := s.client.RouteModel.Query().Where(routemodel.IDIn(ids...), routemodel.DeletedAtIsNil(), lockRouteModelRow()).Order(repoent.Asc(routemodel.FieldID)).All(ctx)
+	if err != nil {
+		return err
+	}
+	if len(entities) != len(ids) {
+		return repoerr.ErrConflict
+	}
+	return nil
+}
+
+func stableModelAdminIDs(values ...int64) []int {
+	unique := make(map[int]struct{}, len(values))
+	for _, value := range values {
+		if value > 0 {
+			unique[int(value)] = struct{}{}
+		}
+	}
+	ids := make([]int, 0, len(unique))
+	for value := range unique {
+		ids = append(ids, value)
+	}
+	sort.Ints(ids)
+	return ids
 }
 
 func (s *ModelAdminStore) ListModelAccounts(ctx context.Context, req domainmodeladmin.ModelAccountListRequest) (domainmodeladmin.ModelAccountListPage, error) {
@@ -153,28 +197,34 @@ func (s *ModelAdminStore) CreateModelAccount(ctx context.Context, req domainmode
 }
 
 func (s *ModelAdminStore) UpdateModelAccount(ctx context.Context, accountID int64, req domainmodeladmin.ModelAccountWriteRequest) (domainmodeladmin.ModelAccount, error) {
-	update := s.client.ModelAccount.UpdateOneID(int(accountID)).
-		SetName(req.Name).
-		SetAdapterType(req.AdapterType).
-		SetAuthType(req.AuthType).
-		SetBaseURL(req.BaseURL).
-		SetStatus(req.Status).
-		SetPriority(req.Priority).
-		SetWeight(req.Weight).
-		SetConcurrencyLimit(req.ConcurrencyLimit).
-		SetTimeoutMs(req.TimeoutMS).
-		SetExtra(req.Extra)
-	if req.Credentials != nil {
-		update.SetCredentialsEncrypted(req.Credentials)
-	}
-	entity, err := update.Save(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainmodeladmin.ModelAccount{}, repoerr.ErrNotFound
+	return withModelAdminTx(ctx, s, func(store *ModelAdminStore) (domainmodeladmin.ModelAccount, error) {
+		current, err := store.client.ModelAccount.Query().Where(modelaccount.IDEQ(int(accountID)), modelaccount.DeletedAtIsNil(), lockModelAccountRow()).Only(ctx)
+		if err != nil {
+			if repoent.IsNotFound(err) {
+				return domainmodeladmin.ModelAccount{}, repoerr.ErrNotFound
+			}
+			return domainmodeladmin.ModelAccount{}, err
 		}
-		return domainmodeladmin.ModelAccount{}, err
-	}
-	return mapModelAccount(entity), nil
+		update := store.client.ModelAccount.UpdateOne(current).
+			SetName(req.Name).
+			SetAdapterType(req.AdapterType).
+			SetAuthType(req.AuthType).
+			SetBaseURL(req.BaseURL).
+			SetStatus(req.Status).
+			SetPriority(req.Priority).
+			SetWeight(req.Weight).
+			SetConcurrencyLimit(req.ConcurrencyLimit).
+			SetTimeoutMs(req.TimeoutMS).
+			SetExtra(req.Extra)
+		if req.Credentials != nil {
+			update.SetCredentialsEncrypted(req.Credentials)
+		}
+		entity, err := update.Save(ctx)
+		if err != nil {
+			return domainmodeladmin.ModelAccount{}, err
+		}
+		return mapModelAccount(entity), nil
+	})
 }
 
 func (s *ModelAdminStore) DeleteModelAccount(ctx context.Context, accountID int64) error {
@@ -278,79 +328,96 @@ func (s *ModelAdminStore) GetModelAccountModel(ctx context.Context, accountModel
 }
 
 func (s *ModelAdminStore) CreateModelAccountModel(ctx context.Context, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error) {
-	entity, err := s.client.ModelAccountModel.Create().
-		SetAccountID(req.AccountID).
-		SetModelCode(req.ModelCode).
-		SetDisplayName(req.DisplayName).
-		SetTaskTypes(req.TaskTypes).
-		SetBaseResolution(req.BaseResolution).
-		SetQuality(req.Quality).
-		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
-		SetMaxImageCount(req.MaxImageCount).
-		SetSizeModes(req.SizeModes).
-		SetSupportedRatios(req.SupportedRatios).
-		SetSupportedPixelSizes(req.SupportedPixelSizes).
-		SetSupportsCustomRatio(req.SupportsCustomRatio).
-		SetSupportedBackgrounds(req.SupportedBackgrounds).
-		SetOutputFormat(req.OutputFormat).
-		SetOutputCompression(req.OutputCompression).
-		SetSupportsOutputCompression(req.SupportsOutputCompression).
-		SetSupportsCustomSize(req.SupportsCustomSize).
-		SetMinWidth(req.MinWidth).
-		SetMaxWidth(req.MaxWidth).
-		SetMinHeight(req.MinHeight).
-		SetMaxHeight(req.MaxHeight).
-		SetModeration(req.Moderation).
-		SetCostPerImage(req.CostPerImage).
-		SetCurrency(req.Currency).
-		SetEnabled(req.Enabled).
-		SetExtra(req.Extra).
-		Save(ctx)
-	if err != nil {
-		if repoent.IsConstraintError(err) {
-			return domainmodeladmin.ModelAccountModel{}, repoerr.ErrConflict
+	return withModelAdminTx(ctx, s, func(store *ModelAdminStore) (domainmodeladmin.ModelAccountModel, error) {
+		if err := store.lockLiveModelAccounts(ctx, req.AccountID); err != nil {
+			return domainmodeladmin.ModelAccountModel{}, err
 		}
-		return domainmodeladmin.ModelAccountModel{}, err
-	}
-	return s.mapModelAccountModel(ctx, entity), nil
+		entity, err := store.client.ModelAccountModel.Create().
+			SetAccountID(req.AccountID).
+			SetModelCode(req.ModelCode).
+			SetDisplayName(req.DisplayName).
+			SetTaskTypes(req.TaskTypes).
+			SetBaseResolution(req.BaseResolution).
+			SetQuality(req.Quality).
+			SetMaxReferenceImageCount(req.MaxReferenceImageCount).
+			SetMaxImageCount(req.MaxImageCount).
+			SetSizeModes(req.SizeModes).
+			SetSupportedRatios(req.SupportedRatios).
+			SetSupportedPixelSizes(req.SupportedPixelSizes).
+			SetSupportsCustomRatio(req.SupportsCustomRatio).
+			SetSupportedBackgrounds(req.SupportedBackgrounds).
+			SetOutputFormat(req.OutputFormat).
+			SetOutputCompression(req.OutputCompression).
+			SetSupportsOutputCompression(req.SupportsOutputCompression).
+			SetSupportsCustomSize(req.SupportsCustomSize).
+			SetMinWidth(req.MinWidth).
+			SetMaxWidth(req.MaxWidth).
+			SetMinHeight(req.MinHeight).
+			SetMaxHeight(req.MaxHeight).
+			SetModeration(req.Moderation).
+			SetCostPerImage(req.CostPerImage).
+			SetCurrency(req.Currency).
+			SetEnabled(req.Enabled).
+			SetExtra(req.Extra).
+			Save(ctx)
+		if err != nil {
+			if repoent.IsConstraintError(err) {
+				return domainmodeladmin.ModelAccountModel{}, repoerr.ErrConflict
+			}
+			return domainmodeladmin.ModelAccountModel{}, err
+		}
+		return store.mapModelAccountModel(ctx, entity), nil
+	})
 }
 
 func (s *ModelAdminStore) UpdateModelAccountModel(ctx context.Context, accountModelID int64, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error) {
-	entity, err := s.client.ModelAccountModel.UpdateOneID(int(accountModelID)).
-		SetAccountID(req.AccountID).
-		SetModelCode(req.ModelCode).
-		SetDisplayName(req.DisplayName).
-		SetTaskTypes(req.TaskTypes).
-		SetBaseResolution(req.BaseResolution).
-		SetQuality(req.Quality).
-		SetMaxReferenceImageCount(req.MaxReferenceImageCount).
-		SetMaxImageCount(req.MaxImageCount).
-		SetSizeModes(req.SizeModes).
-		SetSupportedRatios(req.SupportedRatios).
-		SetSupportedPixelSizes(req.SupportedPixelSizes).
-		SetSupportsCustomRatio(req.SupportsCustomRatio).
-		SetSupportedBackgrounds(req.SupportedBackgrounds).
-		SetOutputFormat(req.OutputFormat).
-		SetOutputCompression(req.OutputCompression).
-		SetSupportsOutputCompression(req.SupportsOutputCompression).
-		SetSupportsCustomSize(req.SupportsCustomSize).
-		SetMinWidth(req.MinWidth).
-		SetMaxWidth(req.MaxWidth).
-		SetMinHeight(req.MinHeight).
-		SetMaxHeight(req.MaxHeight).
-		SetModeration(req.Moderation).
-		SetCostPerImage(req.CostPerImage).
-		SetCurrency(req.Currency).
-		SetEnabled(req.Enabled).
-		SetExtra(req.Extra).
-		Save(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainmodeladmin.ModelAccountModel{}, repoerr.ErrNotFound
+	return withModelAdminTx(ctx, s, func(store *ModelAdminStore) (domainmodeladmin.ModelAccountModel, error) {
+		current, err := store.client.ModelAccountModel.Query().Where(modelaccountmodel.IDEQ(int(accountModelID)), modelaccountmodel.DeletedAtIsNil(), lockModelAccountModelRow()).Only(ctx)
+		if err != nil {
+			if repoent.IsNotFound(err) {
+				return domainmodeladmin.ModelAccountModel{}, repoerr.ErrNotFound
+			}
+			return domainmodeladmin.ModelAccountModel{}, err
 		}
-		return domainmodeladmin.ModelAccountModel{}, err
-	}
-	return s.mapModelAccountModel(ctx, entity), nil
+		if err := store.lockLiveModelAccounts(ctx, current.AccountID, req.AccountID); err != nil {
+			return domainmodeladmin.ModelAccountModel{}, err
+		}
+		entity, err := store.client.ModelAccountModel.UpdateOne(current).
+			SetAccountID(req.AccountID).
+			SetModelCode(req.ModelCode).
+			SetDisplayName(req.DisplayName).
+			SetTaskTypes(req.TaskTypes).
+			SetBaseResolution(req.BaseResolution).
+			SetQuality(req.Quality).
+			SetMaxReferenceImageCount(req.MaxReferenceImageCount).
+			SetMaxImageCount(req.MaxImageCount).
+			SetSizeModes(req.SizeModes).
+			SetSupportedRatios(req.SupportedRatios).
+			SetSupportedPixelSizes(req.SupportedPixelSizes).
+			SetSupportsCustomRatio(req.SupportsCustomRatio).
+			SetSupportedBackgrounds(req.SupportedBackgrounds).
+			SetOutputFormat(req.OutputFormat).
+			SetOutputCompression(req.OutputCompression).
+			SetSupportsOutputCompression(req.SupportsOutputCompression).
+			SetSupportsCustomSize(req.SupportsCustomSize).
+			SetMinWidth(req.MinWidth).
+			SetMaxWidth(req.MaxWidth).
+			SetMinHeight(req.MinHeight).
+			SetMaxHeight(req.MaxHeight).
+			SetModeration(req.Moderation).
+			SetCostPerImage(req.CostPerImage).
+			SetCurrency(req.Currency).
+			SetEnabled(req.Enabled).
+			SetExtra(req.Extra).
+			Save(ctx)
+		if err != nil {
+			if repoent.IsConstraintError(err) {
+				return domainmodeladmin.ModelAccountModel{}, repoerr.ErrConflict
+			}
+			return domainmodeladmin.ModelAccountModel{}, err
+		}
+		return store.mapModelAccountModel(ctx, entity), nil
+	})
 }
 
 func (s *ModelAdminStore) DeleteModelAccountModel(ctx context.Context, accountModelID int64) error {
@@ -453,24 +520,33 @@ func (s *ModelAdminStore) CreateRouteModel(ctx context.Context, req domainmodela
 }
 
 func (s *ModelAdminStore) UpdateRouteModel(ctx context.Context, routeModelID int64, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error) {
-	entity, err := s.client.RouteModel.UpdateOneID(int(routeModelID)).
-		SetCode(req.Code).
-		SetName(req.Name).
-		SetDescription(req.Description).
-		SetVisibility(req.Visibility).
-		SetEnabled(req.Enabled).
-		SetSortOrder(req.SortOrder).
-		Save(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainmodeladmin.RouteModel{}, repoerr.ErrNotFound
+	return withModelAdminTx(ctx, s, func(store *ModelAdminStore) (domainmodeladmin.RouteModel, error) {
+		current, err := store.client.RouteModel.Query().Where(routemodel.IDEQ(int(routeModelID)), routemodel.DeletedAtIsNil(), lockRouteModelRow()).Only(ctx)
+		if err != nil {
+			if repoent.IsNotFound(err) {
+				return domainmodeladmin.RouteModel{}, repoerr.ErrNotFound
+			}
+			return domainmodeladmin.RouteModel{}, err
 		}
-		return domainmodeladmin.RouteModel{}, err
-	}
-	if err := s.replaceRouteVisibilityGroups(ctx, routeModelID, req.GroupIDs); err != nil {
-		return domainmodeladmin.RouteModel{}, err
-	}
-	return mapRouteModel(entity, req.GroupIDs), nil
+		entity, err := store.client.RouteModel.UpdateOne(current).
+			SetCode(req.Code).
+			SetName(req.Name).
+			SetDescription(req.Description).
+			SetVisibility(req.Visibility).
+			SetEnabled(req.Enabled).
+			SetSortOrder(req.SortOrder).
+			Save(ctx)
+		if err != nil {
+			if repoent.IsConstraintError(err) {
+				return domainmodeladmin.RouteModel{}, repoerr.ErrConflict
+			}
+			return domainmodeladmin.RouteModel{}, err
+		}
+		if err := store.replaceRouteVisibilityGroups(ctx, routeModelID, req.GroupIDs); err != nil {
+			return domainmodeladmin.RouteModel{}, err
+		}
+		return mapRouteModel(entity, req.GroupIDs), nil
+	})
 }
 
 func (s *ModelAdminStore) replaceRouteVisibilityGroups(ctx context.Context, routeModelID int64, groupIDs []int64) error {
@@ -602,14 +678,29 @@ func (s *ModelAdminStore) CreateRouteModelCandidate(ctx context.Context, req dom
 }
 
 func (s *ModelAdminStore) UpdateRouteModelCandidate(ctx context.Context, candidateID int64, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error) {
-	entity, err := s.client.RouteModelCandidate.UpdateOneID(int(candidateID)).SetRouteModelID(req.RouteModelID).SetAccountModelID(req.AccountModelID).SetPriority(req.Priority).SetWeight(req.Weight).SetFallbackOrder(req.FallbackOrder).SetEnabled(req.Enabled).Save(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainmodeladmin.RouteModelCandidate{}, repoerr.ErrNotFound
+	return withModelAdminTx(ctx, s, func(store *ModelAdminStore) (domainmodeladmin.RouteModelCandidate, error) {
+		current, err := store.client.RouteModelCandidate.Query().Where(routemodelcandidate.IDEQ(int(candidateID)), routemodelcandidate.DeletedAtIsNil(), lockRouteModelCandidateRow()).Only(ctx)
+		if err != nil {
+			if repoent.IsNotFound(err) {
+				return domainmodeladmin.RouteModelCandidate{}, repoerr.ErrNotFound
+			}
+			return domainmodeladmin.RouteModelCandidate{}, err
 		}
-		return domainmodeladmin.RouteModelCandidate{}, err
-	}
-	return s.mapRouteModelCandidate(ctx, entity), nil
+		if err := store.lockLiveRouteModels(ctx, current.RouteModelID, req.RouteModelID); err != nil {
+			return domainmodeladmin.RouteModelCandidate{}, err
+		}
+		if err := store.lockLiveAccountModels(ctx, current.AccountModelID, req.AccountModelID); err != nil {
+			return domainmodeladmin.RouteModelCandidate{}, err
+		}
+		entity, err := store.client.RouteModelCandidate.UpdateOne(current).SetRouteModelID(req.RouteModelID).SetAccountModelID(req.AccountModelID).SetPriority(req.Priority).SetWeight(req.Weight).SetFallbackOrder(req.FallbackOrder).SetEnabled(req.Enabled).Save(ctx)
+		if err != nil {
+			if repoent.IsConstraintError(err) {
+				return domainmodeladmin.RouteModelCandidate{}, repoerr.ErrConflict
+			}
+			return domainmodeladmin.RouteModelCandidate{}, err
+		}
+		return store.mapRouteModelCandidate(ctx, entity), nil
+	})
 }
 
 func (s *ModelAdminStore) DeleteRouteModelCandidate(ctx context.Context, candidateID int64) error {
@@ -721,14 +812,26 @@ func (s *ModelAdminStore) CreateRouteModelPrice(ctx context.Context, req domainm
 }
 
 func (s *ModelAdminStore) UpdateRouteModelPrice(ctx context.Context, priceID int64, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error) {
-	entity, err := s.client.RouteModelPrice.UpdateOneID(int(priceID)).SetRouteModelID(req.RouteModelID).SetTaskType(req.TaskType).SetBaseResolution(req.BaseResolution).SetBasePoints(req.BasePoints).SetReferenceMultiplier(req.ReferenceMultiplier).SetEnabled(req.Enabled).Save(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainmodeladmin.RouteModelPrice{}, repoerr.ErrNotFound
+	return withModelAdminTx(ctx, s, func(store *ModelAdminStore) (domainmodeladmin.RouteModelPrice, error) {
+		current, err := store.client.RouteModelPrice.Query().Where(routemodelprice.IDEQ(int(priceID)), routemodelprice.DeletedAtIsNil(), lockRouteModelPriceRow()).Only(ctx)
+		if err != nil {
+			if repoent.IsNotFound(err) {
+				return domainmodeladmin.RouteModelPrice{}, repoerr.ErrNotFound
+			}
+			return domainmodeladmin.RouteModelPrice{}, err
 		}
-		return domainmodeladmin.RouteModelPrice{}, err
-	}
-	return s.mapRouteModelPrice(ctx, entity), nil
+		if err := store.lockLiveRouteModels(ctx, current.RouteModelID, req.RouteModelID); err != nil {
+			return domainmodeladmin.RouteModelPrice{}, err
+		}
+		entity, err := store.client.RouteModelPrice.UpdateOne(current).SetRouteModelID(req.RouteModelID).SetTaskType(req.TaskType).SetBaseResolution(req.BaseResolution).SetBasePoints(req.BasePoints).SetReferenceMultiplier(req.ReferenceMultiplier).SetEnabled(req.Enabled).Save(ctx)
+		if err != nil {
+			if repoent.IsConstraintError(err) {
+				return domainmodeladmin.RouteModelPrice{}, repoerr.ErrConflict
+			}
+			return domainmodeladmin.RouteModelPrice{}, err
+		}
+		return store.mapRouteModelPrice(ctx, entity), nil
+	})
 }
 
 func (s *ModelAdminStore) DeleteRouteModelPrice(ctx context.Context, priceID int64) error {

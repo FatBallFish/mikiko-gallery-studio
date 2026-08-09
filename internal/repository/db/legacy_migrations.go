@@ -101,6 +101,68 @@ BEGIN
             WHERE task_type IN (''reference_generate'', ''reference_to_image'')';
     END IF;
 
+    IF to_regclass(current_schema() || '.route_model_candidates') IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'route_model_candidates'
+              AND column_name = 'created_at'
+        ) THEN
+            ALTER TABLE route_model_candidates ADD COLUMN created_at timestamp with time zone;
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'route_model_candidates'
+              AND column_name = 'updated_at'
+        ) THEN
+            ALTER TABLE route_model_candidates ADD COLUMN updated_at timestamp with time zone;
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'route_model_candidates'
+              AND column_name = 'deleted_at'
+        ) THEN
+            ALTER TABLE route_model_candidates ADD COLUMN deleted_at timestamp with time zone;
+        END IF;
+        UPDATE route_model_candidates SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL;
+        UPDATE route_model_candidates SET updated_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL;
+        ALTER TABLE route_model_candidates ALTER COLUMN created_at SET NOT NULL;
+        ALTER TABLE route_model_candidates ALTER COLUMN updated_at SET NOT NULL;
+    END IF;
+
+    IF to_regclass(current_schema() || '.route_model_prices') IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'route_model_prices'
+              AND column_name = 'created_at'
+        ) THEN
+            ALTER TABLE route_model_prices ADD COLUMN created_at timestamp with time zone;
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'route_model_prices'
+              AND column_name = 'updated_at'
+        ) THEN
+            ALTER TABLE route_model_prices ADD COLUMN updated_at timestamp with time zone;
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'route_model_prices'
+              AND column_name = 'deleted_at'
+        ) THEN
+            ALTER TABLE route_model_prices ADD COLUMN deleted_at timestamp with time zone;
+        END IF;
+        UPDATE route_model_prices SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL;
+        UPDATE route_model_prices SET updated_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL;
+        ALTER TABLE route_model_prices ALTER COLUMN created_at SET NOT NULL;
+        ALTER TABLE route_model_prices ALTER COLUMN updated_at SET NOT NULL;
+    END IF;
+
     IF to_regclass(current_schema() || '.model_account_models') IS NOT NULL THEN
         EXECUTE 'UPDATE model_account_models
             SET task_types = COALESCE((

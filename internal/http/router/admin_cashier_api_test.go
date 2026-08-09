@@ -12,21 +12,33 @@ import (
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
+	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	_ "github.com/mattn/go-sqlite3"
 	stripe "github.com/stripe/stripe-go/v85"
 )
 
 func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
+	client, err := repoent.Open(dialect.SQLite, "file:admin-cashier-plan-lifecycle?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
 	authSvc := authservice.NewService(config.AuthConfig{
 		AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test",
 		AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh",
@@ -39,8 +51,9 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 		t.Fatalf("CreateAdmin: %v", err)
 	}
 	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
-	auditSvc := auditservice.NewService(nil)
-	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, billingservice.NewService(cfg.Billing), nil, adminAuth, auditSvc)
+	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
+	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, entstore.NewBillingStore(client, 5))
+	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, billingSvc, nil, adminAuth, auditSvc)
 	handler := NewWithAPI(api)
 	adminToken := loginAdminForCashierPlanTest(t, handler)
 
@@ -80,6 +93,7 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/ops/admin/v1/cashier/plans/%d/%s", created.Data.ID, action), nil)
 		req.Header.Set("Authorization", "Bearer "+adminToken)
+		req.Header.Set("X-Request-Id", "cashier-plan-"+action)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -96,6 +110,7 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 		}
 	}
 
+	transition("enable", "active", true)
 	transition("enable", "active", true)
 	transition("disable", "disabled", false)
 	updateReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/ops/admin/v1/cashier/plans/%d", created.Data.ID), bytes.NewBufferString(
@@ -161,13 +176,25 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list audit logs: %v", err)
 	}
-	actions := map[string]bool{}
+	actions := map[string]int{}
 	for _, log := range logs.Items {
-		actions[log.Action] = true
+		actions[log.Action]++
+		switch log.Action {
+		case "cashier.plan.enable", "cashier.plan.disable", "cashier.plan.archive", "cashier.plan.restore":
+			if _, ok := log.Metadata["before"].(map[string]any); !ok {
+				t.Fatalf("lifecycle audit %q missing before state: %#v", log.Action, log.Metadata)
+			}
+			if _, ok := log.Metadata["after"].(map[string]any); !ok {
+				t.Fatalf("lifecycle audit %q missing after state: %#v", log.Action, log.Metadata)
+			}
+			if requestID, ok := log.Metadata["request_id"].(string); !ok || strings.TrimSpace(requestID) == "" {
+				t.Fatalf("lifecycle audit %q missing request_id: %#v", log.Action, log.Metadata)
+			}
+		}
 	}
 	for _, action := range []string{"cashier.plan.enable", "cashier.plan.disable", "cashier.plan.archive", "cashier.plan.restore"} {
-		if !actions[action] {
-			t.Fatalf("missing audit action %q in %#v", action, actions)
+		if actions[action] != 1 {
+			t.Fatalf("audit action %q count=%d, want exactly 1 in %#v", action, actions[action], actions)
 		}
 	}
 }

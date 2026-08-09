@@ -32,6 +32,18 @@ type contextObservingRoutingSource struct {
 	err error
 }
 
+type auditedPlanStore struct {
+	Store
+	request domainbilling.TransitionSubscriptionPlanRequest
+	audit   domainbilling.PlanLifecycleAudit
+}
+
+func (s *auditedPlanStore) TransitionPlanAudited(_ context.Context, req domainbilling.TransitionSubscriptionPlanRequest, audit domainbilling.PlanLifecycleAudit) (domainbilling.SubscriptionPlan, error) {
+	s.request = req
+	s.audit = audit
+	return domainbilling.SubscriptionPlan{ID: req.PlanID, Status: domainbilling.SubscriptionPlanStatusActive}, nil
+}
+
 func (s *contextObservingRoutingSource) ModelRoutingConfig(ctx context.Context) (modelhub.ModelRoutingSnapshot, error) {
 	s.err = ctx.Err()
 	return modelhub.ModelRoutingSnapshot{}, ctx.Err()
@@ -213,6 +225,24 @@ func TestPlanStateTransitionsAreSafeAndIdempotent(t *testing.T) {
 	}
 	if subscription.Status != "active" || subscription.PurchaseEnabled {
 		t.Fatalf("non-points plan must not become purchasable: %#v", subscription)
+	}
+}
+
+func TestAuditedPlanTransitionValidatesAndForwardsAuditContext(t *testing.T) {
+	store := &auditedPlanStore{}
+	svc := NewServiceWithStore(config.BillingConfig{}, store)
+	audit := domainbilling.PlanLifecycleAudit{
+		ActorType: "admin", ActorID: "9", Action: "cashier.plan.enable", TargetType: "cashier_plan", TargetID: "42", RequestID: "request-42",
+	}
+	result, err := svc.TransitionPlanAudited(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 42, Action: " ENABLE "}, audit)
+	if err != nil {
+		t.Fatalf("TransitionPlanAudited: %v", err)
+	}
+	if result.ID != 42 || store.request.Action != domainbilling.SubscriptionPlanActionEnable || store.audit.RequestID != "request-42" {
+		t.Fatalf("audited transition was not normalized and forwarded: result=%#v request=%#v audit=%#v", result, store.request, store.audit)
+	}
+	if _, err := svc.TransitionPlanAudited(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 0, Action: "enable"}, audit); err == nil {
+		t.Fatal("invalid audited transition plan_id was accepted")
 	}
 }
 

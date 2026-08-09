@@ -293,6 +293,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
             columns={accountColumns({
               modelsByAccount,
               selectedAccountId: expandedAccountId,
+              deleting,
               onSelect: (account) => setExpandedAccountId(String(account.id)),
               onEdit: (account) => openAccountDialog(editAccountDraft(account)),
               onAddModel: (account) => openModelDialog(newModelDraft(account)),
@@ -434,6 +435,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
 function accountColumns({
   modelsByAccount,
   selectedAccountId,
+  deleting,
   onSelect,
   onEdit,
   onAddModel,
@@ -442,6 +444,7 @@ function accountColumns({
 }: {
   modelsByAccount: Record<string, ModelAccountModel[]>
   selectedAccountId: string
+  deleting: boolean
   onSelect: (account: ModelAccount) => void
   onEdit: (account: ModelAccount) => void
   onAddModel: (account: ModelAccount) => void
@@ -503,8 +506,8 @@ function accountColumns({
               { id: 'edit-account', label: '编辑账号', run: () => onEdit(account) },
               { id: 'add-model', label: '添加真实模型', run: () => onAddModel(account) },
               { id: 'test-account', label: '测试模型账号', run: () => onTest(account) },
-              { id: 'delete-account', label: '删除账号', tone: 'danger', run: () => onDelete(account) },
             ]} />
+            <TooltipIconButton label={`删除账号 ${account.name}`} disabled={deleting} disabledReason="删除处理中" onClick={() => onDelete(account)}><Trash2 /></TooltipIconButton>
           </span>
         )
       },
@@ -551,7 +554,7 @@ function modelColumns(onEdit: (model: ModelAccountModel) => void, onDelete: (mod
       title: '操作',
       width: 'minmax(90px,.7fr)',
       align: 'right',
-      render: (model) => <span className={accountTableClasses.actions}><button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => onEdit(model)}>编辑</button><TooltipIconButton label={`删除 ${model.model_code}`} onClick={() => onDelete(model)}><Trash2 /></TooltipIconButton></span>,
+      render: (model) => <span className={accountTableClasses.actions}><button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => onEdit(model)}>编辑</button><TooltipIconButton label={`删除真实模型 ${model.model_code}`} onClick={() => onDelete(model)}><Trash2 /></TooltipIconButton></span>,
     },
   ]
 }

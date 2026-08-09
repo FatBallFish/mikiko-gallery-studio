@@ -4397,26 +4397,26 @@ func (a *API) HandleAdminCashierPlanDetail(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if r.Method == http.MethodPost && action != "" {
-		plan, err := a.billing.TransitionPlan(r.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: action})
+		plan, err := a.billing.TransitionPlanAudited(
+			r.Context(),
+			domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: action},
+			cashierPlanLifecycleAudit(r, admin.AdminID, action, planID),
+		)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan."+action, "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, cashierPlanPayload(plan))
 		return
 	}
 	if r.Method == http.MethodDelete && action == "" {
-		plan, err := a.billing.TransitionPlan(r.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: domainbilling.SubscriptionPlanActionArchive})
+		plan, err := a.billing.TransitionPlanAudited(
+			r.Context(),
+			domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: domainbilling.SubscriptionPlanActionArchive},
+			cashierPlanLifecycleAudit(r, admin.AdminID, domainbilling.SubscriptionPlanActionArchive, planID),
+		)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan.archive", "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, cashierPlanPayload(plan))
@@ -8594,6 +8594,14 @@ func modelLifecycleAudit(r *http.Request, adminID int64, action, targetType stri
 	return domainmodeladmin.LifecycleAudit{
 		ActorType: "admin", ActorID: fmt.Sprintf("%d", adminID), Action: action,
 		TargetType: targetType, TargetID: fmt.Sprintf("%d", targetID),
+		RequestID: httpx.RequestIDFromContext(r.Context()), IPAddr: r.RemoteAddr, UserAgent: r.UserAgent(),
+	}
+}
+
+func cashierPlanLifecycleAudit(r *http.Request, adminID int64, action string, planID int64) domainbilling.PlanLifecycleAudit {
+	return domainbilling.PlanLifecycleAudit{
+		ActorType: "admin", ActorID: fmt.Sprintf("%d", adminID), Action: "cashier.plan." + action,
+		TargetType: "cashier_plan", TargetID: fmt.Sprintf("%d", planID),
 		RequestID: httpx.RequestIDFromContext(r.Context()), IPAddr: r.RemoteAddr, UserAgent: r.UserAgent(),
 	}
 }
