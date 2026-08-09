@@ -160,19 +160,26 @@ func (s *BillingStore) CreatePlan(ctx context.Context, req domainbilling.CreateS
 }
 
 func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
-	current, err := s.client.SubscriptionPlan.Get(ctx, int(req.PlanID))
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainbilling.SubscriptionPlan{}, fmt.Errorf("begin subscription plan update transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	txClient := tx.Client()
+	current, err := txClient.SubscriptionPlan.Query().Where(subscriptionplan.IDEQ(int(req.PlanID)), lockSubscriptionPlanRow()).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
 		}
 		return domainbilling.SubscriptionPlan{}, err
 	}
-	purchaseEnabled := current.PurchaseEnabled && strings.TrimSpace(req.PlanType) == "points_package"
-	metadata := subscriptionPlanMetadata(req.PlanType, purchaseEnabled)
+	planType := strings.TrimSpace(req.PlanType)
+	purchaseEnabled := current.PurchaseEnabled && planType == "points_package"
+	metadata := subscriptionPlanMetadata(planType, purchaseEnabled)
 	expiryEnabled := effectivePlanCreditExpiryEnabled(req.CreditExpiryEnabled)
-	plan, err := s.client.SubscriptionPlan.UpdateOneID(int(req.PlanID)).
+	plan, err := txClient.SubscriptionPlan.UpdateOne(current).
 		SetPlanName(strings.TrimSpace(req.PlanName)).
-		SetPlanType(strings.TrimSpace(req.PlanType)).
+		SetPlanType(planType).
 		SetPurchaseEnabled(purchaseEnabled).
 		SetPriceCny(strings.TrimSpace(req.PriceCNY)).
 		SetPoints(strings.TrimSpace(req.Points)).
@@ -189,6 +196,9 @@ func (s *BillingStore) UpdatePlan(ctx context.Context, req domainbilling.UpdateS
 			return domainbilling.SubscriptionPlan{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "subscription plan not found")
 		}
 		return domainbilling.SubscriptionPlan{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domainbilling.SubscriptionPlan{}, fmt.Errorf("commit subscription plan update transaction: %w", err)
 	}
 	return mapSubscriptionPlan(plan), nil
 }

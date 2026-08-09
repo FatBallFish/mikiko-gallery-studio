@@ -420,17 +420,17 @@ func (s *ModelAdminStore) UpdateModelAccountModel(ctx context.Context, accountMo
 	})
 }
 
-func (s *ModelAdminStore) DeleteModelAccountModel(ctx context.Context, accountModelID int64) error {
-	return s.deleteModelAccountModel(ctx, accountModelID, nil)
+func (s *ModelAdminStore) DeleteModelAccountModel(ctx context.Context, accountID, accountModelID int64) error {
+	return s.deleteModelAccountModel(ctx, accountID, accountModelID, nil)
 }
 
-func (s *ModelAdminStore) DeleteModelAccountModelAudited(ctx context.Context, accountModelID int64, audit domainmodeladmin.LifecycleAudit) error {
-	return s.deleteModelAccountModel(ctx, accountModelID, &audit)
+func (s *ModelAdminStore) DeleteModelAccountModelAudited(ctx context.Context, accountID, accountModelID int64, audit domainmodeladmin.LifecycleAudit) error {
+	return s.deleteModelAccountModel(ctx, accountID, accountModelID, &audit)
 }
 
-func (s *ModelAdminStore) deleteModelAccountModel(ctx context.Context, accountModelID int64, audit *domainmodeladmin.LifecycleAudit) error {
+func (s *ModelAdminStore) deleteModelAccountModel(ctx context.Context, accountID, accountModelID int64, audit *domainmodeladmin.LifecycleAudit) error {
 	_, err := withModelAdminTx(ctx, s, func(store *ModelAdminStore) (struct{}, error) {
-		entity, err := store.client.ModelAccountModel.Query().Where(modelaccountmodel.IDEQ(int(accountModelID)), lockModelAccountModelRow()).Only(ctx)
+		entity, err := store.client.ModelAccountModel.Query().Where(modelaccountmodel.IDEQ(int(accountModelID)), modelaccountmodel.AccountIDEQ(accountID), lockModelAccountModelRow()).Only(ctx)
 		if err != nil {
 			if repoent.IsNotFound(err) {
 				return struct{}{}, repoerr.ErrNotFound
@@ -703,17 +703,17 @@ func (s *ModelAdminStore) UpdateRouteModelCandidate(ctx context.Context, candida
 	})
 }
 
-func (s *ModelAdminStore) DeleteRouteModelCandidate(ctx context.Context, candidateID int64) error {
-	return s.deleteRouteModelCandidate(ctx, candidateID, nil)
+func (s *ModelAdminStore) DeleteRouteModelCandidate(ctx context.Context, routeModelID, candidateID int64) error {
+	return s.deleteRouteModelCandidate(ctx, routeModelID, candidateID, nil)
 }
 
-func (s *ModelAdminStore) DeleteRouteModelCandidateAudited(ctx context.Context, candidateID int64, audit domainmodeladmin.LifecycleAudit) error {
-	return s.deleteRouteModelCandidate(ctx, candidateID, &audit)
+func (s *ModelAdminStore) DeleteRouteModelCandidateAudited(ctx context.Context, routeModelID, candidateID int64, audit domainmodeladmin.LifecycleAudit) error {
+	return s.deleteRouteModelCandidate(ctx, routeModelID, candidateID, &audit)
 }
 
-func (s *ModelAdminStore) deleteRouteModelCandidate(ctx context.Context, candidateID int64, audit *domainmodeladmin.LifecycleAudit) error {
+func (s *ModelAdminStore) deleteRouteModelCandidate(ctx context.Context, routeModelID, candidateID int64, audit *domainmodeladmin.LifecycleAudit) error {
 	_, err := withModelAdminTx(ctx, s, func(store *ModelAdminStore) (struct{}, error) {
-		entity, err := store.client.RouteModelCandidate.Query().Where(routemodelcandidate.IDEQ(int(candidateID)), lockRouteModelCandidateRow()).Only(ctx)
+		entity, err := store.client.RouteModelCandidate.Query().Where(routemodelcandidate.IDEQ(int(candidateID)), routemodelcandidate.RouteModelIDEQ(routeModelID), lockRouteModelCandidateRow()).Only(ctx)
 		if err != nil {
 			if repoent.IsNotFound(err) {
 				return struct{}{}, repoerr.ErrNotFound

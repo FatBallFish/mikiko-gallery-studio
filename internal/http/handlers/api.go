@@ -6833,7 +6833,7 @@ func (a *API) handleAdminModelAccountModels(w http.ResponseWriter, r *http.Reque
 		a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "model_account_model.update", "model_account_model", fmt.Sprintf("%d", updated.ID), map[string]any{"account_id": accountID, "model_code": updated.ModelCode})
 		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	case http.MethodDelete:
-		if err := a.modelAdmin.DeleteModelAccountModelAudited(r.Context(), modelID, modelLifecycleAudit(r, adminID, "model_account_model.delete", "model_account_model", modelID)); err != nil {
+		if err := a.modelAdmin.DeleteModelAccountModelAudited(r.Context(), accountID, modelID, modelLifecycleAudit(r, adminID, "model_account_model.delete", "model_account_model", modelID)); err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
@@ -6967,7 +6967,7 @@ func (a *API) handleAdminRouteModelCandidates(w http.ResponseWriter, r *http.Req
 		a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "route_model_candidate.update", "route_model_candidate", fmt.Sprintf("%d", updated.ID), nil)
 		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	case http.MethodDelete:
-		if err := a.modelAdmin.DeleteRouteModelCandidateAudited(r.Context(), candidateID, modelLifecycleAudit(r, adminID, "route_model_candidate.delete", "route_model_candidate", candidateID)); err != nil {
+		if err := a.modelAdmin.DeleteRouteModelCandidateAudited(r.Context(), routeModelID, candidateID, modelLifecycleAudit(r, adminID, "route_model_candidate.delete", "route_model_candidate", candidateID)); err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}

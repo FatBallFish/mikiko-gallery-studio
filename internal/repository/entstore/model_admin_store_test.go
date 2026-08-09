@@ -3,6 +3,7 @@ package entstore_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -40,6 +41,88 @@ func TestModelAdminStoreAuditedDeleteRollsBackWhenAuditWriteFails(t *testing.T) 
 	}
 	if _, err := store.GetModelAccount(t.Context(), account.ID); err != nil {
 		t.Fatalf("account deletion must roll back when audit fails: %v", err)
+	}
+}
+
+func TestModelAdminStoreNestedDeleteEnforcesParentOwnership(t *testing.T) {
+	ctx := t.Context()
+	client := openModelAdminTestClient(t, "model-admin-nested-delete-ownership")
+	store := entstore.NewModelAdminStore(client)
+
+	accountA, err := store.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name: "nested account a", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: "https://a.example.com", Status: "enabled", ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("create account a: %v", err)
+	}
+	accountB, err := store.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name: "nested account b", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: "https://b.example.com", Status: "enabled", ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("create account b: %v", err)
+	}
+	accountModel, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: accountB.ID, ModelCode: "nested-model", DisplayName: "Nested model", TaskTypes: []string{"text_to_image"}, SizeModes: []string{"auto"}, MaxImageCount: 1, CostPerImage: "0.10000", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create account model: %v", err)
+	}
+	modelAudit := domainmodeladmin.LifecycleAudit{ActorType: "admin", ActorID: "1", Action: "model_account_model.delete", TargetType: "model_account_model", TargetID: fmt.Sprint(accountModel.ID)}
+	if err := store.DeleteModelAccountModelAudited(ctx, accountA.ID, accountModel.ID, modelAudit); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("delete model through wrong account = %v, want not found", err)
+	}
+	modelEntity, err := client.ModelAccountModel.Get(ctx, int(accountModel.ID))
+	if err != nil || modelEntity.DeletedAt != nil {
+		t.Fatalf("wrong-parent model delete mutated row: %#v err=%v", modelEntity, err)
+	}
+	if count, err := client.AuditLog.Query().Count(ctx); err != nil || count != 0 {
+		t.Fatalf("wrong-parent model delete wrote audit: count=%d err=%v", count, err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := store.DeleteModelAccountModelAudited(ctx, accountB.ID, accountModel.ID, modelAudit); err != nil {
+			t.Fatalf("correct-parent model delete attempt %d: %v", attempt+1, err)
+		}
+	}
+	if count, err := client.AuditLog.Query().Count(ctx); err != nil || count != 1 {
+		t.Fatalf("idempotent model delete audit count=%d err=%v, want 1", count, err)
+	}
+
+	routeA, err := store.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{Code: "nested-route-a", Name: "Nested route A", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatalf("create route a: %v", err)
+	}
+	routeB, err := store.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{Code: "nested-route-b", Name: "Nested route B", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatalf("create route b: %v", err)
+	}
+	secondModel, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: accountB.ID, ModelCode: "candidate-model", DisplayName: "Candidate model", TaskTypes: []string{"text_to_image"}, SizeModes: []string{"auto"}, MaxImageCount: 1, CostPerImage: "0.10000", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create candidate model: %v", err)
+	}
+	candidate, err := store.CreateRouteModelCandidate(ctx, domainmodeladmin.RouteModelCandidateWriteRequest{RouteModelID: routeB.ID, AccountModelID: secondModel.ID, Weight: 100, Enabled: true})
+	if err != nil {
+		t.Fatalf("create candidate: %v", err)
+	}
+	candidateAudit := domainmodeladmin.LifecycleAudit{ActorType: "admin", ActorID: "1", Action: "route_model_candidate.delete", TargetType: "route_model_candidate", TargetID: fmt.Sprint(candidate.ID)}
+	if err := store.DeleteRouteModelCandidateAudited(ctx, routeA.ID, candidate.ID, candidateAudit); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("delete candidate through wrong route = %v, want not found", err)
+	}
+	candidateEntity, err := client.RouteModelCandidate.Get(ctx, int(candidate.ID))
+	if err != nil || candidateEntity.DeletedAt != nil {
+		t.Fatalf("wrong-parent candidate delete mutated row: %#v err=%v", candidateEntity, err)
+	}
+	if count, err := client.AuditLog.Query().Count(ctx); err != nil || count != 1 {
+		t.Fatalf("wrong-parent candidate delete wrote audit: count=%d err=%v", count, err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := store.DeleteRouteModelCandidateAudited(ctx, routeB.ID, candidate.ID, candidateAudit); err != nil {
+			t.Fatalf("correct-parent candidate delete attempt %d: %v", attempt+1, err)
+		}
+	}
+	if count, err := client.AuditLog.Query().Count(ctx); err != nil || count != 2 {
+		t.Fatalf("idempotent candidate delete audit count=%d err=%v, want 2", count, err)
 	}
 }
 
@@ -92,13 +175,13 @@ func TestModelAdminStoreLifecycleUsesDependencyAwareSoftDeletion(t *testing.T) {
 		}
 	}
 	assertConfigurationInUse(store.DeleteModelAccount(ctx, account.ID), "account_models", 1)
-	assertConfigurationInUse(store.DeleteModelAccountModel(ctx, accountModel.ID), "route_candidates", 1)
+	assertConfigurationInUse(store.DeleteModelAccountModel(ctx, account.ID, accountModel.ID), "route_candidates", 1)
 	assertConfigurationInUse(store.DeleteRouteModel(ctx, route.ID), "route_candidates", 1)
 
-	if err := store.DeleteRouteModelCandidate(ctx, candidate.ID); err != nil {
+	if err := store.DeleteRouteModelCandidate(ctx, route.ID, candidate.ID); err != nil {
 		t.Fatalf("delete candidate: %v", err)
 	}
-	if err := store.DeleteRouteModelCandidate(ctx, candidate.ID); err != nil {
+	if err := store.DeleteRouteModelCandidate(ctx, route.ID, candidate.ID); err != nil {
 		t.Fatalf("repeat candidate delete must be idempotent: %v", err)
 	}
 	listedCandidates, err := store.ListRouteModelCandidates(ctx, route.ID)
@@ -113,7 +196,7 @@ func TestModelAdminStoreLifecycleUsesDependencyAwareSoftDeletion(t *testing.T) {
 	if err != nil || revivedCandidate.ID != candidate.ID {
 		t.Fatalf("recreate must revive candidate id=%d: %#v err=%v", candidate.ID, revivedCandidate, err)
 	}
-	if err := store.DeleteRouteModelCandidate(ctx, candidate.ID); err != nil {
+	if err := store.DeleteRouteModelCandidate(ctx, route.ID, candidate.ID); err != nil {
 		t.Fatalf("delete revived candidate: %v", err)
 	}
 
@@ -145,7 +228,7 @@ func TestModelAdminStoreLifecycleUsesDependencyAwareSoftDeletion(t *testing.T) {
 		deleteFn func() error
 	}{
 		{"route", func() error { return store.DeleteRouteModel(ctx, route.ID) }},
-		{"account model", func() error { return store.DeleteModelAccountModel(ctx, accountModel.ID) }},
+		{"account model", func() error { return store.DeleteModelAccountModel(ctx, account.ID, accountModel.ID) }},
 		{"account", func() error { return store.DeleteModelAccount(ctx, account.ID) }},
 	} {
 		name, deleteFn := step.name, step.deleteFn
@@ -468,7 +551,7 @@ func TestModelAdminStoreRejectsDeletedParentsAndTombstoneUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create disposable model: %v", err)
 	}
-	if err := store.DeleteModelAccountModel(ctx, disposableModel.ID); err != nil {
+	if err := store.DeleteModelAccountModel(ctx, sourceAccount.ID, disposableModel.ID); err != nil {
 		t.Fatalf("delete disposable model: %v", err)
 	}
 	if _, err := store.UpdateModelAccountModel(ctx, disposableModel.ID, disposableModelRequest); !errors.Is(err, repoerr.ErrNotFound) {
@@ -501,7 +584,7 @@ func TestModelAdminStoreRejectsDeletedParentsAndTombstoneUpdates(t *testing.T) {
 	if _, err := store.UpdateRouteModelCandidate(ctx, candidate.ID, moveCandidate); !errors.Is(err, repoerr.ErrConflict) {
 		t.Fatalf("move candidate to deleted route = %v, want conflict", err)
 	}
-	if err := store.DeleteRouteModelCandidate(ctx, candidate.ID); err != nil {
+	if err := store.DeleteRouteModelCandidate(ctx, sourceRoute.ID, candidate.ID); err != nil {
 		t.Fatalf("delete candidate: %v", err)
 	}
 	if _, err := store.UpdateRouteModelCandidate(ctx, candidate.ID, candidateRequest); !errors.Is(err, repoerr.ErrNotFound) {

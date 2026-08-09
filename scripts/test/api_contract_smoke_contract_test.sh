@@ -63,7 +63,7 @@ for marker in \
   'POSTGRES_TEST_URL=' \
   'PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL"' \
   "-run '^TestTextModelStore.*Postgres'" \
-  "-run '^TestBillingStorePostgres(CancelAndPaidReconciliationEndsCompleted|ConcurrentDuplicatePaidCallbacksAreIdempotent)$'" \
+  "-run '^TestBillingStore(Postgres(CancelAndPaidReconciliationEndsCompleted|ConcurrentDuplicatePaidCallbacksAreIdempotent)|UpdatePlanSerializesWithLifecycleTransitionsPostgres)$'" \
   'go test ./internal/repository/db' \
   "-run '^TestSchemaV2MigratesLegacyRefreshSessions$'"; do
   if ! grep -Fq -- "$marker" "$SMOKE"; then

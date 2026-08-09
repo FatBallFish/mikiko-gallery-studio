@@ -109,18 +109,18 @@ func (s *Service) UpdateModelAccountModel(ctx context.Context, accountModelID in
 	return item, normalizeStoreError(err, "model account model not found")
 }
 
-func (s *Service) DeleteModelAccountModel(ctx context.Context, accountModelID int64) error {
-	if accountModelID <= 0 {
-		return errs.BadRequest("invalid account_model_id")
+func (s *Service) DeleteModelAccountModel(ctx context.Context, accountID, accountModelID int64) error {
+	if accountID <= 0 || accountModelID <= 0 {
+		return errs.BadRequest("invalid account_id or account_model_id")
 	}
-	return normalizeStoreError(s.store.DeleteModelAccountModel(ctx, accountModelID), "model account model not found")
+	return normalizeStoreError(s.store.DeleteModelAccountModel(ctx, accountID, accountModelID), "model account model not found")
 }
 
-func (s *Service) DeleteModelAccountModelAudited(ctx context.Context, accountModelID int64, audit domainmodeladmin.LifecycleAudit) error {
-	if accountModelID <= 0 {
-		return errs.BadRequest("invalid account_model_id")
+func (s *Service) DeleteModelAccountModelAudited(ctx context.Context, accountID, accountModelID int64, audit domainmodeladmin.LifecycleAudit) error {
+	if accountID <= 0 || accountModelID <= 0 {
+		return errs.BadRequest("invalid account_id or account_model_id")
 	}
-	return normalizeStoreError(s.store.DeleteModelAccountModelAudited(ctx, accountModelID, audit), "model account model not found")
+	return normalizeStoreError(s.store.DeleteModelAccountModelAudited(ctx, accountID, accountModelID, audit), "model account model not found")
 }
 
 func (s *Service) ListProviders(ctx context.Context, req domainmodeladmin.ProviderListRequest) (domainmodeladmin.ProviderListPage, error) {
@@ -332,18 +332,18 @@ func (s *Service) UpdateRouteModelCandidate(ctx context.Context, candidateID int
 	return item, normalizeStoreError(err, "route model candidate not found")
 }
 
-func (s *Service) DeleteRouteModelCandidate(ctx context.Context, candidateID int64) error {
-	if candidateID <= 0 {
-		return errs.BadRequest("invalid candidate_id")
+func (s *Service) DeleteRouteModelCandidate(ctx context.Context, routeModelID, candidateID int64) error {
+	if routeModelID <= 0 || candidateID <= 0 {
+		return errs.BadRequest("invalid route_model_id or candidate_id")
 	}
-	return normalizeStoreError(s.store.DeleteRouteModelCandidate(ctx, candidateID), "route model candidate not found")
+	return normalizeStoreError(s.store.DeleteRouteModelCandidate(ctx, routeModelID, candidateID), "route model candidate not found")
 }
 
-func (s *Service) DeleteRouteModelCandidateAudited(ctx context.Context, candidateID int64, audit domainmodeladmin.LifecycleAudit) error {
-	if candidateID <= 0 {
-		return errs.BadRequest("invalid candidate_id")
+func (s *Service) DeleteRouteModelCandidateAudited(ctx context.Context, routeModelID, candidateID int64, audit domainmodeladmin.LifecycleAudit) error {
+	if routeModelID <= 0 || candidateID <= 0 {
+		return errs.BadRequest("invalid route_model_id or candidate_id")
 	}
-	return normalizeStoreError(s.store.DeleteRouteModelCandidateAudited(ctx, candidateID, audit), "route model candidate not found")
+	return normalizeStoreError(s.store.DeleteRouteModelCandidateAudited(ctx, routeModelID, candidateID, audit), "route model candidate not found")
 }
 
 func (s *Service) ListRouteModelPrices(ctx context.Context, req domainmodeladmin.RouteModelPriceListRequest) (domainmodeladmin.RouteModelPriceListPage, error) {

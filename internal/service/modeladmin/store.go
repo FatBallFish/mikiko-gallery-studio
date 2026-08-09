@@ -21,8 +21,8 @@ type Store interface {
 	GetModelAccountModel(ctx context.Context, accountModelID int64) (domainmodeladmin.ModelAccountModel, error)
 	CreateModelAccountModel(ctx context.Context, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error)
 	UpdateModelAccountModel(ctx context.Context, accountModelID int64, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error)
-	DeleteModelAccountModel(ctx context.Context, accountModelID int64) error
-	DeleteModelAccountModelAudited(ctx context.Context, accountModelID int64, audit domainmodeladmin.LifecycleAudit) error
+	DeleteModelAccountModel(ctx context.Context, accountID, accountModelID int64) error
+	DeleteModelAccountModelAudited(ctx context.Context, accountID, accountModelID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListRouteModels(ctx context.Context, req domainmodeladmin.RouteModelListRequest) (domainmodeladmin.RouteModelListPage, error)
 	GetRouteModel(ctx context.Context, routeModelID int64) (domainmodeladmin.RouteModel, error)
 	CreateRouteModel(ctx context.Context, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error)
@@ -33,8 +33,8 @@ type Store interface {
 	GetRouteModelCandidate(ctx context.Context, candidateID int64) (domainmodeladmin.RouteModelCandidate, error)
 	CreateRouteModelCandidate(ctx context.Context, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error)
 	UpdateRouteModelCandidate(ctx context.Context, candidateID int64, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error)
-	DeleteRouteModelCandidate(ctx context.Context, candidateID int64) error
-	DeleteRouteModelCandidateAudited(ctx context.Context, candidateID int64, audit domainmodeladmin.LifecycleAudit) error
+	DeleteRouteModelCandidate(ctx context.Context, routeModelID, candidateID int64) error
+	DeleteRouteModelCandidateAudited(ctx context.Context, routeModelID, candidateID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListRouteModelPrices(ctx context.Context, req domainmodeladmin.RouteModelPriceListRequest) (domainmodeladmin.RouteModelPriceListPage, error)
 	GetRouteModelPrice(ctx context.Context, priceID int64) (domainmodeladmin.RouteModelPrice, error)
 	CreateRouteModelPrice(ctx context.Context, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error)
@@ -268,10 +268,11 @@ func (s *MemoryStore) UpdateModelAccountModel(_ context.Context, accountModelID 
 	return item, nil
 }
 
-func (s *MemoryStore) DeleteModelAccountModel(_ context.Context, accountModelID int64) error {
+func (s *MemoryStore) DeleteModelAccountModel(_ context.Context, accountID, accountModelID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.accountModels[accountModelID]; !ok {
+	accountModel, ok := s.accountModels[accountModelID]
+	if !ok || accountModel.AccountID != accountID {
 		return repoerr.ErrNotFound
 	}
 	for _, candidate := range s.candidates {
@@ -283,8 +284,8 @@ func (s *MemoryStore) DeleteModelAccountModel(_ context.Context, accountModelID 
 	return nil
 }
 
-func (s *MemoryStore) DeleteModelAccountModelAudited(ctx context.Context, accountModelID int64, _ domainmodeladmin.LifecycleAudit) error {
-	return s.DeleteModelAccountModel(ctx, accountModelID)
+func (s *MemoryStore) DeleteModelAccountModelAudited(ctx context.Context, accountID, accountModelID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteModelAccountModel(ctx, accountID, accountModelID)
 }
 
 func (s *MemoryStore) GetProvider(_ context.Context, providerCode string) (domainmodeladmin.Provider, error) {
@@ -635,18 +636,19 @@ func (s *MemoryStore) UpdateRouteModelCandidate(_ context.Context, candidateID i
 	return item, nil
 }
 
-func (s *MemoryStore) DeleteRouteModelCandidate(_ context.Context, candidateID int64) error {
+func (s *MemoryStore) DeleteRouteModelCandidate(_ context.Context, routeModelID, candidateID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.candidates[candidateID]; !ok {
+	candidate, ok := s.candidates[candidateID]
+	if !ok || candidate.RouteModelID != routeModelID {
 		return repoerr.ErrNotFound
 	}
 	delete(s.candidates, candidateID)
 	return nil
 }
 
-func (s *MemoryStore) DeleteRouteModelCandidateAudited(ctx context.Context, candidateID int64, _ domainmodeladmin.LifecycleAudit) error {
-	return s.DeleteRouteModelCandidate(ctx, candidateID)
+func (s *MemoryStore) DeleteRouteModelCandidateAudited(ctx context.Context, routeModelID, candidateID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteRouteModelCandidate(ctx, routeModelID, candidateID)
 }
 
 func (s *MemoryStore) ListRouteModelPrices(_ context.Context, req domainmodeladmin.RouteModelPriceListRequest) (domainmodeladmin.RouteModelPriceListPage, error) {

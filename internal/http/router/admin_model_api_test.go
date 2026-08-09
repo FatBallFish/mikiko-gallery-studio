@@ -403,6 +403,29 @@ func TestAdminModelLifecycleReportsDependenciesAndAuditsDeletionState(t *testing
 	if err != nil {
 		t.Fatalf("create account model: %v", err)
 	}
+	foreignAccount, err := modelStore.CreateModelAccount(t.Context(), domainmodeladmin.ModelAccountWriteRequest{
+		Name: "Foreign lifecycle account", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: "https://foreign-images.example.com",
+		Credentials: map[string]string{"api_key": "secret"}, Status: "enabled", Priority: 1, Weight: 100, ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("create foreign account: %v", err)
+	}
+
+	wrongParentDelete := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-accounts/"+jsonNumber(foreignAccount.ID)+"/models/"+jsonNumber(model.ID), nil)
+	wrongParentDelete.Header.Set("Authorization", "Bearer "+adminToken)
+	wrongParentDeleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(wrongParentDeleteRec, wrongParentDelete)
+	if wrongParentDeleteRec.Code != http.StatusNotFound {
+		t.Fatalf("expected wrong-parent model delete 404, got %d body=%s", wrongParentDeleteRec.Code, wrongParentDeleteRec.Body.String())
+	}
+	modelEntity, err := client.ModelAccountModel.Get(t.Context(), int(model.ID))
+	if err != nil || modelEntity.DeletedAt != nil {
+		t.Fatalf("wrong-parent model delete mutated row: %#v err=%v", modelEntity, err)
+	}
+	modelDeleteAudits, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, Action: "model_account_model.delete", TargetID: jsonNumber(model.ID)})
+	if err != nil || len(modelDeleteAudits.Items) != 0 {
+		t.Fatalf("wrong-parent model delete wrote audit: %#v err=%v", modelDeleteAudits, err)
+	}
 
 	deleteAccount := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID), nil)
 	deleteAccount.Header.Set("Authorization", "Bearer "+adminToken)
@@ -472,6 +495,10 @@ func TestAdminModelLifecycleReportsDependenciesAndAuditsDeletionState(t *testing
 	if err != nil {
 		t.Fatalf("create route price: %v", err)
 	}
+	foreignRoute, err := modelStore.CreateRouteModel(t.Context(), domainmodeladmin.RouteModelWriteRequest{Code: "route-foreign", Name: "Foreign route", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatalf("create foreign route: %v", err)
+	}
 
 	assertDelete := func(path, requestID string, wantStatus int) {
 		t.Helper()
@@ -490,6 +517,15 @@ func TestAdminModelLifecycleReportsDependenciesAndAuditsDeletionState(t *testing
 
 	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID), "", http.StatusConflict)
 	assertDelete("/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/models/"+jsonNumber(model2.ID), "", http.StatusConflict)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(foreignRoute.ID)+"/candidates/"+jsonNumber(candidate.ID), "wrong-parent-candidate-delete", http.StatusNotFound)
+	candidateEntity, err := client.RouteModelCandidate.Get(t.Context(), int(candidate.ID))
+	if err != nil || candidateEntity.DeletedAt != nil {
+		t.Fatalf("wrong-parent candidate delete mutated row: %#v err=%v", candidateEntity, err)
+	}
+	candidateDeleteAudits, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, Action: "route_model_candidate.delete", TargetID: jsonNumber(candidate.ID)})
+	if err != nil || len(candidateDeleteAudits.Items) != 0 {
+		t.Fatalf("wrong-parent candidate delete wrote audit: %#v err=%v", candidateDeleteAudits, err)
+	}
 	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID)+"/candidates/"+jsonNumber(candidate.ID), "delete-candidate-request", http.StatusNoContent)
 	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID)+"/candidates/"+jsonNumber(candidate.ID), "", http.StatusNoContent)
 	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID), "", http.StatusConflict)
