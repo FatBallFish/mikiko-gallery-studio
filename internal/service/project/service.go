@@ -10,11 +10,12 @@ import (
 )
 
 var (
-	ErrNotFound         = repoerr.ErrNotFound
-	ErrNameConflict     = errors.New("project name already exists")
-	ErrDefaultImmutable = errors.New("default project is immutable")
-	ErrProjectChanged   = errors.New("project changed")
-	ErrInvalid          = errors.New("invalid project request")
+	ErrNotFound            = repoerr.ErrNotFound
+	ErrNameConflict        = errors.New("project name already exists")
+	ErrDefaultImmutable    = errors.New("default project is immutable")
+	ErrProjectChanged      = errors.New("project changed")
+	ErrIdempotencyConflict = errors.New("idempotency key already used for another project")
+	ErrInvalid             = errors.New("invalid project request")
 )
 
 type NonEmptyError struct {
@@ -29,7 +30,7 @@ type Store interface {
 	Get(context.Context, int64, string) (domainproject.Project, error)
 	Create(context.Context, int64, string, string, string) (domainproject.Project, error)
 	Rename(context.Context, int64, string, string, string, int64) (domainproject.Project, error)
-	Delete(context.Context, int64, string, string, int64) (domainproject.DeleteResult, error)
+	Delete(context.Context, int64, string, domainproject.DeleteRequest) (domainproject.DeleteResult, error)
 }
 
 type Service struct{ store Store }
@@ -76,6 +77,9 @@ func (s *Service) Create(ctx context.Context, userID int64, req domainproject.Cr
 	if userID <= 0 {
 		return domainproject.Project{}, ErrInvalid
 	}
+	if _, err := s.EnsureDefault(ctx, userID); err != nil {
+		return domainproject.Project{}, err
+	}
 	name, nameKey, err := normalizeName(req.Name)
 	if err != nil {
 		return domainproject.Project{}, err
@@ -102,26 +106,17 @@ func (s *Service) Rename(ctx context.Context, userID int64, projectID string, re
 }
 
 func (s *Service) Delete(ctx context.Context, userID int64, projectID string, req domainproject.DeleteRequest) (domainproject.DeleteResult, error) {
-	if req.ExpectedVersion <= 0 {
+	projectID = strings.TrimSpace(projectID)
+	req.TargetProjectID = strings.TrimSpace(req.TargetProjectID)
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	req.RequestID = strings.TrimSpace(req.RequestID)
+	if userID <= 0 || projectID == "" || req.ExpectedVersion <= 0 {
 		return domainproject.DeleteResult{}, ErrInvalid
 	}
-	current, err := s.ResolveOwned(ctx, userID, projectID)
-	if err != nil {
-		return domainproject.DeleteResult{}, err
-	}
-	if current.IsDefault {
-		return domainproject.DeleteResult{}, ErrDefaultImmutable
-	}
-	targetID := strings.TrimSpace(req.TargetProjectID)
-	if targetID == current.ID {
+	if req.TargetProjectID == projectID {
 		return domainproject.DeleteResult{}, ErrInvalid
 	}
-	if targetID != "" {
-		if _, err := s.ResolveOwned(ctx, userID, targetID); err != nil {
-			return domainproject.DeleteResult{}, err
-		}
-	}
-	return s.store.Delete(ctx, userID, current.ID, targetID, req.ExpectedVersion)
+	return s.store.Delete(ctx, userID, projectID, req)
 }
 
 func normalizeName(value string) (string, string, error) {

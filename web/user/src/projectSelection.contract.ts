@@ -69,6 +69,7 @@ const componentsSource = readFileSync(new URL('./components.tsx', import.meta.ur
 const projectsPageSource = readFileSync(new URL('./pages/ProjectsPage.tsx', import.meta.url), 'utf8')
 const workspaceSource = readFileSync(new URL('./pages/WorkspacePage.tsx', import.meta.url), 'utf8')
 const gallerySource = readFileSync(new URL('./pages/GalleryPage.tsx', import.meta.url), 'utf8')
+const userAPISource = readFileSync(new URL('../../shared/user-api.ts', import.meta.url), 'utf8')
 
 for (const [source, contract] of [
   [appSource, "case 'projects'"],
@@ -81,6 +82,8 @@ for (const [source, contract] of [
   [projectsPageSource, 'targetProjectID'],
   [workspaceSource, 'project_id: selectedProjectID'],
   [gallerySource, 'GALLERY_PAGE_SIZE, selectedProjectID'],
+  [userAPISource, "deleteProject: (project_id: string, expected_version: number, target_project_id?: string, idempotencyKey: string = crypto.randomUUID())"],
+  [userAPISource, "headers: { 'Idempotency-Key': idempotencyKey }"],
 ] as const) {
   if (!source.includes(contract)) throw new Error(`project experience must expose ${contract}`)
 }

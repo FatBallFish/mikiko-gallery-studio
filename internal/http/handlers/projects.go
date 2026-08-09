@@ -83,6 +83,8 @@ func (a *API) HandleProjectDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 			return
 		}
+		req.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+		req.RequestID = httpx.RequestIDFromContext(r.Context())
 		deleted, err := a.projects.Delete(r.Context(), user.ID, projectID, req)
 		if err != nil {
 			httpx.WriteError(w, r, projectAppError(err))
@@ -107,6 +109,8 @@ func projectAppError(err error) *errs.Error {
 		return errs.New(http.StatusConflict, errs.CodeProjectChanged, "project changed; refresh and retry")
 	case errors.Is(err, projectservice.ErrNameConflict):
 		return errs.New(http.StatusConflict, errs.CodeConflict, "project name already exists")
+	case errors.Is(err, projectservice.ErrIdempotencyConflict):
+		return errs.New(http.StatusConflict, errs.CodeConflict, "idempotency key was used for another project")
 	case errors.Is(err, projectservice.ErrNotFound):
 		return errs.New(http.StatusNotFound, errs.CodeNotFound, "project not found")
 	case errors.Is(err, projectservice.ErrInvalid):

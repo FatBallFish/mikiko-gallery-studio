@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
@@ -1067,12 +1069,14 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		if parseErr != nil {
 			return repoerr.ErrNotFound
 		}
-		owned, ownedErr := tx.Project.Query().Where(projectent.IDEQ(parsedProjectID), projectent.UserIDEQ(task.UserID), projectent.StatusEQ("active"), projectent.DeletedAtIsNil()).Exist(ctx)
-		if ownedErr != nil {
+		if _, ownedErr := tx.Project.Query().Where(
+			projectent.IDEQ(parsedProjectID), projectent.UserIDEQ(task.UserID),
+			projectent.StatusEQ("active"), projectent.DeletedAtIsNil(), lockProjectForTaskWrite(),
+		).Only(ctx); ownedErr != nil {
+			if repoent.IsNotFound(ownedErr) {
+				return repoerr.ErrNotFound
+			}
 			return ownedErr
-		}
-		if !owned {
-			return repoerr.ErrNotFound
 		}
 		builder.SetProjectID(parsedProjectID)
 	}
@@ -1127,6 +1131,14 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 	}
 	_, err = builder.Save(ctx)
 	return err
+}
+
+func lockProjectForTaskWrite() predicate.Project {
+	return func(selector *entsql.Selector) {
+		if selector.Dialect() != dialect.SQLite {
+			selector.ForShare()
+		}
+	}
 }
 
 func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageTask, task domainimagetask.Task, trace map[string]any, routingSnapshot map[string]any) error {

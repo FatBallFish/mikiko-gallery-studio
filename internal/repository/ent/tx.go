@@ -34,6 +34,8 @@ type Tx struct {
 	ImageTask *ImageTaskClient
 	// Installation is the client for interacting with the Installation builders.
 	Installation *InstallationClient
+	// MigrationCheckpoint is the client for interacting with the MigrationCheckpoint builders.
+	MigrationCheckpoint *MigrationCheckpointClient
 	// ModelAccount is the client for interacting with the ModelAccount builders.
 	ModelAccount *ModelAccountClient
 	// ModelAccountModel is the client for interacting with the ModelAccountModel builders.
@@ -242,6 +244,7 @@ func (tx *Tx) init() {
 	tx.ImageResult = NewImageResultClient(tx.config)
 	tx.ImageTask = NewImageTaskClient(tx.config)
 	tx.Installation = NewInstallationClient(tx.config)
+	tx.MigrationCheckpoint = NewMigrationCheckpointClient(tx.config)
 	tx.ModelAccount = NewModelAccountClient(tx.config)
 	tx.ModelAccountModel = NewModelAccountModelClient(tx.config)
 	tx.ModelProvider = NewModelProviderClient(tx.config)

@@ -77,8 +77,17 @@ func TestProjectAPIExposesOwnedCRUDAndTypedConflicts(t *testing.T) {
 	if immutable.Code != http.StatusForbidden || responseErrorCode(t, immutable) != "default_project_immutable" {
 		t.Fatalf("immutable response = %d %s", immutable.Code, immutable.Body.String())
 	}
+	deleteHeaders := map[string]string{"Idempotency-Key": "delete-project-api"}
+	deleted := authenticatedProjectRequest(t, handler, session.AccessToken, http.MethodDelete, "/api/agent/project/v1/projects/"+createdPayload.Data.ID, `{"expected_version":1}`, deleteHeaders)
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete status = %d body=%s", deleted.Code, deleted.Body.String())
+	}
+	replayedDelete := authenticatedProjectRequest(t, handler, session.AccessToken, http.MethodDelete, "/api/agent/project/v1/projects/"+createdPayload.Data.ID, `{"expected_version":1}`, deleteHeaders)
+	if replayedDelete.Code != http.StatusOK || !bytes.Contains(replayedDelete.Body.Bytes(), []byte(createdPayload.Data.ID)) {
+		t.Fatalf("delete replay = %d %s, want persisted project %s", replayedDelete.Code, replayedDelete.Body.String(), createdPayload.Data.ID)
+	}
 
-	if projects, err := projectSvc.List(t.Context(), user.ID); err != nil || len(projects) != 2 {
+	if projects, err := projectSvc.List(t.Context(), user.ID); err != nil || len(projects) != 1 {
 		t.Fatalf("service projects = %#v, %v", projects, err)
 	}
 }

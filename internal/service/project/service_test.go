@@ -135,6 +135,34 @@ func TestDeleteEmptyAndAtomicallyTransferPopulatedProject(t *testing.T) {
 	}
 }
 
+func TestDeleteReplaysPersistedResultByUserScopedIdempotencyKey(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	svc := NewService(store)
+	target, _ := svc.EnsureDefault(ctx, 71)
+	source, _ := svc.Create(ctx, 71, domainproject.CreateRequest{Name: "Replay source"})
+	store.SeedOwnedRecords(71, source.ID, 4, 5)
+	req := domainproject.DeleteRequest{
+		TargetProjectID: target.ID, ExpectedVersion: source.Version,
+		IdempotencyKey: "delete-replay-key", RequestID: "request-delete-first",
+	}
+	first, err := svc.Delete(ctx, 71, source.ID, req)
+	if err != nil {
+		t.Fatalf("first Delete: %v", err)
+	}
+	replay, err := svc.Delete(ctx, 71, source.ID, req)
+	if err != nil {
+		t.Fatalf("replayed Delete: %v", err)
+	}
+	if replay.Project.ID != first.Project.ID || replay.Project.Version != first.Project.Version || replay.Transferred != first.Transferred {
+		t.Fatalf("replayed delete = %#v, want persisted %#v", replay, first)
+	}
+	other, _ := svc.Create(ctx, 71, domainproject.CreateRequest{Name: "Other source"})
+	if _, err := svc.Delete(ctx, 71, other.ID, domainproject.DeleteRequest{ExpectedVersion: other.Version, IdempotencyKey: req.IdempotencyKey}); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("same user/key on another project err = %v, want ErrIdempotencyConflict", err)
+	}
+}
+
 func TestResolveForWriteFallsBackOnlyToOwnedDefault(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(NewMemoryStore())
@@ -147,5 +175,23 @@ func TestResolveForWriteFallsBackOnlyToOwnedDefault(t *testing.T) {
 	}
 	if _, err := svc.ResolveForWrite(ctx, 9, foreign.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("foreign explicit project err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCreateEnsuresDefaultBeforeCreatingNamedProject(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	svc := NewService(store)
+
+	created, err := svc.Create(ctx, 88, domainproject.CreateRequest{Name: "First named project"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	projects, err := store.List(ctx, 88)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(projects) != 2 || !projects[0].IsDefault || projects[0].Name != domainproject.DefaultName || created.IsDefault {
+		t.Fatalf("direct create must preserve exactly one default before the named project, got %#v", projects)
 	}
 }

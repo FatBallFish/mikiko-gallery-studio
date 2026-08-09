@@ -47,6 +47,8 @@ type RenameRequest struct {
 type DeleteRequest struct {
 	TargetProjectID string `json:"target_project_id,omitempty"`
 	ExpectedVersion int64  `json:"expected_version"`
+	IdempotencyKey  string `json:"-"`
+	RequestID       string `json:"-"`
 }
 
 type OwnershipCounts struct {
@@ -57,15 +59,4 @@ type OwnershipCounts struct {
 type DeleteResult struct {
 	Project     Project         `json:"project"`
 	Transferred OwnershipCounts `json:"transferred"`
-}
-
-type BackfillRequest struct {
-	AfterUserID int64
-	Limit       int
-}
-
-type BackfillResult struct {
-	UsersProcessed int
-	NextUserID     int64
-	Done           bool
 }

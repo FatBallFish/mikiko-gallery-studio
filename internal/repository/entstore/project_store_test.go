@@ -106,12 +106,23 @@ func TestProjectStoreTransferIsAtomicAndAudited(t *testing.T) {
 	result, err := svc.Delete(ctx, 303, source.ID, domainproject.DeleteRequest{
 		TargetProjectID: defaultProject.ID,
 		ExpectedVersion: source.Version,
+		IdempotencyKey:  "project-transfer-delete",
+		RequestID:       "request-project-transfer-delete",
 	})
 	if err != nil {
 		t.Fatalf("Delete with transfer: %v", err)
 	}
 	if result.Transferred.Tasks != 2 || result.Transferred.Assets != 2 {
 		t.Fatalf("transfer result = %#v", result)
+	}
+	replayed, err := svc.Delete(ctx, 303, source.ID, domainproject.DeleteRequest{
+		TargetProjectID: defaultProject.ID,
+		ExpectedVersion: source.Version,
+		IdempotencyKey:  "project-transfer-delete",
+		RequestID:       "request-project-transfer-retry",
+	})
+	if err != nil || replayed.Project.ID != result.Project.ID || replayed.Transferred != result.Transferred {
+		t.Fatalf("persisted delete replay = %#v, %v; want %#v", replayed, err, result)
 	}
 	targetID := uuid.MustParse(defaultProject.ID)
 	if count, _ := client.ImageTask.Query().Where(imagetask.ProjectIDEQ(targetID)).Count(ctx); count != 3 {
@@ -124,47 +135,14 @@ func TestProjectStoreTransferIsAtomicAndAudited(t *testing.T) {
 	if err != nil || len(audits) != 1 || audits[0].Action != "project.transfer_delete" {
 		t.Fatalf("transfer audit = %#v, %v", audits, err)
 	}
-}
-
-func TestProjectStoreBackfillIsBoundedIdempotentAndRepairsTasksAndResults(t *testing.T) {
-	ctx, client := openProjectStoreTestClient(t, "backfill")
-	for index := range 3 {
-		user, err := client.User.Create().SetEmail(fmt.Sprintf("project-user-%d@example.com", index)).SetStatus("active").Save(ctx)
-		if err != nil {
-			t.Fatalf("seed user: %v", err)
-		}
-		taskID := uuid.New()
-		if _, err := client.ImageTask.Create().SetID(taskID).SetUserID(int64(user.ID)).SetTaskType("text_to_image").SetPrompt("legacy").SetAbstractModel("plus").Save(ctx); err != nil {
-			t.Fatalf("seed legacy task: %v", err)
-		}
-		if _, err := client.ImageResult.Create().SetTaskID(taskID).SetUserID(int64(user.ID)).SetObjectKey(fmt.Sprintf("legacy/%d.png", index)).SetMimeType("image/png").SetSha256(fmt.Sprintf("legacy-sha-%d", index)).Save(ctx); err != nil {
-			t.Fatalf("seed legacy result: %v", err)
+	metadata := audits[0].Metadata
+	for _, key := range []string{"source_before", "source_after", "target_after", "request_id", "idempotency_key"} {
+		if _, ok := metadata[key]; !ok {
+			t.Fatalf("transfer audit metadata missing %q: %#v", key, metadata)
 		}
 	}
-	store := NewProjectStore(client)
-	first, err := store.BackfillBatch(ctx, domainproject.BackfillRequest{Limit: 2})
-	if err != nil {
-		t.Fatalf("first BackfillBatch: %v", err)
-	}
-	if first.UsersProcessed != 2 || first.Done {
-		t.Fatalf("first bounded result = %#v", first)
-	}
-	second, err := store.BackfillBatch(ctx, domainproject.BackfillRequest{AfterUserID: first.NextUserID, Limit: 2})
-	if err != nil {
-		t.Fatalf("second BackfillBatch: %v", err)
-	}
-	if second.UsersProcessed != 1 || !second.Done {
-		t.Fatalf("second bounded result = %#v", second)
-	}
-	replay, err := store.BackfillBatch(ctx, domainproject.BackfillRequest{Limit: 10})
-	if err != nil || !replay.Done {
-		t.Fatalf("idempotent replay = %#v, %v", replay, err)
-	}
-	if count, _ := client.ImageTask.Query().Where(imagetask.ProjectIDIsNil()).Count(ctx); count != 0 {
-		t.Fatalf("legacy tasks without project = %d", count)
-	}
-	if count, _ := client.ImageResult.Query().Where(imageresult.ProjectIDIsNil()).Count(ctx); count != 0 {
-		t.Fatalf("legacy results without project = %d", count)
+	if metadata["request_id"] != "request-project-transfer-delete" || metadata["idempotency_key"] != "project-transfer-delete" {
+		t.Fatalf("transfer audit correlation metadata = %#v", metadata)
 	}
 }
 

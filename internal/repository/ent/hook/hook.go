@@ -141,6 +141,18 @@ func (f InstallationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.InstallationMutation", m)
 }
 
+// The MigrationCheckpointFunc type is an adapter to allow the use of ordinary
+// function as MigrationCheckpoint mutator.
+type MigrationCheckpointFunc func(context.Context, *ent.MigrationCheckpointMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MigrationCheckpointFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MigrationCheckpointMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MigrationCheckpointMutation", m)
+}
+
 // The ModelAccountFunc type is an adapter to allow the use of ordinary
 // function as ModelAccount mutator.
 type ModelAccountFunc func(context.Context, *ent.ModelAccountMutation) (ent.Value, error)

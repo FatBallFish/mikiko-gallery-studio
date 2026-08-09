@@ -2,6 +2,7 @@ package entstore_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"entgo.io/ent/dialect"
@@ -164,6 +165,59 @@ func TestAdminUserStoreListDetailAndStatus(t *testing.T) {
 	}
 	if err := store.DeleteUserGroup(ctx, "promo"); err == nil {
 		t.Fatal("expected deleting membership-referenced group to fail")
+	}
+}
+
+func TestAdminUserStoreCreateUserCreatesDefaultProject(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:adminuser-default-project?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := entstore.NewAdminUserStore(client, entstore.NewBillingStore(client, 5))
+	created, err := store.CreateUser(ctx, domainadminuser.CreateUserRequest{
+		Email: "created-with-project@example.com", Nickname: "Created", Status: "active", UserGroupCode: "basic", DefaultLocale: "zh-CN", Theme: "system",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	projects, err := client.Project.Query().All(ctx)
+	if err != nil {
+		t.Fatalf("query projects: %v", err)
+	}
+	if len(projects) != 1 || projects[0].UserID != created.ID || !projects[0].IsDefault || projects[0].Name != "默认" {
+		t.Fatalf("admin-created user default project = %#v", projects)
+	}
+}
+
+func TestAdminUserStoreCreateUserRollsBackWhenDefaultProjectFails(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:adminuser-default-project-rollback?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	client.Use(func(next repoent.Mutator) repoent.Mutator {
+		return repoent.MutateFunc(func(ctx context.Context, mutation repoent.Mutation) (repoent.Value, error) {
+			if _, ok := mutation.(*repoent.ProjectMutation); ok {
+				return nil, errors.New("injected default project failure")
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+	store := entstore.NewAdminUserStore(client, entstore.NewBillingStore(client, 5))
+	if _, err := store.CreateUser(ctx, domainadminuser.CreateUserRequest{Email: "admin-rollback@example.com", Nickname: "rollback", Status: "active", UserGroupCode: "basic", DefaultLocale: "zh-CN", Theme: "system"}); err == nil {
+		t.Fatal("CreateUser succeeded despite default project failure")
+	}
+	if count, countErr := client.User.Query().Count(ctx); countErr != nil || count != 0 {
+		t.Fatalf("admin-created user transaction did not roll back: count=%d err=%v", count, countErr)
 	}
 }
 

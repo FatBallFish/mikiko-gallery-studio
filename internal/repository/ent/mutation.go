@@ -22,6 +22,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
@@ -79,6 +80,7 @@ const (
 	TypeImageResult                 = "ImageResult"
 	TypeImageTask                   = "ImageTask"
 	TypeInstallation                = "Installation"
+	TypeMigrationCheckpoint         = "MigrationCheckpoint"
 	TypeModelAccount                = "ModelAccount"
 	TypeModelAccountModel           = "ModelAccountModel"
 	TypeModelProvider               = "ModelProvider"
@@ -15619,6 +15621,874 @@ func (m *InstallationMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Installation edge %s", name)
 }
 
+// MigrationCheckpointMutation represents an operation that mutates the MigrationCheckpoint nodes in the graph.
+type MigrationCheckpointMutation struct {
+	config
+	op                Op
+	typ               string
+	id                *int
+	created_at        *time.Time
+	updated_at        *time.Time
+	name              *string
+	phase             *string
+	after_user_id     *int
+	addafter_user_id  *int
+	after_task_id     *uuid.UUID
+	after_result_id   *uuid.UUID
+	processed_rows    *int
+	addprocessed_rows *int
+	completed         *bool
+	clearedFields     map[string]struct{}
+	done              bool
+	oldValue          func(context.Context) (*MigrationCheckpoint, error)
+	predicates        []predicate.MigrationCheckpoint
+}
+
+var _ ent.Mutation = (*MigrationCheckpointMutation)(nil)
+
+// migrationcheckpointOption allows management of the mutation configuration using functional options.
+type migrationcheckpointOption func(*MigrationCheckpointMutation)
+
+// newMigrationCheckpointMutation creates new mutation for the MigrationCheckpoint entity.
+func newMigrationCheckpointMutation(c config, op Op, opts ...migrationcheckpointOption) *MigrationCheckpointMutation {
+	m := &MigrationCheckpointMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeMigrationCheckpoint,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withMigrationCheckpointID sets the ID field of the mutation.
+func withMigrationCheckpointID(id int) migrationcheckpointOption {
+	return func(m *MigrationCheckpointMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *MigrationCheckpoint
+		)
+		m.oldValue = func(ctx context.Context) (*MigrationCheckpoint, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().MigrationCheckpoint.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withMigrationCheckpoint sets the old MigrationCheckpoint of the mutation.
+func withMigrationCheckpoint(node *MigrationCheckpoint) migrationcheckpointOption {
+	return func(m *MigrationCheckpointMutation) {
+		m.oldValue = func(context.Context) (*MigrationCheckpoint, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m MigrationCheckpointMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m MigrationCheckpointMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *MigrationCheckpointMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *MigrationCheckpointMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().MigrationCheckpoint.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *MigrationCheckpointMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *MigrationCheckpointMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the MigrationCheckpoint entity.
+// If the MigrationCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MigrationCheckpointMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *MigrationCheckpointMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *MigrationCheckpointMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *MigrationCheckpointMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the MigrationCheckpoint entity.
+// If the MigrationCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MigrationCheckpointMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *MigrationCheckpointMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetName sets the "name" field.
+func (m *MigrationCheckpointMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *MigrationCheckpointMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the MigrationCheckpoint entity.
+// If the MigrationCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MigrationCheckpointMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *MigrationCheckpointMutation) ResetName() {
+	m.name = nil
+}
+
+// SetPhase sets the "phase" field.
+func (m *MigrationCheckpointMutation) SetPhase(s string) {
+	m.phase = &s
+}
+
+// Phase returns the value of the "phase" field in the mutation.
+func (m *MigrationCheckpointMutation) Phase() (r string, exists bool) {
+	v := m.phase
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPhase returns the old "phase" field's value of the MigrationCheckpoint entity.
+// If the MigrationCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MigrationCheckpointMutation) OldPhase(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPhase is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPhase requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPhase: %w", err)
+	}
+	return oldValue.Phase, nil
+}
+
+// ResetPhase resets all changes to the "phase" field.
+func (m *MigrationCheckpointMutation) ResetPhase() {
+	m.phase = nil
+}
+
+// SetAfterUserID sets the "after_user_id" field.
+func (m *MigrationCheckpointMutation) SetAfterUserID(i int) {
+	m.after_user_id = &i
+	m.addafter_user_id = nil
+}
+
+// AfterUserID returns the value of the "after_user_id" field in the mutation.
+func (m *MigrationCheckpointMutation) AfterUserID() (r int, exists bool) {
+	v := m.after_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAfterUserID returns the old "after_user_id" field's value of the MigrationCheckpoint entity.
+// If the MigrationCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MigrationCheckpointMutation) OldAfterUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAfterUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAfterUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAfterUserID: %w", err)
+	}
+	return oldValue.AfterUserID, nil
+}
+
+// AddAfterUserID adds i to the "after_user_id" field.
+func (m *MigrationCheckpointMutation) AddAfterUserID(i int) {
+	if m.addafter_user_id != nil {
+		*m.addafter_user_id += i
+	} else {
+		m.addafter_user_id = &i
+	}
+}
+
+// AddedAfterUserID returns the value that was added to the "after_user_id" field in this mutation.
+func (m *MigrationCheckpointMutation) AddedAfterUserID() (r int, exists bool) {
+	v := m.addafter_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAfterUserID resets all changes to the "after_user_id" field.
+func (m *MigrationCheckpointMutation) ResetAfterUserID() {
+	m.after_user_id = nil
+	m.addafter_user_id = nil
+}
+
+// SetAfterTaskID sets the "after_task_id" field.
+func (m *MigrationCheckpointMutation) SetAfterTaskID(u uuid.UUID) {
+	m.after_task_id = &u
+}
+
+// AfterTaskID returns the value of the "after_task_id" field in the mutation.
+func (m *MigrationCheckpointMutation) AfterTaskID() (r uuid.UUID, exists bool) {
+	v := m.after_task_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAfterTaskID returns the old "after_task_id" field's value of the MigrationCheckpoint entity.
+// If the MigrationCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MigrationCheckpointMutation) OldAfterTaskID(ctx context.Context) (v *uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAfterTaskID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAfterTaskID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAfterTaskID: %w", err)
+	}
+	return oldValue.AfterTaskID, nil
+}
+
+// ClearAfterTaskID clears the value of the "after_task_id" field.
+func (m *MigrationCheckpointMutation) ClearAfterTaskID() {
+	m.after_task_id = nil
+	m.clearedFields[migrationcheckpoint.FieldAfterTaskID] = struct{}{}
+}
+
+// AfterTaskIDCleared returns if the "after_task_id" field was cleared in this mutation.
+func (m *MigrationCheckpointMutation) AfterTaskIDCleared() bool {
+	_, ok := m.clearedFields[migrationcheckpoint.FieldAfterTaskID]
+	return ok
+}
+
+// ResetAfterTaskID resets all changes to the "after_task_id" field.
+func (m *MigrationCheckpointMutation) ResetAfterTaskID() {
+	m.after_task_id = nil
+	delete(m.clearedFields, migrationcheckpoint.FieldAfterTaskID)
+}
+
+// SetAfterResultID sets the "after_result_id" field.
+func (m *MigrationCheckpointMutation) SetAfterResultID(u uuid.UUID) {
+	m.after_result_id = &u
+}
+
+// AfterResultID returns the value of the "after_result_id" field in the mutation.
+func (m *MigrationCheckpointMutation) AfterResultID() (r uuid.UUID, exists bool) {
+	v := m.after_result_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAfterResultID returns the old "after_result_id" field's value of the MigrationCheckpoint entity.
+// If the MigrationCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MigrationCheckpointMutation) OldAfterResultID(ctx context.Context) (v *uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAfterResultID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAfterResultID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAfterResultID: %w", err)
+	}
+	return oldValue.AfterResultID, nil
+}
+
+// ClearAfterResultID clears the value of the "after_result_id" field.
+func (m *MigrationCheckpointMutation) ClearAfterResultID() {
+	m.after_result_id = nil
+	m.clearedFields[migrationcheckpoint.FieldAfterResultID] = struct{}{}
+}
+
+// AfterResultIDCleared returns if the "after_result_id" field was cleared in this mutation.
+func (m *MigrationCheckpointMutation) AfterResultIDCleared() bool {
+	_, ok := m.clearedFields[migrationcheckpoint.FieldAfterResultID]
+	return ok
+}
+
+// ResetAfterResultID resets all changes to the "after_result_id" field.
+func (m *MigrationCheckpointMutation) ResetAfterResultID() {
+	m.after_result_id = nil
+	delete(m.clearedFields, migrationcheckpoint.FieldAfterResultID)
+}
+
+// SetProcessedRows sets the "processed_rows" field.
+func (m *MigrationCheckpointMutation) SetProcessedRows(i int) {
+	m.processed_rows = &i
+	m.addprocessed_rows = nil
+}
+
+// ProcessedRows returns the value of the "processed_rows" field in the mutation.
+func (m *MigrationCheckpointMutation) ProcessedRows() (r int, exists bool) {
+	v := m.processed_rows
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProcessedRows returns the old "processed_rows" field's value of the MigrationCheckpoint entity.
+// If the MigrationCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MigrationCheckpointMutation) OldProcessedRows(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProcessedRows is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProcessedRows requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProcessedRows: %w", err)
+	}
+	return oldValue.ProcessedRows, nil
+}
+
+// AddProcessedRows adds i to the "processed_rows" field.
+func (m *MigrationCheckpointMutation) AddProcessedRows(i int) {
+	if m.addprocessed_rows != nil {
+		*m.addprocessed_rows += i
+	} else {
+		m.addprocessed_rows = &i
+	}
+}
+
+// AddedProcessedRows returns the value that was added to the "processed_rows" field in this mutation.
+func (m *MigrationCheckpointMutation) AddedProcessedRows() (r int, exists bool) {
+	v := m.addprocessed_rows
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProcessedRows resets all changes to the "processed_rows" field.
+func (m *MigrationCheckpointMutation) ResetProcessedRows() {
+	m.processed_rows = nil
+	m.addprocessed_rows = nil
+}
+
+// SetCompleted sets the "completed" field.
+func (m *MigrationCheckpointMutation) SetCompleted(b bool) {
+	m.completed = &b
+}
+
+// Completed returns the value of the "completed" field in the mutation.
+func (m *MigrationCheckpointMutation) Completed() (r bool, exists bool) {
+	v := m.completed
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompleted returns the old "completed" field's value of the MigrationCheckpoint entity.
+// If the MigrationCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MigrationCheckpointMutation) OldCompleted(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompleted is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompleted requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompleted: %w", err)
+	}
+	return oldValue.Completed, nil
+}
+
+// ResetCompleted resets all changes to the "completed" field.
+func (m *MigrationCheckpointMutation) ResetCompleted() {
+	m.completed = nil
+}
+
+// Where appends a list predicates to the MigrationCheckpointMutation builder.
+func (m *MigrationCheckpointMutation) Where(ps ...predicate.MigrationCheckpoint) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the MigrationCheckpointMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *MigrationCheckpointMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.MigrationCheckpoint, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *MigrationCheckpointMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *MigrationCheckpointMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (MigrationCheckpoint).
+func (m *MigrationCheckpointMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *MigrationCheckpointMutation) Fields() []string {
+	fields := make([]string, 0, 9)
+	if m.created_at != nil {
+		fields = append(fields, migrationcheckpoint.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, migrationcheckpoint.FieldUpdatedAt)
+	}
+	if m.name != nil {
+		fields = append(fields, migrationcheckpoint.FieldName)
+	}
+	if m.phase != nil {
+		fields = append(fields, migrationcheckpoint.FieldPhase)
+	}
+	if m.after_user_id != nil {
+		fields = append(fields, migrationcheckpoint.FieldAfterUserID)
+	}
+	if m.after_task_id != nil {
+		fields = append(fields, migrationcheckpoint.FieldAfterTaskID)
+	}
+	if m.after_result_id != nil {
+		fields = append(fields, migrationcheckpoint.FieldAfterResultID)
+	}
+	if m.processed_rows != nil {
+		fields = append(fields, migrationcheckpoint.FieldProcessedRows)
+	}
+	if m.completed != nil {
+		fields = append(fields, migrationcheckpoint.FieldCompleted)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *MigrationCheckpointMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case migrationcheckpoint.FieldCreatedAt:
+		return m.CreatedAt()
+	case migrationcheckpoint.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case migrationcheckpoint.FieldName:
+		return m.Name()
+	case migrationcheckpoint.FieldPhase:
+		return m.Phase()
+	case migrationcheckpoint.FieldAfterUserID:
+		return m.AfterUserID()
+	case migrationcheckpoint.FieldAfterTaskID:
+		return m.AfterTaskID()
+	case migrationcheckpoint.FieldAfterResultID:
+		return m.AfterResultID()
+	case migrationcheckpoint.FieldProcessedRows:
+		return m.ProcessedRows()
+	case migrationcheckpoint.FieldCompleted:
+		return m.Completed()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *MigrationCheckpointMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case migrationcheckpoint.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case migrationcheckpoint.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case migrationcheckpoint.FieldName:
+		return m.OldName(ctx)
+	case migrationcheckpoint.FieldPhase:
+		return m.OldPhase(ctx)
+	case migrationcheckpoint.FieldAfterUserID:
+		return m.OldAfterUserID(ctx)
+	case migrationcheckpoint.FieldAfterTaskID:
+		return m.OldAfterTaskID(ctx)
+	case migrationcheckpoint.FieldAfterResultID:
+		return m.OldAfterResultID(ctx)
+	case migrationcheckpoint.FieldProcessedRows:
+		return m.OldProcessedRows(ctx)
+	case migrationcheckpoint.FieldCompleted:
+		return m.OldCompleted(ctx)
+	}
+	return nil, fmt.Errorf("unknown MigrationCheckpoint field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MigrationCheckpointMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case migrationcheckpoint.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case migrationcheckpoint.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case migrationcheckpoint.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case migrationcheckpoint.FieldPhase:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPhase(v)
+		return nil
+	case migrationcheckpoint.FieldAfterUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAfterUserID(v)
+		return nil
+	case migrationcheckpoint.FieldAfterTaskID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAfterTaskID(v)
+		return nil
+	case migrationcheckpoint.FieldAfterResultID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAfterResultID(v)
+		return nil
+	case migrationcheckpoint.FieldProcessedRows:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProcessedRows(v)
+		return nil
+	case migrationcheckpoint.FieldCompleted:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompleted(v)
+		return nil
+	}
+	return fmt.Errorf("unknown MigrationCheckpoint field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *MigrationCheckpointMutation) AddedFields() []string {
+	var fields []string
+	if m.addafter_user_id != nil {
+		fields = append(fields, migrationcheckpoint.FieldAfterUserID)
+	}
+	if m.addprocessed_rows != nil {
+		fields = append(fields, migrationcheckpoint.FieldProcessedRows)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *MigrationCheckpointMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case migrationcheckpoint.FieldAfterUserID:
+		return m.AddedAfterUserID()
+	case migrationcheckpoint.FieldProcessedRows:
+		return m.AddedProcessedRows()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MigrationCheckpointMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case migrationcheckpoint.FieldAfterUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAfterUserID(v)
+		return nil
+	case migrationcheckpoint.FieldProcessedRows:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProcessedRows(v)
+		return nil
+	}
+	return fmt.Errorf("unknown MigrationCheckpoint numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *MigrationCheckpointMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(migrationcheckpoint.FieldAfterTaskID) {
+		fields = append(fields, migrationcheckpoint.FieldAfterTaskID)
+	}
+	if m.FieldCleared(migrationcheckpoint.FieldAfterResultID) {
+		fields = append(fields, migrationcheckpoint.FieldAfterResultID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *MigrationCheckpointMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *MigrationCheckpointMutation) ClearField(name string) error {
+	switch name {
+	case migrationcheckpoint.FieldAfterTaskID:
+		m.ClearAfterTaskID()
+		return nil
+	case migrationcheckpoint.FieldAfterResultID:
+		m.ClearAfterResultID()
+		return nil
+	}
+	return fmt.Errorf("unknown MigrationCheckpoint nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *MigrationCheckpointMutation) ResetField(name string) error {
+	switch name {
+	case migrationcheckpoint.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case migrationcheckpoint.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case migrationcheckpoint.FieldName:
+		m.ResetName()
+		return nil
+	case migrationcheckpoint.FieldPhase:
+		m.ResetPhase()
+		return nil
+	case migrationcheckpoint.FieldAfterUserID:
+		m.ResetAfterUserID()
+		return nil
+	case migrationcheckpoint.FieldAfterTaskID:
+		m.ResetAfterTaskID()
+		return nil
+	case migrationcheckpoint.FieldAfterResultID:
+		m.ResetAfterResultID()
+		return nil
+	case migrationcheckpoint.FieldProcessedRows:
+		m.ResetProcessedRows()
+		return nil
+	case migrationcheckpoint.FieldCompleted:
+		m.ResetCompleted()
+		return nil
+	}
+	return fmt.Errorf("unknown MigrationCheckpoint field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *MigrationCheckpointMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *MigrationCheckpointMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *MigrationCheckpointMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *MigrationCheckpointMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *MigrationCheckpointMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *MigrationCheckpointMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *MigrationCheckpointMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown MigrationCheckpoint unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *MigrationCheckpointMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown MigrationCheckpoint edge %s", name)
+}
+
 // ModelAccountMutation represents an operation that mutates the ModelAccount nodes in the graph.
 type ModelAccountMutation struct {
 	config
@@ -30737,31 +31607,36 @@ func (m *PointLedgerMutation) ResetEdge(name string) error {
 // ProjectMutation represents an operation that mutates the Project nodes in the graph.
 type ProjectMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *uuid.UUID
-	created_at           *time.Time
-	updated_at           *time.Time
-	deleted_at           *time.Time
-	user_id              *int64
-	adduser_id           *int64
-	name                 *string
-	name_key             *string
-	is_default           *bool
-	status               *string
-	version              *int64
-	addversion           *int64
-	create_key           *string
-	clearedFields        map[string]struct{}
-	image_tasks          map[uuid.UUID]struct{}
-	removedimage_tasks   map[uuid.UUID]struct{}
-	clearedimage_tasks   bool
-	image_results        map[uuid.UUID]struct{}
-	removedimage_results map[uuid.UUID]struct{}
-	clearedimage_results bool
-	done                 bool
-	oldValue             func(context.Context) (*Project, error)
-	predicates           []predicate.Project
+	op                     Op
+	typ                    string
+	id                     *uuid.UUID
+	created_at             *time.Time
+	updated_at             *time.Time
+	deleted_at             *time.Time
+	user_id                *int64
+	adduser_id             *int64
+	name                   *string
+	name_key               *string
+	is_default             *bool
+	status                 *string
+	version                *int64
+	addversion             *int64
+	create_key             *string
+	delete_key             *string
+	deleted_task_count     *int
+	adddeleted_task_count  *int
+	deleted_asset_count    *int
+	adddeleted_asset_count *int
+	clearedFields          map[string]struct{}
+	image_tasks            map[uuid.UUID]struct{}
+	removedimage_tasks     map[uuid.UUID]struct{}
+	clearedimage_tasks     bool
+	image_results          map[uuid.UUID]struct{}
+	removedimage_results   map[uuid.UUID]struct{}
+	clearedimage_results   bool
+	done                   bool
+	oldValue               func(context.Context) (*Project, error)
+	predicates             []predicate.Project
 }
 
 var _ ent.Mutation = (*ProjectMutation)(nil)
@@ -31294,6 +32169,167 @@ func (m *ProjectMutation) ResetCreateKey() {
 	delete(m.clearedFields, project.FieldCreateKey)
 }
 
+// SetDeleteKey sets the "delete_key" field.
+func (m *ProjectMutation) SetDeleteKey(s string) {
+	m.delete_key = &s
+}
+
+// DeleteKey returns the value of the "delete_key" field in the mutation.
+func (m *ProjectMutation) DeleteKey() (r string, exists bool) {
+	v := m.delete_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeleteKey returns the old "delete_key" field's value of the Project entity.
+// If the Project object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProjectMutation) OldDeleteKey(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeleteKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeleteKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeleteKey: %w", err)
+	}
+	return oldValue.DeleteKey, nil
+}
+
+// ClearDeleteKey clears the value of the "delete_key" field.
+func (m *ProjectMutation) ClearDeleteKey() {
+	m.delete_key = nil
+	m.clearedFields[project.FieldDeleteKey] = struct{}{}
+}
+
+// DeleteKeyCleared returns if the "delete_key" field was cleared in this mutation.
+func (m *ProjectMutation) DeleteKeyCleared() bool {
+	_, ok := m.clearedFields[project.FieldDeleteKey]
+	return ok
+}
+
+// ResetDeleteKey resets all changes to the "delete_key" field.
+func (m *ProjectMutation) ResetDeleteKey() {
+	m.delete_key = nil
+	delete(m.clearedFields, project.FieldDeleteKey)
+}
+
+// SetDeletedTaskCount sets the "deleted_task_count" field.
+func (m *ProjectMutation) SetDeletedTaskCount(i int) {
+	m.deleted_task_count = &i
+	m.adddeleted_task_count = nil
+}
+
+// DeletedTaskCount returns the value of the "deleted_task_count" field in the mutation.
+func (m *ProjectMutation) DeletedTaskCount() (r int, exists bool) {
+	v := m.deleted_task_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedTaskCount returns the old "deleted_task_count" field's value of the Project entity.
+// If the Project object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProjectMutation) OldDeletedTaskCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedTaskCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedTaskCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedTaskCount: %w", err)
+	}
+	return oldValue.DeletedTaskCount, nil
+}
+
+// AddDeletedTaskCount adds i to the "deleted_task_count" field.
+func (m *ProjectMutation) AddDeletedTaskCount(i int) {
+	if m.adddeleted_task_count != nil {
+		*m.adddeleted_task_count += i
+	} else {
+		m.adddeleted_task_count = &i
+	}
+}
+
+// AddedDeletedTaskCount returns the value that was added to the "deleted_task_count" field in this mutation.
+func (m *ProjectMutation) AddedDeletedTaskCount() (r int, exists bool) {
+	v := m.adddeleted_task_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetDeletedTaskCount resets all changes to the "deleted_task_count" field.
+func (m *ProjectMutation) ResetDeletedTaskCount() {
+	m.deleted_task_count = nil
+	m.adddeleted_task_count = nil
+}
+
+// SetDeletedAssetCount sets the "deleted_asset_count" field.
+func (m *ProjectMutation) SetDeletedAssetCount(i int) {
+	m.deleted_asset_count = &i
+	m.adddeleted_asset_count = nil
+}
+
+// DeletedAssetCount returns the value of the "deleted_asset_count" field in the mutation.
+func (m *ProjectMutation) DeletedAssetCount() (r int, exists bool) {
+	v := m.deleted_asset_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAssetCount returns the old "deleted_asset_count" field's value of the Project entity.
+// If the Project object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProjectMutation) OldDeletedAssetCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAssetCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAssetCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAssetCount: %w", err)
+	}
+	return oldValue.DeletedAssetCount, nil
+}
+
+// AddDeletedAssetCount adds i to the "deleted_asset_count" field.
+func (m *ProjectMutation) AddDeletedAssetCount(i int) {
+	if m.adddeleted_asset_count != nil {
+		*m.adddeleted_asset_count += i
+	} else {
+		m.adddeleted_asset_count = &i
+	}
+}
+
+// AddedDeletedAssetCount returns the value that was added to the "deleted_asset_count" field in this mutation.
+func (m *ProjectMutation) AddedDeletedAssetCount() (r int, exists bool) {
+	v := m.adddeleted_asset_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetDeletedAssetCount resets all changes to the "deleted_asset_count" field.
+func (m *ProjectMutation) ResetDeletedAssetCount() {
+	m.deleted_asset_count = nil
+	m.adddeleted_asset_count = nil
+}
+
 // AddImageTaskIDs adds the "image_tasks" edge to the ImageTask entity by ids.
 func (m *ProjectMutation) AddImageTaskIDs(ids ...uuid.UUID) {
 	if m.image_tasks == nil {
@@ -31436,7 +32472,7 @@ func (m *ProjectMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ProjectMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 13)
 	if m.created_at != nil {
 		fields = append(fields, project.FieldCreatedAt)
 	}
@@ -31467,6 +32503,15 @@ func (m *ProjectMutation) Fields() []string {
 	if m.create_key != nil {
 		fields = append(fields, project.FieldCreateKey)
 	}
+	if m.delete_key != nil {
+		fields = append(fields, project.FieldDeleteKey)
+	}
+	if m.deleted_task_count != nil {
+		fields = append(fields, project.FieldDeletedTaskCount)
+	}
+	if m.deleted_asset_count != nil {
+		fields = append(fields, project.FieldDeletedAssetCount)
+	}
 	return fields
 }
 
@@ -31495,6 +32540,12 @@ func (m *ProjectMutation) Field(name string) (ent.Value, bool) {
 		return m.Version()
 	case project.FieldCreateKey:
 		return m.CreateKey()
+	case project.FieldDeleteKey:
+		return m.DeleteKey()
+	case project.FieldDeletedTaskCount:
+		return m.DeletedTaskCount()
+	case project.FieldDeletedAssetCount:
+		return m.DeletedAssetCount()
 	}
 	return nil, false
 }
@@ -31524,6 +32575,12 @@ func (m *ProjectMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldVersion(ctx)
 	case project.FieldCreateKey:
 		return m.OldCreateKey(ctx)
+	case project.FieldDeleteKey:
+		return m.OldDeleteKey(ctx)
+	case project.FieldDeletedTaskCount:
+		return m.OldDeletedTaskCount(ctx)
+	case project.FieldDeletedAssetCount:
+		return m.OldDeletedAssetCount(ctx)
 	}
 	return nil, fmt.Errorf("unknown Project field %s", name)
 }
@@ -31603,6 +32660,27 @@ func (m *ProjectMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCreateKey(v)
 		return nil
+	case project.FieldDeleteKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeleteKey(v)
+		return nil
+	case project.FieldDeletedTaskCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedTaskCount(v)
+		return nil
+	case project.FieldDeletedAssetCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAssetCount(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Project field %s", name)
 }
@@ -31617,6 +32695,12 @@ func (m *ProjectMutation) AddedFields() []string {
 	if m.addversion != nil {
 		fields = append(fields, project.FieldVersion)
 	}
+	if m.adddeleted_task_count != nil {
+		fields = append(fields, project.FieldDeletedTaskCount)
+	}
+	if m.adddeleted_asset_count != nil {
+		fields = append(fields, project.FieldDeletedAssetCount)
+	}
 	return fields
 }
 
@@ -31629,6 +32713,10 @@ func (m *ProjectMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedUserID()
 	case project.FieldVersion:
 		return m.AddedVersion()
+	case project.FieldDeletedTaskCount:
+		return m.AddedDeletedTaskCount()
+	case project.FieldDeletedAssetCount:
+		return m.AddedDeletedAssetCount()
 	}
 	return nil, false
 }
@@ -31652,6 +32740,20 @@ func (m *ProjectMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddVersion(v)
 		return nil
+	case project.FieldDeletedTaskCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDeletedTaskCount(v)
+		return nil
+	case project.FieldDeletedAssetCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDeletedAssetCount(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Project numeric field %s", name)
 }
@@ -31665,6 +32767,9 @@ func (m *ProjectMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(project.FieldCreateKey) {
 		fields = append(fields, project.FieldCreateKey)
+	}
+	if m.FieldCleared(project.FieldDeleteKey) {
+		fields = append(fields, project.FieldDeleteKey)
 	}
 	return fields
 }
@@ -31685,6 +32790,9 @@ func (m *ProjectMutation) ClearField(name string) error {
 		return nil
 	case project.FieldCreateKey:
 		m.ClearCreateKey()
+		return nil
+	case project.FieldDeleteKey:
+		m.ClearDeleteKey()
 		return nil
 	}
 	return fmt.Errorf("unknown Project nullable field %s", name)
@@ -31723,6 +32831,15 @@ func (m *ProjectMutation) ResetField(name string) error {
 		return nil
 	case project.FieldCreateKey:
 		m.ResetCreateKey()
+		return nil
+	case project.FieldDeleteKey:
+		m.ResetDeleteKey()
+		return nil
+	case project.FieldDeletedTaskCount:
+		m.ResetDeletedTaskCount()
+		return nil
+	case project.FieldDeletedAssetCount:
+		m.ResetDeletedAssetCount()
 		return nil
 	}
 	return fmt.Errorf("unknown Project field %s", name)

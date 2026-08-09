@@ -106,6 +106,21 @@ func CreateKey(v string) predicate.Project {
 	return predicate.Project(sql.FieldEQ(FieldCreateKey, v))
 }
 
+// DeleteKey applies equality check predicate on the "delete_key" field. It's identical to DeleteKeyEQ.
+func DeleteKey(v string) predicate.Project {
+	return predicate.Project(sql.FieldEQ(FieldDeleteKey, v))
+}
+
+// DeletedTaskCount applies equality check predicate on the "deleted_task_count" field. It's identical to DeletedTaskCountEQ.
+func DeletedTaskCount(v int) predicate.Project {
+	return predicate.Project(sql.FieldEQ(FieldDeletedTaskCount, v))
+}
+
+// DeletedAssetCount applies equality check predicate on the "deleted_asset_count" field. It's identical to DeletedAssetCountEQ.
+func DeletedAssetCount(v int) predicate.Project {
+	return predicate.Project(sql.FieldEQ(FieldDeletedAssetCount, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.Project {
 	return predicate.Project(sql.FieldEQ(FieldCreatedAt, v))
@@ -594,6 +609,161 @@ func CreateKeyEqualFold(v string) predicate.Project {
 // CreateKeyContainsFold applies the ContainsFold predicate on the "create_key" field.
 func CreateKeyContainsFold(v string) predicate.Project {
 	return predicate.Project(sql.FieldContainsFold(FieldCreateKey, v))
+}
+
+// DeleteKeyEQ applies the EQ predicate on the "delete_key" field.
+func DeleteKeyEQ(v string) predicate.Project {
+	return predicate.Project(sql.FieldEQ(FieldDeleteKey, v))
+}
+
+// DeleteKeyNEQ applies the NEQ predicate on the "delete_key" field.
+func DeleteKeyNEQ(v string) predicate.Project {
+	return predicate.Project(sql.FieldNEQ(FieldDeleteKey, v))
+}
+
+// DeleteKeyIn applies the In predicate on the "delete_key" field.
+func DeleteKeyIn(vs ...string) predicate.Project {
+	return predicate.Project(sql.FieldIn(FieldDeleteKey, vs...))
+}
+
+// DeleteKeyNotIn applies the NotIn predicate on the "delete_key" field.
+func DeleteKeyNotIn(vs ...string) predicate.Project {
+	return predicate.Project(sql.FieldNotIn(FieldDeleteKey, vs...))
+}
+
+// DeleteKeyGT applies the GT predicate on the "delete_key" field.
+func DeleteKeyGT(v string) predicate.Project {
+	return predicate.Project(sql.FieldGT(FieldDeleteKey, v))
+}
+
+// DeleteKeyGTE applies the GTE predicate on the "delete_key" field.
+func DeleteKeyGTE(v string) predicate.Project {
+	return predicate.Project(sql.FieldGTE(FieldDeleteKey, v))
+}
+
+// DeleteKeyLT applies the LT predicate on the "delete_key" field.
+func DeleteKeyLT(v string) predicate.Project {
+	return predicate.Project(sql.FieldLT(FieldDeleteKey, v))
+}
+
+// DeleteKeyLTE applies the LTE predicate on the "delete_key" field.
+func DeleteKeyLTE(v string) predicate.Project {
+	return predicate.Project(sql.FieldLTE(FieldDeleteKey, v))
+}
+
+// DeleteKeyContains applies the Contains predicate on the "delete_key" field.
+func DeleteKeyContains(v string) predicate.Project {
+	return predicate.Project(sql.FieldContains(FieldDeleteKey, v))
+}
+
+// DeleteKeyHasPrefix applies the HasPrefix predicate on the "delete_key" field.
+func DeleteKeyHasPrefix(v string) predicate.Project {
+	return predicate.Project(sql.FieldHasPrefix(FieldDeleteKey, v))
+}
+
+// DeleteKeyHasSuffix applies the HasSuffix predicate on the "delete_key" field.
+func DeleteKeyHasSuffix(v string) predicate.Project {
+	return predicate.Project(sql.FieldHasSuffix(FieldDeleteKey, v))
+}
+
+// DeleteKeyIsNil applies the IsNil predicate on the "delete_key" field.
+func DeleteKeyIsNil() predicate.Project {
+	return predicate.Project(sql.FieldIsNull(FieldDeleteKey))
+}
+
+// DeleteKeyNotNil applies the NotNil predicate on the "delete_key" field.
+func DeleteKeyNotNil() predicate.Project {
+	return predicate.Project(sql.FieldNotNull(FieldDeleteKey))
+}
+
+// DeleteKeyEqualFold applies the EqualFold predicate on the "delete_key" field.
+func DeleteKeyEqualFold(v string) predicate.Project {
+	return predicate.Project(sql.FieldEqualFold(FieldDeleteKey, v))
+}
+
+// DeleteKeyContainsFold applies the ContainsFold predicate on the "delete_key" field.
+func DeleteKeyContainsFold(v string) predicate.Project {
+	return predicate.Project(sql.FieldContainsFold(FieldDeleteKey, v))
+}
+
+// DeletedTaskCountEQ applies the EQ predicate on the "deleted_task_count" field.
+func DeletedTaskCountEQ(v int) predicate.Project {
+	return predicate.Project(sql.FieldEQ(FieldDeletedTaskCount, v))
+}
+
+// DeletedTaskCountNEQ applies the NEQ predicate on the "deleted_task_count" field.
+func DeletedTaskCountNEQ(v int) predicate.Project {
+	return predicate.Project(sql.FieldNEQ(FieldDeletedTaskCount, v))
+}
+
+// DeletedTaskCountIn applies the In predicate on the "deleted_task_count" field.
+func DeletedTaskCountIn(vs ...int) predicate.Project {
+	return predicate.Project(sql.FieldIn(FieldDeletedTaskCount, vs...))
+}
+
+// DeletedTaskCountNotIn applies the NotIn predicate on the "deleted_task_count" field.
+func DeletedTaskCountNotIn(vs ...int) predicate.Project {
+	return predicate.Project(sql.FieldNotIn(FieldDeletedTaskCount, vs...))
+}
+
+// DeletedTaskCountGT applies the GT predicate on the "deleted_task_count" field.
+func DeletedTaskCountGT(v int) predicate.Project {
+	return predicate.Project(sql.FieldGT(FieldDeletedTaskCount, v))
+}
+
+// DeletedTaskCountGTE applies the GTE predicate on the "deleted_task_count" field.
+func DeletedTaskCountGTE(v int) predicate.Project {
+	return predicate.Project(sql.FieldGTE(FieldDeletedTaskCount, v))
+}
+
+// DeletedTaskCountLT applies the LT predicate on the "deleted_task_count" field.
+func DeletedTaskCountLT(v int) predicate.Project {
+	return predicate.Project(sql.FieldLT(FieldDeletedTaskCount, v))
+}
+
+// DeletedTaskCountLTE applies the LTE predicate on the "deleted_task_count" field.
+func DeletedTaskCountLTE(v int) predicate.Project {
+	return predicate.Project(sql.FieldLTE(FieldDeletedTaskCount, v))
+}
+
+// DeletedAssetCountEQ applies the EQ predicate on the "deleted_asset_count" field.
+func DeletedAssetCountEQ(v int) predicate.Project {
+	return predicate.Project(sql.FieldEQ(FieldDeletedAssetCount, v))
+}
+
+// DeletedAssetCountNEQ applies the NEQ predicate on the "deleted_asset_count" field.
+func DeletedAssetCountNEQ(v int) predicate.Project {
+	return predicate.Project(sql.FieldNEQ(FieldDeletedAssetCount, v))
+}
+
+// DeletedAssetCountIn applies the In predicate on the "deleted_asset_count" field.
+func DeletedAssetCountIn(vs ...int) predicate.Project {
+	return predicate.Project(sql.FieldIn(FieldDeletedAssetCount, vs...))
+}
+
+// DeletedAssetCountNotIn applies the NotIn predicate on the "deleted_asset_count" field.
+func DeletedAssetCountNotIn(vs ...int) predicate.Project {
+	return predicate.Project(sql.FieldNotIn(FieldDeletedAssetCount, vs...))
+}
+
+// DeletedAssetCountGT applies the GT predicate on the "deleted_asset_count" field.
+func DeletedAssetCountGT(v int) predicate.Project {
+	return predicate.Project(sql.FieldGT(FieldDeletedAssetCount, v))
+}
+
+// DeletedAssetCountGTE applies the GTE predicate on the "deleted_asset_count" field.
+func DeletedAssetCountGTE(v int) predicate.Project {
+	return predicate.Project(sql.FieldGTE(FieldDeletedAssetCount, v))
+}
+
+// DeletedAssetCountLT applies the LT predicate on the "deleted_asset_count" field.
+func DeletedAssetCountLT(v int) predicate.Project {
+	return predicate.Project(sql.FieldLT(FieldDeletedAssetCount, v))
+}
+
+// DeletedAssetCountLTE applies the LTE predicate on the "deleted_asset_count" field.
+func DeletedAssetCountLTE(v int) predicate.Project {
+	return predicate.Project(sql.FieldLTE(FieldDeletedAssetCount, v))
 }
 
 // HasImageTasks applies the HasEdge predicate on the "image_tasks" edge.

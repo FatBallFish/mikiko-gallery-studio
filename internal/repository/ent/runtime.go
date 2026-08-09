@@ -16,6 +16,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
@@ -1329,6 +1330,57 @@ func init() {
 	installationDescMigratedAt := installationFields[10].Descriptor()
 	// installation.DefaultMigratedAt holds the default value on creation for the migrated_at field.
 	installation.DefaultMigratedAt = installationDescMigratedAt.Default.(func() time.Time)
+	migrationcheckpointMixin := schema.MigrationCheckpoint{}.Mixin()
+	migrationcheckpointMixinFields0 := migrationcheckpointMixin[0].Fields()
+	_ = migrationcheckpointMixinFields0
+	migrationcheckpointFields := schema.MigrationCheckpoint{}.Fields()
+	_ = migrationcheckpointFields
+	// migrationcheckpointDescCreatedAt is the schema descriptor for created_at field.
+	migrationcheckpointDescCreatedAt := migrationcheckpointMixinFields0[0].Descriptor()
+	// migrationcheckpoint.DefaultCreatedAt holds the default value on creation for the created_at field.
+	migrationcheckpoint.DefaultCreatedAt = migrationcheckpointDescCreatedAt.Default.(func() time.Time)
+	// migrationcheckpointDescUpdatedAt is the schema descriptor for updated_at field.
+	migrationcheckpointDescUpdatedAt := migrationcheckpointMixinFields0[1].Descriptor()
+	// migrationcheckpoint.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	migrationcheckpoint.DefaultUpdatedAt = migrationcheckpointDescUpdatedAt.Default.(func() time.Time)
+	// migrationcheckpoint.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	migrationcheckpoint.UpdateDefaultUpdatedAt = migrationcheckpointDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// migrationcheckpointDescName is the schema descriptor for name field.
+	migrationcheckpointDescName := migrationcheckpointFields[0].Descriptor()
+	// migrationcheckpoint.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	migrationcheckpoint.NameValidator = func() func(string) error {
+		validators := migrationcheckpointDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// migrationcheckpointDescPhase is the schema descriptor for phase field.
+	migrationcheckpointDescPhase := migrationcheckpointFields[1].Descriptor()
+	// migrationcheckpoint.DefaultPhase holds the default value on creation for the phase field.
+	migrationcheckpoint.DefaultPhase = migrationcheckpointDescPhase.Default.(string)
+	// migrationcheckpoint.PhaseValidator is a validator for the "phase" field. It is called by the builders before save.
+	migrationcheckpoint.PhaseValidator = migrationcheckpointDescPhase.Validators[0].(func(string) error)
+	// migrationcheckpointDescAfterUserID is the schema descriptor for after_user_id field.
+	migrationcheckpointDescAfterUserID := migrationcheckpointFields[2].Descriptor()
+	// migrationcheckpoint.DefaultAfterUserID holds the default value on creation for the after_user_id field.
+	migrationcheckpoint.DefaultAfterUserID = migrationcheckpointDescAfterUserID.Default.(int)
+	// migrationcheckpointDescProcessedRows is the schema descriptor for processed_rows field.
+	migrationcheckpointDescProcessedRows := migrationcheckpointFields[5].Descriptor()
+	// migrationcheckpoint.DefaultProcessedRows holds the default value on creation for the processed_rows field.
+	migrationcheckpoint.DefaultProcessedRows = migrationcheckpointDescProcessedRows.Default.(int)
+	// migrationcheckpointDescCompleted is the schema descriptor for completed field.
+	migrationcheckpointDescCompleted := migrationcheckpointFields[6].Descriptor()
+	// migrationcheckpoint.DefaultCompleted holds the default value on creation for the completed field.
+	migrationcheckpoint.DefaultCompleted = migrationcheckpointDescCompleted.Default.(bool)
 	modelaccountMixin := schema.ModelAccount{}.Mixin()
 	modelaccountMixinFields0 := modelaccountMixin[0].Fields()
 	_ = modelaccountMixinFields0
@@ -2280,6 +2332,18 @@ func init() {
 	projectDescCreateKey := projectFields[7].Descriptor()
 	// project.CreateKeyValidator is a validator for the "create_key" field. It is called by the builders before save.
 	project.CreateKeyValidator = projectDescCreateKey.Validators[0].(func(string) error)
+	// projectDescDeleteKey is the schema descriptor for delete_key field.
+	projectDescDeleteKey := projectFields[8].Descriptor()
+	// project.DeleteKeyValidator is a validator for the "delete_key" field. It is called by the builders before save.
+	project.DeleteKeyValidator = projectDescDeleteKey.Validators[0].(func(string) error)
+	// projectDescDeletedTaskCount is the schema descriptor for deleted_task_count field.
+	projectDescDeletedTaskCount := projectFields[9].Descriptor()
+	// project.DefaultDeletedTaskCount holds the default value on creation for the deleted_task_count field.
+	project.DefaultDeletedTaskCount = projectDescDeletedTaskCount.Default.(int)
+	// projectDescDeletedAssetCount is the schema descriptor for deleted_asset_count field.
+	projectDescDeletedAssetCount := projectFields[10].Descriptor()
+	// project.DefaultDeletedAssetCount holds the default value on creation for the deleted_asset_count field.
+	project.DefaultDeletedAssetCount = projectDescDeletedAssetCount.Default.(int)
 	// projectDescID is the schema descriptor for id field.
 	projectDescID := projectFields[0].Descriptor()
 	// project.DefaultID holds the default value on creation for the id field.

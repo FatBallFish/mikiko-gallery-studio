@@ -175,6 +175,68 @@ func (_u *ProjectUpdate) ClearCreateKey() *ProjectUpdate {
 	return _u
 }
 
+// SetDeleteKey sets the "delete_key" field.
+func (_u *ProjectUpdate) SetDeleteKey(v string) *ProjectUpdate {
+	_u.mutation.SetDeleteKey(v)
+	return _u
+}
+
+// SetNillableDeleteKey sets the "delete_key" field if the given value is not nil.
+func (_u *ProjectUpdate) SetNillableDeleteKey(v *string) *ProjectUpdate {
+	if v != nil {
+		_u.SetDeleteKey(*v)
+	}
+	return _u
+}
+
+// ClearDeleteKey clears the value of the "delete_key" field.
+func (_u *ProjectUpdate) ClearDeleteKey() *ProjectUpdate {
+	_u.mutation.ClearDeleteKey()
+	return _u
+}
+
+// SetDeletedTaskCount sets the "deleted_task_count" field.
+func (_u *ProjectUpdate) SetDeletedTaskCount(v int) *ProjectUpdate {
+	_u.mutation.ResetDeletedTaskCount()
+	_u.mutation.SetDeletedTaskCount(v)
+	return _u
+}
+
+// SetNillableDeletedTaskCount sets the "deleted_task_count" field if the given value is not nil.
+func (_u *ProjectUpdate) SetNillableDeletedTaskCount(v *int) *ProjectUpdate {
+	if v != nil {
+		_u.SetDeletedTaskCount(*v)
+	}
+	return _u
+}
+
+// AddDeletedTaskCount adds value to the "deleted_task_count" field.
+func (_u *ProjectUpdate) AddDeletedTaskCount(v int) *ProjectUpdate {
+	_u.mutation.AddDeletedTaskCount(v)
+	return _u
+}
+
+// SetDeletedAssetCount sets the "deleted_asset_count" field.
+func (_u *ProjectUpdate) SetDeletedAssetCount(v int) *ProjectUpdate {
+	_u.mutation.ResetDeletedAssetCount()
+	_u.mutation.SetDeletedAssetCount(v)
+	return _u
+}
+
+// SetNillableDeletedAssetCount sets the "deleted_asset_count" field if the given value is not nil.
+func (_u *ProjectUpdate) SetNillableDeletedAssetCount(v *int) *ProjectUpdate {
+	if v != nil {
+		_u.SetDeletedAssetCount(*v)
+	}
+	return _u
+}
+
+// AddDeletedAssetCount adds value to the "deleted_asset_count" field.
+func (_u *ProjectUpdate) AddDeletedAssetCount(v int) *ProjectUpdate {
+	_u.mutation.AddDeletedAssetCount(v)
+	return _u
+}
+
 // AddImageTaskIDs adds the "image_tasks" edge to the ImageTask entity by IDs.
 func (_u *ProjectUpdate) AddImageTaskIDs(ids ...uuid.UUID) *ProjectUpdate {
 	_u.mutation.AddImageTaskIDs(ids...)
@@ -310,6 +372,11 @@ func (_u *ProjectUpdate) check() error {
 			return &ValidationError{Name: "create_key", err: fmt.Errorf(`ent: validator failed for field "Project.create_key": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.DeleteKey(); ok {
+		if err := project.DeleteKeyValidator(v); err != nil {
+			return &ValidationError{Name: "delete_key", err: fmt.Errorf(`ent: validator failed for field "Project.delete_key": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -363,6 +430,24 @@ func (_u *ProjectUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.CreateKeyCleared() {
 		_spec.ClearField(project.FieldCreateKey, field.TypeString)
+	}
+	if value, ok := _u.mutation.DeleteKey(); ok {
+		_spec.SetField(project.FieldDeleteKey, field.TypeString, value)
+	}
+	if _u.mutation.DeleteKeyCleared() {
+		_spec.ClearField(project.FieldDeleteKey, field.TypeString)
+	}
+	if value, ok := _u.mutation.DeletedTaskCount(); ok {
+		_spec.SetField(project.FieldDeletedTaskCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedDeletedTaskCount(); ok {
+		_spec.AddField(project.FieldDeletedTaskCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.DeletedAssetCount(); ok {
+		_spec.SetField(project.FieldDeletedAssetCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedDeletedAssetCount(); ok {
+		_spec.AddField(project.FieldDeletedAssetCount, field.TypeInt, value)
 	}
 	if _u.mutation.ImageTasksCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -618,6 +703,68 @@ func (_u *ProjectUpdateOne) ClearCreateKey() *ProjectUpdateOne {
 	return _u
 }
 
+// SetDeleteKey sets the "delete_key" field.
+func (_u *ProjectUpdateOne) SetDeleteKey(v string) *ProjectUpdateOne {
+	_u.mutation.SetDeleteKey(v)
+	return _u
+}
+
+// SetNillableDeleteKey sets the "delete_key" field if the given value is not nil.
+func (_u *ProjectUpdateOne) SetNillableDeleteKey(v *string) *ProjectUpdateOne {
+	if v != nil {
+		_u.SetDeleteKey(*v)
+	}
+	return _u
+}
+
+// ClearDeleteKey clears the value of the "delete_key" field.
+func (_u *ProjectUpdateOne) ClearDeleteKey() *ProjectUpdateOne {
+	_u.mutation.ClearDeleteKey()
+	return _u
+}
+
+// SetDeletedTaskCount sets the "deleted_task_count" field.
+func (_u *ProjectUpdateOne) SetDeletedTaskCount(v int) *ProjectUpdateOne {
+	_u.mutation.ResetDeletedTaskCount()
+	_u.mutation.SetDeletedTaskCount(v)
+	return _u
+}
+
+// SetNillableDeletedTaskCount sets the "deleted_task_count" field if the given value is not nil.
+func (_u *ProjectUpdateOne) SetNillableDeletedTaskCount(v *int) *ProjectUpdateOne {
+	if v != nil {
+		_u.SetDeletedTaskCount(*v)
+	}
+	return _u
+}
+
+// AddDeletedTaskCount adds value to the "deleted_task_count" field.
+func (_u *ProjectUpdateOne) AddDeletedTaskCount(v int) *ProjectUpdateOne {
+	_u.mutation.AddDeletedTaskCount(v)
+	return _u
+}
+
+// SetDeletedAssetCount sets the "deleted_asset_count" field.
+func (_u *ProjectUpdateOne) SetDeletedAssetCount(v int) *ProjectUpdateOne {
+	_u.mutation.ResetDeletedAssetCount()
+	_u.mutation.SetDeletedAssetCount(v)
+	return _u
+}
+
+// SetNillableDeletedAssetCount sets the "deleted_asset_count" field if the given value is not nil.
+func (_u *ProjectUpdateOne) SetNillableDeletedAssetCount(v *int) *ProjectUpdateOne {
+	if v != nil {
+		_u.SetDeletedAssetCount(*v)
+	}
+	return _u
+}
+
+// AddDeletedAssetCount adds value to the "deleted_asset_count" field.
+func (_u *ProjectUpdateOne) AddDeletedAssetCount(v int) *ProjectUpdateOne {
+	_u.mutation.AddDeletedAssetCount(v)
+	return _u
+}
+
 // AddImageTaskIDs adds the "image_tasks" edge to the ImageTask entity by IDs.
 func (_u *ProjectUpdateOne) AddImageTaskIDs(ids ...uuid.UUID) *ProjectUpdateOne {
 	_u.mutation.AddImageTaskIDs(ids...)
@@ -766,6 +913,11 @@ func (_u *ProjectUpdateOne) check() error {
 			return &ValidationError{Name: "create_key", err: fmt.Errorf(`ent: validator failed for field "Project.create_key": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.DeleteKey(); ok {
+		if err := project.DeleteKeyValidator(v); err != nil {
+			return &ValidationError{Name: "delete_key", err: fmt.Errorf(`ent: validator failed for field "Project.delete_key": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -836,6 +988,24 @@ func (_u *ProjectUpdateOne) sqlSave(ctx context.Context) (_node *Project, err er
 	}
 	if _u.mutation.CreateKeyCleared() {
 		_spec.ClearField(project.FieldCreateKey, field.TypeString)
+	}
+	if value, ok := _u.mutation.DeleteKey(); ok {
+		_spec.SetField(project.FieldDeleteKey, field.TypeString, value)
+	}
+	if _u.mutation.DeleteKeyCleared() {
+		_spec.ClearField(project.FieldDeleteKey, field.TypeString)
+	}
+	if value, ok := _u.mutation.DeletedTaskCount(); ok {
+		_spec.SetField(project.FieldDeletedTaskCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedDeletedTaskCount(); ok {
+		_spec.AddField(project.FieldDeletedTaskCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.DeletedAssetCount(); ok {
+		_spec.SetField(project.FieldDeletedAssetCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedDeletedAssetCount(); ok {
+		_spec.AddField(project.FieldDeletedAssetCount, field.TypeInt, value)
 	}
 	if _u.mutation.ImageTasksCleared() {
 		edge := &sqlgraph.EdgeSpec{

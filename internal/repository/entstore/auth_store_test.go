@@ -42,6 +42,13 @@ func TestAuthStorePersistsUserAndRefreshSession(t *testing.T) {
 	if loaded.ID == 0 || loaded.Email != user.Email {
 		t.Fatalf("unexpected loaded user: %#v", loaded)
 	}
+	projects, err := client.Project.Query().All(ctx)
+	if err != nil {
+		t.Fatalf("query default project: %v", err)
+	}
+	if len(projects) != 1 || projects[0].UserID != loaded.ID || !projects[0].IsDefault || projects[0].Name != "默认" {
+		t.Fatalf("user creation must atomically create one default project, got %#v", projects)
+	}
 
 	err = store.SaveRefreshSession(ctx, RefreshSessionRecord{
 		ID:               "11111111-1111-1111-1111-111111111111",
@@ -76,6 +83,34 @@ func TestAuthStorePersistsUserAndRefreshSession(t *testing.T) {
 	}
 	if blocked.Status != "replay_blocked" {
 		t.Fatalf("expected replay_blocked, got %s", blocked.Status)
+	}
+}
+
+func TestAuthStoreCreateUserRollsBackWhenDefaultProjectFails(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:authstore-default-project-rollback?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	client.Use(func(next repoent.Mutator) repoent.Mutator {
+		return repoent.MutateFunc(func(ctx context.Context, mutation repoent.Mutation) (repoent.Value, error) {
+			if _, ok := mutation.(*repoent.ProjectMutation); ok {
+				return nil, errors.New("injected default project failure")
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+
+	store := NewAuthStore(client)
+	if _, err := store.CreateUser(ctx, auth.User{Email: "rollback@example.com", Status: "active", GroupCode: "basic", GroupMultiplier: "1.00000"}); err == nil {
+		t.Fatal("CreateUser succeeded despite default project failure")
+	}
+	if count, countErr := client.User.Query().Count(ctx); countErr != nil || count != 0 {
+		t.Fatalf("user transaction did not roll back: count=%d err=%v", count, countErr)
 	}
 }
 

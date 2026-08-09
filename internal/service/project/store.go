@@ -15,12 +15,18 @@ type MemoryStore struct {
 	mu          sync.Mutex
 	projects    map[string]domainproject.Project
 	idempotency map[string]string
+	deletions   map[string]memoryDeleteReplay
 	ownership   map[string]domainproject.OwnershipCounts
+}
+
+type memoryDeleteReplay struct {
+	projectID string
+	result    domainproject.DeleteResult
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		projects: map[string]domainproject.Project{}, idempotency: map[string]string{}, ownership: map[string]domainproject.OwnershipCounts{},
+		projects: map[string]domainproject.Project{}, idempotency: map[string]string{}, deletions: map[string]memoryDeleteReplay{}, ownership: map[string]domainproject.OwnershipCounts{},
 	}
 }
 
@@ -111,26 +117,37 @@ func (s *MemoryStore) Rename(_ context.Context, userID int64, projectID, name, n
 	return s.withCounts(item), nil
 }
 
-func (s *MemoryStore) Delete(_ context.Context, userID int64, projectID, targetProjectID string, expectedVersion int64) (domainproject.DeleteResult, error) {
+func (s *MemoryStore) Delete(_ context.Context, userID int64, projectID string, req domainproject.DeleteRequest) (domainproject.DeleteResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if req.IdempotencyKey != "" {
+		if replay, ok := s.deletions[idempotencyStorageKey(userID, req.IdempotencyKey)]; ok {
+			if replay.projectID != projectID {
+				return domainproject.DeleteResult{}, ErrIdempotencyConflict
+			}
+			return replay.result, nil
+		}
+	}
 	item, ok := s.projects[projectID]
 	if !ok || item.UserID != userID || item.Status != domainproject.StatusActive {
 		return domainproject.DeleteResult{}, ErrNotFound
 	}
-	if item.Version != expectedVersion {
+	if item.IsDefault {
+		return domainproject.DeleteResult{}, ErrDefaultImmutable
+	}
+	if item.Version != req.ExpectedVersion {
 		return domainproject.DeleteResult{}, ErrProjectChanged
 	}
 	counts := s.ownership[ownershipStorageKey(userID, projectID)]
-	if counts.Tasks+counts.Assets > 0 && targetProjectID == "" {
+	if counts.Tasks+counts.Assets > 0 && req.TargetProjectID == "" {
 		return domainproject.DeleteResult{}, &NonEmptyError{Counts: counts}
 	}
-	if targetProjectID != "" {
-		target, ok := s.projects[targetProjectID]
+	if req.TargetProjectID != "" {
+		target, ok := s.projects[req.TargetProjectID]
 		if !ok || target.UserID != userID || target.Status != domainproject.StatusActive {
 			return domainproject.DeleteResult{}, ErrNotFound
 		}
-		targetKey := ownershipStorageKey(userID, targetProjectID)
+		targetKey := ownershipStorageKey(userID, req.TargetProjectID)
 		targetCounts := s.ownership[targetKey]
 		targetCounts.Tasks += counts.Tasks
 		targetCounts.Assets += counts.Assets
@@ -140,7 +157,11 @@ func (s *MemoryStore) Delete(_ context.Context, userID int64, projectID, targetP
 	now := time.Now().UTC()
 	item.Status, item.Version, item.UpdatedAt = domainproject.StatusDeleted, item.Version+1, now
 	s.projects[item.ID] = item
-	return domainproject.DeleteResult{Project: item, Transferred: counts}, nil
+	result := domainproject.DeleteResult{Project: item, Transferred: counts}
+	if req.IdempotencyKey != "" {
+		s.deletions[idempotencyStorageKey(userID, req.IdempotencyKey)] = memoryDeleteReplay{projectID: projectID, result: result}
+	}
+	return result, nil
 }
 
 func (s *MemoryStore) SeedOwnedRecords(userID int64, projectID string, tasks, assets int) {

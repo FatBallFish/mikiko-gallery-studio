@@ -39,6 +39,9 @@ type ImageTask func(*sql.Selector)
 // Installation is the predicate function for installation builders.
 type Installation func(*sql.Selector)
 
+// MigrationCheckpoint is the predicate function for migrationcheckpoint builders.
+type MigrationCheckpoint func(*sql.Selector)
+
 // ModelAccount is the predicate function for modelaccount builders.
 type ModelAccount func(*sql.Selector)
 

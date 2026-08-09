@@ -23,6 +23,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
@@ -127,6 +128,7 @@ func checkColumn(t, c string) error {
 			imageresult.Table:                 imageresult.ValidColumn,
 			imagetask.Table:                   imagetask.ValidColumn,
 			installation.Table:                installation.ValidColumn,
+			migrationcheckpoint.Table:         migrationcheckpoint.ValidColumn,
 			modelaccount.Table:                modelaccount.ValidColumn,
 			modelaccountmodel.Table:           modelaccountmodel.ValidColumn,
 			modelprovider.Table:               modelprovider.ValidColumn,

@@ -38,6 +38,12 @@ type Project struct {
 	Version int64 `json:"version,omitempty"`
 	// CreateKey holds the value of the "create_key" field.
 	CreateKey *string `json:"create_key,omitempty"`
+	// DeleteKey holds the value of the "delete_key" field.
+	DeleteKey *string `json:"delete_key,omitempty"`
+	// DeletedTaskCount holds the value of the "deleted_task_count" field.
+	DeletedTaskCount int `json:"deleted_task_count,omitempty"`
+	// DeletedAssetCount holds the value of the "deleted_asset_count" field.
+	DeletedAssetCount int `json:"deleted_asset_count,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the ProjectQuery when eager-loading is set.
 	Edges        ProjectEdges `json:"edges"`
@@ -80,9 +86,9 @@ func (*Project) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case project.FieldIsDefault:
 			values[i] = new(sql.NullBool)
-		case project.FieldUserID, project.FieldVersion:
+		case project.FieldUserID, project.FieldVersion, project.FieldDeletedTaskCount, project.FieldDeletedAssetCount:
 			values[i] = new(sql.NullInt64)
-		case project.FieldName, project.FieldNameKey, project.FieldStatus, project.FieldCreateKey:
+		case project.FieldName, project.FieldNameKey, project.FieldStatus, project.FieldCreateKey, project.FieldDeleteKey:
 			values[i] = new(sql.NullString)
 		case project.FieldCreatedAt, project.FieldUpdatedAt, project.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
@@ -171,6 +177,25 @@ func (_m *Project) assignValues(columns []string, values []any) error {
 				_m.CreateKey = new(string)
 				*_m.CreateKey = value.String
 			}
+		case project.FieldDeleteKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field delete_key", values[i])
+			} else if value.Valid {
+				_m.DeleteKey = new(string)
+				*_m.DeleteKey = value.String
+			}
+		case project.FieldDeletedTaskCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field deleted_task_count", values[i])
+			} else if value.Valid {
+				_m.DeletedTaskCount = int(value.Int64)
+			}
+		case project.FieldDeletedAssetCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field deleted_asset_count", values[i])
+			} else if value.Valid {
+				_m.DeletedAssetCount = int(value.Int64)
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -250,6 +275,17 @@ func (_m *Project) String() string {
 		builder.WriteString("create_key=")
 		builder.WriteString(*v)
 	}
+	builder.WriteString(", ")
+	if v := _m.DeleteKey; v != nil {
+		builder.WriteString("delete_key=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	builder.WriteString("deleted_task_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.DeletedTaskCount))
+	builder.WriteString(", ")
+	builder.WriteString("deleted_asset_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.DeletedAssetCount))
 	builder.WriteByte(')')
 	return builder.String()
 }

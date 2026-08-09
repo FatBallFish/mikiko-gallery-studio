@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
@@ -17,6 +19,16 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+func TestTaskProjectOwnershipCheckUsesCompatibleRowLock(t *testing.T) {
+	table := entsql.Table("projects")
+	selector := entsql.Dialect(dialect.Postgres).Select().From(table)
+	lockProjectForTaskWrite()(selector)
+	query, _ := selector.Query()
+	if !strings.Contains(query, "FOR SHARE") {
+		t.Fatalf("task project ownership query = %q, want FOR SHARE to serialize with project deletion", query)
+	}
+}
 
 func TestImageTaskStoreLoadsUserConcurrencyLimit(t *testing.T) {
 	ctx := context.Background()

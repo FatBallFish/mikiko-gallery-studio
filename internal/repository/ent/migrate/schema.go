@@ -630,6 +630,32 @@ var (
 			},
 		},
 	}
+	// MigrationCheckpointsColumns holds the columns for the "migration_checkpoints" table.
+	MigrationCheckpointsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "phase", Type: field.TypeString, Size: 16, Default: "users"},
+		{Name: "after_user_id", Type: field.TypeInt, Default: 0},
+		{Name: "after_task_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "after_result_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "processed_rows", Type: field.TypeInt, Default: 0},
+		{Name: "completed", Type: field.TypeBool, Default: false},
+	}
+	// MigrationCheckpointsTable holds the schema information for the "migration_checkpoints" table.
+	MigrationCheckpointsTable = &schema.Table{
+		Name:       "migration_checkpoints",
+		Columns:    MigrationCheckpointsColumns,
+		PrimaryKey: []*schema.Column{MigrationCheckpointsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "migrationcheckpoint_name",
+				Unique:  true,
+				Columns: []*schema.Column{MigrationCheckpointsColumns[3]},
+			},
+		},
+	}
 	// ModelAccountsColumns holds the columns for the "model_accounts" table.
 	ModelAccountsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1178,6 +1204,9 @@ var (
 		{Name: "status", Type: field.TypeString, Size: 16, Default: "active"},
 		{Name: "version", Type: field.TypeInt64, Default: 1},
 		{Name: "create_key", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "delete_key", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "deleted_task_count", Type: field.TypeInt, Default: 0},
+		{Name: "deleted_asset_count", Type: field.TypeInt, Default: 0},
 	}
 	// ProjectsTable holds the schema information for the "projects" table.
 	ProjectsTable = &schema.Table{
@@ -1215,6 +1244,11 @@ var (
 				Name:    "project_create_key",
 				Unique:  true,
 				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[10]},
+			},
+			{
+				Name:    "project_delete_key",
+				Unique:  true,
+				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[11]},
 			},
 		},
 	}
@@ -2085,6 +2119,7 @@ var (
 		TaskImagesTable,
 		ImageTasksTable,
 		InstallationsTable,
+		MigrationCheckpointsTable,
 		ModelAccountsTable,
 		ModelAccountModelsTable,
 		ModelProvidersTable,

@@ -473,7 +473,7 @@ export const userApi = {
 	listProjects: async () => (await sharedApiClient.request<{ items: Project[]; default_project_id: string }>(API_PATHS.agent.projects)).items ?? [],
 	createProject: (name: string, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<Project>(API_PATHS.agent.projects, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { name } }),
 	renameProject: (project_id: string, name: string, expected_version: number) => sharedApiClient.request<Project>(API_PATHS.agent.projectDetail, { method: 'PATCH', pathParams: { project_id }, body: { name, expected_version } }),
-	deleteProject: (project_id: string, expected_version: number, target_project_id?: string) => sharedApiClient.request<{ project: Project; transferred: { tasks: number; assets: number } }>(API_PATHS.agent.projectDetail, { method: 'DELETE', pathParams: { project_id }, body: { expected_version, target_project_id } }),
+	deleteProject: (project_id: string, expected_version: number, target_project_id?: string, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<{ project: Project; transferred: { tasks: number; assets: number } }>(API_PATHS.agent.projectDetail, { method: 'DELETE', pathParams: { project_id }, headers: { 'Idempotency-Key': idempotencyKey }, body: { expected_version, target_project_id } }),
   getBalance: async () => toBalance(await sharedApiClient.request(API_PATHS.agent.balance)),
   getLedger: async (page = 1, page_size = 20) => {
     const result = normalizePage<LedgerEntry>(await sharedApiClient.request(API_PATHS.agent.ledger, { query: { page, page_size } }))

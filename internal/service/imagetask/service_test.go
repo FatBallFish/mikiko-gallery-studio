@@ -69,6 +69,34 @@ func TestCreateTaskResolvesOwnedProjectAndRejectsForeignProject(t *testing.T) {
 	}
 }
 
+func TestCreateTaskPersistsNormalizationFailureInResolvedDefaultProject(t *testing.T) {
+	ctx := context.Background()
+	projectSvc := projectservice.NewService(projectservice.NewMemoryStore())
+	defaultProject, err := projectSvc.EnsureDefault(ctx, 503)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithStore(taskTestConfig(), store)
+	svc.SetProjectResolver(projectSvc)
+
+	const taskID = "50350350-3503-4503-8503-503503503503"
+	_, err = svc.CreateTask(ctx, domainimagetask.CreateRequest{
+		TaskID: taskID, UserID: 503, AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage),
+		Prompt: "invalid transparent jpeg", SizeMode: "auto", OutputFormat: "jpeg", Background: "transparent", OutputImageCount: 1,
+	})
+	if err == nil {
+		t.Fatal("CreateTask accepted transparent JPEG")
+	}
+	failed, loadErr := store.GetByID(ctx, 503, taskID)
+	if loadErr != nil {
+		t.Fatalf("load persisted failure: %v", loadErr)
+	}
+	if failed.Status != domainimagetask.StatusFailed || failed.ProjectID != defaultProject.ID {
+		t.Fatalf("normalization failure project = %q status=%q, want default %q and failed", failed.ProjectID, failed.Status, defaultProject.ID)
+	}
+}
+
 type fakeAssetLoader struct {
 	inputs map[string]provider.ImageInput
 	calls  []string
@@ -3049,8 +3077,15 @@ func TestRetryTaskCreatesQueuedCopyFromFailedTask(t *testing.T) {
 	cfg := taskTestConfig()
 	store := imagetask.NewMemoryStore()
 	svc := imagetask.NewServiceWithProvidersAndStore(cfg, nil, store)
+	projectSvc := projectservice.NewService(projectservice.NewMemoryStore())
+	project, err := projectSvc.Create(context.Background(), 33, domainproject.CreateRequest{Name: "Retry project"})
+	if err != nil {
+		t.Fatalf("Create project: %v", err)
+	}
+	svc.SetProjectResolver(projectSvc)
 	seed := domainimagetask.Task{
 		UserID:              33,
+		ProjectID:           project.ID,
 		ID:                  "11111111-1111-1111-1111-111111111111",
 		Status:              domainimagetask.StatusFailed,
 		AbstractModel:       "plus",
@@ -3086,6 +3121,9 @@ func TestRetryTaskCreatesQueuedCopyFromFailedTask(t *testing.T) {
 	}
 	if retry.Status != domainimagetask.StatusQueued {
 		t.Fatalf("expected retry queued, got %s", retry.Status)
+	}
+	if retry.ProjectID != project.ID {
+		t.Fatalf("retry project = %q, want original non-default project %q", retry.ProjectID, project.ID)
 	}
 	if retry.Prompt != seed.Prompt || retry.NegativePrompt != seed.NegativePrompt || retry.RouteModelCode != seed.RouteModelCode || retry.TaskType != seed.TaskType {
 		t.Fatalf("retry did not copy core request fields: %#v", retry)

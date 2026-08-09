@@ -35,6 +35,12 @@ const (
 	FieldVersion = "version"
 	// FieldCreateKey holds the string denoting the create_key field in the database.
 	FieldCreateKey = "create_key"
+	// FieldDeleteKey holds the string denoting the delete_key field in the database.
+	FieldDeleteKey = "delete_key"
+	// FieldDeletedTaskCount holds the string denoting the deleted_task_count field in the database.
+	FieldDeletedTaskCount = "deleted_task_count"
+	// FieldDeletedAssetCount holds the string denoting the deleted_asset_count field in the database.
+	FieldDeletedAssetCount = "deleted_asset_count"
 	// EdgeImageTasks holds the string denoting the image_tasks edge name in mutations.
 	EdgeImageTasks = "image_tasks"
 	// EdgeImageResults holds the string denoting the image_results edge name in mutations.
@@ -70,6 +76,9 @@ var Columns = []string{
 	FieldStatus,
 	FieldVersion,
 	FieldCreateKey,
+	FieldDeleteKey,
+	FieldDeletedTaskCount,
+	FieldDeletedAssetCount,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -103,6 +112,12 @@ var (
 	DefaultVersion int64
 	// CreateKeyValidator is a validator for the "create_key" field. It is called by the builders before save.
 	CreateKeyValidator func(string) error
+	// DeleteKeyValidator is a validator for the "delete_key" field. It is called by the builders before save.
+	DeleteKeyValidator func(string) error
+	// DefaultDeletedTaskCount holds the default value on creation for the "deleted_task_count" field.
+	DefaultDeletedTaskCount int
+	// DefaultDeletedAssetCount holds the default value on creation for the "deleted_asset_count" field.
+	DefaultDeletedAssetCount int
 	// DefaultID holds the default value on creation for the "id" field.
 	DefaultID func() uuid.UUID
 )
@@ -163,6 +178,21 @@ func ByVersion(opts ...sql.OrderTermOption) OrderOption {
 // ByCreateKey orders the results by the create_key field.
 func ByCreateKey(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCreateKey, opts...).ToFunc()
+}
+
+// ByDeleteKey orders the results by the delete_key field.
+func ByDeleteKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDeleteKey, opts...).ToFunc()
+}
+
+// ByDeletedTaskCount orders the results by the deleted_task_count field.
+func ByDeletedTaskCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDeletedTaskCount, opts...).ToFunc()
+}
+
+// ByDeletedAssetCount orders the results by the deleted_asset_count field.
+func ByDeletedAssetCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDeletedAssetCount, opts...).ToFunc()
 }
 
 // ByImageTasksCount orders the results by image_tasks count.

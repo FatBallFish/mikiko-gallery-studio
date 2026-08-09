@@ -236,12 +236,6 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 	if !provider.IsSupportedTaskType(req.TaskType) {
 		return domainimagetask.Task{}, errs.BadRequest("unsupported task_type")
 	}
-	normalizedReq, err := normalizeCreateRequest(req)
-	if err != nil {
-		_ = s.persistPreflightFailedRequest(ctx, req, modelhub.ResolvedRequest{}, err)
-		return domainimagetask.Task{}, err
-	}
-	req = normalizedReq
 	var selectedProject *domainproject.Project
 	if s.projects != nil {
 		project, projectErr := s.projects.ResolveForWrite(ctx, req.UserID, req.ProjectID)
@@ -251,6 +245,12 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 		req.ProjectID = project.ID
 		selectedProject = &project
 	}
+	normalizedReq, err := normalizeCreateRequest(req)
+	if err != nil {
+		_ = s.persistPreflightFailedRequest(ctx, req, modelhub.ResolvedRequest{}, err)
+		return domainimagetask.Task{}, err
+	}
+	req = normalizedReq
 	if strings.TrimSpace(req.TaskID) != "" {
 		existing, err := s.store.GetByID(ctx, req.UserID, req.TaskID)
 		switch {
@@ -1839,6 +1839,7 @@ func (s *Service) RetryTask(ctx context.Context, userID int64, taskID string, re
 	}
 	retryReq := domainimagetask.CreateRequest{
 		UserID:              userID,
+		ProjectID:           original.ProjectID,
 		APIKeyID:            original.APIKeyID,
 		SourceChannel:       defaultString(original.SourceChannel, "web"),
 		AbstractModel:       original.AbstractModel,

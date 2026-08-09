@@ -27,6 +27,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
@@ -89,6 +90,8 @@ type Client struct {
 	ImageTask *ImageTaskClient
 	// Installation is the client for interacting with the Installation builders.
 	Installation *InstallationClient
+	// MigrationCheckpoint is the client for interacting with the MigrationCheckpoint builders.
+	MigrationCheckpoint *MigrationCheckpointClient
 	// ModelAccount is the client for interacting with the ModelAccount builders.
 	ModelAccount *ModelAccountClient
 	// ModelAccountModel is the client for interacting with the ModelAccountModel builders.
@@ -177,6 +180,7 @@ func (c *Client) init() {
 	c.ImageResult = NewImageResultClient(c.config)
 	c.ImageTask = NewImageTaskClient(c.config)
 	c.Installation = NewInstallationClient(c.config)
+	c.MigrationCheckpoint = NewMigrationCheckpointClient(c.config)
 	c.ModelAccount = NewModelAccountClient(c.config)
 	c.ModelAccountModel = NewModelAccountModelClient(c.config)
 	c.ModelProvider = NewModelProviderClient(c.config)
@@ -313,6 +317,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
 		Installation:                NewInstallationClient(cfg),
+		MigrationCheckpoint:         NewMigrationCheckpointClient(cfg),
 		ModelAccount:                NewModelAccountClient(cfg),
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
@@ -376,6 +381,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
 		Installation:                NewInstallationClient(cfg),
+		MigrationCheckpoint:         NewMigrationCheckpointClient(cfg),
 		ModelAccount:                NewModelAccountClient(cfg),
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
@@ -440,15 +446,16 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
 		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask,
-		c.Installation, c.ModelAccount, c.ModelAccountModel, c.ModelProvider,
-		c.ModelRoute, c.ObjectDeletionJob, c.ObjectStorageConfig, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
-		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
-		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
-		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
-		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
-		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
-		c.WalletGrant, c.WalletReservationAllocation,
+		c.Installation, c.MigrationCheckpoint, c.ModelAccount, c.ModelAccountModel,
+		c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob, c.ObjectStorageConfig,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PaymentWebhookEvent,
+		c.PointLedger, c.Project, c.PromptOptimizationRun, c.ProviderErrorPolicy,
+		c.ProviderModel, c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode,
+		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
+		c.RouteModelPrice, c.RouteModelVisibilityGroup, c.SecureConfig,
+		c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User, c.UserGroup,
+		c.UserGroupMember, c.UserSubscription, c.WalletGrant,
+		c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
 	}
@@ -460,15 +467,16 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
 		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask,
-		c.Installation, c.ModelAccount, c.ModelAccountModel, c.ModelProvider,
-		c.ModelRoute, c.ObjectDeletionJob, c.ObjectStorageConfig, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
-		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
-		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
-		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
-		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
-		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
-		c.WalletGrant, c.WalletReservationAllocation,
+		c.Installation, c.MigrationCheckpoint, c.ModelAccount, c.ModelAccountModel,
+		c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob, c.ObjectStorageConfig,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PaymentWebhookEvent,
+		c.PointLedger, c.Project, c.PromptOptimizationRun, c.ProviderErrorPolicy,
+		c.ProviderModel, c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode,
+		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
+		c.RouteModelPrice, c.RouteModelVisibilityGroup, c.SecureConfig,
+		c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User, c.UserGroup,
+		c.UserGroupMember, c.UserSubscription, c.WalletGrant,
+		c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -499,6 +507,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ImageTask.mutate(ctx, m)
 	case *InstallationMutation:
 		return c.Installation.mutate(ctx, m)
+	case *MigrationCheckpointMutation:
+		return c.MigrationCheckpoint.mutate(ctx, m)
 	case *ModelAccountMutation:
 		return c.ModelAccount.mutate(ctx, m)
 	case *ModelAccountModelMutation:
@@ -2062,6 +2072,139 @@ func (c *InstallationClient) mutate(ctx context.Context, m *InstallationMutation
 		return (&InstallationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Installation mutation op: %q", m.Op())
+	}
+}
+
+// MigrationCheckpointClient is a client for the MigrationCheckpoint schema.
+type MigrationCheckpointClient struct {
+	config
+}
+
+// NewMigrationCheckpointClient returns a client for the MigrationCheckpoint from the given config.
+func NewMigrationCheckpointClient(c config) *MigrationCheckpointClient {
+	return &MigrationCheckpointClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `migrationcheckpoint.Hooks(f(g(h())))`.
+func (c *MigrationCheckpointClient) Use(hooks ...Hook) {
+	c.hooks.MigrationCheckpoint = append(c.hooks.MigrationCheckpoint, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `migrationcheckpoint.Intercept(f(g(h())))`.
+func (c *MigrationCheckpointClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MigrationCheckpoint = append(c.inters.MigrationCheckpoint, interceptors...)
+}
+
+// Create returns a builder for creating a MigrationCheckpoint entity.
+func (c *MigrationCheckpointClient) Create() *MigrationCheckpointCreate {
+	mutation := newMigrationCheckpointMutation(c.config, OpCreate)
+	return &MigrationCheckpointCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MigrationCheckpoint entities.
+func (c *MigrationCheckpointClient) CreateBulk(builders ...*MigrationCheckpointCreate) *MigrationCheckpointCreateBulk {
+	return &MigrationCheckpointCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MigrationCheckpointClient) MapCreateBulk(slice any, setFunc func(*MigrationCheckpointCreate, int)) *MigrationCheckpointCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MigrationCheckpointCreateBulk{err: fmt.Errorf("calling to MigrationCheckpointClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MigrationCheckpointCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MigrationCheckpointCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MigrationCheckpoint.
+func (c *MigrationCheckpointClient) Update() *MigrationCheckpointUpdate {
+	mutation := newMigrationCheckpointMutation(c.config, OpUpdate)
+	return &MigrationCheckpointUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MigrationCheckpointClient) UpdateOne(_m *MigrationCheckpoint) *MigrationCheckpointUpdateOne {
+	mutation := newMigrationCheckpointMutation(c.config, OpUpdateOne, withMigrationCheckpoint(_m))
+	return &MigrationCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MigrationCheckpointClient) UpdateOneID(id int) *MigrationCheckpointUpdateOne {
+	mutation := newMigrationCheckpointMutation(c.config, OpUpdateOne, withMigrationCheckpointID(id))
+	return &MigrationCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MigrationCheckpoint.
+func (c *MigrationCheckpointClient) Delete() *MigrationCheckpointDelete {
+	mutation := newMigrationCheckpointMutation(c.config, OpDelete)
+	return &MigrationCheckpointDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MigrationCheckpointClient) DeleteOne(_m *MigrationCheckpoint) *MigrationCheckpointDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MigrationCheckpointClient) DeleteOneID(id int) *MigrationCheckpointDeleteOne {
+	builder := c.Delete().Where(migrationcheckpoint.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MigrationCheckpointDeleteOne{builder}
+}
+
+// Query returns a query builder for MigrationCheckpoint.
+func (c *MigrationCheckpointClient) Query() *MigrationCheckpointQuery {
+	return &MigrationCheckpointQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMigrationCheckpoint},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MigrationCheckpoint entity by its id.
+func (c *MigrationCheckpointClient) Get(ctx context.Context, id int) (*MigrationCheckpoint, error) {
+	return c.Query().Where(migrationcheckpoint.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MigrationCheckpointClient) GetX(ctx context.Context, id int) *MigrationCheckpoint {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *MigrationCheckpointClient) Hooks() []Hook {
+	return c.hooks.MigrationCheckpoint
+}
+
+// Interceptors returns the client interceptors.
+func (c *MigrationCheckpointClient) Interceptors() []Interceptor {
+	return c.inters.MigrationCheckpoint
+}
+
+func (c *MigrationCheckpointClient) mutate(ctx context.Context, m *MigrationCheckpointMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MigrationCheckpointCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MigrationCheckpointUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MigrationCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MigrationCheckpointDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MigrationCheckpoint mutation op: %q", m.Op())
 	}
 }
 
@@ -6491,25 +6634,27 @@ type (
 	hooks struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
 		ClusterNode, ClusterToken, ConfigItem, ImageResult, ImageTask, Installation,
-		ModelAccount, ModelAccountModel, ModelProvider, ModelRoute, ObjectDeletionJob,
-		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
-		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
-		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
-		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
-		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Hook
+		MigrationCheckpoint, ModelAccount, ModelAccountModel, ModelProvider,
+		ModelRoute, ObjectDeletionJob, ObjectStorageConfig, PaymentOrder,
+		PaymentProviderInstance, PaymentWebhookEvent, PointLedger, Project,
+		PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
+		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
+		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
+		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
+		TextModelAccount, User, UserGroup, UserGroupMember, UserSubscription,
+		WalletGrant, WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
 		ClusterNode, ClusterToken, ConfigItem, ImageResult, ImageTask, Installation,
-		ModelAccount, ModelAccountModel, ModelProvider, ModelRoute, ObjectDeletionJob,
-		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
-		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
-		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
-		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
-		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Interceptor
+		MigrationCheckpoint, ModelAccount, ModelAccountModel, ModelProvider,
+		ModelRoute, ObjectDeletionJob, ObjectStorageConfig, PaymentOrder,
+		PaymentProviderInstance, PaymentWebhookEvent, PointLedger, Project,
+		PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
+		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
+		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
+		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
+		TextModelAccount, User, UserGroup, UserGroupMember, UserSubscription,
+		WalletGrant, WalletReservationAllocation []ent.Interceptor
 	}
 )
