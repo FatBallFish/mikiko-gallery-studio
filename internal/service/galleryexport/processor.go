@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	"github.com/fatballfish/pic-gallery/internal/storage"
+	"github.com/google/uuid"
 )
+
+const DefaultAsyncTimeout = 10 * time.Minute
 
 type CompleteJobRequest struct {
 	JobID            string
@@ -27,7 +29,7 @@ type CompleteJobRequest struct {
 
 type ProcessorStore interface {
 	Store
-	AcquireNextJob(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (Job, bool, error)
+	AcquireNextJob(ctx context.Context, owner string, now time.Time, leaseTTL, processingTTL time.Duration) (Job, bool, error)
 	RenewJobLease(ctx context.Context, jobID, owner string, attempt int, now time.Time, leaseTTL time.Duration) (bool, error)
 	CompleteJob(ctx context.Context, req CompleteJobRequest) (Job, error)
 	FailJob(ctx context.Context, job Job, now time.Time, code, message string) error
@@ -42,6 +44,7 @@ type ProcessorOptions struct {
 	ExpireBatch  int
 	Now          func() time.Time
 	Service      Options
+	AttemptToken func() string
 }
 
 type Processor struct {
@@ -59,13 +62,16 @@ func NewProcessor(store ProcessorStore, router storage.Router, opts ProcessorOpt
 		opts.ArchiveTTL = 24 * time.Hour
 	}
 	if opts.AsyncTimeout <= 0 {
-		opts.AsyncTimeout = 10 * time.Minute
+		opts.AsyncTimeout = DefaultAsyncTimeout
 	}
 	if opts.ExpireBatch <= 0 {
 		opts.ExpireBatch = 25
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
+	}
+	if opts.AttemptToken == nil {
+		opts.AttemptToken = uuid.NewString
 	}
 	return &Processor{store: store, router: router, service: NewService(store, router, opts.Service), opts: opts}
 }
@@ -79,7 +85,7 @@ func (p *Processor) ProcessOnce(ctx context.Context) (bool, error) {
 	if expired > 0 {
 		return true, nil
 	}
-	job, ok, err := p.store.AcquireNextJob(ctx, p.opts.Owner, now, p.opts.LeaseTTL)
+	job, ok, err := p.store.AcquireNextJob(ctx, p.opts.Owner, now, p.opts.LeaseTTL, p.opts.AsyncTimeout)
 	if err != nil || !ok {
 		return false, err
 	}
@@ -128,12 +134,18 @@ func (p *Processor) processJob(ctx context.Context, job Job, now time.Time) *job
 	if err != nil {
 		return &jobProcessError{code: "storage_unavailable", message: "archive storage is unavailable"}
 	}
-	objectKey := fmt.Sprintf("gallery-exports/%d/%s.zip", job.UserID, job.ID)
-	content, err := readTempArchive(archive.Path, p.service.opts.MaxArchiveBytes)
-	if err != nil {
-		return &jobProcessError{code: "archive_build_failed", message: err.Error()}
+	streaming, ok := writer.Backend.(storage.StreamingBackend)
+	if !ok {
+		return &jobProcessError{code: "streaming_storage_unsupported", message: "archive storage does not support streaming uploads"}
 	}
-	if err := writer.Backend.Put(ctx, objectKey, "application/zip", content); err != nil {
+	file, err := os.Open(archive.Path)
+	if err != nil {
+		return &jobProcessError{code: "archive_build_failed", message: "temporary archive could not be opened"}
+	}
+	defer file.Close()
+	objectKey := p.attemptObjectKey(job)
+	if err := streaming.PutReader(ctx, objectKey, "application/zip", file, archive.Size); err != nil {
+		_ = writer.Backend.Delete(context.WithoutCancel(ctx), objectKey)
 		return &jobProcessError{code: "archive_store_failed", message: "archive could not be stored"}
 	}
 	_, err = p.store.CompleteJob(ctx, CompleteJobRequest{
@@ -149,6 +161,14 @@ func (p *Processor) processJob(ctx context.Context, job Job, now time.Time) *job
 		return &jobProcessError{code: "archive_completion_failed", message: "archive completion could not be recorded"}
 	}
 	return nil
+}
+
+func (p *Processor) attemptObjectKey(job Job) string {
+	token := strings.TrimSpace(p.opts.AttemptToken())
+	if _, err := uuid.Parse(token); err != nil {
+		token = uuid.NewString()
+	}
+	return fmt.Sprintf("gallery-exports/%d/%s/attempt-%d-%s.zip", job.UserID, job.ID, job.AttemptCount, token)
 }
 
 func (p *Processor) renewLease(ctx context.Context, cancelProcess context.CancelFunc, job Job, done chan<- leaseHeartbeatResult) {
@@ -177,22 +197,6 @@ func (p *Processor) renewLease(ctx context.Context, cancelProcess context.Cancel
 			}
 		}
 	}
-}
-
-func readTempArchive(path string, maxBytes int64) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open temporary ZIP archive: %w", err)
-	}
-	defer file.Close()
-	content, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read temporary ZIP archive: %w", err)
-	}
-	if int64(len(content)) > maxBytes {
-		return nil, ErrArchiveLimitExceeded
-	}
-	return content, nil
 }
 
 func (p *Processor) fail(ctx context.Context, job Job, now time.Time, code, message string) error {

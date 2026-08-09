@@ -3151,18 +3151,11 @@ func (a *API) handleAgentGalleryBatchDownload(w http.ResponseWriter, r *http.Req
 		httpx.WriteError(w, r, errs.Internal("gallery export did not produce an archive"))
 		return
 	}
-	defer result.Archive.Close()
-	file, err := os.Open(result.Archive.Path)
-	if err != nil {
-		httpx.WriteError(w, r, errs.Internal("gallery export archive is unavailable"))
-		return
+	if started, err := streamGalleryArchive(w, r, result.Archive); err != nil {
+		if !started {
+			httpx.WriteError(w, r, errs.Internal("gallery export archive is unavailable"))
+		}
 	}
-	defer file.Close()
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="gallery-assets.zip"`)
-	w.Header().Set("Content-Length", strconv.FormatInt(result.Archive.Size, 10))
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, file)
 }
 
 func (a *API) HandleAgentGalleryExportJob(w http.ResponseWriter, r *http.Request) {
@@ -3199,11 +3192,9 @@ func (a *API) HandleAgentGalleryExportJob(w http.ResponseWriter, r *http.Request
 			}
 			return
 		}
-		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", `attachment; filename="gallery-assets.zip"`)
-		w.Header().Set("Content-Length", strconv.Itoa(len(archive.Content)))
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(archive.Content)
+		if started, err := streamGalleryArchive(w, r, &archive); err != nil && !started {
+			httpx.WriteError(w, r, errs.Internal("gallery export archive is unavailable"))
+		}
 		return
 	}
 	job, err := a.galleryExport.GetJob(r.Context(), user.ID, jobID)
@@ -3220,6 +3211,55 @@ func (a *API) HandleAgentGalleryExportJob(w http.ResponseWriter, r *http.Request
 		payload["download_url"] = "/api/agent/gallery/v1/export-jobs/" + job.ID + "/download"
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, payload)
+}
+
+func streamGalleryArchive(w http.ResponseWriter, r *http.Request, archive *galleryexportservice.Archive) (bool, error) {
+	if archive == nil {
+		return false, errors.New("gallery archive is nil")
+	}
+	defer archive.Close()
+	reader := io.Reader(archive.Reader)
+	var file *os.File
+	if reader == nil {
+		opened, err := os.Open(archive.Path)
+		if err != nil {
+			return false, err
+		}
+		file = opened
+		defer file.Close()
+		reader = file
+	}
+	controller := http.NewResponseController(w)
+	if !archive.ResponseDeadline.IsZero() {
+		if err := controller.SetWriteDeadline(archive.ResponseDeadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return false, err
+		}
+		defer func() { _ = controller.SetWriteDeadline(time.Time{}) }()
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="gallery-assets.zip"`)
+	if archive.Size >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(archive.Size, 10))
+	}
+	w.WriteHeader(http.StatusOK)
+	_, err := io.Copy(w, requestContextReader{ctx: r.Context(), reader: reader})
+	return true, err
+}
+
+type requestContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (reader requestContextReader) Read(buffer []byte) (int, error) {
+	if err := reader.ctx.Err(); err != nil {
+		return 0, err
+	}
+	count, err := reader.reader.Read(buffer)
+	if contextErr := reader.ctx.Err(); contextErr != nil {
+		return count, contextErr
+	}
+	return count, err
 }
 
 func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Request) {

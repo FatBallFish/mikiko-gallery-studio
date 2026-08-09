@@ -17,12 +17,12 @@ if (!runGalleryBatch) throw new Error('gallery batch actions need runGalleryBatc
 
 const invertLoadedGallerySelection = model.invertLoadedGallerySelection as ((current: ReadonlySet<string>, loadedIDs: string[]) => Set<string>) | undefined
 const reconcileGalleryBatchSelection = model.reconcileGalleryBatchSelection as ((current: ReadonlySet<string>, succeeded: string[], failed: string[]) => Set<string>) | undefined
-const pollGalleryExportJob = model.pollGalleryExportJob as ((initial: ExportStatus, getStatus: (jobID: string, signal?: AbortSignal) => Promise<ExportStatus>, options?: { maxAttempts?: number; wait?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal }) => Promise<ExportStatus>) | undefined
+const pollGalleryExportJob = model.pollGalleryExportJob as ((initial: ExportStatus, getStatus: (jobID: string, signal?: AbortSignal) => Promise<ExportStatus>, options?: { maxAttempts?: number; wait?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal; now?: () => number; marginMs?: number }) => Promise<ExportStatus>) | undefined
 if (!invertLoadedGallerySelection || !reconcileGalleryBatchSelection || !pollGalleryExportJob) {
   throw new Error('gallery batch actions need selection reconciliation and bounded export polling')
 }
 
-type ExportStatus = { job: { id: string; state: string; error_message?: string } }
+type ExportStatus = { job: { id: string; state: string; error_message?: string; processing_timeout_seconds?: number; deadline_at?: string } }
 
 const inverted = invertLoadedGallerySelection(new Set(['loaded-1', 'hidden']), ['loaded-1', 'loaded-2'])
 if (inverted.has('loaded-1') || !inverted.has('loaded-2') || inverted.has('hidden')) {
@@ -59,13 +59,35 @@ if (allFailed.succeeded.length !== 0 || allFailed.failed.length !== 2) {
 
 const polledStates = ['running', 'succeeded']
 const completedExport = await pollGalleryExportJob(
-  { job: { id: 'export-1', state: 'queued' } },
+	{ job: { id: 'export-1', state: 'queued', processing_timeout_seconds: 600 } },
   async (jobID) => ({ job: { id: jobID, state: polledStates.shift() ?? 'failed' } }),
   { maxAttempts: 3, wait: async () => undefined },
 )
 if (completedExport.job.state !== 'succeeded' || polledStates.length !== 0) {
   throw new Error('async export polling must continue through queued/running states until success')
 }
+
+let virtualNow = Date.parse('2026-08-09T00:00:00Z')
+let longPolls = 0
+const longRunningExport = await pollGalleryExportJob(
+	{ job: { id: 'export-long', state: 'queued', processing_timeout_seconds: 600 } },
+	async (jobID) => ({ job: { id: jobID, state: ++longPolls > 70 ? 'succeeded' : 'running', processing_timeout_seconds: 600 } }),
+	{ now: () => virtualNow, marginMs: 60_000, wait: async () => { virtualNow += 8_000 } },
+)
+if (longRunningExport.job.state !== 'succeeded' || virtualNow - Date.parse('2026-08-09T00:00:00Z') <= 120_000) {
+	throw new Error('gallery export polling must cover the backend ten-minute processing window')
+}
+
+virtualNow = Date.parse('2026-08-09T00:00:00Z')
+let deadlineMessage = ''
+try {
+	await pollGalleryExportJob(
+		{ job: { id: 'export-deadline', state: 'running', processing_timeout_seconds: 600, deadline_at: '2026-08-09T00:00:10Z' } },
+		async (jobID) => ({ job: { id: jobID, state: 'running', processing_timeout_seconds: 600, deadline_at: '2026-08-09T00:00:10Z' } }),
+		{ now: () => virtualNow, marginMs: 1_000, wait: async () => { virtualNow += 6_000 } },
+	)
+} catch (error) { deadlineMessage = error instanceof Error ? error.message : String(error) }
+if (!deadlineMessage.includes('timed out')) throw new Error(`server export deadline must bound polling, got ${deadlineMessage}`)
 let timeoutMessage = ''
 try {
   await pollGalleryExportJob(

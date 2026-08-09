@@ -89,9 +89,12 @@ func (s *GalleryExportStore) CreateJob(ctx context.Context, req galleryexportser
 	return mapGalleryExportJob(entity), nil
 }
 
-func (s *GalleryExportStore) AcquireNextJob(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (galleryexportservice.Job, bool, error) {
+func (s *GalleryExportStore) AcquireNextJob(ctx context.Context, owner string, now time.Time, leaseTTL, processingTTL time.Duration) (galleryexportservice.Job, bool, error) {
 	if leaseTTL <= 0 {
 		leaseTTL = time.Minute
+	}
+	if processingTTL <= 0 {
+		processingTTL = galleryexportservice.DefaultAsyncTimeout
 	}
 	eligible := galleryexportjob.Or(
 		galleryexportjob.And(galleryexportjob.StateEQ(galleryexportservice.StateQueued), galleryexportjob.Or(galleryexportjob.NextAttemptAtIsNil(), galleryexportjob.NextAttemptAtLTE(now))),
@@ -108,6 +111,7 @@ func (s *GalleryExportStore) AcquireNextJob(ctx context.Context, owner string, n
 		SetState(galleryexportservice.StateRunning).
 		SetLeaseOwner(strings.TrimSpace(owner)).
 		SetLeaseExpiresAt(now.Add(leaseTTL)).
+		SetExpiresAt(now.Add(processingTTL)).
 		AddAttemptCount(1).
 		ClearNextAttemptAt().
 		Save(ctx)
@@ -212,7 +216,7 @@ func (s *GalleryExportStore) FailJob(ctx context.Context, job galleryexportservi
 	update := s.client.GalleryExportJob.Update().Where(
 		galleryexportjob.IDEQ(id), galleryexportjob.StateEQ(galleryexportservice.StateRunning),
 		galleryexportjob.LeaseOwnerEQ(job.LeaseOwner), galleryexportjob.AttemptCountEQ(job.AttemptCount),
-	).ClearLeaseOwner().ClearLeaseExpiresAt().SetLastErrorCode(limitGalleryExportError(code, 64)).SetLastErrorMessage(limitGalleryExportError(message, 512))
+	).ClearLeaseOwner().ClearLeaseExpiresAt().ClearExpiresAt().SetLastErrorCode(limitGalleryExportError(code, 64)).SetLastErrorMessage(limitGalleryExportError(message, 512))
 	if job.AttemptCount >= 3 {
 		update.SetState(galleryexportservice.StateFailed).ClearNextAttemptAt()
 	} else {

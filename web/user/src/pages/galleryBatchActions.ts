@@ -31,30 +31,44 @@ export function reconcileGalleryBatchSelection(current: ReadonlySet<string>, suc
 }
 
 type GalleryExportStatusLike = {
-  job: { id: string; state: string; error_message?: string }
+	job: { id: string; state: string; error_message?: string; processing_timeout_seconds?: number; deadline_at?: string }
 }
 
 export async function pollGalleryExportJob<T extends GalleryExportStatusLike>(
   initial: T,
   getStatus: (jobID: string, signal?: AbortSignal) => Promise<T>,
-  options: { maxAttempts?: number; wait?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal } = {},
+	options: { maxAttempts?: number; wait?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal; now?: () => number; marginMs?: number } = {},
 ): Promise<T> {
-  const maxAttempts = options.maxAttempts ?? 60
-  const wait = options.wait ?? abortableGalleryExportDelay
-  let status = initial
-  for (let attempt = 0; attempt < maxAttempts && (status.job.state === 'queued' || status.job.state === 'running'); attempt += 1) {
-    options.signal?.throwIfAborted()
-    await wait(options.signal)
-    options.signal?.throwIfAborted()
-    status = await getStatus(status.job.id, options.signal)
-  }
-  if (status.job.state === 'queued' || status.job.state === 'running') {
-    throw new Error('gallery export polling timed out')
-  }
-  if (status.job.state !== 'succeeded') {
+	const now = options.now ?? Date.now
+	const marginMs = options.marginMs ?? 60_000
+	const wait = options.wait ?? abortableGalleryExportDelay
+	let status = initial
+	const fallbackDeadline = now() + Math.max(1, status.job.processing_timeout_seconds ?? 600) * 1000 + marginMs
+	let deadline = galleryExportServerDeadline(status, marginMs) ?? fallbackDeadline
+	let attempt = 0
+	while (status.job.state === 'queued' || status.job.state === 'running') {
+		if (options.maxAttempts !== undefined && attempt >= options.maxAttempts) throw new Error('gallery export polling timed out')
+		if (now() >= deadline) throw new Error('gallery export polling timed out')
+		options.signal?.throwIfAborted()
+		await wait(options.signal)
+		options.signal?.throwIfAborted()
+		if (now() >= deadline) throw new Error('gallery export polling timed out')
+		status = await getStatus(status.job.id, options.signal)
+		deadline = galleryExportServerDeadline(status, marginMs) ?? deadline
+		attempt += 1
+	}
+	if (status.job.state !== 'succeeded') {
     throw new Error(status.job.error_message || 'gallery export failed')
   }
   return status
+}
+
+function galleryExportServerDeadline(status: GalleryExportStatusLike, marginMs: number) {
+	if (status.job.deadline_at) {
+		const serverDeadline = Date.parse(status.job.deadline_at)
+		if (Number.isFinite(serverDeadline)) return serverDeadline + marginMs
+	}
+	return undefined
 }
 
 function abortableGalleryExportDelay(signal?: AbortSignal) {

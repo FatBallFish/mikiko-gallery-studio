@@ -59,14 +59,14 @@ func TestGalleryExportStoreCreatesAndClaimsDurableJobWithLease(t *testing.T) {
 	}
 
 	now := time.Now().UTC()
-	claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-1", now, time.Minute)
+	claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-1", now, time.Minute, 10*time.Minute)
 	if err != nil || !ok {
 		t.Fatalf("acquire job: ok=%v err=%v", ok, err)
 	}
 	if claimed.ID != created.ID || claimed.State != galleryexportservice.StateRunning || claimed.AttemptCount != 1 || claimed.LeaseOwner != "worker-1" {
 		t.Fatalf("claimed job = %#v", claimed)
 	}
-	if _, ok, err := store.AcquireNextJob(t.Context(), "worker-2", now, time.Minute); err != nil || ok {
+	if _, ok, err := store.AcquireNextJob(t.Context(), "worker-2", now, time.Minute, 10*time.Minute); err != nil || ok {
 		t.Fatalf("leased job was claimed twice: ok=%v err=%v", ok, err)
 	}
 	if renewed, err := store.RenewJobLease(t.Context(), claimed.ID, "worker-2", claimed.AttemptCount, now.Add(10*time.Second), 2*time.Minute); err != nil || renewed {
@@ -78,6 +78,9 @@ func TestGalleryExportStoreCreatesAndClaimsDurableJobWithLease(t *testing.T) {
 	persisted, err := client.GalleryExportJob.Query().Where(galleryexportjob.IDEQ(uuid.MustParse(claimed.ID))).Only(t.Context())
 	if err != nil || persisted.LeaseExpiresAt == nil || !persisted.LeaseExpiresAt.Equal(now.Add(130*time.Second)) {
 		t.Fatalf("renewed lease=%v err=%v", persisted.LeaseExpiresAt, err)
+	}
+	if persisted.ExpiresAt == nil || !persisted.ExpiresAt.Equal(now.Add(10*time.Minute)) {
+		t.Fatalf("processing deadline moved during renewal: %v", persisted.ExpiresAt)
 	}
 }
 
@@ -91,7 +94,7 @@ func TestGalleryExportCompletionAndExpiryDriveTransactionalArchiveCleanup(t *tes
 		t.Fatalf("create job: %v", err)
 	}
 	now := time.Now().UTC()
-	claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-1", now, time.Minute)
+	claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-1", now, time.Minute, 10*time.Minute)
 	if err != nil || !ok {
 		t.Fatalf("claim job: ok=%v err=%v", ok, err)
 	}

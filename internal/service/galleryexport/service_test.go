@@ -181,13 +181,36 @@ func (b *exportBackend) Put(_ context.Context, key, _ string, content []byte) er
 	b.objects[key] = append([]byte(nil), content...)
 	return nil
 }
+func (b *exportBackend) PutReader(ctx context.Context, key, contentType string, reader io.Reader, size int64) error {
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+	if int64(len(content)) != size {
+		return storage.ErrSizeMismatch
+	}
+	return b.Put(ctx, key, contentType, content)
+}
 func (b *exportBackend) Get(_ context.Context, key string) ([]byte, error) {
 	if err := b.errors[key]; err != nil {
 		return nil, err
 	}
 	return append([]byte(nil), b.objects[key]...), nil
 }
-func (*exportBackend) Delete(context.Context, string) error { return nil }
+func (b *exportBackend) OpenReader(ctx context.Context, key string, maxBytes int64) (io.ReadCloser, int64, error) {
+	content, err := b.Get(ctx, key)
+	if err != nil {
+		return nil, 0, err
+	}
+	if int64(len(content)) > maxBytes {
+		return nil, 0, storage.ErrObjectTooLarge
+	}
+	return io.NopCloser(bytes.NewReader(content)), int64(len(content)), nil
+}
+func (b *exportBackend) Delete(_ context.Context, key string) error {
+	delete(b.objects, key)
+	return nil
+}
 
 func joinIDs(ids []string) string {
 	var result bytes.Buffer

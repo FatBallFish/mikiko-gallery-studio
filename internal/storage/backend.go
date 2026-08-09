@@ -30,6 +30,7 @@ import (
 var (
 	ErrNotFound                = errors.New("storage object not found")
 	ErrObjectTooLarge          = errors.New("storage object exceeds maximum size")
+	ErrSizeMismatch            = errors.New("storage stream size does not match declared length")
 	errInvalidBoundedReadLimit = errors.New("storage bounded read limit is invalid")
 )
 
@@ -61,6 +62,13 @@ type ObjectLister interface {
 // asset reads.
 type BoundedGetter interface {
 	GetBounded(ctx context.Context, objectKey string, maxBytes int64) ([]byte, error)
+}
+
+// StreamingBackend transfers bounded large objects without materializing them
+// as a single byte slice. Callers own the returned reader and must close it.
+type StreamingBackend interface {
+	PutReader(ctx context.Context, objectKey, contentType string, reader io.Reader, size int64) error
+	OpenReader(ctx context.Context, objectKey string, maxBytes int64) (io.ReadCloser, int64, error)
 }
 
 // ObjectCopier is an optional backend capability for copying objects without
@@ -181,6 +189,8 @@ func validateTemporaryMediaURL(value string) (string, error) {
 var (
 	_ BoundedGetter      = (*LocalBackend)(nil)
 	_ BoundedGetter      = (*S3Backend)(nil)
+	_ StreamingBackend   = (*LocalBackend)(nil)
+	_ StreamingBackend   = (*S3Backend)(nil)
 	_ ObjectCopier       = (*LocalBackend)(nil)
 	_ ObjectCopier       = (*S3Backend)(nil)
 	_ TemporaryURLSigner = (*S3Backend)(nil)
@@ -223,6 +233,66 @@ func (b *LocalBackend) Put(_ context.Context, objectKey string, _ string, conten
 	return os.WriteFile(fullPath, content, 0o644)
 }
 
+func (b *LocalBackend) PutReader(ctx context.Context, objectKey, _ string, reader io.Reader, size int64) error {
+	if size < 0 || reader == nil {
+		return ErrSizeMismatch
+	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	fullPath, ok := b.resolvePath(objectKey)
+	if !ok {
+		return fmt.Errorf("invalid local storage key %q", objectKey)
+	}
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(fullPath), ".put-*")
+	if err != nil {
+		return fmt.Errorf("create local storage stream target: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	committed := false
+	defer func() {
+		_ = temporary.Close()
+		if !committed {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	source := contextReader{ctx: ctx, reader: reader}
+	written, copyErr := io.CopyN(temporary, source, size)
+	if copyErr != nil || written != size {
+		if ctxErr := contextError(ctx); ctxErr != nil {
+			return ctxErr
+		}
+		return ErrSizeMismatch
+	}
+	var extra [1]byte
+	if count, readErr := source.Read(extra[:]); count != 0 || (readErr != nil && !errors.Is(readErr, io.EOF)) {
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return readErr
+		}
+		return ErrSizeMismatch
+	}
+	if err := temporary.Sync(); err != nil {
+		return fmt.Errorf("sync local storage stream target: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close local storage stream target: %w", err)
+	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	if err := os.Chmod(temporaryPath, 0o644); err != nil {
+		return fmt.Errorf("set local storage stream permissions: %w", err)
+	}
+	if err := os.Rename(temporaryPath, fullPath); err != nil {
+		return fmt.Errorf("commit local storage stream: %w", err)
+	}
+	committed = true
+	return nil
+}
+
 func (b *LocalBackend) Get(_ context.Context, objectKey string) ([]byte, error) {
 	fullPath, ok := b.resolvePath(objectKey)
 	if !ok {
@@ -257,6 +327,36 @@ func (b *LocalBackend) GetBounded(ctx context.Context, objectKey string, maxByte
 		return nil, err
 	}
 	return readBoundedAndClose(ctx, file, maxBytes)
+}
+
+func (b *LocalBackend) OpenReader(ctx context.Context, objectKey string, maxBytes int64) (io.ReadCloser, int64, error) {
+	if err := validateBoundedReadLimit(maxBytes); err != nil {
+		return nil, 0, err
+	}
+	if err := contextError(ctx); err != nil {
+		return nil, 0, err
+	}
+	fullPath, ok := b.resolvePath(objectKey)
+	if !ok {
+		return nil, 0, ErrNotFound
+	}
+	file, err := os.Open(fullPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, 0, ErrNotFound
+		}
+		return nil, 0, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, 0, err
+	}
+	if info.Size() > maxBytes {
+		_ = file.Close()
+		return nil, 0, ErrObjectTooLarge
+	}
+	return newBoundedStreamReader(ctx, file, maxBytes), info.Size(), nil
 }
 
 func (b *LocalBackend) Copy(ctx context.Context, sourceKey, destinationKey string) error {
@@ -708,6 +808,47 @@ func (b *S3Backend) Put(ctx context.Context, objectKey string, contentType strin
 	return fmt.Errorf("put s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
 }
 
+func (b *S3Backend) PutReader(ctx context.Context, objectKey, contentType string, reader io.Reader, size int64) error {
+	if size < 0 || reader == nil {
+		return ErrSizeMismatch
+	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	sized := &exactSizeReader{ctx: ctx, reader: reader, remaining: size}
+	req, err := b.newSignedReaderRequest(ctx, http.MethodPut, objectKey, contentType, sized, size, "UNSIGNED-PAYLOAD")
+	if err != nil {
+		return err
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		if sized.remaining != 0 {
+			return fmt.Errorf("%w: %v", ErrSizeMismatch, err)
+		}
+		return err
+	}
+	defer resp.Body.Close()
+	if sized.remaining != 0 {
+		_ = resp.Body.Close()
+		_ = b.Delete(context.WithoutCancel(ctx), objectKey)
+		return ErrSizeMismatch
+	}
+	var extra [1]byte
+	if count, readErr := (contextReader{ctx: ctx, reader: reader}).Read(extra[:]); count != 0 || (readErr != nil && !errors.Is(readErr, io.EOF)) {
+		_ = resp.Body.Close()
+		_ = b.Delete(context.WithoutCancel(ctx), objectKey)
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return readErr
+		}
+		return ErrSizeMismatch
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return contextError(ctx)
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	return fmt.Errorf("put s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
+}
+
 func (b *S3Backend) Get(ctx context.Context, objectKey string) ([]byte, error) {
 	req, err := b.newSignedRequest(ctx, http.MethodGet, objectKey, "", nil)
 	if err != nil {
@@ -758,6 +899,38 @@ func (b *S3Backend) GetBounded(ctx context.Context, objectKey string, maxBytes i
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 		return nil, fmt.Errorf("get s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+}
+
+func (b *S3Backend) OpenReader(ctx context.Context, objectKey string, maxBytes int64) (io.ReadCloser, int64, error) {
+	if err := validateBoundedReadLimit(maxBytes); err != nil {
+		return nil, 0, err
+	}
+	if err := contextError(ctx); err != nil {
+		return nil, 0, err
+	}
+	req, err := b.newSignedRequest(ctx, http.MethodGet, objectKey, "", nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if resp.ContentLength > maxBytes {
+			_ = resp.Body.Close()
+			return nil, 0, ErrObjectTooLarge
+		}
+		return newBoundedStreamReader(ctx, resp.Body, maxBytes), resp.ContentLength, nil
+	case http.StatusNotFound:
+		_ = resp.Body.Close()
+		return nil, 0, ErrNotFound
+	default:
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return nil, 0, fmt.Errorf("get s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 }
 
@@ -862,6 +1035,69 @@ func readBoundedAndClose(ctx context.Context, reader io.ReadCloser, maxBytes int
 type contextReader struct {
 	ctx    context.Context
 	reader io.Reader
+}
+
+type exactSizeReader struct {
+	ctx       context.Context
+	reader    io.Reader
+	remaining int64
+}
+
+func (reader *exactSizeReader) Read(buffer []byte) (int, error) {
+	if err := contextError(reader.ctx); err != nil {
+		return 0, err
+	}
+	if reader.remaining == 0 {
+		return 0, io.EOF
+	}
+	if int64(len(buffer)) > reader.remaining {
+		buffer = buffer[:reader.remaining]
+	}
+	count, err := reader.reader.Read(buffer)
+	reader.remaining -= int64(count)
+	if errors.Is(err, io.EOF) && reader.remaining != 0 {
+		return count, ErrSizeMismatch
+	}
+	return count, err
+}
+
+type boundedStreamReader struct {
+	ctx       context.Context
+	reader    io.ReadCloser
+	remaining int64
+	closed    bool
+}
+
+func newBoundedStreamReader(ctx context.Context, reader io.ReadCloser, maxBytes int64) io.ReadCloser {
+	return &boundedStreamReader{ctx: ctx, reader: reader, remaining: maxBytes}
+}
+
+func (reader *boundedStreamReader) Read(buffer []byte) (int, error) {
+	if err := contextError(reader.ctx); err != nil {
+		return 0, err
+	}
+	if reader.remaining > 0 {
+		if int64(len(buffer)) > reader.remaining {
+			buffer = buffer[:reader.remaining]
+		}
+		count, err := reader.reader.Read(buffer)
+		reader.remaining -= int64(count)
+		return count, err
+	}
+	var probe [1]byte
+	count, err := reader.reader.Read(probe[:])
+	if count > 0 {
+		return 0, ErrObjectTooLarge
+	}
+	return 0, err
+}
+
+func (reader *boundedStreamReader) Close() error {
+	if reader.closed {
+		return nil
+	}
+	reader.closed = true
+	return reader.reader.Close()
 }
 
 func (reader contextReader) Read(buffer []byte) (int, error) {
@@ -1024,6 +1260,10 @@ func (b *S3Backend) newSignedRequest(ctx context.Context, method string, objectK
 	return b.newSignedRequestWithHeaders(ctx, method, objectKey, contentType, content, nil)
 }
 
+func (b *S3Backend) newSignedReaderRequest(ctx context.Context, method, objectKey, contentType string, reader io.Reader, size int64, payloadHash string) (*http.Request, error) {
+	return b.newSignedRequestWithReaderAndHeaders(ctx, method, objectKey, contentType, reader, size, payloadHash, nil)
+}
+
 func (b *S3Backend) newSignedRequestWithCopySource(ctx context.Context, destinationKey, copySource string) (*http.Request, error) {
 	return b.newSignedRequestWithHeaders(ctx, http.MethodPut, destinationKey, "", nil, map[string]string{
 		"X-Amz-Copy-Source": copySource,
@@ -1031,6 +1271,10 @@ func (b *S3Backend) newSignedRequestWithCopySource(ctx context.Context, destinat
 }
 
 func (b *S3Backend) newSignedRequestWithHeaders(ctx context.Context, method string, objectKey string, contentType string, content []byte, extraHeaders map[string]string) (*http.Request, error) {
+	return b.newSignedRequestWithReaderAndHeaders(ctx, method, objectKey, contentType, bytes.NewReader(content), int64(len(content)), sha256Hex(content), extraHeaders)
+}
+
+func (b *S3Backend) newSignedRequestWithReaderAndHeaders(ctx context.Context, method string, objectKey string, contentType string, reader io.Reader, size int64, payloadHash string, extraHeaders map[string]string) (*http.Request, error) {
 	key := b.normalizeKey(objectKey)
 	if key == "" {
 		return nil, fmt.Errorf("invalid s3 object key %q", objectKey)
@@ -1039,15 +1283,15 @@ func (b *S3Backend) newSignedRequestWithHeaders(ctx context.Context, method stri
 	if err != nil {
 		return nil, err
 	}
-	payloadHash := sha256Hex(content)
 	now := b.nowUTC()
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
-	req, err := http.NewRequestWithContext(ctx, method, requestURL, bytes.NewReader(content))
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, reader)
 	if err != nil {
 		return nil, err
 	}
 	req.Host = host
+	req.ContentLength = size
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}

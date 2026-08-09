@@ -168,6 +168,9 @@ func TestGalleryAsyncExportStatusAndDownloadAreOwnerScopedAndExpire(t *testing.T
 	if err := json.NewDecoder(create.Body).Decode(&created); err != nil || created.Data.Job.ID == "" || created.Data.Job.State != galleryexportservice.StateQueued {
 		t.Fatalf("async export create payload=%#v err=%v", created, err)
 	}
+	if created.Data.Job.ProcessingTimeoutSeconds != 600 || created.Data.Job.DeadlineAt != nil {
+		t.Fatalf("queued export timing metadata=%#v", created.Data.Job)
+	}
 	statusPath := "/api/agent/gallery/v1/export-jobs/" + created.Data.Job.ID
 	downloadPath := statusPath + "/download"
 	if status := galleryExportGetRequest(handler, owner.AccessToken, statusPath); status.Code != http.StatusOK || !bytes.Contains(status.Body.Bytes(), []byte(`"state":"queued"`)) {
@@ -183,9 +186,12 @@ func TestGalleryAsyncExportStatusAndDownloadAreOwnerScopedAndExpire(t *testing.T
 	}
 
 	now := time.Now().UTC()
-	claimed, ok, err := exportStore.AcquireNextJob(t.Context(), "api-test-worker", now, time.Minute)
+	claimed, ok, err := exportStore.AcquireNextJob(t.Context(), "api-test-worker", now, time.Minute, galleryexportservice.DefaultAsyncTimeout)
 	if err != nil || !ok {
 		t.Fatalf("claim async export ok=%v err=%v", ok, err)
+	}
+	if running := galleryExportGetRequest(handler, owner.AccessToken, statusPath); running.Code != http.StatusOK || !bytes.Contains(running.Body.Bytes(), []byte(`"processing_timeout_seconds":600`)) || !bytes.Contains(running.Body.Bytes(), []byte(`"deadline_at"`)) {
+		t.Fatalf("running timing metadata status=%d body=%s", running.Code, running.Body.String())
 	}
 	objectKey := "gallery-exports/1/" + claimed.ID + ".zip"
 	archive := []byte("zip-content")

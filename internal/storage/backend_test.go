@@ -28,6 +28,148 @@ func TestLocalBackendRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestLocalBackendStreamsSizedWritesAndBoundedReads(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	streaming, ok := any(backend).(StreamingBackend)
+	if !ok {
+		t.Fatal("local backend must implement StreamingBackend")
+	}
+	content := strings.Repeat("streaming-archive", 64)
+	if err := streaming.PutReader(t.Context(), "gallery-exports/job/attempt.zip", "application/zip", strings.NewReader(content), int64(len(content))); err != nil {
+		t.Fatal(err)
+	}
+	reader, size, err := streaming.OpenReader(t.Context(), "gallery-exports/job/attempt.zip", int64(len(content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := io.ReadAll(reader)
+	if closeErr := reader.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil || size != int64(len(content)) || string(loaded) != content {
+		t.Fatalf("streamed local read size=%d len=%d err=%v", size, len(loaded), err)
+	}
+	if reader, _, err := streaming.OpenReader(t.Context(), "gallery-exports/job/attempt.zip", int64(len(content)-1)); !errors.Is(err, ErrObjectTooLarge) || reader != nil {
+		t.Fatalf("oversize open reader=%v err=%v", reader, err)
+	}
+}
+
+func TestLocalBackendPutReaderRejectsShortExtraAndCanceledStreams(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	streaming := any(backend).(StreamingBackend)
+	for _, test := range []struct {
+		name   string
+		reader io.Reader
+		size   int64
+		want   error
+	}{
+		{name: "short", reader: strings.NewReader("abc"), size: 4, want: ErrSizeMismatch},
+		{name: "extra", reader: strings.NewReader("abcde"), size: 4, want: ErrSizeMismatch},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := streaming.PutReader(t.Context(), "gallery-exports/invalid.zip", "application/zip", test.reader, test.size); !errors.Is(err, test.want) {
+				t.Fatalf("PutReader error=%v, want %v", err, test.want)
+			}
+			if _, err := backend.Get(t.Context(), "gallery-exports/invalid.zip"); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("invalid stream was committed: %v", err)
+			}
+		})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := streaming.PutReader(ctx, "gallery-exports/canceled.zip", "application/zip", strings.NewReader("abcd"), 4); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled PutReader error=%v", err)
+	}
+}
+
+func TestS3BackendStreamingRequestUsesKnownLengthAndClosesBoundedResponse(t *testing.T) {
+	responseBody := &trackingReadCloser{Reader: strings.NewReader("archive")}
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.Method {
+		case http.MethodPut:
+			if req.ContentLength != 7 || req.Header.Get("X-Amz-Content-Sha256") != "UNSIGNED-PAYLOAD" {
+				t.Fatalf("stream PUT length=%d hash=%q", req.ContentLength, req.Header.Get("X-Amz-Content-Sha256"))
+			}
+			body, err := io.ReadAll(req.Body)
+			if err != nil || string(body) != "archive" {
+				t.Fatalf("stream PUT body=%q err=%v", body, err)
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+		case http.MethodGet:
+			return &http.Response{StatusCode: http.StatusOK, Body: responseBody, ContentLength: 7, Header: make(http.Header)}, nil
+		default:
+			return nil, fmt.Errorf("unexpected method %s", req.Method)
+		}
+	})
+	backend, err := NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{Endpoint: "https://s3.example.test", Region: "us-east-1", Bucket: "bucket", AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.client = &http.Client{Transport: transport}
+	streaming := any(backend).(StreamingBackend)
+	if err := streaming.PutReader(t.Context(), "gallery-exports/job/attempt.zip", "application/zip", strings.NewReader("archive"), 7); err != nil {
+		t.Fatal(err)
+	}
+	reader, size, err := streaming.OpenReader(t.Context(), "gallery-exports/job/attempt.zip", 7)
+	if err != nil || size != 7 {
+		t.Fatalf("OpenReader size=%d err=%v", size, err)
+	}
+	if _, err := io.ReadAll(reader); err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !responseBody.closed {
+		t.Fatal("S3 streaming response was not closed")
+	}
+}
+
+func TestS3OpenReaderRejectsKnownOversizeAndClosesResponse(t *testing.T) {
+	body := &trackingReadCloser{Reader: strings.NewReader("oversize")}
+	backend, err := NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{Endpoint: "https://s3.example.test", Region: "us-east-1", Bucket: "bucket", AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: body, ContentLength: 8, Header: make(http.Header)}, nil
+	})}
+	reader, _, err := backend.OpenReader(t.Context(), "gallery-exports/job/attempt.zip", 7)
+	if !errors.Is(err, ErrObjectTooLarge) || reader != nil || !body.closed {
+		t.Fatalf("oversize reader=%v closed=%v err=%v", reader, body.closed, err)
+	}
+}
+
+func TestStreamingOpenReaderHonorsCancellationDuringRead(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	if err := backend.Put(t.Context(), "gallery-exports/cancel.zip", "application/zip", []byte("archive")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	reader, _, err := backend.OpenReader(ctx, "gallery-exports/cancel.zip", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if _, err := io.ReadAll(reader); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled read error=%v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type trackingReadCloser struct {
+	io.Reader
+	closed bool
+}
+
+func (r *trackingReadCloser) Close() error { r.closed = true; return nil }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return fn(req) }
+
 func TestTemporaryMediaURLProjectionSignsPreviewAndDownloadSeparately(t *testing.T) {
 	backend := &recordingTemporaryURLBackend{}
 	urls, supported, err := ProjectTemporaryMediaURLs(t.Context(), backend, "generated/result.png", "image/png", "result.png")

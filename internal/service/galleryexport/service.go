@@ -62,42 +62,53 @@ type Manifest struct {
 }
 
 type Archive struct {
-	Filename string
-	Content  []byte
-	Manifest Manifest
-	Path     string
-	Size     int64
+	Filename         string
+	Manifest         Manifest
+	Path             string
+	Reader           io.ReadCloser
+	Size             int64
+	ResponseDeadline time.Time
 }
 
 func (a *Archive) Close() error {
-	if a == nil || a.Path == "" {
+	if a == nil {
 		return nil
+	}
+	var result error
+	if a.Reader != nil {
+		result = a.Reader.Close()
+		a.Reader = nil
+	}
+	if a.Path == "" {
+		return result
 	}
 	path := a.Path
 	a.Path = ""
-	return os.Remove(path)
+	return errors.Join(result, os.Remove(path))
 }
 
 type Job struct {
-	ID               string     `json:"id"`
-	UserID           int64      `json:"-"`
-	ProjectID        string     `json:"project_id"`
-	ImageIDs         []string   `json:"image_ids"`
-	State            string     `json:"state"`
-	EstimatedBytes   int64      `json:"estimated_bytes"`
-	ArchiveSizeBytes int64      `json:"archive_size_bytes,omitempty"`
-	StorageConfigID  string     `json:"-"`
-	StorageDriver    string     `json:"-"`
-	Bucket           string     `json:"-"`
-	ObjectKey        string     `json:"-"`
-	AttemptCount     int        `json:"attempt_count,omitempty"`
-	LeaseOwner       string     `json:"-"`
-	LeaseExpiresAt   *time.Time `json:"-"`
-	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
-	ErrorCode        string     `json:"error_code,omitempty"`
-	ErrorMessage     string     `json:"error_message,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID                       string     `json:"id"`
+	UserID                   int64      `json:"-"`
+	ProjectID                string     `json:"project_id"`
+	ImageIDs                 []string   `json:"image_ids"`
+	State                    string     `json:"state"`
+	EstimatedBytes           int64      `json:"estimated_bytes"`
+	ArchiveSizeBytes         int64      `json:"archive_size_bytes,omitempty"`
+	StorageConfigID          string     `json:"-"`
+	StorageDriver            string     `json:"-"`
+	Bucket                   string     `json:"-"`
+	ObjectKey                string     `json:"-"`
+	AttemptCount             int        `json:"attempt_count,omitempty"`
+	LeaseOwner               string     `json:"-"`
+	LeaseExpiresAt           *time.Time `json:"-"`
+	ExpiresAt                *time.Time `json:"expires_at,omitempty"`
+	ErrorCode                string     `json:"error_code,omitempty"`
+	ErrorMessage             string     `json:"error_message,omitempty"`
+	CreatedAt                time.Time  `json:"created_at"`
+	UpdatedAt                time.Time  `json:"updated_at"`
+	DeadlineAt               *time.Time `json:"deadline_at,omitempty"`
+	ProcessingTimeoutSeconds int64      `json:"processing_timeout_seconds"`
 }
 
 func (s *Service) GetJob(ctx context.Context, userID int64, jobID string) (Job, error) {
@@ -107,7 +118,11 @@ func (s *Service) GetJob(ctx context.Context, userID int64, jobID string) (Job, 
 	if !ok {
 		return Job{}, errors.New("gallery export status is unavailable")
 	}
-	return store.GetJob(ctx, userID, strings.TrimSpace(jobID))
+	job, err := store.GetJob(ctx, userID, strings.TrimSpace(jobID))
+	if err != nil {
+		return Job{}, err
+	}
+	return s.decorateJob(job), nil
 }
 
 func (s *Service) DownloadJob(ctx context.Context, userID int64, jobID string) (Archive, error) {
@@ -122,11 +137,18 @@ func (s *Service) DownloadJob(ctx context.Context, userID int64, jobID string) (
 	if err != nil {
 		return Archive{}, fmt.Errorf("resolve gallery export storage: %w", err)
 	}
-	content, err := getBounded(ctx, backend.Backend, job.ObjectKey, s.opts.MaxArchiveBytes)
-	if err != nil {
-		return Archive{}, fmt.Errorf("read gallery export archive: %w", err)
+	streaming, ok := backend.Backend.(storage.StreamingBackend)
+	if !ok {
+		return Archive{}, errors.New("gallery export storage does not support streaming downloads")
 	}
-	return Archive{Filename: "gallery-assets.zip", Content: content}, nil
+	reader, size, err := streaming.OpenReader(ctx, job.ObjectKey, s.opts.MaxArchiveBytes)
+	if err != nil {
+		return Archive{}, fmt.Errorf("open gallery export archive: %w", err)
+	}
+	if size < 0 {
+		size = job.ArchiveSizeBytes
+	}
+	return Archive{Filename: "gallery-assets.zip", Reader: reader, Size: size}, nil
 }
 
 type CreateJobRequest struct {
@@ -195,7 +217,8 @@ func NewService(store Store, router storage.Router, opts Options) *Service {
 }
 
 func (s *Service) CreateDownload(ctx context.Context, req CreateDownloadRequest) (CreateDownloadResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.opts.DirectTimeout)
+	deadline := time.Now().Add(s.opts.DirectTimeout)
+	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	ids, err := normalizeIDs(req.ImageIDs, s.opts.MaxBatchSize)
 	if err != nil {
@@ -218,13 +241,25 @@ func (s *Service) CreateDownload(ctx context.Context, req CreateDownloadRequest)
 		if err != nil {
 			return CreateDownloadResult{}, err
 		}
+		job = s.decorateJob(job)
 		return CreateDownloadResult{Job: &job}, nil
 	}
 	archive, err := s.buildArchive(ctx, assets)
 	if err != nil {
 		return CreateDownloadResult{}, err
 	}
+	archive.ResponseDeadline = deadline
 	return CreateDownloadResult{Archive: &archive}, nil
+}
+
+func (s *Service) decorateJob(job Job) Job {
+	job.ProcessingTimeoutSeconds = int64(DefaultAsyncTimeout / time.Second)
+	if job.State == StateRunning && job.ExpiresAt != nil {
+		deadline := job.ExpiresAt.UTC()
+		job.DeadlineAt = &deadline
+		job.ExpiresAt = nil
+	}
+	return job
 }
 
 func normalizeIDs(values []string, max int) ([]string, error) {

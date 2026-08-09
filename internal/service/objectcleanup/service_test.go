@@ -331,6 +331,32 @@ func TestReconcilePersistsObjectCursorAcrossProcessorRestart(t *testing.T) {
 	}
 }
 
+func TestReconcileAfterRestartKeepsWinningExportAndQueuesStaleAttempt(t *testing.T) {
+	now := time.Date(2026, 8, 9, 7, 0, 0, 0, time.UTC)
+	winner := "gallery-exports/7/job/attempt-2-22222222-2222-4222-8222-222222222222.zip"
+	stale := "gallery-exports/7/job/attempt-1-11111111-1111-4111-8111-111111111111.zip"
+	backend := &listingCleanupBackend{pages: map[string]map[string]storage.ObjectPage{
+		"generated-images/": {"": {}}, "reference-assets/": {"": {}},
+		"gallery-exports/": {"": {Objects: []storage.ObjectInfo{{ObjectKey: stale, ModifiedAt: now.Add(-2 * time.Hour)}, {ObjectKey: winner, ModifiedAt: now.Add(-2 * time.Hour)}}}},
+	}}
+	ref := storage.BackendRef{ConfigID: "dddddddd-dddd-dddd-dddd-dddddddddddd", Driver: "local", Namespace: "restart-attempts", Backend: backend}
+	store := NewMemoryStore()
+	store.SetNow(func() time.Time { return now })
+	store.AddLiveReference(Identity{StorageConfigID: ref.ConfigID, StorageDriver: ref.Driver, ObjectKey: winner}, "gallery-export:job")
+	options := ProcessorOptions{Now: func() time.Time { return now }, OrphanGracePeriod: time.Hour, ObjectListPageSize: 10}
+	router := &multiCleanupRouter{defaultRef: ref, refs: []storage.BackendRef{ref}}
+	if _, err := NewProcessor(store, router, options).Reconcile(t.Context(), 3); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewProcessor(store, router, options).Reconcile(t.Context(), 3); err != nil {
+		t.Fatal(err)
+	}
+	jobs := store.Jobs()
+	if len(jobs) != 1 || jobs[0].Identity.ObjectKey != stale {
+		t.Fatalf("restart attempt reconciliation jobs=%#v", jobs)
+	}
+}
+
 type cleanupBackend struct {
 	mu          sync.Mutex
 	deleteCalls int
