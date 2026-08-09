@@ -24,6 +24,11 @@ func TestStartRuntimeHeartbeatSkipsSingleAndStartsClusterNode(t *testing.T) {
 	if err != nil || handle != nil {
 		t.Fatalf("single heartbeat handle=%#v err=%v", handle, err)
 	}
+	cfg.Runtime.ClusterNodeID = "single-process-id"
+	handle, err = startRuntimeHeartbeat(t.Context(), cfg, store)
+	if err != nil || handle != nil {
+		t.Fatalf("single heartbeat with process ID handle=%#v err=%v", handle, err)
+	}
 
 	cfg.Runtime.DeploymentRole = config.DeploymentRoleAPI
 	cfg.Runtime.ClusterNodeID = "api-a"

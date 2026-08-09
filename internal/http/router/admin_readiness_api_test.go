@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -281,7 +282,9 @@ func TestAdminReadinessChecksDocsContractInsteadOfOnlyRegisteredRoutes(t *testin
 	}
 	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, nil, nil, nil, nil, adminAuth, nil, nil, nil, nil, nil)
+	var docsChecks atomic.Int64
 	api.SetDocsReadinessChecker(func(context.Context) handlers.DocsReadinessResult {
+		docsChecks.Add(1)
 		return handlers.DocsReadinessResult{Status: "fail", Detail: "OpenAPI JSON 解析失败"}
 	})
 	handler := NewWithAPI(api)
@@ -298,9 +301,11 @@ func TestAdminReadinessChecksDocsContractInsteadOfOnlyRegisteredRoutes(t *testin
 	var resp struct {
 		Data struct {
 			Checks []struct {
-				Key    string `json:"key"`
-				Status string `json:"status"`
-				Detail string `json:"detail"`
+				Key          string    `json:"key"`
+				Status       string    `json:"status"`
+				Availability string    `json:"availability"`
+				Detail       string    `json:"detail"`
+				CheckedAt    time.Time `json:"checked_at"`
 			} `json:"checks"`
 		} `json:"data"`
 	}
@@ -311,8 +316,15 @@ func TestAdminReadinessChecksDocsContractInsteadOfOnlyRegisteredRoutes(t *testin
 		if check.Key != "docs" {
 			continue
 		}
-		if check.Status != "fail" || !strings.Contains(check.Detail, "OpenAPI JSON") {
+		if check.Status != "fail" || check.Availability != "unavailable" || check.CheckedAt.IsZero() || !strings.Contains(check.Detail, "OpenAPI JSON") {
 			t.Fatalf("expected docs readiness to surface checker failure, got %#v", check)
+		}
+		cachedReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/readiness", nil)
+		cachedReq.Header.Set("Authorization", "Bearer "+token)
+		cachedRec := httptest.NewRecorder()
+		handler.ServeHTTP(cachedRec, cachedReq)
+		if cachedRec.Code != http.StatusOK || docsChecks.Load() != 1 {
+			t.Fatalf("readiness cache status=%d docs_checks=%d body=%s", cachedRec.Code, docsChecks.Load(), cachedRec.Body.String())
 		}
 		return
 	}

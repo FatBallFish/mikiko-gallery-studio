@@ -87,3 +87,26 @@ type ListPage struct {
 	PageSize int      `json:"page_size"`
 	Total    int      `json:"total"`
 }
+
+type DistributionRequest struct {
+	From time.Time
+	To   time.Time
+}
+
+type DistributionGroup struct {
+	Key        string  `json:"key"`
+	Calls      int     `json:"calls"`
+	Percentage float64 `json:"percentage"`
+}
+
+type Distribution struct {
+	Window                DistributionWindow  `json:"window"`
+	TotalCalls            int                 `json:"total_calls"`
+	Groups                []DistributionGroup `json:"groups"`
+	PreflightFailureCount int                 `json:"preflight_failure_count"`
+}
+
+type DistributionWindow struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}

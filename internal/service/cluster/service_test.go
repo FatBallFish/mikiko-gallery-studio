@@ -213,6 +213,43 @@ func TestListNodesComputesOfflineAndVersionConfigDrift(t *testing.T) {
 	if item.EffectiveHealth != domaincluster.NodeHealthOffline || !item.ApplicationVersionDrift || !item.RuntimeSchemaDrift || !item.ConfigRevisionDrift {
 		t.Fatalf("node status = %#v", item)
 	}
+	if item.Source != domaincluster.NodeSourceHeartbeat {
+		t.Fatalf("distributed node source = %q", item.Source)
+	}
+}
+
+func TestListNodesSingleTopologyReturnsOneStableLogicalNode(t *testing.T) {
+	now := time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC)
+	store := NewMemoryStore(domaincluster.Installation{
+		InstallationID: clusterTestInstallationID, Initialized: true,
+		ApplicationVersion: "v2", RuntimeSchemaVersion: 2, ConfigRevision: 9,
+	})
+	// Stale process rows from an older runtime must not leak into logical-single topology.
+	store.nodes["api-process-123"] = domaincluster.Node{
+		NodeID: "api-process-123", InstallationID: clusterTestInstallationID, Role: domaincluster.NodeRoleAPI,
+		ApplicationVersion: "v1", RuntimeSchemaVersion: 1, ConfigRevision: 8, Health: domaincluster.NodeHealthOffline,
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+	}
+	service := NewService(ServiceOptions{
+		Store: store, InstallationID: clusterTestInstallationID, DeploymentRole: domaincluster.NodeRoleSingle,
+		Now: func() time.Time { return now },
+	})
+
+	first, err := service.ListNodes(t.Context(), domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
+	if err != nil || first.Total != 1 || len(first.Items) != 1 {
+		t.Fatalf("first logical-single page = %#v, %v", first, err)
+	}
+	second, err := service.ListNodes(t.Context(), domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
+	if err != nil || second.Total != 1 || len(second.Items) != 1 {
+		t.Fatalf("second logical-single page = %#v, %v", second, err)
+	}
+	node := first.Items[0]
+	if node.NodeID == "" || node.NodeID != second.Items[0].NodeID || node.Role != domaincluster.NodeRoleSingle || node.Source != domaincluster.NodeSourceLogicalSingle {
+		t.Fatalf("logical-single identity = first %#v second %#v", node, second.Items[0])
+	}
+	if node.EffectiveHealth != domaincluster.NodeHealthHealthy || node.LastHeartbeatAt != nil {
+		t.Fatalf("logical-single health = %#v", node)
+	}
 }
 
 func appErrorStatus(err error) int {

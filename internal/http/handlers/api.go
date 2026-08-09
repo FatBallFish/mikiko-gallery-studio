@@ -32,6 +32,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -115,6 +116,9 @@ type API struct {
 	adminPerms    domainadminauth.PermissionResolver
 	docsReady     DocsReadinessChecker
 	cashierSync   cashierOrderSyncCoordinator
+	readinessMu   sync.Mutex
+	readinessData []adminReadinessCheck
+	readinessTill time.Time
 	cfg           config.Config
 }
 
@@ -124,17 +128,18 @@ type cashierProviderInstance = domaincashier.ProviderInstance
 type cashierProviderInstanceWriteRequest = domaincashier.ProviderInstanceWriteRequest
 
 type adminReadinessCheck struct {
-	Key         string    `json:"key"`
-	Label       string    `json:"label"`
-	Status      string    `json:"status"`
-	Detail      string    `json:"detail"`
-	Summary     string    `json:"summary"`
-	FixRoute    string    `json:"fix_route,omitempty"`
-	FixAction   string    `json:"fix_action,omitempty"`
-	ActionRoute string    `json:"action_route,omitempty"`
-	ActionLabel string    `json:"action_label,omitempty"`
-	Blocking    bool      `json:"blocking"`
-	CheckedAt   time.Time `json:"checked_at"`
+	Key          string    `json:"key"`
+	Label        string    `json:"label"`
+	Status       string    `json:"status"`
+	Availability string    `json:"availability"`
+	Detail       string    `json:"detail"`
+	Summary      string    `json:"summary"`
+	FixRoute     string    `json:"fix_route,omitempty"`
+	FixAction    string    `json:"fix_action,omitempty"`
+	ActionRoute  string    `json:"action_route,omitempty"`
+	ActionLabel  string    `json:"action_label,omitempty"`
+	Blocking     bool      `json:"blocking"`
+	CheckedAt    time.Time `json:"checked_at"`
 }
 
 type adminDashboardOperations struct {
@@ -185,6 +190,8 @@ type DocsReadinessResult struct {
 type DocsReadinessChecker func(ctx context.Context) DocsReadinessResult
 
 const docsReadinessProbeTimeout = 2 * time.Second
+const adminReadinessTimeout = 3 * time.Second
+const adminReadinessCacheTTL = 5 * time.Second
 
 var errDocsProbeURLNotConfigured = errors.New("documentation probe URL is not configured")
 
@@ -283,15 +290,23 @@ func (a *API) SetAliasRolloutStore(store assetservice.AliasRolloutStore) {
 }
 
 func (a *API) SetDocsReadinessChecker(checker DocsReadinessChecker) {
+	a.readinessMu.Lock()
+	defer a.readinessMu.Unlock()
 	if checker == nil {
 		a.docsReady = newDocsReadinessChecker(a.cfg, nil, docsReadinessProbeTimeout)
-		return
+	} else {
+		a.docsReady = checker
 	}
-	a.docsReady = checker
+	a.readinessData = nil
+	a.readinessTill = time.Time{}
 }
 
 func (a *API) SetCashierProviderInstanceStore(store cashierservice.ProviderInstanceStore) {
+	a.readinessMu.Lock()
+	defer a.readinessMu.Unlock()
 	a.cashierConfigFacade().WithProviderInstanceStore(store)
+	a.readinessData = nil
+	a.readinessTill = time.Time{}
 }
 
 func (a *API) SetSecureConfigService(service *secureconfigservice.Service) {
@@ -3960,8 +3975,19 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	now := time.Now().UTC()
+	distributionFrom, ok := dashboardDistributionWindow(now, r.URL.Query().Get("window"))
+	if !ok {
+		httpx.WriteError(w, r, errs.BadRequest("window must be one of 24h, 7d, or 30d"))
+		return
+	}
+	callDistribution, err := a.callRecord.CallDistribution(r.Context(), domainadmincallrecord.DistributionRequest{From: distributionFrom, To: now})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
 
-	callRecords, err := a.callRecord.ListCallRecords(r.Context(), domainadmincallrecord.ListRequest{Page: 1, PageSize: 200})
+	callRecords, err := a.callRecord.ListCallRecords(r.Context(), domainadmincallrecord.ListRequest{Page: 1, PageSize: 200, CreatedFrom: distributionFrom, CreatedTo: now})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -4005,7 +4031,6 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		totalActualPoints float64
 	)
 	preflightFailuresByCode := map[string]int{}
-	preflightFailureCount := 0
 	platformLossCount := 0
 	platformLossProviderCost := decimal.Zero
 	for _, item := range callRecords.Items {
@@ -4017,7 +4042,6 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		if item.ErrorCode != nil && isPreflightErrorCode(*item.ErrorCode) {
 			preflightFailuresByCode[*item.ErrorCode]++
-			preflightFailureCount++
 		}
 		if item.PlatformLoss {
 			platformLossCount++
@@ -4042,7 +4066,6 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	if durationCount > 0 {
 		avgDuration = totalDurationSec / float64(durationCount)
 	}
-	now := time.Now().UTC()
 	activeUsers := 0
 	closedUsers := 0
 	disabledUsers := 0
@@ -4117,7 +4140,7 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		MockEnabled:                    mockEnabled,
 		SignupTrialGrantedUserCount:    signupTrialGrantedUserCount,
 		TrialExpiringUserCount:         trialExpiringUserCount,
-		PreflightFailureCount:          preflightFailureCount,
+		PreflightFailureCount:          callDistribution.PreflightFailureCount,
 		PreflightFailuresByErrorCode:   preflightFailuresByCode,
 		PlatformLossCount:              platformLossCount,
 		PlatformLossProviderCost:       platformLossProviderCost.StringFixed(5),
@@ -4128,7 +4151,8 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
-		"operations": ops,
+		"operations":        ops,
+		"call_distribution": callDistribution,
 		"metrics": []map[string]any{
 			{"key": "payment_success_rate", "label": "支付成功率", "value": ops.PaymentSuccessRate, "trend": fmt.Sprintf("今日 %d 单", ops.TodayOrderCount), "detail": "今日收银台订单支付完成率", "tone": dashboardMetricTone(ops.FailedWebhookCount == 0, ops.FailedWebhookCount > 0)},
 			{"key": "failed_webhook_count", "label": "失败回调", "value": strconv.Itoa(ops.FailedWebhookCount), "trend": boolTrend(ops.FailedWebhookCount == 0, "正常", "需处理"), "detail": "当前失败支付回调事件数", "tone": dashboardMetricTone(ops.FailedWebhookCount == 0, ops.FailedWebhookCount > 0)},
@@ -4150,6 +4174,19 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		},
 		"audit": audits.Items,
 	})
+}
+
+func dashboardDistributionWindow(now time.Time, value string) (time.Time, bool) {
+	switch strings.TrimSpace(value) {
+	case "", "24h":
+		return now.Add(-24 * time.Hour), true
+	case "7d":
+		return now.Add(-7 * 24 * time.Hour), true
+	case "30d":
+		return now.Add(-30 * 24 * time.Hour), true
+	default:
+		return time.Time{}, false
+	}
 }
 
 func (a *API) HandleAdminMonitoringSnapshot(w http.ResponseWriter, r *http.Request) {
@@ -8947,7 +8984,27 @@ func defaultPositiveInt(value, fallback int) int {
 }
 
 func (a *API) adminReadinessChecks(ctx context.Context) ([]adminReadinessCheck, *errs.Error) {
-	checkedAt := time.Now().UTC()
+	a.readinessMu.Lock()
+	defer a.readinessMu.Unlock()
+	now := time.Now().UTC()
+	if now.Before(a.readinessTill) && a.readinessData != nil {
+		return append([]adminReadinessCheck(nil), a.readinessData...), nil
+	}
+	boundedCtx, cancel := context.WithTimeout(ctx, adminReadinessTimeout)
+	defer cancel()
+	checks, appErr := a.computeAdminReadinessChecks(boundedCtx, now)
+	if appErr != nil {
+		return nil, appErr
+	}
+	if boundedCtx.Err() != nil {
+		return nil, errs.New(http.StatusServiceUnavailable, errs.CodeUpstreamUnavailable, "readiness check did not complete within its deadline")
+	}
+	a.readinessData = append([]adminReadinessCheck(nil), checks...)
+	a.readinessTill = now.Add(adminReadinessCacheTTL)
+	return checks, nil
+}
+
+func (a *API) computeAdminReadinessChecks(ctx context.Context, checkedAt time.Time) ([]adminReadinessCheck, *errs.Error) {
 	checks := make([]adminReadinessCheck, 0, 10)
 
 	enabled := true
@@ -9078,17 +9135,29 @@ func (a *API) adminUserDetailPayload(ctx context.Context, userID int64, detail d
 
 func readinessCheck(key, label, status, detail, fixRoute, actionLabel string, checkedAt time.Time) adminReadinessCheck {
 	return adminReadinessCheck{
-		Key:         key,
-		Label:       label,
-		Status:      status,
-		Detail:      detail,
-		Summary:     detail,
-		FixRoute:    fixRoute,
-		FixAction:   actionLabel,
-		ActionRoute: fixRoute,
-		ActionLabel: actionLabel,
-		Blocking:    status == "fail",
-		CheckedAt:   checkedAt,
+		Key:          key,
+		Label:        label,
+		Status:       status,
+		Availability: readinessAvailability(status),
+		Detail:       detail,
+		Summary:      detail,
+		FixRoute:     fixRoute,
+		FixAction:    actionLabel,
+		ActionRoute:  fixRoute,
+		ActionLabel:  actionLabel,
+		Blocking:     status == "fail",
+		CheckedAt:    checkedAt,
+	}
+}
+
+func readinessAvailability(status string) string {
+	switch status {
+	case "pass":
+		return "healthy"
+	case "warn":
+		return "degraded"
+	default:
+		return "unavailable"
 	}
 }
 
@@ -9120,31 +9189,37 @@ func summarizeReadinessChecks(checks []adminReadinessCheck) (string, map[string]
 }
 
 func (a *API) paymentReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
-	if !a.adminConfigBool(ctx, "payments", "enabled", a.cfg.Cashier.Enabled) {
-		return readinessCheck("payments", "支付配置", "warn", "收银台未启用，用户无法在线充值", "cashier", "去配置", checkedAt)
-	}
 	methods := a.cashierVisibleMethods(ctx, false)
 	if len(methods) == 0 {
 		return readinessCheck("payments", "支付配置", "fail", "暂无可见支付方式", "cashier", "去配置", checkedAt)
 	}
 	instances := a.cashierProviderInstances(ctx)
-	enabledInstanceCount := 0
-	for _, instance := range instances {
-		if !instance.Enabled {
-			continue
+	if isProductionAppEnv(a.cfg.App.Env) {
+		filtered := make([]cashierProviderInstance, 0, len(instances))
+		for _, instance := range instances {
+			if !strings.EqualFold(strings.TrimSpace(instance.ProviderType), "mock") {
+				filtered = append(filtered, instance)
+			}
 		}
-		if isProductionAppEnv(a.cfg.App.Env) && instance.ProviderType == "mock" {
-			continue
-		}
-		if instance.ProviderType != "mock" && instance.ConfigStatus != "configured" {
-			continue
-		}
-		enabledInstanceCount++
+		instances = filtered
 	}
-	if enabledInstanceCount == 0 {
-		return readinessCheck("payments", "支付配置", "fail", "暂无可用支付渠道实例", "cashier", "去配置", checkedAt)
+	eligibleCount := 0
+	unavailableMethods := make([]string, 0)
+	for _, method := range methods {
+		eligible := cashierservice.EligibleProviderInstances(method, instances)
+		if len(eligible) == 0 {
+			unavailableMethods = append(unavailableMethods, method.Method)
+			continue
+		}
+		eligibleCount += len(eligible)
 	}
-	return readinessCheck("payments", "支付配置", "pass", fmt.Sprintf("%d 个可见支付方式，%d 个可用渠道实例", len(methods), enabledInstanceCount), "cashier", "去配置", checkedAt)
+	if len(unavailableMethods) == len(methods) {
+		return readinessCheck("payments", "支付配置", "fail", "可见支付方式均无可服务渠道实例", "cashier", "去配置", checkedAt)
+	}
+	if len(unavailableMethods) > 0 {
+		return readinessCheck("payments", "支付配置", "warn", fmt.Sprintf("%d 个支付方式可用，%s 暂不可用", len(methods)-len(unavailableMethods), strings.Join(unavailableMethods, "、")), "cashier", "去配置", checkedAt)
+	}
+	return readinessCheck("payments", "支付配置", "pass", fmt.Sprintf("%d 个支付方式均可服务，匹配 %d 个渠道实例", len(methods), eligibleCount), "cashier", "去配置", checkedAt)
 }
 
 func (a *API) refundCompensationReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, *errs.Error) {

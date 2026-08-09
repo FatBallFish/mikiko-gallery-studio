@@ -26,6 +26,39 @@ type adminCallRecordStaticRoutingSource struct {
 	snapshot modelhub.ModelRoutingSnapshot
 }
 
+func TestAdminCallRecordStoreAggregatesAttemptsWithoutPagination(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-distribution?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	inside := time.Now().UTC()
+	from := inside.Add(-time.Hour)
+	store := NewImageTaskStore(client)
+	seeds := []domainimagetask.Task{
+		{UserID: 1, ID: "11111111-1111-1111-1111-111111111111", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-a", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}, {StartedAt: &inside}}},
+		{UserID: 1, ID: "22222222-2222-2222-2222-222222222222", Status: domainimagetask.StatusFailed, TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}}},
+		{UserID: 1, ID: "33333333-3333-3333-3333-333333333333", Status: domainimagetask.StatusRejected, TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k"},
+	}
+	for _, seed := range seeds {
+		if err := store.Save(ctx, seed); err != nil {
+			t.Fatalf("save task %s: %v", seed.ID, err)
+		}
+	}
+
+	distribution, err := NewAdminCallRecordStore(client).CallDistribution(ctx, domainadmincallrecord.DistributionRequest{From: from, To: from.Add(24 * time.Hour)})
+	if err != nil {
+		t.Fatalf("CallDistribution: %v", err)
+	}
+	if distribution.TotalCalls != 3 || distribution.PreflightFailureCount != 1 || len(distribution.Groups) != 2 || distribution.Groups[0].Key != "route-a" || distribution.Groups[0].Calls != 2 || distribution.Groups[1].Key != "unrouted" {
+		t.Fatalf("distribution = %#v", distribution)
+	}
+}
+
 func TestAdminCallRecordStoreClassifiesExhaustedArtifactRecoveryAsPlatformLoss(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:admin-call-record-artifact-loss?mode=memory&cache=shared&_fk=1")

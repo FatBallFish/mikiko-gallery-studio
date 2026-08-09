@@ -352,6 +352,25 @@ func (s *Service) ListNodes(ctx context.Context, request domaincluster.ListNodes
 	if request.PageSize > 100 {
 		return domaincluster.NodePage{}, errs.BadRequest("page_size must be at most 100")
 	}
+	if s.deploymentRole == domaincluster.NodeRoleSingle {
+		if request.Role != "" && request.Role != domaincluster.NodeRoleSingle {
+			return domaincluster.NodePage{Items: []domaincluster.NodeStatus{}, Page: request.Page, PageSize: request.PageSize}, nil
+		}
+		now := s.now().UTC()
+		logical := domaincluster.NodeStatus{
+			Node: domaincluster.Node{
+				NodeID: "logical-single-" + installation.InstallationID, InstallationID: installation.InstallationID,
+				Role: domaincluster.NodeRoleSingle, ApplicationVersion: installation.ApplicationVersion,
+				RuntimeSchemaVersion: installation.RuntimeSchemaVersion, ConfigRevision: installation.ConfigRevision,
+				Health: domaincluster.NodeHealthHealthy, CreatedAt: now, UpdatedAt: now,
+			},
+			Source: domaincluster.NodeSourceLogicalSingle, EffectiveHealth: domaincluster.NodeHealthHealthy,
+		}
+		if request.Page > 1 {
+			return domaincluster.NodePage{Items: []domaincluster.NodeStatus{}, Page: request.Page, PageSize: request.PageSize, Total: 1}, nil
+		}
+		return domaincluster.NodePage{Items: []domaincluster.NodeStatus{logical}, Page: request.Page, PageSize: request.PageSize, Total: 1}, nil
+	}
 	nodes, total, err := s.store.ListNodes(ctx, s.installationID, request)
 	if err != nil {
 		return domaincluster.NodePage{}, normalizeStoreError(err)
@@ -368,7 +387,7 @@ func (s *Service) ListNodes(ctx context.Context, request domaincluster.ListNodes
 			effective = domaincluster.NodeHealthOffline
 		}
 		items = append(items, domaincluster.NodeStatus{
-			Node: node, EffectiveHealth: effective,
+			Node: node, Source: domaincluster.NodeSourceHeartbeat, EffectiveHealth: effective,
 			ApplicationVersionDrift: node.ApplicationVersion != installation.ApplicationVersion,
 			RuntimeSchemaDrift:      node.RuntimeSchemaVersion != installation.RuntimeSchemaVersion,
 			ConfigRevisionDrift:     node.ConfigRevision != installation.ConfigRevision,

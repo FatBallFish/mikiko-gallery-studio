@@ -14,6 +14,7 @@ import (
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
+	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 )
 
 type AdminCallRecordStore struct {
@@ -43,6 +44,22 @@ func (s *AdminCallRecordStore) ListCallRecords(ctx context.Context, req domainad
 		items = append(items, mapAdminCallRecord(entity))
 	}
 	return domainadmincallrecord.ListPage{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+func (s *AdminCallRecordStore) CallDistribution(ctx context.Context, req domainadmincallrecord.DistributionRequest) (domainadmincallrecord.Distribution, error) {
+	entities, err := s.client.ImageTask.Query().Where(
+		imagetask.DeletedAtIsNil(),
+		imagetask.CreatedAtLT(req.To),
+		imagetask.UpdatedAtGTE(req.From),
+	).All(ctx)
+	if err != nil {
+		return domainadmincallrecord.Distribution{}, err
+	}
+	records := make([]domainadmincallrecord.Record, 0, len(entities))
+	for _, entity := range entities {
+		records = append(records, mapAdminCallRecord(entity))
+	}
+	return admincallrecordservice.AggregateCallDistribution(records, req), nil
 }
 
 func adminCallRecordPredicates(req domainadmincallrecord.ListRequest) []predicate.ImageTask {

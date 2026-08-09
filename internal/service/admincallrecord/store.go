@@ -11,6 +11,54 @@ import (
 
 type Store interface {
 	ListCallRecords(ctx context.Context, req domainadmincallrecord.ListRequest) (domainadmincallrecord.ListPage, error)
+	CallDistribution(ctx context.Context, req domainadmincallrecord.DistributionRequest) (domainadmincallrecord.Distribution, error)
+}
+
+func (s *MemoryStore) CallDistribution(_ context.Context, req domainadmincallrecord.DistributionRequest) (domainadmincallrecord.Distribution, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return AggregateCallDistribution(s.records, req), nil
+}
+
+func AggregateCallDistribution(records []domainadmincallrecord.Record, req domainadmincallrecord.DistributionRequest) domainadmincallrecord.Distribution {
+	result := domainadmincallrecord.Distribution{
+		Window: domainadmincallrecord.DistributionWindow{From: req.From, To: req.To},
+		Groups: []domainadmincallrecord.DistributionGroup{},
+	}
+	counts := map[string]int{}
+	for _, record := range records {
+		for _, attempt := range record.Attempts {
+			at := record.CreatedAt
+			if attempt.StartedAt != nil {
+				at = *attempt.StartedAt
+			}
+			if at.Before(req.From) || !at.Before(req.To) {
+				continue
+			}
+			key := strings.TrimSpace(record.RouteModelCode)
+			if key == "" {
+				key = "unrouted"
+			}
+			counts[key]++
+			result.TotalCalls++
+		}
+		if len(record.Attempts) == 0 && record.UpstreamSucceededAt == nil && !record.CreatedAt.Before(req.From) && record.CreatedAt.Before(req.To) &&
+			(record.Status == "failed" || record.Status == "rejected") {
+			result.PreflightFailureCount++
+		}
+	}
+	for key, calls := range counts {
+		result.Groups = append(result.Groups, domainadmincallrecord.DistributionGroup{
+			Key: key, Calls: calls, Percentage: float64(calls) * 100 / float64(result.TotalCalls),
+		})
+	}
+	sort.Slice(result.Groups, func(i, j int) bool {
+		if result.Groups[i].Calls == result.Groups[j].Calls {
+			return result.Groups[i].Key < result.Groups[j].Key
+		}
+		return result.Groups[i].Calls > result.Groups[j].Calls
+	})
+	return result
 }
 
 type MemoryStore struct {

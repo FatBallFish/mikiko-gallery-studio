@@ -14,10 +14,58 @@ import (
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 )
+
+func TestPaymentReadinessMatchesCheckoutEligibilityAndIgnoresLegacySwitch(t *testing.T) {
+	cfg := config.Config{}
+	cfg.App.Env = "production"
+	admin := adminconfigservice.NewService(cfg)
+	if _, err := admin.UpdateTab(t.Context(), domainadminconfig.UpdateTabRequest{
+		TabKey: "payments", Version: 1, Items: []domainadminconfig.Item{
+			{ConfigCategory: "payments", ConfigKey: "enabled", ConfigValue: map[string]any{"value": false}, Scope: "global"},
+			{ConfigCategory: "payments", ConfigKey: "visible_methods", ConfigValue: map[string]any{"value": []map[string]any{{"method": "alipay", "label": "支付宝", "enabled": true, "source_provider_type": "alipay_direct", "scheduler_strategy": "round_robin", "display_order": 10}}}, Scope: "global"},
+			{ConfigCategory: "payments", ConfigKey: "provider_instances", ConfigValue: map[string]any{"value": []map[string]any{
+				{"id": 1, "provider_type": "mock", "name": "Mock", "enabled": true, "supported_methods": []string{"alipay"}},
+				{"id": 2, "provider_type": "easypay_alipay", "name": "Wrong provider type", "enabled": true, "supported_methods": []string{"alipay"}, "config": map[string]any{"pid": "merchant", "key": "secret"}},
+				{"id": 3, "provider_type": "alipay_direct", "name": "Ready", "enabled": true, "supported_methods": []string{"alipay"}, "config": map[string]any{"app_id": "app", "payment_url": "https://pay.example.test"}},
+			}}, Scope: "global"},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateTab payments: %v", err)
+	}
+	api := NewAPIWithServices(cfg, nil, nil, nil, admin)
+	check := api.paymentReadinessCheck(t.Context(), time.Now().UTC())
+	if check.Status != "pass" || check.Availability != "healthy" || !strings.Contains(check.Detail, "1 个支付方式均可服务") {
+		methods := api.cashierVisibleMethods(t.Context(), false)
+		instances := api.cashierProviderInstances(t.Context())
+		t.Fatalf("payment readiness = %#v methods=%#v instances=%#v", check, methods, instances)
+	}
+}
+
+func TestCanceledReadinessRequestDoesNotPopulateCache(t *testing.T) {
+	api := NewAPIWithModelAdminService(config.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	checks := 0
+	api.SetDocsReadinessChecker(func(context.Context) DocsReadinessResult {
+		checks++
+		return DocsReadinessResult{Status: "pass", Detail: "ready"}
+	})
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, appErr := api.adminReadinessChecks(canceled); appErr == nil {
+		t.Fatal("canceled readiness request must fail")
+	}
+	if _, appErr := api.adminReadinessChecks(t.Context()); appErr != nil {
+		t.Fatalf("live readiness request: %v", appErr)
+	}
+	if checks != 2 {
+		t.Fatalf("canceled readiness result was cached: docs checks=%d", checks)
+	}
+}
 
 type docsReadinessRoundTripFunc func(*http.Request) (*http.Response, error)
 

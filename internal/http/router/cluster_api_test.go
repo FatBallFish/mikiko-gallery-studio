@@ -129,6 +129,40 @@ func TestClusterNodeListIsReadOnlyAndAvailableThroughAPIReplicas(t *testing.T) {
 	}
 }
 
+func TestClusterNodeListReturnsExactlyOneStableLogicalSingleNode(t *testing.T) {
+	harness := newClusterAPIHarness(t, domainadminauth.RoleAdmin, domaincluster.NodeRoleSingle)
+	load := func() domaincluster.NodePage {
+		req := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cluster/nodes?page=1&page_size=20", nil)
+		req.Header.Set("Authorization", "Bearer "+harness.token)
+		rec := httptest.NewRecorder()
+		harness.handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list logical-single nodes status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var response struct {
+			Data struct {
+				Items      []domaincluster.NodeStatus `json:"items"`
+				Pagination struct {
+					Page     int `json:"page"`
+					PageSize int `json:"page_size"`
+					Total    int `json:"total"`
+				} `json:"pagination"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+			t.Fatalf("decode logical-single nodes: %v", err)
+		}
+		return domaincluster.NodePage{Items: response.Data.Items, Page: response.Data.Pagination.Page, PageSize: response.Data.Pagination.PageSize, Total: response.Data.Pagination.Total}
+	}
+	first, second := load(), load()
+	if first.Total != 1 || len(first.Items) != 1 || second.Total != 1 || len(second.Items) != 1 {
+		t.Fatalf("logical-single pages first=%#v second=%#v", first, second)
+	}
+	if first.Items[0].NodeID == "" || first.Items[0].NodeID != second.Items[0].NodeID || first.Items[0].Role != domaincluster.NodeRoleSingle || first.Items[0].Source != domaincluster.NodeSourceLogicalSingle {
+		t.Fatalf("logical-single node first=%#v second=%#v", first.Items[0], second.Items[0])
+	}
+}
+
 func TestClusterPublicProtocolEncryptsEnrollmentWithoutCredentialInHTTPBodies(t *testing.T) {
 	harness := newClusterAPIHarness(t, domainadminauth.RoleSuperAdmin, domaincluster.NodeRoleControl)
 	issued, err := harness.cluster.CreateToken(t.Context(), domaincluster.CreateTokenRequest{Role: domaincluster.JoinRoleWorker, TTL: time.Hour, ActorID: "1"})

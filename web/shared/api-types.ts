@@ -873,6 +873,7 @@ export type ClusterNode = {
   node_id: string
   installation_id: string
   role: ClusterNodeRole
+  source: 'logical-single' | 'heartbeat' | string
   application_version: string
   runtime_schema_version: number
   config_revision: number
@@ -969,6 +970,14 @@ export type AdminDashboardOperations = {
   public_gallery_detail_login_blocks: number
   enabled_payment_methods: string[]
   generated_at: string
+}
+
+export type AdminCallDistributionGroup = { key: string; calls: number; percentage: number }
+export type AdminCallDistribution = {
+  window: { from: string; to: string }
+  total_calls: number
+  groups: AdminCallDistributionGroup[]
+  preflight_failure_count: number
 }
 
 export type ConfigItem = {
@@ -1259,12 +1268,13 @@ export type ArtifactRecoverySummary = { status: string; attempt_count: number; l
 export type CallRecord = { id?: number; task_id: string; user_id: number; api_key_id?: number | null; source_channel: string; task_type: ImageTaskType | string; status: string; provider: string; route_model_code?: string; account_model_id?: number | null; model_account_id?: number | null; upstream_model_code?: string; abstract_model: string; base_resolution: string; quality: string; requested_output_image_count: number; success_output_image_count: number; reference_image_count: number; estimated_points: string; actual_points: string; provider_request_id?: string; provider_cost: string; gross_margin: string; pricing_snapshot?: Record<string, unknown>; upstream_succeeded_at?: string | null; failure_phase?: 'preflight' | 'upstream' | 'artifact_persistence' | string; platform_loss: boolean; artifact_recovery?: ArtifactRecoverySummary; error_code?: string | null; error_message?: string | null; error_detail?: Record<string, unknown>; attempts?: CallRecordAttempt[]; created_at: string; updated_at: string; started_at?: string | null; finished_at?: string | null; attempt_count: number }
 export type AuditLog = { id: ID; actor: string; action: string; target: string; detail: string; created_at: string; actor_type?: string; actor_id?: string; target_type?: string; target_id?: string; result?: string; metadata?: Record<string, unknown>; ip_addr?: string; user_agent?: string; updated_at?: string }
 export type AdminDashboardQueueItem = { item: string; count: string; detail: string }
-export type AdminDashboard = { operations: AdminDashboardOperations; metrics: AdminMetric[]; providers: ProviderHealth[]; queue: AdminDashboardQueueItem[]; audit: AuditLog[] }
+export type AdminDashboard = { operations: AdminDashboardOperations; call_distribution: AdminCallDistribution; metrics: AdminMetric[]; providers: ProviderHealth[]; queue: AdminDashboardQueueItem[]; audit: AuditLog[] }
 export type ReadinessStatus = 'pass' | 'warn' | 'fail' | string
 export type ReadinessCheck = {
   key: string
   label: string
   status: ReadinessStatus
+  availability?: 'healthy' | 'degraded' | 'unavailable' | string
   detail: string
   summary?: string
   fix_route?: string

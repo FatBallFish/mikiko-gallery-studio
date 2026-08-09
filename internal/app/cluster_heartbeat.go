@@ -11,10 +11,10 @@ import (
 )
 
 func startRuntimeHeartbeat(ctx context.Context, cfg config.Config, store clusterservice.HeartbeatStore) (*clusterservice.HeartbeatHandle, error) {
-	nodeID := strings.TrimSpace(cfg.Runtime.ClusterNodeID)
-	if nodeID == "" && cfg.Runtime.DeploymentRole == config.DeploymentRoleSingle {
+	if cfg.Runtime.DeploymentRole == config.DeploymentRoleSingle {
 		return nil, nil
 	}
+	nodeID := strings.TrimSpace(cfg.Runtime.ClusterNodeID)
 	if nodeID == "" {
 		return nil, fmt.Errorf("cluster node ID is required for role %q", cfg.Runtime.DeploymentRole)
 	}
