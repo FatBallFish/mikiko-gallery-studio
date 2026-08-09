@@ -123,6 +123,77 @@ func TestProjectTaskWritesSerializeWithPostgresDelete(t *testing.T) {
 			t.Fatalf("deleted source gained worker result: count=%d err=%v", count, err)
 		}
 	})
+
+	workerSaves := []struct {
+		name string
+		save func(context.Context, *ImageTaskStore, domainimagetask.Task, time.Time) error
+	}{
+		{name: "ordinary save", save: func(ctx context.Context, store *ImageTaskStore, task domainimagetask.Task, _ time.Time) error {
+			task.Status = domainimagetask.StatusSucceeded
+			return store.Save(ctx, task)
+		}},
+		{name: "lease-owned save", save: func(ctx context.Context, store *ImageTaskStore, task domainimagetask.Task, now time.Time) error {
+			return store.SaveIfOwned(ctx, task, task.LeaseOwner, now)
+		}},
+		{name: "terminal save", save: func(ctx context.Context, store *ImageTaskStore, task domainimagetask.Task, now time.Time) error {
+			task.Status = domainimagetask.StatusSucceeded
+			return store.SaveTerminalState(ctx, task, task.LeaseOwner, now)
+		}},
+	}
+	for _, workerSave := range workerSaves {
+		t.Run("delete lock precedes "+workerSave.name, func(t *testing.T) {
+			source, err := projects.Create(ctx, 7001, domainproject.CreateRequest{Name: "Delete barrier " + workerSave.name})
+			if err != nil {
+				t.Fatalf("create source: %v", err)
+			}
+			task := projectLockTask(uuid.New(), 7001, source.ID)
+			store := NewImageTaskStore(clientB)
+			if err := store.Save(ctx, task); err != nil {
+				t.Fatalf("seed running task: %v", err)
+			}
+
+			deleteTx, err := database.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatalf("start delete barrier transaction: %v", err)
+			}
+			if _, err := deleteTx.ExecContext(ctx, `SELECT id FROM projects WHERE id = $1 FOR UPDATE`, source.ID); err != nil {
+				_ = deleteTx.Rollback()
+				t.Fatalf("lock source project: %v", err)
+			}
+			if _, err := deleteTx.ExecContext(ctx, `SELECT id FROM image_tasks WHERE id = $1 FOR UPDATE`, task.ID); err != nil {
+				_ = deleteTx.Rollback()
+				t.Fatalf("lock source task: %v", err)
+			}
+
+			task.Results = []provider.ImageResult{{ID: uuid.NewString(), ObjectKey: "postgres/delete-barrier-result.png", MimeType: "image/png"}}
+			workerDone := make(chan error, 1)
+			go func() { workerDone <- workerSave.save(context.Background(), store, task, time.Now().UTC()) }()
+			assertPostgresOperationBlocked(t, workerDone, workerSave.name+" while delete holds task row")
+
+			if _, err := deleteTx.ExecContext(ctx, `UPDATE image_tasks SET project_id = $2 WHERE id = $1`, task.ID, target.ID); err != nil {
+				_ = deleteTx.Rollback()
+				t.Fatalf("transfer locked task: %v", err)
+			}
+			if _, err := deleteTx.ExecContext(ctx, `UPDATE projects SET status = $2, deleted_at = CURRENT_TIMESTAMP, version = version + 1 WHERE id = $1`, source.ID, domainproject.StatusDeleted); err != nil {
+				_ = deleteTx.Rollback()
+				t.Fatalf("soft-delete source project: %v", err)
+			}
+			if err := deleteTx.Commit(); err != nil {
+				t.Fatalf("commit delete barrier: %v", err)
+			}
+			if err := awaitPostgresOperation(t, workerDone, workerSave.name+" after delete commit"); err != nil {
+				t.Fatalf("complete stale worker save: %v", err)
+			}
+
+			result, err := clientA.ImageResult.Query().Where(imageresult.TaskIDEQ(uuid.MustParse(task.ID))).Only(ctx)
+			if err != nil || result.ProjectID == nil || result.ProjectID.String() != target.ID {
+				t.Fatalf("barrier worker result did not follow transferred task: %#v, %v", result, err)
+			}
+			if count, err := clientA.ImageResult.Query().Where(imageresult.ProjectIDEQ(uuid.MustParse(source.ID))).Count(ctx); err != nil || count != 0 {
+				t.Fatalf("deleted source gained barrier worker result: count=%d err=%v", count, err)
+			}
+		})
+	}
 }
 
 func openProjectTaskPostgres(t *testing.T) (context.Context, *sql.DB, *repoent.Client, *repoent.Client) {

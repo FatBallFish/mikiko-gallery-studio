@@ -72,7 +72,7 @@ func (s *ImageTaskStore) Save(ctx context.Context, task domainimagetask.Task) er
 	}()
 
 	resultProjectID := task.ProjectID
-	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID)).Only(ctx)
+	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID), lockImageTaskForWorkerUpdate()).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			if err := createImageTask(ctx, tx, taskUUID, task, trace, routingSnapshot); err != nil {
@@ -123,7 +123,7 @@ func (s *ImageTaskStore) SaveIfOwned(ctx context.Context, task domainimagetask.T
 		_ = tx.Rollback()
 	}()
 
-	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID), imagetask.DeletedAtIsNil()).Only(ctx)
+	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID), imagetask.DeletedAtIsNil(), lockImageTaskForWorkerUpdate()).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return repoerr.ErrNotFound
@@ -180,7 +180,7 @@ func (s *ImageTaskStore) SaveTerminalState(ctx context.Context, task domainimage
 		_ = tx.Rollback()
 	}()
 
-	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID), imagetask.DeletedAtIsNil()).Only(ctx)
+	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID), imagetask.DeletedAtIsNil(), lockImageTaskForWorkerUpdate()).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
 			return repoerr.ErrNotFound
@@ -1139,6 +1139,14 @@ func lockProjectForTaskWrite() predicate.Project {
 	return func(selector *entsql.Selector) {
 		if selector.Dialect() != dialect.SQLite {
 			selector.ForShare()
+		}
+	}
+}
+
+func lockImageTaskForWorkerUpdate() predicate.ImageTask {
+	return func(selector *entsql.Selector) {
+		if selector.Dialect() != dialect.SQLite {
+			selector.ForUpdate()
 		}
 	}
 }

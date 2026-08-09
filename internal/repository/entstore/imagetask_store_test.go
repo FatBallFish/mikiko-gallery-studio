@@ -34,6 +34,23 @@ func TestTaskProjectOwnershipCheckUsesCompatibleRowLock(t *testing.T) {
 	}
 }
 
+func TestWorkerTaskUpdateUsesRowLock(t *testing.T) {
+	table := entsql.Table("image_tasks")
+	selector := entsql.Dialect(dialect.Postgres).Select().From(table)
+	lockImageTaskForWorkerUpdate()(selector)
+	query, _ := selector.Query()
+	if !strings.Contains(query, "FOR UPDATE") {
+		t.Fatalf("worker task query = %q, want FOR UPDATE to reload ownership after project transfer", query)
+	}
+
+	sqliteSelector := entsql.Dialect(dialect.SQLite).Select().From(table)
+	lockImageTaskForWorkerUpdate()(sqliteSelector)
+	sqliteQuery, _ := sqliteSelector.Query()
+	if strings.Contains(sqliteQuery, "FOR UPDATE") {
+		t.Fatalf("SQLite worker task query = %q, must not contain unsupported FOR UPDATE", sqliteQuery)
+	}
+}
+
 func TestUpdatedTaskResultsFollowPersistedProjectAfterTransferDelete(t *testing.T) {
 	tests := []struct {
 		name string
