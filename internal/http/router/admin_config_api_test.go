@@ -5,15 +5,89 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	"github.com/google/uuid"
+
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
+	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
+	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
+	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 )
+
+func TestAdminAliasRolloutRequiresDangerousPermissionAndExplicitCohortAttestation(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:admin-alias-rollout-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	cfg := adminConfigAPIConfig()
+	authSvc := authservice.NewService(cfg.Auth, map[string]string{"basic": "1.00000"})
+	adminStore := adminauthservice.NewMemoryStore()
+	for _, admin := range []domainadminauth.AdminUser{
+		{Email: "rollout-ops@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: domainadminauth.RoleAdmin, Status: "active"},
+		{Email: "rollout-root@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: domainadminauth.RoleSuperAdmin, Status: "active"},
+	} {
+		if _, err := adminStore.CreateAdmin(t.Context(), admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	auditSvc := auditservice.NewService(auditservice.NewMemoryStore())
+	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, nil, nil, adminauthservice.NewService(cfg.Auth, adminStore), auditSvc)
+	rollout := entstore.NewAliasRolloutStore(client)
+	api.SetAliasRolloutStore(rollout)
+	handler := NewWithAPI(api)
+	opsToken := loginAdminWithCredentials(t, handler, "rollout-ops@example.com", "password")
+	rootToken := loginAdminWithCredentials(t, handler, "rollout-root@example.com", "password")
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/runtime-rollouts/no-copy-reference-aliases", nil)
+	statusReq.Header.Set("Authorization", "Bearer "+rootToken)
+	statusRec := httptest.NewRecorder()
+	handler.ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != http.StatusOK || !strings.Contains(statusRec.Body.String(), `"enabled":false`) || !strings.Contains(statusRec.Body.String(), `"version":0`) {
+		t.Fatalf("initial rollout status=%d body=%s", statusRec.Code, statusRec.Body.String())
+	}
+
+	request := func(token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/runtime-rollouts/no-copy-reference-aliases", bytes.NewBufferString(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := request(opsToken, `{"enabled":true,"expected_version":0,"all_api_nodes_cleanup_aware":true}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("ordinary admin activation status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec := request(rootToken, `{"enabled":true,"expected_version":0}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("activation without cohort attestation status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	activated := request(rootToken, `{"enabled":true,"expected_version":0,"all_api_nodes_cleanup_aware":true}`)
+	if activated.Code != http.StatusOK || !strings.Contains(activated.Body.String(), `"enabled":true`) || !strings.Contains(activated.Body.String(), `"version":1`) {
+		t.Fatalf("activation status=%d body=%s", activated.Code, activated.Body.String())
+	}
+	if rec := request(rootToken, `{"enabled":false,"expected_version":0}`); rec.Code != http.StatusConflict {
+		t.Fatalf("stale rollback status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	disabled := request(rootToken, `{"enabled":false,"expected_version":1}`)
+	if disabled.Code != http.StatusOK || !strings.Contains(disabled.Body.String(), `"enabled":false`) || !strings.Contains(disabled.Body.String(), `"version":2`) {
+		t.Fatalf("rollback status=%d body=%s", disabled.Code, disabled.Body.String())
+	}
+	audits, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Action: "runtime_rollout.alias_creation.disable", Page: 1, PageSize: 10})
+	if err != nil || len(audits.Items) != 1 || audits.Items[0].TargetID != "no_copy_reference_aliases" {
+		t.Fatalf("rollout audit=%#v err=%v", audits, err)
+	}
+}
 
 func TestAdminConfigTabEndpoints(t *testing.T) {
 	cfg := adminConfigAPIConfig()

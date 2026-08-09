@@ -85,33 +85,34 @@ import (
 )
 
 type API struct {
-	auth        *authservice.Service
-	adminAuth   *adminauthservice.Service
-	apiKeys     *apikeyservice.Service
-	billing     *billingservice.Service
-	assets      *assetservice.Service
-	caps        *capserv.Service
-	compat      *compatservice.Service
-	tasks       *imagetaskservice.Service
-	admin       *adminconfigservice.Service
-	cashierCfg  *cashierservice.ConfigFacade
-	adminUser   *adminuserservice.Service
-	callRecord  *admincallrecordservice.Service
-	modelAdmin  *modeladminservice.Service
-	textModels  *textmodelservice.Service
-	promptOpt   *promptoptimizerservice.Service
-	secureCfg   *secureconfigservice.Service
-	storageCfg  *storageconfigservice.Service
-	storageReg  *storage.Registry
-	storagePub  storage.InvalidationPublisher
-	redeem      *redeemservice.Service
-	audit       *auditservice.Service
-	cluster     *clusterservice.Service
-	projects    *projectservice.Service
-	adminPerms  domainadminauth.PermissionResolver
-	docsReady   DocsReadinessChecker
-	cashierSync cashierOrderSyncCoordinator
-	cfg         config.Config
+	auth         *authservice.Service
+	adminAuth    *adminauthservice.Service
+	apiKeys      *apikeyservice.Service
+	billing      *billingservice.Service
+	assets       *assetservice.Service
+	aliasRollout assetservice.AliasRolloutStore
+	caps         *capserv.Service
+	compat       *compatservice.Service
+	tasks        *imagetaskservice.Service
+	admin        *adminconfigservice.Service
+	cashierCfg   *cashierservice.ConfigFacade
+	adminUser    *adminuserservice.Service
+	callRecord   *admincallrecordservice.Service
+	modelAdmin   *modeladminservice.Service
+	textModels   *textmodelservice.Service
+	promptOpt    *promptoptimizerservice.Service
+	secureCfg    *secureconfigservice.Service
+	storageCfg   *storageconfigservice.Service
+	storageReg   *storage.Registry
+	storagePub   storage.InvalidationPublisher
+	redeem       *redeemservice.Service
+	audit        *auditservice.Service
+	cluster      *clusterservice.Service
+	projects     *projectservice.Service
+	adminPerms   domainadminauth.PermissionResolver
+	docsReady    DocsReadinessChecker
+	cashierSync  cashierOrderSyncCoordinator
+	cfg          config.Config
 }
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
@@ -271,6 +272,11 @@ func (a *API) SetAdminPermissionResolver(resolver domainadminauth.PermissionReso
 		return
 	}
 	a.adminPerms = resolver
+}
+
+func (a *API) SetAliasRolloutStore(store assetservice.AliasRolloutStore) {
+	a.aliasRollout = store
+	a.assets.SetAliasCreationGate(store)
 }
 
 func (a *API) SetDocsReadinessChecker(checker DocsReadinessChecker) {
@@ -4934,6 +4940,67 @@ func (a *API) HandleAdminConfigTabs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": tabs})
+}
+
+func (a *API) HandleAdminAliasCreationRollout(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if a.aliasRollout == nil {
+		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeReferenceAliasCreationNotReady, "alias rollout store is unavailable"))
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		status, err := a.aliasRollout.GetAliasCreationRollout(r.Context())
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, status)
+	case http.MethodPost:
+		var req struct {
+			Enabled                 bool  `json:"enabled"`
+			ExpectedVersion         int64 `json:"expected_version"`
+			AllAPINodesCleanupAware bool  `json:"all_api_nodes_cleanup_aware"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		if req.ExpectedVersion < 0 {
+			httpx.WriteError(w, r, errs.BadRequest("expected_version must not be negative"))
+			return
+		}
+		if req.Enabled && !req.AllAPINodesCleanupAware {
+			httpx.WriteError(w, r, errs.BadRequest("all_api_nodes_cleanup_aware must be confirmed before activation"))
+			return
+		}
+		status, err := a.aliasRollout.UpdateAliasCreationRollout(r.Context(), req.Enabled, req.ExpectedVersion, admin.AdminID)
+		if errors.Is(err, domainassets.ErrAliasRolloutChanged) {
+			httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodeConflict, "alias creation rollout version conflict"))
+			return
+		}
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		action := "disable"
+		if status.Enabled {
+			action = "enable"
+		}
+		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "runtime_rollout.alias_creation."+action, "runtime_rollout", "no_copy_reference_aliases", map[string]any{
+			"enabled": status.Enabled, "version": status.Version, "all_api_nodes_cleanup_aware": req.AllAPINodesCleanupAware,
+		}); auditErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(auditErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, status)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
 }
 
 func (a *API) HandleAdminConfigTabDetail(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,18 @@
 package assets
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var ErrAliasRolloutChanged = errors.New("alias creation rollout changed")
+
+type AliasCreationRollout struct {
+	Enabled   bool      `json:"enabled"`
+	Version   int64     `json:"version"`
+	UpdatedBy int64     `json:"updated_by,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
 
 type ReferenceAsset struct {
 	ID                  string              `json:"id"`

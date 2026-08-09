@@ -23,6 +23,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
+	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
@@ -700,7 +701,9 @@ func TestReferenceAssetsImportFromGalleryCreatesDownloadableReference(t *testing
 		t.Fatalf("AdminAdjust: %v", err)
 	}
 	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
-	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, billingSvc)
+	assetSvc := assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
+	assetSvc.SetAliasCreationGate(enabledAliasCreationGate{})
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, nil, billingSvc)
 	handler := NewWithAPI(api)
 
 	taskID := createAndProcessAgentTask(t, handler, taskSvc, session.AccessToken)

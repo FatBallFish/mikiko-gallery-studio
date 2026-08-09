@@ -22,3 +22,13 @@ type AliasStore interface {
 	GetByUserAndSourceImageResultID(ctx context.Context, userID int64, sourceImageResultID string) (domainassets.ReferenceAsset, error)
 	ImportGalleryAlias(ctx context.Context, userID int64, result provider.ImageResult) (domainassets.ReferenceAsset, error)
 }
+
+type AliasCreationGate interface {
+	AliasCreationEnabled(ctx context.Context) (bool, error)
+}
+
+type AliasRolloutStore interface {
+	AliasCreationGate
+	GetAliasCreationRollout(ctx context.Context) (domainassets.AliasCreationRollout, error)
+	UpdateAliasCreationRollout(ctx context.Context, enabled bool, expectedVersion, updatedBy int64) (domainassets.AliasCreationRollout, error)
+}

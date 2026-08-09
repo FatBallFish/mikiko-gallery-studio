@@ -15,6 +15,13 @@ import (
 )
 
 func (s *Service) ImportGalleryImage(ctx context.Context, userID int64, result provider.ImageResult) (domainassets.ReferenceAsset, error) {
+	enabled, err := s.aliasCreationEnabled(ctx)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, fmt.Errorf("resolve reference alias rollout: %w", err)
+	}
+	if !enabled {
+		return domainassets.ReferenceAsset{}, errs.New(409, errs.CodeReferenceAliasCreationNotReady, "资产引用功能正在完成升级，请稍后再试。")
+	}
 	if strings.EqualFold(strings.TrimSpace(result.StorageDriver), "remote") || strings.TrimSpace(result.ObjectKey) == "" {
 		return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "image not found")
 	}

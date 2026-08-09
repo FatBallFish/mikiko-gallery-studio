@@ -177,6 +177,27 @@ Database migrations are forward-compatible and are not automatically reversed. I
 
 After an upgrade, run `mgsctl doctor`, verify `/readyz`, and open the admin text-model configuration. Exactly one enabled model on an enabled account should be the default optimization model. A single eligible legacy model is repaired automatically; if several eligible models exist without a default, select one before accepting user prompt-optimization traffic.
 
+### Activate no-copy gallery references
+
+No-copy gallery reference creation is persisted as disabled after every upgrade and on new installations. Existing aliases remain readable and continue to protect their shared object while the switch is disabled. The switch is deliberately not activated by `mgsctl upgrade`, because the deployment tool cannot prove that every API node behind an external load balancer has completed its rollout.
+
+After upgrading, first verify that every API node is running a cleanup-aware release and that the object-cleanup worker is healthy. Do not activate while any older API node can still serve traffic. Obtain a super-admin access token, read the current version, and activate with an explicit cohort attestation:
+
+```bash
+curl -fsS -H "Authorization: Bearer ${ADMIN_ACCESS_TOKEN}" \
+  https://gallery.example.com/api/ops/admin/v1/runtime-rollouts/no-copy-reference-aliases
+
+curl -fsS -X POST \
+  -H "Authorization: Bearer ${ADMIN_ACCESS_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  https://gallery.example.com/api/ops/admin/v1/runtime-rollouts/no-copy-reference-aliases \
+  -d '{"enabled":true,"expected_version":0,"all_api_nodes_cleanup_aware":true}'
+```
+
+Use the version returned by the GET response instead of `0` when the record already exists. The operation requires the `manage:dangerous_config` permission and writes an audit event. Every API request reads the persisted value directly, so activation and rollback do not wait for a process-local cache.
+
+To stop new aliases, repeat the POST with `enabled:false` and the current `expected_version`; the cohort attestation is not required for disabling. Disabling never removes existing aliases. After the first activation, do not roll API nodes back to a release that is not reference-aware; disable creation first and roll back only to a cleanup-aware release.
+
 Back up external databases and object storage with provider-native tooling before upgrades. For Docker full, back up the named PostgreSQL and MinIO volumes before destructive maintenance.
 
 ## Uninstall Safety

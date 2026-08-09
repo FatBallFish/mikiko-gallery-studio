@@ -320,6 +320,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
 	billingSvc.SetAdminConfigResolver(adminSvc)
+	aliasRolloutStore := entstore.NewAliasRolloutStore(client)
 	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, entstore.NewAssetsStore(client), storageRegistry)
 	projectSvc := projectservice.NewService(entstore.NewProjectStore(client))
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, entstore.NewImageTaskStore(client), assetSvc, billingSvc, storageRegistry)
@@ -352,6 +353,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	slog.Info("database-backed stores enabled")
 
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
+	api.SetAliasRolloutStore(aliasRolloutStore)
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)
 	api.SetTextModelServices(textModelSvc, promptOptimizerSvc)
