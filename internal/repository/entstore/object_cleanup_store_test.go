@@ -1,12 +1,14 @@
 package entstore
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"entgo.io/ent/dialect"
 	domaincleanup "github.com/fatballfish/pic-gallery/internal/domain/objectcleanup"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -79,5 +81,353 @@ func TestObjectCleanupStoreStaleWorkerTransitionDoesNotOverrideReenqueue(t *test
 				t.Fatalf("stale transition metadata persisted: %#v", job)
 			}
 		})
+	}
+}
+
+func TestArtifactRecoveryReferenceMatchesCanonicalObjectTuple(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-recovery-tuple-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	configID := uuid.New()
+	if _, err := client.ImageTask.Create().
+		SetUserID(91).
+		SetTaskType("text_to_image").
+		SetPrompt("recovery").
+		SetAbstractModel("plus").
+		SetArtifactRecoveryStatus("pending").
+		SetArtifactStorageConfigID(configID).
+		SetArtifactStorageDriver("s3").
+		SetArtifactStorageBucket("owned-bucket").
+		SetArtifactObjectKeys([]string{"generated-images/91/r.png"}).
+		Save(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	other := domaincleanup.Identity{
+		StorageConfigID: configID.String(),
+		StorageDriver:   "s3",
+		Bucket:          "owned-bucket",
+		ObjectKey:       "generated-images/91/x.png",
+	}
+	if live, err := hasLiveObjectReferences(t.Context(), client, other); err != nil || live {
+		t.Fatalf("unrelated object live=%v err=%v", live, err)
+	}
+
+	recovery := other
+	recovery.StorageDriver = "renamed-driver"
+	recovery.Bucket = "renamed-bucket"
+	recovery.ObjectKey = "generated-images/91/r.png"
+	if live, err := hasLiveObjectReferences(t.Context(), client, recovery); err != nil || !live {
+		t.Fatalf("recovery object live=%v err=%v", live, err)
+	}
+
+	differentConfig := recovery
+	differentConfig.StorageConfigID = uuid.NewString()
+	if live, err := hasLiveObjectReferences(t.Context(), client, differentConfig); err != nil || live {
+		t.Fatalf("different config object live=%v err=%v", live, err)
+	}
+}
+
+func TestObjectCleanupStoreConfiguredIdentityUsesConfigAndObjectKey(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-configured-identity-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewObjectCleanupStore(client)
+	configID := uuid.NewString()
+	first, err := store.Enqueue(t.Context(), domaincleanup.Identity{
+		StorageConfigID: configID,
+		StorageDriver:   "s3",
+		Bucket:          "old-bucket",
+		ObjectKey:       "generated-images/91/shared.png",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Enqueue(t.Context(), domaincleanup.Identity{
+		StorageConfigID: configID,
+		StorageDriver:   "renamed-driver",
+		Bucket:          "new-bucket",
+		ObjectKey:       "generated-images/91/shared.png",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("configured identity created duplicate jobs: first=%#v second=%#v", first, second)
+	}
+	if count, err := client.ObjectDeletionJob.Query().Count(t.Context()); err != nil || count != 1 {
+		t.Fatalf("job count=%d err=%v", count, err)
+	}
+}
+
+func TestObjectCleanupStoreEnqueueAfterDoneCreatesNewPendingJob(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-done-aba-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewObjectCleanupStore(client)
+	identity := domaincleanup.Identity{StorageDriver: "local", ObjectKey: "generated/reused.png"}
+	first, err := store.Enqueue(t.Context(), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, claimed, err := store.Claim(t.Context(), time.Now()); err != nil || !claimed {
+		t.Fatalf("Claim() claimed=%v err=%v", claimed, err)
+	}
+	if err := store.MarkDone(t.Context(), first.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := store.Enqueue(t.Context(), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID == first.ID || second.State != domaincleanup.StatePending {
+		t.Fatalf("second=%#v first=%#v", second, first)
+	}
+	if count, err := client.ObjectDeletionJob.Query().Count(t.Context()); err != nil || count != 2 {
+		t.Fatalf("job count=%d err=%v", count, err)
+	}
+	claimed, ok, err := store.Claim(t.Context(), time.Now().Add(time.Second))
+	if err != nil || !ok || claimed.ID != second.ID {
+		t.Fatalf("second Claim()=%#v ok=%v err=%v", claimed, ok, err)
+	}
+	if err := store.MarkDone(t.Context(), second.ID); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := client.ObjectDeletionJob.Get(t.Context(), uuid.MustParse(second.ID))
+	if err != nil || completed.State != domaincleanup.StateDone {
+		t.Fatalf("completed=%#v err=%v", completed, err)
+	}
+}
+
+func TestObjectCleanupReconcileUsesFairKeysetAndSkipsCompletedDeletion(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-reconcile-keyset-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	deletedAt := time.Now().UTC().Add(-time.Hour)
+	task, err := client.ImageTask.Create().
+		SetUserID(92).
+		SetTaskType("text_to_image").
+		SetPrompt("deleted results").
+		SetAbstractModel("plus").
+		Save(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range 5 {
+		if _, err := client.ImageResult.Create().
+			SetTaskID(task.ID).
+			SetUserID(92).
+			SetStorageDriver("local").
+			SetObjectKey(fmt.Sprintf("generated-images/92/result-%d.png", index)).
+			SetMimeType("image/png").
+			SetSha256(fmt.Sprintf("hash-%d", index)).
+			SetDeletedAt(deletedAt.Add(time.Duration(index) * time.Second)).
+			Save(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := client.ReferenceAsset.Create().
+		SetUserID(92).
+		SetStatus("deleted").
+		SetStorageDriver("local").
+		SetObjectKey("reference-assets/deleted.png").
+		SetMimeType("image/png").
+		SetSha256("reference-hash").
+		SetDeletedAt(deletedAt).
+		Save(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ObjectDeletionJob.Create().
+		SetStorageDriver("local").
+		SetObjectKey("generated-images/92/result-0.png").
+		SetState(domaincleanup.StateDone).
+		SetCompletedAt(deletedAt.Add(time.Minute)).
+		Save(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewObjectCleanupStore(client)
+	for range 6 {
+		if _, err := store.Reconcile(t.Context(), 2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, objectKey := range []string{
+		"reference-assets/deleted.png",
+		"generated-images/92/result-1.png",
+		"generated-images/92/result-2.png",
+		"generated-images/92/result-3.png",
+		"generated-images/92/result-4.png",
+	} {
+		if exists, err := client.ObjectDeletionJob.Query().Where(objectdeletionjob.ObjectKeyEQ(objectKey)).Exist(t.Context()); err != nil || !exists {
+			t.Fatalf("cleanup job for %q exists=%v err=%v", objectKey, exists, err)
+		}
+	}
+	if count, err := client.ObjectDeletionJob.Query().Where(objectdeletionjob.ObjectKeyEQ("generated-images/92/result-0.png")).Count(t.Context()); err != nil || count != 1 {
+		t.Fatalf("completed cleanup history count=%d err=%v", count, err)
+	}
+}
+
+func TestObjectCleanupReconcileMigratesLegacyArtifactRecoveriesExplicitly(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-recovery-migration-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	configID := uuid.New()
+	backfillable, err := client.ImageTask.Create().
+		SetUserID(93).
+		SetTaskType("text_to_image").
+		SetPrompt("backfillable").
+		SetAbstractModel("plus").
+		SetArtifactRecoveryStatus("pending").
+		SetArtifactStorageConfigID(configID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ImageResult.Create().
+		SetTaskID(backfillable.ID).
+		SetUserID(93).
+		SetStorageConfigID(configID).
+		SetStorageDriver("s3").
+		SetObjectKey("generated-images/93/recovered.png").
+		SetMimeType("image/png").
+		SetSha256("backfill-hash").
+		Save(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	unrecoverable, err := client.ImageTask.Create().
+		SetUserID(93).
+		SetTaskType("text_to_image").
+		SetPrompt("unrecoverable").
+		SetAbstractModel("plus").
+		SetArtifactRecoveryStatus("pending").
+		SetArtifactStorageConfigID(configID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conservative, err := client.ImageTask.Create().
+		SetUserID(93).
+		SetTaskType("text_to_image").
+		SetPrompt("encrypted legacy").
+		SetAbstractModel("plus").
+		SetArtifactRecoveryStatus("pending").
+		SetArtifactRecoveryPayload("encrypted-envelope").
+		SetArtifactStorageConfigID(configID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewObjectCleanupStore(client)
+	if _, err := store.Reconcile(t.Context(), 10); err != nil {
+		t.Fatal(err)
+	}
+	backfilled, err := client.ImageTask.Get(t.Context(), backfillable.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backfilled.ArtifactStorageDriver != "s3" || len(backfilled.ArtifactObjectKeys) != 1 || backfilled.ArtifactObjectKeys[0] != "generated-images/93/recovered.png" {
+		t.Fatalf("backfilled recovery=%#v", backfilled)
+	}
+	terminal, err := client.ImageTask.Get(t.Context(), unrecoverable.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminal.ArtifactRecoveryStatus != "unrecoverable" || terminal.ArtifactLastDiagnostic["code"] != "artifact_recovery_identity_unavailable" {
+		t.Fatalf("terminal recovery=%#v", terminal)
+	}
+	stillPending, err := client.ImageTask.Get(t.Context(), conservative.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stillPending.ArtifactRecoveryStatus != "pending" || len(stillPending.ArtifactObjectKeys) != 0 {
+		t.Fatalf("conservative recovery=%#v", stillPending)
+	}
+	identity := domaincleanup.Identity{StorageConfigID: configID.String(), StorageDriver: "s3", ObjectKey: "generated-images/93/unrelated.png"}
+	if live, err := hasLiveObjectReferences(t.Context(), client, identity); err != nil || !live {
+		t.Fatalf("legacy encrypted recovery must remain conservative: live=%v err=%v", live, err)
+	}
+}
+
+func TestObjectCleanupReconcileLegacyRecoverySweepDoesNotStarveLaterRows(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-recovery-fairness-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	base := time.Now().UTC().Add(-time.Hour)
+	for index := range 3 {
+		if _, err := client.ImageTask.Create().
+			SetUserID(94).
+			SetTaskType("text_to_image").
+			SetPrompt(fmt.Sprintf("already pinned %d", index)).
+			SetAbstractModel("plus").
+			SetArtifactRecoveryStatus("pending").
+			SetArtifactObjectKeys([]string{fmt.Sprintf("generated-images/94/%d.png", index)}).
+			SetUpdatedAt(base.Add(time.Duration(index) * time.Second)).
+			Save(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target, err := client.ImageTask.Create().
+		SetUserID(94).
+		SetTaskType("text_to_image").
+		SetPrompt("later legacy recovery").
+		SetAbstractModel("plus").
+		SetArtifactRecoveryStatus("pending").
+		SetUpdatedAt(base.Add(10 * time.Second)).
+		Save(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewObjectCleanupStore(client)
+	for range 4 {
+		if _, err := store.Reconcile(t.Context(), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	updated, err := client.ImageTask.Get(t.Context(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ArtifactRecoveryStatus != "unrecoverable" {
+		t.Fatalf("later recovery remained %q", updated.ArtifactRecoveryStatus)
 	}
 }

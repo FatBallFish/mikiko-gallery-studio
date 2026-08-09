@@ -1183,16 +1183,28 @@ func init() {
 	imagetaskDescArtifactAttemptCount := imagetaskFields[53].Descriptor()
 	// imagetask.DefaultArtifactAttemptCount holds the default value on creation for the artifact_attempt_count field.
 	imagetask.DefaultArtifactAttemptCount = imagetaskDescArtifactAttemptCount.Default.(int)
+	// imagetaskDescArtifactStorageDriver is the schema descriptor for artifact_storage_driver field.
+	imagetaskDescArtifactStorageDriver := imagetaskFields[57].Descriptor()
+	// imagetask.DefaultArtifactStorageDriver holds the default value on creation for the artifact_storage_driver field.
+	imagetask.DefaultArtifactStorageDriver = imagetaskDescArtifactStorageDriver.Default.(string)
+	// imagetask.ArtifactStorageDriverValidator is a validator for the "artifact_storage_driver" field. It is called by the builders before save.
+	imagetask.ArtifactStorageDriverValidator = imagetaskDescArtifactStorageDriver.Validators[0].(func(string) error)
+	// imagetaskDescArtifactStorageBucket is the schema descriptor for artifact_storage_bucket field.
+	imagetaskDescArtifactStorageBucket := imagetaskFields[58].Descriptor()
+	// imagetask.DefaultArtifactStorageBucket holds the default value on creation for the artifact_storage_bucket field.
+	imagetask.DefaultArtifactStorageBucket = imagetaskDescArtifactStorageBucket.Default.(string)
+	// imagetask.ArtifactStorageBucketValidator is a validator for the "artifact_storage_bucket" field. It is called by the builders before save.
+	imagetask.ArtifactStorageBucketValidator = imagetaskDescArtifactStorageBucket.Validators[0].(func(string) error)
 	// imagetaskDescArtifactStorageVersion is the schema descriptor for artifact_storage_version field.
-	imagetaskDescArtifactStorageVersion := imagetaskFields[57].Descriptor()
+	imagetaskDescArtifactStorageVersion := imagetaskFields[60].Descriptor()
 	// imagetask.DefaultArtifactStorageVersion holds the default value on creation for the artifact_storage_version field.
 	imagetask.DefaultArtifactStorageVersion = imagetaskDescArtifactStorageVersion.Default.(int64)
 	// imagetaskDescLeaseOwner is the schema descriptor for lease_owner field.
-	imagetaskDescLeaseOwner := imagetaskFields[58].Descriptor()
+	imagetaskDescLeaseOwner := imagetaskFields[61].Descriptor()
 	// imagetask.LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
 	imagetask.LeaseOwnerValidator = imagetaskDescLeaseOwner.Validators[0].(func(string) error)
 	// imagetaskDescErrorCode is the schema descriptor for error_code field.
-	imagetaskDescErrorCode := imagetaskFields[60].Descriptor()
+	imagetaskDescErrorCode := imagetaskFields[63].Descriptor()
 	// imagetask.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
 	imagetask.ErrorCodeValidator = imagetaskDescErrorCode.Validators[0].(func(string) error)
 	// imagetaskDescID is the schema descriptor for id field.

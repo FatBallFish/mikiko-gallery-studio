@@ -776,6 +776,40 @@ func (_c *ImageTaskCreate) SetNillableArtifactStorageConfigID(v *uuid.UUID) *Ima
 	return _c
 }
 
+// SetArtifactStorageDriver sets the "artifact_storage_driver" field.
+func (_c *ImageTaskCreate) SetArtifactStorageDriver(v string) *ImageTaskCreate {
+	_c.mutation.SetArtifactStorageDriver(v)
+	return _c
+}
+
+// SetNillableArtifactStorageDriver sets the "artifact_storage_driver" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableArtifactStorageDriver(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetArtifactStorageDriver(*v)
+	}
+	return _c
+}
+
+// SetArtifactStorageBucket sets the "artifact_storage_bucket" field.
+func (_c *ImageTaskCreate) SetArtifactStorageBucket(v string) *ImageTaskCreate {
+	_c.mutation.SetArtifactStorageBucket(v)
+	return _c
+}
+
+// SetNillableArtifactStorageBucket sets the "artifact_storage_bucket" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillableArtifactStorageBucket(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetArtifactStorageBucket(*v)
+	}
+	return _c
+}
+
+// SetArtifactObjectKeys sets the "artifact_object_keys" field.
+func (_c *ImageTaskCreate) SetArtifactObjectKeys(v []string) *ImageTaskCreate {
+	_c.mutation.SetArtifactObjectKeys(v)
+	return _c
+}
+
 // SetArtifactStorageVersion sets the "artifact_storage_version" field.
 func (_c *ImageTaskCreate) SetArtifactStorageVersion(v int64) *ImageTaskCreate {
 	_c.mutation.SetArtifactStorageVersion(v)
@@ -1052,6 +1086,14 @@ func (_c *ImageTaskCreate) defaults() {
 		v := imagetask.DefaultArtifactAttemptCount
 		_c.mutation.SetArtifactAttemptCount(v)
 	}
+	if _, ok := _c.mutation.ArtifactStorageDriver(); !ok {
+		v := imagetask.DefaultArtifactStorageDriver
+		_c.mutation.SetArtifactStorageDriver(v)
+	}
+	if _, ok := _c.mutation.ArtifactStorageBucket(); !ok {
+		v := imagetask.DefaultArtifactStorageBucket
+		_c.mutation.SetArtifactStorageBucket(v)
+	}
 	if _, ok := _c.mutation.ArtifactStorageVersion(); !ok {
 		v := imagetask.DefaultArtifactStorageVersion
 		_c.mutation.SetArtifactStorageVersion(v)
@@ -1268,6 +1310,22 @@ func (_c *ImageTaskCreate) check() error {
 	}
 	if _, ok := _c.mutation.ArtifactAttemptCount(); !ok {
 		return &ValidationError{Name: "artifact_attempt_count", err: errors.New(`ent: missing required field "ImageTask.artifact_attempt_count"`)}
+	}
+	if _, ok := _c.mutation.ArtifactStorageDriver(); !ok {
+		return &ValidationError{Name: "artifact_storage_driver", err: errors.New(`ent: missing required field "ImageTask.artifact_storage_driver"`)}
+	}
+	if v, ok := _c.mutation.ArtifactStorageDriver(); ok {
+		if err := imagetask.ArtifactStorageDriverValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_storage_driver", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_storage_driver": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ArtifactStorageBucket(); !ok {
+		return &ValidationError{Name: "artifact_storage_bucket", err: errors.New(`ent: missing required field "ImageTask.artifact_storage_bucket"`)}
+	}
+	if v, ok := _c.mutation.ArtifactStorageBucket(); ok {
+		if err := imagetask.ArtifactStorageBucketValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_storage_bucket", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_storage_bucket": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.ArtifactStorageVersion(); !ok {
 		return &ValidationError{Name: "artifact_storage_version", err: errors.New(`ent: missing required field "ImageTask.artifact_storage_version"`)}
@@ -1548,6 +1606,18 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ArtifactStorageConfigID(); ok {
 		_spec.SetField(imagetask.FieldArtifactStorageConfigID, field.TypeUUID, value)
 		_node.ArtifactStorageConfigID = &value
+	}
+	if value, ok := _c.mutation.ArtifactStorageDriver(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageDriver, field.TypeString, value)
+		_node.ArtifactStorageDriver = value
+	}
+	if value, ok := _c.mutation.ArtifactStorageBucket(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageBucket, field.TypeString, value)
+		_node.ArtifactStorageBucket = value
+	}
+	if value, ok := _c.mutation.ArtifactObjectKeys(); ok {
+		_spec.SetField(imagetask.FieldArtifactObjectKeys, field.TypeJSON, value)
+		_node.ArtifactObjectKeys = value
 	}
 	if value, ok := _c.mutation.ArtifactStorageVersion(); ok {
 		_spec.SetField(imagetask.FieldArtifactStorageVersion, field.TypeInt64, value)

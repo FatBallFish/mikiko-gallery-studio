@@ -133,6 +133,12 @@ const (
 	FieldArtifactLastDiagnostic = "artifact_last_diagnostic"
 	// FieldArtifactStorageConfigID holds the string denoting the artifact_storage_config_id field in the database.
 	FieldArtifactStorageConfigID = "artifact_storage_config_id"
+	// FieldArtifactStorageDriver holds the string denoting the artifact_storage_driver field in the database.
+	FieldArtifactStorageDriver = "artifact_storage_driver"
+	// FieldArtifactStorageBucket holds the string denoting the artifact_storage_bucket field in the database.
+	FieldArtifactStorageBucket = "artifact_storage_bucket"
+	// FieldArtifactObjectKeys holds the string denoting the artifact_object_keys field in the database.
+	FieldArtifactObjectKeys = "artifact_object_keys"
 	// FieldArtifactStorageVersion holds the string denoting the artifact_storage_version field in the database.
 	FieldArtifactStorageVersion = "artifact_storage_version"
 	// FieldLeaseOwner holds the string denoting the lease_owner field in the database.
@@ -222,6 +228,9 @@ var Columns = []string{
 	FieldArtifactNextRetryAt,
 	FieldArtifactLastDiagnostic,
 	FieldArtifactStorageConfigID,
+	FieldArtifactStorageDriver,
+	FieldArtifactStorageBucket,
+	FieldArtifactObjectKeys,
 	FieldArtifactStorageVersion,
 	FieldLeaseOwner,
 	FieldLeaseExpiresAt,
@@ -346,6 +355,14 @@ var (
 	ArtifactRecoveryStatusValidator func(string) error
 	// DefaultArtifactAttemptCount holds the default value on creation for the "artifact_attempt_count" field.
 	DefaultArtifactAttemptCount int
+	// DefaultArtifactStorageDriver holds the default value on creation for the "artifact_storage_driver" field.
+	DefaultArtifactStorageDriver string
+	// ArtifactStorageDriverValidator is a validator for the "artifact_storage_driver" field. It is called by the builders before save.
+	ArtifactStorageDriverValidator func(string) error
+	// DefaultArtifactStorageBucket holds the default value on creation for the "artifact_storage_bucket" field.
+	DefaultArtifactStorageBucket string
+	// ArtifactStorageBucketValidator is a validator for the "artifact_storage_bucket" field. It is called by the builders before save.
+	ArtifactStorageBucketValidator func(string) error
 	// DefaultArtifactStorageVersion holds the default value on creation for the "artifact_storage_version" field.
 	DefaultArtifactStorageVersion int64
 	// LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
@@ -632,6 +649,16 @@ func ByArtifactNextRetryAt(opts ...sql.OrderTermOption) OrderOption {
 // ByArtifactStorageConfigID orders the results by the artifact_storage_config_id field.
 func ByArtifactStorageConfigID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldArtifactStorageConfigID, opts...).ToFunc()
+}
+
+// ByArtifactStorageDriver orders the results by the artifact_storage_driver field.
+func ByArtifactStorageDriver(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactStorageDriver, opts...).ToFunc()
+}
+
+// ByArtifactStorageBucket orders the results by the artifact_storage_bucket field.
+func ByArtifactStorageBucket(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactStorageBucket, opts...).ToFunc()
 }
 
 // ByArtifactStorageVersion orders the results by the artifact_storage_version field.

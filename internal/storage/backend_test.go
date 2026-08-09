@@ -461,6 +461,65 @@ func TestProjectTemporaryMediaURLsBucketsPreviewAndFreshlySignsDownload(t *testi
 	}
 }
 
+func TestLocalBackendListObjectsPaginatesWithinPrefix(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	for _, key := range []string{
+		"generated-images/7/b.png",
+		"reference-assets/ignored.png",
+		"generated-images/7/a.png",
+	} {
+		if err := backend.Put(t.Context(), key, "image/png", []byte(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := backend.ListObjects(t.Context(), "generated-images/", "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Objects) != 1 || first.Objects[0].ObjectKey != "generated-images/7/a.png" || first.Objects[0].ModifiedAt.IsZero() || first.NextCursor == "" {
+		t.Fatalf("first page=%#v", first)
+	}
+	second, err := backend.ListObjects(t.Context(), "generated-images/", first.NextCursor, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Objects) != 1 || second.Objects[0].ObjectKey != "generated-images/7/b.png" || second.NextCursor != "" {
+		t.Fatalf("second page=%#v", second)
+	}
+}
+
+func TestS3BackendListObjectsV2UsesConfiguredAndOwnedPrefix(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/bucket" {
+			t.Fatalf("request=%s %s", r.Method, r.URL.Path)
+		}
+		query := r.URL.Query()
+		if query.Get("list-type") != "2" || query.Get("prefix") != "tenant-root/generated-images/" || query.Get("continuation-token") != "token-a" || query.Get("max-keys") != "2" {
+			t.Fatalf("query=%v", query)
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = io.WriteString(w, `<ListBucketResult><IsTruncated>true</IsTruncated><Contents><Key>tenant-root/generated-images/7/a.png</Key><LastModified>2026-08-09T01:00:00Z</LastModified></Contents><NextContinuationToken>token-b</NextContinuationToken></ListBucketResult>`)
+	}))
+	defer server.Close()
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: server.URL, Region: "us-east-1", Bucket: "bucket", Prefix: "tenant-root",
+			ForcePathStyle: true, AccessKeyID: "access", SecretAccessKey: "secret",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := backend.ListObjects(t.Context(), "generated-images/", "token-a", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Objects) != 1 || page.Objects[0].ObjectKey != "generated-images/7/a.png" || !page.Objects[0].ModifiedAt.Equal(time.Date(2026, 8, 9, 1, 0, 0, 0, time.UTC)) || page.NextCursor != "token-b" {
+		t.Fatalf("page=%#v", page)
+	}
+}
+
 func TestS3BackendGetBoundedStopsAfterLimitAndClosesBody(t *testing.T) {
 	body := &countingReadCloser{reader: strings.NewReader(strings.Repeat("x", 1<<20))}
 	backend, err := NewS3Backend(config.StorageConfig{

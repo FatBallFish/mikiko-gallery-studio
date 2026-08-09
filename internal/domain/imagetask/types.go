@@ -184,6 +184,9 @@ type ArtifactRecovery struct {
 	LastDiagnostic   ArtifactDiagnostic   `json:"last_diagnostic,omitempty"`
 	Diagnostics      []ArtifactDiagnostic `json:"diagnostics,omitempty"`
 	StorageConfigID  string               `json:"storage_config_id,omitempty"`
+	StorageDriver    string               `json:"storage_driver,omitempty"`
+	StorageBucket    string               `json:"storage_bucket,omitempty"`
+	ObjectKeys       []string             `json:"object_keys,omitempty"`
 	StorageVersion   int64                `json:"storage_version,omitempty"`
 }
 

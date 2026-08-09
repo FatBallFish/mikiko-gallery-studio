@@ -163,14 +163,32 @@ func (s *Service) pinArtifactWriter(ctx context.Context, task *domainimagetask.T
 	if task == nil {
 		return fmt.Errorf("pin artifact storage writer: task is nil")
 	}
-	if strings.TrimSpace(task.ArtifactRecovery.StorageConfigID) != "" {
+	if strings.TrimSpace(task.ArtifactRecovery.StorageDriver) != "" && len(task.ArtifactRecovery.ObjectKeys) > 0 {
 		return nil
 	}
-	writer, err := s.router.DefaultWriter(ctx)
+	var (
+		writer storage.BackendRef
+		err    error
+	)
+	if strings.TrimSpace(task.ArtifactRecovery.StorageConfigID) != "" {
+		writer, err = s.router.BackendFor(ctx, task.ArtifactRecovery.StorageConfigID, task.ArtifactRecovery.StorageDriver)
+	} else {
+		writer, err = s.router.DefaultWriter(ctx)
+	}
 	if err != nil {
 		return newArtifactFailure(s, errs.CodeArtifactStorageUnavailable, "resolve_storage", true, err)
 	}
+	results, err := s.decryptArtifactResults(task.ArtifactRecovery.EncryptedPayload)
+	if err != nil {
+		return newArtifactFailure(s, errs.CodeArtifactRecoveryPayloadInvalid, "decode", false, err)
+	}
 	task.ArtifactRecovery.StorageConfigID = writer.ConfigID
+	task.ArtifactRecovery.StorageDriver = writer.Driver
+	task.ArtifactRecovery.StorageBucket = writer.Bucket
+	if strings.TrimSpace(writer.ConfigID) != "" {
+		task.ArtifactRecovery.StorageBucket = ""
+	}
+	task.ArtifactRecovery.ObjectKeys = artifactRecoveryObjectKeys(*task, results)
 	task.ArtifactRecovery.StorageVersion = writer.Version
 	if err := s.saveOwnedTask(ctx, *task, owner); err != nil {
 		if snapshotErr := s.saveTerminalState(ctx, *task, owner); snapshotErr != nil {
@@ -178,6 +196,29 @@ func (s *Service) pinArtifactWriter(ctx context.Context, task *domainimagetask.T
 		}
 	}
 	return nil
+}
+
+func artifactRecoveryObjectKeys(task domainimagetask.Task, results []provider.ImageResult) []string {
+	keys := make([]string, 0, len(results))
+	for index, result := range results {
+		resultID := strings.TrimSpace(result.ID)
+		if resultID == "" || strings.TrimSpace(result.B64JSON) != "" || isDataURL(result.URL) {
+			resultID = deterministicImageResultID(task.ID, index)
+		}
+		format := defaultString(result.Format, task.OutputFormat)
+		mimeType := defaultString(result.MimeType, "image/"+strings.ToLower(strings.TrimSpace(task.OutputFormat)))
+		keys = append(keys, generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType)))
+	}
+	return keys
+}
+
+func recoveryObjectKey(task domainimagetask.Task, index int, fallback string) string {
+	if index >= 0 && index < len(task.ArtifactRecovery.ObjectKeys) {
+		if key := strings.TrimSpace(task.ArtifactRecovery.ObjectKeys[index]); key != "" {
+			return key
+		}
+	}
+	return fallback
 }
 
 func (s *Service) handleArtifactPersistenceFailure(ctx context.Context, task domainimagetask.Task, owner string, failure error) (domainimagetask.ExecuteResult, error) {
@@ -332,7 +373,7 @@ func (s *Service) decryptArtifactResults(payload string) ([]provider.ImageResult
 
 func (s *Service) artifactWriter(ctx context.Context, task domainimagetask.Task) (storage.BackendRef, error) {
 	if strings.TrimSpace(task.ArtifactRecovery.StorageConfigID) != "" {
-		return s.router.BackendFor(ctx, task.ArtifactRecovery.StorageConfigID, "")
+		return s.router.BackendFor(ctx, task.ArtifactRecovery.StorageConfigID, task.ArtifactRecovery.StorageDriver)
 	}
 	return s.router.DefaultWriter(ctx)
 }

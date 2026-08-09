@@ -114,6 +114,51 @@ func TestRemediationSchemaEnforcesRuntimeInvariants(t *testing.T) {
 		if _, err := client.ObjectDeletionJob.Create().SetStorageConfigID(firstConfigID).SetStorageDriver("s3").SetBucket("shared-name").SetObjectKey("result.png").Save(ctx); !repoent.IsConstraintError(err) {
 			t.Fatalf("duplicate configured cleanup error = %v, want constraint error", err)
 		}
+		if _, err := client.ObjectDeletionJob.Create().SetStorageConfigID(firstConfigID).SetStorageDriver("renamed-driver").SetBucket("renamed-bucket").SetObjectKey("result.png").Save(ctx); !repoent.IsConstraintError(err) {
+			t.Fatalf("configured cleanup identity must ignore driver and bucket: error=%v", err)
+		}
+	})
+
+	t.Run("active reference aliases are unique per user and source", func(t *testing.T) {
+		sourceID := uuid.New()
+		first, err := client.ReferenceAsset.Create().
+			SetUserID(101).
+			SetStatus("ready").
+			SetObjectKey("generated-images/101/source.png").
+			SetMimeType("image/png").
+			SetSha256("alias-source-one").
+			SetSourceImageResultID(sourceID).
+			SetOwnsObject(false).
+			Save(ctx)
+		if err != nil {
+			t.Fatalf("create first alias: %v", err)
+		}
+		_, err = client.ReferenceAsset.Create().
+			SetUserID(101).
+			SetStatus("ready").
+			SetObjectKey("generated-images/101/source.png").
+			SetMimeType("image/png").
+			SetSha256("alias-source-two").
+			SetSourceImageResultID(sourceID).
+			SetOwnsObject(false).
+			Save(ctx)
+		if !repoent.IsConstraintError(err) {
+			t.Fatalf("duplicate active alias error=%v, want constraint error", err)
+		}
+		if _, err := first.Update().SetStatus("deleted").SetDeletedAt(time.Now().UTC()).Save(ctx); err != nil {
+			t.Fatalf("soft delete first alias: %v", err)
+		}
+		if _, err := client.ReferenceAsset.Create().
+			SetUserID(101).
+			SetStatus("ready").
+			SetObjectKey("generated-images/101/source.png").
+			SetMimeType("image/png").
+			SetSha256("alias-source-three").
+			SetSourceImageResultID(sourceID).
+			SetOwnsObject(false).
+			Save(ctx); err != nil {
+			t.Fatalf("recreate alias after soft delete: %v", err)
+		}
 	})
 }
 

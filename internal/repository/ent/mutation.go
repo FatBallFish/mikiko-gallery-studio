@@ -9469,6 +9469,10 @@ type ImageTaskMutation struct {
 	artifact_next_retry_at          *time.Time
 	artifact_last_diagnostic        *map[string]interface{}
 	artifact_storage_config_id      *uuid.UUID
+	artifact_storage_driver         *string
+	artifact_storage_bucket         *string
+	artifact_object_keys            *[]string
+	appendartifact_object_keys      []string
 	artifact_storage_version        *int64
 	addartifact_storage_version     *int64
 	lease_owner                     *string
@@ -12354,6 +12358,143 @@ func (m *ImageTaskMutation) ResetArtifactStorageConfigID() {
 	delete(m.clearedFields, imagetask.FieldArtifactStorageConfigID)
 }
 
+// SetArtifactStorageDriver sets the "artifact_storage_driver" field.
+func (m *ImageTaskMutation) SetArtifactStorageDriver(s string) {
+	m.artifact_storage_driver = &s
+}
+
+// ArtifactStorageDriver returns the value of the "artifact_storage_driver" field in the mutation.
+func (m *ImageTaskMutation) ArtifactStorageDriver() (r string, exists bool) {
+	v := m.artifact_storage_driver
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactStorageDriver returns the old "artifact_storage_driver" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldArtifactStorageDriver(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactStorageDriver is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactStorageDriver requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactStorageDriver: %w", err)
+	}
+	return oldValue.ArtifactStorageDriver, nil
+}
+
+// ResetArtifactStorageDriver resets all changes to the "artifact_storage_driver" field.
+func (m *ImageTaskMutation) ResetArtifactStorageDriver() {
+	m.artifact_storage_driver = nil
+}
+
+// SetArtifactStorageBucket sets the "artifact_storage_bucket" field.
+func (m *ImageTaskMutation) SetArtifactStorageBucket(s string) {
+	m.artifact_storage_bucket = &s
+}
+
+// ArtifactStorageBucket returns the value of the "artifact_storage_bucket" field in the mutation.
+func (m *ImageTaskMutation) ArtifactStorageBucket() (r string, exists bool) {
+	v := m.artifact_storage_bucket
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactStorageBucket returns the old "artifact_storage_bucket" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldArtifactStorageBucket(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactStorageBucket is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactStorageBucket requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactStorageBucket: %w", err)
+	}
+	return oldValue.ArtifactStorageBucket, nil
+}
+
+// ResetArtifactStorageBucket resets all changes to the "artifact_storage_bucket" field.
+func (m *ImageTaskMutation) ResetArtifactStorageBucket() {
+	m.artifact_storage_bucket = nil
+}
+
+// SetArtifactObjectKeys sets the "artifact_object_keys" field.
+func (m *ImageTaskMutation) SetArtifactObjectKeys(s []string) {
+	m.artifact_object_keys = &s
+	m.appendartifact_object_keys = nil
+}
+
+// ArtifactObjectKeys returns the value of the "artifact_object_keys" field in the mutation.
+func (m *ImageTaskMutation) ArtifactObjectKeys() (r []string, exists bool) {
+	v := m.artifact_object_keys
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactObjectKeys returns the old "artifact_object_keys" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldArtifactObjectKeys(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactObjectKeys is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactObjectKeys requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactObjectKeys: %w", err)
+	}
+	return oldValue.ArtifactObjectKeys, nil
+}
+
+// AppendArtifactObjectKeys adds s to the "artifact_object_keys" field.
+func (m *ImageTaskMutation) AppendArtifactObjectKeys(s []string) {
+	m.appendartifact_object_keys = append(m.appendartifact_object_keys, s...)
+}
+
+// AppendedArtifactObjectKeys returns the list of values that were appended to the "artifact_object_keys" field in this mutation.
+func (m *ImageTaskMutation) AppendedArtifactObjectKeys() ([]string, bool) {
+	if len(m.appendartifact_object_keys) == 0 {
+		return nil, false
+	}
+	return m.appendartifact_object_keys, true
+}
+
+// ClearArtifactObjectKeys clears the value of the "artifact_object_keys" field.
+func (m *ImageTaskMutation) ClearArtifactObjectKeys() {
+	m.artifact_object_keys = nil
+	m.appendartifact_object_keys = nil
+	m.clearedFields[imagetask.FieldArtifactObjectKeys] = struct{}{}
+}
+
+// ArtifactObjectKeysCleared returns if the "artifact_object_keys" field was cleared in this mutation.
+func (m *ImageTaskMutation) ArtifactObjectKeysCleared() bool {
+	_, ok := m.clearedFields[imagetask.FieldArtifactObjectKeys]
+	return ok
+}
+
+// ResetArtifactObjectKeys resets all changes to the "artifact_object_keys" field.
+func (m *ImageTaskMutation) ResetArtifactObjectKeys() {
+	m.artifact_object_keys = nil
+	m.appendartifact_object_keys = nil
+	delete(m.clearedFields, imagetask.FieldArtifactObjectKeys)
+}
+
 // SetArtifactStorageVersion sets the "artifact_storage_version" field.
 func (m *ImageTaskMutation) SetArtifactStorageVersion(i int64) {
 	m.artifact_storage_version = &i
@@ -12765,7 +12906,7 @@ func (m *ImageTaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ImageTaskMutation) Fields() []string {
-	fields := make([]string, 0, 66)
+	fields := make([]string, 0, 69)
 	if m.created_at != nil {
 		fields = append(fields, imagetask.FieldCreatedAt)
 	}
@@ -12943,6 +13084,15 @@ func (m *ImageTaskMutation) Fields() []string {
 	if m.artifact_storage_config_id != nil {
 		fields = append(fields, imagetask.FieldArtifactStorageConfigID)
 	}
+	if m.artifact_storage_driver != nil {
+		fields = append(fields, imagetask.FieldArtifactStorageDriver)
+	}
+	if m.artifact_storage_bucket != nil {
+		fields = append(fields, imagetask.FieldArtifactStorageBucket)
+	}
+	if m.artifact_object_keys != nil {
+		fields = append(fields, imagetask.FieldArtifactObjectKeys)
+	}
 	if m.artifact_storage_version != nil {
 		fields = append(fields, imagetask.FieldArtifactStorageVersion)
 	}
@@ -13090,6 +13240,12 @@ func (m *ImageTaskMutation) Field(name string) (ent.Value, bool) {
 		return m.ArtifactLastDiagnostic()
 	case imagetask.FieldArtifactStorageConfigID:
 		return m.ArtifactStorageConfigID()
+	case imagetask.FieldArtifactStorageDriver:
+		return m.ArtifactStorageDriver()
+	case imagetask.FieldArtifactStorageBucket:
+		return m.ArtifactStorageBucket()
+	case imagetask.FieldArtifactObjectKeys:
+		return m.ArtifactObjectKeys()
 	case imagetask.FieldArtifactStorageVersion:
 		return m.ArtifactStorageVersion()
 	case imagetask.FieldLeaseOwner:
@@ -13231,6 +13387,12 @@ func (m *ImageTaskMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldArtifactLastDiagnostic(ctx)
 	case imagetask.FieldArtifactStorageConfigID:
 		return m.OldArtifactStorageConfigID(ctx)
+	case imagetask.FieldArtifactStorageDriver:
+		return m.OldArtifactStorageDriver(ctx)
+	case imagetask.FieldArtifactStorageBucket:
+		return m.OldArtifactStorageBucket(ctx)
+	case imagetask.FieldArtifactObjectKeys:
+		return m.OldArtifactObjectKeys(ctx)
 	case imagetask.FieldArtifactStorageVersion:
 		return m.OldArtifactStorageVersion(ctx)
 	case imagetask.FieldLeaseOwner:
@@ -13667,6 +13829,27 @@ func (m *ImageTaskMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetArtifactStorageConfigID(v)
 		return nil
+	case imagetask.FieldArtifactStorageDriver:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactStorageDriver(v)
+		return nil
+	case imagetask.FieldArtifactStorageBucket:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactStorageBucket(v)
+		return nil
+	case imagetask.FieldArtifactObjectKeys:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactObjectKeys(v)
+		return nil
 	case imagetask.FieldArtifactStorageVersion:
 		v, ok := value.(int64)
 		if !ok {
@@ -14025,6 +14208,9 @@ func (m *ImageTaskMutation) ClearedFields() []string {
 	if m.FieldCleared(imagetask.FieldArtifactStorageConfigID) {
 		fields = append(fields, imagetask.FieldArtifactStorageConfigID)
 	}
+	if m.FieldCleared(imagetask.FieldArtifactObjectKeys) {
+		fields = append(fields, imagetask.FieldArtifactObjectKeys)
+	}
 	if m.FieldCleared(imagetask.FieldLeaseOwner) {
 		fields = append(fields, imagetask.FieldLeaseOwner)
 	}
@@ -14128,6 +14314,9 @@ func (m *ImageTaskMutation) ClearField(name string) error {
 		return nil
 	case imagetask.FieldArtifactStorageConfigID:
 		m.ClearArtifactStorageConfigID()
+		return nil
+	case imagetask.FieldArtifactObjectKeys:
+		m.ClearArtifactObjectKeys()
 		return nil
 	case imagetask.FieldLeaseOwner:
 		m.ClearLeaseOwner()
@@ -14331,6 +14520,15 @@ func (m *ImageTaskMutation) ResetField(name string) error {
 		return nil
 	case imagetask.FieldArtifactStorageConfigID:
 		m.ResetArtifactStorageConfigID()
+		return nil
+	case imagetask.FieldArtifactStorageDriver:
+		m.ResetArtifactStorageDriver()
+		return nil
+	case imagetask.FieldArtifactStorageBucket:
+		m.ResetArtifactStorageBucket()
+		return nil
+	case imagetask.FieldArtifactObjectKeys:
+		m.ResetArtifactObjectKeys()
 		return nil
 	case imagetask.FieldArtifactStorageVersion:
 		m.ResetArtifactStorageVersion()

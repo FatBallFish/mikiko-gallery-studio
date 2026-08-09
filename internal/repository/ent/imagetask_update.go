@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
@@ -1050,6 +1051,52 @@ func (_u *ImageTaskUpdate) ClearArtifactStorageConfigID() *ImageTaskUpdate {
 	return _u
 }
 
+// SetArtifactStorageDriver sets the "artifact_storage_driver" field.
+func (_u *ImageTaskUpdate) SetArtifactStorageDriver(v string) *ImageTaskUpdate {
+	_u.mutation.SetArtifactStorageDriver(v)
+	return _u
+}
+
+// SetNillableArtifactStorageDriver sets the "artifact_storage_driver" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableArtifactStorageDriver(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetArtifactStorageDriver(*v)
+	}
+	return _u
+}
+
+// SetArtifactStorageBucket sets the "artifact_storage_bucket" field.
+func (_u *ImageTaskUpdate) SetArtifactStorageBucket(v string) *ImageTaskUpdate {
+	_u.mutation.SetArtifactStorageBucket(v)
+	return _u
+}
+
+// SetNillableArtifactStorageBucket sets the "artifact_storage_bucket" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableArtifactStorageBucket(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetArtifactStorageBucket(*v)
+	}
+	return _u
+}
+
+// SetArtifactObjectKeys sets the "artifact_object_keys" field.
+func (_u *ImageTaskUpdate) SetArtifactObjectKeys(v []string) *ImageTaskUpdate {
+	_u.mutation.SetArtifactObjectKeys(v)
+	return _u
+}
+
+// AppendArtifactObjectKeys appends value to the "artifact_object_keys" field.
+func (_u *ImageTaskUpdate) AppendArtifactObjectKeys(v []string) *ImageTaskUpdate {
+	_u.mutation.AppendArtifactObjectKeys(v)
+	return _u
+}
+
+// ClearArtifactObjectKeys clears the value of the "artifact_object_keys" field.
+func (_u *ImageTaskUpdate) ClearArtifactObjectKeys() *ImageTaskUpdate {
+	_u.mutation.ClearArtifactObjectKeys()
+	return _u
+}
+
 // SetArtifactStorageVersion sets the "artifact_storage_version" field.
 func (_u *ImageTaskUpdate) SetArtifactStorageVersion(v int64) *ImageTaskUpdate {
 	_u.mutation.ResetArtifactStorageVersion()
@@ -1343,6 +1390,16 @@ func (_u *ImageTaskUpdate) check() error {
 	if v, ok := _u.mutation.ArtifactRecoveryStatus(); ok {
 		if err := imagetask.ArtifactRecoveryStatusValidator(v); err != nil {
 			return &ValidationError{Name: "artifact_recovery_status", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_recovery_status": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ArtifactStorageDriver(); ok {
+		if err := imagetask.ArtifactStorageDriverValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_storage_driver", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_storage_driver": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ArtifactStorageBucket(); ok {
+		if err := imagetask.ArtifactStorageBucketValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_storage_bucket", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_storage_bucket": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.LeaseOwner(); ok {
@@ -1657,6 +1714,23 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.ArtifactStorageConfigIDCleared() {
 		_spec.ClearField(imagetask.FieldArtifactStorageConfigID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.ArtifactStorageDriver(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageDriver, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactStorageBucket(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageBucket, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactObjectKeys(); ok {
+		_spec.SetField(imagetask.FieldArtifactObjectKeys, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedArtifactObjectKeys(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, imagetask.FieldArtifactObjectKeys, value)
+		})
+	}
+	if _u.mutation.ArtifactObjectKeysCleared() {
+		_spec.ClearField(imagetask.FieldArtifactObjectKeys, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.ArtifactStorageVersion(); ok {
 		_spec.SetField(imagetask.FieldArtifactStorageVersion, field.TypeInt64, value)
@@ -2769,6 +2843,52 @@ func (_u *ImageTaskUpdateOne) ClearArtifactStorageConfigID() *ImageTaskUpdateOne
 	return _u
 }
 
+// SetArtifactStorageDriver sets the "artifact_storage_driver" field.
+func (_u *ImageTaskUpdateOne) SetArtifactStorageDriver(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactStorageDriver(v)
+	return _u
+}
+
+// SetNillableArtifactStorageDriver sets the "artifact_storage_driver" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableArtifactStorageDriver(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetArtifactStorageDriver(*v)
+	}
+	return _u
+}
+
+// SetArtifactStorageBucket sets the "artifact_storage_bucket" field.
+func (_u *ImageTaskUpdateOne) SetArtifactStorageBucket(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactStorageBucket(v)
+	return _u
+}
+
+// SetNillableArtifactStorageBucket sets the "artifact_storage_bucket" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableArtifactStorageBucket(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetArtifactStorageBucket(*v)
+	}
+	return _u
+}
+
+// SetArtifactObjectKeys sets the "artifact_object_keys" field.
+func (_u *ImageTaskUpdateOne) SetArtifactObjectKeys(v []string) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactObjectKeys(v)
+	return _u
+}
+
+// AppendArtifactObjectKeys appends value to the "artifact_object_keys" field.
+func (_u *ImageTaskUpdateOne) AppendArtifactObjectKeys(v []string) *ImageTaskUpdateOne {
+	_u.mutation.AppendArtifactObjectKeys(v)
+	return _u
+}
+
+// ClearArtifactObjectKeys clears the value of the "artifact_object_keys" field.
+func (_u *ImageTaskUpdateOne) ClearArtifactObjectKeys() *ImageTaskUpdateOne {
+	_u.mutation.ClearArtifactObjectKeys()
+	return _u
+}
+
 // SetArtifactStorageVersion sets the "artifact_storage_version" field.
 func (_u *ImageTaskUpdateOne) SetArtifactStorageVersion(v int64) *ImageTaskUpdateOne {
 	_u.mutation.ResetArtifactStorageVersion()
@@ -3075,6 +3195,16 @@ func (_u *ImageTaskUpdateOne) check() error {
 	if v, ok := _u.mutation.ArtifactRecoveryStatus(); ok {
 		if err := imagetask.ArtifactRecoveryStatusValidator(v); err != nil {
 			return &ValidationError{Name: "artifact_recovery_status", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_recovery_status": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ArtifactStorageDriver(); ok {
+		if err := imagetask.ArtifactStorageDriverValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_storage_driver", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_storage_driver": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ArtifactStorageBucket(); ok {
+		if err := imagetask.ArtifactStorageBucketValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_storage_bucket", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_storage_bucket": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.LeaseOwner(); ok {
@@ -3406,6 +3536,23 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	}
 	if _u.mutation.ArtifactStorageConfigIDCleared() {
 		_spec.ClearField(imagetask.FieldArtifactStorageConfigID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.ArtifactStorageDriver(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageDriver, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactStorageBucket(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageBucket, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactObjectKeys(); ok {
+		_spec.SetField(imagetask.FieldArtifactObjectKeys, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedArtifactObjectKeys(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, imagetask.FieldArtifactObjectKeys, value)
+		})
+	}
+	if _u.mutation.ArtifactObjectKeysCleared() {
+		_spec.ClearField(imagetask.FieldArtifactObjectKeys, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.ArtifactStorageVersion(); ok {
 		_spec.SetField(imagetask.FieldArtifactStorageVersion, field.TypeInt64, value)

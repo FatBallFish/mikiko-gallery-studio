@@ -470,6 +470,9 @@ var (
 		{Name: "artifact_next_retry_at", Type: field.TypeTime, Nullable: true},
 		{Name: "artifact_last_diagnostic", Type: field.TypeJSON, Nullable: true},
 		{Name: "artifact_storage_config_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "artifact_storage_driver", Type: field.TypeString, Size: 16, Default: ""},
+		{Name: "artifact_storage_bucket", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "artifact_object_keys", Type: field.TypeJSON, Nullable: true},
 		{Name: "artifact_storage_version", Type: field.TypeInt64, Default: 0},
 		{Name: "lease_owner", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "lease_expires_at", Type: field.TypeTime, Nullable: true},
@@ -487,7 +490,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "image_tasks_projects_image_tasks",
-				Columns:    []*schema.Column{ImageTasksColumns[66]},
+				Columns:    []*schema.Column{ImageTasksColumns[69]},
 				RefColumns: []*schema.Column{ProjectsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -501,12 +504,12 @@ var (
 			{
 				Name:    "imagetask_project_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[66]},
+				Columns: []*schema.Column{ImageTasksColumns[69]},
 			},
 			{
 				Name:    "imagetask_user_id_project_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[4], ImageTasksColumns[66], ImageTasksColumns[1]},
+				Columns: []*schema.Column{ImageTasksColumns[4], ImageTasksColumns[69], ImageTasksColumns[1]},
 			},
 			{
 				Name:    "imagetask_api_key_id",
@@ -561,12 +564,12 @@ var (
 			{
 				Name:    "imagetask_lease_owner",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[60]},
+				Columns: []*schema.Column{ImageTasksColumns[63]},
 			},
 			{
 				Name:    "imagetask_lease_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[61]},
+				Columns: []*schema.Column{ImageTasksColumns[64]},
 			},
 			{
 				Name:    "imagetask_artifact_recovery_status_artifact_next_retry_at",
@@ -574,9 +577,14 @@ var (
 				Columns: []*schema.Column{ImageTasksColumns[53], ImageTasksColumns[56]},
 			},
 			{
+				Name:    "imagetask_artifact_recovery_status_artifact_storage_config_id",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[53], ImageTasksColumns[58]},
+			},
+			{
 				Name:    "imagetask_error_code",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[62]},
+				Columns: []*schema.Column{ImageTasksColumns[65]},
 			},
 			{
 				Name:    "imagetask_created_at",
@@ -839,16 +847,16 @@ var (
 				Columns: []*schema.Column{ObjectDeletionJobsColumns[7], ObjectDeletionJobsColumns[9]},
 			},
 			{
-				Name:    "objectdeletionjob_storage_config_id_bucket_object_key",
+				Name:    "objectdeletionjob_storage_config_id_object_key",
 				Unique:  false,
-				Columns: []*schema.Column{ObjectDeletionJobsColumns[3], ObjectDeletionJobsColumns[5], ObjectDeletionJobsColumns[6]},
+				Columns: []*schema.Column{ObjectDeletionJobsColumns[3], ObjectDeletionJobsColumns[6]},
 			},
 			{
 				Name:    "object_cleanup_config_live",
 				Unique:  true,
-				Columns: []*schema.Column{ObjectDeletionJobsColumns[3], ObjectDeletionJobsColumns[5], ObjectDeletionJobsColumns[6]},
+				Columns: []*schema.Column{ObjectDeletionJobsColumns[3], ObjectDeletionJobsColumns[6]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "storage_config_id IS NOT NULL AND state IN ('pending', 'running', 'retry', 'blocked')",
+					Where: "storage_config_id IS NOT NULL AND state IN ('pending', 'running', 'retry')",
 				},
 			},
 			{
@@ -856,7 +864,7 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{ObjectDeletionJobsColumns[4], ObjectDeletionJobsColumns[5], ObjectDeletionJobsColumns[6]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "storage_config_id IS NULL AND state IN ('pending', 'running', 'retry', 'blocked')",
+					Where: "storage_config_id IS NULL AND state IN ('pending', 'running', 'retry')",
 				},
 			},
 		},
@@ -1549,6 +1557,14 @@ var (
 				Name:    "referenceasset_expires_at",
 				Unique:  false,
 				Columns: []*schema.Column{ReferenceAssetsColumns[19]},
+			},
+			{
+				Name:    "reference_asset_active_source",
+				Unique:  true,
+				Columns: []*schema.Column{ReferenceAssetsColumns[4], ReferenceAssetsColumns[16]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_image_result_id IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'",
+				},
 			},
 		},
 	}

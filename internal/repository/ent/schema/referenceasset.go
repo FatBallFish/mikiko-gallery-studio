@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
@@ -34,5 +35,17 @@ func (ReferenceAsset) Fields() []ent.Field {
 	}
 }
 func (ReferenceAsset) Indexes() []ent.Index {
-	return []ent.Index{index.Fields("object_key"), index.Fields("source_image_result_id"), index.Fields("storage_config_id"), index.Fields("user_id"), index.Fields("status"), index.Fields("sha256"), index.Fields("expires_at")}
+	return []ent.Index{
+		index.Fields("object_key"),
+		index.Fields("source_image_result_id"),
+		index.Fields("storage_config_id"),
+		index.Fields("user_id"),
+		index.Fields("status"),
+		index.Fields("sha256"),
+		index.Fields("expires_at"),
+		index.Fields("user_id", "source_image_result_id").
+			StorageKey("reference_asset_active_source").
+			Unique().
+			Annotations(entsql.IndexWhere("source_image_result_id IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'")),
+	}
 }

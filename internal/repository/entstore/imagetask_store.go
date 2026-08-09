@@ -1607,6 +1607,9 @@ func setImageTaskCreateArtifactFields(builder *repoent.ImageTaskCreate, task dom
 	if id, err := uuid.Parse(task.ArtifactRecovery.StorageConfigID); err == nil {
 		builder.SetArtifactStorageConfigID(id)
 	}
+	builder.SetArtifactStorageDriver(task.ArtifactRecovery.StorageDriver)
+	builder.SetArtifactStorageBucket(task.ArtifactRecovery.StorageBucket)
+	builder.SetArtifactObjectKeys(append([]string(nil), task.ArtifactRecovery.ObjectKeys...))
 }
 
 func setImageTaskUpdateOneArtifactFields(builder *repoent.ImageTaskUpdateOne, task domainimagetask.Task) {
@@ -1635,6 +1638,9 @@ func setImageTaskUpdateOneArtifactFields(builder *repoent.ImageTaskUpdateOne, ta
 	} else {
 		builder.ClearArtifactStorageConfigID()
 	}
+	builder.SetArtifactStorageDriver(task.ArtifactRecovery.StorageDriver)
+	builder.SetArtifactStorageBucket(task.ArtifactRecovery.StorageBucket)
+	builder.SetArtifactObjectKeys(append([]string(nil), task.ArtifactRecovery.ObjectKeys...))
 }
 
 func setImageTaskUpdateArtifactFields(builder *repoent.ImageTaskUpdate, task domainimagetask.Task) {
@@ -1663,6 +1669,9 @@ func setImageTaskUpdateArtifactFields(builder *repoent.ImageTaskUpdate, task dom
 	} else {
 		builder.ClearArtifactStorageConfigID()
 	}
+	builder.SetArtifactStorageDriver(task.ArtifactRecovery.StorageDriver)
+	builder.SetArtifactStorageBucket(task.ArtifactRecovery.StorageBucket)
+	builder.SetArtifactObjectKeys(append([]string(nil), task.ArtifactRecovery.ObjectKeys...))
 }
 
 func artifactDiagnosticsMap(recovery domainimagetask.ArtifactRecovery) map[string]any {
@@ -1839,6 +1848,9 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 			EncryptedPayload: nullableString(entity.ArtifactRecoveryPayload),
 			AttemptCount:     entity.ArtifactAttemptCount,
 			NextRetryAt:      entity.ArtifactNextRetryAt,
+			StorageDriver:    entity.ArtifactStorageDriver,
+			StorageBucket:    entity.ArtifactStorageBucket,
+			ObjectKeys:       append([]string(nil), entity.ArtifactObjectKeys...),
 			StorageVersion:   entity.ArtifactStorageVersion,
 		},
 		CreatedAt: entity.CreatedAt,

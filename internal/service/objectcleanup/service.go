@@ -3,6 +3,8 @@ package objectcleanup
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"math/rand"
 	"strings"
 	"sync"
@@ -32,20 +34,30 @@ type Store interface {
 	MarkDone(context.Context, string) error
 	MarkBlocked(context.Context, string, string) error
 	MarkRetry(context.Context, string, time.Time, string, string) error
+	HasLiveReferences(context.Context, Identity) (bool, error)
 	Reconcile(context.Context, int) (int, error)
 }
 
 type ProcessorOptions struct {
-	Now    func() time.Time
-	Jitter func(time.Duration) time.Duration
+	Now                func() time.Time
+	Jitter             func(time.Duration) time.Duration
+	OrphanGracePeriod  time.Duration
+	ObjectListPageSize int
 }
 
 type Processor struct {
-	store  Store
-	router storage.Router
-	now    func() time.Time
-	jitter func(time.Duration) time.Duration
+	store              Store
+	router             storage.Router
+	now                func() time.Time
+	jitter             func(time.Duration) time.Duration
+	orphanGracePeriod  time.Duration
+	objectListPageSize int
+	reconcileMu        sync.Mutex
+	objectCursors      map[string]string
+	nextObjectPrefix   int
 }
+
+var ownedObjectPrefixes = []string{"generated-images/", "reference-assets/"}
 
 func NewProcessor(store Store, router storage.Router, options ProcessorOptions) *Processor {
 	if options.Now == nil {
@@ -59,7 +71,18 @@ func NewProcessor(store Store, router storage.Router, options ProcessorOptions) 
 			return time.Duration(rand.Int63n(int64(max)))
 		}
 	}
-	return &Processor{store: store, router: router, now: options.Now, jitter: options.Jitter}
+	if options.OrphanGracePeriod <= 0 {
+		options.OrphanGracePeriod = 24 * time.Hour
+	}
+	if options.ObjectListPageSize <= 0 {
+		options.ObjectListPageSize = 100
+	}
+	return &Processor{
+		store: store, router: router, now: options.Now, jitter: options.Jitter,
+		orphanGracePeriod:  options.OrphanGracePeriod,
+		objectListPageSize: options.ObjectListPageSize,
+		objectCursors:      make(map[string]string, len(ownedObjectPrefixes)),
+	}
 }
 
 func (p *Processor) ProcessOnce(ctx context.Context) (bool, error) {
@@ -84,7 +107,101 @@ func (p *Processor) ProcessOnce(ctx context.Context) (bool, error) {
 }
 
 func (p *Processor) Reconcile(ctx context.Context, limit int) (int, error) {
-	return p.store.Reconcile(ctx, limit)
+	count, err := p.store.Reconcile(ctx, limit)
+	if err != nil {
+		return count, err
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	writer, err := p.router.DefaultWriter(ctx)
+	if err != nil {
+		slog.Debug("object cleanup storage reconciliation skipped", "error_code", "default_writer_unavailable")
+		return count, nil
+	}
+	lister, ok := writer.Backend.(storage.ObjectLister)
+	if !ok {
+		slog.Debug("object cleanup storage reconciliation skipped", "error_code", "listing_unsupported", "storage_driver", writer.Driver)
+		return count, nil
+	}
+	p.reconcileMu.Lock()
+	defer p.reconcileMu.Unlock()
+	start := p.nextObjectPrefix % len(ownedObjectPrefixes)
+	base, extra := limit/len(ownedObjectPrefixes), limit%len(ownedObjectPrefixes)
+	for offset := range len(ownedObjectPrefixes) {
+		quota := base
+		if offset < extra {
+			quota++
+		}
+		if quota == 0 {
+			continue
+		}
+		prefix := ownedObjectPrefixes[(start+offset)%len(ownedObjectPrefixes)]
+		scanned, enqueued, nextCursor, err := p.reconcileOwnedPrefix(ctx, writer, lister, prefix, p.objectCursors[prefix], quota)
+		count += enqueued
+		p.objectCursors[prefix] = nextCursor
+		if err != nil {
+			return count, err
+		}
+		if scanned < quota {
+			p.objectCursors[prefix] = ""
+		}
+	}
+	p.nextObjectPrefix = (start + 1) % len(ownedObjectPrefixes)
+	return count, nil
+}
+
+func (p *Processor) reconcileOwnedPrefix(ctx context.Context, writer storage.BackendRef, lister storage.ObjectLister, prefix, cursor string, limit int) (int, int, string, error) {
+	scanned, enqueued := 0, 0
+	cutoff := p.now().Add(-p.orphanGracePeriod)
+	for scanned < limit {
+		pageLimit := p.objectListPageSize
+		if remaining := limit - scanned; pageLimit > remaining {
+			pageLimit = remaining
+		}
+		page, err := lister.ListObjects(ctx, prefix, cursor, pageLimit)
+		if err != nil {
+			return scanned, enqueued, cursor, fmt.Errorf("list cleanup objects: %w", err)
+		}
+		objects := page.Objects
+		if remaining := limit - scanned; len(objects) > remaining {
+			objects = objects[:remaining]
+		}
+		for _, object := range objects {
+			scanned++
+			if object.ModifiedAt.IsZero() || object.ModifiedAt.After(cutoff) {
+				continue
+			}
+			identity := domaincleanup.CanonicalIdentity(Identity{
+				StorageConfigID: writer.ConfigID,
+				StorageDriver:   writer.Driver,
+				Bucket:          writer.Bucket,
+				ObjectKey:       strings.TrimSpace(object.ObjectKey),
+			})
+			if !strings.HasPrefix(identity.ObjectKey, prefix) {
+				continue
+			}
+			live, err := p.store.HasLiveReferences(ctx, identity)
+			if err != nil {
+				return scanned, enqueued, cursor, err
+			}
+			if live {
+				continue
+			}
+			if _, err := p.store.Enqueue(ctx, identity); err != nil {
+				return scanned, enqueued, cursor, err
+			}
+			enqueued++
+		}
+		if strings.TrimSpace(page.NextCursor) == "" {
+			return scanned, enqueued, "", nil
+		}
+		if page.NextCursor == cursor {
+			return scanned, enqueued, cursor, errors.New("object listing cursor did not advance")
+		}
+		cursor = page.NextCursor
+	}
+	return scanned, enqueued, cursor, nil
 }
 
 func (p *Processor) retry(ctx context.Context, job Job, code, message string) error {
@@ -142,27 +259,22 @@ func (s *MemoryStore) SetNow(now func() time.Time) {
 }
 
 func identityKey(value Identity) string {
-	return strings.Join([]string{
-		strings.TrimSpace(value.StorageConfigID),
-		strings.ToLower(strings.TrimSpace(value.StorageDriver)),
-		strings.TrimSpace(value.Bucket),
-		strings.TrimSpace(value.ObjectKey),
-	}, "\x00")
+	return domaincleanup.CanonicalKey(value)
 }
 
 func (s *MemoryStore) Enqueue(_ context.Context, identity Identity) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	identity = domaincleanup.CanonicalIdentity(identity)
 	key, now := identityKey(identity), s.now().UTC()
 	if id := s.jobByKey[key]; id != "" {
 		job := s.jobs[id]
-		if job.State == StateDone {
+		if job.State != StateDone {
+			job.State, job.NextAttemptAt, job.CompletedAt = StatePending, nil, nil
+			job.UpdatedAt = now
+			s.jobs[id] = job
 			return job, nil
 		}
-		job.State, job.NextAttemptAt, job.CompletedAt = StatePending, nil, nil
-		job.UpdatedAt = now
-		s.jobs[id] = job
-		return job, nil
 	}
 	job := Job{ID: uuid.NewString(), Identity: identity, State: StatePending, CreatedAt: now, UpdatedAt: now}
 	s.jobs[job.ID], s.jobByKey[key] = job, job.ID
@@ -193,6 +305,12 @@ func (s *MemoryStore) DeleteIfUnreferenced(_ context.Context, job Job, deleteFn 
 		return true, nil
 	}
 	return false, deleteFn()
+}
+
+func (s *MemoryStore) HasLiveReferences(_ context.Context, identity Identity) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.liveRefs[identityKey(identity)]) > 0, nil
 }
 
 func (s *MemoryStore) MarkDone(_ context.Context, id string) error {
@@ -247,6 +365,7 @@ func (s *MemoryStore) RemoveLiveReference(identity Identity, ref string) {
 func (s *MemoryStore) AddDeletedCandidate(identity Identity) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	identity = domaincleanup.CanonicalIdentity(identity)
 	s.candidates[identityKey(identity)] = identity
 }
 func (s *MemoryStore) Jobs() []Job {

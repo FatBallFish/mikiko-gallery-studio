@@ -311,8 +311,8 @@ func TestObjectDeletionJobSchemaDeduplicatesLiveObjectIdentity(t *testing.T) {
 			t.Fatalf("object_deletion_jobs.%s must be Optional and Nillable", name)
 		}
 	}
-	liveStates := "state IN ('pending', 'running', 'retry', 'blocked')"
-	assertPartialUniqueIndex(t, ObjectDeletionJob{}.Indexes(), []string{"storage_config_id", "bucket", "object_key"}, "storage_config_id IS NOT NULL", liveStates)
+	liveStates := "state IN ('pending', 'running', 'retry')"
+	assertPartialUniqueIndex(t, ObjectDeletionJob{}.Indexes(), []string{"storage_config_id", "object_key"}, "storage_config_id IS NOT NULL", liveStates)
 	assertPartialUniqueIndex(t, ObjectDeletionJob{}.Indexes(), []string{"storage_driver", "bucket", "object_key"}, "storage_config_id IS NULL", liveStates)
 }
 

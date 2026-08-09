@@ -186,6 +186,9 @@ func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.
 	if pending.Task.ArtifactRecovery.Status != artifactRecoveryPending || pending.Task.ArtifactRecovery.AttemptCount != 1 || providerCalls != 1 {
 		t.Fatalf("expected paid fanout checkpoint and pending recovery, task=%#v provider_calls=%d", pending.Task, providerCalls)
 	}
+	if pending.Task.ArtifactRecovery.StorageDriver != "local" || len(pending.Task.ArtifactRecovery.ObjectKeys) != 2 || pending.Task.ArtifactRecovery.ObjectKeys[0] == pending.Task.ArtifactRecovery.ObjectKeys[1] {
+		t.Fatalf("expected exact multi-image recovery identities, got %#v", pending.Task.ArtifactRecovery)
+	}
 	now = pending.Task.ArtifactRecovery.NextRetryAt.Add(time.Millisecond)
 	reclaimed, ok, err := svc.AcquireNextTask(context.Background(), "worker", time.Minute)
 	if err != nil || !ok {
@@ -200,6 +203,11 @@ func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.
 	}
 	if recovered.Task.Results[0].ID == recovered.Task.Results[1].ID || recovered.Task.Results[0].ObjectKey == recovered.Task.Results[1].ObjectKey {
 		t.Fatalf("fanout results collided: %#v", recovered.Task.Results)
+	}
+	for index := range recovered.Task.Results {
+		if recovered.Task.Results[index].ObjectKey != pending.Task.ArtifactRecovery.ObjectKeys[index] {
+			t.Fatalf("result %d key=%q, pinned=%q", index, recovered.Task.Results[index].ObjectKey, pending.Task.ArtifactRecovery.ObjectKeys[index])
+		}
 	}
 	loaded, err := store.GetByID(context.Background(), 502, created.ID)
 	if err != nil || len(loaded.Results) != 2 {

@@ -18,6 +18,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,22 @@ type Backend interface {
 	Put(ctx context.Context, objectKey string, contentType string, content []byte) error
 	Get(ctx context.Context, objectKey string) ([]byte, error)
 	Delete(ctx context.Context, objectKey string) error
+}
+
+type ObjectInfo struct {
+	ObjectKey  string
+	ModifiedAt time.Time
+}
+
+type ObjectPage struct {
+	Objects    []ObjectInfo
+	NextCursor string
+}
+
+// ObjectLister is an optional capability used only with platform-owned
+// prefixes selected by the cleanup processor.
+type ObjectLister interface {
+	ListObjects(ctx context.Context, prefix, cursor string, limit int) (ObjectPage, error)
 }
 
 // BoundedGetter is an optional backend capability for callers that must not
@@ -166,6 +183,8 @@ var (
 	_ ObjectCopier       = (*LocalBackend)(nil)
 	_ ObjectCopier       = (*S3Backend)(nil)
 	_ TemporaryURLSigner = (*S3Backend)(nil)
+	_ ObjectLister       = (*LocalBackend)(nil)
+	_ ObjectLister       = (*S3Backend)(nil)
 )
 
 func NewBackend(cfg config.StorageConfig) (Backend, error) {
@@ -306,6 +325,68 @@ func (b *LocalBackend) Delete(_ context.Context, objectKey string) error {
 		return err
 	}
 	return nil
+}
+
+func (b *LocalBackend) ListObjects(ctx context.Context, prefix, cursor string, limit int) (ObjectPage, error) {
+	prefix, err := normalizeListPrefix(prefix)
+	if err != nil {
+		return ObjectPage{}, err
+	}
+	limit = normalizeObjectListLimit(limit)
+	rootPath, ok := b.resolvePath(strings.TrimSuffix(prefix, "/"))
+	if !ok {
+		return ObjectPage{}, fmt.Errorf("invalid local storage prefix %q", prefix)
+	}
+	rootAbs, err := filepath.Abs(b.root)
+	if err != nil {
+		return ObjectPage{}, err
+	}
+	objects := make([]ObjectInfo, 0)
+	err = filepath.WalkDir(rootPath, func(filePath string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if err := contextError(ctx); err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(rootAbs, filePath)
+		if err != nil {
+			return err
+		}
+		objectKey := filepath.ToSlash(relative)
+		if !strings.HasPrefix(objectKey, prefix) {
+			return nil
+		}
+		objects = append(objects, ObjectInfo{ObjectKey: objectKey, ModifiedAt: info.ModTime().UTC()})
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ObjectPage{}, nil
+		}
+		return ObjectPage{}, err
+	}
+	sort.Slice(objects, func(i, j int) bool { return objects[i].ObjectKey < objects[j].ObjectKey })
+	start := sort.Search(len(objects), func(index int) bool { return objects[index].ObjectKey > strings.TrimSpace(cursor) })
+	end := start + limit
+	if end > len(objects) {
+		end = len(objects)
+	}
+	page := ObjectPage{Objects: append([]ObjectInfo(nil), objects[start:end]...)}
+	if end < len(objects) && end > start {
+		page.NextCursor = objects[end-1].ObjectKey
+	}
+	return page, nil
 }
 
 func (b *LocalBackend) resolvePath(objectKey string) (string, bool) {
@@ -671,6 +752,124 @@ func (b *S3Backend) Delete(ctx context.Context, objectKey string) error {
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 	return fmt.Errorf("delete s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
+}
+
+func (b *S3Backend) ListObjects(ctx context.Context, prefix, cursor string, limit int) (ObjectPage, error) {
+	prefix, err := normalizeListPrefix(prefix)
+	if err != nil {
+		return ObjectPage{}, err
+	}
+	limit = normalizeObjectListLimit(limit)
+	physicalPrefix := prefix
+	if b.prefix != "" {
+		physicalPrefix = strings.TrimSuffix(path.Join(b.prefix, prefix), "/") + "/"
+	}
+	query := url.Values{
+		"list-type": {"2"},
+		"prefix":    {physicalPrefix},
+		"max-keys":  {strconv.Itoa(limit)},
+	}
+	if cursor = strings.TrimSpace(cursor); cursor != "" {
+		query.Set("continuation-token", cursor)
+	}
+	req, err := b.newSignedBucketRequest(ctx, query)
+	if err != nil {
+		return ObjectPage{}, err
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return ObjectPage{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return ObjectPage{}, fmt.Errorf("list s3 objects: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var payload struct {
+		IsTruncated           bool   `xml:"IsTruncated"`
+		NextContinuationToken string `xml:"NextContinuationToken"`
+		Contents              []struct {
+			Key          string `xml:"Key"`
+			LastModified string `xml:"LastModified"`
+		} `xml:"Contents"`
+	}
+	decoder := xml.NewDecoder(io.LimitReader(resp.Body, 2<<20))
+	if err := decoder.Decode(&payload); err != nil {
+		return ObjectPage{}, fmt.Errorf("decode s3 object listing: %w", err)
+	}
+	page := ObjectPage{Objects: make([]ObjectInfo, 0, len(payload.Contents))}
+	for _, item := range payload.Contents {
+		logicalKey := strings.TrimSpace(item.Key)
+		if b.prefix != "" {
+			configuredPrefix := b.prefix + "/"
+			if !strings.HasPrefix(logicalKey, configuredPrefix) {
+				continue
+			}
+			logicalKey = strings.TrimPrefix(logicalKey, configuredPrefix)
+		}
+		if !strings.HasPrefix(logicalKey, prefix) {
+			continue
+		}
+		modifiedAt, err := time.Parse(time.RFC3339, strings.TrimSpace(item.LastModified))
+		if err != nil {
+			continue
+		}
+		page.Objects = append(page.Objects, ObjectInfo{ObjectKey: logicalKey, ModifiedAt: modifiedAt.UTC()})
+	}
+	if payload.IsTruncated {
+		page.NextCursor = strings.TrimSpace(payload.NextContinuationToken)
+	}
+	return page, nil
+}
+
+func (b *S3Backend) newSignedBucketRequest(ctx context.Context, query url.Values) (*http.Request, error) {
+	clone := *b.endpoint
+	host, canonicalURI, requestPath := clone.Host, "/"+b.bucket, "/"+b.bucket
+	if !b.usePathStyle() {
+		host = b.bucket + "." + clone.Host
+		clone.Host = host
+		canonicalURI, requestPath = "/", "/"
+	}
+	clone.Path, clone.RawPath = requestPath, canonicalURI
+	clone.RawQuery, clone.Fragment = awsCanonicalQuery(query), ""
+	payloadHash := sha256Hex(nil)
+	now := b.nowUTC()
+	amzDate, dateStamp := now.Format("20060102T150405Z"), now.Format("20060102")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, clone.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Host = host
+	req.Header.Set("Host", host)
+	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
+	req.Header.Set("X-Amz-Date", amzDate)
+	canonicalHeaders := "host:" + host + "\n" + "x-amz-content-sha256:" + payloadHash + "\n" + "x-amz-date:" + amzDate + "\n"
+	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
+	canonicalRequest := strings.Join([]string{http.MethodGet, canonicalURI, awsCanonicalQuery(query), canonicalHeaders, signedHeaders, payloadHash}, "\n")
+	credentialScope := dateStamp + "/" + b.region + "/s3/aws4_request"
+	stringToSign := strings.Join([]string{"AWS4-HMAC-SHA256", amzDate, credentialScope, sha256Hex([]byte(canonicalRequest))}, "\n")
+	signature := hex.EncodeToString(hmacSHA256(b.signingKey(dateStamp), stringToSign))
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+b.accessKeyID+"/"+credentialScope+", SignedHeaders="+signedHeaders+", Signature="+signature)
+	return req, nil
+}
+
+func normalizeListPrefix(prefix string) (string, error) {
+	prefix = strings.TrimSpace(prefix)
+	clean := path.Clean(prefix)
+	if prefix == "" || clean == "." || clean == "/" || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
+		return "", fmt.Errorf("invalid object listing prefix %q", prefix)
+	}
+	return strings.TrimSuffix(clean, "/") + "/", nil
+}
+
+func normalizeObjectListLimit(limit int) int {
+	if limit <= 0 {
+		return 100
+	}
+	if limit > 1000 {
+		return 1000
+	}
+	return limit
 }
 
 func (b *S3Backend) newSignedRequest(ctx context.Context, method string, objectKey string, contentType string, content []byte) (*http.Request, error) {

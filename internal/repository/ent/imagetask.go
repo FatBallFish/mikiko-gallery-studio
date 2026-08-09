@@ -138,6 +138,12 @@ type ImageTask struct {
 	ArtifactLastDiagnostic map[string]interface{} `json:"artifact_last_diagnostic,omitempty"`
 	// ArtifactStorageConfigID holds the value of the "artifact_storage_config_id" field.
 	ArtifactStorageConfigID *uuid.UUID `json:"artifact_storage_config_id,omitempty"`
+	// ArtifactStorageDriver holds the value of the "artifact_storage_driver" field.
+	ArtifactStorageDriver string `json:"artifact_storage_driver,omitempty"`
+	// ArtifactStorageBucket holds the value of the "artifact_storage_bucket" field.
+	ArtifactStorageBucket string `json:"artifact_storage_bucket,omitempty"`
+	// ArtifactObjectKeys holds the value of the "artifact_object_keys" field.
+	ArtifactObjectKeys []string `json:"artifact_object_keys,omitempty"`
 	// ArtifactStorageVersion holds the value of the "artifact_storage_version" field.
 	ArtifactStorageVersion int64 `json:"artifact_storage_version,omitempty"`
 	// LeaseOwner holds the value of the "lease_owner" field.
@@ -185,13 +191,13 @@ func (*ImageTask) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case imagetask.FieldProjectID, imagetask.FieldArtifactStorageConfigID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
-		case imagetask.FieldPricingSnapshot, imagetask.FieldRoutingSnapshot, imagetask.FieldErrorPolicySnapshot, imagetask.FieldProviderTrace, imagetask.FieldArtifactLastDiagnostic:
+		case imagetask.FieldPricingSnapshot, imagetask.FieldRoutingSnapshot, imagetask.FieldErrorPolicySnapshot, imagetask.FieldProviderTrace, imagetask.FieldArtifactLastDiagnostic, imagetask.FieldArtifactObjectKeys:
 			values[i] = new([]byte)
 		case imagetask.FieldMaskPresent:
 			values[i] = new(sql.NullBool)
 		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldOutputCompression, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed, imagetask.FieldRouteModelID, imagetask.FieldAccountModelID, imagetask.FieldModelAccountID, imagetask.FieldProviderModelID, imagetask.FieldFallbackCount, imagetask.FieldArtifactAttemptCount, imagetask.FieldArtifactStorageVersion:
 			values[i] = new(sql.NullInt64)
-		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldProgressStage, imagetask.FieldProgressMessage, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldSizeMode, imagetask.FieldBaseResolution, imagetask.FieldQuality, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldOutputFormat, imagetask.FieldBackground, imagetask.FieldModeration, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldProviderRequestID, imagetask.FieldArtifactRecoveryStatus, imagetask.FieldArtifactRecoveryPayload, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
+		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldProgressStage, imagetask.FieldProgressMessage, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldSizeMode, imagetask.FieldBaseResolution, imagetask.FieldQuality, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldOutputFormat, imagetask.FieldBackground, imagetask.FieldModeration, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldProviderRequestID, imagetask.FieldArtifactRecoveryStatus, imagetask.FieldArtifactRecoveryPayload, imagetask.FieldArtifactStorageDriver, imagetask.FieldArtifactStorageBucket, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
 			values[i] = new(sql.NullString)
 		case imagetask.FieldCreatedAt, imagetask.FieldUpdatedAt, imagetask.FieldDeletedAt, imagetask.FieldUpstreamSucceededAt, imagetask.FieldArtifactNextRetryAt, imagetask.FieldLeaseExpiresAt, imagetask.FieldStartedAt, imagetask.FieldFinishedAt:
 			values[i] = new(sql.NullTime)
@@ -601,6 +607,26 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 				_m.ArtifactStorageConfigID = new(uuid.UUID)
 				*_m.ArtifactStorageConfigID = *value.S.(*uuid.UUID)
 			}
+		case imagetask.FieldArtifactStorageDriver:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_storage_driver", values[i])
+			} else if value.Valid {
+				_m.ArtifactStorageDriver = value.String
+			}
+		case imagetask.FieldArtifactStorageBucket:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_storage_bucket", values[i])
+			} else if value.Valid {
+				_m.ArtifactStorageBucket = value.String
+			}
+		case imagetask.FieldArtifactObjectKeys:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_object_keys", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ArtifactObjectKeys); err != nil {
+					return fmt.Errorf("unmarshal field artifact_object_keys: %w", err)
+				}
+			}
 		case imagetask.FieldArtifactStorageVersion:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field artifact_storage_version", values[i])
@@ -904,6 +930,15 @@ func (_m *ImageTask) String() string {
 		builder.WriteString("artifact_storage_config_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("artifact_storage_driver=")
+	builder.WriteString(_m.ArtifactStorageDriver)
+	builder.WriteString(", ")
+	builder.WriteString("artifact_storage_bucket=")
+	builder.WriteString(_m.ArtifactStorageBucket)
+	builder.WriteString(", ")
+	builder.WriteString("artifact_object_keys=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ArtifactObjectKeys))
 	builder.WriteString(", ")
 	builder.WriteString("artifact_storage_version=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ArtifactStorageVersion))

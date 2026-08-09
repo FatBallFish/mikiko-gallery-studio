@@ -3,6 +3,8 @@ package objectcleanup
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -136,10 +138,139 @@ func TestEnqueueReactivatesRunningJobAndRejectsStaleWorkerTransition(t *testing.
 	}
 }
 
+func TestEnqueueAfterDoneCreatesNewPendingJob(t *testing.T) {
+	store := NewMemoryStore()
+	identity := Identity{StorageDriver: "local", ObjectKey: "generated/reused.png"}
+	first, err := store.Enqueue(t.Context(), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, claimed, err := store.Claim(t.Context(), time.Now()); err != nil || !claimed {
+		t.Fatalf("Claim() claimed=%v err=%v", claimed, err)
+	}
+	if err := store.MarkDone(t.Context(), first.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := store.Enqueue(t.Context(), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID == first.ID || second.State != StatePending {
+		t.Fatalf("second=%#v first=%#v", second, first)
+	}
+	if len(store.Jobs()) != 2 {
+		t.Fatalf("jobs=%#v", store.Jobs())
+	}
+}
+
+func TestConfiguredStorageIdentityUsesConfigAndObjectKeyNamespace(t *testing.T) {
+	store := NewMemoryStore()
+	first, err := store.Enqueue(t.Context(), Identity{
+		StorageConfigID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		StorageDriver:   "s3",
+		Bucket:          "old-bucket",
+		ObjectKey:       "generated-images/7/shared.png",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Enqueue(t.Context(), Identity{
+		StorageConfigID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		StorageDriver:   "renamed-driver",
+		Bucket:          "new-bucket",
+		ObjectKey:       "generated-images/7/shared.png",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != second.ID || len(store.Jobs()) != 1 {
+		t.Fatalf("first=%#v second=%#v jobs=%#v", first, second, store.Jobs())
+	}
+}
+
+func TestReconcileScansOnlyOwnedPrefixesWithPaginationGraceAndRestart(t *testing.T) {
+	now := time.Date(2026, 8, 9, 4, 0, 0, 0, time.UTC)
+	store := NewMemoryStore()
+	store.SetNow(func() time.Time { return now })
+	live := Identity{StorageDriver: "local", ObjectKey: "generated-images/7/live.png"}
+	store.AddLiveReference(live, "result:live")
+	backend := &listingCleanupBackend{pages: map[string]map[string]storage.ObjectPage{
+		"generated-images/": {
+			"": {
+				Objects:    []storage.ObjectInfo{{ObjectKey: "generated-images/7/orphan-a.png", ModifiedAt: now.Add(-2 * time.Hour)}},
+				NextCursor: "generated-live",
+			},
+			"generated-live": {
+				Objects:    []storage.ObjectInfo{{ObjectKey: live.ObjectKey, ModifiedAt: now.Add(-2 * time.Hour)}},
+				NextCursor: "generated-fresh",
+			},
+			"generated-fresh": {
+				Objects:    []storage.ObjectInfo{{ObjectKey: "generated-images/7/fresh.png", ModifiedAt: now.Add(-time.Minute)}},
+				NextCursor: "generated-orphan-b",
+			},
+			"generated-orphan-b": {
+				Objects: []storage.ObjectInfo{{ObjectKey: "generated-images/7/orphan-b.png", ModifiedAt: now.Add(-3 * time.Hour)}},
+			},
+		},
+		"reference-assets/": {
+			"": {
+				Objects: []storage.ObjectInfo{{ObjectKey: "reference-assets/orphan.png", ModifiedAt: now.Add(-4 * time.Hour)}},
+			},
+		},
+	}}
+	options := ProcessorOptions{
+		Now:                func() time.Time { return now },
+		OrphanGracePeriod:  time.Hour,
+		ObjectListPageSize: 1,
+	}
+	processor := NewProcessor(store, storage.NewStaticRouter(backend), options)
+	for range 7 {
+		if _, err := processor.Reconcile(t.Context(), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(store.Jobs()) != 3 {
+		t.Fatalf("jobs=%#v", store.Jobs())
+	}
+	for _, job := range store.Jobs() {
+		if job.Identity.ObjectKey == live.ObjectKey || job.Identity.ObjectKey == "generated-images/7/fresh.png" {
+			t.Fatalf("protected object was enqueued: %#v", job)
+		}
+	}
+	for _, prefix := range backend.prefixes {
+		if prefix != "generated-images/" && prefix != "reference-assets/" {
+			t.Fatalf("listed non-owned prefix %q in %v", prefix, backend.prefixes)
+		}
+	}
+	if !strings.Contains(fmt.Sprint(backend.prefixes), "reference-assets/") {
+		t.Fatalf("reference prefix starved: %v", backend.prefixes)
+	}
+
+	restarted := NewProcessor(store, storage.NewStaticRouter(backend), options)
+	if _, err := restarted.Reconcile(t.Context(), 10); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.Jobs()) != 3 {
+		t.Fatalf("restart created duplicates: %#v", store.Jobs())
+	}
+}
+
 type cleanupBackend struct {
 	mu          sync.Mutex
 	deleteCalls int
 	deleteErr   error
+}
+
+type listingCleanupBackend struct {
+	cleanupBackend
+	pages    map[string]map[string]storage.ObjectPage
+	prefixes []string
+}
+
+func (b *listingCleanupBackend) ListObjects(_ context.Context, prefix, cursor string, _ int) (storage.ObjectPage, error) {
+	b.prefixes = append(b.prefixes, prefix)
+	return b.pages[prefix][cursor], nil
 }
 
 func (*cleanupBackend) Driver() string                                    { return "local" }

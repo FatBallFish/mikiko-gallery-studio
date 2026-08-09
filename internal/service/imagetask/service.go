@@ -2258,7 +2258,7 @@ func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimage
 	if resultID == "" {
 		resultID = deterministicImageResultID(task.ID, index)
 	}
-	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
+	objectKey := recoveryObjectKey(task, index, generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType)))
 	writer, err := s.artifactWriter(ctx, task)
 	if err != nil {
 		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactStorageUnavailable, "resolve_storage", true, err)
@@ -2307,7 +2307,7 @@ func (s *Service) persistBase64ImageResult(task domainimagetask.Task, index int,
 	hash := sha256.Sum256(content)
 	sha := hex.EncodeToString(hash[:])
 	resultID := deterministicImageResultID(task.ID, index)
-	objectKey := generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType))
+	objectKey := recoveryObjectKey(task, index, generatedImageObjectKey(task.UserID, task.ID, index, resultID, imageExtension(format, mimeType)))
 	writer, err := s.artifactWriter(context.Background(), task)
 	if err != nil {
 		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactStorageUnavailable, "resolve_storage", true, err)

@@ -26,6 +26,7 @@ const (
 type BackendRef struct {
 	ConfigID string
 	Driver   string
+	Bucket   string
 	Version  int64
 	Backend  Backend
 }
@@ -298,7 +299,7 @@ func (r *Registry) backendForResolved(resolved domainstorageconfig.ResolvedConfi
 	if err != nil {
 		return BackendRef{}, err
 	}
-	ref := BackendRef{ConfigID: resolved.ID, Driver: backend.Driver(), Version: resolved.Version, Backend: backend}
+	ref := BackendRef{ConfigID: resolved.ID, Driver: backend.Driver(), Bucket: resolved.Bucket, Version: resolved.Version, Backend: backend}
 	r.mu.Lock()
 	for cachedKey, cached := range r.backends {
 		if cached.ConfigID == resolved.ID {
