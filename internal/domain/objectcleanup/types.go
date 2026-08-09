@@ -1,9 +1,12 @@
 package objectcleanup
 
 import (
+	"errors"
 	"strings"
 	"time"
 )
+
+var ErrStaleClaim = errors.New("object cleanup claim is stale")
 
 const (
 	StatePending = "pending"

@@ -31,10 +31,10 @@ type Job = domaincleanup.Job
 type Store interface {
 	Enqueue(context.Context, Identity) (Job, error)
 	Claim(context.Context, time.Time) (Job, bool, error)
-	DeleteIfUnreferenced(context.Context, Job, func() error) (bool, error)
-	MarkDone(context.Context, string) error
-	MarkBlocked(context.Context, string, string) error
-	MarkRetry(context.Context, string, time.Time, string, string) error
+	DeleteIfUnreferenced(context.Context, Job, func(Identity) error) (bool, error)
+	MarkDone(context.Context, Job) error
+	MarkBlocked(context.Context, Job, string) error
+	MarkRetry(context.Context, Job, time.Time, string, string) error
 	HasLiveReferences(context.Context, Identity) (bool, error)
 	Reconcile(context.Context, int) (int, error)
 	GetReconcileCheckpoint(context.Context, string, string) (domaincleanup.ReconcileCheckpoint, bool, error)
@@ -90,21 +90,33 @@ func (p *Processor) ProcessOnce(ctx context.Context) (bool, error) {
 	if err != nil || !ok {
 		return false, err
 	}
-	ref, err := p.router.BackendFor(ctx, job.Identity.StorageConfigID, job.Identity.StorageDriver)
-	if err != nil {
-		return true, p.retry(ctx, job, "storage_config_unavailable", "storage backend unavailable")
-	}
-	blocked, deleteErr := p.store.DeleteIfUnreferenced(ctx, job, func() error {
-		return ref.Backend.Delete(ctx, job.Identity.ObjectKey)
+	blocked, deleteErr := p.store.DeleteIfUnreferenced(ctx, job, func(identity Identity) error {
+		ref, err := p.router.BackendFor(ctx, identity.StorageConfigID, identity.StorageDriver)
+		if err != nil {
+			return storageBackendUnavailableError{err: err}
+		}
+		return ref.Backend.Delete(ctx, identity.ObjectKey)
 	})
+	if errors.Is(deleteErr, domaincleanup.ErrStaleClaim) {
+		return true, nil
+	}
 	if blocked {
-		return true, p.store.MarkBlocked(ctx, job.ID, "live_reference")
+		return true, p.store.MarkBlocked(ctx, job, "live_reference")
 	}
 	if deleteErr == nil || errors.Is(deleteErr, storage.ErrNotFound) {
-		return true, p.store.MarkDone(ctx, job.ID)
+		return true, p.store.MarkDone(ctx, job)
+	}
+	var unavailable storageBackendUnavailableError
+	if errors.As(deleteErr, &unavailable) {
+		return true, p.retry(ctx, job, "storage_config_unavailable", "storage backend unavailable")
 	}
 	return true, p.retry(ctx, job, "storage_delete_failed", "storage delete failed")
 }
+
+type storageBackendUnavailableError struct{ err error }
+
+func (e storageBackendUnavailableError) Error() string { return "storage backend unavailable" }
+func (e storageBackendUnavailableError) Unwrap() error { return e.err }
 
 func (p *Processor) Reconcile(ctx context.Context, limit int) (int, error) {
 	count, err := p.store.Reconcile(ctx, limit)
@@ -278,7 +290,7 @@ func (p *Processor) retry(ctx context.Context, job Job, code, message string) er
 	}
 	delay := time.Second * time.Duration(1<<shift)
 	delay += p.jitter(delay / 4)
-	return p.store.MarkRetry(ctx, job.ID, p.now().Add(delay), sanitizeCode(code), sanitizeMessage(message))
+	return p.store.MarkRetry(ctx, job, p.now().Add(delay), sanitizeCode(code), sanitizeMessage(message))
 }
 
 func sanitizeCode(value string) string {
@@ -391,13 +403,17 @@ func (s *MemoryStore) Claim(_ context.Context, now time.Time) (Job, bool, error)
 	return Job{}, false, nil
 }
 
-func (s *MemoryStore) DeleteIfUnreferenced(_ context.Context, job Job, deleteFn func() error) (bool, error) {
+func (s *MemoryStore) DeleteIfUnreferenced(_ context.Context, job Job, deleteFn func(Identity) error) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.liveRefs[identityKey(job.Identity)]) > 0 {
+	current, ok := s.jobs[job.ID]
+	if !ok || current.State != StateRunning || current.AttemptCount != job.AttemptCount || identityKey(current.Identity) != identityKey(job.Identity) {
+		return false, domaincleanup.ErrStaleClaim
+	}
+	if len(s.liveRefs[identityKey(current.Identity)]) > 0 {
 		return true, nil
 	}
-	return false, deleteFn()
+	return false, deleteFn(current.Identity)
 }
 
 func (s *MemoryStore) HasLiveReferences(_ context.Context, identity Identity) (bool, error) {
@@ -406,38 +422,38 @@ func (s *MemoryStore) HasLiveReferences(_ context.Context, identity Identity) (b
 	return len(s.liveRefs[identityKey(identity)]) > 0, nil
 }
 
-func (s *MemoryStore) MarkDone(_ context.Context, id string) error {
+func (s *MemoryStore) MarkDone(_ context.Context, claim Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	job := s.jobs[id]
-	if job.State != StateRunning {
+	job := s.jobs[claim.ID]
+	if job.State != StateRunning || job.AttemptCount != claim.AttemptCount {
 		return nil
 	}
 	now := s.now().UTC()
 	job.State, job.CompletedAt, job.UpdatedAt = StateDone, &now, now
-	s.jobs[id] = job
+	s.jobs[claim.ID] = job
 	return nil
 }
-func (s *MemoryStore) MarkBlocked(_ context.Context, id, code string) error {
+func (s *MemoryStore) MarkBlocked(_ context.Context, claim Job, code string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	job := s.jobs[id]
-	if job.State != StateRunning {
+	job := s.jobs[claim.ID]
+	if job.State != StateRunning || job.AttemptCount != claim.AttemptCount {
 		return nil
 	}
 	job.State, job.LastErrorCode, job.UpdatedAt = StateBlocked, sanitizeCode(code), s.now().UTC()
-	s.jobs[id] = job
+	s.jobs[claim.ID] = job
 	return nil
 }
-func (s *MemoryStore) MarkRetry(_ context.Context, id string, next time.Time, code, message string) error {
+func (s *MemoryStore) MarkRetry(_ context.Context, claim Job, next time.Time, code, message string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	job := s.jobs[id]
-	if job.State != StateRunning {
+	job := s.jobs[claim.ID]
+	if job.State != StateRunning || job.AttemptCount != claim.AttemptCount {
 		return nil
 	}
 	job.State, job.NextAttemptAt, job.LastErrorCode, job.LastErrorMessage, job.UpdatedAt = StateRetry, &next, sanitizeCode(code), sanitizeMessage(message), s.now().UTC()
-	s.jobs[id] = job
+	s.jobs[claim.ID] = job
 	return nil
 }
 

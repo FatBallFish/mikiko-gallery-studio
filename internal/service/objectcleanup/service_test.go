@@ -89,10 +89,11 @@ func TestDeletingLastReferenceReactivatesOneJobAndReconciliationFindsCandidate(t
 	identity := Identity{StorageDriver: "local", ObjectKey: "shared.png"}
 	store.AddLiveReference(identity, "result:one")
 	first, _ := store.Enqueue(t.Context(), identity)
-	if _, claimed, err := store.Claim(t.Context(), time.Now()); err != nil || !claimed {
+	claim, claimed, err := store.Claim(t.Context(), time.Now())
+	if err != nil || !claimed {
 		t.Fatalf("Claim() claimed=%v err=%v", claimed, err)
 	}
-	_ = store.MarkBlocked(t.Context(), first.ID, "live_reference")
+	_ = store.MarkBlocked(t.Context(), claim, "live_reference")
 	store.RemoveLiveReference(identity, "result:one")
 	second, _ := store.Enqueue(t.Context(), identity)
 	third, _ := store.Enqueue(t.Context(), identity)
@@ -117,7 +118,8 @@ func TestEnqueueReactivatesRunningJobAndRejectsStaleWorkerTransition(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, claimed, err := store.Claim(t.Context(), time.Now()); err != nil || !claimed {
+	claim, claimed, err := store.Claim(t.Context(), time.Now())
+	if err != nil || !claimed {
 		t.Fatalf("Claim() claimed=%v err=%v", claimed, err)
 	}
 
@@ -128,7 +130,7 @@ func TestEnqueueReactivatesRunningJobAndRejectsStaleWorkerTransition(t *testing.
 	if first.ID != second.ID {
 		t.Fatalf("Enqueue() created duplicate job: first=%q second=%q", first.ID, second.ID)
 	}
-	if err := store.MarkBlocked(t.Context(), first.ID, "live_reference"); err != nil {
+	if err := store.MarkBlocked(t.Context(), claim, "live_reference"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,10 +147,11 @@ func TestEnqueueAfterDoneCreatesNewPendingJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, claimed, err := store.Claim(t.Context(), time.Now()); err != nil || !claimed {
+	claim, claimed, err := store.Claim(t.Context(), time.Now())
+	if err != nil || !claimed {
 		t.Fatalf("Claim() claimed=%v err=%v", claimed, err)
 	}
-	if err := store.MarkDone(t.Context(), first.ID); err != nil {
+	if err := store.MarkDone(t.Context(), claim); err != nil {
 		t.Fatal(err)
 	}
 

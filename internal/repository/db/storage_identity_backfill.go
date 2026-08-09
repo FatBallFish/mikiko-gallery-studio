@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	entsql "entgo.io/ent/dialect/sql"
@@ -18,13 +19,14 @@ import (
 )
 
 const (
-	legacyStorageIdentityMigrationPrefix = "legacy_storage_identity_v1"
+	legacyStorageIdentityMigrationPrefix = "legacy_storage_identity_v2"
 	legacyStoragePhaseResults            = "results"
 	legacyStoragePhaseAssets             = "assets"
 	legacyStoragePhaseTasks              = "tasks"
 	legacyStoragePhaseJobs               = "jobs"
 	legacyStoragePhaseValidate           = "validate"
 	legacyStoragePhaseDone               = "done"
+	legacyStorageConstraintRetryLimit    = 3
 )
 
 type LegacyStorageIdentityBackfillOptions struct {
@@ -39,6 +41,50 @@ type LegacyStorageIdentityBackfillProgress struct {
 	UpdatedRows   int
 	ProcessedRows int
 	Completed     bool
+}
+
+func ListLegacyStorageDrivers(ctx context.Context, client *repoent.Client) ([]string, error) {
+	if client == nil {
+		return nil, fmt.Errorf("legacy storage identity client is required")
+	}
+	drivers := make(map[string]struct{})
+	collect := func(values []string) {
+		for _, value := range values {
+			drivers[normalizeLegacyStorageDriver(value)] = struct{}{}
+		}
+	}
+	resultDrivers, err := client.ImageResult.Query().Where(imageresult.StorageConfigIDIsNil()).
+		Select(imageresult.FieldStorageDriver).Strings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list legacy image result storage drivers: %w", err)
+	}
+	collect(resultDrivers)
+	assetDrivers, err := client.ReferenceAsset.Query().Where(referenceasset.StorageConfigIDIsNil()).
+		Select(referenceasset.FieldStorageDriver).Strings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list legacy reference asset storage drivers: %w", err)
+	}
+	collect(assetDrivers)
+	taskDrivers, err := client.ImageTask.Query().Where(imagetask.ArtifactStorageConfigIDIsNil(), legacyArtifactStorageTuple()).
+		Select(imagetask.FieldArtifactStorageDriver).Strings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list legacy artifact recovery storage drivers: %w", err)
+	}
+	collect(taskDrivers)
+	jobDrivers, err := client.ObjectDeletionJob.Query().Where(
+		objectdeletionjob.StorageConfigIDIsNil(),
+		objectdeletionjob.StateIn(domaincleanup.StatePending, domaincleanup.StateRunning, domaincleanup.StateRetry, domaincleanup.StateBlocked),
+	).Select(objectdeletionjob.FieldStorageDriver).Strings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list legacy cleanup job storage drivers: %w", err)
+	}
+	collect(jobDrivers)
+	result := make([]string, 0, len(drivers))
+	for driver := range drivers {
+		result = append(result, driver)
+	}
+	sort.Strings(result)
+	return result, nil
 }
 
 // RunLegacyStorageIdentityBackfill assigns the immutable bootstrap storage
@@ -67,9 +113,15 @@ func RunLegacyStorageIdentityBackfill(
 	if err != nil {
 		return LegacyStorageIdentityBackfillProgress{}, err
 	}
+	checkpoint, err = revalidateLegacyStorageCheckpoint(ctx, client, checkpoint.ID, driver)
+	if err != nil {
+		return LegacyStorageIdentityBackfillProgress{}, err
+	}
 	progress := legacyStorageProgress(checkpoint)
 	for progress.Batches < opts.MaxBatches && !progress.Completed {
-		updated, batchErr := runLegacyStorageIdentityBatch(ctx, client, checkpoint.ID, driver, configID, opts.BatchSize)
+		updated, batchErr := runLegacyStorageIdentityBatchWithRetry(func() (int, error) {
+			return runLegacyStorageIdentityBatch(ctx, client, checkpoint.ID, driver, configID, opts.BatchSize)
+		})
 		if batchErr != nil {
 			return progress, batchErr
 		}
@@ -91,6 +143,18 @@ func RunLegacyStorageIdentityBackfill(
 	return progress, nil
 }
 
+func runLegacyStorageIdentityBatchWithRetry(run func() (int, error)) (int, error) {
+	var err error
+	for attempt := 0; attempt < legacyStorageConstraintRetryLimit; attempt++ {
+		var updated int
+		updated, err = run()
+		if err == nil || !repoent.IsConstraintError(err) {
+			return updated, err
+		}
+	}
+	return 0, err
+}
+
 func loadLegacyStorageCheckpoint(ctx context.Context, client *repoent.Client, driver string, configID uuid.UUID) (*repoent.MigrationCheckpoint, error) {
 	name := legacyStorageCheckpointName(driver, configID)
 	checkpoint, err := client.MigrationCheckpoint.Query().Where(migrationcheckpoint.NameEQ(name)).Only(ctx)
@@ -100,12 +164,45 @@ func loadLegacyStorageCheckpoint(ctx context.Context, client *repoent.Client, dr
 	if !repoent.IsNotFound(err) {
 		return nil, fmt.Errorf("load legacy storage identity checkpoint: %w", err)
 	}
-	checkpoint, err = client.MigrationCheckpoint.Create().SetName(name).SetPhase(legacyStoragePhaseResults).Save(ctx)
+	checkpoint, err = client.MigrationCheckpoint.Create().SetName(name).SetPhase(legacyStoragePhaseJobs).Save(ctx)
 	if repoent.IsConstraintError(err) {
 		checkpoint, err = client.MigrationCheckpoint.Query().Where(migrationcheckpoint.NameEQ(name)).Only(ctx)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("create legacy storage identity checkpoint: %w", err)
+	}
+	return checkpoint, nil
+}
+
+func revalidateLegacyStorageCheckpoint(ctx context.Context, client *repoent.Client, checkpointID int, driver string) (*repoent.MigrationCheckpoint, error) {
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("start legacy storage checkpoint validation: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	checkpoint, err := tx.MigrationCheckpoint.Query().Where(migrationcheckpoint.IDEQ(checkpointID), lockLegacyStorageCheckpoint()).Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("lock legacy storage checkpoint for validation: %w", err)
+	}
+	if checkpoint.Completed || checkpoint.Phase == legacyStoragePhaseDone {
+		remaining, err := legacyStorageIdentityRowsRemain(ctx, tx, driver)
+		if err != nil {
+			return nil, err
+		}
+		if remaining {
+			checkpoint, err = tx.MigrationCheckpoint.UpdateOneID(checkpoint.ID).
+				SetPhase(legacyStoragePhaseJobs).
+				SetCompleted(false).
+				ClearAfterTaskID().
+				ClearAfterResultID().
+				Save(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("reopen legacy storage checkpoint: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit legacy storage checkpoint validation: %w", err)
 	}
 	return checkpoint, nil
 }
@@ -126,14 +223,14 @@ func runLegacyStorageIdentityBatch(ctx context.Context, client *repoent.Client, 
 	}
 	var updated int
 	switch checkpoint.Phase {
+	case legacyStoragePhaseJobs:
+		updated, err = backfillLegacyStorageJobs(ctx, tx, checkpoint, driver, configID, batchSize)
 	case legacyStoragePhaseResults:
 		updated, err = backfillLegacyStorageResults(ctx, tx, checkpoint, driver, configID, batchSize)
 	case legacyStoragePhaseAssets:
 		updated, err = backfillLegacyStorageAssets(ctx, tx, checkpoint, driver, configID, batchSize)
 	case legacyStoragePhaseTasks:
 		updated, err = backfillLegacyStorageTasks(ctx, tx, checkpoint, driver, configID, batchSize)
-	case legacyStoragePhaseJobs:
-		updated, err = backfillLegacyStorageJobs(ctx, tx, checkpoint, driver, configID, batchSize)
 	case legacyStoragePhaseValidate:
 		err = validateLegacyStorageIdentity(ctx, tx, checkpoint, driver)
 	case legacyStoragePhaseDone:
@@ -249,7 +346,7 @@ func backfillLegacyStorageTasks(ctx context.Context, tx *repoent.Tx, checkpoint 
 		update.SetAfterTaskID(rows[len(rows)-1].ID)
 	}
 	if !hasMore {
-		update.SetPhase(legacyStoragePhaseJobs).ClearAfterTaskID().ClearAfterResultID()
+		update.SetPhase(legacyStoragePhaseValidate).ClearAfterTaskID().ClearAfterResultID()
 	}
 	if err := update.Exec(ctx); err != nil {
 		return 0, fmt.Errorf("checkpoint legacy artifact recoveries: %w", err)
@@ -262,6 +359,7 @@ func backfillLegacyStorageJobs(ctx context.Context, tx *repoent.Tx, checkpoint *
 		objectdeletionjob.StorageConfigIDIsNil(),
 		legacyJobDriver(driver),
 		objectdeletionjob.StateIn(domaincleanup.StatePending, domaincleanup.StateRunning, domaincleanup.StateRetry, domaincleanup.StateBlocked),
+		lockLegacyStorageJobs(),
 	)
 	if checkpoint.AfterResultID != nil {
 		query.Where(objectdeletionjob.IDGT(*checkpoint.AfterResultID))
@@ -313,7 +411,7 @@ func backfillLegacyStorageJobs(ctx context.Context, tx *repoent.Tx, checkpoint *
 		update.SetAfterResultID(rows[len(rows)-1].ID)
 	}
 	if !hasMore {
-		update.SetPhase(legacyStoragePhaseValidate).ClearAfterResultID()
+		update.SetPhase(legacyStoragePhaseResults).ClearAfterResultID()
 	}
 	if err := update.Exec(ctx); err != nil {
 		return 0, fmt.Errorf("checkpoint legacy object deletion jobs: %w", err)
@@ -338,6 +436,14 @@ func resetConfiguredCleanupJob(ctx context.Context, job *repoent.ObjectDeletionJ
 	return nil
 }
 
+func lockLegacyStorageJobs() func(*entsql.Selector) {
+	return func(selector *entsql.Selector) {
+		if selector.Dialect() == "postgres" {
+			selector.ForUpdate()
+		}
+	}
+}
+
 func validateLegacyStorageIdentity(ctx context.Context, tx *repoent.Tx, checkpoint *repoent.MigrationCheckpoint, driver string) error {
 	remaining, err := legacyStorageIdentityRowsRemain(ctx, tx, driver)
 	if err != nil {
@@ -345,7 +451,7 @@ func validateLegacyStorageIdentity(ctx context.Context, tx *repoent.Tx, checkpoi
 	}
 	update := tx.MigrationCheckpoint.UpdateOneID(checkpoint.ID).ClearAfterTaskID().ClearAfterResultID()
 	if remaining {
-		update.SetPhase(legacyStoragePhaseResults).SetCompleted(false)
+		update.SetPhase(legacyStoragePhaseJobs).SetCompleted(false)
 	} else {
 		update.SetPhase(legacyStoragePhaseDone).SetCompleted(true)
 	}

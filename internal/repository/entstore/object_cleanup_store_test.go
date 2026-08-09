@@ -1,6 +1,7 @@
 package entstore
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -13,27 +14,189 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+func TestObjectCleanupStoreRejectsStaleClaimAfterIdentityBackfill(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-stale-identity-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewObjectCleanupStore(client)
+	objectKey := "generated-images/stale-claim.png"
+	legacy := domaincleanup.Identity{StorageDriver: "local", ObjectKey: objectKey}
+	if _, err := store.Enqueue(t.Context(), legacy); err != nil {
+		t.Fatal(err)
+	}
+	claim, ok, err := store.Claim(t.Context(), time.Now().UTC())
+	if err != nil || !ok {
+		t.Fatalf("Claim()=%#v ok=%v err=%v", claim, ok, err)
+	}
+
+	configID := uuid.New()
+	if err := client.ObjectDeletionJob.UpdateOneID(uuid.MustParse(claim.ID)).
+		SetStorageConfigID(configID).
+		SetState(domaincleanup.StatePending).
+		Exec(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	task, err := client.ImageTask.Create().
+		SetUserID(97).
+		SetTaskType("text_to_image").
+		SetPrompt("configured live reference").
+		SetAbstractModel("plus").
+		Save(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ImageResult.Create().
+		SetTaskID(task.ID).
+		SetUserID(task.UserID).
+		SetStorageConfigID(configID).
+		SetStorageDriver("local").
+		SetObjectKey(objectKey).
+		SetMimeType("image/png").
+		SetSha256("configured-live-reference").
+		Save(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	deleteCalled := false
+	blocked, err := store.DeleteIfUnreferenced(t.Context(), claim, func(domaincleanup.Identity) error {
+		deleteCalled = true
+		return nil
+	})
+	if err != nil && !errors.Is(err, domaincleanup.ErrStaleClaim) {
+		t.Fatalf("DeleteIfUnreferenced() err=%v", err)
+	}
+	if blocked || deleteCalled {
+		t.Fatalf("stale claim blocked=%v deleteCalled=%v", blocked, deleteCalled)
+	}
+}
+
+func TestObjectCleanupStoreRejectsSupersededAttempt(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-stale-attempt-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewObjectCleanupStore(client)
+	identity := domaincleanup.Identity{StorageDriver: "local", ObjectKey: "generated-images/stale-attempt.png"}
+	if _, err := store.Enqueue(t.Context(), identity); err != nil {
+		t.Fatal(err)
+	}
+	claim, ok, err := store.Claim(t.Context(), time.Now().UTC())
+	if err != nil || !ok {
+		t.Fatalf("Claim()=%#v ok=%v err=%v", claim, ok, err)
+	}
+	if err := client.ObjectDeletionJob.UpdateOneID(uuid.MustParse(claim.ID)).AddAttemptCount(1).Exec(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	deleteCalled := false
+	blocked, err := store.DeleteIfUnreferenced(t.Context(), claim, func(domaincleanup.Identity) error {
+		deleteCalled = true
+		return nil
+	})
+	if !errors.Is(err, domaincleanup.ErrStaleClaim) {
+		t.Fatalf("DeleteIfUnreferenced() err=%v, want stale claim", err)
+	}
+	if blocked || deleteCalled {
+		t.Fatalf("superseded claim blocked=%v deleteCalled=%v", blocked, deleteCalled)
+	}
+}
+
+func TestObjectCleanupStorePassesLockedAuthoritativeIdentityToDelete(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-authoritative-identity-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewObjectCleanupStore(client)
+	configID := uuid.New()
+	identity := domaincleanup.Identity{StorageConfigID: configID.String(), StorageDriver: "local", ObjectKey: "generated-images/authoritative.png"}
+	if _, err := store.Enqueue(t.Context(), identity); err != nil {
+		t.Fatal(err)
+	}
+	claim, ok, err := store.Claim(t.Context(), time.Now().UTC())
+	if err != nil || !ok {
+		t.Fatalf("Claim()=%#v ok=%v err=%v", claim, ok, err)
+	}
+	if err := client.ObjectDeletionJob.UpdateOneID(uuid.MustParse(claim.ID)).SetStorageDriver("s3").Exec(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	var deleted domaincleanup.Identity
+	blocked, err := store.DeleteIfUnreferenced(t.Context(), claim, func(identity domaincleanup.Identity) error {
+		deleted = identity
+		return nil
+	})
+	if err != nil || blocked || deleted.StorageConfigID != configID.String() || deleted.StorageDriver != "s3" || deleted.ObjectKey != identity.ObjectKey {
+		t.Fatalf("authoritative delete identity=%#v blocked=%v err=%v", deleted, blocked, err)
+	}
+}
+
+func TestObjectCleanupStoreTreatsRemovedClaimAsStale(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-removed-claim-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	store := NewObjectCleanupStore(client)
+	if _, err := store.Enqueue(t.Context(), domaincleanup.Identity{StorageDriver: "local", ObjectKey: "generated-images/removed-claim.png"}); err != nil {
+		t.Fatal(err)
+	}
+	claim, ok, err := store.Claim(t.Context(), time.Now().UTC())
+	if err != nil || !ok {
+		t.Fatalf("Claim()=%#v ok=%v err=%v", claim, ok, err)
+	}
+	if err := client.ObjectDeletionJob.DeleteOneID(uuid.MustParse(claim.ID)).Exec(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	deleteCalled := false
+	blocked, err := store.DeleteIfUnreferenced(t.Context(), claim, func(domaincleanup.Identity) error {
+		deleteCalled = true
+		return nil
+	})
+	if !errors.Is(err, domaincleanup.ErrStaleClaim) || blocked || deleteCalled {
+		t.Fatalf("removed claim blocked=%v deleteCalled=%v err=%v", blocked, deleteCalled, err)
+	}
+}
+
 func TestObjectCleanupStoreStaleWorkerTransitionDoesNotOverrideReenqueue(t *testing.T) {
 	tests := []struct {
 		name       string
-		transition func(*ObjectCleanupStore, string) error
+		transition func(*ObjectCleanupStore, domaincleanup.Job) error
 	}{
 		{
 			name: "done",
-			transition: func(store *ObjectCleanupStore, id string) error {
-				return store.MarkDone(t.Context(), id)
+			transition: func(store *ObjectCleanupStore, claim domaincleanup.Job) error {
+				return store.MarkDone(t.Context(), claim)
 			},
 		},
 		{
 			name: "blocked",
-			transition: func(store *ObjectCleanupStore, id string) error {
-				return store.MarkBlocked(t.Context(), id, "live_reference")
+			transition: func(store *ObjectCleanupStore, claim domaincleanup.Job) error {
+				return store.MarkBlocked(t.Context(), claim, "live_reference")
 			},
 		},
 		{
 			name: "retry",
-			transition: func(store *ObjectCleanupStore, id string) error {
-				return store.MarkRetry(t.Context(), id, time.Now().Add(time.Minute), "delete_failed", "delete failed")
+			transition: func(store *ObjectCleanupStore, claim domaincleanup.Job) error {
+				return store.MarkRetry(t.Context(), claim, time.Now().Add(time.Minute), "delete_failed", "delete failed")
 			},
 		},
 	}
@@ -55,7 +218,8 @@ func TestObjectCleanupStoreStaleWorkerTransitionDoesNotOverrideReenqueue(t *test
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, claimed, err := store.Claim(t.Context(), time.Now()); err != nil || !claimed {
+			claim, claimed, err := store.Claim(t.Context(), time.Now())
+			if err != nil || !claimed {
 				t.Fatalf("Claim() claimed=%v err=%v", claimed, err)
 			}
 
@@ -66,7 +230,7 @@ func TestObjectCleanupStoreStaleWorkerTransitionDoesNotOverrideReenqueue(t *test
 			if first.ID != second.ID {
 				t.Fatalf("Enqueue() created duplicate job: first=%q second=%q", first.ID, second.ID)
 			}
-			if err := test.transition(store, first.ID); err != nil {
+			if err := test.transition(store, claim); err != nil {
 				t.Fatal(err)
 			}
 
@@ -188,10 +352,11 @@ func TestObjectCleanupStoreEnqueueAfterDoneCreatesNewPendingJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, claimed, err := store.Claim(t.Context(), time.Now()); err != nil || !claimed {
+	firstClaim, claimed, err := store.Claim(t.Context(), time.Now())
+	if err != nil || !claimed {
 		t.Fatalf("Claim() claimed=%v err=%v", claimed, err)
 	}
-	if err := store.MarkDone(t.Context(), first.ID); err != nil {
+	if err := store.MarkDone(t.Context(), firstClaim); err != nil {
 		t.Fatal(err)
 	}
 
@@ -205,11 +370,11 @@ func TestObjectCleanupStoreEnqueueAfterDoneCreatesNewPendingJob(t *testing.T) {
 	if count, err := client.ObjectDeletionJob.Query().Count(t.Context()); err != nil || count != 2 {
 		t.Fatalf("job count=%d err=%v", count, err)
 	}
-	claimed, ok, err := store.Claim(t.Context(), time.Now().Add(time.Second))
-	if err != nil || !ok || claimed.ID != second.ID {
-		t.Fatalf("second Claim()=%#v ok=%v err=%v", claimed, ok, err)
+	secondClaim, ok, err := store.Claim(t.Context(), time.Now().Add(time.Second))
+	if err != nil || !ok || secondClaim.ID != second.ID {
+		t.Fatalf("second Claim()=%#v ok=%v err=%v", secondClaim, ok, err)
 	}
-	if err := store.MarkDone(t.Context(), second.ID); err != nil {
+	if err := store.MarkDone(t.Context(), secondClaim); err != nil {
 		t.Fatal(err)
 	}
 	completed, err := client.ObjectDeletionJob.Get(t.Context(), uuid.MustParse(second.ID))

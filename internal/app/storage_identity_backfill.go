@@ -42,6 +42,52 @@ func backfillLegacyStorageIdentityAtStartup(
 	if err != nil {
 		return db.LegacyStorageIdentityBackfillProgress{}, fmt.Errorf("resolve legacy storage config ID: %w", err)
 	}
+	return backfillResolvedLegacyStorageIdentityAtStartup(ctx, client, driver, configID, options)
+}
+
+func backfillLegacyStorageIdentitiesAtStartup(
+	ctx context.Context,
+	client *repoent.Client,
+	resolver legacyStorageIdentityResolver,
+	options db.LegacyStorageIdentityBackfillOptions,
+) (map[string]db.LegacyStorageIdentityBackfillProgress, error) {
+	if resolver == nil {
+		return nil, fmt.Errorf("resolve legacy storage identity: resolver is required")
+	}
+	drivers, err := db.ListLegacyStorageDrivers(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	configIDs := make(map[string]uuid.UUID, len(drivers))
+	for _, driver := range drivers {
+		resolved, err := resolver.ResolveLegacyByDriver(ctx, driver)
+		if err != nil {
+			return nil, fmt.Errorf("resolve legacy %s storage config: %w", driver, err)
+		}
+		configID, err := uuid.Parse(strings.TrimSpace(resolved.ID))
+		if err != nil {
+			return nil, fmt.Errorf("resolve legacy %s storage config ID: %w", driver, err)
+		}
+		configIDs[driver] = configID
+	}
+	progressByDriver := make(map[string]db.LegacyStorageIdentityBackfillProgress, len(drivers))
+	for _, driver := range drivers {
+		progress, err := backfillResolvedLegacyStorageIdentityAtStartup(ctx, client, driver, configIDs[driver], options)
+		progressByDriver[driver] = progress
+		if err != nil {
+			return progressByDriver, err
+		}
+	}
+	return progressByDriver, nil
+}
+
+func backfillResolvedLegacyStorageIdentityAtStartup(
+	ctx context.Context,
+	client *repoent.Client,
+	driver string,
+	configID uuid.UUID,
+	options db.LegacyStorageIdentityBackfillOptions,
+) (db.LegacyStorageIdentityBackfillProgress, error) {
 	progress, err := db.RunLegacyStorageIdentityBackfill(ctx, client, driver, configID, options)
 	if err != nil {
 		return progress, fmt.Errorf("backfill legacy storage identity: %w", err)
@@ -57,8 +103,8 @@ func backfillLegacyStorageIdentityAtStartup(
 	return progress, nil
 }
 
-func requireLegacyStorageIdentityBackfill(ctx context.Context, client *repoent.Client, resolver legacyStorageIdentityResolver, driver string) error {
-	_, err := backfillLegacyStorageIdentityAtStartup(ctx, client, resolver, driver, db.LegacyStorageIdentityBackfillOptions{
+func requireLegacyStorageIdentityBackfill(ctx context.Context, client *repoent.Client, resolver legacyStorageIdentityResolver) error {
+	_, err := backfillLegacyStorageIdentitiesAtStartup(ctx, client, resolver, db.LegacyStorageIdentityBackfillOptions{
 		BatchSize: startupStorageIdentityBatchSize, MaxBatches: startupStorageIdentityMaxBatches,
 	})
 	return err

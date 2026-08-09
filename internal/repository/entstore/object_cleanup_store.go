@@ -122,7 +122,7 @@ func lockCleanupJobForClaim() func(*entsql.Selector) {
 	}
 }
 
-func (s *ObjectCleanupStore) DeleteIfUnreferenced(ctx context.Context, job domaincleanup.Job, deleteFn func() error) (bool, error) {
+func (s *ObjectCleanupStore) DeleteIfUnreferenced(ctx context.Context, job domaincleanup.Job, deleteFn func(domaincleanup.Identity) error) (bool, error) {
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
 		return false, err
@@ -132,14 +132,24 @@ func (s *ObjectCleanupStore) DeleteIfUnreferenced(ctx context.Context, job domai
 	if err != nil {
 		return false, err
 	}
-	if _, err := tx.ObjectDeletionJob.Query().Where(objectdeletionjob.IDEQ(id), lockCleanupJobForClaim()).Only(ctx); err != nil {
+	entity, err := tx.ObjectDeletionJob.Query().Where(objectdeletionjob.IDEQ(id), lockCleanupJobForClaim()).Only(ctx)
+	if repoent.IsNotFound(err) {
+		return false, domaincleanup.ErrStaleClaim
+	}
+	if err != nil {
 		return false, err
 	}
-	live, err := hasLiveObjectReferences(ctx, tx.Client(), job.Identity)
+	authoritative := mapCleanupJob(entity)
+	if authoritative.State != domaincleanup.StateRunning ||
+		authoritative.AttemptCount != job.AttemptCount ||
+		domaincleanup.CanonicalKey(authoritative.Identity) != domaincleanup.CanonicalKey(job.Identity) {
+		return false, domaincleanup.ErrStaleClaim
+	}
+	live, err := hasLiveObjectReferences(ctx, tx.Client(), authoritative.Identity)
 	if err != nil || live {
 		return live, err
 	}
-	if err := deleteFn(); err != nil {
+	if err := deleteFn(authoritative.Identity); err != nil {
 		return false, err
 	}
 	return false, tx.Commit()
@@ -270,14 +280,14 @@ func artifactRecoveryReferencesIdentity(recovery *repoent.ImageTask, identity do
 	return false
 }
 
-func (s *ObjectCleanupStore) MarkDone(ctx context.Context, id string) error {
-	parsed, err := uuid.Parse(id)
+func (s *ObjectCleanupStore) MarkDone(ctx context.Context, claim domaincleanup.Job) error {
+	parsed, err := uuid.Parse(claim.ID)
 	if err != nil {
 		return err
 	}
 	now := time.Now().UTC()
 	return s.client.ObjectDeletionJob.Update().
-		Where(objectdeletionjob.IDEQ(parsed), objectdeletionjob.StateEQ(domaincleanup.StateRunning)).
+		Where(objectdeletionjob.IDEQ(parsed), objectdeletionjob.StateEQ(domaincleanup.StateRunning), objectdeletionjob.AttemptCountEQ(claim.AttemptCount)).
 		SetState(domaincleanup.StateDone).
 		SetCompletedAt(now).
 		ClearNextAttemptAt().
@@ -285,25 +295,25 @@ func (s *ObjectCleanupStore) MarkDone(ctx context.Context, id string) error {
 		ClearLastErrorMessage().
 		Exec(ctx)
 }
-func (s *ObjectCleanupStore) MarkBlocked(ctx context.Context, id, code string) error {
-	parsed, err := uuid.Parse(id)
+func (s *ObjectCleanupStore) MarkBlocked(ctx context.Context, claim domaincleanup.Job, code string) error {
+	parsed, err := uuid.Parse(claim.ID)
 	if err != nil {
 		return err
 	}
 	return s.client.ObjectDeletionJob.Update().
-		Where(objectdeletionjob.IDEQ(parsed), objectdeletionjob.StateEQ(domaincleanup.StateRunning)).
+		Where(objectdeletionjob.IDEQ(parsed), objectdeletionjob.StateEQ(domaincleanup.StateRunning), objectdeletionjob.AttemptCountEQ(claim.AttemptCount)).
 		SetState(domaincleanup.StateBlocked).
 		SetLastErrorCode(cleanupError(code, 64)).
 		ClearLastErrorMessage().
 		Exec(ctx)
 }
-func (s *ObjectCleanupStore) MarkRetry(ctx context.Context, id string, next time.Time, code, message string) error {
-	parsed, err := uuid.Parse(id)
+func (s *ObjectCleanupStore) MarkRetry(ctx context.Context, claim domaincleanup.Job, next time.Time, code, message string) error {
+	parsed, err := uuid.Parse(claim.ID)
 	if err != nil {
 		return err
 	}
 	return s.client.ObjectDeletionJob.Update().
-		Where(objectdeletionjob.IDEQ(parsed), objectdeletionjob.StateEQ(domaincleanup.StateRunning)).
+		Where(objectdeletionjob.IDEQ(parsed), objectdeletionjob.StateEQ(domaincleanup.StateRunning), objectdeletionjob.AttemptCountEQ(claim.AttemptCount)).
 		SetState(domaincleanup.StateRetry).
 		SetNextAttemptAt(next).
 		SetLastErrorCode(cleanupError(code, 64)).

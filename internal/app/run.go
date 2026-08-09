@@ -299,7 +299,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	if err := storageConfigSvc.Bootstrap(startupContext, 0); err != nil {
 		return fmt.Errorf("bootstrap storage config: %w", err)
 	}
-	if err := requireLegacyStorageIdentityBackfill(startupContext, client, storageConfigSvc, cfg.Storage.Driver); err != nil {
+	if err := requireLegacyStorageIdentityBackfill(startupContext, client, storageConfigSvc); err != nil {
 		return fmt.Errorf("prepare object cleanup storage identities: %w", err)
 	}
 	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
