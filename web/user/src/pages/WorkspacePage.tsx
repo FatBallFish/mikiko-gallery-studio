@@ -31,6 +31,7 @@ import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, works
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 import { ProjectSelector, useProjects } from '../ProjectContext'
+import { workspaceProjectReadiness, workspaceSubmissionIsCurrent, type WorkspaceProjectSelection } from './workspaceProjectLifecycle'
 
 type OutputTab = 'current' | 'history'
 type WorkspacePixelSelection = 'preset' | 'custom'
@@ -265,7 +266,8 @@ const workspaceClasses = {
 
 export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const app = useApp()
-  const { selectedProjectID } = useProjects()
+  const projects = useProjects()
+  const selectedProjectID = projects.selectedProjectID
   const compactViewport = useCompactWorkspaceViewport()
 
   const [capability, setCapability] = useState<Capability | null>(null)
@@ -293,6 +295,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [records, setRecords] = useState<ImageTask[]>([])
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => initialTaskId?.trim() || null)
   const selectedTaskIdRef = useRef<string | null>(selectedTaskId)
+  const projectSelectionRef = useRef<WorkspaceProjectSelection>({
+    projectID: projects.selectedProjectID,
+    generation: projects.selectionGeneration,
+  })
   const [initialTaskLoading, setInitialTaskLoading] = useState(false)
   const [initialTaskError, setInitialTaskError] = useState('')
   const [initialTaskReloadKey, setInitialTaskReloadKey] = useState(0)
@@ -344,9 +350,24 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const taskType: ImageTaskType = editRefs.length ? 'image_edit' : 'text_to_image'
   const referenceCount = editRefs.length
   const requiredReferencesReady = workspaceRequiredReferencesReady(taskType, referenceCount)
+  const projectReadiness = workspaceProjectReadiness({
+    loading: projects.loading,
+    error: projects.error,
+    selectedProjectID: projects.selectedProjectID,
+    selectedProject: projects.selectedProject,
+  })
+  const projectIDsKey = projects.projects
+    .filter((project) => project.status === 'active')
+    .map((project) => project.id)
+    .sort()
+    .join(',')
 
   notifyRef.current = app.notify
   refreshAccountRef.current = app.refreshAccount
+  projectSelectionRef.current = {
+    projectID: projects.selectedProjectID,
+    generation: projects.selectionGeneration,
+  }
 
   useEffect(() => {
     selectedTaskIdRef.current = selectedTaskId
@@ -400,12 +421,32 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       setInitialTaskLoading(false)
       return undefined
     }
+    if (projects.loading) {
+      setInitialTaskLoading(true)
+      return undefined
+    }
+    if (projects.error) {
+      setInitialTaskLoading(false)
+      setInitialTaskError(projects.error)
+      return undefined
+    }
+    if (!projectIDsKey) {
+      setInitialTaskLoading(false)
+      setInitialTaskError('没有可用项目，无法打开该任务。')
+      return undefined
+    }
     let cancelled = false
     setInitialTaskLoading(true)
     async function loadInitialTask() {
       try {
         const task = await userApi.getTask(taskId)
         if (cancelled) return
+        const taskProject = projects.projects.find((project) => project.status === 'active' && project.id === task.project_id)
+        if (!task.project_id || !taskProject) {
+          setInitialTaskError('任务所属项目不存在或无权访问。')
+          return
+        }
+        if (projects.selectedProjectID !== task.project_id) projects.selectProject(task.project_id)
         setRecords((items) => mergeWorkspaceTaskRecords(items, task, { limit: 20, preserveIds: [taskId] }))
       } catch (err) {
         if (!cancelled) setInitialTaskError(errorMessage(err))
@@ -415,7 +456,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
     void loadInitialTask()
     return () => { cancelled = true }
-  }, [initialTaskId, initialTaskReloadKey])
+  }, [initialTaskId, initialTaskReloadKey, projectIDsKey, projects.error, projects.loading])
 
   useEffect(() => () => {
     if (sheetClickResetRef.current !== null) window.clearTimeout(sheetClickResetRef.current)
@@ -429,7 +470,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       window.clearTimeout(streamRecoveryTimerRef.current)
       streamRecoveryTimerRef.current = null
     }
-    if (!token) {
+    if (!token || !projectReadiness.ready) {
       streamGenerationRef.current = null
       streamTokenRef.current = null
       streamRetryCountRef.current = 0
@@ -444,9 +485,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       streamDisconnectNoticeRef.current = false
       streamExhaustedNoticeRef.current = false
     }
-    const generation = createWorkspaceStreamGeneration(token, streamRetryCountRef.current)
+    const generation = createWorkspaceStreamGeneration(token, selectedProjectID, streamRetryCountRef.current)
     streamGenerationRef.current = generation
-    const source = new EventSource(userApi.taskStreamUrl(token))
+    const source = new EventSource(userApi.taskStreamUrl(token, selectedProjectID))
     function markStreamHealthy() {
       if (!workspaceStreamEventIsCurrent(generation, streamGenerationRef.current)) return
       markWorkspaceStreamHealthy(generation)
@@ -529,7 +570,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       closeWorkspaceStreamGeneration(generation)
       if (workspaceStreamRecoveryIsCurrent(generation, streamGenerationRef.current)) streamGenerationRef.current = null
     }
-  }, [app.session?.token, selectedProjectID, streamRetryKey])
+  }, [app.session?.token, projectReadiness.ready, selectedProjectID, streamRetryKey])
 
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
@@ -786,7 +827,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     busy,
     task: latestTask,
   }), [capability, taskType, referenceCount, requiredReferencesReady, model, parametersReady, prompt, estimateError, estimate, busy, latestTask])
-  const generateReadiness = workspaceView.generate
+  const generateReadiness = projectReadiness.ready
+    ? workspaceView.generate
+    : { disabled: true, reason: projectReadiness.reason, showRechargeAction: false }
   const historyTasks = useMemo(() => (
     [...records].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   ), [records])
@@ -964,6 +1007,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }
 
   async function createTask() {
+    if (!projectReadiness.ready) {
+      app.notify('error', projectReadiness.reason)
+      return
+    }
     if (!requiredReferencesReady) {
       app.notify('error', WORKSPACE_REFERENCE_REQUIRED_MESSAGE)
       return
@@ -974,9 +1021,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
     const activeTaskType = taskType
     const editSourceAssets = activeTaskType === 'image_edit' ? [...editRefs] : []
+    const submissionProject = projectSelectionRef.current
     setBusy(true)
     try {
-      const task = await userApi.createTask({ ...estimatePayload, project_id: selectedProjectID, prompt, negative_prompt: negative, capability_version: estimate?.capability_version, idempotency_key: crypto.randomUUID() })
+      const task = await userApi.createTask({ ...estimatePayload, project_id: submissionProject.projectID, prompt, negative_prompt: negative, capability_version: estimate?.capability_version, idempotency_key: crypto.randomUUID() })
+      if (!workspaceSubmissionIsCurrent(submissionProject, projectSelectionRef.current)) {
+        void app.refreshAccount()
+        return
+      }
       const nextTask = editSourceAssets.length ? { ...task, reference_assets: editSourceAssets } : task
       setRecords((items) => mergeWorkspaceTaskRecords(items, nextTask, {
         limit: 20,
@@ -993,6 +1045,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       app.notify('info', '任务已进入队列，正在等待实时状态')
       await app.refreshAccount()
     } catch (err) {
+      if (!workspaceSubmissionIsCurrent(submissionProject, projectSelectionRef.current)) return
       if (err instanceof ApiError && err.code === 'capability_changed') {
         try {
           const nextCapability = await userApi.getCapabilities()

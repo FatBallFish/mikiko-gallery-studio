@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +37,7 @@ import (
 	openaiprovider "github.com/fatballfish/pic-gallery/internal/provider/openai"
 	openrouterprovider "github.com/fatballfish/pic-gallery/internal/provider/openrouter"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/fatballfish/pic-gallery/internal/service/secretcodec"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
@@ -240,7 +242,7 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 	if s.projects != nil {
 		project, projectErr := s.projects.ResolveForWrite(ctx, req.UserID, req.ProjectID)
 		if projectErr != nil {
-			return domainimagetask.Task{}, errs.New(404, errs.CodeNotFound, "project not found")
+			return domainimagetask.Task{}, mapProjectResolutionError("create task", projectErr)
 		}
 		req.ProjectID = project.ID
 		selectedProject = &project
@@ -366,7 +368,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 	if s.projects != nil {
 		project, projectErr := s.projects.ResolveForWrite(ctx, req.UserID, req.ProjectID)
 		if projectErr != nil {
-			return domainimagetask.ExecuteResult{}, errs.New(404, errs.CodeNotFound, "project not found")
+			return domainimagetask.ExecuteResult{}, mapProjectResolutionError("execute task", projectErr)
 		}
 		req.ProjectID = project.ID
 		selectedProject = &project
@@ -1671,15 +1673,48 @@ type projectTaskLister interface {
 	ListByUserProject(context.Context, int64, string) ([]domainimagetask.Task, error)
 }
 
+type recentProjectTaskLister interface {
+	ListRecentByUserProject(context.Context, int64, string, int) ([]domainimagetask.Task, error)
+}
+
 func (s *Service) ListByUserProject(ctx context.Context, userID int64, projectID string) ([]domainimagetask.Task, error) {
 	if s.projects != nil {
 		project, err := s.projects.ResolveForWrite(ctx, userID, projectID)
 		if err != nil {
-			return nil, errs.New(404, errs.CodeNotFound, "project not found")
+			return nil, mapProjectResolutionError("list tasks", err)
 		}
 		projectID = project.ID
 	}
 	return s.listByUserProject(ctx, userID, strings.TrimSpace(projectID))
+}
+
+func (s *Service) ListRecentByUserProject(ctx context.Context, userID int64, projectID string, limit int) ([]domainimagetask.Task, error) {
+	if s.projects != nil {
+		project, err := s.projects.ResolveForWrite(ctx, userID, projectID)
+		if err != nil {
+			return nil, mapProjectResolutionError("stream tasks", err)
+		}
+		projectID = project.ID
+	}
+	projectID = strings.TrimSpace(projectID)
+	if lister, ok := s.store.(recentProjectTaskLister); ok {
+		list, err := lister.ListRecentByUserProject(ctx, userID, projectID, limit)
+		if err != nil {
+			return nil, mapTaskListError(err)
+		}
+		return s.projectTaskList(ctx, list)
+	}
+	list, err := s.listByUserProject(ctx, userID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		return taskListTime(list[i]).After(taskListTime(list[j]))
+	})
+	if limit > 0 && len(list) > limit {
+		list = list[:limit]
+	}
+	return list, nil
 }
 
 func (s *Service) listByUserProject(ctx context.Context, userID int64, projectID string) ([]domainimagetask.Task, error) {
@@ -1704,11 +1739,19 @@ func (s *Service) listByUserProject(ctx context.Context, userID int64, projectID
 		list, err = s.store.ListByUser(ctx, userID)
 	}
 	if err != nil {
-		if errors.Is(err, repoerr.ErrNotFound) {
-			return nil, errs.New(404, errs.CodeNotFound, "image task not found")
-		}
-		return nil, errs.Internal("failed to list image tasks")
+		return nil, mapTaskListError(err)
 	}
+	return s.projectTaskList(ctx, list)
+}
+
+func mapTaskListError(err error) error {
+	if errors.Is(err, repoerr.ErrNotFound) {
+		return errs.New(http.StatusNotFound, errs.CodeNotFound, "image task not found")
+	}
+	return fmt.Errorf("list image tasks: %w", err)
+}
+
+func (s *Service) projectTaskList(ctx context.Context, list []domainimagetask.Task) ([]domainimagetask.Task, error) {
 	projected := make([]domainimagetask.Task, 0, len(list))
 	for _, task := range list {
 		item, projectErr := s.projectTaskMedia(ctx, cloneTask(task), "/api/agent/image/v1/images/")
@@ -1718,6 +1761,13 @@ func (s *Service) listByUserProject(ctx context.Context, userID int64, projectID
 		projected = append(projected, item)
 	}
 	return projected, nil
+}
+
+func taskListTime(task domainimagetask.Task) time.Time {
+	if !task.CreatedAt.IsZero() {
+		return task.CreatedAt
+	}
+	return task.UpdatedAt
 }
 
 func (s *Service) projectTaskMedia(ctx context.Context, task domainimagetask.Task, fallbackPrefix string) (domainimagetask.Task, error) {
@@ -1973,7 +2023,7 @@ func (s *Service) ListGalleryByUser(ctx context.Context, userID int64, req domai
 	if s.projects != nil {
 		project, err := s.projects.ResolveForWrite(ctx, userID, req.ProjectID)
 		if err != nil {
-			return domainimagetask.GalleryPage{}, errs.New(404, errs.CodeNotFound, "project not found")
+			return domainimagetask.GalleryPage{}, mapProjectResolutionError("list gallery", err)
 		}
 		req.ProjectID = project.ID
 	}
@@ -1984,6 +2034,17 @@ func (s *Service) ListGalleryByUser(ctx context.Context, userID int64, req domai
 	return s.projectGalleryPageMedia(ctx, page, func(imageID string) string {
 		return "/api/agent/image/v1/images/" + url.PathEscape(imageID)
 	})
+}
+
+func mapProjectResolutionError(operation string, err error) error {
+	switch {
+	case errors.Is(err, projectservice.ErrNotFound):
+		return errs.New(http.StatusNotFound, errs.CodeNotFound, "project not found")
+	case errors.Is(err, projectservice.ErrInvalid):
+		return errs.BadRequest("invalid project")
+	default:
+		return fmt.Errorf("%s project resolution: %w", operation, err)
+	}
 }
 
 func (s *Service) ListPublicGallery(ctx context.Context, req domainimagetask.GalleryListRequest) (domainimagetask.GalleryPage, error) {

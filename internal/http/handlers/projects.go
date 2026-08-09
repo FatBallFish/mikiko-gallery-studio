@@ -41,7 +41,12 @@ func (a *API) HandleProjects(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 			return
 		}
-		req.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+		var keyErr *errs.Error
+		req.IdempotencyKey, keyErr = projectIdempotencyKey(r)
+		if keyErr != nil {
+			httpx.WriteError(w, r, keyErr)
+			return
+		}
 		created, err := a.projects.Create(r.Context(), user.ID, req)
 		if err != nil {
 			httpx.WriteError(w, r, projectAppError(err))
@@ -83,7 +88,12 @@ func (a *API) HandleProjectDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 			return
 		}
-		req.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+		var keyErr *errs.Error
+		req.IdempotencyKey, keyErr = projectIdempotencyKey(r)
+		if keyErr != nil {
+			httpx.WriteError(w, r, keyErr)
+			return
+		}
 		req.RequestID = httpx.RequestIDFromContext(r.Context())
 		deleted, err := a.projects.Delete(r.Context(), user.ID, projectID, req)
 		if err != nil {
@@ -94,6 +104,14 @@ func (a *API) HandleProjectDetail(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeMethodNotAllowed(w, r)
 	}
+}
+
+func projectIdempotencyKey(r *http.Request) (string, *errs.Error) {
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if len([]rune(key)) > domainproject.MaxIdempotencyKeyLength {
+		return "", errs.BadRequest("Idempotency-Key must be at most 128 characters")
+	}
+	return key, nil
 }
 
 func projectAppError(err error) *errs.Error {

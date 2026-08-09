@@ -57,8 +57,16 @@ func RunProjectOwnershipBackfill(ctx context.Context, client *repoent.Client, op
 	}
 	progress := projectBackfillProgress(checkpoint)
 	if progress.Completed {
-		if err := validateProjectOwnership(ctx, client); err != nil {
+		reset, err := resetProjectBackfillForMissingOwnership(ctx, client, checkpoint)
+		if err != nil {
 			return progress, err
+		}
+		if reset {
+			checkpoint, err = client.MigrationCheckpoint.Get(ctx, checkpoint.ID)
+			if err != nil {
+				return progress, fmt.Errorf("reload reset project backfill checkpoint: %w", err)
+			}
+			return projectBackfillProgress(checkpoint), nil
 		}
 		return progress, nil
 	}
@@ -103,8 +111,12 @@ func runProjectBackfillBatch(ctx context.Context, client *repoent.Client, checkp
 	case projectBackfillPhaseResults:
 		return backfillProjectResults(ctx, client, checkpoint, batchSize)
 	case projectBackfillPhaseValidate:
-		if err := validateProjectOwnership(ctx, client); err != nil {
+		reset, err := resetProjectBackfillForMissingOwnership(ctx, client, checkpoint)
+		if err != nil {
 			return 0, err
+		}
+		if reset {
+			return 0, nil
 		}
 		if _, err := client.MigrationCheckpoint.UpdateOneID(checkpoint.ID).
 			SetPhase(projectBackfillPhaseDone).SetCompleted(true).Save(ctx); err != nil {
@@ -322,18 +334,46 @@ func resolveBackfillProjectsForResults(ctx context.Context, client *repoent.Clie
 }
 
 func validateProjectOwnership(ctx context.Context, client *repoent.Client) error {
-	tasks, err := client.ImageTask.Query().Where(imagetask.ProjectIDIsNil()).Count(ctx)
+	tasks, results, err := countMissingProjectOwnership(ctx, client)
 	if err != nil {
-		return fmt.Errorf("count tasks without project: %w", err)
-	}
-	results, err := client.ImageResult.Query().Where(imageresult.ProjectIDIsNil()).Count(ctx)
-	if err != nil {
-		return fmt.Errorf("count results without project: %w", err)
+		return err
 	}
 	if tasks != 0 || results != 0 {
 		return fmt.Errorf("project ownership backfill incomplete: %d tasks and %d results remain", tasks, results)
 	}
 	return nil
+}
+
+func resetProjectBackfillForMissingOwnership(ctx context.Context, client *repoent.Client, checkpoint *repoent.MigrationCheckpoint) (bool, error) {
+	tasks, results, err := countMissingProjectOwnership(ctx, client)
+	if err != nil {
+		return false, err
+	}
+	if tasks == 0 && results == 0 {
+		return false, nil
+	}
+	update := client.MigrationCheckpoint.UpdateOneID(checkpoint.ID).SetCompleted(false)
+	if tasks > 0 {
+		update.SetPhase(projectBackfillPhaseTasks).ClearAfterTaskID().ClearAfterResultID()
+	} else {
+		update.SetPhase(projectBackfillPhaseResults).ClearAfterResultID()
+	}
+	if _, err := update.Save(ctx); err != nil {
+		return false, fmt.Errorf("reset project backfill checkpoint: %w", err)
+	}
+	return true, nil
+}
+
+func countMissingProjectOwnership(ctx context.Context, client *repoent.Client) (int, int, error) {
+	tasks, err := client.ImageTask.Query().Where(imagetask.ProjectIDIsNil()).Count(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("count tasks without project: %w", err)
+	}
+	results, err := client.ImageResult.Query().Where(imageresult.ProjectIDIsNil()).Count(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("count results without project: %w", err)
+	}
+	return tasks, results, nil
 }
 
 func projectBackfillProgress(checkpoint *repoent.MigrationCheckpoint) ProjectBackfillProgress {

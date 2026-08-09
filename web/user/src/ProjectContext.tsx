@@ -13,7 +13,7 @@ type ProjectContextValue = ProjectSelectionSnapshot & {
   deleteProject: (project: Project, targetProjectID?: string) => Promise<void>
 }
 
-const emptySnapshot: ProjectSelectionSnapshot = { projects: [], selectedProjectID: '', selectedProject: null }
+const emptySnapshot: ProjectSelectionSnapshot = { projects: [], selectedProjectID: '', selectedProject: null, selectionGeneration: 0 }
 const ProjectContext = createContext<ProjectContextValue | null>(null)
 
 export function ProjectProvider({ userID, children }: { userID: string; children: React.ReactNode }) {

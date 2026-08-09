@@ -4,6 +4,7 @@ export type ProjectSelectionSnapshot = {
   projects: Project[]
   selectedProjectID: string
   selectedProject: Project | null
+  selectionGeneration: number
 }
 
 type StorageEventLike = { key: string | null; newValue: string | null }
@@ -42,6 +43,7 @@ export function createProjectSelectionController({ userID, storage }: { userID: 
   const source = Symbol(key)
   let projects: Project[] = []
   let selectedProjectID = ''
+  let selectionGeneration = 0
   const listeners = new Set<Listener>()
 
   const notify = () => listeners.forEach((listener) => listener())
@@ -50,6 +52,7 @@ export function createProjectSelectionController({ userID, storage }: { userID: 
     const nextID = selected?.id ?? ''
     const changed = nextID !== selectedProjectID
     selectedProjectID = nextID
+    if (changed) selectionGeneration += 1
     if (persist) {
       try {
         if (nextID) storage.setItem(key, nextID)
@@ -94,6 +97,7 @@ export function createProjectSelectionController({ userID, storage }: { userID: 
         projects: [...projects],
         selectedProjectID,
         selectedProject: projects.find((project) => project.id === selectedProjectID) ?? null,
+        selectionGeneration,
       }
     },
     subscribe(listener: Listener) {

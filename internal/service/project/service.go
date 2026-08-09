@@ -84,7 +84,11 @@ func (s *Service) Create(ctx context.Context, userID int64, req domainproject.Cr
 	if err != nil {
 		return domainproject.Project{}, err
 	}
-	return s.store.Create(ctx, userID, name, nameKey, strings.TrimSpace(req.IdempotencyKey))
+	idempotencyKey, err := normalizeIdempotencyKey(req.IdempotencyKey)
+	if err != nil {
+		return domainproject.Project{}, err
+	}
+	return s.store.Create(ctx, userID, name, nameKey, idempotencyKey)
 }
 
 func (s *Service) Rename(ctx context.Context, userID int64, projectID string, req domainproject.RenameRequest) (domainproject.Project, error) {
@@ -108,7 +112,11 @@ func (s *Service) Rename(ctx context.Context, userID int64, projectID string, re
 func (s *Service) Delete(ctx context.Context, userID int64, projectID string, req domainproject.DeleteRequest) (domainproject.DeleteResult, error) {
 	projectID = strings.TrimSpace(projectID)
 	req.TargetProjectID = strings.TrimSpace(req.TargetProjectID)
-	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	var err error
+	req.IdempotencyKey, err = normalizeIdempotencyKey(req.IdempotencyKey)
+	if err != nil {
+		return domainproject.DeleteResult{}, err
+	}
 	req.RequestID = strings.TrimSpace(req.RequestID)
 	if userID <= 0 || projectID == "" || req.ExpectedVersion <= 0 {
 		return domainproject.DeleteResult{}, ErrInvalid
@@ -125,4 +133,12 @@ func normalizeName(value string) (string, string, error) {
 		return "", "", ErrInvalid
 	}
 	return name, strings.ToLower(name), nil
+}
+
+func normalizeIdempotencyKey(value string) (string, error) {
+	key := strings.TrimSpace(value)
+	if len([]rune(key)) > domainproject.MaxIdempotencyKeyLength {
+		return "", ErrInvalid
+	}
+	return key, nil
 }

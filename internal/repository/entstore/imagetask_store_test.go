@@ -34,6 +34,61 @@ func TestTaskProjectOwnershipCheckUsesCompatibleRowLock(t *testing.T) {
 	}
 }
 
+func TestImageTaskStoreRecentProjectQueryFiltersBeforeLimit(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, fmt.Sprintf("file:imagetask-project-recent-%s?mode=memory&cache=shared&_fk=1", uuid.NewString()))
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	projectA, err := client.Project.Create().SetUserID(919).SetName("A").SetNameKey("a").SetStatus(domainproject.StatusActive).Save(ctx)
+	if err != nil {
+		t.Fatalf("create project A: %v", err)
+	}
+	projectB, err := client.Project.Create().SetUserID(919).SetName("B").SetNameKey("b").SetStatus(domainproject.StatusActive).Save(ctx)
+	if err != nil {
+		t.Fatalf("create project B: %v", err)
+	}
+	oldCreatedAt := time.Now().UTC().Add(-24 * time.Hour)
+	oldTaskID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
+	if _, err := client.ImageTask.Create().SetID(oldTaskID).SetUserID(919).SetProjectID(projectA.ID).
+		SetTaskType("text_to_image").SetPrompt("old A").SetAbstractModel("plus").SetCreatedAt(oldCreatedAt).Save(ctx); err != nil {
+		t.Fatalf("create old project A task: %v", err)
+	}
+	for index := range 21 {
+		if _, err := client.ImageTask.Create().SetID(uuid.New()).SetUserID(919).SetProjectID(projectB.ID).
+			SetTaskType("text_to_image").SetPrompt(fmt.Sprintf("new B %d", index)).SetAbstractModel("plus").
+			SetCreatedAt(oldCreatedAt.Add(time.Duration(index+1) * time.Minute)).Save(ctx); err != nil {
+			t.Fatalf("create project B task %d: %v", index, err)
+		}
+	}
+	store := NewImageTaskStore(client)
+	lister, ok := any(store).(interface {
+		ListRecentByUserProject(context.Context, int64, string, int) ([]domainimagetask.Task, error)
+	})
+	if !ok {
+		t.Fatal("ImageTaskStore must expose a project-scoped recent query")
+	}
+	projectATasks, err := lister.ListRecentByUserProject(ctx, 919, projectA.ID.String(), 20)
+	if err != nil || len(projectATasks) != 1 || projectATasks[0].ID != oldTaskID.String() {
+		t.Fatalf("project A recent tasks = %#v, %v", projectATasks, err)
+	}
+	projectBTasks, err := lister.ListRecentByUserProject(ctx, 919, projectB.ID.String(), 20)
+	if err != nil || len(projectBTasks) != 20 || projectBTasks[0].Prompt != "new B 20" {
+		t.Fatalf("project B recent tasks len=%d first=%#v err=%v", len(projectBTasks), firstTask(projectBTasks), err)
+	}
+}
+
+func firstTask(tasks []domainimagetask.Task) domainimagetask.Task {
+	if len(tasks) == 0 {
+		return domainimagetask.Task{}
+	}
+	return tasks[0]
+}
+
 func TestWorkerTaskUpdateUsesRowLock(t *testing.T) {
 	table := entsql.Table("image_tasks")
 	selector := entsql.Dialect(dialect.Postgres).Select().From(table)

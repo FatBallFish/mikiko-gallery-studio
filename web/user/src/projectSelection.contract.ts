@@ -52,6 +52,14 @@ sameTabA.bootstrap([defaultProject, campaign])
 sameTabB.bootstrap([defaultProject, campaign])
 sameTabA.select(campaign.id)
 if (sameTabB.getSnapshot().selectedProjectID !== campaign.id) throw new Error('same-tab controllers must synchronize selection')
+const campaignGeneration = sameTabA.getSnapshot().selectionGeneration
+if (typeof campaignGeneration !== 'number') throw new Error('project selection snapshots must expose a generation')
+sameTabA.select(defaultProject.id)
+sameTabA.select(campaign.id)
+const returnedGeneration = sameTabA.getSnapshot().selectionGeneration
+if (typeof returnedGeneration !== 'number' || returnedGeneration <= campaignGeneration + 1) {
+  throw new Error('A to B to A selection changes must advance a monotonic generation')
+}
 
 sameTabB.handleStorageEvent({ key: projectSelectionStorageKey('same-user'), newValue: 'missing' })
 if (sameTabB.getSnapshot().selectedProjectID !== defaultProject.id) throw new Error('cross-tab invalid selection must fall back to default')

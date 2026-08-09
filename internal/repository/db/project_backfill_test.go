@@ -66,11 +66,69 @@ func TestProjectBackfillPersistsBoundedProgressAndResumesAllHistoricalRows(t *te
 	if err != nil || !replayed.Completed || replayed.ProcessedRows != current.ProcessedRows {
 		t.Fatalf("completed replay = %#v, %v; want %#v", replayed, err, current)
 	}
-	if _, err := client.ImageTask.Create().SetID(uuid.New()).SetUserID(active).SetTaskType("text_to_image").SetPrompt("late legacy row").SetAbstractModel("plus").Save(ctx); err != nil {
+	lateTask, err := client.ImageTask.Create().SetID(uuid.New()).SetUserID(active).SetTaskType("text_to_image").SetPrompt("late legacy row").SetAbstractModel("plus").Save(ctx)
+	if err != nil {
 		t.Fatalf("seed late null-project task: %v", err)
 	}
-	if _, err := RunProjectOwnershipBackfill(ctx, client, ProjectBackfillOptions{BatchSize: 1, MaxBatches: 1}); err == nil {
-		t.Fatal("completed checkpoint replay skipped final null ownership validation")
+	if _, err := client.ImageResult.Create().SetTaskID(lateTask.ID).SetUserID(active).SetObjectKey("legacy/late.png").SetMimeType("image/png").SetSha256("late-result").Save(ctx); err != nil {
+		t.Fatalf("seed late null-project result: %v", err)
+	}
+
+	reset, err := RunProjectOwnershipBackfill(ctx, client, ProjectBackfillOptions{BatchSize: 1, MaxBatches: 1})
+	if err != nil || reset.Completed || reset.Phase != projectBackfillPhaseTasks {
+		t.Fatalf("completed checkpoint repair reset = %#v, %v; want tasks phase", reset, err)
+	}
+	checkpoint, err = client.MigrationCheckpoint.Query().Only(ctx)
+	if err != nil || checkpoint.AfterTaskID != nil || checkpoint.AfterResultID != nil || checkpoint.Completed {
+		t.Fatalf("persisted repair checkpoint = %#v, %v; want cleared cursors", checkpoint, err)
+	}
+
+	repaired, err := RunProjectOwnershipBackfill(ctx, client, ProjectBackfillOptions{BatchSize: 1, MaxBatches: 10})
+	if err != nil || !repaired.Completed || repaired.Phase != projectBackfillPhaseDone {
+		t.Fatalf("late ownership repair = %#v, %v; want completed", repaired, err)
+	}
+	if lateTask, err = client.ImageTask.Get(ctx, lateTask.ID); err != nil || lateTask.ProjectID == nil {
+		t.Fatalf("late task project after repair = %#v, %v", lateTask, err)
+	}
+	lateResult, err := client.ImageResult.Query().Where(imageresult.TaskIDEQ(lateTask.ID)).Only(ctx)
+	if err != nil || lateResult.ProjectID == nil || *lateResult.ProjectID != *lateTask.ProjectID {
+		t.Fatalf("late result project after repair = %#v, %v", lateResult, err)
+	}
+}
+
+func TestProjectBackfillValidationResetsCursorForLowerUUIDOmission(t *testing.T) {
+	client := openProjectBackfillSQLite(t, "lower-cursor")
+	ctx := context.Background()
+	userID := seedProjectBackfillUser(t, ctx, client, "lower-cursor@example.com", nil, 0)
+	lowerID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	higherID := uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")
+	if _, err := client.ImageTask.Create().SetID(lowerID).SetUserID(userID).SetTaskType("text_to_image").SetPrompt("missed below cursor").SetAbstractModel("plus").Save(ctx); err != nil {
+		t.Fatalf("seed lower UUID task: %v", err)
+	}
+	if _, err := client.MigrationCheckpoint.Create().
+		SetName(projectOwnershipMigrationName).
+		SetPhase(projectBackfillPhaseTasks).
+		SetAfterTaskID(higherID).
+		Save(ctx); err != nil {
+		t.Fatalf("seed advanced checkpoint: %v", err)
+	}
+
+	reset, err := RunProjectOwnershipBackfill(ctx, client, ProjectBackfillOptions{BatchSize: 1, MaxBatches: 3})
+	if err != nil || reset.Completed || reset.Phase != projectBackfillPhaseTasks {
+		t.Fatalf("lower UUID repair reset = %#v, %v; want tasks phase", reset, err)
+	}
+	checkpoint, err := client.MigrationCheckpoint.Query().Only(ctx)
+	if err != nil || checkpoint.AfterTaskID != nil || checkpoint.AfterResultID != nil {
+		t.Fatalf("lower UUID persisted reset = %#v, %v", checkpoint, err)
+	}
+
+	repaired, err := RunProjectOwnershipBackfill(ctx, client, ProjectBackfillOptions{BatchSize: 1, MaxBatches: 10})
+	if err != nil || !repaired.Completed {
+		t.Fatalf("lower UUID repair = %#v, %v", repaired, err)
+	}
+	task, err := client.ImageTask.Get(ctx, lowerID)
+	if err != nil || task.ProjectID == nil {
+		t.Fatalf("lower UUID task after repair = %#v, %v", task, err)
 	}
 }
 

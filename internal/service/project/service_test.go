@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -193,5 +194,24 @@ func TestCreateEnsuresDefaultBeforeCreatingNamedProject(t *testing.T) {
 	}
 	if len(projects) != 2 || !projects[0].IsDefault || projects[0].Name != domainproject.DefaultName || created.IsDefault {
 		t.Fatalf("direct create must preserve exactly one default before the named project, got %#v", projects)
+	}
+}
+
+func TestMemoryProjectServiceRejectsOverlongTrimmedIdempotencyKeys(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(NewMemoryStore())
+	overlong := "  " + strings.Repeat("k", 129) + "  "
+	if _, err := svc.Create(ctx, 91, domainproject.CreateRequest{Name: "Invalid key", IdempotencyKey: overlong}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("Create overlong idempotency error = %v, want ErrInvalid", err)
+	}
+	source, err := svc.Create(ctx, 91, domainproject.CreateRequest{Name: "Delete key source"})
+	if err != nil {
+		t.Fatalf("Create source: %v", err)
+	}
+	if _, err := svc.Delete(ctx, 91, source.ID, domainproject.DeleteRequest{ExpectedVersion: source.Version, IdempotencyKey: overlong}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("Delete overlong idempotency error = %v, want ErrInvalid", err)
+	}
+	if _, err := svc.ResolveOwned(ctx, 91, source.ID); err != nil {
+		t.Fatalf("overlong delete key mutated source: %v", err)
 	}
 }

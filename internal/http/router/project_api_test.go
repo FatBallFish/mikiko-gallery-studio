@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,6 +53,32 @@ func TestProjectAPIExposesOwnedCRUDAndTypedConflicts(t *testing.T) {
 	}
 	if len(listPayload.Data.Items) != 1 || !listPayload.Data.Items[0].IsDefault || listPayload.Data.DefaultProjectID != listPayload.Data.Items[0].ID {
 		t.Fatalf("default project payload = %#v", listPayload.Data)
+	}
+	overlongKey := strings.Repeat("k", 129)
+	overlongCreate := authenticatedProjectRequest(t, handler, session.AccessToken, http.MethodPost, "/api/agent/project/v1/projects", `{"name":"Rejected key"}`, map[string]string{"Idempotency-Key": "  " + overlongKey + "  "})
+	if overlongCreate.Code != http.StatusBadRequest {
+		t.Fatalf("overlong create key status = %d body=%s", overlongCreate.Code, overlongCreate.Body.String())
+	}
+	overlongDeleteSource := authenticatedProjectRequest(t, handler, session.AccessToken, http.MethodPost, "/api/agent/project/v1/projects", `{"name":"Rejected delete key"}`, nil)
+	if overlongDeleteSource.Code != http.StatusCreated {
+		t.Fatalf("create overlong delete source = %d body=%s", overlongDeleteSource.Code, overlongDeleteSource.Body.String())
+	}
+	var overlongDeletePayload struct {
+		Data struct {
+			ID      string `json:"id"`
+			Version int64  `json:"version"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(overlongDeleteSource.Body).Decode(&overlongDeletePayload); err != nil {
+		t.Fatal(err)
+	}
+	overlongDelete := authenticatedProjectRequest(t, handler, session.AccessToken, http.MethodDelete, "/api/agent/project/v1/projects/"+overlongDeletePayload.Data.ID, `{"expected_version":1}`, map[string]string{"Idempotency-Key": overlongKey})
+	if overlongDelete.Code != http.StatusBadRequest {
+		t.Fatalf("overlong delete key status = %d body=%s", overlongDelete.Code, overlongDelete.Body.String())
+	}
+	cleanupOverlongDeleteSource := authenticatedProjectRequest(t, handler, session.AccessToken, http.MethodDelete, "/api/agent/project/v1/projects/"+overlongDeletePayload.Data.ID, `{"expected_version":1}`, nil)
+	if cleanupOverlongDeleteSource.Code != http.StatusOK {
+		t.Fatalf("cleanup overlong delete source = %d body=%s", cleanupOverlongDeleteSource.Code, cleanupOverlongDeleteSource.Body.String())
 	}
 
 	createHeaders := map[string]string{"Idempotency-Key": "project-api-create"}

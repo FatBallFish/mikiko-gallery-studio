@@ -213,6 +213,27 @@ func (s *MemoryStore) ListByUserProject(_ context.Context, userID int64, project
 	return s.listByUserProject(userID, projectID)
 }
 
+func (s *MemoryStore) ListRecentByUserProject(_ context.Context, userID int64, projectID string, limit int) ([]domainimagetask.Task, error) {
+	list, err := s.listByUserProject(userID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		return taskListSortTime(list[i]).After(taskListSortTime(list[j]))
+	})
+	if limit > 0 && len(list) > limit {
+		list = list[:limit]
+	}
+	return list, nil
+}
+
+func taskListSortTime(task domainimagetask.Task) time.Time {
+	if !task.CreatedAt.IsZero() {
+		return task.CreatedAt
+	}
+	return task.UpdatedAt
+}
+
 func (s *MemoryStore) listByUserProject(userID int64, projectID string) ([]domainimagetask.Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

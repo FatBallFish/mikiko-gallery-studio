@@ -34,7 +34,7 @@ import type {
   UserProfile,
 } from './api-types'
 import { API_PATHS } from './api-types'
-import { fillPath, normalizePage, sharedApiClient } from './http-client'
+import { fillPath, normalizePage, sharedApiClient, withQuery } from './http-client'
 import { mediaAssetURL } from './media-url'
 
 export { resolveGenerationResolution } from './generation-resolution'
@@ -534,7 +534,7 @@ export const userApi = {
   },
   getTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.taskDetail, { pathParams: { task_id } })),
   taskEventsUrl: (task_id: string, accessToken?: string | null) => apiEventUrl(fillPath(API_PATHS.agent.taskEvents, { task_id }), accessToken),
-  taskStreamUrl: (accessToken?: string | null) => apiEventUrl(API_PATHS.agent.taskStream, accessToken),
+  taskStreamUrl: (accessToken?: string | null, projectID?: string) => apiEventUrl(withQuery(API_PATHS.agent.taskStream, { project_id: projectID }), accessToken),
   listTasks: async (filters?: { query?: string; status?: string; type?: string; project_id?: string }) => {
     const response = await sharedApiClient.request(API_PATHS.agent.tasks, {
 	  query: { project_id: filters?.project_id, status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },

@@ -316,14 +316,21 @@ func (s *ImageTaskStore) GetImageResultForAdmin(ctx context.Context, imageID str
 }
 
 func (s *ImageTaskStore) ListByUser(ctx context.Context, userID int64) ([]domainimagetask.Task, error) {
-	return s.listByUserProject(ctx, userID, "")
+	return s.listByUserProject(ctx, userID, "", 0)
 }
 
 func (s *ImageTaskStore) ListByUserProject(ctx context.Context, userID int64, projectID string) ([]domainimagetask.Task, error) {
-	return s.listByUserProject(ctx, userID, projectID)
+	return s.listByUserProject(ctx, userID, projectID, 0)
 }
 
-func (s *ImageTaskStore) listByUserProject(ctx context.Context, userID int64, projectID string) ([]domainimagetask.Task, error) {
+func (s *ImageTaskStore) ListRecentByUserProject(ctx context.Context, userID int64, projectID string, limit int) ([]domainimagetask.Task, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	return s.listByUserProject(ctx, userID, projectID, limit)
+}
+
+func (s *ImageTaskStore) listByUserProject(ctx context.Context, userID int64, projectID string, limit int) ([]domainimagetask.Task, error) {
 	query := s.client.ImageTask.Query().Where(imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil())
 	if projectID = strings.TrimSpace(projectID); projectID != "" {
 		parsedProjectID, err := uuid.Parse(projectID)
@@ -332,10 +339,11 @@ func (s *ImageTaskStore) listByUserProject(ctx context.Context, userID int64, pr
 		}
 		query.Where(imagetask.ProjectIDEQ(parsedProjectID))
 	}
-	entities, err := query.
-		WithProject().
-		Order(repoent.Desc(imagetask.FieldCreatedAt)).
-		All(ctx)
+	query.WithProject().Order(repoent.Desc(imagetask.FieldCreatedAt))
+	if limit > 0 {
+		query.Limit(limit)
+	}
+	entities, err := query.All(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -30,11 +30,59 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	compatservice "github.com/fatballfish/pic-gallery/internal/service/compat"
 	"github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
+
+type failingProjectResolver struct{ err error }
+
+func (r failingProjectResolver) ResolveForWrite(context.Context, int64, string) (domainproject.Project, error) {
+	return domainproject.Project{}, r.err
+}
+
+func TestProjectResolverInfrastructureFailuresRemainInternalWithCause(t *testing.T) {
+	dbDown := errors.New("project database unavailable")
+	svc := imagetask.NewServiceWithStore(taskTestConfig(), imagetask.NewMemoryStore())
+	svc.SetProjectResolver(failingProjectResolver{err: dbDown})
+	operations := map[string]func() error{
+		"create": func() error {
+			_, err := svc.CreateTask(t.Context(), domainimagetask.CreateRequest{
+				UserID: 41, TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "plus",
+				Prompt: "resolver failure", SizeMode: "auto", OutputFormat: "png", OutputImageCount: 1,
+			})
+			return err
+		},
+		"execute": func() error {
+			_, err := svc.Execute(t.Context(), domainimagetask.ExecuteRequest{
+				UserID: 41, TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "plus",
+				Prompt: "resolver failure", SizeMode: "auto", OutputFormat: "png", OutputImageCount: 1,
+			})
+			return err
+		},
+		"task list": func() error {
+			_, err := svc.ListByUserProject(t.Context(), 41, "project-1")
+			return err
+		},
+		"gallery list": func() error {
+			_, err := svc.ListGalleryByUser(t.Context(), 41, domainimagetask.GalleryListRequest{ProjectID: "project-1"})
+			return err
+		},
+	}
+	for name, operation := range operations {
+		t.Run(name, func(t *testing.T) {
+			err := operation()
+			if !errors.Is(err, dbDown) {
+				t.Fatalf("error = %v, want preserved database cause", err)
+			}
+			if mapped := compatservice.MapError(err); mapped.StatusCode != http.StatusInternalServerError || mapped.Code != errs.CodeInternal {
+				t.Fatalf("mapped error = %#v, want 500 internal", mapped)
+			}
+		})
+	}
+}
 
 func TestCreateTaskResolvesOwnedProjectAndRejectsForeignProject(t *testing.T) {
 	ctx := context.Background()

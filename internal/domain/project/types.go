@@ -3,11 +3,12 @@ package project
 import "time"
 
 const (
-	DefaultName        = "默认"
-	DefaultProjectName = DefaultName
-	StatusActive       = "active"
-	StatusTransferring = "transferring"
-	StatusDeleted      = "deleted"
+	DefaultName             = "默认"
+	DefaultProjectName      = DefaultName
+	MaxIdempotencyKeyLength = 128
+	StatusActive            = "active"
+	StatusTransferring      = "transferring"
+	StatusDeleted           = "deleted"
 )
 
 type Project struct {

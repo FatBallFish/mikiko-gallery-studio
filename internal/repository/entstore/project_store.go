@@ -72,12 +72,19 @@ func (s *ProjectStore) List(ctx context.Context, userID int64) ([]domainproject.
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
+	projectIDs := make([]uuid.UUID, 0, len(entities))
+	for _, entity := range entities {
+		projectIDs = append(projectIDs, entity.ID)
+	}
+	counts, err := listProjectOwnershipCounts(ctx, s.client, userID, projectIDs)
+	if err != nil {
+		return nil, err
+	}
 	items := make([]domainproject.Project, 0, len(entities))
 	for _, entity := range entities {
-		item, mapErr := s.mapWithCounts(ctx, entity)
-		if mapErr != nil {
-			return nil, mapErr
-		}
+		item := mapProjectEntity(entity)
+		item.TaskCount = counts[entity.ID].Tasks
+		item.AssetCount = counts[entity.ID].Assets
 		items = append(items, item)
 	}
 	return items, nil
@@ -359,6 +366,41 @@ func countProjectOwnershipClient(ctx context.Context, client *repoent.Client, us
 		return domainproject.OwnershipCounts{}, fmt.Errorf("count project assets: %w", err)
 	}
 	return domainproject.OwnershipCounts{Tasks: tasks, Assets: assets}, nil
+}
+
+type projectOwnershipCountRow struct {
+	ProjectID uuid.UUID `json:"project_id"`
+	Count     int       `json:"count"`
+}
+
+func listProjectOwnershipCounts(ctx context.Context, client *repoent.Client, userID int64, projectIDs []uuid.UUID) (map[uuid.UUID]domainproject.OwnershipCounts, error) {
+	counts := make(map[uuid.UUID]domainproject.OwnershipCounts, len(projectIDs))
+	if len(projectIDs) == 0 {
+		return counts, nil
+	}
+	var taskRows []projectOwnershipCountRow
+	if err := client.ImageTask.Query().Where(
+		imagetask.UserIDEQ(userID), imagetask.ProjectIDIn(projectIDs...), imagetask.DeletedAtIsNil(),
+	).GroupBy(imagetask.FieldProjectID).Aggregate(repoent.Count()).Scan(ctx, &taskRows); err != nil {
+		return nil, fmt.Errorf("aggregate project task counts: %w", err)
+	}
+	for _, row := range taskRows {
+		value := counts[row.ProjectID]
+		value.Tasks = row.Count
+		counts[row.ProjectID] = value
+	}
+	var assetRows []projectOwnershipCountRow
+	if err := client.ImageResult.Query().Where(
+		imageresult.UserIDEQ(userID), imageresult.ProjectIDIn(projectIDs...), imageresult.DeletedAtIsNil(),
+	).GroupBy(imageresult.FieldProjectID).Aggregate(repoent.Count()).Scan(ctx, &assetRows); err != nil {
+		return nil, fmt.Errorf("aggregate project asset counts: %w", err)
+	}
+	for _, row := range assetRows {
+		value := counts[row.ProjectID]
+		value.Assets = row.Count
+		counts[row.ProjectID] = value
+	}
+	return counts, nil
 }
 
 var _ projectservice.Store = (*ProjectStore)(nil)

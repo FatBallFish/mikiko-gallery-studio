@@ -2784,24 +2784,30 @@ func (a *API) handleAgentTaskStream(w http.ResponseWriter, r *http.Request, user
 		httpx.WriteError(w, r, errs.New(http.StatusInternalServerError, errs.CodeInternal, "streaming is not supported"))
 		return
 	}
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	initialTasks, err := a.latestUserTasks(r.Context(), user.ID, projectID, 20)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	seen := map[string]string{}
-	sendSnapshot := func(initial bool) {
-		tasks, err := a.latestUserTasks(r.Context(), user.ID, 20)
+	writeSSE(w, "history", initialTasks)
+	for _, task := range initialTasks {
+		seen[task.ID] = taskStreamSignature(task)
+	}
+	flusher.Flush()
+	if strings.EqualFold(r.URL.Query().Get("once"), "true") {
+		return
+	}
+	sendSnapshot := func() {
+		tasks, err := a.latestUserTasks(r.Context(), user.ID, projectID, 20)
 		if err != nil {
 			writeSSE(w, "error", normalizeAppError(err))
-			flusher.Flush()
-			return
-		}
-		if initial {
-			writeSSE(w, "history", tasks)
-			for _, task := range tasks {
-				seen[task.ID] = taskStreamSignature(task)
-			}
 			flusher.Flush()
 			return
 		}
@@ -2821,10 +2827,6 @@ func (a *API) handleAgentTaskStream(w http.ResponseWriter, r *http.Request, user
 		flusher.Flush()
 	}
 
-	sendSnapshot(true)
-	if strings.EqualFold(r.URL.Query().Get("once"), "true") {
-		return
-	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -2832,13 +2834,13 @@ func (a *API) handleAgentTaskStream(w http.ResponseWriter, r *http.Request, user
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			sendSnapshot(false)
+			sendSnapshot()
 		}
 	}
 }
 
-func (a *API) latestUserTasks(ctx context.Context, userID int64, limit int) ([]domainimagetask.Task, error) {
-	tasks, err := a.tasks.ListByUser(ctx, userID)
+func (a *API) latestUserTasks(ctx context.Context, userID int64, projectID string, limit int) ([]domainimagetask.Task, error) {
+	tasks, err := a.tasks.ListRecentByUserProject(ctx, userID, projectID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -8039,7 +8041,7 @@ func (a *API) handleAgentTaskList(w http.ResponseWriter, r *http.Request) {
 	}
 	tasks, err := a.tasks.ListByUserProject(r.Context(), user.ID, r.URL.Query().Get("project_id"))
 	if err != nil {
-		httpx.WriteError(w, r, err.(*errs.Error))
+		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
 	tasks = decorateTaskProgressList(tasks)
