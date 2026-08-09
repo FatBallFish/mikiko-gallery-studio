@@ -71,6 +71,7 @@ func (s *ImageTaskStore) Save(ctx context.Context, task domainimagetask.Task) er
 		_ = tx.Rollback()
 	}()
 
+	resultProjectID := task.ProjectID
 	entity, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID)).Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -84,13 +85,14 @@ func (s *ImageTaskStore) Save(ctx context.Context, task domainimagetask.Task) er
 		if err := updateImageTask(ctx, tx, entity, task, trace, routingSnapshot); err != nil {
 			return err
 		}
+		resultProjectID = persistedImageTaskProjectID(entity)
 	}
 
 	if _, err := tx.ImageResult.Delete().Where(imageresult.TaskIDEQ(taskUUID)).Exec(ctx); err != nil {
 		return err
 	}
 	for idx, result := range task.Results {
-		if err := createImageResult(ctx, tx, taskUUID, task.UserID, task.ProjectID, idx, result); err != nil {
+		if err := createImageResult(ctx, tx, taskUUID, task.UserID, resultProjectID, idx, result); err != nil {
 			return err
 		}
 	}
@@ -147,7 +149,7 @@ func (s *ImageTaskStore) SaveIfOwned(ctx context.Context, task domainimagetask.T
 		return err
 	}
 	for idx, result := range task.Results {
-		if err := createImageResult(ctx, tx, taskUUID, task.UserID, task.ProjectID, idx, result); err != nil {
+		if err := createImageResult(ctx, tx, taskUUID, entity.UserID, persistedImageTaskProjectID(entity), idx, result); err != nil {
 			return err
 		}
 	}
@@ -201,7 +203,7 @@ func (s *ImageTaskStore) SaveTerminalState(ctx context.Context, task domainimage
 		return err
 	}
 	for idx, result := range task.Results {
-		if err := createImageResult(ctx, tx, taskUUID, task.UserID, task.ProjectID, idx, result); err != nil {
+		if err := createImageResult(ctx, tx, taskUUID, entity.UserID, persistedImageTaskProjectID(entity), idx, result); err != nil {
 			return err
 		}
 	}
@@ -1714,6 +1716,13 @@ func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, 
 		builder.SetStorageConfigID(storageConfigID)
 	}
 	return builder.Exec(ctx)
+}
+
+func persistedImageTaskProjectID(entity *repoent.ImageTask) string {
+	if entity == nil || entity.ProjectID == nil {
+		return ""
+	}
+	return entity.ProjectID.String()
 }
 
 func imageResultUUID(value string) (uuid.UUID, error) {

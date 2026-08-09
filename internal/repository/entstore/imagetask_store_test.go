@@ -13,9 +13,13 @@ import (
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -27,6 +31,80 @@ func TestTaskProjectOwnershipCheckUsesCompatibleRowLock(t *testing.T) {
 	query, _ := selector.Query()
 	if !strings.Contains(query, "FOR SHARE") {
 		t.Fatalf("task project ownership query = %q, want FOR SHARE to serialize with project deletion", query)
+	}
+}
+
+func TestUpdatedTaskResultsFollowPersistedProjectAfterTransferDelete(t *testing.T) {
+	tests := []struct {
+		name string
+		save func(context.Context, *ImageTaskStore, domainimagetask.Task, time.Time) error
+	}{
+		{name: "ordinary save", save: func(ctx context.Context, store *ImageTaskStore, task domainimagetask.Task, _ time.Time) error {
+			task.Status = domainimagetask.StatusSucceeded
+			return store.Save(ctx, task)
+		}},
+		{name: "lease-owned save", save: func(ctx context.Context, store *ImageTaskStore, task domainimagetask.Task, now time.Time) error {
+			return store.SaveIfOwned(ctx, task, task.LeaseOwner, now)
+		}},
+		{name: "terminal save", save: func(ctx context.Context, store *ImageTaskStore, task domainimagetask.Task, now time.Time) error {
+			task.Status = domainimagetask.StatusSucceeded
+			return store.SaveTerminalState(ctx, task, task.LeaseOwner, now)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client, err := repoent.Open(dialect.SQLite, fmt.Sprintf("file:imagetask-project-transfer-worker-%s?mode=memory&cache=shared&_fk=1", uuid.NewString()))
+			if err != nil {
+				t.Fatalf("open ent client: %v", err)
+			}
+			t.Cleanup(func() { _ = client.Close() })
+			if err := client.Schema.Create(ctx); err != nil {
+				t.Fatalf("create schema: %v", err)
+			}
+			projects := projectservice.NewService(NewProjectStore(client))
+			target, err := projects.EnsureDefault(ctx, 909)
+			if err != nil {
+				t.Fatalf("ensure target project: %v", err)
+			}
+			source, err := projects.Create(ctx, 909, domainproject.CreateRequest{Name: "Worker source"})
+			if err != nil {
+				t.Fatalf("create source project: %v", err)
+			}
+			now := time.Now().UTC()
+			expiresAt := now.Add(time.Minute)
+			task := domainimagetask.Task{
+				ID: uuid.NewString(), UserID: 909, ProjectID: source.ID,
+				Status: domainimagetask.StatusRunning, LeaseOwner: "worker-project-transfer", LeaseExpiresAt: &expiresAt,
+				TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "plus", Prompt: "persist in transferred project",
+			}
+			store := NewImageTaskStore(client)
+			if err := store.Save(ctx, task); err != nil {
+				t.Fatalf("seed running task: %v", err)
+			}
+			if _, err := projects.Delete(ctx, 909, source.ID, domainproject.DeleteRequest{TargetProjectID: target.ID, ExpectedVersion: source.Version}); err != nil {
+				t.Fatalf("transfer-delete source project: %v", err)
+			}
+			task.Results = []provider.ImageResult{{ID: uuid.NewString(), ObjectKey: "worker/transferred.png", MimeType: "image/png"}}
+			if err := tt.save(ctx, store, task, now); err != nil {
+				t.Fatalf("save stale task result: %v", err)
+			}
+			taskEntity, err := client.ImageTask.Query().Where(imagetask.IDEQ(uuid.MustParse(task.ID))).Only(ctx)
+			if err != nil {
+				t.Fatalf("query transferred task: %v", err)
+			}
+			resultEntity, err := client.ImageResult.Query().Where(imageresult.TaskIDEQ(taskEntity.ID)).Only(ctx)
+			if err != nil {
+				t.Fatalf("query saved result: %v", err)
+			}
+			targetID := uuid.MustParse(target.ID)
+			if taskEntity.ProjectID == nil || *taskEntity.ProjectID != targetID || resultEntity.ProjectID == nil || *resultEntity.ProjectID != targetID {
+				t.Fatalf("task/result project after stale save = task %v, result %v, want %s", taskEntity.ProjectID, resultEntity.ProjectID, target.ID)
+			}
+			if count, countErr := client.ImageResult.Query().Where(imageresult.ProjectIDEQ(uuid.MustParse(source.ID))).Count(ctx); countErr != nil || count != 0 {
+				t.Fatalf("deleted source gained results: count=%d err=%v", count, countErr)
+			}
+		})
 	}
 }
 

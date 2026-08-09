@@ -16,6 +16,7 @@ import (
 )
 
 var errForcedProjectBackfillStop = errors.New("forced project backfill stop")
+var errForcedProjectResultBatchFailure = errors.New("forced project result batch failure")
 
 func TestProjectBackfillPersistsBoundedProgressAndResumesAllHistoricalRows(t *testing.T) {
 	client := openProjectBackfillSQLite(t, "resume")
@@ -84,7 +85,7 @@ func TestProjectBackfillValidationRejectsRemainingNullOwnership(t *testing.T) {
 
 func TestProjectBackfillCountsOnlyCommittedRows(t *testing.T) {
 	client := openProjectBackfillSQLite(t, "committed")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx := context.Background()
 	user, err := client.User.Create().SetEmail("project-backfill@example.com").SetStatus("active").Save(ctx)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
@@ -99,23 +100,28 @@ func TestProjectBackfillCountsOnlyCommittedRows(t *testing.T) {
 
 	client.Use(func(next repoent.Mutator) repoent.Mutator {
 		return repoent.MutateFunc(func(hookCtx context.Context, mutation repoent.Mutation) (repoent.Value, error) {
-			value, mutateErr := next.Mutate(hookCtx, mutation)
-			if _, ok := mutation.(*repoent.ImageResultMutation); ok && mutateErr == nil {
-				cancel()
+			if _, ok := mutation.(*repoent.ImageResultMutation); ok {
+				return nil, errForcedProjectResultBatchFailure
 			}
-			return value, mutateErr
+			return next.Mutate(hookCtx, mutation)
 		})
 	})
 
 	progress, err := RunProjectOwnershipBackfill(ctx, client, ProjectBackfillOptions{BatchSize: 10, MaxBatches: 100})
-	if err == nil {
-		t.Fatal("backfill unexpectedly committed after its transaction context was canceled")
+	if !errors.Is(err, errForcedProjectResultBatchFailure) {
+		t.Fatalf("backfill result batch error = %v, want injected failure", err)
 	}
 	if progress.UpdatedRows != 1 {
 		t.Fatalf("reported updated rows = %d, want the one previously committed task batch", progress.UpdatedRows)
 	}
-	committedTasks, _ := client.ImageTask.Query().Where(imagetask.ProjectIDNotNil()).Count(context.Background())
-	committedResults, _ := client.ImageResult.Query().Where(imageresult.ProjectIDNotNil()).Count(context.Background())
+	committedTasks, err := client.ImageTask.Query().Where(imagetask.ProjectIDNotNil()).Count(ctx)
+	if err != nil {
+		t.Fatalf("count committed tasks: %v", err)
+	}
+	committedResults, err := client.ImageResult.Query().Where(imageresult.ProjectIDNotNil()).Count(ctx)
+	if err != nil {
+		t.Fatalf("count committed results: %v", err)
+	}
 	if committedTasks != 1 || committedResults != 0 {
 		t.Fatalf("committed ownership after canceled result batch = tasks %d, results %d", committedTasks, committedResults)
 	}
