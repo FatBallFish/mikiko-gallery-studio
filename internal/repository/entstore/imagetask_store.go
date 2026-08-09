@@ -2046,6 +2046,9 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 }
 
 func buildProviderTrace(task domainimagetask.Task) (map[string]any, error) {
+	if len(task.Attempts) > maxProviderTraceAttempts {
+		return nil, errProviderTraceExceedsLimits
+	}
 	trace := map[string]any{
 		"provider":               task.Provider,
 		"provider_model_id":      task.ProviderModelID,
@@ -2065,6 +2068,13 @@ func buildProviderTrace(task domainimagetask.Task) (map[string]any, error) {
 	}
 	trace["attempts"] = attempts
 	trace["results"] = results
+	payload, err := json.Marshal(trace)
+	if err != nil {
+		return nil, err
+	}
+	if len(payload) > maxProviderTraceSemanticBytes {
+		return nil, errProviderTraceExceedsLimits
+	}
 	return trace, nil
 }
 

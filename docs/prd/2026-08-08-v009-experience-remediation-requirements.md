@@ -178,6 +178,9 @@ This document freezes the product requirements for the remediation. It supersede
 7. Model-call distribution must be calculated from real image task/call records, not provider health weights.
 8. The dashboard must provide at least route-model call count and percentage for a defined time window. Account-model and upstream-model breakdowns may be included in the same response.
 9. Distribution totals must reconcile with the number of call records in the selected window, including explicit handling of preflight failures with no selected upstream model.
+10. Every production image-task persistence path must reject, without truncation, a provider trace whose compact JSON exceeds 8 MiB or whose attempt list exceeds 10,000 entries. This safety boundary must not change platform image-count fan-out, retry, fallback, or partial-success behavior.
+11. Distribution reads must reject an oversized historical provider trace using a stable sanitized error before transferring or deserializing that trace. The database transport limit may include explicit headroom for PostgreSQL JSONB text formatting, but decoded compact JSON must still satisfy the 8 MiB semantic limit and 10,000-attempt limit.
+12. Distribution aggregation must use repeatable-read keyset pagination and bounded raw-trace sub-batches. It must preserve exact totals, equal timestamps, and soft-deleted task attempts without issuing one trace query per task.
 
 ## 7. Non-goals
 
@@ -210,7 +213,7 @@ This document freezes the product requirements for the remediation. It supersede
 15. Deleting a referenced image hides it immediately but retains its object until the last reference is gone; cleanup retries safely after injected storage failures.
 16. Admin lifecycle actions are available and historical records remain understandable after configuration deletion.
 17. Full deployment reports exactly one logical single node.
-18. Model-call distribution contains real counts whose total reconciles with the selected call-record window.
+18. Model-call distribution contains real counts whose total reconciles with the selected call-record window; malformed or oversized historical traces fail with a sanitized error, and provider-trace writes and reads enforce the documented exact limits without truncation or unbounded batch materialization.
 19. The observed size mismatch is diagnosable from one correlated task/request record without logging credentials or signed URLs.
 20. Administrators can toggle fixed-package expiry. Existing and newly created packages default to enabled; disabling it hides/ignores validity days, and orders retain the creation-time policy after later plan edits.
 

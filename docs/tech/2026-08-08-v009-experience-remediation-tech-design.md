@@ -397,6 +397,15 @@ Add a dashboard aggregation query over actual upstream call/attempt records in a
 
 Count upstream call attempts, not requested output count. Preflight failures without a selected route/account model are explicitly grouped as `unrouted` only if they have a call record; otherwise the API returns a separate preflight-failure counter outside `total_calls`. Group counts must equal `total_calls` exactly. The UI labels the time window and metric.
 
+Provider traces have two distinct limits:
+
+- The semantic persistence limit is 8 MiB of complete compact JSON and 10,000 attempt entries. The shared image-task store boundary validates the complete value before every create, worker-owned update, retry/error update, and terminal-state update. A violation returns an error; traces and attempts are never truncated. These limits constrain diagnostic persistence only and do not change image-count `n` fan-out or upstream-call scheduling.
+- The historical transport limit is 16 MiB per database-returned trace. It deliberately allows PostgreSQL JSONB text to add separator whitespace to a legal 8 MiB compact trace. SQLite measures `length(CAST(provider_trace AS BLOB))`; PostgreSQL measures `octet_length(CAST(provider_trace AS text))`. A metadata-only query checks this value before any trace column is selected, so an oversized legacy row is rejected before transfer or JSON materialization.
+
+Run distribution aggregation in one repeatable-read, read-only transaction. Page task metadata by `(updated_at, id)` and include the dialect-specific transport byte length without selecting `provider_trace`. Reject an over-limit row immediately, then partition the page IDs into trace sub-batches whose summed reported bytes do not exceed the 16 MiB aggregate budget. Fetch `id` plus raw trace bytes once per sub-batch, verify actual transport length again, check context cancellation between rows, compact/validate the complete JSON, enforce the 8 MiB semantic limit and 10,000-attempt limit, and only then add attempts to the accumulator. Trace fetches use bound ID predicates, never per-row SQL. Missing, duplicate, malformed, or mismatched trace rows fail with the same sanitized `invalid call distribution trace` contract.
+
+The 16 MiB transport allowance is not a relaxed persistence contract. Normal store values are marshalled through Go's typed task/attempt/result structures into compact JSON; PostgreSQL JSONB may reorder keys and insert at most formatting overhead for these scalar forms. Read-time compaction removes that overhead before the 8 MiB semantic check. SQLite and temporary PostgreSQL integration tests cover the exact 8 MiB boundary so a trace accepted by the writer remains readable on both dialects.
+
 ### 7.6 Admin lifecycle APIs and UI
 
 Reuse existing DELETE/lifecycle endpoints where present; do not create parallel mutations solely for the UI. Add visible icon actions with tooltips, confirmation, dependency-conflict rendering, and audit events for:
@@ -725,6 +734,8 @@ Release blockers/rollback triggers include duplicate credit, cross-tenant projec
 - Admin delete dependency conflicts and historical snapshot fallbacks.
 - Single topology logical node and distributed heartbeat behavior.
 - Payment/docs readiness parity and call-distribution reconciliation.
+- Provider-trace persistence at exactly/over 8 MiB and exactly/over 10,000 attempts; exact values remain readable without truncation.
+- Distribution rejects an oversized historical trace before raw materialization, bounds multi-page raw batches, observes cancellation during decode, and sanitizes malformed trace errors on SQLite and temporary PostgreSQL.
 
 ### 18.2 Frontend tests
 
