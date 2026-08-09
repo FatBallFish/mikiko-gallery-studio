@@ -377,13 +377,33 @@ func TestLegacyStorageIdentityBatchRetriesTransientDatabaseErrors(t *testing.T) 
 	}
 }
 
-func TestLegacyStorageDriversExcludeRemoteImageResults(t *testing.T) {
-	client := openStorageIdentityBackfillSQLite(t, "remote-result")
+func TestLegacyStorageDriversExcludeRemoteRowsFromEveryStorageTable(t *testing.T) {
+	client := openStorageIdentityBackfillSQLite(t, "remote-rows")
 	ctx := t.Context()
-	task := seedStorageIdentityTask(t, ctx, client, "remote-result")
+	task := seedStorageIdentityTask(t, ctx, client, "remote-rows")
 	remote, err := client.ImageResult.Create().
 		SetTaskID(task.ID).SetUserID(task.UserID).SetStorageDriver("remote").
 		SetObjectKey("https://cdn.example.com/remote.png").SetMimeType("image/png").SetSha256("remote").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := client.ReferenceAsset.Create().
+		SetUserID(task.UserID).SetStatus("ready").SetStorageDriver("remote").
+		SetObjectKey("https://cdn.example.com/reference.png").SetMimeType("image/png").SetSha256("remote-reference").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err = task.Update().
+		SetArtifactRecoveryStatus("pending").
+		SetArtifactStorageDriver("remote").
+		SetArtifactObjectKeys([]string{"https://cdn.example.com/recovery.png"}).
+		Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := client.ObjectDeletionJob.Create().
+		SetStorageDriver("remote").SetObjectKey("https://cdn.example.com/delete.png").
+		SetState(domaincleanup.StatePending).Save(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,6 +417,194 @@ func TestLegacyStorageDriversExcludeRemoteImageResults(t *testing.T) {
 	remote, err = client.ImageResult.Get(ctx, remote.ID)
 	if err != nil || remote.StorageConfigID != nil {
 		t.Fatalf("remote result mutated: %#v err=%v", remote, err)
+	}
+	asset, err = client.ReferenceAsset.Get(ctx, asset.ID)
+	if err != nil || asset.StorageConfigID != nil {
+		t.Fatalf("remote asset mutated: %#v err=%v", asset, err)
+	}
+	task, err = client.ImageTask.Get(ctx, task.ID)
+	if err != nil || task.ArtifactStorageConfigID != nil {
+		t.Fatalf("remote recovery mutated: %#v err=%v", task, err)
+	}
+	job, err = client.ObjectDeletionJob.Get(ctx, job.ID)
+	if err != nil || job.StorageConfigID != nil {
+		t.Fatalf("remote cleanup job mutated: %#v err=%v", job, err)
+	}
+}
+
+func TestLegacyStorageIdentityBackfillRemoteDriverIsNoOp(t *testing.T) {
+	client := openStorageIdentityBackfillSQLite(t, "remote-noop")
+	ctx := t.Context()
+	task := seedStorageIdentityTask(t, ctx, client, "remote-noop")
+	remote, err := client.ReferenceAsset.Create().
+		SetUserID(task.UserID).SetStatus("ready").SetStorageDriver("remote").
+		SetObjectKey("https://cdn.example.com/reference.png").SetMimeType("image/png").SetSha256("remote").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	progress, err := RunLegacyStorageIdentityBackfill(ctx, client, "remote", uuid.New(), LegacyStorageIdentityBackfillOptions{})
+	if err != nil || !progress.Completed || progress.ProcessedRows != 0 {
+		t.Fatalf("remote backfill progress=%#v err=%v", progress, err)
+	}
+	if count, err := client.MigrationCheckpoint.Query().Count(ctx); err != nil || count != 0 {
+		t.Fatalf("remote backfill created checkpoints: count=%d err=%v", count, err)
+	}
+	remote, err = client.ReferenceAsset.Get(ctx, remote.ID)
+	if err != nil || remote.StorageConfigID != nil {
+		t.Fatalf("remote backfill mutated row: %#v err=%v", remote, err)
+	}
+}
+
+func TestPrepareLegacyStorageCleanupCutoversRetriesSimultaneousSQLiteFirstStartup(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "legacy-prepare-race.db")
+	databaseURL := fmt.Sprintf("file:%s?_fk=1&_busy_timeout=5000&_journal_mode=WAL", databasePath)
+	clients := make([]*repoent.Client, 3)
+	for index := range clients {
+		client, err := repoent.Open(dialect.SQLite, databaseURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clients[index] = client
+		t.Cleanup(func() { _ = client.Close() })
+	}
+	ctx := t.Context()
+	if err := clients[0].Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	blocker, err := clients[0].Tx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := blocker.MigrationCheckpoint.Create().
+		SetName("prepare-race-blocker").SetPhase("test").Save(ctx); err != nil {
+		_ = blocker.Rollback()
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	done := make(chan error, 2)
+	for _, client := range clients[1:] {
+		go func(client *repoent.Client) {
+			<-start
+			done <- PrepareLegacyStorageCleanupCutovers(ctx, client, []string{"local", "s3"})
+		}(client)
+	}
+	close(start)
+	time.Sleep(50 * time.Millisecond)
+	if err := blocker.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatalf("simultaneous SQLite prepare: %v", err)
+		}
+	}
+	markers, err := clients[0].MigrationCheckpoint.Query().Where(
+		migrationcheckpoint.NameIn(
+			legacyCleanupCutoverGlobalMarker,
+			legacyCleanupCutoverMarkerName("local"),
+			legacyCleanupCutoverMarkerName("s3"),
+		),
+	).All(ctx)
+	if err != nil || len(markers) != 3 {
+		t.Fatalf("prepared markers=%#v err=%v", markers, err)
+	}
+	for _, marker := range markers {
+		if marker.Completed || marker.Phase != legacyCleanupCutoverPreparing {
+			t.Fatalf("invalid prepared marker=%#v", marker)
+		}
+	}
+	database, err := sql.Open("sqlite3", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	var triggerCount int
+	if err := database.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM sqlite_master
+		WHERE type = 'trigger' AND name IN (
+		  'enforce_legacy_cleanup_identity_cutover_insert',
+		  'enforce_legacy_cleanup_identity_cutover_update'
+		)
+	`).Scan(&triggerCount); err != nil || triggerCount != 2 {
+		t.Fatalf("cleanup barrier trigger count=%d err=%v", triggerCount, err)
+	}
+}
+
+func TestPrepareLegacyStorageCleanupCutoversSurfacesPermanentSQLError(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:legacy-prepare-permanent-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := PrepareLegacyStorageCleanupCutovers(t.Context(), client, []string{"local"}); err == nil {
+		t.Fatal("prepare without schema must surface its permanent SQL error")
+	}
+}
+
+func TestPrepareLegacyStorageCleanupCutoversRetriesSimultaneousPostgresFirstStartup(t *testing.T) {
+	database, databaseURL := openLegacyMigrationPostgres(t)
+	ctx := context.Background()
+	clientA, err := repoent.Open(dialect.Postgres, postgresURLWithApplicationName(t, databaseURL, "legacy-prepare-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = clientA.Close() })
+	clientB, err := repoent.Open(dialect.Postgres, postgresURLWithApplicationName(t, databaseURL, "legacy-prepare-b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = clientB.Close() })
+	if err := clientA.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	blocker, err := database.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := blocker.ExecContext(ctx, `LOCK TABLE migration_checkpoints IN ACCESS EXCLUSIVE MODE`); err != nil {
+		_ = blocker.Rollback()
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	done := make(chan error, 2)
+	for _, client := range []*repoent.Client{clientA, clientB} {
+		go func(client *repoent.Client) {
+			<-start
+			done <- PrepareLegacyStorageCleanupCutovers(ctx, client, []string{"local", "s3"})
+		}(client)
+	}
+	close(start)
+	waitForPostgresApplicationLock(t, database, "legacy-prepare-a", "")
+	waitForPostgresApplicationLock(t, database, "legacy-prepare-b", "")
+	if err := blocker.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatalf("simultaneous PostgreSQL prepare: %v", err)
+		}
+	}
+	var markerCount int
+	if err := database.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM migration_checkpoints
+		WHERE name IN (
+		  'legacy_cleanup_nil_config_cutover_v1:global',
+		  'legacy_cleanup_nil_config_cutover_v1:local',
+		  'legacy_cleanup_nil_config_cutover_v1:s3'
+		)
+	`).Scan(&markerCount); err != nil || markerCount != 3 {
+		t.Fatalf("PostgreSQL marker count=%d err=%v", markerCount, err)
+	}
+	var triggerCount int
+	if err := database.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM pg_trigger
+		WHERE tgname = 'enforce_legacy_cleanup_identity_cutover'
+		  AND tgrelid = 'object_deletion_jobs'::regclass
+		  AND NOT tgisinternal
+	`).Scan(&triggerCount); err != nil || triggerCount != 1 {
+		t.Fatalf("PostgreSQL trigger count=%d err=%v", triggerCount, err)
 	}
 }
 

@@ -225,9 +225,9 @@ func (s *Service) ListLegacyDrivers(ctx context.Context) ([]string, error) {
 	}
 	driverSet := make(map[string]struct{})
 	for _, record := range records {
-		driver := normalizeDriver(record.Driver)
+		driver, managed := domainstorageconfig.NormalizeManagedDriver(record.Driver)
 		if record.Status == domainstorageconfig.StatusDeleted || !record.ReadEnabled ||
-			(driver != domainstorageconfig.DriverLocal && driver != domainstorageconfig.DriverS3) ||
+			!managed ||
 			strings.TrimSpace(record.Code) != "bootstrap-"+driver {
 			continue
 		}

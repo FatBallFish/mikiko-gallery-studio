@@ -144,6 +144,77 @@ func TestStartupStorageIdentityBackfillMigratesEveryLegacyDriver(t *testing.T) {
 	}
 }
 
+func TestStartupStorageIdentityBackfillIgnoresRemoteRowsAlongsideManagedRows(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, fmt.Sprintf("file:startup-storage-mixed-remote-%s?mode=memory&cache=shared&_fk=1", uuid.NewString()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	localTask, err := client.ImageTask.Create().SetUserID(906).SetTaskType("text_to_image").SetPrompt("local").SetAbstractModel("plus").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localResult, err := client.ImageResult.Create().SetTaskID(localTask.ID).SetUserID(localTask.UserID).SetStorageDriver("local").
+		SetObjectKey("generated-images/local.png").SetMimeType("image/png").SetSha256("local").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteTask, err := client.ImageTask.Create().SetUserID(906).SetTaskType("text_to_image").SetPrompt("remote").SetAbstractModel("plus").
+		SetArtifactRecoveryStatus("pending").SetArtifactStorageDriver("remote").
+		SetArtifactObjectKeys([]string{"https://cdn.example.com/recovery.png"}).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteResult, err := client.ImageResult.Create().SetTaskID(remoteTask.ID).SetUserID(remoteTask.UserID).SetStorageDriver("remote").
+		SetObjectKey("https://cdn.example.com/result.png").SetMimeType("image/png").SetSha256("remote-result").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteAsset, err := client.ReferenceAsset.Create().SetUserID(remoteTask.UserID).SetStatus("ready").SetStorageDriver("remote").
+		SetObjectKey("https://cdn.example.com/reference.png").SetMimeType("image/png").SetSha256("remote-reference").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteJob, err := client.ObjectDeletionJob.Create().SetStorageDriver("remote").
+		SetObjectKey("https://cdn.example.com/delete.png").SetState(domaincleanup.StatePending).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configID := uuid.New()
+	resolver := &legacyStorageResolverMap{resolved: map[string]domainstorageconfig.ResolvedConfig{
+		"local": {ConfigRecord: domainstorageconfig.ConfigRecord{ID: configID.String(), Driver: "local"}},
+	}}
+
+	progress, err := backfillLegacyStorageIdentitiesAtStartup(ctx, client, resolver, "local", db.LegacyStorageIdentityBackfillOptions{})
+	if err != nil || len(progress) != 1 || strings.Join(resolver.calls, ",") != "local" {
+		t.Fatalf("mixed startup progress=%#v calls=%v err=%v", progress, resolver.calls, err)
+	}
+	localResult, err = client.ImageResult.Get(ctx, localResult.ID)
+	if err != nil || localResult.StorageConfigID == nil || *localResult.StorageConfigID != configID {
+		t.Fatalf("managed result=%#v err=%v", localResult, err)
+	}
+	remoteResult, err = client.ImageResult.Get(ctx, remoteResult.ID)
+	if err != nil || remoteResult.StorageConfigID != nil {
+		t.Fatalf("remote result=%#v err=%v", remoteResult, err)
+	}
+	remoteAsset, err = client.ReferenceAsset.Get(ctx, remoteAsset.ID)
+	if err != nil || remoteAsset.StorageConfigID != nil {
+		t.Fatalf("remote asset=%#v err=%v", remoteAsset, err)
+	}
+	remoteTask, err = client.ImageTask.Get(ctx, remoteTask.ID)
+	if err != nil || remoteTask.ArtifactStorageConfigID != nil {
+		t.Fatalf("remote recovery=%#v err=%v", remoteTask, err)
+	}
+	remoteJob, err = client.ObjectDeletionJob.Get(ctx, remoteJob.ID)
+	if err != nil || remoteJob.StorageConfigID != nil {
+		t.Fatalf("remote cleanup job=%#v err=%v", remoteJob, err)
+	}
+}
+
 func TestStartupStorageIdentityBackfillArmsCurrentDriverWithoutLegacyRows(t *testing.T) {
 	client, err := repoent.Open(dialect.SQLite, fmt.Sprintf("file:startup-storage-empty-cutover-%s?mode=memory&cache=shared&_fk=1", uuid.NewString()))
 	if err != nil {
@@ -226,8 +297,8 @@ func TestStartupStorageIdentityBackfillResolvesAllDriversBeforeMutation(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.ReferenceAsset.Create().SetUserID(task.UserID).SetStatus("ready").SetStorageDriver("archive").
-		SetObjectKey("reference-assets/archive.png").SetMimeType("image/png").SetSha256("archive").Save(ctx); err != nil {
+	if _, err := client.ReferenceAsset.Create().SetUserID(task.UserID).SetStatus("ready").SetStorageDriver("s3").
+		SetObjectKey("reference-assets/s3.png").SetMimeType("image/png").SetSha256("s3").Save(ctx); err != nil {
 		t.Fatal(err)
 	}
 	localID := uuid.New()

@@ -10,6 +10,7 @@ import (
 
 	entsql "entgo.io/ent/dialect/sql"
 	domaincleanup "github.com/fatballfish/pic-gallery/internal/domain/objectcleanup"
+	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
@@ -55,10 +56,12 @@ func ListLegacyStorageDrivers(ctx context.Context, client *repoent.Client) ([]st
 	drivers := make(map[string]struct{})
 	collect := func(values []string) {
 		for _, value := range values {
-			drivers[normalizeLegacyStorageDriver(value)] = struct{}{}
+			if driver, ok := domainstorageconfig.NormalizeManagedDriver(value); ok {
+				drivers[driver] = struct{}{}
+			}
 		}
 	}
-	resultDrivers, err := client.ImageResult.Query().Where(imageresult.StorageConfigIDIsNil(), managedLegacyImageResult()).
+	resultDrivers, err := client.ImageResult.Query().Where(imageresult.StorageConfigIDIsNil()).
 		Select(imageresult.FieldStorageDriver).Strings(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list legacy image result storage drivers: %w", err)
@@ -92,14 +95,9 @@ func ListLegacyStorageDrivers(ctx context.Context, client *repoent.Client) ([]st
 	return result, nil
 }
 
-func managedLegacyImageResult() predicate.ImageResult {
-	return func(selector *entsql.Selector) {
-		selector.Where(entsql.ExprP("LOWER(TRIM(" + selector.C(imageresult.FieldStorageDriver) + ")) <> 'remote'"))
-	}
-}
-
 // RunLegacyStorageIdentityBackfill assigns the immutable bootstrap storage
-// config to rows that previously relied on driver-based runtime fallback.
+// config to managed rows that previously relied on driver-based runtime
+// fallback. Non-managed drivers are a completed no-op.
 func RunLegacyStorageIdentityBackfill(
 	ctx context.Context,
 	client *repoent.Client,
@@ -110,7 +108,11 @@ func RunLegacyStorageIdentityBackfill(
 	if client == nil {
 		return LegacyStorageIdentityBackfillProgress{}, fmt.Errorf("legacy storage identity backfill client is required")
 	}
-	driver = normalizeLegacyStorageDriver(driver)
+	managedDriver, managed := domainstorageconfig.NormalizeManagedDriver(driver)
+	if !managed {
+		return LegacyStorageIdentityBackfillProgress{Phase: legacyStoragePhaseDone, Completed: true}, nil
+	}
+	driver = managedDriver
 	if configID == uuid.Nil {
 		return LegacyStorageIdentityBackfillProgress{}, fmt.Errorf("legacy storage identity config ID is required")
 	}
@@ -588,8 +590,12 @@ func legacyArtifactStorageTuple() predicate.ImageTask {
 }
 
 func legacyDriverSelector(fieldName, driver string) func(*entsql.Selector) {
-	driver = normalizeLegacyStorageDriver(driver)
+	driver, managed := domainstorageconfig.NormalizeManagedDriver(driver)
 	return func(selector *entsql.Selector) {
+		if !managed {
+			selector.Where(entsql.ExprP("1 = 0"))
+			return
+		}
 		if driver == "local" {
 			selector.Where(entsql.Or(entsql.EQ(selector.C(fieldName), driver), entsql.EQ(selector.C(fieldName), "")))
 			return

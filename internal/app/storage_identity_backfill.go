@@ -99,11 +99,9 @@ func backfillLegacyStorageIdentitiesAtStartup(
 func normalizedStorageDrivers(values []string) []string {
 	driverSet := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		driver := strings.ToLower(strings.TrimSpace(value))
-		if driver == "" {
-			driver = domainstorageconfig.DriverLocal
+		if driver, ok := domainstorageconfig.NormalizeManagedDriver(value); ok {
+			driverSet[driver] = struct{}{}
 		}
-		driverSet[driver] = struct{}{}
 	}
 	drivers := make([]string, 0, len(driverSet))
 	for driver := range driverSet {

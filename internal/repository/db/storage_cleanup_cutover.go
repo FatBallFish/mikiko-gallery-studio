@@ -2,15 +2,20 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
+	"time"
 
 	"entgo.io/ent/dialect"
 	domaincleanup "github.com/fatballfish/pic-gallery/internal/domain/objectcleanup"
+	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 const (
@@ -19,6 +24,7 @@ const (
 	legacyCleanupCutoverPreparing    = "preparing"
 	legacyCleanupCutoverArming       = "arming"
 	legacyCleanupCutoverArmed        = "armed"
+	legacyCleanupPrepareAdvisoryKey  = int64(0x4d4753434c45414e)
 )
 
 func PrepareLegacyStorageCleanupCutovers(ctx context.Context, client *repoent.Client, drivers []string) error {
@@ -29,11 +35,22 @@ func PrepareLegacyStorageCleanupCutovers(ctx context.Context, client *repoent.Cl
 	if len(drivers) == 0 {
 		return nil
 	}
+	return runLegacyStoragePrepareWithRetry(ctx, func() error {
+		return prepareLegacyStorageCleanupCutoversOnce(ctx, client, drivers)
+	})
+}
+
+func prepareLegacyStorageCleanupCutoversOnce(ctx context.Context, client *repoent.Client, drivers []string) error {
 	tx, err := client.Tx(ctx)
 	if err != nil {
 		return fmt.Errorf("start legacy cleanup barrier transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if tx.Client().DialectName() == dialect.Postgres {
+		if err := tx.ExecRaw(ctx, "SELECT pg_advisory_xact_lock($1)", legacyCleanupPrepareAdvisoryKey); err != nil {
+			return fmt.Errorf("lock legacy cleanup prepare transaction: %w", err)
+		}
+	}
 	global, err := tx.MigrationCheckpoint.Query().Where(
 		migrationcheckpoint.NameEQ(legacyCleanupCutoverGlobalMarker),
 		lockLegacyStorageCheckpoint(),
@@ -73,11 +90,49 @@ func PrepareLegacyStorageCleanupCutovers(ctx context.Context, client *repoent.Cl
 	return nil
 }
 
+func runLegacyStoragePrepareWithRetry(ctx context.Context, run func() error) error {
+	var err error
+	for attempt := 0; attempt < legacyStorageBatchRetryLimit; attempt++ {
+		err = run()
+		if err == nil || !isLegacyStoragePrepareRetryable(err) {
+			return err
+		}
+		if attempt == legacyStorageBatchRetryLimit-1 {
+			break
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * legacyStorageBatchRetryDelay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return err
+}
+
+func isLegacyStoragePrepareRetryable(err error) bool {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "database is locked") || strings.Contains(message, "database table is locked") ||
+		strings.Contains(message, "unique constraint failed: migration_checkpoints.name") {
+		return true
+	}
+	var postgresErr *pq.Error
+	if errors.As(err, &postgresErr) {
+		switch postgresErr.Code {
+		case "23505", "40001", "40P01", "42710":
+			return true
+		}
+	}
+	return false
+}
+
 func managedLegacyStorageDrivers(values []string) []string {
 	set := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		driver := normalizeLegacyStorageDriver(value)
-		if driver == "local" || driver == "s3" {
+		if driver, ok := domainstorageconfig.NormalizeManagedDriver(value); ok {
 			set[driver] = struct{}{}
 		}
 	}
@@ -137,7 +192,11 @@ END;
 $$ LANGUAGE plpgsql;
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'enforce_legacy_cleanup_identity_cutover') THEN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+         WHERE tgname = 'enforce_legacy_cleanup_identity_cutover'
+           AND tgrelid = 'object_deletion_jobs'::regclass
+    ) THEN
         CREATE TRIGGER enforce_legacy_cleanup_identity_cutover
         BEFORE INSERT OR UPDATE ON object_deletion_jobs
         FOR EACH ROW EXECUTE FUNCTION enforce_legacy_cleanup_identity_cutover();

@@ -1,6 +1,9 @@
 package storageconfig
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	DriverLocal = "local"
@@ -20,6 +23,16 @@ const (
 	ProbeStatusSuccess = "success"
 	ProbeStatusFailed  = "failed"
 )
+
+// NormalizeManagedDriver maps legacy empty drivers to local and accepts only
+// drivers whose object identity is managed by this application.
+func NormalizeManagedDriver(value string) (string, bool) {
+	driver := strings.ToLower(strings.TrimSpace(value))
+	if driver == "" {
+		driver = DriverLocal
+	}
+	return driver, driver == DriverLocal || driver == DriverS3
+}
 
 type SecretStatus struct {
 	HasSecret    bool       `json:"has_secret"`
