@@ -293,6 +293,84 @@ func TestObjectCleanupReconcileUsesFairKeysetAndSkipsCompletedDeletion(t *testin
 	}
 }
 
+func TestObjectCleanupReconcileRestartSkipsCompletedFrontPage(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-reconcile-restart-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	deletedAt := time.Now().UTC().Add(-time.Hour)
+	task, err := client.ImageTask.Create().SetUserID(95).SetTaskType("text_to_image").SetPrompt("restart sweep").SetAbstractModel("plus").Save(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range 5 {
+		key := fmt.Sprintf("generated-images/95/result-%d.png", index)
+		if _, err := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(95).SetStorageDriver("local").SetObjectKey(key).
+			SetMimeType("image/png").SetSha256(fmt.Sprintf("restart-%d", index)).SetDeletedAt(deletedAt.Add(time.Duration(index) * time.Second)).Save(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if index < 4 {
+			if _, err := client.ObjectDeletionJob.Create().SetStorageDriver("local").SetObjectKey(key).SetState(domaincleanup.StateDone).
+				SetCompletedAt(deletedAt.Add(time.Minute)).Save(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	for range 2 {
+		store := NewObjectCleanupStore(client)
+		if _, err := store.Reconcile(t.Context(), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if exists, err := client.ObjectDeletionJob.Query().Where(objectdeletionjob.ObjectKeyEQ("generated-images/95/result-4.png")).Exist(t.Context()); err != nil || !exists {
+		t.Fatalf("orphan after completed front page exists=%v err=%v", exists, err)
+	}
+}
+
+func TestObjectCleanupCheckpointCompareAndSwapRejectsStaleCursor(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-checkpoint-cas-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	store := NewObjectCleanupStore(client)
+	createdAt := time.Date(2026, time.August, 9, 3, 4, 5, 0, time.UTC)
+	created := domaincleanup.ReconcileCheckpoint{
+		StorageIdentity: "config-a", Namespace: "sha256:namespace", Prefix: "generated-images/", Cursor: "cursor-a", UpdatedAt: createdAt,
+	}
+	if saved, err := store.SaveReconcileCheckpoint(t.Context(), created, time.Time{}); err != nil || !saved {
+		t.Fatalf("create checkpoint saved=%v err=%v", saved, err)
+	}
+	if saved, err := store.SaveReconcileCheckpoint(t.Context(), created, time.Time{}); err != nil || saved {
+		t.Fatalf("duplicate create must lose CAS saved=%v err=%v", saved, err)
+	}
+	advanced := created
+	advanced.Cursor = "cursor-b"
+	advanced.UpdatedAt = createdAt.Add(time.Microsecond)
+	if saved, err := store.SaveReconcileCheckpoint(t.Context(), advanced, createdAt); err != nil || !saved {
+		t.Fatalf("advance checkpoint saved=%v err=%v", saved, err)
+	}
+	stale := created
+	stale.Cursor = "stale-cursor"
+	stale.UpdatedAt = createdAt.Add(2 * time.Microsecond)
+	if saved, err := store.SaveReconcileCheckpoint(t.Context(), stale, createdAt); err != nil || saved {
+		t.Fatalf("stale checkpoint must lose CAS saved=%v err=%v", saved, err)
+	}
+	checkpoint, ok, err := store.GetReconcileCheckpoint(t.Context(), created.StorageIdentity, created.Prefix)
+	if err != nil || !ok || checkpoint.Cursor != advanced.Cursor || !checkpoint.UpdatedAt.Equal(advanced.UpdatedAt) {
+		t.Fatalf("checkpoint=%#v ok=%v err=%v", checkpoint, ok, err)
+	}
+}
+
 func TestObjectCleanupReconcileMigratesLegacyArtifactRecoveriesExplicitly(t *testing.T) {
 	client, err := repoent.Open(dialect.SQLite, "file:cleanup-recovery-migration-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
 	if err != nil {

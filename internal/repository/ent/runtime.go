@@ -22,6 +22,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
@@ -1802,6 +1803,87 @@ func init() {
 	objectdeletionjobDescID := objectdeletionjobFields[0].Descriptor()
 	// objectdeletionjob.DefaultID holds the default value on creation for the id field.
 	objectdeletionjob.DefaultID = objectdeletionjobDescID.Default.(func() uuid.UUID)
+	objectreconcilecheckpointMixin := schema.ObjectReconcileCheckpoint{}.Mixin()
+	objectreconcilecheckpointMixinFields0 := objectreconcilecheckpointMixin[0].Fields()
+	_ = objectreconcilecheckpointMixinFields0
+	objectreconcilecheckpointFields := schema.ObjectReconcileCheckpoint{}.Fields()
+	_ = objectreconcilecheckpointFields
+	// objectreconcilecheckpointDescCreatedAt is the schema descriptor for created_at field.
+	objectreconcilecheckpointDescCreatedAt := objectreconcilecheckpointMixinFields0[0].Descriptor()
+	// objectreconcilecheckpoint.DefaultCreatedAt holds the default value on creation for the created_at field.
+	objectreconcilecheckpoint.DefaultCreatedAt = objectreconcilecheckpointDescCreatedAt.Default.(func() time.Time)
+	// objectreconcilecheckpointDescUpdatedAt is the schema descriptor for updated_at field.
+	objectreconcilecheckpointDescUpdatedAt := objectreconcilecheckpointMixinFields0[1].Descriptor()
+	// objectreconcilecheckpoint.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	objectreconcilecheckpoint.DefaultUpdatedAt = objectreconcilecheckpointDescUpdatedAt.Default.(func() time.Time)
+	// objectreconcilecheckpoint.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	objectreconcilecheckpoint.UpdateDefaultUpdatedAt = objectreconcilecheckpointDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// objectreconcilecheckpointDescStorageIdentity is the schema descriptor for storage_identity field.
+	objectreconcilecheckpointDescStorageIdentity := objectreconcilecheckpointFields[1].Descriptor()
+	// objectreconcilecheckpoint.StorageIdentityValidator is a validator for the "storage_identity" field. It is called by the builders before save.
+	objectreconcilecheckpoint.StorageIdentityValidator = func() func(string) error {
+		validators := objectreconcilecheckpointDescStorageIdentity.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(storage_identity string) error {
+			for _, fn := range fns {
+				if err := fn(storage_identity); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// objectreconcilecheckpointDescNamespace is the schema descriptor for namespace field.
+	objectreconcilecheckpointDescNamespace := objectreconcilecheckpointFields[2].Descriptor()
+	// objectreconcilecheckpoint.NamespaceValidator is a validator for the "namespace" field. It is called by the builders before save.
+	objectreconcilecheckpoint.NamespaceValidator = func() func(string) error {
+		validators := objectreconcilecheckpointDescNamespace.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(namespace string) error {
+			for _, fn := range fns {
+				if err := fn(namespace); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// objectreconcilecheckpointDescPrefix is the schema descriptor for prefix field.
+	objectreconcilecheckpointDescPrefix := objectreconcilecheckpointFields[3].Descriptor()
+	// objectreconcilecheckpoint.PrefixValidator is a validator for the "prefix" field. It is called by the builders before save.
+	objectreconcilecheckpoint.PrefixValidator = func() func(string) error {
+		validators := objectreconcilecheckpointDescPrefix.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(prefix string) error {
+			for _, fn := range fns {
+				if err := fn(prefix); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// objectreconcilecheckpointDescCursor is the schema descriptor for cursor field.
+	objectreconcilecheckpointDescCursor := objectreconcilecheckpointFields[4].Descriptor()
+	// objectreconcilecheckpoint.DefaultCursor holds the default value on creation for the cursor field.
+	objectreconcilecheckpoint.DefaultCursor = objectreconcilecheckpointDescCursor.Default.(string)
+	// objectreconcilecheckpointDescGeneration is the schema descriptor for generation field.
+	objectreconcilecheckpointDescGeneration := objectreconcilecheckpointFields[5].Descriptor()
+	// objectreconcilecheckpoint.DefaultGeneration holds the default value on creation for the generation field.
+	objectreconcilecheckpoint.DefaultGeneration = objectreconcilecheckpointDescGeneration.Default.(int64)
+	// objectreconcilecheckpointDescID is the schema descriptor for id field.
+	objectreconcilecheckpointDescID := objectreconcilecheckpointFields[0].Descriptor()
+	// objectreconcilecheckpoint.DefaultID holds the default value on creation for the id field.
+	objectreconcilecheckpoint.DefaultID = objectreconcilecheckpointDescID.Default.(func() uuid.UUID)
 	objectstorageconfigMixin := schema.ObjectStorageConfig{}.Mixin()
 	objectstorageconfigMixinFields0 := objectstorageconfigMixin[0].Fields()
 	_ = objectstorageconfigMixinFields0

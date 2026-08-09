@@ -3,8 +3,10 @@ package storage
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -24,22 +26,25 @@ const (
 )
 
 type BackendRef struct {
-	ConfigID string
-	Driver   string
-	Bucket   string
-	Version  int64
-	Backend  Backend
+	ConfigID  string
+	Driver    string
+	Bucket    string
+	Namespace string
+	Version   int64
+	Backend   Backend
 }
 
 type Router interface {
 	DefaultWriter(ctx context.Context) (BackendRef, error)
 	BackendFor(ctx context.Context, configID string, legacyDriver string) (BackendRef, error)
+	ReadableBackends(ctx context.Context) ([]BackendRef, error)
 }
 
 type ConfigSource interface {
 	ResolveDefaultWritable(ctx context.Context) (domainstorageconfig.ResolvedConfig, error)
 	ResolveByID(ctx context.Context, id string) (domainstorageconfig.ResolvedConfig, error)
 	ResolveLegacyByDriver(ctx context.Context, driver string) (domainstorageconfig.ResolvedConfig, error)
+	ListReadableConfigIDs(ctx context.Context) ([]string, error)
 }
 
 type StaticRouter struct{ ref BackendRef }
@@ -48,7 +53,8 @@ func NewStaticRouter(backend Backend) *StaticRouter {
 	if backend == nil {
 		backend = NewLocalBackend("")
 	}
-	return &StaticRouter{ref: BackendRef{Driver: backend.Driver(), Backend: backend}}
+	driver := strings.ToLower(strings.TrimSpace(backend.Driver()))
+	return &StaticRouter{ref: BackendRef{Driver: driver, Namespace: "static:" + driver, Backend: backend}}
 }
 
 func (r *StaticRouter) DefaultWriter(context.Context) (BackendRef, error) { return r.ref, nil }
@@ -62,6 +68,10 @@ func (r *StaticRouter) BackendFor(_ context.Context, configID string, legacyDriv
 		ref.Driver = strings.TrimSpace(legacyDriver)
 	}
 	return ref, nil
+}
+
+func (r *StaticRouter) ReadableBackends(context.Context) ([]BackendRef, error) {
+	return []BackendRef{r.ref}, nil
 }
 
 type Registry struct {
@@ -134,6 +144,35 @@ func (r *Registry) BackendFor(ctx context.Context, configID string, legacyDriver
 		return BackendRef{}, ErrStorageUnreadable
 	}
 	return r.backendForResolved(resolved)
+}
+
+func (r *Registry) ReadableBackends(ctx context.Context) ([]BackendRef, error) {
+	if r == nil || r.source == nil {
+		return nil, ErrStorageUnreadable
+	}
+	ids, err := r.source.ListReadableConfigIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]BackendRef, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ref, err := r.BackendFor(ctx, id, "")
+		if err != nil {
+			slog.WarnContext(ctx, "storage backend skipped during readable enumeration", "config_id", id, "error_code", "storage_config_unavailable")
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
 }
 
 func (r *Registry) resolveCached(ctx context.Context, key string, resolve func(context.Context) (domainstorageconfig.ResolvedConfig, error)) (domainstorageconfig.ResolvedConfig, error) {
@@ -299,7 +338,7 @@ func (r *Registry) backendForResolved(resolved domainstorageconfig.ResolvedConfi
 	if err != nil {
 		return BackendRef{}, err
 	}
-	ref := BackendRef{ConfigID: resolved.ID, Driver: backend.Driver(), Bucket: resolved.Bucket, Version: resolved.Version, Backend: backend}
+	ref := BackendRef{ConfigID: resolved.ID, Driver: backend.Driver(), Bucket: resolved.Bucket, Namespace: storageNamespaceFingerprint(resolved.ConfigRecord), Version: resolved.Version, Backend: backend}
 	r.mu.Lock()
 	for cachedKey, cached := range r.backends {
 		if cached.ConfigID == resolved.ID {
@@ -309,6 +348,21 @@ func (r *Registry) backendForResolved(resolved domainstorageconfig.ResolvedConfi
 	r.backends[key] = ref
 	r.mu.Unlock()
 	return ref, nil
+}
+
+func storageNamespaceFingerprint(record domainstorageconfig.ConfigRecord) string {
+	canonical := strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(record.Driver)),
+		strings.ToLower(strings.TrimSpace(record.Provider)),
+		strings.TrimSpace(record.Endpoint),
+		strings.TrimSpace(record.Region),
+		strings.TrimSpace(record.Bucket),
+		strings.Trim(strings.TrimSpace(record.Prefix), "/"),
+		fmt.Sprintf("%t", record.ForcePathStyle),
+		strings.TrimSpace(record.LocalRoot),
+	}, "\x00")
+	digest := sha256.Sum256([]byte(canonical))
+	return fmt.Sprintf("sha256:%x", digest[:])
 }
 
 func StorageConfigFromResolved(resolved domainstorageconfig.ResolvedConfig) config.StorageConfig {

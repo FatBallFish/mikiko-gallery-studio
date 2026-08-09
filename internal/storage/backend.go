@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -18,7 +20,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -328,65 +329,212 @@ func (b *LocalBackend) Delete(_ context.Context, objectKey string) error {
 }
 
 func (b *LocalBackend) ListObjects(ctx context.Context, prefix, cursor string, limit int) (ObjectPage, error) {
+	page, _, err := b.listObjectsIncrementally(ctx, prefix, cursor, limit)
+	return page, err
+}
+
+type localObjectListStats struct {
+	VisitedObjects       int
+	MaterializedObjects  int
+	DirectoriesRead      int
+	DirectoryEntriesRead int
+}
+
+func (b *LocalBackend) listObjectsIncrementally(ctx context.Context, prefix, cursor string, limit int) (ObjectPage, localObjectListStats, error) {
+	var stats localObjectListStats
 	prefix, err := normalizeListPrefix(prefix)
 	if err != nil {
-		return ObjectPage{}, err
+		return ObjectPage{}, stats, err
+	}
+	frames, err := decodeLocalObjectCursor(cursor, prefix)
+	if err != nil {
+		return ObjectPage{}, stats, err
 	}
 	limit = normalizeObjectListLimit(limit)
-	rootPath, ok := b.resolvePath(strings.TrimSuffix(prefix, "/"))
+	rootKey := strings.TrimSuffix(prefix, "/")
+	rootPath, ok := b.resolvePath(rootKey)
 	if !ok {
-		return ObjectPage{}, fmt.Errorf("invalid local storage prefix %q", prefix)
+		return ObjectPage{}, stats, fmt.Errorf("invalid local storage prefix %q", prefix)
 	}
-	rootAbs, err := filepath.Abs(b.root)
+	rootInfo, err := os.Lstat(rootPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return ObjectPage{}, stats, nil
+	}
 	if err != nil {
-		return ObjectPage{}, err
+		return ObjectPage{}, stats, err
 	}
-	objects := make([]ObjectInfo, 0)
-	err = filepath.WalkDir(rootPath, func(filePath string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			if errors.Is(walkErr, os.ErrNotExist) {
-				return nil
-			}
-			return walkErr
+	if !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
+		return ObjectPage{}, stats, nil
+	}
+	if len(frames) == 0 {
+		frames = []localObjectCursorFrame{{Directory: rootKey}}
+	}
+
+	objects := make([]ObjectInfo, 0, limit+1)
+	walker := localObjectWalker{backend: b, prefix: prefix, frames: frames, stats: &stats}
+	var resumeFrames []localObjectCursorFrame
+	for len(objects) < limit+1 {
+		object, ok, err := walker.next(ctx)
+		if err != nil {
+			return ObjectPage{}, stats, err
 		}
+		if !ok {
+			break
+		}
+		objects = append(objects, object)
+		if len(objects) == limit {
+			resumeFrames = cloneLocalObjectCursorFrames(walker.frames)
+		}
+	}
+	pageLength := len(objects)
+	if pageLength > limit {
+		pageLength = limit
+	}
+	page := ObjectPage{Objects: append([]ObjectInfo(nil), objects[:pageLength]...)}
+	if len(objects) > limit && pageLength > 0 {
+		page.NextCursor, err = encodeLocalObjectCursor(prefix, resumeFrames)
+		if err != nil {
+			return ObjectPage{}, stats, err
+		}
+	}
+	return page, stats, nil
+}
+
+type localObjectWalker struct {
+	backend *LocalBackend
+	prefix  string
+	frames  []localObjectCursorFrame
+	stats   *localObjectListStats
+}
+
+func (w *localObjectWalker) next(ctx context.Context) (ObjectInfo, bool, error) {
+	for len(w.frames) > 0 {
 		if err := contextError(ctx); err != nil {
-			return err
+			return ObjectInfo{}, false, err
 		}
-		if entry.IsDir() {
-			return nil
+		frame := &w.frames[len(w.frames)-1]
+		if len(frame.Pending) == 0 {
+			directoryPath, ok := w.backend.resolvePath(frame.Directory)
+			if !ok {
+				return ObjectInfo{}, false, errors.New("invalid local object listing cursor")
+			}
+			names, nextOffset, eof, err := readLocalDirectoryChunk(directoryPath, frame.Offset)
+			if errors.Is(err, os.ErrNotExist) {
+				w.frames = w.frames[:len(w.frames)-1]
+				continue
+			}
+			if err != nil {
+				return ObjectInfo{}, false, err
+			}
+			w.stats.DirectoriesRead++
+			w.stats.DirectoryEntriesRead += len(names)
+			frame.Offset = nextOffset
+			frame.Pending = names
+			if len(names) == 0 {
+				if eof {
+					w.frames = w.frames[:len(w.frames)-1]
+				}
+				continue
+			}
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
+
+		name := frame.Pending[0]
+		frame.Pending = frame.Pending[1:]
+		objectKey := path.Join(frame.Directory, name)
+		if !strings.HasPrefix(objectKey, w.prefix) {
+			return ObjectInfo{}, false, errors.New("invalid local object listing cursor")
 		}
-		relative, err := filepath.Rel(rootAbs, filePath)
-		if err != nil {
-			return err
+		objectPath, ok := w.backend.resolvePath(objectKey)
+		if !ok {
+			return ObjectInfo{}, false, errors.New("invalid local object listing cursor")
 		}
-		objectKey := filepath.ToSlash(relative)
-		if !strings.HasPrefix(objectKey, prefix) {
-			return nil
-		}
-		objects = append(objects, ObjectInfo{ObjectKey: objectKey, ModifiedAt: info.ModTime().UTC()})
-		return nil
-	})
-	if err != nil {
+		info, err := os.Lstat(objectPath)
 		if errors.Is(err, os.ErrNotExist) {
-			return ObjectPage{}, nil
+			continue
 		}
-		return ObjectPage{}, err
+		if err != nil {
+			return ObjectInfo{}, false, err
+		}
+		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			w.frames = append(w.frames, localObjectCursorFrame{Directory: objectKey})
+			continue
+		}
+		w.stats.VisitedObjects++
+		w.stats.MaterializedObjects++
+		return ObjectInfo{ObjectKey: objectKey, ModifiedAt: info.ModTime().UTC()}, true, nil
 	}
-	sort.Slice(objects, func(i, j int) bool { return objects[i].ObjectKey < objects[j].ObjectKey })
-	start := sort.Search(len(objects), func(index int) bool { return objects[index].ObjectKey > strings.TrimSpace(cursor) })
-	end := start + limit
-	if end > len(objects) {
-		end = len(objects)
+	return ObjectInfo{}, false, nil
+}
+
+type localObjectCursor struct {
+	Version int                      `json:"v"`
+	Prefix  string                   `json:"prefix"`
+	Frames  []localObjectCursorFrame `json:"frames"`
+}
+
+type localObjectCursorFrame struct {
+	Directory string   `json:"directory"`
+	Offset    int64    `json:"offset"`
+	Pending   []string `json:"pending,omitempty"`
+}
+
+func encodeLocalObjectCursor(prefix string, frames []localObjectCursorFrame) (string, error) {
+	payload, err := json.Marshal(localObjectCursor{Version: 2, Prefix: prefix, Frames: frames})
+	if err != nil {
+		return "", fmt.Errorf("encode local object listing cursor: %w", err)
 	}
-	page := ObjectPage{Objects: append([]ObjectInfo(nil), objects[start:end]...)}
-	if end < len(objects) && end > start {
-		page.NextCursor = objects[end-1].ObjectKey
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeLocalObjectCursor(cursor, prefix string) ([]localObjectCursorFrame, error) {
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return nil, nil
 	}
-	return page, nil
+	if len(cursor) > 64*1024 {
+		return nil, errors.New("invalid local object listing cursor")
+	}
+	payload, err := base64.RawURLEncoding.Strict().DecodeString(cursor)
+	if err != nil {
+		return nil, errors.New("invalid local object listing cursor")
+	}
+	var decoded localObjectCursor
+	if err := json.Unmarshal(payload, &decoded); err != nil || decoded.Version != 2 || decoded.Prefix != prefix || !validLocalObjectCursorFrames(decoded.Frames, prefix) {
+		return nil, errors.New("invalid local object listing cursor")
+	}
+	return cloneLocalObjectCursorFrames(decoded.Frames), nil
+}
+
+func validLocalObjectCursorFrames(frames []localObjectCursorFrame, prefix string) bool {
+	if len(frames) == 0 || len(frames) > 256 || frames[0].Directory != strings.TrimSuffix(prefix, "/") {
+		return false
+	}
+	for index, frame := range frames {
+		if frame.Offset < 0 || strings.TrimSpace(frame.Directory) != frame.Directory || path.Clean(frame.Directory) != frame.Directory || strings.HasSuffix(frame.Directory, "/") {
+			return false
+		}
+		if index > 0 && path.Dir(frame.Directory) != frames[index-1].Directory {
+			return false
+		}
+		if len(frame.Pending) > 128 {
+			return false
+		}
+		for _, name := range frame.Pending {
+			if strings.TrimSpace(name) != name || name == "" || name == "." || name == ".." || path.Base(name) != name {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func cloneLocalObjectCursorFrames(frames []localObjectCursorFrame) []localObjectCursorFrame {
+	cloned := make([]localObjectCursorFrame, len(frames))
+	for index, frame := range frames {
+		cloned[index] = frame
+		cloned[index].Pending = append([]string(nil), frame.Pending...)
+	}
+	return cloned
 }
 
 func (b *LocalBackend) resolvePath(objectKey string) (string, bool) {

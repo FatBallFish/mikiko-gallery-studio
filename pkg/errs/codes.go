@@ -55,6 +55,7 @@ const (
 	CodeLoginRequiredGalleryDetail     = "LOGIN_REQUIRED_FOR_GALLERY_DETAIL"
 	CodeSignupTrialConfigInvalid       = "SIGNUP_TRIAL_CONFIG_INVALID"
 	CodeTextModelDefaultRequired       = "TEXT_MODEL_DEFAULT_REQUIRED"
+	CodeStorageNamespaceImmutable      = "STORAGE_NAMESPACE_IMMUTABLE"
 	CodeDefaultProjectImmutable        = "default_project_immutable"
 	CodeProjectNotEmpty                = "project_not_empty"
 	CodeProjectChanged                 = "project_changed"

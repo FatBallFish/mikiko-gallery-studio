@@ -29,6 +29,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
@@ -134,6 +135,7 @@ func checkColumn(t, c string) error {
 			modelprovider.Table:               modelprovider.ValidColumn,
 			modelroute.Table:                  modelroute.ValidColumn,
 			objectdeletionjob.Table:           objectdeletionjob.ValidColumn,
+			objectreconcilecheckpoint.Table:   objectreconcilecheckpoint.ValidColumn,
 			objectstorageconfig.Table:         objectstorageconfig.ValidColumn,
 			paymentorder.Table:                paymentorder.ValidColumn,
 			paymentproviderinstance.Table:     paymentproviderinstance.ValidColumn,

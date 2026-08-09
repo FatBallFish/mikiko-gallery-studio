@@ -46,6 +46,8 @@ type Tx struct {
 	ModelRoute *ModelRouteClient
 	// ObjectDeletionJob is the client for interacting with the ObjectDeletionJob builders.
 	ObjectDeletionJob *ObjectDeletionJobClient
+	// ObjectReconcileCheckpoint is the client for interacting with the ObjectReconcileCheckpoint builders.
+	ObjectReconcileCheckpoint *ObjectReconcileCheckpointClient
 	// ObjectStorageConfig is the client for interacting with the ObjectStorageConfig builders.
 	ObjectStorageConfig *ObjectStorageConfigClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -250,6 +252,7 @@ func (tx *Tx) init() {
 	tx.ModelProvider = NewModelProviderClient(tx.config)
 	tx.ModelRoute = NewModelRouteClient(tx.config)
 	tx.ObjectDeletionJob = NewObjectDeletionJobClient(tx.config)
+	tx.ObjectReconcileCheckpoint = NewObjectReconcileCheckpointClient(tx.config)
 	tx.ObjectStorageConfig = NewObjectStorageConfigClient(tx.config)
 	tx.PaymentOrder = NewPaymentOrderClient(tx.config)
 	tx.PaymentProviderInstance = NewPaymentProviderInstanceClient(tx.config)

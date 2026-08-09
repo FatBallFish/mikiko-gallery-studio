@@ -14,6 +14,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 )
 
@@ -21,16 +23,8 @@ type ObjectCleanupStore struct {
 	client *repoent.Client
 
 	reconcileMu          sync.Mutex
-	resultCursor         cleanupSweepCursor
-	referenceAssetCursor cleanupSweepCursor
 	legacyRecoveryCursor recoverySweepCursor
 	nextSingleSweepAsset bool
-}
-
-type cleanupSweepCursor struct {
-	deletedAt time.Time
-	id        uuid.UUID
-	valid     bool
 }
 
 type recoverySweepCursor struct {
@@ -160,6 +154,64 @@ func (s *ObjectCleanupStore) DeleteIfUnreferenced(ctx context.Context, job domai
 
 func (s *ObjectCleanupStore) HasLiveReferences(ctx context.Context, identity domaincleanup.Identity) (bool, error) {
 	return hasLiveObjectReferences(ctx, s.client, identity)
+}
+
+func (s *ObjectCleanupStore) GetReconcileCheckpoint(ctx context.Context, storageIdentity, prefix string) (domaincleanup.ReconcileCheckpoint, bool, error) {
+	row, err := s.client.ObjectReconcileCheckpoint.Query().Where(
+		objectreconcilecheckpoint.StorageIdentityEQ(strings.TrimSpace(storageIdentity)),
+		objectreconcilecheckpoint.PrefixEQ(strings.TrimSpace(prefix)),
+	).Only(ctx)
+	if repoent.IsNotFound(err) {
+		return domaincleanup.ReconcileCheckpoint{}, false, nil
+	}
+	if err != nil {
+		return domaincleanup.ReconcileCheckpoint{}, false, err
+	}
+	return mapReconcileCheckpoint(row), true, nil
+}
+
+func (s *ObjectCleanupStore) SaveReconcileCheckpoint(ctx context.Context, checkpoint domaincleanup.ReconcileCheckpoint, expectedUpdatedAt time.Time) (bool, error) {
+	storageIdentity, prefix := strings.TrimSpace(checkpoint.StorageIdentity), strings.TrimSpace(checkpoint.Prefix)
+	updatedAt := checkpoint.UpdatedAt.UTC()
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	if expectedUpdatedAt.IsZero() {
+		_, err := s.client.ObjectReconcileCheckpoint.Create().
+			SetStorageIdentity(storageIdentity).
+			SetNamespace(strings.TrimSpace(checkpoint.Namespace)).
+			SetPrefix(prefix).
+			SetCursor(checkpoint.Cursor).
+			SetGeneration(checkpoint.Generation).
+			SetUpdatedAt(updatedAt).
+			Save(ctx)
+		if repoent.IsConstraintError(err) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	updated, err := s.client.ObjectReconcileCheckpoint.Update().Where(
+		objectreconcilecheckpoint.StorageIdentityEQ(storageIdentity),
+		objectreconcilecheckpoint.PrefixEQ(prefix),
+		objectreconcilecheckpoint.UpdatedAtEQ(expectedUpdatedAt.UTC()),
+	).
+		SetNamespace(strings.TrimSpace(checkpoint.Namespace)).
+		SetCursor(checkpoint.Cursor).
+		SetGeneration(checkpoint.Generation).
+		SetUpdatedAt(updatedAt).
+		Save(ctx)
+	return updated == 1, err
+}
+
+func mapReconcileCheckpoint(row *repoent.ObjectReconcileCheckpoint) domaincleanup.ReconcileCheckpoint {
+	return domaincleanup.ReconcileCheckpoint{
+		StorageIdentity: row.StorageIdentity,
+		Namespace:       row.Namespace,
+		Prefix:          row.Prefix,
+		Cursor:          row.Cursor,
+		Generation:      row.Generation,
+		UpdatedAt:       row.UpdatedAt,
+	}
 }
 
 func hasLiveObjectReferences(ctx context.Context, client *repoent.Client, identity domaincleanup.Identity) (bool, error) {
@@ -373,20 +425,13 @@ func (s *ObjectCleanupStore) reconcileDeletedResults(ctx context.Context, limit 
 	if limit <= 0 {
 		return 0, nil
 	}
-	query := s.client.ImageResult.Query().Where(imageresult.DeletedAtNotNil())
-	if s.resultCursor.valid {
-		query.Where(imageresult.Or(
-			imageresult.DeletedAtGT(s.resultCursor.deletedAt),
-			imageresult.And(imageresult.DeletedAtEQ(s.resultCursor.deletedAt), imageresult.IDGT(s.resultCursor.id)),
-		))
-	}
+	query := s.client.ImageResult.Query().Where(imageresult.DeletedAtNotNil(), uncoveredDeletedResult())
 	rows, err := query.Order(repoent.Asc(imageresult.FieldDeletedAt), repoent.Asc(imageresult.FieldID)).Limit(limit).All(ctx)
 	if err != nil {
 		return 0, err
 	}
 	count := 0
 	for _, row := range rows {
-		s.resultCursor = cleanupSweepCursor{deletedAt: *row.DeletedAt, id: row.ID, valid: true}
 		configID := ""
 		if row.StorageConfigID != nil {
 			configID = row.StorageConfigID.String()
@@ -403,9 +448,6 @@ func (s *ObjectCleanupStore) reconcileDeletedResults(ctx context.Context, limit 
 			return count, err
 		}
 		count++
-	}
-	if len(rows) < limit {
-		s.resultCursor = cleanupSweepCursor{}
 	}
 	return count, nil
 }
@@ -414,20 +456,13 @@ func (s *ObjectCleanupStore) reconcileDeletedReferenceAssets(ctx context.Context
 	if limit <= 0 {
 		return 0, nil
 	}
-	query := s.client.ReferenceAsset.Query().Where(referenceasset.DeletedAtNotNil())
-	if s.referenceAssetCursor.valid {
-		query.Where(referenceasset.Or(
-			referenceasset.DeletedAtGT(s.referenceAssetCursor.deletedAt),
-			referenceasset.And(referenceasset.DeletedAtEQ(s.referenceAssetCursor.deletedAt), referenceasset.IDGT(s.referenceAssetCursor.id)),
-		))
-	}
+	query := s.client.ReferenceAsset.Query().Where(referenceasset.DeletedAtNotNil(), uncoveredDeletedReferenceAsset())
 	rows, err := query.Order(repoent.Asc(referenceasset.FieldDeletedAt), repoent.Asc(referenceasset.FieldID)).Limit(limit).All(ctx)
 	if err != nil {
 		return 0, err
 	}
 	count := 0
 	for _, row := range rows {
-		s.referenceAssetCursor = cleanupSweepCursor{deletedAt: *row.DeletedAt, id: row.ID, valid: true}
 		configID := ""
 		if row.StorageConfigID != nil {
 			configID = row.StorageConfigID.String()
@@ -445,10 +480,58 @@ func (s *ObjectCleanupStore) reconcileDeletedReferenceAssets(ctx context.Context
 		}
 		count++
 	}
-	if len(rows) < limit {
-		s.referenceAssetCursor = cleanupSweepCursor{}
-	}
 	return count, nil
+}
+
+func uncoveredDeletedResult() predicate.ImageResult {
+	return func(selector *entsql.Selector) {
+		selector.Where(entsql.NotExists(cleanupCoverageSelector(
+			selector,
+			imageresult.FieldStorageConfigID,
+			imageresult.FieldStorageDriver,
+			imageresult.FieldObjectKey,
+			imageresult.FieldDeletedAt,
+		)))
+	}
+}
+
+func uncoveredDeletedReferenceAsset() predicate.ReferenceAsset {
+	return func(selector *entsql.Selector) {
+		selector.Where(entsql.NotExists(cleanupCoverageSelector(
+			selector,
+			referenceasset.FieldStorageConfigID,
+			referenceasset.FieldStorageDriver,
+			referenceasset.FieldObjectKey,
+			referenceasset.FieldDeletedAt,
+		)))
+	}
+}
+
+func cleanupCoverageSelector(candidate *entsql.Selector, configField, driverField, keyField, deletedAtField string) *entsql.Selector {
+	jobs := entsql.Table(objectdeletionjob.Table)
+	configuredIdentity := entsql.And(
+		entsql.NotNull(candidate.C(configField)),
+		entsql.ColumnsEQ(jobs.C(objectdeletionjob.FieldStorageConfigID), candidate.C(configField)),
+	)
+	legacyIdentity := entsql.And(
+		entsql.IsNull(candidate.C(configField)),
+		entsql.IsNull(jobs.C(objectdeletionjob.FieldStorageConfigID)),
+		entsql.ColumnsEQ(jobs.C(objectdeletionjob.FieldStorageDriver), candidate.C(driverField)),
+		entsql.EQ(jobs.C(objectdeletionjob.FieldBucket), ""),
+	)
+	coveredState := entsql.Or(
+		entsql.In(jobs.C(objectdeletionjob.FieldState), domaincleanup.StatePending, domaincleanup.StateRunning, domaincleanup.StateRetry, domaincleanup.StateBlocked),
+		entsql.And(
+			entsql.EQ(jobs.C(objectdeletionjob.FieldState), domaincleanup.StateDone),
+			entsql.NotNull(jobs.C(objectdeletionjob.FieldCompletedAt)),
+			entsql.ColumnsGTE(jobs.C(objectdeletionjob.FieldCompletedAt), candidate.C(deletedAtField)),
+		),
+	)
+	return entsql.Select(jobs.C(objectdeletionjob.FieldID)).From(jobs).Where(entsql.And(
+		entsql.ColumnsEQ(jobs.C(objectdeletionjob.FieldObjectKey), candidate.C(keyField)),
+		entsql.Or(configuredIdentity, legacyIdentity),
+		coveredState,
+	))
 }
 
 func (s *ObjectCleanupStore) cleanupJobNeeded(ctx context.Context, identity domaincleanup.Identity, deletedAt time.Time) (bool, error) {

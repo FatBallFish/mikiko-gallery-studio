@@ -57,6 +57,9 @@ type ModelRoute func(*sql.Selector)
 // ObjectDeletionJob is the predicate function for objectdeletionjob builders.
 type ObjectDeletionJob func(*sql.Selector)
 
+// ObjectReconcileCheckpoint is the predicate function for objectreconcilecheckpoint builders.
+type ObjectReconcileCheckpoint func(*sql.Selector)
+
 // ObjectStorageConfig is the predicate function for objectstorageconfig builders.
 type ObjectStorageConfig func(*sql.Selector)
 

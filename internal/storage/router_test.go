@@ -47,6 +47,29 @@ func TestRegistryInvalidationSynchronizesDefaultAcrossInstances(t *testing.T) {
 	}
 }
 
+func TestRegistryEnumeratesEnabledAndDisabledReadableBackends(t *testing.T) {
+	source := &mutableConfigSource{defaultID: "current", records: map[string]domainstorageconfig.ResolvedConfig{
+		"current": localResolved("current", 1, t.TempDir()),
+		"history": localResolved("history", 3, t.TempDir()),
+	}}
+	history := source.records["history"]
+	history.Status, history.WriteEnabled, history.IsDefault = domainstorageconfig.StatusDisabled, false, false
+	source.records["history"] = history
+	registry := NewRegistry(source, time.Hour)
+
+	refs, err := registry.ReadableBackends(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]BackendRef{}
+	for _, ref := range refs {
+		seen[ref.ConfigID] = ref
+	}
+	if len(seen) != 2 || seen["current"].Namespace == "" || seen["history"].Namespace == "" {
+		t.Fatalf("readable backends=%#v", refs)
+	}
+}
+
 func TestRegistryTTLConvergesWithoutInvalidation(t *testing.T) {
 	now := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)
 	source := &mutableConfigSource{records: map[string]domainstorageconfig.ResolvedConfig{}}
@@ -590,4 +613,16 @@ func (s *mutableConfigSource) ResolveLegacyByDriver(context.Context, string) (do
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.records[s.defaultID], nil
+}
+
+func (s *mutableConfigSource) ListReadableConfigIDs(context.Context) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]string, 0, len(s.records))
+	for id, record := range s.records {
+		if record.Status != domainstorageconfig.StatusDeleted && record.ReadEnabled {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }

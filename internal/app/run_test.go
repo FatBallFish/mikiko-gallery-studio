@@ -600,6 +600,10 @@ func (s fixedStartupStorageSource) ResolveLegacyByDriver(context.Context, string
 	return s.resolved, s.err
 }
 
+func (s fixedStartupStorageSource) ListReadableConfigIDs(context.Context) ([]string, error) {
+	return []string{s.resolved.ID}, nil
+}
+
 type startupStorageProberFunc func(context.Context, domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult
 
 func (f startupStorageProberFunc) Probe(ctx context.Context, resolved domainstorageconfig.ResolvedConfig) domainstorageconfig.ProbeResult {

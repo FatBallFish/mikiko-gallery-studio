@@ -869,6 +869,35 @@ var (
 			},
 		},
 	}
+	// ObjectReconcileCheckpointsColumns holds the columns for the "object_reconcile_checkpoints" table.
+	ObjectReconcileCheckpointsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "storage_identity", Type: field.TypeString, Size: 255},
+		{Name: "namespace", Type: field.TypeString, Size: 80},
+		{Name: "prefix", Type: field.TypeString, Size: 64},
+		{Name: "cursor", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "generation", Type: field.TypeInt64, Default: 0},
+	}
+	// ObjectReconcileCheckpointsTable holds the schema information for the "object_reconcile_checkpoints" table.
+	ObjectReconcileCheckpointsTable = &schema.Table{
+		Name:       "object_reconcile_checkpoints",
+		Columns:    ObjectReconcileCheckpointsColumns,
+		PrimaryKey: []*schema.Column{ObjectReconcileCheckpointsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "objectreconcilecheckpoint_storage_identity_prefix",
+				Unique:  true,
+				Columns: []*schema.Column{ObjectReconcileCheckpointsColumns[3], ObjectReconcileCheckpointsColumns[5]},
+			},
+			{
+				Name:    "objectreconcilecheckpoint_generation_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{ObjectReconcileCheckpointsColumns[7], ObjectReconcileCheckpointsColumns[2]},
+			},
+		},
+	}
 	// ObjectStorageConfigsColumns holds the columns for the "object_storage_configs" table.
 	ObjectStorageConfigsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUUID},
@@ -2141,6 +2170,7 @@ var (
 		ModelProvidersTable,
 		ModelRoutesTable,
 		ObjectDeletionJobsTable,
+		ObjectReconcileCheckpointsTable,
 		ObjectStorageConfigsTable,
 		PaymentOrdersTable,
 		PaymentProviderInstancesTable,
@@ -2205,6 +2235,9 @@ func init() {
 	}
 	ModelRoutesTable.Annotation = &entsql.Annotation{
 		Table: "model_routes",
+	}
+	ObjectReconcileCheckpointsTable.Annotation = &entsql.Annotation{
+		Table: "object_reconcile_checkpoints",
 	}
 	ObjectStorageConfigsTable.Annotation = &entsql.Annotation{
 		Table: "object_storage_configs",

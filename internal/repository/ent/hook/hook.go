@@ -213,6 +213,18 @@ func (f ObjectDeletionJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ObjectDeletionJobMutation", m)
 }
 
+// The ObjectReconcileCheckpointFunc type is an adapter to allow the use of ordinary
+// function as ObjectReconcileCheckpoint mutator.
+type ObjectReconcileCheckpointFunc func(context.Context, *ent.ObjectReconcileCheckpointMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ObjectReconcileCheckpointFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ObjectReconcileCheckpointMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ObjectReconcileCheckpointMutation", m)
+}
+
 // The ObjectStorageConfigFunc type is an adapter to allow the use of ordinary
 // function as ObjectStorageConfig mutator.
 type ObjectStorageConfigFunc func(context.Context, *ent.ObjectStorageConfigMutation) (ent.Value, error)

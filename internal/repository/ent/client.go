@@ -33,6 +33,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
@@ -102,6 +103,8 @@ type Client struct {
 	ModelRoute *ModelRouteClient
 	// ObjectDeletionJob is the client for interacting with the ObjectDeletionJob builders.
 	ObjectDeletionJob *ObjectDeletionJobClient
+	// ObjectReconcileCheckpoint is the client for interacting with the ObjectReconcileCheckpoint builders.
+	ObjectReconcileCheckpoint *ObjectReconcileCheckpointClient
 	// ObjectStorageConfig is the client for interacting with the ObjectStorageConfig builders.
 	ObjectStorageConfig *ObjectStorageConfigClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -186,6 +189,7 @@ func (c *Client) init() {
 	c.ModelProvider = NewModelProviderClient(c.config)
 	c.ModelRoute = NewModelRouteClient(c.config)
 	c.ObjectDeletionJob = NewObjectDeletionJobClient(c.config)
+	c.ObjectReconcileCheckpoint = NewObjectReconcileCheckpointClient(c.config)
 	c.ObjectStorageConfig = NewObjectStorageConfigClient(c.config)
 	c.PaymentOrder = NewPaymentOrderClient(c.config)
 	c.PaymentProviderInstance = NewPaymentProviderInstanceClient(c.config)
@@ -323,6 +327,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
 		ObjectDeletionJob:           NewObjectDeletionJobClient(cfg),
+		ObjectReconcileCheckpoint:   NewObjectReconcileCheckpointClient(cfg),
 		ObjectStorageConfig:         NewObjectStorageConfigClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
@@ -387,6 +392,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
 		ObjectDeletionJob:           NewObjectDeletionJobClient(cfg),
+		ObjectReconcileCheckpoint:   NewObjectReconcileCheckpointClient(cfg),
 		ObjectStorageConfig:         NewObjectStorageConfigClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
@@ -447,15 +453,15 @@ func (c *Client) Use(hooks ...Hook) {
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
 		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask,
 		c.Installation, c.MigrationCheckpoint, c.ModelAccount, c.ModelAccountModel,
-		c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob, c.ObjectStorageConfig,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PaymentWebhookEvent,
-		c.PointLedger, c.Project, c.PromptOptimizationRun, c.ProviderErrorPolicy,
-		c.ProviderModel, c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode,
-		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
-		c.RouteModelPrice, c.RouteModelVisibilityGroup, c.SecureConfig,
-		c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User, c.UserGroup,
-		c.UserGroupMember, c.UserSubscription, c.WalletGrant,
-		c.WalletReservationAllocation,
+		c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
+		c.ObjectReconcileCheckpoint, c.ObjectStorageConfig, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
+		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
+		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
+		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
+		c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
 	}
@@ -468,15 +474,15 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
 		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask,
 		c.Installation, c.MigrationCheckpoint, c.ModelAccount, c.ModelAccountModel,
-		c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob, c.ObjectStorageConfig,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PaymentWebhookEvent,
-		c.PointLedger, c.Project, c.PromptOptimizationRun, c.ProviderErrorPolicy,
-		c.ProviderModel, c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode,
-		c.ReferenceAsset, c.RefreshSession, c.RouteModel, c.RouteModelCandidate,
-		c.RouteModelPrice, c.RouteModelVisibilityGroup, c.SecureConfig,
-		c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User, c.UserGroup,
-		c.UserGroupMember, c.UserSubscription, c.WalletGrant,
-		c.WalletReservationAllocation,
+		c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
+		c.ObjectReconcileCheckpoint, c.ObjectStorageConfig, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
+		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
+		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
+		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
+		c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -519,6 +525,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ModelRoute.mutate(ctx, m)
 	case *ObjectDeletionJobMutation:
 		return c.ObjectDeletionJob.mutate(ctx, m)
+	case *ObjectReconcileCheckpointMutation:
+		return c.ObjectReconcileCheckpoint.mutate(ctx, m)
 	case *ObjectStorageConfigMutation:
 		return c.ObjectStorageConfig.mutate(ctx, m)
 	case *PaymentOrderMutation:
@@ -2870,6 +2878,139 @@ func (c *ObjectDeletionJobClient) mutate(ctx context.Context, m *ObjectDeletionJ
 		return (&ObjectDeletionJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ObjectDeletionJob mutation op: %q", m.Op())
+	}
+}
+
+// ObjectReconcileCheckpointClient is a client for the ObjectReconcileCheckpoint schema.
+type ObjectReconcileCheckpointClient struct {
+	config
+}
+
+// NewObjectReconcileCheckpointClient returns a client for the ObjectReconcileCheckpoint from the given config.
+func NewObjectReconcileCheckpointClient(c config) *ObjectReconcileCheckpointClient {
+	return &ObjectReconcileCheckpointClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `objectreconcilecheckpoint.Hooks(f(g(h())))`.
+func (c *ObjectReconcileCheckpointClient) Use(hooks ...Hook) {
+	c.hooks.ObjectReconcileCheckpoint = append(c.hooks.ObjectReconcileCheckpoint, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `objectreconcilecheckpoint.Intercept(f(g(h())))`.
+func (c *ObjectReconcileCheckpointClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ObjectReconcileCheckpoint = append(c.inters.ObjectReconcileCheckpoint, interceptors...)
+}
+
+// Create returns a builder for creating a ObjectReconcileCheckpoint entity.
+func (c *ObjectReconcileCheckpointClient) Create() *ObjectReconcileCheckpointCreate {
+	mutation := newObjectReconcileCheckpointMutation(c.config, OpCreate)
+	return &ObjectReconcileCheckpointCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ObjectReconcileCheckpoint entities.
+func (c *ObjectReconcileCheckpointClient) CreateBulk(builders ...*ObjectReconcileCheckpointCreate) *ObjectReconcileCheckpointCreateBulk {
+	return &ObjectReconcileCheckpointCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ObjectReconcileCheckpointClient) MapCreateBulk(slice any, setFunc func(*ObjectReconcileCheckpointCreate, int)) *ObjectReconcileCheckpointCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ObjectReconcileCheckpointCreateBulk{err: fmt.Errorf("calling to ObjectReconcileCheckpointClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ObjectReconcileCheckpointCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ObjectReconcileCheckpointCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ObjectReconcileCheckpoint.
+func (c *ObjectReconcileCheckpointClient) Update() *ObjectReconcileCheckpointUpdate {
+	mutation := newObjectReconcileCheckpointMutation(c.config, OpUpdate)
+	return &ObjectReconcileCheckpointUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ObjectReconcileCheckpointClient) UpdateOne(_m *ObjectReconcileCheckpoint) *ObjectReconcileCheckpointUpdateOne {
+	mutation := newObjectReconcileCheckpointMutation(c.config, OpUpdateOne, withObjectReconcileCheckpoint(_m))
+	return &ObjectReconcileCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ObjectReconcileCheckpointClient) UpdateOneID(id uuid.UUID) *ObjectReconcileCheckpointUpdateOne {
+	mutation := newObjectReconcileCheckpointMutation(c.config, OpUpdateOne, withObjectReconcileCheckpointID(id))
+	return &ObjectReconcileCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ObjectReconcileCheckpoint.
+func (c *ObjectReconcileCheckpointClient) Delete() *ObjectReconcileCheckpointDelete {
+	mutation := newObjectReconcileCheckpointMutation(c.config, OpDelete)
+	return &ObjectReconcileCheckpointDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ObjectReconcileCheckpointClient) DeleteOne(_m *ObjectReconcileCheckpoint) *ObjectReconcileCheckpointDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ObjectReconcileCheckpointClient) DeleteOneID(id uuid.UUID) *ObjectReconcileCheckpointDeleteOne {
+	builder := c.Delete().Where(objectreconcilecheckpoint.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ObjectReconcileCheckpointDeleteOne{builder}
+}
+
+// Query returns a query builder for ObjectReconcileCheckpoint.
+func (c *ObjectReconcileCheckpointClient) Query() *ObjectReconcileCheckpointQuery {
+	return &ObjectReconcileCheckpointQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeObjectReconcileCheckpoint},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ObjectReconcileCheckpoint entity by its id.
+func (c *ObjectReconcileCheckpointClient) Get(ctx context.Context, id uuid.UUID) (*ObjectReconcileCheckpoint, error) {
+	return c.Query().Where(objectreconcilecheckpoint.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ObjectReconcileCheckpointClient) GetX(ctx context.Context, id uuid.UUID) *ObjectReconcileCheckpoint {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ObjectReconcileCheckpointClient) Hooks() []Hook {
+	return c.hooks.ObjectReconcileCheckpoint
+}
+
+// Interceptors returns the client interceptors.
+func (c *ObjectReconcileCheckpointClient) Interceptors() []Interceptor {
+	return c.inters.ObjectReconcileCheckpoint
+}
+
+func (c *ObjectReconcileCheckpointClient) mutate(ctx context.Context, m *ObjectReconcileCheckpointMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ObjectReconcileCheckpointCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ObjectReconcileCheckpointUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ObjectReconcileCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ObjectReconcileCheckpointDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ObjectReconcileCheckpoint mutation op: %q", m.Op())
 	}
 }
 
@@ -6635,9 +6776,9 @@ type (
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
 		ClusterNode, ClusterToken, ConfigItem, ImageResult, ImageTask, Installation,
 		MigrationCheckpoint, ModelAccount, ModelAccountModel, ModelProvider,
-		ModelRoute, ObjectDeletionJob, ObjectStorageConfig, PaymentOrder,
-		PaymentProviderInstance, PaymentWebhookEvent, PointLedger, Project,
-		PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
+		ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint, ObjectStorageConfig,
+		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
+		Project, PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
 		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
 		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
 		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
@@ -6648,9 +6789,9 @@ type (
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
 		ClusterNode, ClusterToken, ConfigItem, ImageResult, ImageTask, Installation,
 		MigrationCheckpoint, ModelAccount, ModelAccountModel, ModelProvider,
-		ModelRoute, ObjectDeletionJob, ObjectStorageConfig, PaymentOrder,
-		PaymentProviderInstance, PaymentWebhookEvent, PointLedger, Project,
-		PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
+		ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint, ObjectStorageConfig,
+		PaymentOrder, PaymentProviderInstance, PaymentWebhookEvent, PointLedger,
+		Project, PromptOptimizationRun, ProviderErrorPolicy, ProviderModel,
 		PublicImageInteraction, PublicImageStat, RedeemCode, ReferenceAsset,
 		RefreshSession, RouteModel, RouteModelCandidate, RouteModelPrice,
 		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,

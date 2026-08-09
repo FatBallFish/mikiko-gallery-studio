@@ -28,6 +28,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
@@ -86,6 +87,7 @@ const (
 	TypeModelProvider               = "ModelProvider"
 	TypeModelRoute                  = "ModelRoute"
 	TypeObjectDeletionJob           = "ObjectDeletionJob"
+	TypeObjectReconcileCheckpoint   = "ObjectReconcileCheckpoint"
 	TypeObjectStorageConfig         = "ObjectStorageConfig"
 	TypePaymentOrder                = "PaymentOrder"
 	TypePaymentProviderInstance     = "PaymentProviderInstance"
@@ -23181,6 +23183,698 @@ func (m *ObjectDeletionJobMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ObjectDeletionJobMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown ObjectDeletionJob edge %s", name)
+}
+
+// ObjectReconcileCheckpointMutation represents an operation that mutates the ObjectReconcileCheckpoint nodes in the graph.
+type ObjectReconcileCheckpointMutation struct {
+	config
+	op               Op
+	typ              string
+	id               *uuid.UUID
+	created_at       *time.Time
+	updated_at       *time.Time
+	storage_identity *string
+	namespace        *string
+	prefix           *string
+	cursor           *string
+	generation       *int64
+	addgeneration    *int64
+	clearedFields    map[string]struct{}
+	done             bool
+	oldValue         func(context.Context) (*ObjectReconcileCheckpoint, error)
+	predicates       []predicate.ObjectReconcileCheckpoint
+}
+
+var _ ent.Mutation = (*ObjectReconcileCheckpointMutation)(nil)
+
+// objectreconcilecheckpointOption allows management of the mutation configuration using functional options.
+type objectreconcilecheckpointOption func(*ObjectReconcileCheckpointMutation)
+
+// newObjectReconcileCheckpointMutation creates new mutation for the ObjectReconcileCheckpoint entity.
+func newObjectReconcileCheckpointMutation(c config, op Op, opts ...objectreconcilecheckpointOption) *ObjectReconcileCheckpointMutation {
+	m := &ObjectReconcileCheckpointMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeObjectReconcileCheckpoint,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withObjectReconcileCheckpointID sets the ID field of the mutation.
+func withObjectReconcileCheckpointID(id uuid.UUID) objectreconcilecheckpointOption {
+	return func(m *ObjectReconcileCheckpointMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ObjectReconcileCheckpoint
+		)
+		m.oldValue = func(ctx context.Context) (*ObjectReconcileCheckpoint, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ObjectReconcileCheckpoint.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withObjectReconcileCheckpoint sets the old ObjectReconcileCheckpoint of the mutation.
+func withObjectReconcileCheckpoint(node *ObjectReconcileCheckpoint) objectreconcilecheckpointOption {
+	return func(m *ObjectReconcileCheckpointMutation) {
+		m.oldValue = func(context.Context) (*ObjectReconcileCheckpoint, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ObjectReconcileCheckpointMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ObjectReconcileCheckpointMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of ObjectReconcileCheckpoint entities.
+func (m *ObjectReconcileCheckpointMutation) SetID(id uuid.UUID) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ObjectReconcileCheckpointMutation) ID() (id uuid.UUID, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ObjectReconcileCheckpointMutation) IDs(ctx context.Context) ([]uuid.UUID, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []uuid.UUID{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ObjectReconcileCheckpoint.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ObjectReconcileCheckpointMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ObjectReconcileCheckpointMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ObjectReconcileCheckpoint entity.
+// If the ObjectReconcileCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectReconcileCheckpointMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ObjectReconcileCheckpointMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *ObjectReconcileCheckpointMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *ObjectReconcileCheckpointMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the ObjectReconcileCheckpoint entity.
+// If the ObjectReconcileCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectReconcileCheckpointMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *ObjectReconcileCheckpointMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetStorageIdentity sets the "storage_identity" field.
+func (m *ObjectReconcileCheckpointMutation) SetStorageIdentity(s string) {
+	m.storage_identity = &s
+}
+
+// StorageIdentity returns the value of the "storage_identity" field in the mutation.
+func (m *ObjectReconcileCheckpointMutation) StorageIdentity() (r string, exists bool) {
+	v := m.storage_identity
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStorageIdentity returns the old "storage_identity" field's value of the ObjectReconcileCheckpoint entity.
+// If the ObjectReconcileCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectReconcileCheckpointMutation) OldStorageIdentity(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStorageIdentity is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStorageIdentity requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStorageIdentity: %w", err)
+	}
+	return oldValue.StorageIdentity, nil
+}
+
+// ResetStorageIdentity resets all changes to the "storage_identity" field.
+func (m *ObjectReconcileCheckpointMutation) ResetStorageIdentity() {
+	m.storage_identity = nil
+}
+
+// SetNamespace sets the "namespace" field.
+func (m *ObjectReconcileCheckpointMutation) SetNamespace(s string) {
+	m.namespace = &s
+}
+
+// Namespace returns the value of the "namespace" field in the mutation.
+func (m *ObjectReconcileCheckpointMutation) Namespace() (r string, exists bool) {
+	v := m.namespace
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNamespace returns the old "namespace" field's value of the ObjectReconcileCheckpoint entity.
+// If the ObjectReconcileCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectReconcileCheckpointMutation) OldNamespace(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNamespace is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNamespace requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNamespace: %w", err)
+	}
+	return oldValue.Namespace, nil
+}
+
+// ResetNamespace resets all changes to the "namespace" field.
+func (m *ObjectReconcileCheckpointMutation) ResetNamespace() {
+	m.namespace = nil
+}
+
+// SetPrefix sets the "prefix" field.
+func (m *ObjectReconcileCheckpointMutation) SetPrefix(s string) {
+	m.prefix = &s
+}
+
+// Prefix returns the value of the "prefix" field in the mutation.
+func (m *ObjectReconcileCheckpointMutation) Prefix() (r string, exists bool) {
+	v := m.prefix
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPrefix returns the old "prefix" field's value of the ObjectReconcileCheckpoint entity.
+// If the ObjectReconcileCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectReconcileCheckpointMutation) OldPrefix(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPrefix is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPrefix requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPrefix: %w", err)
+	}
+	return oldValue.Prefix, nil
+}
+
+// ResetPrefix resets all changes to the "prefix" field.
+func (m *ObjectReconcileCheckpointMutation) ResetPrefix() {
+	m.prefix = nil
+}
+
+// SetCursor sets the "cursor" field.
+func (m *ObjectReconcileCheckpointMutation) SetCursor(s string) {
+	m.cursor = &s
+}
+
+// Cursor returns the value of the "cursor" field in the mutation.
+func (m *ObjectReconcileCheckpointMutation) Cursor() (r string, exists bool) {
+	v := m.cursor
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCursor returns the old "cursor" field's value of the ObjectReconcileCheckpoint entity.
+// If the ObjectReconcileCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectReconcileCheckpointMutation) OldCursor(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCursor is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCursor requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCursor: %w", err)
+	}
+	return oldValue.Cursor, nil
+}
+
+// ResetCursor resets all changes to the "cursor" field.
+func (m *ObjectReconcileCheckpointMutation) ResetCursor() {
+	m.cursor = nil
+}
+
+// SetGeneration sets the "generation" field.
+func (m *ObjectReconcileCheckpointMutation) SetGeneration(i int64) {
+	m.generation = &i
+	m.addgeneration = nil
+}
+
+// Generation returns the value of the "generation" field in the mutation.
+func (m *ObjectReconcileCheckpointMutation) Generation() (r int64, exists bool) {
+	v := m.generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGeneration returns the old "generation" field's value of the ObjectReconcileCheckpoint entity.
+// If the ObjectReconcileCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ObjectReconcileCheckpointMutation) OldGeneration(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGeneration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGeneration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGeneration: %w", err)
+	}
+	return oldValue.Generation, nil
+}
+
+// AddGeneration adds i to the "generation" field.
+func (m *ObjectReconcileCheckpointMutation) AddGeneration(i int64) {
+	if m.addgeneration != nil {
+		*m.addgeneration += i
+	} else {
+		m.addgeneration = &i
+	}
+}
+
+// AddedGeneration returns the value that was added to the "generation" field in this mutation.
+func (m *ObjectReconcileCheckpointMutation) AddedGeneration() (r int64, exists bool) {
+	v := m.addgeneration
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetGeneration resets all changes to the "generation" field.
+func (m *ObjectReconcileCheckpointMutation) ResetGeneration() {
+	m.generation = nil
+	m.addgeneration = nil
+}
+
+// Where appends a list predicates to the ObjectReconcileCheckpointMutation builder.
+func (m *ObjectReconcileCheckpointMutation) Where(ps ...predicate.ObjectReconcileCheckpoint) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ObjectReconcileCheckpointMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ObjectReconcileCheckpointMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ObjectReconcileCheckpoint, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ObjectReconcileCheckpointMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ObjectReconcileCheckpointMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ObjectReconcileCheckpoint).
+func (m *ObjectReconcileCheckpointMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ObjectReconcileCheckpointMutation) Fields() []string {
+	fields := make([]string, 0, 7)
+	if m.created_at != nil {
+		fields = append(fields, objectreconcilecheckpoint.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, objectreconcilecheckpoint.FieldUpdatedAt)
+	}
+	if m.storage_identity != nil {
+		fields = append(fields, objectreconcilecheckpoint.FieldStorageIdentity)
+	}
+	if m.namespace != nil {
+		fields = append(fields, objectreconcilecheckpoint.FieldNamespace)
+	}
+	if m.prefix != nil {
+		fields = append(fields, objectreconcilecheckpoint.FieldPrefix)
+	}
+	if m.cursor != nil {
+		fields = append(fields, objectreconcilecheckpoint.FieldCursor)
+	}
+	if m.generation != nil {
+		fields = append(fields, objectreconcilecheckpoint.FieldGeneration)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ObjectReconcileCheckpointMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case objectreconcilecheckpoint.FieldCreatedAt:
+		return m.CreatedAt()
+	case objectreconcilecheckpoint.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case objectreconcilecheckpoint.FieldStorageIdentity:
+		return m.StorageIdentity()
+	case objectreconcilecheckpoint.FieldNamespace:
+		return m.Namespace()
+	case objectreconcilecheckpoint.FieldPrefix:
+		return m.Prefix()
+	case objectreconcilecheckpoint.FieldCursor:
+		return m.Cursor()
+	case objectreconcilecheckpoint.FieldGeneration:
+		return m.Generation()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ObjectReconcileCheckpointMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case objectreconcilecheckpoint.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case objectreconcilecheckpoint.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case objectreconcilecheckpoint.FieldStorageIdentity:
+		return m.OldStorageIdentity(ctx)
+	case objectreconcilecheckpoint.FieldNamespace:
+		return m.OldNamespace(ctx)
+	case objectreconcilecheckpoint.FieldPrefix:
+		return m.OldPrefix(ctx)
+	case objectreconcilecheckpoint.FieldCursor:
+		return m.OldCursor(ctx)
+	case objectreconcilecheckpoint.FieldGeneration:
+		return m.OldGeneration(ctx)
+	}
+	return nil, fmt.Errorf("unknown ObjectReconcileCheckpoint field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ObjectReconcileCheckpointMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case objectreconcilecheckpoint.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case objectreconcilecheckpoint.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case objectreconcilecheckpoint.FieldStorageIdentity:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStorageIdentity(v)
+		return nil
+	case objectreconcilecheckpoint.FieldNamespace:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNamespace(v)
+		return nil
+	case objectreconcilecheckpoint.FieldPrefix:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPrefix(v)
+		return nil
+	case objectreconcilecheckpoint.FieldCursor:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCursor(v)
+		return nil
+	case objectreconcilecheckpoint.FieldGeneration:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGeneration(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ObjectReconcileCheckpoint field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ObjectReconcileCheckpointMutation) AddedFields() []string {
+	var fields []string
+	if m.addgeneration != nil {
+		fields = append(fields, objectreconcilecheckpoint.FieldGeneration)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ObjectReconcileCheckpointMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case objectreconcilecheckpoint.FieldGeneration:
+		return m.AddedGeneration()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ObjectReconcileCheckpointMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case objectreconcilecheckpoint.FieldGeneration:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGeneration(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ObjectReconcileCheckpoint numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ObjectReconcileCheckpointMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ObjectReconcileCheckpointMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ObjectReconcileCheckpointMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown ObjectReconcileCheckpoint nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ObjectReconcileCheckpointMutation) ResetField(name string) error {
+	switch name {
+	case objectreconcilecheckpoint.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case objectreconcilecheckpoint.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case objectreconcilecheckpoint.FieldStorageIdentity:
+		m.ResetStorageIdentity()
+		return nil
+	case objectreconcilecheckpoint.FieldNamespace:
+		m.ResetNamespace()
+		return nil
+	case objectreconcilecheckpoint.FieldPrefix:
+		m.ResetPrefix()
+		return nil
+	case objectreconcilecheckpoint.FieldCursor:
+		m.ResetCursor()
+		return nil
+	case objectreconcilecheckpoint.FieldGeneration:
+		m.ResetGeneration()
+		return nil
+	}
+	return fmt.Errorf("unknown ObjectReconcileCheckpoint field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ObjectReconcileCheckpointMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ObjectReconcileCheckpointMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ObjectReconcileCheckpointMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ObjectReconcileCheckpointMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ObjectReconcileCheckpointMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ObjectReconcileCheckpointMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ObjectReconcileCheckpointMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown ObjectReconcileCheckpoint unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ObjectReconcileCheckpointMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown ObjectReconcileCheckpoint edge %s", name)
 }
 
 // ObjectStorageConfigMutation represents an operation that mutates the ObjectStorageConfig nodes in the graph.

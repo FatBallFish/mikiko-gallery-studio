@@ -35,6 +35,7 @@ func TestCoreSchemaFilesExist(t *testing.T) {
 		"imageresult.go",
 		"project.go",
 		"objectdeletionjob.go",
+		"objectreconcilecheckpoint.go",
 		"auditlog.go",
 		"textmodelaccount.go",
 		"textmodel.go",
@@ -314,6 +315,25 @@ func TestObjectDeletionJobSchemaDeduplicatesLiveObjectIdentity(t *testing.T) {
 	liveStates := "state IN ('pending', 'running', 'retry')"
 	assertPartialUniqueIndex(t, ObjectDeletionJob{}.Indexes(), []string{"storage_config_id", "object_key"}, "storage_config_id IS NOT NULL", liveStates)
 	assertPartialUniqueIndex(t, ObjectDeletionJob{}.Indexes(), []string{"storage_driver", "bucket", "object_key"}, "storage_config_id IS NULL", liveStates)
+}
+
+func TestObjectReconcileCheckpointSchemaPersistsRestartProgress(t *testing.T) {
+	fields := schemaFieldDescriptors(ObjectReconcileCheckpoint{}.Fields())
+	for _, name := range []string{"storage_identity", "namespace", "prefix", "cursor", "generation"} {
+		requireSchemaField(t, fields, name)
+	}
+	if defaultValue, ok := fields["cursor"].Default.(string); !ok || defaultValue != "" {
+		t.Fatalf("object reconcile cursor default = %#v, want empty", fields["cursor"].Default)
+	}
+	if defaultValue, ok := fields["generation"].Default.(int64); !ok || defaultValue != 0 {
+		t.Fatalf("object reconcile generation default = %#v, want int64(0)", fields["generation"].Default)
+	}
+	if !hasIndexFields(ObjectReconcileCheckpoint{}.Indexes(), []string{"storage_identity", "prefix"}, true) {
+		t.Fatal("object reconcile checkpoints must uniquely index storage identity and owned prefix")
+	}
+	if !hasIndexFields(ObjectReconcileCheckpoint{}.Indexes(), []string{"generation", "updated_at"}, false) {
+		t.Fatal("object reconcile checkpoints must index generation and update time for fair scheduling")
+	}
 }
 
 func TestPaymentProviderInstanceSchemaCarriesCashierContract(t *testing.T) {

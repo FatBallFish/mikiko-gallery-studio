@@ -3,10 +3,12 @@ package storageconfig
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 func TestStorageConfigRequiresProbeBeforeBecomingDefault(t *testing.T) {
@@ -124,7 +126,7 @@ func TestStorageConfigRejectsMaskedSecretPlaceholder(t *testing.T) {
 	}
 }
 
-func TestStorageConfigBackendUpdateInvalidatesProbeAndRequiresReprobe(t *testing.T) {
+func TestStorageConfigNamespaceIsImmutableAfterCreation(t *testing.T) {
 	svc := NewService(newMemoryStore(), "test-key", config.StorageConfig{Driver: "local"}, "local")
 	created, err := svc.Create(context.Background(), domainstorageconfig.WriteRequest{Code: "local-next", Name: "Local", Driver: "local", Provider: "local", Status: "enabled", ReadEnabled: true, WriteEnabled: true, LocalRoot: "/first"})
 	if err != nil {
@@ -134,15 +136,54 @@ func TestStorageConfigBackendUpdateInvalidatesProbeAndRequiresReprobe(t *testing
 	if err != nil {
 		t.Fatalf("UpdateProbe: %v", err)
 	}
-	updated, err := svc.Update(context.Background(), domainstorageconfig.WriteRequest{ID: created.ID, Version: probed.Version, Code: created.Code, Name: created.Name, Driver: "local", Provider: "local", Status: "enabled", ReadEnabled: true, WriteEnabled: true, LocalRoot: "/second"})
+	_, err = svc.Update(context.Background(), domainstorageconfig.WriteRequest{ID: created.ID, Version: probed.Version, Code: created.Code, Name: created.Name, Driver: "local", Provider: "local", Status: "enabled", ReadEnabled: true, WriteEnabled: true, LocalRoot: "/second"})
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.StatusCode != http.StatusConflict || appErr.Code != errs.CodeStorageNamespaceImmutable {
+		t.Fatalf("Update namespace error=%#v, want typed immutable conflict", err)
+	}
+}
+
+func TestStorageConfigCredentialRotationDoesNotChangeNamespace(t *testing.T) {
+	svc := NewService(newMemoryStore(), "test-key", config.StorageConfig{Driver: "local"}, "local")
+	created, err := svc.Create(context.Background(), domainstorageconfig.WriteRequest{
+		Code: "s3-next", Name: "S3", Driver: "s3", Provider: "custom_s3", Status: "enabled", ReadEnabled: true, WriteEnabled: true,
+		Endpoint: "https://s3.example.com", Region: "us-east-1", Bucket: "images", Prefix: "prod", Secrets: map[string]string{"access_key_id": "old-ak", "secret_access_key": "old-sk"},
+	})
 	if err != nil {
-		t.Fatalf("Update: %v", err)
+		t.Fatalf("Create: %v", err)
 	}
-	if updated.LastProbe.Status != domainstorageconfig.ProbeStatusNever || updated.LastProbe.CheckedAt != nil {
-		t.Fatalf("backend change must invalidate probe: %#v", updated.LastProbe)
+	probed, err := svc.UpdateProbe(context.Background(), created.ID, domainstorageconfig.ProbeResult{Status: "success", Message: "ok"}, 1)
+	if err != nil {
+		t.Fatalf("UpdateProbe: %v", err)
 	}
-	if _, err := svc.SetDefault(context.Background(), domainstorageconfig.SetDefaultRequest{ID: updated.ID, Version: updated.Version}); err == nil {
-		t.Fatal("updated backend must be reprobed before becoming default")
+	updated, err := svc.Update(context.Background(), domainstorageconfig.WriteRequest{
+		ID: created.ID, Version: probed.Version, Code: created.Code, Name: "Renamed", Driver: created.Driver, Provider: created.Provider,
+		Status: created.Status, ReadEnabled: created.ReadEnabled, WriteEnabled: created.WriteEnabled, Endpoint: created.Endpoint, Region: created.Region,
+		Bucket: created.Bucket, Prefix: created.Prefix, Secrets: map[string]string{"access_key_id": "new-ak", "secret_access_key": "new-sk"},
+	})
+	if err != nil {
+		t.Fatalf("credential rotation: %v", err)
+	}
+	if updated.SecretStatus.Fingerprint == created.SecretStatus.Fingerprint || updated.LastProbe.Status != domainstorageconfig.ProbeStatusSuccess {
+		t.Fatalf("credential rotation updated=%#v created=%#v", updated, created)
+	}
+}
+
+func TestListReadableConfigIDsIncludesDisabledHistoricalStorage(t *testing.T) {
+	store := newMemoryStore()
+	store.records = map[string]domainstorageconfig.ConfigRecord{
+		"current": {ID: "current", Status: domainstorageconfig.StatusEnabled, ReadEnabled: true},
+		"history": {ID: "history", Status: domainstorageconfig.StatusDisabled, ReadEnabled: true},
+		"closed":  {ID: "closed", Status: domainstorageconfig.StatusDisabled, ReadEnabled: false},
+		"deleted": {ID: "deleted", Status: domainstorageconfig.StatusDeleted, ReadEnabled: true},
+	}
+	svc := NewService(store, "test-key", config.StorageConfig{Driver: "local"}, "local")
+	ids, err := svc.ListReadableConfigIDs(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || ids[0] != "current" || ids[1] != "history" {
+		t.Fatalf("readable IDs=%v", ids)
 	}
 }
 

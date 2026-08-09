@@ -3057,6 +3057,14 @@ func (r *switchingImageRouter) BackendFor(_ context.Context, configID string, _ 
 	return r.refs[configID], nil
 }
 
+func (r *switchingImageRouter) ReadableBackends(context.Context) ([]storage.BackendRef, error) {
+	refs := make([]storage.BackendRef, 0, len(r.refs))
+	for _, ref := range r.refs {
+		refs = append(refs, ref)
+	}
+	return refs, nil
+}
+
 func TestCreateTaskQueuesResolvedTask(t *testing.T) {
 	cfg := taskTestConfig()
 	store := imagetask.NewMemoryStore()

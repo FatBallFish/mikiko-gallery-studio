@@ -256,6 +256,73 @@ func TestReconcileScansOnlyOwnedPrefixesWithPaginationGraceAndRestart(t *testing
 	}
 }
 
+func TestReconcileScansHistoricalReadableStorageAfterDefaultSwitch(t *testing.T) {
+	now := time.Date(2026, 8, 9, 5, 0, 0, 0, time.UTC)
+	objectKey := "generated-images/7/shared.png"
+	oldBackend := &listingCleanupBackend{pages: map[string]map[string]storage.ObjectPage{
+		"generated-images/": {"": {Objects: []storage.ObjectInfo{{ObjectKey: objectKey, ModifiedAt: now.Add(-2 * time.Hour)}}}},
+		"reference-assets/": {"": {}},
+	}}
+	newBackend := &listingCleanupBackend{pages: map[string]map[string]storage.ObjectPage{
+		"generated-images/": {"": {Objects: []storage.ObjectInfo{{ObjectKey: objectKey, ModifiedAt: now.Add(-2 * time.Hour)}}}},
+		"reference-assets/": {"": {}},
+	}}
+	oldRef := storage.BackendRef{ConfigID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Driver: "local", Namespace: "old", Backend: oldBackend}
+	newRef := storage.BackendRef{ConfigID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", Driver: "local", Namespace: "new", Backend: newBackend}
+	router := &multiCleanupRouter{defaultRef: newRef, refs: []storage.BackendRef{oldRef, newRef}}
+	store := NewMemoryStore()
+	store.SetNow(func() time.Time { return now })
+	store.AddLiveReference(Identity{StorageConfigID: newRef.ConfigID, StorageDriver: "local", ObjectKey: objectKey}, "result:new")
+	processor := NewProcessor(store, router, ProcessorOptions{Now: func() time.Time { return now }, OrphanGracePeriod: time.Hour, ObjectListPageSize: 10})
+
+	if _, err := processor.Reconcile(t.Context(), 4); err != nil {
+		t.Fatal(err)
+	}
+	jobs := store.Jobs()
+	if len(jobs) != 1 || jobs[0].Identity.StorageConfigID != oldRef.ConfigID {
+		t.Fatalf("cleanup jobs=%#v", jobs)
+	}
+	if processed, err := processor.ProcessOnce(t.Context()); err != nil || !processed {
+		t.Fatalf("ProcessOnce()=%v err=%v", processed, err)
+	}
+	if oldBackend.deleteCalls != 1 || newBackend.deleteCalls != 0 {
+		t.Fatalf("delete calls old=%d new=%d", oldBackend.deleteCalls, newBackend.deleteCalls)
+	}
+}
+
+func TestReconcilePersistsObjectCursorAcrossProcessorRestart(t *testing.T) {
+	now := time.Date(2026, 8, 9, 6, 0, 0, 0, time.UTC)
+	liveKey := "generated-images/7/live-first.png"
+	orphanKey := "generated-images/7/orphan-second.png"
+	backend := &listingCleanupBackend{pages: map[string]map[string]storage.ObjectPage{
+		"generated-images/": {
+			"":          {Objects: []storage.ObjectInfo{{ObjectKey: liveKey, ModifiedAt: now.Add(-2 * time.Hour)}}, NextCursor: "next-page"},
+			"next-page": {Objects: []storage.ObjectInfo{{ObjectKey: orphanKey, ModifiedAt: now.Add(-2 * time.Hour)}}, NextCursor: ""},
+		},
+		"reference-assets/": {"": {}},
+	}}
+	ref := storage.BackendRef{ConfigID: "cccccccc-cccc-cccc-cccc-cccccccccccc", Driver: "local", Namespace: "stable-c", Backend: backend}
+	store := NewMemoryStore()
+	store.SetNow(func() time.Time { return now })
+	store.AddLiveReference(Identity{StorageConfigID: ref.ConfigID, StorageDriver: ref.Driver, ObjectKey: liveKey}, "result:live")
+	options := ProcessorOptions{Now: func() time.Time { return now }, OrphanGracePeriod: time.Hour, ObjectListPageSize: 1}
+
+	if _, err := NewProcessor(store, &multiCleanupRouter{defaultRef: ref, refs: []storage.BackendRef{ref}}, options).Reconcile(t.Context(), 2); err != nil {
+		t.Fatal(err)
+	}
+	restarted := NewProcessor(store, &multiCleanupRouter{defaultRef: ref, refs: []storage.BackendRef{ref}}, options)
+	if _, err := restarted.Reconcile(t.Context(), 2); err != nil {
+		t.Fatal(err)
+	}
+	jobs := store.Jobs()
+	if len(jobs) != 1 || jobs[0].Identity.ObjectKey != orphanKey {
+		t.Fatalf("restart jobs=%#v cursor calls=%v", jobs, backend.cursors)
+	}
+	if len(backend.cursors) < 3 || backend.cursors[2] != "next-page" {
+		t.Fatalf("restart did not continue persisted cursor: %v", backend.cursors)
+	}
+}
+
 type cleanupBackend struct {
 	mu          sync.Mutex
 	deleteCalls int
@@ -266,10 +333,34 @@ type listingCleanupBackend struct {
 	cleanupBackend
 	pages    map[string]map[string]storage.ObjectPage
 	prefixes []string
+	cursors  []string
+}
+
+type multiCleanupRouter struct {
+	defaultRef storage.BackendRef
+	refs       []storage.BackendRef
+}
+
+func (r *multiCleanupRouter) DefaultWriter(context.Context) (storage.BackendRef, error) {
+	return r.defaultRef, nil
+}
+
+func (r *multiCleanupRouter) BackendFor(_ context.Context, configID, _ string) (storage.BackendRef, error) {
+	for _, ref := range r.refs {
+		if ref.ConfigID == configID {
+			return ref, nil
+		}
+	}
+	return storage.BackendRef{}, storage.ErrStorageUnreadable
+}
+
+func (r *multiCleanupRouter) ReadableBackends(context.Context) ([]storage.BackendRef, error) {
+	return append([]storage.BackendRef(nil), r.refs...), nil
 }
 
 func (b *listingCleanupBackend) ListObjects(_ context.Context, prefix, cursor string, _ int) (storage.ObjectPage, error) {
 	b.prefixes = append(b.prefixes, prefix)
+	b.cursors = append(b.cursors, cursor)
 	return b.pages[prefix][cursor], nil
 }
 

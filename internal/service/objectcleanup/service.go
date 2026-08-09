@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,8 @@ type Store interface {
 	MarkRetry(context.Context, string, time.Time, string, string) error
 	HasLiveReferences(context.Context, Identity) (bool, error)
 	Reconcile(context.Context, int) (int, error)
+	GetReconcileCheckpoint(context.Context, string, string) (domaincleanup.ReconcileCheckpoint, bool, error)
+	SaveReconcileCheckpoint(context.Context, domaincleanup.ReconcileCheckpoint, time.Time) (bool, error)
 }
 
 type ProcessorOptions struct {
@@ -53,8 +56,6 @@ type Processor struct {
 	orphanGracePeriod  time.Duration
 	objectListPageSize int
 	reconcileMu        sync.Mutex
-	objectCursors      map[string]string
-	nextObjectPrefix   int
 }
 
 var ownedObjectPrefixes = []string{"generated-images/", "reference-assets/"}
@@ -81,7 +82,6 @@ func NewProcessor(store Store, router storage.Router, options ProcessorOptions) 
 		store: store, router: router, now: options.Now, jitter: options.Jitter,
 		orphanGracePeriod:  options.OrphanGracePeriod,
 		objectListPageSize: options.ObjectListPageSize,
-		objectCursors:      make(map[string]string, len(ownedObjectPrefixes)),
 	}
 }
 
@@ -114,44 +114,86 @@ func (p *Processor) Reconcile(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	writer, err := p.router.DefaultWriter(ctx)
+	refs, err := p.router.ReadableBackends(ctx)
 	if err != nil {
-		slog.Debug("object cleanup storage reconciliation skipped", "error_code", "default_writer_unavailable")
-		return count, nil
+		return count, fmt.Errorf("list readable storage backends: %w", err)
 	}
-	lister, ok := writer.Backend.(storage.ObjectLister)
-	if !ok {
-		slog.Debug("object cleanup storage reconciliation skipped", "error_code", "listing_unsupported", "storage_driver", writer.Driver)
+	if len(refs) == 0 {
+		slog.Debug("object cleanup storage reconciliation skipped", "error_code", "readable_storage_unavailable")
 		return count, nil
 	}
 	p.reconcileMu.Lock()
 	defer p.reconcileMu.Unlock()
-	start := p.nextObjectPrefix % len(ownedObjectPrefixes)
-	base, extra := limit/len(ownedObjectPrefixes), limit%len(ownedObjectPrefixes)
-	for offset := range len(ownedObjectPrefixes) {
+	targets := make([]objectReconcileTarget, 0, len(refs)*len(ownedObjectPrefixes))
+	for _, ref := range refs {
+		lister, ok := ref.Backend.(storage.ObjectLister)
+		if !ok {
+			slog.Debug("object cleanup storage reconciliation skipped", "error_code", "listing_unsupported", "config_id", ref.ConfigID, "storage_driver", ref.Driver)
+			continue
+		}
+		storageIdentity := reconcileStorageIdentity(ref)
+		for _, prefix := range ownedObjectPrefixes {
+			checkpoint, ok, err := p.store.GetReconcileCheckpoint(ctx, storageIdentity, prefix)
+			if err != nil {
+				return count, err
+			}
+			if !ok {
+				checkpoint = domaincleanup.ReconcileCheckpoint{StorageIdentity: storageIdentity, Namespace: ref.Namespace, Prefix: prefix}
+			} else if checkpoint.Namespace != ref.Namespace {
+				checkpoint.Namespace, checkpoint.Cursor = ref.Namespace, ""
+				checkpoint.Generation++
+			}
+			targets = append(targets, objectReconcileTarget{ref: ref, lister: lister, checkpoint: checkpoint})
+		}
+	}
+	if len(targets) == 0 {
+		return count, nil
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		left, right := targets[i].checkpoint, targets[j].checkpoint
+		if left.Generation != right.Generation {
+			return left.Generation < right.Generation
+		}
+		if !left.UpdatedAt.Equal(right.UpdatedAt) {
+			return left.UpdatedAt.Before(right.UpdatedAt)
+		}
+		if left.StorageIdentity != right.StorageIdentity {
+			return left.StorageIdentity < right.StorageIdentity
+		}
+		return left.Prefix < right.Prefix
+	})
+	base, extra := limit/len(targets), limit%len(targets)
+	for index, target := range targets {
 		quota := base
-		if offset < extra {
+		if index < extra {
 			quota++
 		}
 		if quota == 0 {
 			continue
 		}
-		prefix := ownedObjectPrefixes[(start+offset)%len(ownedObjectPrefixes)]
-		scanned, enqueued, nextCursor, err := p.reconcileOwnedPrefix(ctx, writer, lister, prefix, p.objectCursors[prefix], quota)
+		_, enqueued, err := p.reconcileOwnedPrefix(ctx, target, quota)
 		count += enqueued
-		p.objectCursors[prefix] = nextCursor
 		if err != nil {
 			return count, err
 		}
-		if scanned < quota {
-			p.objectCursors[prefix] = ""
-		}
 	}
-	p.nextObjectPrefix = (start + 1) % len(ownedObjectPrefixes)
 	return count, nil
 }
 
-func (p *Processor) reconcileOwnedPrefix(ctx context.Context, writer storage.BackendRef, lister storage.ObjectLister, prefix, cursor string, limit int) (int, int, string, error) {
+type objectReconcileTarget struct {
+	ref        storage.BackendRef
+	lister     storage.ObjectLister
+	checkpoint domaincleanup.ReconcileCheckpoint
+}
+
+func reconcileStorageIdentity(ref storage.BackendRef) string {
+	if id := strings.TrimSpace(ref.ConfigID); id != "" {
+		return id
+	}
+	return "legacy:" + strings.ToLower(strings.TrimSpace(ref.Driver)) + ":" + strings.TrimSpace(ref.Namespace)
+}
+
+func (p *Processor) reconcileOwnedPrefix(ctx context.Context, target objectReconcileTarget, limit int) (int, int, error) {
 	scanned, enqueued := 0, 0
 	cutoff := p.now().Add(-p.orphanGracePeriod)
 	for scanned < limit {
@@ -159,9 +201,10 @@ func (p *Processor) reconcileOwnedPrefix(ctx context.Context, writer storage.Bac
 		if remaining := limit - scanned; pageLimit > remaining {
 			pageLimit = remaining
 		}
-		page, err := lister.ListObjects(ctx, prefix, cursor, pageLimit)
+		cursor := target.checkpoint.Cursor
+		page, err := target.lister.ListObjects(ctx, target.checkpoint.Prefix, cursor, pageLimit)
 		if err != nil {
-			return scanned, enqueued, cursor, fmt.Errorf("list cleanup objects: %w", err)
+			return scanned, enqueued, fmt.Errorf("list cleanup objects: %w", err)
 		}
 		objects := page.Objects
 		if remaining := limit - scanned; len(objects) > remaining {
@@ -173,35 +216,56 @@ func (p *Processor) reconcileOwnedPrefix(ctx context.Context, writer storage.Bac
 				continue
 			}
 			identity := domaincleanup.CanonicalIdentity(Identity{
-				StorageConfigID: writer.ConfigID,
-				StorageDriver:   writer.Driver,
-				Bucket:          writer.Bucket,
+				StorageConfigID: target.ref.ConfigID,
+				StorageDriver:   target.ref.Driver,
+				Bucket:          target.ref.Bucket,
 				ObjectKey:       strings.TrimSpace(object.ObjectKey),
 			})
-			if !strings.HasPrefix(identity.ObjectKey, prefix) {
+			if !strings.HasPrefix(identity.ObjectKey, target.checkpoint.Prefix) {
 				continue
 			}
 			live, err := p.store.HasLiveReferences(ctx, identity)
 			if err != nil {
-				return scanned, enqueued, cursor, err
+				return scanned, enqueued, err
 			}
 			if live {
 				continue
 			}
 			if _, err := p.store.Enqueue(ctx, identity); err != nil {
-				return scanned, enqueued, cursor, err
+				return scanned, enqueued, err
 			}
 			enqueued++
 		}
-		if strings.TrimSpace(page.NextCursor) == "" {
-			return scanned, enqueued, "", nil
+		nextCursor := strings.TrimSpace(page.NextCursor)
+		if nextCursor != "" && nextCursor == cursor {
+			return scanned, enqueued, errors.New("object listing cursor did not advance")
 		}
-		if page.NextCursor == cursor {
-			return scanned, enqueued, cursor, errors.New("object listing cursor did not advance")
+		expectedUpdatedAt := target.checkpoint.UpdatedAt
+		target.checkpoint.Cursor = nextCursor
+		target.checkpoint.UpdatedAt = nextCheckpointUpdateTime(expectedUpdatedAt, p.now().UTC())
+		if nextCursor == "" {
+			target.checkpoint.Generation++
 		}
-		cursor = page.NextCursor
+		saved, err := p.store.SaveReconcileCheckpoint(ctx, target.checkpoint, expectedUpdatedAt)
+		if err != nil {
+			return scanned, enqueued, err
+		}
+		if !saved {
+			return scanned, enqueued, nil
+		}
+		if nextCursor == "" {
+			return scanned, enqueued, nil
+		}
 	}
-	return scanned, enqueued, cursor, nil
+	return scanned, enqueued, nil
+}
+
+func nextCheckpointUpdateTime(previous, current time.Time) time.Time {
+	current = current.UTC()
+	if !previous.IsZero() && !current.After(previous) {
+		return previous.UTC().Add(time.Microsecond)
+	}
+	return current
 }
 
 func (p *Processor) retry(ctx context.Context, job Job, code, message string) error {
@@ -234,22 +298,51 @@ func sanitizeMessage(value string) string {
 }
 
 type MemoryStore struct {
-	mu         sync.Mutex
-	now        func() time.Time
-	jobs       map[string]Job
-	jobByKey   map[string]string
-	liveRefs   map[string]map[string]struct{}
-	candidates map[string]Identity
+	mu          sync.Mutex
+	now         func() time.Time
+	jobs        map[string]Job
+	jobByKey    map[string]string
+	liveRefs    map[string]map[string]struct{}
+	candidates  map[string]Identity
+	checkpoints map[string]domaincleanup.ReconcileCheckpoint
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		now:        time.Now,
-		jobs:       map[string]Job{},
-		jobByKey:   map[string]string{},
-		liveRefs:   map[string]map[string]struct{}{},
-		candidates: map[string]Identity{},
+		now:         time.Now,
+		jobs:        map[string]Job{},
+		jobByKey:    map[string]string{},
+		liveRefs:    map[string]map[string]struct{}{},
+		candidates:  map[string]Identity{},
+		checkpoints: map[string]domaincleanup.ReconcileCheckpoint{},
 	}
+}
+
+func checkpointKey(storageIdentity, prefix string) string {
+	return strings.TrimSpace(storageIdentity) + "\x00" + strings.TrimSpace(prefix)
+}
+
+func (s *MemoryStore) GetReconcileCheckpoint(_ context.Context, storageIdentity, prefix string) (domaincleanup.ReconcileCheckpoint, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	checkpoint, ok := s.checkpoints[checkpointKey(storageIdentity, prefix)]
+	return checkpoint, ok, nil
+}
+
+func (s *MemoryStore) SaveReconcileCheckpoint(_ context.Context, checkpoint domaincleanup.ReconcileCheckpoint, expectedUpdatedAt time.Time) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := checkpointKey(checkpoint.StorageIdentity, checkpoint.Prefix)
+	current, ok := s.checkpoints[key]
+	if expectedUpdatedAt.IsZero() {
+		if ok {
+			return false, nil
+		}
+	} else if !ok || !current.UpdatedAt.Equal(expectedUpdatedAt) {
+		return false, nil
+	}
+	s.checkpoints[key] = checkpoint
+	return true, nil
 }
 
 func (s *MemoryStore) SetNow(now func() time.Time) {

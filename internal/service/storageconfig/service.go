@@ -112,19 +112,13 @@ func (s *Service) Update(ctx context.Context, req domainstorageconfig.WriteReque
 	if err != nil {
 		return domainstorageconfig.ConfigView{}, err
 	}
-	backendChanged := storageBackendChanged(current, record)
+	if storageNamespaceChanged(current, record) {
+		return domainstorageconfig.ConfigView{}, errs.New(409, errs.CodeStorageNamespaceImmutable, "storage namespace is immutable; create a new config and switch the default")
+	}
 	if current.IsDefault {
 		if current.Status != record.Status || current.ReadEnabled != record.ReadEnabled || current.WriteEnabled != record.WriteEnabled {
 			return domainstorageconfig.ConfigView{}, errs.BadRequest("default storage config must remain enabled for read and write")
 		}
-		if backendChanged {
-			return domainstorageconfig.ConfigView{}, errs.BadRequest("switch default storage before changing its backend settings")
-		}
-	}
-	if backendChanged {
-		record.LastProbeStatus = domainstorageconfig.ProbeStatusNever
-		record.LastProbeMessage = ""
-		record.LastProbeAt = nil
 	}
 	saved, err := s.store.Save(ctx, record)
 	if err != nil {
@@ -181,11 +175,10 @@ func (s *Service) SetDefault(ctx context.Context, req domainstorageconfig.SetDef
 	return viewFromRecord(saved), nil
 }
 
-func storageBackendChanged(before, after domainstorageconfig.ConfigRecord) bool {
+func storageNamespaceChanged(before, after domainstorageconfig.ConfigRecord) bool {
 	return before.Driver != after.Driver || before.Provider != after.Provider || before.Endpoint != after.Endpoint ||
 		before.Region != after.Region || before.Bucket != after.Bucket || before.Prefix != after.Prefix ||
-		before.ForcePathStyle != after.ForcePathStyle || before.LocalRoot != after.LocalRoot ||
-		before.SecretFingerprint != after.SecretFingerprint
+		before.ForcePathStyle != after.ForcePathStyle || before.LocalRoot != after.LocalRoot
 }
 
 func (s *Service) ResolveDefaultWritable(ctx context.Context) (domainstorageconfig.ResolvedConfig, error) {
@@ -208,6 +201,21 @@ func (s *Service) ResolveByID(ctx context.Context, id string) (domainstorageconf
 		return domainstorageconfig.ResolvedConfig{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "storage config is unavailable")
 	}
 	return s.resolveRecord(record)
+}
+
+func (s *Service) ListReadableConfigIDs(ctx context.Context) ([]string, error) {
+	records, err := s.store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.Status != domainstorageconfig.StatusDeleted && record.ReadEnabled && strings.TrimSpace(record.ID) != "" {
+			ids = append(ids, strings.TrimSpace(record.ID))
+		}
+	}
+	sort.Strings(ids)
+	return ids, nil
 }
 
 func (s *Service) ResolveLegacyByDriver(ctx context.Context, driver string) (domainstorageconfig.ResolvedConfig, error) {

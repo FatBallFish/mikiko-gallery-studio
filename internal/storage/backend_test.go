@@ -3,11 +3,14 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -462,29 +465,192 @@ func TestProjectTemporaryMediaURLsBucketsPreviewAndFreshlySignsDownload(t *testi
 }
 
 func TestLocalBackendListObjectsPaginatesWithinPrefix(t *testing.T) {
-	backend := NewLocalBackend(t.TempDir())
+	root := t.TempDir()
+	backend := NewLocalBackend(root)
 	for _, key := range []string{
 		"generated-images/7/b.png",
 		"reference-assets/ignored.png",
 		"generated-images/7/a.png",
+		"generated-images/8/d.png",
+		"generated-images/8/c.png",
+		"generated-images/a/z.png",
+		"generated-images/a.png",
 	} {
 		if err := backend.Put(t.Context(), key, "image/png", []byte(key)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	first, err := backend.ListObjects(t.Context(), "generated-images/", "", 1)
+	wantModifiedAt := time.Date(2026, time.August, 9, 1, 2, 3, 0, time.UTC)
+	modifiedPath, ok := backend.resolvePath("generated-images/7/a.png")
+	if !ok {
+		t.Fatal("resolve generated image path")
+	}
+	if err := os.Chtimes(modifiedPath, wantModifiedAt, wantModifiedAt); err != nil {
+		t.Fatalf("set object mtime: %v", err)
+	}
+
+	var (
+		cursor   string
+		objects  []ObjectInfo
+		pageRuns int
+	)
+	for {
+		// A fresh backend proves that pagination state lives entirely in the
+		// opaque cursor rather than process memory.
+		page, err := NewLocalBackend(root).ListObjects(t.Context(), "generated-images/", cursor, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pageRuns++
+		objects = append(objects, page.Objects...)
+		if page.NextCursor == "" {
+			break
+		}
+		if strings.Contains(page.NextCursor, "generated-images/") || page.NextCursor == page.Objects[len(page.Objects)-1].ObjectKey {
+			t.Fatalf("cursor exposes implementation key %q", page.NextCursor)
+		}
+		cursor = page.NextCursor
+	}
+	if pageRuns != 3 {
+		t.Fatalf("page runs=%d want 3", pageRuns)
+	}
+	wantKeys := map[string]struct{}{
+		"generated-images/7/a.png": {},
+		"generated-images/7/b.png": {},
+		"generated-images/8/c.png": {},
+		"generated-images/8/d.png": {},
+		"generated-images/a.png":   {},
+		"generated-images/a/z.png": {},
+	}
+	if len(objects) != len(wantKeys) {
+		t.Fatalf("objects=%#v want keys=%#v", objects, wantKeys)
+	}
+	seen := make(map[string]struct{}, len(objects))
+	foundKnownMtime := false
+	for _, object := range objects {
+		if _, ok := wantKeys[object.ObjectKey]; !ok {
+			t.Fatalf("unexpected object %q", object.ObjectKey)
+		}
+		if _, duplicate := seen[object.ObjectKey]; duplicate {
+			t.Fatalf("duplicate object %q", object.ObjectKey)
+		}
+		seen[object.ObjectKey] = struct{}{}
+		if object.ObjectKey == "generated-images/7/a.png" {
+			foundKnownMtime = object.ModifiedAt.Equal(wantModifiedAt)
+		}
+	}
+	if !foundKnownMtime {
+		t.Fatal("known object mtime was not preserved")
+	}
+}
+
+func TestLocalBackendListObjectsBoundsIncrementalCandidatesPerPage(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	for index := 99; index >= 0; index-- {
+		key := fmt.Sprintf("generated-images/%03d/result.png", index)
+		if err := backend.Put(t.Context(), key, "image/png", []byte(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	first, firstStats, err := backend.listObjectsIncrementally(t.Context(), "generated-images/", "", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(first.Objects) != 1 || first.Objects[0].ObjectKey != "generated-images/7/a.png" || first.Objects[0].ModifiedAt.IsZero() || first.NextCursor == "" {
+	if len(first.Objects) != 2 || first.NextCursor == "" {
 		t.Fatalf("first page=%#v", first)
 	}
-	second, err := backend.ListObjects(t.Context(), "generated-images/", first.NextCursor, 1)
+	if firstStats.VisitedObjects != 3 || firstStats.MaterializedObjects != 3 || firstStats.DirectoryEntriesRead > 32 {
+		t.Fatalf("first page scanned beyond limit+1: %#v", firstStats)
+	}
+
+	second, secondStats, err := backend.listObjectsIncrementally(t.Context(), "generated-images/", first.NextCursor, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Objects) != 1 || second.Objects[0].ObjectKey != "generated-images/7/b.png" || second.NextCursor != "" {
+	if len(second.Objects) != 2 || second.Objects[0].ObjectKey == first.Objects[0].ObjectKey || second.Objects[0].ObjectKey == first.Objects[1].ObjectKey ||
+		second.Objects[1].ObjectKey == first.Objects[0].ObjectKey || second.Objects[1].ObjectKey == first.Objects[1].ObjectKey {
 		t.Fatalf("second page=%#v", second)
+	}
+	if secondStats.VisitedObjects != 3 || secondStats.MaterializedObjects != 3 || secondStats.DirectoryEntriesRead > 32 {
+		t.Fatalf("second page rescanned or materialized beyond limit+1: %#v", secondStats)
+	}
+}
+
+func TestLocalBackendListObjectsBoundsFlatDirectoryTraversal(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "reference-assets")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const objectCount = 10_000
+	for index := range objectCount {
+		name := fmt.Sprintf("asset-%05d.png", index)
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wantModifiedAt := time.Date(2026, time.August, 9, 2, 3, 4, 0, time.UTC)
+	if err := os.Chtimes(filepath.Join(directory, "asset-05000.png"), wantModifiedAt, wantModifiedAt); err != nil {
+		t.Fatal(err)
+	}
+
+	backend := NewLocalBackend(root)
+	seen := make(map[string]struct{}, objectCount)
+	cursor := ""
+	foundKnownMtime := false
+	for pageNumber := 0; ; pageNumber++ {
+		page, stats, err := backend.listObjectsIncrementally(t.Context(), "reference-assets/", cursor, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pageNumber < 2 && (stats.DirectoryEntriesRead > 32 || stats.MaterializedObjects > 3) {
+			t.Fatalf("page %d read beyond limit+1: %#v", pageNumber, stats)
+		}
+		for _, object := range page.Objects {
+			if _, duplicate := seen[object.ObjectKey]; duplicate {
+				t.Fatalf("duplicate object %q", object.ObjectKey)
+			}
+			seen[object.ObjectKey] = struct{}{}
+			if object.ObjectKey == "reference-assets/asset-05000.png" {
+				foundKnownMtime = object.ModifiedAt.Equal(wantModifiedAt)
+			}
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	if len(seen) != objectCount {
+		t.Fatalf("listed %d objects, want %d", len(seen), objectCount)
+	}
+	if !foundKnownMtime {
+		t.Fatal("known object mtime was not preserved")
+	}
+}
+
+func TestLocalBackendListObjectsRejectsCursorOutsideOwnedPrefix(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	forged, err := encodeLocalObjectCursor("generated-images/", []localObjectCursorFrame{{Directory: "generated-images/../reference-assets", Offset: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.ListObjects(t.Context(), "generated-images/", forged, 2); err == nil {
+		t.Fatal("expected non-canonical cursor key to be rejected")
+	}
+
+	if err := backend.Put(t.Context(), "generated-images/a.png", "image/png", []byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.Put(t.Context(), "generated-images/b.png", "image/png", []byte("b")); err != nil {
+		t.Fatal(err)
+	}
+	page, err := backend.ListObjects(t.Context(), "generated-images/", "", 1)
+	if err != nil || page.NextCursor == "" {
+		t.Fatalf("first page=%#v err=%v", page, err)
+	}
+	if _, err := backend.ListObjects(t.Context(), "reference-assets/", page.NextCursor, 1); err == nil {
+		t.Fatal("expected cursor bound to another owned prefix to be rejected")
 	}
 }
 

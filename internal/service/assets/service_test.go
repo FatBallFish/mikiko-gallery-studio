@@ -270,6 +270,14 @@ func (r *switchingAssetRouter) BackendFor(_ context.Context, configID string, _ 
 	return r.refs[configID], nil
 }
 
+func (r *switchingAssetRouter) ReadableBackends(context.Context) ([]storage.BackendRef, error) {
+	refs := make([]storage.BackendRef, 0, len(r.refs))
+	for _, ref := range r.refs {
+		refs = append(refs, ref)
+	}
+	return refs, nil
+}
+
 func TestUploadDeduplicatesByHash(t *testing.T) {
 	data, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII=")
 	storageRoot := t.TempDir()

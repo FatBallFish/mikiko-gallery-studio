@@ -53,3 +53,12 @@ type Job struct {
 	UpdatedAt        time.Time
 	CompletedAt      *time.Time
 }
+
+type ReconcileCheckpoint struct {
+	StorageIdentity string
+	Namespace       string
+	Prefix          string
+	Cursor          string
+	Generation      int64
+	UpdatedAt       time.Time
+}

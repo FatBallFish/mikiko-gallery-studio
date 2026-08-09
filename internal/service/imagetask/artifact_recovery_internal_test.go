@@ -144,6 +144,10 @@ func (r *failingDefaultWriterRouter) BackendFor(_ context.Context, configID stri
 	return r.ref, nil
 }
 
+func (r *failingDefaultWriterRouter) ReadableBackends(context.Context) ([]storage.BackendRef, error) {
+	return []storage.BackendRef{r.ref}, nil
+}
+
 func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.T) {
 	now := time.Date(2026, 7, 15, 13, 0, 0, 0, time.UTC)
 	providerCalls := 0

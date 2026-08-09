@@ -86,6 +86,7 @@ export function StorageConfigPage({
   const isDirty = useMemo(() => storageEditorIsDirty(draft, selected), [draft, selected])
   const editorState = storageEditorState({ saving, probing, activationPhase, isDirty, feedback })
   const editorLocked = saving || probing || refreshing || activationPhase !== 'idle'
+  const namespaceLocked = Boolean(draft.id)
   const probeActionLabel = !draft.id || isDirty ? '测试草稿连接' : '探测已保存配置'
 
   async function load(refreshID?: string, initial = false) {
@@ -333,8 +334,8 @@ export function StorageConfigPage({
           <div className={adminPage.formGrid}>
             <Field label="配置代码"><input value={draft.code} disabled={Boolean(draft.id)} onChange={(event) => setDraft({ ...draft, code: event.target.value })} placeholder="r2-prod" /></Field>
             <Field label="配置名称"><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Cloudflare R2 Prod" /></Field>
-            <Field label="存储驱动"><select value={draft.driver} onChange={(event) => setDraft(driverTemplate({ ...draft, driver: event.target.value }))}><option value="local">Local</option><option value="s3">S3</option></select></Field>
-            <Field label="服务提供方"><select value={draft.provider} onChange={(event) => setDraft(providerTemplate({ ...draft, provider: event.target.value }))}><option value="local">Local</option><option value="r2">Cloudflare R2</option><option value="aws_s3">AWS S3</option><option value="minio">MinIO</option><option value="custom_s3">自定义 S3</option></select></Field>
+            <Field label="存储驱动"><select value={draft.driver} disabled={namespaceLocked} onChange={(event) => setDraft(driverTemplate({ ...draft, driver: event.target.value }))}><option value="local">Local</option><option value="s3">S3</option></select></Field>
+            <Field label="服务提供方"><select value={draft.provider} disabled={namespaceLocked} onChange={(event) => setDraft(providerTemplate({ ...draft, provider: event.target.value }))}><option value="local">Local</option><option value="r2">Cloudflare R2</option><option value="aws_s3">AWS S3</option><option value="minio">MinIO</option><option value="custom_s3">自定义 S3</option></select></Field>
             <Field label="启用状态"><select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
           </div>
         </section>
@@ -342,16 +343,16 @@ export function StorageConfigPage({
         <section data-storage-section="location" className={storageClasses.section}>
           <div className={storageClasses.sectionHead}>
             <h3 className={cn('m-0', adminType.sectionTitle)}>对象定位</h3>
-            <p className={storageClasses.note}>定义远端端点、桶、对象前缀或本地根目录。</p>
+            <p className={storageClasses.note}>{namespaceLocked ? '对象地址创建后不可修改；迁移时请新建配置、验证后切换默认写入。' : '定义远端端点、桶、对象前缀或本地根目录。'}</p>
           </div>
           <div className={adminPage.formGrid}>
-            <Field label="Endpoint"><input value={draft.endpoint} onChange={(event) => setDraft({ ...draft, endpoint: event.target.value })} placeholder="https://account.r2.cloudflarestorage.com" /></Field>
-            <Field label="Region"><input value={draft.region} onChange={(event) => setDraft({ ...draft, region: event.target.value })} placeholder="auto" /></Field>
-            <Field label="Bucket"><input value={draft.bucket} onChange={(event) => setDraft({ ...draft, bucket: event.target.value })} placeholder="pic-gallery-prod" /></Field>
-            <Field label="Prefix"><input value={draft.prefix} onChange={(event) => setDraft({ ...draft, prefix: event.target.value })} placeholder="prod" /></Field>
-            <Field label="本地根目录"><input value={draft.local_root} onChange={(event) => setDraft({ ...draft, local_root: event.target.value })} placeholder="/var/lib/pic-gallery/storage" /></Field>
+            <Field label="Endpoint"><input value={draft.endpoint} disabled={namespaceLocked} onChange={(event) => setDraft({ ...draft, endpoint: event.target.value })} placeholder="https://account.r2.cloudflarestorage.com" /></Field>
+            <Field label="Region"><input value={draft.region} disabled={namespaceLocked} onChange={(event) => setDraft({ ...draft, region: event.target.value })} placeholder="auto" /></Field>
+            <Field label="Bucket"><input value={draft.bucket} disabled={namespaceLocked} onChange={(event) => setDraft({ ...draft, bucket: event.target.value })} placeholder="pic-gallery-prod" /></Field>
+            <Field label="Prefix"><input value={draft.prefix} disabled={namespaceLocked} onChange={(event) => setDraft({ ...draft, prefix: event.target.value })} placeholder="prod" /></Field>
+            <Field label="本地根目录"><input value={draft.local_root} disabled={namespaceLocked} onChange={(event) => setDraft({ ...draft, local_root: event.target.value })} placeholder="/var/lib/pic-gallery/storage" /></Field>
             <Field label="公开访问地址"><input value={draft.public_base_url} onChange={(event) => setDraft({ ...draft, public_base_url: event.target.value })} placeholder="reserved" /></Field>
-            <label className={storageClasses.toggle}><input type="checkbox" checked={draft.force_path_style} onChange={(event) => setDraft({ ...draft, force_path_style: event.target.checked })} /><span>使用 Path-style 请求</span></label>
+            <label className={storageClasses.toggle}><input type="checkbox" checked={draft.force_path_style} disabled={namespaceLocked} onChange={(event) => setDraft({ ...draft, force_path_style: event.target.checked })} /><span>使用 Path-style 请求</span></label>
           </div>
         </section>
 
