@@ -114,7 +114,7 @@ func TestGalleryExportStoreRetriesWithinLifecycleAndStopsBeyondDeadline(t *testi
 		}
 		if err := store.FailJob(t.Context(), galleryexportservice.FailJobRequest{
 			Job: claimed, FailedAt: start, Disposition: galleryexportservice.FailureRetryable,
-			Code: "archive_store_failed", Message: "retry",
+			Code: "authorization_failed", Message: "selected assets could not be authorized",
 		}); err != nil {
 			t.Fatalf("fail attempt %d: %v", attempt, err)
 		}
@@ -130,6 +130,20 @@ func TestGalleryExportStoreRetriesWithinLifecycleAndStopsBeyondDeadline(t *testi
 	if err != nil || !ok || third.AttemptCount != 3 || third.DeadlineAt == nil || !third.DeadlineAt.Equal(deadline) {
 		t.Fatalf("third claim before deadline: job=%#v ok=%v err=%v", third, ok, err)
 	}
+	if err := store.FailJob(t.Context(), galleryexportservice.FailJobRequest{
+		Job: third, FailedAt: start, Disposition: galleryexportservice.FailureRetryable,
+		Code: "authorization_failed", Message: "selected assets could not be authorized",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	maxed, err := store.GetJob(t.Context(), 7, created.ID, start)
+	if err != nil || maxed.State != galleryexportservice.StateFailed || maxed.ErrorCode != "authorization_failed" || maxed.ErrorMessage != "selected assets could not be authorized" {
+		t.Fatalf("max-attempt authorization job=%#v err=%v", maxed, err)
+	}
+	maxedEntity, err := client.GalleryExportJob.Get(t.Context(), uuid.MustParse(created.ID))
+	if err != nil || maxedEntity.NextAttemptAt != nil {
+		t.Fatalf("max-attempt next_attempt_at=%v err=%v", maxedEntity.NextAttemptAt, err)
+	}
 
 	shortDeadline := start.Add(30 * time.Second)
 	short, err := store.CreateJob(t.Context(), galleryexportservice.CreateJobRequest{UserID: 7, ProjectID: projectID.String(), ImageIDs: []string{"two"}, LifecycleDeadlineAt: shortDeadline})
@@ -142,7 +156,7 @@ func TestGalleryExportStoreRetriesWithinLifecycleAndStopsBeyondDeadline(t *testi
 	}
 	if err := store.FailJob(t.Context(), galleryexportservice.FailJobRequest{
 		Job: claimed, FailedAt: start, Disposition: galleryexportservice.FailureRetryable,
-		Code: "archive_store_failed", Message: "retry",
+		Code: "authorization_failed", Message: "selected assets could not be authorized",
 	}); err != nil {
 		t.Fatal(err)
 	}

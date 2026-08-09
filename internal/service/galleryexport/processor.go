@@ -147,7 +147,10 @@ type leaseHeartbeatResult struct {
 func (p *Processor) processJob(ctx context.Context, job Job, now time.Time) *jobProcessError {
 	assets, err := p.store.AuthorizeAssets(ctx, job.UserID, job.ProjectID, job.ImageIDs)
 	if err != nil {
-		return &jobProcessError{disposition: FailureTerminal, code: "authorization_changed", message: "selected assets are no longer available"}
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return &jobProcessError{disposition: FailureTerminal, code: "authorization_changed", message: "selected assets are no longer available"}
+		}
+		return &jobProcessError{disposition: FailureRetryable, code: "authorization_failed", message: "selected assets could not be authorized"}
 	}
 	archive, err := p.service.buildArchive(ctx, assets)
 	if err != nil {

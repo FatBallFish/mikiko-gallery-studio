@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -85,18 +86,26 @@ func (s *ambiguousCompletionStore) CompleteJob(ctx context.Context, req Complete
 
 type processorStoreStub struct {
 	exportStoreStub
-	claimed      Job
-	completed    CompleteJobRequest
-	failed       FailJobRequest
-	authorizeErr error
-	renewed      chan struct{}
-	renewOK      bool
-	mu           sync.Mutex
+	claimed         Job
+	completed       CompleteJobRequest
+	failed          FailJobRequest
+	authorizeErrors []error
+	authorizeCalls  int
+	renewed         chan struct{}
+	renewOK         bool
+	mu              sync.Mutex
 }
 
 func (s *processorStoreStub) AuthorizeAssets(ctx context.Context, userID int64, projectID string, imageIDs []string) ([]Asset, error) {
-	if s.authorizeErr != nil {
-		return nil, s.authorizeErr
+	s.mu.Lock()
+	var err error
+	if s.authorizeCalls < len(s.authorizeErrors) {
+		err = s.authorizeErrors[s.authorizeCalls]
+	}
+	s.authorizeCalls++
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
 	}
 	return s.exportStoreStub.AuthorizeAssets(ctx, userID, projectID, imageIDs)
 }
@@ -111,6 +120,7 @@ func (s *processorStoreStub) CompleteJob(_ context.Context, req CompleteJobReque
 	defer s.mu.Unlock()
 	s.completed = req
 	job := s.claimed
+	s.claimed = Job{}
 	job.State = StateSucceeded
 	return job, nil
 }
@@ -129,6 +139,8 @@ func (s *processorStoreStub) FailJob(_ context.Context, req FailJobRequest) erro
 	s.failed = req
 	if req.Disposition == FailureTerminal {
 		s.claimed = Job{}
+	} else {
+		s.claimed.AttemptCount++
 	}
 	return nil
 }
@@ -263,18 +275,82 @@ func TestProcessorTerminalizesOversizeOnFirstAttemptWithoutRepeatedSourceRead(t 
 
 func TestProcessorTerminalizesAuthorizationChanges(t *testing.T) {
 	now := time.Now().UTC()
+	backend := &countingExportBackend{exportBackend: exportBackend{objects: map[string][]byte{"source.png": []byte("source")}}}
 	store := &processorStoreStub{
-		claimed:      Job{ID: "job-auth", UserID: 7, ProjectID: "project", ImageIDs: []string{"one"}, State: StateRunning, LeaseOwner: "worker", AttemptCount: 1},
-		authorizeErr: errors.New("asset no longer available"),
+		claimed:         Job{ID: "job-auth", UserID: 7, ProjectID: "project", ImageIDs: []string{"one"}, State: StateRunning, LeaseOwner: "worker", AttemptCount: 1},
+		authorizeErrors: []error{fmt.Errorf("wrapped: %w", repoerr.ErrNotFound)},
 	}
-	processor := NewProcessor(store, storage.NewStaticRouter(&exportBackend{}), ProcessorOptions{Owner: "worker", Now: func() time.Time { return now }})
+	processor := NewProcessor(store, storage.NewStaticRouter(backend), ProcessorOptions{Owner: "worker", Now: func() time.Time { return now }})
 	processed, err := processor.ProcessOnce(t.Context())
 	if err != nil || !processed {
 		t.Fatalf("authorization cycle processed=%v err=%v", processed, err)
 	}
 	failure := store.failedRequest()
-	if failure.Disposition != FailureTerminal || failure.Code != "authorization_changed" || failure.Message != "selected assets are no longer available" {
+	if failure.Job.AttemptCount != 1 || failure.Disposition != FailureTerminal || failure.Code != "authorization_changed" || failure.Message != "selected assets are no longer available" {
 		t.Fatalf("authorization failure=%#v", failure)
+	}
+	processed, err = processor.ProcessOnce(t.Context())
+	if err != nil || processed {
+		t.Fatalf("terminal authorization second cycle processed=%v err=%v", processed, err)
+	}
+	if reads := backend.reads.Load(); reads != 0 {
+		t.Fatalf("storage reads for terminal authorization failure=%d", reads)
+	}
+}
+
+func TestProcessorRetriesTransientAuthorizationFailureThenSucceedsWithoutEarlyStorageRead(t *testing.T) {
+	now := time.Now().UTC()
+	backend := &countingExportBackend{exportBackend: exportBackend{objects: map[string][]byte{"source.png": []byte("source")}}}
+	store := &processorStoreStub{
+		exportStoreStub: exportStoreStub{assets: []Asset{{ID: "one", ObjectKey: "source.png", MIMEType: "image/png"}}},
+		claimed:         Job{ID: "job-auth-retry", UserID: 7, ProjectID: "project", ImageIDs: []string{"one"}, State: StateRunning, LeaseOwner: "worker", AttemptCount: 1},
+		authorizeErrors: []error{errors.New("query failed: SQL password=secret"), nil},
+	}
+	processor := NewProcessor(store, storage.NewStaticRouter(backend), ProcessorOptions{Owner: "worker", Now: func() time.Time { return now }})
+
+	processed, err := processor.ProcessOnce(t.Context())
+	if err != nil || !processed {
+		t.Fatalf("transient authorization cycle processed=%v err=%v", processed, err)
+	}
+	failure := store.failedRequest()
+	if failure.Disposition != FailureRetryable || failure.Code != "authorization_failed" || failure.Message != "selected assets could not be authorized" {
+		t.Fatalf("transient authorization failure=%#v", failure)
+	}
+	if reads := backend.reads.Load(); reads != 0 {
+		t.Fatalf("storage reads before authorization succeeded=%d", reads)
+	}
+
+	processed, err = processor.ProcessOnce(t.Context())
+	if err != nil || !processed {
+		t.Fatalf("authorization retry cycle processed=%v err=%v", processed, err)
+	}
+	if store.completed.JobID != "job-auth-retry" || store.completed.AttemptCount != 2 {
+		t.Fatalf("completed retry=%#v", store.completed)
+	}
+	if reads := backend.reads.Load(); reads != 1 {
+		t.Fatalf("storage reads after authorization succeeded=%d, want 1", reads)
+	}
+}
+
+func TestProcessorKeepsAuthorizationContextExpiryRetryableForLifecyclePolicy(t *testing.T) {
+	now := time.Now().UTC()
+	deadline := now.Add(30 * time.Second)
+	backend := &countingExportBackend{exportBackend: exportBackend{objects: map[string][]byte{"source.png": []byte("source")}}}
+	store := &processorStoreStub{
+		claimed:         Job{ID: "job-auth-context", UserID: 7, ProjectID: "project", ImageIDs: []string{"one"}, State: StateRunning, LeaseOwner: "worker", AttemptCount: 1, DeadlineAt: &deadline},
+		authorizeErrors: []error{context.DeadlineExceeded},
+	}
+	processor := NewProcessor(store, storage.NewStaticRouter(backend), ProcessorOptions{Owner: "worker", Now: func() time.Time { return now }})
+	processed, err := processor.ProcessOnce(t.Context())
+	if err != nil || !processed {
+		t.Fatalf("authorization context cycle processed=%v err=%v", processed, err)
+	}
+	failure := store.failedRequest()
+	if failure.Disposition != FailureRetryable || failure.Code != "authorization_failed" || failure.Message != "selected assets could not be authorized" {
+		t.Fatalf("authorization context failure=%#v", failure)
+	}
+	if reads := backend.reads.Load(); reads != 0 {
+		t.Fatalf("storage reads after authorization context failure=%d", reads)
 	}
 }
 
