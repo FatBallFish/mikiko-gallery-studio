@@ -459,53 +459,84 @@ func TestObjectCleanupReconcileMigratesLegacyArtifactRecoveriesExplicitly(t *tes
 	}
 }
 
-func TestObjectCleanupReconcileLegacyRecoverySweepDoesNotStarveLaterRows(t *testing.T) {
-	client, err := repoent.Open(dialect.SQLite, "file:cleanup-recovery-fairness-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
-	if err != nil {
-		t.Fatal(err)
+func TestObjectCleanupReconcileLegacyRecoveryRestartSkipsConservativeRows(t *testing.T) {
+	tests := []struct {
+		name string
+		seed func(*testing.T, *repoent.Client, time.Time) *repoent.ImageTask
+		want func(*testing.T, *repoent.ImageTask)
+	}{
+		{
+			name: "backfillable",
+			seed: func(t *testing.T, client *repoent.Client, updatedAt time.Time) *repoent.ImageTask {
+				task, err := client.ImageTask.Create().SetUserID(94).SetTaskType("text_to_image").SetPrompt("backfillable target").
+					SetAbstractModel("plus").SetArtifactRecoveryStatus("pending").SetArtifactRecoveryPayload("encrypted-envelope").
+					SetUpdatedAt(updatedAt).Save(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(task.UserID).SetStorageDriver("local").
+					SetObjectKey("generated-images/94/backfillable.png").SetMimeType("image/png").SetSha256("backfillable").Save(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				return task
+			},
+			want: func(t *testing.T, task *repoent.ImageTask) {
+				if len(task.ArtifactObjectKeys) != 1 || task.ArtifactObjectKeys[0] != "generated-images/94/backfillable.png" {
+					t.Fatalf("backfillable target=%#v", task)
+				}
+			},
+		},
+		{
+			name: "unrecoverable",
+			seed: func(t *testing.T, client *repoent.Client, updatedAt time.Time) *repoent.ImageTask {
+				task, err := client.ImageTask.Create().SetUserID(94).SetTaskType("text_to_image").SetPrompt("unrecoverable target").
+					SetAbstractModel("plus").SetArtifactRecoveryStatus("pending").SetArtifactRecoveryPayload("   ").
+					SetArtifactObjectKeys([]string{}).SetUpdatedAt(updatedAt).Save(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
+				return task
+			},
+			want: func(t *testing.T, task *repoent.ImageTask) {
+				if task.ArtifactRecoveryStatus != "unrecoverable" {
+					t.Fatalf("unrecoverable target=%#v", task)
+				}
+			},
+		},
 	}
-	t.Cleanup(func() { _ = client.Close() })
-	if err := client.Schema.Create(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client, err := repoent.Open(dialect.SQLite, "file:cleanup-recovery-fairness-"+test.name+"-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = client.Close() })
+			if err := client.Schema.Create(t.Context()); err != nil {
+				t.Fatal(err)
+			}
 
-	base := time.Now().UTC().Add(-time.Hour)
-	for index := range 3 {
-		if _, err := client.ImageTask.Create().
-			SetUserID(94).
-			SetTaskType("text_to_image").
-			SetPrompt(fmt.Sprintf("already pinned %d", index)).
-			SetAbstractModel("plus").
-			SetArtifactRecoveryStatus("pending").
-			SetArtifactObjectKeys([]string{fmt.Sprintf("generated-images/94/%d.png", index)}).
-			SetUpdatedAt(base.Add(time.Duration(index) * time.Second)).
-			Save(t.Context()); err != nil {
-			t.Fatal(err)
-		}
-	}
-	target, err := client.ImageTask.Create().
-		SetUserID(94).
-		SetTaskType("text_to_image").
-		SetPrompt("later legacy recovery").
-		SetAbstractModel("plus").
-		SetArtifactRecoveryStatus("pending").
-		SetUpdatedAt(base.Add(10 * time.Second)).
-		Save(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+			base := time.Now().UTC().Add(-time.Hour)
+			for index := range 100 {
+				if _, err := client.ImageTask.Create().SetUserID(94).SetTaskType("text_to_image").
+					SetPrompt(fmt.Sprintf("conservative encrypted %d", index)).SetAbstractModel("plus").
+					SetArtifactRecoveryStatus("pending").SetArtifactRecoveryPayload("encrypted-envelope").
+					SetUpdatedAt(base.Add(time.Duration(index) * time.Second)).Save(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			target := test.seed(t, client, base.Add(101*time.Second))
 
-	store := NewObjectCleanupStore(client)
-	for range 4 {
-		if _, err := store.Reconcile(t.Context(), 1); err != nil {
-			t.Fatal(err)
-		}
-	}
-	updated, err := client.ImageTask.Get(t.Context(), target.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.ArtifactRecoveryStatus != "unrecoverable" {
-		t.Fatalf("later recovery remained %q", updated.ArtifactRecoveryStatus)
+			if _, err := NewObjectCleanupStore(client).Reconcile(t.Context(), 1); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NewObjectCleanupStore(client).Reconcile(t.Context(), 1); err != nil {
+				t.Fatal(err)
+			}
+			updated, err := client.ImageTask.Get(t.Context(), target.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.want(t, updated)
+		})
 	}
 }

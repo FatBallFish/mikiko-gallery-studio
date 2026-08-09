@@ -143,7 +143,7 @@ func TestStorageConfigNamespaceIsImmutableAfterCreation(t *testing.T) {
 	}
 }
 
-func TestStorageConfigCredentialRotationDoesNotChangeNamespace(t *testing.T) {
+func TestStorageConfigCredentialRotationInvalidatesProbeWithoutChangingNamespace(t *testing.T) {
 	svc := NewService(newMemoryStore(), "test-key", config.StorageConfig{Driver: "local"}, "local")
 	created, err := svc.Create(context.Background(), domainstorageconfig.WriteRequest{
 		Code: "s3-next", Name: "S3", Driver: "s3", Provider: "custom_s3", Status: "enabled", ReadEnabled: true, WriteEnabled: true,
@@ -164,8 +164,36 @@ func TestStorageConfigCredentialRotationDoesNotChangeNamespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("credential rotation: %v", err)
 	}
-	if updated.SecretStatus.Fingerprint == created.SecretStatus.Fingerprint || updated.LastProbe.Status != domainstorageconfig.ProbeStatusSuccess {
+	if updated.SecretStatus.Fingerprint == created.SecretStatus.Fingerprint || updated.LastProbe.Status != domainstorageconfig.ProbeStatusNever ||
+		updated.LastProbe.CheckedAt != nil || updated.LastProbe.Message != "" {
 		t.Fatalf("credential rotation updated=%#v created=%#v", updated, created)
+	}
+}
+
+func TestStorageConfigUpdatePreservesProbeWhenCredentialsDoNotChange(t *testing.T) {
+	svc := NewService(newMemoryStore(), "test-key", config.StorageConfig{Driver: "local"}, "local")
+	created, err := svc.Create(context.Background(), domainstorageconfig.WriteRequest{
+		Code: "s3-stable", Name: "S3", Driver: "s3", Provider: "custom_s3", Status: "enabled", ReadEnabled: true, WriteEnabled: true,
+		Endpoint: "https://s3.example.com", Region: "us-east-1", Bucket: "images", Prefix: "prod", Secrets: map[string]string{"access_key_id": "stable-ak", "secret_access_key": "stable-sk"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	probed, err := svc.UpdateProbe(context.Background(), created.ID, domainstorageconfig.ProbeResult{Status: "success", Message: "ok"}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := svc.Update(context.Background(), domainstorageconfig.WriteRequest{
+		ID: created.ID, Version: probed.Version, Code: created.Code, Name: "Renamed", Driver: created.Driver, Provider: created.Provider,
+		Status: created.Status, ReadEnabled: created.ReadEnabled, WriteEnabled: created.WriteEnabled, Endpoint: created.Endpoint, Region: created.Region,
+		Bucket: created.Bucket, Prefix: created.Prefix,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.SecretStatus.Fingerprint != probed.SecretStatus.Fingerprint || updated.LastProbe.Status != domainstorageconfig.ProbeStatusSuccess ||
+		updated.LastProbe.CheckedAt == nil || updated.LastProbe.Message != "ok" {
+		t.Fatalf("ordinary update lost probe: updated=%#v probed=%#v", updated, probed)
 	}
 }
 

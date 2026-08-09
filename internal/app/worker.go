@@ -106,6 +106,9 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	if err := storageConfigSvc.Bootstrap(startupContext, 0); err != nil {
 		return fmt.Errorf("bootstrap storage config: %w", err)
 	}
+	if err := requireLegacyStorageIdentityBackfill(startupContext, client, storageConfigSvc, cfg.Storage.Driver); err != nil {
+		return fmt.Errorf("prepare object cleanup storage identities: %w", err)
+	}
 	cancelStartup()
 	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
 	if redisClient != nil {

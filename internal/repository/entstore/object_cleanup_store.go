@@ -23,14 +23,7 @@ type ObjectCleanupStore struct {
 	client *repoent.Client
 
 	reconcileMu          sync.Mutex
-	legacyRecoveryCursor recoverySweepCursor
 	nextSingleSweepAsset bool
-}
-
-type recoverySweepCursor struct {
-	updatedAt time.Time
-	id        uuid.UUID
-	valid     bool
 }
 
 func NewObjectCleanupStore(client *repoent.Client) *ObjectCleanupStore {
@@ -359,22 +352,13 @@ func (s *ObjectCleanupStore) reconcileLegacyArtifactRecoveries(ctx context.Conte
 	query := s.client.ImageTask.Query().Where(
 		imagetask.DeletedAtIsNil(),
 		imagetask.ArtifactRecoveryStatusIn("pending", "persisting", "retry", "running"),
+		legacyArtifactRecoveryActionable(),
 	)
-	if s.legacyRecoveryCursor.valid {
-		query.Where(imagetask.Or(
-			imagetask.UpdatedAtGT(s.legacyRecoveryCursor.updatedAt),
-			imagetask.And(imagetask.UpdatedAtEQ(s.legacyRecoveryCursor.updatedAt), imagetask.IDGT(s.legacyRecoveryCursor.id)),
-		))
-	}
 	rows, err := query.Order(repoent.Asc(imagetask.FieldUpdatedAt), repoent.Asc(imagetask.FieldID)).Limit(limit).All(ctx)
 	if err != nil {
 		return err
 	}
 	for _, row := range rows {
-		s.legacyRecoveryCursor = recoverySweepCursor{updatedAt: row.UpdatedAt, id: row.ID, valid: true}
-		if len(row.ArtifactObjectKeys) > 0 {
-			continue
-		}
 		results, err := s.client.ImageResult.Query().Where(imageresult.TaskIDEQ(row.ID)).
 			Order(repoent.Asc(imageresult.FieldCreatedAt), repoent.Asc(imageresult.FieldID)).
 			All(ctx)
@@ -415,10 +399,30 @@ func (s *ObjectCleanupStore) reconcileLegacyArtifactRecoveries(ctx context.Conte
 			}
 		}
 	}
-	if len(rows) < limit {
-		s.legacyRecoveryCursor = recoverySweepCursor{}
-	}
 	return nil
+}
+
+func legacyArtifactRecoveryActionable() predicate.ImageTask {
+	return func(selector *entsql.Selector) {
+		results := entsql.Table(imageresult.Table)
+		resultHasObjectKey := entsql.ExprP("TRIM(" + results.C(imageresult.FieldObjectKey) + ") <> ''")
+		resultCanBackfill := entsql.Exists(
+			entsql.Select(results.C(imageresult.FieldID)).From(results).Where(entsql.And(
+				entsql.ColumnsEQ(results.C(imageresult.FieldTaskID), selector.C(imagetask.FieldID)),
+				resultHasObjectKey,
+			)),
+		)
+		payloadEmpty := entsql.Or(
+			entsql.IsNull(selector.C(imagetask.FieldArtifactRecoveryPayload)),
+			entsql.ExprP("TRIM("+selector.C(imagetask.FieldArtifactRecoveryPayload)+") = ''"),
+		)
+		jsonArrayLength := "json_array_length"
+		if selector.Dialect() == "postgres" {
+			jsonArrayLength = "jsonb_array_length"
+		}
+		keysEmpty := entsql.ExprP("COALESCE(" + jsonArrayLength + "(" + selector.C(imagetask.FieldArtifactObjectKeys) + "), 0) = 0")
+		selector.Where(entsql.And(keysEmpty, entsql.Or(payloadEmpty, resultCanBackfill)))
+	}
 }
 
 func (s *ObjectCleanupStore) reconcileDeletedResults(ctx context.Context, limit int) (int, error) {

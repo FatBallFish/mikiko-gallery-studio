@@ -314,6 +314,11 @@ func (s *Service) recordForWrite(ctx context.Context, current domainstorageconfi
 	}
 	record.SecretFields = sortedSecretFields(secrets)
 	record.SecretFingerprint = secretcodec.Fingerprint(secrets, record.SecretFields)
+	if updating && record.SecretFingerprint != current.SecretFingerprint {
+		record.LastProbeStatus = domainstorageconfig.ProbeStatusNever
+		record.LastProbeMessage = ""
+		record.LastProbeAt = nil
+	}
 	return record, nil
 }
 
