@@ -48,7 +48,6 @@ func (s *AdminCallRecordStore) ListCallRecords(ctx context.Context, req domainad
 
 func (s *AdminCallRecordStore) CallDistribution(ctx context.Context, req domainadmincallrecord.DistributionRequest) (domainadmincallrecord.Distribution, error) {
 	entities, err := s.client.ImageTask.Query().Where(
-		imagetask.DeletedAtIsNil(),
 		imagetask.CreatedAtLT(req.To),
 		imagetask.UpdatedAtGTE(req.From),
 	).All(ctx)

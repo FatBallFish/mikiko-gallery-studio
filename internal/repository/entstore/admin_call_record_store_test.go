@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -56,6 +57,69 @@ func TestAdminCallRecordStoreAggregatesAttemptsWithoutPagination(t *testing.T) {
 	}
 	if distribution.TotalCalls != 3 || distribution.PreflightFailureCount != 1 || len(distribution.Groups) != 2 || distribution.Groups[0].Key != "route-a" || distribution.Groups[0].Calls != 2 || distribution.Groups[1].Key != "unrouted" {
 		t.Fatalf("distribution = %#v", distribution)
+	}
+}
+
+func TestAdminCallRecordStoreDistributionSurvivesTaskSoftDeletion(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-distribution-soft-delete?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	inside := time.Now().UTC()
+	request := domainadmincallrecord.DistributionRequest{From: inside.Add(-24 * time.Hour), To: inside.Add(24 * time.Hour)}
+	taskStore := NewImageTaskStore(client)
+	seeds := []domainimagetask.Task{
+		{
+			UserID: 88, ID: "44444444-4444-4444-8444-444444444444", Status: domainimagetask.StatusSucceeded,
+			RouteModelCode: "route-soft-deleted", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k",
+			Attempts: []domainimagetask.Attempt{{StartedAt: &inside}, {StartedAt: &inside}},
+		},
+		{
+			UserID: 88, ID: "55555555-5555-4555-8555-555555555555", Status: domainimagetask.StatusRejected,
+			TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k",
+		},
+	}
+	for _, seed := range seeds {
+		if err := taskStore.Save(ctx, seed); err != nil {
+			t.Fatalf("save task %s: %v", seed.ID, err)
+		}
+	}
+
+	callRecords := NewAdminCallRecordStore(client)
+	before, err := callRecords.CallDistribution(ctx, request)
+	if err != nil {
+		t.Fatalf("distribution before deletion: %v", err)
+	}
+	if before.TotalCalls != 2 || before.PreflightFailureCount != 1 || len(before.Groups) != 1 || before.Groups[0].Key != "route-soft-deleted" || before.Groups[0].Calls != 2 || before.Groups[0].Percentage != 100 {
+		t.Fatalf("distribution before deletion = %#v", before)
+	}
+	visibleBefore, err := callRecords.ListCallRecords(ctx, domainadmincallrecord.ListRequest{Page: 1, PageSize: 10})
+	if err != nil || visibleBefore.Total != 2 {
+		t.Fatalf("visible records before deletion: page=%#v err=%v", visibleBefore, err)
+	}
+
+	for _, seed := range seeds {
+		if err := taskStore.DeleteByID(ctx, seed.UserID, seed.ID); err != nil {
+			t.Fatalf("soft-delete task %s: %v", seed.ID, err)
+		}
+	}
+
+	after, err := callRecords.CallDistribution(ctx, request)
+	if err != nil {
+		t.Fatalf("distribution after deletion: %v", err)
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("distribution changed after soft deletion: before=%#v after=%#v", before, after)
+	}
+	visibleAfter, err := callRecords.ListCallRecords(ctx, domainadmincallrecord.ListRequest{Page: 1, PageSize: 10})
+	if err != nil || visibleAfter.Total != 0 || len(visibleAfter.Items) != 0 {
+		t.Fatalf("deleted records remain visible in admin list: page=%#v err=%v", visibleAfter, err)
 	}
 }
 
