@@ -2,9 +2,11 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	entsql "entgo.io/ent/dialect/sql"
 	domaincleanup "github.com/fatballfish/pic-gallery/internal/domain/objectcleanup"
@@ -16,17 +18,20 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 const (
-	legacyStorageIdentityMigrationPrefix = "legacy_storage_identity_v2"
+	legacyStorageIdentityMigrationPrefix = "legacy_storage_identity_v3"
 	legacyStoragePhaseResults            = "results"
 	legacyStoragePhaseAssets             = "assets"
 	legacyStoragePhaseTasks              = "tasks"
 	legacyStoragePhaseJobs               = "jobs"
+	legacyStoragePhaseJobsCutover        = "jobs_cutover"
 	legacyStoragePhaseValidate           = "validate"
 	legacyStoragePhaseDone               = "done"
-	legacyStorageConstraintRetryLimit    = 3
+	legacyStorageBatchRetryLimit         = 5
+	legacyStorageBatchRetryDelay         = 25 * time.Millisecond
 )
 
 type LegacyStorageIdentityBackfillOptions struct {
@@ -53,7 +58,7 @@ func ListLegacyStorageDrivers(ctx context.Context, client *repoent.Client) ([]st
 			drivers[normalizeLegacyStorageDriver(value)] = struct{}{}
 		}
 	}
-	resultDrivers, err := client.ImageResult.Query().Where(imageresult.StorageConfigIDIsNil()).
+	resultDrivers, err := client.ImageResult.Query().Where(imageresult.StorageConfigIDIsNil(), managedLegacyImageResult()).
 		Select(imageresult.FieldStorageDriver).Strings(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list legacy image result storage drivers: %w", err)
@@ -87,6 +92,12 @@ func ListLegacyStorageDrivers(ctx context.Context, client *repoent.Client) ([]st
 	return result, nil
 }
 
+func managedLegacyImageResult() predicate.ImageResult {
+	return func(selector *entsql.Selector) {
+		selector.Where(entsql.ExprP("LOWER(TRIM(" + selector.C(imageresult.FieldStorageDriver) + ")) <> 'remote'"))
+	}
+}
+
 // RunLegacyStorageIdentityBackfill assigns the immutable bootstrap storage
 // config to rows that previously relied on driver-based runtime fallback.
 func RunLegacyStorageIdentityBackfill(
@@ -109,6 +120,9 @@ func RunLegacyStorageIdentityBackfill(
 	if opts.MaxBatches <= 0 {
 		opts.MaxBatches = 100
 	}
+	if err := PrepareLegacyStorageCleanupCutovers(ctx, client, []string{driver}); err != nil {
+		return LegacyStorageIdentityBackfillProgress{}, err
+	}
 	checkpoint, err := loadLegacyStorageCheckpoint(ctx, client, driver, configID)
 	if err != nil {
 		return LegacyStorageIdentityBackfillProgress{}, err
@@ -119,7 +133,7 @@ func RunLegacyStorageIdentityBackfill(
 	}
 	progress := legacyStorageProgress(checkpoint)
 	for progress.Batches < opts.MaxBatches && !progress.Completed {
-		updated, batchErr := runLegacyStorageIdentityBatchWithRetry(func() (int, error) {
+		updated, batchErr := runLegacyStorageIdentityBatchWithRetry(ctx, func() (int, error) {
 			return runLegacyStorageIdentityBatch(ctx, client, checkpoint.ID, driver, configID, opts.BatchSize)
 		})
 		if batchErr != nil {
@@ -143,16 +157,43 @@ func RunLegacyStorageIdentityBackfill(
 	return progress, nil
 }
 
-func runLegacyStorageIdentityBatchWithRetry(run func() (int, error)) (int, error) {
+func runLegacyStorageIdentityBatchWithRetry(ctx context.Context, run func() (int, error)) (int, error) {
 	var err error
-	for attempt := 0; attempt < legacyStorageConstraintRetryLimit; attempt++ {
+	for attempt := 0; attempt < legacyStorageBatchRetryLimit; attempt++ {
 		var updated int
 		updated, err = run()
-		if err == nil || !repoent.IsConstraintError(err) {
+		if err == nil || !isLegacyStorageBatchRetryable(err) {
 			return updated, err
+		}
+		if attempt == legacyStorageBatchRetryLimit-1 {
+			break
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * legacyStorageBatchRetryDelay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return 0, ctx.Err()
+		case <-timer.C:
 		}
 	}
 	return 0, err
+}
+
+func isLegacyStorageBatchRetryable(err error) bool {
+	if repoent.IsConstraintError(err) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "database is locked") || strings.Contains(message, "database table is locked") {
+		return true
+	}
+	var postgresErr *pq.Error
+	if errors.As(err, &postgresErr) {
+		return postgresErr.Code == "40P01" || postgresErr.Code == "40001"
+	}
+	return false
 }
 
 func loadLegacyStorageCheckpoint(ctx context.Context, client *repoent.Client, driver string, configID uuid.UUID) (*repoent.MigrationCheckpoint, error) {
@@ -225,6 +266,8 @@ func runLegacyStorageIdentityBatch(ctx context.Context, client *repoent.Client, 
 	switch checkpoint.Phase {
 	case legacyStoragePhaseJobs:
 		updated, err = backfillLegacyStorageJobs(ctx, tx, checkpoint, driver, configID, batchSize)
+	case legacyStoragePhaseJobsCutover:
+		updated, err = finalizeLegacyStorageJobCutover(ctx, tx, checkpoint.ID, driver, configID)
 	case legacyStoragePhaseResults:
 		updated, err = backfillLegacyStorageResults(ctx, tx, checkpoint, driver, configID, batchSize)
 	case legacyStoragePhaseAssets:
@@ -374,35 +417,8 @@ func backfillLegacyStorageJobs(ctx context.Context, tx *repoent.Tx, checkpoint *
 	}
 	updated := 0
 	for _, row := range rows {
-		existing, err := tx.ObjectDeletionJob.Query().Where(
-			objectdeletionjob.StorageConfigIDEQ(configID),
-			objectdeletionjob.ObjectKeyEQ(row.ObjectKey),
-			objectdeletionjob.StateIn(domaincleanup.StatePending, domaincleanup.StateRunning, domaincleanup.StateRetry, domaincleanup.StateBlocked),
-		).Order(repoent.Asc(objectdeletionjob.FieldCreatedAt), repoent.Asc(objectdeletionjob.FieldID)).All(ctx)
-		if err != nil {
-			return 0, fmt.Errorf("find configured object deletion jobs for %s: %w", row.ID, err)
-		}
-		if len(existing) > 0 {
-			primary := configuredCleanupJobPrimary(existing)
-			for _, duplicate := range existing {
-				if duplicate.ID == primary.ID {
-					continue
-				}
-				if err := tx.ObjectDeletionJob.DeleteOneID(duplicate.ID).Exec(ctx); err != nil {
-					return 0, fmt.Errorf("merge configured object deletion job %s: %w", duplicate.ID, err)
-				}
-			}
-			if err := resetConfiguredCleanupJob(ctx, primary); err != nil {
-				return 0, err
-			}
-			if err := tx.ObjectDeletionJob.DeleteOneID(row.ID).Exec(ctx); err != nil {
-				return 0, fmt.Errorf("merge legacy object deletion job %s: %w", row.ID, err)
-			}
-		} else {
-			if err := row.Update().SetStorageConfigID(configID).SetState(domaincleanup.StatePending).
-				ClearNextAttemptAt().ClearCompletedAt().ClearLastErrorCode().ClearLastErrorMessage().Exec(ctx); err != nil {
-				return 0, fmt.Errorf("backfill object deletion job %s storage identity: %w", row.ID, err)
-			}
+		if err := replaceLegacyCleanupJob(ctx, tx, row, configID); err != nil {
+			return 0, err
 		}
 		updated++
 	}
@@ -411,12 +427,52 @@ func backfillLegacyStorageJobs(ctx context.Context, tx *repoent.Tx, checkpoint *
 		update.SetAfterResultID(rows[len(rows)-1].ID)
 	}
 	if !hasMore {
-		update.SetPhase(legacyStoragePhaseResults).ClearAfterResultID()
+		update.SetPhase(legacyStoragePhaseJobsCutover).ClearAfterResultID()
 	}
 	if err := update.Exec(ctx); err != nil {
 		return 0, fmt.Errorf("checkpoint legacy object deletion jobs: %w", err)
 	}
 	return updated, nil
+}
+
+func replaceLegacyCleanupJob(ctx context.Context, tx *repoent.Tx, legacy *repoent.ObjectDeletionJob, configID uuid.UUID) error {
+	existing, err := tx.ObjectDeletionJob.Query().Where(
+		objectdeletionjob.StorageConfigIDEQ(configID),
+		objectdeletionjob.ObjectKeyEQ(legacy.ObjectKey),
+		objectdeletionjob.StateIn(domaincleanup.StatePending, domaincleanup.StateRunning, domaincleanup.StateRetry, domaincleanup.StateBlocked),
+	).Order(repoent.Asc(objectdeletionjob.FieldCreatedAt), repoent.Asc(objectdeletionjob.FieldID)).All(ctx)
+	if err != nil {
+		return fmt.Errorf("find configured object deletion jobs for %s: %w", legacy.ID, err)
+	}
+	if len(existing) == 0 {
+		created, err := tx.ObjectDeletionJob.Create().
+			SetStorageConfigID(configID).
+			SetStorageDriver(normalizeLegacyStorageDriver(legacy.StorageDriver)).
+			SetBucket(legacy.Bucket).
+			SetObjectKey(legacy.ObjectKey).
+			SetState(domaincleanup.StatePending).
+			Save(ctx)
+		if err != nil {
+			return fmt.Errorf("create configured object deletion job for %s: %w", legacy.ID, err)
+		}
+		existing = []*repoent.ObjectDeletionJob{created}
+	}
+	primary := configuredCleanupJobPrimary(existing)
+	for _, duplicate := range existing {
+		if duplicate.ID == primary.ID {
+			continue
+		}
+		if err := tx.ObjectDeletionJob.DeleteOneID(duplicate.ID).Exec(ctx); err != nil {
+			return fmt.Errorf("merge configured object deletion job %s: %w", duplicate.ID, err)
+		}
+	}
+	if err := resetConfiguredCleanupJob(ctx, primary); err != nil {
+		return err
+	}
+	if err := tx.ObjectDeletionJob.DeleteOneID(legacy.ID).Exec(ctx); err != nil {
+		return fmt.Errorf("remove legacy object deletion job %s: %w", legacy.ID, err)
+	}
+	return nil
 }
 
 func configuredCleanupJobPrimary(jobs []*repoent.ObjectDeletionJob) *repoent.ObjectDeletionJob {

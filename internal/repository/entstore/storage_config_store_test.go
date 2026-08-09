@@ -13,7 +13,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func TestStorageConfigStoreResolvesUniqueReadableLegacyDriverWithoutBootstrapCode(t *testing.T) {
+func TestStorageConfigStoreDoesNotGuessUniqueNonBootstrapLegacyDriver(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:storage-config-legacy-unique-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
 	if err != nil {
@@ -24,7 +24,7 @@ func TestStorageConfigStoreResolvesUniqueReadableLegacyDriverWithoutBootstrapCod
 		t.Fatal(err)
 	}
 	store := entstore.NewStorageConfigStore(client)
-	want, err := store.Save(ctx, domainstorageconfig.ConfigRecord{
+	_, err = store.Save(ctx, domainstorageconfig.ConfigRecord{
 		Code: "historical-s3", Name: "Historical S3", Driver: "s3", Provider: "r2", Status: "enabled",
 		ReadEnabled: true, Endpoint: "https://r2.example.com", Region: "auto", Bucket: "images", Version: 1,
 	})
@@ -32,7 +32,37 @@ func TestStorageConfigStoreResolvesUniqueReadableLegacyDriverWithoutBootstrapCod
 		t.Fatal(err)
 	}
 	got, ok, err := store.GetLegacyByDriver(ctx, " S3 ")
-	if err != nil || !ok || got.ID != want.ID {
+	if err != nil || ok {
+		t.Fatalf("unmapped GetLegacyByDriver()=%#v ok=%v err=%v", got, ok, err)
+	}
+}
+
+func TestStorageConfigStorePrefersDisabledReadableBootstrapOverNewEnabledNamespace(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:storage-config-legacy-bootstrap-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := entstore.NewStorageConfigStore(client)
+	historical, err := store.Save(ctx, domainstorageconfig.ConfigRecord{
+		Code: "bootstrap-local", Name: "Historical Local", Driver: "local", Provider: "local", Status: "disabled",
+		ReadEnabled: true, LocalRoot: "/historical", Version: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Save(ctx, domainstorageconfig.ConfigRecord{
+		Code: "new-local", Name: "New Local", Driver: "local", Provider: "local", Status: "enabled",
+		ReadEnabled: true, WriteEnabled: true, LocalRoot: "/new", Version: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := store.GetLegacyByDriver(ctx, "local")
+	if err != nil || !ok || got.ID != historical.ID {
 		t.Fatalf("GetLegacyByDriver()=%#v ok=%v err=%v", got, ok, err)
 	}
 }

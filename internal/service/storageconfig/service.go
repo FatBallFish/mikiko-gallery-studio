@@ -218,6 +218,29 @@ func (s *Service) ListReadableConfigIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
+func (s *Service) ListLegacyDrivers(ctx context.Context) ([]string, error) {
+	records, err := s.store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	driverSet := make(map[string]struct{})
+	for _, record := range records {
+		driver := normalizeDriver(record.Driver)
+		if record.Status == domainstorageconfig.StatusDeleted || !record.ReadEnabled ||
+			(driver != domainstorageconfig.DriverLocal && driver != domainstorageconfig.DriverS3) ||
+			strings.TrimSpace(record.Code) != "bootstrap-"+driver {
+			continue
+		}
+		driverSet[driver] = struct{}{}
+	}
+	drivers := make([]string, 0, len(driverSet))
+	for driver := range driverSet {
+		drivers = append(drivers, driver)
+	}
+	sort.Strings(drivers)
+	return drivers, nil
+}
+
 func (s *Service) ResolveLegacyByDriver(ctx context.Context, driver string) (domainstorageconfig.ResolvedConfig, error) {
 	record, ok, err := s.store.GetLegacyByDriver(ctx, normalizeDriver(driver))
 	if err != nil {

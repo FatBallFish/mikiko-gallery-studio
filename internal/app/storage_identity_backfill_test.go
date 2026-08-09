@@ -123,7 +123,7 @@ func TestStartupStorageIdentityBackfillMigratesEveryLegacyDriver(t *testing.T) {
 		"s3":    {ConfigRecord: domainstorageconfig.ConfigRecord{ID: s3ID.String(), Driver: "s3"}},
 	}}
 
-	progress, err := backfillLegacyStorageIdentitiesAtStartup(ctx, client, resolver, db.LegacyStorageIdentityBackfillOptions{BatchSize: 1, MaxBatches: 100})
+	progress, err := backfillLegacyStorageIdentitiesAtStartup(ctx, client, resolver, "local", db.LegacyStorageIdentityBackfillOptions{BatchSize: 1, MaxBatches: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +141,69 @@ func TestStartupStorageIdentityBackfillMigratesEveryLegacyDriver(t *testing.T) {
 	recovery, err := client.ImageTask.Get(ctx, task.ID)
 	if err != nil || recovery.ArtifactStorageConfigID == nil || *recovery.ArtifactStorageConfigID != s3ID {
 		t.Fatalf("s3 recovery=%#v err=%v", recovery, err)
+	}
+}
+
+func TestStartupStorageIdentityBackfillArmsCurrentDriverWithoutLegacyRows(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, fmt.Sprintf("file:startup-storage-empty-cutover-%s?mode=memory&cache=shared&_fk=1", uuid.NewString()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	configID := uuid.New()
+	resolver := &legacyStorageResolverMap{resolved: map[string]domainstorageconfig.ResolvedConfig{
+		"local": {ConfigRecord: domainstorageconfig.ConfigRecord{ID: configID.String(), Driver: "local"}},
+	}}
+
+	progress, err := backfillLegacyStorageIdentitiesAtStartup(
+		t.Context(), client, resolver, "local", db.LegacyStorageIdentityBackfillOptions{},
+	)
+	if err != nil || len(progress) != 1 || !progress["local"].Completed {
+		t.Fatalf("empty startup cutover progress=%#v err=%v", progress, err)
+	}
+	if _, err := client.ObjectDeletionJob.Create().
+		SetStorageDriver("local").
+		SetObjectKey("generated-images/first-old-write.png").
+		SetState(domaincleanup.StatePending).
+		Save(t.Context()); err == nil {
+		t.Fatal("startup cutover allowed first nil-config write for the current storage driver")
+	}
+}
+
+func TestStartupStorageIdentityBackfillArmsReadableHistoricalBootstrapDrivers(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, fmt.Sprintf("file:startup-storage-history-cutover-%s?mode=memory&cache=shared&_fk=1", uuid.NewString()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	resolver := &legacyStorageResolverMap{
+		resolved: map[string]domainstorageconfig.ResolvedConfig{
+			"local": {ConfigRecord: domainstorageconfig.ConfigRecord{ID: uuid.NewString(), Driver: "local"}},
+			"s3":    {ConfigRecord: domainstorageconfig.ConfigRecord{ID: uuid.NewString(), Driver: "s3"}},
+		},
+		legacyDrivers: []string{"s3"},
+	}
+
+	progress, err := backfillLegacyStorageIdentitiesAtStartup(
+		t.Context(), client, resolver, "local", db.LegacyStorageIdentityBackfillOptions{},
+	)
+	if err != nil || len(progress) != 2 || strings.Join(resolver.calls, ",") != "local,s3" {
+		t.Fatalf("historical startup cutover progress=%#v calls=%v err=%v", progress, resolver.calls, err)
+	}
+	for _, driver := range []string{"local", "s3"} {
+		if _, err := client.ObjectDeletionJob.Create().
+			SetStorageDriver(driver).
+			SetObjectKey("generated-images/late-" + driver + ".png").
+			SetState(domaincleanup.StatePending).
+			Save(t.Context()); err == nil {
+			t.Fatalf("startup cutover allowed first nil-config %s write", driver)
+		}
 	}
 }
 
@@ -172,8 +235,11 @@ func TestStartupStorageIdentityBackfillResolvesAllDriversBeforeMutation(t *testi
 		"local": {ConfigRecord: domainstorageconfig.ConfigRecord{ID: localID.String(), Driver: "local"}},
 	}}
 
-	if _, err := backfillLegacyStorageIdentitiesAtStartup(ctx, client, resolver, db.LegacyStorageIdentityBackfillOptions{}); err == nil {
+	if _, err := backfillLegacyStorageIdentitiesAtStartup(ctx, client, resolver, "local", db.LegacyStorageIdentityBackfillOptions{}); err == nil {
 		t.Fatal("unresolved historical driver must fail startup gate")
+	}
+	if count, err := client.MigrationCheckpoint.Query().Count(ctx); err != nil || count != 0 {
+		t.Fatalf("startup installed cutover state before resolving all drivers: count=%d err=%v", count, err)
 	}
 	localResult, err = client.ImageResult.Get(ctx, localResult.ID)
 	if err != nil || localResult.StorageConfigID != nil {
@@ -259,8 +325,13 @@ type legacyStorageResolverStub struct {
 }
 
 type legacyStorageResolverMap struct {
-	resolved map[string]domainstorageconfig.ResolvedConfig
-	calls    []string
+	resolved      map[string]domainstorageconfig.ResolvedConfig
+	legacyDrivers []string
+	calls         []string
+}
+
+func (s *legacyStorageResolverMap) ListLegacyDrivers(context.Context) ([]string, error) {
+	return append([]string(nil), s.legacyDrivers...), nil
 }
 
 func (s *legacyStorageResolverMap) ResolveLegacyByDriver(_ context.Context, driver string) (domainstorageconfig.ResolvedConfig, error) {

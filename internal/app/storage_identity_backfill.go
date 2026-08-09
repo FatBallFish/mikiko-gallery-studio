@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
@@ -22,6 +23,11 @@ var ErrLegacyStorageIdentityBackfillIncomplete = errors.New("legacy storage iden
 
 type legacyStorageIdentityResolver interface {
 	ResolveLegacyByDriver(context.Context, string) (domainstorageconfig.ResolvedConfig, error)
+}
+
+type legacyStorageIdentityStartupResolver interface {
+	legacyStorageIdentityResolver
+	ListLegacyDrivers(context.Context) ([]string, error)
 }
 
 func backfillLegacyStorageIdentityAtStartup(
@@ -48,7 +54,8 @@ func backfillLegacyStorageIdentityAtStartup(
 func backfillLegacyStorageIdentitiesAtStartup(
 	ctx context.Context,
 	client *repoent.Client,
-	resolver legacyStorageIdentityResolver,
+	resolver legacyStorageIdentityStartupResolver,
+	currentDriver string,
 	options db.LegacyStorageIdentityBackfillOptions,
 ) (map[string]db.LegacyStorageIdentityBackfillProgress, error) {
 	if resolver == nil {
@@ -58,6 +65,11 @@ func backfillLegacyStorageIdentitiesAtStartup(
 	if err != nil {
 		return nil, err
 	}
+	persistedDrivers, err := resolver.ListLegacyDrivers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list legacy storage config drivers: %w", err)
+	}
+	drivers = normalizedStorageDrivers(append(append(drivers, persistedDrivers...), currentDriver))
 	configIDs := make(map[string]uuid.UUID, len(drivers))
 	for _, driver := range drivers {
 		resolved, err := resolver.ResolveLegacyByDriver(ctx, driver)
@@ -70,6 +82,9 @@ func backfillLegacyStorageIdentitiesAtStartup(
 		}
 		configIDs[driver] = configID
 	}
+	if err := db.PrepareLegacyStorageCleanupCutovers(ctx, client, drivers); err != nil {
+		return nil, err
+	}
 	progressByDriver := make(map[string]db.LegacyStorageIdentityBackfillProgress, len(drivers))
 	for _, driver := range drivers {
 		progress, err := backfillResolvedLegacyStorageIdentityAtStartup(ctx, client, driver, configIDs[driver], options)
@@ -79,6 +94,23 @@ func backfillLegacyStorageIdentitiesAtStartup(
 		}
 	}
 	return progressByDriver, nil
+}
+
+func normalizedStorageDrivers(values []string) []string {
+	driverSet := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		driver := strings.ToLower(strings.TrimSpace(value))
+		if driver == "" {
+			driver = domainstorageconfig.DriverLocal
+		}
+		driverSet[driver] = struct{}{}
+	}
+	drivers := make([]string, 0, len(driverSet))
+	for driver := range driverSet {
+		drivers = append(drivers, driver)
+	}
+	sort.Strings(drivers)
+	return drivers
 }
 
 func backfillResolvedLegacyStorageIdentityAtStartup(
@@ -103,8 +135,8 @@ func backfillResolvedLegacyStorageIdentityAtStartup(
 	return progress, nil
 }
 
-func requireLegacyStorageIdentityBackfill(ctx context.Context, client *repoent.Client, resolver legacyStorageIdentityResolver) error {
-	_, err := backfillLegacyStorageIdentitiesAtStartup(ctx, client, resolver, db.LegacyStorageIdentityBackfillOptions{
+func requireLegacyStorageIdentityBackfill(ctx context.Context, client *repoent.Client, resolver legacyStorageIdentityStartupResolver, currentDriver string) error {
+	_, err := backfillLegacyStorageIdentitiesAtStartup(ctx, client, resolver, currentDriver, db.LegacyStorageIdentityBackfillOptions{
 		BatchSize: startupStorageIdentityBatchSize, MaxBatches: startupStorageIdentityMaxBatches,
 	})
 	return err

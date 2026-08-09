@@ -81,7 +81,7 @@ func (s *StorageConfigStore) GetLegacyByDriver(ctx context.Context, driver strin
 	}
 	base := []predicate.ObjectStorageConfig{
 		objectstorageconfig.DriverEQ(driver),
-		objectstorageconfig.StatusEQ(domainstorageconfig.StatusEnabled), objectstorageconfig.ReadEnabledEQ(true),
+		objectstorageconfig.StatusNEQ(domainstorageconfig.StatusDeleted), objectstorageconfig.ReadEnabledEQ(true),
 	}
 	row, err := s.client.ObjectStorageConfig.Query().Where(append(base, objectstorageconfig.CodeEQ("bootstrap-"+driver))...).Only(ctx)
 	if err == nil {
@@ -90,14 +90,7 @@ func (s *StorageConfigStore) GetLegacyByDriver(ctx context.Context, driver strin
 	if !repoent.IsNotFound(err) {
 		return domainstorageconfig.ConfigRecord{}, false, err
 	}
-	rows, err := s.client.ObjectStorageConfig.Query().Where(base...).Limit(2).All(ctx)
-	if err != nil {
-		return domainstorageconfig.ConfigRecord{}, false, err
-	}
-	if len(rows) != 1 {
-		return domainstorageconfig.ConfigRecord{}, false, nil
-	}
-	return mapObjectStorageConfig(rows[0]), true, nil
+	return domainstorageconfig.ConfigRecord{}, false, nil
 }
 
 func (s *StorageConfigStore) Save(ctx context.Context, record domainstorageconfig.ConfigRecord) (domainstorageconfig.ConfigRecord, error) {

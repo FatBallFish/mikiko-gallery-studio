@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
@@ -212,6 +213,26 @@ func TestListReadableConfigIDsIncludesDisabledHistoricalStorage(t *testing.T) {
 	}
 	if len(ids) != 2 || ids[0] != "current" || ids[1] != "history" {
 		t.Fatalf("readable IDs=%v", ids)
+	}
+}
+
+func TestListLegacyDriversIncludesReadableBootstrapConfigsOnly(t *testing.T) {
+	store := newMemoryStore()
+	store.records = map[string]domainstorageconfig.ConfigRecord{
+		"local":   {ID: "local", Code: "bootstrap-local", Driver: "local", Status: domainstorageconfig.StatusEnabled, ReadEnabled: true},
+		"s3":      {ID: "s3", Code: "bootstrap-s3", Driver: "s3", Status: domainstorageconfig.StatusDisabled, ReadEnabled: true},
+		"new-s3":  {ID: "new-s3", Code: "new-s3", Driver: "s3", Status: domainstorageconfig.StatusEnabled, ReadEnabled: true},
+		"closed":  {ID: "closed", Code: "bootstrap-local", Driver: "local", Status: domainstorageconfig.StatusDisabled, ReadEnabled: false},
+		"deleted": {ID: "deleted", Code: "bootstrap-s3", Driver: "s3", Status: domainstorageconfig.StatusDeleted, ReadEnabled: true},
+	}
+	svc := NewService(store, "test-key", config.StorageConfig{Driver: "local"}, "local")
+
+	drivers, err := svc.ListLegacyDrivers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := strings.Join(drivers, ","); diff != "local,s3" {
+		t.Fatalf("legacy drivers=%q", diff)
 	}
 }
 
