@@ -92,7 +92,10 @@ func TestGalleryAliasRolloutCompatibilityAcrossActivationAndRollback(t *testing.
 	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.putCalls.Load() != 0 {
 		t.Fatalf("disabled rollout performed storage IO: copy=%d get=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.putCalls.Load())
 	}
-	activated, err := rolloutStore.UpdateAliasCreationRollout(ctx, true, 0, 1)
+	activated, err := rolloutStore.UpdateAliasCreationRollout(ctx, domainassets.UpdateAliasCreationRolloutRequest{
+		Enabled: true, ExpectedVersion: 0, UpdatedBy: 1, AllAPINodesCleanupAware: true,
+		ActorType: "admin", ActorID: "1",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +111,10 @@ func TestGalleryAliasRolloutCompatibilityAcrossActivationAndRollback(t *testing.
 	if err := json.Unmarshal(created.Body.Bytes(), &response); err != nil || len(response.Data.Items) != 1 {
 		t.Fatalf("decode activated alias: %v body=%s", err, created.Body.String())
 	}
-	if _, err := rolloutStore.UpdateAliasCreationRollout(ctx, false, activated.Version, 1); err != nil {
+	if _, err := rolloutStore.UpdateAliasCreationRollout(ctx, domainassets.UpdateAliasCreationRolloutRequest{
+		Enabled: false, ExpectedVersion: activated.Version, UpdatedBy: 1,
+		ActorType: "admin", ActorID: "1",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if rec := importResult(results[1].ID.String()); rec.Code != http.StatusConflict {

@@ -2,10 +2,14 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,12 +18,10 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
-	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
-	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 )
 
@@ -32,19 +34,33 @@ func TestAdminAliasRolloutRequiresDangerousPermissionAndExplicitCohortAttestatio
 	if err := client.Schema.Create(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+	var failAudit atomic.Bool
+	injectedAuditErr := errors.New("injected rollout audit failure")
+	client.Use(func(next repoent.Mutator) repoent.Mutator {
+		return repoent.MutateFunc(func(ctx context.Context, mutation repoent.Mutation) (repoent.Value, error) {
+			if _, ok := mutation.(*repoent.AuditLogMutation); ok && failAudit.Load() {
+				return nil, injectedAuditErr
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
 	cfg := adminConfigAPIConfig()
 	authSvc := authservice.NewService(cfg.Auth, map[string]string{"basic": "1.00000"})
 	adminStore := adminauthservice.NewMemoryStore()
+	var rootAdmin domainadminauth.AdminUser
 	for _, admin := range []domainadminauth.AdminUser{
 		{Email: "rollout-ops@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: domainadminauth.RoleAdmin, Status: "active"},
 		{Email: "rollout-root@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: domainadminauth.RoleSuperAdmin, Status: "active"},
 	} {
-		if _, err := adminStore.CreateAdmin(t.Context(), admin); err != nil {
+		created, err := adminStore.CreateAdmin(t.Context(), admin)
+		if err != nil {
 			t.Fatal(err)
 		}
+		if created.Email == "rollout-root@example.com" {
+			rootAdmin = created
+		}
 	}
-	auditSvc := auditservice.NewService(auditservice.NewMemoryStore())
-	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, nil, nil, adminauthservice.NewService(cfg.Auth, adminStore), auditSvc)
+	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, nil, nil, adminauthservice.NewService(cfg.Auth, adminStore), nil)
 	rollout := entstore.NewAliasRolloutStore(client)
 	api.SetAliasRolloutStore(rollout)
 	handler := NewWithAPI(api)
@@ -62,6 +78,9 @@ func TestAdminAliasRolloutRequiresDangerousPermissionAndExplicitCohortAttestatio
 		req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/runtime-rollouts/no-copy-reference-aliases", bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Request-Id", "req-admin-alias-rollout")
+		req.Header.Set("User-Agent", "admin-rollout-contract/1.0")
+		req.RemoteAddr = "198.51.100.9:8443"
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		return rec
@@ -71,6 +90,18 @@ func TestAdminAliasRolloutRequiresDangerousPermissionAndExplicitCohortAttestatio
 	}
 	if rec := request(rootToken, `{"enabled":true,"expected_version":0}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("activation without cohort attestation status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	failAudit.Store(true)
+	if rec := request(rootToken, `{"enabled":true,"expected_version":0,"all_api_nodes_cleanup_aware":true}`); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("activation with failed audit status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	failAudit.Store(false)
+	status, err := rollout.GetAliasCreationRollout(t.Context())
+	if err != nil || status.Enabled || status.Version != 0 {
+		t.Fatalf("failed audit committed rollout: status=%#v err=%v", status, err)
+	}
+	if count, err := client.AuditLog.Query().Count(t.Context()); err != nil || count != 0 {
+		t.Fatalf("failed audit wrote partial event: count=%d err=%v", count, err)
 	}
 	activated := request(rootToken, `{"enabled":true,"expected_version":0,"all_api_nodes_cleanup_aware":true}`)
 	if activated.Code != http.StatusOK || !strings.Contains(activated.Body.String(), `"enabled":true`) || !strings.Contains(activated.Body.String(), `"version":1`) {
@@ -83,9 +114,21 @@ func TestAdminAliasRolloutRequiresDangerousPermissionAndExplicitCohortAttestatio
 	if disabled.Code != http.StatusOK || !strings.Contains(disabled.Body.String(), `"enabled":false`) || !strings.Contains(disabled.Body.String(), `"version":2`) {
 		t.Fatalf("rollback status=%d body=%s", disabled.Code, disabled.Body.String())
 	}
-	audits, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Action: "runtime_rollout.alias_creation.disable", Page: 1, PageSize: 10})
-	if err != nil || len(audits.Items) != 1 || audits.Items[0].TargetID != "no_copy_reference_aliases" {
-		t.Fatalf("rollout audit=%#v err=%v", audits, err)
+	audits, err := client.AuditLog.Query().All(t.Context())
+	if err != nil || len(audits) != 2 {
+		t.Fatalf("transactional rollout audits=%#v err=%v", audits, err)
+	}
+	var disableAudit *repoent.AuditLog
+	for _, audit := range audits {
+		if audit.Action == "runtime_rollout.alias_creation.disable" {
+			disableAudit = audit
+		}
+	}
+	if disableAudit == nil || disableAudit.ActorType != "admin" || disableAudit.ActorID != fmt.Sprintf("%d", rootAdmin.ID) || disableAudit.TargetID != "no_copy_reference_aliases" || disableAudit.IPAddr != "198.51.100.9:8443" || disableAudit.UserAgent != "admin-rollout-contract/1.0" {
+		t.Fatalf("transactional rollout disable audit=%#v", disableAudit)
+	}
+	if disableAudit.Metadata["request_id"] != "req-admin-alias-rollout" || disableAudit.Metadata["expected_version"] != float64(1) || disableAudit.Metadata["version"] != float64(2) {
+		t.Fatalf("transactional rollout disable metadata=%#v", disableAudit.Metadata)
 	}
 }
 

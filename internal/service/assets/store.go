@@ -30,5 +30,5 @@ type AliasCreationGate interface {
 type AliasRolloutStore interface {
 	AliasCreationGate
 	GetAliasCreationRollout(ctx context.Context) (domainassets.AliasCreationRollout, error)
-	UpdateAliasCreationRollout(ctx context.Context, enabled bool, expectedVersion, updatedBy int64) (domainassets.AliasCreationRollout, error)
+	UpdateAliasCreationRollout(ctx context.Context, req domainassets.UpdateAliasCreationRolloutRequest) (domainassets.AliasCreationRollout, error)
 }

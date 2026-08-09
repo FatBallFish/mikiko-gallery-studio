@@ -4978,23 +4978,18 @@ func (a *API) HandleAdminAliasCreationRollout(w http.ResponseWriter, r *http.Req
 			httpx.WriteError(w, r, errs.BadRequest("all_api_nodes_cleanup_aware must be confirmed before activation"))
 			return
 		}
-		status, err := a.aliasRollout.UpdateAliasCreationRollout(r.Context(), req.Enabled, req.ExpectedVersion, admin.AdminID)
+		status, err := a.aliasRollout.UpdateAliasCreationRollout(r.Context(), domainassets.UpdateAliasCreationRolloutRequest{
+			Enabled: req.Enabled, ExpectedVersion: req.ExpectedVersion, UpdatedBy: admin.AdminID,
+			AllAPINodesCleanupAware: req.AllAPINodesCleanupAware,
+			ActorType:               "admin", ActorID: fmt.Sprintf("%d", admin.AdminID),
+			RequestID: httpx.RequestIDFromContext(r.Context()), IPAddr: r.RemoteAddr, UserAgent: r.UserAgent(),
+		})
 		if errors.Is(err, domainassets.ErrAliasRolloutChanged) {
 			httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodeConflict, "alias creation rollout version conflict"))
 			return
 		}
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		action := "disable"
-		if status.Enabled {
-			action = "enable"
-		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "runtime_rollout.alias_creation."+action, "runtime_rollout", "no_copy_reference_aliases", map[string]any{
-			"enabled": status.Enabled, "version": status.Version, "all_api_nodes_cleanup_aware": req.AllAPINodesCleanupAware,
-		}); auditErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, status)
