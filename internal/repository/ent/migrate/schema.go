@@ -649,6 +649,11 @@ var (
 				Columns: []*schema.Column{ImageTasksColumns[1]},
 			},
 			{
+				Name:    "imagetask_updated_at_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[2], ImageTasksColumns[0], ImageTasksColumns[1]},
+			},
+			{
 				Name:    "imagetask_deleted_at",
 				Unique:  false,
 				Columns: []*schema.Column{ImageTasksColumns[3]},

@@ -119,6 +119,9 @@ type API struct {
 	readinessMu   sync.Mutex
 	readinessData []adminReadinessCheck
 	readinessTill time.Time
+	readinessGen  uint64
+	readinessRun  *adminReadinessFlight
+	readinessWait time.Duration
 	cfg           config.Config
 }
 
@@ -140,6 +143,22 @@ type adminReadinessCheck struct {
 	ActionLabel  string    `json:"action_label,omitempty"`
 	Blocking     bool      `json:"blocking"`
 	CheckedAt    time.Time `json:"checked_at"`
+}
+
+type adminReadinessFlight struct {
+	generation uint64
+	checkedAt  time.Time
+	docsReady  DocsReadinessChecker
+	done       chan struct{}
+	checks     []adminReadinessCheck
+}
+
+type adminReadinessProbe struct {
+	key         string
+	label       string
+	fixRoute    string
+	actionLabel string
+	run         func(context.Context, time.Time) (adminReadinessCheck, error)
 }
 
 type adminDashboardOperations struct {
@@ -297,16 +316,21 @@ func (a *API) SetDocsReadinessChecker(checker DocsReadinessChecker) {
 	} else {
 		a.docsReady = checker
 	}
-	a.readinessData = nil
-	a.readinessTill = time.Time{}
+	a.invalidateReadinessLocked()
 }
 
 func (a *API) SetCashierProviderInstanceStore(store cashierservice.ProviderInstanceStore) {
 	a.readinessMu.Lock()
 	defer a.readinessMu.Unlock()
 	a.cashierConfigFacade().WithProviderInstanceStore(store)
+	a.invalidateReadinessLocked()
+}
+
+func (a *API) invalidateReadinessLocked() {
+	a.readinessGen++
 	a.readinessData = nil
 	a.readinessTill = time.Time{}
+	a.readinessRun = nil
 }
 
 func (a *API) SetSecureConfigService(service *secureconfigservice.Service) {
@@ -8984,121 +9008,229 @@ func defaultPositiveInt(value, fallback int) int {
 }
 
 func (a *API) adminReadinessChecks(ctx context.Context) ([]adminReadinessCheck, *errs.Error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	a.readinessMu.Lock()
-	defer a.readinessMu.Unlock()
 	now := time.Now().UTC()
 	if now.Before(a.readinessTill) && a.readinessData != nil {
-		return append([]adminReadinessCheck(nil), a.readinessData...), nil
+		checks := append([]adminReadinessCheck(nil), a.readinessData...)
+		a.readinessMu.Unlock()
+		return checks, nil
 	}
-	boundedCtx, cancel := context.WithTimeout(ctx, adminReadinessTimeout)
-	defer cancel()
-	checks, appErr := a.computeAdminReadinessChecks(boundedCtx, now)
-	if appErr != nil {
-		return nil, appErr
+	flight := a.readinessRun
+	start := false
+	if flight == nil || flight.generation != a.readinessGen {
+		flight = &adminReadinessFlight{
+			generation: a.readinessGen,
+			checkedAt:  now,
+			docsReady:  a.docsReady,
+			done:       make(chan struct{}),
+		}
+		a.readinessRun = flight
+		start = true
 	}
-	if boundedCtx.Err() != nil {
-		return nil, errs.New(http.StatusServiceUnavailable, errs.CodeUpstreamUnavailable, "readiness check did not complete within its deadline")
+	a.readinessMu.Unlock()
+	if start {
+		// The shared flight is bounded by its individual probes and intentionally
+		// does not inherit the first waiter's cancellation.
+		go a.runAdminReadinessFlight(flight)
 	}
-	a.readinessData = append([]adminReadinessCheck(nil), checks...)
-	a.readinessTill = now.Add(adminReadinessCacheTTL)
-	return checks, nil
+	select {
+	case <-ctx.Done():
+		return nil, errs.New(http.StatusServiceUnavailable, errs.CodeUpstreamUnavailable, "readiness request was canceled")
+	case <-flight.done:
+		return append([]adminReadinessCheck(nil), flight.checks...), nil
+	}
 }
 
-func (a *API) computeAdminReadinessChecks(ctx context.Context, checkedAt time.Time) ([]adminReadinessCheck, *errs.Error) {
-	checks := make([]adminReadinessCheck, 0, 10)
+func (a *API) runAdminReadinessFlight(flight *adminReadinessFlight) {
+	checks := a.computeAdminReadinessChecks(flight.checkedAt, flight.docsReady)
+	a.readinessMu.Lock()
+	flight.checks = append([]adminReadinessCheck(nil), checks...)
+	if a.readinessGen == flight.generation && a.readinessRun == flight {
+		a.readinessData = append([]adminReadinessCheck(nil), checks...)
+		a.readinessTill = time.Now().UTC().Add(adminReadinessCacheTTL)
+		a.readinessRun = nil
+	}
+	close(flight.done)
+	a.readinessMu.Unlock()
+}
 
-	enabled := true
+func (a *API) computeAdminReadinessChecks(checkedAt time.Time, docsReady DocsReadinessChecker) []adminReadinessCheck {
+	probes := a.adminReadinessProbes(docsReady)
+	checks := make([]adminReadinessCheck, len(probes))
+	var wait sync.WaitGroup
+	wait.Add(len(probes))
+	for index := range probes {
+		index := index
+		go func() {
+			defer wait.Done()
+			checks[index] = a.runAdminReadinessProbe(probes[index], checkedAt)
+		}()
+	}
+	wait.Wait()
+	return checks
+}
+
+func (a *API) adminReadinessProbes(docsReady DocsReadinessChecker) []adminReadinessProbe {
+	return []adminReadinessProbe{
+		{key: "model_accounts", label: "模型接入账号", fixRoute: "provider-models", actionLabel: "去配置", run: a.modelAccountsReadinessCheck},
+		{key: "provider_models", label: "真实模型", fixRoute: "provider-models", actionLabel: "去配置", run: a.providerModelsReadinessCheck},
+		{key: "route_models", label: "路由模型", fixRoute: "routing", actionLabel: "去配置", run: a.routeModelsReadinessCheck},
+		{key: "route_candidates", label: "候选模型", fixRoute: "routing", actionLabel: "去配置", run: a.routeCandidatesReadinessCheck},
+		{key: "route_prices", label: "价格策略", fixRoute: "pricing", actionLabel: "去配置", run: a.routePricesReadinessCheck},
+		{key: "payments", label: "支付配置", fixRoute: "cashier", actionLabel: "去配置", run: a.paymentReadinessProbe},
+		{key: "refund_compensation", label: "退款补偿", fixRoute: "cashier", actionLabel: "去处理", run: func(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+			check, appErr := a.refundCompensationReadinessCheck(ctx, checkedAt)
+			if appErr != nil {
+				return adminReadinessCheck{}, appErr
+			}
+			return check, nil
+		}},
+		{key: "signup_trial", label: "注册送体验额度", fixRoute: "config", actionLabel: "去配置", run: func(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+			return a.signupTrialReadinessCheck(ctx, checkedAt), nil
+		}},
+		{key: "public_gallery", label: "公开广场", fixRoute: "reviews", actionLabel: "去审核", run: a.publicGalleryReadinessProbe},
+		{key: "docs", label: "开发文档", fixRoute: "monitoring", actionLabel: "查看诊断", run: func(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+			return a.docsReadinessCheckWith(ctx, checkedAt, docsReady), nil
+		}},
+	}
+}
+
+type adminReadinessProbeResult struct {
+	check adminReadinessCheck
+	err   error
+}
+
+func (a *API) runAdminReadinessProbe(probe adminReadinessProbe, checkedAt time.Time) adminReadinessCheck {
+	timeout := a.readinessWait
+	if timeout <= 0 {
+		timeout = adminReadinessTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	result := make(chan adminReadinessProbeResult, 1)
+	go func() {
+		defer func() {
+			if recover() != nil {
+				result <- adminReadinessProbeResult{err: errors.New("readiness probe panicked")}
+			}
+		}()
+		check, err := probe.run(ctx, checkedAt)
+		result <- adminReadinessProbeResult{check: check, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return readinessCheck(probe.key, probe.label, "fail", probe.label+"检查超时", probe.fixRoute, probe.actionLabel, checkedAt)
+	case resolved := <-result:
+		if resolved.err != nil {
+			return readinessCheck(probe.key, probe.label, "fail", probe.label+"检查暂时不可用", probe.fixRoute, probe.actionLabel, checkedAt)
+		}
+		return resolved.check
+	}
+}
+
+func (a *API) modelAccountsReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
 	accounts, err := a.modelAdmin.ListModelAccounts(ctx, domainmodeladmin.ModelAccountListRequest{Page: 1, PageSize: 200, Status: domainmodeladmin.ModelAccountStatusEnabled})
 	if err != nil {
-		return nil, normalizeAppError(err)
+		return adminReadinessCheck{}, err
 	}
-	checks = append(checks, readinessCheck("model_accounts", "模型接入账号", statusByPositiveCount(accounts.Total), fmt.Sprintf("%d 个已启用账号", accounts.Total), "provider-models", "去配置", checkedAt))
+	return readinessCheck("model_accounts", "模型接入账号", statusByPositiveCount(accounts.Total), fmt.Sprintf("%d 个已启用账号", accounts.Total), "provider-models", "去配置", checkedAt), nil
+}
 
-	providerModels, err := a.modelAdmin.ListModelAccountModels(ctx, domainmodeladmin.ModelAccountModelListRequest{Page: 1, PageSize: 200, Enabled: &enabled})
+func (a *API) providerModelsReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+	enabled := true
+	models, err := a.modelAdmin.ListModelAccountModels(ctx, domainmodeladmin.ModelAccountModelListRequest{Page: 1, PageSize: 200, Enabled: &enabled})
 	if err != nil {
-		return nil, normalizeAppError(err)
+		return adminReadinessCheck{}, err
 	}
-	checks = append(checks, readinessCheck("provider_models", "真实模型", statusByPositiveCount(providerModels.Total), fmt.Sprintf("%d 个已启用真实模型", providerModels.Total), "provider-models", "去配置", checkedAt))
+	return readinessCheck("provider_models", "真实模型", statusByPositiveCount(models.Total), fmt.Sprintf("%d 个已启用真实模型", models.Total), "provider-models", "去配置", checkedAt), nil
+}
 
-	routeModels, err := a.modelAdmin.ListRouteModels(ctx, domainmodeladmin.RouteModelListRequest{Page: 1, PageSize: 200, Enabled: &enabled})
+func (a *API) visibleRouteModelsForReadiness(ctx context.Context) ([]domainmodeladmin.RouteModel, error) {
+	enabled := true
+	page, err := a.modelAdmin.ListRouteModels(ctx, domainmodeladmin.RouteModelListRequest{Page: 1, PageSize: 200, Enabled: &enabled})
 	if err != nil {
-		return nil, normalizeAppError(err)
+		return nil, err
 	}
-	visibleRouteModels := make([]domainmodeladmin.RouteModel, 0, len(routeModels.Items))
-	for _, item := range routeModels.Items {
+	items := make([]domainmodeladmin.RouteModel, 0, len(page.Items))
+	for _, item := range page.Items {
 		if item.Visibility == domainmodeladmin.RouteModelVisibilityPublic || item.Visibility == domainmodeladmin.RouteModelVisibilityGroups {
-			visibleRouteModels = append(visibleRouteModels, item)
+			items = append(items, item)
 		}
 	}
-	routeModelStatus := statusByPositiveCount(len(visibleRouteModels))
-	checks = append(checks, readinessCheck("route_models", "路由模型", routeModelStatus, fmt.Sprintf("%d 个可见启用路由模型", len(visibleRouteModels)), "routing", "去配置", checkedAt))
+	return items, nil
+}
 
-	routeCandidateStatus := "fail"
-	routeCandidateDetail := "暂无可见启用路由模型"
-	if len(visibleRouteModels) > 0 {
+func (a *API) routeModelsReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+	models, err := a.visibleRouteModelsForReadiness(ctx)
+	if err != nil {
+		return adminReadinessCheck{}, err
+	}
+	return readinessCheck("route_models", "路由模型", statusByPositiveCount(len(models)), fmt.Sprintf("%d 个可见启用路由模型", len(models)), "routing", "去配置", checkedAt), nil
+}
+
+func (a *API) routeCandidatesReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+	models, err := a.visibleRouteModelsForReadiness(ctx)
+	if err != nil {
+		return adminReadinessCheck{}, err
+	}
+	status, detail := "fail", "暂无可见启用路由模型"
+	if len(models) > 0 {
 		missing := 0
-		for _, routeModel := range visibleRouteModels {
-			candidates, candidateErr := a.modelAdmin.ListRouteModelCandidates(ctx, routeModel.ID)
+		for _, model := range models {
+			candidates, candidateErr := a.modelAdmin.ListRouteModelCandidates(ctx, model.ID)
 			if candidateErr != nil {
-				return nil, normalizeAppError(candidateErr)
+				return adminReadinessCheck{}, candidateErr
 			}
-			hasEnabledCandidate := false
+			hasEnabled := false
 			for _, candidate := range candidates {
 				if candidate.Enabled {
-					hasEnabledCandidate = true
+					hasEnabled = true
 					break
 				}
 			}
-			if !hasEnabledCandidate {
+			if !hasEnabled {
 				missing++
 			}
 		}
 		switch {
 		case missing == 0:
-			routeCandidateStatus = "pass"
-			routeCandidateDetail = fmt.Sprintf("%d 个路由模型均有启用候选", len(visibleRouteModels))
-		case missing == len(visibleRouteModels):
-			routeCandidateStatus = "fail"
-			routeCandidateDetail = fmt.Sprintf("%d 个路由模型缺少启用候选", missing)
+			status, detail = "pass", fmt.Sprintf("%d 个路由模型均有启用候选", len(models))
+		case missing == len(models):
+			status, detail = "fail", fmt.Sprintf("%d 个路由模型缺少启用候选", missing)
 		default:
-			routeCandidateStatus = "warn"
-			routeCandidateDetail = fmt.Sprintf("%d 个路由模型缺少启用候选", missing)
+			status, detail = "warn", fmt.Sprintf("%d 个路由模型缺少启用候选", missing)
 		}
 	}
-	checks = append(checks, readinessCheck("route_candidates", "候选模型", routeCandidateStatus, routeCandidateDetail, "routing", "去配置", checkedAt))
+	return readinessCheck("route_candidates", "候选模型", status, detail, "routing", "去配置", checkedAt), nil
+}
 
+func (a *API) routePricesReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+	models, err := a.visibleRouteModelsForReadiness(ctx)
+	if err != nil {
+		return adminReadinessCheck{}, err
+	}
+	enabled := true
 	prices, err := a.modelAdmin.ListRouteModelPrices(ctx, domainmodeladmin.RouteModelPriceListRequest{Page: 1, PageSize: 200, Enabled: &enabled})
 	if err != nil {
-		return nil, normalizeAppError(err)
+		return adminReadinessCheck{}, err
 	}
-	routePriceStatus := statusByPositiveCount(prices.Total)
-	if len(visibleRouteModels) > 0 && routePriceStatus == "pass" {
-		priceRouteIDs := map[int64]struct{}{}
+	status := statusByPositiveCount(prices.Total)
+	if len(models) > 0 && status == "pass" {
+		priced := make(map[int64]struct{}, len(prices.Items))
 		for _, price := range prices.Items {
-			priceRouteIDs[price.RouteModelID] = struct{}{}
+			priced[price.RouteModelID] = struct{}{}
 		}
-		missing := 0
-		for _, routeModel := range visibleRouteModels {
-			if _, ok := priceRouteIDs[routeModel.ID]; !ok {
-				missing++
+		for _, model := range models {
+			if _, ok := priced[model.ID]; !ok {
+				status = "warn"
+				break
 			}
 		}
-		if missing > 0 {
-			routePriceStatus = "warn"
-		}
 	}
-	checks = append(checks, readinessCheck("route_prices", "价格策略", routePriceStatus, fmt.Sprintf("%d 条已启用价格", prices.Total), "pricing", "去配置", checkedAt))
-
-	checks = append(checks, a.paymentReadinessCheck(ctx, checkedAt))
-	refundCompensationCheck, appErr := a.refundCompensationReadinessCheck(ctx, checkedAt)
-	if appErr != nil {
-		return nil, appErr
-	}
-	checks = append(checks, refundCompensationCheck)
-	checks = append(checks, a.signupTrialReadinessCheck(ctx, checkedAt))
-	checks = append(checks, a.publicGalleryReadinessCheck(ctx, checkedAt))
-	checks = append(checks, a.docsReadinessCheck(ctx, checkedAt))
-	return checks, nil
+	return readinessCheck("route_prices", "价格策略", status, fmt.Sprintf("%d 条已启用价格", prices.Total), "pricing", "去配置", checkedAt), nil
 }
 
 func (a *API) adminUserDetailPayload(ctx context.Context, userID int64, detail domainadminuser.Detail) (map[string]any, *errs.Error) {
@@ -9189,11 +9321,25 @@ func summarizeReadinessChecks(checks []adminReadinessCheck) (string, map[string]
 }
 
 func (a *API) paymentReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
-	methods := a.cashierVisibleMethods(ctx, false)
-	if len(methods) == 0 {
-		return readinessCheck("payments", "支付配置", "fail", "暂无可见支付方式", "cashier", "去配置", checkedAt)
+	check, err := a.paymentReadinessProbe(ctx, checkedAt)
+	if err != nil {
+		return readinessCheck("payments", "支付配置", "fail", "支付配置检查暂时不可用", "cashier", "去配置", checkedAt)
 	}
-	instances := a.cashierProviderInstances(ctx)
+	return check
+}
+
+func (a *API) paymentReadinessProbe(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+	methods, err := a.cashierConfigFacade().VisibleMethods(ctx, false)
+	if err != nil {
+		return adminReadinessCheck{}, err
+	}
+	if len(methods) == 0 {
+		return readinessCheck("payments", "支付配置", "fail", "暂无可见支付方式", "cashier", "去配置", checkedAt), nil
+	}
+	instances, err := a.cashierConfigFacade().ProviderInstances(ctx)
+	if err != nil {
+		return adminReadinessCheck{}, err
+	}
 	if isProductionAppEnv(a.cfg.App.Env) {
 		filtered := make([]cashierProviderInstance, 0, len(instances))
 		for _, instance := range instances {
@@ -9214,12 +9360,12 @@ func (a *API) paymentReadinessCheck(ctx context.Context, checkedAt time.Time) ad
 		eligibleCount += len(eligible)
 	}
 	if len(unavailableMethods) == len(methods) {
-		return readinessCheck("payments", "支付配置", "fail", "可见支付方式均无可服务渠道实例", "cashier", "去配置", checkedAt)
+		return readinessCheck("payments", "支付配置", "fail", "可见支付方式均无可服务渠道实例", "cashier", "去配置", checkedAt), nil
 	}
 	if len(unavailableMethods) > 0 {
-		return readinessCheck("payments", "支付配置", "warn", fmt.Sprintf("%d 个支付方式可用，%s 暂不可用", len(methods)-len(unavailableMethods), strings.Join(unavailableMethods, "、")), "cashier", "去配置", checkedAt)
+		return readinessCheck("payments", "支付配置", "warn", fmt.Sprintf("%d 个支付方式可用，%s 暂不可用", len(methods)-len(unavailableMethods), strings.Join(unavailableMethods, "、")), "cashier", "去配置", checkedAt), nil
 	}
-	return readinessCheck("payments", "支付配置", "pass", fmt.Sprintf("%d 个支付方式均可服务，匹配 %d 个渠道实例", len(methods), eligibleCount), "cashier", "去配置", checkedAt)
+	return readinessCheck("payments", "支付配置", "pass", fmt.Sprintf("%d 个支付方式均可服务，匹配 %d 个渠道实例", len(methods), eligibleCount), "cashier", "去配置", checkedAt), nil
 }
 
 func (a *API) refundCompensationReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, *errs.Error) {
@@ -9254,26 +9400,37 @@ func (a *API) signupTrialReadinessCheck(ctx context.Context, checkedAt time.Time
 }
 
 func (a *API) publicGalleryReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
+	check, err := a.publicGalleryReadinessProbe(ctx, checkedAt)
+	if err != nil {
+		return readinessCheck("public_gallery", "公开广场", "fail", "公开广场检查暂时不可用", "reviews", "去审核", checkedAt)
+	}
+	return check
+}
+
+func (a *API) publicGalleryReadinessProbe(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
 	if !a.adminConfigBool(ctx, "public_gallery", "gallery_enabled", true) {
-		return readinessCheck("public_gallery", "公开广场", "warn", "公开广场入口未启用", "reviews", "去审核", checkedAt)
+		return readinessCheck("public_gallery", "公开广场", "warn", "公开广场入口未启用", "reviews", "去审核", checkedAt), nil
 	}
 	pending, err := a.tasks.ListGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 1, Status: domainimagetask.VisibilityPendingReview})
 	if err != nil {
-		return readinessCheck("public_gallery", "公开广场", "warn", "审核队列读取失败", "reviews", "去审核", checkedAt)
+		return adminReadinessCheck{}, err
 	}
 	public, err := a.tasks.ListPublicGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 1})
 	if err != nil {
-		return readinessCheck("public_gallery", "公开广场", "warn", "公开作品读取失败", "reviews", "去审核", checkedAt)
+		return adminReadinessCheck{}, err
 	}
 	status := "pass"
 	if public.Total == 0 {
 		status = "warn"
 	}
-	return readinessCheck("public_gallery", "公开广场", status, fmt.Sprintf("%d 个公开作品，%d 个待审核", public.Total, pending.Total), "reviews", "去审核", checkedAt)
+	return readinessCheck("public_gallery", "公开广场", status, fmt.Sprintf("%d 个公开作品，%d 个待审核", public.Total, pending.Total), "reviews", "去审核", checkedAt), nil
 }
 
 func (a *API) docsReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
-	checker := a.docsReady
+	return a.docsReadinessCheckWith(ctx, checkedAt, a.docsReady)
+}
+
+func (a *API) docsReadinessCheckWith(ctx context.Context, checkedAt time.Time, checker DocsReadinessChecker) adminReadinessCheck {
 	if checker == nil {
 		checker = newDocsReadinessChecker(a.cfg, nil, docsReadinessProbeTimeout)
 	}

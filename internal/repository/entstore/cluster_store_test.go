@@ -293,6 +293,32 @@ func TestClusterStoreEnforcesNodeIdentityAndUpdatesHeartbeat(t *testing.T) {
 	}
 }
 
+func TestClusterStorePersistsLogicalSingleComponentHeartbeat(t *testing.T) {
+	client := newClusterStoreClient(t)
+	installationID := "019d0000-0000-7000-8000-000000000884"
+	seedInitializedClusterInstallation(t, client, installationID)
+	now := time.Now().UTC()
+	store := entstore.NewClusterStore(client)
+	runner, err := clusterservice.NewHeartbeatRunner(clusterservice.HeartbeatOptions{
+		Store: store, InstallationID: installationID,
+		NodeID: clusterservice.LogicalSingleComponentNodeID(installationID, domaincluster.NodeRoleWorker),
+		Role:   domaincluster.NodeRoleWorker, ApplicationVersion: "v1", RuntimeSchemaVersion: 1, ConfigRevision: 4,
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("new heartbeat runner: %v", err)
+	}
+	if _, err := runner.Pulse(t.Context()); err != nil {
+		t.Fatalf("pulse logical-single Worker: %v", err)
+	}
+
+	reloaded := entstore.NewClusterStore(client)
+	items, total, err := reloaded.ListNodes(t.Context(), installationID, domaincluster.ListNodesRequest{Page: 1, PageSize: 20, Role: domaincluster.NodeRoleWorker})
+	if err != nil || total != 1 || len(items) != 1 || items[0].NodeID != clusterservice.LogicalSingleComponentNodeID(installationID, domaincluster.NodeRoleWorker) || items[0].LastHeartbeatAt == nil || !items[0].LastHeartbeatAt.Equal(now) {
+		t.Fatalf("persisted logical-single Worker = %#v total=%d err=%v", items, total, err)
+	}
+}
+
 func newClusterStoreClient(t *testing.T) *repoent.Client {
 	t.Helper()
 	client, err := repoent.Open(dialect.SQLite, "file:"+strings.NewReplacer("/", "-", " ", "-").Replace(t.Name())+"?mode=memory&cache=shared&_fk=1")

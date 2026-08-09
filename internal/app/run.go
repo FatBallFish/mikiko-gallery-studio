@@ -342,7 +342,8 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	clusterSvc := clusterservice.NewService(clusterservice.ServiceOptions{
 		Store:          clusterStore,
 		InstallationID: cfg.Runtime.InstallationID, DeploymentRole: domaincluster.NodeRole(cfg.Runtime.DeploymentRole),
-		RuntimeValues: startup.Bootstrap.Values, EnrollmentSealKey: startup.Bootstrap.Values["CLUSTER_ENROLLMENT_SEAL_KEY"],
+		SingleComponents: runtimeClusterNodeRoles(cfg.Runtime),
+		RuntimeValues:    startup.Bootstrap.Values, EnrollmentSealKey: startup.Bootstrap.Values["CLUSTER_ENROLLMENT_SEAL_KEY"],
 	})
 	adminUserSvc := adminuserservice.NewServiceWithStore(entstore.NewAdminUserStore(client, billingStore), billingSvc)
 	redeemSvc := redeemservice.NewServiceWithStore(entstore.NewRedeemAdminStore(client))
@@ -362,7 +363,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	api.SetStorageConfigService(storageConfigSvc, storageRegistry, storageInvalidationBus)
 	api.SetClusterService(clusterSvc)
 	api.SetProjectService(projectSvc)
-	heartbeat, err := startRuntimeHeartbeat(metricsContext, cfg, clusterStore)
+	heartbeat, err := startRuntimeHeartbeat(metricsContext, cfg, clusterStore, domaincluster.NodeRoleAPI)
 	if err != nil {
 		return err
 	}

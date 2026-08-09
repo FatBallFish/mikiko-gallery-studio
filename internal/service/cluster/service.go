@@ -58,6 +58,7 @@ type ServiceOptions struct {
 	Store             Store
 	InstallationID    string
 	DeploymentRole    domaincluster.NodeRole
+	SingleComponents  []domaincluster.NodeRole
 	RuntimeValues     map[string]string
 	EnrollmentSealKey string
 	ChallengeTTL      time.Duration
@@ -69,6 +70,7 @@ type Service struct {
 	store             Store
 	installationID    string
 	deploymentRole    domaincluster.NodeRole
+	singleComponents  []domaincluster.NodeRole
 	runtimeValues     map[string]string
 	enrollmentSealKey string
 	challengeTTL      time.Duration
@@ -89,10 +91,12 @@ func NewService(options ServiceOptions) *Service {
 	if options.ChallengeTTL <= 0 {
 		options.ChallengeTTL = 2 * time.Minute
 	}
+	singleComponents := normalizeSingleComponents(options.SingleComponents)
 	return &Service{
 		store:          options.Store,
 		installationID: strings.TrimSpace(options.InstallationID), deploymentRole: options.DeploymentRole,
-		runtimeValues: cloneRuntimeValues(options.RuntimeValues), enrollmentSealKey: strings.TrimSpace(options.EnrollmentSealKey),
+		singleComponents: singleComponents,
+		runtimeValues:    cloneRuntimeValues(options.RuntimeValues), enrollmentSealKey: strings.TrimSpace(options.EnrollmentSealKey),
 		challengeTTL: options.ChallengeTTL, now: options.Now, entropy: options.Entropy,
 	}
 }
@@ -356,15 +360,9 @@ func (s *Service) ListNodes(ctx context.Context, request domaincluster.ListNodes
 		if request.Role != "" && request.Role != domaincluster.NodeRoleSingle {
 			return domaincluster.NodePage{Items: []domaincluster.NodeStatus{}, Page: request.Page, PageSize: request.PageSize}, nil
 		}
-		now := s.now().UTC()
-		logical := domaincluster.NodeStatus{
-			Node: domaincluster.Node{
-				NodeID: "logical-single-" + installation.InstallationID, InstallationID: installation.InstallationID,
-				Role: domaincluster.NodeRoleSingle, ApplicationVersion: installation.ApplicationVersion,
-				RuntimeSchemaVersion: installation.RuntimeSchemaVersion, ConfigRevision: installation.ConfigRevision,
-				Health: domaincluster.NodeHealthHealthy, CreatedAt: now, UpdatedAt: now,
-			},
-			Source: domaincluster.NodeSourceLogicalSingle, EffectiveHealth: domaincluster.NodeHealthHealthy,
+		logical, err := s.logicalSingleNodeStatus(ctx, installation)
+		if err != nil {
+			return domaincluster.NodePage{}, normalizeStoreError(err)
 		}
 		if request.Page > 1 {
 			return domaincluster.NodePage{Items: []domaincluster.NodeStatus{}, Page: request.Page, PageSize: request.PageSize, Total: 1}, nil
@@ -394,6 +392,129 @@ func (s *Service) ListNodes(ctx context.Context, request domaincluster.ListNodes
 		})
 	}
 	return domaincluster.NodePage{Items: items, Page: request.Page, PageSize: request.PageSize, Total: total}, nil
+}
+
+const logicalSingleComponentPageSize = 100
+
+func LogicalSingleComponentNodeID(installationID string, role domaincluster.NodeRole) string {
+	digest := sha256.Sum256([]byte("logical-single-component\x00" + strings.TrimSpace(installationID) + "\x00" + string(role)))
+	return "single-component-" + hex.EncodeToString(digest[:16]) + "-" + string(role)
+}
+
+func logicalSingleNodeID(installationID string) string {
+	digest := sha256.Sum256([]byte("logical-single\x00" + strings.TrimSpace(installationID)))
+	return "logical-single-" + hex.EncodeToString(digest[:16])
+}
+
+func normalizeSingleComponents(roles []domaincluster.NodeRole) []domaincluster.NodeRole {
+	seen := map[domaincluster.NodeRole]bool{}
+	result := make([]domaincluster.NodeRole, 0, 2)
+	for _, role := range roles {
+		if (role == domaincluster.NodeRoleAPI || role == domaincluster.NodeRoleWorker) && !seen[role] {
+			seen[role] = true
+			result = append(result, role)
+		}
+	}
+	if len(result) == 0 {
+		return []domaincluster.NodeRole{domaincluster.NodeRoleAPI, domaincluster.NodeRoleWorker}
+	}
+	return result
+}
+
+func (s *Service) logicalSingleNodeStatus(ctx context.Context, installation domaincluster.Installation) (domaincluster.NodeStatus, error) {
+	components := make(map[domaincluster.NodeRole]domaincluster.Node, len(s.singleComponents))
+	for _, role := range s.singleComponents {
+		node, found, err := s.findLogicalSingleComponent(ctx, role)
+		if err != nil {
+			return domaincluster.NodeStatus{}, err
+		}
+		if found {
+			components[role] = node
+		}
+	}
+
+	now := s.now().UTC()
+	health := domaincluster.NodeHealthHealthy
+	missingOrUnhealthy := make([]string, 0, len(s.singleComponents))
+	freshCount := 0
+	var createdAt, updatedAt time.Time
+	var lastHeartbeatAt *time.Time
+	status := domaincluster.NodeStatus{
+		Node: domaincluster.Node{
+			NodeID: logicalSingleNodeID(installation.InstallationID), InstallationID: installation.InstallationID,
+			Role: domaincluster.NodeRoleSingle, ApplicationVersion: installation.ApplicationVersion,
+			RuntimeSchemaVersion: installation.RuntimeSchemaVersion, ConfigRevision: installation.ConfigRevision,
+		},
+		Source: domaincluster.NodeSourceLogicalSingle,
+	}
+	for _, role := range s.singleComponents {
+		component, found := components[role]
+		if !found {
+			missingOrUnhealthy = append(missingOrUnhealthy, string(role)+" missing")
+			continue
+		}
+		if createdAt.IsZero() || component.CreatedAt.Before(createdAt) {
+			createdAt = component.CreatedAt
+		}
+		if component.UpdatedAt.After(updatedAt) {
+			updatedAt = component.UpdatedAt
+		}
+		if component.LastHeartbeatAt != nil && (lastHeartbeatAt == nil || component.LastHeartbeatAt.After(*lastHeartbeatAt)) {
+			value := *component.LastHeartbeatAt
+			lastHeartbeatAt = &value
+		}
+		lastContact := component.CreatedAt
+		if component.LastHeartbeatAt != nil {
+			lastContact = *component.LastHeartbeatAt
+		}
+		fresh := !lastContact.IsZero() && lastContact.Add(nodeOfflineAfter).After(now)
+		if fresh {
+			freshCount++
+		}
+		if !fresh || component.Health != domaincluster.NodeHealthHealthy {
+			reason := string(role) + " unhealthy"
+			if !fresh {
+				reason = string(role) + " stale"
+			}
+			missingOrUnhealthy = append(missingOrUnhealthy, reason)
+		}
+		status.ApplicationVersionDrift = status.ApplicationVersionDrift || component.ApplicationVersion != installation.ApplicationVersion
+		status.RuntimeSchemaDrift = status.RuntimeSchemaDrift || component.RuntimeSchemaVersion != installation.RuntimeSchemaVersion
+		status.ConfigRevisionDrift = status.ConfigRevisionDrift || component.ConfigRevision != installation.ConfigRevision
+	}
+	switch {
+	case len(components) == 0:
+		health = domaincluster.NodeHealthUnready
+	case freshCount == 0:
+		health = domaincluster.NodeHealthOffline
+	case len(missingOrUnhealthy) > 0:
+		health = domaincluster.NodeHealthDegraded
+	}
+	status.Health = health
+	status.EffectiveHealth = health
+	status.CreatedAt = createdAt
+	status.UpdatedAt = updatedAt
+	status.LastHeartbeatAt = lastHeartbeatAt
+	status.LastError = strings.Join(missingOrUnhealthy, ", ")
+	return status, nil
+}
+
+func (s *Service) findLogicalSingleComponent(ctx context.Context, role domaincluster.NodeRole) (domaincluster.Node, bool, error) {
+	wantID := LogicalSingleComponentNodeID(s.installationID, role)
+	for page := 1; ; page++ {
+		nodes, total, err := s.store.ListNodes(ctx, s.installationID, domaincluster.ListNodesRequest{Page: page, PageSize: logicalSingleComponentPageSize, Role: role})
+		if err != nil {
+			return domaincluster.Node{}, false, err
+		}
+		for _, node := range nodes {
+			if node.NodeID == wantID {
+				return node, true, nil
+			}
+		}
+		if page*logicalSingleComponentPageSize >= total {
+			return domaincluster.Node{}, false, nil
+		}
+	}
 }
 
 func (s *Service) requireReadableInstallation(ctx context.Context) (domaincluster.Installation, error) {

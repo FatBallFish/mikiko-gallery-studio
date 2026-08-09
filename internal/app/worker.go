@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domaincluster "github.com/fatballfish/pic-gallery/internal/domain/cluster"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
@@ -94,7 +95,7 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 		defer redisClient.Close()
 	}
 	clusterStore := entstore.NewClusterStore(client)
-	heartbeat, err := startRuntimeHeartbeat(ctx, cfg, clusterStore)
+	heartbeat, err := startRuntimeHeartbeat(ctx, cfg, clusterStore, domaincluster.NodeRoleWorker)
 	if err != nil {
 		return err
 	}

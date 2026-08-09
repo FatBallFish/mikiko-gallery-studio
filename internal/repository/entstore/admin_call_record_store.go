@@ -2,10 +2,14 @@ package entstore
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
-	"entgo.io/ent/dialect/sql"
+	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/google/uuid"
 
@@ -18,8 +22,17 @@ import (
 )
 
 type AdminCallRecordStore struct {
-	client *repoent.Client
+	client    *repoent.Client
+	batchSize int
 }
+
+const (
+	defaultCallDistributionBatchSize = 256
+	maxCallDistributionTraceBytes    = 8 << 20
+	maxCallDistributionAttempts      = 10_000
+)
+
+var errInvalidCallDistributionTrace = errors.New("invalid call distribution trace")
 
 func NewAdminCallRecordStore(client *repoent.Client) *AdminCallRecordStore {
 	return &AdminCallRecordStore{client: client}
@@ -47,18 +60,117 @@ func (s *AdminCallRecordStore) ListCallRecords(ctx context.Context, req domainad
 }
 
 func (s *AdminCallRecordStore) CallDistribution(ctx context.Context, req domainadmincallrecord.DistributionRequest) (domainadmincallrecord.Distribution, error) {
-	entities, err := s.client.ImageTask.Query().Where(
-		imagetask.CreatedAtLT(req.To),
-		imagetask.UpdatedAtGTE(req.From),
-	).All(ctx)
+	tx, err := s.client.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return domainadmincallrecord.Distribution{}, fmt.Errorf("begin call distribution snapshot: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := s.callDistributionInTx(ctx, tx.Client(), req)
 	if err != nil {
 		return domainadmincallrecord.Distribution{}, err
 	}
-	records := make([]domainadmincallrecord.Record, 0, len(entities))
-	for _, entity := range entities {
-		records = append(records, mapAdminCallRecord(entity))
+	if err := tx.Commit(); err != nil {
+		return domainadmincallrecord.Distribution{}, fmt.Errorf("commit call distribution snapshot: %w", err)
 	}
-	return admincallrecordservice.AggregateCallDistribution(records, req), nil
+	return result, nil
+}
+
+type callDistributionRow struct {
+	ID                  uuid.UUID      `json:"id"`
+	Status              string         `json:"status"`
+	RouteModelCode      string         `json:"route_model_code"`
+	ProviderTrace       map[string]any `json:"provider_trace"`
+	UpstreamSucceededAt *time.Time     `json:"upstream_succeeded_at"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
+}
+
+type callDistributionCursor struct {
+	updatedAt time.Time
+	id        uuid.UUID
+}
+
+func (s *AdminCallRecordStore) callDistributionInTx(ctx context.Context, client *repoent.Client, req domainadmincallrecord.DistributionRequest) (domainadmincallrecord.Distribution, error) {
+	batchSize := s.batchSize
+	if batchSize <= 0 {
+		batchSize = defaultCallDistributionBatchSize
+	}
+	accumulator := admincallrecordservice.NewDistributionAccumulator(req)
+	var cursor *callDistributionCursor
+	for {
+		predicates := []predicate.ImageTask{
+			imagetask.CreatedAtLT(req.To),
+			imagetask.UpdatedAtGTE(req.From),
+		}
+		if cursor != nil {
+			cursorValue := *cursor
+			predicates = append(predicates, predicate.ImageTask(func(selector *entsql.Selector) {
+				selector.Where(entsql.Or(
+					entsql.GT(selector.C(imagetask.FieldUpdatedAt), cursorValue.updatedAt),
+					entsql.And(
+						entsql.EQ(selector.C(imagetask.FieldUpdatedAt), cursorValue.updatedAt),
+						entsql.GT(selector.C(imagetask.FieldID), cursorValue.id),
+					),
+				))
+			}))
+		}
+
+		var rows []callDistributionRow
+		err := client.ImageTask.Query().
+			Where(predicates...).
+			Order(repoent.Asc(imagetask.FieldUpdatedAt), repoent.Asc(imagetask.FieldID)).
+			Limit(batchSize).
+			Select(
+				imagetask.FieldID,
+				imagetask.FieldStatus,
+				imagetask.FieldRouteModelCode,
+				imagetask.FieldProviderTrace,
+				imagetask.FieldUpstreamSucceededAt,
+				imagetask.FieldCreatedAt,
+				imagetask.FieldUpdatedAt,
+			).
+			Scan(ctx, &rows)
+		if err != nil {
+			return domainadmincallrecord.Distribution{}, fmt.Errorf("scan call distribution batch: %w", err)
+		}
+		for _, row := range rows {
+			record, err := callDistributionRecord(row)
+			if err != nil {
+				return domainadmincallrecord.Distribution{}, err
+			}
+			accumulator.Add(record)
+		}
+		if len(rows) < batchSize {
+			return accumulator.Result(), nil
+		}
+		last := rows[len(rows)-1]
+		cursor = &callDistributionCursor{updatedAt: last.UpdatedAt, id: last.ID}
+	}
+}
+
+func callDistributionRecord(row callDistributionRow) (domainadmincallrecord.Record, error) {
+	trace, err := json.Marshal(row.ProviderTrace)
+	if err != nil || len(trace) > maxCallDistributionTraceBytes {
+		return domainadmincallrecord.Record{}, errInvalidCallDistributionTrace
+	}
+	attempts, err := decodeAttempts(row.ProviderTrace["attempts"])
+	if err != nil || len(attempts) > maxCallDistributionAttempts {
+		return domainadmincallrecord.Record{}, errInvalidCallDistributionTrace
+	}
+	distributionAttempts := make([]domainadmincallrecord.Attempt, len(attempts))
+	for index := range attempts {
+		distributionAttempts[index].StartedAt = attempts[index].StartedAt
+	}
+	return domainadmincallrecord.Record{
+		TaskID:              row.ID.String(),
+		Status:              row.Status,
+		RouteModelCode:      row.RouteModelCode,
+		UpstreamSucceededAt: row.UpstreamSucceededAt,
+		CreatedAt:           row.CreatedAt,
+		UpdatedAt:           row.UpdatedAt,
+		Attempts:            distributionAttempts,
+	}, nil
 }
 
 func adminCallRecordPredicates(req domainadmincallrecord.ListRequest) []predicate.ImageTask {
@@ -70,7 +182,7 @@ func adminCallRecordPredicates(req domainadmincallrecord.ListRequest) []predicat
 		predicates = append(predicates, imagetask.ErrorCodeEQ(errorCode))
 	}
 	if provider := strings.TrimSpace(req.Provider); provider != "" {
-		predicates = append(predicates, predicate.ImageTask(func(s *sql.Selector) {
+		predicates = append(predicates, predicate.ImageTask(func(s *entsql.Selector) {
 			s.Where(sqljson.ValueEQ(s.C(imagetask.FieldProviderTrace), provider, sqljson.Path("provider")))
 		}))
 	}

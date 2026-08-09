@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -120,6 +121,113 @@ func TestAdminCallRecordStoreDistributionSurvivesTaskSoftDeletion(t *testing.T) 
 	visibleAfter, err := callRecords.ListCallRecords(ctx, domainadmincallrecord.ListRequest{Page: 1, PageSize: 10})
 	if err != nil || visibleAfter.Total != 0 || len(visibleAfter.Items) != 0 {
 		t.Fatalf("deleted records remain visible in admin list: page=%#v err=%v", visibleAfter, err)
+	}
+}
+
+func TestAdminCallRecordStoreDistributionUsesStableKeysetAcrossBatches(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-distribution-keyset?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	inside := time.Now().UTC()
+	request := domainadmincallrecord.DistributionRequest{From: inside.Add(-time.Hour), To: inside.Add(time.Hour)}
+	seeds := []domainimagetask.Task{
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000001", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-a", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}, {StartedAt: &inside}}},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000002", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-b", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}}},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000003", Status: domainimagetask.StatusFailed, TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}}},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000004", Status: domainimagetask.StatusRejected, TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k"},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000005", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-a", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}}},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000006", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-a", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}, {StartedAt: &inside}}},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000007", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-b", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}}},
+	}
+	for _, seed := range seeds {
+		trace, err := buildProviderTrace(seed)
+		if err != nil {
+			t.Fatalf("build trace %s: %v", seed.ID, err)
+		}
+		id := uuid.MustParse(seed.ID)
+		if _, err := client.ImageTask.Create().
+			SetID(id).
+			SetUserID(seed.UserID).
+			SetTaskType(seed.TaskType).
+			SetStatus(seed.Status).
+			SetPrompt("distribution test").
+			SetAbstractModel(seed.AbstractModel).
+			SetBaseResolution(seed.BaseResolution).
+			SetRouteModelCode(seed.RouteModelCode).
+			SetProviderTrace(trace).
+			SetCreatedAt(inside).
+			SetUpdatedAt(inside).
+			Save(ctx); err != nil {
+			t.Fatalf("create task %s: %v", seed.ID, err)
+		}
+	}
+	if _, err := client.ImageTask.UpdateOneID(uuid.MustParse(seeds[5].ID)).SetDeletedAt(inside).SetUpdatedAt(inside).Save(ctx); err != nil {
+		t.Fatalf("soft-delete task: %v", err)
+	}
+	candidateCount, err := client.ImageTask.Query().Where(imagetask.CreatedAtLT(request.To), imagetask.UpdatedAtGTE(request.From)).Count(ctx)
+	if err != nil || candidateCount != len(seeds) {
+		t.Fatalf("distribution candidates = %d, want %d: %v", candidateCount, len(seeds), err)
+	}
+
+	callRecords := NewAdminCallRecordStore(client)
+	callRecords.batchSize = 2
+	distribution, err := callRecords.CallDistribution(ctx, request)
+	if err != nil {
+		t.Fatalf("CallDistribution: %v", err)
+	}
+	if distribution.TotalCalls != 8 || distribution.PreflightFailureCount != 1 {
+		t.Fatalf("distribution totals = %#v", distribution)
+	}
+	wantGroups := []domainadmincallrecord.DistributionGroup{
+		{Key: "route-a", Calls: 5, Percentage: float64(5) * 100 / 8},
+		{Key: "route-b", Calls: 2, Percentage: float64(2) * 100 / 8},
+		{Key: "unrouted", Calls: 1, Percentage: float64(1) * 100 / 8},
+	}
+	if !reflect.DeepEqual(distribution.Groups, wantGroups) {
+		t.Fatalf("distribution groups = %#v, want %#v", distribution.Groups, wantGroups)
+	}
+}
+
+func TestAdminCallRecordStoreDistributionRejectsMalformedLegacyTrace(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-distribution-malformed?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	inside := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	_, err = client.ImageTask.Create().
+		SetID(uuid.MustParse("00000000-0000-4000-8000-000000000099")).
+		SetUserID(99).
+		SetTaskType(string(provider.TaskTypeTextToImage)).
+		SetStatus(domainimagetask.StatusFailed).
+		SetPrompt("legacy").
+		SetAbstractModel("basic").
+		SetCreatedAt(inside).
+		SetUpdatedAt(inside).
+		SetProviderTrace(map[string]any{"attempts": "password=do-not-leak"}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create malformed legacy task: %v", err)
+	}
+
+	_, err = NewAdminCallRecordStore(client).CallDistribution(ctx, domainadmincallrecord.DistributionRequest{From: inside.Add(-time.Hour), To: inside.Add(time.Hour)})
+	if err == nil || !strings.Contains(err.Error(), "invalid call distribution trace") {
+		t.Fatalf("CallDistribution error = %v, want stable invalid trace error", err)
+	}
+	if strings.Contains(err.Error(), "password=do-not-leak") {
+		t.Fatalf("CallDistribution leaked malformed trace: %v", err)
 	}
 }
 

@@ -10,16 +10,41 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
+	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
+
+type readinessModelAdminStore struct {
+	modeladminservice.Store
+	listAccounts      func(context.Context, domainmodeladmin.ModelAccountListRequest) (domainmodeladmin.ModelAccountListPage, error)
+	listAccountModels func(context.Context, domainmodeladmin.ModelAccountModelListRequest) (domainmodeladmin.ModelAccountModelListPage, error)
+}
+
+func (s readinessModelAdminStore) ListModelAccounts(ctx context.Context, req domainmodeladmin.ModelAccountListRequest) (domainmodeladmin.ModelAccountListPage, error) {
+	if s.listAccounts != nil {
+		return s.listAccounts(ctx, req)
+	}
+	return s.Store.ListModelAccounts(ctx, req)
+}
+
+func (s readinessModelAdminStore) ListModelAccountModels(ctx context.Context, req domainmodeladmin.ModelAccountModelListRequest) (domainmodeladmin.ModelAccountModelListPage, error) {
+	if s.listAccountModels != nil {
+		return s.listAccountModels(ctx, req)
+	}
+	return s.Store.ListModelAccountModels(ctx, req)
+}
 
 func TestPaymentReadinessMatchesCheckoutEligibilityAndIgnoresLegacySwitch(t *testing.T) {
 	cfg := config.Config{}
@@ -47,24 +72,192 @@ func TestPaymentReadinessMatchesCheckoutEligibilityAndIgnoresLegacySwitch(t *tes
 	}
 }
 
-func TestCanceledReadinessRequestDoesNotPopulateCache(t *testing.T) {
+func TestCanceledReadinessWaiterDoesNotCancelOrPoisonSharedFlight(t *testing.T) {
 	api := NewAPIWithModelAdminService(config.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	checks := 0
+	var checks atomic.Int64
+	started := make(chan struct{})
+	release := make(chan struct{})
 	api.SetDocsReadinessChecker(func(context.Context) DocsReadinessResult {
-		checks++
+		if checks.Add(1) == 1 {
+			close(started)
+		}
+		<-release
 		return DocsReadinessResult{Status: "pass", Detail: "ready"}
 	})
-	canceled, cancel := context.WithCancel(t.Context())
+	leaderDone := make(chan *errs.Error, 1)
+	go func() {
+		_, appErr := api.adminReadinessChecks(t.Context())
+		leaderDone <- appErr
+	}()
+	<-started
+	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
+	before := time.Now()
 	if _, appErr := api.adminReadinessChecks(canceled); appErr == nil {
 		t.Fatal("canceled readiness request must fail")
+	}
+	if time.Since(before) > 200*time.Millisecond {
+		t.Fatal("canceled waiter did not stop waiting promptly")
+	}
+	close(release)
+	if appErr := <-leaderDone; appErr != nil {
+		t.Fatalf("shared readiness flight failed: %v", appErr)
 	}
 	if _, appErr := api.adminReadinessChecks(t.Context()); appErr != nil {
 		t.Fatalf("live readiness request: %v", appErr)
 	}
-	if checks != 2 {
-		t.Fatalf("canceled readiness result was cached: docs checks=%d", checks)
+	if checks.Load() != 1 {
+		t.Fatalf("canceled waiter canceled or duplicated shared readiness: docs checks=%d", checks.Load())
 	}
+}
+
+func TestAdminReadinessIsolatesAndSanitizesItemFailure(t *testing.T) {
+	api := NewAPIWithModelAdminService(config.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	base := modeladminservice.NewMemoryStore()
+	api.modelAdmin = modeladminservice.NewServiceWithStore(readinessModelAdminStore{
+		Store: base,
+		listAccounts: func(context.Context, domainmodeladmin.ModelAccountListRequest) (domainmodeladmin.ModelAccountListPage, error) {
+			return domainmodeladmin.ModelAccountListPage{}, errors.New("postgres password=do-not-leak")
+		},
+	})
+	api.SetDocsReadinessChecker(func(context.Context) DocsReadinessResult {
+		return DocsReadinessResult{Status: "pass", Detail: "docs ready"}
+	})
+
+	checks, appErr := api.adminReadinessChecks(t.Context())
+	if appErr != nil {
+		t.Fatalf("one failed item must not fail the readiness snapshot: %v", appErr)
+	}
+	failed, docs := readinessCheckByKey(checks, "model_accounts"), readinessCheckByKey(checks, "docs")
+	if failed == nil || failed.Status != "fail" || failed.Availability != "unavailable" || strings.Contains(failed.Detail, "do-not-leak") || strings.Contains(failed.Detail, "password") {
+		t.Fatalf("failed readiness item is not isolated/sanitized: %#v", failed)
+	}
+	if docs == nil || docs.Status != "pass" || docs.Availability != "healthy" {
+		t.Fatalf("healthy readiness item was lost after another item failed: %#v", docs)
+	}
+}
+
+func TestAdminReadinessTimesOutOnlyTheSlowItem(t *testing.T) {
+	api := NewAPIWithModelAdminService(config.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	api.readinessWait = 30 * time.Millisecond
+	base := modeladminservice.NewMemoryStore()
+	api.modelAdmin = modeladminservice.NewServiceWithStore(readinessModelAdminStore{
+		Store: base,
+		listAccountModels: func(ctx context.Context, _ domainmodeladmin.ModelAccountModelListRequest) (domainmodeladmin.ModelAccountModelListPage, error) {
+			<-ctx.Done()
+			return domainmodeladmin.ModelAccountModelListPage{}, ctx.Err()
+		},
+	})
+	api.SetDocsReadinessChecker(func(context.Context) DocsReadinessResult {
+		return DocsReadinessResult{Status: "pass", Detail: "docs ready"}
+	})
+
+	started := time.Now()
+	checks, appErr := api.adminReadinessChecks(t.Context())
+	if appErr != nil || time.Since(started) > 500*time.Millisecond {
+		t.Fatalf("bounded readiness snapshot: elapsed=%s err=%v", time.Since(started), appErr)
+	}
+	slow, docs := readinessCheckByKey(checks, "provider_models"), readinessCheckByKey(checks, "docs")
+	if slow == nil || slow.Status != "fail" || slow.Availability != "unavailable" {
+		t.Fatalf("slow item did not time out independently: %#v", slow)
+	}
+	if docs == nil || docs.Status != "pass" || docs.Availability != "healthy" {
+		t.Fatalf("healthy item was lost after another timed out: %#v", docs)
+	}
+}
+
+func TestAdminReadinessConcurrentRequestsShareStableSnapshot(t *testing.T) {
+	api := NewAPIWithModelAdminService(config.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	var docsChecks atomic.Int64
+	started := make(chan struct{})
+	release := make(chan struct{})
+	api.SetDocsReadinessChecker(func(context.Context) DocsReadinessResult {
+		if docsChecks.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+		return DocsReadinessResult{Status: "pass", Detail: "shared"}
+	})
+
+	const callers = 12
+	results := make([][]adminReadinessCheck, callers)
+	errorsByCaller := make([]*errs.Error, callers)
+	var wait sync.WaitGroup
+	wait.Add(callers)
+	for index := 0; index < callers; index++ {
+		index := index
+		go func() {
+			defer wait.Done()
+			results[index], errorsByCaller[index] = api.adminReadinessChecks(t.Context())
+		}()
+	}
+	<-started
+	close(release)
+	wait.Wait()
+	if docsChecks.Load() != 1 {
+		t.Fatalf("concurrent readiness executed docs probe %d times", docsChecks.Load())
+	}
+	var checkedAt time.Time
+	for index, checks := range results {
+		if errorsByCaller[index] != nil || len(checks) == 0 {
+			t.Fatalf("caller %d snapshot=%#v err=%v", index, checks, errorsByCaller[index])
+		}
+		for _, check := range checks {
+			if checkedAt.IsZero() {
+				checkedAt = check.CheckedAt
+			}
+			if !check.CheckedAt.Equal(checkedAt) {
+				t.Fatalf("checked_at changed within shared snapshot: got=%s want=%s", check.CheckedAt, checkedAt)
+			}
+		}
+	}
+}
+
+func TestAdminReadinessInvalidationStartsNewGenerationAndRejectsStalePublish(t *testing.T) {
+	api := NewAPIWithModelAdminService(config.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	oldStarted := make(chan struct{})
+	oldRelease := make(chan struct{})
+	var oldChecks, newChecks atomic.Int64
+	api.SetDocsReadinessChecker(func(context.Context) DocsReadinessResult {
+		if oldChecks.Add(1) == 1 {
+			close(oldStarted)
+		}
+		<-oldRelease
+		return DocsReadinessResult{Status: "pass", Detail: "old generation"}
+	})
+	oldDone := make(chan []adminReadinessCheck, 1)
+	go func() {
+		checks, _ := api.adminReadinessChecks(t.Context())
+		oldDone <- checks
+	}()
+	<-oldStarted
+
+	api.SetDocsReadinessChecker(func(context.Context) DocsReadinessResult {
+		newChecks.Add(1)
+		return DocsReadinessResult{Status: "pass", Detail: "new generation"}
+	})
+	newSnapshot, appErr := api.adminReadinessChecks(t.Context())
+	if appErr != nil || readinessCheckByKey(newSnapshot, "docs") == nil || readinessCheckByKey(newSnapshot, "docs").Detail != "new generation" {
+		t.Fatalf("new readiness generation = %#v err=%v", newSnapshot, appErr)
+	}
+	close(oldRelease)
+	oldSnapshot := <-oldDone
+	if readinessCheckByKey(oldSnapshot, "docs") == nil || readinessCheckByKey(oldSnapshot, "docs").Detail != "old generation" {
+		t.Fatalf("old in-flight snapshot = %#v", oldSnapshot)
+	}
+	cached, appErr := api.adminReadinessChecks(t.Context())
+	if appErr != nil || readinessCheckByKey(cached, "docs") == nil || readinessCheckByKey(cached, "docs").Detail != "new generation" || newChecks.Load() != 1 {
+		t.Fatalf("stale flight overwrote new cache: snapshot=%#v new_checks=%d err=%v", cached, newChecks.Load(), appErr)
+	}
+}
+
+func readinessCheckByKey(checks []adminReadinessCheck, key string) *adminReadinessCheck {
+	for index := range checks {
+		if checks[index].Key == key {
+			return &checks[index]
+		}
+	}
+	return nil
 }
 
 type docsReadinessRoundTripFunc func(*http.Request) (*http.Response, error)

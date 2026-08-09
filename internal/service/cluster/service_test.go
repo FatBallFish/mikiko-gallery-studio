@@ -218,12 +218,39 @@ func TestListNodesComputesOfflineAndVersionConfigDrift(t *testing.T) {
 	}
 }
 
-func TestListNodesSingleTopologyReturnsOneStableLogicalNode(t *testing.T) {
+func TestListNodesSingleTopologyAggregatesComponentLiveness(t *testing.T) {
 	now := time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC)
+	emptyStore := NewMemoryStore(domaincluster.Installation{
+		InstallationID: clusterTestInstallationID, Initialized: true,
+		ApplicationVersion: "v2", RuntimeSchemaVersion: 2, ConfigRevision: 9,
+	})
+	emptyService := NewService(ServiceOptions{
+		Store: emptyStore, InstallationID: clusterTestInstallationID, DeploymentRole: domaincluster.NodeRoleSingle,
+		SingleComponents: []domaincluster.NodeRole{domaincluster.NodeRoleAPI, domaincluster.NodeRoleWorker}, Now: func() time.Time { return now },
+	})
+	emptyPage, err := emptyService.ListNodes(t.Context(), domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
+	if err != nil || emptyPage.Total != 1 || len(emptyPage.Items) != 1 || emptyPage.Items[0].EffectiveHealth != domaincluster.NodeHealthUnready || emptyPage.Items[0].LastHeartbeatAt != nil || !emptyPage.Items[0].CreatedAt.IsZero() {
+		t.Fatalf("empty logical-single page = %#v, %v", emptyPage, err)
+	}
+
 	store := NewMemoryStore(domaincluster.Installation{
 		InstallationID: clusterTestInstallationID, Initialized: true,
 		ApplicationVersion: "v2", RuntimeSchemaVersion: 2, ConfigRevision: 9,
 	})
+	apiCreatedAt := now.Add(-2 * time.Hour)
+	workerCreatedAt := now.Add(-time.Hour)
+	apiHeartbeatAt := now.Add(-2 * time.Second)
+	workerHeartbeatAt := now.Add(-time.Second)
+	store.nodes[LogicalSingleComponentNodeID(clusterTestInstallationID, domaincluster.NodeRoleAPI)] = domaincluster.Node{
+		NodeID: LogicalSingleComponentNodeID(clusterTestInstallationID, domaincluster.NodeRoleAPI), InstallationID: clusterTestInstallationID, Role: domaincluster.NodeRoleAPI,
+		ApplicationVersion: "v2", RuntimeSchemaVersion: 2, ConfigRevision: 9, Health: domaincluster.NodeHealthHealthy,
+		LastHeartbeatAt: timePointer(apiHeartbeatAt), CreatedAt: apiCreatedAt, UpdatedAt: apiHeartbeatAt,
+	}
+	store.nodes[LogicalSingleComponentNodeID(clusterTestInstallationID, domaincluster.NodeRoleWorker)] = domaincluster.Node{
+		NodeID: LogicalSingleComponentNodeID(clusterTestInstallationID, domaincluster.NodeRoleWorker), InstallationID: clusterTestInstallationID, Role: domaincluster.NodeRoleWorker,
+		ApplicationVersion: "v2", RuntimeSchemaVersion: 2, ConfigRevision: 9, Health: domaincluster.NodeHealthHealthy,
+		LastHeartbeatAt: timePointer(workerHeartbeatAt), CreatedAt: workerCreatedAt, UpdatedAt: workerHeartbeatAt,
+	}
 	// Stale process rows from an older runtime must not leak into logical-single topology.
 	store.nodes["api-process-123"] = domaincluster.Node{
 		NodeID: "api-process-123", InstallationID: clusterTestInstallationID, Role: domaincluster.NodeRoleAPI,
@@ -232,7 +259,7 @@ func TestListNodesSingleTopologyReturnsOneStableLogicalNode(t *testing.T) {
 	}
 	service := NewService(ServiceOptions{
 		Store: store, InstallationID: clusterTestInstallationID, DeploymentRole: domaincluster.NodeRoleSingle,
-		Now: func() time.Time { return now },
+		SingleComponents: []domaincluster.NodeRole{domaincluster.NodeRoleAPI, domaincluster.NodeRoleWorker}, Now: func() time.Time { return now },
 	})
 
 	first, err := service.ListNodes(t.Context(), domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
@@ -247,8 +274,38 @@ func TestListNodesSingleTopologyReturnsOneStableLogicalNode(t *testing.T) {
 	if node.NodeID == "" || node.NodeID != second.Items[0].NodeID || node.Role != domaincluster.NodeRoleSingle || node.Source != domaincluster.NodeSourceLogicalSingle {
 		t.Fatalf("logical-single identity = first %#v second %#v", node, second.Items[0])
 	}
-	if node.EffectiveHealth != domaincluster.NodeHealthHealthy || node.LastHeartbeatAt != nil {
+	if node.EffectiveHealth != domaincluster.NodeHealthHealthy || node.LastHeartbeatAt == nil || !node.LastHeartbeatAt.Equal(workerHeartbeatAt) || !node.CreatedAt.Equal(apiCreatedAt) || !node.UpdatedAt.Equal(workerHeartbeatAt) {
 		t.Fatalf("logical-single health = %#v", node)
+	}
+	workerID := LogicalSingleComponentNodeID(clusterTestInstallationID, domaincluster.NodeRoleWorker)
+	worker := store.nodes[workerID]
+	staleAt := now.Add(-nodeOfflineAfter - time.Second)
+	worker.LastHeartbeatAt = timePointer(staleAt)
+	worker.UpdatedAt = staleAt
+	store.nodes[workerID] = worker
+	degraded, err := service.ListNodes(t.Context(), domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
+	if err != nil || degraded.Items[0].EffectiveHealth != domaincluster.NodeHealthDegraded {
+		t.Fatalf("stale Worker logical-single page = %#v, %v", degraded, err)
+	}
+	delete(store.nodes, workerID)
+	missing, err := service.ListNodes(t.Context(), domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
+	if err != nil || missing.Items[0].EffectiveHealth != domaincluster.NodeHealthDegraded {
+		t.Fatalf("missing Worker logical-single page = %#v, %v", missing, err)
+	}
+	worker.LastHeartbeatAt = timePointer(now)
+	worker.UpdatedAt = now
+	store.nodes[workerID] = worker
+	recovered, err := service.ListNodes(t.Context(), domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
+	if err != nil || recovered.Items[0].EffectiveHealth != domaincluster.NodeHealthHealthy || recovered.Items[0].LastHeartbeatAt == nil || !recovered.Items[0].LastHeartbeatAt.Equal(now) {
+		t.Fatalf("recovered Worker logical-single page = %#v, %v", recovered, err)
+	}
+	filtered, err := service.ListNodes(t.Context(), domaincluster.ListNodesRequest{Page: 1, PageSize: 20, Role: domaincluster.NodeRoleWorker})
+	if err != nil || filtered.Total != 0 || len(filtered.Items) != 0 {
+		t.Fatalf("component role leaked through filter = %#v, %v", filtered, err)
+	}
+	pageTwo, err := service.ListNodes(t.Context(), domaincluster.ListNodesRequest{Page: 2, PageSize: 1})
+	if err != nil || pageTwo.Total != 1 || len(pageTwo.Items) != 0 {
+		t.Fatalf("logical-single page two = %#v, %v", pageTwo, err)
 	}
 }
 

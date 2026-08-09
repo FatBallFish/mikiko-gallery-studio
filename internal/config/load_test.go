@@ -46,6 +46,26 @@ func TestDefaultRuntimeEnvPathIsRelativeToWorkingDirectory(t *testing.T) {
 	}
 }
 
+func TestRuntimeHeartbeatRolesFollowDeploymentModules(t *testing.T) {
+	testCases := []struct {
+		name    string
+		runtime RuntimeConfig
+		want    []DeploymentRole
+	}{
+		{name: "full single modules", runtime: RuntimeConfig{DeploymentRole: DeploymentRoleSingle, DeploymentModules: []string{"api", "worker", "user-web", "gateway"}}, want: []DeploymentRole{DeploymentRoleAPI, DeploymentRoleWorker}},
+		{name: "custom api only", runtime: RuntimeConfig{DeploymentRole: DeploymentRoleSingle, DeploymentModules: []string{" API ", "docs-web"}}, want: []DeploymentRole{DeploymentRoleAPI}},
+		{name: "single safe default", runtime: RuntimeConfig{DeploymentRole: DeploymentRoleSingle}, want: []DeploymentRole{DeploymentRoleAPI, DeploymentRoleWorker}},
+		{name: "distributed worker", runtime: RuntimeConfig{DeploymentRole: DeploymentRoleWorker, DeploymentModules: []string{"worker"}}, want: []DeploymentRole{DeploymentRoleWorker}},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := RuntimeHeartbeatRoles(testCase.runtime); !reflect.DeepEqual(got, testCase.want) {
+				t.Fatalf("RuntimeHeartbeatRoles() = %v, want %v", got, testCase.want)
+			}
+		})
+	}
+}
+
 func TestLoadBootstrapUsesAPPENVFILEOverride(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "custom.env")
 	writeRuntimeValuesForTest(t, path, map[string]string{
