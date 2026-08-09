@@ -67,6 +67,12 @@ export function firstGalleryReferenceReuse(currentReferenceCount: number, import
   }), capability)
 }
 
+export function galleryImportSuccessMessage(importedCount: number, notices: string[] = []) {
+  const message = `已从资产导入 ${importedCount} 张参考图`
+  const uniqueNotices = Array.from(new Set(notices.map((notice) => notice.trim()).filter(Boolean)))
+  return uniqueNotices.length ? `${message}；${uniqueNotices.join(' ')}` : message
+}
+
 function uniqueValues(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))
 }

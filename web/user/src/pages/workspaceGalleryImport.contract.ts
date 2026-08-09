@@ -1,5 +1,5 @@
 import type { GalleryImage } from '../../../shared/api-types'
-import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, mergeReferenceAssets } from './workspaceGalleryImport'
+import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, galleryImportSuccessMessage, mergeReferenceAssets } from './workspaceGalleryImport'
 
 const images = [
   galleryImage({ id: '1', prompt: 'blue city skyline', route_model_code: 'plus', image_group: '城市', aspect_ratio: '16:9', visibility_status: 'private', url: '/1.png' }),
@@ -40,6 +40,13 @@ const imported = [{ id: 'ref-first', status: 'ready', created_at: '', generation
 const firstReuse = firstGalleryReferenceReuse(0, imported as any, reuseCapability)
 if (!firstReuse || firstReuse.values.route_model_code !== 'plus' || firstReuse.values.pixel_size !== '1024x1024' || firstReuse.values.output_format !== 'png' || firstReuse.values.background !== 'transparent' || firstReuse.values.image_count !== 6) {
   throw new Error(`first gallery reference must capability-normalize source parameters without applying model max n: ${JSON.stringify(firstReuse)}`)
+}
+if (!firstReuse.notices.length) {
+  throw new Error(`unsupported source parameters must produce user notices: ${JSON.stringify(firstReuse)}`)
+}
+const importMessage = galleryImportSuccessMessage(1, [...firstReuse.notices, firstReuse.notices[0]])
+if (!importMessage.startsWith('已从资产导入 1 张参考图') || !firstReuse.notices.every((notice: string) => importMessage.includes(notice)) || importMessage.split(firstReuse.notices[0]).length !== 2) {
+  throw new Error(`gallery import success must include deduplicated normalization notices once: ${importMessage}`)
 }
 if (firstGalleryReferenceReuse(1, imported as any, reuseCapability) !== null || firstGalleryReferenceReuse(0, [{ id: 'plain' }] as any, reuseCapability) !== null) {
   throw new Error('later references and imports without a generation snapshot must not overwrite parameters')

@@ -15,7 +15,7 @@ import { mediaAccess, type MediaResource } from '../mediaAccess'
 import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
 import { displayPoints, publicUnavailableReason, WORKSPACE_REFERENCE_REQUIRED_MESSAGE } from './workspaceGenerateReadiness'
 import { currentWorkspaceEstimate, workspaceDisplayedResolvedSize, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
-import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
+import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, galleryImportSuccessMessage, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
 import { WorkspaceStatusRail } from './WorkspaceStatusRail'
 import { workspaceTaskCardView, workspaceTaskFailureView } from './workspaceTaskFailure'
 import { generationSlots, workspaceBaseResolutionLabel } from './workspaceTaskProgress'
@@ -943,9 +943,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 		setOutputCompression(values.output_compression)
 		setModeration(values.moderation)
 		setCount(values.image_count)
-	  }
+      }
       setGalleryImportTarget(null)
-      app.notify('success', `已从资产导入 ${assets.length} 张参考图`)
+      app.notify(reused?.notices.length ? 'info' : 'success', galleryImportSuccessMessage(assets.length, reused?.notices))
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
