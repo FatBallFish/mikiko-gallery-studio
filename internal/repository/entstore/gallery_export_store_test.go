@@ -112,8 +112,17 @@ func TestGalleryExportStoreRetriesWithinLifecycleAndStopsBeyondDeadline(t *testi
 		if err != nil || !ok || claimed.AttemptCount != attempt {
 			t.Fatalf("claim attempt %d: job=%#v ok=%v err=%v", attempt, claimed, ok, err)
 		}
-		if err := store.FailJob(t.Context(), claimed, start, "archive_store_failed", "retry"); err != nil {
+		if err := store.FailJob(t.Context(), galleryexportservice.FailJobRequest{
+			Job: claimed, FailedAt: start, Disposition: galleryexportservice.FailureRetryable,
+			Code: "archive_store_failed", Message: "retry",
+		}); err != nil {
 			t.Fatalf("fail attempt %d: %v", attempt, err)
+		}
+		if attempt == 1 {
+			persisted, err := client.GalleryExportJob.Get(t.Context(), uuid.MustParse(claimed.ID))
+			if err != nil || persisted.State != galleryexportservice.StateQueued || persisted.NextAttemptAt == nil || !persisted.NextAttemptAt.Equal(start.Add(time.Minute)) {
+				t.Fatalf("retryable attempt persisted=%#v err=%v", persisted, err)
+			}
 		}
 		start = start.Add(time.Duration(attempt) * time.Minute)
 	}
@@ -131,7 +140,10 @@ func TestGalleryExportStoreRetriesWithinLifecycleAndStopsBeyondDeadline(t *testi
 	if err != nil || !ok || claimed.ID != short.ID {
 		t.Fatalf("short claim=%#v ok=%v err=%v", claimed, ok, err)
 	}
-	if err := store.FailJob(t.Context(), claimed, start, "archive_store_failed", "retry"); err != nil {
+	if err := store.FailJob(t.Context(), galleryexportservice.FailJobRequest{
+		Job: claimed, FailedAt: start, Disposition: galleryexportservice.FailureRetryable,
+		Code: "archive_store_failed", Message: "retry",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	terminal, err := store.GetJob(t.Context(), 7, short.ID, start)
@@ -142,6 +154,44 @@ func TestGalleryExportStoreRetriesWithinLifecycleAndStopsBeyondDeadline(t *testi
 		t.Fatalf("claim beyond lifecycle ok=%v err=%v", ok, err)
 	}
 	_ = created
+}
+
+func TestGalleryExportStoreTerminalFailurePreservesStableErrorWithoutRetry(t *testing.T) {
+	client := openGalleryExportTestClient(t)
+	projectID := uuid.New()
+	seedGalleryExportProject(t, client, projectID, 7, "owned")
+	store := NewGalleryExportStore(client)
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	created, err := store.CreateJob(t.Context(), galleryexportservice.CreateJobRequest{
+		UserID: 7, ProjectID: projectID.String(), ImageIDs: []string{"one"}, LifecycleDeadlineAt: now.Add(30 * time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok, err := store.AcquireNextJob(t.Context(), "worker-1", now, time.Minute)
+	if err != nil || !ok || claimed.AttemptCount != 1 {
+		t.Fatalf("claim terminal job=%#v ok=%v err=%v", claimed, ok, err)
+	}
+	const message = "gallery export exceeds the configured size limit"
+	if err := store.FailJob(t.Context(), galleryexportservice.FailJobRequest{
+		Job: claimed, FailedAt: now, Disposition: galleryexportservice.FailureTerminal,
+		Code: galleryexportservice.ErrorExportTooLarge, Message: message,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := client.GalleryExportJob.Get(t.Context(), uuid.MustParse(created.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.State != galleryexportservice.StateFailed || persisted.NextAttemptAt != nil {
+		t.Fatalf("terminal state=%q next_attempt_at=%v", persisted.State, persisted.NextAttemptAt)
+	}
+	if persisted.LastErrorCode == nil || *persisted.LastErrorCode != galleryexportservice.ErrorExportTooLarge || persisted.LastErrorMessage == nil || *persisted.LastErrorMessage != message {
+		t.Fatalf("terminal error code=%v message=%v", persisted.LastErrorCode, persisted.LastErrorMessage)
+	}
+	if _, ok, err := store.AcquireNextJob(t.Context(), "worker-2", now.Add(time.Second), time.Minute); err != nil || ok {
+		t.Fatalf("terminal job was claimable again: ok=%v err=%v", ok, err)
+	}
 }
 
 func TestGalleryExportStoreTerminalizesQueuedJobAtImmutableLifecycleDeadline(t *testing.T) {

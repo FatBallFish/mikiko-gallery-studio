@@ -224,24 +224,31 @@ func (s *GalleryExportStore) CompleteJob(ctx context.Context, req galleryexports
 	return mapGalleryExportJob(entity), nil
 }
 
-func (s *GalleryExportStore) FailJob(ctx context.Context, job galleryexportservice.Job, now time.Time, code, message string) error {
-	id, err := uuid.Parse(job.ID)
+func (s *GalleryExportStore) FailJob(ctx context.Context, req galleryexportservice.FailJobRequest) error {
+	id, err := uuid.Parse(req.Job.ID)
 	if err != nil {
 		return repoerr.ErrNotFound
 	}
-	nextAttemptAt := now.UTC().Add(time.Duration(job.AttemptCount) * time.Minute)
 	update := s.client.GalleryExportJob.Update().Where(
 		galleryexportjob.IDEQ(id), galleryexportjob.StateEQ(galleryexportservice.StateRunning),
-		galleryexportjob.LeaseOwnerEQ(job.LeaseOwner), galleryexportjob.AttemptCountEQ(job.AttemptCount),
-	).ClearLeaseOwner().ClearLeaseExpiresAt().SetLastErrorCode(limitGalleryExportError(code, 64)).SetLastErrorMessage(limitGalleryExportError(message, 512))
-	if job.DeadlineAt != nil && !nextAttemptAt.Before(job.DeadlineAt.UTC()) {
-		update.SetState(galleryexportservice.StateFailed).ClearNextAttemptAt().
-			SetLastErrorCode(galleryexportservice.ErrorLifecycleDeadlineExceeded).
-			SetLastErrorMessage("gallery export lifecycle deadline exceeded")
-	} else if job.AttemptCount >= 3 {
+		galleryexportjob.LeaseOwnerEQ(req.Job.LeaseOwner), galleryexportjob.AttemptCountEQ(req.Job.AttemptCount),
+	).ClearLeaseOwner().ClearLeaseExpiresAt().SetLastErrorCode(limitGalleryExportError(req.Code, 64)).SetLastErrorMessage(limitGalleryExportError(req.Message, 512))
+	switch req.Disposition {
+	case galleryexportservice.FailureTerminal:
 		update.SetState(galleryexportservice.StateFailed).ClearNextAttemptAt()
-	} else {
-		update.SetState(galleryexportservice.StateQueued).SetNextAttemptAt(nextAttemptAt)
+	case galleryexportservice.FailureRetryable:
+		nextAttemptAt := req.FailedAt.UTC().Add(time.Duration(req.Job.AttemptCount) * time.Minute)
+		if req.Job.DeadlineAt != nil && !nextAttemptAt.Before(req.Job.DeadlineAt.UTC()) {
+			update.SetState(galleryexportservice.StateFailed).ClearNextAttemptAt().
+				SetLastErrorCode(galleryexportservice.ErrorLifecycleDeadlineExceeded).
+				SetLastErrorMessage("gallery export lifecycle deadline exceeded")
+		} else if req.Job.AttemptCount >= 3 {
+			update.SetState(galleryexportservice.StateFailed).ClearNextAttemptAt()
+		} else {
+			update.SetState(galleryexportservice.StateQueued).SetNextAttemptAt(nextAttemptAt)
+		}
+	default:
+		return fmt.Errorf("fail gallery export job: invalid failure disposition %q", req.Disposition)
 	}
 	updated, err := update.Save(ctx)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -84,14 +85,25 @@ func (s *ambiguousCompletionStore) CompleteJob(ctx context.Context, req Complete
 
 type processorStoreStub struct {
 	exportStoreStub
-	claimed   Job
-	completed CompleteJobRequest
-	renewed   chan struct{}
-	renewOK   bool
-	mu        sync.Mutex
+	claimed      Job
+	completed    CompleteJobRequest
+	failed       FailJobRequest
+	authorizeErr error
+	renewed      chan struct{}
+	renewOK      bool
+	mu           sync.Mutex
+}
+
+func (s *processorStoreStub) AuthorizeAssets(ctx context.Context, userID int64, projectID string, imageIDs []string) ([]Asset, error) {
+	if s.authorizeErr != nil {
+		return nil, s.authorizeErr
+	}
+	return s.exportStoreStub.AuthorizeAssets(ctx, userID, projectID, imageIDs)
 }
 
 func (s *processorStoreStub) AcquireNextJob(context.Context, string, time.Time, time.Duration) (Job, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.claimed, s.claimed.ID != "", nil
 }
 func (s *processorStoreStub) CompleteJob(_ context.Context, req CompleteJobRequest) (Job, error) {
@@ -111,8 +123,22 @@ func (s *processorStoreStub) RenewJobLease(context.Context, string, string, int,
 	}
 	return s.renewOK, nil
 }
-func (*processorStoreStub) FailJob(context.Context, Job, time.Time, string, string) error { return nil }
-func (*processorStoreStub) ExpireReady(context.Context, time.Time, int) (int, error)      { return 0, nil }
+func (s *processorStoreStub) FailJob(_ context.Context, req FailJobRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failed = req
+	if req.Disposition == FailureTerminal {
+		s.claimed = Job{}
+	}
+	return nil
+}
+func (*processorStoreStub) ExpireReady(context.Context, time.Time, int) (int, error) { return 0, nil }
+
+func (s *processorStoreStub) failedRequest() FailJobRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.failed
+}
 
 func TestProcessorRenewsLeaseAndTreatsLostOwnershipAsBenign(t *testing.T) {
 	renewed := make(chan struct{}, 1)
@@ -184,12 +210,106 @@ func TestProcessorRejectsByteOnlyArchiveStorageBeforeCompletion(t *testing.T) {
 	backend := &byteOnlyBackend{objects: map[string][]byte{"source.png": []byte("source")}}
 	processor := NewProcessor(store, storage.NewStaticRouter(backend), ProcessorOptions{Owner: "worker"})
 	processErr := processor.processJob(t.Context(), store.claimed, time.Now().UTC())
-	if processErr == nil || processErr.code != "streaming_storage_unsupported" {
+	if processErr == nil || processErr.code != "streaming_storage_unsupported" || processErr.disposition != FailureTerminal {
 		t.Fatalf("byte-only storage error=%#v", processErr)
 	}
 	if store.completed.JobID != "" {
 		t.Fatalf("unsupported storage completed job: %#v", store.completed)
 	}
+}
+
+func TestProcessorTerminalizesOversizeOnFirstAttemptWithoutRepeatedSourceRead(t *testing.T) {
+	tests := []struct {
+		name      string
+		assets    []Asset
+		options   Options
+		wantReads int32
+	}{
+		{name: "file count", assets: []Asset{{ID: "one", ObjectKey: "source.png"}, {ID: "two", ObjectKey: "source.png"}}, options: Options{MaxFileCount: 1}, wantReads: 0},
+		{name: "source bytes", assets: []Asset{{ID: "one", ObjectKey: "source.png", MIMEType: "image/png"}}, options: Options{MaxSourceBytes: 4}, wantReads: 1},
+		{name: "archive bytes", assets: []Asset{{ID: "one", ObjectKey: "source.png", MIMEType: "image/png"}}, options: Options{MaxArchiveBytes: 32}, wantReads: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			now := time.Now().UTC()
+			deadline := now.Add(30 * time.Second)
+			backend := &countingExportBackend{exportBackend: exportBackend{objects: map[string][]byte{"source.png": []byte("oversized")}}}
+			store := &processorStoreStub{
+				exportStoreStub: exportStoreStub{assets: test.assets},
+				claimed:         Job{ID: "job-oversize", UserID: 7, ProjectID: "project", ImageIDs: []string{"one"}, State: StateRunning, LeaseOwner: "worker", AttemptCount: 1, DeadlineAt: &deadline},
+			}
+			processor := NewProcessor(store, storage.NewStaticRouter(backend), ProcessorOptions{
+				Owner: "worker", Now: func() time.Time { return now }, Service: test.options,
+			})
+
+			processed, err := processor.ProcessOnce(t.Context())
+			if err != nil || !processed {
+				t.Fatalf("oversize first cycle processed=%v err=%v", processed, err)
+			}
+			failure := store.failedRequest()
+			if failure.Disposition != FailureTerminal || failure.Code != ErrorExportTooLarge || failure.Message != "gallery export exceeds the configured size limit" {
+				t.Fatalf("oversize failure=%#v", failure)
+			}
+			processed, err = processor.ProcessOnce(t.Context())
+			if err != nil || processed {
+				t.Fatalf("oversize second cycle processed=%v err=%v", processed, err)
+			}
+			if reads := backend.reads.Load(); reads != test.wantReads {
+				t.Fatalf("oversize source reads=%d, want %d", reads, test.wantReads)
+			}
+		})
+	}
+}
+
+func TestProcessorTerminalizesAuthorizationChanges(t *testing.T) {
+	now := time.Now().UTC()
+	store := &processorStoreStub{
+		claimed:      Job{ID: "job-auth", UserID: 7, ProjectID: "project", ImageIDs: []string{"one"}, State: StateRunning, LeaseOwner: "worker", AttemptCount: 1},
+		authorizeErr: errors.New("asset no longer available"),
+	}
+	processor := NewProcessor(store, storage.NewStaticRouter(&exportBackend{}), ProcessorOptions{Owner: "worker", Now: func() time.Time { return now }})
+	processed, err := processor.ProcessOnce(t.Context())
+	if err != nil || !processed {
+		t.Fatalf("authorization cycle processed=%v err=%v", processed, err)
+	}
+	failure := store.failedRequest()
+	if failure.Disposition != FailureTerminal || failure.Code != "authorization_changed" || failure.Message != "selected assets are no longer available" {
+		t.Fatalf("authorization failure=%#v", failure)
+	}
+}
+
+func TestProcessorKeepsTransientArchiveUploadFailureRetryable(t *testing.T) {
+	now := time.Date(2026, 8, 9, 10, 0, 0, 0, time.UTC)
+	backend := &failingUploadBackend{exportBackend: exportBackend{objects: map[string][]byte{"source.png": []byte("source")}}}
+	store := &processorStoreStub{
+		exportStoreStub: exportStoreStub{assets: []Asset{{ID: "one", ObjectKey: "source.png", MIMEType: "image/png"}}},
+		claimed:         Job{ID: "job-transient", UserID: 7, ProjectID: "project", ImageIDs: []string{"one"}, State: StateRunning, LeaseOwner: "worker", AttemptCount: 1},
+	}
+	processor := NewProcessor(store, storage.NewStaticRouter(backend), ProcessorOptions{Owner: "worker", Now: func() time.Time { return now }})
+	processed, err := processor.ProcessOnce(t.Context())
+	if err != nil || !processed {
+		t.Fatalf("transient cycle processed=%v err=%v", processed, err)
+	}
+	failure := store.failedRequest()
+	if failure.Disposition != FailureRetryable || failure.Code != "archive_store_failed" {
+		t.Fatalf("transient failure=%#v", failure)
+	}
+}
+
+type countingExportBackend struct {
+	exportBackend
+	reads atomic.Int32
+}
+
+func (b *countingExportBackend) Get(ctx context.Context, key string) ([]byte, error) {
+	b.reads.Add(1)
+	return b.exportBackend.Get(ctx, key)
+}
+
+type failingUploadBackend struct{ exportBackend }
+
+func (*failingUploadBackend) PutReader(context.Context, string, string, io.Reader, int64) error {
+	return errors.New("injected upload failure")
 }
 
 type byteOnlyBackend struct{ objects map[string][]byte }
@@ -288,8 +408,8 @@ func (*attemptStore) AcquireNextJob(context.Context, string, time.Time, time.Dur
 func (*attemptStore) RenewJobLease(context.Context, string, string, int, time.Time, time.Duration) (bool, error) {
 	return true, nil
 }
-func (*attemptStore) FailJob(context.Context, Job, time.Time, string, string) error { return nil }
-func (*attemptStore) ExpireReady(context.Context, time.Time, int) (int, error)      { return 0, nil }
+func (*attemptStore) FailJob(context.Context, FailJobRequest) error            { return nil }
+func (*attemptStore) ExpireReady(context.Context, time.Time, int) (int, error) { return 0, nil }
 func (s *attemptStore) CompleteJob(_ context.Context, req CompleteJobRequest) (Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

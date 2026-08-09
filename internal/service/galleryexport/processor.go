@@ -28,12 +28,27 @@ type CompleteJobRequest struct {
 	CompletedAt      time.Time
 }
 
+type FailureDisposition string
+
+const (
+	FailureRetryable FailureDisposition = "retryable"
+	FailureTerminal  FailureDisposition = "terminal"
+)
+
+type FailJobRequest struct {
+	Job         Job
+	FailedAt    time.Time
+	Disposition FailureDisposition
+	Code        string
+	Message     string
+}
+
 type ProcessorStore interface {
 	Store
 	AcquireNextJob(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (Job, bool, error)
 	RenewJobLease(ctx context.Context, jobID, owner string, attempt int, now time.Time, leaseTTL time.Duration) (bool, error)
 	CompleteJob(ctx context.Context, req CompleteJobRequest) (Job, error)
-	FailJob(ctx context.Context, job Job, now time.Time, code, message string) error
+	FailJob(ctx context.Context, req FailJobRequest) error
 	ExpireReady(ctx context.Context, now time.Time, limit int) (int, error)
 }
 
@@ -115,12 +130,13 @@ func (p *Processor) ProcessOnce(ctx context.Context) (bool, error) {
 	if processErr == nil {
 		return true, nil
 	}
-	return true, p.fail(ctx, job, p.opts.Now().UTC(), processErr.code, processErr.message)
+	return true, p.fail(ctx, job, p.opts.Now().UTC(), *processErr)
 }
 
 type jobProcessError struct {
-	code    string
-	message string
+	disposition FailureDisposition
+	code        string
+	message     string
 }
 
 type leaseHeartbeatResult struct {
@@ -131,33 +147,33 @@ type leaseHeartbeatResult struct {
 func (p *Processor) processJob(ctx context.Context, job Job, now time.Time) *jobProcessError {
 	assets, err := p.store.AuthorizeAssets(ctx, job.UserID, job.ProjectID, job.ImageIDs)
 	if err != nil {
-		return &jobProcessError{code: "authorization_changed", message: "selected assets are no longer available"}
+		return &jobProcessError{disposition: FailureTerminal, code: "authorization_changed", message: "selected assets are no longer available"}
 	}
 	archive, err := p.service.buildArchive(ctx, assets)
 	if err != nil {
 		if errors.Is(err, ErrBatchTooLarge) || errors.Is(err, ErrSourceLimitExceeded) || errors.Is(err, ErrArchiveLimitExceeded) {
-			return &jobProcessError{code: ErrorExportTooLarge, message: "gallery export exceeds the configured size limit"}
+			return &jobProcessError{disposition: FailureTerminal, code: ErrorExportTooLarge, message: "gallery export exceeds the configured size limit"}
 		}
-		return &jobProcessError{code: "archive_build_failed", message: err.Error()}
+		return &jobProcessError{disposition: FailureRetryable, code: "archive_build_failed", message: err.Error()}
 	}
 	defer archive.Close()
 	writer, err := p.router.DefaultWriter(ctx)
 	if err != nil {
-		return &jobProcessError{code: "storage_unavailable", message: "archive storage is unavailable"}
+		return &jobProcessError{disposition: FailureRetryable, code: "storage_unavailable", message: "archive storage is unavailable"}
 	}
 	streaming, ok := writer.Backend.(storage.StreamingBackend)
 	if !ok {
-		return &jobProcessError{code: "streaming_storage_unsupported", message: "archive storage does not support streaming uploads"}
+		return &jobProcessError{disposition: FailureTerminal, code: "streaming_storage_unsupported", message: "archive storage does not support streaming uploads"}
 	}
 	file, err := os.Open(archive.Path)
 	if err != nil {
-		return &jobProcessError{code: "archive_build_failed", message: "temporary archive could not be opened"}
+		return &jobProcessError{disposition: FailureRetryable, code: "archive_build_failed", message: "temporary archive could not be opened"}
 	}
 	defer file.Close()
 	objectKey := p.attemptObjectKey(job)
 	if err := streaming.PutReader(ctx, objectKey, "application/zip", file, archive.Size); err != nil {
 		_ = writer.Backend.Delete(context.WithoutCancel(ctx), objectKey)
-		return &jobProcessError{code: "archive_store_failed", message: "archive could not be stored"}
+		return &jobProcessError{disposition: FailureRetryable, code: "archive_store_failed", message: "archive could not be stored"}
 	}
 	completedAt := p.opts.Now().UTC()
 	_, err = p.store.CompleteJob(ctx, CompleteJobRequest{
@@ -169,7 +185,7 @@ func (p *Processor) processJob(ctx context.Context, job Job, now time.Time) *job
 		if errors.Is(err, repoerr.ErrConflict) {
 			return nil
 		}
-		return &jobProcessError{code: "archive_completion_failed", message: "archive completion could not be recorded"}
+		return &jobProcessError{disposition: FailureRetryable, code: "archive_completion_failed", message: "archive completion could not be recorded"}
 	}
 	return nil
 }
@@ -210,8 +226,11 @@ func (p *Processor) renewLease(ctx context.Context, cancelProcess context.Cancel
 	}
 }
 
-func (p *Processor) fail(ctx context.Context, job Job, now time.Time, code, message string) error {
-	if err := p.store.FailJob(ctx, job, now, strings.TrimSpace(code), strings.TrimSpace(message)); err != nil {
+func (p *Processor) fail(ctx context.Context, job Job, now time.Time, failure jobProcessError) error {
+	if err := p.store.FailJob(ctx, FailJobRequest{
+		Job: job, FailedAt: now, Disposition: failure.disposition,
+		Code: strings.TrimSpace(failure.code), Message: strings.TrimSpace(failure.message),
+	}); err != nil {
 		if errors.Is(err, repoerr.ErrConflict) {
 			return nil
 		}

@@ -272,6 +272,40 @@ func TestGalleryAsyncExportStatusAndDownloadAreOwnerScopedAndExpire(t *testing.T
 	if expired := galleryExportGetRequest(handler, owner.AccessToken, downloadPath); expired.Code != http.StatusConflict {
 		t.Fatalf("expired download status=%d body=%s", expired.Code, expired.Body.String())
 	}
+
+	failedCreate := galleryBatchRequest(t, handler, owner.AccessToken, "/api/agent/gallery/v1/images:batch-download", map[string]any{
+		"image_ids": []string{one, two}, "project_id": project.ID,
+	})
+	if failedCreate.Code != http.StatusAccepted {
+		t.Fatalf("failed export create status=%d body=%s", failedCreate.Code, failedCreate.Body.String())
+	}
+	var failedJob struct {
+		Data struct {
+			Job galleryexportservice.Job `json:"job"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(failedCreate.Body).Decode(&failedJob); err != nil || failedJob.Data.Job.ID == "" {
+		t.Fatalf("failed export create payload=%#v err=%v", failedJob, err)
+	}
+	failedClaim, ok, err := exportStore.AcquireNextJob(t.Context(), "api-test-worker", time.Now().UTC(), time.Minute)
+	if err != nil || !ok || failedClaim.ID != failedJob.Data.Job.ID {
+		t.Fatalf("claim failed export job=%#v ok=%v err=%v", failedClaim, ok, err)
+	}
+	const failureMessage = "gallery export exceeds the configured size limit"
+	if err := exportStore.FailJob(t.Context(), galleryexportservice.FailJobRequest{
+		Job: failedClaim, FailedAt: time.Now().UTC(), Disposition: galleryexportservice.FailureTerminal,
+		Code: galleryexportservice.ErrorExportTooLarge, Message: failureMessage,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	failedStatusPath := "/api/agent/gallery/v1/export-jobs/" + failedJob.Data.Job.ID
+	failedStatus := galleryExportGetRequest(handler, owner.AccessToken, failedStatusPath)
+	if failedStatus.Code != http.StatusOK || !bytes.Contains(failedStatus.Body.Bytes(), []byte(`"state":"failed"`)) ||
+		!bytes.Contains(failedStatus.Body.Bytes(), []byte(`"error_code":"EXPORT_TOO_LARGE"`)) ||
+		!bytes.Contains(failedStatus.Body.Bytes(), []byte(`"error_message":"`+failureMessage+`"`)) ||
+		bytes.Contains(failedStatus.Body.Bytes(), []byte(`"download_url"`)) {
+		t.Fatalf("failed export status=%d body=%s", failedStatus.Code, failedStatus.Body.String())
+	}
 }
 
 func TestGalleryBatchPublishPreservesModerationOutcomesPerItem(t *testing.T) {
