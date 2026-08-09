@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -36,6 +37,37 @@ func TestRunnerProcessesCleanupBeforeLookingForImageTask(t *testing.T) {
 	processed, err := runner.ProcessOnce(t.Context())
 	if err != nil || !processed || cleanup.calls.Load() != 1 {
 		t.Fatalf("processed=%v err=%v calls=%d", processed, err, cleanup.calls.Load())
+	}
+}
+
+func TestRunnerBoundsCleanupStreakWhileCleanupBacklogAndImageTasksRemain(t *testing.T) {
+	cleanup := &fakeCleanupService{}
+	var acquired atomic.Int32
+	tasks := fakeTaskService{
+		acquireFunc: func(context.Context, string, time.Duration) (domainimagetask.Task, bool, error) {
+			index := acquired.Add(1)
+			return domainimagetask.Task{ID: fmt.Sprintf("task-%d", index)}, true, nil
+		},
+		heartbeatFunc: func(context.Context, string, string, time.Duration) (domainimagetask.Task, error) {
+			return domainimagetask.Task{}, nil
+		},
+		executeFunc: func(context.Context, domainimagetask.Task, string, []string) (domainimagetask.ExecuteResult, error) {
+			return domainimagetask.ExecuteResult{}, nil
+		},
+	}
+	runner := NewRunner(tasks, Config{Owner: "fair-worker"})
+	runner.SetCleanupService(cleanup)
+	for range 6 {
+		processed, err := runner.ProcessOnce(t.Context())
+		if err != nil || !processed {
+			t.Fatalf("ProcessOnce processed=%v err=%v", processed, err)
+		}
+	}
+	if got := acquired.Load(); got < 3 {
+		t.Fatalf("sustained cleanup backlog starved image tasks: acquired=%d cleanup=%d", got, cleanup.calls.Load())
+	}
+	if got := cleanup.calls.Load(); got < 3 {
+		t.Fatalf("fair scheduling starved cleanup: acquired=%d cleanup=%d", acquired.Load(), got)
 	}
 }
 

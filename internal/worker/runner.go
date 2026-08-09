@@ -32,8 +32,11 @@ type Runner struct {
 	cleanup              cleanupService
 	cfg                  Config
 	cleanupMu            sync.Mutex
+	cleanupStreak        int
 	lastCleanupReconcile time.Time
 }
+
+const maxCleanupStreak = 1
 
 type executeOutcome struct {
 	result domainimagetask.ExecuteResult
@@ -268,6 +271,12 @@ func normalizeMaxConcurrentTasks(value int) int {
 }
 
 func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
+	if r.takeCleanupFairnessTurn() {
+		processed, err := r.processTaskOnce(ctx)
+		if err != nil || processed {
+			return processed, err
+		}
+	}
 	if r.cleanup != nil {
 		r.cleanupMu.Lock()
 		due := r.lastCleanupReconcile.IsZero() || time.Since(r.lastCleanupReconcile) >= r.cfg.CleanupReconcileInterval
@@ -282,6 +291,9 @@ func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
 		}
 		processed, err := r.cleanup.ProcessOnce(ctx)
 		if err != nil || processed {
+			if processed {
+				r.noteCleanupProcessed()
+			}
 			return processed, err
 		}
 	}
@@ -298,7 +310,36 @@ func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
 		}
 	}
 
-	return r.processTaskOnce(ctx)
+	processed, err := r.processTaskOnce(ctx)
+	if processed {
+		r.resetCleanupStreak()
+	}
+	return processed, err
+}
+
+func (r *Runner) takeCleanupFairnessTurn() bool {
+	if r.cleanup == nil {
+		return false
+	}
+	r.cleanupMu.Lock()
+	defer r.cleanupMu.Unlock()
+	if r.cleanupStreak < maxCleanupStreak {
+		return false
+	}
+	r.cleanupStreak = 0
+	return true
+}
+
+func (r *Runner) noteCleanupProcessed() {
+	r.cleanupMu.Lock()
+	r.cleanupStreak++
+	r.cleanupMu.Unlock()
+}
+
+func (r *Runner) resetCleanupStreak() {
+	r.cleanupMu.Lock()
+	r.cleanupStreak = 0
+	r.cleanupMu.Unlock()
 }
 
 func (r *Runner) processTaskOnce(ctx context.Context) (bool, error) {
