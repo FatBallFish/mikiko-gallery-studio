@@ -2,10 +2,14 @@ package galleryexport
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
@@ -24,18 +28,20 @@ type CompleteJobRequest struct {
 type ProcessorStore interface {
 	Store
 	AcquireNextJob(ctx context.Context, owner string, now time.Time, leaseTTL time.Duration) (Job, bool, error)
+	RenewJobLease(ctx context.Context, jobID, owner string, attempt int, now time.Time, leaseTTL time.Duration) (bool, error)
 	CompleteJob(ctx context.Context, req CompleteJobRequest) (Job, error)
 	FailJob(ctx context.Context, job Job, now time.Time, code, message string) error
 	ExpireReady(ctx context.Context, now time.Time, limit int) (int, error)
 }
 
 type ProcessorOptions struct {
-	Owner       string
-	LeaseTTL    time.Duration
-	ArchiveTTL  time.Duration
-	ExpireBatch int
-	Now         func() time.Time
-	Service     Options
+	Owner        string
+	LeaseTTL     time.Duration
+	ArchiveTTL   time.Duration
+	AsyncTimeout time.Duration
+	ExpireBatch  int
+	Now          func() time.Time
+	Service      Options
 }
 
 type Processor struct {
@@ -51,6 +57,9 @@ func NewProcessor(store ProcessorStore, router storage.Router, opts ProcessorOpt
 	}
 	if opts.ArchiveTTL <= 0 {
 		opts.ArchiveTTL = 24 * time.Hour
+	}
+	if opts.AsyncTimeout <= 0 {
+		opts.AsyncTimeout = 10 * time.Minute
 	}
 	if opts.ExpireBatch <= 0 {
 		opts.ExpireBatch = 25
@@ -74,35 +83,123 @@ func (p *Processor) ProcessOnce(ctx context.Context) (bool, error) {
 	if err != nil || !ok {
 		return false, err
 	}
+	processCtx, cancelProcess := context.WithTimeout(ctx, p.opts.AsyncTimeout)
+	defer cancelProcess()
+	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
+	heartbeatDone := make(chan leaseHeartbeatResult, 1)
+	go p.renewLease(heartbeatCtx, cancelProcess, job, heartbeatDone)
+
+	processErr := p.processJob(processCtx, job, now)
+	stopHeartbeat()
+	heartbeat := <-heartbeatDone
+	if heartbeat.lost {
+		return true, nil
+	}
+	if heartbeat.err != nil {
+		return true, heartbeat.err
+	}
+	if processErr == nil {
+		return true, nil
+	}
+	return true, p.fail(ctx, job, p.opts.Now().UTC(), processErr.code, processErr.message)
+}
+
+type jobProcessError struct {
+	code    string
+	message string
+}
+
+type leaseHeartbeatResult struct {
+	lost bool
+	err  error
+}
+
+func (p *Processor) processJob(ctx context.Context, job Job, now time.Time) *jobProcessError {
 	assets, err := p.store.AuthorizeAssets(ctx, job.UserID, job.ProjectID, job.ImageIDs)
 	if err != nil {
-		return true, p.fail(ctx, job, now, "authorization_changed", "selected assets are no longer available")
+		return &jobProcessError{code: "authorization_changed", message: "selected assets are no longer available"}
 	}
-	archive, _, err := p.service.buildArchive(ctx, assets)
+	archive, err := p.service.buildArchive(ctx, assets)
 	if err != nil {
-		return true, p.fail(ctx, job, now, "archive_build_failed", err.Error())
+		return &jobProcessError{code: "archive_build_failed", message: err.Error()}
 	}
+	defer archive.Close()
 	writer, err := p.router.DefaultWriter(ctx)
 	if err != nil {
-		return true, p.fail(ctx, job, now, "storage_unavailable", "archive storage is unavailable")
+		return &jobProcessError{code: "storage_unavailable", message: "archive storage is unavailable"}
 	}
 	objectKey := fmt.Sprintf("gallery-exports/%d/%s.zip", job.UserID, job.ID)
-	if err := writer.Backend.Put(ctx, objectKey, "application/zip", archive); err != nil {
-		return true, p.fail(ctx, job, now, "archive_store_failed", "archive could not be stored")
+	content, err := readTempArchive(archive.Path, p.service.opts.MaxArchiveBytes)
+	if err != nil {
+		return &jobProcessError{code: "archive_build_failed", message: err.Error()}
+	}
+	if err := writer.Backend.Put(ctx, objectKey, "application/zip", content); err != nil {
+		return &jobProcessError{code: "archive_store_failed", message: "archive could not be stored"}
 	}
 	_, err = p.store.CompleteJob(ctx, CompleteJobRequest{
 		JobID: job.ID, Owner: p.opts.Owner, AttemptCount: job.AttemptCount,
 		StorageConfigID: writer.ConfigID, StorageDriver: writer.Driver, Bucket: writer.Bucket,
-		ObjectKey: objectKey, ArchiveSizeBytes: int64(len(archive)), ExpiresAt: now.Add(p.opts.ArchiveTTL),
+		ObjectKey: objectKey, ArchiveSizeBytes: archive.Size, ExpiresAt: now.Add(p.opts.ArchiveTTL),
 	})
 	if err != nil {
-		return true, fmt.Errorf("complete gallery export: %w", err)
+		_ = writer.Backend.Delete(context.WithoutCancel(ctx), objectKey)
+		if errors.Is(err, repoerr.ErrConflict) {
+			return nil
+		}
+		return &jobProcessError{code: "archive_completion_failed", message: "archive completion could not be recorded"}
 	}
-	return true, nil
+	return nil
+}
+
+func (p *Processor) renewLease(ctx context.Context, cancelProcess context.CancelFunc, job Job, done chan<- leaseHeartbeatResult) {
+	interval := p.opts.LeaseTTL / 3
+	if interval <= 0 {
+		interval = time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			done <- leaseHeartbeatResult{}
+			return
+		case <-ticker.C:
+			ok, err := p.store.RenewJobLease(ctx, job.ID, p.opts.Owner, job.AttemptCount, p.opts.Now().UTC(), p.opts.LeaseTTL)
+			if err != nil {
+				cancelProcess()
+				done <- leaseHeartbeatResult{err: fmt.Errorf("renew gallery export lease: %w", err)}
+				return
+			}
+			if !ok {
+				cancelProcess()
+				done <- leaseHeartbeatResult{lost: true}
+				return
+			}
+		}
+	}
+}
+
+func readTempArchive(path string, maxBytes int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open temporary ZIP archive: %w", err)
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read temporary ZIP archive: %w", err)
+	}
+	if int64(len(content)) > maxBytes {
+		return nil, ErrArchiveLimitExceeded
+	}
+	return content, nil
 }
 
 func (p *Processor) fail(ctx context.Context, job Job, now time.Time, code, message string) error {
 	if err := p.store.FailJob(ctx, job, now, strings.TrimSpace(code), strings.TrimSpace(message)); err != nil {
+		if errors.Is(err, repoerr.ErrConflict) {
+			return nil
+		}
 		return fmt.Errorf("record gallery export failure: %w", err)
 	}
 	return nil

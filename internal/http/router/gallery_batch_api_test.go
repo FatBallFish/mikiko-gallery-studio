@@ -14,12 +14,14 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
@@ -289,6 +291,48 @@ func TestGalleryBatchPublishPreservesModerationOutcomesPerItem(t *testing.T) {
 	}
 	if statuses[allowed] != "pending_review:" || statuses[fallback] != "pending_review:" || statuses[rejected] != "rejected:auto_moderation_blocked:violence" {
 		t.Fatalf("batch moderation statuses=%#v", statuses)
+	}
+}
+
+func TestGalleryBatchCancelPublishAuditsOnlySuccessfulItemsAndRecordsMode(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:gallery-batch-cancel-audit-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	authSvc := authservice.NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: time.Hour, Issuer: "test", AccessTokenSecret: "secret", RefreshCookieName: "refresh"}, map[string]string{"basic": "1.00000"})
+	session := loginExistingAuthUser(t, authSvc, "gallery-cancel-audit@example.com")
+	projects := projectservice.NewService(entstore.NewProjectStore(client))
+	project, err := projects.EnsureDefault(t.Context(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := storage.NewLocalBackend(t.TempDir())
+	storageRouter := storage.NewStaticRouter(backend)
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(config.Config{}, nil, entstore.NewImageTaskStore(client), nil, nil, storageRouter)
+	taskSvc.SetProjectResolver(projects)
+	auditStore := auditservice.NewMemoryStore()
+	auditSvc := auditservice.NewService(auditStore)
+	api := handlers.NewAPIWithCompletionServices(config.Config{}, authSvc, nil, taskSvc, nil, nil, nil, nil, auditSvc)
+	api.SetProjectService(projects)
+	handler := NewWithAPI(api)
+	imageID := seedGalleryBatchAPIImage(t, client, backend, 1, project.ID, "audit", "one")
+	rec := galleryBatchRequest(t, handler, session.AccessToken, "/api/agent/gallery/v1/images:batch-publish", map[string]any{
+		"image_ids": []string{imageID, uuid.NewString()}, "project_id": project.ID, "publish": false,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cancel status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	itemLogs, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Action: "gallery.publish_cancel", PageSize: 10})
+	if err != nil || itemLogs.Total != 1 || itemLogs.Items[0].TargetID != imageID {
+		t.Fatalf("item audit logs=%#v err=%v", itemLogs, err)
+	}
+	batchLogs, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Action: "gallery.batch_publish", PageSize: 10})
+	if err != nil || batchLogs.Total != 1 || batchLogs.Items[0].Metadata["publish"] != false {
+		t.Fatalf("batch audit logs=%#v err=%v", batchLogs, err)
 	}
 }
 

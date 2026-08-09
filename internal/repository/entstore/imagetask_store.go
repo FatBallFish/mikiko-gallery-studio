@@ -513,7 +513,20 @@ func (s *ImageTaskStore) TransferImageProject(ctx context.Context, userID int64,
 	if err != nil {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
-	updated, err := s.client.ImageResult.Update().Where(
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, fmt.Errorf("start gallery project transfer: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Project.Query().Where(
+		activeOwnedProject(userID), projectent.IDEQ(targetID), lockProjectForGalleryTransfer(),
+	).Only(ctx); err != nil {
+		if repoent.IsNotFound(err) {
+			return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+		}
+		return domainimagetask.GalleryImage{}, fmt.Errorf("lock gallery transfer target: %w", err)
+	}
+	updated, err := tx.ImageResult.Update().Where(
 		imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.ProjectIDEQ(sourceID), imageresult.DeletedAtIsNil(),
 	).SetProjectID(targetID).Save(ctx)
 	if err != nil {
@@ -522,11 +535,27 @@ func (s *ImageTaskStore) TransferImageProject(ctx context.Context, userID int64,
 	if updated != 1 {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
-	entity, taskEntity, err := s.loadGalleryImageWithTask(ctx, imageUUID)
+	entity, err := tx.ImageResult.Query().Where(imageresult.IDEQ(imageUUID), imageresult.DeletedAtIsNil()).Only(ctx)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	return mapGalleryImageEntity(entity, taskEntity), nil
+	taskEntity, err := tx.ImageTask.Get(ctx, entity.TaskID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, err
+	}
+	result := mapGalleryImageEntity(entity, taskEntity)
+	if err := tx.Commit(); err != nil {
+		return domainimagetask.GalleryImage{}, fmt.Errorf("commit gallery project transfer: %w", err)
+	}
+	return result, nil
+}
+
+func lockProjectForGalleryTransfer() predicate.Project {
+	return func(selector *entsql.Selector) {
+		if selector.Dialect() != dialect.SQLite {
+			selector.ForShare()
+		}
+	}
 }
 
 func (s *ImageTaskStore) ReviewImage(ctx context.Context, imageID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {

@@ -25,8 +25,8 @@ if (!invertLoadedGallerySelection || !reconcileGalleryBatchSelection || !pollGal
 type ExportStatus = { job: { id: string; state: string; error_message?: string } }
 
 const inverted = invertLoadedGallerySelection(new Set(['loaded-1', 'hidden']), ['loaded-1', 'loaded-2'])
-if (inverted.has('loaded-1') || !inverted.has('loaded-2') || !inverted.has('hidden')) {
-  throw new Error('invert must affect current loaded IDs only and preserve hidden selections')
+if (inverted.has('loaded-1') || !inverted.has('loaded-2') || inverted.has('hidden')) {
+	throw new Error('invert must affect current loaded IDs only and prune hidden selections')
 }
 const retriable = reconcileGalleryBatchSelection(new Set(['one', 'two', 'hidden']), ['one'], ['two'])
 if (retriable.has('one') || !retriable.has('two') || !retriable.has('hidden')) {

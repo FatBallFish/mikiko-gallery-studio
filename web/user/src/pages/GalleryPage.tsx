@@ -11,7 +11,7 @@ import { rdGallery } from '../ui/redesign-classes'
 import { Check, Copy, Download, Edit, FolderPlus, Globe, RotateCcw, Trash2, X } from '../ui/icons'
 import { stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot } from './workspaceCreationDraft'
 import { invertLoadedGallerySelection, pollGalleryExportJob, reconcileGalleryBatchSelection } from './galleryBatchActions'
-import { areAllVisibleGalleryItemsSelected, galleryImageAspect, selectVisibleGalleryImages, selectedVisibleGalleryItems, toggleGalleryImageSelection } from './galleryExperience'
+import { areAllVisibleGalleryItemsSelected, galleryImageAspect, pruneGallerySelection, selectVisibleGalleryImages, selectedVisibleGalleryItems, toggleGalleryImageSelection } from './galleryExperience'
 import { applyGalleryPage, initialGalleryPageState, patchGalleryPageItems, removeGalleryPageItems } from './galleryPagination'
 import { filterGalleryImages, galleryImageCard, galleryPublishActionPresentation, galleryPublishStatus, type GalleryPublishActionPresentation } from './galleryRows'
 import { ProjectSelector, useProjects } from '../ProjectContext'
@@ -316,9 +316,14 @@ export function GalleryPage() {
     return Array.from(groups).sort()
   }, [galleryPage.items])
 
-  const filtered = useMemo(() => filterGalleryImages(typeRows, { type: 'all', status, publishStatus, imageGroup, query }), [typeRows, query, status, publishStatus, imageGroup])
+	const filtered = useMemo(() => filterGalleryImages(typeRows, { type: 'all', status, publishStatus, imageGroup, query }), [typeRows, query, status, publishStatus, imageGroup])
+	const filteredIDs = useMemo(() => filtered.map((image) => image.id), [filtered])
 
-  const selectedImages = useMemo(() => selectedVisibleGalleryItems(filtered, selectedIds), [filtered, selectedIds])
+	useEffect(() => {
+		setSelectedIds((current) => pruneGallerySelection(current, filteredIDs))
+	}, [filteredIDs])
+
+	const selectedImages = useMemo(() => selectedVisibleGalleryItems(filtered, selectedIds), [filtered, selectedIds])
   const allVisibleSelected = useMemo(() => areAllVisibleGalleryItemsSelected(filtered, selectedIds), [filtered, selectedIds])
 
   function patchImages(updates: GalleryImage[]) {
@@ -509,11 +514,11 @@ export function GalleryPage() {
   }
 
   function selectAllVisible(checked: boolean) {
-    setSelectedIds((current) => selectVisibleGalleryImages(current, filtered.map((image) => image.id), checked))
+		setSelectedIds((current) => selectVisibleGalleryImages(current, filteredIDs, checked))
   }
 
   function invertLoadedSelection() {
-	setSelectedIds((current) => invertLoadedGallerySelection(current, filtered.map((image) => image.id)))
+	setSelectedIds((current) => invertLoadedGallerySelection(current, filteredIDs))
   }
 
   function openGroupDialog(images: GalleryImage[]) {

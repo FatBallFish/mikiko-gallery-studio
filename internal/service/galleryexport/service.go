@@ -2,12 +2,13 @@ package galleryexport
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -28,9 +29,11 @@ const (
 )
 
 var (
-	ErrBatchEmpty     = errors.New("gallery export selection is empty")
-	ErrBatchTooLarge  = errors.New("gallery export selection exceeds the batch limit")
-	ErrExportNotReady = errors.New("gallery export is not ready")
+	ErrBatchEmpty           = errors.New("gallery export selection is empty")
+	ErrBatchTooLarge        = errors.New("gallery export selection exceeds the batch limit")
+	ErrExportNotReady       = errors.New("gallery export is not ready")
+	ErrSourceLimitExceeded  = errors.New("gallery export source byte limit exceeded")
+	ErrArchiveLimitExceeded = errors.New("gallery export archive byte limit exceeded")
 )
 
 type Asset struct {
@@ -62,6 +65,17 @@ type Archive struct {
 	Filename string
 	Content  []byte
 	Manifest Manifest
+	Path     string
+	Size     int64
+}
+
+func (a *Archive) Close() error {
+	if a == nil || a.Path == "" {
+		return nil
+	}
+	path := a.Path
+	a.Path = ""
+	return os.Remove(path)
 }
 
 type Job struct {
@@ -131,7 +145,11 @@ type Options struct {
 	MaxBatchSize            int
 	DirectMaxCount          int
 	DirectMaxEstimatedBytes int64
+	MaxFileCount            int
+	MaxSourceBytes          int64
 	MaxArchiveBytes         int64
+	DirectTimeout           time.Duration
+	TempDir                 string
 }
 
 type Service struct {
@@ -164,10 +182,21 @@ func NewService(store Store, router storage.Router, opts Options) *Service {
 	if opts.MaxArchiveBytes <= 0 {
 		opts.MaxArchiveBytes = 256 << 20
 	}
+	if opts.MaxSourceBytes <= 0 {
+		opts.MaxSourceBytes = opts.MaxArchiveBytes
+	}
+	if opts.MaxFileCount <= 0 {
+		opts.MaxFileCount = opts.MaxBatchSize
+	}
+	if opts.DirectTimeout <= 0 {
+		opts.DirectTimeout = 2 * time.Minute
+	}
 	return &Service{store: store, router: router, opts: opts}
 }
 
 func (s *Service) CreateDownload(ctx context.Context, req CreateDownloadRequest) (CreateDownloadResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.opts.DirectTimeout)
+	defer cancel()
 	ids, err := normalizeIDs(req.ImageIDs, s.opts.MaxBatchSize)
 	if err != nil {
 		return CreateDownloadResult{}, err
@@ -191,11 +220,11 @@ func (s *Service) CreateDownload(ctx context.Context, req CreateDownloadRequest)
 		}
 		return CreateDownloadResult{Job: &job}, nil
 	}
-	content, manifest, err := s.buildArchive(ctx, assets)
+	archive, err := s.buildArchive(ctx, assets)
 	if err != nil {
 		return CreateDownloadResult{}, err
 	}
-	return CreateDownloadResult{Archive: &Archive{Filename: "gallery-assets.zip", Content: content, Manifest: manifest}}, nil
+	return CreateDownloadResult{Archive: &archive}, nil
 }
 
 func normalizeIDs(values []string, max int) ([]string, error) {
@@ -221,13 +250,32 @@ func normalizeIDs(values []string, max int) ([]string, error) {
 	return result, nil
 }
 
-func (s *Service) buildArchive(ctx context.Context, assets []Asset) ([]byte, Manifest, error) {
+func (s *Service) buildArchive(ctx context.Context, assets []Asset) (Archive, error) {
+	if len(assets) > s.opts.MaxFileCount {
+		return Archive{}, ErrBatchTooLarge
+	}
 	manifest := Manifest{Version: 1, Files: make([]ManifestFile, 0, len(assets))}
-	var buffer bytes.Buffer
-	writer := zip.NewWriter(&buffer)
+	temp, err := os.CreateTemp(s.opts.TempDir, "gallery-export-*.zip")
+	if err != nil {
+		return Archive{}, fmt.Errorf("create temporary ZIP archive: %w", err)
+	}
+	archive := Archive{Filename: "gallery-assets.zip", Path: temp.Name()}
+	keep := false
+	defer func() {
+		_ = temp.Close()
+		if !keep {
+			_ = os.Remove(temp.Name())
+		}
+	}()
+	bounded := &archiveLimitWriter{writer: temp, max: s.opts.MaxArchiveBytes}
+	writer := zip.NewWriter(bounded)
 	usedNames := map[string]int{"manifest.json": 1}
-	var totalBytes int64
+	var sourceBytes int64
 	for _, asset := range assets {
+		if err := ctx.Err(); err != nil {
+			_ = writer.Close()
+			return Archive{}, err
+		}
 		filename := uniqueArchiveFilename(asset.DisplayName, asset.MIMEType, asset.ObjectKey, usedNames)
 		entry := ManifestFile{ID: asset.ID, Filename: filename}
 		backend, err := s.router.BackendFor(ctx, asset.StorageConfigID, asset.StorageDriver)
@@ -236,14 +284,21 @@ func (s *Service) buildArchive(ctx context.Context, assets []Asset) ([]byte, Man
 			manifest.Files = append(manifest.Files, entry)
 			continue
 		}
-		remaining := s.opts.MaxArchiveBytes - totalBytes
+		remaining := s.opts.MaxSourceBytes - sourceBytes
 		if remaining <= 0 {
-			entry.Status, entry.ErrorCode, entry.Message = FileStatusFailed, "archive_limit_exceeded", "archive byte limit exceeded"
-			manifest.Files = append(manifest.Files, entry)
-			continue
+			_ = writer.Close()
+			return Archive{}, ErrSourceLimitExceeded
 		}
 		content, err := getBounded(ctx, backend.Backend, asset.ObjectKey, remaining)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				_ = writer.Close()
+				return Archive{}, ctxErr
+			}
+			if errors.Is(err, storage.ErrObjectTooLarge) {
+				_ = writer.Close()
+				return Archive{}, ErrSourceLimitExceeded
+			}
 			entry.Status, entry.ErrorCode, entry.Message = FileStatusFailed, exportReadErrorCode(err), "image file could not be read"
 			manifest.Files = append(manifest.Files, entry)
 			continue
@@ -251,34 +306,74 @@ func (s *Service) buildArchive(ctx context.Context, assets []Asset) ([]byte, Man
 		file, err := writer.Create(filename)
 		if err != nil {
 			_ = writer.Close()
-			return nil, Manifest{}, fmt.Errorf("create ZIP entry: %w", err)
+			return Archive{}, archiveWriteError("create ZIP entry", err)
 		}
 		if _, err := file.Write(content); err != nil {
 			_ = writer.Close()
-			return nil, Manifest{}, fmt.Errorf("write ZIP entry: %w", err)
+			return Archive{}, archiveWriteError("write ZIP entry", err)
 		}
-		totalBytes += int64(len(content))
+		sourceBytes += int64(len(content))
 		entry.Status, entry.SizeBytes = FileStatusSucceeded, int64(len(content))
 		manifest.Files = append(manifest.Files, entry)
 	}
 	payload, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		_ = writer.Close()
-		return nil, Manifest{}, fmt.Errorf("encode ZIP manifest: %w", err)
+		return Archive{}, fmt.Errorf("encode ZIP manifest: %w", err)
 	}
 	file, err := writer.Create("manifest.json")
 	if err != nil {
 		_ = writer.Close()
-		return nil, Manifest{}, fmt.Errorf("create ZIP manifest: %w", err)
+		return Archive{}, archiveWriteError("create ZIP manifest", err)
 	}
 	if _, err := file.Write(payload); err != nil {
 		_ = writer.Close()
-		return nil, Manifest{}, fmt.Errorf("write ZIP manifest: %w", err)
+		return Archive{}, archiveWriteError("write ZIP manifest", err)
 	}
 	if err := writer.Close(); err != nil {
-		return nil, Manifest{}, fmt.Errorf("close ZIP archive: %w", err)
+		return Archive{}, archiveWriteError("close ZIP archive", err)
 	}
-	return buffer.Bytes(), manifest, nil
+	if err := temp.Sync(); err != nil {
+		return Archive{}, fmt.Errorf("sync ZIP archive: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return Archive{}, fmt.Errorf("close temporary ZIP archive: %w", err)
+	}
+	archive.Manifest = manifest
+	archive.Size = bounded.written
+	keep = true
+	return archive, nil
+}
+
+type archiveLimitWriter struct {
+	writer  io.Writer
+	max     int64
+	written int64
+}
+
+func (w *archiveLimitWriter) Write(payload []byte) (int, error) {
+	remaining := w.max - w.written
+	if remaining <= 0 {
+		return 0, ErrArchiveLimitExceeded
+	}
+	if int64(len(payload)) > remaining {
+		written, err := w.writer.Write(payload[:remaining])
+		w.written += int64(written)
+		if err != nil {
+			return written, err
+		}
+		return written, ErrArchiveLimitExceeded
+	}
+	written, err := w.writer.Write(payload)
+	w.written += int64(written)
+	return written, err
+}
+
+func archiveWriteError(operation string, err error) error {
+	if errors.Is(err, ErrArchiveLimitExceeded) {
+		return ErrArchiveLimitExceeded
+	}
+	return fmt.Errorf("%s: %w", operation, err)
 }
 
 func getBounded(ctx context.Context, backend storage.Backend, objectKey string, maxBytes int64) ([]byte, error) {

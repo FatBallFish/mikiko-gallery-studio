@@ -34,6 +34,52 @@ func TestTaskProjectOwnershipCheckUsesCompatibleRowLock(t *testing.T) {
 	}
 }
 
+func TestGalleryTransferTargetCheckUsesProjectRowLock(t *testing.T) {
+	table := entsql.Table("projects")
+	selector := entsql.Dialect(dialect.Postgres).Select().From(table)
+	lockProjectForGalleryTransfer()(selector)
+	query, _ := selector.Query()
+	if !strings.Contains(query, "FOR SHARE") {
+		t.Fatalf("gallery transfer target query = %q, want FOR SHARE to serialize with project deletion", query)
+	}
+}
+
+func TestTransferImageProjectRejectsDeletedTargetAtomically(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:gallery-transfer-target-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	source, err := client.Project.Create().SetUserID(77).SetName("Source").SetNameKey("source").SetStatus(domainproject.StatusActive).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletedAt := time.Now().UTC()
+	target, err := client.Project.Create().SetUserID(77).SetName("Deleted").SetNameKey("deleted").SetStatus(domainproject.StatusDeleted).SetDeletedAt(deletedAt).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := client.ImageTask.Create().SetUserID(77).SetProjectID(source.ID).SetTaskType("text_to_image").SetPrompt("transfer").SetAbstractModel("plus").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(77).SetProjectID(source.ID).SetObjectKey("one.png").SetMimeType("image/png").SetSha256(strings.Repeat("a", 64)).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewImageTaskStore(client).TransferImageProject(ctx, 77, image.ID.String(), source.ID.String(), target.ID.String()); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("deleted target transfer error=%v, want not found", err)
+	}
+	persisted, err := client.ImageResult.Get(ctx, image.ID)
+	if err != nil || persisted.ProjectID == nil || *persisted.ProjectID != source.ID {
+		t.Fatalf("image project=%v err=%v, want source %s", persisted.ProjectID, err, source.ID)
+	}
+}
+
 func TestCleanupClaimUsesSkipLockedOnPostgres(t *testing.T) {
 	table := entsql.Table("object_deletion_jobs")
 	selector := entsql.Dialect(dialect.Postgres).Select().From(table)

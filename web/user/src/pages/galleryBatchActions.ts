@@ -14,7 +14,8 @@ export async function runGalleryBatch<T, R>(items: T[], action: (item: T) => Pro
 }
 
 export function invertLoadedGallerySelection(current: ReadonlySet<string>, loadedIDs: string[]) {
-  const next = new Set(current)
+	const loaded = new Set(loadedIDs)
+	const next = new Set(Array.from(current).filter((id) => loaded.has(id)))
   loadedIDs.forEach((id) => {
     if (next.has(id)) next.delete(id)
     else next.add(id)

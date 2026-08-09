@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
@@ -56,7 +58,7 @@ func TestBuildArchiveSanitizesAndDeduplicatesNamesAndReportsReadFailures(t *test
 		errors:  map[string]error{"missing": storage.ErrNotFound},
 	}
 	service := NewService(&exportStoreStub{}, storage.NewStaticRouter(backend), Options{MaxArchiveBytes: 1024})
-	archive, manifest, err := service.buildArchive(context.Background(), []Asset{
+	archive, err := service.buildArchive(context.Background(), []Asset{
 		{ID: "one", ObjectKey: "ok-1", MIMEType: "image/png", DisplayName: "../same"},
 		{ID: "two", ObjectKey: "ok-2", MIMEType: "image/png", DisplayName: "..\\same"},
 		{ID: "three", ObjectKey: "missing", MIMEType: "image/png", DisplayName: "manifest.json"},
@@ -64,6 +66,8 @@ func TestBuildArchiveSanitizesAndDeduplicatesNamesAndReportsReadFailures(t *test
 	if err != nil {
 		t.Fatalf("build archive: %v", err)
 	}
+	t.Cleanup(func() { _ = archive.Close() })
+	manifest := archive.Manifest
 	if len(manifest.Files) != 3 || manifest.Files[0].Filename != "same.png" || manifest.Files[1].Filename != "same-2.png" {
 		t.Fatalf("manifest filenames = %#v", manifest.Files)
 	}
@@ -71,10 +75,11 @@ func TestBuildArchiveSanitizesAndDeduplicatesNamesAndReportsReadFailures(t *test
 		t.Fatalf("failed manifest entry = %#v", manifest.Files[2])
 	}
 
-	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	reader, err := zip.OpenReader(archive.Path)
 	if err != nil {
 		t.Fatalf("open zip: %v", err)
 	}
+	defer reader.Close()
 	if len(reader.File) != 3 {
 		t.Fatalf("zip entries = %d, want two images plus manifest", len(reader.File))
 	}
@@ -98,6 +103,54 @@ func TestBuildArchiveSanitizesAndDeduplicatesNamesAndReportsReadFailures(t *test
 		if err := json.Unmarshal(payload, &decoded); err != nil || len(decoded.Files) != 3 {
 			t.Fatalf("manifest payload = %s err=%v", payload, err)
 		}
+	}
+}
+
+func TestBuildArchiveEnforcesIndependentFileSourceAndFinalArchiveBudgets(t *testing.T) {
+	backend := &exportBackend{objects: map[string][]byte{"one": bytes.Repeat([]byte("a"), 64), "two": bytes.Repeat([]byte("b"), 64)}}
+	assets := []Asset{{ID: "one", ObjectKey: "one"}, {ID: "two", ObjectKey: "two"}}
+	if _, err := NewService(&exportStoreStub{}, storage.NewStaticRouter(backend), Options{MaxFileCount: 1}).buildArchive(t.Context(), assets); !errors.Is(err, ErrBatchTooLarge) {
+		t.Fatalf("file-count error=%v", err)
+	}
+	if _, err := NewService(&exportStoreStub{}, storage.NewStaticRouter(backend), Options{MaxFileCount: 2, MaxSourceBytes: 100}).buildArchive(t.Context(), assets); !errors.Is(err, ErrSourceLimitExceeded) {
+		t.Fatalf("source budget error=%v", err)
+	}
+	if archive, err := NewService(&exportStoreStub{}, storage.NewStaticRouter(backend), Options{MaxFileCount: 2, MaxSourceBytes: 1024, MaxArchiveBytes: 100}).buildArchive(t.Context(), assets); !errors.Is(err, ErrArchiveLimitExceeded) {
+		if archive.Path != "" {
+			_ = archive.Close()
+		}
+		t.Fatalf("archive budget error=%v", err)
+	}
+}
+
+func TestBuildArchiveUsesTempFileAndCleansItUp(t *testing.T) {
+	backend := &exportBackend{objects: map[string][]byte{"one": []byte("content")}}
+	service := NewService(&exportStoreStub{}, storage.NewStaticRouter(backend), Options{TempDir: t.TempDir(), MaxArchiveBytes: 4096})
+	archive, err := service.buildArchive(t.Context(), []Asset{{ID: "one", ObjectKey: "one"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archive.Path == "" || archive.Size <= 0 {
+		t.Fatalf("archive=%#v", archive)
+	}
+	if _, err := os.Stat(archive.Path); err != nil {
+		t.Fatal(err)
+	}
+	path := archive.Path
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("temp archive remains: %v", err)
+	}
+}
+
+func TestCreateDownloadAppliesDirectDeadline(t *testing.T) {
+	backend := &blockingExportBackend{started: make(chan struct{})}
+	service := NewService(&exportStoreStub{assets: []Asset{{ID: "one", ObjectKey: "one"}}}, storage.NewStaticRouter(backend), Options{DirectTimeout: 20 * time.Millisecond})
+	_, err := service.CreateDownload(t.Context(), CreateDownloadRequest{UserID: 7, ProjectID: "project", ImageIDs: []string{"one"}})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("direct deadline error=%v", err)
 	}
 }
 

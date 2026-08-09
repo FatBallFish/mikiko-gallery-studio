@@ -124,6 +124,26 @@ func (s *GalleryExportStore) AcquireNextJob(ctx context.Context, owner string, n
 	return mapGalleryExportJob(claimed), true, nil
 }
 
+func (s *GalleryExportStore) RenewJobLease(ctx context.Context, jobID, owner string, attempt int, now time.Time, leaseTTL time.Duration) (bool, error) {
+	id, err := uuid.Parse(strings.TrimSpace(jobID))
+	if err != nil {
+		return false, repoerr.ErrNotFound
+	}
+	if leaseTTL <= 0 {
+		leaseTTL = time.Minute
+	}
+	updated, err := s.client.GalleryExportJob.Update().Where(
+		galleryexportjob.IDEQ(id),
+		galleryexportjob.StateEQ(galleryexportservice.StateRunning),
+		galleryexportjob.LeaseOwnerEQ(strings.TrimSpace(owner)),
+		galleryexportjob.AttemptCountEQ(attempt),
+	).SetLeaseExpiresAt(now.UTC().Add(leaseTTL)).Save(ctx)
+	if err != nil {
+		return false, fmt.Errorf("renew gallery export lease: %w", err)
+	}
+	return updated == 1, nil
+}
+
 func (s *GalleryExportStore) GetJob(ctx context.Context, userID int64, jobID string) (galleryexportservice.Job, error) {
 	id, err := uuid.Parse(strings.TrimSpace(jobID))
 	if err != nil {

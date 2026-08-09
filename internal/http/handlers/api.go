@@ -3080,7 +3080,13 @@ func (a *API) HandleAgentGalleryBatch(w http.ResponseWriter, r *http.Request) {
 				return image, publishErr
 			})
 		} else {
-			result, err = a.tasks.BatchPublishImages(r.Context(), user.ID, payload.ProjectID, imageIDs, false)
+			result, err = a.tasks.BatchPublishImagesWithAction(r.Context(), user.ID, payload.ProjectID, imageIDs, func(ctx context.Context, imageID, projectID string) (domainimagetask.GalleryImage, error) {
+				image, cancelErr := a.tasks.CancelPublishInProject(ctx, user.ID, imageID, projectID)
+				if cancelErr == nil {
+					a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_cancel", "image_result", imageID, map[string]any{"status": image.VisibilityStatus})
+				}
+				return image, cancelErr
+			})
 		}
 	case "group":
 		result, err = a.tasks.BatchSetImageGroup(r.Context(), user.ID, payload.ProjectID, imageIDs, payload.ImageGroup)
@@ -3099,10 +3105,18 @@ func (a *API) HandleAgentGalleryBatch(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
-	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.batch_"+strings.ReplaceAll(action, "-", "_"), "image_result", "batch", map[string]any{
+	metadata := map[string]any{
 		"project_id": payload.ProjectID, "target_project_id": payload.TargetProjectID,
 		"succeeded": len(result.Succeeded), "failed": len(result.Failed),
-	})
+	}
+	if action == "publish" {
+		publish := true
+		if payload.Publish != nil {
+			publish = *payload.Publish
+		}
+		metadata["publish"] = publish
+	}
+	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.batch_"+strings.ReplaceAll(action, "-", "_"), "image_result", "batch", metadata)
 	httpx.WriteSuccess(w, r, http.StatusOK, result)
 }
 
@@ -3137,11 +3151,18 @@ func (a *API) handleAgentGalleryBatchDownload(w http.ResponseWriter, r *http.Req
 		httpx.WriteError(w, r, errs.Internal("gallery export did not produce an archive"))
 		return
 	}
+	defer result.Archive.Close()
+	file, err := os.Open(result.Archive.Path)
+	if err != nil {
+		httpx.WriteError(w, r, errs.Internal("gallery export archive is unavailable"))
+		return
+	}
+	defer file.Close()
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="gallery-assets.zip"`)
-	w.Header().Set("Content-Length", strconv.Itoa(len(result.Archive.Content)))
+	w.Header().Set("Content-Length", strconv.FormatInt(result.Archive.Size, 10))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(result.Archive.Content)
+	_, _ = io.Copy(w, file)
 }
 
 func (a *API) HandleAgentGalleryExportJob(w http.ResponseWriter, r *http.Request) {

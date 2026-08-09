@@ -11,6 +11,7 @@ import (
 
 	domaincleanup "github.com/fatballfish/pic-gallery/internal/domain/objectcleanup"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
@@ -67,6 +68,16 @@ func TestGalleryExportStoreCreatesAndClaimsDurableJobWithLease(t *testing.T) {
 	}
 	if _, ok, err := store.AcquireNextJob(t.Context(), "worker-2", now, time.Minute); err != nil || ok {
 		t.Fatalf("leased job was claimed twice: ok=%v err=%v", ok, err)
+	}
+	if renewed, err := store.RenewJobLease(t.Context(), claimed.ID, "worker-2", claimed.AttemptCount, now.Add(10*time.Second), 2*time.Minute); err != nil || renewed {
+		t.Fatalf("foreign lease renewal renewed=%v err=%v", renewed, err)
+	}
+	if renewed, err := store.RenewJobLease(t.Context(), claimed.ID, "worker-1", claimed.AttemptCount, now.Add(10*time.Second), 2*time.Minute); err != nil || !renewed {
+		t.Fatalf("owned lease renewal renewed=%v err=%v", renewed, err)
+	}
+	persisted, err := client.GalleryExportJob.Query().Where(galleryexportjob.IDEQ(uuid.MustParse(claimed.ID))).Only(t.Context())
+	if err != nil || persisted.LeaseExpiresAt == nil || !persisted.LeaseExpiresAt.Equal(now.Add(130*time.Second)) {
+		t.Fatalf("renewed lease=%v err=%v", persisted.LeaseExpiresAt, err)
 	}
 }
 

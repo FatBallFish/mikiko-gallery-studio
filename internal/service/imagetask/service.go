@@ -1981,6 +1981,23 @@ func (s *Service) CancelPublish(ctx context.Context, userID int64, imageID strin
 	return s.projectGalleryImageMedia(ctx, image, "/api/agent/image/v1/images/"+url.PathEscape(image.ID))
 }
 
+func (s *Service) CancelPublishInProject(ctx context.Context, userID int64, imageID, projectID string) (domainimagetask.GalleryImage, error) {
+	store, ok := s.store.(interface {
+		CancelPublishInProject(context.Context, int64, string, string) (domainimagetask.GalleryImage, error)
+	})
+	if !ok {
+		return domainimagetask.GalleryImage{}, errs.Internal("project-scoped gallery publication is unavailable")
+	}
+	image, err := store.CancelPublishInProject(ctx, userID, imageID, projectID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return domainimagetask.GalleryImage{}, errs.Internal("failed to cancel image publish")
+	}
+	return s.projectGalleryImageMedia(ctx, image, "/api/agent/image/v1/images/"+url.PathEscape(image.ID))
+}
+
 func (s *Service) SetImageGroup(ctx context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
 	imageGroup = strings.TrimSpace(imageGroup)
 	if len([]rune(imageGroup)) > 64 {

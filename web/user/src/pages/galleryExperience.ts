@@ -14,12 +14,21 @@ export function toggleGalleryImageSelection(current: ReadonlySet<string>, imageI
 }
 
 export function selectVisibleGalleryImages(current: ReadonlySet<string>, visibleIDs: string[], selected: boolean) {
-  const next = new Set(current)
+	const next = pruneGallerySelection(current, visibleIDs)
   visibleIDs.forEach((id) => {
     if (selected) next.add(id)
     else next.delete(id)
   })
   return next
+}
+
+export function pruneGallerySelection(current: ReadonlySet<string>, visibleIDs: string[]) {
+	const visible = new Set(visibleIDs)
+	const next = new Set(Array.from(current).filter((id) => visible.has(id)))
+	if (next.size === current.size && Array.from(next).every((id) => current.has(id))) {
+		return current instanceof Set ? current : next
+	}
+	return next
 }
 
 export function selectedVisibleGalleryItems<T extends { id: string }>(rows: T[], selectedIds: ReadonlySet<string>) {

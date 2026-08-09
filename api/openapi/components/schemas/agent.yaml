@@ -967,9 +967,9 @@ components:
               $ref: ./common.yaml#/components/schemas/Pagination
     GalleryBatchImageIDs:
       type: array
+      description: Duplicate IDs are accepted and deduplicated in first-seen order.
       minItems: 1
       maxItems: 100
-      uniqueItems: true
       items:
         type: string
         format: uuid
