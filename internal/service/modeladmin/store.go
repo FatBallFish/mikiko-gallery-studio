@@ -16,24 +16,31 @@ type Store interface {
 	CreateModelAccount(ctx context.Context, req domainmodeladmin.ModelAccountWriteRequest) (domainmodeladmin.ModelAccount, error)
 	UpdateModelAccount(ctx context.Context, accountID int64, req domainmodeladmin.ModelAccountWriteRequest) (domainmodeladmin.ModelAccount, error)
 	DeleteModelAccount(ctx context.Context, accountID int64) error
+	DeleteModelAccountAudited(ctx context.Context, accountID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListModelAccountModels(ctx context.Context, req domainmodeladmin.ModelAccountModelListRequest) (domainmodeladmin.ModelAccountModelListPage, error)
 	GetModelAccountModel(ctx context.Context, accountModelID int64) (domainmodeladmin.ModelAccountModel, error)
 	CreateModelAccountModel(ctx context.Context, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error)
 	UpdateModelAccountModel(ctx context.Context, accountModelID int64, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error)
 	DeleteModelAccountModel(ctx context.Context, accountModelID int64) error
+	DeleteModelAccountModelAudited(ctx context.Context, accountModelID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListRouteModels(ctx context.Context, req domainmodeladmin.RouteModelListRequest) (domainmodeladmin.RouteModelListPage, error)
 	GetRouteModel(ctx context.Context, routeModelID int64) (domainmodeladmin.RouteModel, error)
 	CreateRouteModel(ctx context.Context, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error)
 	UpdateRouteModel(ctx context.Context, routeModelID int64, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error)
 	DeleteRouteModel(ctx context.Context, routeModelID int64) error
+	DeleteRouteModelAudited(ctx context.Context, routeModelID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListRouteModelCandidates(ctx context.Context, routeModelID int64) ([]domainmodeladmin.RouteModelCandidate, error)
+	GetRouteModelCandidate(ctx context.Context, candidateID int64) (domainmodeladmin.RouteModelCandidate, error)
 	CreateRouteModelCandidate(ctx context.Context, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error)
 	UpdateRouteModelCandidate(ctx context.Context, candidateID int64, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error)
 	DeleteRouteModelCandidate(ctx context.Context, candidateID int64) error
+	DeleteRouteModelCandidateAudited(ctx context.Context, candidateID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListRouteModelPrices(ctx context.Context, req domainmodeladmin.RouteModelPriceListRequest) (domainmodeladmin.RouteModelPriceListPage, error)
+	GetRouteModelPrice(ctx context.Context, priceID int64) (domainmodeladmin.RouteModelPrice, error)
 	CreateRouteModelPrice(ctx context.Context, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error)
 	UpdateRouteModelPrice(ctx context.Context, priceID int64, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error)
 	DeleteRouteModelPrice(ctx context.Context, priceID int64) error
+	DeleteRouteModelPriceAudited(ctx context.Context, priceID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListProviders(ctx context.Context, req domainmodeladmin.ProviderListRequest) (domainmodeladmin.ProviderListPage, error)
 	GetProvider(ctx context.Context, providerCode string) (domainmodeladmin.Provider, error)
 	CreateProvider(ctx context.Context, req domainmodeladmin.ProviderWriteRequest) (domainmodeladmin.Provider, error)
@@ -178,6 +185,10 @@ func (s *MemoryStore) DeleteModelAccount(_ context.Context, accountID int64) err
 	return nil
 }
 
+func (s *MemoryStore) DeleteModelAccountAudited(ctx context.Context, accountID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteModelAccount(ctx, accountID)
+}
+
 func (s *MemoryStore) ListModelAccountModels(_ context.Context, req domainmodeladmin.ModelAccountModelListRequest) (domainmodeladmin.ModelAccountModelListPage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -270,6 +281,10 @@ func (s *MemoryStore) DeleteModelAccountModel(_ context.Context, accountModelID 
 	}
 	delete(s.accountModels, accountModelID)
 	return nil
+}
+
+func (s *MemoryStore) DeleteModelAccountModelAudited(ctx context.Context, accountModelID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteModelAccountModel(ctx, accountModelID)
 }
 
 func (s *MemoryStore) GetProvider(_ context.Context, providerCode string) (domainmodeladmin.Provider, error) {
@@ -562,6 +577,10 @@ func (s *MemoryStore) DeleteRouteModel(_ context.Context, routeModelID int64) er
 	return nil
 }
 
+func (s *MemoryStore) DeleteRouteModelAudited(ctx context.Context, routeModelID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteRouteModel(ctx, routeModelID)
+}
+
 func (s *MemoryStore) ListRouteModelCandidates(_ context.Context, routeModelID int64) ([]domainmodeladmin.RouteModelCandidate, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -573,6 +592,16 @@ func (s *MemoryStore) ListRouteModelCandidates(_ context.Context, routeModelID i
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func (s *MemoryStore) GetRouteModelCandidate(_ context.Context, candidateID int64) (domainmodeladmin.RouteModelCandidate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.candidates[candidateID]
+	if !ok {
+		return domainmodeladmin.RouteModelCandidate{}, repoerr.ErrNotFound
+	}
+	return item, nil
 }
 
 func (s *MemoryStore) CreateRouteModelCandidate(_ context.Context, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error) {
@@ -616,6 +645,10 @@ func (s *MemoryStore) DeleteRouteModelCandidate(_ context.Context, candidateID i
 	return nil
 }
 
+func (s *MemoryStore) DeleteRouteModelCandidateAudited(ctx context.Context, candidateID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteRouteModelCandidate(ctx, candidateID)
+}
+
 func (s *MemoryStore) ListRouteModelPrices(_ context.Context, req domainmodeladmin.RouteModelPriceListRequest) (domainmodeladmin.RouteModelPriceListPage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -638,6 +671,16 @@ func (s *MemoryStore) ListRouteModelPrices(_ context.Context, req domainmodeladm
 	}
 	total := len(items)
 	return domainmodeladmin.RouteModelPriceListPage{Items: slicePage(items, page, pageSize), Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+func (s *MemoryStore) GetRouteModelPrice(_ context.Context, priceID int64) (domainmodeladmin.RouteModelPrice, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.prices[priceID]
+	if !ok {
+		return domainmodeladmin.RouteModelPrice{}, repoerr.ErrNotFound
+	}
+	return item, nil
 }
 
 func (s *MemoryStore) CreateRouteModelPrice(_ context.Context, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error) {
@@ -676,6 +719,10 @@ func (s *MemoryStore) DeleteRouteModelPrice(_ context.Context, priceID int64) er
 	}
 	delete(s.prices, priceID)
 	return nil
+}
+
+func (s *MemoryStore) DeleteRouteModelPriceAudited(ctx context.Context, priceID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteRouteModelPrice(ctx, priceID)
 }
 
 func (s *MemoryStore) ListRoutes(_ context.Context, req domainmodeladmin.RouteListRequest) (domainmodeladmin.RouteListPage, error) {

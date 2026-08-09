@@ -8,8 +8,32 @@ import (
 
 var ErrNotFound = errors.New("repository: not found")
 var ErrConflict = errors.New("repository: conflict")
+var ErrConfigurationInUse = errors.New("repository: configuration in use")
 var ErrDefaultModelRequired = errors.New("repository: text model default required")
 var ErrTransientContention = errors.New("repository: transient contention")
+
+type configurationInUseError struct {
+	dependency string
+	count      int
+}
+
+func (e *configurationInUseError) Error() string {
+	return fmt.Sprintf("%s: %s (%d)", ErrConfigurationInUse, e.dependency, e.count)
+}
+
+func (e *configurationInUseError) Unwrap() error { return ErrConfigurationInUse }
+
+func ConfigurationInUse(dependency string, count int) error {
+	return &configurationInUseError{dependency: strings.TrimSpace(dependency), count: count}
+}
+
+func ConfigurationInUseDetails(err error) (dependency string, count int, ok bool) {
+	var target *configurationInUseError
+	if !errors.As(err, &target) {
+		return "", 0, false
+	}
+	return target.dependency, target.count, true
+}
 
 func TransientContention(err error) error {
 	if err == nil {

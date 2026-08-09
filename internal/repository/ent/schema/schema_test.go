@@ -286,6 +286,25 @@ func TestImageSchemasCarryProjectAndCapabilityContracts(t *testing.T) {
 	}
 }
 
+func TestModelLifecycleSchemasRetainTombstonesForHistoricalSafety(t *testing.T) {
+	for name, mixins := range map[string][]ent.Mixin{
+		"route_model_candidates": RouteModelCandidate{}.Mixin(),
+		"route_model_prices":     RouteModelPrice{}.Mixin(),
+	} {
+		fields := map[string]bool{}
+		for _, schemaMixin := range mixins {
+			for _, schemaField := range schemaMixin.Fields() {
+				fields[schemaField.Descriptor().Name] = true
+			}
+		}
+		for _, fieldName := range []string{"created_at", "updated_at", "deleted_at"} {
+			if !fields[fieldName] {
+				t.Fatalf("%s must retain %s for safe soft deletion", name, fieldName)
+			}
+		}
+	}
+}
+
 func TestProjectSchemaEnforcesActiveDefaultAndNameUniqueness(t *testing.T) {
 	fields := schemaFieldDescriptors(Project{}.Fields())
 	if defaultValue, ok := requireSchemaField(t, fields, "is_default").Default.(bool); !ok || defaultValue {

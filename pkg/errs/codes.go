@@ -61,4 +61,5 @@ const (
 	CodeDefaultProjectImmutable        = "default_project_immutable"
 	CodeProjectNotEmpty                = "project_not_empty"
 	CodeProjectChanged                 = "project_changed"
+	CodeConfigurationInUse             = "configuration_in_use"
 )

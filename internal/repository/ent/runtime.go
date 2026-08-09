@@ -3157,8 +3157,21 @@ func init() {
 	routemodelDescSortOrder := routemodelFields[5].Descriptor()
 	// routemodel.DefaultSortOrder holds the default value on creation for the sort_order field.
 	routemodel.DefaultSortOrder = routemodelDescSortOrder.Default.(int)
+	routemodelcandidateMixin := schema.RouteModelCandidate{}.Mixin()
+	routemodelcandidateMixinFields0 := routemodelcandidateMixin[0].Fields()
+	_ = routemodelcandidateMixinFields0
 	routemodelcandidateFields := schema.RouteModelCandidate{}.Fields()
 	_ = routemodelcandidateFields
+	// routemodelcandidateDescCreatedAt is the schema descriptor for created_at field.
+	routemodelcandidateDescCreatedAt := routemodelcandidateMixinFields0[0].Descriptor()
+	// routemodelcandidate.DefaultCreatedAt holds the default value on creation for the created_at field.
+	routemodelcandidate.DefaultCreatedAt = routemodelcandidateDescCreatedAt.Default.(func() time.Time)
+	// routemodelcandidateDescUpdatedAt is the schema descriptor for updated_at field.
+	routemodelcandidateDescUpdatedAt := routemodelcandidateMixinFields0[1].Descriptor()
+	// routemodelcandidate.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	routemodelcandidate.DefaultUpdatedAt = routemodelcandidateDescUpdatedAt.Default.(func() time.Time)
+	// routemodelcandidate.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	routemodelcandidate.UpdateDefaultUpdatedAt = routemodelcandidateDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// routemodelcandidateDescPriority is the schema descriptor for priority field.
 	routemodelcandidateDescPriority := routemodelcandidateFields[2].Descriptor()
 	// routemodelcandidate.DefaultPriority holds the default value on creation for the priority field.
@@ -3175,8 +3188,21 @@ func init() {
 	routemodelcandidateDescEnabled := routemodelcandidateFields[5].Descriptor()
 	// routemodelcandidate.DefaultEnabled holds the default value on creation for the enabled field.
 	routemodelcandidate.DefaultEnabled = routemodelcandidateDescEnabled.Default.(bool)
+	routemodelpriceMixin := schema.RouteModelPrice{}.Mixin()
+	routemodelpriceMixinFields0 := routemodelpriceMixin[0].Fields()
+	_ = routemodelpriceMixinFields0
 	routemodelpriceFields := schema.RouteModelPrice{}.Fields()
 	_ = routemodelpriceFields
+	// routemodelpriceDescCreatedAt is the schema descriptor for created_at field.
+	routemodelpriceDescCreatedAt := routemodelpriceMixinFields0[0].Descriptor()
+	// routemodelprice.DefaultCreatedAt holds the default value on creation for the created_at field.
+	routemodelprice.DefaultCreatedAt = routemodelpriceDescCreatedAt.Default.(func() time.Time)
+	// routemodelpriceDescUpdatedAt is the schema descriptor for updated_at field.
+	routemodelpriceDescUpdatedAt := routemodelpriceMixinFields0[1].Descriptor()
+	// routemodelprice.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	routemodelprice.DefaultUpdatedAt = routemodelpriceDescUpdatedAt.Default.(func() time.Time)
+	// routemodelprice.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	routemodelprice.UpdateDefaultUpdatedAt = routemodelpriceDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// routemodelpriceDescTaskType is the schema descriptor for task_type field.
 	routemodelpriceDescTaskType := routemodelpriceFields[1].Descriptor()
 	// routemodelprice.TaskTypeValidator is a validator for the "task_type" field. It is called by the builders before save.

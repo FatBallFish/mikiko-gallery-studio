@@ -36,6 +36,7 @@ type Record struct {
 	TaskType                  string                   `json:"task_type"`
 	Status                    string                   `json:"status"`
 	Provider                  string                   `json:"provider"`
+	RouteModelCode            string                   `json:"route_model_code,omitempty"`
 	AccountModelID            *int64                   `json:"account_model_id,omitempty"`
 	ModelAccountID            *int64                   `json:"model_account_id,omitempty"`
 	UpstreamModelCode         string                   `json:"upstream_model_code,omitempty"`
@@ -50,6 +51,7 @@ type Record struct {
 	ProviderRequestID         string                   `json:"provider_request_id,omitempty"`
 	ProviderCost              string                   `json:"provider_cost"`
 	GrossMargin               string                   `json:"gross_margin"`
+	PricingSnapshot           map[string]any           `json:"pricing_snapshot,omitempty"`
 	UpstreamSucceededAt       *time.Time               `json:"upstream_succeeded_at,omitempty"`
 	FailurePhase              string                   `json:"failure_phase,omitempty"`
 	PlatformLoss              bool                     `json:"platform_loss"`

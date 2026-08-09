@@ -1,5 +1,9 @@
 import type { CashierPlan } from '../../../shared/api-types'
 import { cashierPlanActions, cashierPlanEmptyState, cashierPlanFilterOptions, cashierPlanPurchaseBadge, cashierPlanSavePayload, cashierPlanSectionCopy } from './cashierPlanPurchase'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
+
+const cashierPageSource = readFileSync(new URL('./CashierPage.tsx', import.meta.url), 'utf8')
 
 const subscriptionPayload = cashierPlanSavePayload({
   plan_code: 'sub-monthly',
@@ -103,4 +107,10 @@ if (disabledActions.map((action) => action.action).join(',') !== 'enable,archive
 const archivedActions = cashierPlanActions({ ...subscriptionPlan, plan_type: 'points_package', purchase_enabled: false, status: 'archived' })
 if (archivedActions.map((action) => action.action).join(',') !== 'restore') {
   throw new Error(`archived plan actions must only restore, got ${JSON.stringify(archivedActions)}`)
+}
+
+for (const lifecycleContract of ['cashierPlanActions(plan).map', '<TooltipIconButton', 'setPlanTransition({ plan, action })', 'planTransition ? <Modal', 'disabled={savingPlan}', "savingPlan ? '处理中...' : '确认'"]) {
+  if (!cashierPageSource.includes(lifecycleContract)) {
+    throw new Error(`plan lifecycle must retain visible controls, confirmation and loading state with ${lifecycleContract}`)
+  }
 }

@@ -2,16 +2,161 @@ package entstore_test
 
 import (
 	"context"
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"entgo.io/ent/dialect"
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+func TestModelAdminStoreAuditedDeleteRollsBackWhenAuditWriteFails(t *testing.T) {
+	client := openModelAdminTestClient(t, "model-admin-audit-rollback")
+	store := entstore.NewModelAdminStore(client)
+	account, err := store.CreateModelAccount(t.Context(), domainmodeladmin.ModelAccountWriteRequest{
+		Name: "audit rollback", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: "https://example.com", Status: "enabled", ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	client.AuditLog.Use(func(repoent.Mutator) repoent.Mutator {
+		return repoent.MutateFunc(func(context.Context, repoent.Mutation) (repoent.Value, error) {
+			return nil, errors.New("injected audit failure")
+		})
+	})
+	err = store.DeleteModelAccountAudited(t.Context(), account.ID, domainmodeladmin.LifecycleAudit{
+		ActorType: "admin", ActorID: "1", Action: "model_account.delete", TargetType: "model_account", TargetID: "1",
+		RequestID: "audit-rollback-request", IPAddr: "127.0.0.1", UserAgent: "test-agent",
+	})
+	if err == nil || !strings.Contains(err.Error(), "injected audit failure") {
+		t.Fatalf("expected injected audit failure, got %v", err)
+	}
+	if _, err := store.GetModelAccount(t.Context(), account.ID); err != nil {
+		t.Fatalf("account deletion must roll back when audit fails: %v", err)
+	}
+}
+
+func TestModelAdminStoreLifecycleUsesDependencyAwareSoftDeletion(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:modeladmin-lifecycle?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := entstore.NewModelAdminStore(client)
+	account, err := store.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name: "lifecycle", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: "https://example.com",
+		Status: "enabled", ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	accountModel, err := store.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "gpt-image-lifecycle", DisplayName: "Lifecycle", TaskTypes: []string{"text_to_image"},
+		SizeModes: []string{"auto"}, MaxImageCount: 1, CostPerImage: "0.10000", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create account model: %v", err)
+	}
+	route, err := store.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{Code: "lifecycle", Name: "Lifecycle", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatalf("create route model: %v", err)
+	}
+	candidate, err := store.CreateRouteModelCandidate(ctx, domainmodeladmin.RouteModelCandidateWriteRequest{RouteModelID: route.ID, AccountModelID: accountModel.ID, Weight: 100, Enabled: true})
+	if err != nil {
+		t.Fatalf("create candidate: %v", err)
+	}
+	price, err := store.CreateRouteModelPrice(ctx, domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: route.ID, TaskType: "text_to_image", BaseResolution: "1K", BasePoints: "8.00000", ReferenceMultiplier: "1.00000", Enabled: true})
+	if err != nil {
+		t.Fatalf("create price: %v", err)
+	}
+
+	assertConfigurationInUse := func(err error, dependency string, count int) {
+		t.Helper()
+		if !errors.Is(err, repoerr.ErrConfigurationInUse) {
+			t.Fatalf("error = %v, want configuration in use", err)
+		}
+		actualDependency, actualCount, ok := repoerr.ConfigurationInUseDetails(err)
+		if !ok || actualDependency != dependency || actualCount != count {
+			t.Fatalf("conflict details = (%q,%d,%t), want (%q,%d,true)", actualDependency, actualCount, ok, dependency, count)
+		}
+	}
+	assertConfigurationInUse(store.DeleteModelAccount(ctx, account.ID), "account_models", 1)
+	assertConfigurationInUse(store.DeleteModelAccountModel(ctx, accountModel.ID), "route_candidates", 1)
+	assertConfigurationInUse(store.DeleteRouteModel(ctx, route.ID), "route_candidates", 1)
+
+	if err := store.DeleteRouteModelCandidate(ctx, candidate.ID); err != nil {
+		t.Fatalf("delete candidate: %v", err)
+	}
+	if err := store.DeleteRouteModelCandidate(ctx, candidate.ID); err != nil {
+		t.Fatalf("repeat candidate delete must be idempotent: %v", err)
+	}
+	listedCandidates, err := store.ListRouteModelCandidates(ctx, route.ID)
+	if err != nil || len(listedCandidates) != 0 {
+		t.Fatalf("deleted candidate remained visible: %#v err=%v", listedCandidates, err)
+	}
+	deletedCandidate, err := client.RouteModelCandidate.Get(ctx, int(candidate.ID))
+	if err != nil || deletedCandidate.DeletedAt == nil {
+		t.Fatalf("candidate tombstone = %#v err=%v", deletedCandidate, err)
+	}
+	revivedCandidate, err := store.CreateRouteModelCandidate(ctx, domainmodeladmin.RouteModelCandidateWriteRequest{RouteModelID: route.ID, AccountModelID: accountModel.ID, Weight: 90, Enabled: true})
+	if err != nil || revivedCandidate.ID != candidate.ID {
+		t.Fatalf("recreate must revive candidate id=%d: %#v err=%v", candidate.ID, revivedCandidate, err)
+	}
+	if err := store.DeleteRouteModelCandidate(ctx, candidate.ID); err != nil {
+		t.Fatalf("delete revived candidate: %v", err)
+	}
+
+	assertConfigurationInUse(store.DeleteRouteModel(ctx, route.ID), "route_prices", 1)
+	if err := store.DeleteRouteModelPrice(ctx, price.ID); err != nil {
+		t.Fatalf("delete price: %v", err)
+	}
+	if err := store.DeleteRouteModelPrice(ctx, price.ID); err != nil {
+		t.Fatalf("repeat price delete must be idempotent: %v", err)
+	}
+	listedPrices, err := store.ListRouteModelPrices(ctx, domainmodeladmin.RouteModelPriceListRequest{Page: 1, PageSize: 10, RouteModelID: route.ID})
+	if err != nil || listedPrices.Total != 0 {
+		t.Fatalf("deleted price remained visible: %#v err=%v", listedPrices, err)
+	}
+	deletedPrice, err := client.RouteModelPrice.Get(ctx, int(price.ID))
+	if err != nil || deletedPrice.DeletedAt == nil {
+		t.Fatalf("price tombstone = %#v err=%v", deletedPrice, err)
+	}
+	revivedPrice, err := store.CreateRouteModelPrice(ctx, domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: route.ID, TaskType: "text_to_image", BaseResolution: "1K", BasePoints: "9.00000", ReferenceMultiplier: "1.00000", Enabled: true})
+	if err != nil || revivedPrice.ID != price.ID || revivedPrice.BasePoints != "9.00000" {
+		t.Fatalf("recreate must revive price id=%d: %#v err=%v", price.ID, revivedPrice, err)
+	}
+	if err := store.DeleteRouteModelPrice(ctx, price.ID); err != nil {
+		t.Fatalf("delete revived price: %v", err)
+	}
+
+	for _, step := range []struct {
+		name     string
+		deleteFn func() error
+	}{
+		{"route", func() error { return store.DeleteRouteModel(ctx, route.ID) }},
+		{"account model", func() error { return store.DeleteModelAccountModel(ctx, accountModel.ID) }},
+		{"account", func() error { return store.DeleteModelAccount(ctx, account.ID) }},
+	} {
+		name, deleteFn := step.name, step.deleteFn
+		if err := deleteFn(); err != nil {
+			t.Fatalf("delete %s: %v", name, err)
+		}
+		if err := deleteFn(); err != nil {
+			t.Fatalf("repeat %s delete must be idempotent: %v", name, err)
+		}
+	}
+}
 
 func TestModelAdminStorePersistsProvidersRoutesAndRuntimeSnapshot(t *testing.T) {
 	ctx := context.Background()
@@ -284,4 +429,17 @@ func modelAccountModelWriteRequest(model domainmodeladmin.ModelAccountModel) dom
 		MinHeight: model.MinHeight, MaxHeight: model.MaxHeight, Moderation: model.Moderation,
 		CostPerImage: model.CostPerImage, Currency: model.Currency, Enabled: model.Enabled, Extra: model.Extra,
 	}
+}
+
+func openModelAdminTestClient(t *testing.T, name string) *repoent.Client {
+	t.Helper()
+	client, err := repoent.Open(dialect.SQLite, "file:"+name+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	return client
 }

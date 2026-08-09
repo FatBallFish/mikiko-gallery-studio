@@ -2,6 +2,17 @@ package modeladmin
 
 import "time"
 
+type LifecycleAudit struct {
+	ActorType  string
+	ActorID    string
+	Action     string
+	TargetType string
+	TargetID   string
+	RequestID  string
+	IPAddr     string
+	UserAgent  string
+}
+
 const (
 	AdapterTypeOpenAICompatible = "openai_compatible"
 	AdapterTypeOpenRouter       = "openrouter"

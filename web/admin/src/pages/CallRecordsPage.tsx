@@ -328,6 +328,14 @@ function CallRecordDetail({ record }: { record: CallRecord }) {
             <p className={callRecordClasses.paragraph}>{record.error_message || record.error_code || '暂无结构化错误明细。'}</p>
           )}
         </div>
+        <div className={callRecordClasses.detailBox}>
+          <h3 className={callRecordClasses.detailTitle}>计费快照</h3>
+          {record.pricing_snapshot && Object.keys(record.pricing_snapshot).length ? (
+            <pre className={callRecordClasses.detailCode}>{stableJson(record.pricing_snapshot)}</pre>
+          ) : (
+            <p className={callRecordClasses.paragraph}>该历史记录未保存计费快照。</p>
+          )}
+        </div>
       </div>
     </section>
   )
@@ -355,7 +363,7 @@ function AttemptDetail({ attempt, index }: { attempt: CallRecordAttempt; index: 
 }
 
 function hasCallRecordDetails(record: CallRecord) {
-  return Boolean(record.attempts?.length || (record.error_detail && Object.keys(record.error_detail).length) || record.error_message || record.error_code)
+  return Boolean(record.attempts?.length || (record.pricing_snapshot && Object.keys(record.pricing_snapshot).length) || (record.error_detail && Object.keys(record.error_detail).length) || record.error_message || record.error_code)
 }
 
 type DistributionRowModel = {

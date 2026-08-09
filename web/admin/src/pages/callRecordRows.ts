@@ -88,7 +88,7 @@ export function callRecordRows(records: CallRecord[]): CallRecordRowModel[] {
     taskDetail: `${adminTaskTypeLabel(record.task_type)} · ${record.requested_output_image_count} 张请求 / ${record.success_output_image_count} 张成功 / ${record.reference_image_count} 张参考`,
     userLabel: `User #${record.user_id}`,
     userDetail: record.api_key_id ? `API Key #${record.api_key_id}` : channelLabel(record.source_channel),
-    routeLabel: record.abstract_model || '-',
+    routeLabel: record.route_model_code || snapshotText(record.pricing_snapshot, 'route_model_code') || record.abstract_model || '-',
     routeDetail: `${record.base_resolution || '-'} · ${record.quality || '-'} · ${channelLabel(record.source_channel)}`,
     providerLabel: record.provider || '-',
     providerDetail: providerDetail(record),
@@ -152,6 +152,11 @@ function providerDetail(record: CallRecord) {
   if (record.model_account_id) parts.push(`模型账号 #${record.model_account_id}`)
   if (record.upstream_model_code) parts.push(record.upstream_model_code)
   return parts.join(' · ')
+}
+
+function snapshotText(snapshot: Record<string, unknown> | undefined, key: string) {
+  const value = snapshot?.[key]
+  return typeof value === 'string' ? value : ''
 }
 
 function channelLabel(channel?: string) {

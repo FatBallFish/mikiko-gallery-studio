@@ -281,6 +281,42 @@ func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 	}
 }
 
+func TestAdminCallRecordStoreProjectsImmutableRouteAndPricingSnapshots(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-history?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	task, err := client.ImageTask.Create().
+		SetUserID(42).
+		SetTaskType("text_to_image").
+		SetPrompt("historical").
+		SetAbstractModel("plus").
+		SetRouteModelCode("route-snapshot").
+		SetUpstreamModelCode("gpt-image-snapshot").
+		SetProviderCost("0.42000").
+		SetPricingSnapshot(map[string]any{"route_model_code": "route-snapshot", "base_unit_points": "8.00000", "total_points": "8.00000"}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create historical task: %v", err)
+	}
+	page, err := NewAdminCallRecordStore(client).ListCallRecords(ctx, domainadmincallrecord.ListRequest{Page: 1, PageSize: 10, TaskID: task.ID.String()})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("list call record: %#v err=%v", page, err)
+	}
+	record := page.Items[0]
+	if record.RouteModelCode != "route-snapshot" || record.UpstreamModelCode != "gpt-image-snapshot" || record.ProviderCost != "0.42000" {
+		t.Fatalf("historical routing/cost snapshots were lost: %#v", record)
+	}
+	if record.PricingSnapshot["base_unit_points"] != "8.00000" || record.PricingSnapshot["total_points"] != "8.00000" {
+		t.Fatalf("historical pricing snapshot was lost: %#v", record.PricingSnapshot)
+	}
+}
+
 func TestAdminCallRecordStoreListsCreateTaskRoutePreflightFailures(t *testing.T) {
 	testCases := []struct {
 		name          string

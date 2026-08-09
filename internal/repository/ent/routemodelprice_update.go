@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -24,6 +25,32 @@ type RouteModelPriceUpdate struct {
 // Where appends a list predicates to the RouteModelPriceUpdate builder.
 func (_u *RouteModelPriceUpdate) Where(ps ...predicate.RouteModelPrice) *RouteModelPriceUpdate {
 	_u.mutation.Where(ps...)
+	return _u
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *RouteModelPriceUpdate) SetUpdatedAt(v time.Time) *RouteModelPriceUpdate {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *RouteModelPriceUpdate) SetDeletedAt(v time.Time) *RouteModelPriceUpdate {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *RouteModelPriceUpdate) SetNillableDeletedAt(v *time.Time) *RouteModelPriceUpdate {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *RouteModelPriceUpdate) ClearDeletedAt() *RouteModelPriceUpdate {
+	_u.mutation.ClearDeletedAt()
 	return _u
 }
 
@@ -125,6 +152,7 @@ func (_u *RouteModelPriceUpdate) Mutation() *RouteModelPriceMutation {
 
 // Save executes the query and returns the number of nodes affected by the update operation.
 func (_u *RouteModelPriceUpdate) Save(ctx context.Context) (int, error) {
+	_u.defaults()
 	return withHooks(ctx, _u.sqlSave, _u.mutation, _u.hooks)
 }
 
@@ -147,6 +175,14 @@ func (_u *RouteModelPriceUpdate) Exec(ctx context.Context) error {
 func (_u *RouteModelPriceUpdate) ExecX(ctx context.Context) {
 	if err := _u.Exec(ctx); err != nil {
 		panic(err)
+	}
+}
+
+// defaults sets the default values of the builder before save.
+func (_u *RouteModelPriceUpdate) defaults() {
+	if _, ok := _u.mutation.UpdatedAt(); !ok {
+		v := routemodelprice.UpdateDefaultUpdatedAt()
+		_u.mutation.SetUpdatedAt(v)
 	}
 }
 
@@ -176,6 +212,15 @@ func (_u *RouteModelPriceUpdate) sqlSave(ctx context.Context) (_node int, err er
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.UpdatedAt(); ok {
+		_spec.SetField(routemodelprice.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(routemodelprice.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(routemodelprice.FieldDeletedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RouteModelID(); ok {
 		_spec.SetField(routemodelprice.FieldRouteModelID, field.TypeInt64, value)
@@ -216,6 +261,32 @@ type RouteModelPriceUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *RouteModelPriceMutation
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *RouteModelPriceUpdateOne) SetUpdatedAt(v time.Time) *RouteModelPriceUpdateOne {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *RouteModelPriceUpdateOne) SetDeletedAt(v time.Time) *RouteModelPriceUpdateOne {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *RouteModelPriceUpdateOne) SetNillableDeletedAt(v *time.Time) *RouteModelPriceUpdateOne {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *RouteModelPriceUpdateOne) ClearDeletedAt() *RouteModelPriceUpdateOne {
+	_u.mutation.ClearDeletedAt()
+	return _u
 }
 
 // SetRouteModelID sets the "route_model_id" field.
@@ -329,6 +400,7 @@ func (_u *RouteModelPriceUpdateOne) Select(field string, fields ...string) *Rout
 
 // Save executes the query and returns the updated RouteModelPrice entity.
 func (_u *RouteModelPriceUpdateOne) Save(ctx context.Context) (*RouteModelPrice, error) {
+	_u.defaults()
 	return withHooks(ctx, _u.sqlSave, _u.mutation, _u.hooks)
 }
 
@@ -351,6 +423,14 @@ func (_u *RouteModelPriceUpdateOne) Exec(ctx context.Context) error {
 func (_u *RouteModelPriceUpdateOne) ExecX(ctx context.Context) {
 	if err := _u.Exec(ctx); err != nil {
 		panic(err)
+	}
+}
+
+// defaults sets the default values of the builder before save.
+func (_u *RouteModelPriceUpdateOne) defaults() {
+	if _, ok := _u.mutation.UpdatedAt(); !ok {
+		v := routemodelprice.UpdateDefaultUpdatedAt()
+		_u.mutation.SetUpdatedAt(v)
 	}
 }
 
@@ -397,6 +477,15 @@ func (_u *RouteModelPriceUpdateOne) sqlSave(ctx context.Context) (_node *RouteMo
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.UpdatedAt(); ok {
+		_spec.SetField(routemodelprice.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(routemodelprice.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(routemodelprice.FieldDeletedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RouteModelID(); ok {
 		_spec.SetField(routemodelprice.FieldRouteModelID, field.TypeInt64, value)

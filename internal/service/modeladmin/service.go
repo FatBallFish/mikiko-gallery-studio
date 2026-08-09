@@ -67,6 +67,13 @@ func (s *Service) DeleteModelAccount(ctx context.Context, accountID int64) error
 	return normalizeStoreError(s.store.DeleteModelAccount(ctx, accountID), "model account not found")
 }
 
+func (s *Service) DeleteModelAccountAudited(ctx context.Context, accountID int64, audit domainmodeladmin.LifecycleAudit) error {
+	if accountID <= 0 {
+		return errs.BadRequest("invalid account_id")
+	}
+	return normalizeStoreError(s.store.DeleteModelAccountAudited(ctx, accountID, audit), "model account not found")
+}
+
 func (s *Service) ListModelAccountModels(ctx context.Context, req domainmodeladmin.ModelAccountModelListRequest) (domainmodeladmin.ModelAccountModelListPage, error) {
 	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
 	req.ModelCode = strings.TrimSpace(req.ModelCode)
@@ -107,6 +114,13 @@ func (s *Service) DeleteModelAccountModel(ctx context.Context, accountModelID in
 		return errs.BadRequest("invalid account_model_id")
 	}
 	return normalizeStoreError(s.store.DeleteModelAccountModel(ctx, accountModelID), "model account model not found")
+}
+
+func (s *Service) DeleteModelAccountModelAudited(ctx context.Context, accountModelID int64, audit domainmodeladmin.LifecycleAudit) error {
+	if accountModelID <= 0 {
+		return errs.BadRequest("invalid account_model_id")
+	}
+	return normalizeStoreError(s.store.DeleteModelAccountModelAudited(ctx, accountModelID, audit), "model account model not found")
 }
 
 func (s *Service) ListProviders(ctx context.Context, req domainmodeladmin.ProviderListRequest) (domainmodeladmin.ProviderListPage, error) {
@@ -278,8 +292,23 @@ func (s *Service) DeleteRouteModel(ctx context.Context, routeModelID int64) erro
 	return normalizeStoreError(s.store.DeleteRouteModel(ctx, routeModelID), "route model not found")
 }
 
+func (s *Service) DeleteRouteModelAudited(ctx context.Context, routeModelID int64, audit domainmodeladmin.LifecycleAudit) error {
+	if routeModelID <= 0 {
+		return errs.BadRequest("invalid route_model_id")
+	}
+	return normalizeStoreError(s.store.DeleteRouteModelAudited(ctx, routeModelID, audit), "route model not found")
+}
+
 func (s *Service) ListRouteModelCandidates(ctx context.Context, routeModelID int64) ([]domainmodeladmin.RouteModelCandidate, error) {
 	return s.store.ListRouteModelCandidates(ctx, routeModelID)
+}
+
+func (s *Service) GetRouteModelCandidate(ctx context.Context, candidateID int64) (domainmodeladmin.RouteModelCandidate, error) {
+	if candidateID <= 0 {
+		return domainmodeladmin.RouteModelCandidate{}, errs.BadRequest("invalid candidate_id")
+	}
+	item, err := s.store.GetRouteModelCandidate(ctx, candidateID)
+	return item, normalizeStoreError(err, "route model candidate not found")
 }
 
 func (s *Service) CreateRouteModelCandidate(ctx context.Context, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error) {
@@ -310,11 +339,26 @@ func (s *Service) DeleteRouteModelCandidate(ctx context.Context, candidateID int
 	return normalizeStoreError(s.store.DeleteRouteModelCandidate(ctx, candidateID), "route model candidate not found")
 }
 
+func (s *Service) DeleteRouteModelCandidateAudited(ctx context.Context, candidateID int64, audit domainmodeladmin.LifecycleAudit) error {
+	if candidateID <= 0 {
+		return errs.BadRequest("invalid candidate_id")
+	}
+	return normalizeStoreError(s.store.DeleteRouteModelCandidateAudited(ctx, candidateID, audit), "route model candidate not found")
+}
+
 func (s *Service) ListRouteModelPrices(ctx context.Context, req domainmodeladmin.RouteModelPriceListRequest) (domainmodeladmin.RouteModelPriceListPage, error) {
 	req.Page, req.PageSize = normalizePage(req.Page, req.PageSize)
 	req.TaskType = normalizeCode(req.TaskType)
 	req.BaseResolution = normalizeCode(req.BaseResolution)
 	return s.store.ListRouteModelPrices(ctx, req)
+}
+
+func (s *Service) GetRouteModelPrice(ctx context.Context, priceID int64) (domainmodeladmin.RouteModelPrice, error) {
+	if priceID <= 0 {
+		return domainmodeladmin.RouteModelPrice{}, errs.BadRequest("invalid price_id")
+	}
+	item, err := s.store.GetRouteModelPrice(ctx, priceID)
+	return item, normalizeStoreError(err, "route model price not found")
 }
 
 func (s *Service) CreateRouteModelPrice(ctx context.Context, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error) {
@@ -343,6 +387,13 @@ func (s *Service) DeleteRouteModelPrice(ctx context.Context, priceID int64) erro
 		return errs.BadRequest("invalid price_id")
 	}
 	return normalizeStoreError(s.store.DeleteRouteModelPrice(ctx, priceID), "route model price not found")
+}
+
+func (s *Service) DeleteRouteModelPriceAudited(ctx context.Context, priceID int64, audit domainmodeladmin.LifecycleAudit) error {
+	if priceID <= 0 {
+		return errs.BadRequest("invalid price_id")
+	}
+	return normalizeStoreError(s.store.DeleteRouteModelPriceAudited(ctx, priceID, audit), "route model price not found")
 }
 
 func (s *Service) ModelRoutingConfig(ctx context.Context) (modelhub.ModelRoutingSnapshot, error) {
@@ -633,6 +684,12 @@ func normalizeStoreError(err error, notFoundMessage string) error {
 	switch {
 	case errors.Is(err, repoerr.ErrNotFound):
 		return errs.New(404, errs.CodeNotFound, notFoundMessage)
+	case errors.Is(err, repoerr.ErrConfigurationInUse):
+		dependency, count, _ := repoerr.ConfigurationInUseDetails(err)
+		return errs.WithDetails(
+			errs.New(409, errs.CodeConfigurationInUse, "configuration is still in use; remove its dependencies first"),
+			map[string]any{"dependency": dependency, "count": count},
+		)
 	case errors.Is(err, repoerr.ErrConflict):
 		return errs.New(409, errs.CodeConflict, notFoundMessage)
 	default:

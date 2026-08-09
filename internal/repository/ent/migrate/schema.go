@@ -1737,6 +1737,9 @@ var (
 	// RouteModelCandidatesColumns holds the columns for the "route_model_candidates" table.
 	RouteModelCandidatesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "route_model_id", Type: field.TypeInt64},
 		{Name: "account_model_id", Type: field.TypeInt64},
 		{Name: "priority", Type: field.TypeInt, Default: 0},
@@ -1753,18 +1756,21 @@ var (
 			{
 				Name:    "routemodelcandidate_route_model_id_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{RouteModelCandidatesColumns[1], RouteModelCandidatesColumns[6]},
+				Columns: []*schema.Column{RouteModelCandidatesColumns[4], RouteModelCandidatesColumns[9]},
 			},
 			{
 				Name:    "routemodelcandidate_route_model_id_account_model_id",
 				Unique:  true,
-				Columns: []*schema.Column{RouteModelCandidatesColumns[1], RouteModelCandidatesColumns[2]},
+				Columns: []*schema.Column{RouteModelCandidatesColumns[4], RouteModelCandidatesColumns[5]},
 			},
 		},
 	}
 	// RouteModelPricesColumns holds the columns for the "route_model_prices" table.
 	RouteModelPricesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "route_model_id", Type: field.TypeInt64},
 		{Name: "task_type", Type: field.TypeString, Size: 64},
 		{Name: "base_resolution", Type: field.TypeString, Size: 32},
@@ -1781,7 +1787,7 @@ var (
 			{
 				Name:    "routemodelprice_route_model_id_task_type_base_resolution",
 				Unique:  true,
-				Columns: []*schema.Column{RouteModelPricesColumns[1], RouteModelPricesColumns[2], RouteModelPricesColumns[3]},
+				Columns: []*schema.Column{RouteModelPricesColumns[4], RouteModelPricesColumns[5], RouteModelPricesColumns[6]},
 			},
 		},
 	}

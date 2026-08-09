@@ -72,6 +72,7 @@ const rows = callRecordRows([
     task_type: 'image_to_image',
     status: 'succeeded',
     provider: 'openai-main',
+    route_model_code: 'route-image-history',
     account_model_id: 1201,
     model_account_id: 2201,
     upstream_model_code: 'gpt-image-1',
@@ -85,6 +86,13 @@ const rows = callRecordRows([
     actual_points: '5.00000',
     provider_cost: '0.12000',
     gross_margin: '4.88000',
+    pricing_snapshot: {
+      route_model_code: 'route-image-history',
+      base_unit_points: '4.00000',
+      task_multiplier: '1.25000',
+      reference_extra_multiplier: '0.10000',
+      estimated_points: '5.00000',
+    },
     platform_loss: false,
     error_code: null,
     error_message: null,
@@ -172,6 +180,16 @@ if (!rows[1]?.taskDetail.startsWith('图片编辑 ·')) {
 
 if (rows[1]?.providerDetail !== '1 次尝试 · 账号模型 #1201 · 模型账号 #2201 · gpt-image-1' || rows[1]?.costLabel !== '0.12000' || rows[1]?.marginLabel !== '4.88000') {
   throw new Error(`successful call records should expose attempts and costs, got ${JSON.stringify(rows[1])}`)
+}
+
+if (rows[1]?.routeLabel !== 'route-image-history') {
+  throw new Error(`historical call records must prefer the persisted route code after configuration deletion, got ${JSON.stringify(rows[1])}`)
+}
+
+for (const snapshotContract of ['record.pricing_snapshot', '计费快照', 'stableJson(record.pricing_snapshot)']) {
+  if (!callRecordsPageSource.includes(snapshotContract)) {
+    throw new Error(`call record details must preserve historical pricing snapshots with ${snapshotContract}`)
+  }
 }
 
 if (rows[1]?.createdAt !== '2026/06/05 01:00' || rows[1]?.lifecycleLabel !== '开始 2026/06/05 01:00 · 结束 2026/06/05 01:00') {

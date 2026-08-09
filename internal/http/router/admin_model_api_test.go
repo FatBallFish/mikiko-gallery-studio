@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
+	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
@@ -354,6 +355,172 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	for _, action := range []string{"model_provider.create", "model_provider.update", "model_provider.delete", "provider_model.create", "provider_model.update", "provider_model.delete", "model_route.create", "model_route.update", "model_route.delete"} {
 		if !bytes.Contains(auditRec.Body.Bytes(), []byte(action)) {
 			t.Fatalf("expected audit log action %q, got body=%s", action, auditRec.Body.String())
+		}
+	}
+}
+
+func TestAdminModelLifecycleReportsDependenciesAndAuditsDeletionState(t *testing.T) {
+	cfg := adminConfigAPIConfig()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-model-lifecycle-api?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	authSvc := authservice.NewServiceWithStore(config.AuthConfig{
+		AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test",
+		AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"}, entstore.NewAuthStore(client))
+	adminStore := entstore.NewAdminAuthStore(client)
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{Email: "admin-model@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: "super_admin", Status: "active"}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	billingStore := entstore.NewBillingStore(client, 5)
+	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
+	adminUsers := adminuserservice.NewServiceWithStore(entstore.NewAdminUserStore(client, billingStore), billingSvc)
+	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
+	modelStore := entstore.NewModelAdminStore(client)
+	modelAdminSvc := modeladminservice.NewServiceWithStore(modelStore)
+	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, nil, nil, billingSvc, nil, adminAuth, auditSvc, adminUsers, nil, nil, modelAdminSvc)
+	handler := NewWithAPI(api)
+	adminToken := loginAdminForModelTest(t, handler)
+
+	account, err := modelStore.CreateModelAccount(t.Context(), domainmodeladmin.ModelAccountWriteRequest{
+		Name: "Lifecycle account", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: "https://images.example.com",
+		Credentials: map[string]string{"api_key": "secret"}, Status: "enabled", Priority: 1, Weight: 100, ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	model, err := modelStore.CreateModelAccountModel(t.Context(), domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "gpt-image-lifecycle", DisplayName: "Lifecycle model", TaskTypes: []string{"text_to_image"},
+		BaseResolution: []string{"1k"}, Quality: []string{"auto"}, MaxImageCount: 1, SizeModes: []string{"auto"}, CostPerImage: "0.04", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create account model: %v", err)
+	}
+
+	deleteAccount := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID), nil)
+	deleteAccount.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteAccountRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteAccountRec, deleteAccount)
+	if deleteAccountRec.Code != http.StatusConflict {
+		t.Fatalf("expected account dependency conflict 409, got %d body=%s", deleteAccountRec.Code, deleteAccountRec.Body.String())
+	}
+	var conflict struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(deleteAccountRec.Body).Decode(&conflict); err != nil {
+		t.Fatalf("decode dependency conflict: %v", err)
+	}
+	if conflict.Error.Code != "configuration_in_use" || conflict.Error.Details["dependency"] != "account_models" || conflict.Error.Details["count"] != float64(1) {
+		t.Fatalf("unexpected dependency conflict: %#v", conflict.Error)
+	}
+
+	deleteModel := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/models/"+jsonNumber(model.ID), nil)
+	deleteModel.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteModel.Header.Set("X-Request-Id", "lifecycle-delete-request")
+	deleteModelRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteModelRec, deleteModel)
+	if deleteModelRec.Code != http.StatusNoContent {
+		t.Fatalf("expected model delete 204, got %d body=%s", deleteModelRec.Code, deleteModelRec.Body.String())
+	}
+
+	auditPage, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, Action: "model_account_model.delete", TargetID: jsonNumber(model.ID)})
+	if err != nil {
+		t.Fatalf("list deletion audit: %v", err)
+	}
+	if len(auditPage.Items) != 1 {
+		t.Fatalf("expected one deletion audit, got %d", len(auditPage.Items))
+	}
+	metadata := auditPage.Items[0].Metadata
+	if metadata["request_id"] == "" || metadata["before"] == nil || metadata["after"] == nil || metadata["account_id"] != float64(account.ID) {
+		t.Fatalf("deletion audit missing lifecycle metadata: %#v", metadata)
+	}
+
+	repeatDeleteModel := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/models/"+jsonNumber(model.ID), nil)
+	repeatDeleteModel.Header.Set("Authorization", "Bearer "+adminToken)
+	repeatDeleteModelRec := httptest.NewRecorder()
+	handler.ServeHTTP(repeatDeleteModelRec, repeatDeleteModel)
+	if repeatDeleteModelRec.Code != http.StatusNoContent {
+		t.Fatalf("expected repeated model delete 204, got %d body=%s", repeatDeleteModelRec.Code, repeatDeleteModelRec.Body.String())
+	}
+
+	model2, err := modelStore.CreateModelAccountModel(t.Context(), domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "gpt-image-route", DisplayName: "Route model", TaskTypes: []string{"text_to_image"},
+		BaseResolution: []string{"1k"}, Quality: []string{"auto"}, MaxImageCount: 1, SizeModes: []string{"auto"}, CostPerImage: "0.04", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create second account model: %v", err)
+	}
+	route, err := modelStore.CreateRouteModel(t.Context(), domainmodeladmin.RouteModelWriteRequest{Code: "route-lifecycle", Name: "Lifecycle route", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatalf("create route model: %v", err)
+	}
+	candidate, err := modelStore.CreateRouteModelCandidate(t.Context(), domainmodeladmin.RouteModelCandidateWriteRequest{RouteModelID: route.ID, AccountModelID: model2.ID, Priority: 1, Weight: 100, FallbackOrder: 1, Enabled: true})
+	if err != nil {
+		t.Fatalf("create route candidate: %v", err)
+	}
+	price, err := modelStore.CreateRouteModelPrice(t.Context(), domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: route.ID, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1", ReferenceMultiplier: "1", Enabled: true})
+	if err != nil {
+		t.Fatalf("create route price: %v", err)
+	}
+
+	assertDelete := func(path, requestID string, wantStatus int) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodDelete, path, nil)
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		if requestID != "" {
+			req.Header.Set("X-Request-Id", requestID)
+		}
+		req.Header.Set("User-Agent", "task8-lifecycle-test")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != wantStatus {
+			t.Fatalf("DELETE %s: expected %d, got %d body=%s", path, wantStatus, rec.Code, rec.Body.String())
+		}
+	}
+
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID), "", http.StatusConflict)
+	assertDelete("/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/models/"+jsonNumber(model2.ID), "", http.StatusConflict)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID)+"/candidates/"+jsonNumber(candidate.ID), "delete-candidate-request", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID)+"/candidates/"+jsonNumber(candidate.ID), "", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID), "", http.StatusConflict)
+	assertDelete("/api/ops/admin/v1/route-model-prices/"+jsonNumber(price.ID), "delete-price-request", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/route-model-prices/"+jsonNumber(price.ID), "", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID), "delete-route-request", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID), "", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/models/"+jsonNumber(model2.ID), "delete-model-request", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID), "delete-account-request", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID), "", http.StatusNoContent)
+
+	for _, expected := range []struct {
+		action, targetID, requestID string
+	}{
+		{"route_model_candidate.delete", jsonNumber(candidate.ID), "delete-candidate-request"},
+		{"route_model_price.delete", jsonNumber(price.ID), "delete-price-request"},
+		{"route_model.delete", jsonNumber(route.ID), "delete-route-request"},
+		{"model_account_model.delete", jsonNumber(model2.ID), "delete-model-request"},
+		{"model_account.delete", jsonNumber(account.ID), "delete-account-request"},
+	} {
+		page, listErr := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, Action: expected.action, TargetID: expected.targetID})
+		if listErr != nil || len(page.Items) != 1 {
+			t.Fatalf("expected one %s audit, got page=%#v err=%v", expected.action, page, listErr)
+		}
+		got := page.Items[0].Metadata
+		if got["request_id"] != expected.requestID || got["before"] == nil || got["after"] == nil {
+			t.Fatalf("%s audit missing lifecycle metadata: %#v", expected.action, got)
+		}
+		log := page.Items[0]
+		if log.ActorType != "admin" || log.ActorID != "1" || log.TargetID != expected.targetID || log.IPAddr == "" || log.UserAgent != "task8-lifecycle-test" {
+			t.Fatalf("%s audit missing actor/target/request identity: %#v", expected.action, log)
 		}
 	}
 }

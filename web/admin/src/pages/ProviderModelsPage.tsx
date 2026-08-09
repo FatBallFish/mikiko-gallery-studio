@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ImageTaskType, ModelAccount, ModelAccountModel, ModelAccountTestImageResult } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { ActionMenu, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader } from '../components'
+import { Trash2 } from 'lucide-react'
+import { ActionMenu, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
 import { DataTable, FilterToolbar, ListPage, type ColumnDef } from '../ui/dataTable'
 import { AccessAccountsIcon } from '../ui/icons'
 import { adminTaskTypeOptions } from './adminTaskTypes'
+import { modelLifecycleErrorMessage } from './adminModelLifecycle'
 import {
   credentialsStatusLabel,
   modelAccountStatusLabel,
@@ -20,6 +22,7 @@ import {
 type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string }
 type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportsCustomRatio: boolean; supportedPixelSizes: string[]; pixelInput: string; supportsCustomSize: boolean; minWidth: string; maxWidth: string; minHeight: string; maxHeight: string; supportedBackgrounds: string[]; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
 type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string; sourceMode: string; sizeMode: string; requestedSize: string; baseResolution: string; quality: string; outputFormat: string; background: string; outputCompression: string; moderation: string; aspectRatio: string; result?: ModelAccountTestImageResult; error?: string }
+type DeleteTarget = { kind: 'account'; account: ModelAccount } | { kind: 'model'; account: ModelAccount; model: ModelAccountModel }
 
 const baseResolutionOptions = ['1K', '2K', '4K']
 const qualityOptions = ['auto', 'low', 'medium', 'high']
@@ -71,6 +74,8 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = async (preferredAccountId?: string) => {
     setLoading(true)
@@ -183,6 +188,22 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
     }
   }
 
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setMutationError(null)
+    try {
+      if (deleteTarget.kind === 'account') await adminApi.deleteModelAccount(deleteTarget.account.id)
+      else await adminApi.deleteModelAccountModel(deleteTarget.account.id, deleteTarget.model.id)
+      setDeleteTarget(null)
+      await load()
+    } catch (caught) {
+      setMutationError(modelLifecycleErrorMessage(caught, '删除模型配置失败'))
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const openAccountDialog = (draft: AccountDraft) => {
     setMutationError(null)
     setAccountDialog(draft)
@@ -276,6 +297,7 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
               onEdit: (account) => openAccountDialog(editAccountDraft(account)),
               onAddModel: (account) => openModelDialog(newModelDraft(account)),
               onTest: (account) => setTestDialog(newTestImageDialog(account, modelsByAccount[String(account.id)] ?? [])),
+              onDelete: (account) => { setMutationError(null); setDeleteTarget({ kind: 'account', account }) },
             })}
             rows={filteredAccounts}
             rowKey={(account) => account.id}
@@ -293,7 +315,10 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
             <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => openModelDialog(newModelDraft(selectedAccount))}>添加模型</button>
           </header>
           <DataTable
-            columns={modelColumns((model) => openModelDialog(editModelDraft(selectedAccount, model)))}
+            columns={modelColumns(
+              (model) => openModelDialog(editModelDraft(selectedAccount, model)),
+              (model) => { setMutationError(null); setDeleteTarget({ kind: 'model', account: selectedAccount, model }) },
+            )}
             rows={selectedModels}
             rowKey={(model) => model.id}
             empty={<EmptyBlock title="暂无真实模型" detail="为当前账号添加可请求的上游模型代码。" />}
@@ -391,6 +416,17 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
           </div>
         </Modal>
       ) : null}
+      {deleteTarget ? (
+        <Modal
+          title={deleteTarget.kind === 'account' ? '删除接入账号' : '删除真实模型'}
+          detail={deleteTarget.kind === 'account' ? deleteTarget.account.name : `${deleteTarget.account.name} / ${deleteTarget.model.model_code}`}
+          onClose={() => { if (!deleting) setDeleteTarget(null) }}
+          footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={deleting} onClick={() => setDeleteTarget(null)}>取消</button><button className={cn(adminButton.base, adminButton.danger)} type="button" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? '删除中...' : '确认删除'}</button></>}
+        >
+          {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
+          <p className="m-0 text-sm leading-6 text-[var(--muted)]">删除后该配置不再参与新请求，历史任务仍按已保存的模型快照展示。</p>
+        </Modal>
+      ) : null}
     </section>
   )
 }
@@ -402,6 +438,7 @@ function accountColumns({
   onEdit,
   onAddModel,
   onTest,
+  onDelete,
 }: {
   modelsByAccount: Record<string, ModelAccountModel[]>
   selectedAccountId: string
@@ -409,6 +446,7 @@ function accountColumns({
   onEdit: (account: ModelAccount) => void
   onAddModel: (account: ModelAccount) => void
   onTest: (account: ModelAccount) => void
+  onDelete: (account: ModelAccount) => void
 }): ColumnDef<ModelAccount>[] {
   return [
     {
@@ -465,6 +503,7 @@ function accountColumns({
               { id: 'edit-account', label: '编辑账号', run: () => onEdit(account) },
               { id: 'add-model', label: '添加真实模型', run: () => onAddModel(account) },
               { id: 'test-account', label: '测试模型账号', run: () => onTest(account) },
+              { id: 'delete-account', label: '删除账号', tone: 'danger', run: () => onDelete(account) },
             ]} />
           </span>
         )
@@ -473,7 +512,7 @@ function accountColumns({
   ]
 }
 
-function modelColumns(onEdit: (model: ModelAccountModel) => void): ColumnDef<ModelAccountModel>[] {
+function modelColumns(onEdit: (model: ModelAccountModel) => void, onDelete: (model: ModelAccountModel) => void): ColumnDef<ModelAccountModel>[] {
   return [
     {
       key: 'model',
@@ -512,7 +551,7 @@ function modelColumns(onEdit: (model: ModelAccountModel) => void): ColumnDef<Mod
       title: '操作',
       width: 'minmax(90px,.7fr)',
       align: 'right',
-      render: (model) => <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => onEdit(model)}>编辑</button>,
+      render: (model) => <span className={accountTableClasses.actions}><button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => onEdit(model)}>编辑</button><TooltipIconButton label={`删除 ${model.model_code}`} onClick={() => onDelete(model)}><Trash2 /></TooltipIconButton></span>,
     },
   ]
 }

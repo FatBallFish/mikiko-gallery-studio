@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ImageTaskType, RouteModel, RouteModelPrice } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader } from '../components'
+import { Trash2 } from 'lucide-react'
+import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, TooltipIconButton } from '../components'
 import { adminButton, adminPage, adminType } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
 import type { ColumnDef } from '../ui/dataTable'
@@ -11,6 +12,7 @@ import { ChevronDownIcon, InfoIcon } from '../ui/icons'
 import { FilterIcon, XIcon } from '../ui/listIcons'
 import { adminTaskTypeLabel, adminTaskTypeOptions } from './adminTaskTypes'
 import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
+import { modelLifecycleErrorMessage } from './adminModelLifecycle'
 import {
   pricingEnabledBadge,
   pricingFieldHints,
@@ -48,6 +50,8 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
   const [dialog, setDialog] = useState<PricingDialog | null>(null)
   const [saving, setSaving] = useState(false)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<RouteModelPrice | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [filters, setFilters] = useState<PricingFilters>(initialFilters)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
 
@@ -121,6 +125,22 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
     }
   }
 
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setMutationError(null)
+    try {
+      await adminApi.deleteRouteModelPrice(deleteTarget.id)
+      setDeleteTarget(null)
+      onFeedback('价格配置已删除', `${adminTaskTypeLabel(deleteTarget.task_type)} · ${pricingBaseResolutionLabel(deleteTarget.base_resolution)}`)
+      await load()
+    } catch (caught) {
+      setMutationError(modelLifecycleErrorMessage(caught, '删除价格配置失败'))
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   if (loading) return <LoadingBlock label="载入价格策略" />
   if (error) return <ErrorBlock message={error} onRetry={load} />
 
@@ -186,7 +206,7 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
             columns={priceGroupColumns(expandedGroups, (key) => setExpandedGroups((current) => ({ ...current, [key]: !current[key] })), openDialog)}
             rows={visibleGroups}
             rowKey={(group) => group.key}
-            renderAfterRow={(group) => expandedGroups[group.key] ? pricingExpandedGroup(group, openDialog) : null}
+            renderAfterRow={(group) => expandedGroups[group.key] ? pricingExpandedGroup(group, openDialog, (row) => { setMutationError(null); setDeleteTarget(row) }) : null}
             empty={<EmptyBlock title="没有匹配的价格组" detail="清空筛选或为当前路由新增价格配置。" action={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openDialog(newPriceDialog(routes))}>新增配置</button>} />}
           />
         </ListPage>
@@ -205,11 +225,22 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
           </div>
         </Modal>
       ) : null}
+      {deleteTarget ? (
+        <Modal
+          title="删除价格配置"
+          detail={`${pricingBaseResolutionLabel(deleteTarget.base_resolution)} · ${adminTaskTypeLabel(deleteTarget.task_type)}`}
+          onClose={() => { if (!deleting) setDeleteTarget(null) }}
+          footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={deleting} onClick={() => setDeleteTarget(null)}>取消</button><button className={cn(adminButton.base, adminButton.danger)} type="button" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? '删除中...' : '确认删除'}</button></>}
+        >
+          {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
+          <p className="m-0 text-sm leading-6 text-[var(--muted)]">删除后该分辨率价格不再用于新任务，历史账单与调用记录保留已保存的价格快照。</p>
+        </Modal>
+      ) : null}
     </section>
   )
 }
 
-function pricingExpandedGroup(group: PriceGroup, onOpenDialog: (dialog: PricingDialog) => void) {
+function pricingExpandedGroup(group: PriceGroup, onOpenDialog: (dialog: PricingDialog) => void, onDelete: (row: RouteModelPrice) => void) {
   return (
     <section className={pricingClasses.expandedSection} aria-label={`${group.routeLabel} 价格明细`}>
       <header className={pricingClasses.expandedHeader}>
@@ -219,7 +250,7 @@ function pricingExpandedGroup(group: PriceGroup, onOpenDialog: (dialog: PricingD
         </div>
         <button className={cn(adminButton.base, adminButton.secondary, adminButton.small)} type="button" onClick={() => onOpenDialog(newPriceDialogForGroup(group))}>新增分辨率</button>
       </header>
-      <DataTable columns={priceDetailColumns(onOpenDialog)} rows={group.rows} rowKey={(row) => row.id} />
+      <DataTable columns={priceDetailColumns(onOpenDialog, onDelete)} rows={group.rows} rowKey={(row) => row.id} />
     </section>
   )
 }
@@ -272,13 +303,13 @@ function priceGroupColumns(expandedGroups: Record<string, boolean>, onToggle: (k
   ]
 }
 
-function priceDetailColumns(onOpenDialog: (dialog: PricingDialog) => void): ColumnDef<RouteModelPrice>[] {
+function priceDetailColumns(onOpenDialog: (dialog: PricingDialog) => void, onDelete: (row: RouteModelPrice) => void): ColumnDef<RouteModelPrice>[] {
   return [
     { key: 'resolution', title: '基础分辨率', width: 'minmax(140px,1.2fr)', render: (row) => <strong className="text-[var(--fg)]">{pricingBaseResolutionLabel(row.base_resolution)}</strong> },
     { key: 'points', title: '基础消耗', width: 'minmax(130px,1fr)', align: 'right', kind: 'number', render: (row) => <code className={adminDataGrid.code}>{row.base_points} ◈</code> },
     { key: 'multiplier', title: '参考图倍率', width: 'minmax(130px,1fr)', align: 'right', kind: 'number', render: (row) => <code className={adminDataGrid.code}>x {row.reference_multiplier}</code> },
     { key: 'status', title: '状态', width: 'minmax(100px,.8fr)', render: (row) => <PricingBadge enabled={row.enabled} /> },
-    { key: 'actions', title: '操作', width: 'minmax(100px,.8fr)', align: 'right', render: (row) => <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onOpenDialog(editPriceDialog(row))}>调整</button> },
+    { key: 'actions', title: '操作', width: 'minmax(120px,.9fr)', align: 'right', render: (row) => <span className={pricingClasses.actionRow}><button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onOpenDialog(editPriceDialog(row))}>调整</button><TooltipIconButton label={`删除 ${pricingBaseResolutionLabel(row.base_resolution)} 价格`} onClick={() => onDelete(row)}><Trash2 /></TooltipIconButton></span> },
   ]
 }
 
