@@ -575,7 +575,9 @@ func (s *ImageTaskStore) ReviewImage(ctx context.Context, imageID, nextStatus, r
 		return domainimagetask.GalleryImage{}, repoerr.ErrConflict
 	}
 
-	update := s.client.ImageResult.UpdateOneID(entity.ID).SetVisibilityStatus(nextStatus)
+	update := s.client.ImageResult.UpdateOneID(entity.ID).
+		Where(imageresult.VisibilityStatusEQ(entity.VisibilityStatus), imageresult.DeletedAtIsNil()).
+		SetVisibilityStatus(nextStatus)
 	switch nextStatus {
 	case domainimagetask.VisibilityApproved:
 		update.ClearReviewReason()
@@ -590,6 +592,9 @@ func (s *ImageTaskStore) ReviewImage(ctx context.Context, imageID, nextStatus, r
 	}
 	updated, err := update.Save(ctx)
 	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainimagetask.GalleryImage{}, repoerr.ErrConflict
+		}
 		return domainimagetask.GalleryImage{}, err
 	}
 	return mapGalleryImageEntity(updated, taskEntity), nil

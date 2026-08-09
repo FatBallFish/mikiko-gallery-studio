@@ -399,4 +399,3 @@ Resolve the latest SemVer tag and require the next tag to be `v0.0.10` unless re
 **Step 6: Verify GitHub Release Action**
 
 Wait for `.github/workflows/release.yml` to complete successfully. Verify the GitHub Release, release manifest, checksums, native packages, and expected container image metadata/artifacts.
-

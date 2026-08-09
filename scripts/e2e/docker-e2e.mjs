@@ -6,7 +6,8 @@ import http from 'node:http'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { inflateRawSync } from 'node:zlib'
+
+import { assertGalleryZip } from './gallery-zip.mjs'
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const BASE_URL = envUrl('BASE_URL', 'http://127.0.0.1:8088')
@@ -24,6 +25,7 @@ const E2E_ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@example.com'
 const E2E_ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'admin123456'
 const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+y1X8AAAAASUVORK5CYII='
 const FAKE_PROVIDER_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNkaGAAAAHAAZcAzSrgAAAAAElFTkSuQmCC'
+const FAKE_PROVIDER_IMAGE_SIGNATURE = Buffer.from(FAKE_PROVIDER_IMAGE_BASE64, 'base64').subarray(0, 16)
 
 const state = {
   steps: [],
@@ -151,105 +153,6 @@ async function requestBinary(method, url, options = {}) {
   const response = await fetch(url, { method, headers, body, redirect: options.redirect || 'follow' })
   const buffer = Buffer.from(await response.arrayBuffer())
   return { response, buffer, status: response.status, headers: response.headers }
-}
-
-function readZipEntries(buffer) {
-  const minimumEOCDSize = 22
-  const maximumCommentSize = 0xffff
-  let eocdOffset = -1
-  for (let offset = buffer.length - minimumEOCDSize; offset >= Math.max(0, buffer.length - minimumEOCDSize - maximumCommentSize); offset -= 1) {
-    if (buffer.readUInt32LE(offset) === 0x06054b50) {
-      eocdOffset = offset
-      break
-    }
-  }
-  if (eocdOffset < 0) fail('Gallery export response was not a valid ZIP archive')
-
-  const entryCount = buffer.readUInt16LE(eocdOffset + 10)
-  const directorySize = buffer.readUInt32LE(eocdOffset + 12)
-  const directoryOffset = buffer.readUInt32LE(eocdOffset + 16)
-  if (directoryOffset + directorySize > eocdOffset) {
-    fail('Gallery export ZIP central directory exceeded the archive bounds')
-  }
-
-  const entries = []
-  let offset = directoryOffset
-  for (let index = 0; index < entryCount; index += 1) {
-    if (offset + 46 > buffer.length || buffer.readUInt32LE(offset) !== 0x02014b50) {
-      fail('Gallery export ZIP central directory was malformed', { index, offset })
-    }
-    const compressionMethod = buffer.readUInt16LE(offset + 10)
-    const compressedSize = buffer.readUInt32LE(offset + 20)
-    const uncompressedSize = buffer.readUInt32LE(offset + 24)
-    const filenameLength = buffer.readUInt16LE(offset + 28)
-    const extraLength = buffer.readUInt16LE(offset + 30)
-    const commentLength = buffer.readUInt16LE(offset + 32)
-    const localHeaderOffset = buffer.readUInt32LE(offset + 42)
-    const nameStart = offset + 46
-    const nameEnd = nameStart + filenameLength
-    if (nameEnd > buffer.length) fail('Gallery export ZIP filename exceeded the archive bounds', { index })
-    entries.push({
-      name: buffer.toString('utf8', nameStart, nameEnd),
-      compressionMethod,
-      compressedSize,
-      uncompressedSize,
-      localHeaderOffset,
-    })
-    offset = nameEnd + extraLength + commentLength
-  }
-  return entries
-}
-
-function readZipEntry(buffer, entry) {
-  const offset = entry.localHeaderOffset
-  if (offset + 30 > buffer.length || buffer.readUInt32LE(offset) !== 0x04034b50) {
-    fail('Gallery export ZIP local header was malformed', { name: entry.name })
-  }
-  const filenameLength = buffer.readUInt16LE(offset + 26)
-  const extraLength = buffer.readUInt16LE(offset + 28)
-  const contentStart = offset + 30 + filenameLength + extraLength
-  const contentEnd = contentStart + entry.compressedSize
-  if (contentEnd > buffer.length) fail('Gallery export ZIP entry exceeded the archive bounds', { name: entry.name })
-  const compressed = buffer.subarray(contentStart, contentEnd)
-  const content = entry.compressionMethod === 0
-    ? compressed
-    : entry.compressionMethod === 8
-      ? inflateRawSync(compressed)
-      : fail('Gallery export ZIP used an unsupported compression method', { name: entry.name, method: entry.compressionMethod })
-  if (content.length !== entry.uncompressedSize) {
-    fail('Gallery export ZIP entry size did not match its metadata', { name: entry.name, expected: entry.uncompressedSize, actual: content.length })
-  }
-  return content
-}
-
-function assertGalleryZip(result, expectedImageIDs) {
-  if (result.status !== 200 || !String(result.headers.get('content-type') || '').toLowerCase().startsWith('application/zip')) {
-    fail('Gallery batch download did not return a ZIP archive', {
-      status: result.status,
-      contentType: result.headers.get('content-type'),
-      body: result.buffer.toString('utf8', 0, 600),
-    })
-  }
-  const entries = readZipEntries(result.buffer)
-  const manifestEntry = entries.find(entry => entry.name === 'manifest.json')
-  if (!manifestEntry || entries.length !== expectedImageIDs.length + 1) {
-    fail('Gallery export ZIP did not contain the selected images plus manifest', {
-      expectedImageCount: expectedImageIDs.length,
-      entries: entries.map(entry => entry.name),
-    })
-  }
-  let manifest
-  try {
-    manifest = JSON.parse(readZipEntry(result.buffer, manifestEntry).toString('utf8'))
-  } catch (error) {
-    fail('Gallery export ZIP manifest was invalid JSON', { message: error.message })
-  }
-  const manifestIDs = (manifest.files || []).filter(item => item.status === 'succeeded').map(item => String(item.id)).sort()
-  const expectedIDs = expectedImageIDs.map(String).sort()
-  if (JSON.stringify(manifestIDs) !== JSON.stringify(expectedIDs)) {
-    fail('Gallery export ZIP manifest did not match the selected assets', { manifestIDs, expectedIDs, manifest })
-  }
-  return { archiveBytes: result.buffer.length, entries: entries.map(entry => entry.name) }
 }
 
 async function expectStatus(method, url, expected, options = {}) {
@@ -1095,7 +998,7 @@ async function happyPathGalleryBatchAndExports() {
     headers: { ...bearer(state.user.token), 'Content-Type': 'application/json' },
     body: JSON.stringify({ image_ids: directImageIDs, project_id: projectID }),
   })
-  const directArchive = assertGalleryZip(direct, directImageIDs)
+  const directArchive = assertGalleryZip(direct, directImageIDs, { expectedImageSignatures: [FAKE_PROVIDER_IMAGE_SIGNATURE] })
 
   const group = await expectStatus('POST', `${BASE_URL}/api/agent/gallery/v1/images:batch-group`, 200, {
     headers: bearer(state.user.token),
@@ -1169,7 +1072,7 @@ async function happyPathGalleryBatchAndExports() {
   const asyncDownload = await requestBinary('GET', `${BASE_URL}/api/agent/gallery/v1/export-jobs/${state.ids.exportJobId}/download`, {
     headers: bearer(state.user.token),
   })
-  const asyncArchive = assertGalleryZip(asyncDownload, asyncImageIDs)
+  const asyncArchive = assertGalleryZip(asyncDownload, asyncImageIDs, { expectedImageSignatures: [FAKE_PROVIDER_IMAGE_SIGNATURE] })
   return {
     projectID,
     targetProjectID: state.ids.projectId,

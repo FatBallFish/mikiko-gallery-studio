@@ -44,6 +44,83 @@ func TestGalleryTransferTargetCheckUsesProjectRowLock(t *testing.T) {
 	}
 }
 
+func TestReviewImageConcurrentDecisionsUseCompareAndSwap(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	dsn := "file:review-image-cas-" + uuid.NewString() + "?mode=memory&cache=shared&_fk=1"
+	client, err := repoent.Open(dialect.SQLite, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	concurrentClient, err := repoent.Open(dialect.SQLite, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = concurrentClient.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewImageTaskStore(client)
+	task := domainimagetask.Task{
+		UserID: 91, ID: uuid.NewString(), Status: domainimagetask.StatusSucceeded,
+		AbstractModel: "basic", TaskType: string(provider.TaskTypeTextToImage), Prompt: "concurrent review",
+		Results: []provider.ImageResult{{
+			ID: uuid.NewString(), ObjectKey: "generated/concurrent-review.png", MimeType: "image/png",
+			StorageDriver: "local", VisibilityStatus: domainimagetask.VisibilityPendingReview,
+		}},
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+
+	reviewWriteReached := make(chan struct{})
+	release := make(chan struct{})
+	client.Use(func(next repoent.Mutator) repoent.Mutator {
+		return repoent.MutateFunc(func(ctx context.Context, mutation repoent.Mutation) (repoent.Value, error) {
+			if _, ok := mutation.(*repoent.ImageResultMutation); ok {
+				close(reviewWriteReached)
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+
+	reviewDone := make(chan error, 1)
+	go func() {
+		publishedAt := time.Now().UTC()
+		_, reviewErr := store.ReviewImage(ctx, task.Results[0].ID, domainimagetask.VisibilityApproved, "", &publishedAt)
+		reviewDone <- reviewErr
+	}()
+	select {
+	case <-reviewWriteReached:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	imageUUID := uuid.MustParse(task.Results[0].ID)
+	if _, err := concurrentClient.ImageResult.UpdateOneID(imageUUID).
+		SetVisibilityStatus(domainimagetask.VisibilityRejected).
+		SetReviewReason("concurrent decision").
+		Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if reviewErr := <-reviewDone; !errors.Is(reviewErr, repoerr.ErrConflict) {
+		t.Fatalf("stale concurrent review error=%v, want conflict", reviewErr)
+	}
+	persisted, err := concurrentClient.ImageResult.Get(ctx, imageUUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.VisibilityStatus != domainimagetask.VisibilityRejected {
+		t.Fatalf("stale review overwrote concurrent decision: status=%q", persisted.VisibilityStatus)
+	}
+}
+
 func TestTransferImageProjectRejectsDeletedTargetAtomically(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:gallery-transfer-target-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
