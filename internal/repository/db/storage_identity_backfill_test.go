@@ -608,6 +608,30 @@ func TestPrepareLegacyStorageCleanupCutoversRetriesSimultaneousPostgresFirstStar
 	}
 }
 
+func TestListLegacyStorageDriversIgnoresPostgresJSONNullArtifactKeys(t *testing.T) {
+	database, databaseURL := openLegacyMigrationPostgres(t)
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.Postgres, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	task := seedStorageIdentityTask(t, ctx, client, "postgres-json-null")
+	if _, err := database.ExecContext(ctx, `UPDATE image_tasks SET artifact_object_keys = 'null'::jsonb WHERE id = $1`, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	drivers, err := ListLegacyStorageDrivers(ctx, client)
+	if err != nil {
+		t.Fatalf("list drivers with JSON null artifact keys: %v", err)
+	}
+	if len(drivers) != 0 {
+		t.Fatalf("JSON null artifact keys produced legacy drivers: %v", drivers)
+	}
+}
+
 func TestLegacyCleanupWriteBarrierAllowsPreparingAndRejectsManagedWritesAfterCutover(t *testing.T) {
 	client := openStorageIdentityBackfillSQLite(t, "write-barrier")
 	ctx := t.Context()

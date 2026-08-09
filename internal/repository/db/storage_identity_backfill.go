@@ -572,9 +572,9 @@ func legacyJobDriver(driver string) func(*entsql.Selector) {
 
 func legacyArtifactStorageTuple() predicate.ImageTask {
 	return func(selector *entsql.Selector) {
-		jsonArrayLength := "json_array_length"
+		jsonArrayLength := "CASE WHEN json_type(" + selector.C(imagetask.FieldArtifactObjectKeys) + ") = 'array' THEN json_array_length(" + selector.C(imagetask.FieldArtifactObjectKeys) + ") ELSE 0 END"
 		if selector.Dialect() == "postgres" {
-			jsonArrayLength = "jsonb_array_length"
+			jsonArrayLength = "CASE WHEN jsonb_typeof(" + selector.C(imagetask.FieldArtifactObjectKeys) + ") = 'array' THEN jsonb_array_length(" + selector.C(imagetask.FieldArtifactObjectKeys) + ") ELSE 0 END"
 		}
 		selector.Where(entsql.Or(
 			entsql.ExprP("TRIM("+selector.C(imagetask.FieldArtifactRecoveryStatus)+") <> ''"),
@@ -583,7 +583,7 @@ func legacyArtifactStorageTuple() predicate.ImageTask {
 				entsql.ExprP("TRIM("+selector.C(imagetask.FieldArtifactRecoveryPayload)+") <> ''"),
 			),
 			entsql.ExprP("TRIM("+selector.C(imagetask.FieldArtifactStorageBucket)+") <> ''"),
-			entsql.ExprP("COALESCE("+jsonArrayLength+"("+selector.C(imagetask.FieldArtifactObjectKeys)+"), 0) > 0"),
+			entsql.ExprP(jsonArrayLength+" > 0"),
 			entsql.GT(selector.C(imagetask.FieldArtifactStorageVersion), 0),
 		))
 	}

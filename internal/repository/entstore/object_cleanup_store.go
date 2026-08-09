@@ -448,7 +448,7 @@ func (s *ObjectCleanupStore) reconcileLegacyArtifactRecoveries(ctx context.Conte
 
 func legacyArtifactRecoveryActionable() predicate.ImageTask {
 	return func(selector *entsql.Selector) {
-		results := entsql.Table(imageresult.Table)
+		results := entsql.Dialect(selector.Dialect()).Table(imageresult.Table)
 		resultHasObjectKey := entsql.ExprP("TRIM(" + results.C(imageresult.FieldObjectKey) + ") <> ''")
 		resultCanBackfill := entsql.Exists(
 			entsql.Select(results.C(imageresult.FieldID)).From(results).Where(entsql.And(
@@ -460,11 +460,11 @@ func legacyArtifactRecoveryActionable() predicate.ImageTask {
 			entsql.IsNull(selector.C(imagetask.FieldArtifactRecoveryPayload)),
 			entsql.ExprP("TRIM("+selector.C(imagetask.FieldArtifactRecoveryPayload)+") = ''"),
 		)
-		jsonArrayLength := "json_array_length"
+		jsonArrayLength := "CASE WHEN json_type(" + selector.C(imagetask.FieldArtifactObjectKeys) + ") = 'array' THEN json_array_length(" + selector.C(imagetask.FieldArtifactObjectKeys) + ") ELSE 0 END"
 		if selector.Dialect() == "postgres" {
-			jsonArrayLength = "jsonb_array_length"
+			jsonArrayLength = "CASE WHEN jsonb_typeof(" + selector.C(imagetask.FieldArtifactObjectKeys) + ") = 'array' THEN jsonb_array_length(" + selector.C(imagetask.FieldArtifactObjectKeys) + ") ELSE 0 END"
 		}
-		keysEmpty := entsql.ExprP("COALESCE(" + jsonArrayLength + "(" + selector.C(imagetask.FieldArtifactObjectKeys) + "), 0) = 0")
+		keysEmpty := entsql.ExprP(jsonArrayLength + " = 0")
 		selector.Where(entsql.And(keysEmpty, entsql.Or(payloadEmpty, resultCanBackfill)))
 	}
 }

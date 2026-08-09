@@ -61,3 +61,19 @@ func TestObjectCleanupStoreConcurrentEnqueuePostgres(t *testing.T) {
 		t.Fatalf("PostgreSQL live cleanup jobs=%d err=%v", count, err)
 	}
 }
+
+func TestObjectCleanupReconcileIgnoresPostgresJSONNullArtifactKeys(t *testing.T) {
+	ctx, database, client, _ := openProjectTaskPostgres(t)
+	task, err := client.ImageTask.Create().
+		SetUserID(7).SetTaskType("text_to_image").SetPrompt("json null").SetAbstractModel("plus").
+		Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.ExecContext(ctx, `UPDATE image_tasks SET artifact_object_keys = 'null'::jsonb WHERE id = $1`, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewObjectCleanupStore(client).Reconcile(ctx, 10); err != nil {
+		t.Fatalf("reconcile with JSON null artifact keys: %v", err)
+	}
+}
