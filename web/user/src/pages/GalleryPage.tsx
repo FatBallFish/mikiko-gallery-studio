@@ -9,6 +9,7 @@ import { mediaAccess } from '../mediaAccess'
 import { userForm, userState } from '../ui/classes'
 import { rdGallery } from '../ui/redesign-classes'
 import { Check, Copy, Download, Edit, FolderPlus, Globe, RotateCcw, Trash2, X } from '../ui/icons'
+import { OverlayPortal } from '../ui/overlayPortal'
 import { stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot } from './workspaceCreationDraft'
 import { invertLoadedGallerySelection, pollGalleryExportJob, reconcileGalleryBatchSelection } from './galleryBatchActions'
 import { areAllVisibleGalleryItemsSelected, galleryImageAspect, pruneGallerySelection, selectVisibleGalleryImages, selectedVisibleGalleryItems, toggleGalleryImageSelection } from './galleryExperience'
@@ -35,7 +36,7 @@ const galleryClasses = {
   filterOption: rdGallery.filterOption,
   filterOptionActive: rdGallery.filterOptionActive,
   filterToolbar: 'mb-8',
-  batchBar: cn(rdGallery.batchBar, 'max-w-[calc(100vw-24px)] overflow-x-auto rounded-md'),
+  batchBar: cn(rdGallery.batchBar, 'w-max max-w-[calc(100vw-24px)] max-md:bottom-20 overflow-x-auto rounded-md'),
   selectCheck: 'inline-flex items-center gap-2 text-sm text-[var(--fg)]',
   batchSelectAll: 'flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-medium text-[var(--fg)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--accent)]',
   batchSelectAllActive: 'bg-[var(--accent)]/12 text-[var(--accent)] ring-1 ring-[var(--accent)]/35',
@@ -632,32 +633,34 @@ export function GalleryPage() {
           {!loading && !loadError && !filtered.length ? <EmptyState title="暂无资产" detail="换一个筛选条件，或回工作台创建新任务。" action={<Button onClick={() => app.navigate('genpic')}>继续生成</Button>} /> : null}
 
           {selectedImages.length ? (
-            <div className={galleryClasses.batchBar}>
-              <div className={cn(rdGallery.batchCount, 'shrink-0')}>已选择 {selectedImages.length} 个已加载资产</div>
-              <div className="flex shrink-0 items-center gap-1 pl-2">
-                <button
-                  className={cn(galleryClasses.batchSelectAll, allVisibleSelected && galleryClasses.batchSelectAllActive)}
-                  type="button"
-                  aria-pressed={allVisibleSelected}
-				  disabled={allVisibleSelected}
-                  onClick={() => selectAllVisible(true)}
-                >
-                  <span className={cn(rdGallery.itemCheckbox, allVisibleSelected && rdGallery.itemCheckboxChecked)}>
-                    {allVisibleSelected ? '✓' : ''}
-                  </span>
-                  全选
-                </button>
-				<button className={galleryClasses.batchBtn} type="button" onClick={invertLoadedSelection}><RotateCcw /> 反选</button>
-				<button className={galleryClasses.batchBtn} type="button" onClick={() => setSelectedIds(new Set())}><X /> 清除选择</button>
-				<button className={galleryClasses.batchBtn} type="button" disabled={busyId === 'batch'} onClick={() => void downloadImages(selectedImages)}><ActionIcon name="download" /> 打包下载</button>
-				<button className={galleryClasses.batchBtn} type="button" disabled={busyId === 'batch'} onClick={() => void publishImages(selectedImages, true)}><ActionIcon name="public" /> 公开</button>
-				<button className={galleryClasses.batchBtn} type="button" disabled={busyId === 'batch'} onClick={() => void publishImages(selectedImages, false)}><X /> 取消公开</button>
-                <button className={galleryClasses.batchBtn} type="button" onClick={() => openGroupDialog(selectedImages)}><ActionIcon name="group" /> 设为分组</button>
-				<button className={galleryClasses.batchBtn} type="button" onClick={() => openTransferDialog(selectedImages)}><FolderPlus /> 批量转移项目</button>
-                <div className="mx-1 h-4 w-px bg-[var(--border)]" />
-                <button className={cn(galleryClasses.batchBtn, 'text-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_10%,transparent)] hover:text-[var(--accent-coral)]')} type="button" disabled={busyId === 'batch'} onClick={() => requestDeleteImages(selectedImages)}><ActionIcon name="delete" /> 删除</button>
+            <OverlayPortal>
+              <div className={galleryClasses.batchBar}>
+                <div className={cn(rdGallery.batchCount, 'shrink-0')}>已选择 {selectedImages.length} 个已加载资产</div>
+                <div className="flex shrink-0 items-center gap-1 pl-2">
+                  <button
+                    className={cn(galleryClasses.batchSelectAll, allVisibleSelected && galleryClasses.batchSelectAllActive)}
+                    type="button"
+                    aria-pressed={allVisibleSelected}
+                    disabled={allVisibleSelected}
+                    onClick={() => selectAllVisible(true)}
+                  >
+                    <span className={cn(rdGallery.itemCheckbox, allVisibleSelected && rdGallery.itemCheckboxChecked)}>
+                      {allVisibleSelected ? '✓' : ''}
+                    </span>
+                    全选
+                  </button>
+                  <button className={galleryClasses.batchBtn} type="button" onClick={invertLoadedSelection}><RotateCcw /> 反选</button>
+                  <button className={galleryClasses.batchBtn} type="button" onClick={() => setSelectedIds(new Set())}><X /> 清除选择</button>
+                  <button className={galleryClasses.batchBtn} type="button" disabled={busyId === 'batch'} onClick={() => void downloadImages(selectedImages)}><ActionIcon name="download" /> 打包下载</button>
+                  <button className={galleryClasses.batchBtn} type="button" disabled={busyId === 'batch'} onClick={() => void publishImages(selectedImages, true)}><ActionIcon name="public" /> 公开</button>
+                  <button className={galleryClasses.batchBtn} type="button" disabled={busyId === 'batch'} onClick={() => void publishImages(selectedImages, false)}><X /> 取消公开</button>
+                  <button className={galleryClasses.batchBtn} type="button" onClick={() => openGroupDialog(selectedImages)}><ActionIcon name="group" /> 设为分组</button>
+                  <button className={galleryClasses.batchBtn} type="button" onClick={() => openTransferDialog(selectedImages)}><FolderPlus /> 批量转移项目</button>
+                  <div className="mx-1 h-4 w-px bg-[var(--border)]" />
+                  <button className={cn(galleryClasses.batchBtn, 'text-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_10%,transparent)] hover:text-[var(--accent-coral)]')} type="button" disabled={busyId === 'batch'} onClick={() => requestDeleteImages(selectedImages)}><ActionIcon name="delete" /> 删除</button>
+                </div>
               </div>
-            </div>
+            </OverlayPortal>
           ) : null}
 
       <ImageGrid

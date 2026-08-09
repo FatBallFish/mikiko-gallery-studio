@@ -1206,6 +1206,8 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 	if err != nil {
 		return err
 	}
+	sizeMode := defaultString(task.SizeMode, "ratio")
+	aspectRatio, baseResolution := imageTaskSizeFields(task, sizeMode, "1:1", "auto")
 	builder := tx.ImageTask.Create().
 		SetID(taskUUID).
 		SetUserID(task.UserID).
@@ -1216,9 +1218,9 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
-		SetSizeMode(defaultString(task.SizeMode, "ratio")).
-		SetAspectRatio(defaultString(task.AspectRatio, "1:1")).
-		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetSizeMode(sizeMode).
+		SetAspectRatio(aspectRatio).
+		SetBaseResolution(baseResolution).
 		SetQuality(defaultString(task.Quality, "auto")).
 		SetOutputFormat(defaultString(task.OutputFormat, "png")).
 		SetOutputCompression(defaultPositive(task.OutputCompression, 100)).
@@ -1339,6 +1341,8 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 	if err != nil {
 		return err
 	}
+	sizeMode := defaultString(task.SizeMode, entity.SizeMode)
+	aspectRatio, baseResolution := imageTaskSizeFields(task, sizeMode, entity.AspectRatio, entity.BaseResolution)
 	builder := tx.ImageTask.UpdateOneID(entity.ID).
 		SetUserID(task.UserID).
 		SetSourceChannel(defaultString(task.SourceChannel, entity.SourceChannel)).
@@ -1348,9 +1352,9 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
-		SetSizeMode(defaultString(task.SizeMode, entity.SizeMode)).
-		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
-		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetSizeMode(sizeMode).
+		SetAspectRatio(aspectRatio).
+		SetBaseResolution(baseResolution).
 		SetQuality(defaultString(task.Quality, entity.Quality)).
 		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
 		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
@@ -1482,6 +1486,8 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 	if err != nil {
 		return 0, err
 	}
+	sizeMode := defaultString(task.SizeMode, entity.SizeMode)
+	aspectRatio, baseResolution := imageTaskSizeFields(task, sizeMode, entity.AspectRatio, entity.BaseResolution)
 	builder := tx.ImageTask.Update().
 		Where(
 			imagetask.IDEQ(entity.ID),
@@ -1498,9 +1504,9 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
-		SetSizeMode(defaultString(task.SizeMode, entity.SizeMode)).
-		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
-		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetSizeMode(sizeMode).
+		SetAspectRatio(aspectRatio).
+		SetBaseResolution(baseResolution).
 		SetQuality(defaultString(task.Quality, entity.Quality)).
 		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
 		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
@@ -1618,6 +1624,8 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 	if err != nil {
 		return 0, err
 	}
+	sizeMode := defaultString(task.SizeMode, entity.SizeMode)
+	aspectRatio, baseResolution := imageTaskSizeFields(task, sizeMode, entity.AspectRatio, entity.BaseResolution)
 	builder := tx.ImageTask.Update().
 		Where(
 			imagetask.IDEQ(entity.ID),
@@ -1633,9 +1641,9 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetProgressMessage(task.ProgressMessage).
 		SetPrompt(task.Prompt).
 		SetAbstractModel(task.AbstractModel).
-		SetSizeMode(defaultString(task.SizeMode, entity.SizeMode)).
-		SetAspectRatio(defaultString(task.AspectRatio, entity.AspectRatio)).
-		SetBaseResolution(defaultString(task.BaseResolution, "auto")).
+		SetSizeMode(sizeMode).
+		SetAspectRatio(aspectRatio).
+		SetBaseResolution(baseResolution).
 		SetQuality(defaultString(task.Quality, entity.Quality)).
 		SetOutputFormat(defaultString(task.OutputFormat, entity.OutputFormat)).
 		SetOutputCompression(defaultPositive(task.OutputCompression, entity.OutputCompression)).
@@ -2560,6 +2568,17 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func imageTaskSizeFields(task domainimagetask.Task, sizeMode, aspectFallback, baseFallback string) (string, string) {
+	switch strings.ToLower(strings.TrimSpace(sizeMode)) {
+	case "auto":
+		return "", ""
+	case "pixel":
+		return "", defaultString(task.BaseResolution, baseFallback)
+	default:
+		return defaultString(task.AspectRatio, aspectFallback), defaultString(task.BaseResolution, baseFallback)
+	}
 }
 
 func defaultPositive(value, fallback int) int {

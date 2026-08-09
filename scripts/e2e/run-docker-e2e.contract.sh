@@ -13,6 +13,11 @@ GROUP_PID=""
 
 source "$RUNNER_STATE"
 
+if ! sed -n '/^start_writers()/,/^}/p' "$RUNNER" | rg -q 'restart nginx'; then
+  echo "FAIL: shared E2E writer restart does not refresh the Nginx upstream" >&2
+  exit 1
+fi
+
 cleanup() {
   if [[ "$LOCK_CREATED" == true && -L "$LOCK_FILE" ]]; then
     unlink "$LOCK_FILE"

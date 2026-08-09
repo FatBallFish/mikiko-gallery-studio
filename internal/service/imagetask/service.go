@@ -2021,10 +2021,14 @@ func (s *Service) ReviewImage(ctx context.Context, imageID, nextStatus, reviewRe
 	}
 	image, err := s.store.ReviewImage(ctx, imageID, nextStatus, strings.TrimSpace(reviewReason), publishedAt)
 	if err != nil {
-		if errors.Is(err, repoerr.ErrNotFound) {
+		switch {
+		case errors.Is(err, repoerr.ErrNotFound):
 			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "image not found")
+		case errors.Is(err, repoerr.ErrConflict):
+			return domainimagetask.GalleryImage{}, errs.New(http.StatusConflict, errs.CodeConflict, "image review state changed")
+		default:
+			return domainimagetask.GalleryImage{}, errs.Internal("failed to update image review")
 		}
-		return domainimagetask.GalleryImage{}, errs.Internal("failed to update image review")
 	}
 	return image, nil
 }
@@ -2592,7 +2596,9 @@ func taskEstimateRequest(req domainimagetask.CreateRequest, outputImageCount int
 }
 
 func (s *Service) applyTaskEstimateResult(ctx context.Context, task *domainimagetask.Task, req domainimagetask.CreateRequest, estimate domainbilling.EstimateResult) error {
-	task.BaseResolution = estimate.BaseResolution
+	if modelhub.PublicSizeMode(task.SizeMode) != modelhub.SizeModeAuto {
+		task.BaseResolution = estimate.BaseResolution
+	}
 	task.EstimatedPoints = estimate.EstimatedPoints
 	task.ChargedPoints = defaultString(estimate.ChargedPoints, estimate.EstimatedPoints)
 	task.EffectiveMultiplier = estimate.UserGroupMultiplier
@@ -2706,7 +2712,7 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 	}
 	switch task.SizeMode {
 	case modelhub.SizeModeAuto:
-		task.RequestedSize, task.AspectRatio = "", ""
+		task.RequestedSize, task.BaseResolution, task.AspectRatio = "", "", ""
 	case modelhub.SizeModeRatio:
 		size := strings.TrimSpace(resolved.ResolvedSize)
 		if size == "" {

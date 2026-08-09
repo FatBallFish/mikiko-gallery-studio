@@ -413,6 +413,82 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 	}
 }
 
+func TestImageTaskStorePreservesExplicitAutoSizeWithoutLegacyDefaults(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-auto-size-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	task := domainimagetask.Task{
+		UserID: 93, ID: uuid.NewString(), Status: domainimagetask.StatusQueued,
+		AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "automatic size",
+		SizeMode: "auto",
+		GenerationSnapshot: domainimagetask.GenerationSnapshot{
+			CapabilityVersion: "capability-auto-v1",
+			SizeMode:          "auto",
+		},
+	}
+	store := NewImageTaskStore(client)
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	assertExplicitAutoTaskSnapshot(t, loaded, task.GenerationSnapshot)
+
+	loaded.ProgressMessage = "ordinary update"
+	if err := store.Save(ctx, loaded); err != nil {
+		t.Fatalf("update Save: %v", err)
+	}
+	loaded, err = store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID after ordinary update: %v", err)
+	}
+	assertExplicitAutoTaskSnapshot(t, loaded, task.GenerationSnapshot)
+
+	now := time.Now().UTC()
+	leased, err := store.AcquireNextQueuedTask(ctx, "worker-auto", now, time.Minute)
+	if err != nil {
+		t.Fatalf("AcquireNextQueuedTask: %v", err)
+	}
+	if err := store.SaveIfOwned(ctx, leased, "worker-auto", now); err != nil {
+		t.Fatalf("SaveIfOwned: %v", err)
+	}
+	loaded, err = store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID after lease-owned update: %v", err)
+	}
+	assertExplicitAutoTaskSnapshot(t, loaded, task.GenerationSnapshot)
+
+	loaded.Status = domainimagetask.StatusSucceeded
+	if err := store.SaveTerminalState(ctx, loaded, "worker-auto", now); err != nil {
+		t.Fatalf("SaveTerminalState: %v", err)
+	}
+	loaded, err = store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID after terminal update: %v", err)
+	}
+	assertExplicitAutoTaskSnapshot(t, loaded, task.GenerationSnapshot)
+}
+
+func assertExplicitAutoTaskSnapshot(t *testing.T, task domainimagetask.Task, wantGeneration domainimagetask.GenerationSnapshot) {
+	t.Helper()
+	if task.BaseResolution != "" || task.AspectRatio != "" || task.RequestedSize != "" || task.ResolvedWidth != 0 || task.ResolvedHeight != 0 {
+		t.Fatalf("explicit auto task gained legacy size defaults: %#v", task)
+	}
+	if task.GenerationSnapshot != wantGeneration {
+		t.Fatalf("explicit auto generation snapshot changed: got %#v want %#v", task.GenerationSnapshot, wantGeneration)
+	}
+}
+
 func TestImageTaskStoreCancelPublishIsOwnerScopedAndReversible(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:imagetask-cancel-publish?mode=memory&cache=shared&_fk=1")

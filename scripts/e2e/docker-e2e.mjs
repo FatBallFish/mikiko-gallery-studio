@@ -6,6 +6,7 @@ import http from 'node:http'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { inflateRawSync } from 'node:zlib'
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const BASE_URL = envUrl('BASE_URL', 'http://127.0.0.1:8088')
@@ -40,6 +41,11 @@ const state = {
     taskId: 'missing-task',
     assetId: 'missing-asset',
     imageId: 'missing-image',
+    reviewApproveImageId: 'missing-review-image',
+    reviewRejectImageId: 'missing-review-image',
+    projectId: 'missing-project',
+    projectVersion: 1,
+    exportJobId: 'missing-export-job',
     codeId: '1',
     routeId: '1',
     providerModelId: '1',
@@ -133,6 +139,117 @@ async function request(method, url, options = {}) {
     }
   }
   return { response, text, json, status: response.status, headers: response.headers }
+}
+
+async function requestBinary(method, url, options = {}) {
+  const headers = new Headers(options.headers || {})
+  let body = options.body
+  if (body !== undefined && typeof body !== 'string' && !(body instanceof FormData)) {
+    body = JSON.stringify(body)
+    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  }
+  const response = await fetch(url, { method, headers, body, redirect: options.redirect || 'follow' })
+  const buffer = Buffer.from(await response.arrayBuffer())
+  return { response, buffer, status: response.status, headers: response.headers }
+}
+
+function readZipEntries(buffer) {
+  const minimumEOCDSize = 22
+  const maximumCommentSize = 0xffff
+  let eocdOffset = -1
+  for (let offset = buffer.length - minimumEOCDSize; offset >= Math.max(0, buffer.length - minimumEOCDSize - maximumCommentSize); offset -= 1) {
+    if (buffer.readUInt32LE(offset) === 0x06054b50) {
+      eocdOffset = offset
+      break
+    }
+  }
+  if (eocdOffset < 0) fail('Gallery export response was not a valid ZIP archive')
+
+  const entryCount = buffer.readUInt16LE(eocdOffset + 10)
+  const directorySize = buffer.readUInt32LE(eocdOffset + 12)
+  const directoryOffset = buffer.readUInt32LE(eocdOffset + 16)
+  if (directoryOffset + directorySize > eocdOffset) {
+    fail('Gallery export ZIP central directory exceeded the archive bounds')
+  }
+
+  const entries = []
+  let offset = directoryOffset
+  for (let index = 0; index < entryCount; index += 1) {
+    if (offset + 46 > buffer.length || buffer.readUInt32LE(offset) !== 0x02014b50) {
+      fail('Gallery export ZIP central directory was malformed', { index, offset })
+    }
+    const compressionMethod = buffer.readUInt16LE(offset + 10)
+    const compressedSize = buffer.readUInt32LE(offset + 20)
+    const uncompressedSize = buffer.readUInt32LE(offset + 24)
+    const filenameLength = buffer.readUInt16LE(offset + 28)
+    const extraLength = buffer.readUInt16LE(offset + 30)
+    const commentLength = buffer.readUInt16LE(offset + 32)
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42)
+    const nameStart = offset + 46
+    const nameEnd = nameStart + filenameLength
+    if (nameEnd > buffer.length) fail('Gallery export ZIP filename exceeded the archive bounds', { index })
+    entries.push({
+      name: buffer.toString('utf8', nameStart, nameEnd),
+      compressionMethod,
+      compressedSize,
+      uncompressedSize,
+      localHeaderOffset,
+    })
+    offset = nameEnd + extraLength + commentLength
+  }
+  return entries
+}
+
+function readZipEntry(buffer, entry) {
+  const offset = entry.localHeaderOffset
+  if (offset + 30 > buffer.length || buffer.readUInt32LE(offset) !== 0x04034b50) {
+    fail('Gallery export ZIP local header was malformed', { name: entry.name })
+  }
+  const filenameLength = buffer.readUInt16LE(offset + 26)
+  const extraLength = buffer.readUInt16LE(offset + 28)
+  const contentStart = offset + 30 + filenameLength + extraLength
+  const contentEnd = contentStart + entry.compressedSize
+  if (contentEnd > buffer.length) fail('Gallery export ZIP entry exceeded the archive bounds', { name: entry.name })
+  const compressed = buffer.subarray(contentStart, contentEnd)
+  const content = entry.compressionMethod === 0
+    ? compressed
+    : entry.compressionMethod === 8
+      ? inflateRawSync(compressed)
+      : fail('Gallery export ZIP used an unsupported compression method', { name: entry.name, method: entry.compressionMethod })
+  if (content.length !== entry.uncompressedSize) {
+    fail('Gallery export ZIP entry size did not match its metadata', { name: entry.name, expected: entry.uncompressedSize, actual: content.length })
+  }
+  return content
+}
+
+function assertGalleryZip(result, expectedImageIDs) {
+  if (result.status !== 200 || !String(result.headers.get('content-type') || '').toLowerCase().startsWith('application/zip')) {
+    fail('Gallery batch download did not return a ZIP archive', {
+      status: result.status,
+      contentType: result.headers.get('content-type'),
+      body: result.buffer.toString('utf8', 0, 600),
+    })
+  }
+  const entries = readZipEntries(result.buffer)
+  const manifestEntry = entries.find(entry => entry.name === 'manifest.json')
+  if (!manifestEntry || entries.length !== expectedImageIDs.length + 1) {
+    fail('Gallery export ZIP did not contain the selected images plus manifest', {
+      expectedImageCount: expectedImageIDs.length,
+      entries: entries.map(entry => entry.name),
+    })
+  }
+  let manifest
+  try {
+    manifest = JSON.parse(readZipEntry(result.buffer, manifestEntry).toString('utf8'))
+  } catch (error) {
+    fail('Gallery export ZIP manifest was invalid JSON', { message: error.message })
+  }
+  const manifestIDs = (manifest.files || []).filter(item => item.status === 'succeeded').map(item => String(item.id)).sort()
+  const expectedIDs = expectedImageIDs.map(String).sort()
+  if (JSON.stringify(manifestIDs) !== JSON.stringify(expectedIDs)) {
+    fail('Gallery export ZIP manifest did not match the selected assets', { manifestIDs, expectedIDs, manifest })
+  }
+  return { archiveBytes: result.buffer.length, entries: entries.map(entry => entry.name) }
 }
 
 async function expectStatus(method, url, expected, options = {}) {
@@ -384,6 +501,20 @@ async function seedGenerationRoute() {
       display_name: 'Docker E2E Image Model',
       task_types: ['text_to_image'],
       base_resolution: ['1k'],
+      quality: ['auto'],
+      size_modes: ['auto', 'ratio', 'pixel'],
+      supported_ratios: ['1:1', '16:9'],
+      supported_pixel_sizes: ['1024x1024'],
+      supports_custom_ratio: true,
+      supported_backgrounds: ['auto', 'opaque', 'transparent'],
+      min_width: 256,
+      max_width: 2048,
+      min_height: 256,
+      max_height: 2048,
+      max_image_count: 1,
+      max_reference_image_count: 1,
+      output_format: ['png', 'jpeg', 'webp'],
+      supports_output_compression: true,
       cost_per_image: '0.00000',
       currency: 'USD',
       enabled: true,
@@ -488,7 +619,7 @@ async function waitForSucceededTask(label, loadTask, timeoutMs = 90000) {
       if (!Array.isArray(lastTask.results) || lastTask.results.length === 0) {
         fail(`${label} succeeded without persisted image results`, { task: lastTask })
       }
-      return { taskId: lastTask.id, status: lastTask.status, resultCount: lastTask.results.length }
+      return { taskId: lastTask.id, status: lastTask.status, resultCount: lastTask.results.length, results: lastTask.results }
     }
     if (lastTask.status === 'failed') {
       fail(`${label} failed`, { task: lastTask })
@@ -538,7 +669,11 @@ async function frontendApiClientSmoke() {
       const adminEmail = process.env.E2E_ADMIN_EMAIL || 'admin@example.com'
       const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'admin123456'
       await userApi.sendEmailCode(userEmail, 'login')
-      const login = await userApi.loginWithEmailCode(userEmail, '123456')
+      const passwordSetup = await userApi.loginWithEmailCode(userEmail, '123456')
+      if (!passwordSetup.password_setup_required || !passwordSetup.password_setup_token) {
+        throw new Error('new user login did not require password setup')
+      }
+      const login = await userApi.completePasswordSetup(passwordSetup.password_setup_token, 'FrontendSmoke-123!')
       if (!login.access_token) throw new Error('user login was not unwrapped to access_token')
       userApi.configureAuth({ getToken: () => login.access_token })
       const profile = await userApi.getProfile()
@@ -581,10 +716,17 @@ async function bootstrapUser() {
   const login = await expectStatus('POST', `${BASE_URL}/api/agent/auth/v1/login/email-code`, 200, {
     body: { email, code: '123456' },
   })
-  const session = data(login)
+  const passwordSetup = data(login)
+  if (!passwordSetup.password_setup_required || !passwordSetup.password_setup_token || passwordSetup.access_token) {
+    fail('New user login did not require password setup before issuing a session', { body: login.text })
+  }
+  const completedSetup = await expectStatus('POST', `${BASE_URL}/api/agent/auth/v1/password/setup`, 200, {
+    body: { password_setup_token: passwordSetup.password_setup_token, new_password: 'DockerE2E-123!' },
+  })
+  const session = data(completedSetup)
   state.user.email = email
   state.user.token = session.access_token
-  const signupGrant = session.signup_grant
+  const signupGrant = passwordSetup.signup_grant
   if (!signupGrant?.granted) fail('New user login did not include granted signup trial credits', { body: login.text })
   if (signupGrant.balance?.trial_points !== '20.00000') fail('Signup trial grant did not return the expected trial bucket balance', { signupGrant })
   if (!signupGrant.balance?.buckets?.some(bucket => bucket.bucket === 'trial' && bucket.expires_at)) {
@@ -676,7 +818,6 @@ async function happyPathAgentBilling() {
   if (!data(initialBalance).buckets?.some(bucket => bucket.bucket === 'trial' && bucket.expires_at)) {
     fail('Balance summary did not include the trial bucket after admin seed', { body: initialBalance.text })
   }
-  const initialRechargePoints = decimalNumber(data(initialBalance).recharge_points)
   const signupLedger = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/ledger`, 200, { headers: bearer(state.user.token) })
   if (!findLedgerItem(data(signupLedger).items, 'trial_grant', 'trial', 'signup')) {
     fail('Ledger did not include signup trial grant bucket metadata', { body: signupLedger.text })
@@ -688,7 +829,11 @@ async function happyPathAgentBilling() {
 
   const options = await expectStatus('GET', `${BASE_URL}/api/agent/cashier/v1/options`, 200, { headers: bearer(state.user.token) })
   if (!data(options).visible_methods?.some(method => method.method === 'mock')) fail('Cashier options did not expose mock payment in local E2E', { body: options.text })
-  if (!data(options).plans?.some(plan => plan.plan_code === 'basic-monthly')) fail('Cashier options did not expose the basic points package', { body: options.text })
+  const expiringPlan = data(options).plans?.find(plan => plan.plan_code === 'basic-monthly')
+  if (!expiringPlan) fail('Cashier options did not expose the basic points package', { body: options.text })
+  if (!expiringPlan.credit_expiry_enabled || expiringPlan.duration_days !== 30) {
+    fail('Basic points package did not expose its expiring credit policy', { plan: expiringPlan })
+  }
 
   const order = await expectStatus('POST', `${BASE_URL}/api/agent/cashier/v1/orders`, 201, {
     headers: bearer(state.user.token),
@@ -701,19 +846,69 @@ async function happyPathAgentBilling() {
   if (data(order).payment_display?.type !== 'mock' || data(order).payment_url || data(order).payment_display?.payment_url) {
     fail('Cashier order did not use in-page mock payment without legacy payment_url', { body: order.text })
   }
+  if (!data(order).credit_expiry_enabled || data(order).credit_valid_days !== 30 || data(order).credit_expires_at) {
+    fail('Pending points-package order did not snapshot its enabled expiry policy', { body: order.text })
+  }
   await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/orders`, 200, { headers: bearer(state.user.token) })
   await expectStatus('GET', `${BASE_URL}/api/agent/cashier/v1/orders/${state.ids.orderId}`, 200, { headers: bearer(state.user.token) })
   const paid = await expectStatus('POST', `${BASE_URL}/api/agent/cashier/v1/orders/${state.ids.orderId}/mock-pay`, 200, { headers: bearer(state.user.token) })
   if (data(paid).status !== 'completed' || !data(paid).ledger_id) fail('Mock cashier payment did not complete and attach a ledger id', { body: paid.text })
-
-  const rechargedBalance = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/balance`, 200, { headers: bearer(state.user.token) })
-  const rechargeDelta = decimalNumber(data(rechargedBalance).recharge_points) - initialRechargePoints
-  if (Math.abs(rechargeDelta - 100) > 0.00001) fail('Mock cashier payment did not credit 100 recharge points', { before: data(initialBalance), after: data(rechargedBalance) })
-  const rechargeLedger = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/ledger`, 200, { headers: bearer(state.user.token) })
-  if (!findLedgerItem(data(rechargeLedger).items, 'recharge', 'recharge', 'payment_order')) {
-    fail('Ledger did not include recharge bucket metadata after mock cashier payment', { body: rechargeLedger.text })
+  if (!data(paid).credited_at || !data(paid).credit_expires_at || data(paid).credit_valid_days !== 30) {
+    fail('Completed expiring package did not expose its snapshotted credit timestamps', { body: paid.text })
   }
-  return { orderId: state.ids.orderId, rechargeDelta: rechargeDelta.toFixed(5) }
+
+  const packageBalance = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/balance`, 200, { headers: bearer(state.user.token) })
+  const packageDelta = decimalNumber(data(packageBalance).subscription_points) - decimalNumber(data(initialBalance).subscription_points)
+  if (Math.abs(packageDelta - 100) > 0.00001) fail('Mock cashier payment did not credit 100 package points', { before: data(initialBalance), after: data(packageBalance) })
+  const packageLedger = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/ledger`, 200, { headers: bearer(state.user.token) })
+  const expiringPurchase = (data(packageLedger).items || []).find(item => String(item.order_id) === state.ids.orderId && item.ledger_type === 'order_paid' && item.balance_bucket === 'subscription')
+  if (!expiringPurchase?.expires_at) {
+    fail('Expiring package ledger did not preserve its subscription bucket and expiry snapshot', { body: packageLedger.text })
+  }
+
+  const permanentPlanCode = `e2e-permanent-${RUN_ID}`.toLowerCase()
+  const permanentPlan = await expectStatus('POST', `${BASE_URL}/api/ops/admin/v1/cashier/plans`, 201, {
+    headers: bearer(state.admin.token),
+    body: {
+      plan_code: permanentPlanCode,
+      plan_name: `E2E Permanent ${RUN_ID}`,
+      plan_type: 'points_package',
+      purchase_enabled: true,
+      status: 'active',
+      price_cny: '1.00000',
+      points: '3.00000',
+      bonus_points: '1.00000',
+      credit_expiry_enabled: false,
+      currency: 'CNY',
+    },
+  })
+  if (data(permanentPlan).credit_expiry_enabled || data(permanentPlan).duration_days != null) {
+    fail('Permanent points package retained an expiry duration', { body: permanentPlan.text })
+  }
+  const permanentOrder = await expectStatus('POST', `${BASE_URL}/api/agent/cashier/v1/orders`, 201, {
+    headers: bearer(state.user.token),
+    body: { purchase_type: 'plan', plan_code: permanentPlanCode, visible_method: 'mock' },
+  })
+  const permanentOrderId = String(data(permanentOrder).id)
+  if (data(permanentOrder).credit_expiry_enabled || data(permanentOrder).credit_valid_days != null || data(permanentOrder).credit_expires_at) {
+    fail('Pending permanent package order did not snapshot a permanent credit policy', { body: permanentOrder.text })
+  }
+  const permanentPaid = await expectStatus('POST', `${BASE_URL}/api/agent/cashier/v1/orders/${permanentOrderId}/mock-pay`, 200, { headers: bearer(state.user.token) })
+  if (!data(permanentPaid).credited_at || data(permanentPaid).credit_expiry_enabled || data(permanentPaid).credit_valid_days != null || data(permanentPaid).credit_expires_at) {
+    fail('Completed permanent package unexpectedly acquired an expiry', { body: permanentPaid.text })
+  }
+  const permanentBalance = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/balance`, 200, { headers: bearer(state.user.token) })
+  const permanentPackageDelta = decimalNumber(data(permanentBalance).subscription_points) - decimalNumber(data(packageBalance).subscription_points)
+  const permanentGiftDelta = decimalNumber(data(permanentBalance).gift_points) - decimalNumber(data(packageBalance).gift_points)
+  if (Math.abs(permanentPackageDelta - 3) > 0.00001 || Math.abs(permanentGiftDelta - 1) > 0.00001) {
+    fail('Permanent package did not split purchased and gift points', { before: data(packageBalance), after: data(permanentBalance) })
+  }
+  const permanentLedger = await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/ledger`, 200, { headers: bearer(state.user.token) })
+  const permanentEntries = (data(permanentLedger).items || []).filter(item => String(item.order_id) === permanentOrderId && item.ledger_type === 'order_paid')
+  if (permanentEntries.length !== 2 || permanentEntries.some(item => item.expires_at) || !permanentEntries.some(item => item.balance_bucket === 'subscription') || !permanentEntries.some(item => item.balance_bucket === 'gift')) {
+    fail('Permanent package ledger did not preserve split buckets without expiry', { body: permanentLedger.text })
+  }
+  return { orderId: state.ids.orderId, packageDelta: packageDelta.toFixed(5), permanentOrderId }
 }
 
 async function happyPathApiKeys() {
@@ -782,7 +977,7 @@ async function happyPathAssetsAndTasks() {
       route_model_code: 'basic',
       requested_quality: 'auto',
       requested_size: '1024x1024',
-      requested_output_image_count: 1,
+      requested_output_image_count: 2,
       reference_image_count: 0,
       response_mode: 'async',
     },
@@ -790,9 +985,201 @@ async function happyPathAssetsAndTasks() {
   state.ids.taskId = data(task).id
   await expectStatus('GET', `${BASE_URL}/api/agent/image/v1/tasks`, 200, { headers: bearer(state.user.token) })
   const completedTask = await waitForSucceededTask('Agent image task', () => request('GET', `${BASE_URL}/api/agent/image/v1/tasks/${state.ids.taskId}`, { headers: bearer(state.user.token) }))
+  if (completedTask.resultCount !== 2) {
+    fail('Platform output count did not fan out above the candidate max_image_count', { completedTask })
+  }
+  state.generatedImages = completedTask.results
+  state.ids.imageId = String(completedTask.results[0].id)
+  state.ids.projectId = String(completedTask.results[0].project_id)
+  if (!state.ids.imageId || state.ids.imageId === 'undefined' || !state.ids.projectId || state.ids.projectId === 'undefined') {
+    fail('Completed image task did not expose persisted image and project ids', { completedTask })
+  }
+
+  const autoTask = await expectStatus('POST', `${BASE_URL}/api/agent/image/v1/tasks`, 202, {
+    headers: { ...bearer(state.user.token), 'Idempotency-Key': `e2e-auto-task-${RUN_ID}` },
+    body: {
+      task_type: 'text_to_image',
+      prompt: 'docker e2e automatic size',
+      route_model_code: 'basic',
+      size_mode: 'auto',
+      requested_quality: 'auto',
+      requested_output_image_count: 1,
+      response_mode: 'async',
+    },
+  })
+  await waitForSucceededTask('Automatic-size image task', () => request('GET', `${BASE_URL}/api/agent/image/v1/tasks/${data(autoTask).id}`, { headers: bearer(state.user.token) }))
+
+  const ratioTask = await expectStatus('POST', `${BASE_URL}/api/agent/image/v1/tasks`, 202, {
+    headers: { ...bearer(state.user.token), 'Idempotency-Key': `e2e-ratio-task-${RUN_ID}` },
+    body: {
+      task_type: 'text_to_image',
+      prompt: 'docker e2e custom ratio transparent background',
+      route_model_code: 'basic',
+      size_mode: 'ratio',
+      base_resolution: '1k',
+      aspect_ratio: '3:2',
+      background: 'transparent',
+      output_format: 'png',
+      requested_quality: 'auto',
+      requested_output_image_count: 1,
+      response_mode: 'async',
+    },
+  })
+  await waitForSucceededTask('Custom-ratio transparent image task', () => request('GET', `${BASE_URL}/api/agent/image/v1/tasks/${data(ratioTask).id}`, { headers: bearer(state.user.token) }))
+
+  const invalidTransparent = await request('POST', `${BASE_URL}/api/agent/image/v1/tasks`, {
+    headers: { ...bearer(state.user.token), 'Content-Type': 'application/json', 'Idempotency-Key': `e2e-transparent-jpeg-${RUN_ID}` },
+    body: {
+      task_type: 'text_to_image',
+      prompt: 'docker e2e invalid transparent jpeg',
+      route_model_code: 'basic',
+      size_mode: 'pixel',
+      requested_size: '1024x1024',
+      background: 'transparent',
+      output_format: 'jpeg',
+      requested_quality: 'auto',
+      requested_output_image_count: 1,
+      response_mode: 'async',
+    },
+  })
+  if (invalidTransparent.status !== 400 || invalidTransparent.json?.error?.code !== 'transparent_format_conflict') {
+    fail('Transparent JPEG request did not fail with the dedicated validation error', { status: invalidTransparent.status, body: invalidTransparent.text })
+  }
   await expectStatus('GET', `${BASE_URL}/api/agent/image/v1/history/tasks`, 200, { headers: bearer(state.user.token) })
   await expectStatus('GET', `${BASE_URL}/api/agent/image/v1/history/tasks/${state.ids.taskId}`, 200, { headers: bearer(state.user.token) })
   return { assetId: state.ids.assetId, taskId: state.ids.taskId, resultCount: completedTask.resultCount }
+}
+
+function assertBatchMutation(result, expectedIDs, action) {
+  const payload = data(result)
+  const succeeded = (payload.succeeded || []).map(item => String(item.id)).sort()
+  const expected = expectedIDs.map(String).sort()
+  if (JSON.stringify(succeeded) !== JSON.stringify(expected) || (payload.failed || []).length !== 0) {
+    fail(`Gallery batch ${action} did not succeed for every selected asset`, { expected, payload })
+  }
+  return payload
+}
+
+async function waitForGalleryExport(jobID, timeoutMs = 90000) {
+  const started = Date.now()
+  let lastJob = null
+  while (Date.now() - started < timeoutMs) {
+    const result = await expectStatus('GET', `${BASE_URL}/api/agent/gallery/v1/export-jobs/${jobID}`, 200, {
+      headers: bearer(state.user.token),
+    })
+    const payload = data(result)
+    lastJob = payload.job
+    if (lastJob?.state === 'succeeded') {
+      if (payload.download_url !== `/api/agent/gallery/v1/export-jobs/${jobID}/download`) {
+        fail('Succeeded gallery export did not expose its download URL', { payload })
+      }
+      return lastJob
+    }
+    if (lastJob?.state === 'failed' || lastJob?.state === 'expired') {
+      fail('Gallery export reached a terminal failure state', { job: lastJob })
+    }
+    await sleep(250)
+  }
+  fail('Gallery export did not succeed before timeout', { job: lastJob })
+}
+
+async function happyPathGalleryBatchAndExports() {
+  const initialImages = state.generatedImages || []
+  const directImageIDs = initialImages.map(item => String(item.id))
+  const projectID = state.ids.projectId
+  if (directImageIDs.length !== 2 || !projectID || projectID === 'missing-project') {
+    fail('Gallery batch E2E requires the two-image generation task and its project', { directImageIDs, projectID })
+  }
+
+  const direct = await requestBinary('POST', `${BASE_URL}/api/agent/gallery/v1/images:batch-download`, {
+    headers: { ...bearer(state.user.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image_ids: directImageIDs, project_id: projectID }),
+  })
+  const directArchive = assertGalleryZip(direct, directImageIDs)
+
+  const group = await expectStatus('POST', `${BASE_URL}/api/agent/gallery/v1/images:batch-group`, 200, {
+    headers: bearer(state.user.token),
+    body: { image_ids: directImageIDs, project_id: projectID, image_group: `e2e-${RUN_ID}` },
+  })
+  assertBatchMutation(group, directImageIDs, 'group')
+
+  const publish = await expectStatus('POST', `${BASE_URL}/api/agent/gallery/v1/images:batch-publish`, 200, {
+    headers: bearer(state.user.token),
+    body: { image_ids: directImageIDs, project_id: projectID, publish: true },
+  })
+  assertBatchMutation(publish, directImageIDs, 'publish')
+  state.ids.reviewApproveImageId = directImageIDs[0]
+  state.ids.reviewRejectImageId = directImageIDs[1]
+
+  const targetResult = await expectStatus('POST', `${BASE_URL}/api/agent/project/v1/projects`, 201, {
+    headers: { ...bearer(state.user.token), 'Idempotency-Key': `e2e-gallery-project-${RUN_ID}` },
+    body: { name: `E2E Gallery ${RUN_ID}` },
+  })
+  const targetProject = data(targetResult)
+  state.ids.projectId = String(targetProject.id)
+  state.ids.projectVersion = Number(targetProject.version)
+  const transferredID = directImageIDs[0]
+  const transferOut = await expectStatus('POST', `${BASE_URL}/api/agent/gallery/v1/images:batch-transfer-project`, 200, {
+    headers: bearer(state.user.token),
+    body: { image_ids: [transferredID], project_id: projectID, target_project_id: state.ids.projectId },
+  })
+  assertBatchMutation(transferOut, [transferredID], 'transfer-project')
+  const transferBack = await expectStatus('POST', `${BASE_URL}/api/agent/gallery/v1/images:batch-transfer-project`, 200, {
+    headers: bearer(state.user.token),
+    body: { image_ids: [transferredID], project_id: state.ids.projectId, target_project_id: projectID },
+  })
+  assertBatchMutation(transferBack, [transferredID], 'transfer-project-return')
+
+  const asyncImageIDs = [...directImageIDs]
+  for (let taskIndex = 0; taskIndex < 4; taskIndex += 1) {
+    const task = await expectStatus('POST', `${BASE_URL}/api/agent/image/v1/tasks`, 202, {
+      headers: { ...bearer(state.user.token), 'Idempotency-Key': `e2e-export-assets-${RUN_ID}-${taskIndex}` },
+      body: {
+        task_type: 'text_to_image',
+        prompt: `docker e2e gallery export ${taskIndex}`,
+        route_model_code: 'basic',
+        project_id: projectID,
+        size_mode: 'pixel',
+        requested_size: '1024x1024',
+        requested_quality: 'auto',
+        requested_output_image_count: 5,
+        response_mode: 'async',
+      },
+    })
+    const completed = await waitForSucceededTask(`Gallery export asset task ${taskIndex + 1}`, () => request('GET', `${BASE_URL}/api/agent/image/v1/tasks/${data(task).id}`, {
+      headers: bearer(state.user.token),
+    }))
+    if (completed.resultCount !== 5) {
+      fail('Gallery export seed task did not persist all requested images', { taskIndex, completed })
+    }
+    asyncImageIDs.push(...completed.results.map(item => String(item.id)))
+  }
+  if (asyncImageIDs.length <= 20) fail('Gallery export E2E did not exceed the direct-download threshold', { count: asyncImageIDs.length })
+
+  const queued = await expectStatus('POST', `${BASE_URL}/api/agent/gallery/v1/images:batch-download`, 202, {
+    headers: bearer(state.user.token),
+    body: { image_ids: asyncImageIDs, project_id: projectID },
+  })
+  const queuedPayload = data(queued)
+  state.ids.exportJobId = String(queuedPayload.job?.id)
+  if (!state.ids.exportJobId || state.ids.exportJobId === 'undefined' || queuedPayload.job?.state !== 'queued') {
+    fail('Large gallery export did not create a queued job', { payload: queuedPayload })
+  }
+  const completedJob = await waitForGalleryExport(state.ids.exportJobId)
+  const asyncDownload = await requestBinary('GET', `${BASE_URL}/api/agent/gallery/v1/export-jobs/${state.ids.exportJobId}/download`, {
+    headers: bearer(state.user.token),
+  })
+  const asyncArchive = assertGalleryZip(asyncDownload, asyncImageIDs)
+  return {
+    projectID,
+    targetProjectID: state.ids.projectId,
+    directImageCount: directImageIDs.length,
+    directArchiveBytes: directArchive.archiveBytes,
+    asyncImageCount: asyncImageIDs.length,
+    asyncArchiveBytes: asyncArchive.archiveBytes,
+    exportJobID: state.ids.exportJobId,
+    exportState: completedJob.state,
+  }
 }
 
 async function happyPathOpenAPI() {
@@ -896,11 +1283,9 @@ async function happyPathPromptOptimization() {
   }))
   const chatModel = await createModel(chatAccount, 'chat')
   const responsesModel = await createModel(responsesAccount, 'responses')
-  if (!chatModel.is_default || responsesModel.is_default) {
-    fail('The first eligible text model was not retained as the automatic default', {
-      chatModel,
-      responsesModel,
-    })
+  const selectedChat = data(await expectStatus('PUT', `${BASE_URL}/api/ops/admin/v1/text-models/${chatModel.id}:default`, 200, { headers: bearer(state.admin.token) }))
+  if (!selectedChat.is_default) {
+    fail('The E2E chat model could not be selected as the default', { selectedChat })
   }
   state.ids.textModelAccountId = String(chatAccount.id)
   state.ids.textModelId = String(chatModel.id)
@@ -1219,6 +1604,7 @@ async function openapiRouteSweep(openapi) {
       })
     }
     rememberStorageConfigVersion(template, result)
+    rememberProjectVersion(template, result)
   }
   if (failures.length > 0) {
     fail('OpenAPI route sweep found contract failures', { failures })
@@ -1238,6 +1624,14 @@ function rememberStorageConfigVersion(template, result) {
   const version = Number(result.json?.data?.version)
   if (result.status >= 200 && result.status < 300 && Number.isFinite(version) && version > 0) {
     state.ids.storageConfigVersion = version
+  }
+}
+
+function rememberProjectVersion(template, result) {
+  if (template !== '/api/agent/project/v1/projects/{project_id}') return
+  const version = Number(result.json?.data?.version)
+  if (result.status >= 200 && result.status < 300 && Number.isFinite(version) && version > 0) {
+    state.ids.projectVersion = version
   }
 }
 
@@ -1277,12 +1671,17 @@ function defaultHeaders(template, method, pathWithQuery, body) {
 
 function materializePath(template) {
   const textModelPath = template.includes('/text-model')
+  const reviewImageID = template.includes('/image-reviews/')
+    ? template.endsWith(':reject') ? state.ids.reviewRejectImageId : state.ids.reviewApproveImageId
+    : state.ids.imageId
   return template
     .replace('{key_id}', state.ids.keyId)
     .replace('{order_id}', state.ids.orderId)
     .replace('{task_id}', state.ids.taskId)
     .replace('{asset_id}', state.ids.assetId)
-    .replace('{image_id}', state.ids.imageId)
+    .replace('{image_id}', reviewImageID)
+    .replace('{project_id}', state.ids.projectId)
+    .replace('{job_id}', state.ids.exportJobId)
     .replace('{channel}', 'alipay')
     .replace('{tab_key}', 'billing_pricing')
     .replace('{user_id}', state.ids.userId)
@@ -1314,8 +1713,14 @@ function defaultQuery(template) {
 }
 
 function defaultBody(method, template) {
-  if (method === 'GET' || method === 'DELETE') return ''
+  if (method === 'GET' || (method === 'DELETE' && template !== '/api/agent/project/v1/projects/{project_id}')) return ''
   const bodies = {
+    '/api/agent/project/v1/projects': { name: `Sweep Project ${RUN_ID}` },
+    '/api/agent/project/v1/projects/{project_id}': method === 'DELETE'
+      ? { expected_version: state.ids.projectVersion }
+      : { name: `Sweep Gallery ${RUN_ID}`, expected_version: state.ids.projectVersion },
+    '/api/ops/admin/v1/image-reviews/{image_id}:reject': { reason: 'OpenAPI sweep rejection' },
+    '/api/ops/admin/v1/image-reviews/{image_id}:unpublish': { reason: 'OpenAPI sweep unpublish' },
     '/api/agent/account/v1/api-keys': { name: `sweep-key-${RUN_ID}`, total_quota_points: '5.00000', daily_quota_points: '5.00000', rpm_limit: 60 },
     '/api/agent/account/v1/api-keys/{key_id}': { name: `sweep-key-updated-${RUN_ID}`, total_quota_points: '4.00000', daily_quota_points: '4.00000', rpm_limit: 60 },
     '/api/agent/auth/v1/email/send-code': { email: uniqueEmail('sweep-code'), scene: 'login' },
@@ -1445,6 +1850,7 @@ async function main() {
     await step('agent API key happy path', happyPathApiKeys)
     await step('seed generation route for image task happy paths', seedGenerationRoute)
     await step('agent assets and image task happy path', happyPathAssetsAndTasks)
+    await step('gallery batch mutations and ZIP export happy path', happyPathGalleryBatchAndExports)
     await step('native Open API and OpenAI-compatible API happy path', happyPathOpenAPI)
     await step('text model accounts and prompt optimization happy path', happyPathPromptOptimization)
     await step('browser prompt optimization and configuration reuse workflow', browserPromptWorkflow)

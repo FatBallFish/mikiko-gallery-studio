@@ -204,6 +204,16 @@ if (pageSource.includes('await Promise.all(images.map') || pageSource.includes('
 for (const contract of ['已加载资产', '反选', '清除选择', '批量转移项目', 'batchDownloadGalleryImages', 'batchTransferGalleryImages']) {
   if (!pageSource.includes(contract)) throw new Error(`gallery batch toolbar needs ${contract}`)
 }
+const batchToolbarRender = pageSource.slice(
+  pageSource.indexOf('{selectedImages.length ? ('),
+  pageSource.indexOf('<ImageGrid'),
+)
+if (!batchToolbarRender.includes('<OverlayPortal>') || !batchToolbarRender.includes('</OverlayPortal>')) {
+  throw new Error('the viewport-fixed gallery batch toolbar must escape transformed route containers through OverlayPortal')
+}
+if (!pageSource.includes("batchBar: cn(rdGallery.batchBar, 'w-max max-w-[calc(100vw-24px)] max-md:bottom-20")) {
+  throw new Error('the gallery batch toolbar must use intrinsic desktop width and clear the mobile bottom navigation')
+}
 if (pageSource.includes('window.setTimeout(() => void downloadImage')) {
   throw new Error('batch download must use one authorized ZIP response instead of repeated browser downloads')
 }

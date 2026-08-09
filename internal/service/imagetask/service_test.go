@@ -1384,8 +1384,11 @@ func TestExecuteLeasedAutoTaskOmitsSizeAndPersistsDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	if created.RequestedSize != "" || created.ResolvedWidth != 0 || created.ResolvedHeight != 0 {
+	if created.BaseResolution != "" || created.AspectRatio != "" || created.RequestedSize != "" || created.ResolvedWidth != 0 || created.ResolvedHeight != 0 {
 		t.Fatalf("auto task must persist absent dimensions, got %#v", created)
+	}
+	if created.GenerationSnapshot.BaseResolution != "" || created.GenerationSnapshot.AspectRatio != "" || created.GenerationSnapshot.ResolvedSize != "" || created.GenerationSnapshot.ResolvedWidth != 0 || created.GenerationSnapshot.ResolvedHeight != 0 {
+		t.Fatalf("auto task generation snapshot must omit dimensions, got %#v", created.GenerationSnapshot)
 	}
 	leased, ok, err := svc.AcquireNextTask(context.Background(), "worker-auto", time.Minute)
 	if err != nil || !ok {
@@ -1807,6 +1810,23 @@ func TestCancelPublishPendingAndApprovedAllowsReapply(t *testing.T) {
 	reapplied, err := svc.RequestPublish(t.Context(), userID, imageID)
 	if err != nil || reapplied.VisibilityStatus != domainimagetask.VisibilityPendingReview {
 		t.Fatalf("canceled image must allow reapply: image=%#v err=%v", reapplied, err)
+	}
+}
+
+type reviewConflictStore struct {
+	imagetask.Store
+}
+
+func (s *reviewConflictStore) ReviewImage(context.Context, string, string, string, *time.Time) (domainimagetask.GalleryImage, error) {
+	return domainimagetask.GalleryImage{}, repoerr.ErrConflict
+}
+
+func TestReviewImageMapsRepositoryConflict(t *testing.T) {
+	svc := imagetask.NewServiceWithStore(taskTestConfig(), &reviewConflictStore{Store: imagetask.NewMemoryStore()})
+	_, err := svc.ReviewImage(t.Context(), "image-id", domainimagetask.VisibilityRejected, "late rejection", nil)
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.StatusCode != http.StatusConflict || appErr.Code != errs.CodeConflict {
+		t.Fatalf("ReviewImage conflict = %T %v, want 409 CONFLICT", err, err)
 	}
 }
 
