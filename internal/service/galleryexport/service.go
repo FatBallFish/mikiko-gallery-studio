@@ -28,6 +28,7 @@ const (
 	FileStatusFailed    = "failed"
 
 	ErrorLifecycleDeadlineExceeded = "lifecycle_deadline_exceeded"
+	ErrorExportTooLarge            = "EXPORT_TOO_LARGE"
 
 	DefaultQueueTimeout     = 10 * time.Minute
 	DefaultLifecycleTimeout = DefaultQueueTimeout + DefaultAsyncTimeout
@@ -73,6 +74,7 @@ type Archive struct {
 	Reader           io.ReadCloser
 	Size             int64
 	ResponseDeadline time.Time
+	cancel           context.CancelFunc
 }
 
 func (a *Archive) Close() error {
@@ -80,6 +82,10 @@ func (a *Archive) Close() error {
 		return nil
 	}
 	var result error
+	if a.cancel != nil {
+		a.cancel()
+		a.cancel = nil
+	}
 	if a.Reader != nil {
 		result = a.Reader.Close()
 		a.Reader = nil
@@ -145,14 +151,17 @@ func (s *Service) DownloadJob(ctx context.Context, userID int64, jobID string) (
 	if !ok {
 		return Archive{}, errors.New("gallery export storage does not support streaming downloads")
 	}
-	reader, size, err := streaming.OpenReader(ctx, job.ObjectKey, s.opts.MaxArchiveBytes)
+	transferCtx, cancel := context.WithTimeout(ctx, s.opts.LifecycleTimeout)
+	responseDeadline, _ := transferCtx.Deadline()
+	reader, size, err := streaming.OpenReader(transferCtx, job.ObjectKey, s.opts.MaxArchiveBytes)
 	if err != nil {
+		cancel()
 		return Archive{}, fmt.Errorf("open gallery export archive: %w", err)
 	}
 	if size < 0 {
 		size = job.ArchiveSizeBytes
 	}
-	return Archive{Filename: "gallery-assets.zip", Reader: reader, Size: size}, nil
+	return Archive{Filename: "gallery-assets.zip", Reader: reader, Size: size, ResponseDeadline: responseDeadline, cancel: cancel}, nil
 }
 
 type CreateJobRequest struct {
@@ -242,12 +251,15 @@ func (s *Service) CreateDownload(ctx context.Context, req CreateDownloadRequest)
 		return CreateDownloadResult{}, err
 	}
 	var estimatedBytes int64
+	hasUnknownSize := false
 	for _, asset := range assets {
 		if asset.FileSizeBytes > 0 {
 			estimatedBytes += asset.FileSizeBytes
+		} else {
+			hasUnknownSize = true
 		}
 	}
-	if len(assets) > s.opts.DirectMaxCount || estimatedBytes > s.opts.DirectMaxEstimatedBytes {
+	if hasUnknownSize || len(assets) > s.opts.DirectMaxCount || estimatedBytes > s.opts.DirectMaxEstimatedBytes {
 		job, err := s.store.CreateJob(ctx, CreateJobRequest{
 			UserID: req.UserID, ProjectID: strings.TrimSpace(req.ProjectID), ImageIDs: ids, EstimatedBytes: estimatedBytes,
 			LifecycleDeadlineAt: s.now().Add(s.opts.LifecycleTimeout),

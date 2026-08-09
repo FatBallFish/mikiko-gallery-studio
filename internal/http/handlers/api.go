@@ -3132,8 +3132,10 @@ func (a *API) handleAgentGalleryBatchDownload(w http.ResponseWriter, r *http.Req
 		switch {
 		case errors.Is(err, galleryexportservice.ErrBatchEmpty):
 			httpx.WriteError(w, r, errs.BadRequest("image_ids is required"))
-		case errors.Is(err, galleryexportservice.ErrBatchTooLarge):
-			httpx.WriteError(w, r, errs.New(http.StatusRequestEntityTooLarge, errs.CodeBadRequest, "gallery export selection exceeds the batch limit"))
+		case errors.Is(err, galleryexportservice.ErrBatchTooLarge),
+			errors.Is(err, galleryexportservice.ErrSourceLimitExceeded),
+			errors.Is(err, galleryexportservice.ErrArchiveLimitExceeded):
+			httpx.WriteError(w, r, errs.New(http.StatusRequestEntityTooLarge, errs.CodeExportTooLarge, "gallery export exceeds the configured size limit"))
 		case errors.Is(err, repoerr.ErrNotFound):
 			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "one or more gallery images were not found"))
 		default:

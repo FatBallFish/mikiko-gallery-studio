@@ -37,11 +37,21 @@ type GalleryExportStatusLike = {
 export async function pollGalleryExportJob<T extends GalleryExportStatusLike>(
   initial: T,
   getStatus: (jobID: string, signal?: AbortSignal) => Promise<T>,
-	options: { maxAttempts?: number; wait?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal; now?: () => number; marginMs?: number } = {},
+	options: {
+		maxAttempts?: number
+		wait?: (signal?: AbortSignal) => Promise<void>
+		signal?: AbortSignal
+		now?: () => number
+		marginMs?: number
+		setTimer?: (callback: () => void, delayMs: number) => unknown
+		clearTimer?: (timer: unknown) => void
+	} = {},
 ): Promise<T> {
 	const now = options.now ?? Date.now
 	const marginMs = options.marginMs ?? 15_000
 	const wait = options.wait ?? abortableGalleryExportDelay
+	const setTimer = options.setTimer ?? ((callback, delayMs) => globalThis.setTimeout(callback, delayMs))
+	const clearTimer = options.clearTimer ?? ((timer) => globalThis.clearTimeout(timer as ReturnType<typeof setTimeout>))
 	let status = initial
 	let deadline = requiredGalleryExportServerDeadline(status, marginMs)
 	let attempt = 0
@@ -52,7 +62,7 @@ export async function pollGalleryExportJob<T extends GalleryExportStatusLike>(
 		await wait(options.signal)
 		options.signal?.throwIfAborted()
 		if (now() >= deadline) throw new Error('gallery export polling timed out')
-		status = await getStatus(status.job.id, options.signal)
+		status = await fetchGalleryExportStatus(status.job.id, getStatus, options.signal, deadline, now, setTimer, clearTimer)
 		deadline = requiredGalleryExportServerDeadline(status, marginMs)
 		attempt += 1
 	}
@@ -60,6 +70,49 @@ export async function pollGalleryExportJob<T extends GalleryExportStatusLike>(
     throw new Error(status.job.error_message || 'gallery export failed')
   }
   return status
+}
+
+async function fetchGalleryExportStatus<T extends GalleryExportStatusLike>(
+	jobID: string,
+	getStatus: (jobID: string, signal?: AbortSignal) => Promise<T>,
+	externalSignal: AbortSignal | undefined,
+	deadline: number,
+	now: () => number,
+	setTimer: (callback: () => void, delayMs: number) => unknown,
+	clearTimer: (timer: unknown) => void,
+): Promise<T> {
+	externalSignal?.throwIfAborted()
+	const remainingMs = deadline - now()
+	if (remainingMs <= 0) throw galleryExportPollingTimeout()
+	const controller = new AbortController()
+	let deadlineExpired = false
+	let rejectBoundary: (reason: unknown) => void = () => undefined
+	const boundary = new Promise<never>((_resolve, reject) => { rejectBoundary = reject })
+	const onExternalAbort = () => {
+		const reason = externalSignal?.reason ?? new DOMException('Aborted', 'AbortError')
+		controller.abort(reason)
+		rejectBoundary(reason)
+	}
+	externalSignal?.addEventListener('abort', onExternalAbort, { once: true })
+	const timer = setTimer(() => {
+		deadlineExpired = true
+		controller.abort(new DOMException('Gallery export polling timed out', 'AbortError'))
+		rejectBoundary(galleryExportPollingTimeout())
+	}, remainingMs)
+	try {
+		return await Promise.race([getStatus(jobID, controller.signal), boundary])
+	} catch (error) {
+		if (deadlineExpired) throw galleryExportPollingTimeout()
+		if (externalSignal?.aborted) throw externalSignal.reason ?? new DOMException('Aborted', 'AbortError')
+		throw error
+	} finally {
+		clearTimer(timer)
+		externalSignal?.removeEventListener('abort', onExternalAbort)
+	}
+}
+
+function galleryExportPollingTimeout() {
+	return new Error('gallery export polling timed out')
 }
 
 function requiredGalleryExportServerDeadline(status: GalleryExportStatusLike, marginMs: number) {

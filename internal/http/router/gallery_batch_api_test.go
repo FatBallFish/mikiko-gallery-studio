@@ -122,6 +122,58 @@ func TestGalleryBatchRoutesReturnPartialResultsAndOneAuthorizedZIP(t *testing.T)
 	}
 }
 
+func TestGalleryBatchDownloadPromotesLegacyUnknownSizeAndMapsDirectLimitToExportTooLarge(t *testing.T) {
+	client, err := repoent.Open(dialect.SQLite, "file:gallery-batch-limits-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: time.Hour, Issuer: "test", AccessTokenSecret: "secret", RefreshCookieName: "refresh",
+	}, map[string]string{"basic": "1.00000"})
+	session := loginExistingAuthUser(t, authSvc, "gallery-export-limits@example.com")
+	projects := projectservice.NewService(entstore.NewProjectStore(client))
+	project, err := projects.EnsureDefault(t.Context(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := storage.NewLocalBackend(t.TempDir())
+	storageRouter := storage.NewStaticRouter(backend)
+	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(config.Config{}, nil, entstore.NewImageTaskStore(client), nil, nil, storageRouter)
+	taskSvc.SetProjectResolver(projects)
+	api := handlers.NewAPIWithTaskService(config.Config{}, authSvc, nil, taskSvc)
+	api.SetProjectService(projects)
+	api.SetGalleryExportService(galleryexportservice.NewService(entstore.NewGalleryExportStore(client), storageRouter, galleryexportservice.Options{
+		DirectMaxCount: 10, DirectMaxEstimatedBytes: 1 << 20, MaxSourceBytes: 4, MaxArchiveBytes: 1 << 20,
+	}))
+	handler := NewWithAPI(api)
+
+	legacyID := seedGalleryBatchAPIImage(t, client, backend, 1, project.ID, "legacy", "legacy")
+	if err := client.ImageResult.UpdateOneID(uuid.MustParse(legacyID)).SetFileSizeBytes(0).Exec(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	legacy := galleryBatchRequest(t, handler, session.AccessToken, "/api/agent/gallery/v1/images:batch-download", map[string]any{
+		"image_ids": []string{legacyID}, "project_id": project.ID,
+	})
+	if legacy.Code != http.StatusAccepted {
+		t.Fatalf("legacy unknown-size export status=%d body=%s", legacy.Code, legacy.Body.String())
+	}
+
+	oversizedID := seedGalleryBatchAPIImage(t, client, backend, 1, project.ID, "oversized", "oversized")
+	if err := client.ImageResult.UpdateOneID(uuid.MustParse(oversizedID)).SetFileSizeBytes(1).Exec(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	oversized := galleryBatchRequest(t, handler, session.AccessToken, "/api/agent/gallery/v1/images:batch-download", map[string]any{
+		"image_ids": []string{oversizedID}, "project_id": project.ID,
+	})
+	if oversized.Code != http.StatusRequestEntityTooLarge || !bytes.Contains(oversized.Body.Bytes(), []byte(`"code":"EXPORT_TOO_LARGE"`)) {
+		t.Fatalf("direct over-limit export status=%d body=%s", oversized.Code, oversized.Body.String())
+	}
+}
+
 func TestGalleryAsyncExportStatusAndDownloadAreOwnerScopedAndExpire(t *testing.T) {
 	client, err := repoent.Open(dialect.SQLite, "file:gallery-async-api-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
 	if err != nil {

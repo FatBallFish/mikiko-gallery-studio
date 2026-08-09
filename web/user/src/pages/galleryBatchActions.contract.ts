@@ -17,7 +17,15 @@ if (!runGalleryBatch) throw new Error('gallery batch actions need runGalleryBatc
 
 const invertLoadedGallerySelection = model.invertLoadedGallerySelection as ((current: ReadonlySet<string>, loadedIDs: string[]) => Set<string>) | undefined
 const reconcileGalleryBatchSelection = model.reconcileGalleryBatchSelection as ((current: ReadonlySet<string>, succeeded: string[], failed: string[]) => Set<string>) | undefined
-const pollGalleryExportJob = model.pollGalleryExportJob as ((initial: ExportStatus, getStatus: (jobID: string, signal?: AbortSignal) => Promise<ExportStatus>, options?: { maxAttempts?: number; wait?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal; now?: () => number; marginMs?: number }) => Promise<ExportStatus>) | undefined
+const pollGalleryExportJob = model.pollGalleryExportJob as ((initial: ExportStatus, getStatus: (jobID: string, signal?: AbortSignal) => Promise<ExportStatus>, options?: {
+	maxAttempts?: number
+	wait?: (signal?: AbortSignal) => Promise<void>
+	signal?: AbortSignal
+	now?: () => number
+	marginMs?: number
+	setTimer?: (callback: () => void, delayMs: number) => unknown
+	clearTimer?: (timer: unknown) => void
+}) => Promise<ExportStatus>) | undefined
 if (!invertLoadedGallerySelection || !reconcileGalleryBatchSelection || !pollGalleryExportJob) {
   throw new Error('gallery batch actions need selection reconciliation and bounded export polling')
 }
@@ -103,6 +111,58 @@ try {
 } catch (error) { refreshedDeadlineMessage = error instanceof Error ? error.message : String(error) }
 if (!refreshedDeadlineMessage.includes('timed out') || refreshedDeadlineFetches !== 1) {
 	throw new Error(`polling must refresh the authoritative deadline from every response, message=${refreshedDeadlineMessage} fetches=${refreshedDeadlineFetches}`)
+}
+
+const stalledDeadline = new Date(Date.now() + 20).toISOString()
+const stalledResult = await Promise.race([
+	pollGalleryExportJob(
+		{ job: { id: 'export-stalled', state: 'running', deadline_at: stalledDeadline } },
+		async () => await new Promise<ExportStatus>(() => undefined),
+		{ marginMs: 0, wait: async () => undefined },
+	).then(() => 'unexpected success', (error) => error instanceof Error ? error.message : String(error)),
+	new Promise<string>((resolve) => setTimeout(() => resolve('watchdog expired'), 150)),
+])
+if (!stalledResult.includes('timed out')) {
+	throw new Error(`a never-resolving status fetch must abort at the server deadline, got ${stalledResult}`)
+}
+
+const externalController = new AbortController()
+let externalAbortName = ''
+const externalAbortPoll = pollGalleryExportJob(
+	{ job: { id: 'export-unmount', state: 'running', deadline_at: new Date(Date.now() + 60_000).toISOString() } },
+	async (_jobID, signal) => await new Promise<ExportStatus>((_resolve, reject) => {
+		signal?.addEventListener('abort', () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError')), { once: true })
+	}),
+	{ signal: externalController.signal, wait: async () => undefined },
+)
+setTimeout(() => externalController.abort(), 0)
+try { await externalAbortPoll } catch (error) { externalAbortName = error instanceof Error ? error.name : '' }
+if (externalAbortName !== 'AbortError') {
+	throw new Error(`external unmount abort must remain silent AbortError, got ${externalAbortName}`)
+}
+
+let scheduledTimers = 0
+let clearedTimers = 0
+const timerTokens = new Set<object>()
+const timerCleanupStatus = await pollGalleryExportJob(
+	{ job: { id: 'export-timer-cleanup', state: 'running', deadline_at: new Date(Date.now() + 60_000).toISOString() } },
+	async (jobID) => ({ job: { id: jobID, state: 'succeeded', deadline_at: new Date(Date.now() + 60_000).toISOString() } }),
+	{
+		wait: async () => undefined,
+		setTimer: () => {
+			const token = {}
+			scheduledTimers += 1
+			timerTokens.add(token)
+			return token
+		},
+		clearTimer: (timer) => {
+			clearedTimers += 1
+			timerTokens.delete(timer as object)
+		},
+	},
+)
+if (timerCleanupStatus.job.state !== 'succeeded' || scheduledTimers !== 1 || clearedTimers !== 1 || timerTokens.size !== 0) {
+	throw new Error(`status fetch deadline timer leaked: scheduled=${scheduledTimers} cleared=${clearedTimers} live=${timerTokens.size}`)
 }
 let missingDeadlineMessage = ''
 try {

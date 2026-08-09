@@ -42,6 +42,46 @@ func TestProcessorBuildsQueuedArchiveAndPersistsExpiringCleanupIdentity(t *testi
 	}
 }
 
+func TestProcessorRetainsArchiveWhenCompletionCommittedBeforeConnectionError(t *testing.T) {
+	backend := &exportBackend{objects: map[string][]byte{"source.png": []byte("png")}}
+	store := &ambiguousCompletionStore{attemptStore: attemptStore{
+		activeAttempt: 1,
+		assets:        []Asset{{ID: "one", ObjectKey: "source.png", MIMEType: "image/png"}},
+	}}
+	job := Job{ID: "job-ambiguous", UserID: 7, ProjectID: "project", ImageIDs: []string{"one"}, State: StateRunning, LeaseOwner: "worker", AttemptCount: 1}
+	processor := NewProcessor(store, storage.NewStaticRouter(backend), ProcessorOptions{
+		Owner: "worker", AttemptToken: func() string { return "33333333-3333-4333-8333-333333333333" },
+	})
+
+	processErr := processor.processJob(t.Context(), job, time.Now().UTC())
+	if processErr == nil || processErr.code != "archive_completion_failed" {
+		t.Fatalf("ambiguous completion error=%#v", processErr)
+	}
+	completed := store.completedRequest()
+	if _, exists := backend.objects[completed.ObjectKey]; completed.ObjectKey == "" || !exists {
+		t.Fatalf("committed archive was deleted after ambiguous error: request=%#v objects=%#v", completed, backend.objects)
+	}
+	archive, err := NewService(store, storage.NewStaticRouter(backend), Options{}).DownloadJob(t.Context(), 7, job.ID)
+	if err != nil {
+		t.Fatalf("download committed archive: %v", err)
+	}
+	payload, err := io.ReadAll(archive.Reader)
+	_ = archive.Close()
+	if err != nil || len(payload) == 0 {
+		t.Fatalf("committed archive payload bytes=%d err=%v", len(payload), err)
+	}
+}
+
+type ambiguousCompletionStore struct{ attemptStore }
+
+func (s *ambiguousCompletionStore) CompleteJob(ctx context.Context, req CompleteJobRequest) (Job, error) {
+	job, err := s.attemptStore.CompleteJob(ctx, req)
+	if err != nil {
+		return job, err
+	}
+	return job, errors.New("injected connection reset after commit")
+}
+
 type processorStoreStub struct {
 	exportStoreStub
 	claimed   Job
@@ -212,8 +252,8 @@ func TestProcessorAttemptObjectsAreIsolatedAcrossLeaseTakeoverOrderings(t *testi
 				t.Fatalf("winner=%#v", winner)
 			}
 			oldKey := "gallery-exports/7/job-takeover/attempt-1-11111111-1111-4111-8111-111111111111.zip"
-			if backend.exists(oldKey) {
-				t.Fatalf("stale attempt object remains: %s", oldKey)
+			if !backend.exists(oldKey) {
+				t.Fatalf("stale attempt must remain for reference-aware orphan reconciliation: %s", oldKey)
 			}
 			if !backend.exists(winner.ObjectKey) {
 				t.Fatalf("winner object was deleted: %s", winner.ObjectKey)

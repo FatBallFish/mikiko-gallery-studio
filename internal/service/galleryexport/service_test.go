@@ -58,6 +58,23 @@ func TestCreateDownloadPromotesLargeSelectionsToDurableJob(t *testing.T) {
 	}
 }
 
+func TestCreateDownloadPromotesUnknownAssetSizeToDurableJob(t *testing.T) {
+	store := &exportStoreStub{assets: []Asset{{ID: "legacy", FileSizeBytes: 0, ObjectKey: "legacy.png"}}}
+	service := NewService(store, storage.NewStaticRouter(&exportBackend{objects: map[string][]byte{"legacy.png": []byte("content")}}), Options{
+		DirectMaxCount: 10, DirectMaxEstimatedBytes: 1 << 20,
+	})
+	result, err := service.CreateDownload(t.Context(), CreateDownloadRequest{UserID: 7, ProjectID: "project", ImageIDs: []string{"legacy"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Archive != nil || result.Job == nil || result.Job.State != StateQueued {
+		if result.Archive != nil {
+			_ = result.Archive.Close()
+		}
+		t.Fatalf("unknown-size download must be asynchronous: %#v", result)
+	}
+}
+
 func TestBuildArchiveSanitizesAndDeduplicatesNamesAndReportsReadFailures(t *testing.T) {
 	backend := &exportBackend{
 		objects: map[string][]byte{"ok-1": []byte("first"), "ok-2": []byte("second")},
@@ -153,12 +170,113 @@ func TestBuildArchiveUsesTempFileAndCleansItUp(t *testing.T) {
 
 func TestCreateDownloadAppliesDirectDeadline(t *testing.T) {
 	backend := &blockingExportBackend{started: make(chan struct{})}
-	service := NewService(&exportStoreStub{assets: []Asset{{ID: "one", ObjectKey: "one"}}}, storage.NewStaticRouter(backend), Options{DirectTimeout: 20 * time.Millisecond})
+	service := NewService(&exportStoreStub{assets: []Asset{{ID: "one", ObjectKey: "one", FileSizeBytes: 1}}}, storage.NewStaticRouter(backend), Options{DirectTimeout: 20 * time.Millisecond})
 	_, err := service.CreateDownload(t.Context(), CreateDownloadRequest{UserID: 7, ProjectID: "project", ImageIDs: []string{"one"}})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("direct deadline error=%v", err)
 	}
 }
+
+func TestDownloadJobBoundsLocalAndS3ReaderLifetimeWithResponseDeadline(t *testing.T) {
+	for _, driver := range []string{"local", "s3"} {
+		t.Run(driver, func(t *testing.T) {
+			backend := &deadlineDownloadBackend{driver: driver, contexts: make(chan context.Context, 1)}
+			expires := time.Now().UTC().Add(time.Hour)
+			store := &downloadJobStore{job: Job{
+				ID: "job-1", UserID: 7, State: StateSucceeded, StorageDriver: driver,
+				ObjectKey: "gallery-exports/7/job-1.zip", ArchiveSizeBytes: 7, ExpiresAt: &expires,
+			}}
+			service := NewService(store, storage.NewStaticRouter(backend), Options{LifecycleTimeout: 30 * time.Millisecond})
+			archive, err := service.DownloadJob(t.Context(), 7, "job-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if archive.ResponseDeadline.IsZero() {
+				_ = archive.Close()
+				t.Fatal("async archive is missing response deadline")
+			}
+			ctx := <-backend.contexts
+			ctxDeadline, ok := ctx.Deadline()
+			if !ok || !ctxDeadline.Equal(archive.ResponseDeadline) {
+				_ = archive.Close()
+				t.Fatalf("reader deadline=%v ok=%v response deadline=%v", ctxDeadline, ok, archive.ResponseDeadline)
+			}
+			result := make(chan error, 1)
+			go func() {
+				_, readErr := io.ReadAll(archive.Reader)
+				result <- readErr
+			}()
+			select {
+			case readErr := <-result:
+				if !errors.Is(readErr, context.DeadlineExceeded) {
+					t.Fatalf("slow %s read error=%v", driver, readErr)
+				}
+			case <-time.After(250 * time.Millisecond):
+				_ = archive.Close()
+				t.Fatalf("slow %s read ignored async deadline", driver)
+			}
+			_ = archive.Close()
+		})
+	}
+}
+
+func TestDownloadJobArchiveCloseCancelsOwnedReaderContext(t *testing.T) {
+	backend := &deadlineDownloadBackend{driver: "local", contexts: make(chan context.Context, 1)}
+	expires := time.Now().UTC().Add(time.Hour)
+	store := &downloadJobStore{job: Job{ID: "job-close", UserID: 7, State: StateSucceeded, StorageDriver: "local", ObjectKey: "gallery-exports/7/job-close.zip", ArchiveSizeBytes: 7, ExpiresAt: &expires}}
+	archive, err := NewService(store, storage.NewStaticRouter(backend), Options{LifecycleTimeout: time.Hour}).DownloadJob(t.Context(), 7, "job-close")
+	if err != nil {
+		t.Fatal(err)
+	}
+	readerCtx := <-backend.contexts
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-readerCtx.Done():
+		if !errors.Is(readerCtx.Err(), context.Canceled) {
+			t.Fatalf("reader close context error=%v", readerCtx.Err())
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("archive close did not cancel owned reader context")
+	}
+}
+
+type downloadJobStore struct {
+	exportStoreStub
+	job Job
+}
+
+func (s *downloadJobStore) GetJob(context.Context, int64, string, time.Time) (Job, error) {
+	return s.job, nil
+}
+
+type deadlineDownloadBackend struct {
+	driver   string
+	contexts chan context.Context
+}
+
+func (b *deadlineDownloadBackend) Driver() string                                  { return b.driver }
+func (*deadlineDownloadBackend) Put(context.Context, string, string, []byte) error { return nil }
+func (*deadlineDownloadBackend) PutReader(context.Context, string, string, io.Reader, int64) error {
+	return nil
+}
+func (*deadlineDownloadBackend) Get(context.Context, string) ([]byte, error) {
+	return nil, storage.ErrNotFound
+}
+func (b *deadlineDownloadBackend) OpenReader(ctx context.Context, _ string, _ int64) (io.ReadCloser, int64, error) {
+	b.contexts <- ctx
+	return &contextDeadlineReader{ctx: ctx}, 7, nil
+}
+func (*deadlineDownloadBackend) Delete(context.Context, string) error { return nil }
+
+type contextDeadlineReader struct{ ctx context.Context }
+
+func (r *contextDeadlineReader) Read([]byte) (int, error) {
+	<-r.ctx.Done()
+	return 0, r.ctx.Err()
+}
+func (*contextDeadlineReader) Close() error { return nil }
 
 type exportStoreStub struct {
 	assets  []Asset

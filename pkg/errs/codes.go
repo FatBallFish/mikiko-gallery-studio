@@ -57,6 +57,7 @@ const (
 	CodeTextModelDefaultRequired       = "TEXT_MODEL_DEFAULT_REQUIRED"
 	CodeStorageNamespaceImmutable      = "STORAGE_NAMESPACE_IMMUTABLE"
 	CodeReferenceAliasCreationNotReady = "REFERENCE_ALIAS_CREATION_NOT_READY"
+	CodeExportTooLarge                 = "EXPORT_TOO_LARGE"
 	CodeDefaultProjectImmutable        = "default_project_immutable"
 	CodeProjectNotEmpty                = "project_not_empty"
 	CodeProjectChanged                 = "project_changed"

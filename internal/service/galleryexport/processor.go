@@ -135,6 +135,9 @@ func (p *Processor) processJob(ctx context.Context, job Job, now time.Time) *job
 	}
 	archive, err := p.service.buildArchive(ctx, assets)
 	if err != nil {
+		if errors.Is(err, ErrBatchTooLarge) || errors.Is(err, ErrSourceLimitExceeded) || errors.Is(err, ErrArchiveLimitExceeded) {
+			return &jobProcessError{code: ErrorExportTooLarge, message: "gallery export exceeds the configured size limit"}
+		}
 		return &jobProcessError{code: "archive_build_failed", message: err.Error()}
 	}
 	defer archive.Close()
@@ -163,7 +166,6 @@ func (p *Processor) processJob(ctx context.Context, job Job, now time.Time) *job
 		ObjectKey: objectKey, ArchiveSizeBytes: archive.Size, ExpiresAt: completedAt.Add(p.opts.ArchiveTTL), CompletedAt: completedAt,
 	})
 	if err != nil {
-		_ = writer.Backend.Delete(context.WithoutCancel(ctx), objectKey)
 		if errors.Is(err, repoerr.ErrConflict) {
 			return nil
 		}

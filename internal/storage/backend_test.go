@@ -125,6 +125,54 @@ func TestS3BackendStreamingRequestUsesKnownLengthAndClosesBoundedResponse(t *tes
 	}
 }
 
+func TestS3StreamingTransfersUseCallerDeadlineBeyondThirtySeconds(t *testing.T) {
+	observed := make([]time.Duration, 0, 2)
+	backend, err := NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{Endpoint: "https://s3.example.test", Region: "us-east-1", Bucket: "bucket", AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		deadline, ok := req.Context().Deadline()
+		if !ok {
+			return nil, errors.New("streaming request is missing caller deadline")
+		}
+		observed = append(observed, time.Until(deadline))
+		switch req.Method {
+		case http.MethodPut:
+			if _, err := io.ReadAll(req.Body); err != nil {
+				return nil, err
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+		case http.MethodGet:
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("archive")), ContentLength: 7, Header: make(http.Header)}, nil
+		default:
+			return nil, fmt.Errorf("unexpected method %s", req.Method)
+		}
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	if err := backend.PutReader(ctx, "gallery-exports/job/attempt.zip", "application/zip", strings.NewReader("archive"), 7); err != nil {
+		t.Fatal(err)
+	}
+	reader, _, err := backend.OpenReader(ctx, "gallery-exports/job/attempt.zip", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, readErr := io.ReadAll(reader)
+	closeErr := reader.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		t.Fatal(err)
+	}
+	if len(observed) != 2 {
+		t.Fatalf("streaming request deadlines=%v", observed)
+	}
+	for _, remaining := range observed {
+		if remaining < 40*time.Second {
+			t.Fatalf("S3 client shortened caller transfer deadline to %s", remaining)
+		}
+	}
+}
+
 func TestS3BackendPutReaderPreservesContextErrorsBeforeSizeMismatch(t *testing.T) {
 	for _, test := range []struct {
 		name    string

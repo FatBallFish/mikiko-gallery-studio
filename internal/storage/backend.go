@@ -672,6 +672,8 @@ type S3Backend struct {
 	now             func() time.Time
 }
 
+const defaultS3RequestTimeout = 30 * time.Second
+
 func NewS3Backend(cfg config.StorageConfig) (*S3Backend, error) {
 	rawEndpoint := strings.TrimSpace(cfg.S3.Endpoint)
 	if rawEndpoint == "" {
@@ -701,7 +703,7 @@ func NewS3Backend(cfg config.StorageConfig) (*S3Backend, error) {
 		secretAccessKey: strings.TrimSpace(cfg.S3.SecretAccessKey),
 		prefix:          strings.Trim(strings.TrimSpace(cfg.S3.Prefix), "/"),
 		forcePathStyle:  cfg.S3.ForcePathStyle,
-		client:          &http.Client{Timeout: 30 * time.Second},
+		client:          &http.Client{},
 		now:             time.Now,
 	}, nil
 }
@@ -792,6 +794,8 @@ func awsCanonicalQuery(query url.Values) string {
 }
 
 func (b *S3Backend) Put(ctx context.Context, objectKey string, contentType string, content []byte) error {
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	req, err := b.newSignedRequest(ctx, http.MethodPut, objectKey, contentType, content)
 	if err != nil {
 		return err
@@ -856,6 +860,8 @@ func (b *S3Backend) PutReader(ctx context.Context, objectKey, contentType string
 }
 
 func (b *S3Backend) Get(ctx context.Context, objectKey string) ([]byte, error) {
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	req, err := b.newSignedRequest(ctx, http.MethodGet, objectKey, "", nil)
 	if err != nil {
 		return nil, err
@@ -883,6 +889,8 @@ func (b *S3Backend) GetBounded(ctx context.Context, objectKey string, maxBytes i
 	if err := contextError(ctx); err != nil {
 		return nil, err
 	}
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	req, err := b.newSignedRequest(ctx, http.MethodGet, objectKey, "", nil)
 	if err != nil {
 		return nil, err
@@ -941,6 +949,8 @@ func (b *S3Backend) OpenReader(ctx context.Context, objectKey string, maxBytes i
 }
 
 func (b *S3Backend) Copy(ctx context.Context, sourceKey, destinationKey string) error {
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	sourceKey = b.normalizeKey(sourceKey)
 	if sourceKey == "" {
 		return ErrNotFound
@@ -1124,7 +1134,19 @@ func contextError(ctx context.Context) error {
 	return ctx.Err()
 }
 
+func withDefaultS3RequestTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultS3RequestTimeout)
+}
+
 func (b *S3Backend) Delete(ctx context.Context, objectKey string) error {
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	req, err := b.newSignedRequest(ctx, http.MethodDelete, objectKey, "", nil)
 	if err != nil {
 		return err
@@ -1145,6 +1167,8 @@ func (b *S3Backend) Delete(ctx context.Context, objectKey string) error {
 }
 
 func (b *S3Backend) ListObjects(ctx context.Context, prefix, cursor string, limit int) (ObjectPage, error) {
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	prefix, err := normalizeListPrefix(prefix)
 	if err != nil {
 		return ObjectPage{}, err
