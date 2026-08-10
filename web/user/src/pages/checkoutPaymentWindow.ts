@@ -1,4 +1,4 @@
-import type { PaymentVisibleMethod } from '../../../shared/api-types'
+import type { PublicPaymentVisibleMethod } from '../../../shared/api-types'
 import type { CheckoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 
 type PaymentWindowElement = {
@@ -38,10 +38,9 @@ export function reservePaymentWindow(openWindow: OpenPaymentWindow = defaultOpen
   return paymentWindow
 }
 
-export function paymentMethodNeedsReservedWindow(method: PaymentVisibleMethod | undefined) {
-  const providerType = method?.source_provider_type?.trim().toLowerCase()
+export function paymentMethodNeedsReservedWindow(method: PublicPaymentVisibleMethod | undefined) {
   const methodCode = method?.method.trim().toLowerCase()
-  return providerType !== 'stripe' && providerType !== 'mock' && methodCode !== 'stripe' && methodCode !== 'mock'
+  return methodCode !== 'stripe' && methodCode !== 'mock'
 }
 
 export function dispatchPaymentWindow(

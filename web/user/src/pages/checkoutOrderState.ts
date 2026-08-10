@@ -1,4 +1,5 @@
-import type { CashierOrder, CashierPurchaseType, PaymentProviderType, PaymentVisibleMethod } from '../../../shared/api-types'
+import type { CashierOrder, CashierPurchaseType, PaymentProviderType, PublicPaymentVisibleMethod } from '../../../shared/api-types'
+import { checkoutPublicPaymentMethod } from './checkoutPaymentMethods'
 
 export function checkoutMoney(value?: string) {
   return value ? `¥${Number(value).toFixed(2)}` : '¥0.00'
@@ -57,13 +58,13 @@ const CHECKOUT_PAYMENT_METHOD_LABELS: Record<string, string> = {
   alipay_direct: '支付宝',
   wxpay: '微信支付',
   wxpay_direct: '微信支付',
-  easypay_alipay: '易支付支付宝',
-  easypay_wxpay: '易支付微信',
-  jeepay_alipay: 'JeePay 支付宝',
-  jeepay_wxpay: 'JeePay 微信',
-  manual_alipay: '人工确认 · 支付宝',
-  manual_wxpay: '人工确认 · 微信支付',
-  manual_bank: '人工确认 · 银行转账',
+  easypay_alipay: '支付宝',
+  easypay_wxpay: '微信支付',
+  jeepay_alipay: '支付宝',
+  jeepay_wxpay: '微信支付',
+  manual_alipay: '支付宝',
+  manual_wxpay: '微信支付',
+  manual_bank: '银行转账',
 }
 
 export function checkoutOrderStatusLabel(status?: string) {
@@ -105,28 +106,9 @@ export function checkoutPaymentMethodLabel(order: { visible_method?: string; pro
   return CHECKOUT_PAYMENT_METHOD_LABELS[normalized] ?? raw
 }
 
-export function checkoutPaymentMethodOptionModel(method: PaymentVisibleMethod): CheckoutPaymentMethodOptionModel {
-  const rawMethod = method.method.trim()
-  const rawProvider = (method.source_provider_type ?? '').trim()
-  const label = method.label.trim() || checkoutPaymentMethodLabel({
-    visible_method: rawMethod,
-    provider_type: rawProvider,
-    provider: '',
-  })
-  const providerLabel = checkoutPaymentMethodLabel({
-    visible_method: '',
-    provider_type: rawProvider,
-    provider: '',
-  })
-  const detail = method.description?.trim()
-    || (rawMethod === 'mock' || rawProvider === 'mock'
-      ? '测试环境模拟支付'
-      : providerLabel !== '-' ? (providerLabel === rawProvider ? providerLabel : `${providerLabel} 渠道`) : rawMethod || '-')
-  return {
-    rawMethod,
-    label,
-    detail,
-  }
+export function checkoutPaymentMethodOptionModel(method: PublicPaymentVisibleMethod): CheckoutPaymentMethodOptionModel {
+  const publicMethod = checkoutPublicPaymentMethod(method)
+  return { rawMethod: publicMethod.rawMethod, label: publicMethod.label, detail: publicMethod.detail }
 }
 
 export function checkoutRecentOrderRows(orders: CheckoutRecentOrder[], limit = 10): CheckoutRecentOrderRow[] {

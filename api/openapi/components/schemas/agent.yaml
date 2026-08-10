@@ -567,6 +567,20 @@ components:
           type: integer
         description:
           type: string
+    CashierPublicVisibleMethod:
+      type: object
+      additionalProperties: false
+      required: [method, label, enabled, display_order]
+      properties:
+        method:
+          type: string
+          enum: [alipay, wxpay, stripe, mock]
+        label:
+          type: string
+        enabled:
+          type: boolean
+        display_order:
+          type: integer
     CashierOptionsResponse:
       type: object
       properties:
@@ -583,7 +597,7 @@ components:
             visible_methods:
               type: array
               items:
-                $ref: '#/components/schemas/CashierVisibleMethod'
+                $ref: '#/components/schemas/CashierPublicVisibleMethod'
             order_timeout_seconds:
               type: integer
     PaymentDisplay:

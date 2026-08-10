@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { galleryImageAspect, pruneGallerySelection, selectVisibleGalleryImages, toggleGalleryImageSelection } from './galleryExperience'
+import { galleryImageAspect, galleryMarqueeSelection, gallerySelectionClickAction, gallerySelectionDragDistance, pruneGallerySelection, selectVisibleGalleryImages, toggleGalleryImageSelection } from './galleryExperience'
 
 const galleryModel = await import('./galleryExperience') as unknown as Record<string, unknown>
 type GalleryRow = { id: string }
@@ -27,6 +27,26 @@ if (galleryImageAspect({ width: 0, height: 0, aspectRatio: '3:4' }) !== '3 / 4')
 
 if (galleryImageAspect({ aspectRatio: 'unexpected' }) !== '4 / 3') {
   throw new Error('gallery image geometry should have a stable fallback')
+}
+
+if (gallerySelectionDragDistance({ x: 10, y: 20 }, { x: 14, y: 24 }) >= 6) {
+  throw new Error('small pointer movement must remain a normal click')
+}
+if (gallerySelectionDragDistance({ x: 10, y: 20 }, { x: 17, y: 20 }) < 6) {
+  throw new Error('a 6px-or-greater desktop drag must enter marquee selection')
+}
+
+const marqueeItems = [
+  { id: 'one', rect: { left: 10, top: 10, right: 50, bottom: 50 } },
+  { id: 'two', rect: { left: 70, top: 10, right: 110, bottom: 50 } },
+  { id: 'three', rect: { left: 130, top: 10, right: 170, bottom: 50 } },
+]
+const replaced = galleryMarqueeSelection(new Set(['three']), marqueeItems, { left: 0, top: 0, right: 120, bottom: 60 }, false)
+if (JSON.stringify([...replaced]) !== JSON.stringify(['one', 'two'])) throw new Error(`marquee replacement mismatch: ${JSON.stringify([...replaced])}`)
+const appended = galleryMarqueeSelection(new Set(['three']), marqueeItems, { left: 0, top: 0, right: 120, bottom: 60 }, true)
+if (JSON.stringify([...appended]) !== JSON.stringify(['three', 'one', 'two'])) throw new Error(`marquee additive mismatch: ${JSON.stringify([...appended])}`)
+if (gallerySelectionClickAction(1) !== 'toggle' || gallerySelectionClickAction(0) !== 'open') {
+  throw new Error('card clicks must toggle while selection mode is active and open detail otherwise')
 }
 
 const selected = toggleGalleryImageSelection(new Set(['image_1']), 'image_2')
@@ -142,6 +162,20 @@ if (!privateGallerySource.includes("card: 'group/asset")) {
 
 if (!privateGallerySource.includes("selectedIds.has(image.id) && galleryClasses.assetSelectVisualSelected")) {
   throw new Error('selected gallery assets must keep the compact checkbox visible')
+}
+
+for (const interactionContract of [
+  'data-gallery-selection-surface',
+  'data-gallery-image-id={image.id}',
+  'onPointerDown={beginMarqueeSelection}',
+  'gallery-selection-marquee',
+  'gallerySelectionClickAction(selectedIds.size)',
+  'RefreshCw',
+  'aria-label="刷新资产"',
+]) {
+  if (!privateGallerySource.includes(interactionContract)) {
+    throw new Error(`private gallery selection and refresh must wire ${interactionContract}`)
+  }
 }
 
 for (const visibleBatchContract of [

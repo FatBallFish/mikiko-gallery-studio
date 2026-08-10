@@ -364,10 +364,11 @@ export type PaymentVisibleMethod = {
   display_order: number
   description?: string
 }
+export type PublicPaymentVisibleMethod = Pick<PaymentVisibleMethod, 'method' | 'label' | 'enabled' | 'display_order'>
 export type CashierOptions = {
   plans: CashierPlan[]
   custom_amount: CashierCustomAmountConfig
-  visible_methods: PaymentVisibleMethod[]
+  visible_methods: PublicPaymentVisibleMethod[]
   order_timeout_seconds: number
 }
 export type CashierPurchaseType = 'plan' | 'custom_amount' | string

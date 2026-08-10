@@ -104,13 +104,13 @@ const methodCases: Array<[Partial<PaymentOrder>, string]> = [
   [{ visible_method: 'mock', provider: 'mock', provider_type: 'mock' }, 'Mock 测试'],
   [{ visible_method: 'alipay', provider: '', provider_type: 'alipay_direct' }, '支付宝'],
   [{ visible_method: 'wxpay', provider: '', provider_type: 'wxpay_direct' }, '微信支付'],
-  [{ visible_method: '', provider: 'easypay_alipay', provider_type: 'easypay_alipay' }, '易支付支付宝'],
-  [{ visible_method: '', provider: 'easypay_wxpay', provider_type: 'easypay_wxpay' }, '易支付微信'],
-  [{ visible_method: '', provider: 'jeepay_alipay', provider_type: 'jeepay_alipay' }, 'JeePay 支付宝'],
-  [{ visible_method: '', provider: 'jeepay_wxpay', provider_type: 'jeepay_wxpay' }, 'JeePay 微信'],
-  [{ visible_method: '', provider: 'manual_alipay', provider_type: 'manual_alipay' }, '人工确认 · 支付宝'],
-  [{ visible_method: '', provider: 'manual_wxpay', provider_type: 'manual_wxpay' }, '人工确认 · 微信支付'],
-  [{ visible_method: '', provider: 'manual_bank', provider_type: 'manual_bank' }, '人工确认 · 银行转账'],
+  [{ visible_method: '', provider: 'easypay_alipay', provider_type: 'easypay_alipay' }, '支付宝'],
+  [{ visible_method: '', provider: 'easypay_wxpay', provider_type: 'easypay_wxpay' }, '微信支付'],
+  [{ visible_method: '', provider: 'jeepay_alipay', provider_type: 'jeepay_alipay' }, '支付宝'],
+  [{ visible_method: '', provider: 'jeepay_wxpay', provider_type: 'jeepay_wxpay' }, '微信支付'],
+  [{ visible_method: '', provider: 'manual_alipay', provider_type: 'manual_alipay' }, '支付宝'],
+  [{ visible_method: '', provider: 'manual_wxpay', provider_type: 'manual_wxpay' }, '微信支付'],
+  [{ visible_method: '', provider: 'manual_bank', provider_type: 'manual_bank' }, '银行转账'],
   [{ visible_method: '', provider: '', provider_type: '' }, '-'],
 ]
 
@@ -121,7 +121,7 @@ for (const [orderFields, expected] of methodCases) {
   }
 }
 
-const alipayMethod = checkoutPaymentMethodOptionModel({ method: 'alipay', label: '支付宝', enabled: true, source_provider_type: 'alipay_direct', display_order: 1 })
+const alipayMethod = checkoutPaymentMethodOptionModel({ method: 'alipay', label: '支付宝', enabled: true, display_order: 1 })
 if (alipayMethod.label !== '支付宝' || !alipayMethod.detail.includes('支付宝') || alipayMethod.rawMethod !== 'alipay') {
   throw new Error(`checkout payment method option should keep raw method and display user-facing label/detail, got ${JSON.stringify(alipayMethod)}`)
 }
@@ -129,17 +129,17 @@ if (/^alipay$|^wxpay$|^mock$/.test(alipayMethod.detail)) {
   throw new Error(`checkout payment method detail should not expose raw method as visible helper text, got ${JSON.stringify(alipayMethod)}`)
 }
 
-const wxpayMethod = checkoutPaymentMethodOptionModel({ method: 'wxpay', label: '', enabled: true, source_provider_type: 'jeepay_wxpay', display_order: 2 })
-if (wxpayMethod.label !== '微信支付' || !wxpayMethod.detail.includes('JeePay 微信')) {
-  throw new Error(`checkout wxpay option should fallback to localized method/provider labels, got ${JSON.stringify(wxpayMethod)}`)
+const wxpayMethod = checkoutPaymentMethodOptionModel({ method: 'wxpay', label: '', enabled: true, display_order: 2 })
+if (wxpayMethod.label !== '微信支付' || !wxpayMethod.detail.includes('微信支付') || /jeepay|渠道/i.test(wxpayMethod.detail)) {
+  throw new Error(`checkout wxpay option should use only public brand copy, got ${JSON.stringify(wxpayMethod)}`)
 }
 
-const mockMethod = checkoutPaymentMethodOptionModel({ method: 'mock', label: '', enabled: true, source_provider_type: 'mock', display_order: 3 })
-if (mockMethod.label !== 'Mock 测试' || !mockMethod.detail.includes('测试环境')) {
+const mockMethod = checkoutPaymentMethodOptionModel({ method: 'mock', label: '', enabled: true, display_order: 3 })
+if (mockMethod.label !== '测试支付' || !mockMethod.detail.includes('测试环境')) {
   throw new Error(`checkout mock option should clearly mark test environment usage, got ${JSON.stringify(mockMethod)}`)
 }
 
-const customMethod = checkoutPaymentMethodOptionModel({ method: 'bank_transfer', label: '', enabled: true, source_provider_type: 'manual_bank', display_order: 4 })
-if (customMethod.label !== 'bank_transfer' || customMethod.detail !== '人工确认 · 银行转账 渠道') {
-  throw new Error(`checkout visible method option should localize known manual provider details while preserving custom visible method labels, got ${JSON.stringify(customMethod)}`)
+const customMethod = checkoutPaymentMethodOptionModel({ method: 'bank_transfer', label: '', enabled: true, display_order: 4 })
+if (customMethod.label !== '在线支付' || /渠道|provider|manual/i.test(customMethod.detail)) {
+  throw new Error(`checkout visible method option must hide internal routing details, got ${JSON.stringify(customMethod)}`)
 }

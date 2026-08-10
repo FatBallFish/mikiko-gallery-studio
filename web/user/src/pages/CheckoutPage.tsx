@@ -1,21 +1,25 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import type { CashierOptions, CashierOrder, CashierPlan, PaymentVisibleMethod } from '../../../shared/api-types'
+import type { CashierOptions, CashierOrder, CashierPlan, PublicPaymentVisibleMethod } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, LoadingState, useApp } from '../components'
 import { rdBilling } from '../ui/redesign-classes'
-import { Wallet, CreditCard, QrCode } from '../ui/icons'
+import { QrCode } from '../ui/icons'
 import { errorMessage } from '../useApiResource'
 import { checkoutPaymentMethodEmptyState, checkoutPlanEmptyState, checkoutUnavailableEmptyState, type CheckoutUnavailableEmptyState } from './checkoutEmptyState'
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import { checkoutPaymentErrorMessage } from './checkoutPaymentError'
 import { closePaymentWindow, dispatchPaymentWindow, paymentMethodNeedsReservedWindow, reservePaymentWindow } from './checkoutPaymentWindow'
-import { checkoutCancelResultState, checkoutMoney, checkoutOrderActionState, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
+import { checkoutPublicPaymentMethod, type CheckoutPaymentBrand } from './checkoutPaymentMethods'
+import { checkoutCancelResultState, checkoutMoney, checkoutOrderActionState, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
 import { checkoutPlanValidityLabel, checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
 import { RedeemCodeForm } from './RedeemCodeForm'
 import { PaymentMonitorModal } from './PaymentMonitorModal'
 import { PaymentOrderDetailModal } from './PaymentOrderDetailModal'
+import alipayIcon from '../assets/payment/alipay.svg'
+import wechatPayIcon from '../assets/payment/wechat-pay.svg'
+import stripeIcon from '../assets/payment/stripe.svg'
 
 const checkoutClasses = {
   page: 'w-full flex-1 px-4 py-6 sm:px-6 md:px-10 md:py-8',
@@ -32,9 +36,9 @@ const checkoutClasses = {
   planPoints: rdBilling.planPrice,
   planPrice: 'text-[13px] not-italic text-[var(--fg)]',
   optionMeta: 'text-xs font-semibold text-[var(--muted)]',
-  methodGrid: 'grid grid-cols-1 gap-3',
-  methodButton: 'group flex min-h-[68px] cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-4 text-left text-[var(--fg)] transition-colors hover:border-[var(--accent)] motion-reduce:transition-none',
-  methodIcon: 'grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)]',
+  methodGrid: 'grid grid-cols-2 gap-2 max-[420px]:grid-cols-1',
+  methodButton: 'group flex min-h-[64px] min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg)]/50 p-3 text-left text-[var(--fg)] transition-colors hover:border-[var(--accent)] motion-reduce:transition-none',
+  methodIcon: 'grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg border border-[var(--border)] bg-white text-[var(--accent)]',
   custom: 'mt-4 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]/80 px-4 py-3',
   customResult: 'grid min-h-[70px] gap-1.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5',
   customResultLabel: 'text-xs text-[var(--muted)]',
@@ -462,15 +466,20 @@ function CustomAmountCard({ active, customAmount, customPoints, unitPrice, error
   )
 }
 
-function MethodButton({ method, active, onSelect }: { method: PaymentVisibleMethod; active: boolean; onSelect: () => void }) {
-  const display = checkoutPaymentMethodOptionModel(method)
+function MethodButton({ method, active, onSelect }: { method: PublicPaymentVisibleMethod; active: boolean; onSelect: () => void }) {
+  const display = checkoutPublicPaymentMethod(method)
   return (
     <button type="button" className={cn(checkoutClasses.optionButton, checkoutClasses.methodButton, active && checkoutClasses.optionActive)} onClick={onSelect}>
-      <span className={checkoutClasses.methodIcon}>{method.method.includes('wx') ? <Wallet size={18} strokeWidth={1.5} /> : method.method.includes('ali') ? <CreditCard size={18} strokeWidth={1.5} /> : <QrCode size={18} strokeWidth={1.5} />}</span>
+      <span className={checkoutClasses.methodIcon}><PaymentMethodBrandIcon brand={display.icon} /></span>
       <span className="grid min-w-0 gap-1">
         <strong>{display.label}</strong>
         <span className={checkoutClasses.optionLabel}>{display.detail}</span>
       </span>
     </button>
   )
+}
+
+function PaymentMethodBrandIcon({ brand }: { brand: CheckoutPaymentBrand }) {
+  const source = brand === 'alipay' ? alipayIcon : brand === 'wechat-pay' ? wechatPayIcon : brand === 'stripe' ? stripeIcon : ''
+  return source ? <img className="size-full object-cover" src={source} alt="" aria-hidden="true" /> : <QrCode size={19} strokeWidth={1.6} aria-hidden="true" />
 }

@@ -126,6 +126,12 @@ type API struct {
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
 type cashierVisibleMethod = domaincashier.VisibleMethod
+type publicCashierVisibleMethod struct {
+	Method       string `json:"method"`
+	Label        string `json:"label"`
+	Enabled      bool   `json:"enabled"`
+	DisplayOrder int    `json:"display_order"`
+}
 type cashierProviderInstance = domaincashier.ProviderInstance
 type cashierProviderInstanceWriteRequest = domaincashier.ProviderInstanceWriteRequest
 
@@ -1193,7 +1199,7 @@ func (a *API) HandleCashierOptions(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
 		"plans":                 cashierPlans,
 		"custom_amount":         a.cashierCustomAmountConfig(r.Context()),
-		"visible_methods":       a.cashierVisibleMethods(r.Context(), false),
+		"visible_methods":       a.publicCashierVisibleMethods(r.Context()),
 		"order_timeout_seconds": a.cashierOrderTimeoutSeconds(r.Context()),
 	})
 }
@@ -10149,6 +10155,20 @@ func (a *API) cashierVisibleMethods(ctx context.Context, includeDisabled bool) [
 		return cashierservice.DefaultVisibleMethods()
 	}
 	return methods
+}
+
+func (a *API) publicCashierVisibleMethods(ctx context.Context) []publicCashierVisibleMethod {
+	methods := a.cashierVisibleMethods(ctx, false)
+	public := make([]publicCashierVisibleMethod, 0, len(methods))
+	for _, method := range methods {
+		public = append(public, publicCashierVisibleMethod{
+			Method:       method.Method,
+			Label:        method.Label,
+			Enabled:      method.Enabled,
+			DisplayOrder: method.DisplayOrder,
+		})
+	}
+	return public
 }
 
 func (a *API) cashierVisibleMethod(ctx context.Context, methodName string) (cashierVisibleMethod, bool) {

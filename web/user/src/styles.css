@@ -638,3 +638,13 @@ html[data-theme-mode="dark"] .pg-date-input {
   .prompt-template-editor { min-height: 116px; }
   .prompt-token-preview { display: none; }
 }
+
+.gallery-selection-marquee {
+  position: fixed;
+  z-index: 90;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--bg) 72%, transparent) inset;
+  pointer-events: none;
+}

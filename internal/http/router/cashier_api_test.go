@@ -69,11 +69,27 @@ func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
 			} `json:"visible_methods"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(optionsRec.Body).Decode(&optionsResp); err != nil {
+	optionsBody := append([]byte(nil), optionsRec.Body.Bytes()...)
+	if err := json.NewDecoder(bytes.NewReader(optionsBody)).Decode(&optionsResp); err != nil {
 		t.Fatalf("decode options: %v", err)
 	}
 	if len(optionsResp.Data.Plans) == 0 || len(optionsResp.Data.VisibleMethods) == 0 || optionsResp.Data.VisibleMethods[0].Method != "mock" {
 		t.Fatalf("expected mock cashier options, got %#v", optionsResp.Data)
+	}
+	var publicOptions struct {
+		Data struct {
+			VisibleMethods []map[string]any `json:"visible_methods"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(optionsBody, &publicOptions); err != nil {
+		t.Fatalf("decode public cashier options: %v", err)
+	}
+	for _, method := range publicOptions.Data.VisibleMethods {
+		for _, internalField := range []string{"source_provider_type", "scheduler_strategy", "description"} {
+			if _, exposed := method[internalField]; exposed {
+				t.Fatalf("user cashier options exposed internal field %s: %#v", internalField, method)
+			}
+		}
 	}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"plan","plan_code":"basic-monthly","visible_method":"mock"}`))
