@@ -133,9 +133,6 @@ func (s *AssetsStore) ImportGalleryAlias(ctx context.Context, userID int64, resu
 		}
 		return domainassets.ReferenceAsset{}, err
 	}
-	if strings.TrimSpace(result.ProjectID) == "" || source.ProjectID == nil || source.ProjectID.String() != strings.TrimSpace(result.ProjectID) {
-		return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
-	}
 	task, err := tx.ImageTask.Query().Where(
 		imagetask.IDEQ(source.TaskID),
 		imagetask.UserIDEQ(userID),

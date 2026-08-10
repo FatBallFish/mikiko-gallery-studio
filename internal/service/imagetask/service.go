@@ -1524,6 +1524,23 @@ func (s *Service) GetOwnedImageResult(ctx context.Context, userID int64, imageID
 	return result, nil
 }
 
+func (s *Service) GetOwnedGalleryImage(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	store, ok := s.store.(interface {
+		GetOwnedGalleryImage(context.Context, int64, string) (domainimagetask.GalleryImage, error)
+	})
+	if !ok {
+		return domainimagetask.GalleryImage{}, errs.Internal("direct gallery image lookup is unavailable")
+	}
+	image, err := store.GetOwnedGalleryImage(ctx, userID, imageID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			return domainimagetask.GalleryImage{}, errs.New(404, errs.CodeNotFound, "image not found")
+		}
+		return domainimagetask.GalleryImage{}, errs.Internal("failed to load gallery image")
+	}
+	return s.projectGalleryImageMedia(ctx, image, "/api/agent/image/v1/images/"+url.PathEscape(image.ID))
+}
+
 func (s *Service) DeliverImageResult(ctx context.Context, userID int64, imageID string) (ImageResultDelivery, error) {
 	result, err := s.store.GetImageResultByID(ctx, userID, imageID)
 	if err != nil {

@@ -702,7 +702,6 @@ func TestReferenceAssetsImportFromGalleryCreatesDownloadableReference(t *testing
 	}
 	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
 	assetSvc := assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
-	assetSvc.SetAliasCreationGate(enabledAliasCreationGate{})
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, nil, billingSvc)
 	handler := NewWithAPI(api)
 

@@ -1,30 +1,8 @@
 package assets
 
 import (
-	"errors"
 	"time"
 )
-
-var ErrAliasRolloutChanged = errors.New("alias creation rollout changed")
-
-type AliasCreationRollout struct {
-	Enabled   bool      `json:"enabled"`
-	Version   int64     `json:"version"`
-	UpdatedBy int64     `json:"updated_by,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
-}
-
-type UpdateAliasCreationRolloutRequest struct {
-	Enabled                 bool
-	ExpectedVersion         int64
-	UpdatedBy               int64
-	AllAPINodesCleanupAware bool
-	ActorType               string
-	ActorID                 string
-	RequestID               string
-	IPAddr                  string
-	UserAgent               string
-}
 
 type ReferenceAsset struct {
 	ID                  string              `json:"id"`

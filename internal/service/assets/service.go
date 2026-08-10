@@ -40,7 +40,6 @@ type Service struct {
 	fallback       AttachmentPolicy
 	policyMu       sync.RWMutex
 	policy         *AttachmentPolicyResolver
-	aliasGate      AliasCreationGate
 	assetsByID     map[string]storedAsset
 	assetsByHash   map[string]string
 	assetsBySource map[string]string
@@ -78,22 +77,6 @@ func (s *Service) SetAttachmentPolicyResolver(resolver *AttachmentPolicyResolver
 	s.policyMu.Lock()
 	s.policy = resolver
 	s.policyMu.Unlock()
-}
-
-func (s *Service) SetAliasCreationGate(gate AliasCreationGate) {
-	s.policyMu.Lock()
-	s.aliasGate = gate
-	s.policyMu.Unlock()
-}
-
-func (s *Service) aliasCreationEnabled(ctx context.Context) (bool, error) {
-	s.policyMu.RLock()
-	gate := s.aliasGate
-	s.policyMu.RUnlock()
-	if gate == nil {
-		return false, nil
-	}
-	return gate.AliasCreationEnabled(ctx)
 }
 
 func (s *Service) AttachmentPolicy(ctx context.Context) (AttachmentPolicy, error) {

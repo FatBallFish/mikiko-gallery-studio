@@ -91,19 +91,19 @@ func TestGalleryImageFromMemoryTaskPreservesReusableCreationConfiguration(t *tes
 func TestMemoryGalleryFiltersByOwnedProjectAndProjectsSnapshots(t *testing.T) {
 	store := NewMemoryStore()
 	ctx := context.Background()
-	for _, task := range []domainimagetask.Task{
-		{ID: "project-task-a", UserID: 42, ProjectID: "project-a", Project: &domainimagetask.ProjectSnapshot{ID: "project-a", Name: "A"}, Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{{ID: "project-image-a"}}},
-		{ID: "project-task-b", UserID: 42, ProjectID: "project-b", Project: &domainimagetask.ProjectSnapshot{ID: "project-b", Name: "B"}, Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{{ID: "project-image-b"}}},
-	} {
-		if err := store.Save(ctx, task); err != nil {
-			t.Fatal(err)
-		}
+	task := domainimagetask.Task{
+		ID: "project-task-a", UserID: 42, ProjectID: "project-a",
+		Project: &domainimagetask.ProjectSnapshot{ID: "project-a", Name: "A"}, Status: domainimagetask.StatusSucceeded,
+		Results: []provider.ImageResult{{ID: "project-image-b", ProjectID: "project-b", Project: &domainimagetask.ProjectSnapshot{ID: "project-b", Name: "B"}}},
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatal(err)
 	}
 	page, err := store.ListGalleryByUser(ctx, 42, domainimagetask.GalleryListRequest{Page: 1, PageSize: 20, ProjectID: "project-b"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Items) != 1 || page.Items[0].ID != "project-image-b" || page.Items[0].ProjectID != "project-b" || page.Items[0].Project == nil {
+	if len(page.Items) != 1 || page.Items[0].ID != "project-image-b" || page.Items[0].ProjectID != "project-b" || page.Items[0].Project == nil || page.Items[0].Project.Name != "B" {
 		t.Fatalf("project filtered gallery = %#v", page.Items)
 	}
 }

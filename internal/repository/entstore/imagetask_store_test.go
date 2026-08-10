@@ -157,6 +157,132 @@ func TestTransferImageProjectRejectsDeletedTargetAtomically(t *testing.T) {
 	}
 }
 
+func TestTransferredImagesKeepIndependentProjectOwnership(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:gallery-independent-projects-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	const userID int64 = 78
+	createProject := func(name string, isDefault bool) *repoent.Project {
+		t.Helper()
+		project, createErr := client.Project.Create().
+			SetUserID(userID).
+			SetName(name).
+			SetNameKey(strings.ToLower(name)).
+			SetIsDefault(isDefault).
+			SetStatus(domainproject.StatusActive).
+			Save(ctx)
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		return project
+	}
+	source := createProject("Source", true)
+	firstTarget := createProject("First Target", false)
+	secondTarget := createProject("Second Target", false)
+	task, err := client.ImageTask.Create().
+		SetUserID(userID).
+		SetProjectID(source.ID).
+		SetTaskType(string(provider.TaskTypeTextToImage)).
+		SetPrompt("independent projects").
+		SetAbstractModel("plus").
+		SetStatus(domainimagetask.StatusSucceeded).
+		Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	images := make([]*repoent.ImageResult, 0, 2)
+	for index := range 2 {
+		image, createErr := client.ImageResult.Create().
+			SetTaskID(task.ID).
+			SetUserID(userID).
+			SetProjectID(source.ID).
+			SetObjectKey(fmt.Sprintf("generated/independent-%d.png", index)).
+			SetMimeType("image/png").
+			SetSha256(fmt.Sprintf("independent-%d", index)).
+			Save(ctx)
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		images = append(images, image)
+	}
+
+	store := NewImageTaskStore(client)
+	if _, err := store.TransferImageProject(ctx, userID, images[0].ID.String(), source.ID.String(), firstTarget.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.TransferImageProject(ctx, userID, images[1].ID.String(), source.ID.String(), secondTarget.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+
+	loadedTask, err := store.GetByID(ctx, userID, task.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loadedTask.ProjectID != source.ID.String() || loadedTask.Project == nil || loadedTask.Project.Name != source.Name {
+		t.Fatalf("task project changed after image transfers: %#v", loadedTask.Project)
+	}
+	wantProjects := map[string]*repoent.Project{
+		images[0].ID.String(): firstTarget,
+		images[1].ID.String(): secondTarget,
+	}
+	for _, result := range loadedTask.Results {
+		want := wantProjects[result.ID]
+		if want == nil {
+			t.Fatalf("unexpected result %s", result.ID)
+		}
+		if result.ProjectID != want.ID.String() || result.Project == nil || result.Project.ID != want.ID.String() || result.Project.Name != want.Name {
+			t.Errorf("result %s project=%#v project_id=%q, want %s/%q", result.ID, result.Project, result.ProjectID, want.ID, want.Name)
+		}
+	}
+
+	page, err := store.ListGalleryByUser(ctx, userID, domainimagetask.GalleryListRequest{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, image := range page.Items {
+		want := wantProjects[image.ID]
+		if want == nil {
+			continue
+		}
+		if image.ProjectID != want.ID.String() || image.Project == nil || image.Project.ID != want.ID.String() || image.Project.Name != want.Name {
+			t.Errorf("gallery image %s project=%#v project_id=%q, want %s/%q", image.ID, image.Project, image.ProjectID, want.ID, want.Name)
+		}
+	}
+	owned, err := store.GetOwnedGalleryImage(ctx, userID, images[0].ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owned.ProjectID != firstTarget.ID.String() || owned.Project == nil || owned.Project.Name != firstTarget.Name {
+		t.Fatalf("direct owned image project=%#v project_id=%q", owned.Project, owned.ProjectID)
+	}
+	if _, err := store.GetOwnedGalleryImage(ctx, userID+1, images[0].ID.String()); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("direct lookup must hide another user's image, got %v", err)
+	}
+
+	published, err := store.RequestPublish(ctx, userID, images[0].ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if published.ProjectID != firstTarget.ID.String() || published.Project == nil || published.Project.Name != firstTarget.Name {
+		t.Fatalf("published transferred image project=%#v project_id=%q", published.Project, published.ProjectID)
+	}
+	persistedTask, err := client.ImageTask.Get(ctx, task.ID)
+	if err != nil || persistedTask.ProjectID == nil || *persistedTask.ProjectID != source.ID {
+		t.Fatalf("publish changed task project: project=%v err=%v", persistedTask.ProjectID, err)
+	}
+	persistedSibling, err := client.ImageResult.Get(ctx, images[1].ID)
+	if err != nil || persistedSibling.ProjectID == nil || *persistedSibling.ProjectID != secondTarget.ID {
+		t.Fatalf("publish changed sibling project: project=%v err=%v", persistedSibling.ProjectID, err)
+	}
+}
+
 func TestCleanupClaimUsesSkipLockedOnPostgres(t *testing.T) {
 	table := entsql.Table("object_deletion_jobs")
 	selector := entsql.Dialect(dialect.Postgres).Select().From(table)

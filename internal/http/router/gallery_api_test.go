@@ -5,12 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"entgo.io/ent/dialect"
+	"github.com/google/uuid"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
@@ -19,6 +23,8 @@ import (
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	"github.com/fatballfish/pic-gallery/internal/provider"
+	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
@@ -29,6 +35,78 @@ import (
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
+
+func TestGalleryPublishUsesTransferredImageProject(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:gallery-publish-transferred-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	source, err := client.Project.Create().SetUserID(1).SetName("Source").SetNameKey("source").SetIsDefault(true).SetStatus("active").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := client.Project.Create().SetUserID(1).SetName("Target").SetNameKey("target").SetStatus("active").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := client.ImageTask.Create().SetUserID(1).SetProjectID(source.ID).SetTaskType("text_to_image").SetPrompt("transferred publish").SetAbstractModel("basic").SetStatus(domainimagetask.StatusSucceeded).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	images := make([]*repoent.ImageResult, 0, 2)
+	for index := range 2 {
+		image, createErr := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(1).SetProjectID(source.ID).
+			SetObjectKey(fmt.Sprintf("generated/transferred-publish-%d.png", index)).SetMimeType("image/png").SetSha256(fmt.Sprintf("publish-%d", index)).Save(ctx)
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		images = append(images, image)
+	}
+	store := entstore.NewImageTaskStore(client)
+	if _, err := store.TransferImageProject(ctx, 1, images[0].ID.String(), source.ID.String(), target.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := taskAPIConfig("http://provider.invalid")
+	cfg.Storage.LocalRoot = t.TempDir()
+	authSvc, session := loginTestUser(t, "transferred-publish@example.com")
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, store, nil, nil)
+	projectSvc := projectservice.NewService(entstore.NewProjectStore(client))
+	taskSvc.SetProjectResolver(projectSvc)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, taskSvc, nil, nil)
+	api.SetProjectService(projectSvc)
+	handler := NewWithAPI(api)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/gallery/v1/images/"+images[0].ID.String()+"/publish", nil)
+	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("publish transferred image status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Data domainimagetask.GalleryImage `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Data.ProjectID != target.ID.String() || response.Data.Project == nil || response.Data.Project.Name != target.Name {
+		t.Fatalf("published project=%#v project_id=%q", response.Data.Project, response.Data.ProjectID)
+	}
+	persistedTask, err := client.ImageTask.Get(ctx, task.ID)
+	if err != nil || persistedTask.ProjectID == nil || *persistedTask.ProjectID != source.ID {
+		t.Fatalf("publish changed task project=%v err=%v", persistedTask.ProjectID, err)
+	}
+	persistedSibling, err := client.ImageResult.Get(ctx, images[1].ID)
+	if err != nil || persistedSibling.ProjectID == nil || *persistedSibling.ProjectID != source.ID {
+		t.Fatalf("publish changed sibling project=%v err=%v", persistedSibling.ProjectID, err)
+	}
+}
 
 func TestGalleryPublishReviewAndPublicListFlow(t *testing.T) {
 	imageBytes := tinyPNG(t)

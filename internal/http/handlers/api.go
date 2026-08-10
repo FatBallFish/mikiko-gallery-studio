@@ -93,7 +93,6 @@ type API struct {
 	apiKeys       *apikeyservice.Service
 	billing       *billingservice.Service
 	assets        *assetservice.Service
-	aliasRollout  assetservice.AliasRolloutStore
 	caps          *capserv.Service
 	compat        *compatservice.Service
 	tasks         *imagetaskservice.Service
@@ -301,11 +300,6 @@ func (a *API) SetAdminPermissionResolver(resolver domainadminauth.PermissionReso
 		return
 	}
 	a.adminPerms = resolver
-}
-
-func (a *API) SetAliasRolloutStore(store assetservice.AliasRolloutStore) {
-	a.aliasRollout = store
-	a.assets.SetAliasCreationGate(store)
 }
 
 func (a *API) SetDocsReadinessChecker(checker DocsReadinessChecker) {
@@ -2441,7 +2435,7 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 	}
 	var req struct {
 		GalleryImageIDs []string `json:"gallery_image_ids"`
-		ProjectID       string   `json:"project_id"`
+		ProjectID       string   `json:"project_id"` // Deprecated: accepted for one compatibility window and ignored.
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -2468,21 +2462,11 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 		httpx.WriteError(w, r, errs.BadRequest("gallery_image_ids exceeds limit"))
 		return
 	}
-	selectedProject, err := a.projects.ResolveForWrite(r.Context(), user.ID, req.ProjectID)
-	if err != nil {
-		httpx.WriteError(w, r, projectAppError(err))
-		return
-	}
-
 	items := make([]domainassets.ReferenceAsset, 0, len(ids))
 	for _, imageID := range ids {
 		result, err := a.tasks.GetOwnedImageResult(r.Context(), user.ID, imageID)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		if result.ProjectID != selectedProject.ID {
-			httpx.WriteError(w, r, projectAppError(projectservice.ErrNotFound))
 			return
 		}
 		asset, svcErr := a.assets.ImportGalleryImage(r.Context(), user.ID, result)
@@ -5250,62 +5234,6 @@ func (a *API) HandleAdminConfigTabs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": tabs})
-}
-
-func (a *API) HandleAdminAliasCreationRollout(w http.ResponseWriter, r *http.Request) {
-	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
-	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
-		return
-	}
-	if a.aliasRollout == nil {
-		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeReferenceAliasCreationNotReady, "alias rollout store is unavailable"))
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		status, err := a.aliasRollout.GetAliasCreationRollout(r.Context())
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		httpx.WriteSuccess(w, r, http.StatusOK, status)
-	case http.MethodPost:
-		var req struct {
-			Enabled                 bool  `json:"enabled"`
-			ExpectedVersion         int64 `json:"expected_version"`
-			AllAPINodesCleanupAware bool  `json:"all_api_nodes_cleanup_aware"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
-			return
-		}
-		if req.ExpectedVersion < 0 {
-			httpx.WriteError(w, r, errs.BadRequest("expected_version must not be negative"))
-			return
-		}
-		if req.Enabled && !req.AllAPINodesCleanupAware {
-			httpx.WriteError(w, r, errs.BadRequest("all_api_nodes_cleanup_aware must be confirmed before activation"))
-			return
-		}
-		status, err := a.aliasRollout.UpdateAliasCreationRollout(r.Context(), domainassets.UpdateAliasCreationRolloutRequest{
-			Enabled: req.Enabled, ExpectedVersion: req.ExpectedVersion, UpdatedBy: admin.AdminID,
-			AllAPINodesCleanupAware: req.AllAPINodesCleanupAware,
-			ActorType:               "admin", ActorID: fmt.Sprintf("%d", admin.AdminID),
-			RequestID: httpx.RequestIDFromContext(r.Context()), IPAddr: r.RemoteAddr, UserAgent: r.UserAgent(),
-		})
-		if errors.Is(err, domainassets.ErrAliasRolloutChanged) {
-			httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodeConflict, "alias creation rollout version conflict"))
-			return
-		}
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		httpx.WriteSuccess(w, r, http.StatusOK, status)
-	default:
-		writeMethodNotAllowed(w, r)
-	}
 }
 
 func (a *API) HandleAdminConfigTabDetail(w http.ResponseWriter, r *http.Request) {
@@ -9500,51 +9428,7 @@ func (a *API) moderatePublishRequest(ctx context.Context, prompt string) (bool, 
 }
 
 func (a *API) findOwnedGalleryImage(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
-	tasks, err := a.tasks.ListByUser(ctx, userID)
-	if err != nil {
-		return domainimagetask.GalleryImage{}, err
-	}
-	for _, task := range tasks {
-		for _, result := range task.Results {
-			if result.ID != imageID {
-				continue
-			}
-			return domainimagetask.GalleryImage{
-				ID:                result.ID,
-				TaskID:            task.ID,
-				UserID:            task.UserID,
-				ProjectID:         defaultString(result.ProjectID, task.ProjectID),
-				Prompt:            task.Prompt,
-				AbstractModel:     task.AbstractModel,
-				TaskType:          task.TaskType,
-				RouteModelCode:    task.RouteModelCode,
-				SizeMode:          task.SizeMode,
-				RequestedSize:     task.RequestedSize,
-				BaseResolution:    task.BaseResolution,
-				Quality:           task.Quality,
-				AspectRatio:       task.AspectRatio,
-				OutputFormat:      task.OutputFormat,
-				OutputCompression: task.OutputCompression,
-				Moderation:        task.Moderation,
-				OutputImageCount:  task.OutputImageCount,
-				ReferenceAssetIDs: append([]string(nil), task.ReferenceAssetIDs...),
-				URL:               result.URL,
-				DownloadURL:       result.DownloadURL,
-				MimeType:          result.MimeType,
-				FileSizeBytes:     result.FileSizeBytes,
-				Width:             result.Width,
-				Height:            result.Height,
-				SHA256:            result.SHA256,
-				StorageConfigID:   result.StorageConfigID,
-				ObjectKey:         result.ObjectKey,
-				StorageDriver:     result.StorageDriver,
-				VisibilityStatus:  defaultString(result.VisibilityStatus, domainimagetask.VisibilityPrivate),
-				ReviewReason:      result.ReviewReason,
-				PublishedAt:       result.PublishedAt,
-			}, nil
-		}
-	}
-	return domainimagetask.GalleryImage{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "image not found")
+	return a.tasks.GetOwnedGalleryImage(ctx, userID, imageID)
 }
 
 func parseOptionalTime(raw, field string) (time.Time, *errs.Error) {

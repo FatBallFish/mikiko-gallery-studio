@@ -255,6 +255,7 @@ func (s *ImageTaskStore) GetByID(ctx context.Context, userID int64, taskID strin
 	}
 	results, err := s.client.ImageResult.Query().
 		Where(imageresult.TaskIDEQ(taskUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Order(repoent.Asc(imageresult.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
@@ -270,6 +271,7 @@ func (s *ImageTaskStore) GetImageResultByID(ctx context.Context, userID int64, i
 	}
 	result, err := s.client.ImageResult.Query().
 		Where(imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -289,6 +291,34 @@ func (s *ImageTaskStore) GetImageResultByID(ctx context.Context, userID int64, i
 	return mapImageResultEntity(result), nil
 }
 
+func (s *ImageTaskStore) GetOwnedGalleryImage(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	imageUUID, err := uuid.Parse(imageID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	entity, err := s.client.ImageResult.Query().
+		Where(imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
+		WithProject().
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+		}
+		return domainimagetask.GalleryImage{}, err
+	}
+	taskEntity, err := s.client.ImageTask.Query().
+		Where(imagetask.IDEQ(entity.TaskID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+		WithProject().
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+		}
+		return domainimagetask.GalleryImage{}, err
+	}
+	return mapGalleryImageEntity(entity, taskEntity), nil
+}
+
 func (s *ImageTaskStore) GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error) {
 	imageUUID, err := uuid.Parse(imageID)
 	if err != nil {
@@ -296,6 +326,7 @@ func (s *ImageTaskStore) GetImageResultForAdmin(ctx context.Context, imageID str
 	}
 	result, err := s.client.ImageResult.Query().
 		Where(imageresult.IDEQ(imageUUID), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -357,6 +388,7 @@ func (s *ImageTaskStore) listByUserProject(ctx context.Context, userID int64, pr
 	}
 	resultEntities, err := s.client.ImageResult.Query().
 		Where(imageresult.UserIDEQ(userID), imageresult.TaskIDIn(taskIDs...), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Order(repoent.Asc(imageresult.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
@@ -535,7 +567,7 @@ func (s *ImageTaskStore) TransferImageProject(ctx context.Context, userID int64,
 	if updated != 1 {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
-	entity, err := tx.ImageResult.Query().Where(imageresult.IDEQ(imageUUID), imageresult.DeletedAtIsNil()).Only(ctx)
+	entity, err := tx.ImageResult.Query().Where(imageresult.IDEQ(imageUUID), imageresult.DeletedAtIsNil()).WithProject().Only(ctx)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
@@ -852,7 +884,7 @@ func (s *ImageTaskStore) ListPublicGallery(ctx context.Context, req domainimaget
 	if err != nil {
 		return domainimagetask.GalleryPage{}, err
 	}
-	entities, err := query.All(ctx)
+	entities, err := query.WithProject().All(ctx)
 	if err != nil {
 		return domainimagetask.GalleryPage{}, err
 	}
@@ -1126,12 +1158,13 @@ func (s *ImageTaskStore) AcquireNextQueuedTask(ctx context.Context, owner string
 		return domainimagetask.Task{}, repoerr.ErrNotFound
 	}
 
-	updated, err := tx.ImageTask.Query().Where(imagetask.IDEQ(entity.ID)).Only(ctx)
+	updated, err := tx.ImageTask.Query().Where(imagetask.IDEQ(entity.ID)).WithProject().Only(ctx)
 	if err != nil {
 		return domainimagetask.Task{}, err
 	}
 	results, err := tx.ImageResult.Query().
 		Where(imageresult.TaskIDEQ(entity.ID), imageresult.UserIDEQ(updated.UserID), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Order(repoent.Asc(imageresult.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
@@ -1189,12 +1222,13 @@ func (s *ImageTaskStore) RenewTaskLease(ctx context.Context, taskID, owner strin
 		return domainimagetask.Task{}, repoerr.ErrConflict
 	}
 
-	updated, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID)).Only(ctx)
+	updated, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID)).WithProject().Only(ctx)
 	if err != nil {
 		return domainimagetask.Task{}, err
 	}
 	results, err := tx.ImageResult.Query().
 		Where(imageresult.TaskIDEQ(taskUUID), imageresult.UserIDEQ(updated.UserID), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Order(repoent.Asc(imageresult.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
@@ -2048,13 +2082,6 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		}
 	}
 	task.Results = mapFallbackResults(resultEntities)
-	for index := range task.Results {
-		task.Results[index].ProjectID = task.ProjectID
-		if task.Project != nil {
-			snapshot := *task.Project
-			task.Results[index].Project = &snapshot
-		}
-	}
 	return task, nil
 }
 
@@ -2219,6 +2246,10 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 	if entity.ProjectID != nil {
 		item.ProjectID = entity.ProjectID.String()
 		item.Project = &domainimagetask.ProjectSnapshot{ID: item.ProjectID}
+		if entity.Edges.Project != nil {
+			item.Project.Name = entity.Edges.Project.Name
+			item.Project.IsDefault = entity.Edges.Project.IsDefault
+		}
 	}
 	if entity.StorageConfigID != nil {
 		item.StorageConfigID = entity.StorageConfigID.String()
@@ -2240,6 +2271,7 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 func (s *ImageTaskStore) loadGalleryImageWithTask(ctx context.Context, imageID uuid.UUID) (*repoent.ImageResult, *repoent.ImageTask, error) {
 	entity, err := s.client.ImageResult.Query().
 		Where(imageresult.IDEQ(imageID), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -2265,7 +2297,7 @@ func (s *ImageTaskStore) galleryPageFromQuery(ctx context.Context, query *repoen
 	if err != nil {
 		return domainimagetask.GalleryPage{}, err
 	}
-	entities, err := query.Offset((page - 1) * pageSize).Limit(pageSize).All(ctx)
+	entities, err := query.Offset((page - 1) * pageSize).Limit(pageSize).WithProject().All(ctx)
 	if err != nil {
 		return domainimagetask.GalleryPage{}, err
 	}
@@ -2422,7 +2454,7 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		TaskID:            entity.TaskID.String(),
 		UserID:            taskEntity.UserID,
 		ProjectID:         item.ProjectID,
-		Project:           projectSnapshotFromTaskEntity(taskEntity),
+		Project:           item.Project,
 		Prompt:            taskEntity.Prompt,
 		AbstractModel:     taskEntity.AbstractModel,
 		RouteModelCode:    taskEntity.RouteModelCode,

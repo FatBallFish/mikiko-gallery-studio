@@ -37,17 +37,6 @@ func TestImportGalleryImageCreatesAliasWithoutStorageIO(t *testing.T) {
 	svc := NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{}, newMemoryAssetStore(), router)
 	result := galleryImportResult(content, "bfss")
 
-	_, err := svc.ImportGalleryImage(t.Context(), 31, result)
-	var rolloutErr *errs.Error
-	if !errors.As(err, &rolloutErr) || rolloutErr.Code != errs.CodeReferenceAliasCreationNotReady || rolloutErr.StatusCode != 409 {
-		t.Fatalf("disabled rollout error = %#v", err)
-	}
-	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.getBoundedCalls.Load() != 0 || backend.putCalls.Load() != 0 {
-		t.Fatalf("disabled alias rollout must perform no storage IO: copy=%d get=%d bounded=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.getBoundedCalls.Load(), backend.putCalls.Load())
-	}
-
-	svc.SetAliasCreationGate(staticAliasCreationGate{enabled: true})
-
 	asset, err := svc.ImportGalleryImage(t.Context(), 31, result)
 	if err != nil {
 		t.Fatalf("ImportGalleryImage: %v", err)
@@ -75,7 +64,6 @@ func TestImportGalleryImageAliasesOriginalStorageAcrossDefaultWriterChanges(t *t
 		},
 	}
 	svc := NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{ReferenceImageMaxMB: 1}, newMemoryAssetStore(), router)
-	svc.SetAliasCreationGate(staticAliasCreationGate{enabled: true})
 	result := galleryImportResult(content, "source")
 
 	asset, err := svc.ImportGalleryImage(t.Context(), 32, result)
@@ -96,7 +84,6 @@ func TestImportGalleryImageRejectsMissingLegacyMetadataWithoutReadingSameStorage
 	ref := storage.BackendRef{ConfigID: "bfss", Version: 7, Driver: "s3", Backend: backend}
 	router := &switchingAssetRouter{defaultRef: ref, refs: map[string]storage.BackendRef{"bfss": ref}}
 	svc := NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{}, newMemoryAssetStore(), router)
-	svc.SetAliasCreationGate(staticAliasCreationGate{enabled: true})
 	result := galleryImportResult(content, "bfss")
 	result.FileSizeBytes, result.Width, result.Height, result.SHA256 = 0, 0, 0, ""
 
@@ -108,12 +95,6 @@ func TestImportGalleryImageRejectsMissingLegacyMetadataWithoutReadingSameStorage
 	if backend.copyCalls.Load() != 0 || backend.getBoundedCalls.Load() != 0 || backend.putCalls.Load() != 0 {
 		t.Fatalf("same-storage legacy metadata must fail closed without proxying bytes: copy=%d bounded=%d put=%d", backend.copyCalls.Load(), backend.getBoundedCalls.Load(), backend.putCalls.Load())
 	}
-}
-
-type staticAliasCreationGate struct{ enabled bool }
-
-func (g staticAliasCreationGate) AliasCreationEnabled(context.Context) (bool, error) {
-	return g.enabled, nil
 }
 
 func galleryImportResult(content []byte, configID string) provider.ImageResult {
