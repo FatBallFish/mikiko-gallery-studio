@@ -182,11 +182,8 @@ if (!source.includes("task.size_mode === 'pixel' ? `尺寸: ${task.requested_siz
   throw new Error('pixel-mode task results must display requested pixel size instead of an aspect-ratio label')
 }
 
-if (!source.includes("'redesign-prompt-input pb-11'")) {
-  throw new Error('the outer prompt textarea must reserve only bottom clearance for floating actions')
-}
-if (source.includes("'redesign-prompt-input pb-11 pr-20'")) {
-  throw new Error('the outer prompt textarea must use its full width instead of reserving a right-side text column')
+if (!source.includes('<PromptTemplateEditor') || source.includes('redesign-prompt-input pb-11 pr-20')) {
+  throw new Error('the outer prompt editor must use the full width and render template tokens')
 }
 for (const required of [
   'function HistoryTaskGalleryModal',

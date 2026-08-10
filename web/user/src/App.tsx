@@ -6,7 +6,6 @@ import { AppContext, protectedRoutes, Shell, ToastViewport } from './components'
 import type { RouteId, SessionState, Toast, ToastTone } from './types'
 import { LoginPage } from './pages/LoginPage'
 import { HomePage } from './pages/HomePage'
-import { WorkspacePage } from './pages/WorkspacePage'
 import { GalleryPage } from './pages/GalleryPage'
 import { PublicGalleryPage } from './pages/PublicGalleryPage'
 import { CheckoutPage } from './pages/CheckoutPage'
@@ -20,6 +19,11 @@ import { applyThemePreference, readLocalThemePreference, serializeThemePreferenc
 
 const sessionKey = 'pic-gallery-user-session'
 const LandingPage = lazy(() => import('./pages/LandingPage'))
+const WorkspacePage = lazy(async () => ({ default: (await import('./pages/WorkspacePage')).WorkspacePage }))
+
+function WorkspaceRouteFallback() {
+  return <div className="grid min-h-full place-items-center text-sm text-[var(--muted)]" role="status">正在载入创作工作台...</div>
+}
 
 function parseHash() {
   return parseUserHashState(window.location.hash)
@@ -327,7 +331,7 @@ function UserApplication() {
       case 'home':
         return <Shell><HomePage /></Shell>
       case 'genpic':
-        return <Shell><WorkspacePage initialTaskId={routeTaskId} /></Shell>
+        return <Shell><Suspense fallback={<WorkspaceRouteFallback />}><WorkspacePage initialTaskId={routeTaskId} /></Suspense></Shell>
       case 'gallery':
         return <Shell><GalleryPage /></Shell>
       case 'projects':

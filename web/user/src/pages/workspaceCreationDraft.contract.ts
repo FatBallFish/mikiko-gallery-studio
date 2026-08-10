@@ -111,7 +111,7 @@ const reused = workspaceCreationDraftFromSnapshot({
   output_format: 'webp', output_compression: 72, moderation: 'low', requested_output_image_count: 4,
   reference_asset_ids: ['ref-1', 'ref-2'],
 })
-if (reused.pixel_size !== '1536x1024' || reused.image_count !== 4 || reused.output_format !== 'webp' || reused.output_compression !== 72 || reused.reference_asset_ids?.length !== 2) {
+if (reused.pixel_size !== '1536x1024' || reused.image_count !== 4 || reused.output_format !== 'webp' || reused.output_compression !== 72 || reused.reference_asset_ids?.length !== 0) {
   throw new Error(`reused creation snapshot lost generation fields: ${JSON.stringify(reused)}`)
 }
 

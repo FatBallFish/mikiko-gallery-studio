@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ChevronUp, SlidersHorizontal } from 'lucide-react'
+import { Check, ChevronUp, Pencil, SlidersHorizontal, X } from 'lucide-react'
 import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
@@ -29,6 +29,10 @@ import { projectWorkspaceImageDetail } from './workspaceImageDetail'
 import { referenceImageAccept, referenceImagePolicy, validateReferenceImageFile } from './referenceImageUpload'
 import { chooseWorkspaceSizeMode, normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceBackgroundForFormat, workspaceBackgroundOptions, workspaceCompressionVisible, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspacePixelOptions, workspaceRatioOptions, workspaceRatioPixelEstimate, workspaceSizeModeOptions, workspaceSizeParameterError, type WorkspaceSizeMode } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
+import { PromptTemplateEditor, type PromptTemplateEditorHandle } from './PromptTemplateEditor'
+import { PromptVariableForm } from './PromptVariableForm'
+import { buildPromptReferenceBindings, buildPromptVariableInputs, expandedPromptCodePointLength, promptVariableValidation, reconcilePromptVariables, renamePromptReference } from './promptTemplateEditorModel'
+import { parsePromptTemplate } from './promptTemplateParser'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 import { ProjectSelector, useProjects } from '../ProjectContext'
 import { workspaceProjectReadiness, workspaceSubmissionIsCurrent, type WorkspaceProjectSelection } from './workspaceProjectLifecycle'
@@ -289,6 +293,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [capability, setCapability] = useState<Capability | null>(null)
   const [editRefs, setEditRefs] = useState<ReferenceAsset[]>([])
   const [prompt, setPrompt] = useState('')
+  const [promptVariables, setPromptVariables] = useState<Record<string, string>>({})
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [promptOptimization, setPromptOptimization] = useState(initialPromptOptimizationState)
   const [model, setModel] = useState('')
@@ -342,6 +347,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [galleryImportBusy, setGalleryImportBusy] = useState(false)
   const [galleryImportFilter, setGalleryImportFilter] = useState<GalleryImportFilter>(defaultGalleryImportFilter)
   const [dragUpload, setDragUpload] = useState<DragUploadState>({ edit: false })
+  const [renamingReferenceID, setRenamingReferenceID] = useState<string | null>(null)
+  const [renamingReferenceName, setRenamingReferenceName] = useState('')
+  const [renamingReferenceBusy, setRenamingReferenceBusy] = useState(false)
   const [parametersExpanded, setParametersExpanded] = useState(false)
   const [sheetDragOffset, setSheetDragOffset] = useState(0)
   const parametersHidden = workspaceParametersHidden(compactViewport, parametersExpanded)
@@ -357,6 +365,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const refreshAccountRef = useRef(app.refreshAccount)
   const completedNoticeRef = useRef<Set<string>>(new Set())
   const feedEndRef = useRef<HTMLDivElement | null>(null)
+  const compactPromptEditorRef = useRef<PromptTemplateEditorHandle | null>(null)
   const restoreParametersRef = useRef<RestoreParameters | null>(null)
   const pendingCreationDraftRef = useRef<WorkspaceCreationDraft | null | undefined>(undefined)
   const sheetDragRef = useRef<SheetDragState | null>(null)
@@ -378,6 +387,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     .join(',')
 
   notifyRef.current = app.notify
+
+  useEffect(() => {
+    setPromptVariables((current) => reconcilePromptVariables(prompt, current))
+  }, [prompt])
   refreshAccountRef.current = app.refreshAccount
   projectSelectionRef.current = {
     projectID: projects.selectedProjectID,
@@ -825,6 +838,15 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const maxReferenceImages = workspaceReferenceMaximum(selectedModel?.max_reference_image_count)
   const editRemainingLimit = remainingReferenceCapacity(maxReferenceImages, editRefs.length)
   const remainingGalleryImportLimit = editRemainingLimit
+  const promptTemplateParse = useMemo(() => parsePromptTemplate(prompt), [prompt])
+  const promptReferenceBindings = useMemo(() => buildPromptReferenceBindings(prompt, editRefs), [editRefs, prompt])
+  const promptVariableState = useMemo(() => promptVariableValidation(prompt, promptVariables), [prompt, promptVariables])
+  const promptExpandedLength = useMemo(() => expandedPromptCodePointLength(prompt, promptVariables, promptReferenceBindings.bindings), [prompt, promptReferenceBindings.bindings, promptVariables])
+  const promptTemplateIssue = promptTemplateParse.error?.message
+    || (promptReferenceBindings.unresolved.length ? `未关联资产：${promptReferenceBindings.unresolved.join('、')}` : '')
+    || (promptVariableState.missing.length ? `请填写变量：${promptVariableState.missing.join('、')}` : '')
+    || (promptVariableState.tooLong.length ? `变量内容超过长度限制：${promptVariableState.tooLong.join('、')}` : '')
+    || (promptExpandedLength > 4000 ? '变量填充后的提示词超过 4000 个字符。' : '')
   const newestTask = records[records.length - 1] ?? null
   const selectedTask = selectedTaskId ? records.find((task) => task.id === selectedTaskId) ?? null : null
   const latestTask = selectedTask ?? newestTask
@@ -843,9 +865,12 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     busy,
     task: latestTask,
   }), [capability, taskType, referenceCount, requiredReferencesReady, model, parametersReady, sizeParameterError, prompt, estimateError, estimate, busy, latestTask])
-  const generateReadiness = projectReadiness.ready
+  const baseGenerateReadiness = projectReadiness.ready
     ? workspaceView.generate
     : { disabled: true, reason: projectReadiness.reason, showRechargeAction: false }
+  const generateReadiness = promptTemplateIssue
+    ? { disabled: true, reason: promptTemplateIssue, showRechargeAction: false }
+    : baseGenerateReadiness
   const historyTasks = useMemo(() => (
     [...records].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   ), [records])
@@ -1056,7 +1081,15 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const submissionProject = projectSelectionRef.current
     setBusy(true)
     try {
-      const task = await userApi.createTask({ ...estimatePayload, project_id: submissionProject.projectID, prompt, capability_version: estimate?.capability_version, idempotency_key: crypto.randomUUID() })
+      const task = await userApi.createTask({
+        ...estimatePayload,
+        project_id: submissionProject.projectID,
+        prompt,
+        reference_bindings: promptReferenceBindings.bindings,
+        prompt_variables: buildPromptVariableInputs(prompt, promptVariables),
+        capability_version: estimate?.capability_version,
+        idempotency_key: crypto.randomUUID(),
+      })
       if (!workspaceSubmissionIsCurrent(submissionProject, projectSelectionRef.current)) {
         void app.refreshAccount()
         return
@@ -1071,6 +1104,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       setParametersExpanded(false)
       if (activeTaskType === 'image_edit') {
         setPrompt('')
+        setPromptVariables({})
         setEditRefs([])
       }
       app.notify('info', '任务已进入队列，正在等待实时状态')
@@ -1162,6 +1196,31 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setEditRefs((items) => items.filter((item) => (
       asset.id ? item.id !== asset.id : item.preview_url !== asset.preview_url
     )))
+  }
+
+  function beginRenameReference(asset: ReferenceAsset) {
+    setRenamingReferenceID(asset.id)
+    setRenamingReferenceName(asset.name)
+  }
+
+  async function saveReferenceName(asset: ReferenceAsset) {
+    const nextName = renamingReferenceName.trim()
+    if (!nextName || nextName === asset.name) {
+      setRenamingReferenceID(null)
+      return
+    }
+    setRenamingReferenceBusy(true)
+    try {
+      const renamed = await userApi.renameReferenceAsset(asset.id, nextName)
+      setEditRefs((items) => items.map((item) => item.id === asset.id ? renamed : item))
+      setPrompt((current) => renamePromptReference(current, asset.name, renamed.name))
+      setRenamingReferenceID(null)
+      app.notify('success', '资产名称已更新')
+    } catch (err) {
+      app.notify('error', errorMessage(err))
+    } finally {
+      setRenamingReferenceBusy(false)
+    }
   }
 
   function updateImageCount(value: number) {
@@ -1349,6 +1408,18 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                           onMediaRefresh={() => refreshWorkspaceReference(asset.id)}
                         />
                         <button type="button" className={workspaceClasses.refRemove} title="移除编辑图片" onClick={() => removeEditAsset(asset)}><CloseGlyph /></button>
+                        {renamingReferenceID === asset.id ? (
+                          <div className="reference-name-editor">
+                            <input autoFocus value={renamingReferenceName} maxLength={64} aria-label="资产名称" onChange={(event) => setRenamingReferenceName(event.target.value)} onKeyDown={(event) => {
+                              if (event.key === 'Enter') void saveReferenceName(asset)
+                              if (event.key === 'Escape') setRenamingReferenceID(null)
+                            }} />
+                            <button type="button" title="保存名称" aria-label="保存名称" disabled={renamingReferenceBusy} onClick={() => void saveReferenceName(asset)}><Check size={13} /></button>
+                            <button type="button" title="取消重命名" aria-label="取消重命名" disabled={renamingReferenceBusy} onClick={() => setRenamingReferenceID(null)}><X size={13} /></button>
+                          </div>
+                        ) : (
+                          <button type="button" className="reference-name-button" title="重命名资产" onClick={() => beginRenameReference(asset)}><span>{asset.name}</span><Pencil size={12} /></button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1358,26 +1429,27 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
           {/* Prompt */}
           <div className={workspaceClasses.promptBlock}>
-            <label className={workspaceClasses.fieldLabel}>提示词</label>
-            <div className={cn(rdWorkspace.promptWrapper, 'relative')}>
-              <textarea
-                className={cn(rdWorkspace.textarea, 'redesign-prompt-input pb-11')}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                rows={5}
-                maxLength={4000}
-                placeholder="描述想要生成的内容..."
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <label className={workspaceClasses.fieldLabel}>提示词</label>
+              <PromptEditorActions
+                optimizing={promptOptimization.stage === 'estimating' || promptOptimization.stage === 'optimizing'}
+                canUndo={promptOptimization.stage === 'applied'}
+                onExpand={() => setPromptExpanded(true)}
+                onOptimize={() => void startPromptOptimization()}
+                onUndo={undoOptimization}
               />
-              <div className="absolute bottom-2 right-2">
-                <PromptEditorActions
-                  optimizing={promptOptimization.stage === 'estimating' || promptOptimization.stage === 'optimizing'}
-                  canUndo={promptOptimization.stage === 'applied'}
-                  onExpand={() => setPromptExpanded(true)}
-                  onOptimize={() => void startPromptOptimization()}
-                  onUndo={undoOptimization}
-                />
-              </div>
             </div>
+            <PromptTemplateEditor
+              ref={compactPromptEditorRef}
+              value={prompt}
+              assets={editRefs}
+              variables={promptVariables}
+              accessToken={app.session?.token}
+              disabled={busy || promptExpanded}
+              onChange={setPrompt}
+              onAddAsset={() => { setEditSourceOpen(true); void openGalleryImport('edit') }}
+            />
+            <PromptVariableForm template={prompt} values={promptVariables} disabled={busy} onChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))} />
           </div>
 
         </div>
@@ -1689,10 +1761,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         <PromptEditorDialog
           prompt={prompt}
           assets={editRefs}
+          variables={promptVariables}
           accessToken={app.session?.token}
           optimization={promptOptimization}
           onPromptChange={setPrompt}
-          onClose={() => setPromptExpanded(false)}
+          onVariableChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))}
+          onAddAsset={() => { setPromptExpanded(false); setEditSourceOpen(true); void openGalleryImport('edit') }}
+          onClose={() => { setPromptExpanded(false); window.setTimeout(() => compactPromptEditorRef.current?.focus(), 0) }}
           onOptimize={() => void startPromptOptimization()}
           onConfirm={() => void confirmOptimization()}
           onApply={applyOptimization}

@@ -70,7 +70,8 @@ export function workspaceCreationDraftFromSnapshot(snapshot: WorkspaceCreationSn
     output_compression: typeof snapshot.output_compression === 'number' ? snapshot.output_compression : undefined,
     moderation: clean(snapshot.moderation),
     image_count: snapshot.requested_output_image_count ?? snapshot.image_count ?? 1,
-    reference_asset_ids: snapshot.reference_asset_ids ?? [],
+    // Reusing history intentionally starts references unresolved; users must bind current assets explicitly.
+    reference_asset_ids: [],
   }
 }
 
