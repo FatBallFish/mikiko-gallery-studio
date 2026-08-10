@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import type { ReviewItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { AdminTabs, Badge, ConfirmDrawer, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader } from '../components'
+import { AdminTabs, Badge, ConfirmDrawer, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader, RefreshIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { useAdminPreviewMotion } from '../ui/adminMotion'
 import { FilterToolbar, ListPage, Pager } from '../ui/dataTable'
@@ -54,6 +54,7 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
   const [busy, setBusy] = useState(false)
   const [selectedId, setSelectedId] = useState<string>('')
   const requestGenerationRef = useRef(0)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const load = async () => {
     const requestGeneration = ++requestGenerationRef.current
@@ -76,7 +77,7 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
     }
   }
 
-  useEffect(() => { void load() }, [appliedFilters, filter, page, pageSize])
+  useEffect(() => { void load() }, [appliedFilters, filter, page, pageSize, reloadKey])
 
   const visibleRows = rows
   const selectedItem = useMemo(() => visibleRows.find((row) => String(row.id) === selectedId) ?? visibleRows[0] ?? null, [selectedId, visibleRows])
@@ -127,6 +128,7 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
     event.preventDefault()
     setPage(1)
     setAppliedFilters(filters)
+    setReloadKey((value) => value + 1)
   }
 
   const resetFilters = () => {
@@ -143,7 +145,7 @@ export function ReviewPage({ accessToken, onFeedback }: { accessToken?: string; 
       <PageHeader
         title="公开图片管理"
         description="集中处理公开申请、已公开图片、已下架和已驳回内容。"
-        secondaryActions={<button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={refreshing || Boolean(drawer) || busy} onClick={() => void load()}>{refreshing ? '刷新中...' : '刷新队列'}</button>}
+        secondaryActions={<RefreshIconButton label="刷新审核队列" refreshing={refreshing} disabled={Boolean(drawer) || busy} onClick={() => void load()} />}
       />
       {refreshing ? <InlineFeedback tone="neutral" message="正在刷新审核队列，当前预览与选择会保留。" /> : null}
       {error && rows.length ? <InlineFeedback tone="danger" message={error} /> : null}

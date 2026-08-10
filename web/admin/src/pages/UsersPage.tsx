@@ -1,8 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { AdminMetric, AdminUser, AdminUserCreateRequest, AdminUserDetail, ApiKey, BalanceBucket, ImageTask, LedgerEntry, PaymentOrder, UserGroup } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { ActionMenu, Badge, Drawer, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader } from '../components'
+import { ActionMenu, Badge, Drawer, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, RefreshIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
 import { ColumnDef, DataTable, FilterToolbar, ListPage, Pager } from '../ui/dataTable'
@@ -16,6 +16,7 @@ import {
   userDetailTaskRow,
 } from './userDetailResourceRows'
 import { adminUserRowActions, adminUserRowView, adminUserStatusBadge, adminUserStatusFilterOptions, adminUserStatusOptions, adminUserSummary } from './userRows'
+import { createLatestListRequestGuard } from './listRefresh'
 
 const inlineControlClass = 'flex items-center gap-2'
 const creditAmountClass = 'text-[var(--success)]'
@@ -58,27 +59,35 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [detailFeedback, setDetailFeedback] = useState<string | null>(null)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
+  const [reloadKey, setReloadKey] = useState(0)
 
   const load = async (nextFilters = appliedFilters, nextPage = page, nextPageize = pageSize) => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
-      const userPage = await adminApi.listUsersPage(nextFilters.query.trim(), nextPage, nextPageize, userListFilters(nextFilters))
+      const [userPage, nextGroups] = await Promise.all([
+        adminApi.listUsersPage(nextFilters.query.trim(), nextPage, nextPageize, userListFilters(nextFilters)),
+        groups.length ? Promise.resolve(null) : adminApi.listUserGroups().catch(() => []),
+      ])
+      if (!requestGuard.isCurrent(request)) return
       setRows(userPage.items)
       setTotal(userPage.total)
-      if (!groups.length) {
-        adminApi.listUserGroups().then(setGroups).catch(() => setGroups([]))
-      }
+      if (nextGroups) setGroups(nextGroups)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '用户载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
   useEffect(() => {
     void load(appliedFilters, page, pageSize)
-  }, [appliedFilters, page, pageSize])
+    return () => requestGuard.invalidate()
+  }, [appliedFilters, page, pageSize, reloadKey])
 
   const totals = useMemo(() => adminUserSummary(rows), [rows])
   const summaryMetrics = useMemo<AdminMetric[]>(() => [
@@ -173,8 +182,8 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
     setActionError(null)
   }
 
-  if (loading) return <LoadingBlock label="载入用户列表" />
-  if (error) return <ErrorBlock message={error} onRetry={() => void load()} />
+  if (loading && !rows.length) return <LoadingBlock label="载入用户列表" />
+  if (error && !rows.length) return <ErrorBlock message={error} onRetry={() => void load()} />
 
   return (
     <section className={adminPage.stack}>
@@ -182,12 +191,14 @@ export function UsersPage({ onFeedback }: { onFeedback: (title: string, detail?:
         eyebrow="Users"
         title="用户管理"
         detail="按用户名、状态和分组定位用户，并支持按积分、最后活跃、创建时间排序。"
-        actions={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => { setActionError(null); setAction({ type: 'create', draft: { email: '', nickname: '', status: 'active', user_group_code: groups[0]?.code ?? 'basic', password: '', rpm_limit: 0, concurrency_limit: 0, default_locale: 'zh-CN', theme: 'system' } }) }}>新增用户</button>}
+        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => { setActionError(null); setAction({ type: 'create', draft: { email: '', nickname: '', status: 'active', user_group_code: groups[0]?.code ?? 'basic', password: '', rpm_limit: 0, concurrency_limit: 0, default_locale: 'zh-CN', theme: 'system' } }) }}>新增用户</button>}
+        secondaryActions={<RefreshIconButton label="刷新用户列表" refreshing={loading} onClick={() => void load(appliedFilters, page, pageSize)} />}
       />
+      {error ? <InlineFeedback tone="danger" message={`用户列表刷新失败：${error}`} /> : null}
       <MetricStrip metrics={summaryMetrics} />
       <ListPage
         filters={(
-          <form onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedFilters(filters) }}>
+          <form onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedFilters(filters); setReloadKey((value) => value + 1) }}>
             <FilterToolbar
               fields={[
                 { key: 'query', label: '关键词', primary: true, control: <input value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} placeholder="用户名 / 邮箱" /> },

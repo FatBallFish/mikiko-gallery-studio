@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ClusterNode, PageResult } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, Button, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader, SegmentedControl, StatusCell, StatusStrip } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader, RefreshIconButton, SegmentedControl, StatusCell, StatusStrip } from '../components'
 import { DataTable, ListPage, Pager, type ColumnDef } from '../ui/dataTable'
 import { clusterNodeRows, clusterSummary, type ClusterNodeRow } from './clusterRows'
+import { createLatestListRequestGuard } from './listRefresh'
 
 type RoleFilter = '' | 'single' | 'control' | 'api' | 'worker' | 'web'
 
@@ -15,20 +15,29 @@ export function ClusterPage() {
   const [role, setRole] = useState<RoleFilter>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = useCallback(async () => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
-      setResult(await adminApi.listClusterNodes(page, pageSize, role))
+      const nextResult = await adminApi.listClusterNodes(page, pageSize, role)
+      if (!requestGuard.isCurrent(request)) return
+      setResult(nextResult)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '集群节点载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
-  }, [page, pageSize, role])
+  }, [page, pageSize, requestGuard, role])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+    return () => requestGuard.invalidate()
+  }, [load, requestGuard])
 
   const rows = useMemo(() => clusterNodeRows(result.items), [result.items])
   const summary = useMemo(() => clusterSummary(result.items), [result.items])
@@ -49,7 +58,7 @@ export function ClusterPage() {
         eyebrow="Cluster"
         title="集群节点"
         detail="汇总 API 与 Worker 节点的心跳、运行版本和配置一致性。"
-        actions={<Button variant="secondary" icon={<RefreshCw className="size-4" />} onClick={() => void load()} disabled={loading}>刷新</Button>}
+        secondaryActions={<RefreshIconButton label="刷新集群节点" refreshing={loading} onClick={() => void load()} />}
       />
       <StatusStrip columns={4}>
         <StatusCell label="当前页节点" value={summary.total} />
@@ -63,8 +72,9 @@ export function ClusterPage() {
         pagination={<Pager page={page} pageSize={pageSize} total={result.total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
       >
         {loading && !rows.length ? <LoadingBlock label="载入集群节点" /> : null}
-        {error ? <ErrorBlock message={error} onRetry={load} /> : null}
-        {!loading && !error ? <DataTable columns={columns} rows={rows} rowKey={(row) => row.node_id} empty={<EmptyBlock variant="inline" title="暂无节点" detail="当前筛选范围内没有节点记录。" />} /> : null}
+        {error && rows.length ? <InlineFeedback tone="danger" message={`集群节点刷新失败：${error}`} /> : null}
+        {error && !rows.length ? <ErrorBlock message={error} onRetry={load} /> : null}
+        {rows.length || (!loading && !error) ? <DataTable columns={columns} rows={rows} rowKey={(row) => row.node_id} empty={<EmptyBlock variant="inline" title="暂无节点" detail="当前筛选范围内没有节点记录。" />} /> : null}
       </ListPage>
     </section>
   )

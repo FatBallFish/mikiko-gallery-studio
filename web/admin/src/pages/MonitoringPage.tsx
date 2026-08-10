@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
 import type {
   AdminMonitoringSnapshot,
   MonitoringWindow,
@@ -15,6 +14,7 @@ import {
   LoadingBlock,
   MetricStrip,
   PageHeader,
+  RefreshIconButton,
   SegmentedControl,
 } from '../components'
 import { healthRefreshTimeLabel } from '../healthRows'
@@ -172,17 +172,7 @@ export function MonitoringPage() {
       <PageHeader
         title="系统健康"
         description="实时观察应用请求、响应质量与 API 进程压力，并在异常出现时直接定位热点接口。"
-        primaryAction={(
-          <button
-            type="button"
-            className={cn(adminButton.base, adminButton.primary)}
-            disabled={refreshing}
-            onClick={() => void load('refresh', selectedWindow, true)}
-          >
-            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} aria-hidden="true" />
-            <span>{refreshing ? '刷新中...' : '立即刷新'}</span>
-          </button>
-        )}
+        secondaryActions={<RefreshIconButton label="刷新系统健康" refreshing={refreshing} onClick={() => void load('refresh', selectedWindow, true)} />}
       />
 
       <div className={monitoringClasses.controlBar}>

@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import type { AdminMetric, CallRecord, CallRecordAttempt } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, MetricStrip, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, MetricStrip, PageHeader, RefreshIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
 import { FilterToolbar, ListPage, Pager } from '../ui/dataTable'
@@ -86,6 +86,7 @@ export function CallRecordsPage() {
   const [error, setError] = useState<string | null>(null)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
   const requestGenerationRef = useRef(0)
+  const [reloadKey, setReloadKey] = useState(0)
   const viewRows = useMemo(() => callRecordRows(rows), [rows])
   const stats = useMemo(() => callRecordStats(rows), [rows])
   const distributions = useMemo(() => callRecordDistributions(rows), [rows])
@@ -117,12 +118,13 @@ export function CallRecordsPage() {
     }
   }
 
-  useEffect(() => { void load() }, [page, appliedFilters, pageSize])
+  useEffect(() => { void load() }, [page, appliedFilters, pageSize, reloadKey])
 
   const submitFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setPage(1)
     setAppliedFilters(filters)
+    setReloadKey((value) => value + 1)
   }
 
   const resetFilters = () => {
@@ -139,7 +141,7 @@ export function CallRecordsPage() {
       <PageHeader
         title="调用记录"
         description="优先按任务、用户、Provider 和错误码排查失败调用，统计分布放在日志之后。"
-        secondaryActions={<button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={refreshing} onClick={() => void load()}>{refreshing ? '刷新中...' : '刷新'}</button>}
+        secondaryActions={<RefreshIconButton label="刷新调用记录" refreshing={refreshing} onClick={() => void load()} />}
       />
       <form onSubmit={submitFilters}>
         <FilterToolbar

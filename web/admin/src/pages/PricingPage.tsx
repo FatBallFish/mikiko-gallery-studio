@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ImageTaskType, RouteModel, RouteModelPrice } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Trash2 } from 'lucide-react'
-import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, TooltipIconButton } from '../components'
+import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, RefreshIconButton, TooltipIconButton } from '../components'
 import { adminButton, adminPage, adminType } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
 import type { ColumnDef } from '../ui/dataTable'
@@ -13,6 +13,7 @@ import { FilterIcon, XIcon } from '../ui/listIcons'
 import { adminTaskTypeLabel, adminTaskTypeOptions } from './adminTaskTypes'
 import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import { modelLifecycleErrorMessage } from './adminModelLifecycle'
+import { createLatestListRequestGuard } from './listRefresh'
 import {
   pricingEnabledBadge,
   pricingFieldHints,
@@ -54,8 +55,10 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
   const [deleting, setDeleting] = useState(false)
   const [filters, setFilters] = useState<PricingFilters>(initialFilters)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = async () => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
@@ -63,16 +66,22 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
         adminApi.listRouteModels({ page_size: 100 }),
         loadAllRouteModelPrices((priceQuery) => adminApi.listRouteModelPrices(priceQuery)),
       ])
+      if (!requestGuard.isCurrent(request)) return
       setRoutes(nextRoutes)
       setPrices(nextPrices)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '价格策略载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    void load()
+    return () => requestGuard.invalidate()
+  }, [])
 
   const stats = useMemo(() => pricingSummary(routes, prices), [routes, prices])
   const missingEnabledRoutes = useMemo(
@@ -141,8 +150,8 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
     }
   }
 
-  if (loading) return <LoadingBlock label="载入价格策略" />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
+  if (loading && !routes.length && !prices.length) return <LoadingBlock label="载入价格策略" />
+  if (error && !routes.length && !prices.length) return <ErrorBlock message={error} onRetry={load} />
 
   return (
     <section className={adminPage.stack}>
@@ -150,7 +159,9 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
         title="价格策略"
         description="按路由模型、任务类型和基础分辨率维护用户积分价格，并直接处理启用路由的缺价风险。"
         primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={!routes.length} onClick={() => openDialog(newPriceDialog(routes))}>新增配置</button>}
+        secondaryActions={<RefreshIconButton label="刷新价格策略" refreshing={loading} onClick={() => void load()} />}
       />
+      {error ? <InlineFeedback tone="danger" message={`价格策略刷新失败：${error}`} /> : null}
       <MetricStrip metrics={metrics} />
 
       <section data-admin-pricing-risk className={pricingClasses.riskList} aria-label="缺价风险">

@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AdminMetric, ModelAccount, ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelPrice, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
 import { Trash2 } from 'lucide-react'
-import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, TooltipIconButton } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, RefreshIconButton, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
 import { FilterToolbar } from '../ui/dataTable'
 import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import { modelLifecycleErrorMessage } from './adminModelLifecycle'
+import { createLatestListRequestGuard } from './listRefresh'
 import {
   routeCandidateLabel,
   routeCandidateSummary,
@@ -67,8 +68,10 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
   const [mutationError, setMutationError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = async (preferredRouteId?: string) => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
@@ -80,6 +83,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
       ])
       const modelLists = await Promise.all(nextAccounts.map((account) => adminApi.listModelAccountModels(account.id)))
       const candidatePairs = await Promise.all(nextRoutes.map(async (route) => [String(route.id), await adminApi.listRouteModelCandidates(route.id)] as const))
+      if (!requestGuard.isCurrent(request)) return
       setRoutes(nextRoutes)
       setGroups(nextGroups)
       setModelAccounts(nextAccounts)
@@ -91,13 +95,18 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         return nextRoutes.some((route) => String(route.id) === preferred) ? preferred : String(nextRoutes[0]?.id ?? '')
       })
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '路由载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    void load()
+    return () => requestGuard.invalidate()
+  }, [])
 
   const totals = useMemo(() => ({
     enabled: routes.filter((row) => row.enabled).length,
@@ -229,8 +238,8 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
     setCandidateDialog(null)
   }
 
-  if (loading) return <LoadingBlock label="载入模型路由" />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
+  if (loading && !routes.length) return <LoadingBlock label="载入模型路由" />
+  if (error && !routes.length) return <ErrorBlock message={error} onRetry={load} />
 
   return (
     <section className={adminPage.stack}>
@@ -238,8 +247,9 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         title="路由模型"
         description="创建用户可见的路由模型，并完成候选模型、可见范围和价格状态配置。"
         primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openRouteDialog(newRouteDialog(groups))}>新增路由模型</button>}
-        secondaryActions={<button className={cn(adminButton.base, adminButton.ghost)} type="button" onClick={() => void load()}>刷新</button>}
+        secondaryActions={<RefreshIconButton label="刷新路由模型" refreshing={loading} onClick={() => void load()} />}
       />
+      {error ? <InlineFeedback tone="danger" message={`路由模型刷新失败：${error}`} /> : null}
       <MetricStrip metrics={summaryMetrics} />
       <FilterToolbar
         fields={[{

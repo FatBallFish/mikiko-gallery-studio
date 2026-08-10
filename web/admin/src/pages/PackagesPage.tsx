@@ -1,10 +1,10 @@
-import { Archive, Pause, Pencil, Play, RefreshCw, RotateCcw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Archive, Pause, Pencil, Play, RotateCcw } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { CashierPlan, CashierPlanTransitionAction } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, Modal, PageHeader, TooltipIconButton } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, Modal, PageHeader, RefreshIconButton, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { DataTable, FilterToolbar, ListPage, Pager, type ColumnDef } from '../ui/dataTable'
 import { FilterIcon } from '../ui/listIcons'
@@ -12,6 +12,7 @@ import { CashierPlanEditorDialog } from './CashierPlanEditorDialog'
 import { cashierPlanDraftFromRow, cashierPlanEmptyDraft, cashierPlanPayloadFromDraft, type CashierPlanDraft } from './cashierPlanDraft'
 import { cashierPlanActions, cashierPlanEmptyState, cashierPlanPurchaseBadge, type CashierPlanAction } from './cashierPlanPurchase'
 import { cashierPlanStatusBadge, cashierPlanTypeLabel } from './cashierStatusRows'
+import { createLatestListRequestGuard } from './listRefresh'
 
 export function PackagesPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<CashierPlan[]>([])
@@ -29,8 +30,10 @@ export function PackagesPage({ onFeedback }: { onFeedback: (title: string, detai
   const [pageSize, setPageSize] = useState(20)
   const [total, setTotal] = useState(0)
   const [planTransition, setPlanTransition] = useState<{ plan: CashierPlan; action: CashierPlanAction } | null>(null)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = async (nextPage = page, nextPageSize = pageSize) => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
@@ -43,18 +46,22 @@ export function PackagesPage({ onFeedback }: { onFeedback: (title: string, detai
         sort_by: sortBy,
         sort_order: sortOrder,
       })
+      if (!requestGuard.isCurrent(request)) return
       setRows(result.items)
       setTotal(result.total)
       setPage(nextPage)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '套餐载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
   useEffect(() => {
     void load(1)
+    return () => requestGuard.invalidate()
   }, [])
 
   const openEditor = (draft: CashierPlanDraft) => {
@@ -99,8 +106,8 @@ export function PackagesPage({ onFeedback }: { onFeedback: (title: string, detai
     }
   }
 
-  if (loading) return <LoadingBlock label="载入套餐列表" />
-  if (error) return <ErrorBlock message={error} onRetry={() => void load()} />
+  if (loading && !rows.length) return <LoadingBlock label="载入套餐列表" />
+  if (error && !rows.length) return <ErrorBlock message={error} onRetry={() => void load()} />
 
   return (
     <section className={adminPage.stack}>
@@ -108,8 +115,9 @@ export function PackagesPage({ onFeedback }: { onFeedback: (title: string, detai
         title="套餐管理"
         description="维护价格、积分、上下架和展示顺序；支付通道配置已移至支付配置。"
         primaryAction={<button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => openEditor(cashierPlanEmptyDraft())}>新增套餐</button>}
-        secondaryActions={<TooltipIconButton label="刷新套餐列表" disabled={loading || saving} onClick={() => void load(page)}><RefreshCw /></TooltipIconButton>}
+        secondaryActions={<RefreshIconButton label="刷新套餐列表" refreshing={loading} disabled={saving} onClick={() => void load(page)} />}
       />
+      {error ? <InlineFeedback tone="danger" message={`套餐列表刷新失败：${error}`} /> : null}
       <ListPage
         filters={(
           <form onSubmit={(event: FormEvent) => { event.preventDefault(); void load(1) }}>

@@ -1,14 +1,14 @@
-import { FormEvent, useEffect, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import type { PaymentOrder } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader, TooltipIconButton } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader, RefreshIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { ColumnDef, DataTable, FilterToolbar, ListPage, Pager } from '../ui/dataTable'
 import { FilterIcon } from '../ui/listIcons'
 import { cashierAdminDateTime, cashierOrderPaymentLabel, cashierOrderPurchaseTypeLabel } from './cashierPaymentDisplay'
 import { cashierOrderStatusBadge } from './cashierStatusRows'
+import { createLatestListRequestGuard } from './listRefresh'
 
 const quickFilters = [
   { label: '全部', value: '' },
@@ -30,8 +30,10 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = async (nextPage = page, nextPageize = pageSize) => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
@@ -41,22 +43,26 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
         query: query.trim() || undefined,
         status: status || undefined,
       })
+      if (!requestGuard.isCurrent(request)) return
       setRows(result.items)
       setTotal(result.total)
       setPage(nextPage)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '订单载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
   useEffect(() => {
     void load(1)
+    return () => requestGuard.invalidate()
   }, [status])
 
-  if (loading) return <LoadingBlock label="载入订单列表" />
-  if (error) return <ErrorBlock message={error} onRetry={() => void load(page)} />
+  if (loading && !rows.length) return <LoadingBlock label="载入订单列表" />
+  if (error && !rows.length) return <ErrorBlock message={error} onRetry={() => void load(page)} />
 
   const columns: ColumnDef<PaymentOrder>[] = [
     {
@@ -128,8 +134,9 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
       <PageHeader
         title="订单管理"
         description="按订单号、用户、渠道流水号定位订单，并优先处理异常状态。"
-        secondaryActions={<TooltipIconButton label="刷新订单列表" disabled={loading} onClick={() => void load(page)}><RefreshCw /></TooltipIconButton>}
+        secondaryActions={<RefreshIconButton label="刷新订单列表" refreshing={loading} onClick={() => void load(page)} />}
       />
+      {error ? <InlineFeedback tone="danger" message={`订单列表刷新失败：${error}`} /> : null}
       <ListPage
         filters={(
           <form onSubmit={(event: FormEvent) => { event.preventDefault(); void load(1) }}>

@@ -1,8 +1,8 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import type { LedgerEntry, RedeemCode } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader } from '../components'
+import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader, RefreshIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { ColumnDef, DataTable, FilterToolbar, ListPage, Pager } from '../ui/dataTable'
 import {
@@ -14,6 +14,7 @@ import {
   redeemStatusLabel,
   redeemStatusOptions,
 } from './redeemRows'
+import { createLatestListRequestGuard } from './listRefresh'
 
 type RedeemDialog =
   | { type: 'create' }
@@ -57,22 +58,30 @@ export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?
   const [redemptionsLoading, setRedemptionsLoading] = useState(false)
   const [redemptionsError, setRedemptionsError] = useState<string | null>(null)
   const [dialogError, setDialogError] = useState('')
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = async () => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
       const result = await adminApi.listRedeemCodes({ page, page_size: pageSize, status: statusFilter || undefined })
+      if (!requestGuard.isCurrent(request)) return
       setRows(result.items)
       setTotal(result.total)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '兑换码载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
-  useEffect(() => { void load() }, [page, pageSize, statusFilter])
+  useEffect(() => {
+    void load()
+    return () => requestGuard.invalidate()
+  }, [page, pageSize, statusFilter])
 
   const create = async (event: FormEvent) => {
     event.preventDefault()
@@ -180,15 +189,15 @@ export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?
     setDialog(next)
   }
 
-  if (loading) return <LoadingBlock label="载入兑换码" />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
+  if (loading && !rows.length) return <LoadingBlock label="载入兑换码" />
+  if (error && !rows.length) return <ErrorBlock message={error} onRetry={load} />
 
   return (
     <section className={adminPage.stack}>
       <PageHeader
         title="兑换码"
         description="创建、停用、批量生成与核销记录全部连接真实后台接口。"
-        actions={(
+        primaryAction={(
           <div className={redeemClasses.actionRow}>
             <button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openDialog({ type: 'create' })}>创建兑换码</button>
             <ActionMenu actions={[
@@ -197,7 +206,9 @@ export function RedeemPage({ onFeedback }: { onFeedback: (title: string, detail?
             ]} />
           </div>
         )}
+        secondaryActions={<RefreshIconButton label="刷新兑换码列表" refreshing={loading} onClick={() => void load()} />}
       />
+      {error ? <InlineFeedback tone="danger" message={`兑换码刷新失败：${error}`} /> : null}
       <ListPage
         filters={(
           <FilterToolbar

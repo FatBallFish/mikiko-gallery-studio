@@ -1,13 +1,14 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { AdminMetric, UserGroup, UserGroupWriteRequest } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader } from '../components'
+import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, RefreshIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import type { ColumnDef } from '../ui/dataTable'
 import { DataTable, FilterToolbar, ListPage } from '../ui/dataTable'
 import { XIcon } from '../ui/listIcons'
 import { userGroupRows, userGroupStatusTone, userGroupSummary } from './userGroupRows'
+import { createLatestListRequestGuard } from './listRefresh'
 
 type GroupAction = { row?: UserGroup; draft: UserGroupWriteRequest }
 type GroupFilters = { query: string; status: string }
@@ -30,21 +31,28 @@ export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, det
   const [saving, setSaving] = useState(false)
   const [action, setAction] = useState<GroupAction | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = async () => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
-      setGroups(await adminApi.listUserGroups())
+      const nextGroups = await adminApi.listUserGroups()
+      if (!requestGuard.isCurrent(request)) return
+      setGroups(nextGroups)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '分组载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
   useEffect(() => {
     void load()
+    return () => requestGuard.invalidate()
   }, [])
 
   const summary = useMemo(() => userGroupSummary(groups), [groups])
@@ -102,8 +110,8 @@ export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, det
     }
   }
 
-  if (loading) return <LoadingBlock label="载入分组列表" />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
+  if (loading && !groups.length) return <LoadingBlock label="载入分组列表" />
+  if (error && !groups.length) return <ErrorBlock message={error} onRetry={load} />
 
   return (
     <section className={adminPage.stack}>
@@ -111,7 +119,9 @@ export function UserGroupsPage({ onFeedback }: { onFeedback: (title: string, det
         title="用户分组"
         description="维护用户权益分组，并查看分组对模型可见性和计费倍率的影响。"
         primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openAction({ draft: blankGroupDraft(groups.length + 1) })}>添加用户分组</button>}
+        secondaryActions={<RefreshIconButton label="刷新用户分组" refreshing={loading} onClick={() => void load()} />}
       />
+      {error ? <InlineFeedback tone="danger" message={`用户分组刷新失败：${error}`} /> : null}
       <MetricStrip metrics={metrics} />
       {mutationError && !action ? <InlineFeedback tone="danger" message={mutationError} /> : null}
       <ListPage

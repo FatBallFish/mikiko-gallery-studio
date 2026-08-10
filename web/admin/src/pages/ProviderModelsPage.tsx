@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { ImageTaskType, ModelAccount, ModelAccountModel, ModelAccountTestImageResult } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Trash2 } from 'lucide-react'
-import { ActionMenu, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader, TooltipIconButton } from '../components'
+import { ActionMenu, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader, RefreshIconButton, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
 import { DataTable, FilterToolbar, ListPage, type ColumnDef } from '../ui/dataTable'
@@ -18,6 +18,7 @@ import {
   providerAdapterLabel,
   providerAuthLabel,
 } from './providerModelRows'
+import { createLatestListRequestGuard } from './listRefresh'
 
 type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string }
 type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportsCustomRatio: boolean; supportedPixelSizes: string[]; pixelInput: string; supportsCustomSize: boolean; minWidth: string; maxWidth: string; minHeight: string; maxHeight: string; supportedBackgrounds: string[]; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
@@ -76,13 +77,16 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
   const [mutationError, setMutationError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = async (preferredAccountId?: string) => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
       const nextAccounts = await adminApi.listModelAccounts({ page_size: 100 })
       const modelPairs = await Promise.all(nextAccounts.map(async (account) => [String(account.id), await adminApi.listModelAccountModels(account.id)] as const))
+      if (!requestGuard.isCurrent(request)) return
       const nextModels = Object.fromEntries(modelPairs)
       setAccounts(nextAccounts)
       setModelsByAccount(nextModels)
@@ -91,13 +95,18 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
         return nextAccounts.some((account) => String(account.id) === preferred) ? preferred : String(nextAccounts[0]?.id ?? '')
       })
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '模型接入载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    void load()
+    return () => requestGuard.invalidate()
+  }, [])
 
   const filteredAccounts = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -250,8 +259,8 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
     }
   }
 
-  if (loading) return <LoadingBlock label="载入模型接入" />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
+  if (loading && !accounts.length) return <LoadingBlock label="载入模型接入" />
+  if (error && !accounts.length) return <ErrorBlock message={error} onRetry={load} />
 
   const selectedAccount = filteredAccounts.find((account) => String(account.id) === expandedAccountId)
   const selectedModels = selectedAccount ? modelsByAccount[String(selectedAccount.id)] ?? [] : []
@@ -270,8 +279,10 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
       <PageHeader
         title="接入账号"
         description="管理上游模型账号、真实模型能力、健康测试和密钥轮换入口。"
-        actions={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openAccountDialog(blankAccount)}>添加账号</button>}
+        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openAccountDialog(blankAccount)}>添加账号</button>}
+        secondaryActions={<RefreshIconButton label="刷新接入账号" refreshing={loading} onClick={() => void load()} />}
       />
+      {error ? <InlineFeedback tone="danger" message={`接入账号刷新失败：${error}`} /> : null}
       {!accounts.length ? <EmptyBlock title="暂无模型接入账号" detail="创建账号后再添加真实上游模型。" /> : null}
       {accounts.length ? (
         <ListPage
