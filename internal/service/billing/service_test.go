@@ -140,6 +140,115 @@ func TestMarkOrderPaidRejectsCallbackFromDifferentProviderInstance(t *testing.T)
 	}
 }
 
+func TestPaymentOrdersSnapshotExpiryAndExpirePendingIdempotently(t *testing.T) {
+	ctx := t.Context()
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	before := time.Now().UTC()
+	defaultOrder, err := svc.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 9021, OrderNo: "PGO-DEFAULT-EXPIRY", PlanCode: "basic-monthly", Provider: "mock",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultTTL := defaultOrder.ExpiresAt.Sub(before)
+	if defaultTTL < 899*time.Second || defaultTTL > 901*time.Second {
+		t.Fatalf("default order ttl=%s, want 900s", defaultTTL)
+	}
+
+	explicitExpiry := time.Now().UTC().Add(2 * time.Minute)
+	explicitOrder, err := svc.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 9021, OrderNo: "PGO-EXPLICIT-EXPIRY", AmountCNY: "10.00000", CNYPerPoint: "0.31250", Provider: "mock",
+		ExpiresAt: explicitExpiry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !explicitOrder.ExpiresAt.Equal(explicitExpiry) {
+		t.Fatalf("explicit expiry=%s, want %s", explicitOrder.ExpiresAt, explicitExpiry)
+	}
+
+	expired, err := svc.ExpirePendingOrders(ctx, explicitExpiry.Add(time.Second), 1)
+	if err != nil || expired != 1 {
+		t.Fatalf("first expiry sweep count=%d err=%v", expired, err)
+	}
+	expiredAgain, err := svc.ExpirePendingOrders(ctx, explicitExpiry.Add(time.Second), 10)
+	if err != nil || expiredAgain != 0 {
+		t.Fatalf("idempotent expiry sweep count=%d err=%v", expiredAgain, err)
+	}
+	reloaded, err := svc.GetOrder(ctx, explicitOrder.UserID, explicitOrder.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Status != "expired" || reloaded.ClosedAt == nil {
+		t.Fatalf("expired order=%#v", reloaded)
+	}
+}
+
+func TestPaymentOrderReadsLazilyExpirePendingOrders(t *testing.T) {
+	ctx := t.Context()
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	order, err := svc.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 9022, OrderNo: "PGO-LAZY-EXPIRY", PlanCode: "basic-monthly", Provider: "mock",
+		ExpiresAt: time.Now().UTC().Add(-time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := svc.GetOrder(ctx, order.UserID, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status != "expired" || loaded.ClosedAt == nil {
+		t.Fatalf("GetOrder must lazily expire pending order, got %#v", loaded)
+	}
+	page, err := svc.ListOrders(ctx, domainbilling.ListOrdersRequest{UserID: order.UserID, Status: "expired"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || page.Items[0].ID != order.ID {
+		t.Fatalf("expired order must be visible through status filter, got %#v", page)
+	}
+}
+
+func TestExpiredPlanOrderCanCompleteFromVerifiedLatePaymentExactlyOnce(t *testing.T) {
+	ctx := t.Context()
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	order, err := svc.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 9023, OrderNo: "PGO-LATE-PLAN", PlanCode: "basic-monthly", Provider: "mock",
+		ExpiresAt: time.Now().UTC().Add(-time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.GetOrder(ctx, order.UserID, order.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	req := domainbilling.MarkOrderPaidRequest{
+		Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-LATE-PLAN", AmountCNY: order.AmountCNY,
+		ReconciliationSource: domainbilling.PaymentReconciliationSourceProviderWebhook,
+	}
+	first, err := svc.MarkOrderPaid(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.MarkOrderPaid(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Status != "paid" || second.Status != "paid" || first.LedgerID == 0 || second.LedgerID != first.LedgerID {
+		t.Fatalf("late payment must credit exactly once: first=%#v second=%#v", first, second)
+	}
+	balance, err := svc.GetBalance(ctx, order.UserID, "1.00000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if balance.AvailablePoints != "100.00000" {
+		t.Fatalf("late payment must credit one order only, got %#v", balance)
+	}
+}
+
 func TestPlanListDefaultsToNonArchivedAndSupportsStatusFilter(t *testing.T) {
 	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
 
@@ -164,6 +273,30 @@ func TestPlanListDefaultsToNonArchivedAndSupportsStatusFilter(t *testing.T) {
 	}
 	if len(archived) != 1 || archived[0].ID != 2 || archived[0].Status != "archived" {
 		t.Fatalf("expected only archived plan, got %#v", archived)
+	}
+}
+
+func TestMemoryPlanPageUsesStableIDTieBreakForDescendingSort(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	created := make([]domainbilling.SubscriptionPlan, 0, 2)
+	for _, code := range []string{"stable-alpha", "stable-beta"} {
+		plan, err := svc.CreatePlan(t.Context(), domainbilling.CreateSubscriptionPlanRequest{
+			PlanCode: code, PlanName: code, PlanType: "points_package", PurchaseEnabled: true,
+			Status: "active", PriceCNY: "12.00000", Points: "20.00000", BonusPoints: "0.00000",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		created = append(created, plan)
+	}
+	page, err := svc.ListPlansPage(t.Context(), domainbilling.SubscriptionPlanListRequest{
+		Query: "stable-", SortBy: "price_cny", SortOrder: "desc", Page: 1, PageSize: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 2 || page.Items[0].ID != created[0].ID || page.Items[1].ID != created[1].ID {
+		t.Fatalf("equal primary values must use ascending ID tie-break, got %#v", page.Items)
 	}
 }
 

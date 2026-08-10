@@ -2,6 +2,7 @@ package adminconfig_test
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -83,6 +84,28 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 		"video_allowed_formats",
 		"video_max_mb",
 	})
+}
+
+func TestPaymentsTabValidatesOrderTimeoutRange(t *testing.T) {
+	for _, value := range []int{59, 86401} {
+		t.Run(fmt.Sprintf("reject_%d", value), func(t *testing.T) {
+			svc := adminconfig.NewServiceWithStore(testConfig(), adminconfig.NewMemoryStore())
+			tab, err := svc.GetTab(t.Context(), "payments")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = svc.UpdateTab(t.Context(), domainadminconfig.UpdateTabRequest{
+				TabKey: "payments", Version: tab.Version,
+				Items: []domainadminconfig.Item{{
+					ConfigCategory: "payments", ConfigKey: "order_timeout_seconds",
+					ConfigValue: map[string]any{"value": value}, Scope: "global",
+				}},
+			})
+			if err == nil {
+				t.Fatalf("expected timeout %d to be rejected", value)
+			}
+		})
+	}
 }
 
 func TestAttachmentPolicyTabRejectsInvalidValues(t *testing.T) {

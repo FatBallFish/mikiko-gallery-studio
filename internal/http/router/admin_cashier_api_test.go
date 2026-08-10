@@ -88,6 +88,16 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	if invalidCreateRec.Code != http.StatusBadRequest {
 		t.Fatalf("explicit expiry create without duration must fail: status=%d body=%s", invalidCreateRec.Code, invalidCreateRec.Body.String())
 	}
+	unrelatedReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/plans", bytes.NewBufferString(
+		`{"plan_code":"unrelated-plan","plan_name":"其他套餐","plan_type":"points_package","purchase_enabled":false,"status":"disabled","price_cny":"8.00000","points":"8.00000","bonus_points":"0.00000","duration_days":30}`,
+	))
+	unrelatedReq.Header.Set("Authorization", "Bearer "+adminToken)
+	unrelatedReq.Header.Set("Content-Type", "application/json")
+	unrelatedRec := httptest.NewRecorder()
+	handler.ServeHTTP(unrelatedRec, unrelatedReq)
+	if unrelatedRec.Code != http.StatusCreated {
+		t.Fatalf("create unrelated plan: status=%d body=%s", unrelatedRec.Code, unrelatedRec.Body.String())
+	}
 
 	transition := func(action string, wantStatus string, wantPurchase bool) {
 		t.Helper()
@@ -170,6 +180,24 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	handler.ServeHTTP(disabledRec, disabledReq)
 	if disabledRec.Code != http.StatusOK || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"lifecycle-plan"`)) || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"credit_expiry_enabled":true`)) {
 		t.Fatalf("disabled filter must return restored plan: status=%d body=%s", disabledRec.Code, disabledRec.Body.String())
+	}
+	searchReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/plans?query=lifecycle&plan_type=points_package&status=all&sort_by=points&sort_order=desc&page=1&page_size=1", nil)
+	searchReq.Header.Set("Authorization", "Bearer "+adminToken)
+	searchRec := httptest.NewRecorder()
+	handler.ServeHTTP(searchRec, searchReq)
+	var searchResponse struct {
+		Data struct {
+			Items      []domainbilling.SubscriptionPlan `json:"items"`
+			Pagination struct {
+				Total int `json:"total"`
+			} `json:"pagination"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(searchRec.Body).Decode(&searchResponse); err != nil {
+		t.Fatalf("decode search response: %v", err)
+	}
+	if searchRec.Code != http.StatusOK || len(searchResponse.Data.Items) != 1 || searchResponse.Data.Items[0].PlanCode != "lifecycle-plan" || searchResponse.Data.Pagination.Total != 1 {
+		t.Fatalf("search and database pagination must return one matching plan: status=%d body=%s", searchRec.Code, searchRec.Body.String())
 	}
 
 	logs, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, TargetType: "cashier_plan", TargetID: fmt.Sprintf("%d", created.Data.ID)})
@@ -316,8 +344,12 @@ func TestAdminCashierReadEndpoints(t *testing.T) {
 	var ordersResp struct {
 		Data struct {
 			Items []struct {
-				OrderNo string `json:"order_no"`
-				Status  string `json:"status"`
+				OrderNo     string `json:"order_no"`
+				Status      string `json:"status"`
+				UserID      int64  `json:"user_id"`
+				Points      string `json:"points"`
+				BonusPoints string `json:"bonus_points"`
+				TotalPoints string `json:"total_points"`
 			} `json:"items"`
 			Pagination struct {
 				Total int `json:"total"`
@@ -327,7 +359,8 @@ func TestAdminCashierReadEndpoints(t *testing.T) {
 	if err := json.NewDecoder(ordersRec.Body).Decode(&ordersResp); err != nil {
 		t.Fatalf("decode admin orders: %v", err)
 	}
-	if ordersResp.Data.Pagination.Total != 2 || len(ordersResp.Data.Items) != 2 || ordersResp.Data.Items[0].Status != "pending" || ordersResp.Data.Items[0].OrderNo == "" {
+	firstOrder := ordersResp.Data.Items[0]
+	if ordersResp.Data.Pagination.Total != 2 || len(ordersResp.Data.Items) != 2 || firstOrder.Status != "pending" || firstOrder.OrderNo == "" || firstOrder.UserID <= 0 || firstOrder.Points == "" || firstOrder.BonusPoints == "" || firstOrder.TotalPoints != firstOrder.Points {
 		t.Fatalf("expected admin cashier orders to include user order, got %#v", ordersResp.Data)
 	}
 

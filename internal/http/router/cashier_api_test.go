@@ -326,7 +326,7 @@ func TestCashierPendingOrderLimitUsesAdminConfig(t *testing.T) {
 	}
 }
 
-func TestCashierOptionsUsesAdminConfiguredOrderTimeout(t *testing.T) {
+func TestCashierOrdersSnapshotAdminConfiguredOrderTimeout(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	cfg.Cashier.OrderTimeoutSeconds = 1800
 	authSvc := authservice.NewService(config.AuthConfig{
@@ -344,7 +344,7 @@ func TestCashierOptionsUsesAdminConfiguredOrderTimeout(t *testing.T) {
 		Items: []domainadminconfig.Item{{
 			ConfigCategory: "payments",
 			ConfigKey:      "order_timeout_seconds",
-			ConfigValue:    map[string]any{"value": 900},
+			ConfigValue:    map[string]any{"value": 120},
 			Scope:          "global",
 		}},
 	}); err != nil {
@@ -367,8 +367,28 @@ func TestCashierOptionsUsesAdminConfiguredOrderTimeout(t *testing.T) {
 	if err := json.NewDecoder(optionsRec.Body).Decode(&optionsResp); err != nil {
 		t.Fatalf("decode options: %v", err)
 	}
-	if optionsResp.Data.OrderTimeoutSeconds != 900 {
-		t.Fatalf("expected admin configured order timeout 900, got %d", optionsResp.Data.OrderTimeoutSeconds)
+	if optionsResp.Data.OrderTimeoutSeconds != 120 {
+		t.Fatalf("expected admin configured order timeout 120, got %d", optionsResp.Data.OrderTimeoutSeconds)
+	}
+
+	before := time.Now().UTC()
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"plan","plan_code":"basic-monthly","visible_method":"mock"}`))
+	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create expected 201, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+	var createResp struct {
+		Data domainbilling.PaymentOrder `json:"data"`
+	}
+	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	ttl := createResp.Data.ExpiresAt.Sub(before)
+	if ttl < 119*time.Second || ttl > 121*time.Second {
+		t.Fatalf("created order ttl=%s, want configured 120s", ttl)
 	}
 }
 

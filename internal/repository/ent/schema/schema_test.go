@@ -447,6 +447,12 @@ func TestWalletBucketSchemaCarriesReservationIndexes(t *testing.T) {
 	}
 }
 
+func TestPaymentOrderSchemaIndexesExpirySweep(t *testing.T) {
+	if !hasIndexFields(PaymentOrder{}.Indexes(), []string{"status", "expires_at", "id"}, false) {
+		t.Fatal("payment_orders should index status,expires_at,id for bounded expiry sweeps")
+	}
+}
+
 func TestImageArtifactRecoveryAndStorageConfigSchema(t *testing.T) {
 	requiredTaskFields := map[string]bool{
 		"provider_request_id":        false,

@@ -387,6 +387,8 @@ export type PaymentOrder = {
   id: number
   order_no: string
   user_id?: number
+	user_email?: string
+	user_nickname?: string
   plan_id: number
   plan_code: string
   plan_name: string
@@ -400,6 +402,7 @@ export type PaymentOrder = {
   amount_cny: string
   points: string
   bonus_points: string
+	total_points?: string
   credit_expiry_enabled?: boolean
   credit_valid_days?: number | null
   credited_at?: string | null

@@ -1289,6 +1289,7 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 	if !ok {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentMethodUnavailable, "payment method is unavailable")
 	}
+	expiresAt := time.Now().UTC().Add(time.Duration(a.cashierOrderTimeoutSeconds(ctx)) * time.Second)
 	if purchaseType == "custom_amount" {
 		customAmountConfig := a.cashierCustomAmountConfig(ctx)
 		if !customAmountConfig.Enabled {
@@ -1313,6 +1314,7 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 			ProviderType:       instance.ProviderType,
 			ProviderInstanceID: instance.ID,
 			IdempotencyKey:     idempotencyKey,
+			ExpiresAt:          expiresAt,
 		})
 		if err != nil {
 			return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1356,6 +1358,7 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 		ProviderType:       instance.ProviderType,
 		ProviderInstanceID: instance.ID,
 		IdempotencyKey:     idempotencyKey,
+		ExpiresAt:          expiresAt,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1443,7 +1446,15 @@ func (a *API) ensureCashierPendingOrderLimit(ctx context.Context, userID int64) 
 }
 
 func (a *API) cashierOrderTimeoutSeconds(ctx context.Context) int {
-	return a.adminConfigInt(ctx, "payments", "order_timeout_seconds", defaultPositiveInt(a.cfg.Cashier.OrderTimeoutSeconds, 1800))
+	fallback := defaultPositiveInt(a.cfg.Cashier.OrderTimeoutSeconds, 900)
+	if fallback < 60 || fallback > 86400 {
+		fallback = 900
+	}
+	value := a.adminConfigInt(ctx, "payments", "order_timeout_seconds", fallback)
+	if value < 60 || value > 86400 {
+		return fallback
+	}
+	return value
 }
 
 func (a *API) cashierMaxPendingOrdersPerUser(ctx context.Context) int {
@@ -4418,16 +4429,24 @@ func (a *API) HandleAdminCashierPlans(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	plans, err := a.billing.ListPlans(r.Context(), domainbilling.SubscriptionPlanListRequest{Status: r.URL.Query().Get("status")})
+	plans, err := a.billing.ListPlansPage(r.Context(), domainbilling.SubscriptionPlanListRequest{
+		Query:     r.URL.Query().Get("query"),
+		PlanType:  r.URL.Query().Get("plan_type"),
+		Status:    r.URL.Query().Get("status"),
+		SortBy:    r.URL.Query().Get("sort_by"),
+		SortOrder: r.URL.Query().Get("sort_order"),
+		Page:      page,
+		PageSize:  pageSize,
+	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
-	items := make([]map[string]any, 0, len(plans))
-	for _, plan := range plans {
+	items := make([]map[string]any, 0, len(plans.Items))
+	for _, plan := range plans.Items {
 		items = append(items, cashierPlanPayload(plan))
 	}
-	httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(paginateAny(items, page, pageSize), page, pageSize, len(items)))
+	httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(items, plans.Page, plans.PageSize, plans.Total))
 }
 
 func (a *API) HandleAdminCashierPlanDetail(w http.ResponseWriter, r *http.Request) {
@@ -4681,7 +4700,8 @@ func (a *API) HandleAdminCashierOrders(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	result, err := a.billing.ListOrders(r.Context(), domainbilling.ListOrdersRequest{
+	result, err := a.billing.ListAdminOrders(r.Context(), domainbilling.ListOrdersRequest{
+		Query:         strings.TrimSpace(r.URL.Query().Get("query")),
 		UserID:        userID,
 		Status:        strings.TrimSpace(r.URL.Query().Get("status")),
 		OrderNo:       strings.TrimSpace(r.URL.Query().Get("order_no")),

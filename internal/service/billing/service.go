@@ -337,6 +337,56 @@ func (s *Service) ListPlans(ctx context.Context, req domainbilling.SubscriptionP
 	return items, nil
 }
 
+func (s *Service) ListPlansPage(ctx context.Context, req domainbilling.SubscriptionPlanListRequest) (domainbilling.SubscriptionPlanPage, error) {
+	normalized, err := normalizePlanListRequest(req)
+	if err != nil {
+		return domainbilling.SubscriptionPlanPage{}, err
+	}
+	page, err := s.store.ListPlansPage(ctx, normalized)
+	if err != nil {
+		return domainbilling.SubscriptionPlanPage{}, errs.Internal("failed to load subscription plans")
+	}
+	return page, nil
+}
+
+func normalizePlanListRequest(req domainbilling.SubscriptionPlanListRequest) (domainbilling.SubscriptionPlanListRequest, error) {
+	req.Query = strings.TrimSpace(req.Query)
+	req.PlanType = strings.ToLower(strings.TrimSpace(req.PlanType))
+	req.Status = strings.ToLower(strings.TrimSpace(req.Status))
+	req.SortBy = strings.ToLower(strings.TrimSpace(req.SortBy))
+	req.SortOrder = strings.ToLower(strings.TrimSpace(req.SortOrder))
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+	if req.PageSize > 100 {
+		req.PageSize = 100
+	}
+	switch req.Status {
+	case "", "all", domainbilling.SubscriptionPlanStatusActive, domainbilling.SubscriptionPlanStatusDisabled, domainbilling.SubscriptionPlanStatusArchived:
+	default:
+		return req, errs.BadRequest("invalid subscription plan status")
+	}
+	switch req.PlanType {
+	case "", "all", "points_package", "subscription":
+	default:
+		return req, errs.BadRequest("invalid subscription plan type")
+	}
+	switch req.SortBy {
+	case "", "price_cny", "sort_order", "points":
+	default:
+		return req, errs.BadRequest("invalid subscription plan sort field")
+	}
+	switch req.SortOrder {
+	case "", "asc", "desc":
+	default:
+		return req, errs.BadRequest("invalid subscription plan sort order")
+	}
+	return req, nil
+}
+
 func (s *Service) TransitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
 	normalized, err := normalizePlanTransition(req)
 	if err != nil {
@@ -515,9 +565,23 @@ func (s *Service) GetSubscription(ctx context.Context, userID int64) (*domainbil
 }
 
 func (s *Service) ListOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.PaymentOrderPage, error) {
+	if _, err := s.store.ExpirePendingOrders(ctx, time.Now().UTC(), 500); err != nil {
+		return domainbilling.PaymentOrderPage{}, errs.Internal("failed to expire payment orders")
+	}
 	items, err := s.store.ListOrders(ctx, req)
 	if err != nil {
 		return domainbilling.PaymentOrderPage{}, errs.Internal("failed to load payment orders")
+	}
+	return items, nil
+}
+
+func (s *Service) ListAdminOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.AdminPaymentOrderPage, error) {
+	if _, err := s.store.ExpirePendingOrders(ctx, time.Now().UTC(), 500); err != nil {
+		return domainbilling.AdminPaymentOrderPage{}, errs.Internal("failed to expire payment orders")
+	}
+	items, err := s.store.ListAdminOrders(ctx, req)
+	if err != nil {
+		return domainbilling.AdminPaymentOrderPage{}, errs.Internal("failed to load payment orders")
 	}
 	return items, nil
 }
@@ -531,6 +595,9 @@ func (s *Service) ListWebhookEvents(ctx context.Context, page, pageSize int) (do
 }
 
 func (s *Service) GetOrder(ctx context.Context, userID, orderID int64) (domainbilling.PaymentOrder, error) {
+	if _, err := s.store.ExpirePendingOrders(ctx, time.Now().UTC(), 500); err != nil {
+		return domainbilling.PaymentOrder{}, errs.Internal("failed to expire payment orders")
+	}
 	item, err := s.store.GetOrder(ctx, userID, orderID)
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
@@ -542,6 +609,9 @@ func (s *Service) GetOrderByIdempotencyKey(ctx context.Context, userID int64, id
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
 	}
+	if _, err := s.store.ExpirePendingOrders(ctx, time.Now().UTC(), 500); err != nil {
+		return domainbilling.PaymentOrder{}, errs.Internal("failed to expire payment orders")
+	}
 	item, err := s.store.GetOrderByIdempotencyKey(ctx, userID, idempotencyKey)
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
@@ -552,6 +622,9 @@ func (s *Service) GetOrderByIdempotencyKey(ctx context.Context, userID int64, id
 func (s *Service) GetOrderForAdmin(ctx context.Context, orderID int64) (domainbilling.PaymentOrder, error) {
 	if orderID <= 0 {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("order_id is required")
+	}
+	if _, err := s.store.ExpirePendingOrders(ctx, time.Now().UTC(), 500); err != nil {
+		return domainbilling.PaymentOrder{}, errs.Internal("failed to expire payment orders")
 	}
 	item, err := s.store.GetOrderForAdmin(ctx, orderID)
 	if err != nil {
@@ -614,6 +687,9 @@ func (s *Service) RecordRefundFinalizeFailure(ctx context.Context, req RefundFin
 }
 
 func (s *Service) CreateOrder(ctx context.Context, req domainbilling.CreateOrderRequest) (domainbilling.PaymentOrder, error) {
+	if req.ExpiresAt.IsZero() {
+		req.ExpiresAt = time.Now().UTC().Add(15 * time.Minute)
+	}
 	item, err := s.store.CreateOrder(ctx, req)
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
@@ -622,11 +698,21 @@ func (s *Service) CreateOrder(ctx context.Context, req domainbilling.CreateOrder
 }
 
 func (s *Service) CreateCustomAmountOrder(ctx context.Context, req domainbilling.CreateCustomAmountOrderRequest) (domainbilling.PaymentOrder, error) {
+	if req.ExpiresAt.IsZero() {
+		req.ExpiresAt = time.Now().UTC().Add(15 * time.Minute)
+	}
 	item, err := s.store.CreateCustomAmountOrder(ctx, req)
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
 	return item, nil
+}
+
+func (s *Service) ExpirePendingOrders(ctx context.Context, now time.Time, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+	return s.store.ExpirePendingOrders(ctx, now.UTC(), limit)
 }
 
 func (s *Service) CancelOrder(ctx context.Context, userID, orderID int64) (domainbilling.PaymentOrder, error) {

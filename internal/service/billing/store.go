@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -100,6 +101,7 @@ type Store interface {
 	GetBalance(ctx context.Context, userID int64) (BalanceState, error)
 	ListLedger(ctx context.Context, userID int64, page, pageSize int) (domainbilling.LedgerPage, error)
 	ListPlans(ctx context.Context, req domainbilling.SubscriptionPlanListRequest) ([]domainbilling.SubscriptionPlan, error)
+	ListPlansPage(ctx context.Context, req domainbilling.SubscriptionPlanListRequest) (domainbilling.SubscriptionPlanPage, error)
 	CreatePlan(ctx context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
 	UpdatePlan(ctx context.Context, req domainbilling.UpdateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
 	TransitionPlan(ctx context.Context, req domainbilling.TransitionSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error)
@@ -107,6 +109,7 @@ type Store interface {
 	DeletePlan(ctx context.Context, planID int64) (domainbilling.SubscriptionPlan, error)
 	GetActiveSubscription(ctx context.Context, userID int64) (*domainbilling.UserSubscriptionSummary, error)
 	ListOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.PaymentOrderPage, error)
+	ListAdminOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.AdminPaymentOrderPage, error)
 	ListWebhookEvents(ctx context.Context, page, pageSize int) (domainbilling.PaymentWebhookEventPage, error)
 	GetOrder(ctx context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error)
 	GetOrderByIdempotencyKey(ctx context.Context, userID int64, idempotencyKey string) (domainbilling.PaymentOrder, error)
@@ -116,6 +119,7 @@ type Store interface {
 	ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error)
 	CreateOrder(ctx context.Context, req domainbilling.CreateOrderRequest) (domainbilling.PaymentOrder, error)
 	CreateCustomAmountOrder(ctx context.Context, req domainbilling.CreateCustomAmountOrderRequest) (domainbilling.PaymentOrder, error)
+	ExpirePendingOrders(ctx context.Context, now time.Time, limit int) (int, error)
 	InitializePaymentOrder(ctx context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error)
 	FailPaymentOrderInitialization(ctx context.Context, req domainbilling.FailPaymentOrderInitializationRequest) (domainbilling.PaymentOrder, error)
 	CancelOrder(ctx context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error)
@@ -284,6 +288,70 @@ func (s *MemoryStore) ListPlans(_ context.Context, req domainbilling.Subscriptio
 	return items, nil
 }
 
+func (s *MemoryStore) ListPlansPage(_ context.Context, req domainbilling.SubscriptionPlanListRequest) (domainbilling.SubscriptionPlanPage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+	items := make([]domainbilling.SubscriptionPlan, 0, len(s.plans))
+	query := strings.ToLower(strings.TrimSpace(req.Query))
+	planType := strings.ToLower(strings.TrimSpace(req.PlanType))
+	for _, item := range s.plans {
+		if !planMatchesListRequest(item, req) {
+			continue
+		}
+		if planType != "" && planType != "all" && item.PlanType != planType {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(item.PlanCode), query) && !strings.Contains(strings.ToLower(item.PlanName), query) {
+			continue
+		}
+		items = append(items, item)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		comparison := compareSubscriptionPlans(items[i], items[j], req.SortBy)
+		if comparison == 0 {
+			return items[i].ID < items[j].ID
+		}
+		if strings.EqualFold(req.SortOrder, "desc") {
+			return comparison > 0
+		}
+		return comparison < 0
+	})
+	total := len(items)
+	start := (req.Page - 1) * req.PageSize
+	if start > total {
+		start = total
+	}
+	end := min(start+req.PageSize, total)
+	return domainbilling.SubscriptionPlanPage{Items: items[start:end], Page: req.Page, PageSize: req.PageSize, Total: total}, nil
+}
+
+func compareSubscriptionPlans(left, right domainbilling.SubscriptionPlan, sortBy string) int {
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case "price_cny":
+		return mustDecimalValue(left.PriceCNY).Cmp(mustDecimalValue(right.PriceCNY))
+	case "points":
+		return mustDecimalValue(left.Points).Cmp(mustDecimalValue(right.Points))
+	case "sort_order":
+		return left.SortOrder - right.SortOrder
+	default:
+		return left.SortOrder - right.SortOrder
+	}
+}
+
+func mustDecimalValue(raw string) decimal.Decimal {
+	value, err := decimal.NewFromString(strings.TrimSpace(raw))
+	if err != nil {
+		return decimal.Zero
+	}
+	return value
+}
+
 func (s *MemoryStore) CreatePlan(_ context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -445,6 +513,12 @@ func (s *MemoryStore) ListOrders(_ context.Context, req domainbilling.ListOrders
 		if strings.TrimSpace(req.OrderNo) != "" && !strings.Contains(strings.ToLower(order.OrderNo), strings.ToLower(strings.TrimSpace(req.OrderNo))) {
 			continue
 		}
+		if query := strings.ToLower(strings.TrimSpace(req.Query)); query != "" &&
+			!strings.Contains(strings.ToLower(order.OrderNo), query) &&
+			!strings.Contains(strings.ToLower(order.TradeNo), query) &&
+			strconv.FormatInt(order.UserID, 10) != query {
+			continue
+		}
 		if strings.TrimSpace(req.VisibleMethod) != "" && strings.ToLower(order.VisibleMethod) != strings.ToLower(strings.TrimSpace(req.VisibleMethod)) {
 			continue
 		}
@@ -466,6 +540,19 @@ func (s *MemoryStore) ListOrders(_ context.Context, req domainbilling.ListOrders
 		end = total
 	}
 	return domainbilling.PaymentOrderPage{Items: items[start:end], Page: req.Page, PageSize: req.PageSize, Total: total}, nil
+}
+
+func (s *MemoryStore) ListAdminOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.AdminPaymentOrderPage, error) {
+	page, err := s.ListOrders(ctx, req)
+	if err != nil {
+		return domainbilling.AdminPaymentOrderPage{}, err
+	}
+	items := make([]domainbilling.AdminPaymentOrder, 0, len(page.Items))
+	for _, order := range page.Items {
+		total := mustDecimalValue(order.Points).Add(mustDecimalValue(order.BonusPoints)).Round(s.scale).StringFixed(s.scale)
+		items = append(items, domainbilling.AdminPaymentOrder{PaymentOrder: order, TotalPoints: total})
+	}
+	return domainbilling.AdminPaymentOrderPage{Items: items, Page: page.Page, PageSize: page.PageSize, Total: page.Total}, nil
 }
 
 func (s *MemoryStore) ListWebhookEvents(_ context.Context, page, pageSize int) (domainbilling.PaymentWebhookEventPage, error) {
@@ -669,6 +756,10 @@ func (s *MemoryStore) CreateOrder(_ context.Context, req domainbilling.CreateOrd
 		return domainbilling.PaymentOrder{}, errs.BadRequest("subscription plan is not purchasable")
 	}
 	now := time.Now().UTC()
+	expiresAt := req.ExpiresAt
+	if expiresAt.IsZero() {
+		expiresAt = now.Add(15 * time.Minute)
+	}
 	orderNo := strings.TrimSpace(req.OrderNo)
 	if orderNo == "" {
 		orderNo = fmt.Sprintf("PGO-%06d", s.nextOrderID)
@@ -698,7 +789,7 @@ func (s *MemoryStore) CreateOrder(_ context.Context, req domainbilling.CreateOrd
 		PaymentURL:          paymentURL,
 		QRCode:              strings.TrimSpace(req.QRCode),
 		ClientToken:         strings.TrimSpace(req.ClientToken),
-		ExpiresAt:           now.Add(15 * time.Minute),
+		ExpiresAt:           expiresAt,
 		CreatedAt:           now,
 		UpdatedAt:           now,
 	}
@@ -728,6 +819,10 @@ func (s *MemoryStore) CreateCustomAmountOrder(_ context.Context, req domainbilli
 	}
 	points := amount.Div(cnyPerPoint).Round(s.scale)
 	now := time.Now().UTC()
+	expiresAt := req.ExpiresAt
+	if expiresAt.IsZero() {
+		expiresAt = now.Add(15 * time.Minute)
+	}
 	orderNo := strings.TrimSpace(req.OrderNo)
 	if orderNo == "" {
 		orderNo = fmt.Sprintf("PGO-%06d", s.nextOrderID)
@@ -754,13 +849,44 @@ func (s *MemoryStore) CreateCustomAmountOrder(_ context.Context, req domainbilli
 		PaymentURL:         paymentURL,
 		QRCode:             strings.TrimSpace(req.QRCode),
 		ClientToken:        strings.TrimSpace(req.ClientToken),
-		ExpiresAt:          now.Add(15 * time.Minute),
+		ExpiresAt:          expiresAt,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
 	s.orders[order.ID] = order
 	s.nextOrderID++
 	return order, nil
+}
+
+func (s *MemoryStore) ExpirePendingOrders(_ context.Context, now time.Time, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ids := make([]int64, 0, len(s.orders))
+	for id := range s.orders {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	expired := 0
+	for _, id := range ids {
+		if expired >= limit {
+			break
+		}
+		order := s.orders[id]
+		if order.Status != "pending" || order.ExpiresAt.After(now) {
+			continue
+		}
+		closedAt := now
+		order.Status = "expired"
+		order.ClosedAt = &closedAt
+		order.UpdatedAt = now
+		s.orders[id] = order
+		expired++
+	}
+	return expired, nil
 }
 
 func (s *MemoryStore) InitializePaymentOrder(_ context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error) {

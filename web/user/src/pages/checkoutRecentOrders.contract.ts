@@ -87,7 +87,7 @@ const statusCases: Array<[string, string]> = [
   ['cancelled', '已取消'],
   ['closed', '已关闭'],
   ['failed', '支付失败'],
-  ['expired', '已过期'],
+	['expired', '已取消（支付超时）'],
   ['refunded', '已退款'],
   ['partially_refunded', '部分退款'],
   ['manual_review', 'manual_review'],

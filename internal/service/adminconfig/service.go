@@ -153,6 +153,11 @@ func (s *Service) UpdateTab(ctx context.Context, req domainadminconfig.UpdateTab
 			return domainadminconfig.Tab{}, errs.BadRequest(err.Error())
 		}
 	}
+	if req.TabKey == "payments" {
+		if err := validatePaymentItems(req.Items); err != nil {
+			return domainadminconfig.Tab{}, errs.BadRequest(err.Error())
+		}
+	}
 
 	nextVersion := current.Version + 1
 	if err := s.store.SaveByCategory(ctx, req.TabKey, nextVersion, req.UpdatedBy, req.Items); err != nil {
@@ -309,7 +314,7 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 			Items: []domainadminconfig.Item{
 				valueItem("payments", "enabled", false),
 				valueItem("payments", "site_base_url", cfg.Cashier.SiteBaseURL),
-				valueItem("payments", "order_timeout_seconds", defaultInt(cfg.Cashier.OrderTimeoutSeconds, 1800)),
+				valueItem("payments", "order_timeout_seconds", defaultInt(cfg.Cashier.OrderTimeoutSeconds, 900)),
 				valueItem("payments", "max_pending_orders_per_user", defaultInt(cfg.Cashier.MaxPendingOrdersPerUser, 3)),
 				valueItem("payments", "providers", []string{"alipay", "wxpay"}),
 				valueItem("payments", "custom_amount_enabled", true),

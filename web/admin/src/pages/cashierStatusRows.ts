@@ -50,7 +50,7 @@ export function cashierOrderStatusBadge(status?: string | null): CashierStatusBa
   if (normalized === 'failed') return { label: '失败', tone: 'danger' }
   if (normalized === 'canceled') return { label: '已取消', tone: 'neutral' }
   if (normalized === 'closed') return { label: '已关闭', tone: 'neutral' }
-  if (normalized === 'expired') return { label: '已过期', tone: 'danger' }
+	if (normalized === 'expired') return { label: '支付超时', tone: 'danger' }
   return { label: normalized || '未知状态', tone: 'neutral' }
 }
 

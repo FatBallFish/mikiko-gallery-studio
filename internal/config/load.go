@@ -355,7 +355,7 @@ func applyDefaults(cfg *Config) {
 	}
 	cfg.Billing.SignupTrial.GrantOncePerUser = true
 	if cfg.Cashier.OrderTimeoutSeconds == 0 {
-		cfg.Cashier.OrderTimeoutSeconds = 1800
+		cfg.Cashier.OrderTimeoutSeconds = 900
 	}
 	if cfg.Cashier.MaxPendingOrdersPerUser == 0 {
 		cfg.Cashier.MaxPendingOrdersPerUser = 3

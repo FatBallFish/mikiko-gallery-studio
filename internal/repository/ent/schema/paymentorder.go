@@ -59,6 +59,7 @@ func (PaymentOrder) Indexes() []ent.Index {
 		index.Fields("status"),
 		index.Fields("trade_no"),
 		index.Fields("expires_at"),
+		index.Fields("status", "expires_at", "id"),
 		index.Fields("completed_at"),
 	}
 }

@@ -46,7 +46,7 @@ const CHECKOUT_ORDER_STATUS_LABELS: Record<string, string> = {
   cancelled: '已取消',
   closed: '已关闭',
   failed: '支付失败',
-  expired: '已过期',
+	expired: '已取消（支付超时）',
   refunded: '已退款',
   partially_refunded: '部分退款',
 }
@@ -204,14 +204,14 @@ export function checkoutOrderRuntimeState(order: CashierOrder | null, nowMs = Da
     return { step: 'success', shouldPoll: false, label: '支付成功', detail: '积分已到账，可立即用于生成图片。' }
   }
   if (status === 'expired') {
-    return { step: 'expired', shouldPoll: false, label: '订单已过期', detail: '该订单已超过支付有效期，请重新创建订单。' }
+		return { step: 'expired', shouldPoll: false, label: '已取消（支付超时）', detail: '该订单已超过支付有效期，请重新创建订单。' }
   }
   if (status === 'failed' || status === 'closed' || status === 'canceled' || status === 'cancelled' || status === 'refunded') {
     return { step: 'failed', shouldPoll: false, label: '订单未完成', detail: '订单已关闭或支付失败，可重新创建订单。' }
   }
   const expiresAt = Date.parse(order.expires_at)
   if (Number.isFinite(expiresAt) && expiresAt <= nowMs) {
-    return { step: 'expired', shouldPoll: false, label: '订单已过期', detail: '该订单已超过支付有效期，请重新创建订单。' }
+		return { step: 'expired', shouldPoll: false, label: '已取消（支付超时）', detail: '该订单已超过支付有效期，请重新创建订单。' }
   }
   return { step: 'paying', shouldPoll: true, label: '等待支付', detail: '完成支付后页面会自动刷新订单状态和账户余额。' }
 }

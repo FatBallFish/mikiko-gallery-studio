@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 import type { PaymentOrder } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { ColumnDef, DataTable, FilterToolbar, ListPage, Pager } from '../ui/dataTable'
 import { FilterIcon } from '../ui/listIcons'
@@ -13,6 +14,8 @@ const quickFilters = [
   { label: '全部', value: '' },
   { label: '待支付', value: 'pending' },
   { label: '支付失败', value: 'failed' },
+  { label: '支付超时', value: 'expired' },
+  { label: '人工取消', value: 'canceled' },
   { label: '待回调', value: 'paid' },
   { label: '退款中', value: 'partially_refunded' },
   { label: '同步失败', value: 'sync_failed' },
@@ -68,6 +71,17 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
       ),
     },
     {
+      key: 'user',
+      title: '用户',
+      width: 'minmax(200px,1.5fr)',
+      render: (order) => (
+        <span className="grid min-w-0 gap-1">
+          <strong className="truncate text-[var(--text)]">{order.user_nickname || order.user_email || `用户 ${order.user_id ?? '-'}`}</strong>
+          <span className="truncate text-xs text-[var(--soft)]">{order.user_email || `ID ${order.user_id ?? '-'}`}</span>
+        </span>
+      ),
+    },
+    {
       key: 'status',
       title: '状态',
       width: 'minmax(90px,0.8fr)',
@@ -90,9 +104,10 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
     },
     {
       key: 'points',
-      title: '积分',
-      width: 'minmax(100px,0.8fr)',
-      render: (order) => <code>{order.points}</code>,
+      title: '积分明细',
+      width: 'minmax(150px,1fr)',
+      align: 'right',
+      render: (order) => <span className="grid gap-1 text-right text-xs"><span>基础 <code className="font-semibold text-[var(--text)]">{order.points}</code></span><span>赠送 <code>{order.bonus_points}</code></span><span className="text-[var(--soft)]">合计 <code>{order.total_points ?? order.points}</code></span></span>,
     },
     {
       key: 'payment',
@@ -113,7 +128,7 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
       <PageHeader
         title="订单管理"
         description="按订单号、用户、渠道流水号定位订单，并优先处理异常状态。"
-        secondaryActions={<button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={() => void load(page)}>刷新</button>}
+        secondaryActions={<TooltipIconButton label="刷新订单列表" disabled={loading} onClick={() => void load(page)}><RefreshCw /></TooltipIconButton>}
       />
       <ListPage
         filters={(
