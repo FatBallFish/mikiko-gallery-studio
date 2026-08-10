@@ -54,6 +54,203 @@ func TestReconcileLegacyCompletedBindingMigratesOnlyVerifiedLegacyDigest(t *test
 	}
 }
 
+func TestReconcileLegacyCompletedBindingAcceptsPreDocumentationSchema(t *testing.T) {
+	values := legacyBindingRuntimeValues()
+	values["PIC_GALLERY_DOCS_URL"] = "/developer-docs/"
+	values["PIC_GALLERY_DOCS_PROBE_URL"] = ""
+	previousValues := cloneRuntimeValues(values)
+	delete(previousValues, "PIC_GALLERY_DOCS_URL")
+	delete(previousValues, "PIC_GALLERY_DOCS_PROBE_URL")
+	previousCanonicalDigest, err := setupRequestDigest(previousValues, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousRelease := LegacySetupReleaseIdentity{
+		ApplicationVersion: "v1.0.0", ImageRegistry: "docker.io/fatballfish", ImageTag: "v1.0.0", ReleaseVersion: "v1.0.0",
+	}
+	previousLegacyDigest, err := legacySetupRequestDigest(previousRelease.apply(previousValues), "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalDigest, err := setupRequestDigest(values, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if previousCanonicalDigest == canonicalDigest || previousLegacyDigest == canonicalDigest {
+		t.Fatal("pre-documentation and current canonical fixtures unexpectedly produced the same digest")
+	}
+
+	for _, test := range []struct {
+		name   string
+		digest string
+	}{
+		{name: "canonical digest", digest: previousCanonicalDigest},
+		{name: "release-field digest", digest: previousLegacyDigest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			proof := CommitProof{
+				OperationID: "019d0000-0000-7000-8000-000000000456", InstallationID: values["INSTALLATION_ID"],
+				RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion, ConfigRevision: 7, RequestDigest: test.digest,
+			}
+			stateStore := &legacyBindingStateStore{state: completedLegacyBindingState(proof)}
+			bindingStore := &legacyBindingSetupStore{binding: SetupBinding{
+				OperationID: proof.OperationID, InstallationID: proof.InstallationID,
+				ConfigRevision: proof.ConfigRevision, RequestDigest: test.digest,
+				AdminID: 1, AdminEmail: "admin@example.com",
+			}}
+
+			changed, err := ReconcileLegacyCompletedBinding(t.Context(), completedLegacyBindingBootstrap(values), previousRelease, stateStore, func(context.Context, string) (SetupStoreSession, error) {
+				return bindingStore, nil
+			})
+			if err != nil {
+				t.Fatalf("ReconcileLegacyCompletedBinding: %v", err)
+			}
+			if !changed || bindingStore.binding.RequestDigest != canonicalDigest || stateStore.state.Commit.RequestDigest != canonicalDigest {
+				t.Fatalf("pre-documentation binding was not canonicalized: changed=%t binding=%q state=%q want=%q", changed, bindingStore.binding.RequestDigest, stateStore.state.Commit.RequestDigest, canonicalDigest)
+			}
+		})
+	}
+}
+
+func TestReconcileLegacyCompletedBindingRejectsPreDocumentationSchemaWithNonDefaultDocumentationValues(t *testing.T) {
+	values := legacyBindingRuntimeValues()
+	values["PIC_GALLERY_DOCS_URL"] = "https://docs.example.com/"
+	values["PIC_GALLERY_DOCS_PROBE_URL"] = "https://docs.example.com/health"
+	previousValues := cloneRuntimeValues(values)
+	delete(previousValues, "PIC_GALLERY_DOCS_URL")
+	delete(previousValues, "PIC_GALLERY_DOCS_PROBE_URL")
+	previousDigest, err := setupRequestDigest(previousValues, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proof := CommitProof{
+		OperationID: "019d0000-0000-7000-8000-000000000456", InstallationID: values["INSTALLATION_ID"],
+		RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion, ConfigRevision: 7, RequestDigest: previousDigest,
+	}
+	stateStore := &legacyBindingStateStore{state: completedLegacyBindingState(proof)}
+	bindingStore := &legacyBindingSetupStore{binding: SetupBinding{
+		OperationID: proof.OperationID, InstallationID: proof.InstallationID,
+		ConfigRevision: proof.ConfigRevision, RequestDigest: previousDigest,
+		AdminID: 1, AdminEmail: "admin@example.com",
+	}}
+
+	changed, err := ReconcileLegacyCompletedBinding(t.Context(), completedLegacyBindingBootstrap(values), LegacySetupReleaseIdentity{}, stateStore, func(context.Context, string) (SetupStoreSession, error) {
+		return bindingStore, nil
+	})
+	if !errors.Is(err, ErrSetupBindingMismatch) || changed {
+		t.Fatalf("non-default documentation compatibility = changed %t, err %v", changed, err)
+	}
+	if len(bindingStore.updates) != 0 || stateStore.reconcileCalls != 0 {
+		t.Fatalf("non-default documentation binding was mutated: database=%#v state_calls=%d", bindingStore.updates, stateStore.reconcileCalls)
+	}
+}
+
+func TestReconcileLegacyCompletedBindingRejectsDivergentHistoricalDigests(t *testing.T) {
+	values := legacyBindingRuntimeValues()
+	values["PIC_GALLERY_DOCS_URL"] = "/developer-docs/"
+	values["PIC_GALLERY_DOCS_PROBE_URL"] = ""
+	previousValues := cloneRuntimeValues(values)
+	delete(previousValues, "PIC_GALLERY_DOCS_URL")
+	delete(previousValues, "PIC_GALLERY_DOCS_PROBE_URL")
+	previousRelease := LegacySetupReleaseIdentity{
+		ApplicationVersion: "v1.0.0", ImageRegistry: "docker.io/fatballfish", ImageTag: "v1.0.0", ReleaseVersion: "v1.0.0",
+	}
+	stateDigest, err := setupRequestDigest(previousValues, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindingDigest, err := legacySetupRequestDigest(previousRelease.apply(previousValues), "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stateDigest == bindingDigest {
+		t.Fatal("historical digest fixtures unexpectedly match")
+	}
+
+	proof := CommitProof{
+		OperationID: "019d0000-0000-7000-8000-000000000456", InstallationID: values["INSTALLATION_ID"],
+		RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion, ConfigRevision: 7, RequestDigest: stateDigest,
+	}
+	stateStore := &legacyBindingStateStore{state: completedLegacyBindingState(proof)}
+	bindingStore := &legacyBindingSetupStore{binding: SetupBinding{
+		OperationID: proof.OperationID, InstallationID: proof.InstallationID,
+		ConfigRevision: proof.ConfigRevision, RequestDigest: bindingDigest,
+		AdminID: 1, AdminEmail: "admin@example.com",
+	}}
+
+	changed, err := ReconcileLegacyCompletedBinding(t.Context(), completedLegacyBindingBootstrap(values), previousRelease, stateStore, func(context.Context, string) (SetupStoreSession, error) {
+		return bindingStore, nil
+	})
+	if !errors.Is(err, ErrSetupBindingMismatch) || changed {
+		t.Fatalf("divergent historical binding = changed %t, err %v", changed, err)
+	}
+	if len(bindingStore.updates) != 0 || stateStore.reconcileCalls != 0 {
+		t.Fatalf("divergent historical binding was mutated: database=%#v state_calls=%d", bindingStore.updates, stateStore.reconcileCalls)
+	}
+}
+
+func TestReconcileLegacyCompletedBindingCompletesPartialMigrationIdempotently(t *testing.T) {
+	values := legacyBindingRuntimeValues()
+	values["PIC_GALLERY_DOCS_URL"] = "/developer-docs/"
+	values["PIC_GALLERY_DOCS_PROBE_URL"] = ""
+	previousValues := cloneRuntimeValues(values)
+	delete(previousValues, "PIC_GALLERY_DOCS_URL")
+	delete(previousValues, "PIC_GALLERY_DOCS_PROBE_URL")
+	previousDigest, err := setupRequestDigest(previousValues, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalDigest, err := setupRequestDigest(values, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name           string
+		stateDigest    string
+		bindingDigest  string
+		stateWrites    int
+		databaseWrites int
+	}{
+		{name: "database already current", stateDigest: previousDigest, bindingDigest: canonicalDigest, stateWrites: 1},
+		{name: "install state already current", stateDigest: canonicalDigest, bindingDigest: previousDigest, databaseWrites: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			proof := CommitProof{
+				OperationID: "019d0000-0000-7000-8000-000000000456", InstallationID: values["INSTALLATION_ID"],
+				RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion, ConfigRevision: 7, RequestDigest: test.stateDigest,
+			}
+			stateStore := &legacyBindingStateStore{state: completedLegacyBindingState(proof)}
+			bindingStore := &legacyBindingSetupStore{binding: SetupBinding{
+				OperationID: proof.OperationID, InstallationID: proof.InstallationID,
+				ConfigRevision: proof.ConfigRevision, RequestDigest: test.bindingDigest,
+				AdminID: 1, AdminEmail: "admin@example.com",
+			}}
+			openStore := func(context.Context, string) (SetupStoreSession, error) { return bindingStore, nil }
+
+			changed, err := ReconcileLegacyCompletedBinding(t.Context(), completedLegacyBindingBootstrap(values), LegacySetupReleaseIdentity{}, stateStore, openStore)
+			if err != nil || !changed {
+				t.Fatalf("partial reconciliation = changed %t, err %v", changed, err)
+			}
+			if stateStore.state.Commit.RequestDigest != canonicalDigest || bindingStore.binding.RequestDigest != canonicalDigest {
+				t.Fatalf("partial binding was not canonicalized: binding=%q state=%q", bindingStore.binding.RequestDigest, stateStore.state.Commit.RequestDigest)
+			}
+			if stateStore.reconcileCalls != test.stateWrites || len(bindingStore.updates) != test.databaseWrites {
+				t.Fatalf("partial reconciliation writes: database=%d state=%d", len(bindingStore.updates), stateStore.reconcileCalls)
+			}
+
+			changed, err = ReconcileLegacyCompletedBinding(t.Context(), completedLegacyBindingBootstrap(values), LegacySetupReleaseIdentity{}, stateStore, openStore)
+			if err != nil || changed {
+				t.Fatalf("idempotent reconciliation = changed %t, err %v", changed, err)
+			}
+			if stateStore.reconcileCalls != test.stateWrites || len(bindingStore.updates) != test.databaseWrites {
+				t.Fatalf("idempotent reconciliation wrote again: database=%d state=%d", len(bindingStore.updates), stateStore.reconcileCalls)
+			}
+		})
+	}
+}
+
 func TestReconcileLegacyCompletedBindingRejectsUnverifiableDigestWithoutWriting(t *testing.T) {
 	values := legacyBindingRuntimeValues()
 	previousRelease := LegacySetupReleaseIdentity{ApplicationVersion: "v1.0.0", ImageTag: "v1.0.0"}

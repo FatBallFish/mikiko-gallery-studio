@@ -1058,9 +1058,16 @@ func legacySetupRequestDigest(values map[string]string, adminEmail string) (stri
 }
 
 func setupRequestDigestWithReleaseFields(values map[string]string, adminEmail string, includeReleaseFields bool) (string, error) {
+	return setupRequestDigestWithOmittedFields(values, adminEmail, includeReleaseFields, nil)
+}
+
+func setupRequestDigestWithOmittedFields(values map[string]string, adminEmail string, includeReleaseFields bool, omittedFields map[string]struct{}) (string, error) {
 	entries := make([]config.EnvEntry, 0, len(values))
 	for name, value := range values {
 		if !includeReleaseFields && setupReleaseField(name) {
+			continue
+		}
+		if _, omitted := omittedFields[name]; omitted {
 			continue
 		}
 		entries = append(entries, config.EnvEntry{Key: name, Value: value})
