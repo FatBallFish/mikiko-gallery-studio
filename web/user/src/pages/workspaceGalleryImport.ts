@@ -60,11 +60,12 @@ export function mergeReferenceAssets<T extends { id: string }>(current: T[], inc
 export function firstGalleryReferenceReuse(currentReferenceCount: number, imported: ReferenceAsset[], capability: Capability) {
   if (currentReferenceCount !== 0 || !imported.length || !imported[0].generation_snapshot) return null
   const snapshot = imported[0].generation_snapshot
-  return normalizeWorkspaceCreationDraft(workspaceCreationDraftFromSnapshot({
+  const draft = workspaceCreationDraftFromSnapshot({
     ...snapshot,
     requested_output_image_count: snapshot.image_count,
-    reference_asset_ids: [imported[0].id],
-  }), capability)
+  })
+  draft.reference_asset_ids = [imported[0].id]
+  return normalizeWorkspaceCreationDraft(draft, capability)
 }
 
 export function galleryImportSuccessMessage(importedCount: number, notices: string[] = []) {

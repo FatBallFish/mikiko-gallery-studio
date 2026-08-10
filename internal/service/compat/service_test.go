@@ -23,6 +23,7 @@ import (
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 func TestOpenAICompatGenerateRoutesToOpenRouter(t *testing.T) {
@@ -265,8 +266,8 @@ func TestOpenAICompatGenerationUsesAuthoritativePixelValidationForExplicitSize(t
 			if providerCalls != 0 {
 				t.Fatalf("invalid explicit pixels reached provider %d times", providerCalls)
 			}
-			if !bytes.Contains(rec.Body.Bytes(), []byte("invalid_explicit_dimensions")) {
-				t.Fatalf("expected typed explicit-dimensions error, got body=%s", rec.Body.String())
+			if !bytes.Contains(rec.Body.Bytes(), []byte(errs.CodeImageCapabilityMismatch)) || !bytes.Contains(rec.Body.Bytes(), []byte("宽高必须为 16 的倍数")) {
+				t.Fatalf("expected actionable capability error, got body=%s", rec.Body.String())
 			}
 		})
 	}

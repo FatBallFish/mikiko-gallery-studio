@@ -1056,13 +1056,13 @@ func TestEstimateRouteModelPreservesTypedSizeValidationErrors(t *testing.T) {
 	}})
 
 	tests := []struct {
-		name string
-		req  domainbilling.EstimateRequest
-		code string
+		name  string
+		req   domainbilling.EstimateRequest
+		field string
+		rule  string
 	}{
-		{name: "ratio bounds", req: domainbilling.EstimateRequest{SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "4:1"}, code: modelhub.CodeInvalidAspectRatio},
-		{name: "illegal pixels", req: domainbilling.EstimateRequest{SizeMode: "pixel", RequestedSize: "1001x777"}, code: modelhub.CodeInvalidExplicitDimensions},
-		{name: "mixed ratio", req: domainbilling.EstimateRequest{SizeMode: "ratio", BaseResolution: "auto", AspectRatio: "1:1", RequestedSize: "1024x1024"}, code: modelhub.CodeInvalidSizeMode},
+		{name: "ratio bounds", req: domainbilling.EstimateRequest{SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "4:1"}, field: "aspect_ratio", rule: "max_ratio"},
+		{name: "illegal pixels", req: domainbilling.EstimateRequest{SizeMode: "pixel", RequestedSize: "1001x777"}, field: "pixel_size", rule: "multiple_of_16"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1071,10 +1071,22 @@ func TestEstimateRouteModelPreservesTypedSizeValidationErrors(t *testing.T) {
 			tt.req.RequestedOutputImageCount = 1
 			_, err := svc.Estimate(tt.req)
 			appErr, ok := err.(*errs.Error)
-			if !ok || appErr.StatusCode != 400 || appErr.Code != tt.code {
-				t.Fatalf("Estimate error = %#v, want 400/%s", err, tt.code)
+			if !ok || appErr.StatusCode != 400 || appErr.Code != errs.CodeImageCapabilityMismatch {
+				t.Fatalf("Estimate error = %#v, want 400/%s", err, errs.CodeImageCapabilityMismatch)
+			}
+			if appErr.Details["field"] != tt.field || appErr.Details["rule"] != tt.rule {
+				t.Fatalf("Estimate details = %#v, want field=%q rule=%q", appErr.Details, tt.field, tt.rule)
 			}
 		})
+	}
+
+	_, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "ratio", BaseResolution: "auto", AspectRatio: "1:1", RequestedSize: "1024x1024",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	appErr, ok := err.(*errs.Error)
+	if !ok || appErr.StatusCode != 400 || appErr.Code != modelhub.CodeInvalidSizeMode {
+		t.Fatalf("mixed size mode error = %#v, want 400/%s", err, modelhub.CodeInvalidSizeMode)
 	}
 }
 

@@ -90,14 +90,14 @@ for required in 'latest' 'release-manifest.json' 'concrete' 'current directory' 
   require_text "$ROOT/docs/runbooks/backend-deployment.md" "$required"
 done
 for required in \
-  'missing rollout row defaults to disabled' \
-  'Ordinary later upgrades preserve the persisted enabled or disabled value' \
-  'GET the current rollout state and explicitly disable alias creation before starting any rollout or rollback that may include cleanup-unaware API nodes' \
-  'initial migration to a cleanup-aware release'; do
+  'Gallery references always create non-owning aliases to the original object' \
+  'There is no runtime rollout switch' \
+  'Before rolling back, verify the target release remains alias-aware and protects shared objects during cleanup'; do
   require_text "$ROOT/docs/runbooks/backend-deployment.md" "$required"
 done
 forbid_text "$ROOT/docs/runbooks/backend-deployment.md" '--application-version'
 forbid_text "$ROOT/docs/runbooks/backend-deployment.md" 'disabled after every upgrade'
+forbid_text "$ROOT/docs/runbooks/backend-deployment.md" 'runtime_rollout/no_copy_reference_aliases'
 
 for required in 'mgsctl' 'release-manifest.json' 'docker.io/fatballfish/mikiko-gallery-studio-api' 'mgsctl upgrade'; do
   require_text "$ROOT/docs/deploy/backend-runbook.md" "$required"
