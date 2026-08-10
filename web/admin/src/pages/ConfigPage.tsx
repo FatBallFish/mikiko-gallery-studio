@@ -207,14 +207,14 @@ export function ConfigPage({
 
   if (loading) return <LoadingBlock label="载入通用配置" />
   if (error) return <ErrorBlock message={error} onRetry={load} />
-  if (!rows.length) return <EmptyBlock title="暂无通用配置项" detail="配置中心尚未返回文档、公开内容等低风险配置。" />
+  if (!rows.length) return <EmptyBlock title="暂无通用配置项" detail="配置中心尚未返回公开内容等低风险配置。" />
 
   return (
     <section className={adminPage.stack}>
       {!compact ? (
         <PageHeader
           title="通用配置"
-          detail="只维护文档、公开内容等低风险配置；认证、支付、审核和生成限制已拆到对应独立页面。"
+          detail="只维护公开内容等低风险配置；认证、支付、审核和生成限制已拆到对应独立页面。"
         />
       ) : null}
 

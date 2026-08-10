@@ -3,11 +3,14 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +27,250 @@ func TestLocalBackendRejectsTraversal(t *testing.T) {
 		t.Fatalf("expected traversal get to behave like not found, got %v", err)
 	}
 }
+
+func TestLocalBackendStreamsSizedWritesAndBoundedReads(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	streaming, ok := any(backend).(StreamingBackend)
+	if !ok {
+		t.Fatal("local backend must implement StreamingBackend")
+	}
+	content := strings.Repeat("streaming-archive", 64)
+	if err := streaming.PutReader(t.Context(), "gallery-exports/job/attempt.zip", "application/zip", strings.NewReader(content), int64(len(content))); err != nil {
+		t.Fatal(err)
+	}
+	reader, size, err := streaming.OpenReader(t.Context(), "gallery-exports/job/attempt.zip", int64(len(content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := io.ReadAll(reader)
+	if closeErr := reader.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil || size != int64(len(content)) || string(loaded) != content {
+		t.Fatalf("streamed local read size=%d len=%d err=%v", size, len(loaded), err)
+	}
+	if reader, _, err := streaming.OpenReader(t.Context(), "gallery-exports/job/attempt.zip", int64(len(content)-1)); !errors.Is(err, ErrObjectTooLarge) || reader != nil {
+		t.Fatalf("oversize open reader=%v err=%v", reader, err)
+	}
+}
+
+func TestLocalBackendPutReaderRejectsShortExtraAndCanceledStreams(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	streaming := any(backend).(StreamingBackend)
+	for _, test := range []struct {
+		name   string
+		reader io.Reader
+		size   int64
+		want   error
+	}{
+		{name: "short", reader: strings.NewReader("abc"), size: 4, want: ErrSizeMismatch},
+		{name: "extra", reader: strings.NewReader("abcde"), size: 4, want: ErrSizeMismatch},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := streaming.PutReader(t.Context(), "gallery-exports/invalid.zip", "application/zip", test.reader, test.size); !errors.Is(err, test.want) {
+				t.Fatalf("PutReader error=%v, want %v", err, test.want)
+			}
+			if _, err := backend.Get(t.Context(), "gallery-exports/invalid.zip"); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("invalid stream was committed: %v", err)
+			}
+		})
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := streaming.PutReader(ctx, "gallery-exports/canceled.zip", "application/zip", strings.NewReader("abcd"), 4); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled PutReader error=%v", err)
+	}
+}
+
+func TestS3BackendStreamingRequestUsesKnownLengthAndClosesBoundedResponse(t *testing.T) {
+	responseBody := &trackingReadCloser{Reader: strings.NewReader("archive")}
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.Method {
+		case http.MethodPut:
+			if req.ContentLength != 7 || req.Header.Get("X-Amz-Content-Sha256") != "UNSIGNED-PAYLOAD" {
+				t.Fatalf("stream PUT length=%d hash=%q", req.ContentLength, req.Header.Get("X-Amz-Content-Sha256"))
+			}
+			body, err := io.ReadAll(req.Body)
+			if err != nil || string(body) != "archive" {
+				t.Fatalf("stream PUT body=%q err=%v", body, err)
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+		case http.MethodGet:
+			return &http.Response{StatusCode: http.StatusOK, Body: responseBody, ContentLength: 7, Header: make(http.Header)}, nil
+		default:
+			return nil, fmt.Errorf("unexpected method %s", req.Method)
+		}
+	})
+	backend, err := NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{Endpoint: "https://s3.example.test", Region: "us-east-1", Bucket: "bucket", AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.client = &http.Client{Transport: transport}
+	streaming := any(backend).(StreamingBackend)
+	if err := streaming.PutReader(t.Context(), "gallery-exports/job/attempt.zip", "application/zip", strings.NewReader("archive"), 7); err != nil {
+		t.Fatal(err)
+	}
+	reader, size, err := streaming.OpenReader(t.Context(), "gallery-exports/job/attempt.zip", 7)
+	if err != nil || size != 7 {
+		t.Fatalf("OpenReader size=%d err=%v", size, err)
+	}
+	if _, err := io.ReadAll(reader); err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !responseBody.closed {
+		t.Fatal("S3 streaming response was not closed")
+	}
+}
+
+func TestS3StreamingTransfersUseCallerDeadlineBeyondThirtySeconds(t *testing.T) {
+	observed := make([]time.Duration, 0, 2)
+	backend, err := NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{Endpoint: "https://s3.example.test", Region: "us-east-1", Bucket: "bucket", AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		deadline, ok := req.Context().Deadline()
+		if !ok {
+			return nil, errors.New("streaming request is missing caller deadline")
+		}
+		observed = append(observed, time.Until(deadline))
+		switch req.Method {
+		case http.MethodPut:
+			if _, err := io.ReadAll(req.Body); err != nil {
+				return nil, err
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+		case http.MethodGet:
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("archive")), ContentLength: 7, Header: make(http.Header)}, nil
+		default:
+			return nil, fmt.Errorf("unexpected method %s", req.Method)
+		}
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	if err := backend.PutReader(ctx, "gallery-exports/job/attempt.zip", "application/zip", strings.NewReader("archive"), 7); err != nil {
+		t.Fatal(err)
+	}
+	reader, _, err := backend.OpenReader(ctx, "gallery-exports/job/attempt.zip", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, readErr := io.ReadAll(reader)
+	closeErr := reader.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		t.Fatal(err)
+	}
+	if len(observed) != 2 {
+		t.Fatalf("streaming request deadlines=%v", observed)
+	}
+	for _, remaining := range observed {
+		if remaining < 40*time.Second {
+			t.Fatalf("S3 client shortened caller transfer deadline to %s", remaining)
+		}
+	}
+}
+
+func TestS3BackendPutReaderPreservesContextErrorsBeforeSizeMismatch(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		context func(t *testing.T) (context.Context, context.CancelFunc)
+		want    error
+	}{
+		{name: "canceled", context: func(t *testing.T) (context.Context, context.CancelFunc) { return context.WithCancel(t.Context()) }, want: context.Canceled},
+		{name: "deadline", context: func(t *testing.T) (context.Context, context.CancelFunc) {
+			return context.WithTimeout(t.Context(), 20*time.Millisecond)
+		}, want: context.DeadlineExceeded},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := test.context(t)
+			defer cancel()
+			backend := newS3StreamingTestBackend(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				buffer := make([]byte, 2)
+				if _, err := io.ReadFull(req.Body, buffer); err != nil {
+					return nil, err
+				}
+				if errors.Is(test.want, context.Canceled) {
+					cancel()
+				}
+				<-req.Context().Done()
+				return nil, req.Context().Err()
+			}))
+			err := backend.PutReader(ctx, "gallery-exports/job/partial.zip", "application/zip", strings.NewReader("archive"), 7)
+			if !errors.Is(err, test.want) || errors.Is(err, ErrSizeMismatch) {
+				t.Fatalf("partial upload error=%v, want %v without ErrSizeMismatch", err, test.want)
+			}
+		})
+	}
+}
+
+func TestS3BackendPutReaderReportsGenuineShortSourceAsSizeMismatch(t *testing.T) {
+	backend := newS3StreamingTestBackend(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		_, err := io.ReadAll(req.Body)
+		return nil, err
+	}))
+	err := backend.PutReader(t.Context(), "gallery-exports/job/short.zip", "application/zip", strings.NewReader("abc"), 7)
+	if !errors.Is(err, ErrSizeMismatch) {
+		t.Fatalf("short source error=%v, want ErrSizeMismatch", err)
+	}
+}
+
+func newS3StreamingTestBackend(t *testing.T, transport http.RoundTripper) *S3Backend {
+	t.Helper()
+	backend, err := NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{Endpoint: "https://s3.example.test", Region: "us-east-1", Bucket: "bucket", AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.client = &http.Client{Transport: transport}
+	return backend
+}
+
+func TestS3OpenReaderRejectsKnownOversizeAndClosesResponse(t *testing.T) {
+	body := &trackingReadCloser{Reader: strings.NewReader("oversize")}
+	backend, err := NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{Endpoint: "https://s3.example.test", Region: "us-east-1", Bucket: "bucket", AccessKeyID: "access", SecretAccessKey: "secret", ForcePathStyle: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: body, ContentLength: 8, Header: make(http.Header)}, nil
+	})}
+	reader, _, err := backend.OpenReader(t.Context(), "gallery-exports/job/attempt.zip", 7)
+	if !errors.Is(err, ErrObjectTooLarge) || reader != nil || !body.closed {
+		t.Fatalf("oversize reader=%v closed=%v err=%v", reader, body.closed, err)
+	}
+}
+
+func TestStreamingOpenReaderHonorsCancellationDuringRead(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	if err := backend.Put(t.Context(), "gallery-exports/cancel.zip", "application/zip", []byte("archive")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	reader, _, err := backend.OpenReader(ctx, "gallery-exports/cancel.zip", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if _, err := io.ReadAll(reader); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled read error=%v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type trackingReadCloser struct {
+	io.Reader
+	closed bool
+}
+
+func (r *trackingReadCloser) Close() error { r.closed = true; return nil }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return fn(req) }
 
 func TestTemporaryMediaURLProjectionSignsPreviewAndDownloadSeparately(t *testing.T) {
 	backend := &recordingTemporaryURLBackend{}
@@ -458,6 +705,228 @@ func TestProjectTemporaryMediaURLsBucketsPreviewAndFreshlySignsDownload(t *testi
 	}
 	if second.PreviewURL == third.PreviewURL {
 		t.Fatal("preview URL did not rotate at the next signing bucket")
+	}
+}
+
+func TestLocalBackendListObjectsPaginatesWithinPrefix(t *testing.T) {
+	root := t.TempDir()
+	backend := NewLocalBackend(root)
+	for _, key := range []string{
+		"generated-images/7/b.png",
+		"reference-assets/ignored.png",
+		"generated-images/7/a.png",
+		"generated-images/8/d.png",
+		"generated-images/8/c.png",
+		"generated-images/a/z.png",
+		"generated-images/a.png",
+	} {
+		if err := backend.Put(t.Context(), key, "image/png", []byte(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wantModifiedAt := time.Date(2026, time.August, 9, 1, 2, 3, 0, time.UTC)
+	modifiedPath, ok := backend.resolvePath("generated-images/7/a.png")
+	if !ok {
+		t.Fatal("resolve generated image path")
+	}
+	if err := os.Chtimes(modifiedPath, wantModifiedAt, wantModifiedAt); err != nil {
+		t.Fatalf("set object mtime: %v", err)
+	}
+
+	var (
+		cursor   string
+		objects  []ObjectInfo
+		pageRuns int
+	)
+	for {
+		// A fresh backend proves that pagination state lives entirely in the
+		// opaque cursor rather than process memory.
+		page, err := NewLocalBackend(root).ListObjects(t.Context(), "generated-images/", cursor, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pageRuns++
+		objects = append(objects, page.Objects...)
+		if page.NextCursor == "" {
+			break
+		}
+		if strings.Contains(page.NextCursor, "generated-images/") || page.NextCursor == page.Objects[len(page.Objects)-1].ObjectKey {
+			t.Fatalf("cursor exposes implementation key %q", page.NextCursor)
+		}
+		cursor = page.NextCursor
+	}
+	if pageRuns != 3 {
+		t.Fatalf("page runs=%d want 3", pageRuns)
+	}
+	wantKeys := map[string]struct{}{
+		"generated-images/7/a.png": {},
+		"generated-images/7/b.png": {},
+		"generated-images/8/c.png": {},
+		"generated-images/8/d.png": {},
+		"generated-images/a.png":   {},
+		"generated-images/a/z.png": {},
+	}
+	if len(objects) != len(wantKeys) {
+		t.Fatalf("objects=%#v want keys=%#v", objects, wantKeys)
+	}
+	seen := make(map[string]struct{}, len(objects))
+	foundKnownMtime := false
+	for _, object := range objects {
+		if _, ok := wantKeys[object.ObjectKey]; !ok {
+			t.Fatalf("unexpected object %q", object.ObjectKey)
+		}
+		if _, duplicate := seen[object.ObjectKey]; duplicate {
+			t.Fatalf("duplicate object %q", object.ObjectKey)
+		}
+		seen[object.ObjectKey] = struct{}{}
+		if object.ObjectKey == "generated-images/7/a.png" {
+			foundKnownMtime = object.ModifiedAt.Equal(wantModifiedAt)
+		}
+	}
+	if !foundKnownMtime {
+		t.Fatal("known object mtime was not preserved")
+	}
+}
+
+func TestLocalBackendListObjectsBoundsIncrementalCandidatesPerPage(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	for index := 99; index >= 0; index-- {
+		key := fmt.Sprintf("generated-images/%03d/result.png", index)
+		if err := backend.Put(t.Context(), key, "image/png", []byte(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	first, firstStats, err := backend.listObjectsIncrementally(t.Context(), "generated-images/", "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Objects) != 2 || first.NextCursor == "" {
+		t.Fatalf("first page=%#v", first)
+	}
+	if firstStats.VisitedObjects != 3 || firstStats.MaterializedObjects != 3 || firstStats.DirectoryEntriesRead > 32 {
+		t.Fatalf("first page scanned beyond limit+1: %#v", firstStats)
+	}
+
+	second, secondStats, err := backend.listObjectsIncrementally(t.Context(), "generated-images/", first.NextCursor, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Objects) != 2 || second.Objects[0].ObjectKey == first.Objects[0].ObjectKey || second.Objects[0].ObjectKey == first.Objects[1].ObjectKey ||
+		second.Objects[1].ObjectKey == first.Objects[0].ObjectKey || second.Objects[1].ObjectKey == first.Objects[1].ObjectKey {
+		t.Fatalf("second page=%#v", second)
+	}
+	if secondStats.VisitedObjects != 3 || secondStats.MaterializedObjects != 3 || secondStats.DirectoryEntriesRead > 32 {
+		t.Fatalf("second page rescanned or materialized beyond limit+1: %#v", secondStats)
+	}
+}
+
+func TestLocalBackendListObjectsBoundsFlatDirectoryTraversal(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "reference-assets")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const objectCount = 10_000
+	for index := range objectCount {
+		name := fmt.Sprintf("asset-%05d.png", index)
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wantModifiedAt := time.Date(2026, time.August, 9, 2, 3, 4, 0, time.UTC)
+	if err := os.Chtimes(filepath.Join(directory, "asset-05000.png"), wantModifiedAt, wantModifiedAt); err != nil {
+		t.Fatal(err)
+	}
+
+	backend := NewLocalBackend(root)
+	seen := make(map[string]struct{}, objectCount)
+	cursor := ""
+	foundKnownMtime := false
+	for pageNumber := 0; ; pageNumber++ {
+		page, stats, err := backend.listObjectsIncrementally(t.Context(), "reference-assets/", cursor, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pageNumber < 2 && (stats.DirectoryEntriesRead > 32 || stats.MaterializedObjects > 3) {
+			t.Fatalf("page %d read beyond limit+1: %#v", pageNumber, stats)
+		}
+		for _, object := range page.Objects {
+			if _, duplicate := seen[object.ObjectKey]; duplicate {
+				t.Fatalf("duplicate object %q", object.ObjectKey)
+			}
+			seen[object.ObjectKey] = struct{}{}
+			if object.ObjectKey == "reference-assets/asset-05000.png" {
+				foundKnownMtime = object.ModifiedAt.Equal(wantModifiedAt)
+			}
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	if len(seen) != objectCount {
+		t.Fatalf("listed %d objects, want %d", len(seen), objectCount)
+	}
+	if !foundKnownMtime {
+		t.Fatal("known object mtime was not preserved")
+	}
+}
+
+func TestLocalBackendListObjectsRejectsCursorOutsideOwnedPrefix(t *testing.T) {
+	backend := NewLocalBackend(t.TempDir())
+	forged, err := encodeLocalObjectCursor("generated-images/", []localObjectCursorFrame{{Directory: "generated-images/../reference-assets", Offset: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.ListObjects(t.Context(), "generated-images/", forged, 2); err == nil {
+		t.Fatal("expected non-canonical cursor key to be rejected")
+	}
+
+	if err := backend.Put(t.Context(), "generated-images/a.png", "image/png", []byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.Put(t.Context(), "generated-images/b.png", "image/png", []byte("b")); err != nil {
+		t.Fatal(err)
+	}
+	page, err := backend.ListObjects(t.Context(), "generated-images/", "", 1)
+	if err != nil || page.NextCursor == "" {
+		t.Fatalf("first page=%#v err=%v", page, err)
+	}
+	if _, err := backend.ListObjects(t.Context(), "reference-assets/", page.NextCursor, 1); err == nil {
+		t.Fatal("expected cursor bound to another owned prefix to be rejected")
+	}
+}
+
+func TestS3BackendListObjectsV2UsesConfiguredAndOwnedPrefix(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/bucket" {
+			t.Fatalf("request=%s %s", r.Method, r.URL.Path)
+		}
+		query := r.URL.Query()
+		if query.Get("list-type") != "2" || query.Get("prefix") != "tenant-root/generated-images/" || query.Get("continuation-token") != "token-a" || query.Get("max-keys") != "2" {
+			t.Fatalf("query=%v", query)
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = io.WriteString(w, `<ListBucketResult><IsTruncated>true</IsTruncated><Contents><Key>tenant-root/generated-images/7/a.png</Key><LastModified>2026-08-09T01:00:00Z</LastModified></Contents><NextContinuationToken>token-b</NextContinuationToken></ListBucketResult>`)
+	}))
+	defer server.Close()
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver: "s3",
+		S3: config.StorageS3Config{
+			Endpoint: server.URL, Region: "us-east-1", Bucket: "bucket", Prefix: "tenant-root",
+			ForcePathStyle: true, AccessKeyID: "access", SecretAccessKey: "secret",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := backend.ListObjects(t.Context(), "generated-images/", "token-a", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Objects) != 1 || page.Objects[0].ObjectKey != "generated-images/7/a.png" || !page.Objects[0].ModifiedAt.Equal(time.Date(2026, 8, 9, 1, 0, 0, 0, time.UTC)) || page.NextCursor != "token-b" {
+		t.Fatalf("page=%#v", page)
 	}
 }
 

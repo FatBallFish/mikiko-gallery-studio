@@ -8,6 +8,7 @@ export type ClusterNodeRow = ClusterNode & {
   driftLabel: string
   actionLabel: string
   lastContactLabel: string
+  sourceLabel: string
 }
 
 const roleLabels: Record<string, string> = {
@@ -42,6 +43,7 @@ export function clusterNodeRows(nodes: ClusterNode[]): ClusterNodeRow[] {
       driftLabel: drift.length ? drift.join('、') : '一致',
       actionLabel: health.action,
       lastContactLabel: formatClusterContact(node.last_heartbeat_at ?? node.created_at),
+      sourceLabel: node.source === 'logical-single' ? '单机逻辑节点' : node.source === 'heartbeat' ? '心跳注册' : node.source || '未知来源',
     }
   })
 }

@@ -59,7 +59,15 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/user/v1/preferences", api.HandlePreferences)
 		mux.HandleFunc("/api/agent/user/v1/avatar", api.HandleAvatar)
 		mux.HandleFunc("/api/agent/user/v1/account/close", api.HandleCloseAccount)
+		mux.HandleFunc("/api/agent/project/v1/projects", api.HandleProjects)
+		mux.HandleFunc("/api/agent/project/v1/projects/", api.HandleProjectDetail)
 		mux.HandleFunc("/api/agent/gallery/v1/images", api.HandleAgentGalleryImages)
+		mux.HandleFunc("/api/agent/gallery/v1/images:batch-publish", api.HandleAgentGalleryBatch)
+		mux.HandleFunc("/api/agent/gallery/v1/images:batch-group", api.HandleAgentGalleryBatch)
+		mux.HandleFunc("/api/agent/gallery/v1/images:batch-delete", api.HandleAgentGalleryBatch)
+		mux.HandleFunc("/api/agent/gallery/v1/images:batch-transfer-project", api.HandleAgentGalleryBatch)
+		mux.HandleFunc("/api/agent/gallery/v1/images:batch-download", api.HandleAgentGalleryBatch)
+		mux.HandleFunc("/api/agent/gallery/v1/export-jobs/", api.HandleAgentGalleryExportJob)
 		mux.HandleFunc("/api/agent/gallery/v1/images/", api.HandleAgentGalleryImageDetail)
 		mux.HandleFunc("/api/agent/billing/v1/balance", api.HandleBalance)
 		mux.HandleFunc("/api/agent/billing/v1/ledger", api.HandleLedger)
@@ -171,6 +179,7 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/ops/admin/v1/cashier/webhook-events/", api.HandleAdminCashierWebhookEventDetail)
 		mux.HandleFunc("/api/ops/admin/v1/config-tabs", api.HandleAdminConfigTabs)
 		mux.HandleFunc("/api/ops/admin/v1/config-tabs/", api.HandleAdminConfigTabDetail)
+		mux.HandleFunc("/api/ops/admin/v1/runtime-rollouts/no-copy-reference-aliases", api.HandleAdminAliasCreationRollout)
 		mux.HandleFunc("/api/ops/admin/v1/storage-configs", api.HandleAdminStorageConfigs)
 		mux.HandleFunc("/api/ops/admin/v1/storage-configs:probe", api.HandleAdminStorageConfigProbe)
 		mux.HandleFunc("/api/ops/admin/v1/storage-configs/", api.HandleAdminStorageConfigDetail)
@@ -278,24 +287,23 @@ func splitSupplementalAbsolutePath(path string) ([]string, bool) {
 }
 
 var supplementalNormalExactRoutes = map[string]map[string]bool{
-	"/api/agent/auth/v1/password/reset":                        {http.MethodPost: true},
-	"/api/agent/user/v1/preferences":                           {http.MethodPut: true},
-	"/api/agent/user/v1/avatar":                                {http.MethodPost: true},
-	"/api/agent/gallery/v1/images":                             {http.MethodGet: true},
-	"/api/agent/developer/v1/api-keys":                         {http.MethodGet: true, http.MethodPost: true},
-	"/api/agent/billing/v1/redeem-codes/redeem":                {http.MethodPost: true},
-	"/api/agent/image/v1/reference-assets:import-from-gallery": {http.MethodPost: true},
-	"/api/agent/image/v1/tasks/events":                         {http.MethodGet: true},
-	"/api/ops/admin/v1/auth/logout":                            {http.MethodPost: true},
-	"/api/ops/admin/v1/redeem-codes:batch-create":              {http.MethodPost: true},
-	"/api/ops/admin/v1/redeem-codes:export":                    {http.MethodPost: true},
-	"/api/ops/admin/v1/monitoring/snapshot":                    {http.MethodGet: true},
-	"/api/ops/admin/v1/storage-configs:probe":                  {http.MethodPost: true},
-	"/api/ops/admin/v1/cashier/visible-methods/":               {http.MethodGet: true, http.MethodPut: true},
-	"/docs/openapi.yaml":                                       {http.MethodGet: true},
-	"/docs/openapi.json":                                       {http.MethodGet: true},
-	"/docs/examples":                                           {http.MethodGet: true},
-	"/docs/errors":                                             {http.MethodGet: true},
+	"/api/agent/auth/v1/password/reset":                            {http.MethodPost: true},
+	"/api/agent/user/v1/preferences":                               {http.MethodPut: true},
+	"/api/agent/user/v1/avatar":                                    {http.MethodPost: true},
+	"/api/agent/developer/v1/api-keys":                             {http.MethodGet: true, http.MethodPost: true},
+	"/api/agent/billing/v1/redeem-codes/redeem":                    {http.MethodPost: true},
+	"/api/agent/image/v1/tasks/events":                             {http.MethodGet: true},
+	"/api/ops/admin/v1/auth/logout":                                {http.MethodPost: true},
+	"/api/ops/admin/v1/redeem-codes:batch-create":                  {http.MethodPost: true},
+	"/api/ops/admin/v1/redeem-codes:export":                        {http.MethodPost: true},
+	"/api/ops/admin/v1/monitoring/snapshot":                        {http.MethodGet: true},
+	"/api/ops/admin/v1/runtime-rollouts/no-copy-reference-aliases": {http.MethodGet: true, http.MethodPost: true},
+	"/api/ops/admin/v1/storage-configs:probe":                      {http.MethodPost: true},
+	"/api/ops/admin/v1/cashier/visible-methods/":                   {http.MethodGet: true, http.MethodPut: true},
+	"/docs/openapi.yaml":                                           {http.MethodGet: true},
+	"/docs/openapi.json":                                           {http.MethodGet: true},
+	"/docs/examples":                                               {http.MethodGet: true},
+	"/docs/errors":                                                 {http.MethodGet: true},
 }
 
 var supplementalNormalTemplateRoutes = map[string]map[string]bool{
@@ -306,6 +314,13 @@ var supplementalNormalTemplateRoutes = map[string]map[string]bool{
 	"/api/agent/gallery/v1/images/{image_id}/like":           {http.MethodPost: true},
 	"/api/agent/gallery/v1/images/{image_id}/favorite":       {http.MethodPost: true},
 	"/api/agent/gallery/v1/images/{image_id}/publish":        {http.MethodPost: true, http.MethodDelete: true},
+	"/api/agent/gallery/v1/images:batch-publish":             {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-group":               {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-delete":              {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-transfer-project":    {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-download":            {http.MethodPost: true},
+	"/api/agent/gallery/v1/export-jobs/{job_id}":             {http.MethodGet: true},
+	"/api/agent/gallery/v1/export-jobs/{job_id}/download":    {http.MethodGet: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:approve":     {http.MethodPost: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:reject":      {http.MethodPost: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:unpublish":   {http.MethodPost: true},

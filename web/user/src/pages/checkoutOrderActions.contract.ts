@@ -54,6 +54,11 @@ for (const status of ['pending', 'failed', 'expired', 'refunded']) {
 }
 
 const checkoutSource = readFileSync(new URL('./CheckoutPage.tsx', import.meta.url), 'utf8')
+for (const staleCopy of ['固定积分包和自定义金额统一通过收银台创建订单，支付成功后进入充值余额桶且不过期。', '支付成功，充值余额已刷新']) {
+  if (checkoutSource.includes(staleCopy)) {
+    throw new Error(`checkout must not claim fixed packages always enter permanent recharge balance: ${staleCopy}`)
+  }
+}
 const cancelOrderBody = checkoutSource.match(/async function cancelOrder[\s\S]*?\n  }\n\n  if \(loading\)/)?.[0] ?? ''
 for (const required of ['checkoutCancelResultState(next.status)', 'monitorOrder?.id === next.id', 'app.refreshAccount()', 'loadRecentOrders()']) {
   if (!cancelOrderBody.includes(required)) {

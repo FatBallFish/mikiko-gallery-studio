@@ -105,6 +105,18 @@ func (f ConfigItemFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ConfigItemMutation", m)
 }
 
+// The GalleryExportJobFunc type is an adapter to allow the use of ordinary
+// function as GalleryExportJob mutator.
+type GalleryExportJobFunc func(context.Context, *ent.GalleryExportJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f GalleryExportJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.GalleryExportJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GalleryExportJobMutation", m)
+}
+
 // The ImageResultFunc type is an adapter to allow the use of ordinary
 // function as ImageResult mutator.
 type ImageResultFunc func(context.Context, *ent.ImageResultMutation) (ent.Value, error)
@@ -139,6 +151,18 @@ func (f InstallationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.InstallationMutation", m)
+}
+
+// The MigrationCheckpointFunc type is an adapter to allow the use of ordinary
+// function as MigrationCheckpoint mutator.
+type MigrationCheckpointFunc func(context.Context, *ent.MigrationCheckpointMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MigrationCheckpointFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MigrationCheckpointMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MigrationCheckpointMutation", m)
 }
 
 // The ModelAccountFunc type is an adapter to allow the use of ordinary
@@ -187,6 +211,30 @@ func (f ModelRouteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ModelRouteMutation", m)
+}
+
+// The ObjectDeletionJobFunc type is an adapter to allow the use of ordinary
+// function as ObjectDeletionJob mutator.
+type ObjectDeletionJobFunc func(context.Context, *ent.ObjectDeletionJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ObjectDeletionJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ObjectDeletionJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ObjectDeletionJobMutation", m)
+}
+
+// The ObjectReconcileCheckpointFunc type is an adapter to allow the use of ordinary
+// function as ObjectReconcileCheckpoint mutator.
+type ObjectReconcileCheckpointFunc func(context.Context, *ent.ObjectReconcileCheckpointMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ObjectReconcileCheckpointFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ObjectReconcileCheckpointMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ObjectReconcileCheckpointMutation", m)
 }
 
 // The ObjectStorageConfigFunc type is an adapter to allow the use of ordinary
@@ -247,6 +295,18 @@ func (f PointLedgerFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PointLedgerMutation", m)
+}
+
+// The ProjectFunc type is an adapter to allow the use of ordinary
+// function as Project mutator.
+type ProjectFunc func(context.Context, *ent.ProjectMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ProjectFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ProjectMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ProjectMutation", m)
 }
 
 // The PromptOptimizationRunFunc type is an adapter to allow the use of ordinary

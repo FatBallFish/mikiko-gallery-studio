@@ -20,6 +20,7 @@ import {
   Edit,
   Globe,
   FolderPlus,
+  FolderKanban,
   Trash2,
   Check,
   Plus,
@@ -53,7 +54,7 @@ export type IconName = LucideIcon
 export {
   Home, Sparkles, LayoutGrid, User, KeyRound, CreditCard, Settings, FileText,
   Sun, Moon, LogOut, ChevronDown, ChevronRight, ChevronUp, X, Eye, Heart, Star,
-  Download, Copy, Edit, Globe, FolderPlus, Trash2, Check, Plus, Minus,
+  Download, Copy, Edit, Globe, FolderPlus, FolderKanban, Trash2, Check, Plus, Minus,
   RotateCcw, Wallet, QrCode, Route, ShieldCheck, Layers, Image, Search, Filter,
   ArrowLeft, ArrowRight, ExternalLink, RefreshCw, Save, Palette,
 }

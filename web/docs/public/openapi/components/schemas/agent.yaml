@@ -316,6 +316,9 @@ components:
         data:
           type: object
           properties:
+            capability_version:
+              type: string
+              description: Effective route capability snapshot token. Send it with task creation to detect configuration drift.
             base_resolution:
               type: string
             estimated_points:
@@ -860,6 +863,240 @@ components:
         file:
           type: string
           format: binary
+    ProjectCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+    ProjectRenameRequest:
+      type: object
+      required: [name, expected_version]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        expected_version:
+          type: integer
+          format: int64
+          minimum: 1
+    ProjectDeleteRequest:
+      type: object
+      required: [expected_version]
+      properties:
+        expected_version:
+          type: integer
+          format: int64
+          minimum: 1
+        target_project_id:
+          type: string
+          description: Required when the source project owns tasks or assets.
+    ProjectResponse:
+      type: object
+      properties:
+        data:
+          $ref: ./common.yaml#/components/schemas/Project
+    ProjectListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [items, default_project_id]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: ./common.yaml#/components/schemas/Project
+            default_project_id:
+              type: string
+    ProjectDeleteResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [project, transferred]
+          properties:
+            project:
+              $ref: ./common.yaml#/components/schemas/Project
+            transferred:
+              type: object
+              required: [tasks, assets]
+              properties:
+                tasks: { type: integer, minimum: 0 }
+                assets: { type: integer, minimum: 0 }
+    ReferenceAssetsImportFromGalleryRequest:
+      type: object
+      required: [gallery_image_ids]
+      properties:
+        gallery_image_ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        project_id:
+          type: string
+          description: Current owned project. Omission resolves the caller's default project.
+    ReferenceAssetsImportFromGalleryResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: ./common.yaml#/components/schemas/ReferenceAsset
+    GalleryImageListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: ./common.yaml#/components/schemas/GalleryImage
+            pagination:
+              $ref: ./common.yaml#/components/schemas/Pagination
+    GalleryBatchImageIDs:
+      type: array
+      description: Duplicate IDs are accepted and deduplicated in first-seen order.
+      minItems: 1
+      maxItems: 100
+      items:
+        type: string
+        format: uuid
+    GalleryBatchPublishRequest:
+      type: object
+      required: [image_ids, project_id]
+      properties:
+        image_ids:
+          $ref: '#/components/schemas/GalleryBatchImageIDs'
+        project_id:
+          type: string
+          format: uuid
+        publish:
+          type: boolean
+          default: true
+    GalleryBatchGroupRequest:
+      type: object
+      required: [image_ids, project_id, image_group]
+      properties:
+        image_ids:
+          $ref: '#/components/schemas/GalleryBatchImageIDs'
+        project_id:
+          type: string
+          format: uuid
+        image_group:
+          type: string
+          maxLength: 64
+    GalleryBatchDeleteRequest:
+      type: object
+      required: [image_ids, project_id]
+      properties:
+        image_ids:
+          $ref: '#/components/schemas/GalleryBatchImageIDs'
+        project_id:
+          type: string
+          format: uuid
+    GalleryBatchTransferProjectRequest:
+      type: object
+      required: [image_ids, project_id, target_project_id]
+      properties:
+        image_ids:
+          $ref: '#/components/schemas/GalleryBatchImageIDs'
+        project_id:
+          type: string
+          format: uuid
+        target_project_id:
+          type: string
+          format: uuid
+    GalleryBatchDownloadRequest:
+      type: object
+      required: [image_ids, project_id]
+      properties:
+        image_ids:
+          $ref: '#/components/schemas/GalleryBatchImageIDs'
+        project_id:
+          type: string
+          format: uuid
+    GalleryBatchMutationResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [succeeded, failed]
+          properties:
+            succeeded:
+              type: array
+              items:
+                type: object
+                required: [id, entity]
+                properties:
+                  id: { type: string, format: uuid }
+                  entity:
+                    $ref: ./common.yaml#/components/schemas/GalleryImage
+            failed:
+              type: array
+              items:
+                type: object
+                required: [id, code, message]
+                properties:
+                  id: { type: string }
+                  code: { type: string }
+                  message: { type: string }
+    GalleryExportJob:
+      type: object
+      required: [id, project_id, image_ids, state, estimated_bytes, deadline_at, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        image_ids:
+          $ref: '#/components/schemas/GalleryBatchImageIDs'
+        state:
+          type: string
+          enum: [queued, running, succeeded, failed, expired]
+        estimated_bytes: { type: integer, format: int64, minimum: 0 }
+        archive_size_bytes: { type: integer, format: int64, minimum: 0 }
+        attempt_count: { type: integer, minimum: 0 }
+        deadline_at:
+          type: string
+          format: date-time
+          description: Immutable lifecycle deadline shared by queueing, retries, processing, and polling.
+        expires_at: { type: string, format: date-time }
+        error_code: { type: string }
+        error_message: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    GalleryExportCreateResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [job, status_url]
+          properties:
+            job:
+              $ref: '#/components/schemas/GalleryExportJob'
+            status_url: { type: string }
+    GalleryExportStatusResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [job]
+          properties:
+            job:
+              $ref: '#/components/schemas/GalleryExportJob'
+            download_url:
+              type: string
+              description: Present only while a completed archive remains downloadable.
     ReferenceAssetResponse:
       type: object
       properties:
@@ -867,8 +1104,11 @@ components:
           $ref: ./common.yaml#/components/schemas/ReferenceAsset
     CreateImageTaskRequest:
       type: object
-      required: [task_type, prompt, route_model_code, base_resolution, requested_output_image_count]
+      required: [task_type, prompt, route_model_code, requested_output_image_count]
       properties:
+        project_id:
+          type: string
+          description: Owned project for the task and outputs. Omission resolves the caller's default project.
         task_type:
           type: string
           enum: [text_to_image, image_edit]
@@ -888,16 +1128,19 @@ components:
           description: Legacy static model selector retained for older clients.
         size_mode:
           type: string
-          enum: [ratio, pixel]
+          enum: [auto, ratio, pixel]
         base_resolution:
           type: string
-          enum: [auto, 1k, 2k, 4k]
+          enum: [1k, 2k, 4k]
         quality:
           type: string
           enum: [auto, low, medium, high]
         output_format:
           type: string
           enum: [png, jpeg, webp]
+        background:
+          type: string
+          enum: [auto, opaque, transparent]
         output_compression:
           type: integer
           minimum: 0
@@ -929,6 +1172,9 @@ components:
           type: string
           enum: [async]
           description: Native Agent/Open API task creation is async-only; omit the field or send async, then poll task detail.
+        capability_version:
+          type: string
+          description: Optional token returned by estimate. A stale token is rejected with capability_changed.
     ImageTaskResponse:
       type: object
       properties:

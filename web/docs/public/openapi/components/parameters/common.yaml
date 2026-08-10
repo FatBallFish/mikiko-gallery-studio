@@ -19,7 +19,7 @@ components:
       schema:
         type: string
         maxLength: 128
-      description: Optional idempotency key for safe task create retries.
+      description: Optional user-scoped idempotency key for safe mutation retries.
     RequiredIdempotencyKey:
       name: Idempotency-Key
       in: header

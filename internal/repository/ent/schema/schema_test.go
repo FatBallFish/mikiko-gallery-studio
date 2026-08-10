@@ -33,6 +33,9 @@ func TestCoreSchemaFilesExist(t *testing.T) {
 		"referenceasset.go",
 		"imagetask.go",
 		"imageresult.go",
+		"project.go",
+		"objectdeletionjob.go",
+		"objectreconcilecheckpoint.go",
 		"auditlog.go",
 		"textmodelaccount.go",
 		"textmodel.go",
@@ -210,6 +213,173 @@ func TestSubscriptionPlanSchemaCarriesPurchaseTypeContract(t *testing.T) {
 	}
 }
 
+func TestSubscriptionPlanSchemaCarriesCreditExpiryPolicy(t *testing.T) {
+	fields := schemaFieldDescriptors(SubscriptionPlan{}.Fields())
+	expiryEnabled, ok := fields["credit_expiry_enabled"]
+	if !ok {
+		t.Fatal("subscription_plans should expose credit_expiry_enabled")
+	}
+	if defaultValue, ok := expiryEnabled.Default.(bool); !ok || !defaultValue {
+		t.Fatalf("credit_expiry_enabled default = %#v, want true", expiryEnabled.Default)
+	}
+}
+
+func TestPaymentOrderSchemaSnapshotsCreditPolicy(t *testing.T) {
+	fields := schemaFieldDescriptors(PaymentOrder{}.Fields())
+	expiryEnabled := requireSchemaField(t, fields, "credit_expiry_enabled")
+	if defaultValue, ok := expiryEnabled.Default.(bool); !ok || defaultValue {
+		t.Fatalf("payment order credit_expiry_enabled default = %#v, want false", expiryEnabled.Default)
+	}
+	for _, name := range []string{"credit_valid_days", "credited_at", "credit_expires_at"} {
+		descriptor := requireSchemaField(t, fields, name)
+		if !descriptor.Optional || !descriptor.Nillable {
+			t.Fatalf("payment_orders.%s must be Optional and Nillable", name)
+		}
+	}
+}
+
+func TestImageSchemasCarryProjectAndCapabilityContracts(t *testing.T) {
+	accountModelFields := schemaFieldDescriptors(ModelAccountModel{}.Fields())
+	for _, name := range []string{
+		"supports_custom_ratio",
+		"min_width",
+		"max_width",
+		"min_height",
+		"max_height",
+		"supported_backgrounds",
+	} {
+		if _, ok := accountModelFields[name]; !ok {
+			t.Fatalf("model_account_models should expose %s", name)
+		}
+	}
+	maxImageCount := requireSchemaField(t, accountModelFields, "max_image_count")
+	if defaultValue, ok := maxImageCount.Default.(int); !ok || defaultValue != 1 {
+		t.Fatalf("max_image_count default = %#v, want 1", maxImageCount.Default)
+	}
+	if len(maxImageCount.Validators) == 0 {
+		t.Fatal("max_image_count must enforce the upstream n range 1..10")
+	}
+
+	for schemaName, fields := range map[string]map[string]*field.Descriptor{
+		"image_tasks": schemaFieldDescriptors(ImageTask{}.Fields()),
+		"task_images": schemaFieldDescriptors(ImageResult{}.Fields()),
+	} {
+		if _, ok := fields["project_id"]; !ok {
+			t.Fatalf("%s should expose project_id", schemaName)
+		}
+		projectID := fields["project_id"]
+		if !projectID.Optional || !projectID.Nillable {
+			t.Fatalf("%s.project_id must remain Optional and Nillable during backfill", schemaName)
+		}
+	}
+	assertEdgeUsesField(t, "image_tasks", ImageTask{}.Edges(), "project", "project_id", "Project")
+	assertEdgeUsesField(t, "task_images", ImageResult{}.Edges(), "project", "project_id", "Project")
+	if _, ok := schemaFieldDescriptors(ImageTask{}.Fields())["background"]; !ok {
+		t.Fatal("image_tasks should expose background")
+	}
+
+	referenceFields := schemaFieldDescriptors(ReferenceAsset{}.Fields())
+	for _, name := range []string{"source_image_result_id", "owns_object"} {
+		if _, ok := referenceFields[name]; !ok {
+			t.Fatalf("reference_assets should expose %s", name)
+		}
+	}
+}
+
+func TestModelLifecycleSchemasRetainTombstonesForHistoricalSafety(t *testing.T) {
+	for name, mixins := range map[string][]ent.Mixin{
+		"route_model_candidates": RouteModelCandidate{}.Mixin(),
+		"route_model_prices":     RouteModelPrice{}.Mixin(),
+	} {
+		fields := map[string]bool{}
+		for _, schemaMixin := range mixins {
+			for _, schemaField := range schemaMixin.Fields() {
+				fields[schemaField.Descriptor().Name] = true
+			}
+		}
+		for _, fieldName := range []string{"created_at", "updated_at", "deleted_at"} {
+			if !fields[fieldName] {
+				t.Fatalf("%s must retain %s for safe soft deletion", name, fieldName)
+			}
+		}
+	}
+}
+
+func TestProjectSchemaEnforcesActiveDefaultAndNameUniqueness(t *testing.T) {
+	fields := schemaFieldDescriptors(Project{}.Fields())
+	if defaultValue, ok := requireSchemaField(t, fields, "is_default").Default.(bool); !ok || defaultValue {
+		t.Fatalf("project is_default default = %#v, want false", fields["is_default"].Default)
+	}
+	if defaultValue, ok := requireSchemaField(t, fields, "version").Default.(int64); !ok || defaultValue != 1 {
+		t.Fatalf("project version default = %#v, want int64(1)", fields["version"].Default)
+	}
+	assertPartialUniqueIndex(t, Project{}.Indexes(), []string{"user_id"}, "is_default", "status = 'active'", "deleted_at IS NULL")
+	assertPartialUniqueIndex(t, Project{}.Indexes(), []string{"user_id", "name_key"}, "status = 'active'", "deleted_at IS NULL")
+}
+
+func TestObjectDeletionJobSchemaDeduplicatesLiveObjectIdentity(t *testing.T) {
+	fields := schemaFieldDescriptors(ObjectDeletionJob{}.Fields())
+	if defaultValue, ok := requireSchemaField(t, fields, "state").Default.(string); !ok || defaultValue != "pending" {
+		t.Fatalf("object deletion state default = %#v, want pending", fields["state"].Default)
+	}
+	if defaultValue, ok := requireSchemaField(t, fields, "attempt_count").Default.(int); !ok || defaultValue != 0 {
+		t.Fatalf("object deletion attempt_count default = %#v, want 0", fields["attempt_count"].Default)
+	}
+	for _, name := range []string{"next_attempt_at", "last_error_code", "last_error_message", "completed_at"} {
+		descriptor := requireSchemaField(t, fields, name)
+		if !descriptor.Optional || !descriptor.Nillable {
+			t.Fatalf("object_deletion_jobs.%s must be Optional and Nillable", name)
+		}
+	}
+	liveStates := "state IN ('pending', 'running', 'retry')"
+	assertPartialUniqueIndex(t, ObjectDeletionJob{}.Indexes(), []string{"storage_config_id", "object_key"}, "storage_config_id IS NOT NULL", liveStates)
+	assertPartialUniqueIndex(t, ObjectDeletionJob{}.Indexes(), []string{"storage_driver", "bucket", "object_key"}, "storage_config_id IS NULL", liveStates)
+}
+
+func TestGalleryExportJobSchemaSupportsDurableLeasesAndTemporaryArchiveCleanup(t *testing.T) {
+	fields := schemaFieldDescriptors(GalleryExportJob{}.Fields())
+	for _, name := range []string{
+		"user_id", "project_id", "image_ids", "state", "estimated_bytes", "archive_size_bytes",
+		"storage_config_id", "storage_driver", "bucket", "object_key", "attempt_count",
+		"lease_owner", "lease_expires_at", "next_attempt_at", "lifecycle_deadline_at", "expires_at", "last_error_code",
+	} {
+		if _, ok := fields[name]; !ok {
+			t.Fatalf("gallery_export_jobs is missing %q", name)
+		}
+	}
+	if !hasIndexFields(GalleryExportJob{}.Indexes(), []string{"state", "next_attempt_at"}, false) {
+		t.Fatal("gallery export jobs need a claim index")
+	}
+	if !hasIndexFields(GalleryExportJob{}.Indexes(), []string{"state", "expires_at"}, false) {
+		t.Fatal("gallery export jobs need an expiry cleanup index")
+	}
+	if !hasIndexFields(GalleryExportJob{}.Indexes(), []string{"state", "lifecycle_deadline_at"}, false) {
+		t.Fatal("gallery export jobs need a lifecycle deadline index")
+	}
+	if deadline := fields["lifecycle_deadline_at"]; !deadline.Optional || !deadline.Nillable {
+		t.Fatal("gallery export lifecycle deadline must be nullable during migration")
+	}
+}
+
+func TestObjectReconcileCheckpointSchemaPersistsRestartProgress(t *testing.T) {
+	fields := schemaFieldDescriptors(ObjectReconcileCheckpoint{}.Fields())
+	for _, name := range []string{"storage_identity", "namespace", "prefix", "cursor", "generation"} {
+		requireSchemaField(t, fields, name)
+	}
+	if defaultValue, ok := fields["cursor"].Default.(string); !ok || defaultValue != "" {
+		t.Fatalf("object reconcile cursor default = %#v, want empty", fields["cursor"].Default)
+	}
+	if defaultValue, ok := fields["generation"].Default.(int64); !ok || defaultValue != 0 {
+		t.Fatalf("object reconcile generation default = %#v, want int64(0)", fields["generation"].Default)
+	}
+	if !hasIndexFields(ObjectReconcileCheckpoint{}.Indexes(), []string{"storage_identity", "prefix"}, true) {
+		t.Fatal("object reconcile checkpoints must uniquely index storage identity and owned prefix")
+	}
+	if !hasIndexFields(ObjectReconcileCheckpoint{}.Indexes(), []string{"generation", "updated_at"}, false) {
+		t.Fatal("object reconcile checkpoints must index generation and update time for fair scheduling")
+	}
+}
+
 func TestPaymentProviderInstanceSchemaCarriesCashierContract(t *testing.T) {
 	fields := PaymentProviderInstance{}.Fields()
 	required := map[string]bool{
@@ -319,4 +489,51 @@ func hasIndexFields(indexes []ent.Index, fields []string, unique bool) bool {
 		}
 	}
 	return false
+}
+
+func requireSchemaField(t *testing.T, fields map[string]*field.Descriptor, name string) *field.Descriptor {
+	t.Helper()
+	descriptor, ok := fields[name]
+	if !ok {
+		t.Fatalf("schema is missing field %s", name)
+	}
+	return descriptor
+}
+
+func assertEdgeUsesField(t *testing.T, schemaName string, edges []ent.Edge, edgeName, fieldName, typeName string) {
+	t.Helper()
+	for _, schemaEdge := range edges {
+		descriptor := schemaEdge.Descriptor()
+		if descriptor.Name == edgeName && descriptor.Field == fieldName && descriptor.Type == typeName && descriptor.Unique {
+			return
+		}
+	}
+	t.Fatalf("%s must define unique %s edge using %s as a Project foreign key", schemaName, edgeName, fieldName)
+}
+
+func assertPartialUniqueIndex(t *testing.T, indexes []ent.Index, fields []string, predicates ...string) {
+	t.Helper()
+	for _, schemaIndex := range indexes {
+		descriptor := schemaIndex.Descriptor()
+		if !descriptor.Unique || !reflect.DeepEqual(descriptor.Fields, fields) {
+			continue
+		}
+		for _, annotation := range descriptor.Annotations {
+			indexAnnotation, ok := annotation.(*entsql.IndexAnnotation)
+			if !ok {
+				continue
+			}
+			matches := true
+			for _, predicate := range predicates {
+				if !strings.Contains(indexAnnotation.Where, predicate) {
+					matches = false
+					break
+				}
+			}
+			if matches {
+				return
+			}
+		}
+	}
+	t.Fatalf("schema must define partial unique index on %v with predicates %v", fields, predicates)
 }

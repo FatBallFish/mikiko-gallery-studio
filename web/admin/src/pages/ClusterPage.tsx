@@ -6,7 +6,7 @@ import { Badge, Button, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader, Segmen
 import { DataTable, ListPage, Pager, type ColumnDef } from '../ui/dataTable'
 import { clusterNodeRows, clusterSummary, type ClusterNodeRow } from './clusterRows'
 
-type RoleFilter = '' | 'control' | 'api' | 'worker' | 'web'
+type RoleFilter = '' | 'single' | 'control' | 'api' | 'worker' | 'web'
 
 export function ClusterPage() {
   const [result, setResult] = useState<PageResult<ClusterNode>>({ items: [], total: 0 })
@@ -35,6 +35,7 @@ export function ClusterPage() {
   const columns = useMemo<ColumnDef<ClusterNodeRow>[]>(() => [
     { key: 'node', title: '节点', width: 'minmax(190px,1.3fr)', render: (row) => <div className="min-w-0"><strong className="block truncate text-[var(--fg)]">{row.node_id}</strong><span className="mt-1 block truncate text-xs text-[var(--soft)]">{row.installation_id}</span></div> },
     { key: 'role', title: '角色', width: 'minmax(100px,.7fr)', render: (row) => <Badge>{row.roleLabel}</Badge> },
+    { key: 'source', title: '来源', width: 'minmax(110px,.8fr)', render: (row) => <span className="text-[var(--muted)]">{row.sourceLabel}</span> },
     { key: 'health', title: '健康', width: 'minmax(110px,.7fr)', render: (row) => <Badge tone={row.healthTone}>{row.healthLabel}</Badge> },
     { key: 'contact', title: '最后联系', width: 'minmax(150px,1fr)', kind: 'code', render: (row) => row.lastContactLabel },
     { key: 'version', title: '应用 / Schema / 配置', width: 'minmax(180px,1.1fr)', kind: 'code', render: (row) => `${row.application_version} / ${row.runtime_schema_version} / ${row.config_revision}` },
@@ -57,7 +58,7 @@ export function ClusterPage() {
         <StatusCell label="存在漂移" value={summary.drifted} />
       </StatusStrip>
       <ListPage
-        filters={<SegmentedControl value={role} options={[{ value: '', label: '全部' }, { value: 'control', label: '控制' }, { value: 'api', label: 'API' }, { value: 'worker', label: 'Worker' }, { value: 'web', label: 'Web' }]} onChange={(value) => { setRole(value); setPage(1) }} />}
+        filters={<SegmentedControl value={role} options={[{ value: '', label: '全部' }, { value: 'single', label: '单节点' }, { value: 'control', label: '控制' }, { value: 'api', label: 'API' }, { value: 'worker', label: 'Worker' }, { value: 'web', label: 'Web' }]} onChange={(value) => { setRole(value); setPage(1) }} />}
         resultSummary={`共 ${result.total} 个节点`}
         pagination={<Pager page={page} pageSize={pageSize} total={result.total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
       >

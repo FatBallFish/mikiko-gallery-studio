@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -125,6 +126,7 @@ func (s *AdminConfigStore) DefaultCNYPerPoint() string {
 }
 
 type ConfigFacade struct {
+	mu                 sync.RWMutex
 	store              ConfigStore
 	providerInstances  ProviderInstanceStore
 	defaultCNYPerPoint string
@@ -142,8 +144,19 @@ func (f *ConfigFacade) WithProviderInstanceStore(store ProviderInstanceStore) *C
 	if f == nil {
 		return f
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.providerInstances = store
 	return f
+}
+
+func (f *ConfigFacade) providerInstanceStore() ProviderInstanceStore {
+	if f == nil {
+		return nil
+	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.providerInstances
 }
 
 func (f *ConfigFacade) CustomAmountConfig(ctx context.Context) (domaincashier.CustomAmountConfig, error) {
@@ -232,8 +245,8 @@ func (f *ConfigFacade) UpdateVisibleMethods(ctx context.Context, methods []domai
 }
 
 func (f *ConfigFacade) ProviderInstances(ctx context.Context) ([]domaincashier.ProviderInstance, error) {
-	if f.providerInstances != nil {
-		instances, err := f.providerInstances.ProviderInstances(ctx)
+	if store := f.providerInstanceStore(); store != nil {
+		instances, err := store.ProviderInstances(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -255,8 +268,8 @@ func (f *ConfigFacade) ProviderInstances(ctx context.Context) ([]domaincashier.P
 }
 
 func (f *ConfigFacade) CreateProviderInstance(ctx context.Context, req domaincashier.ProviderInstanceWriteRequest, adminID int64) (domaincashier.ProviderInstance, error) {
-	if f.providerInstances != nil {
-		return f.providerInstances.CreateProviderInstance(ctx, req)
+	if store := f.providerInstanceStore(); store != nil {
+		return store.CreateProviderInstance(ctx, req)
 	}
 	current, err := f.ProviderInstances(ctx)
 	if err != nil {
@@ -280,8 +293,8 @@ func (f *ConfigFacade) CreateProviderInstance(ctx context.Context, req domaincas
 }
 
 func (f *ConfigFacade) UpdateProviderInstance(ctx context.Context, instanceID int64, req domaincashier.ProviderInstanceWriteRequest, adminID int64) (domaincashier.ProviderInstance, error) {
-	if f.providerInstances != nil {
-		return f.providerInstances.UpdateProviderInstance(ctx, instanceID, req)
+	if store := f.providerInstanceStore(); store != nil {
+		return store.UpdateProviderInstance(ctx, instanceID, req)
 	}
 	current, err := f.ProviderInstances(ctx)
 	if err != nil {
@@ -326,8 +339,8 @@ func providerWriteError(err error) error {
 }
 
 func (f *ConfigFacade) DeleteProviderInstance(ctx context.Context, instanceID int64, adminID int64) (domaincashier.ProviderInstance, error) {
-	if f.providerInstances != nil {
-		return f.providerInstances.DeleteProviderInstance(ctx, instanceID)
+	if store := f.providerInstanceStore(); store != nil {
+		return store.DeleteProviderInstance(ctx, instanceID)
 	}
 	current, err := f.ProviderInstances(ctx)
 	if err != nil {

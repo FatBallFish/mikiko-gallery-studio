@@ -1,5 +1,5 @@
 import type { GalleryImage } from '../../../shared/api-types'
-import { defaultGalleryImportFilter, filterGalleryImportImages, galleryImportOptions, mergeReferenceAssets } from './workspaceGalleryImport'
+import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, galleryImportSuccessMessage, mergeReferenceAssets } from './workspaceGalleryImport'
 
 const images = [
   galleryImage({ id: '1', prompt: 'blue city skyline', route_model_code: 'plus', image_group: '城市', aspect_ratio: '16:9', visibility_status: 'private', url: '/1.png' }),
@@ -29,6 +29,27 @@ if (!options.groups.includes('城市') || !options.models.includes('plus') || !o
 const merged = mergeReferenceAssets([{ id: 'a' }, { id: 'b' }], [{ id: 'b' }, { id: 'c' }], 2)
 if (JSON.stringify(merged.map((item) => item.id)) !== JSON.stringify(['b', 'c'])) {
   throw new Error(`reference merge should prefer incoming assets and respect limit, got ${JSON.stringify(merged)}`)
+}
+
+const reuseCapability = {
+  task_types: ['text_to_image', 'image_edit'],
+  model_groups: [{ id: 'plus', code: 'plus', name: 'Plus', task_types: ['image_edit'], size_modes: ['auto', 'ratio', 'pixel'], base_resolution: ['1K'], aspect_ratios: ['1:1'], pixel_sizes: ['1024x1024'], quality: ['auto'], output_format: ['png', 'webp'], supported_backgrounds: ['opaque', 'transparent'], moderation: ['auto'], supports_reference: true, max_reference_image_count: 4, max_output_image_count: 1 }],
+  base_resolution: ['1K'], aspect_ratios: ['1:1'], quality: ['auto'], output_format: ['png', 'webp'], moderation: ['auto'],
+} as any
+const imported = [{ id: 'ref-first', status: 'ready', created_at: '', generation_snapshot: { task_type: 'image_edit', route_model_code: 'plus', size_mode: 'pixel', requested_size: '9999x9999', quality: 'unsupported', output_format: 'jpeg', background: 'transparent', moderation: 'unsupported', image_count: 6 } }]
+const firstReuse = firstGalleryReferenceReuse(0, imported as any, reuseCapability)
+if (!firstReuse || firstReuse.values.route_model_code !== 'plus' || firstReuse.values.pixel_size !== '1024x1024' || firstReuse.values.output_format !== 'png' || firstReuse.values.background !== 'transparent' || firstReuse.values.image_count !== 6) {
+  throw new Error(`first gallery reference must capability-normalize source parameters without applying model max n: ${JSON.stringify(firstReuse)}`)
+}
+if (!firstReuse.notices.length) {
+  throw new Error(`unsupported source parameters must produce user notices: ${JSON.stringify(firstReuse)}`)
+}
+const importMessage = galleryImportSuccessMessage(1, [...firstReuse.notices, firstReuse.notices[0]])
+if (!importMessage.startsWith('已从资产导入 1 张参考图') || !firstReuse.notices.every((notice: string) => importMessage.includes(notice)) || importMessage.split(firstReuse.notices[0]).length !== 2) {
+  throw new Error(`gallery import success must include deduplicated normalization notices once: ${importMessage}`)
+}
+if (firstGalleryReferenceReuse(1, imported as any, reuseCapability) !== null || firstGalleryReferenceReuse(0, [{ id: 'plain' }] as any, reuseCapability) !== null) {
+  throw new Error('later references and imports without a generation snapshot must not overwrite parameters')
 }
 
 function galleryImage(patch: Partial<GalleryImage>): GalleryImage {

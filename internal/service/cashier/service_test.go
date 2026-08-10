@@ -30,6 +30,21 @@ func TestServiceScheduleProviderInstanceFiltersEnabledConfiguredAndAmount(t *tes
 	}
 }
 
+func TestEligibleProviderInstancesUsesCheckoutMethodEligibility(t *testing.T) {
+	method := domaincashier.VisibleMethod{Method: "alipay", Enabled: true, SourceProviderType: "alipay_direct"}
+	instances := []domaincashier.ProviderInstance{
+		{ID: 1, ProviderType: "alipay_direct", Enabled: true, SupportedMethods: []string{"wxpay"}, ConfigStatus: "configured"},
+		{ID: 2, ProviderType: "alipay_direct", Enabled: true, SupportedMethods: []string{"alipay"}, ConfigStatus: "missing"},
+		{ID: 3, ProviderType: "wxpay_direct", Enabled: true, SupportedMethods: []string{"alipay"}, ConfigStatus: "configured"},
+		{ID: 4, ProviderType: "alipay_direct", Enabled: false, SupportedMethods: []string{"alipay"}, ConfigStatus: "configured"},
+		{ID: 5, ProviderType: "alipay_direct", Enabled: true, SupportedMethods: []string{"alipay"}, ConfigStatus: "configured"},
+	}
+	eligible := EligibleProviderInstances(method, instances)
+	if len(eligible) != 1 || eligible[0].ID != 5 {
+		t.Fatalf("eligible provider instances = %#v", eligible)
+	}
+}
+
 func TestServiceScheduleProviderInstanceHonorsDailyAmountLimit(t *testing.T) {
 	svc := NewService()
 	method := domaincashier.VisibleMethod{Method: "alipay", Enabled: true, SourceProviderType: "alipay_direct"}

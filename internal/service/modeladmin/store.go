@@ -16,24 +16,31 @@ type Store interface {
 	CreateModelAccount(ctx context.Context, req domainmodeladmin.ModelAccountWriteRequest) (domainmodeladmin.ModelAccount, error)
 	UpdateModelAccount(ctx context.Context, accountID int64, req domainmodeladmin.ModelAccountWriteRequest) (domainmodeladmin.ModelAccount, error)
 	DeleteModelAccount(ctx context.Context, accountID int64) error
+	DeleteModelAccountAudited(ctx context.Context, accountID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListModelAccountModels(ctx context.Context, req domainmodeladmin.ModelAccountModelListRequest) (domainmodeladmin.ModelAccountModelListPage, error)
 	GetModelAccountModel(ctx context.Context, accountModelID int64) (domainmodeladmin.ModelAccountModel, error)
 	CreateModelAccountModel(ctx context.Context, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error)
 	UpdateModelAccountModel(ctx context.Context, accountModelID int64, req domainmodeladmin.ModelAccountModelWriteRequest) (domainmodeladmin.ModelAccountModel, error)
-	DeleteModelAccountModel(ctx context.Context, accountModelID int64) error
+	DeleteModelAccountModel(ctx context.Context, accountID, accountModelID int64) error
+	DeleteModelAccountModelAudited(ctx context.Context, accountID, accountModelID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListRouteModels(ctx context.Context, req domainmodeladmin.RouteModelListRequest) (domainmodeladmin.RouteModelListPage, error)
 	GetRouteModel(ctx context.Context, routeModelID int64) (domainmodeladmin.RouteModel, error)
 	CreateRouteModel(ctx context.Context, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error)
 	UpdateRouteModel(ctx context.Context, routeModelID int64, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error)
 	DeleteRouteModel(ctx context.Context, routeModelID int64) error
+	DeleteRouteModelAudited(ctx context.Context, routeModelID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListRouteModelCandidates(ctx context.Context, routeModelID int64) ([]domainmodeladmin.RouteModelCandidate, error)
+	GetRouteModelCandidate(ctx context.Context, candidateID int64) (domainmodeladmin.RouteModelCandidate, error)
 	CreateRouteModelCandidate(ctx context.Context, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error)
 	UpdateRouteModelCandidate(ctx context.Context, candidateID int64, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error)
-	DeleteRouteModelCandidate(ctx context.Context, candidateID int64) error
+	DeleteRouteModelCandidate(ctx context.Context, routeModelID, candidateID int64) error
+	DeleteRouteModelCandidateAudited(ctx context.Context, routeModelID, candidateID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListRouteModelPrices(ctx context.Context, req domainmodeladmin.RouteModelPriceListRequest) (domainmodeladmin.RouteModelPriceListPage, error)
+	GetRouteModelPrice(ctx context.Context, priceID int64) (domainmodeladmin.RouteModelPrice, error)
 	CreateRouteModelPrice(ctx context.Context, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error)
 	UpdateRouteModelPrice(ctx context.Context, priceID int64, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error)
 	DeleteRouteModelPrice(ctx context.Context, priceID int64) error
+	DeleteRouteModelPriceAudited(ctx context.Context, priceID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListProviders(ctx context.Context, req domainmodeladmin.ProviderListRequest) (domainmodeladmin.ProviderListPage, error)
 	GetProvider(ctx context.Context, providerCode string) (domainmodeladmin.Provider, error)
 	CreateProvider(ctx context.Context, req domainmodeladmin.ProviderWriteRequest) (domainmodeladmin.Provider, error)
@@ -178,6 +185,10 @@ func (s *MemoryStore) DeleteModelAccount(_ context.Context, accountID int64) err
 	return nil
 }
 
+func (s *MemoryStore) DeleteModelAccountAudited(ctx context.Context, accountID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteModelAccount(ctx, accountID)
+}
+
 func (s *MemoryStore) ListModelAccountModels(_ context.Context, req domainmodeladmin.ModelAccountModelListRequest) (domainmodeladmin.ModelAccountModelListPage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -217,7 +228,7 @@ func (s *MemoryStore) CreateModelAccountModel(_ context.Context, req domainmodel
 		return domainmodeladmin.ModelAccountModel{}, repoerr.ErrNotFound
 	}
 	now := time.Now().UTC()
-	item := domainmodeladmin.ModelAccountModel{ID: s.nextID, AccountID: req.AccountID, AccountName: account.Name, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: append([]string(nil), req.TaskTypes...), BaseResolution: append([]string(nil), req.BaseResolution...), Quality: append([]string(nil), req.Quality...), MaxReferenceImageCount: req.MaxReferenceImageCount, MaxImageCount: req.MaxImageCount, SizeModes: append([]string(nil), req.SizeModes...), SupportedRatios: append([]string(nil), req.SupportedRatios...), SupportedPixelSizes: append([]string(nil), req.SupportedPixelSizes...), OutputFormat: append([]string(nil), req.OutputFormat...), OutputCompression: req.OutputCompression, SupportsOutputCompression: req.SupportsOutputCompression, SupportsCustomSize: req.SupportsCustomSize, Moderation: append([]string(nil), req.Moderation...), CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra, CreatedAt: now, UpdatedAt: now}
+	item := domainmodeladmin.ModelAccountModel{ID: s.nextID, AccountID: req.AccountID, AccountName: account.Name, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: append([]string(nil), req.TaskTypes...), BaseResolution: append([]string(nil), req.BaseResolution...), Quality: append([]string(nil), req.Quality...), MaxReferenceImageCount: req.MaxReferenceImageCount, MaxImageCount: req.MaxImageCount, SizeModes: append([]string(nil), req.SizeModes...), SupportedRatios: append([]string(nil), req.SupportedRatios...), SupportedPixelSizes: append([]string(nil), req.SupportedPixelSizes...), SupportsCustomRatio: req.SupportsCustomRatio, SupportedBackgrounds: append([]string(nil), req.SupportedBackgrounds...), OutputFormat: append([]string(nil), req.OutputFormat...), OutputCompression: req.OutputCompression, SupportsOutputCompression: req.SupportsOutputCompression, SupportsCustomSize: req.SupportsCustomSize, MinWidth: req.MinWidth, MaxWidth: req.MaxWidth, MinHeight: req.MinHeight, MaxHeight: req.MaxHeight, Moderation: append([]string(nil), req.Moderation...), CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra, CreatedAt: now, UpdatedAt: now}
 	s.nextID++
 	s.accountModels[item.ID] = item
 	return item, nil
@@ -242,10 +253,14 @@ func (s *MemoryStore) UpdateModelAccountModel(_ context.Context, accountModelID 
 	item.SizeModes = append([]string(nil), req.SizeModes...)
 	item.SupportedRatios = append([]string(nil), req.SupportedRatios...)
 	item.SupportedPixelSizes = append([]string(nil), req.SupportedPixelSizes...)
+	item.SupportsCustomRatio = req.SupportsCustomRatio
+	item.SupportedBackgrounds = append([]string(nil), req.SupportedBackgrounds...)
 	item.OutputFormat = append([]string(nil), req.OutputFormat...)
 	item.OutputCompression = req.OutputCompression
 	item.SupportsOutputCompression = req.SupportsOutputCompression
 	item.SupportsCustomSize = req.SupportsCustomSize
+	item.MinWidth, item.MaxWidth = req.MinWidth, req.MaxWidth
+	item.MinHeight, item.MaxHeight = req.MinHeight, req.MaxHeight
 	item.Moderation = append([]string(nil), req.Moderation...)
 	item.CostPerImage, item.Currency, item.Enabled, item.Extra = req.CostPerImage, req.Currency, req.Enabled, req.Extra
 	item.UpdatedAt = time.Now().UTC()
@@ -253,10 +268,11 @@ func (s *MemoryStore) UpdateModelAccountModel(_ context.Context, accountModelID 
 	return item, nil
 }
 
-func (s *MemoryStore) DeleteModelAccountModel(_ context.Context, accountModelID int64) error {
+func (s *MemoryStore) DeleteModelAccountModel(_ context.Context, accountID, accountModelID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.accountModels[accountModelID]; !ok {
+	accountModel, ok := s.accountModels[accountModelID]
+	if !ok || accountModel.AccountID != accountID {
 		return repoerr.ErrNotFound
 	}
 	for _, candidate := range s.candidates {
@@ -266,6 +282,10 @@ func (s *MemoryStore) DeleteModelAccountModel(_ context.Context, accountModelID 
 	}
 	delete(s.accountModels, accountModelID)
 	return nil
+}
+
+func (s *MemoryStore) DeleteModelAccountModelAudited(ctx context.Context, accountID, accountModelID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteModelAccountModel(ctx, accountID, accountModelID)
 }
 
 func (s *MemoryStore) GetProvider(_ context.Context, providerCode string) (domainmodeladmin.Provider, error) {
@@ -558,6 +578,10 @@ func (s *MemoryStore) DeleteRouteModel(_ context.Context, routeModelID int64) er
 	return nil
 }
 
+func (s *MemoryStore) DeleteRouteModelAudited(ctx context.Context, routeModelID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteRouteModel(ctx, routeModelID)
+}
+
 func (s *MemoryStore) ListRouteModelCandidates(_ context.Context, routeModelID int64) ([]domainmodeladmin.RouteModelCandidate, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -569,6 +593,16 @@ func (s *MemoryStore) ListRouteModelCandidates(_ context.Context, routeModelID i
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func (s *MemoryStore) GetRouteModelCandidate(_ context.Context, candidateID int64) (domainmodeladmin.RouteModelCandidate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.candidates[candidateID]
+	if !ok {
+		return domainmodeladmin.RouteModelCandidate{}, repoerr.ErrNotFound
+	}
+	return item, nil
 }
 
 func (s *MemoryStore) CreateRouteModelCandidate(_ context.Context, req domainmodeladmin.RouteModelCandidateWriteRequest) (domainmodeladmin.RouteModelCandidate, error) {
@@ -602,14 +636,19 @@ func (s *MemoryStore) UpdateRouteModelCandidate(_ context.Context, candidateID i
 	return item, nil
 }
 
-func (s *MemoryStore) DeleteRouteModelCandidate(_ context.Context, candidateID int64) error {
+func (s *MemoryStore) DeleteRouteModelCandidate(_ context.Context, routeModelID, candidateID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.candidates[candidateID]; !ok {
+	candidate, ok := s.candidates[candidateID]
+	if !ok || candidate.RouteModelID != routeModelID {
 		return repoerr.ErrNotFound
 	}
 	delete(s.candidates, candidateID)
 	return nil
+}
+
+func (s *MemoryStore) DeleteRouteModelCandidateAudited(ctx context.Context, routeModelID, candidateID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteRouteModelCandidate(ctx, routeModelID, candidateID)
 }
 
 func (s *MemoryStore) ListRouteModelPrices(_ context.Context, req domainmodeladmin.RouteModelPriceListRequest) (domainmodeladmin.RouteModelPriceListPage, error) {
@@ -634,6 +673,16 @@ func (s *MemoryStore) ListRouteModelPrices(_ context.Context, req domainmodeladm
 	}
 	total := len(items)
 	return domainmodeladmin.RouteModelPriceListPage{Items: slicePage(items, page, pageSize), Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+func (s *MemoryStore) GetRouteModelPrice(_ context.Context, priceID int64) (domainmodeladmin.RouteModelPrice, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.prices[priceID]
+	if !ok {
+		return domainmodeladmin.RouteModelPrice{}, repoerr.ErrNotFound
+	}
+	return item, nil
 }
 
 func (s *MemoryStore) CreateRouteModelPrice(_ context.Context, req domainmodeladmin.RouteModelPriceWriteRequest) (domainmodeladmin.RouteModelPrice, error) {
@@ -672,6 +721,10 @@ func (s *MemoryStore) DeleteRouteModelPrice(_ context.Context, priceID int64) er
 	}
 	delete(s.prices, priceID)
 	return nil
+}
+
+func (s *MemoryStore) DeleteRouteModelPriceAudited(ctx context.Context, priceID int64, _ domainmodeladmin.LifecycleAudit) error {
+	return s.DeleteRouteModelPrice(ctx, priceID)
 }
 
 func (s *MemoryStore) ListRoutes(_ context.Context, req domainmodeladmin.RouteListRequest) (domainmodeladmin.RouteListPage, error) {
@@ -822,7 +875,7 @@ func (s *MemoryStore) ModelRoutingConfig(_ context.Context) (modelhub.ModelRouti
 		if !item.Enabled || account.Status != domainmodeladmin.ModelAccountStatusEnabled {
 			continue
 		}
-		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{AccountModelID: item.ID, ModelAccountID: item.AccountID, Provider: account.AdapterType, AdapterType: account.AdapterType, AuthType: account.AuthType, BaseURL: account.BaseURL, Credentials: account.CredentialsEncrypted, ModelCode: item.ModelCode, SupportedTaskTypes: append([]string(nil), item.TaskTypes...), SupportedBaseResolution: append([]string(nil), item.BaseResolution...), Quality: append([]string(nil), item.Quality...), SizeModes: append([]string(nil), item.SizeModes...), SupportedAspectRatios: append([]string(nil), item.SupportedRatios...), SupportedPixelSizes: append([]string(nil), item.SupportedPixelSizes...), MaxImageCount: item.MaxImageCount, ConcurrencyLimit: account.ConcurrencyLimit, MaxReferenceImageCount: item.MaxReferenceImageCount, SupportsImageInput: item.MaxReferenceImageCount > 0, OutputFormat: append([]string(nil), item.OutputFormat...), OutputCompression: item.OutputCompression, SupportsOutputCompression: item.SupportsOutputCompression, SupportsCustomSize: item.SupportsCustomSize, Moderation: append([]string(nil), item.Moderation...), HealthStatus: account.Status, TimeoutMS: account.TimeoutMS, InputCost: item.CostPerImage, Currency: item.Currency, AccountExtra: cloneModelAdminExtra(account.Extra), ModelExtra: cloneModelAdminExtra(item.Extra)})
+		snapshot.ProviderModels = append(snapshot.ProviderModels, modelhub.ProviderCandidate{AccountModelID: item.ID, ModelAccountID: item.AccountID, Provider: account.AdapterType, AdapterType: account.AdapterType, AuthType: account.AuthType, BaseURL: account.BaseURL, Credentials: account.CredentialsEncrypted, ModelCode: item.ModelCode, SupportedTaskTypes: append([]string(nil), item.TaskTypes...), SupportedBaseResolution: append([]string(nil), item.BaseResolution...), Quality: append([]string(nil), item.Quality...), SizeModes: append([]string(nil), item.SizeModes...), SupportedAspectRatios: append([]string(nil), item.SupportedRatios...), SupportedPixelSizes: append([]string(nil), item.SupportedPixelSizes...), SupportsCustomRatio: item.SupportsCustomRatio, SupportedBackgrounds: append([]string(nil), item.SupportedBackgrounds...), MaxImageCount: item.MaxImageCount, ConcurrencyLimit: account.ConcurrencyLimit, MaxReferenceImageCount: item.MaxReferenceImageCount, SupportsImageInput: item.MaxReferenceImageCount > 0, OutputFormat: append([]string(nil), item.OutputFormat...), OutputCompression: item.OutputCompression, SupportsOutputCompression: item.SupportsOutputCompression, SupportsCustomSize: item.SupportsCustomSize, MinWidth: item.MinWidth, MaxWidth: item.MaxWidth, MinHeight: item.MinHeight, MaxHeight: item.MaxHeight, Moderation: append([]string(nil), item.Moderation...), HealthStatus: account.Status, TimeoutMS: account.TimeoutMS, InputCost: item.CostPerImage, Currency: item.Currency, AccountExtra: cloneModelAdminExtra(account.Extra), ModelExtra: cloneModelAdminExtra(item.Extra)})
 	}
 	return snapshot, nil
 }

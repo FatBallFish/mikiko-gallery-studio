@@ -10,6 +10,7 @@ import (
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 )
 
@@ -74,17 +75,22 @@ func (s *StorageConfigStore) GetDefaultWritable(ctx context.Context) (domainstor
 }
 
 func (s *StorageConfigStore) GetLegacyByDriver(ctx context.Context, driver string) (domainstorageconfig.ConfigRecord, bool, error) {
-	row, err := s.client.ObjectStorageConfig.Query().Where(
-		objectstorageconfig.CodeEQ("bootstrap-"+strings.ToLower(strings.TrimSpace(driver))),
-		objectstorageconfig.StatusEQ(domainstorageconfig.StatusEnabled), objectstorageconfig.ReadEnabledEQ(true),
-	).Only(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainstorageconfig.ConfigRecord{}, false, nil
-		}
+	driver = strings.ToLower(strings.TrimSpace(driver))
+	if driver == "" {
+		driver = domainstorageconfig.DriverLocal
+	}
+	base := []predicate.ObjectStorageConfig{
+		objectstorageconfig.DriverEQ(driver),
+		objectstorageconfig.StatusNEQ(domainstorageconfig.StatusDeleted), objectstorageconfig.ReadEnabledEQ(true),
+	}
+	row, err := s.client.ObjectStorageConfig.Query().Where(append(base, objectstorageconfig.CodeEQ("bootstrap-"+driver))...).Only(ctx)
+	if err == nil {
+		return mapObjectStorageConfig(row), true, nil
+	}
+	if !repoent.IsNotFound(err) {
 		return domainstorageconfig.ConfigRecord{}, false, err
 	}
-	return mapObjectStorageConfig(row), true, nil
+	return domainstorageconfig.ConfigRecord{}, false, nil
 }
 
 func (s *StorageConfigStore) Save(ctx context.Context, record domainstorageconfig.ConfigRecord) (domainstorageconfig.ConfigRecord, error) {

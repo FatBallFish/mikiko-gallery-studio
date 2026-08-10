@@ -15,6 +15,10 @@ const baseOrder: PaymentOrder = {
   amount_cny: '19.90000',
   points: '100.00000',
   bonus_points: '0.00000',
+  credit_expiry_enabled: true,
+  credit_valid_days: 30,
+  credited_at: '2026-06-05T10:05:00Z',
+  credit_expires_at: '2026-07-05T10:05:00Z',
   expires_at: '2026-06-05T12:00:00Z',
   created_at: '2026-06-05T10:00:00Z',
   updated_at: '2026-06-05T10:00:00Z',
@@ -46,6 +50,21 @@ if (customRow) {
 const oneRow = checkoutRecentOrderRows([{ ...baseOrder, plan_name: '', purchase_type: 'custom_amount', amount_cny: '25.00000' }])[0]
 if (oneRow.title !== '自定义金额充值' || oneRow.amount !== '¥25.00' || oneRow.points !== '100.00') {
   throw new Error(`recent checkout order row should normalize custom amount display, got ${JSON.stringify(oneRow)}`)
+}
+
+const fixedRow = checkoutRecentOrderRows([{ ...baseOrder, points: '100.00000', bonus_points: '20.00000' }])[0]
+if (fixedRow.basePoints !== '100.00' || fixedRow.bonusPoints !== '20.00' || fixedRow.creditValidity !== '有效期至 2026/07/05 10:05') {
+  throw new Error(`recent fixed-package order must expose base, gift, and actual expiry, got ${JSON.stringify(fixedRow)}`)
+}
+
+const pendingRow = checkoutRecentOrderRows([{ ...baseOrder, status: 'pending', credited_at: null, credit_expires_at: null }])[0]
+if (pendingRow.creditValidity !== '到账后 30 天内有效') {
+  throw new Error(`pending fixed-package order must explain relative validity, got ${JSON.stringify(pendingRow)}`)
+}
+
+const permanentRow = checkoutRecentOrderRows([{ ...baseOrder, credit_expiry_enabled: false, credit_valid_days: null, credited_at: '2026-06-05T10:05:00Z', credit_expires_at: null }])[0]
+if (permanentRow.creditValidity !== '积分长期有效') {
+  throw new Error(`permanent fixed-package order must explain non-expiry, got ${JSON.stringify(permanentRow)}`)
 }
 
 if (oneRow.createdAtLabel !== '2026/06/05 10:00') {

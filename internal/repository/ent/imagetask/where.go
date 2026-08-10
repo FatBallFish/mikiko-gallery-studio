@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/google/uuid"
 )
@@ -73,6 +74,11 @@ func DeletedAt(v time.Time) predicate.ImageTask {
 // UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
 func UserID(v int64) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldUserID, v))
+}
+
+// ProjectID applies equality check predicate on the "project_id" field. It's identical to ProjectIDEQ.
+func ProjectID(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProjectID, v))
 }
 
 // APIKeyID applies equality check predicate on the "api_key_id" field. It's identical to APIKeyIDEQ.
@@ -158,6 +164,11 @@ func AspectRatio(v string) predicate.ImageTask {
 // OutputFormat applies equality check predicate on the "output_format" field. It's identical to OutputFormatEQ.
 func OutputFormat(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldOutputFormat, v))
+}
+
+// Background applies equality check predicate on the "background" field. It's identical to BackgroundEQ.
+func Background(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldBackground, v))
 }
 
 // OutputCompression applies equality check predicate on the "output_compression" field. It's identical to OutputCompressionEQ.
@@ -313,6 +324,16 @@ func ArtifactNextRetryAt(v time.Time) predicate.ImageTask {
 // ArtifactStorageConfigID applies equality check predicate on the "artifact_storage_config_id" field. It's identical to ArtifactStorageConfigIDEQ.
 func ArtifactStorageConfigID(v uuid.UUID) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldArtifactStorageConfigID, v))
+}
+
+// ArtifactStorageDriver applies equality check predicate on the "artifact_storage_driver" field. It's identical to ArtifactStorageDriverEQ.
+func ArtifactStorageDriver(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageBucket applies equality check predicate on the "artifact_storage_bucket" field. It's identical to ArtifactStorageBucketEQ.
+func ArtifactStorageBucket(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactStorageBucket, v))
 }
 
 // ArtifactStorageVersion applies equality check predicate on the "artifact_storage_version" field. It's identical to ArtifactStorageVersionEQ.
@@ -518,6 +539,36 @@ func UserIDLT(v int64) predicate.ImageTask {
 // UserIDLTE applies the LTE predicate on the "user_id" field.
 func UserIDLTE(v int64) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldLTE(FieldUserID, v))
+}
+
+// ProjectIDEQ applies the EQ predicate on the "project_id" field.
+func ProjectIDEQ(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldProjectID, v))
+}
+
+// ProjectIDNEQ applies the NEQ predicate on the "project_id" field.
+func ProjectIDNEQ(v uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldProjectID, v))
+}
+
+// ProjectIDIn applies the In predicate on the "project_id" field.
+func ProjectIDIn(vs ...uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldProjectID, vs...))
+}
+
+// ProjectIDNotIn applies the NotIn predicate on the "project_id" field.
+func ProjectIDNotIn(vs ...uuid.UUID) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldProjectID, vs...))
+}
+
+// ProjectIDIsNil applies the IsNil predicate on the "project_id" field.
+func ProjectIDIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldProjectID))
+}
+
+// ProjectIDNotNil applies the NotNil predicate on the "project_id" field.
+func ProjectIDNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldProjectID))
 }
 
 // APIKeyIDEQ applies the EQ predicate on the "api_key_id" field.
@@ -1598,6 +1649,81 @@ func OutputFormatEqualFold(v string) predicate.ImageTask {
 // OutputFormatContainsFold applies the ContainsFold predicate on the "output_format" field.
 func OutputFormatContainsFold(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldContainsFold(FieldOutputFormat, v))
+}
+
+// BackgroundEQ applies the EQ predicate on the "background" field.
+func BackgroundEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldBackground, v))
+}
+
+// BackgroundNEQ applies the NEQ predicate on the "background" field.
+func BackgroundNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldBackground, v))
+}
+
+// BackgroundIn applies the In predicate on the "background" field.
+func BackgroundIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldBackground, vs...))
+}
+
+// BackgroundNotIn applies the NotIn predicate on the "background" field.
+func BackgroundNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldBackground, vs...))
+}
+
+// BackgroundGT applies the GT predicate on the "background" field.
+func BackgroundGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldBackground, v))
+}
+
+// BackgroundGTE applies the GTE predicate on the "background" field.
+func BackgroundGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldBackground, v))
+}
+
+// BackgroundLT applies the LT predicate on the "background" field.
+func BackgroundLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldBackground, v))
+}
+
+// BackgroundLTE applies the LTE predicate on the "background" field.
+func BackgroundLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldBackground, v))
+}
+
+// BackgroundContains applies the Contains predicate on the "background" field.
+func BackgroundContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldBackground, v))
+}
+
+// BackgroundHasPrefix applies the HasPrefix predicate on the "background" field.
+func BackgroundHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldBackground, v))
+}
+
+// BackgroundHasSuffix applies the HasSuffix predicate on the "background" field.
+func BackgroundHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldBackground, v))
+}
+
+// BackgroundIsNil applies the IsNil predicate on the "background" field.
+func BackgroundIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldBackground))
+}
+
+// BackgroundNotNil applies the NotNil predicate on the "background" field.
+func BackgroundNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldBackground))
+}
+
+// BackgroundEqualFold applies the EqualFold predicate on the "background" field.
+func BackgroundEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldBackground, v))
+}
+
+// BackgroundContainsFold applies the ContainsFold predicate on the "background" field.
+func BackgroundContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldBackground, v))
 }
 
 // OutputCompressionEQ applies the EQ predicate on the "output_compression" field.
@@ -3345,6 +3471,146 @@ func ArtifactStorageConfigIDNotNil() predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldNotNull(FieldArtifactStorageConfigID))
 }
 
+// ArtifactStorageDriverEQ applies the EQ predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageDriverNEQ applies the NEQ predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageDriverIn applies the In predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldArtifactStorageDriver, vs...))
+}
+
+// ArtifactStorageDriverNotIn applies the NotIn predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldArtifactStorageDriver, vs...))
+}
+
+// ArtifactStorageDriverGT applies the GT predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageDriverGTE applies the GTE predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageDriverLT applies the LT predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageDriverLTE applies the LTE predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageDriverContains applies the Contains predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageDriverHasPrefix applies the HasPrefix predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageDriverHasSuffix applies the HasSuffix predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageDriverEqualFold applies the EqualFold predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageDriverContainsFold applies the ContainsFold predicate on the "artifact_storage_driver" field.
+func ArtifactStorageDriverContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldArtifactStorageDriver, v))
+}
+
+// ArtifactStorageBucketEQ applies the EQ predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactStorageBucketNEQ applies the NEQ predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactStorageBucketIn applies the In predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldArtifactStorageBucket, vs...))
+}
+
+// ArtifactStorageBucketNotIn applies the NotIn predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldArtifactStorageBucket, vs...))
+}
+
+// ArtifactStorageBucketGT applies the GT predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactStorageBucketGTE applies the GTE predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactStorageBucketLT applies the LT predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactStorageBucketLTE applies the LTE predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactStorageBucketContains applies the Contains predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactStorageBucketHasPrefix applies the HasPrefix predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactStorageBucketHasSuffix applies the HasSuffix predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactStorageBucketEqualFold applies the EqualFold predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactStorageBucketContainsFold applies the ContainsFold predicate on the "artifact_storage_bucket" field.
+func ArtifactStorageBucketContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldArtifactStorageBucket, v))
+}
+
+// ArtifactObjectKeysIsNil applies the IsNil predicate on the "artifact_object_keys" field.
+func ArtifactObjectKeysIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldArtifactObjectKeys))
+}
+
+// ArtifactObjectKeysNotNil applies the NotNil predicate on the "artifact_object_keys" field.
+func ArtifactObjectKeysNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldArtifactObjectKeys))
+}
+
 // ArtifactStorageVersionEQ applies the EQ predicate on the "artifact_storage_version" field.
 func ArtifactStorageVersionEQ(v int64) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldArtifactStorageVersion, v))
@@ -3758,6 +4024,29 @@ func FinishedAtIsNil() predicate.ImageTask {
 // FinishedAtNotNil applies the NotNil predicate on the "finished_at" field.
 func FinishedAtNotNil() predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldNotNull(FieldFinishedAt))
+}
+
+// HasProject applies the HasEdge predicate on the "project" edge.
+func HasProject() predicate.ImageTask {
+	return predicate.ImageTask(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, ProjectTable, ProjectColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasProjectWith applies the HasEdge predicate on the "project" edge with a given conditions (other predicates).
+func HasProjectWith(preds ...predicate.Project) predicate.ImageTask {
+	return predicate.ImageTask(func(s *sql.Selector) {
+		step := newProjectStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.

@@ -32,8 +32,18 @@ for (const overviewContract of [
   'lg:col-span-4',
   'function OperationalAlertRail',
   '生成成功率',
+  'call_distribution',
+  '真实上游调用',
+  '24 小时窗口',
+  'preflight_failure_count',
 ]) {
   if (!source.includes(overviewContract)) throw new Error(`overview must implement ${overviewContract}`)
+}
+
+for (const forbiddenFakeDistribution of ['providerDistributionRows', 'providerWeight']) {
+  if (source.includes(forbiddenFakeDistribution)) {
+    throw new Error(`overview must not derive call distribution from provider health: ${forbiddenFakeDistribution}`)
+  }
 }
 
 for (const forbidden of ['<details', 'rounded-2xl', 'rounded-3xl', '.trend?.match']) {

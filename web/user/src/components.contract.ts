@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { componentPrimitiveNames, formatDate, imageFrameActionsClass, imagePixelsLabel, imageRatioLabel, navItems, protectedRoutes } from './components'
 import { siteBrand } from './brand'
 
@@ -28,6 +29,7 @@ const expectedNavigation = [
   ['home', '首页'],
   ['genpic', '创作'],
   ['gallery', '资产'],
+  ['projects', '项目'],
   ['checkout', '积分'],
   ['api-keys', '密钥'],
   ['settings', '设置'],
@@ -55,8 +57,18 @@ if (JSON.stringify(componentPrimitiveNames) !== JSON.stringify(expectedPrimitive
   throw new Error(`shared component primitive inventory drifted, got ${JSON.stringify(componentPrimitiveNames)}`)
 }
 
-if (protectedRoutes.includes('docs')) {
+if ((protectedRoutes as readonly string[]).includes('docs')) {
   throw new Error('the external documentation route must not require a user session')
+}
+if (!(protectedRoutes as readonly string[]).includes('projects')) {
+  throw new Error('project management must require a user session')
+}
+
+for (const file of ['./components.tsx', './pages/RedesignDemo.tsx']) {
+  const source = readFileSync(new URL(file, import.meta.url), 'utf8')
+  if (/京ICP备20261024号-1|ICP备/.test(source)) {
+    throw new Error(`${file} must not display an unregistered ICP filing number`)
+  }
 }
 
 if (imageFrameActionsClass !== 'pg-image-frame-actions') {

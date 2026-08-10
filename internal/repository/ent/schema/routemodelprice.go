@@ -11,6 +11,8 @@ import (
 
 type RouteModelPrice struct{ ent.Schema }
 
+func (RouteModelPrice) Mixin() []ent.Mixin { return []ent.Mixin{TimeMixin{}, SoftDeleteMixin{}} }
+
 func (RouteModelPrice) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("route_model_id"),

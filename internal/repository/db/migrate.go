@@ -20,16 +20,19 @@ import (
 const (
 	// CurrentDatabaseSchemaVersion is advanced whenever an application release
 	// requires a database migration before ordinary nodes may start.
-	CurrentDatabaseSchemaVersion = 2
+	CurrentDatabaseSchemaVersion = 3
 
 	// A fixed signed 64-bit key coordinates every explicit migrator for one
 	// PostgreSQL database. Session locks are scoped by database, so installations
 	// in different databases do not block one another.
 	migrationAdvisoryLockKey int64 = 0x5047434D49475231
 
-	acquireMigrationLockSQL  = `SELECT pg_advisory_lock($1)`
-	releaseMigrationLockSQL  = `SELECT pg_advisory_unlock($1)`
-	installationSingletonKey = "installation"
+	acquireMigrationLockSQL   = `SELECT pg_advisory_lock($1)`
+	releaseMigrationLockSQL   = `SELECT pg_advisory_unlock($1)`
+	installationSingletonKey  = "installation"
+	projectBackfillBatchSize  = 100
+	projectBackfillMaxBatches = 100
+	projectBackfillBatchPause = 10 * time.Millisecond
 )
 
 var migrationIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
@@ -57,6 +60,14 @@ type MigrationResult struct {
 	Changed        bool
 	BackfilledRows int
 	MigratedAt     time.Time
+}
+
+type ProjectBackfillIncompleteError struct {
+	Progress ProjectBackfillProgress
+}
+
+func (e *ProjectBackfillIncompleteError) Error() string {
+	return fmt.Sprintf("project ownership backfill paused in phase %q after %d batches and %d processed rows; rerun migration to resume", e.Progress.Phase, e.Progress.Batches, e.Progress.ProcessedRows)
 }
 
 type CompatibilityErrorKind string
@@ -216,12 +227,32 @@ func migrateLocked(ctx context.Context, database *sql.DB, req MigrationRequest) 
 	if err != nil {
 		return MigrationResult{}, fmt.Errorf("backfill legacy model account capabilities: %w", err)
 	}
+	sizeBoundsBackfilled, err := BackfillLegacyModelAccountSizeBounds(ctx, client)
+	if err != nil {
+		return MigrationResult{}, fmt.Errorf("backfill legacy model account size bounds: %w", err)
+	}
+	projectProgress, err := RunProjectOwnershipBackfill(ctx, client, ProjectBackfillOptions{
+		BatchSize: projectBackfillBatchSize, MaxBatches: projectBackfillMaxBatches, BatchPause: projectBackfillBatchPause,
+	})
+	if err != nil {
+		return MigrationResult{}, fmt.Errorf("backfill legacy project ownership: %w", err)
+	}
+	if err := requireCompletedProjectBackfill(projectProgress); err != nil {
+		return MigrationResult{}, err
+	}
 	result, err := recordInstallationMigration(ctx, client, req)
 	if err != nil {
 		return MigrationResult{}, err
 	}
-	result.BackfilledRows = backfilled
+	result.BackfilledRows = backfilled + sizeBoundsBackfilled + projectProgress.UpdatedRows
 	return result, nil
+}
+
+func requireCompletedProjectBackfill(progress ProjectBackfillProgress) error {
+	if progress.Completed {
+		return nil
+	}
+	return &ProjectBackfillIncompleteError{Progress: progress}
 }
 
 func preflightInstallationMigration(ctx context.Context, database *sql.DB, req MigrationRequest) error {

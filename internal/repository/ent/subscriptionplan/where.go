@@ -104,6 +104,11 @@ func BonusPoints(v string) predicate.SubscriptionPlan {
 	return predicate.SubscriptionPlan(sql.FieldEQ(FieldBonusPoints, v))
 }
 
+// CreditExpiryEnabled applies equality check predicate on the "credit_expiry_enabled" field. It's identical to CreditExpiryEnabledEQ.
+func CreditExpiryEnabled(v bool) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldCreditExpiryEnabled, v))
+}
+
 // DurationDays applies equality check predicate on the "duration_days" field. It's identical to DurationDaysEQ.
 func DurationDays(v int) predicate.SubscriptionPlan {
 	return predicate.SubscriptionPlan(sql.FieldEQ(FieldDurationDays, v))
@@ -667,6 +672,16 @@ func BonusPointsEqualFold(v string) predicate.SubscriptionPlan {
 // BonusPointsContainsFold applies the ContainsFold predicate on the "bonus_points" field.
 func BonusPointsContainsFold(v string) predicate.SubscriptionPlan {
 	return predicate.SubscriptionPlan(sql.FieldContainsFold(FieldBonusPoints, v))
+}
+
+// CreditExpiryEnabledEQ applies the EQ predicate on the "credit_expiry_enabled" field.
+func CreditExpiryEnabledEQ(v bool) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldCreditExpiryEnabled, v))
+}
+
+// CreditExpiryEnabledNEQ applies the NEQ predicate on the "credit_expiry_enabled" field.
+func CreditExpiryEnabledNEQ(v bool) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldNEQ(FieldCreditExpiryEnabled, v))
 }
 
 // DurationDaysEQ applies the EQ predicate on the "duration_days" field.

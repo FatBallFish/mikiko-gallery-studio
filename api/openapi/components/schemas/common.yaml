@@ -41,6 +41,45 @@ components:
           type: integer
         total:
           type: integer
+    ProjectSnapshot:
+      type: object
+      required: [id, name, is_default]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        is_default:
+          type: boolean
+    Project:
+      type: object
+      required: [id, name, is_default, status, version, task_count, asset_count, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        is_default:
+          type: boolean
+        status:
+          type: string
+          enum: [active, transferring, deleted]
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        task_count:
+          type: integer
+          minimum: 0
+        asset_count:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     ReferenceAsset:
       type: object
       properties:
@@ -57,18 +96,61 @@ components:
           type: integer
         height:
           type: integer
+        source_image_result_id:
+          type: string
+          format: uuid
+          nullable: true
+        owns_object:
+          type: boolean
+        generation_snapshot:
+          $ref: '#/components/schemas/ReferenceGenerationSnapshot'
         preview_expires_at:
           type: string
           format: date-time
         download_expires_at:
           type: string
           format: date-time
+    ReferenceGenerationSnapshot:
+      type: object
+      properties:
+        task_type:
+          type: string
+        abstract_model:
+          type: string
+        route_model_code:
+          type: string
+        capability_version:
+          type: string
+        size_mode:
+          type: string
+        requested_size:
+          type: string
+        base_resolution:
+          type: string
+        aspect_ratio:
+          type: string
+        quality:
+          type: string
+        background:
+          type: string
+        output_format:
+          type: string
+        output_compression:
+          type: integer
+        moderation:
+          type: string
+        image_count:
+          type: integer
     ImageResult:
       type: object
       properties:
         id:
           type: string
           format: uuid
+        project_id:
+          type: string
+        project:
+          $ref: '#/components/schemas/ProjectSnapshot'
         url:
           type: string
           description: Frontend-usable image URL. For local generated images this may be the authenticated download endpoint.
@@ -111,6 +193,10 @@ components:
         id:
           type: string
           format: uuid
+        project_id:
+          type: string
+        project:
+          $ref: '#/components/schemas/ProjectSnapshot'
         task_type:
           type: string
         status:
@@ -175,6 +261,10 @@ components:
         id:
           type: string
           format: uuid
+        project_id:
+          type: string
+        project:
+          $ref: '#/components/schemas/ProjectSnapshot'
         task_id:
           type: string
           format: uuid

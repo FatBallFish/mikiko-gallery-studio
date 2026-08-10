@@ -5,7 +5,7 @@ export type ConfigFieldType = 'number' | 'boolean' | 'text' | 'map' | 'list'
 export type ConfigFieldMeta = { label: string; hint: string; type?: ConfigFieldType }
 export type ConfigTabMeta = { label: string; detail: string }
 
-export const generalConfigCategories = ['site', 'docs', 'public_gallery'] as const
+export const generalConfigCategories = ['site', 'public_gallery'] as const
 export const forbiddenGeneralConfigCategories = ['auth_security', 'generation_limits', 'moderation', 'payments'] as const
 
 const tabMeta: Record<string, ConfigTabMeta> = {
@@ -16,7 +16,6 @@ const tabMeta: Record<string, ConfigTabMeta> = {
   public_gallery: { label: '公开内容', detail: '图片公开申请、广场展示和内容可见性开关。' },
   moderation: { label: '内容审核', detail: '审核供应商和审核开关配置。' },
   payments: { label: '支付配置', detail: '底层支付配置、可见支付方式和自定义充值边界；日常套餐、订单与渠道实例运营优先在收银台页面完成。' },
-  docs: { label: '开发文档', detail: '开放接口文档标题和基础路径。' },
 }
 
 const itemMeta: Record<string, ConfigFieldMeta> = {
@@ -45,8 +44,6 @@ const itemMeta: Record<string, ConfigFieldMeta> = {
   provider_instances: { label: '支付渠道实例', hint: '收银台底层渠道账号配置，包含商户配置、状态、限额和调度参数；密钥不会明文回显。', type: 'list' },
   scheduler_state: { label: '支付调度状态', hint: '多渠道账号轮询调度的运行状态，通常由系统维护。', type: 'map' },
   signup_trial: { label: '注册送体验额度', hint: '控制新用户注册后获得的体验额度金额、有效期、过期提醒和是否每人仅发放一次。', type: 'map' },
-  title: { label: '文档标题', hint: '开发文档页面展示的标题。', type: 'text' },
-  base_path: { label: '文档基础路径', hint: '开发文档站点挂载路径。', type: 'text' },
 }
 
 export function configTabMeta(tabKey: string): ConfigTabMeta {

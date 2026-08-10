@@ -35,6 +35,16 @@ for (const operationLabel of ['测试草稿连接', '探测已保存配置', '�
   }
 }
 
+for (const namespaceContract of [
+  'const namespaceLocked = Boolean(draft.id)',
+  'disabled={namespaceLocked}',
+  '对象地址创建后不可修改；迁移时请新建配置、验证后切换默认写入。',
+]) {
+  if (!storagePageSource.includes(namespaceContract)) {
+    throw new Error(`persisted storage namespace must be immutable with ${namespaceContract}`)
+  }
+}
+
 for (const concurrencyContract of [
   'saving || probing || refreshing || activationPhase',
   'saving || probing || refreshing || isDirty || activationPhase',

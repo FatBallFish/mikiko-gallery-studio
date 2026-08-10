@@ -23,7 +23,10 @@ if (WORKSPACE_STREAM_MAX_RETRIES !== 3) {
   throw new Error(`workspace stream must allow the first connection plus 3 retries, got ${WORKSPACE_STREAM_MAX_RETRIES}`)
 }
 
-const generation = createWorkspaceStreamGeneration('old-access-token')
+const generation = createWorkspaceStreamGeneration('old-access-token', 'project-a')
+if (generation.projectID !== 'project-a') {
+  throw new Error('stream generations must snapshot their selected project')
+}
 const retries = [1, 2, 3].map(() => nextWorkspaceStreamRetry(generation))
 if (retries.some((item) => !item.retry) || generation.retryCount !== 3) {
   throw new Error(`the first three stream recoveries must remain available, got ${JSON.stringify({ retries, generation })}`)
@@ -41,7 +44,7 @@ if (!afterHealthy.retry || afterHealthy.attempt !== 1 || Number(generation.retry
   throw new Error(`the next independent disconnect must restart at attempt 1, got ${JSON.stringify({ afterHealthy, generation })}`)
 }
 
-const refreshed = createWorkspaceStreamGeneration('new-access-token')
+const refreshed = createWorkspaceStreamGeneration('new-access-token', 'project-a')
 if (refreshed.id === generation.id || refreshed.token === generation.token || refreshed.retryCount !== 0) {
   throw new Error('a refreshed access token must create a distinct stream generation and URL input')
 }
@@ -59,8 +62,19 @@ if (workspaceStreamEventIsCurrent(refreshed, refreshed)) {
 if (!workspaceStreamRecoveryIsCurrent(refreshed, refreshed)) {
   throw new Error('a closed source recovery must remain current until a newer generation replaces it')
 }
+const switchedProject = createWorkspaceStreamGeneration('new-access-token', 'project-b')
+if (workspaceStreamRecoveryIsCurrent(refreshed, switchedProject)) {
+  throw new Error('callbacks from the previous project must not recover after project selection changes')
+}
 
 const pageSource = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')
+const userAPISource = readFileSync(new URL('../../../shared/user-api.ts', import.meta.url), 'utf8')
+if (!pageSource.includes('userApi.taskStreamUrl(token, selectedProjectID)')) {
+  throw new Error('workspace task stream URL must carry the selected project')
+}
+if (!userAPISource.includes("project_id: projectID")) {
+  throw new Error('taskStreamUrl must serialize project_id')
+}
 for (const required of [
   'streamRef.current?.close()',
   'nextWorkspaceStreamRetry',
@@ -73,6 +87,7 @@ for (const required of [
   "source.addEventListener('open'",
   'markStreamHealthy()',
   'streamTokenRef.current !== token',
+  'selectedProjectID, streamRetryKey',
 ]) {
   if (!pageSource.includes(required)) {
     throw new Error(`workspace SSE recovery must include ${required}`)
@@ -87,8 +102,14 @@ const taskHandler = pageSource.slice(taskHandlerStart, errorHandlerStart)
 if (!historyHandler.includes('markStreamHealthy()') || !taskHandler.includes('markStreamHealthy()')) {
   throw new Error('valid history and task events must mark the current stream healthy')
 }
+if (taskHandler.indexOf('markStreamHealthy()') > taskHandler.indexOf("next.project_id !== selectedProjectID")) {
+  throw new Error('valid events from another project must still mark the SSE connection healthy before list filtering')
+}
+if (taskHandler.indexOf('refreshAccountRef.current()') > taskHandler.indexOf("next.project_id !== selectedProjectID")) {
+  throw new Error('terminal events from another project must still refresh the global account balance')
+}
 
-const restRecoveryStart = pageSource.indexOf('const tasks = await userApi.listTasks()')
+const restRecoveryStart = pageSource.indexOf('const tasks = await userApi.listTasks({ project_id: selectedProjectID })')
 const restRecoveryEnd = pageSource.indexOf('} catch {', restRecoveryStart)
 if (pageSource.slice(restRecoveryStart, restRecoveryEnd).includes('markStreamHealthy')) {
   throw new Error('REST compensation success must not reset the SSE recovery budget')

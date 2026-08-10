@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -28,6 +30,7 @@ import (
 var (
 	ErrNotFound                = errors.New("storage object not found")
 	ErrObjectTooLarge          = errors.New("storage object exceeds maximum size")
+	ErrSizeMismatch            = errors.New("storage stream size does not match declared length")
 	errInvalidBoundedReadLimit = errors.New("storage bounded read limit is invalid")
 )
 
@@ -38,11 +41,34 @@ type Backend interface {
 	Delete(ctx context.Context, objectKey string) error
 }
 
+type ObjectInfo struct {
+	ObjectKey  string
+	ModifiedAt time.Time
+}
+
+type ObjectPage struct {
+	Objects    []ObjectInfo
+	NextCursor string
+}
+
+// ObjectLister is an optional capability used only with platform-owned
+// prefixes selected by the cleanup processor.
+type ObjectLister interface {
+	ListObjects(ctx context.Context, prefix, cursor string, limit int) (ObjectPage, error)
+}
+
 // BoundedGetter is an optional backend capability for callers that must not
 // allocate based on untrusted object sizes. Get remains unchanged for normal
 // asset reads.
 type BoundedGetter interface {
 	GetBounded(ctx context.Context, objectKey string, maxBytes int64) ([]byte, error)
+}
+
+// StreamingBackend transfers bounded large objects without materializing them
+// as a single byte slice. Callers own the returned reader and must close it.
+type StreamingBackend interface {
+	PutReader(ctx context.Context, objectKey, contentType string, reader io.Reader, size int64) error
+	OpenReader(ctx context.Context, objectKey string, maxBytes int64) (io.ReadCloser, int64, error)
 }
 
 // ObjectCopier is an optional backend capability for copying objects without
@@ -163,9 +189,13 @@ func validateTemporaryMediaURL(value string) (string, error) {
 var (
 	_ BoundedGetter      = (*LocalBackend)(nil)
 	_ BoundedGetter      = (*S3Backend)(nil)
+	_ StreamingBackend   = (*LocalBackend)(nil)
+	_ StreamingBackend   = (*S3Backend)(nil)
 	_ ObjectCopier       = (*LocalBackend)(nil)
 	_ ObjectCopier       = (*S3Backend)(nil)
 	_ TemporaryURLSigner = (*S3Backend)(nil)
+	_ ObjectLister       = (*LocalBackend)(nil)
+	_ ObjectLister       = (*S3Backend)(nil)
 )
 
 func NewBackend(cfg config.StorageConfig) (Backend, error) {
@@ -203,6 +233,66 @@ func (b *LocalBackend) Put(_ context.Context, objectKey string, _ string, conten
 	return os.WriteFile(fullPath, content, 0o644)
 }
 
+func (b *LocalBackend) PutReader(ctx context.Context, objectKey, _ string, reader io.Reader, size int64) error {
+	if size < 0 || reader == nil {
+		return ErrSizeMismatch
+	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	fullPath, ok := b.resolvePath(objectKey)
+	if !ok {
+		return fmt.Errorf("invalid local storage key %q", objectKey)
+	}
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(fullPath), ".put-*")
+	if err != nil {
+		return fmt.Errorf("create local storage stream target: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	committed := false
+	defer func() {
+		_ = temporary.Close()
+		if !committed {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	source := contextReader{ctx: ctx, reader: reader}
+	written, copyErr := io.CopyN(temporary, source, size)
+	if copyErr != nil || written != size {
+		if ctxErr := contextError(ctx); ctxErr != nil {
+			return ctxErr
+		}
+		return ErrSizeMismatch
+	}
+	var extra [1]byte
+	if count, readErr := source.Read(extra[:]); count != 0 || (readErr != nil && !errors.Is(readErr, io.EOF)) {
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return readErr
+		}
+		return ErrSizeMismatch
+	}
+	if err := temporary.Sync(); err != nil {
+		return fmt.Errorf("sync local storage stream target: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close local storage stream target: %w", err)
+	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	if err := os.Chmod(temporaryPath, 0o644); err != nil {
+		return fmt.Errorf("set local storage stream permissions: %w", err)
+	}
+	if err := os.Rename(temporaryPath, fullPath); err != nil {
+		return fmt.Errorf("commit local storage stream: %w", err)
+	}
+	committed = true
+	return nil
+}
+
 func (b *LocalBackend) Get(_ context.Context, objectKey string) ([]byte, error) {
 	fullPath, ok := b.resolvePath(objectKey)
 	if !ok {
@@ -237,6 +327,36 @@ func (b *LocalBackend) GetBounded(ctx context.Context, objectKey string, maxByte
 		return nil, err
 	}
 	return readBoundedAndClose(ctx, file, maxBytes)
+}
+
+func (b *LocalBackend) OpenReader(ctx context.Context, objectKey string, maxBytes int64) (io.ReadCloser, int64, error) {
+	if err := validateBoundedReadLimit(maxBytes); err != nil {
+		return nil, 0, err
+	}
+	if err := contextError(ctx); err != nil {
+		return nil, 0, err
+	}
+	fullPath, ok := b.resolvePath(objectKey)
+	if !ok {
+		return nil, 0, ErrNotFound
+	}
+	file, err := os.Open(fullPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, 0, ErrNotFound
+		}
+		return nil, 0, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, 0, err
+	}
+	if info.Size() > maxBytes {
+		_ = file.Close()
+		return nil, 0, ErrObjectTooLarge
+	}
+	return newBoundedStreamReader(ctx, file, maxBytes), info.Size(), nil
 }
 
 func (b *LocalBackend) Copy(ctx context.Context, sourceKey, destinationKey string) error {
@@ -308,6 +428,215 @@ func (b *LocalBackend) Delete(_ context.Context, objectKey string) error {
 	return nil
 }
 
+func (b *LocalBackend) ListObjects(ctx context.Context, prefix, cursor string, limit int) (ObjectPage, error) {
+	page, _, err := b.listObjectsIncrementally(ctx, prefix, cursor, limit)
+	return page, err
+}
+
+type localObjectListStats struct {
+	VisitedObjects       int
+	MaterializedObjects  int
+	DirectoriesRead      int
+	DirectoryEntriesRead int
+}
+
+func (b *LocalBackend) listObjectsIncrementally(ctx context.Context, prefix, cursor string, limit int) (ObjectPage, localObjectListStats, error) {
+	var stats localObjectListStats
+	prefix, err := normalizeListPrefix(prefix)
+	if err != nil {
+		return ObjectPage{}, stats, err
+	}
+	frames, err := decodeLocalObjectCursor(cursor, prefix)
+	if err != nil {
+		return ObjectPage{}, stats, err
+	}
+	limit = normalizeObjectListLimit(limit)
+	rootKey := strings.TrimSuffix(prefix, "/")
+	rootPath, ok := b.resolvePath(rootKey)
+	if !ok {
+		return ObjectPage{}, stats, fmt.Errorf("invalid local storage prefix %q", prefix)
+	}
+	rootInfo, err := os.Lstat(rootPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return ObjectPage{}, stats, nil
+	}
+	if err != nil {
+		return ObjectPage{}, stats, err
+	}
+	if !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
+		return ObjectPage{}, stats, nil
+	}
+	if len(frames) == 0 {
+		frames = []localObjectCursorFrame{{Directory: rootKey}}
+	}
+
+	objects := make([]ObjectInfo, 0, limit+1)
+	walker := localObjectWalker{backend: b, prefix: prefix, frames: frames, stats: &stats}
+	var resumeFrames []localObjectCursorFrame
+	for len(objects) < limit+1 {
+		object, ok, err := walker.next(ctx)
+		if err != nil {
+			return ObjectPage{}, stats, err
+		}
+		if !ok {
+			break
+		}
+		objects = append(objects, object)
+		if len(objects) == limit {
+			resumeFrames = cloneLocalObjectCursorFrames(walker.frames)
+		}
+	}
+	pageLength := len(objects)
+	if pageLength > limit {
+		pageLength = limit
+	}
+	page := ObjectPage{Objects: append([]ObjectInfo(nil), objects[:pageLength]...)}
+	if len(objects) > limit && pageLength > 0 {
+		page.NextCursor, err = encodeLocalObjectCursor(prefix, resumeFrames)
+		if err != nil {
+			return ObjectPage{}, stats, err
+		}
+	}
+	return page, stats, nil
+}
+
+type localObjectWalker struct {
+	backend *LocalBackend
+	prefix  string
+	frames  []localObjectCursorFrame
+	stats   *localObjectListStats
+}
+
+func (w *localObjectWalker) next(ctx context.Context) (ObjectInfo, bool, error) {
+	for len(w.frames) > 0 {
+		if err := contextError(ctx); err != nil {
+			return ObjectInfo{}, false, err
+		}
+		frame := &w.frames[len(w.frames)-1]
+		if len(frame.Pending) == 0 {
+			directoryPath, ok := w.backend.resolvePath(frame.Directory)
+			if !ok {
+				return ObjectInfo{}, false, errors.New("invalid local object listing cursor")
+			}
+			names, nextOffset, eof, err := readLocalDirectoryChunk(directoryPath, frame.Offset)
+			if errors.Is(err, os.ErrNotExist) {
+				w.frames = w.frames[:len(w.frames)-1]
+				continue
+			}
+			if err != nil {
+				return ObjectInfo{}, false, err
+			}
+			w.stats.DirectoriesRead++
+			w.stats.DirectoryEntriesRead += len(names)
+			frame.Offset = nextOffset
+			frame.Pending = names
+			if len(names) == 0 {
+				if eof {
+					w.frames = w.frames[:len(w.frames)-1]
+				}
+				continue
+			}
+		}
+
+		name := frame.Pending[0]
+		frame.Pending = frame.Pending[1:]
+		objectKey := path.Join(frame.Directory, name)
+		if !strings.HasPrefix(objectKey, w.prefix) {
+			return ObjectInfo{}, false, errors.New("invalid local object listing cursor")
+		}
+		objectPath, ok := w.backend.resolvePath(objectKey)
+		if !ok {
+			return ObjectInfo{}, false, errors.New("invalid local object listing cursor")
+		}
+		info, err := os.Lstat(objectPath)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return ObjectInfo{}, false, err
+		}
+		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			w.frames = append(w.frames, localObjectCursorFrame{Directory: objectKey})
+			continue
+		}
+		w.stats.VisitedObjects++
+		w.stats.MaterializedObjects++
+		return ObjectInfo{ObjectKey: objectKey, ModifiedAt: info.ModTime().UTC()}, true, nil
+	}
+	return ObjectInfo{}, false, nil
+}
+
+type localObjectCursor struct {
+	Version int                      `json:"v"`
+	Prefix  string                   `json:"prefix"`
+	Frames  []localObjectCursorFrame `json:"frames"`
+}
+
+type localObjectCursorFrame struct {
+	Directory string   `json:"directory"`
+	Offset    int64    `json:"offset"`
+	Pending   []string `json:"pending,omitempty"`
+}
+
+func encodeLocalObjectCursor(prefix string, frames []localObjectCursorFrame) (string, error) {
+	payload, err := json.Marshal(localObjectCursor{Version: 2, Prefix: prefix, Frames: frames})
+	if err != nil {
+		return "", fmt.Errorf("encode local object listing cursor: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeLocalObjectCursor(cursor, prefix string) ([]localObjectCursorFrame, error) {
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return nil, nil
+	}
+	if len(cursor) > 64*1024 {
+		return nil, errors.New("invalid local object listing cursor")
+	}
+	payload, err := base64.RawURLEncoding.Strict().DecodeString(cursor)
+	if err != nil {
+		return nil, errors.New("invalid local object listing cursor")
+	}
+	var decoded localObjectCursor
+	if err := json.Unmarshal(payload, &decoded); err != nil || decoded.Version != 2 || decoded.Prefix != prefix || !validLocalObjectCursorFrames(decoded.Frames, prefix) {
+		return nil, errors.New("invalid local object listing cursor")
+	}
+	return cloneLocalObjectCursorFrames(decoded.Frames), nil
+}
+
+func validLocalObjectCursorFrames(frames []localObjectCursorFrame, prefix string) bool {
+	if len(frames) == 0 || len(frames) > 256 || frames[0].Directory != strings.TrimSuffix(prefix, "/") {
+		return false
+	}
+	for index, frame := range frames {
+		if frame.Offset < 0 || strings.TrimSpace(frame.Directory) != frame.Directory || path.Clean(frame.Directory) != frame.Directory || strings.HasSuffix(frame.Directory, "/") {
+			return false
+		}
+		if index > 0 && path.Dir(frame.Directory) != frames[index-1].Directory {
+			return false
+		}
+		if len(frame.Pending) > 128 {
+			return false
+		}
+		for _, name := range frame.Pending {
+			if strings.TrimSpace(name) != name || name == "" || name == "." || name == ".." || path.Base(name) != name {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func cloneLocalObjectCursorFrames(frames []localObjectCursorFrame) []localObjectCursorFrame {
+	cloned := make([]localObjectCursorFrame, len(frames))
+	for index, frame := range frames {
+		cloned[index] = frame
+		cloned[index].Pending = append([]string(nil), frame.Pending...)
+	}
+	return cloned
+}
+
 func (b *LocalBackend) resolvePath(objectKey string) (string, bool) {
 	cleanKey := path.Clean(strings.TrimSpace(objectKey))
 	if cleanKey == "." || cleanKey == "/" || strings.HasPrefix(cleanKey, "../") || strings.HasPrefix(cleanKey, "/") {
@@ -343,6 +672,8 @@ type S3Backend struct {
 	now             func() time.Time
 }
 
+const defaultS3RequestTimeout = 30 * time.Second
+
 func NewS3Backend(cfg config.StorageConfig) (*S3Backend, error) {
 	rawEndpoint := strings.TrimSpace(cfg.S3.Endpoint)
 	if rawEndpoint == "" {
@@ -372,7 +703,7 @@ func NewS3Backend(cfg config.StorageConfig) (*S3Backend, error) {
 		secretAccessKey: strings.TrimSpace(cfg.S3.SecretAccessKey),
 		prefix:          strings.Trim(strings.TrimSpace(cfg.S3.Prefix), "/"),
 		forcePathStyle:  cfg.S3.ForcePathStyle,
-		client:          &http.Client{Timeout: 30 * time.Second},
+		client:          &http.Client{},
 		now:             time.Now,
 	}, nil
 }
@@ -463,6 +794,8 @@ func awsCanonicalQuery(query url.Values) string {
 }
 
 func (b *S3Backend) Put(ctx context.Context, objectKey string, contentType string, content []byte) error {
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	req, err := b.newSignedRequest(ctx, http.MethodPut, objectKey, contentType, content)
 	if err != nil {
 		return err
@@ -479,7 +812,56 @@ func (b *S3Backend) Put(ctx context.Context, objectKey string, contentType strin
 	return fmt.Errorf("put s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
 }
 
+func (b *S3Backend) PutReader(ctx context.Context, objectKey, contentType string, reader io.Reader, size int64) error {
+	if size < 0 || reader == nil {
+		return ErrSizeMismatch
+	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	sized := &exactSizeReader{ctx: ctx, reader: reader, remaining: size}
+	req, err := b.newSignedReaderRequest(ctx, http.MethodPut, objectKey, contentType, sized, size, "UNSIGNED-PAYLOAD")
+	if err != nil {
+		return err
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		if sized.remaining != 0 {
+			return fmt.Errorf("%w: %v", ErrSizeMismatch, err)
+		}
+		return err
+	}
+	defer resp.Body.Close()
+	if sized.remaining != 0 {
+		_ = resp.Body.Close()
+		_ = b.Delete(context.WithoutCancel(ctx), objectKey)
+		return ErrSizeMismatch
+	}
+	var extra [1]byte
+	if count, readErr := (contextReader{ctx: ctx, reader: reader}).Read(extra[:]); count != 0 || (readErr != nil && !errors.Is(readErr, io.EOF)) {
+		_ = resp.Body.Close()
+		_ = b.Delete(context.WithoutCancel(ctx), objectKey)
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return readErr
+		}
+		return ErrSizeMismatch
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return contextError(ctx)
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	return fmt.Errorf("put s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
+}
+
 func (b *S3Backend) Get(ctx context.Context, objectKey string) ([]byte, error) {
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	req, err := b.newSignedRequest(ctx, http.MethodGet, objectKey, "", nil)
 	if err != nil {
 		return nil, err
@@ -507,6 +889,8 @@ func (b *S3Backend) GetBounded(ctx context.Context, objectKey string, maxBytes i
 	if err := contextError(ctx); err != nil {
 		return nil, err
 	}
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	req, err := b.newSignedRequest(ctx, http.MethodGet, objectKey, "", nil)
 	if err != nil {
 		return nil, err
@@ -532,7 +916,41 @@ func (b *S3Backend) GetBounded(ctx context.Context, objectKey string, maxBytes i
 	}
 }
 
+func (b *S3Backend) OpenReader(ctx context.Context, objectKey string, maxBytes int64) (io.ReadCloser, int64, error) {
+	if err := validateBoundedReadLimit(maxBytes); err != nil {
+		return nil, 0, err
+	}
+	if err := contextError(ctx); err != nil {
+		return nil, 0, err
+	}
+	req, err := b.newSignedRequest(ctx, http.MethodGet, objectKey, "", nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if resp.ContentLength > maxBytes {
+			_ = resp.Body.Close()
+			return nil, 0, ErrObjectTooLarge
+		}
+		return newBoundedStreamReader(ctx, resp.Body, maxBytes), resp.ContentLength, nil
+	case http.StatusNotFound:
+		_ = resp.Body.Close()
+		return nil, 0, ErrNotFound
+	default:
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return nil, 0, fmt.Errorf("get s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+}
+
 func (b *S3Backend) Copy(ctx context.Context, sourceKey, destinationKey string) error {
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	sourceKey = b.normalizeKey(sourceKey)
 	if sourceKey == "" {
 		return ErrNotFound
@@ -635,6 +1053,69 @@ type contextReader struct {
 	reader io.Reader
 }
 
+type exactSizeReader struct {
+	ctx       context.Context
+	reader    io.Reader
+	remaining int64
+}
+
+func (reader *exactSizeReader) Read(buffer []byte) (int, error) {
+	if err := contextError(reader.ctx); err != nil {
+		return 0, err
+	}
+	if reader.remaining == 0 {
+		return 0, io.EOF
+	}
+	if int64(len(buffer)) > reader.remaining {
+		buffer = buffer[:reader.remaining]
+	}
+	count, err := reader.reader.Read(buffer)
+	reader.remaining -= int64(count)
+	if errors.Is(err, io.EOF) && reader.remaining != 0 {
+		return count, ErrSizeMismatch
+	}
+	return count, err
+}
+
+type boundedStreamReader struct {
+	ctx       context.Context
+	reader    io.ReadCloser
+	remaining int64
+	closed    bool
+}
+
+func newBoundedStreamReader(ctx context.Context, reader io.ReadCloser, maxBytes int64) io.ReadCloser {
+	return &boundedStreamReader{ctx: ctx, reader: reader, remaining: maxBytes}
+}
+
+func (reader *boundedStreamReader) Read(buffer []byte) (int, error) {
+	if err := contextError(reader.ctx); err != nil {
+		return 0, err
+	}
+	if reader.remaining > 0 {
+		if int64(len(buffer)) > reader.remaining {
+			buffer = buffer[:reader.remaining]
+		}
+		count, err := reader.reader.Read(buffer)
+		reader.remaining -= int64(count)
+		return count, err
+	}
+	var probe [1]byte
+	count, err := reader.reader.Read(probe[:])
+	if count > 0 {
+		return 0, ErrObjectTooLarge
+	}
+	return 0, err
+}
+
+func (reader *boundedStreamReader) Close() error {
+	if reader.closed {
+		return nil
+	}
+	reader.closed = true
+	return reader.reader.Close()
+}
+
 func (reader contextReader) Read(buffer []byte) (int, error) {
 	if err := contextError(reader.ctx); err != nil {
 		return 0, err
@@ -653,7 +1134,19 @@ func contextError(ctx context.Context) error {
 	return ctx.Err()
 }
 
+func withDefaultS3RequestTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultS3RequestTimeout)
+}
+
 func (b *S3Backend) Delete(ctx context.Context, objectKey string) error {
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
 	req, err := b.newSignedRequest(ctx, http.MethodDelete, objectKey, "", nil)
 	if err != nil {
 		return err
@@ -673,8 +1166,132 @@ func (b *S3Backend) Delete(ctx context.Context, objectKey string) error {
 	return fmt.Errorf("delete s3 object %q: status=%d body=%s", objectKey, resp.StatusCode, strings.TrimSpace(string(body)))
 }
 
+func (b *S3Backend) ListObjects(ctx context.Context, prefix, cursor string, limit int) (ObjectPage, error) {
+	ctx, cancel := withDefaultS3RequestTimeout(ctx)
+	defer cancel()
+	prefix, err := normalizeListPrefix(prefix)
+	if err != nil {
+		return ObjectPage{}, err
+	}
+	limit = normalizeObjectListLimit(limit)
+	physicalPrefix := prefix
+	if b.prefix != "" {
+		physicalPrefix = strings.TrimSuffix(path.Join(b.prefix, prefix), "/") + "/"
+	}
+	query := url.Values{
+		"list-type": {"2"},
+		"prefix":    {physicalPrefix},
+		"max-keys":  {strconv.Itoa(limit)},
+	}
+	if cursor = strings.TrimSpace(cursor); cursor != "" {
+		query.Set("continuation-token", cursor)
+	}
+	req, err := b.newSignedBucketRequest(ctx, query)
+	if err != nil {
+		return ObjectPage{}, err
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return ObjectPage{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return ObjectPage{}, fmt.Errorf("list s3 objects: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var payload struct {
+		IsTruncated           bool   `xml:"IsTruncated"`
+		NextContinuationToken string `xml:"NextContinuationToken"`
+		Contents              []struct {
+			Key          string `xml:"Key"`
+			LastModified string `xml:"LastModified"`
+		} `xml:"Contents"`
+	}
+	decoder := xml.NewDecoder(io.LimitReader(resp.Body, 2<<20))
+	if err := decoder.Decode(&payload); err != nil {
+		return ObjectPage{}, fmt.Errorf("decode s3 object listing: %w", err)
+	}
+	page := ObjectPage{Objects: make([]ObjectInfo, 0, len(payload.Contents))}
+	for _, item := range payload.Contents {
+		logicalKey := strings.TrimSpace(item.Key)
+		if b.prefix != "" {
+			configuredPrefix := b.prefix + "/"
+			if !strings.HasPrefix(logicalKey, configuredPrefix) {
+				continue
+			}
+			logicalKey = strings.TrimPrefix(logicalKey, configuredPrefix)
+		}
+		if !strings.HasPrefix(logicalKey, prefix) {
+			continue
+		}
+		modifiedAt, err := time.Parse(time.RFC3339, strings.TrimSpace(item.LastModified))
+		if err != nil {
+			continue
+		}
+		page.Objects = append(page.Objects, ObjectInfo{ObjectKey: logicalKey, ModifiedAt: modifiedAt.UTC()})
+	}
+	if payload.IsTruncated {
+		page.NextCursor = strings.TrimSpace(payload.NextContinuationToken)
+	}
+	return page, nil
+}
+
+func (b *S3Backend) newSignedBucketRequest(ctx context.Context, query url.Values) (*http.Request, error) {
+	clone := *b.endpoint
+	host, canonicalURI, requestPath := clone.Host, "/"+b.bucket, "/"+b.bucket
+	if !b.usePathStyle() {
+		host = b.bucket + "." + clone.Host
+		clone.Host = host
+		canonicalURI, requestPath = "/", "/"
+	}
+	clone.Path, clone.RawPath = requestPath, canonicalURI
+	clone.RawQuery, clone.Fragment = awsCanonicalQuery(query), ""
+	payloadHash := sha256Hex(nil)
+	now := b.nowUTC()
+	amzDate, dateStamp := now.Format("20060102T150405Z"), now.Format("20060102")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, clone.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Host = host
+	req.Header.Set("Host", host)
+	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
+	req.Header.Set("X-Amz-Date", amzDate)
+	canonicalHeaders := "host:" + host + "\n" + "x-amz-content-sha256:" + payloadHash + "\n" + "x-amz-date:" + amzDate + "\n"
+	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
+	canonicalRequest := strings.Join([]string{http.MethodGet, canonicalURI, awsCanonicalQuery(query), canonicalHeaders, signedHeaders, payloadHash}, "\n")
+	credentialScope := dateStamp + "/" + b.region + "/s3/aws4_request"
+	stringToSign := strings.Join([]string{"AWS4-HMAC-SHA256", amzDate, credentialScope, sha256Hex([]byte(canonicalRequest))}, "\n")
+	signature := hex.EncodeToString(hmacSHA256(b.signingKey(dateStamp), stringToSign))
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+b.accessKeyID+"/"+credentialScope+", SignedHeaders="+signedHeaders+", Signature="+signature)
+	return req, nil
+}
+
+func normalizeListPrefix(prefix string) (string, error) {
+	prefix = strings.TrimSpace(prefix)
+	clean := path.Clean(prefix)
+	if prefix == "" || clean == "." || clean == "/" || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
+		return "", fmt.Errorf("invalid object listing prefix %q", prefix)
+	}
+	return strings.TrimSuffix(clean, "/") + "/", nil
+}
+
+func normalizeObjectListLimit(limit int) int {
+	if limit <= 0 {
+		return 100
+	}
+	if limit > 1000 {
+		return 1000
+	}
+	return limit
+}
+
 func (b *S3Backend) newSignedRequest(ctx context.Context, method string, objectKey string, contentType string, content []byte) (*http.Request, error) {
 	return b.newSignedRequestWithHeaders(ctx, method, objectKey, contentType, content, nil)
+}
+
+func (b *S3Backend) newSignedReaderRequest(ctx context.Context, method, objectKey, contentType string, reader io.Reader, size int64, payloadHash string) (*http.Request, error) {
+	return b.newSignedRequestWithReaderAndHeaders(ctx, method, objectKey, contentType, reader, size, payloadHash, nil)
 }
 
 func (b *S3Backend) newSignedRequestWithCopySource(ctx context.Context, destinationKey, copySource string) (*http.Request, error) {
@@ -684,6 +1301,10 @@ func (b *S3Backend) newSignedRequestWithCopySource(ctx context.Context, destinat
 }
 
 func (b *S3Backend) newSignedRequestWithHeaders(ctx context.Context, method string, objectKey string, contentType string, content []byte, extraHeaders map[string]string) (*http.Request, error) {
+	return b.newSignedRequestWithReaderAndHeaders(ctx, method, objectKey, contentType, bytes.NewReader(content), int64(len(content)), sha256Hex(content), extraHeaders)
+}
+
+func (b *S3Backend) newSignedRequestWithReaderAndHeaders(ctx context.Context, method string, objectKey string, contentType string, reader io.Reader, size int64, payloadHash string, extraHeaders map[string]string) (*http.Request, error) {
 	key := b.normalizeKey(objectKey)
 	if key == "" {
 		return nil, fmt.Errorf("invalid s3 object key %q", objectKey)
@@ -692,15 +1313,15 @@ func (b *S3Backend) newSignedRequestWithHeaders(ctx context.Context, method stri
 	if err != nil {
 		return nil, err
 	}
-	payloadHash := sha256Hex(content)
 	now := b.nowUTC()
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
-	req, err := http.NewRequestWithContext(ctx, method, requestURL, bytes.NewReader(content))
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, reader)
 	if err != nil {
 		return nil, err
 	}
 	req.Host = host
+	req.ContentLength = size
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}

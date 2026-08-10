@@ -6,7 +6,7 @@ import { Button, EmptyState, Field, Modal, useApp } from '../components'
 import { button as btn, card, form } from '../ui/redesign-classes'
 import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { errorMessage } from '../useApiResource'
-import { balanceBucketLabel, bucketExpiryText, normalizeBalanceBuckets, profileLedgerRows } from './profileBalanceModel'
+import { balanceBucketLabel, bucketExpiryText, nextExpiringCreditText, normalizeBalanceBuckets, profileLedgerRows } from './profileBalanceModel'
 import { RedeemCodeForm } from './RedeemCodeForm'
 
 const profileClasses = {
@@ -47,6 +47,7 @@ const profileClasses = {
   bucketAmount: 'num font-extrabold',
   bucketHint: 'mt-1.5 text-xs text-[var(--muted)]',
   bucketHintWarning: 'text-[var(--accent)]',
+  nextExpiry: 'mt-4 border-l-2 border-[var(--accent)] pl-3 text-sm font-bold text-[var(--accent)]',
   profileHeader: 'mb-8 flex items-center gap-6',
   avatar: 'grid size-20 place-items-center rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] text-[32px] font-extrabold text-white shadow-[0_0_30px_rgba(var(--accent-rgb),0.3)]',
   profileName: 'text-xl font-bold',
@@ -151,6 +152,8 @@ export function ProfilePage() {
                       <span className={cn(profileClasses.ledgerTag, profileClasses.ledgerSourceTag)}>{entry.expiryText}</span>
                     </div>
                     <div className={profileClasses.ledgerMeta}>{entry.occurredAt} · {entry.detail}</div>
+                    {entry.generationDetail ? <div className={profileClasses.ledgerMeta}>{entry.generationDetail}</div> : null}
+                    {entry.taskId ? <div className={profileClasses.ledgerMeta}>任务 {entry.taskId}</div> : null}
                   </div>
                   <div className={cn(profileClasses.ledgerAmount, entry.amountTone === 'credit' && profileClasses.ledgerAmountCredit)}>{entry.amount}</div>
                 </div>
@@ -209,21 +212,25 @@ function ProfileLoadingSkeleton() {
 
 function BalanceBuckets({ balance }: { balance: Balance | null }) {
   const buckets = normalizeBalanceBuckets(balance)
+  const nextExpiry = nextExpiringCreditText(balance)
   if (!buckets.length) return null
   return (
-    <div className={profileClasses.bucketList}>
-      {buckets.map((bucket) => (
-        <div key={`${bucket.bucket}-${bucket.expires_at ?? 'never'}`} className={cn(profileClasses.bucketCard, bucket.bucket === 'trial' && profileClasses.bucketTrial, bucket.expire_warning && profileClasses.bucketWarning)}>
-          <div className={profileClasses.bucketHead}>
-            <span className={profileClasses.bucketTitle}>{bucket.label ?? balanceBucketLabel(bucket.bucket)}</span>
-            <span className={profileClasses.bucketAmount}>{bucket.available_points}</span>
+    <>
+      {nextExpiry ? <div className={profileClasses.nextExpiry}>{nextExpiry}</div> : null}
+      <div className={profileClasses.bucketList}>
+        {buckets.map((bucket) => (
+          <div key={`${bucket.bucket}-${bucket.expires_at ?? 'never'}`} className={cn(profileClasses.bucketCard, bucket.bucket === 'trial' && profileClasses.bucketTrial, bucket.expire_warning && profileClasses.bucketWarning)}>
+            <div className={profileClasses.bucketHead}>
+              <span className={profileClasses.bucketTitle}>{bucket.label ?? balanceBucketLabel(bucket.bucket)}</span>
+              <span className={profileClasses.bucketAmount}>{bucket.available_points}</span>
+            </div>
+            <div className={cn(profileClasses.bucketHint, bucket.expire_warning && profileClasses.bucketHintWarning)}>
+              {bucketExpiryText(bucket)}
+            </div>
           </div>
-          <div className={cn(profileClasses.bucketHint, bucket.expire_warning && profileClasses.bucketHintWarning)}>
-            {bucketExpiryText(bucket)}
-          </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   )
 }
 

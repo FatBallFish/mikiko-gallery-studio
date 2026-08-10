@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/google/uuid"
 )
@@ -78,6 +79,11 @@ func TaskID(v uuid.UUID) predicate.ImageResult {
 // UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
 func UserID(v int64) predicate.ImageResult {
 	return predicate.ImageResult(sql.FieldEQ(FieldUserID, v))
+}
+
+// ProjectID applies equality check predicate on the "project_id" field. It's identical to ProjectIDEQ.
+func ProjectID(v uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldEQ(FieldProjectID, v))
 }
 
 // ImageRole applies equality check predicate on the "image_role" field. It's identical to ImageRoleEQ.
@@ -353,6 +359,36 @@ func UserIDLT(v int64) predicate.ImageResult {
 // UserIDLTE applies the LTE predicate on the "user_id" field.
 func UserIDLTE(v int64) predicate.ImageResult {
 	return predicate.ImageResult(sql.FieldLTE(FieldUserID, v))
+}
+
+// ProjectIDEQ applies the EQ predicate on the "project_id" field.
+func ProjectIDEQ(v uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldEQ(FieldProjectID, v))
+}
+
+// ProjectIDNEQ applies the NEQ predicate on the "project_id" field.
+func ProjectIDNEQ(v uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldNEQ(FieldProjectID, v))
+}
+
+// ProjectIDIn applies the In predicate on the "project_id" field.
+func ProjectIDIn(vs ...uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldIn(FieldProjectID, vs...))
+}
+
+// ProjectIDNotIn applies the NotIn predicate on the "project_id" field.
+func ProjectIDNotIn(vs ...uuid.UUID) predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldNotIn(FieldProjectID, vs...))
+}
+
+// ProjectIDIsNil applies the IsNil predicate on the "project_id" field.
+func ProjectIDIsNil() predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldIsNull(FieldProjectID))
+}
+
+// ProjectIDNotNil applies the NotNil predicate on the "project_id" field.
+func ProjectIDNotNil() predicate.ImageResult {
+	return predicate.ImageResult(sql.FieldNotNull(FieldProjectID))
 }
 
 // ImageRoleEQ applies the EQ predicate on the "image_role" field.
@@ -1103,6 +1139,29 @@ func PublishedAtIsNil() predicate.ImageResult {
 // PublishedAtNotNil applies the NotNil predicate on the "published_at" field.
 func PublishedAtNotNil() predicate.ImageResult {
 	return predicate.ImageResult(sql.FieldNotNull(FieldPublishedAt))
+}
+
+// HasProject applies the HasEdge predicate on the "project" edge.
+func HasProject() predicate.ImageResult {
+	return predicate.ImageResult(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, ProjectTable, ProjectColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasProjectWith applies the HasEdge predicate on the "project" edge with a given conditions (other predicates).
+func HasProjectWith(preds ...predicate.Project) predicate.ImageResult {
+	return predicate.ImageResult(func(s *sql.Selector) {
+		step := newProjectStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.

@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	SizeModeAuto            = "auto"
 	SizeModeRatio           = "ratio"
 	SizeModePixel           = "pixel"
 	sizeModeLegacyRatio     = "legacy_ratio_size"
@@ -18,7 +19,6 @@ var (
 	DefaultSizeModes           = []string{SizeModeRatio}
 	DefaultSupportedRatios     = []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
 	DefaultSupportedPixelSizes = []string{"1024x1024"}
-	DefaultBaseResolution      = []string{"auto", "1k"}
 	DefaultQuality             = []string{"auto"}
 	DefaultOutputFormat        = []string{"png"}
 	DefaultModeration          = []string{"auto"}
@@ -32,10 +32,16 @@ type ImageModelCapability struct {
 	SizeModes                 []string
 	SupportedRatios           []string
 	SupportedPixelSizes       []string
+	SupportsCustomRatio       bool
+	SupportedBackgrounds      []string
 	OutputFormat              []string
 	OutputCompression         int
 	SupportsOutputCompression bool
 	SupportsCustomSize        bool
+	MinWidth                  int
+	MaxWidth                  int
+	MinHeight                 int
+	MaxHeight                 int
 	Moderation                []string
 }
 
@@ -44,19 +50,28 @@ func NormalizeCapability(raw ImageModelCapability) (ImageModelCapability, error)
 	if capability.MaxReferenceImageCount < 0 {
 		return capability, errs.BadRequest("max_reference_image_count must be greater than or equal to 0")
 	}
-	if capability.MaxImageCount < 0 {
-		return capability, errs.BadRequest("max_image_count must be greater than or equal to 0")
+	if capability.MaxImageCount < 1 || capability.MaxImageCount > 10 {
+		return capability, errs.BadRequest("max_image_count must be between 1 and 10")
 	}
-	if capability.MaxImageCount == 0 {
-		capability.MaxImageCount = 1
+	for _, item := range raw.BaseResolution {
+		if normalizeBaseResolutionValue(item) == "" || strings.EqualFold(strings.TrimSpace(item), SizeModeAuto) {
+			return capability, errs.BadRequest("base_resolution contains an unsupported value")
+		}
 	}
-	capability.BaseResolution = normalizeBaseResolution(defaultStrings(capability.BaseResolution, DefaultBaseResolution))
+	capability.BaseResolution = normalizeBaseResolution(defaultStrings(capability.BaseResolution, []string{"1k"}))
 	if len(capability.BaseResolution) == 0 {
 		return capability, errs.BadRequest("base_resolution is required")
 	}
-	capability.Quality = normalizeEnumStrings(defaultStrings(capability.Quality, DefaultQuality), map[string]struct{}{"auto": {}, "low": {}, "medium": {}, "high": {}})
+	qualityValues := defaultStrings(capability.Quality, DefaultQuality)
+	if !allEnumStringsAllowed(qualityValues, map[string]struct{}{"auto": {}, "low": {}, "medium": {}, "high": {}}) {
+		return capability, errs.BadRequest("quality contains an unsupported value")
+	}
+	capability.Quality = normalizeEnumStrings(qualityValues, map[string]struct{}{"auto": {}, "low": {}, "medium": {}, "high": {}})
 	if len(capability.Quality) == 0 {
 		return capability, errs.BadRequest("quality is required")
+	}
+	if len(raw.SizeModes) > 0 && !allEnumStringsAllowed(raw.SizeModes, map[string]struct{}{SizeModeAuto: {}, SizeModeRatio: {}, SizeModePixel: {}}) {
+		return capability, errs.BadRequest("size_modes contains an unsupported value")
 	}
 	capability.SizeModes = normalizeSizeModes(capability.SizeModes)
 	if len(capability.SizeModes) == 0 {
@@ -66,7 +81,15 @@ func NormalizeCapability(raw ImageModelCapability) (ImageModelCapability, error)
 		capability.SizeModes = cloneStrings(DefaultSizeModes)
 	}
 	if containsString(capability.SizeModes, SizeModeRatio) {
-		capability.SupportedRatios = normalizeRatios(defaultStrings(capability.SupportedRatios, DefaultSupportedRatios))
+		ratioValues := defaultStrings(capability.SupportedRatios, DefaultSupportedRatios)
+		for _, item := range ratioValues {
+			ratio := NormalizeRatio(item)
+			width, height, ok := parseRatio(ratio)
+			if !ok || maxFloat(float64(width)/float64(height), float64(height)/float64(width)) > imageMaxAspectRatio {
+				return capability, errs.BadRequest("supported_ratios contains an invalid ratio")
+			}
+		}
+		capability.SupportedRatios = normalizeRatios(ratioValues)
 		if len(capability.SupportedRatios) == 0 {
 			return capability, errs.BadRequest("ratio mode requires supported_ratios")
 		}
@@ -74,14 +97,47 @@ func NormalizeCapability(raw ImageModelCapability) (ImageModelCapability, error)
 		capability.SupportedRatios = nil
 	}
 	if containsString(capability.SizeModes, SizeModePixel) {
-		capability.SupportedPixelSizes = normalizePixelSizes(defaultStrings(capability.SupportedPixelSizes, DefaultSupportedPixelSizes))
+		pixelValues := defaultStrings(capability.SupportedPixelSizes, DefaultSupportedPixelSizes)
+		for _, item := range pixelValues {
+			width, height, ok := ParseImageSize(NormalizePixelSize(item))
+			if !ok || !IsLegalCustomImageSize(width, height) {
+				return capability, errs.BadRequest("supported_pixel_sizes contains an invalid size")
+			}
+		}
+		capability.SupportedPixelSizes = normalizePixelSizes(pixelValues)
 		if len(capability.SupportedPixelSizes) == 0 {
 			return capability, errs.BadRequest("pixel mode requires supported_pixel_sizes")
 		}
 	} else {
 		capability.SupportedPixelSizes = nil
 	}
-	capability.OutputFormat = normalizeEnumStrings(defaultStrings(capability.OutputFormat, DefaultOutputFormat), map[string]struct{}{"png": {}, "jpeg": {}, "webp": {}})
+	if err := validateConfiguredPixelBounds(capability); err != nil {
+		return capability, err
+	}
+	if containsString(capability.SizeModes, SizeModeRatio) {
+		for _, baseResolution := range capability.BaseResolution {
+			for _, ratio := range capability.SupportedRatios {
+				if _, err := CalculateImageSizeWithinCapability(baseResolution, ratio, capability); err != nil {
+					return capability, errs.BadRequest("base_resolution and supported_ratios contain an unsatisfiable combination")
+				}
+			}
+		}
+	}
+	for _, size := range capability.SupportedPixelSizes {
+		width, height, ok := ParseImageSize(size)
+		if !ok || !legalExplicitDimensions(width, height, capability) {
+			return capability, errs.BadRequest("supported_pixel_sizes contains an invalid size")
+		}
+	}
+	if !allEnumStringsAllowed(raw.SupportedBackgrounds, map[string]struct{}{"auto": {}, "opaque": {}, "transparent": {}}) {
+		return capability, errs.BadRequest("supported_backgrounds contains an unsupported value")
+	}
+	capability.SupportedBackgrounds = normalizeEnumStrings(capability.SupportedBackgrounds, map[string]struct{}{"auto": {}, "opaque": {}, "transparent": {}})
+	outputFormats := defaultStrings(capability.OutputFormat, DefaultOutputFormat)
+	if !allEnumStringsAllowed(outputFormats, map[string]struct{}{"png": {}, "jpeg": {}, "webp": {}}) {
+		return capability, errs.BadRequest("output_format contains an unsupported value")
+	}
+	capability.OutputFormat = normalizeEnumStrings(outputFormats, map[string]struct{}{"png": {}, "jpeg": {}, "webp": {}})
 	if len(capability.OutputFormat) == 0 {
 		return capability, errs.BadRequest("output_format is required")
 	}
@@ -91,7 +147,11 @@ func NormalizeCapability(raw ImageModelCapability) (ImageModelCapability, error)
 	if capability.OutputCompression == 0 {
 		capability.OutputCompression = 100
 	}
-	capability.Moderation = normalizeEnumStrings(defaultStrings(capability.Moderation, DefaultModeration), map[string]struct{}{"auto": {}, "low": {}})
+	moderationValues := defaultStrings(capability.Moderation, DefaultModeration)
+	if !allEnumStringsAllowed(moderationValues, map[string]struct{}{"auto": {}, "low": {}}) {
+		return capability, errs.BadRequest("moderation contains an unsupported value")
+	}
+	capability.Moderation = normalizeEnumStrings(moderationValues, map[string]struct{}{"auto": {}, "low": {}})
 	if len(capability.Moderation) == 0 {
 		return capability, errs.BadRequest("moderation is required")
 	}
@@ -119,69 +179,112 @@ func NormalizeResolveRequest(req ResolveRequest) (ResolveRequest, error) {
 	if req.OutputCompression == 0 {
 		req.OutputCompression = 100
 	}
+	req.Background = strings.ToLower(strings.TrimSpace(req.Background))
+	if req.Background == "transparent" && req.OutputFormat != "png" && req.OutputFormat != "webp" {
+		return req, errs.New(400, CodeTransparentFormatConflict, "transparent background requires png or webp")
+	}
 	req.Moderation = NormalizeModeration(req.Moderation)
 	if req.Moderation == "" {
 		return req, errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported moderation")
 	}
 	mode := strings.ToLower(strings.TrimSpace(req.SizeMode))
+	explicitMode := mode != ""
 	if mode == "" {
-		if strings.TrimSpace(req.AspectRatio) == "" {
-			if size := NormalizePixelSize(req.RequestedSize); size != "" {
-				req.SizeMode = sizeModeLegacyRatio
-				req.RequestedSize = size
-				req.AspectRatio = RatioFromPixelSize(size)
-				return req, nil
-			}
-		}
-		mode = SizeModeRatio
+		mode = sizeModeLegacyRatio
 	}
 	switch mode {
+	case SizeModeAuto:
+		if strings.TrimSpace(req.BaseResolution) != "" || strings.TrimSpace(req.AspectRatio) != "" || strings.TrimSpace(req.RequestedSize) != "" {
+			return req, errs.New(400, CodeInvalidSizeMode, "auto size_mode does not accept size fields")
+		}
+		req.SizeMode = SizeModeAuto
+		return req, nil
 	case sizeModeLegacyRatio:
-		size := NormalizePixelSize(req.RequestedSize)
+		ratio := NormalizeRatio(req.AspectRatio)
+		if ratio == "" && strings.TrimSpace(req.AspectRatio) != "" {
+			return req, errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported aspect ratio")
+		}
+		size := ""
+		if rawSize := strings.TrimSpace(req.RequestedSize); rawSize != "" && !strings.EqualFold(rawSize, "auto") {
+			size = NormalizePixelSize(rawSize)
+			if size == "" {
+				return req, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
+			}
+		}
+		if ratio == "" && size != "" {
+			ratio = RatioFromPixelSize(size)
+		}
+		if ratio == "" {
+			ratio = "1:1"
+		}
+		baseResolution := normalizeBaseResolutionValue(req.BaseResolution)
+		if strings.TrimSpace(req.BaseResolution) != "" && baseResolution == "" {
+			return req, errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported base_resolution")
+		}
+		if baseResolution == "" {
+			baseResolution = "auto"
+		}
 		if size == "" {
-			return req, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
+			size = "auto"
 		}
 		req.SizeMode = sizeModeLegacyRatio
 		req.RequestedSize = size
-		req.AspectRatio = RatioFromPixelSize(size)
+		req.AspectRatio = ratio
+		req.BaseResolution = baseResolution
 		return req, nil
 	case SizeModeRatio:
+		if explicitMode && strings.TrimSpace(req.RequestedSize) != "" {
+			return req, errs.New(400, CodeInvalidSizeMode, "ratio size_mode does not accept requested_size")
+		}
+		if explicitMode && strings.EqualFold(strings.TrimSpace(req.BaseResolution), SizeModeAuto) {
+			return req, errs.New(400, CodeInvalidSizeMode, "ratio size_mode requires an explicit base_resolution")
+		}
 		ratio := NormalizeRatio(req.AspectRatio)
 		if ratio == "" {
-			if strings.TrimSpace(req.AspectRatio) != "" {
-				return req, errs.New(400, errs.CodeImageCapabilityMismatch, "unsupported aspect ratio")
-			}
-			ratio = "1:1"
+			return req, errs.New(400, CodeInvalidAspectRatio, "aspect_ratio is required")
+		}
+		widthRatio, heightRatio, ok := parseRatio(ratio)
+		if !ok || maxFloat(float64(widthRatio)/float64(heightRatio), float64(heightRatio)/float64(widthRatio)) > imageMaxAspectRatio {
+			return req, errs.New(400, CodeInvalidAspectRatio, "aspect_ratio is invalid")
 		}
 		req.SizeMode = SizeModeRatio
 		req.AspectRatio = ratio
 		req.BaseResolution = normalizeBaseResolutionValue(req.BaseResolution)
-		if strings.TrimSpace(req.BaseResolution) == "" {
+		if explicitMode && req.BaseResolution == "" {
+			return req, errs.New(400, CodeInvalidSizeMode, "ratio size_mode requires an explicit base_resolution")
+		}
+		if !explicitMode && strings.TrimSpace(req.BaseResolution) == "" {
 			req.BaseResolution = "auto"
 		}
-		if strings.TrimSpace(req.RequestedSize) == "" {
+		if !explicitMode && strings.TrimSpace(req.RequestedSize) == "" {
 			req.RequestedSize = "auto"
 		}
 		return req, nil
 	case SizeModePixel:
+		if explicitMode && (strings.TrimSpace(req.BaseResolution) != "" || strings.TrimSpace(req.AspectRatio) != "") {
+			return req, errs.New(400, CodeInvalidSizeMode, "pixel size_mode does not accept ratio fields")
+		}
 		width, height, ok := ParseImageSize(req.RequestedSize)
-		if !ok {
-			return req, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
+		if !ok || !IsLegalCustomImageSize(width, height) {
+			return req, errs.New(400, CodeInvalidExplicitDimensions, "explicit dimensions violate hard limits")
 		}
-		size, err := NormalizeCustomImageSize(width, height)
-		if err != nil {
-			return req, errs.New(400, errs.CodeImageAutoUnsupported, "unsupported size")
-		}
+		size := fmt.Sprintf("%dx%d", width, height)
 		req.SizeMode = SizeModePixel
 		req.RequestedSize = size
-		req.BaseResolution = normalizeBaseResolutionValue(req.BaseResolution)
-		if req.BaseResolution == "" {
+		if !explicitMode {
+			req.BaseResolution = normalizeBaseResolutionValue(req.BaseResolution)
+		}
+		if !explicitMode && req.BaseResolution == "" {
 			req.BaseResolution = "auto"
 		}
-		req.AspectRatio = RatioFromPixelSize(size)
+		if !explicitMode {
+			req.AspectRatio = RatioFromPixelSize(size)
+		} else {
+			req.BaseResolution, req.AspectRatio = "", ""
+		}
 		return req, nil
 	default:
-		return req, errs.BadRequest("unsupported size_mode")
+		return req, errs.New(400, CodeInvalidSizeMode, "size_mode is unsupported")
 	}
 }
 
@@ -223,6 +326,9 @@ func PublicSizeMode(mode string) string {
 		return SizeModeRatio
 	}
 	normalized := strings.ToLower(strings.TrimSpace(mode))
+	if normalized == SizeModeAuto {
+		return SizeModeAuto
+	}
 	if normalized == SizeModePixel {
 		return SizeModePixel
 	}
@@ -281,7 +387,7 @@ func normalizeSizeModes(values []string) []string {
 	result := []string{}
 	for _, value := range values {
 		mode := strings.ToLower(strings.TrimSpace(value))
-		if mode != SizeModeRatio && mode != SizeModePixel {
+		if mode != SizeModeAuto && mode != SizeModeRatio && mode != SizeModePixel {
 			continue
 		}
 		if _, ok := seen[mode]; ok {
@@ -370,6 +476,15 @@ func normalizeEnumStrings(values []string, allowed map[string]struct{}) []string
 		result = append(result, item)
 	}
 	return result
+}
+
+func allEnumStringsAllowed(values []string, allowed map[string]struct{}) bool {
+	for _, value := range values {
+		if _, ok := allowed[strings.ToLower(strings.TrimSpace(value))]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func defaultStrings(values, fallback []string) []string {

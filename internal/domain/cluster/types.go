@@ -30,6 +30,13 @@ const (
 	NodeHealthOffline  NodeHealth = "offline"
 )
 
+type NodeSource string
+
+const (
+	NodeSourceLogicalSingle NodeSource = "logical-single"
+	NodeSourceHeartbeat     NodeSource = "heartbeat"
+)
+
 type Installation struct {
 	InstallationID       string
 	Initialized          bool
@@ -105,6 +112,7 @@ type ListNodesRequest struct {
 
 type NodeStatus struct {
 	Node
+	Source                  NodeSource `json:"source"`
 	EffectiveHealth         NodeHealth `json:"effective_health"`
 	ApplicationVersionDrift bool       `json:"application_version_drift"`
 	RuntimeSchemaDrift      bool       `json:"runtime_schema_drift"`

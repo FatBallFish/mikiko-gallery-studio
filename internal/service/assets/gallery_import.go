@@ -3,10 +3,7 @@ package assets
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"path/filepath"
-	"reflect"
 	"strings"
 	"time"
 
@@ -14,12 +11,17 @@ import (
 
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	"github.com/fatballfish/pic-gallery/internal/provider"
-	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
-	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 func (s *Service) ImportGalleryImage(ctx context.Context, userID int64, result provider.ImageResult) (domainassets.ReferenceAsset, error) {
+	enabled, err := s.aliasCreationEnabled(ctx)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, fmt.Errorf("resolve reference alias rollout: %w", err)
+	}
+	if !enabled {
+		return domainassets.ReferenceAsset{}, errs.New(409, errs.CodeReferenceAliasCreationNotReady, "资产引用功能正在完成升级，请稍后再试。")
+	}
 	if strings.EqualFold(strings.TrimSpace(result.StorageDriver), "remote") || strings.TrimSpace(result.ObjectKey) == "" {
 		return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "image not found")
 	}
@@ -27,94 +29,31 @@ func (s *Service) ImportGalleryImage(ctx context.Context, userID int64, result p
 	if err != nil {
 		return domainassets.ReferenceAsset{}, fmt.Errorf("resolve attachment policy: %w", err)
 	}
-	source, err := s.router.BackendFor(ctx, result.StorageConfigID, result.StorageDriver)
-	if err != nil {
-		return domainassets.ReferenceAsset{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "source storage config is unavailable")
+	_, metadataReady := galleryImportMetadata(result, policy.Image)
+	if !metadataReady {
+		return domainassets.ReferenceAsset{}, errs.New(422, "IMAGE_REFERENCE_METADATA_UNAVAILABLE", "图片元数据不完整，请重新生成或下载后上传。")
 	}
-	destination, err := s.router.DefaultWriter(ctx)
-	if err != nil {
-		return domainassets.ReferenceAsset{}, errs.New(500, "STORAGE_CONFIG_UNAVAILABLE", "destination storage config is unavailable")
-	}
-
-	format, metadataReady := galleryImportMetadata(result, policy.Image)
-	if matchingBackendConfiguration(source, destination) {
-		if !metadataReady {
-			return domainassets.ReferenceAsset{}, errs.New(422, "IMAGE_REFERENCE_METADATA_UNAVAILABLE", "图片元数据不完整，请重新生成或下载后上传。")
-		}
-		copier, ok := source.Backend.(storage.ObjectCopier)
-		if !ok {
-			return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "storage backend does not support server-side copy")
-		}
-		return s.importGalleryImageByCopy(ctx, userID, result, format, destination, copier)
-	}
-
-	getter, ok := source.Backend.(storage.BoundedGetter)
-	if !ok {
-		return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "storage backend does not support bounded reads")
-	}
-	content, err := getter.GetBounded(ctx, result.ObjectKey, policy.Image.MaxBytes+1)
-	if err != nil {
-		if errors.Is(err, storage.ErrObjectTooLarge) {
-			return domainassets.ReferenceAsset{}, galleryImportTooLargeError(policy.Image, 0)
-		}
-		if errors.Is(err, storage.ErrNotFound) {
-			return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "image not found")
-		}
-		return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "failed to read gallery image")
-	}
-	return s.UploadWithMetadataContext(
-		ctx,
-		userID,
-		galleryImportFilename(result, format),
-		result.MimeType,
-		content,
-		domainassets.UploadMetadata{UploadSource: "gallery_import"},
-	)
-}
-
-func (s *Service) importGalleryImageByCopy(
-	ctx context.Context,
-	userID int64,
-	result provider.ImageResult,
-	format string,
-	destination storage.BackendRef,
-	copier storage.ObjectCopier,
-) (domainassets.ReferenceAsset, error) {
-	key := fmt.Sprintf("%d:%s", userID, result.SHA256)
+	key := fmt.Sprintf("%d:%s", userID, strings.TrimSpace(result.ID))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.store != nil {
-		existing, err := s.store.GetByUserAndHash(ctx, userID, result.SHA256)
-		if err == nil {
-			return existing, nil
-		}
-		if err != nil && !errors.Is(err, repoerr.ErrNotFound) {
-			return domainassets.ReferenceAsset{}, err
-		}
+	if aliasStore, ok := s.store.(AliasStore); ok {
+		return aliasStore.ImportGalleryAlias(ctx, userID, result)
 	}
-	if assetID, ok := s.assetsByHash[key]; ok {
+	if assetID, ok := s.assetsBySource[key]; ok {
 		if stored, exists := s.assetsByID[assetID]; exists && stored.Asset.Status != "deleted" {
 			return stored.Asset, nil
 		}
-		delete(s.assetsByHash, key)
+		delete(s.assetsBySource, key)
 	}
 
 	assetID := uuid.NewString()
-	extension := "." + format
-	if format == "jpeg" {
-		extension = ".jpg"
-	}
-	objectKey := filepath.Join("reference-assets", assetID+extension)
-	if err := copier.Copy(ctx, result.ObjectKey, objectKey); err != nil {
-		return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "failed to copy gallery image")
-	}
 	asset := domainassets.ReferenceAsset{
 		ID: assetID, UploadSource: "gallery_import", Status: "ready",
-		StorageConfigID: destination.ConfigID, StorageDriver: destination.Driver,
+		StorageConfigID: result.StorageConfigID, StorageDriver: result.StorageDriver,
 		MimeType: result.MimeType, FileSizeBytes: result.FileSizeBytes,
 		Width: result.Width, Height: result.Height, SHA256: result.SHA256,
-		ObjectKey: objectKey, CreatedAt: time.Now(),
+		ObjectKey: result.ObjectKey, SourceImageResultID: result.ID, OwnsObject: false, CreatedAt: time.Now(),
 	}
 	if s.store != nil {
 		var err error
@@ -125,12 +64,11 @@ func (s *Service) importGalleryImageByCopy(
 			err = s.store.Save(ctx, userID, asset)
 		}
 		if err != nil {
-			_ = destination.Backend.Delete(ctx, objectKey)
 			return domainassets.ReferenceAsset{}, err
 		}
 	}
 	s.assetsByID[assetID] = storedAsset{UserID: userID, Asset: asset}
-	s.assetsByHash[key] = assetID
+	s.assetsBySource[key] = assetID
 	return asset, nil
 }
 
@@ -158,17 +96,6 @@ func galleryImportFormat(mimeType string) string {
 	default:
 		return ""
 	}
-}
-
-func matchingBackendConfiguration(source, destination storage.BackendRef) bool {
-	if !strings.EqualFold(source.Driver, destination.Driver) || source.Version != destination.Version {
-		return false
-	}
-	if source.ConfigID != "" || destination.ConfigID != "" {
-		return source.ConfigID != "" && source.ConfigID == destination.ConfigID
-	}
-	left, right := reflect.ValueOf(source.Backend), reflect.ValueOf(destination.Backend)
-	return left.IsValid() && right.IsValid() && left.Type() == right.Type() && left.Kind() == reflect.Pointer && left.Pointer() == right.Pointer()
 }
 
 func galleryImportFilename(result provider.ImageResult, format string) string {

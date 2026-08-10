@@ -12,21 +12,33 @@ import (
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
+	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	_ "github.com/mattn/go-sqlite3"
 	stripe "github.com/stripe/stripe-go/v85"
 )
 
 func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	cfg := taskAPIConfig("http://127.0.0.1:1")
+	client, err := repoent.Open(dialect.SQLite, "file:admin-cashier-plan-lifecycle?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
 	authSvc := authservice.NewService(config.AuthConfig{
 		AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test",
 		AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh",
@@ -39,8 +51,9 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 		t.Fatalf("CreateAdmin: %v", err)
 	}
 	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
-	auditSvc := auditservice.NewService(nil)
-	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, billingservice.NewService(cfg.Billing), nil, adminAuth, auditSvc)
+	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
+	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, entstore.NewBillingStore(client, 5))
+	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, billingSvc, nil, adminAuth, auditSvc)
 	handler := NewWithAPI(api)
 	adminToken := loginAdminForCashierPlanTest(t, handler)
 
@@ -54,17 +67,33 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	if createRec.Code != http.StatusCreated {
 		t.Fatalf("create lifecycle plan: status=%d body=%s", createRec.Code, createRec.Body.String())
 	}
+	createBody := append([]byte(nil), createRec.Body.Bytes()...)
 	var created struct {
 		Data domainbilling.SubscriptionPlan `json:"data"`
 	}
 	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
 		t.Fatalf("decode created plan: %v", err)
 	}
+	if !created.Data.CreditExpiryEnabled || created.Data.DurationDays == nil || *created.Data.DurationDays != 30 || !bytes.Contains(createBody, []byte(`"credit_expiry_enabled":true`)) {
+		t.Fatalf("legacy create response must expose default expiry policy: %s", createBody)
+	}
+
+	invalidCreateReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/plans", bytes.NewBufferString(
+		`{"plan_code":"invalid-expiry","plan_name":"无效有效期","plan_type":"points_package","purchase_enabled":false,"status":"disabled","price_cny":"20.00000","points":"50.00000","bonus_points":"0.00000","credit_expiry_enabled":true}`,
+	))
+	invalidCreateReq.Header.Set("Authorization", "Bearer "+adminToken)
+	invalidCreateReq.Header.Set("Content-Type", "application/json")
+	invalidCreateRec := httptest.NewRecorder()
+	handler.ServeHTTP(invalidCreateRec, invalidCreateReq)
+	if invalidCreateRec.Code != http.StatusBadRequest {
+		t.Fatalf("explicit expiry create without duration must fail: status=%d body=%s", invalidCreateRec.Code, invalidCreateRec.Body.String())
+	}
 
 	transition := func(action string, wantStatus string, wantPurchase bool) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/ops/admin/v1/cashier/plans/%d/%s", created.Data.ID, action), nil)
 		req.Header.Set("Authorization", "Bearer "+adminToken)
+		req.Header.Set("X-Request-Id", "cashier-plan-"+action)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -82,6 +111,7 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	}
 
 	transition("enable", "active", true)
+	transition("enable", "active", true)
 	transition("disable", "disabled", false)
 	updateReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/ops/admin/v1/cashier/plans/%d", created.Data.ID), bytes.NewBufferString(
 		`{"plan_name":"生命周期套餐已编辑","plan_type":"points_package","purchase_enabled":true,"status":"active","price_cny":"21.00000","points":"51.00000","bonus_points":"0.00000","duration_days":30,"currency":"CNY"}`,
@@ -93,6 +123,7 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	if updateRec.Code != http.StatusOK {
 		t.Fatalf("edit disabled plan: status=%d body=%s", updateRec.Code, updateRec.Body.String())
 	}
+	updateBody := append([]byte(nil), updateRec.Body.Bytes()...)
 	var updated struct {
 		Data domainbilling.SubscriptionPlan `json:"data"`
 	}
@@ -101,6 +132,19 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	}
 	if updated.Data.Status != "disabled" || updated.Data.PurchaseEnabled {
 		t.Fatalf("plan edit must not bypass lifecycle transition: %#v", updated.Data)
+	}
+	if !updated.Data.CreditExpiryEnabled || updated.Data.DurationDays == nil || *updated.Data.DurationDays != 30 || !bytes.Contains(updateBody, []byte(`"credit_expiry_enabled":true`)) {
+		t.Fatalf("legacy update response must expose default expiry policy: %s", updateBody)
+	}
+	invalidUpdateReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/ops/admin/v1/cashier/plans/%d", created.Data.ID), bytes.NewBufferString(
+		`{"plan_name":"生命周期套餐已编辑","plan_type":"points_package","purchase_enabled":true,"status":"active","price_cny":"21.00000","points":"51.00000","bonus_points":"0.00000","credit_expiry_enabled":true,"duration_days":0}`,
+	))
+	invalidUpdateReq.Header.Set("Authorization", "Bearer "+adminToken)
+	invalidUpdateReq.Header.Set("Content-Type", "application/json")
+	invalidUpdateRec := httptest.NewRecorder()
+	handler.ServeHTTP(invalidUpdateRec, invalidUpdateReq)
+	if invalidUpdateRec.Code != http.StatusBadRequest {
+		t.Fatalf("explicit expiry update with zero duration must fail: status=%d body=%s", invalidUpdateRec.Code, invalidUpdateRec.Body.String())
 	}
 	transition("archive", "archived", false)
 
@@ -124,7 +168,7 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	disabledReq.Header.Set("Authorization", "Bearer "+adminToken)
 	disabledRec := httptest.NewRecorder()
 	handler.ServeHTTP(disabledRec, disabledReq)
-	if disabledRec.Code != http.StatusOK || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"lifecycle-plan"`)) {
+	if disabledRec.Code != http.StatusOK || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"lifecycle-plan"`)) || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"credit_expiry_enabled":true`)) {
 		t.Fatalf("disabled filter must return restored plan: status=%d body=%s", disabledRec.Code, disabledRec.Body.String())
 	}
 
@@ -132,13 +176,25 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list audit logs: %v", err)
 	}
-	actions := map[string]bool{}
+	actions := map[string]int{}
 	for _, log := range logs.Items {
-		actions[log.Action] = true
+		actions[log.Action]++
+		switch log.Action {
+		case "cashier.plan.enable", "cashier.plan.disable", "cashier.plan.archive", "cashier.plan.restore":
+			if _, ok := log.Metadata["before"].(map[string]any); !ok {
+				t.Fatalf("lifecycle audit %q missing before state: %#v", log.Action, log.Metadata)
+			}
+			if _, ok := log.Metadata["after"].(map[string]any); !ok {
+				t.Fatalf("lifecycle audit %q missing after state: %#v", log.Action, log.Metadata)
+			}
+			if requestID, ok := log.Metadata["request_id"].(string); !ok || strings.TrimSpace(requestID) == "" {
+				t.Fatalf("lifecycle audit %q missing request_id: %#v", log.Action, log.Metadata)
+			}
+		}
 	}
 	for _, action := range []string{"cashier.plan.enable", "cashier.plan.disable", "cashier.plan.archive", "cashier.plan.restore"} {
-		if !actions[action] {
-			t.Fatalf("missing audit action %q in %#v", action, actions)
+		if actions[action] != 1 {
+			t.Fatalf("audit action %q count=%d, want exactly 1 in %#v", action, actions[action], actions)
 		}
 	}
 }
@@ -561,8 +617,8 @@ func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBalance: %v", err)
 	}
-	if balance.RechargePoints != "100.00000" || balance.AvailablePoints != "100.00000" {
-		t.Fatalf("expected manual complete to credit recharge balance, got %#v", balance)
+	if balance.SubscriptionPoints != "100.00000" || balance.RechargePoints != "0.00000" || balance.AvailablePoints != "100.00000" {
+		t.Fatalf("expected manual complete to credit purchased package balance, got %#v", balance)
 	}
 
 	replayReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(createResp.Data.ID)+"/complete", bytes.NewBufferString(`{"provider":"manual_alipay","trade_no":"MANUAL-TRADE-001","reason":"confirmed in provider console"}`))
@@ -577,7 +633,7 @@ func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBalance after replay: %v", err)
 	}
-	if balanceAfterReplay.RechargePoints != "100.00000" || balanceAfterReplay.AvailablePoints != "100.00000" {
+	if balanceAfterReplay.SubscriptionPoints != "100.00000" || balanceAfterReplay.RechargePoints != "0.00000" || balanceAfterReplay.AvailablePoints != "100.00000" {
 		t.Fatalf("expected replay not to double credit, got %#v", balanceAfterReplay)
 	}
 }
@@ -712,8 +768,8 @@ func TestAdminCashierOrderRefundDeductsUnusedRechargeBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBalance: %v", err)
 	}
-	if balance.RechargePoints != "100.00000" {
-		t.Fatalf("expected completed order to credit recharge balance, got %#v", balance)
+	if balance.SubscriptionPoints != "100.00000" || balance.RechargePoints != "0.00000" {
+		t.Fatalf("expected completed order to credit purchased package balance, got %#v", balance)
 	}
 
 	refundReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(createResp.Data.ID)+"/refund", bytes.NewBufferString(`{"refund_trade_no":"REFUND-TRADE-001","reason":"customer requested refund"}`))
@@ -1982,8 +2038,8 @@ func TestAdminCashierOrderSyncCompletesPaidProviderOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBalance after sync: %v", err)
 	}
-	if balance.RechargePoints != "100.00000" || balance.AvailablePoints != "100.00000" {
-		t.Fatalf("expected sync to credit recharge balance, got %#v", balance)
+	if balance.SubscriptionPoints != "100.00000" || balance.RechargePoints != "0.00000" || balance.AvailablePoints != "100.00000" {
+		t.Fatalf("expected sync to credit purchased package balance, got %#v", balance)
 	}
 }
 

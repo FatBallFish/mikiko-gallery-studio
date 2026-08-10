@@ -3,15 +3,21 @@ package openai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"mime/multipart"
 	"net/http"
 	"path"
 	"strings"
 
 	"github.com/fatballfish/pic-gallery/internal/provider"
+	_ "golang.org/x/image/webp"
 )
 
 type Config struct {
@@ -35,12 +41,24 @@ func NewClient(cfg Config) *Client {
 }
 
 func (c *Client) Generate(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+	if strings.EqualFold(strings.TrimSpace(req.Background), "transparent") &&
+		!strings.EqualFold(strings.TrimSpace(req.OutputFormat), "png") &&
+		!strings.EqualFold(strings.TrimSpace(req.OutputFormat), "webp") {
+		return provider.ImageResponse{}, errors.New("transparent background requires png or webp output format")
+	}
 	payload := map[string]any{
-		"model":           req.Model,
-		"prompt":          req.Prompt,
-		"size":            req.Size,
-		"quality":         req.Quality,
-		"response_format": string(req.ResponseFormat),
+		"model":   req.Model,
+		"prompt":  req.Prompt,
+		"quality": req.Quality,
+	}
+	if req.Size != "" {
+		payload["size"] = req.Size
+	}
+	if req.Background != "" {
+		payload["background"] = req.Background
+	}
+	if req.ResponseFormat != "" && !isGPTImageModel(req.Model) {
+		payload["response_format"] = string(req.ResponseFormat)
 	}
 	if req.OutputImageCount > 0 {
 		payload["n"] = req.OutputImageCount
@@ -58,6 +76,10 @@ func (c *Client) Generate(ctx context.Context, req provider.ImageRequest) (provi
 		payload["user"] = req.User
 	}
 	return c.doJSON(ctx, http.MethodPost, "/v1/images/generations", payload)
+}
+
+func isGPTImageModel(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-image-")
 }
 
 func (c *Client) Edit(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
@@ -160,6 +182,19 @@ func (c *Client) do(httpReq *http.Request) (provider.ImageResponse, error) {
 		return provider.ImageResponse{}, provider.NewInvalidResponseError(provider.ProviderTypeOpenAI, err)
 	}
 	result.ProviderRequestID = resp.Header.Get("x-request-id")
+	for i := range result.Data {
+		if result.Data[i].Width > 0 && result.Data[i].Height > 0 || result.Data[i].B64JSON == "" {
+			continue
+		}
+		decoded, decodeErr := base64.StdEncoding.DecodeString(result.Data[i].B64JSON)
+		if decodeErr != nil {
+			continue
+		}
+		config, _, decodeErr := image.DecodeConfig(bytes.NewReader(decoded))
+		if decodeErr == nil {
+			result.Data[i].Width, result.Data[i].Height = config.Width, config.Height
+		}
+	}
 	return result, nil
 }
 

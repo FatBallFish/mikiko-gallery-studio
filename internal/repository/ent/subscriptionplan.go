@@ -38,6 +38,8 @@ type SubscriptionPlan struct {
 	Points string `json:"points,omitempty"`
 	// BonusPoints holds the value of the "bonus_points" field.
 	BonusPoints string `json:"bonus_points,omitempty"`
+	// CreditExpiryEnabled holds the value of the "credit_expiry_enabled" field.
+	CreditExpiryEnabled bool `json:"credit_expiry_enabled,omitempty"`
 	// DurationDays holds the value of the "duration_days" field.
 	DurationDays int `json:"duration_days,omitempty"`
 	// Currency holds the value of the "currency" field.
@@ -58,7 +60,7 @@ func (*SubscriptionPlan) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case subscriptionplan.FieldMetadata:
 			values[i] = new([]byte)
-		case subscriptionplan.FieldPurchaseEnabled:
+		case subscriptionplan.FieldPurchaseEnabled, subscriptionplan.FieldCreditExpiryEnabled:
 			values[i] = new(sql.NullBool)
 		case subscriptionplan.FieldID, subscriptionplan.FieldDurationDays, subscriptionplan.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
@@ -146,6 +148,12 @@ func (_m *SubscriptionPlan) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field bonus_points", values[i])
 			} else if value.Valid {
 				_m.BonusPoints = value.String
+			}
+		case subscriptionplan.FieldCreditExpiryEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_expiry_enabled", values[i])
+			} else if value.Valid {
+				_m.CreditExpiryEnabled = value.Bool
 			}
 		case subscriptionplan.FieldDurationDays:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -244,6 +252,9 @@ func (_m *SubscriptionPlan) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("bonus_points=")
 	builder.WriteString(_m.BonusPoints)
+	builder.WriteString(", ")
+	builder.WriteString("credit_expiry_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CreditExpiryEnabled))
 	builder.WriteString(", ")
 	builder.WriteString("duration_days=")
 	builder.WriteString(fmt.Sprintf("%v", _m.DurationDays))

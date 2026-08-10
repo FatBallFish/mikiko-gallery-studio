@@ -22,13 +22,23 @@ type Config struct {
 	MaxConcurrentTasks          int
 	MaxConcurrentTasksResolver  func(context.Context) (int, error)
 	ConfigRefreshInterval       time.Duration
+	CleanupReconcileInterval    time.Duration
+	CleanupReconcileBatchSize   int
 }
 
 type Runner struct {
-	tasks        taskService
-	compensation compensationService
-	cfg          Config
+	tasks                taskService
+	compensation         compensationService
+	cleanup              cleanupService
+	galleryExport        galleryExportService
+	cfg                  Config
+	cleanupMu            sync.Mutex
+	backgroundStreak     int
+	nextBackgroundExport bool
+	lastCleanupReconcile time.Time
 }
+
+const maxBackgroundStreak = 1
 
 type executeOutcome struct {
 	result domainimagetask.ExecuteResult
@@ -43,6 +53,15 @@ type taskService interface {
 
 type compensationService interface {
 	ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error)
+}
+
+type cleanupService interface {
+	ProcessOnce(context.Context) (bool, error)
+	Reconcile(context.Context, int) (int, error)
+}
+
+type galleryExportService interface {
+	ProcessOnce(context.Context) (bool, error)
 }
 
 func NewRunner(tasks taskService, cfg Config) *Runner {
@@ -70,8 +89,18 @@ func NewRunner(tasks taskService, cfg Config) *Runner {
 	if cfg.ConfigRefreshInterval <= 0 {
 		cfg.ConfigRefreshInterval = 5 * time.Second
 	}
+	if cfg.CleanupReconcileInterval <= 0 {
+		cfg.CleanupReconcileInterval = 6 * time.Hour
+	}
+	if cfg.CleanupReconcileBatchSize <= 0 {
+		cfg.CleanupReconcileBatchSize = 100
+	}
 	return &Runner{tasks: tasks, cfg: cfg}
 }
+
+func (r *Runner) SetCleanupService(service cleanupService) { r.cleanup = service }
+
+func (r *Runner) SetGalleryExportService(service galleryExportService) { r.galleryExport = service }
 
 func (r *Runner) SetCompensationService(service compensationService) {
 	r.compensation = service
@@ -250,6 +279,16 @@ func normalizeMaxConcurrentTasks(value int) int {
 }
 
 func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
+	if r.takeBackgroundFairnessTurn() {
+		processed, err := r.processTaskOnce(ctx)
+		if err != nil || processed {
+			return processed, err
+		}
+	}
+	processed, err := r.processBackgroundOnce(ctx)
+	if err != nil || processed {
+		return processed, err
+	}
 	if r.compensation != nil {
 		processed, err := r.compensation.ProcessRefundFinalizeFailures(ctx, r.cfg.RefundCompensationBatchSize)
 		if err != nil {
@@ -262,8 +301,86 @@ func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
 			return true, nil
 		}
 	}
+	processed, err = r.processTaskOnce(ctx)
+	if processed {
+		r.resetBackgroundStreak()
+	}
+	return processed, err
+}
 
-	return r.processTaskOnce(ctx)
+func (r *Runner) processBackgroundOnce(ctx context.Context) (bool, error) {
+	r.cleanupMu.Lock()
+	exportFirst := r.nextBackgroundExport
+	r.cleanupMu.Unlock()
+	if exportFirst {
+		if processed, err := r.processGalleryExportOnce(ctx); err != nil || processed {
+			return processed, err
+		}
+		return r.processCleanupOnce(ctx)
+	}
+	if processed, err := r.processCleanupOnce(ctx); err != nil || processed {
+		return processed, err
+	}
+	return r.processGalleryExportOnce(ctx)
+}
+
+func (r *Runner) processCleanupOnce(ctx context.Context) (bool, error) {
+	if r.cleanup == nil {
+		return false, nil
+	}
+	r.cleanupMu.Lock()
+	due := r.lastCleanupReconcile.IsZero() || time.Since(r.lastCleanupReconcile) >= r.cfg.CleanupReconcileInterval
+	if due {
+		r.lastCleanupReconcile = time.Now()
+	}
+	r.cleanupMu.Unlock()
+	if due {
+		if _, err := r.cleanup.Reconcile(ctx, r.cfg.CleanupReconcileBatchSize); err != nil {
+			return false, err
+		}
+	}
+	processed, err := r.cleanup.ProcessOnce(ctx)
+	if processed {
+		r.noteBackgroundProcessed(true)
+	}
+	return processed, err
+}
+
+func (r *Runner) processGalleryExportOnce(ctx context.Context) (bool, error) {
+	if r.galleryExport == nil {
+		return false, nil
+	}
+	processed, err := r.galleryExport.ProcessOnce(ctx)
+	if processed {
+		r.noteBackgroundProcessed(false)
+	}
+	return processed, err
+}
+
+func (r *Runner) takeBackgroundFairnessTurn() bool {
+	if r.cleanup == nil && r.galleryExport == nil {
+		return false
+	}
+	r.cleanupMu.Lock()
+	defer r.cleanupMu.Unlock()
+	if r.backgroundStreak < maxBackgroundStreak {
+		return false
+	}
+	r.backgroundStreak = 0
+	return true
+}
+
+func (r *Runner) noteBackgroundProcessed(cleanup bool) {
+	r.cleanupMu.Lock()
+	r.backgroundStreak++
+	r.nextBackgroundExport = cleanup
+	r.cleanupMu.Unlock()
+}
+
+func (r *Runner) resetBackgroundStreak() {
+	r.cleanupMu.Lock()
+	r.backgroundStreak = 0
+	r.cleanupMu.Unlock()
 }
 
 func (r *Runner) processTaskOnce(ctx context.Context) (bool, error) {

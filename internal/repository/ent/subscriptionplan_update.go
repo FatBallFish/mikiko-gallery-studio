@@ -146,6 +146,20 @@ func (_u *SubscriptionPlanUpdate) SetNillableBonusPoints(v *string) *Subscriptio
 	return _u
 }
 
+// SetCreditExpiryEnabled sets the "credit_expiry_enabled" field.
+func (_u *SubscriptionPlanUpdate) SetCreditExpiryEnabled(v bool) *SubscriptionPlanUpdate {
+	_u.mutation.SetCreditExpiryEnabled(v)
+	return _u
+}
+
+// SetNillableCreditExpiryEnabled sets the "credit_expiry_enabled" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillableCreditExpiryEnabled(v *bool) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetCreditExpiryEnabled(*v)
+	}
+	return _u
+}
+
 // SetDurationDays sets the "duration_days" field.
 func (_u *SubscriptionPlanUpdate) SetDurationDays(v int) *SubscriptionPlanUpdate {
 	_u.mutation.ResetDurationDays()
@@ -343,6 +357,9 @@ func (_u *SubscriptionPlanUpdate) sqlSave(ctx context.Context) (_node int, err e
 	if value, ok := _u.mutation.BonusPoints(); ok {
 		_spec.SetField(subscriptionplan.FieldBonusPoints, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.CreditExpiryEnabled(); ok {
+		_spec.SetField(subscriptionplan.FieldCreditExpiryEnabled, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.DurationDays(); ok {
 		_spec.SetField(subscriptionplan.FieldDurationDays, field.TypeInt, value)
 	}
@@ -501,6 +518,20 @@ func (_u *SubscriptionPlanUpdateOne) SetBonusPoints(v string) *SubscriptionPlanU
 func (_u *SubscriptionPlanUpdateOne) SetNillableBonusPoints(v *string) *SubscriptionPlanUpdateOne {
 	if v != nil {
 		_u.SetBonusPoints(*v)
+	}
+	return _u
+}
+
+// SetCreditExpiryEnabled sets the "credit_expiry_enabled" field.
+func (_u *SubscriptionPlanUpdateOne) SetCreditExpiryEnabled(v bool) *SubscriptionPlanUpdateOne {
+	_u.mutation.SetCreditExpiryEnabled(v)
+	return _u
+}
+
+// SetNillableCreditExpiryEnabled sets the "credit_expiry_enabled" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillableCreditExpiryEnabled(v *bool) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetCreditExpiryEnabled(*v)
 	}
 	return _u
 }
@@ -731,6 +762,9 @@ func (_u *SubscriptionPlanUpdateOne) sqlSave(ctx context.Context) (_node *Subscr
 	}
 	if value, ok := _u.mutation.BonusPoints(); ok {
 		_spec.SetField(subscriptionplan.FieldBonusPoints, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.CreditExpiryEnabled(); ok {
+		_spec.SetField(subscriptionplan.FieldCreditExpiryEnabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.DurationDays(); ok {
 		_spec.SetField(subscriptionplan.FieldDurationDays, field.TypeInt, value)

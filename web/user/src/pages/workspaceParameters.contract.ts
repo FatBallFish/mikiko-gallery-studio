@@ -4,10 +4,17 @@ import { normalizeCapabilities, toTask } from '../../../shared/user-api'
 import {
   normalizeWorkspaceOutputParameters,
   normalizeWorkspaceCustomSize,
+  workspaceBackgroundForFormat,
+  workspaceBackgroundOptions,
   workspaceCustomSizeSupported,
+  workspaceCustomRatioSupported,
+  workspaceCustomRatioValid,
   workspaceCompressionVisible,
   workspaceModelForTask,
   workspaceOutputOptions,
+  workspacePixelOptions,
+  workspaceRatioOptions,
+  workspaceSizeModeOptions,
 } from './workspaceParameters'
 
 const workspaceSource = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')
@@ -18,8 +25,13 @@ for (const expected of [
   'Width',
   'Height',
   'effectivePixelSize',
-  "pixel_size: sizeMode === 'pixel' ? effectivePixelSize : undefined",
-  '由于模型限制，最终输出会自动规整到合法尺寸：宽高均为 16 的倍数，最大边长 3840px，宽高比不超过 3:1，总像素限制为 655360-8294400。',
+  "sizeMode === 'auto' ? true",
+  '自定义比例',
+  'workspace-custom-ratio',
+  'backgroundOptions.map',
+  "value === 'transparent'",
+  "...(sizeMode === 'pixel' ? { pixel_size: effectivePixelSize } : {})",
+  '宽高必须为 16 的倍数',
 ]) {
   if (!workspaceSource.includes(expected)) throw new Error(`workspace custom size UI must include ${expected}`)
 }
@@ -121,6 +133,38 @@ if (!workspaceCustomSizeSupported({ ...model, supports_custom_size: true })) {
   throw new Error('legacy capability payloads must fall back to the aggregate custom-size flag')
 }
 
+const emptyScopedModel = workspaceModelForTask({
+  ...model,
+  size_modes: ['ratio'],
+  aspect_ratios: ['1:1'],
+  pixel_sizes: ['1024x1024'],
+  quality: ['auto'],
+  output_format: ['png'],
+  supported_backgrounds: ['auto'],
+  moderation: ['auto'],
+  capabilities_by_task_type: {
+    text_to_image: {
+      size_modes: [], aspect_ratios: [], pixel_sizes: [], quality: [], output_format: [], supported_backgrounds: [], moderation: [],
+    },
+  },
+}, 'text_to_image')
+if (!emptyScopedModel) throw new Error('empty scoped capability projection must retain the model')
+const emptyOutputOptions = workspaceOutputOptions(emptyScopedModel)
+if (workspaceSizeModeOptions(emptyScopedModel).length || workspaceRatioOptions(emptyScopedModel, ['1:1']).length || workspacePixelOptions(emptyScopedModel, ['1024x1024']).length) {
+  throw new Error(`explicit empty size capability must not inherit aggregate defaults: ${JSON.stringify(emptyScopedModel)}`)
+}
+if (emptyOutputOptions.quality.length || emptyOutputOptions.outputFormat.length || emptyOutputOptions.moderation.length || workspaceBackgroundOptions(emptyScopedModel).length) {
+  throw new Error(`explicit empty output capability must not receive defaults: ${JSON.stringify(emptyOutputOptions)}`)
+}
+const legacySizeModel = { ...model, size_modes: undefined, aspect_ratios: undefined, pixel_sizes: undefined, quality: undefined, output_format: undefined, moderation: undefined } satisfies CapabilityModelGroup
+if (workspaceSizeModeOptions(legacySizeModel).join(',') !== 'ratio' || workspaceRatioOptions(legacySizeModel, ['1:1']).join(',') !== '1:1' || workspacePixelOptions(legacySizeModel, ['1024x1024']).join(',') !== '1024x1024') {
+  throw new Error('undefined legacy size fields must retain compatibility fallbacks')
+}
+const legacyOutputOptions = workspaceOutputOptions(legacySizeModel)
+if (legacyOutputOptions.quality.join(',') !== 'auto' || legacyOutputOptions.outputFormat.join(',') !== 'png' || legacyOutputOptions.moderation.join(',') !== 'auto') {
+  throw new Error(`undefined legacy output fields must retain compatibility fallbacks: ${JSON.stringify(legacyOutputOptions)}`)
+}
+
 const unsupportedModel = { ...model, supports_output_compression: false } satisfies CapabilityModelGroup
 if (workspaceCompressionVisible(unsupportedModel, 'webp')) {
   throw new Error('compression must remain hidden when the selected model does not support it')
@@ -137,8 +181,20 @@ if (clamped.outputCompression !== 100) {
 }
 
 const customSize = normalizeWorkspaceCustomSize('1001', '777')
-if (!customSize.valid || customSize.size !== '1008x784') {
-  throw new Error(`custom workspace size should use shared normalization, got ${JSON.stringify(customSize)}`)
+if (customSize.valid) {
+  throw new Error(`custom workspace size must reject rather than normalize, got ${JSON.stringify(customSize)}`)
+}
+
+const exactCustomSize = normalizeWorkspaceCustomSize('1008', '784', { ...model, min_width: 512, max_width: 2048, min_height: 512, max_height: 1536 })
+if (!exactCustomSize.valid || exactCustomSize.size !== '1008x784') throw new Error(`legal custom size should remain exact: ${JSON.stringify(exactCustomSize)}`)
+
+const backgroundModel = { ...model, size_modes: ['auto', 'ratio'], supports_custom_ratio: true, supported_backgrounds: ['auto', 'opaque', 'transparent'] } satisfies CapabilityModelGroup
+if (!workspaceCustomRatioSupported(backgroundModel) || !workspaceCustomRatioValid('7:5') || workspaceCustomRatioValid('4:1') || workspaceCustomRatioValid('1.5:1')) {
+  throw new Error('custom ratio capability or validation drifted')
+}
+if (workspaceBackgroundOptions(backgroundModel).join(',') !== 'auto,opaque,transparent') throw new Error('background options must be capability-driven')
+if (workspaceBackgroundForFormat(backgroundModel, 'transparent', 'jpeg') !== 'auto' || workspaceBackgroundForFormat(backgroundModel, 'transparent', 'webp') !== 'transparent') {
+  throw new Error('transparent background must require PNG or WebP')
 }
 
 if (normalizeWorkspaceCustomSize('1001.5', '777').valid || normalizeWorkspaceCustomSize('', '777').valid) {

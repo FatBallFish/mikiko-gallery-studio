@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +26,209 @@ import (
 
 type adminCallRecordStaticRoutingSource struct {
 	snapshot modelhub.ModelRoutingSnapshot
+}
+
+func TestAdminCallRecordStoreAggregatesAttemptsWithoutPagination(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-distribution?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	inside := time.Now().UTC()
+	from := inside.Add(-time.Hour)
+	store := NewImageTaskStore(client)
+	seeds := []domainimagetask.Task{
+		{UserID: 1, ID: "11111111-1111-1111-1111-111111111111", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-a", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}, {StartedAt: &inside}}},
+		{UserID: 1, ID: "22222222-2222-2222-2222-222222222222", Status: domainimagetask.StatusFailed, TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}}},
+		{UserID: 1, ID: "33333333-3333-3333-3333-333333333333", Status: domainimagetask.StatusRejected, TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k"},
+	}
+	for _, seed := range seeds {
+		if err := store.Save(ctx, seed); err != nil {
+			t.Fatalf("save task %s: %v", seed.ID, err)
+		}
+	}
+
+	distribution, err := NewAdminCallRecordStore(client).CallDistribution(ctx, domainadmincallrecord.DistributionRequest{From: from, To: from.Add(24 * time.Hour)})
+	if err != nil {
+		t.Fatalf("CallDistribution: %v", err)
+	}
+	if distribution.TotalCalls != 3 || distribution.PreflightFailureCount != 1 || len(distribution.Groups) != 2 || distribution.Groups[0].Key != "route-a" || distribution.Groups[0].Calls != 2 || distribution.Groups[1].Key != "unrouted" {
+		t.Fatalf("distribution = %#v", distribution)
+	}
+}
+
+func TestAdminCallRecordStoreDistributionSurvivesTaskSoftDeletion(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-distribution-soft-delete?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	inside := time.Now().UTC()
+	request := domainadmincallrecord.DistributionRequest{From: inside.Add(-24 * time.Hour), To: inside.Add(24 * time.Hour)}
+	taskStore := NewImageTaskStore(client)
+	seeds := []domainimagetask.Task{
+		{
+			UserID: 88, ID: "44444444-4444-4444-8444-444444444444", Status: domainimagetask.StatusSucceeded,
+			RouteModelCode: "route-soft-deleted", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k",
+			Attempts: []domainimagetask.Attempt{{StartedAt: &inside}, {StartedAt: &inside}},
+		},
+		{
+			UserID: 88, ID: "55555555-5555-4555-8555-555555555555", Status: domainimagetask.StatusRejected,
+			TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k",
+		},
+	}
+	for _, seed := range seeds {
+		if err := taskStore.Save(ctx, seed); err != nil {
+			t.Fatalf("save task %s: %v", seed.ID, err)
+		}
+	}
+
+	callRecords := NewAdminCallRecordStore(client)
+	before, err := callRecords.CallDistribution(ctx, request)
+	if err != nil {
+		t.Fatalf("distribution before deletion: %v", err)
+	}
+	if before.TotalCalls != 2 || before.PreflightFailureCount != 1 || len(before.Groups) != 1 || before.Groups[0].Key != "route-soft-deleted" || before.Groups[0].Calls != 2 || before.Groups[0].Percentage != 100 {
+		t.Fatalf("distribution before deletion = %#v", before)
+	}
+	visibleBefore, err := callRecords.ListCallRecords(ctx, domainadmincallrecord.ListRequest{Page: 1, PageSize: 10})
+	if err != nil || visibleBefore.Total != 2 {
+		t.Fatalf("visible records before deletion: page=%#v err=%v", visibleBefore, err)
+	}
+
+	for _, seed := range seeds {
+		if err := taskStore.DeleteByID(ctx, seed.UserID, seed.ID); err != nil {
+			t.Fatalf("soft-delete task %s: %v", seed.ID, err)
+		}
+	}
+
+	after, err := callRecords.CallDistribution(ctx, request)
+	if err != nil {
+		t.Fatalf("distribution after deletion: %v", err)
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("distribution changed after soft deletion: before=%#v after=%#v", before, after)
+	}
+	visibleAfter, err := callRecords.ListCallRecords(ctx, domainadmincallrecord.ListRequest{Page: 1, PageSize: 10})
+	if err != nil || visibleAfter.Total != 0 || len(visibleAfter.Items) != 0 {
+		t.Fatalf("deleted records remain visible in admin list: page=%#v err=%v", visibleAfter, err)
+	}
+}
+
+func TestAdminCallRecordStoreDistributionUsesStableKeysetAcrossBatches(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-distribution-keyset?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	inside := time.Now().UTC()
+	request := domainadmincallrecord.DistributionRequest{From: inside.Add(-time.Hour), To: inside.Add(time.Hour)}
+	seeds := []domainimagetask.Task{
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000001", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-a", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}, {StartedAt: &inside}}},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000002", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-b", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}}},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000003", Status: domainimagetask.StatusFailed, TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}}},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000004", Status: domainimagetask.StatusRejected, TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k"},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000005", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-a", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}}},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000006", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-a", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}, {StartedAt: &inside}}},
+		{UserID: 91, ID: "00000000-0000-4000-8000-000000000007", Status: domainimagetask.StatusSucceeded, RouteModelCode: "route-b", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k", Attempts: []domainimagetask.Attempt{{StartedAt: &inside}}},
+	}
+	for _, seed := range seeds {
+		trace, err := buildProviderTrace(seed)
+		if err != nil {
+			t.Fatalf("build trace %s: %v", seed.ID, err)
+		}
+		id := uuid.MustParse(seed.ID)
+		if _, err := client.ImageTask.Create().
+			SetID(id).
+			SetUserID(seed.UserID).
+			SetTaskType(seed.TaskType).
+			SetStatus(seed.Status).
+			SetPrompt("distribution test").
+			SetAbstractModel(seed.AbstractModel).
+			SetBaseResolution(seed.BaseResolution).
+			SetRouteModelCode(seed.RouteModelCode).
+			SetProviderTrace(trace).
+			SetCreatedAt(inside).
+			SetUpdatedAt(inside).
+			Save(ctx); err != nil {
+			t.Fatalf("create task %s: %v", seed.ID, err)
+		}
+	}
+	if _, err := client.ImageTask.UpdateOneID(uuid.MustParse(seeds[5].ID)).SetDeletedAt(inside).SetUpdatedAt(inside).Save(ctx); err != nil {
+		t.Fatalf("soft-delete task: %v", err)
+	}
+	candidateCount, err := client.ImageTask.Query().Where(imagetask.CreatedAtLT(request.To), imagetask.UpdatedAtGTE(request.From)).Count(ctx)
+	if err != nil || candidateCount != len(seeds) {
+		t.Fatalf("distribution candidates = %d, want %d: %v", candidateCount, len(seeds), err)
+	}
+
+	callRecords := NewAdminCallRecordStore(client)
+	callRecords.batchSize = 2
+	distribution, err := callRecords.CallDistribution(ctx, request)
+	if err != nil {
+		t.Fatalf("CallDistribution: %v", err)
+	}
+	if distribution.TotalCalls != 8 || distribution.PreflightFailureCount != 1 {
+		t.Fatalf("distribution totals = %#v", distribution)
+	}
+	wantGroups := []domainadmincallrecord.DistributionGroup{
+		{Key: "route-a", Calls: 5, Percentage: float64(5) * 100 / 8},
+		{Key: "route-b", Calls: 2, Percentage: float64(2) * 100 / 8},
+		{Key: "unrouted", Calls: 1, Percentage: float64(1) * 100 / 8},
+	}
+	if !reflect.DeepEqual(distribution.Groups, wantGroups) {
+		t.Fatalf("distribution groups = %#v, want %#v", distribution.Groups, wantGroups)
+	}
+}
+
+func TestAdminCallRecordStoreDistributionRejectsMalformedLegacyTrace(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-distribution-malformed?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	inside := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	_, err = client.ImageTask.Create().
+		SetID(uuid.MustParse("00000000-0000-4000-8000-000000000099")).
+		SetUserID(99).
+		SetTaskType(string(provider.TaskTypeTextToImage)).
+		SetStatus(domainimagetask.StatusFailed).
+		SetPrompt("legacy").
+		SetAbstractModel("basic").
+		SetCreatedAt(inside).
+		SetUpdatedAt(inside).
+		SetProviderTrace(map[string]any{"attempts": "password=do-not-leak"}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create malformed legacy task: %v", err)
+	}
+
+	_, err = NewAdminCallRecordStore(client).CallDistribution(ctx, domainadmincallrecord.DistributionRequest{From: inside.Add(-time.Hour), To: inside.Add(time.Hour)})
+	if err == nil || !strings.Contains(err.Error(), "invalid call distribution trace") {
+		t.Fatalf("CallDistribution error = %v, want stable invalid trace error", err)
+	}
+	if strings.Contains(err.Error(), "password=do-not-leak") {
+		t.Fatalf("CallDistribution leaked malformed trace: %v", err)
+	}
 }
 
 func TestAdminCallRecordStoreClassifiesExhaustedArtifactRecoveryAsPlatformLoss(t *testing.T) {
@@ -278,6 +483,42 @@ func TestAdminCallRecordStoreListsImageTasksWithFilters(t *testing.T) {
 	}
 	if errorFilteredPage.Total != 1 || len(errorFilteredPage.Items) != 1 || errorFilteredPage.Items[0].TaskID != seedTasks[0].ID {
 		t.Fatalf("expected error_code filter to return only first task, got %#v", errorFilteredPage)
+	}
+}
+
+func TestAdminCallRecordStoreProjectsImmutableRouteAndPricingSnapshots(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-call-history?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	task, err := client.ImageTask.Create().
+		SetUserID(42).
+		SetTaskType("text_to_image").
+		SetPrompt("historical").
+		SetAbstractModel("plus").
+		SetRouteModelCode("route-snapshot").
+		SetUpstreamModelCode("gpt-image-snapshot").
+		SetProviderCost("0.42000").
+		SetPricingSnapshot(map[string]any{"route_model_code": "route-snapshot", "base_unit_points": "8.00000", "total_points": "8.00000"}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create historical task: %v", err)
+	}
+	page, err := NewAdminCallRecordStore(client).ListCallRecords(ctx, domainadmincallrecord.ListRequest{Page: 1, PageSize: 10, TaskID: task.ID.String()})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("list call record: %#v err=%v", page, err)
+	}
+	record := page.Items[0]
+	if record.RouteModelCode != "route-snapshot" || record.UpstreamModelCode != "gpt-image-snapshot" || record.ProviderCost != "0.42000" {
+		t.Fatalf("historical routing/cost snapshots were lost: %#v", record)
+	}
+	if record.PricingSnapshot["base_unit_points"] != "8.00000" || record.PricingSnapshot["total_points"] != "8.00000" {
+		t.Fatalf("historical pricing snapshot was lost: %#v", record.PricingSnapshot)
 	}
 }
 

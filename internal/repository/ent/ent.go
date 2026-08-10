@@ -20,18 +20,23 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/promptoptimizationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
@@ -122,18 +127,23 @@ func checkColumn(t, c string) error {
 			clusternode.Table:                 clusternode.ValidColumn,
 			clustertoken.Table:                clustertoken.ValidColumn,
 			configitem.Table:                  configitem.ValidColumn,
+			galleryexportjob.Table:            galleryexportjob.ValidColumn,
 			imageresult.Table:                 imageresult.ValidColumn,
 			imagetask.Table:                   imagetask.ValidColumn,
 			installation.Table:                installation.ValidColumn,
+			migrationcheckpoint.Table:         migrationcheckpoint.ValidColumn,
 			modelaccount.Table:                modelaccount.ValidColumn,
 			modelaccountmodel.Table:           modelaccountmodel.ValidColumn,
 			modelprovider.Table:               modelprovider.ValidColumn,
 			modelroute.Table:                  modelroute.ValidColumn,
+			objectdeletionjob.Table:           objectdeletionjob.ValidColumn,
+			objectreconcilecheckpoint.Table:   objectreconcilecheckpoint.ValidColumn,
 			objectstorageconfig.Table:         objectstorageconfig.ValidColumn,
 			paymentorder.Table:                paymentorder.ValidColumn,
 			paymentproviderinstance.Table:     paymentproviderinstance.ValidColumn,
 			paymentwebhookevent.Table:         paymentwebhookevent.ValidColumn,
 			pointledger.Table:                 pointledger.ValidColumn,
+			project.Table:                     project.ValidColumn,
 			promptoptimizationrun.Table:       promptoptimizationrun.ValidColumn,
 			providererrorpolicy.Table:         providererrorpolicy.ValidColumn,
 			providermodel.Table:               providermodel.ValidColumn,

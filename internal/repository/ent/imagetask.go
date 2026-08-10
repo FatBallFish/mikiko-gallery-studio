@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/google/uuid"
 )
 
@@ -27,6 +28,8 @@ type ImageTask struct {
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID int64 `json:"user_id,omitempty"`
+	// ProjectID holds the value of the "project_id" field.
+	ProjectID *uuid.UUID `json:"project_id,omitempty"`
 	// APIKeyID holds the value of the "api_key_id" field.
 	APIKeyID *int64 `json:"api_key_id,omitempty"`
 	// SourceChannel holds the value of the "source_channel" field.
@@ -61,6 +64,8 @@ type ImageTask struct {
 	AspectRatio string `json:"aspect_ratio,omitempty"`
 	// OutputFormat holds the value of the "output_format" field.
 	OutputFormat string `json:"output_format,omitempty"`
+	// Background holds the value of the "background" field.
+	Background *string `json:"background,omitempty"`
 	// OutputCompression holds the value of the "output_compression" field.
 	OutputCompression int `json:"output_compression,omitempty"`
 	// Moderation holds the value of the "moderation" field.
@@ -133,6 +138,12 @@ type ImageTask struct {
 	ArtifactLastDiagnostic map[string]interface{} `json:"artifact_last_diagnostic,omitempty"`
 	// ArtifactStorageConfigID holds the value of the "artifact_storage_config_id" field.
 	ArtifactStorageConfigID *uuid.UUID `json:"artifact_storage_config_id,omitempty"`
+	// ArtifactStorageDriver holds the value of the "artifact_storage_driver" field.
+	ArtifactStorageDriver string `json:"artifact_storage_driver,omitempty"`
+	// ArtifactStorageBucket holds the value of the "artifact_storage_bucket" field.
+	ArtifactStorageBucket string `json:"artifact_storage_bucket,omitempty"`
+	// ArtifactObjectKeys holds the value of the "artifact_object_keys" field.
+	ArtifactObjectKeys []string `json:"artifact_object_keys,omitempty"`
 	// ArtifactStorageVersion holds the value of the "artifact_storage_version" field.
 	ArtifactStorageVersion int64 `json:"artifact_storage_version,omitempty"`
 	// LeaseOwner holds the value of the "lease_owner" field.
@@ -146,8 +157,31 @@ type ImageTask struct {
 	// StartedAt holds the value of the "started_at" field.
 	StartedAt *time.Time `json:"started_at,omitempty"`
 	// FinishedAt holds the value of the "finished_at" field.
-	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the ImageTaskQuery when eager-loading is set.
+	Edges        ImageTaskEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// ImageTaskEdges holds the relations/edges for other nodes in the graph.
+type ImageTaskEdges struct {
+	// Project holds the value of the project edge.
+	Project *Project `json:"project,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// ProjectOrErr returns the Project value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e ImageTaskEdges) ProjectOrErr() (*Project, error) {
+	if e.Project != nil {
+		return e.Project, nil
+	} else if e.loadedTypes[0] {
+		return nil, &NotFoundError{label: project.Label}
+	}
+	return nil, &NotLoadedError{edge: "project"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -155,15 +189,15 @@ func (*ImageTask) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case imagetask.FieldArtifactStorageConfigID:
+		case imagetask.FieldProjectID, imagetask.FieldArtifactStorageConfigID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
-		case imagetask.FieldPricingSnapshot, imagetask.FieldRoutingSnapshot, imagetask.FieldErrorPolicySnapshot, imagetask.FieldProviderTrace, imagetask.FieldArtifactLastDiagnostic:
+		case imagetask.FieldPricingSnapshot, imagetask.FieldRoutingSnapshot, imagetask.FieldErrorPolicySnapshot, imagetask.FieldProviderTrace, imagetask.FieldArtifactLastDiagnostic, imagetask.FieldArtifactObjectKeys:
 			values[i] = new([]byte)
 		case imagetask.FieldMaskPresent:
 			values[i] = new(sql.NullBool)
 		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldOutputCompression, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed, imagetask.FieldRouteModelID, imagetask.FieldAccountModelID, imagetask.FieldModelAccountID, imagetask.FieldProviderModelID, imagetask.FieldFallbackCount, imagetask.FieldArtifactAttemptCount, imagetask.FieldArtifactStorageVersion:
 			values[i] = new(sql.NullInt64)
-		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldProgressStage, imagetask.FieldProgressMessage, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldSizeMode, imagetask.FieldBaseResolution, imagetask.FieldQuality, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldOutputFormat, imagetask.FieldModeration, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldProviderRequestID, imagetask.FieldArtifactRecoveryStatus, imagetask.FieldArtifactRecoveryPayload, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
+		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldProgressStage, imagetask.FieldProgressMessage, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldSizeMode, imagetask.FieldBaseResolution, imagetask.FieldQuality, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldOutputFormat, imagetask.FieldBackground, imagetask.FieldModeration, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldProviderRequestID, imagetask.FieldArtifactRecoveryStatus, imagetask.FieldArtifactRecoveryPayload, imagetask.FieldArtifactStorageDriver, imagetask.FieldArtifactStorageBucket, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
 			values[i] = new(sql.NullString)
 		case imagetask.FieldCreatedAt, imagetask.FieldUpdatedAt, imagetask.FieldDeletedAt, imagetask.FieldUpstreamSucceededAt, imagetask.FieldArtifactNextRetryAt, imagetask.FieldLeaseExpiresAt, imagetask.FieldStartedAt, imagetask.FieldFinishedAt:
 			values[i] = new(sql.NullTime)
@@ -214,6 +248,13 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
 				_m.UserID = value.Int64
+			}
+		case imagetask.FieldProjectID:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field project_id", values[i])
+			} else if value.Valid {
+				_m.ProjectID = new(uuid.UUID)
+				*_m.ProjectID = *value.S.(*uuid.UUID)
 			}
 		case imagetask.FieldAPIKeyID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -321,6 +362,13 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field output_format", values[i])
 			} else if value.Valid {
 				_m.OutputFormat = value.String
+			}
+		case imagetask.FieldBackground:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field background", values[i])
+			} else if value.Valid {
+				_m.Background = new(string)
+				*_m.Background = value.String
 			}
 		case imagetask.FieldOutputCompression:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -559,6 +607,26 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 				_m.ArtifactStorageConfigID = new(uuid.UUID)
 				*_m.ArtifactStorageConfigID = *value.S.(*uuid.UUID)
 			}
+		case imagetask.FieldArtifactStorageDriver:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_storage_driver", values[i])
+			} else if value.Valid {
+				_m.ArtifactStorageDriver = value.String
+			}
+		case imagetask.FieldArtifactStorageBucket:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_storage_bucket", values[i])
+			} else if value.Valid {
+				_m.ArtifactStorageBucket = value.String
+			}
+		case imagetask.FieldArtifactObjectKeys:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_object_keys", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ArtifactObjectKeys); err != nil {
+					return fmt.Errorf("unmarshal field artifact_object_keys: %w", err)
+				}
+			}
 		case imagetask.FieldArtifactStorageVersion:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field artifact_storage_version", values[i])
@@ -620,6 +688,11 @@ func (_m *ImageTask) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
 }
 
+// QueryProject queries the "project" edge of the ImageTask entity.
+func (_m *ImageTask) QueryProject() *ProjectQuery {
+	return NewImageTaskClient(_m.config).QueryProject(_m)
+}
+
 // Update returns a builder for updating this ImageTask.
 // Note that you need to call ImageTask.Unwrap() before calling this method if this ImageTask
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -656,6 +729,11 @@ func (_m *ImageTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
+	builder.WriteString(", ")
+	if v := _m.ProjectID; v != nil {
+		builder.WriteString("project_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.APIKeyID; v != nil {
 		builder.WriteString("api_key_id=")
@@ -717,6 +795,11 @@ func (_m *ImageTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("output_format=")
 	builder.WriteString(_m.OutputFormat)
+	builder.WriteString(", ")
+	if v := _m.Background; v != nil {
+		builder.WriteString("background=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("output_compression=")
 	builder.WriteString(fmt.Sprintf("%v", _m.OutputCompression))
@@ -847,6 +930,15 @@ func (_m *ImageTask) String() string {
 		builder.WriteString("artifact_storage_config_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("artifact_storage_driver=")
+	builder.WriteString(_m.ArtifactStorageDriver)
+	builder.WriteString(", ")
+	builder.WriteString("artifact_storage_bucket=")
+	builder.WriteString(_m.ArtifactStorageBucket)
+	builder.WriteString(", ")
+	builder.WriteString("artifact_object_keys=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ArtifactObjectKeys))
 	builder.WriteString(", ")
 	builder.WriteString("artifact_storage_version=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ArtifactStorageVersion))

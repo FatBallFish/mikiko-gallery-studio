@@ -1,6 +1,10 @@
 package modelhub
 
-import "testing"
+import (
+	"fmt"
+	"math/rand"
+	"testing"
+)
 
 func TestCalculateImageSizeUsesPresetDimensions(t *testing.T) {
 	cases := []struct {
@@ -56,6 +60,82 @@ func TestCalculateImageSizeKeepsCustomRatioWithinModelLimits(t *testing.T) {
 func TestCalculateImageSizeRejectsInvalidRatio(t *testing.T) {
 	if _, err := CalculateImageSize("4k", "8:1"); err == nil {
 		t.Fatal("expected invalid model ratio to fail")
+	}
+}
+
+func TestCalculateImageSizeWithinCapabilityUsesNearestLegalRatioSize(t *testing.T) {
+	tests := []struct {
+		name       string
+		base       string
+		ratio      string
+		capability ImageModelCapability
+		want       string
+		wantError  bool
+	}{
+		{name: "unbounded preset compatibility", base: "1k", ratio: "16:9", capability: ImageModelCapability{}, want: "1280x720"},
+		{name: "tight square", base: "1k", ratio: "1:1", capability: ImageModelCapability{MinWidth: 512, MaxWidth: 900, MinHeight: 512, MaxHeight: 900}, want: "896x896"},
+		{name: "non symmetric bounds", base: "1k", ratio: "16:9", capability: ImageModelCapability{MinWidth: 1000, MaxWidth: 1200, MinHeight: 600, MaxHeight: 700}, want: "1200x672"},
+		{name: "boundary equality", base: "1k", ratio: "16:9", capability: ImageModelCapability{MinWidth: 1280, MaxWidth: 1280, MinHeight: 720, MaxHeight: 720}, want: "1280x720"},
+		{name: "no solution below global area", base: "1k", ratio: "1:1", capability: ImageModelCapability{MinWidth: 512, MaxWidth: 700, MinHeight: 512, MaxHeight: 700}, wantError: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := CalculateImageSizeWithinCapability(tt.base, tt.ratio, tt.capability)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("CalculateImageSizeWithinCapability() = %q, want error", got)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("CalculateImageSizeWithinCapability() = %q, %v; want %q", got, err, tt.want)
+			}
+			again, repeatErr := CalculateImageSizeWithinCapability(tt.base, tt.ratio, tt.capability)
+			if repeatErr != nil || again != got {
+				t.Fatalf("bounded ratio resolution must be deterministic: first=%q second=%q err=%v", got, again, repeatErr)
+			}
+		})
+	}
+}
+
+func TestCalculateImageSizeWithinCapabilityPropertyReturnsExactLegalBoundary(t *testing.T) {
+	rng := rand.New(rand.NewSource(20260809))
+	checked := 0
+	for checked < 250 {
+		width := (51 + rng.Intn(130)) * imageSizeMultiple
+		height := (51 + rng.Intn(130)) * imageSizeMultiple
+		if !IsLegalCustomImageSize(width, height) {
+			continue
+		}
+		ratio := fmt.Sprintf("%d:%d", width, height)
+		capability := ImageModelCapability{MinWidth: width, MaxWidth: width, MinHeight: height, MaxHeight: height, SupportsCustomRatio: true}
+		got, err := CalculateImageSizeWithinCapability("4k", ratio, capability)
+		if err != nil || got != fmt.Sprintf("%dx%d", width, height) {
+			t.Fatalf("legal exact boundary %dx%d ratio=%s resolved as %q, %v", width, height, ratio, got, err)
+		}
+		resolvedWidth, resolvedHeight, ok := ParseImageSize(got)
+		if !ok || !legalExplicitDimensions(resolvedWidth, resolvedHeight, capability) {
+			t.Fatalf("resolved property size is illegal: %q capability=%#v", got, capability)
+		}
+		actualRatio := float64(resolvedWidth) / float64(resolvedHeight)
+		targetRatio := float64(width) / float64(height)
+		if ratioError(actualRatio, targetRatio) > imageMaxRatioError {
+			t.Fatalf("resolved ratio drifted: got=%q target=%s", got, ratio)
+		}
+		checked++
+	}
+}
+
+func BenchmarkCalculateImageSizeWithinCapability(b *testing.B) {
+	capability := ImageModelCapability{
+		MinWidth: 512, MaxWidth: imageMaxEdge,
+		MinHeight: 512, MaxHeight: imageMaxEdge,
+		SupportsCustomRatio: true,
+	}
+	for b.Loop() {
+		if _, err := CalculateImageSizeWithinCapability("4k", "137:89", capability); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

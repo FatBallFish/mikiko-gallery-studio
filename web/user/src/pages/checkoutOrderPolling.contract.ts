@@ -27,7 +27,7 @@ if (expiredState.step !== 'expired' || expiredState.shouldPoll) {
 }
 
 const completedState = checkoutOrderRuntimeState({ ...pendingOrder, status: 'completed' }, Date.parse('2026-06-05T10:05:00Z'))
-if (completedState.step !== 'success' || completedState.shouldPoll) {
+if (completedState.step !== 'success' || completedState.shouldPoll || completedState.detail.includes('充值余额桶')) {
   throw new Error(`completed order should be terminal success, got ${JSON.stringify(completedState)}`)
 }
 

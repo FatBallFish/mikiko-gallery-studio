@@ -3,6 +3,7 @@ package schema
 import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ func (ImageTask) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).Default(uuid.New).Immutable(),
 		field.Int64("user_id"),
+		field.UUID("project_id", uuid.UUID{}).Optional().Nillable(),
 		field.Int64("api_key_id").Optional().Nillable(),
 		field.String("source_channel").MaxLen(16).Default("web"),
 		field.String("task_type").MaxLen(32).NotEmpty(),
@@ -32,6 +34,7 @@ func (ImageTask) Fields() []ent.Field {
 		field.Int("resolved_height").Optional().Nillable(),
 		field.String("aspect_ratio").MaxLen(16).Default("1:1"),
 		field.String("output_format").MaxLen(16).Default("png"),
+		field.String("background").MaxLen(16).Optional().Nillable(),
 		field.Int("output_compression").Default(100),
 		field.String("moderation").MaxLen(16).Default("auto"),
 		field.Int("requested_output_image_count").Default(1),
@@ -68,6 +71,9 @@ func (ImageTask) Fields() []ent.Field {
 		field.Time("artifact_next_retry_at").Optional().Nillable(),
 		field.JSON("artifact_last_diagnostic", map[string]any{}).Optional(),
 		field.UUID("artifact_storage_config_id", uuid.UUID{}).Optional().Nillable(),
+		field.String("artifact_storage_driver").MaxLen(16).Default(""),
+		field.String("artifact_storage_bucket").MaxLen(255).Default(""),
+		field.JSON("artifact_object_keys", []string{}).Optional(),
 		field.Int64("artifact_storage_version").Default(0),
 		field.String("lease_owner").MaxLen(64).Optional().Nillable(),
 		field.Time("lease_expires_at").Optional().Nillable(),
@@ -77,10 +83,17 @@ func (ImageTask) Fields() []ent.Field {
 		field.Time("finished_at").Optional().Nillable(),
 	}
 }
+
+func (ImageTask) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("project", Project.Type).Ref("image_tasks").Field("project_id").Unique(),
+	}
+}
+
 func (ImageTask) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("user_id"), index.Fields("api_key_id"), index.Fields("source_channel"), index.Fields("task_type"),
+		index.Fields("user_id"), index.Fields("project_id"), index.Fields("user_id", "project_id", "created_at"), index.Fields("api_key_id"), index.Fields("source_channel"), index.Fields("task_type"),
 		index.Fields("status"), index.Fields("abstract_model"), index.Fields("route_model_code"), index.Fields("base_resolution"), index.Fields("provider_model_id"), index.Fields("account_model_id"), index.Fields("model_account_id"), index.Fields("lease_owner"),
-		index.Fields("lease_expires_at"), index.Fields("artifact_recovery_status", "artifact_next_retry_at"), index.Fields("error_code"), index.Fields("created_at"), index.Fields("deleted_at"),
+		index.Fields("lease_expires_at"), index.Fields("artifact_recovery_status", "artifact_next_retry_at"), index.Fields("artifact_recovery_status", "artifact_storage_config_id"), index.Fields("error_code"), index.Fields("created_at"), index.Fields("updated_at", "id", "created_at"), index.Fields("deleted_at"),
 	}
 }

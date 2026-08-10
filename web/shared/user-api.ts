@@ -15,6 +15,8 @@ import type {
   EstimateRequest,
   EstimateResult,
   GalleryImage,
+	GalleryBatchMutationResult,
+	GalleryExportStatus,
   ImageResult,
   ImageTask,
   ImageTaskType,
@@ -25,6 +27,7 @@ import type {
   NormalLoginResponse,
   PageResult,
   PaymentOrder,
+	Project,
   PromptOptimizationEstimate,
   PromptOptimizationResult,
   ReferenceAsset,
@@ -33,7 +36,7 @@ import type {
   UserProfile,
 } from './api-types'
 import { API_PATHS } from './api-types'
-import { fillPath, normalizePage, sharedApiClient } from './http-client'
+import { fillPath, normalizePage, sharedApiClient, withQuery } from './http-client'
 import { mediaAssetURL } from './media-url'
 
 export { resolveGenerationResolution } from './generation-resolution'
@@ -196,20 +199,20 @@ export function toTask(raw: any): ImageTask {
 }
 
 export function buildEstimateWireRequest(req: EstimateRequest): BackendEstimateRequest {
-  const sizeMode = req.size_mode === 'pixel' ? 'pixel' : 'ratio'
-  return {
-    task_type: toBackendTaskType(req.task_type),
-    route_model_code: req.route_model_code,
-    size_mode: sizeMode,
-    aspect_ratio: sizeMode === 'ratio' ? req.aspect_ratio : undefined,
-    base_resolution: sizeMode === 'ratio' ? req.base_resolution : 'auto',
-    quality: req.quality ?? 'auto',
-    output_format: req.output_format ?? 'png',
-    output_compression: req.output_compression ?? 100,
-    moderation: req.moderation ?? 'auto',
-    requested_size: sizeMode === 'pixel' ? req.pixel_size ?? '' : 'auto',
-    requested_output_image_count: req.image_count,
-    reference_image_count: req.reference_asset_ids?.length ?? 0,
+	const sizeMode = req.size_mode === 'auto' ? 'auto' : req.size_mode === 'pixel' ? 'pixel' : 'ratio'
+	return {
+		task_type: toBackendTaskType(req.task_type),
+		route_model_code: req.route_model_code,
+		size_mode: sizeMode,
+		...(sizeMode === 'ratio' ? { aspect_ratio: req.aspect_ratio, base_resolution: req.base_resolution } : {}),
+		...(sizeMode === 'pixel' ? { requested_size: req.pixel_size ?? '' } : {}),
+		quality: req.quality ?? 'auto',
+		output_format: req.output_format ?? 'png',
+		...(req.background ? { background: req.background } : {}),
+		output_compression: req.output_compression ?? 100,
+		moderation: req.moderation ?? 'auto',
+		requested_output_image_count: req.image_count,
+		reference_image_count: req.reference_asset_ids?.length ?? 0,
   }
 }
 
@@ -218,9 +221,11 @@ export function buildCreateTaskWireRequest(req: CreateTaskRequest): { body: Back
   return {
     body: {
       ...estimateFields,
+	  ...(req.project_id ? { project_id: req.project_id } : {}),
       prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
       reference_asset_ids: req.reference_asset_ids ?? [],
       response_mode: 'async',
+      ...(req.capability_version ? { capability_version: req.capability_version } : {}),
     },
     headers: req.idempotency_key ? { 'Idempotency-Key': req.idempotency_key } : {},
   }
@@ -270,24 +275,41 @@ export function toGalleryImage(raw: any): GalleryImage {
 }
 
 function optionalOutputCapabilities(source: any) {
-  const result: {
-    quality?: string[]
-    output_format?: string[]
-    supports_output_compression: boolean
-    supports_custom_size: boolean
-    capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
-    moderation?: string[]
-  } = { supports_output_compression: false, supports_custom_size: false }
+	const result: {
+		quality?: string[]
+		output_format?: string[]
+		supports_output_compression: boolean
+		supports_custom_size: boolean
+		supports_custom_ratio: boolean
+		supported_backgrounds?: string[]
+		min_width?: number
+		max_width?: number
+		min_height?: number
+		max_height?: number
+		capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
+		moderation?: string[]
+	} = { supports_output_compression: false, supports_custom_size: false, supports_custom_ratio: false }
   const quality = pick<string[]>(source, 'quality', 'Quality')
   const outputFormat = pick<string[]>(source, 'output_format', 'OutputFormat')
   const supportsCompression = pick<boolean>(source, 'supports_output_compression', 'SupportsOutputCompression')
-  const supportsCustomSize = pick<boolean>(source, 'supports_custom_size', 'SupportsCustomSize')
+	const supportsCustomSize = pick<boolean>(source, 'supports_custom_size', 'SupportsCustomSize')
+	const supportsCustomRatio = pick<boolean>(source, 'supports_custom_ratio', 'SupportsCustomRatio')
+	const supportedBackgrounds = pick<string[]>(source, 'supported_backgrounds', 'SupportedBackgrounds')
   const capabilitiesByTaskType = pick<Record<string, unknown>>(source, 'capabilities_by_task_type', 'CapabilitiesByTaskType')
   const moderation = pick<string[]>(source, 'moderation', 'Moderation')
   if (quality !== undefined) result.quality = quality
   if (outputFormat !== undefined) result.output_format = outputFormat
   if (supportsCompression !== undefined) result.supports_output_compression = supportsCompression
-  if (supportsCustomSize !== undefined) result.supports_custom_size = supportsCustomSize
+	if (supportsCustomSize !== undefined) result.supports_custom_size = supportsCustomSize
+	if (supportsCustomRatio !== undefined) result.supports_custom_ratio = supportsCustomRatio
+	if (supportedBackgrounds !== undefined) result.supported_backgrounds = supportedBackgrounds
+	for (const [key, aliases] of Object.entries({
+		min_width: ['min_width', 'MinWidth'], max_width: ['max_width', 'MaxWidth'],
+		min_height: ['min_height', 'MinHeight'], max_height: ['max_height', 'MaxHeight'],
+	})) {
+		const value = Number(pick(source, ...aliases) ?? 0)
+		if (value > 0) Object.assign(result, { [key]: value })
+	}
   if (capabilitiesByTaskType !== undefined) {
     result.capabilities_by_task_type = Object.fromEntries(
       Object.entries(capabilitiesByTaskType).map(([taskType, capability]) => [normalizeTaskType(taskType), normalizeTaskCapability(capability)]),
@@ -298,20 +320,35 @@ function optionalOutputCapabilities(source: any) {
 }
 
 function normalizeTaskCapability(source: unknown): CapabilityTaskOptions {
-  return {
-    base_resolution: pick<string[]>(source, 'base_resolution', 'BaseResolution') ?? [],
+	const result: CapabilityTaskOptions = {
     auto_base_resolution: String(pick(source, 'auto_base_resolution', 'AutoBaseResolution') ?? '').trim().toLowerCase() || undefined,
-    size_modes: pick<Array<'ratio' | 'pixel' | string>>(source, 'size_modes', 'SizeModes') ?? [],
-    aspect_ratios: pick<string[]>(source, 'aspect_ratios', 'AspectRatios') ?? [],
-    pixel_sizes: pick<string[]>(source, 'pixel_sizes', 'PixelSizes') ?? [],
-    quality: pick<string[]>(source, 'quality', 'Quality') ?? [],
-    output_format: pick<string[]>(source, 'output_format', 'OutputFormat') ?? [],
     supports_output_compression: Boolean(pick(source, 'supports_output_compression', 'SupportsOutputCompression')),
-    supports_custom_size: Boolean(pick(source, 'supports_custom_size', 'SupportsCustomSize')),
-    moderation: pick<string[]>(source, 'moderation', 'Moderation') ?? [],
+		supports_custom_size: Boolean(pick(source, 'supports_custom_size', 'SupportsCustomSize')),
+		supports_custom_ratio: Boolean(pick(source, 'supports_custom_ratio', 'SupportsCustomRatio')),
+		min_width: positiveNumber(pick(source, 'min_width', 'MinWidth')),
+		max_width: positiveNumber(pick(source, 'max_width', 'MaxWidth')),
+		min_height: positiveNumber(pick(source, 'min_height', 'MinHeight')),
+		max_height: positiveNumber(pick(source, 'max_height', 'MaxHeight')),
     max_output_image_count: Number(pick(source, 'max_output_image_count', 'MaxOutputImageCount') ?? 0),
     max_reference_image_count: Number(pick(source, 'max_reference_image_count', 'MaxReferenceImageCount') ?? 0),
   }
+	const baseResolution = pick<string[]>(source, 'base_resolution', 'BaseResolution')
+	const sizeModes = pick<Array<'auto' | 'ratio' | 'pixel' | string>>(source, 'size_modes', 'SizeModes')
+	const aspectRatios = pick<string[]>(source, 'aspect_ratios', 'AspectRatios')
+	const pixelSizes = pick<string[]>(source, 'pixel_sizes', 'PixelSizes')
+	const quality = pick<string[]>(source, 'quality', 'Quality')
+	const outputFormat = pick<string[]>(source, 'output_format', 'OutputFormat')
+	const backgrounds = pick<string[]>(source, 'supported_backgrounds', 'SupportedBackgrounds')
+	const moderation = pick<string[]>(source, 'moderation', 'Moderation')
+	if (baseResolution !== undefined) result.base_resolution = normalizeBaseResolutions(baseResolution)
+	if (sizeModes !== undefined) result.size_modes = sizeModes
+	if (aspectRatios !== undefined) result.aspect_ratios = aspectRatios
+	if (pixelSizes !== undefined) result.pixel_sizes = pixelSizes
+	if (quality !== undefined) result.quality = quality
+	if (outputFormat !== undefined) result.output_format = outputFormat
+	if (backgrounds !== undefined) result.supported_backgrounds = backgrounds
+	if (moderation !== undefined) result.moderation = moderation
+	return result
 }
 
 export function normalizeCapabilities(raw: any): Capability {
@@ -322,7 +359,7 @@ export function normalizeCapabilities(raw: any): Capability {
     const qualities = pick<string[]>(item, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
       ?? pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities')
       ?? ['auto']
-    const baseResolution = pick<string[]>(item, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? qualities
+		const baseResolution = normalizeBaseResolutions(pick<string[]>(item, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? qualities)
     const autoBaseResolutionByTaskType = pick<Record<string, string>>(item, 'auto_base_resolution_by_task_type', 'AutoBaseResolutionByTaskType')
     const prices = (pick<any[]>(item, 'prices', 'Prices') ?? []).map((price: any) => {
       const quality = String(pick(price, 'quality', 'Quality', 'base_resolution', 'BaseResolution') ?? 'auto')
@@ -351,7 +388,7 @@ export function normalizeCapabilities(raw: any): Capability {
       auto_base_resolution_by_task_type: autoBaseResolutionByTaskType
         ? Object.fromEntries(Object.entries(autoBaseResolutionByTaskType).map(([taskType, resolution]) => [normalizeTaskType(taskType), String(resolution).trim().toLowerCase()]))
         : undefined,
-      size_modes: pick<Array<'ratio' | 'pixel' | string>>(item, 'size_modes', 'SizeModes') ?? ['ratio'],
+      size_modes: pick<Array<'auto' | 'ratio' | 'pixel' | string>>(item, 'size_modes', 'SizeModes') ?? ['ratio'],
       aspect_ratios: pick<string[]>(item, 'aspect_ratios', 'AspectRatios') ?? pick<string[]>(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? [],
       pixel_sizes: pick<string[]>(item, 'pixel_sizes', 'PixelSizes', 'supported_pixel_sizes', 'SupportedPixelSizes') ?? [],
       max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
@@ -369,8 +406,8 @@ export function normalizeCapabilities(raw: any): Capability {
     unavailable_reason: pick(raw, 'unavailable_reason', 'UnavailableReason') ?? null,
     model_groups: normalizedModels,
     qualities,
-    base_resolution: pick<string[]>(raw, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? normalizedModels[0]?.base_resolution ?? qualities,
-    size_modes: pick<Array<'ratio' | 'pixel' | string>>(raw, 'size_modes', 'SizeModes') ?? ['ratio'],
+		base_resolution: normalizeBaseResolutions(pick<string[]>(raw, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? normalizedModels[0]?.base_resolution ?? qualities),
+    size_modes: pick<Array<'auto' | 'ratio' | 'pixel' | string>>(raw, 'size_modes', 'SizeModes') ?? ['ratio'],
     aspect_ratios: pick<string[]>(raw, 'aspect_ratios', 'AspectRatios', 'supported_ratios', 'SupportedRatios') ?? normalizedModels[0]?.aspect_ratios ?? ['1:1', '16:9', '9:16', '4:3'],
     pixel_sizes: pick<string[]>(raw, 'pixel_sizes', 'PixelSizes', 'supported_pixel_sizes', 'SupportedPixelSizes') ?? [],
     max_image_count: Number(pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
@@ -381,6 +418,15 @@ export function normalizeCapabilities(raw: any): Capability {
     task_types: (pick<string[]>(raw, 'task_types', 'TaskTypes') ?? Array.from(new Set(normalizedModels.flatMap((item) => item.task_types)))).map(normalizeTaskType),
     ...optionalOutputCapabilities(raw),
   }
+}
+
+function normalizeBaseResolutions(values: string[]) {
+	return Array.from(new Set(values.map((value) => value.trim().toLowerCase()).filter((value) => value === '1k' || value === '2k' || value === '4k')))
+}
+
+function positiveNumber(value: unknown) {
+	const parsed = Number(value ?? 0)
+	return parsed > 0 ? parsed : undefined
 }
 
 export function normalizeTaskList(raw: any): ImageTask[] {
@@ -426,6 +472,10 @@ export const userApi = {
     return toUserProfile(await sharedApiClient.request(API_PATHS.agent.avatar, { method: 'POST', formData }))
   },
   closeAccount: () => sharedApiClient.request<void>(API_PATHS.agent.accountClose, { method: 'POST' }),
+	listProjects: async () => (await sharedApiClient.request<{ items: Project[]; default_project_id: string }>(API_PATHS.agent.projects)).items ?? [],
+	createProject: (name: string, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<Project>(API_PATHS.agent.projects, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { name } }),
+	renameProject: (project_id: string, name: string, expected_version: number) => sharedApiClient.request<Project>(API_PATHS.agent.projectDetail, { method: 'PATCH', pathParams: { project_id }, body: { name, expected_version } }),
+	deleteProject: (project_id: string, expected_version: number, target_project_id?: string, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<{ project: Project; transferred: { tasks: number; assets: number } }>(API_PATHS.agent.projectDetail, { method: 'DELETE', pathParams: { project_id }, headers: { 'Idempotency-Key': idempotencyKey }, body: { expected_version, target_project_id } }),
   getBalance: async () => toBalance(await sharedApiClient.request(API_PATHS.agent.balance)),
   getLedger: async (page = 1, page_size = 20) => {
     const result = normalizePage<LedgerEntry>(await sharedApiClient.request(API_PATHS.agent.ledger, { query: { page, page_size } }))
@@ -463,10 +513,10 @@ export const userApi = {
     return toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssets, { method: 'POST', formData }))
   },
   listReferenceAssets: async () => [] as ReferenceAsset[],
-  importReferenceAssetsFromGallery: async (galleryImageIds: string[]) => {
+  importReferenceAssetsFromGallery: async (galleryImageIds: string[], projectID?: string) => {
     const response = await sharedApiClient.request<{ items?: any[]; assets?: any[]; references?: any[] } | any[]>(API_PATHS.agent.importReferenceAssetsFromGallery, {
       method: 'POST',
-      body: { gallery_image_ids: galleryImageIds },
+	  body: { gallery_image_ids: galleryImageIds, project_id: projectID },
     })
     const items = Array.isArray(response) ? response : response.items ?? response.assets ?? response.references ?? []
     return items.map(toReferenceAsset)
@@ -486,20 +536,27 @@ export const userApi = {
   },
   getTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.taskDetail, { pathParams: { task_id } })),
   taskEventsUrl: (task_id: string, accessToken?: string | null) => apiEventUrl(fillPath(API_PATHS.agent.taskEvents, { task_id }), accessToken),
-  taskStreamUrl: (accessToken?: string | null) => apiEventUrl(API_PATHS.agent.taskStream, accessToken),
-  listTasks: async (filters?: { query?: string; status?: string; type?: string }) => {
+  taskStreamUrl: (accessToken?: string | null, projectID?: string) => apiEventUrl(withQuery(API_PATHS.agent.taskStream, { project_id: projectID }), accessToken),
+  listTasks: async (filters?: { query?: string; status?: string; type?: string; project_id?: string }) => {
     const response = await sharedApiClient.request(API_PATHS.agent.tasks, {
-      query: { status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
+	  query: { project_id: filters?.project_id, status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
     })
     return normalizeTaskList(response)
   },
-  listHistoryTasks: async (filters?: { query?: string; status?: string; type?: string }) => {
+  listHistoryTasks: async (filters?: { query?: string; status?: string; type?: string; project_id?: string }) => {
     const response = await sharedApiClient.request(API_PATHS.agent.historyTasks, {
-      query: { status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
+	  query: { project_id: filters?.project_id, status: filters?.status === 'all' ? undefined : filters?.status, task_type: filters?.type === 'all' ? undefined : filters?.type, query: filters?.query },
     })
     return normalizeTaskList(response)
   },
-  listGalleryImages: async (page = 1, page_size = 100) => normalizePage<GalleryImage>(await sharedApiClient.request(API_PATHS.agent.galleryImages, { query: { page, page_size } })).items.map(toGalleryImage),
+	listGalleryImages: async (page = 1, page_size = 100, project_id?: string) => normalizePage<GalleryImage>(await sharedApiClient.request(API_PATHS.agent.galleryImages, { query: { page, page_size, project_id } })).items.map(toGalleryImage),
+	batchPublishGalleryImages: (image_ids: string[], project_id: string, publish = true) => sharedApiClient.request<GalleryBatchMutationResult>(API_PATHS.agent.galleryBatchPublish, { method: 'POST', body: { image_ids, project_id, publish } }),
+	batchGroupGalleryImages: (image_ids: string[], project_id: string, image_group: string) => sharedApiClient.request<GalleryBatchMutationResult>(API_PATHS.agent.galleryBatchGroup, { method: 'POST', body: { image_ids, project_id, image_group } }),
+	batchDeleteGalleryImages: (image_ids: string[], project_id: string) => sharedApiClient.request<GalleryBatchMutationResult>(API_PATHS.agent.galleryBatchDelete, { method: 'POST', body: { image_ids, project_id } }),
+	batchTransferGalleryImages: (image_ids: string[], project_id: string, target_project_id: string) => sharedApiClient.request<GalleryBatchMutationResult>(API_PATHS.agent.galleryBatchTransferProject, { method: 'POST', body: { image_ids, project_id, target_project_id } }),
+	batchDownloadGalleryImages: (image_ids: string[], project_id: string) => sharedApiClient.blob(API_PATHS.agent.galleryBatchDownload, { method: 'POST', body: { image_ids, project_id } }) as Promise<Blob | GalleryExportStatus>,
+	getGalleryExportJob: (job_id: string, signal?: AbortSignal) => sharedApiClient.request<GalleryExportStatus>(API_PATHS.agent.galleryExportJob, { pathParams: { job_id }, signal }),
+	downloadGalleryExport: (job_id: string, signal?: AbortSignal) => sharedApiClient.blob(API_PATHS.agent.galleryExportDownload, { pathParams: { job_id }, signal }),
   retryTask: async (task_id: string) => toTask(await sharedApiClient.request(API_PATHS.agent.historyTaskRetry, { method: 'POST', pathParams: { task_id } })),
   deleteTask: (task_id: string) => sharedApiClient.request<void>(API_PATHS.agent.historyTaskDetail, { method: 'DELETE', pathParams: { task_id } }),
   deleteGalleryImage: (image_id: string) => sharedApiClient.request<void>(API_PATHS.agent.galleryImageDetail, { method: 'DELETE', pathParams: { image_id } }),

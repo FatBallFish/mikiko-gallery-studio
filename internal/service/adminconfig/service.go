@@ -330,14 +330,6 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 				valueItem("payments", "scheduler_state", map[string]any{}),
 			},
 		},
-		{
-			Key:  "docs",
-			Name: "Developer Docs",
-			Items: []domainadminconfig.Item{
-				valueItem("docs", "title", cfg.Docs.Title),
-				valueItem("docs", "base_path", cfg.Docs.BasePath),
-			},
-		},
 	}
 }
 

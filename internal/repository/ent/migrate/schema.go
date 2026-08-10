@@ -325,6 +325,63 @@ var (
 			},
 		},
 	}
+	// GalleryExportJobsColumns holds the columns for the "gallery_export_jobs" table.
+	GalleryExportJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "project_id", Type: field.TypeUUID},
+		{Name: "image_ids", Type: field.TypeJSON},
+		{Name: "state", Type: field.TypeString, Size: 16, Default: "queued"},
+		{Name: "estimated_bytes", Type: field.TypeInt64, Default: 0},
+		{Name: "archive_size_bytes", Type: field.TypeInt64, Default: 0},
+		{Name: "storage_config_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: ""},
+		{Name: "bucket", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "object_key", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "attempt_count", Type: field.TypeInt, Default: 0},
+		{Name: "lease_owner", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "lease_expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "next_attempt_at", Type: field.TypeTime, Nullable: true},
+		{Name: "lifecycle_deadline_at", Type: field.TypeTime, Nullable: true},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "last_error_message", Type: field.TypeString, Nullable: true, Size: 512},
+	}
+	// GalleryExportJobsTable holds the schema information for the "gallery_export_jobs" table.
+	GalleryExportJobsTable = &schema.Table{
+		Name:       "gallery_export_jobs",
+		Columns:    GalleryExportJobsColumns,
+		PrimaryKey: []*schema.Column{GalleryExportJobsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "galleryexportjob_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{GalleryExportJobsColumns[3], GalleryExportJobsColumns[1]},
+			},
+			{
+				Name:    "galleryexportjob_state_next_attempt_at",
+				Unique:  false,
+				Columns: []*schema.Column{GalleryExportJobsColumns[6], GalleryExportJobsColumns[16]},
+			},
+			{
+				Name:    "galleryexportjob_state_lifecycle_deadline_at",
+				Unique:  false,
+				Columns: []*schema.Column{GalleryExportJobsColumns[6], GalleryExportJobsColumns[17]},
+			},
+			{
+				Name:    "galleryexportjob_state_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{GalleryExportJobsColumns[6], GalleryExportJobsColumns[18]},
+			},
+			{
+				Name:    "galleryexportjob_storage_config_id_object_key",
+				Unique:  false,
+				Columns: []*schema.Column{GalleryExportJobsColumns[9], GalleryExportJobsColumns[12]},
+			},
+		},
+	}
 	// TaskImagesColumns holds the columns for the "task_images" table.
 	TaskImagesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUUID},
@@ -346,12 +403,21 @@ var (
 		{Name: "visibility_status", Type: field.TypeString, Size: 32, Default: "private"},
 		{Name: "review_reason", Type: field.TypeString, Nullable: true, Size: 255},
 		{Name: "published_at", Type: field.TypeTime, Nullable: true},
+		{Name: "project_id", Type: field.TypeUUID, Nullable: true},
 	}
 	// TaskImagesTable holds the schema information for the "task_images" table.
 	TaskImagesTable = &schema.Table{
 		Name:       "task_images",
 		Columns:    TaskImagesColumns,
 		PrimaryKey: []*schema.Column{TaskImagesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "task_images_projects_image_results",
+				Columns:    []*schema.Column{TaskImagesColumns[19]},
+				RefColumns: []*schema.Column{ProjectsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
 		Indexes: []*schema.Index{
 			{
 				Name:    "imageresult_task_id",
@@ -362,6 +428,16 @@ var (
 				Name:    "imageresult_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{TaskImagesColumns[5]},
+			},
+			{
+				Name:    "imageresult_project_id",
+				Unique:  false,
+				Columns: []*schema.Column{TaskImagesColumns[19]},
+			},
+			{
+				Name:    "imageresult_user_id_project_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TaskImagesColumns[5], TaskImagesColumns[19], TaskImagesColumns[1]},
 			},
 			{
 				Name:    "imageresult_image_role",
@@ -414,6 +490,7 @@ var (
 		{Name: "resolved_height", Type: field.TypeInt, Nullable: true},
 		{Name: "aspect_ratio", Type: field.TypeString, Size: 16, Default: "1:1"},
 		{Name: "output_format", Type: field.TypeString, Size: 16, Default: "png"},
+		{Name: "background", Type: field.TypeString, Nullable: true, Size: 16},
 		{Name: "output_compression", Type: field.TypeInt, Default: 100},
 		{Name: "moderation", Type: field.TypeString, Size: 16, Default: "auto"},
 		{Name: "requested_output_image_count", Type: field.TypeInt, Default: 1},
@@ -450,6 +527,9 @@ var (
 		{Name: "artifact_next_retry_at", Type: field.TypeTime, Nullable: true},
 		{Name: "artifact_last_diagnostic", Type: field.TypeJSON, Nullable: true},
 		{Name: "artifact_storage_config_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "artifact_storage_driver", Type: field.TypeString, Size: 16, Default: ""},
+		{Name: "artifact_storage_bucket", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "artifact_object_keys", Type: field.TypeJSON, Nullable: true},
 		{Name: "artifact_storage_version", Type: field.TypeInt64, Default: 0},
 		{Name: "lease_owner", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "lease_expires_at", Type: field.TypeTime, Nullable: true},
@@ -457,17 +537,36 @@ var (
 		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "started_at", Type: field.TypeTime, Nullable: true},
 		{Name: "finished_at", Type: field.TypeTime, Nullable: true},
+		{Name: "project_id", Type: field.TypeUUID, Nullable: true},
 	}
 	// ImageTasksTable holds the schema information for the "image_tasks" table.
 	ImageTasksTable = &schema.Table{
 		Name:       "image_tasks",
 		Columns:    ImageTasksColumns,
 		PrimaryKey: []*schema.Column{ImageTasksColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "image_tasks_projects_image_tasks",
+				Columns:    []*schema.Column{ImageTasksColumns[69]},
+				RefColumns: []*schema.Column{ProjectsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
 		Indexes: []*schema.Index{
 			{
 				Name:    "imagetask_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{ImageTasksColumns[4]},
+			},
+			{
+				Name:    "imagetask_project_id",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[69]},
+			},
+			{
+				Name:    "imagetask_user_id_project_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[4], ImageTasksColumns[69], ImageTasksColumns[1]},
 			},
 			{
 				Name:    "imagetask_api_key_id",
@@ -497,7 +596,7 @@ var (
 			{
 				Name:    "imagetask_route_model_code",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[35]},
+				Columns: []*schema.Column{ImageTasksColumns[36]},
 			},
 			{
 				Name:    "imagetask_base_resolution",
@@ -507,42 +606,52 @@ var (
 			{
 				Name:    "imagetask_provider_model_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[41]},
+				Columns: []*schema.Column{ImageTasksColumns[42]},
 			},
 			{
 				Name:    "imagetask_account_model_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[36]},
+				Columns: []*schema.Column{ImageTasksColumns[37]},
 			},
 			{
 				Name:    "imagetask_model_account_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[37]},
+				Columns: []*schema.Column{ImageTasksColumns[38]},
 			},
 			{
 				Name:    "imagetask_lease_owner",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[59]},
+				Columns: []*schema.Column{ImageTasksColumns[63]},
 			},
 			{
 				Name:    "imagetask_lease_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[60]},
+				Columns: []*schema.Column{ImageTasksColumns[64]},
 			},
 			{
 				Name:    "imagetask_artifact_recovery_status_artifact_next_retry_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[52], ImageTasksColumns[55]},
+				Columns: []*schema.Column{ImageTasksColumns[53], ImageTasksColumns[56]},
+			},
+			{
+				Name:    "imagetask_artifact_recovery_status_artifact_storage_config_id",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[53], ImageTasksColumns[58]},
 			},
 			{
 				Name:    "imagetask_error_code",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[61]},
+				Columns: []*schema.Column{ImageTasksColumns[65]},
 			},
 			{
 				Name:    "imagetask_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{ImageTasksColumns[1]},
+			},
+			{
+				Name:    "imagetask_updated_at_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ImageTasksColumns[2], ImageTasksColumns[0], ImageTasksColumns[1]},
 			},
 			{
 				Name:    "imagetask_deleted_at",
@@ -588,6 +697,32 @@ var (
 				Name:    "installation_database_schema_version_config_schema_version",
 				Unique:  false,
 				Columns: []*schema.Column{InstallationsColumns[6], InstallationsColumns[5]},
+			},
+		},
+	}
+	// MigrationCheckpointsColumns holds the columns for the "migration_checkpoints" table.
+	MigrationCheckpointsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "phase", Type: field.TypeString, Size: 16, Default: "users"},
+		{Name: "after_user_id", Type: field.TypeInt, Default: 0},
+		{Name: "after_task_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "after_result_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "processed_rows", Type: field.TypeInt, Default: 0},
+		{Name: "completed", Type: field.TypeBool, Default: false},
+	}
+	// MigrationCheckpointsTable holds the schema information for the "migration_checkpoints" table.
+	MigrationCheckpointsTable = &schema.Table{
+		Name:       "migration_checkpoints",
+		Columns:    MigrationCheckpointsColumns,
+		PrimaryKey: []*schema.Column{MigrationCheckpointsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "migrationcheckpoint_name",
+				Unique:  true,
+				Columns: []*schema.Column{MigrationCheckpointsColumns[3]},
 			},
 		},
 	}
@@ -647,10 +782,16 @@ var (
 		{Name: "size_modes", Type: field.TypeJSON, Nullable: true},
 		{Name: "supported_ratios", Type: field.TypeJSON, Nullable: true},
 		{Name: "supported_pixel_sizes", Type: field.TypeJSON, Nullable: true},
+		{Name: "supports_custom_ratio", Type: field.TypeBool, Default: false},
 		{Name: "output_format", Type: field.TypeJSON, Nullable: true},
+		{Name: "supported_backgrounds", Type: field.TypeJSON, Nullable: true},
 		{Name: "output_compression", Type: field.TypeInt, Default: 100},
 		{Name: "supports_output_compression", Type: field.TypeBool, Default: false},
 		{Name: "supports_custom_size", Type: field.TypeBool, Default: false},
+		{Name: "min_width", Type: field.TypeInt, Default: 256},
+		{Name: "max_width", Type: field.TypeInt, Default: 3840},
+		{Name: "min_height", Type: field.TypeInt, Default: 256},
+		{Name: "max_height", Type: field.TypeInt, Default: 3840},
 		{Name: "moderation", Type: field.TypeJSON, Nullable: true},
 		{Name: "cost_per_image", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(18,5)"}},
 		{Name: "currency", Type: field.TypeString, Size: 16, Default: "USD"},
@@ -676,7 +817,7 @@ var (
 			{
 				Name:    "modelaccountmodel_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{ModelAccountModelsColumns[22]},
+				Columns: []*schema.Column{ModelAccountModelsColumns[28]},
 			},
 		},
 	}
@@ -737,6 +878,85 @@ var (
 				Name:    "modelroute_provider_model_id",
 				Unique:  false,
 				Columns: []*schema.Column{ModelRoutesColumns[5]},
+			},
+		},
+	}
+	// ObjectDeletionJobsColumns holds the columns for the "object_deletion_jobs" table.
+	ObjectDeletionJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "storage_config_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: "local"},
+		{Name: "bucket", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "object_key", Type: field.TypeString, Size: 255},
+		{Name: "state", Type: field.TypeString, Size: 16, Default: "pending"},
+		{Name: "attempt_count", Type: field.TypeInt, Default: 0},
+		{Name: "next_attempt_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "last_error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// ObjectDeletionJobsTable holds the schema information for the "object_deletion_jobs" table.
+	ObjectDeletionJobsTable = &schema.Table{
+		Name:       "object_deletion_jobs",
+		Columns:    ObjectDeletionJobsColumns,
+		PrimaryKey: []*schema.Column{ObjectDeletionJobsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "objectdeletionjob_state_next_attempt_at",
+				Unique:  false,
+				Columns: []*schema.Column{ObjectDeletionJobsColumns[7], ObjectDeletionJobsColumns[9]},
+			},
+			{
+				Name:    "objectdeletionjob_storage_config_id_object_key",
+				Unique:  false,
+				Columns: []*schema.Column{ObjectDeletionJobsColumns[3], ObjectDeletionJobsColumns[6]},
+			},
+			{
+				Name:    "object_cleanup_config_live",
+				Unique:  true,
+				Columns: []*schema.Column{ObjectDeletionJobsColumns[3], ObjectDeletionJobsColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "storage_config_id IS NOT NULL AND state IN ('pending', 'running', 'retry')",
+				},
+			},
+			{
+				Name:    "object_cleanup_driver_live",
+				Unique:  true,
+				Columns: []*schema.Column{ObjectDeletionJobsColumns[4], ObjectDeletionJobsColumns[5], ObjectDeletionJobsColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "storage_config_id IS NULL AND state IN ('pending', 'running', 'retry')",
+				},
+			},
+		},
+	}
+	// ObjectReconcileCheckpointsColumns holds the columns for the "object_reconcile_checkpoints" table.
+	ObjectReconcileCheckpointsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "storage_identity", Type: field.TypeString, Size: 255},
+		{Name: "namespace", Type: field.TypeString, Size: 80},
+		{Name: "prefix", Type: field.TypeString, Size: 64},
+		{Name: "cursor", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "generation", Type: field.TypeInt64, Default: 0},
+	}
+	// ObjectReconcileCheckpointsTable holds the schema information for the "object_reconcile_checkpoints" table.
+	ObjectReconcileCheckpointsTable = &schema.Table{
+		Name:       "object_reconcile_checkpoints",
+		Columns:    ObjectReconcileCheckpointsColumns,
+		PrimaryKey: []*schema.Column{ObjectReconcileCheckpointsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "objectreconcilecheckpoint_storage_identity_prefix",
+				Unique:  true,
+				Columns: []*schema.Column{ObjectReconcileCheckpointsColumns[3], ObjectReconcileCheckpointsColumns[5]},
+			},
+			{
+				Name:    "objectreconcilecheckpoint_generation_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{ObjectReconcileCheckpointsColumns[7], ObjectReconcileCheckpointsColumns[2]},
 			},
 		},
 	}
@@ -822,6 +1042,10 @@ var (
 		{Name: "amount_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "bonus_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "credit_expiry_enabled", Type: field.TypeBool, Default: false},
+		{Name: "credit_valid_days", Type: field.TypeInt, Nullable: true},
+		{Name: "credited_at", Type: field.TypeTime, Nullable: true},
+		{Name: "credit_expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "trade_no", Type: field.TypeString, Nullable: true, Size: 128},
 		{Name: "payment_url", Type: field.TypeString, Nullable: true, Size: 2048},
 		{Name: "qr_code", Type: field.TypeString, Nullable: true, Size: 4096},
@@ -860,12 +1084,12 @@ var (
 			{
 				Name:    "paymentorder_user_id_idempotency_key",
 				Unique:  true,
-				Columns: []*schema.Column{PaymentOrdersColumns[3], PaymentOrdersColumns[29]},
+				Columns: []*schema.Column{PaymentOrdersColumns[3], PaymentOrdersColumns[33]},
 			},
 			{
 				Name:    "paymentorder_provider_type_trade_no",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[18]},
+				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[22]},
 			},
 			{
 				Name:    "paymentorder_provider_instance_id",
@@ -880,17 +1104,17 @@ var (
 			{
 				Name:    "paymentorder_trade_no",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[18]},
+				Columns: []*schema.Column{PaymentOrdersColumns[22]},
 			},
 			{
 				Name:    "paymentorder_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[23]},
+				Columns: []*schema.Column{PaymentOrdersColumns[27]},
 			},
 			{
 				Name:    "paymentorder_completed_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[25]},
+				Columns: []*schema.Column{PaymentOrdersColumns[29]},
 			},
 		},
 	}
@@ -1063,6 +1287,67 @@ var (
 				Name:    "pointledger_idempotency_key",
 				Unique:  true,
 				Columns: []*schema.Column{PointLedgersColumns[19]},
+			},
+		},
+	}
+	// ProjectsColumns holds the columns for the "projects" table.
+	ProjectsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "name_key", Type: field.TypeString, Size: 128},
+		{Name: "is_default", Type: field.TypeBool, Default: false},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "active"},
+		{Name: "version", Type: field.TypeInt64, Default: 1},
+		{Name: "create_key", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "delete_key", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "deleted_task_count", Type: field.TypeInt, Default: 0},
+		{Name: "deleted_asset_count", Type: field.TypeInt, Default: 0},
+	}
+	// ProjectsTable holds the schema information for the "projects" table.
+	ProjectsTable = &schema.Table{
+		Name:       "projects",
+		Columns:    ProjectsColumns,
+		PrimaryKey: []*schema.Column{ProjectsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "project_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{ProjectsColumns[4]},
+			},
+			{
+				Name:    "project_user_id_status_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[8], ProjectsColumns[2]},
+			},
+			{
+				Name:    "project_active_default",
+				Unique:  true,
+				Columns: []*schema.Column{ProjectsColumns[4]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "is_default = true AND status = 'active' AND deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "project_active_name",
+				Unique:  true,
+				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'active' AND deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "project_create_key",
+				Unique:  true,
+				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[10]},
+			},
+			{
+				Name:    "project_delete_key",
+				Unique:  true,
+				Columns: []*schema.Column{ProjectsColumns[4], ProjectsColumns[11]},
 			},
 		},
 	}
@@ -1318,6 +1603,8 @@ var (
 		{Name: "width", Type: field.TypeInt, Nullable: true},
 		{Name: "height", Type: field.TypeInt, Nullable: true},
 		{Name: "sha256", Type: field.TypeString, Size: 64},
+		{Name: "source_image_result_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "owns_object", Type: field.TypeBool, Default: true},
 		{Name: "bound_task_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "expires_at", Type: field.TypeTime},
 	}
@@ -1329,8 +1616,13 @@ var (
 		Indexes: []*schema.Index{
 			{
 				Name:    "referenceasset_object_key",
-				Unique:  true,
+				Unique:  false,
 				Columns: []*schema.Column{ReferenceAssetsColumns[10]},
+			},
+			{
+				Name:    "referenceasset_source_image_result_id",
+				Unique:  false,
+				Columns: []*schema.Column{ReferenceAssetsColumns[16]},
 			},
 			{
 				Name:    "referenceasset_storage_config_id",
@@ -1355,7 +1647,15 @@ var (
 			{
 				Name:    "referenceasset_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[17]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[19]},
+			},
+			{
+				Name:    "reference_asset_active_source",
+				Unique:  true,
+				Columns: []*schema.Column{ReferenceAssetsColumns[4], ReferenceAssetsColumns[16]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_image_result_id IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'",
+				},
 			},
 		},
 	}
@@ -1442,6 +1742,9 @@ var (
 	// RouteModelCandidatesColumns holds the columns for the "route_model_candidates" table.
 	RouteModelCandidatesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "route_model_id", Type: field.TypeInt64},
 		{Name: "account_model_id", Type: field.TypeInt64},
 		{Name: "priority", Type: field.TypeInt, Default: 0},
@@ -1458,18 +1761,21 @@ var (
 			{
 				Name:    "routemodelcandidate_route_model_id_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{RouteModelCandidatesColumns[1], RouteModelCandidatesColumns[6]},
+				Columns: []*schema.Column{RouteModelCandidatesColumns[4], RouteModelCandidatesColumns[9]},
 			},
 			{
 				Name:    "routemodelcandidate_route_model_id_account_model_id",
 				Unique:  true,
-				Columns: []*schema.Column{RouteModelCandidatesColumns[1], RouteModelCandidatesColumns[2]},
+				Columns: []*schema.Column{RouteModelCandidatesColumns[4], RouteModelCandidatesColumns[5]},
 			},
 		},
 	}
 	// RouteModelPricesColumns holds the columns for the "route_model_prices" table.
 	RouteModelPricesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "route_model_id", Type: field.TypeInt64},
 		{Name: "task_type", Type: field.TypeString, Size: 64},
 		{Name: "base_resolution", Type: field.TypeString, Size: 32},
@@ -1486,7 +1792,7 @@ var (
 			{
 				Name:    "routemodelprice_route_model_id_task_type_base_resolution",
 				Unique:  true,
-				Columns: []*schema.Column{RouteModelPricesColumns[1], RouteModelPricesColumns[2], RouteModelPricesColumns[3]},
+				Columns: []*schema.Column{RouteModelPricesColumns[4], RouteModelPricesColumns[5], RouteModelPricesColumns[6]},
 			},
 		},
 	}
@@ -1554,6 +1860,7 @@ var (
 		{Name: "price_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "bonus_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "credit_expiry_enabled", Type: field.TypeBool, Default: true},
 		{Name: "duration_days", Type: field.TypeInt, Default: 30},
 		{Name: "currency", Type: field.TypeString, Size: 16, Default: "CNY"},
 		{Name: "description", Type: field.TypeString, Size: 255, Default: ""},
@@ -1574,7 +1881,7 @@ var (
 			{
 				Name:    "subscriptionplan_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionPlansColumns[14]},
+				Columns: []*schema.Column{SubscriptionPlansColumns[15]},
 			},
 		},
 	}
@@ -1922,18 +2229,23 @@ var (
 		ClusterNodesTable,
 		ClusterTokensTable,
 		SystemConfigsTable,
+		GalleryExportJobsTable,
 		TaskImagesTable,
 		ImageTasksTable,
 		InstallationsTable,
+		MigrationCheckpointsTable,
 		ModelAccountsTable,
 		ModelAccountModelsTable,
 		ModelProvidersTable,
 		ModelRoutesTable,
+		ObjectDeletionJobsTable,
+		ObjectReconcileCheckpointsTable,
 		ObjectStorageConfigsTable,
 		PaymentOrdersTable,
 		PaymentProviderInstancesTable,
 		PaymentWebhookEventsTable,
 		PointLedgersTable,
+		ProjectsTable,
 		PromptOptimizationRunsTable,
 		ProviderErrorPoliciesTable,
 		ProviderModelsTable,
@@ -1972,9 +2284,14 @@ func init() {
 	SystemConfigsTable.Annotation = &entsql.Annotation{
 		Table: "system_configs",
 	}
+	GalleryExportJobsTable.Annotation = &entsql.Annotation{
+		Table: "gallery_export_jobs",
+	}
+	TaskImagesTable.ForeignKeys[0].RefTable = ProjectsTable
 	TaskImagesTable.Annotation = &entsql.Annotation{
 		Table: "task_images",
 	}
+	ImageTasksTable.ForeignKeys[0].RefTable = ProjectsTable
 	InstallationsTable.Annotation = &entsql.Annotation{
 		Table: "installations",
 		Check: "singleton_key = 'installation'",
@@ -1990,6 +2307,9 @@ func init() {
 	}
 	ModelRoutesTable.Annotation = &entsql.Annotation{
 		Table: "model_routes",
+	}
+	ObjectReconcileCheckpointsTable.Annotation = &entsql.Annotation{
+		Table: "object_reconcile_checkpoints",
 	}
 	ObjectStorageConfigsTable.Annotation = &entsql.Annotation{
 		Table: "object_storage_configs",

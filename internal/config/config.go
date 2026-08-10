@@ -21,19 +21,24 @@ type Config struct {
 	AttachmentPolicy AttachmentPolicyConfig `yaml:"attachment_policy"`
 	Providers        ProvidersConfig        `yaml:"providers"`
 	Routing          RoutingConfig          `yaml:"routing"`
-	Docs             DocsConfig             `yaml:"docs"`
 }
 
 // RuntimeConfig is immutable identity metadata loaded from the same runtime.env
 // snapshot as Database.URL. It is intentionally not populated from process env.
 type RuntimeConfig struct {
+	DeploymentMode      DeploymentMode
 	DeploymentRole      DeploymentRole
+	DeploymentModules   []string
 	Path                string
 	InstallationID      string
 	ClusterNodeID       string
 	ApplicationVersion  string
 	ConfigSchemaVersion int
 	ConfigRevision      int
+	PublicAPIURL        string
+	DocsURL             string
+	DocsProbeURL        string
+	GatewayPort         string
 }
 
 type AppConfig struct {
@@ -236,9 +241,4 @@ type ProviderCapabilityConfig struct {
 	SupportsImageInput      bool     `yaml:"supports_image_input"`
 	SupportsMask            bool     `yaml:"supports_mask"`
 	Priority                int      `yaml:"priority"`
-}
-
-type DocsConfig struct {
-	Title    string `yaml:"title"`
-	BasePath string `yaml:"base_path"`
 }

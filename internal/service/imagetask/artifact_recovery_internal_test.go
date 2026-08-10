@@ -144,6 +144,10 @@ func (r *failingDefaultWriterRouter) BackendFor(_ context.Context, configID stri
 	return r.ref, nil
 }
 
+func (r *failingDefaultWriterRouter) ReadableBackends(context.Context) ([]storage.BackendRef, error) {
+	return []storage.BackendRef{r.ref}, nil
+}
+
 func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.T) {
 	now := time.Date(2026, 7, 15, 13, 0, 0, 0, time.UTC)
 	providerCalls := 0
@@ -171,7 +175,7 @@ func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.
 	svc.SetHTTPClient(&http.Client{Transport: artifactRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(imageBytes))}, nil
 	})})
-	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{UserID: 502, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover fanout", SizeMode: "ratio", BaseResolution: "1k", Quality: "auto", AspectRatio: "1:1", RequestedSize: "auto", OutputImageCount: 2})
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{UserID: 502, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover fanout", SizeMode: "ratio", BaseResolution: "1k", Quality: "auto", AspectRatio: "1:1", OutputImageCount: 2})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -185,6 +189,9 @@ func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.
 	}
 	if pending.Task.ArtifactRecovery.Status != artifactRecoveryPending || pending.Task.ArtifactRecovery.AttemptCount != 1 || providerCalls != 1 {
 		t.Fatalf("expected paid fanout checkpoint and pending recovery, task=%#v provider_calls=%d", pending.Task, providerCalls)
+	}
+	if pending.Task.ArtifactRecovery.StorageDriver != "local" || len(pending.Task.ArtifactRecovery.ObjectKeys) != 2 || pending.Task.ArtifactRecovery.ObjectKeys[0] == pending.Task.ArtifactRecovery.ObjectKeys[1] {
+		t.Fatalf("expected exact multi-image recovery identities, got %#v", pending.Task.ArtifactRecovery)
 	}
 	now = pending.Task.ArtifactRecovery.NextRetryAt.Add(time.Millisecond)
 	reclaimed, ok, err := svc.AcquireNextTask(context.Background(), "worker", time.Minute)
@@ -200,6 +207,11 @@ func TestOpenAIFanoutCheckpointsAllPaidResultsBeforeArtifactRecovery(t *testing.
 	}
 	if recovered.Task.Results[0].ID == recovered.Task.Results[1].ID || recovered.Task.Results[0].ObjectKey == recovered.Task.Results[1].ObjectKey {
 		t.Fatalf("fanout results collided: %#v", recovered.Task.Results)
+	}
+	for index := range recovered.Task.Results {
+		if recovered.Task.Results[index].ObjectKey != pending.Task.ArtifactRecovery.ObjectKeys[index] {
+			t.Fatalf("result %d key=%q, pinned=%q", index, recovered.Task.Results[index].ObjectKey, pending.Task.ArtifactRecovery.ObjectKeys[index])
+		}
 	}
 	loaded, err := store.GetByID(context.Background(), 502, created.ID)
 	if err != nil || len(loaded.Results) != 2 {
@@ -337,11 +349,20 @@ func artifactRecoveryTestConfig() config.Config {
 }
 
 func artifactRecoveryCreateRequest() domainimagetask.CreateRequest {
-	return domainimagetask.CreateRequest{UserID: 501, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover me", SizeMode: "ratio", BaseResolution: "1k", Quality: "auto", AspectRatio: "1:1", RequestedSize: "auto", OutputImageCount: 1}
+	return domainimagetask.CreateRequest{UserID: 501, AbstractModel: "basic", TaskType: "text_to_image", Prompt: "recover me", SizeMode: "ratio", BaseResolution: "1k", Quality: "auto", AspectRatio: "1:1", OutputImageCount: 1}
 }
 
 type artifactTestProvider struct {
 	generate func(context.Context, provider.ImageRequest) (provider.ImageResponse, error)
+}
+
+func TestClassifyImageSizeIdentifiesObservedUpstreamRewrite(t *testing.T) {
+	if got := classifyImageSize("1280x720", 1672, 941); got != "upstream_rewritten" {
+		t.Fatalf("classifyImageSize() = %q, want upstream_rewritten", got)
+	}
+	if got := classifyImageSize("1280x720", 1280, 720); got != "match" {
+		t.Fatalf("classifyImageSize() = %q, want match", got)
+	}
 }
 
 func (p artifactTestProvider) Generate(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {

@@ -24,9 +24,15 @@ type GenerateRequest struct {
 	AbstractModel       string
 	RouteModelCode      string
 	Prompt              string
+	SizeMode            string
+	BaseResolution      string
 	Size                string
 	N                   int
 	Quality             string
+	OutputFormat        string
+	Background          string
+	OutputCompression   int
+	Moderation          string
 	ResponseFormat      string
 	User                string
 }
@@ -131,9 +137,14 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (provider.I
 		RouteModelCode:      selection.RouteModelCode,
 		TaskType:            string(provider.TaskTypeTextToImage),
 		Prompt:              req.Prompt,
-		RequestedSize:       defaultString(req.Size, "auto"),
-		BaseResolution:      "auto",
+		SizeMode:            req.SizeMode,
+		RequestedSize:       req.Size,
+		BaseResolution:      req.BaseResolution,
 		Quality:             req.Quality,
+		OutputFormat:        req.OutputFormat,
+		Background:          req.Background,
+		OutputCompression:   req.OutputCompression,
+		Moderation:          req.Moderation,
 		OutputImageCount:    req.N,
 		ResponseFormat:      string(normalizeResponseFormat(req.ResponseFormat)),
 		User:                req.User,

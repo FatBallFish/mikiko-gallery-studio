@@ -3,6 +3,7 @@ package admincallrecord
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -12,6 +13,20 @@ import (
 
 type Service struct {
 	store Store
+}
+
+const maximumDistributionWindow = 31 * 24 * time.Hour
+
+func (s *Service) CallDistribution(ctx context.Context, req domainadmincallrecord.DistributionRequest) (domainadmincallrecord.Distribution, error) {
+	req.From = req.From.UTC()
+	req.To = req.To.UTC()
+	if req.From.IsZero() || req.To.IsZero() || !req.From.Before(req.To) {
+		return domainadmincallrecord.Distribution{}, errs.BadRequest("from and to must define a valid time window")
+	}
+	if req.To.Sub(req.From) > maximumDistributionWindow {
+		return domainadmincallrecord.Distribution{}, errs.BadRequest("time window must not exceed 31 days")
+	}
+	return s.store.CallDistribution(ctx, req)
 }
 
 func NewServiceWithStore(store Store) *Service {

@@ -167,7 +167,7 @@ class MockPicGalleryApi {
       model_group: routeCode,
       base_resolution: resolvedQuality,
       quality: resolvedQuality,
-      aspect_ratio: req.aspect_ratio,
+      aspect_ratio: req.aspect_ratio ?? '',
       image_count: req.image_count,
       estimate_points: estimate.display_points ?? estimate.points,
       progress: 8,

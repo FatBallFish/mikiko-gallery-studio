@@ -36,6 +36,7 @@ type Record struct {
 	TaskType                  string                   `json:"task_type"`
 	Status                    string                   `json:"status"`
 	Provider                  string                   `json:"provider"`
+	RouteModelCode            string                   `json:"route_model_code,omitempty"`
 	AccountModelID            *int64                   `json:"account_model_id,omitempty"`
 	ModelAccountID            *int64                   `json:"model_account_id,omitempty"`
 	UpstreamModelCode         string                   `json:"upstream_model_code,omitempty"`
@@ -50,6 +51,7 @@ type Record struct {
 	ProviderRequestID         string                   `json:"provider_request_id,omitempty"`
 	ProviderCost              string                   `json:"provider_cost"`
 	GrossMargin               string                   `json:"gross_margin"`
+	PricingSnapshot           map[string]any           `json:"pricing_snapshot,omitempty"`
 	UpstreamSucceededAt       *time.Time               `json:"upstream_succeeded_at,omitempty"`
 	FailurePhase              string                   `json:"failure_phase,omitempty"`
 	PlatformLoss              bool                     `json:"platform_loss"`
@@ -84,4 +86,27 @@ type ListPage struct {
 	Page     int      `json:"page"`
 	PageSize int      `json:"page_size"`
 	Total    int      `json:"total"`
+}
+
+type DistributionRequest struct {
+	From time.Time
+	To   time.Time
+}
+
+type DistributionGroup struct {
+	Key        string  `json:"key"`
+	Calls      int     `json:"calls"`
+	Percentage float64 `json:"percentage"`
+}
+
+type Distribution struct {
+	Window                DistributionWindow  `json:"window"`
+	TotalCalls            int                 `json:"total_calls"`
+	Groups                []DistributionGroup `json:"groups"`
+	PreflightFailureCount int                 `json:"preflight_failure_count"`
+}
+
+type DistributionWindow struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
 }

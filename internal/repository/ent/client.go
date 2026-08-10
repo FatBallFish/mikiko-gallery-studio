@@ -15,6 +15,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/adminuser"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
@@ -23,18 +24,23 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelprovider"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelroute"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectstorageconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentproviderinstance"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/promptoptimizationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providererrorpolicy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
@@ -80,12 +86,16 @@ type Client struct {
 	ClusterToken *ClusterTokenClient
 	// ConfigItem is the client for interacting with the ConfigItem builders.
 	ConfigItem *ConfigItemClient
+	// GalleryExportJob is the client for interacting with the GalleryExportJob builders.
+	GalleryExportJob *GalleryExportJobClient
 	// ImageResult is the client for interacting with the ImageResult builders.
 	ImageResult *ImageResultClient
 	// ImageTask is the client for interacting with the ImageTask builders.
 	ImageTask *ImageTaskClient
 	// Installation is the client for interacting with the Installation builders.
 	Installation *InstallationClient
+	// MigrationCheckpoint is the client for interacting with the MigrationCheckpoint builders.
+	MigrationCheckpoint *MigrationCheckpointClient
 	// ModelAccount is the client for interacting with the ModelAccount builders.
 	ModelAccount *ModelAccountClient
 	// ModelAccountModel is the client for interacting with the ModelAccountModel builders.
@@ -94,6 +104,10 @@ type Client struct {
 	ModelProvider *ModelProviderClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
 	ModelRoute *ModelRouteClient
+	// ObjectDeletionJob is the client for interacting with the ObjectDeletionJob builders.
+	ObjectDeletionJob *ObjectDeletionJobClient
+	// ObjectReconcileCheckpoint is the client for interacting with the ObjectReconcileCheckpoint builders.
+	ObjectReconcileCheckpoint *ObjectReconcileCheckpointClient
 	// ObjectStorageConfig is the client for interacting with the ObjectStorageConfig builders.
 	ObjectStorageConfig *ObjectStorageConfigClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -104,6 +118,8 @@ type Client struct {
 	PaymentWebhookEvent *PaymentWebhookEventClient
 	// PointLedger is the client for interacting with the PointLedger builders.
 	PointLedger *PointLedgerClient
+	// Project is the client for interacting with the Project builders.
+	Project *ProjectClient
 	// PromptOptimizationRun is the client for interacting with the PromptOptimizationRun builders.
 	PromptOptimizationRun *PromptOptimizationRunClient
 	// ProviderErrorPolicy is the client for interacting with the ProviderErrorPolicy builders.
@@ -167,18 +183,23 @@ func (c *Client) init() {
 	c.ClusterNode = NewClusterNodeClient(c.config)
 	c.ClusterToken = NewClusterTokenClient(c.config)
 	c.ConfigItem = NewConfigItemClient(c.config)
+	c.GalleryExportJob = NewGalleryExportJobClient(c.config)
 	c.ImageResult = NewImageResultClient(c.config)
 	c.ImageTask = NewImageTaskClient(c.config)
 	c.Installation = NewInstallationClient(c.config)
+	c.MigrationCheckpoint = NewMigrationCheckpointClient(c.config)
 	c.ModelAccount = NewModelAccountClient(c.config)
 	c.ModelAccountModel = NewModelAccountModelClient(c.config)
 	c.ModelProvider = NewModelProviderClient(c.config)
 	c.ModelRoute = NewModelRouteClient(c.config)
+	c.ObjectDeletionJob = NewObjectDeletionJobClient(c.config)
+	c.ObjectReconcileCheckpoint = NewObjectReconcileCheckpointClient(c.config)
 	c.ObjectStorageConfig = NewObjectStorageConfigClient(c.config)
 	c.PaymentOrder = NewPaymentOrderClient(c.config)
 	c.PaymentProviderInstance = NewPaymentProviderInstanceClient(c.config)
 	c.PaymentWebhookEvent = NewPaymentWebhookEventClient(c.config)
 	c.PointLedger = NewPointLedgerClient(c.config)
+	c.Project = NewProjectClient(c.config)
 	c.PromptOptimizationRun = NewPromptOptimizationRunClient(c.config)
 	c.ProviderErrorPolicy = NewProviderErrorPolicyClient(c.config)
 	c.ProviderModel = NewProviderModelClient(c.config)
@@ -301,18 +322,23 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ClusterNode:                 NewClusterNodeClient(cfg),
 		ClusterToken:                NewClusterTokenClient(cfg),
 		ConfigItem:                  NewConfigItemClient(cfg),
+		GalleryExportJob:            NewGalleryExportJobClient(cfg),
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
 		Installation:                NewInstallationClient(cfg),
+		MigrationCheckpoint:         NewMigrationCheckpointClient(cfg),
 		ModelAccount:                NewModelAccountClient(cfg),
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
+		ObjectDeletionJob:           NewObjectDeletionJobClient(cfg),
+		ObjectReconcileCheckpoint:   NewObjectReconcileCheckpointClient(cfg),
 		ObjectStorageConfig:         NewObjectStorageConfigClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
 		PaymentWebhookEvent:         NewPaymentWebhookEventClient(cfg),
 		PointLedger:                 NewPointLedgerClient(cfg),
+		Project:                     NewProjectClient(cfg),
 		PromptOptimizationRun:       NewPromptOptimizationRunClient(cfg),
 		ProviderErrorPolicy:         NewProviderErrorPolicyClient(cfg),
 		ProviderModel:               NewProviderModelClient(cfg),
@@ -362,18 +388,23 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ClusterNode:                 NewClusterNodeClient(cfg),
 		ClusterToken:                NewClusterTokenClient(cfg),
 		ConfigItem:                  NewConfigItemClient(cfg),
+		GalleryExportJob:            NewGalleryExportJobClient(cfg),
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
 		Installation:                NewInstallationClient(cfg),
+		MigrationCheckpoint:         NewMigrationCheckpointClient(cfg),
 		ModelAccount:                NewModelAccountClient(cfg),
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
 		ModelProvider:               NewModelProviderClient(cfg),
 		ModelRoute:                  NewModelRouteClient(cfg),
+		ObjectDeletionJob:           NewObjectDeletionJobClient(cfg),
+		ObjectReconcileCheckpoint:   NewObjectReconcileCheckpointClient(cfg),
 		ObjectStorageConfig:         NewObjectStorageConfigClient(cfg),
 		PaymentOrder:                NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:     NewPaymentProviderInstanceClient(cfg),
 		PaymentWebhookEvent:         NewPaymentWebhookEventClient(cfg),
 		PointLedger:                 NewPointLedgerClient(cfg),
+		Project:                     NewProjectClient(cfg),
 		PromptOptimizationRun:       NewPromptOptimizationRunClient(cfg),
 		ProviderErrorPolicy:         NewProviderErrorPolicyClient(cfg),
 		ProviderModel:               NewProviderModelClient(cfg),
@@ -426,13 +457,14 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
-		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask,
-		c.Installation, c.ModelAccount, c.ModelAccountModel, c.ModelProvider,
-		c.ModelRoute, c.ObjectStorageConfig, c.PaymentOrder, c.PaymentProviderInstance,
-		c.PaymentWebhookEvent, c.PointLedger, c.PromptOptimizationRun,
-		c.ProviderErrorPolicy, c.ProviderModel, c.PublicImageInteraction,
-		c.PublicImageStat, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
-		c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.GalleryExportJob, c.ImageResult,
+		c.ImageTask, c.Installation, c.MigrationCheckpoint, c.ModelAccount,
+		c.ModelAccountModel, c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
+		c.ObjectReconcileCheckpoint, c.ObjectStorageConfig, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
+		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
+		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
 		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
 		c.WalletGrant, c.WalletReservationAllocation,
@@ -446,13 +478,14 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
-		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.ImageResult, c.ImageTask,
-		c.Installation, c.ModelAccount, c.ModelAccountModel, c.ModelProvider,
-		c.ModelRoute, c.ObjectStorageConfig, c.PaymentOrder, c.PaymentProviderInstance,
-		c.PaymentWebhookEvent, c.PointLedger, c.PromptOptimizationRun,
-		c.ProviderErrorPolicy, c.ProviderModel, c.PublicImageInteraction,
-		c.PublicImageStat, c.RedeemCode, c.ReferenceAsset, c.RefreshSession,
-		c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
+		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.GalleryExportJob, c.ImageResult,
+		c.ImageTask, c.Installation, c.MigrationCheckpoint, c.ModelAccount,
+		c.ModelAccountModel, c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
+		c.ObjectReconcileCheckpoint, c.ObjectStorageConfig, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
+		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
+		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
 		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
 		c.WalletGrant, c.WalletReservationAllocation,
@@ -480,12 +513,16 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ClusterToken.mutate(ctx, m)
 	case *ConfigItemMutation:
 		return c.ConfigItem.mutate(ctx, m)
+	case *GalleryExportJobMutation:
+		return c.GalleryExportJob.mutate(ctx, m)
 	case *ImageResultMutation:
 		return c.ImageResult.mutate(ctx, m)
 	case *ImageTaskMutation:
 		return c.ImageTask.mutate(ctx, m)
 	case *InstallationMutation:
 		return c.Installation.mutate(ctx, m)
+	case *MigrationCheckpointMutation:
+		return c.MigrationCheckpoint.mutate(ctx, m)
 	case *ModelAccountMutation:
 		return c.ModelAccount.mutate(ctx, m)
 	case *ModelAccountModelMutation:
@@ -494,6 +531,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ModelProvider.mutate(ctx, m)
 	case *ModelRouteMutation:
 		return c.ModelRoute.mutate(ctx, m)
+	case *ObjectDeletionJobMutation:
+		return c.ObjectDeletionJob.mutate(ctx, m)
+	case *ObjectReconcileCheckpointMutation:
+		return c.ObjectReconcileCheckpoint.mutate(ctx, m)
 	case *ObjectStorageConfigMutation:
 		return c.ObjectStorageConfig.mutate(ctx, m)
 	case *PaymentOrderMutation:
@@ -504,6 +545,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PaymentWebhookEvent.mutate(ctx, m)
 	case *PointLedgerMutation:
 		return c.PointLedger.mutate(ctx, m)
+	case *ProjectMutation:
+		return c.Project.mutate(ctx, m)
 	case *PromptOptimizationRunMutation:
 		return c.PromptOptimizationRun.mutate(ctx, m)
 	case *ProviderErrorPolicyMutation:
@@ -1617,6 +1660,139 @@ func (c *ConfigItemClient) mutate(ctx context.Context, m *ConfigItemMutation) (V
 	}
 }
 
+// GalleryExportJobClient is a client for the GalleryExportJob schema.
+type GalleryExportJobClient struct {
+	config
+}
+
+// NewGalleryExportJobClient returns a client for the GalleryExportJob from the given config.
+func NewGalleryExportJobClient(c config) *GalleryExportJobClient {
+	return &GalleryExportJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `galleryexportjob.Hooks(f(g(h())))`.
+func (c *GalleryExportJobClient) Use(hooks ...Hook) {
+	c.hooks.GalleryExportJob = append(c.hooks.GalleryExportJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `galleryexportjob.Intercept(f(g(h())))`.
+func (c *GalleryExportJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.GalleryExportJob = append(c.inters.GalleryExportJob, interceptors...)
+}
+
+// Create returns a builder for creating a GalleryExportJob entity.
+func (c *GalleryExportJobClient) Create() *GalleryExportJobCreate {
+	mutation := newGalleryExportJobMutation(c.config, OpCreate)
+	return &GalleryExportJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of GalleryExportJob entities.
+func (c *GalleryExportJobClient) CreateBulk(builders ...*GalleryExportJobCreate) *GalleryExportJobCreateBulk {
+	return &GalleryExportJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *GalleryExportJobClient) MapCreateBulk(slice any, setFunc func(*GalleryExportJobCreate, int)) *GalleryExportJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &GalleryExportJobCreateBulk{err: fmt.Errorf("calling to GalleryExportJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*GalleryExportJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &GalleryExportJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for GalleryExportJob.
+func (c *GalleryExportJobClient) Update() *GalleryExportJobUpdate {
+	mutation := newGalleryExportJobMutation(c.config, OpUpdate)
+	return &GalleryExportJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *GalleryExportJobClient) UpdateOne(_m *GalleryExportJob) *GalleryExportJobUpdateOne {
+	mutation := newGalleryExportJobMutation(c.config, OpUpdateOne, withGalleryExportJob(_m))
+	return &GalleryExportJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *GalleryExportJobClient) UpdateOneID(id uuid.UUID) *GalleryExportJobUpdateOne {
+	mutation := newGalleryExportJobMutation(c.config, OpUpdateOne, withGalleryExportJobID(id))
+	return &GalleryExportJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for GalleryExportJob.
+func (c *GalleryExportJobClient) Delete() *GalleryExportJobDelete {
+	mutation := newGalleryExportJobMutation(c.config, OpDelete)
+	return &GalleryExportJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *GalleryExportJobClient) DeleteOne(_m *GalleryExportJob) *GalleryExportJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *GalleryExportJobClient) DeleteOneID(id uuid.UUID) *GalleryExportJobDeleteOne {
+	builder := c.Delete().Where(galleryexportjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &GalleryExportJobDeleteOne{builder}
+}
+
+// Query returns a query builder for GalleryExportJob.
+func (c *GalleryExportJobClient) Query() *GalleryExportJobQuery {
+	return &GalleryExportJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeGalleryExportJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a GalleryExportJob entity by its id.
+func (c *GalleryExportJobClient) Get(ctx context.Context, id uuid.UUID) (*GalleryExportJob, error) {
+	return c.Query().Where(galleryexportjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *GalleryExportJobClient) GetX(ctx context.Context, id uuid.UUID) *GalleryExportJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *GalleryExportJobClient) Hooks() []Hook {
+	return c.hooks.GalleryExportJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *GalleryExportJobClient) Interceptors() []Interceptor {
+	return c.inters.GalleryExportJob
+}
+
+func (c *GalleryExportJobClient) mutate(ctx context.Context, m *GalleryExportJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&GalleryExportJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&GalleryExportJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&GalleryExportJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&GalleryExportJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown GalleryExportJob mutation op: %q", m.Op())
+	}
+}
+
 // ImageResultClient is a client for the ImageResult schema.
 type ImageResultClient struct {
 	config
@@ -1723,6 +1899,22 @@ func (c *ImageResultClient) GetX(ctx context.Context, id uuid.UUID) *ImageResult
 		panic(err)
 	}
 	return obj
+}
+
+// QueryProject queries the project edge of a ImageResult.
+func (c *ImageResultClient) QueryProject(_m *ImageResult) *ProjectQuery {
+	query := (&ProjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(imageresult.Table, imageresult.FieldID, id),
+			sqlgraph.To(project.Table, project.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, imageresult.ProjectTable, imageresult.ProjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
 }
 
 // Hooks returns the client hooks.
@@ -1856,6 +2048,22 @@ func (c *ImageTaskClient) GetX(ctx context.Context, id uuid.UUID) *ImageTask {
 		panic(err)
 	}
 	return obj
+}
+
+// QueryProject queries the project edge of a ImageTask.
+func (c *ImageTaskClient) QueryProject(_m *ImageTask) *ProjectQuery {
+	query := (&ProjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(imagetask.Table, imagetask.FieldID, id),
+			sqlgraph.To(project.Table, project.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, imagetask.ProjectTable, imagetask.ProjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
 }
 
 // Hooks returns the client hooks.
@@ -2013,6 +2221,139 @@ func (c *InstallationClient) mutate(ctx context.Context, m *InstallationMutation
 		return (&InstallationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Installation mutation op: %q", m.Op())
+	}
+}
+
+// MigrationCheckpointClient is a client for the MigrationCheckpoint schema.
+type MigrationCheckpointClient struct {
+	config
+}
+
+// NewMigrationCheckpointClient returns a client for the MigrationCheckpoint from the given config.
+func NewMigrationCheckpointClient(c config) *MigrationCheckpointClient {
+	return &MigrationCheckpointClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `migrationcheckpoint.Hooks(f(g(h())))`.
+func (c *MigrationCheckpointClient) Use(hooks ...Hook) {
+	c.hooks.MigrationCheckpoint = append(c.hooks.MigrationCheckpoint, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `migrationcheckpoint.Intercept(f(g(h())))`.
+func (c *MigrationCheckpointClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MigrationCheckpoint = append(c.inters.MigrationCheckpoint, interceptors...)
+}
+
+// Create returns a builder for creating a MigrationCheckpoint entity.
+func (c *MigrationCheckpointClient) Create() *MigrationCheckpointCreate {
+	mutation := newMigrationCheckpointMutation(c.config, OpCreate)
+	return &MigrationCheckpointCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MigrationCheckpoint entities.
+func (c *MigrationCheckpointClient) CreateBulk(builders ...*MigrationCheckpointCreate) *MigrationCheckpointCreateBulk {
+	return &MigrationCheckpointCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MigrationCheckpointClient) MapCreateBulk(slice any, setFunc func(*MigrationCheckpointCreate, int)) *MigrationCheckpointCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MigrationCheckpointCreateBulk{err: fmt.Errorf("calling to MigrationCheckpointClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MigrationCheckpointCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MigrationCheckpointCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MigrationCheckpoint.
+func (c *MigrationCheckpointClient) Update() *MigrationCheckpointUpdate {
+	mutation := newMigrationCheckpointMutation(c.config, OpUpdate)
+	return &MigrationCheckpointUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MigrationCheckpointClient) UpdateOne(_m *MigrationCheckpoint) *MigrationCheckpointUpdateOne {
+	mutation := newMigrationCheckpointMutation(c.config, OpUpdateOne, withMigrationCheckpoint(_m))
+	return &MigrationCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MigrationCheckpointClient) UpdateOneID(id int) *MigrationCheckpointUpdateOne {
+	mutation := newMigrationCheckpointMutation(c.config, OpUpdateOne, withMigrationCheckpointID(id))
+	return &MigrationCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MigrationCheckpoint.
+func (c *MigrationCheckpointClient) Delete() *MigrationCheckpointDelete {
+	mutation := newMigrationCheckpointMutation(c.config, OpDelete)
+	return &MigrationCheckpointDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MigrationCheckpointClient) DeleteOne(_m *MigrationCheckpoint) *MigrationCheckpointDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MigrationCheckpointClient) DeleteOneID(id int) *MigrationCheckpointDeleteOne {
+	builder := c.Delete().Where(migrationcheckpoint.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MigrationCheckpointDeleteOne{builder}
+}
+
+// Query returns a query builder for MigrationCheckpoint.
+func (c *MigrationCheckpointClient) Query() *MigrationCheckpointQuery {
+	return &MigrationCheckpointQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMigrationCheckpoint},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MigrationCheckpoint entity by its id.
+func (c *MigrationCheckpointClient) Get(ctx context.Context, id int) (*MigrationCheckpoint, error) {
+	return c.Query().Where(migrationcheckpoint.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MigrationCheckpointClient) GetX(ctx context.Context, id int) *MigrationCheckpoint {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *MigrationCheckpointClient) Hooks() []Hook {
+	return c.hooks.MigrationCheckpoint
+}
+
+// Interceptors returns the client interceptors.
+func (c *MigrationCheckpointClient) Interceptors() []Interceptor {
+	return c.inters.MigrationCheckpoint
+}
+
+func (c *MigrationCheckpointClient) mutate(ctx context.Context, m *MigrationCheckpointMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MigrationCheckpointCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MigrationCheckpointUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MigrationCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MigrationCheckpointDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MigrationCheckpoint mutation op: %q", m.Op())
 	}
 }
 
@@ -2545,6 +2886,272 @@ func (c *ModelRouteClient) mutate(ctx context.Context, m *ModelRouteMutation) (V
 		return (&ModelRouteDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ModelRoute mutation op: %q", m.Op())
+	}
+}
+
+// ObjectDeletionJobClient is a client for the ObjectDeletionJob schema.
+type ObjectDeletionJobClient struct {
+	config
+}
+
+// NewObjectDeletionJobClient returns a client for the ObjectDeletionJob from the given config.
+func NewObjectDeletionJobClient(c config) *ObjectDeletionJobClient {
+	return &ObjectDeletionJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `objectdeletionjob.Hooks(f(g(h())))`.
+func (c *ObjectDeletionJobClient) Use(hooks ...Hook) {
+	c.hooks.ObjectDeletionJob = append(c.hooks.ObjectDeletionJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `objectdeletionjob.Intercept(f(g(h())))`.
+func (c *ObjectDeletionJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ObjectDeletionJob = append(c.inters.ObjectDeletionJob, interceptors...)
+}
+
+// Create returns a builder for creating a ObjectDeletionJob entity.
+func (c *ObjectDeletionJobClient) Create() *ObjectDeletionJobCreate {
+	mutation := newObjectDeletionJobMutation(c.config, OpCreate)
+	return &ObjectDeletionJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ObjectDeletionJob entities.
+func (c *ObjectDeletionJobClient) CreateBulk(builders ...*ObjectDeletionJobCreate) *ObjectDeletionJobCreateBulk {
+	return &ObjectDeletionJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ObjectDeletionJobClient) MapCreateBulk(slice any, setFunc func(*ObjectDeletionJobCreate, int)) *ObjectDeletionJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ObjectDeletionJobCreateBulk{err: fmt.Errorf("calling to ObjectDeletionJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ObjectDeletionJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ObjectDeletionJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ObjectDeletionJob.
+func (c *ObjectDeletionJobClient) Update() *ObjectDeletionJobUpdate {
+	mutation := newObjectDeletionJobMutation(c.config, OpUpdate)
+	return &ObjectDeletionJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ObjectDeletionJobClient) UpdateOne(_m *ObjectDeletionJob) *ObjectDeletionJobUpdateOne {
+	mutation := newObjectDeletionJobMutation(c.config, OpUpdateOne, withObjectDeletionJob(_m))
+	return &ObjectDeletionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ObjectDeletionJobClient) UpdateOneID(id uuid.UUID) *ObjectDeletionJobUpdateOne {
+	mutation := newObjectDeletionJobMutation(c.config, OpUpdateOne, withObjectDeletionJobID(id))
+	return &ObjectDeletionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ObjectDeletionJob.
+func (c *ObjectDeletionJobClient) Delete() *ObjectDeletionJobDelete {
+	mutation := newObjectDeletionJobMutation(c.config, OpDelete)
+	return &ObjectDeletionJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ObjectDeletionJobClient) DeleteOne(_m *ObjectDeletionJob) *ObjectDeletionJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ObjectDeletionJobClient) DeleteOneID(id uuid.UUID) *ObjectDeletionJobDeleteOne {
+	builder := c.Delete().Where(objectdeletionjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ObjectDeletionJobDeleteOne{builder}
+}
+
+// Query returns a query builder for ObjectDeletionJob.
+func (c *ObjectDeletionJobClient) Query() *ObjectDeletionJobQuery {
+	return &ObjectDeletionJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeObjectDeletionJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ObjectDeletionJob entity by its id.
+func (c *ObjectDeletionJobClient) Get(ctx context.Context, id uuid.UUID) (*ObjectDeletionJob, error) {
+	return c.Query().Where(objectdeletionjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ObjectDeletionJobClient) GetX(ctx context.Context, id uuid.UUID) *ObjectDeletionJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ObjectDeletionJobClient) Hooks() []Hook {
+	return c.hooks.ObjectDeletionJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *ObjectDeletionJobClient) Interceptors() []Interceptor {
+	return c.inters.ObjectDeletionJob
+}
+
+func (c *ObjectDeletionJobClient) mutate(ctx context.Context, m *ObjectDeletionJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ObjectDeletionJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ObjectDeletionJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ObjectDeletionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ObjectDeletionJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ObjectDeletionJob mutation op: %q", m.Op())
+	}
+}
+
+// ObjectReconcileCheckpointClient is a client for the ObjectReconcileCheckpoint schema.
+type ObjectReconcileCheckpointClient struct {
+	config
+}
+
+// NewObjectReconcileCheckpointClient returns a client for the ObjectReconcileCheckpoint from the given config.
+func NewObjectReconcileCheckpointClient(c config) *ObjectReconcileCheckpointClient {
+	return &ObjectReconcileCheckpointClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `objectreconcilecheckpoint.Hooks(f(g(h())))`.
+func (c *ObjectReconcileCheckpointClient) Use(hooks ...Hook) {
+	c.hooks.ObjectReconcileCheckpoint = append(c.hooks.ObjectReconcileCheckpoint, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `objectreconcilecheckpoint.Intercept(f(g(h())))`.
+func (c *ObjectReconcileCheckpointClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ObjectReconcileCheckpoint = append(c.inters.ObjectReconcileCheckpoint, interceptors...)
+}
+
+// Create returns a builder for creating a ObjectReconcileCheckpoint entity.
+func (c *ObjectReconcileCheckpointClient) Create() *ObjectReconcileCheckpointCreate {
+	mutation := newObjectReconcileCheckpointMutation(c.config, OpCreate)
+	return &ObjectReconcileCheckpointCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ObjectReconcileCheckpoint entities.
+func (c *ObjectReconcileCheckpointClient) CreateBulk(builders ...*ObjectReconcileCheckpointCreate) *ObjectReconcileCheckpointCreateBulk {
+	return &ObjectReconcileCheckpointCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ObjectReconcileCheckpointClient) MapCreateBulk(slice any, setFunc func(*ObjectReconcileCheckpointCreate, int)) *ObjectReconcileCheckpointCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ObjectReconcileCheckpointCreateBulk{err: fmt.Errorf("calling to ObjectReconcileCheckpointClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ObjectReconcileCheckpointCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ObjectReconcileCheckpointCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ObjectReconcileCheckpoint.
+func (c *ObjectReconcileCheckpointClient) Update() *ObjectReconcileCheckpointUpdate {
+	mutation := newObjectReconcileCheckpointMutation(c.config, OpUpdate)
+	return &ObjectReconcileCheckpointUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ObjectReconcileCheckpointClient) UpdateOne(_m *ObjectReconcileCheckpoint) *ObjectReconcileCheckpointUpdateOne {
+	mutation := newObjectReconcileCheckpointMutation(c.config, OpUpdateOne, withObjectReconcileCheckpoint(_m))
+	return &ObjectReconcileCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ObjectReconcileCheckpointClient) UpdateOneID(id uuid.UUID) *ObjectReconcileCheckpointUpdateOne {
+	mutation := newObjectReconcileCheckpointMutation(c.config, OpUpdateOne, withObjectReconcileCheckpointID(id))
+	return &ObjectReconcileCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ObjectReconcileCheckpoint.
+func (c *ObjectReconcileCheckpointClient) Delete() *ObjectReconcileCheckpointDelete {
+	mutation := newObjectReconcileCheckpointMutation(c.config, OpDelete)
+	return &ObjectReconcileCheckpointDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ObjectReconcileCheckpointClient) DeleteOne(_m *ObjectReconcileCheckpoint) *ObjectReconcileCheckpointDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ObjectReconcileCheckpointClient) DeleteOneID(id uuid.UUID) *ObjectReconcileCheckpointDeleteOne {
+	builder := c.Delete().Where(objectreconcilecheckpoint.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ObjectReconcileCheckpointDeleteOne{builder}
+}
+
+// Query returns a query builder for ObjectReconcileCheckpoint.
+func (c *ObjectReconcileCheckpointClient) Query() *ObjectReconcileCheckpointQuery {
+	return &ObjectReconcileCheckpointQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeObjectReconcileCheckpoint},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ObjectReconcileCheckpoint entity by its id.
+func (c *ObjectReconcileCheckpointClient) Get(ctx context.Context, id uuid.UUID) (*ObjectReconcileCheckpoint, error) {
+	return c.Query().Where(objectreconcilecheckpoint.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ObjectReconcileCheckpointClient) GetX(ctx context.Context, id uuid.UUID) *ObjectReconcileCheckpoint {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ObjectReconcileCheckpointClient) Hooks() []Hook {
+	return c.hooks.ObjectReconcileCheckpoint
+}
+
+// Interceptors returns the client interceptors.
+func (c *ObjectReconcileCheckpointClient) Interceptors() []Interceptor {
+	return c.inters.ObjectReconcileCheckpoint
+}
+
+func (c *ObjectReconcileCheckpointClient) mutate(ctx context.Context, m *ObjectReconcileCheckpointMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ObjectReconcileCheckpointCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ObjectReconcileCheckpointUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ObjectReconcileCheckpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ObjectReconcileCheckpointDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ObjectReconcileCheckpoint mutation op: %q", m.Op())
 	}
 }
 
@@ -3210,6 +3817,171 @@ func (c *PointLedgerClient) mutate(ctx context.Context, m *PointLedgerMutation) 
 		return (&PointLedgerDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown PointLedger mutation op: %q", m.Op())
+	}
+}
+
+// ProjectClient is a client for the Project schema.
+type ProjectClient struct {
+	config
+}
+
+// NewProjectClient returns a client for the Project from the given config.
+func NewProjectClient(c config) *ProjectClient {
+	return &ProjectClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `project.Hooks(f(g(h())))`.
+func (c *ProjectClient) Use(hooks ...Hook) {
+	c.hooks.Project = append(c.hooks.Project, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `project.Intercept(f(g(h())))`.
+func (c *ProjectClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Project = append(c.inters.Project, interceptors...)
+}
+
+// Create returns a builder for creating a Project entity.
+func (c *ProjectClient) Create() *ProjectCreate {
+	mutation := newProjectMutation(c.config, OpCreate)
+	return &ProjectCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Project entities.
+func (c *ProjectClient) CreateBulk(builders ...*ProjectCreate) *ProjectCreateBulk {
+	return &ProjectCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ProjectClient) MapCreateBulk(slice any, setFunc func(*ProjectCreate, int)) *ProjectCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ProjectCreateBulk{err: fmt.Errorf("calling to ProjectClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ProjectCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ProjectCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Project.
+func (c *ProjectClient) Update() *ProjectUpdate {
+	mutation := newProjectMutation(c.config, OpUpdate)
+	return &ProjectUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ProjectClient) UpdateOne(_m *Project) *ProjectUpdateOne {
+	mutation := newProjectMutation(c.config, OpUpdateOne, withProject(_m))
+	return &ProjectUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ProjectClient) UpdateOneID(id uuid.UUID) *ProjectUpdateOne {
+	mutation := newProjectMutation(c.config, OpUpdateOne, withProjectID(id))
+	return &ProjectUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Project.
+func (c *ProjectClient) Delete() *ProjectDelete {
+	mutation := newProjectMutation(c.config, OpDelete)
+	return &ProjectDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ProjectClient) DeleteOne(_m *Project) *ProjectDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ProjectClient) DeleteOneID(id uuid.UUID) *ProjectDeleteOne {
+	builder := c.Delete().Where(project.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ProjectDeleteOne{builder}
+}
+
+// Query returns a query builder for Project.
+func (c *ProjectClient) Query() *ProjectQuery {
+	return &ProjectQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeProject},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Project entity by its id.
+func (c *ProjectClient) Get(ctx context.Context, id uuid.UUID) (*Project, error) {
+	return c.Query().Where(project.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ProjectClient) GetX(ctx context.Context, id uuid.UUID) *Project {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryImageTasks queries the image_tasks edge of a Project.
+func (c *ProjectClient) QueryImageTasks(_m *Project) *ImageTaskQuery {
+	query := (&ImageTaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(project.Table, project.FieldID, id),
+			sqlgraph.To(imagetask.Table, imagetask.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, project.ImageTasksTable, project.ImageTasksColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryImageResults queries the image_results edge of a Project.
+func (c *ProjectClient) QueryImageResults(_m *Project) *ImageResultQuery {
+	query := (&ImageResultClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(project.Table, project.FieldID, id),
+			sqlgraph.To(imageresult.Table, imageresult.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, project.ImageResultsTable, project.ImageResultsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *ProjectClient) Hooks() []Hook {
+	return c.hooks.Project
+}
+
+// Interceptors returns the client interceptors.
+func (c *ProjectClient) Interceptors() []Interceptor {
+	return c.inters.Project
+}
+
+func (c *ProjectClient) mutate(ctx context.Context, m *ProjectMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ProjectCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ProjectUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ProjectUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ProjectDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Project mutation op: %q", m.Op())
 	}
 }
 
@@ -6143,24 +6915,26 @@ func (c *WalletReservationAllocationClient) mutate(ctx context.Context, m *Walle
 type (
 	hooks struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
-		ClusterNode, ClusterToken, ConfigItem, ImageResult, ImageTask, Installation,
-		ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
+		ClusterNode, ClusterToken, ConfigItem, GalleryExportJob, ImageResult,
+		ImageTask, Installation, MigrationCheckpoint, ModelAccount, ModelAccountModel,
+		ModelProvider, ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint,
 		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, PromptOptimizationRun, ProviderErrorPolicy,
-		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
-		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
+		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
+		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
 		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
 		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
 		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
-		ClusterNode, ClusterToken, ConfigItem, ImageResult, ImageTask, Installation,
-		ModelAccount, ModelAccountModel, ModelProvider, ModelRoute,
+		ClusterNode, ClusterToken, ConfigItem, GalleryExportJob, ImageResult,
+		ImageTask, Installation, MigrationCheckpoint, ModelAccount, ModelAccountModel,
+		ModelProvider, ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint,
 		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
-		PaymentWebhookEvent, PointLedger, PromptOptimizationRun, ProviderErrorPolicy,
-		ProviderModel, PublicImageInteraction, PublicImageStat, RedeemCode,
-		ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
+		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
+		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
+		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
 		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
 		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
 		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Interceptor

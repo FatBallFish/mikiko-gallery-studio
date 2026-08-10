@@ -1,6 +1,6 @@
 import type { Balance, UserProfile, UserThemePreference } from '../../shared/api-types'
 
-export type RouteId = 'landing' | 'login' | 'home' | 'genpic' | 'gallery' | 'public-gallery' | 'checkout' | 'api-keys' | 'profile' | 'docs' | 'settings'
+export type RouteId = 'landing' | 'login' | 'home' | 'genpic' | 'gallery' | 'projects' | 'public-gallery' | 'checkout' | 'api-keys' | 'profile' | 'settings'
 
 export type ToastTone = 'success' | 'error' | 'info'
 

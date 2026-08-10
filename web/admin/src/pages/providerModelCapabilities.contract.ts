@@ -15,6 +15,16 @@ for (const expected of [
   '是否支持压缩质量',
   'checked={modelDialog.supportsOutputCompression}',
   'row.supports_output_compression',
+  "const baseResolutionOptions = ['1K', '2K', '4K']",
+  "toggleSizeMode(modelDialog, 'auto'",
+  'supportsCustomRatio: boolean',
+  'supports_custom_ratio: modelDialog.supportsCustomRatio',
+  'supported_backgrounds: modelDialog.supportedBackgrounds',
+  'min_width: Number(modelDialog.minWidth)',
+  'max_width: Number(modelDialog.maxWidth)',
+  'min_height: Number(modelDialog.minHeight)',
+  'max_height: Number(modelDialog.maxHeight)',
+  'max="10" value={modelDialog.maxImageCount}',
 ]) {
   if (!source.includes(expected)) {
     throw new Error(`real-model editor must include ${expected}`)
@@ -23,6 +33,20 @@ for (const expected of [
 
 if (!source.includes("mode === 'pixel' && checked") || !source.includes('supportedPixelSizes: defaultPixelSizes')) {
   throw new Error('enabling pixel mode must seed all default pixel presets')
+}
+
+for (const expected of [
+  'selectedTestModel',
+  'testModelSizeModes(selectedTestModel)',
+  'testModelOptions(selectedTestModel?.quality',
+  'testModelOptions(selectedTestModel?.output_format',
+  'testModelOptions(selectedTestModel?.supported_backgrounds',
+  'testModelOptions(selectedTestModel?.moderation',
+  'rebuildTestImageDialog(testDialog, selected)',
+]) {
+  if (!source.includes(expected)) {
+    throw new Error(`model test dialog must be capability-driven: ${expected}`)
+  }
 }
 
 if (!source.includes("mode === 'pixel' && !checked") || !source.includes('supportsCustomSize: false')) {

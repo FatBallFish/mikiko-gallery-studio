@@ -149,6 +149,41 @@ func TestAdminStorageConfigMalformedIDReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestAdminStorageConfigUpdateRejectsNamespaceChanges(t *testing.T) {
+	harness := newAdminStorageConfigTestHarness(t)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/storage-configs", nil)
+	listReq.Header.Set("Authorization", "Bearer "+harness.token)
+	listRec := httptest.NewRecorder()
+	harness.handler.ServeHTTP(listRec, listReq)
+	var listed struct {
+		Data struct {
+			Items []struct {
+				ID        string `json:"id"`
+				Code      string `json:"code"`
+				Name      string `json:"name"`
+				Version   int64  `json:"version"`
+				LocalRoot string `json:"local_root"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(listRec.Body).Decode(&listed); err != nil || len(listed.Data.Items) == 0 {
+		t.Fatalf("list configs: status=%d body=%s err=%v", listRec.Code, listRec.Body.String(), err)
+	}
+	current := listed.Data.Items[0]
+	body, _ := json.Marshal(map[string]any{
+		"version": current.Version, "code": current.Code, "name": current.Name, "driver": "local", "provider": "local",
+		"status": "enabled", "read_enabled": true, "write_enabled": true, "local_root": current.LocalRoot + "-moved",
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/storage-configs/"+current.ID, bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+harness.token)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	harness.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !bytes.Contains(rec.Body.Bytes(), []byte(`"code":"STORAGE_NAMESPACE_IMMUTABLE"`)) {
+		t.Fatalf("namespace update: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 type adminStorageConfigTestHarness struct {
 	handler        http.Handler
 	token          string

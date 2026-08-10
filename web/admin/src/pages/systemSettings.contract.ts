@@ -6,6 +6,10 @@ import { isSystemSettingsHash, systemSettingsTabFromHash } from './systemSetting
 const systemSettingsSource = readFileSync(new URL('./SystemSettingsPage.tsx', import.meta.url), 'utf8')
 const generalConfigSource = readFileSync(new URL('./ConfigPage.tsx', import.meta.url), 'utf8')
 
+if (/文档、公开内容|维护文档|文档标题|文档基础路径/.test(systemSettingsSource + generalConfigSource)) {
+  throw new Error('system settings copy must not advertise removed documentation configuration')
+}
+
 for (const parentContract of ['dirtyTabs', 'busyTabs', 'busyTabsRef', 'window.confirm(', 'onDirtyChange=', 'onBusyChange=', '当前分区存在未保存修改', 'activeTabRef.current = tab', 'isSystemSettingsHash(window.location.hash)', "dispatchEvent(new HashChangeEvent('hashchange'))"]) {
   if (!systemSettingsSource.includes(parentContract)) {
     throw new Error(`system settings must guard dirty tab changes with ${parentContract}`)

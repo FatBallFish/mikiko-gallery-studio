@@ -2,6 +2,7 @@ package modeladmin_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
@@ -61,6 +62,29 @@ func TestServiceValidatesProviderAndRouteCRUD(t *testing.T) {
 	}
 }
 
+func TestModelWriteBoundariesRejectInvalidUpstreamMaxImageCount(t *testing.T) {
+	ctx := context.Background()
+	svc := modeladmin.NewServiceWithStore(nil)
+	account, err := svc.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+		Name: "max-n-account", AdapterType: "openrouter", AuthType: "api_key", BaseURL: "https://example.com", Status: "disabled",
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccount: %v", err)
+	}
+	for _, count := range []int{0, 11} {
+		if _, err := svc.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+			AccountID: account.ID, ModelCode: "model", TaskTypes: []string{"text_to_image"}, MaxImageCount: count,
+		}); err == nil || !strings.Contains(err.Error(), "max_image_count") {
+			t.Fatalf("CreateModelAccountModel max_image_count=%d error = %v, want max_image_count validation", count, err)
+		}
+		if _, err := svc.CreateProviderModel(ctx, domainmodeladmin.ProviderModelWriteRequest{
+			ProviderCode: "openrouter", ModelCode: "provider-model", MaxImageCount: count,
+		}); err == nil || !strings.Contains(err.Error(), "max_image_count") {
+			t.Fatalf("CreateProviderModel max_image_count=%d error = %v, want max_image_count validation", count, err)
+		}
+	}
+}
+
 func TestServiceRejectsRemovedReferenceGenerationConfiguration(t *testing.T) {
 	ctx := context.Background()
 	svc := modeladmin.NewServiceWithStore(nil)
@@ -104,6 +128,7 @@ func TestMemoryStorePreservesModelAccountGenerationCapabilities(t *testing.T) {
 		AccountID: account.ID, ModelCode: "memory-image", DisplayName: "Memory Image",
 		TaskTypes: []string{"image_edit"}, Quality: []string{"high"},
 		SizeModes: []string{"ratio", "pixel"}, SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true,
+		MinWidth: 512, MaxWidth: 3840, MinHeight: 512, MaxHeight: 3840,
 		SupportedRatios: []string{"16:9"}, MaxImageCount: 2, MaxReferenceImageCount: 3,
 		CostPerImage: "0.10000", Currency: "USD", Enabled: true,
 	})

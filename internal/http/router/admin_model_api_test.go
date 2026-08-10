@@ -6,12 +6,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
 	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
+	domainaudit "github.com/fatballfish/pic-gallery/internal/domain/audit"
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
@@ -77,7 +79,7 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		t.Fatalf("decode model account response: %v", err)
 	}
 
-	createAccountModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models", bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image","image_edit"],"qualities":["1k","2k"],"size_modes":["ratio","pixel"],"supported_ratios":["1:1","16:9"],"supported_pixel_sizes":["1024x1024"],"supports_custom_size":true,"max_image_count":2,"max_reference_image_count":3,"cost_per_image":"0.04000","currency":"USD","enabled":true}`))
+	createAccountModelReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models", bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image","image_edit"],"base_resolution":["1k","2k"],"quality":["auto","high"],"size_modes":["auto","ratio","pixel"],"supported_ratios":["1:1","16:9"],"supported_pixel_sizes":["1024x1024"],"supports_custom_ratio":true,"supported_backgrounds":["auto","opaque","transparent"],"supports_custom_size":true,"min_width":512,"max_width":2048,"min_height":640,"max_height":1536,"max_image_count":2,"max_reference_image_count":3,"cost_per_image":"0.04000","currency":"USD","enabled":true}`))
 	createAccountModelReq.Header.Set("Authorization", "Bearer "+adminToken)
 	createAccountModelReq.Header.Set("Content-Type", "application/json")
 	createAccountModelRec := httptest.NewRecorder()
@@ -88,7 +90,16 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	var accountModelResp struct {
 		Data struct {
 			ID                     int64    `json:"id"`
+			BaseResolution         []string `json:"base_resolution"`
+			SizeModes              []string `json:"size_modes"`
 			SupportedRatios        []string `json:"supported_ratios"`
+			SupportedPixelSizes    []string `json:"supported_pixel_sizes"`
+			SupportsCustomRatio    bool     `json:"supports_custom_ratio"`
+			SupportedBackgrounds   []string `json:"supported_backgrounds"`
+			MinWidth               int      `json:"min_width"`
+			MaxWidth               int      `json:"max_width"`
+			MinHeight              int      `json:"min_height"`
+			MaxHeight              int      `json:"max_height"`
 			MaxImageCount          int      `json:"max_image_count"`
 			MaxReferenceImageCount int      `json:"max_reference_image_count"`
 			SupportsCustomSize     bool     `json:"supports_custom_size"`
@@ -97,7 +108,11 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	if err := json.NewDecoder(createAccountModelRec.Body).Decode(&accountModelResp); err != nil {
 		t.Fatalf("decode account model response: %v", err)
 	}
-	if len(accountModelResp.Data.SupportedRatios) != 2 || accountModelResp.Data.SupportedRatios[1] != "16:9" || accountModelResp.Data.MaxImageCount != 2 || accountModelResp.Data.MaxReferenceImageCount != 3 || !accountModelResp.Data.SupportsCustomSize {
+	if !reflect.DeepEqual(accountModelResp.Data.BaseResolution, []string{"1k", "2k"}) || !reflect.DeepEqual(accountModelResp.Data.SizeModes, []string{"auto", "ratio", "pixel"}) ||
+		!reflect.DeepEqual(accountModelResp.Data.SupportedRatios, []string{"1:1", "16:9"}) || !reflect.DeepEqual(accountModelResp.Data.SupportedPixelSizes, []string{"1024x1024"}) ||
+		!accountModelResp.Data.SupportsCustomRatio || !reflect.DeepEqual(accountModelResp.Data.SupportedBackgrounds, []string{"auto", "opaque", "transparent"}) ||
+		accountModelResp.Data.MinWidth != 512 || accountModelResp.Data.MaxWidth != 2048 || accountModelResp.Data.MinHeight != 640 || accountModelResp.Data.MaxHeight != 1536 ||
+		accountModelResp.Data.MaxImageCount != 2 || accountModelResp.Data.MaxReferenceImageCount != 3 || !accountModelResp.Data.SupportsCustomSize {
 		t.Fatalf("account model capabilities were not preserved: %#v", accountModelResp.Data)
 	}
 
@@ -112,7 +127,16 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 		Data struct {
 			Items []struct {
 				ID                     int64    `json:"id"`
+				BaseResolution         []string `json:"base_resolution"`
+				SizeModes              []string `json:"size_modes"`
 				SupportedRatios        []string `json:"supported_ratios"`
+				SupportedPixelSizes    []string `json:"supported_pixel_sizes"`
+				SupportsCustomRatio    bool     `json:"supports_custom_ratio"`
+				SupportedBackgrounds   []string `json:"supported_backgrounds"`
+				MinWidth               int      `json:"min_width"`
+				MaxWidth               int      `json:"max_width"`
+				MinHeight              int      `json:"min_height"`
+				MaxHeight              int      `json:"max_height"`
 				MaxImageCount          int      `json:"max_image_count"`
 				MaxReferenceImageCount int      `json:"max_reference_image_count"`
 				SupportsCustomSize     bool     `json:"supports_custom_size"`
@@ -122,11 +146,16 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	if err := json.NewDecoder(listAccountModelsRec.Body).Decode(&accountModelListResp); err != nil {
 		t.Fatalf("decode account model list response: %v", err)
 	}
-	if len(accountModelListResp.Data.Items) != 1 || accountModelListResp.Data.Items[0].ID != accountModelResp.Data.ID || len(accountModelListResp.Data.Items[0].SupportedRatios) != 2 || accountModelListResp.Data.Items[0].MaxImageCount != 2 || accountModelListResp.Data.Items[0].MaxReferenceImageCount != 3 || !accountModelListResp.Data.Items[0].SupportsCustomSize {
+	if len(accountModelListResp.Data.Items) != 1 || accountModelListResp.Data.Items[0].ID != accountModelResp.Data.ID ||
+		!reflect.DeepEqual(accountModelListResp.Data.Items[0].BaseResolution, []string{"1k", "2k"}) || !reflect.DeepEqual(accountModelListResp.Data.Items[0].SizeModes, []string{"auto", "ratio", "pixel"}) ||
+		!reflect.DeepEqual(accountModelListResp.Data.Items[0].SupportedRatios, []string{"1:1", "16:9"}) || !reflect.DeepEqual(accountModelListResp.Data.Items[0].SupportedPixelSizes, []string{"1024x1024"}) ||
+		!accountModelListResp.Data.Items[0].SupportsCustomRatio || !reflect.DeepEqual(accountModelListResp.Data.Items[0].SupportedBackgrounds, []string{"auto", "opaque", "transparent"}) ||
+		accountModelListResp.Data.Items[0].MinWidth != 512 || accountModelListResp.Data.Items[0].MaxWidth != 2048 || accountModelListResp.Data.Items[0].MinHeight != 640 || accountModelListResp.Data.Items[0].MaxHeight != 1536 ||
+		accountModelListResp.Data.Items[0].MaxImageCount != 2 || accountModelListResp.Data.Items[0].MaxReferenceImageCount != 3 || !accountModelListResp.Data.Items[0].SupportsCustomSize {
 		t.Fatalf("account model list lost capabilities: %#v", accountModelListResp.Data.Items)
 	}
 
-	updateAccountModelReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models/"+jsonNumber(accountModelResp.Data.ID), bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image"],"qualities":["2k"],"supported_ratios":["9:16"],"max_image_count":1,"max_reference_image_count":0,"cost_per_image":"0.05000","currency":"USD","enabled":true}`))
+	updateAccountModelReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/model-accounts/"+jsonNumber(accountResp.Data.ID)+"/models/"+jsonNumber(accountModelResp.Data.ID), bytes.NewBufferString(`{"model_code":"gpt-image-current","display_name":"Current Image","task_types":["text_to_image"],"base_resolution":["1k"],"quality":["auto"],"size_modes":["ratio","pixel"],"supported_ratios":["9:16"],"supported_pixel_sizes":["1024x1024"],"supported_backgrounds":["auto","opaque"],"supports_custom_size":true,"min_width":768,"max_width":1920,"min_height":512,"max_height":1600,"max_image_count":1,"max_reference_image_count":0,"cost_per_image":"0.05000","currency":"USD","enabled":true}`))
 	updateAccountModelReq.Header.Set("Authorization", "Bearer "+adminToken)
 	updateAccountModelReq.Header.Set("Content-Type", "application/json")
 	updateAccountModelRec := httptest.NewRecorder()
@@ -136,7 +165,16 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	}
 	var updatedAccountModelResp struct {
 		Data struct {
+			BaseResolution         []string `json:"base_resolution"`
+			SizeModes              []string `json:"size_modes"`
 			SupportedRatios        []string `json:"supported_ratios"`
+			SupportedPixelSizes    []string `json:"supported_pixel_sizes"`
+			SupportsCustomRatio    bool     `json:"supports_custom_ratio"`
+			SupportedBackgrounds   []string `json:"supported_backgrounds"`
+			MinWidth               int      `json:"min_width"`
+			MaxWidth               int      `json:"max_width"`
+			MinHeight              int      `json:"min_height"`
+			MaxHeight              int      `json:"max_height"`
 			MaxImageCount          int      `json:"max_image_count"`
 			MaxReferenceImageCount int      `json:"max_reference_image_count"`
 			SupportsCustomSize     bool     `json:"supports_custom_size"`
@@ -145,7 +183,11 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	if err := json.NewDecoder(updateAccountModelRec.Body).Decode(&updatedAccountModelResp); err != nil {
 		t.Fatalf("decode updated account model response: %v", err)
 	}
-	if len(updatedAccountModelResp.Data.SupportedRatios) != 1 || updatedAccountModelResp.Data.SupportedRatios[0] != "9:16" || updatedAccountModelResp.Data.MaxImageCount != 1 || updatedAccountModelResp.Data.MaxReferenceImageCount != 0 || updatedAccountModelResp.Data.SupportsCustomSize {
+	if !reflect.DeepEqual(updatedAccountModelResp.Data.BaseResolution, []string{"1k"}) || !reflect.DeepEqual(updatedAccountModelResp.Data.SizeModes, []string{"ratio", "pixel"}) ||
+		!reflect.DeepEqual(updatedAccountModelResp.Data.SupportedRatios, []string{"9:16"}) || !reflect.DeepEqual(updatedAccountModelResp.Data.SupportedPixelSizes, []string{"1024x1024"}) ||
+		updatedAccountModelResp.Data.SupportsCustomRatio || !reflect.DeepEqual(updatedAccountModelResp.Data.SupportedBackgrounds, []string{"auto", "opaque"}) ||
+		updatedAccountModelResp.Data.MinWidth != 768 || updatedAccountModelResp.Data.MaxWidth != 1920 || updatedAccountModelResp.Data.MinHeight != 512 || updatedAccountModelResp.Data.MaxHeight != 1600 ||
+		updatedAccountModelResp.Data.MaxImageCount != 1 || updatedAccountModelResp.Data.MaxReferenceImageCount != 0 || !updatedAccountModelResp.Data.SupportsCustomSize {
 		t.Fatalf("account model update lost capabilities: %#v", updatedAccountModelResp.Data)
 	}
 
@@ -317,6 +359,208 @@ func TestAdminModelManagementEndpoints(t *testing.T) {
 	}
 }
 
+func TestAdminModelLifecycleReportsDependenciesAndAuditsDeletionState(t *testing.T) {
+	cfg := adminConfigAPIConfig()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-model-lifecycle-api?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	authSvc := authservice.NewServiceWithStore(config.AuthConfig{
+		AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test",
+		AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"}, entstore.NewAuthStore(client))
+	adminStore := entstore.NewAdminAuthStore(client)
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{Email: "admin-model@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: "super_admin", Status: "active"}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	billingStore := entstore.NewBillingStore(client, 5)
+	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
+	adminUsers := adminuserservice.NewServiceWithStore(entstore.NewAdminUserStore(client, billingStore), billingSvc)
+	auditSvc := auditservice.NewService(entstore.NewAuditStore(client))
+	modelStore := entstore.NewModelAdminStore(client)
+	modelAdminSvc := modeladminservice.NewServiceWithStore(modelStore)
+	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, nil, nil, billingSvc, nil, adminAuth, auditSvc, adminUsers, nil, nil, modelAdminSvc)
+	handler := NewWithAPI(api)
+	adminToken := loginAdminForModelTest(t, handler)
+
+	account, err := modelStore.CreateModelAccount(t.Context(), domainmodeladmin.ModelAccountWriteRequest{
+		Name: "Lifecycle account", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: "https://images.example.com",
+		Credentials: map[string]string{"api_key": "secret"}, Status: "enabled", Priority: 1, Weight: 100, ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	model, err := modelStore.CreateModelAccountModel(t.Context(), domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "gpt-image-lifecycle", DisplayName: "Lifecycle model", TaskTypes: []string{"text_to_image"},
+		BaseResolution: []string{"1k"}, Quality: []string{"auto"}, MaxImageCount: 1, SizeModes: []string{"auto"}, CostPerImage: "0.04", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create account model: %v", err)
+	}
+	foreignAccount, err := modelStore.CreateModelAccount(t.Context(), domainmodeladmin.ModelAccountWriteRequest{
+		Name: "Foreign lifecycle account", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: "https://foreign-images.example.com",
+		Credentials: map[string]string{"api_key": "secret"}, Status: "enabled", Priority: 1, Weight: 100, ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("create foreign account: %v", err)
+	}
+
+	wrongParentDelete := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-accounts/"+jsonNumber(foreignAccount.ID)+"/models/"+jsonNumber(model.ID), nil)
+	wrongParentDelete.Header.Set("Authorization", "Bearer "+adminToken)
+	wrongParentDeleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(wrongParentDeleteRec, wrongParentDelete)
+	if wrongParentDeleteRec.Code != http.StatusNotFound {
+		t.Fatalf("expected wrong-parent model delete 404, got %d body=%s", wrongParentDeleteRec.Code, wrongParentDeleteRec.Body.String())
+	}
+	modelEntity, err := client.ModelAccountModel.Get(t.Context(), int(model.ID))
+	if err != nil || modelEntity.DeletedAt != nil {
+		t.Fatalf("wrong-parent model delete mutated row: %#v err=%v", modelEntity, err)
+	}
+	modelDeleteAudits, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, Action: "model_account_model.delete", TargetID: jsonNumber(model.ID)})
+	if err != nil || len(modelDeleteAudits.Items) != 0 {
+		t.Fatalf("wrong-parent model delete wrote audit: %#v err=%v", modelDeleteAudits, err)
+	}
+
+	deleteAccount := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID), nil)
+	deleteAccount.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteAccountRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteAccountRec, deleteAccount)
+	if deleteAccountRec.Code != http.StatusConflict {
+		t.Fatalf("expected account dependency conflict 409, got %d body=%s", deleteAccountRec.Code, deleteAccountRec.Body.String())
+	}
+	var conflict struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(deleteAccountRec.Body).Decode(&conflict); err != nil {
+		t.Fatalf("decode dependency conflict: %v", err)
+	}
+	if conflict.Error.Code != "configuration_in_use" || conflict.Error.Details["dependency"] != "account_models" || conflict.Error.Details["count"] != float64(1) {
+		t.Fatalf("unexpected dependency conflict: %#v", conflict.Error)
+	}
+
+	deleteModel := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/models/"+jsonNumber(model.ID), nil)
+	deleteModel.Header.Set("Authorization", "Bearer "+adminToken)
+	deleteModel.Header.Set("X-Request-Id", "lifecycle-delete-request")
+	deleteModelRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteModelRec, deleteModel)
+	if deleteModelRec.Code != http.StatusNoContent {
+		t.Fatalf("expected model delete 204, got %d body=%s", deleteModelRec.Code, deleteModelRec.Body.String())
+	}
+
+	auditPage, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, Action: "model_account_model.delete", TargetID: jsonNumber(model.ID)})
+	if err != nil {
+		t.Fatalf("list deletion audit: %v", err)
+	}
+	if len(auditPage.Items) != 1 {
+		t.Fatalf("expected one deletion audit, got %d", len(auditPage.Items))
+	}
+	metadata := auditPage.Items[0].Metadata
+	if metadata["request_id"] == "" || metadata["before"] == nil || metadata["after"] == nil || metadata["account_id"] != float64(account.ID) {
+		t.Fatalf("deletion audit missing lifecycle metadata: %#v", metadata)
+	}
+
+	repeatDeleteModel := httptest.NewRequest(http.MethodDelete, "/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/models/"+jsonNumber(model.ID), nil)
+	repeatDeleteModel.Header.Set("Authorization", "Bearer "+adminToken)
+	repeatDeleteModelRec := httptest.NewRecorder()
+	handler.ServeHTTP(repeatDeleteModelRec, repeatDeleteModel)
+	if repeatDeleteModelRec.Code != http.StatusNoContent {
+		t.Fatalf("expected repeated model delete 204, got %d body=%s", repeatDeleteModelRec.Code, repeatDeleteModelRec.Body.String())
+	}
+
+	model2, err := modelStore.CreateModelAccountModel(t.Context(), domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "gpt-image-route", DisplayName: "Route model", TaskTypes: []string{"text_to_image"},
+		BaseResolution: []string{"1k"}, Quality: []string{"auto"}, MaxImageCount: 1, SizeModes: []string{"auto"}, CostPerImage: "0.04", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create second account model: %v", err)
+	}
+	route, err := modelStore.CreateRouteModel(t.Context(), domainmodeladmin.RouteModelWriteRequest{Code: "route-lifecycle", Name: "Lifecycle route", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatalf("create route model: %v", err)
+	}
+	candidate, err := modelStore.CreateRouteModelCandidate(t.Context(), domainmodeladmin.RouteModelCandidateWriteRequest{RouteModelID: route.ID, AccountModelID: model2.ID, Priority: 1, Weight: 100, FallbackOrder: 1, Enabled: true})
+	if err != nil {
+		t.Fatalf("create route candidate: %v", err)
+	}
+	price, err := modelStore.CreateRouteModelPrice(t.Context(), domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: route.ID, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1", ReferenceMultiplier: "1", Enabled: true})
+	if err != nil {
+		t.Fatalf("create route price: %v", err)
+	}
+	foreignRoute, err := modelStore.CreateRouteModel(t.Context(), domainmodeladmin.RouteModelWriteRequest{Code: "route-foreign", Name: "Foreign route", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatalf("create foreign route: %v", err)
+	}
+
+	assertDelete := func(path, requestID string, wantStatus int) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodDelete, path, nil)
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		if requestID != "" {
+			req.Header.Set("X-Request-Id", requestID)
+		}
+		req.Header.Set("User-Agent", "task8-lifecycle-test")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != wantStatus {
+			t.Fatalf("DELETE %s: expected %d, got %d body=%s", path, wantStatus, rec.Code, rec.Body.String())
+		}
+	}
+
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID), "", http.StatusConflict)
+	assertDelete("/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/models/"+jsonNumber(model2.ID), "", http.StatusConflict)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(foreignRoute.ID)+"/candidates/"+jsonNumber(candidate.ID), "wrong-parent-candidate-delete", http.StatusNotFound)
+	candidateEntity, err := client.RouteModelCandidate.Get(t.Context(), int(candidate.ID))
+	if err != nil || candidateEntity.DeletedAt != nil {
+		t.Fatalf("wrong-parent candidate delete mutated row: %#v err=%v", candidateEntity, err)
+	}
+	candidateDeleteAudits, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, Action: "route_model_candidate.delete", TargetID: jsonNumber(candidate.ID)})
+	if err != nil || len(candidateDeleteAudits.Items) != 0 {
+		t.Fatalf("wrong-parent candidate delete wrote audit: %#v err=%v", candidateDeleteAudits, err)
+	}
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID)+"/candidates/"+jsonNumber(candidate.ID), "delete-candidate-request", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID)+"/candidates/"+jsonNumber(candidate.ID), "", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID), "", http.StatusConflict)
+	assertDelete("/api/ops/admin/v1/route-model-prices/"+jsonNumber(price.ID), "delete-price-request", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/route-model-prices/"+jsonNumber(price.ID), "", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID), "delete-route-request", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/route-models/"+jsonNumber(route.ID), "", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID)+"/models/"+jsonNumber(model2.ID), "delete-model-request", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID), "delete-account-request", http.StatusNoContent)
+	assertDelete("/api/ops/admin/v1/model-accounts/"+jsonNumber(account.ID), "", http.StatusNoContent)
+
+	for _, expected := range []struct {
+		action, targetID, requestID string
+	}{
+		{"route_model_candidate.delete", jsonNumber(candidate.ID), "delete-candidate-request"},
+		{"route_model_price.delete", jsonNumber(price.ID), "delete-price-request"},
+		{"route_model.delete", jsonNumber(route.ID), "delete-route-request"},
+		{"model_account_model.delete", jsonNumber(model2.ID), "delete-model-request"},
+		{"model_account.delete", jsonNumber(account.ID), "delete-account-request"},
+	} {
+		page, listErr := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, Action: expected.action, TargetID: expected.targetID})
+		if listErr != nil || len(page.Items) != 1 {
+			t.Fatalf("expected one %s audit, got page=%#v err=%v", expected.action, page, listErr)
+		}
+		got := page.Items[0].Metadata
+		if got["request_id"] != expected.requestID || got["before"] == nil || got["after"] == nil {
+			t.Fatalf("%s audit missing lifecycle metadata: %#v", expected.action, got)
+		}
+		log := page.Items[0]
+		if log.ActorType != "admin" || log.ActorID != "1" || log.TargetID != expected.targetID || log.IPAddr == "" || log.UserAgent != "task8-lifecycle-test" {
+			t.Fatalf("%s audit missing actor/target/request identity: %#v", expected.action, log)
+		}
+	}
+}
+
 func TestAdminModelAccountTestImageUsesDirectAccountAndActualParams(t *testing.T) {
 	var upstreamReq struct {
 		Model             string `json:"model"`
@@ -381,6 +625,7 @@ func TestAdminModelAccountTestImageUsesDirectAccountAndActualParams(t *testing.T
 		BaseResolution:            []string{"1k", "2k", "4k"},
 		Quality:                   []string{"auto", "high"},
 		OutputFormat:              []string{"png", "webp"},
+		MaxImageCount:             1,
 		SupportsOutputCompression: true,
 		Moderation:                []string{"auto", "low"},
 		CostPerImage:              "0.00000",
@@ -483,6 +728,7 @@ func TestAdminModelAccountTestImageMapsUpstreamTransportError(t *testing.T) {
 		DisplayName:    "GPT Image 2",
 		TaskTypes:      []string{"text_to_image"},
 		BaseResolution: []string{"1k", "2k", "4k"},
+		MaxImageCount:  1,
 		CostPerImage:   "0.00000",
 		Currency:       "USD",
 		Enabled:        true,

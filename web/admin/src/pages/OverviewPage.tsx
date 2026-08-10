@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AdminDashboardOperations, AdminMetric, AdminUser, AuditLog, ProviderHealth, ReadinessReport } from '../../../shared/api-types'
+import type { AdminCallDistribution, AdminDashboardOperations, AdminMetric, AdminUser, AuditLog, ProviderHealth, ReadinessReport } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
 import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, MetricStrip, PageHeader } from '../components'
@@ -11,6 +11,7 @@ import { overviewRecentUserRows } from './overviewRows'
 
 type DashboardData = {
   operations: AdminDashboardOperations
+  call_distribution: AdminCallDistribution
   metrics: AdminMetric[]
   providers: ProviderHealth[]
   queue: Array<{ item: string; count: string; detail: string }>
@@ -92,7 +93,7 @@ export function OverviewPage() {
     <section className={overviewClasses.content}>
       <PageHeader title="运营总览" description="今日生成、积分消耗、待处理风险与关键运营明细。" />
       <MetricStrip metrics={metricRows} />
-      <OperationsInsightPanel providers={data.providers} users={data.users} operations={data.operations} queue={data.queue} risks={readinessRisks} />
+      <OperationsInsightPanel users={data.users} operations={data.operations} distribution={data.call_distribution} queue={data.queue} risks={readinessRisks} />
       <section className="grid gap-4" aria-label="运营支持信息">
         <ReadinessRiskPanel report={data.readiness} risks={readinessRisks} />
 
@@ -134,19 +135,19 @@ export function OverviewPage() {
 }
 
 function OperationsInsightPanel({
-  providers,
   users,
   operations,
+  distribution,
   queue,
   risks,
 }: {
-  providers: ProviderHealth[]
   users: AdminUser[]
   operations: AdminDashboardOperations
+  distribution: AdminCallDistribution
   queue: Array<{ item: string; count: string; detail: string }>
   risks: OverviewReadinessRow[]
 }) {
-  const providerRows = providerDistributionRows(providers)
+  const distributionRows = callDistributionRows(distribution)
   const topUsers = users
     .slice()
     .sort((left, right) => Number(right.balance || 0) - Number(left.balance || 0))
@@ -156,23 +157,26 @@ function OperationsInsightPanel({
     <section className={overviewClasses.insightGrid}>
       <div className={overviewClasses.chartPanel}>
         <div className={overviewClasses.sectionHeader}>
-          <h3 className={overviewClasses.sectionTitle}>模型调用分布</h3>
+          <div>
+            <h3 className={overviewClasses.sectionTitle}>模型调用分布</h3>
+            <p className={overviewClasses.panelDetail}>24 小时窗口 · 真实上游调用 {distribution.total_calls} 次</p>
+          </div>
         </div>
         <div className={overviewClasses.distributionBox}>
-          {providerRows.length ? providerRows.map((row) => (
+          {distributionRows.length ? distributionRows.map((row) => (
             <div key={row.label} className={overviewClasses.distributionRow}>
               <div className={overviewClasses.distributionMeta}>
                 <span className="min-w-0 truncate text-[var(--muted)]">{row.label}</span>
-                <span className="text-[var(--text)]">{row.value} ({row.percent}%)</span>
+                <span className="text-[var(--text)]">{row.calls} 次 ({row.percent}%)</span>
               </div>
               <div className={overviewClasses.distributionTrack}>
                 <div className={overviewClasses.distributionFill} style={{ width: `${row.percent}%` }} />
               </div>
             </div>
-          )) : <EmptyBlock variant="inline" title="暂无模型调用" detail="配置模型账号并产生调用后展示分布。" />}
+          )) : <EmptyBlock variant="inline" title="暂无模型调用" detail="当前 24 小时窗口内没有真实上游调用。" />}
         </div>
         <div className={overviewClasses.modelStats}>
-          <ModelStat name="上游健康" value={providerHealthLabel(providers)} detail={`${providers.length} 个上游实例`} />
+          <ModelStat name="真实调用" value={String(distribution.total_calls)} detail="按 upstream attempt 计数" />
           <ModelStat name="前置失败" value={String(operations.preflight_failure_count)} detail="生成前校验阻断" />
           <ModelStat name="广场访问" value={String(operations.public_gallery_list_views)} detail="公开广场浏览" />
         </div>
@@ -273,29 +277,12 @@ function overviewHeroMetricRows(metrics: AdminMetric[], operations: AdminDashboa
   ]
 }
 
-function providerDistributionRows(providers: ProviderHealth[]) {
-  const rows = providers
-  const total = rows.reduce((sum, row) => sum + providerWeight(row), 0) || 1
-  return rows.slice(0, 4).map((row) => {
-    const value = providerWeight(row)
-    return {
-      label: row.provider || row.provider_code || 'Provider',
-      value: `${row.latency_ms || 0}ms`,
-      percent: Math.max(4, Math.round((value / total) * 100)),
-    }
-  })
-}
-
-function providerWeight(provider: Pick<ProviderHealth, 'latency_ms' | 'status'>) {
-  const latency = Number(provider.latency_ms || 0)
-  const health = provider.status === 'healthy' ? 100 : provider.status === 'degraded' ? 45 : 12
-  return Math.max(8, health - Math.min(60, latency / 10))
-}
-
-function providerHealthLabel(providers: ProviderHealth[]) {
-  if (!providers.length) return '0 / 0'
-  const healthy = providers.filter((provider) => provider.status === 'healthy').length
-  return `${healthy} / ${providers.length}`
+function callDistributionRows(distribution: AdminCallDistribution) {
+  return distribution.groups.slice(0, 8).map((group) => ({
+    label: group.key === 'unrouted' ? '未路由调用' : group.key,
+    calls: group.calls,
+    percent: Number(group.percentage.toFixed(2)),
+  }))
 }
 
 function ReadinessRiskPanel({ report, risks }: { report: ReadinessReport; risks: OverviewReadinessRow[] }) {

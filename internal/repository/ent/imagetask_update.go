@@ -10,9 +10,11 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/google/uuid"
 )
 
@@ -73,6 +75,26 @@ func (_u *ImageTaskUpdate) SetNillableUserID(v *int64) *ImageTaskUpdate {
 // AddUserID adds value to the "user_id" field.
 func (_u *ImageTaskUpdate) AddUserID(v int64) *ImageTaskUpdate {
 	_u.mutation.AddUserID(v)
+	return _u
+}
+
+// SetProjectID sets the "project_id" field.
+func (_u *ImageTaskUpdate) SetProjectID(v uuid.UUID) *ImageTaskUpdate {
+	_u.mutation.SetProjectID(v)
+	return _u
+}
+
+// SetNillableProjectID sets the "project_id" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableProjectID(v *uuid.UUID) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetProjectID(*v)
+	}
+	return _u
+}
+
+// ClearProjectID clears the value of the "project_id" field.
+func (_u *ImageTaskUpdate) ClearProjectID() *ImageTaskUpdate {
+	_u.mutation.ClearProjectID()
 	return _u
 }
 
@@ -362,6 +384,26 @@ func (_u *ImageTaskUpdate) SetNillableOutputFormat(v *string) *ImageTaskUpdate {
 	if v != nil {
 		_u.SetOutputFormat(*v)
 	}
+	return _u
+}
+
+// SetBackground sets the "background" field.
+func (_u *ImageTaskUpdate) SetBackground(v string) *ImageTaskUpdate {
+	_u.mutation.SetBackground(v)
+	return _u
+}
+
+// SetNillableBackground sets the "background" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableBackground(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetBackground(*v)
+	}
+	return _u
+}
+
+// ClearBackground clears the value of the "background" field.
+func (_u *ImageTaskUpdate) ClearBackground() *ImageTaskUpdate {
+	_u.mutation.ClearBackground()
 	return _u
 }
 
@@ -1009,6 +1051,52 @@ func (_u *ImageTaskUpdate) ClearArtifactStorageConfigID() *ImageTaskUpdate {
 	return _u
 }
 
+// SetArtifactStorageDriver sets the "artifact_storage_driver" field.
+func (_u *ImageTaskUpdate) SetArtifactStorageDriver(v string) *ImageTaskUpdate {
+	_u.mutation.SetArtifactStorageDriver(v)
+	return _u
+}
+
+// SetNillableArtifactStorageDriver sets the "artifact_storage_driver" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableArtifactStorageDriver(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetArtifactStorageDriver(*v)
+	}
+	return _u
+}
+
+// SetArtifactStorageBucket sets the "artifact_storage_bucket" field.
+func (_u *ImageTaskUpdate) SetArtifactStorageBucket(v string) *ImageTaskUpdate {
+	_u.mutation.SetArtifactStorageBucket(v)
+	return _u
+}
+
+// SetNillableArtifactStorageBucket sets the "artifact_storage_bucket" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillableArtifactStorageBucket(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetArtifactStorageBucket(*v)
+	}
+	return _u
+}
+
+// SetArtifactObjectKeys sets the "artifact_object_keys" field.
+func (_u *ImageTaskUpdate) SetArtifactObjectKeys(v []string) *ImageTaskUpdate {
+	_u.mutation.SetArtifactObjectKeys(v)
+	return _u
+}
+
+// AppendArtifactObjectKeys appends value to the "artifact_object_keys" field.
+func (_u *ImageTaskUpdate) AppendArtifactObjectKeys(v []string) *ImageTaskUpdate {
+	_u.mutation.AppendArtifactObjectKeys(v)
+	return _u
+}
+
+// ClearArtifactObjectKeys clears the value of the "artifact_object_keys" field.
+func (_u *ImageTaskUpdate) ClearArtifactObjectKeys() *ImageTaskUpdate {
+	_u.mutation.ClearArtifactObjectKeys()
+	return _u
+}
+
 // SetArtifactStorageVersion sets the "artifact_storage_version" field.
 func (_u *ImageTaskUpdate) SetArtifactStorageVersion(v int64) *ImageTaskUpdate {
 	_u.mutation.ResetArtifactStorageVersion()
@@ -1150,9 +1238,20 @@ func (_u *ImageTaskUpdate) ClearFinishedAt() *ImageTaskUpdate {
 	return _u
 }
 
+// SetProject sets the "project" edge to the Project entity.
+func (_u *ImageTaskUpdate) SetProject(v *Project) *ImageTaskUpdate {
+	return _u.SetProjectID(v.ID)
+}
+
 // Mutation returns the ImageTaskMutation object of the builder.
 func (_u *ImageTaskUpdate) Mutation() *ImageTaskMutation {
 	return _u.mutation
+}
+
+// ClearProject clears the "project" edge to the Project entity.
+func (_u *ImageTaskUpdate) ClearProject() *ImageTaskUpdate {
+	_u.mutation.ClearProject()
+	return _u
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -1248,6 +1347,11 @@ func (_u *ImageTaskUpdate) check() error {
 			return &ValidationError{Name: "output_format", err: fmt.Errorf(`ent: validator failed for field "ImageTask.output_format": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Background(); ok {
+		if err := imagetask.BackgroundValidator(v); err != nil {
+			return &ValidationError{Name: "background", err: fmt.Errorf(`ent: validator failed for field "ImageTask.background": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Moderation(); ok {
 		if err := imagetask.ModerationValidator(v); err != nil {
 			return &ValidationError{Name: "moderation", err: fmt.Errorf(`ent: validator failed for field "ImageTask.moderation": %w`, err)}
@@ -1286,6 +1390,16 @@ func (_u *ImageTaskUpdate) check() error {
 	if v, ok := _u.mutation.ArtifactRecoveryStatus(); ok {
 		if err := imagetask.ArtifactRecoveryStatusValidator(v); err != nil {
 			return &ValidationError{Name: "artifact_recovery_status", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_recovery_status": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ArtifactStorageDriver(); ok {
+		if err := imagetask.ArtifactStorageDriverValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_storage_driver", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_storage_driver": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ArtifactStorageBucket(); ok {
+		if err := imagetask.ArtifactStorageBucketValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_storage_bucket", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_storage_bucket": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.LeaseOwner(); ok {
@@ -1402,6 +1516,12 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.OutputFormat(); ok {
 		_spec.SetField(imagetask.FieldOutputFormat, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Background(); ok {
+		_spec.SetField(imagetask.FieldBackground, field.TypeString, value)
+	}
+	if _u.mutation.BackgroundCleared() {
+		_spec.ClearField(imagetask.FieldBackground, field.TypeString)
 	}
 	if value, ok := _u.mutation.OutputCompression(); ok {
 		_spec.SetField(imagetask.FieldOutputCompression, field.TypeInt, value)
@@ -1595,6 +1715,23 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.ArtifactStorageConfigIDCleared() {
 		_spec.ClearField(imagetask.FieldArtifactStorageConfigID, field.TypeUUID)
 	}
+	if value, ok := _u.mutation.ArtifactStorageDriver(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageDriver, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactStorageBucket(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageBucket, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactObjectKeys(); ok {
+		_spec.SetField(imagetask.FieldArtifactObjectKeys, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedArtifactObjectKeys(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, imagetask.FieldArtifactObjectKeys, value)
+		})
+	}
+	if _u.mutation.ArtifactObjectKeysCleared() {
+		_spec.ClearField(imagetask.FieldArtifactObjectKeys, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.ArtifactStorageVersion(); ok {
 		_spec.SetField(imagetask.FieldArtifactStorageVersion, field.TypeInt64, value)
 	}
@@ -1636,6 +1773,35 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.FinishedAtCleared() {
 		_spec.ClearField(imagetask.FieldFinishedAt, field.TypeTime)
+	}
+	if _u.mutation.ProjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   imagetask.ProjectTable,
+			Columns: []string{imagetask.ProjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(project.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ProjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   imagetask.ProjectTable,
+			Columns: []string{imagetask.ProjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(project.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -1701,6 +1867,26 @@ func (_u *ImageTaskUpdateOne) SetNillableUserID(v *int64) *ImageTaskUpdateOne {
 // AddUserID adds value to the "user_id" field.
 func (_u *ImageTaskUpdateOne) AddUserID(v int64) *ImageTaskUpdateOne {
 	_u.mutation.AddUserID(v)
+	return _u
+}
+
+// SetProjectID sets the "project_id" field.
+func (_u *ImageTaskUpdateOne) SetProjectID(v uuid.UUID) *ImageTaskUpdateOne {
+	_u.mutation.SetProjectID(v)
+	return _u
+}
+
+// SetNillableProjectID sets the "project_id" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableProjectID(v *uuid.UUID) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetProjectID(*v)
+	}
+	return _u
+}
+
+// ClearProjectID clears the value of the "project_id" field.
+func (_u *ImageTaskUpdateOne) ClearProjectID() *ImageTaskUpdateOne {
+	_u.mutation.ClearProjectID()
 	return _u
 }
 
@@ -1990,6 +2176,26 @@ func (_u *ImageTaskUpdateOne) SetNillableOutputFormat(v *string) *ImageTaskUpdat
 	if v != nil {
 		_u.SetOutputFormat(*v)
 	}
+	return _u
+}
+
+// SetBackground sets the "background" field.
+func (_u *ImageTaskUpdateOne) SetBackground(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetBackground(v)
+	return _u
+}
+
+// SetNillableBackground sets the "background" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableBackground(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetBackground(*v)
+	}
+	return _u
+}
+
+// ClearBackground clears the value of the "background" field.
+func (_u *ImageTaskUpdateOne) ClearBackground() *ImageTaskUpdateOne {
+	_u.mutation.ClearBackground()
 	return _u
 }
 
@@ -2637,6 +2843,52 @@ func (_u *ImageTaskUpdateOne) ClearArtifactStorageConfigID() *ImageTaskUpdateOne
 	return _u
 }
 
+// SetArtifactStorageDriver sets the "artifact_storage_driver" field.
+func (_u *ImageTaskUpdateOne) SetArtifactStorageDriver(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactStorageDriver(v)
+	return _u
+}
+
+// SetNillableArtifactStorageDriver sets the "artifact_storage_driver" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableArtifactStorageDriver(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetArtifactStorageDriver(*v)
+	}
+	return _u
+}
+
+// SetArtifactStorageBucket sets the "artifact_storage_bucket" field.
+func (_u *ImageTaskUpdateOne) SetArtifactStorageBucket(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactStorageBucket(v)
+	return _u
+}
+
+// SetNillableArtifactStorageBucket sets the "artifact_storage_bucket" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillableArtifactStorageBucket(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetArtifactStorageBucket(*v)
+	}
+	return _u
+}
+
+// SetArtifactObjectKeys sets the "artifact_object_keys" field.
+func (_u *ImageTaskUpdateOne) SetArtifactObjectKeys(v []string) *ImageTaskUpdateOne {
+	_u.mutation.SetArtifactObjectKeys(v)
+	return _u
+}
+
+// AppendArtifactObjectKeys appends value to the "artifact_object_keys" field.
+func (_u *ImageTaskUpdateOne) AppendArtifactObjectKeys(v []string) *ImageTaskUpdateOne {
+	_u.mutation.AppendArtifactObjectKeys(v)
+	return _u
+}
+
+// ClearArtifactObjectKeys clears the value of the "artifact_object_keys" field.
+func (_u *ImageTaskUpdateOne) ClearArtifactObjectKeys() *ImageTaskUpdateOne {
+	_u.mutation.ClearArtifactObjectKeys()
+	return _u
+}
+
 // SetArtifactStorageVersion sets the "artifact_storage_version" field.
 func (_u *ImageTaskUpdateOne) SetArtifactStorageVersion(v int64) *ImageTaskUpdateOne {
 	_u.mutation.ResetArtifactStorageVersion()
@@ -2778,9 +3030,20 @@ func (_u *ImageTaskUpdateOne) ClearFinishedAt() *ImageTaskUpdateOne {
 	return _u
 }
 
+// SetProject sets the "project" edge to the Project entity.
+func (_u *ImageTaskUpdateOne) SetProject(v *Project) *ImageTaskUpdateOne {
+	return _u.SetProjectID(v.ID)
+}
+
 // Mutation returns the ImageTaskMutation object of the builder.
 func (_u *ImageTaskUpdateOne) Mutation() *ImageTaskMutation {
 	return _u.mutation
+}
+
+// ClearProject clears the "project" edge to the Project entity.
+func (_u *ImageTaskUpdateOne) ClearProject() *ImageTaskUpdateOne {
+	_u.mutation.ClearProject()
+	return _u
 }
 
 // Where appends a list predicates to the ImageTaskUpdate builder.
@@ -2889,6 +3152,11 @@ func (_u *ImageTaskUpdateOne) check() error {
 			return &ValidationError{Name: "output_format", err: fmt.Errorf(`ent: validator failed for field "ImageTask.output_format": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Background(); ok {
+		if err := imagetask.BackgroundValidator(v); err != nil {
+			return &ValidationError{Name: "background", err: fmt.Errorf(`ent: validator failed for field "ImageTask.background": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Moderation(); ok {
 		if err := imagetask.ModerationValidator(v); err != nil {
 			return &ValidationError{Name: "moderation", err: fmt.Errorf(`ent: validator failed for field "ImageTask.moderation": %w`, err)}
@@ -2927,6 +3195,16 @@ func (_u *ImageTaskUpdateOne) check() error {
 	if v, ok := _u.mutation.ArtifactRecoveryStatus(); ok {
 		if err := imagetask.ArtifactRecoveryStatusValidator(v); err != nil {
 			return &ValidationError{Name: "artifact_recovery_status", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_recovery_status": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ArtifactStorageDriver(); ok {
+		if err := imagetask.ArtifactStorageDriverValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_storage_driver", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_storage_driver": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ArtifactStorageBucket(); ok {
+		if err := imagetask.ArtifactStorageBucketValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_storage_bucket", err: fmt.Errorf(`ent: validator failed for field "ImageTask.artifact_storage_bucket": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.LeaseOwner(); ok {
@@ -3060,6 +3338,12 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	}
 	if value, ok := _u.mutation.OutputFormat(); ok {
 		_spec.SetField(imagetask.FieldOutputFormat, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Background(); ok {
+		_spec.SetField(imagetask.FieldBackground, field.TypeString, value)
+	}
+	if _u.mutation.BackgroundCleared() {
+		_spec.ClearField(imagetask.FieldBackground, field.TypeString)
 	}
 	if value, ok := _u.mutation.OutputCompression(); ok {
 		_spec.SetField(imagetask.FieldOutputCompression, field.TypeInt, value)
@@ -3253,6 +3537,23 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	if _u.mutation.ArtifactStorageConfigIDCleared() {
 		_spec.ClearField(imagetask.FieldArtifactStorageConfigID, field.TypeUUID)
 	}
+	if value, ok := _u.mutation.ArtifactStorageDriver(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageDriver, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactStorageBucket(); ok {
+		_spec.SetField(imagetask.FieldArtifactStorageBucket, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactObjectKeys(); ok {
+		_spec.SetField(imagetask.FieldArtifactObjectKeys, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedArtifactObjectKeys(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, imagetask.FieldArtifactObjectKeys, value)
+		})
+	}
+	if _u.mutation.ArtifactObjectKeysCleared() {
+		_spec.ClearField(imagetask.FieldArtifactObjectKeys, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.ArtifactStorageVersion(); ok {
 		_spec.SetField(imagetask.FieldArtifactStorageVersion, field.TypeInt64, value)
 	}
@@ -3294,6 +3595,35 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	}
 	if _u.mutation.FinishedAtCleared() {
 		_spec.ClearField(imagetask.FieldFinishedAt, field.TypeTime)
+	}
+	if _u.mutation.ProjectCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   imagetask.ProjectTable,
+			Columns: []string{imagetask.ProjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(project.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ProjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   imagetask.ProjectTable,
+			Columns: []string{imagetask.ProjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(project.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &ImageTask{config: _u.config}
 	_spec.Assign = _node.assignValues

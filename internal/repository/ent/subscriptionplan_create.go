@@ -144,6 +144,20 @@ func (_c *SubscriptionPlanCreate) SetNillableBonusPoints(v *string) *Subscriptio
 	return _c
 }
 
+// SetCreditExpiryEnabled sets the "credit_expiry_enabled" field.
+func (_c *SubscriptionPlanCreate) SetCreditExpiryEnabled(v bool) *SubscriptionPlanCreate {
+	_c.mutation.SetCreditExpiryEnabled(v)
+	return _c
+}
+
+// SetNillableCreditExpiryEnabled sets the "credit_expiry_enabled" field if the given value is not nil.
+func (_c *SubscriptionPlanCreate) SetNillableCreditExpiryEnabled(v *bool) *SubscriptionPlanCreate {
+	if v != nil {
+		_c.SetCreditExpiryEnabled(*v)
+	}
+	return _c
+}
+
 // SetDurationDays sets the "duration_days" field.
 func (_c *SubscriptionPlanCreate) SetDurationDays(v int) *SubscriptionPlanCreate {
 	_c.mutation.SetDurationDays(v)
@@ -273,6 +287,10 @@ func (_c *SubscriptionPlanCreate) defaults() {
 		v := subscriptionplan.DefaultBonusPoints
 		_c.mutation.SetBonusPoints(v)
 	}
+	if _, ok := _c.mutation.CreditExpiryEnabled(); !ok {
+		v := subscriptionplan.DefaultCreditExpiryEnabled
+		_c.mutation.SetCreditExpiryEnabled(v)
+	}
 	if _, ok := _c.mutation.DurationDays(); !ok {
 		v := subscriptionplan.DefaultDurationDays
 		_c.mutation.SetDurationDays(v)
@@ -342,6 +360,9 @@ func (_c *SubscriptionPlanCreate) check() error {
 	}
 	if _, ok := _c.mutation.BonusPoints(); !ok {
 		return &ValidationError{Name: "bonus_points", err: errors.New(`ent: missing required field "SubscriptionPlan.bonus_points"`)}
+	}
+	if _, ok := _c.mutation.CreditExpiryEnabled(); !ok {
+		return &ValidationError{Name: "credit_expiry_enabled", err: errors.New(`ent: missing required field "SubscriptionPlan.credit_expiry_enabled"`)}
 	}
 	if _, ok := _c.mutation.DurationDays(); !ok {
 		return &ValidationError{Name: "duration_days", err: errors.New(`ent: missing required field "SubscriptionPlan.duration_days"`)}
@@ -430,6 +451,10 @@ func (_c *SubscriptionPlanCreate) createSpec() (*SubscriptionPlan, *sqlgraph.Cre
 	if value, ok := _c.mutation.BonusPoints(); ok {
 		_spec.SetField(subscriptionplan.FieldBonusPoints, field.TypeString, value)
 		_node.BonusPoints = value
+	}
+	if value, ok := _c.mutation.CreditExpiryEnabled(); ok {
+		_spec.SetField(subscriptionplan.FieldCreditExpiryEnabled, field.TypeBool, value)
+		_node.CreditExpiryEnabled = value
 	}
 	if value, ok := _c.mutation.DurationDays(); ok {
 		_spec.SetField(subscriptionplan.FieldDurationDays, field.TypeInt, value)

@@ -11,8 +11,8 @@ export type CashierPlanDraft = {
   price_cny: string
   points: string
   bonus_points: string
+  credit_expiry_enabled: boolean
   duration_days: string
-  currency: string
   sort_order: string
   description: string
 }
@@ -27,8 +27,8 @@ export function cashierPlanEmptyDraft(): CashierPlanDraft {
     price_cny: '19.90000',
     points: '100.00000',
     bonus_points: '0.00000',
+    credit_expiry_enabled: true,
     duration_days: '30',
-    currency: 'CNY',
     sort_order: '10',
     description: '',
   }
@@ -45,8 +45,8 @@ export function cashierPlanDraftFromRow(row: CashierPlan): CashierPlanDraft {
     price_cny: row.price_cny,
     points: row.points,
     bonus_points: row.bonus_points,
-    duration_days: String(row.duration_days),
-    currency: row.currency,
+    credit_expiry_enabled: row.credit_expiry_enabled !== false,
+    duration_days: row.credit_expiry_enabled === false ? '' : String(row.duration_days ?? 30),
     sort_order: String(row.sort_order ?? 0),
     description: row.description ?? '',
   }
@@ -57,5 +57,11 @@ export function cashierPlanPayloadFromDraft(draft: CashierPlanDraft): Partial<Ca
 }
 
 export function cashierPlanDraftCanSave(draft: CashierPlanDraft): boolean {
-  return Boolean(draft.plan_code.trim() && draft.plan_name.trim() && draft.price_cny.trim() && draft.points.trim())
+  return Boolean(
+    draft.plan_code.trim()
+    && draft.plan_name.trim()
+    && draft.price_cny.trim()
+    && draft.points.trim()
+    && (!draft.credit_expiry_enabled || Number(draft.duration_days) > 0),
+  )
 }

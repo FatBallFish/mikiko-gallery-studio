@@ -13,7 +13,16 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
+	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 )
+
+type staticModelRoutingSource struct {
+	snapshot modelhub.ModelRoutingSnapshot
+}
+
+func (s staticModelRoutingSource) ModelRoutingConfig(context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	return s.snapshot, nil
+}
 
 type flakyAttachmentPolicySource struct {
 	tab domainadminconfig.Tab
@@ -158,5 +167,53 @@ func TestCapabilitiesExposeConfiguredModelGroups(t *testing.T) {
 	}
 	if resp.ReferenceImageMaxMB != 12 || resp.ReferenceImageMaxBytes != 12*1024*1024 {
 		t.Fatalf("expected reference image upload limits, got mb=%d bytes=%d", resp.ReferenceImageMaxMB, resp.ReferenceImageMaxBytes)
+	}
+}
+
+func TestCapabilitiesUseDynamicBillingConfigForAutoResolutionAndPrices(t *testing.T) {
+	cfg := config.Config{Billing: config.BillingConfig{
+		AutoBaseResolutionDefaultByGroup: map[string]string{"plus": "1k"},
+		TaskMultipliers:                  map[string]string{"text_to_image": "1.00000"},
+	}}
+	admin := adminconfigservice.NewService(cfg)
+	billing := billingservice.NewService(cfg.Billing)
+	billing.SetAdminConfigResolver(admin)
+	svc := NewService(cfg)
+	svc.SetBillingConfigResolver(billing)
+	svc.SetModelRoutingSource(staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices: []modelhub.RoutePriceConfig{
+			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", Enabled: true},
+			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "2k", BasePoints: "2.00000", Enabled: true},
+		},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 11, SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k", "2k"},
+			SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 11, Enabled: true}},
+	}})
+
+	first, err := svc.ListForGroups(context.Background(), nil)
+	if err != nil || len(first.ModelGroups) != 1 {
+		t.Fatalf("first ListForGroups = %#v, %v", first, err)
+	}
+	if first.ModelGroups[0].AutoBaseResolutionByTaskType["text_to_image"] != "1k" || first.ModelGroups[0].Prices[0].ChargedPoints != "1.00000" {
+		t.Fatalf("unexpected initial dynamic capability: %#v", first.ModelGroups[0])
+	}
+	if _, err := admin.UpdateTab(context.Background(), domainadminconfig.UpdateTabRequest{
+		TabKey: "billing_pricing", Version: 1,
+		Items: []domainadminconfig.Item{
+			{ConfigCategory: "billing_pricing", ConfigKey: "auto_base_resolution_default_by_group", ConfigValue: map[string]any{"value": map[string]any{"plus": "2k"}}, Scope: "global"},
+			{ConfigCategory: "billing_pricing", ConfigKey: "task_multipliers", ConfigValue: map[string]any{"value": map[string]any{"text_to_image": "2.00000"}}, Scope: "global"},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateTab: %v", err)
+	}
+	second, err := svc.ListForGroups(context.Background(), nil)
+	if err != nil || len(second.ModelGroups) != 1 {
+		t.Fatalf("second ListForGroups = %#v, %v", second, err)
+	}
+	if second.ModelGroups[0].AutoBaseResolutionByTaskType["text_to_image"] != "2k" || second.ModelGroups[0].Prices[0].ChargedPoints != "2.00000" {
+		t.Fatalf("capabilities retained stale billing config: %#v", second.ModelGroups[0])
 	}
 }

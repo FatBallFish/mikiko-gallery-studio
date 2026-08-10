@@ -262,12 +262,12 @@ func (_q *RouteModelPriceQuery) Clone() *RouteModelPriceQuery {
 // Example:
 //
 //	var v []struct {
-//		RouteModelID int64 `json:"route_model_id,omitempty"`
+//		CreatedAt time.Time `json:"created_at,omitempty"`
 //		Count int `json:"count,omitempty"`
 //	}
 //
 //	client.RouteModelPrice.Query().
-//		GroupBy(routemodelprice.FieldRouteModelID).
+//		GroupBy(routemodelprice.FieldCreatedAt).
 //		Aggregate(ent.Count()).
 //		Scan(ctx, &v)
 func (_q *RouteModelPriceQuery) GroupBy(field string, fields ...string) *RouteModelPriceGroupBy {
@@ -285,11 +285,11 @@ func (_q *RouteModelPriceQuery) GroupBy(field string, fields ...string) *RouteMo
 // Example:
 //
 //	var v []struct {
-//		RouteModelID int64 `json:"route_model_id,omitempty"`
+//		CreatedAt time.Time `json:"created_at,omitempty"`
 //	}
 //
 //	client.RouteModelPrice.Query().
-//		Select(routemodelprice.FieldRouteModelID).
+//		Select(routemodelprice.FieldCreatedAt).
 //		Scan(ctx, &v)
 func (_q *RouteModelPriceQuery) Select(fields ...string) *RouteModelPriceSelect {
 	_q.ctx.Fields = append(_q.ctx.Fields, fields...)

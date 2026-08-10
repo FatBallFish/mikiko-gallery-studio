@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { docsEntryPoints, docsUrl, openDocsEntry, openDocsSite, resolveDocsUrl } from './docsUrl'
 
 if (docsUrl({ VITE_DOCS_URL: 'https://docs.example.com/' }) !== 'https://docs.example.com/') {
@@ -38,7 +39,7 @@ if (opened[0]?.target !== '_blank' || opened[0]?.features !== 'noopener,noreferr
   throw new Error(`documentation site must open safely in a new tab, got ${JSON.stringify(opened[0])}`)
 }
 
-const expectedEntryPoints = ['home', 'api-keys', 'account-menu', 'footer', 'legacy-route']
+const expectedEntryPoints = ['home', 'api-keys', 'account-menu', 'footer']
 if (JSON.stringify(docsEntryPoints) !== JSON.stringify(expectedEntryPoints)) {
   throw new Error(`known documentation entry points drifted, got ${JSON.stringify(docsEntryPoints)}`)
 }
@@ -55,4 +56,24 @@ for (const entryPoint of docsEntryPoints) {
 }
 if (entryOpens.length !== docsEntryPoints.length || entryOpens.some((url) => url !== 'https://docs.example.com/')) {
   throw new Error(`every known documentation entry must open the external site directly, got ${JSON.stringify(entryOpens)}`)
+}
+
+const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+const routeSource = readFileSync(new URL('./routeState.ts', import.meta.url), 'utf8')
+const typeSource = readFileSync(new URL('./types.ts', import.meta.url), 'utf8')
+for (const [name, source] of [['App', appSource], ['route state', routeSource], ['route types', typeSource]] as const) {
+  if (/['"]docs['"]/.test(source) || source.includes('DocsPage')) {
+    throw new Error(`${name} must not retain the retired /docs user route`)
+  }
+}
+for (const file of ['./pages/ApiKeysPage.tsx', './pages/LandingPage.tsx', './avatarMenu.ts']) {
+  const source = readFileSync(new URL(file, import.meta.url), 'utf8')
+  if (/navigate\(['"]docs['"]\)|route:\s*['"]docs['"]/.test(source)) {
+    throw new Error(`${file} must open the resolved documentation URL directly`)
+  }
+}
+if (existsSync(new URL('./pages/DocsPage.tsx', import.meta.url))
+  || existsSync(new URL('./pages/docsPageModel.ts', import.meta.url))
+  || existsSync(new URL('./pages/docsPageModel.contract.ts', import.meta.url))) {
+  throw new Error('obsolete embedded documentation route files must be deleted')
 }

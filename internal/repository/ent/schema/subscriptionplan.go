@@ -21,6 +21,7 @@ func (SubscriptionPlan) Fields() []ent.Field {
 		field.String("price_cny").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
 		field.String("points").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
 		field.String("bonus_points").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
+		field.Bool("credit_expiry_enabled").Default(true),
 		field.Int("duration_days").Default(30),
 		field.String("currency").MaxLen(16).Default("CNY"),
 		field.String("description").MaxLen(255).Default(""),

@@ -29,7 +29,7 @@ import (
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
-func TestImportGalleryImageUsesServerSideCopyOnMatchingStorage(t *testing.T) {
+func TestImportGalleryImageCreatesAliasWithoutStorageIO(t *testing.T) {
 	content := encodedTestImage(t, "png")
 	backend := newImportTrackingBackend(content)
 	ref := storage.BackendRef{ConfigID: "bfss", Version: 7, Driver: "s3", Backend: backend}
@@ -37,25 +37,34 @@ func TestImportGalleryImageUsesServerSideCopyOnMatchingStorage(t *testing.T) {
 	svc := NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{}, newMemoryAssetStore(), router)
 	result := galleryImportResult(content, "bfss")
 
+	_, err := svc.ImportGalleryImage(t.Context(), 31, result)
+	var rolloutErr *errs.Error
+	if !errors.As(err, &rolloutErr) || rolloutErr.Code != errs.CodeReferenceAliasCreationNotReady || rolloutErr.StatusCode != 409 {
+		t.Fatalf("disabled rollout error = %#v", err)
+	}
+	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.getBoundedCalls.Load() != 0 || backend.putCalls.Load() != 0 {
+		t.Fatalf("disabled alias rollout must perform no storage IO: copy=%d get=%d bounded=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.getBoundedCalls.Load(), backend.putCalls.Load())
+	}
+
+	svc.SetAliasCreationGate(staticAliasCreationGate{enabled: true})
+
 	asset, err := svc.ImportGalleryImage(t.Context(), 31, result)
 	if err != nil {
 		t.Fatalf("ImportGalleryImage: %v", err)
 	}
-	if backend.copyCalls.Load() != 1 || backend.getBoundedCalls.Load() != 0 || backend.putCalls.Load() != 0 {
-		t.Fatalf("same storage import must use only CopyObject: copy=%d bounded=%d put=%d", backend.copyCalls.Load(), backend.getBoundedCalls.Load(), backend.putCalls.Load())
+	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.getBoundedCalls.Load() != 0 || backend.putCalls.Load() != 0 {
+		t.Fatalf("alias import must not touch storage: copy=%d get=%d bounded=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.getBoundedCalls.Load(), backend.putCalls.Load())
 	}
-	if asset.ObjectKey == result.ObjectKey || asset.SHA256 != result.SHA256 || asset.StorageConfigID != "bfss" {
-		t.Fatalf("import must own a distinct copied object with source metadata: %#v", asset)
+	if asset.ObjectKey != result.ObjectKey || asset.SHA256 != result.SHA256 || asset.StorageConfigID != "bfss" || asset.SourceImageResultID != result.ID || asset.OwnsObject {
+		t.Fatalf("import must snapshot a non-owning alias of the source tuple: %#v", asset)
 	}
-	if err := backend.Delete(t.Context(), result.ObjectKey); err != nil {
-		t.Fatalf("delete source: %v", err)
-	}
-	if _, err := backend.Get(t.Context(), asset.ObjectKey); err != nil {
-		t.Fatalf("copied asset must survive source deletion: %v", err)
+	second, err := svc.ImportGalleryImage(t.Context(), 31, result)
+	if err != nil || second.ID != asset.ID {
+		t.Fatalf("repeated import must be idempotent: first=%s second=%#v err=%v", asset.ID, second, err)
 	}
 }
 
-func TestImportGalleryImageUsesBoundedCrossStorageFallback(t *testing.T) {
+func TestImportGalleryImageAliasesOriginalStorageAcrossDefaultWriterChanges(t *testing.T) {
 	content := encodedTestImage(t, "png")
 	source := newImportTrackingBackend(content)
 	destination := newImportTrackingBackend(nil)
@@ -66,17 +75,18 @@ func TestImportGalleryImageUsesBoundedCrossStorageFallback(t *testing.T) {
 		},
 	}
 	svc := NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{ReferenceImageMaxMB: 1}, newMemoryAssetStore(), router)
+	svc.SetAliasCreationGate(staticAliasCreationGate{enabled: true})
 	result := galleryImportResult(content, "source")
 
 	asset, err := svc.ImportGalleryImage(t.Context(), 32, result)
 	if err != nil {
 		t.Fatalf("ImportGalleryImage: %v", err)
 	}
-	if source.getBoundedCalls.Load() != 1 || source.lastBoundedLimit.Load() != 1024*1024+1 || source.copyCalls.Load() != 0 {
-		t.Fatalf("cross storage import must use max+1 bounded read: calls=%d limit=%d copy=%d", source.getBoundedCalls.Load(), source.lastBoundedLimit.Load(), source.copyCalls.Load())
+	if source.getCalls.Load() != 0 || source.getBoundedCalls.Load() != 0 || source.copyCalls.Load() != 0 || destination.putCalls.Load() != 0 {
+		t.Fatalf("cross-storage alias import must perform zero storage IO: get=%d bounded=%d copy=%d put=%d", source.getCalls.Load(), source.getBoundedCalls.Load(), source.copyCalls.Load(), destination.putCalls.Load())
 	}
-	if destination.putCalls.Load() != 1 || asset.StorageConfigID != "destination" {
-		t.Fatalf("cross storage import must write destination once: puts=%d asset=%#v", destination.putCalls.Load(), asset)
+	if asset.StorageConfigID != "source" || asset.ObjectKey != result.ObjectKey || asset.OwnsObject {
+		t.Fatalf("alias must remain pinned to source storage tuple: %#v", asset)
 	}
 }
 
@@ -86,6 +96,7 @@ func TestImportGalleryImageRejectsMissingLegacyMetadataWithoutReadingSameStorage
 	ref := storage.BackendRef{ConfigID: "bfss", Version: 7, Driver: "s3", Backend: backend}
 	router := &switchingAssetRouter{defaultRef: ref, refs: map[string]storage.BackendRef{"bfss": ref}}
 	svc := NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{}, newMemoryAssetStore(), router)
+	svc.SetAliasCreationGate(staticAliasCreationGate{enabled: true})
 	result := galleryImportResult(content, "bfss")
 	result.FileSizeBytes, result.Width, result.Height, result.SHA256 = 0, 0, 0, ""
 
@@ -99,6 +110,12 @@ func TestImportGalleryImageRejectsMissingLegacyMetadataWithoutReadingSameStorage
 	}
 }
 
+type staticAliasCreationGate struct{ enabled bool }
+
+func (g staticAliasCreationGate) AliasCreationEnabled(context.Context) (bool, error) {
+	return g.enabled, nil
+}
+
 func galleryImportResult(content []byte, configID string) provider.ImageResult {
 	hash := sha256.Sum256(content)
 	return provider.ImageResult{
@@ -110,6 +127,7 @@ func galleryImportResult(content []byte, configID string) provider.ImageResult {
 type importTrackingBackend struct {
 	objects          map[string][]byte
 	copyCalls        atomic.Int32
+	getCalls         atomic.Int32
 	getBoundedCalls  atomic.Int32
 	putCalls         atomic.Int32
 	lastBoundedLimit atomic.Int64
@@ -130,6 +148,7 @@ func (b *importTrackingBackend) Put(_ context.Context, key, _ string, content []
 	return nil
 }
 func (b *importTrackingBackend) Get(_ context.Context, key string) ([]byte, error) {
+	b.getCalls.Add(1)
 	content, ok := b.objects[key]
 	if !ok {
 		return nil, storage.ErrNotFound
@@ -268,6 +287,14 @@ func (r *switchingAssetRouter) DefaultWriter(context.Context) (storage.BackendRe
 
 func (r *switchingAssetRouter) BackendFor(_ context.Context, configID string, _ string) (storage.BackendRef, error) {
 	return r.refs[configID], nil
+}
+
+func (r *switchingAssetRouter) ReadableBackends(context.Context) ([]storage.BackendRef, error) {
+	refs := make([]storage.BackendRef, 0, len(r.refs))
+	for _, ref := range r.refs {
+		refs = append(refs, ref)
+	}
+	return refs, nil
 }
 
 func TestUploadDeduplicatesByHash(t *testing.T) {

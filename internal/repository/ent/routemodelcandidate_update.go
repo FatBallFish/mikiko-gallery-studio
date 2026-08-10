@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -24,6 +25,32 @@ type RouteModelCandidateUpdate struct {
 // Where appends a list predicates to the RouteModelCandidateUpdate builder.
 func (_u *RouteModelCandidateUpdate) Where(ps ...predicate.RouteModelCandidate) *RouteModelCandidateUpdate {
 	_u.mutation.Where(ps...)
+	return _u
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *RouteModelCandidateUpdate) SetUpdatedAt(v time.Time) *RouteModelCandidateUpdate {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *RouteModelCandidateUpdate) SetDeletedAt(v time.Time) *RouteModelCandidateUpdate {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *RouteModelCandidateUpdate) SetNillableDeletedAt(v *time.Time) *RouteModelCandidateUpdate {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *RouteModelCandidateUpdate) ClearDeletedAt() *RouteModelCandidateUpdate {
+	_u.mutation.ClearDeletedAt()
 	return _u
 }
 
@@ -153,6 +180,7 @@ func (_u *RouteModelCandidateUpdate) Mutation() *RouteModelCandidateMutation {
 
 // Save executes the query and returns the number of nodes affected by the update operation.
 func (_u *RouteModelCandidateUpdate) Save(ctx context.Context) (int, error) {
+	_u.defaults()
 	return withHooks(ctx, _u.sqlSave, _u.mutation, _u.hooks)
 }
 
@@ -178,6 +206,14 @@ func (_u *RouteModelCandidateUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// defaults sets the default values of the builder before save.
+func (_u *RouteModelCandidateUpdate) defaults() {
+	if _, ok := _u.mutation.UpdatedAt(); !ok {
+		v := routemodelcandidate.UpdateDefaultUpdatedAt()
+		_u.mutation.SetUpdatedAt(v)
+	}
+}
+
 func (_u *RouteModelCandidateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(routemodelcandidate.Table, routemodelcandidate.Columns, sqlgraph.NewFieldSpec(routemodelcandidate.FieldID, field.TypeInt))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -186,6 +222,15 @@ func (_u *RouteModelCandidateUpdate) sqlSave(ctx context.Context) (_node int, er
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.UpdatedAt(); ok {
+		_spec.SetField(routemodelcandidate.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(routemodelcandidate.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(routemodelcandidate.FieldDeletedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RouteModelID(); ok {
 		_spec.SetField(routemodelcandidate.FieldRouteModelID, field.TypeInt64, value)
@@ -238,6 +283,32 @@ type RouteModelCandidateUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *RouteModelCandidateMutation
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *RouteModelCandidateUpdateOne) SetUpdatedAt(v time.Time) *RouteModelCandidateUpdateOne {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *RouteModelCandidateUpdateOne) SetDeletedAt(v time.Time) *RouteModelCandidateUpdateOne {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *RouteModelCandidateUpdateOne) SetNillableDeletedAt(v *time.Time) *RouteModelCandidateUpdateOne {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *RouteModelCandidateUpdateOne) ClearDeletedAt() *RouteModelCandidateUpdateOne {
+	_u.mutation.ClearDeletedAt()
+	return _u
 }
 
 // SetRouteModelID sets the "route_model_id" field.
@@ -379,6 +450,7 @@ func (_u *RouteModelCandidateUpdateOne) Select(field string, fields ...string) *
 
 // Save executes the query and returns the updated RouteModelCandidate entity.
 func (_u *RouteModelCandidateUpdateOne) Save(ctx context.Context) (*RouteModelCandidate, error) {
+	_u.defaults()
 	return withHooks(ctx, _u.sqlSave, _u.mutation, _u.hooks)
 }
 
@@ -401,6 +473,14 @@ func (_u *RouteModelCandidateUpdateOne) Exec(ctx context.Context) error {
 func (_u *RouteModelCandidateUpdateOne) ExecX(ctx context.Context) {
 	if err := _u.Exec(ctx); err != nil {
 		panic(err)
+	}
+}
+
+// defaults sets the default values of the builder before save.
+func (_u *RouteModelCandidateUpdateOne) defaults() {
+	if _, ok := _u.mutation.UpdatedAt(); !ok {
+		v := routemodelcandidate.UpdateDefaultUpdatedAt()
+		_u.mutation.SetUpdatedAt(v)
 	}
 }
 
@@ -429,6 +509,15 @@ func (_u *RouteModelCandidateUpdateOne) sqlSave(ctx context.Context) (_node *Rou
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.UpdatedAt(); ok {
+		_spec.SetField(routemodelcandidate.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(routemodelcandidate.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(routemodelcandidate.FieldDeletedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RouteModelID(); ok {
 		_spec.SetField(routemodelcandidate.FieldRouteModelID, field.TypeInt64, value)

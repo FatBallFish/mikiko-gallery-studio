@@ -165,6 +165,36 @@ export type CustomImageSizeNormalization = {
   error?: string
 }
 
+export type CustomImageSizeBounds = {
+  minWidth?: number
+  maxWidth?: number
+  minHeight?: number
+  maxHeight?: number
+}
+
+export function validateCustomImageSize(width: number, height: number, bounds: CustomImageSizeBounds = {}): CustomImageSizeNormalization {
+  const invalid = (error: string): CustomImageSizeNormalization => ({
+    valid: false,
+    requestedWidth: width,
+    requestedHeight: height,
+    width: 0,
+    height: 0,
+    size: '',
+    wasNormalized: false,
+    error,
+  })
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
+    return invalid('width and height must be positive integers')
+  }
+  if (!isLegalCustomImageSize(width, height)) {
+    return invalid('width and height must be divisible by 16, within platform limits, and use an aspect ratio between 1:3 and 3:1')
+  }
+  if ((bounds.minWidth ?? 0) > width || (bounds.maxWidth ?? MAX_EDGE) < width || (bounds.minHeight ?? 0) > height || (bounds.maxHeight ?? MAX_EDGE) < height) {
+    return invalid('width and height exceed the configured model limits')
+  }
+  return customImageSizeResult(width, height, width, height)
+}
+
 export function normalizeCustomImageSize(width: number, height: number): CustomImageSizeNormalization {
   const invalid = (error: string): CustomImageSizeNormalization => ({
     valid: false,

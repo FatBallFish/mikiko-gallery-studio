@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/google/uuid"
 )
 
@@ -72,6 +73,20 @@ func (_c *ImageResultCreate) SetTaskID(v uuid.UUID) *ImageResultCreate {
 // SetUserID sets the "user_id" field.
 func (_c *ImageResultCreate) SetUserID(v int64) *ImageResultCreate {
 	_c.mutation.SetUserID(v)
+	return _c
+}
+
+// SetProjectID sets the "project_id" field.
+func (_c *ImageResultCreate) SetProjectID(v uuid.UUID) *ImageResultCreate {
+	_c.mutation.SetProjectID(v)
+	return _c
+}
+
+// SetNillableProjectID sets the "project_id" field if the given value is not nil.
+func (_c *ImageResultCreate) SetNillableProjectID(v *uuid.UUID) *ImageResultCreate {
+	if v != nil {
+		_c.SetProjectID(*v)
+	}
 	return _c
 }
 
@@ -245,6 +260,11 @@ func (_c *ImageResultCreate) SetNillableID(v *uuid.UUID) *ImageResultCreate {
 		_c.SetID(*v)
 	}
 	return _c
+}
+
+// SetProject sets the "project" edge to the Project entity.
+func (_c *ImageResultCreate) SetProject(v *Project) *ImageResultCreate {
+	return _c.SetProjectID(v.ID)
 }
 
 // Mutation returns the ImageResultMutation object of the builder.
@@ -514,6 +534,23 @@ func (_c *ImageResultCreate) createSpec() (*ImageResult, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.PublishedAt(); ok {
 		_spec.SetField(imageresult.FieldPublishedAt, field.TypeTime, value)
 		_node.PublishedAt = &value
+	}
+	if nodes := _c.mutation.ProjectIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   imageresult.ProjectTable,
+			Columns: []string{imageresult.ProjectColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(project.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.ProjectID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

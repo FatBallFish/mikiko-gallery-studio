@@ -94,6 +94,11 @@ func MaxImageCount(v int) predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldEQ(FieldMaxImageCount, v))
 }
 
+// SupportsCustomRatio applies equality check predicate on the "supports_custom_ratio" field. It's identical to SupportsCustomRatioEQ.
+func SupportsCustomRatio(v bool) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldSupportsCustomRatio, v))
+}
+
 // OutputCompression applies equality check predicate on the "output_compression" field. It's identical to OutputCompressionEQ.
 func OutputCompression(v int) predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldEQ(FieldOutputCompression, v))
@@ -107,6 +112,26 @@ func SupportsOutputCompression(v bool) predicate.ModelAccountModel {
 // SupportsCustomSize applies equality check predicate on the "supports_custom_size" field. It's identical to SupportsCustomSizeEQ.
 func SupportsCustomSize(v bool) predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldEQ(FieldSupportsCustomSize, v))
+}
+
+// MinWidth applies equality check predicate on the "min_width" field. It's identical to MinWidthEQ.
+func MinWidth(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMinWidth, v))
+}
+
+// MaxWidth applies equality check predicate on the "max_width" field. It's identical to MaxWidthEQ.
+func MaxWidth(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMaxWidth, v))
+}
+
+// MinHeight applies equality check predicate on the "min_height" field. It's identical to MinHeightEQ.
+func MinHeight(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMinHeight, v))
+}
+
+// MaxHeight applies equality check predicate on the "max_height" field. It's identical to MaxHeightEQ.
+func MaxHeight(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMaxHeight, v))
 }
 
 // CostPerImage applies equality check predicate on the "cost_per_image" field. It's identical to CostPerImageEQ.
@@ -564,6 +589,16 @@ func SupportedPixelSizesNotNil() predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldNotNull(FieldSupportedPixelSizes))
 }
 
+// SupportsCustomRatioEQ applies the EQ predicate on the "supports_custom_ratio" field.
+func SupportsCustomRatioEQ(v bool) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldSupportsCustomRatio, v))
+}
+
+// SupportsCustomRatioNEQ applies the NEQ predicate on the "supports_custom_ratio" field.
+func SupportsCustomRatioNEQ(v bool) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNEQ(FieldSupportsCustomRatio, v))
+}
+
 // OutputFormatIsNil applies the IsNil predicate on the "output_format" field.
 func OutputFormatIsNil() predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldIsNull(FieldOutputFormat))
@@ -572,6 +607,16 @@ func OutputFormatIsNil() predicate.ModelAccountModel {
 // OutputFormatNotNil applies the NotNil predicate on the "output_format" field.
 func OutputFormatNotNil() predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldNotNull(FieldOutputFormat))
+}
+
+// SupportedBackgroundsIsNil applies the IsNil predicate on the "supported_backgrounds" field.
+func SupportedBackgroundsIsNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIsNull(FieldSupportedBackgrounds))
+}
+
+// SupportedBackgroundsNotNil applies the NotNil predicate on the "supported_backgrounds" field.
+func SupportedBackgroundsNotNil() predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotNull(FieldSupportedBackgrounds))
 }
 
 // OutputCompressionEQ applies the EQ predicate on the "output_compression" field.
@@ -632,6 +677,166 @@ func SupportsCustomSizeEQ(v bool) predicate.ModelAccountModel {
 // SupportsCustomSizeNEQ applies the NEQ predicate on the "supports_custom_size" field.
 func SupportsCustomSizeNEQ(v bool) predicate.ModelAccountModel {
 	return predicate.ModelAccountModel(sql.FieldNEQ(FieldSupportsCustomSize, v))
+}
+
+// MinWidthEQ applies the EQ predicate on the "min_width" field.
+func MinWidthEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMinWidth, v))
+}
+
+// MinWidthNEQ applies the NEQ predicate on the "min_width" field.
+func MinWidthNEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNEQ(FieldMinWidth, v))
+}
+
+// MinWidthIn applies the In predicate on the "min_width" field.
+func MinWidthIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIn(FieldMinWidth, vs...))
+}
+
+// MinWidthNotIn applies the NotIn predicate on the "min_width" field.
+func MinWidthNotIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotIn(FieldMinWidth, vs...))
+}
+
+// MinWidthGT applies the GT predicate on the "min_width" field.
+func MinWidthGT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGT(FieldMinWidth, v))
+}
+
+// MinWidthGTE applies the GTE predicate on the "min_width" field.
+func MinWidthGTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGTE(FieldMinWidth, v))
+}
+
+// MinWidthLT applies the LT predicate on the "min_width" field.
+func MinWidthLT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLT(FieldMinWidth, v))
+}
+
+// MinWidthLTE applies the LTE predicate on the "min_width" field.
+func MinWidthLTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLTE(FieldMinWidth, v))
+}
+
+// MaxWidthEQ applies the EQ predicate on the "max_width" field.
+func MaxWidthEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMaxWidth, v))
+}
+
+// MaxWidthNEQ applies the NEQ predicate on the "max_width" field.
+func MaxWidthNEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNEQ(FieldMaxWidth, v))
+}
+
+// MaxWidthIn applies the In predicate on the "max_width" field.
+func MaxWidthIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIn(FieldMaxWidth, vs...))
+}
+
+// MaxWidthNotIn applies the NotIn predicate on the "max_width" field.
+func MaxWidthNotIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotIn(FieldMaxWidth, vs...))
+}
+
+// MaxWidthGT applies the GT predicate on the "max_width" field.
+func MaxWidthGT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGT(FieldMaxWidth, v))
+}
+
+// MaxWidthGTE applies the GTE predicate on the "max_width" field.
+func MaxWidthGTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGTE(FieldMaxWidth, v))
+}
+
+// MaxWidthLT applies the LT predicate on the "max_width" field.
+func MaxWidthLT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLT(FieldMaxWidth, v))
+}
+
+// MaxWidthLTE applies the LTE predicate on the "max_width" field.
+func MaxWidthLTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLTE(FieldMaxWidth, v))
+}
+
+// MinHeightEQ applies the EQ predicate on the "min_height" field.
+func MinHeightEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMinHeight, v))
+}
+
+// MinHeightNEQ applies the NEQ predicate on the "min_height" field.
+func MinHeightNEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNEQ(FieldMinHeight, v))
+}
+
+// MinHeightIn applies the In predicate on the "min_height" field.
+func MinHeightIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIn(FieldMinHeight, vs...))
+}
+
+// MinHeightNotIn applies the NotIn predicate on the "min_height" field.
+func MinHeightNotIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotIn(FieldMinHeight, vs...))
+}
+
+// MinHeightGT applies the GT predicate on the "min_height" field.
+func MinHeightGT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGT(FieldMinHeight, v))
+}
+
+// MinHeightGTE applies the GTE predicate on the "min_height" field.
+func MinHeightGTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGTE(FieldMinHeight, v))
+}
+
+// MinHeightLT applies the LT predicate on the "min_height" field.
+func MinHeightLT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLT(FieldMinHeight, v))
+}
+
+// MinHeightLTE applies the LTE predicate on the "min_height" field.
+func MinHeightLTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLTE(FieldMinHeight, v))
+}
+
+// MaxHeightEQ applies the EQ predicate on the "max_height" field.
+func MaxHeightEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldEQ(FieldMaxHeight, v))
+}
+
+// MaxHeightNEQ applies the NEQ predicate on the "max_height" field.
+func MaxHeightNEQ(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNEQ(FieldMaxHeight, v))
+}
+
+// MaxHeightIn applies the In predicate on the "max_height" field.
+func MaxHeightIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldIn(FieldMaxHeight, vs...))
+}
+
+// MaxHeightNotIn applies the NotIn predicate on the "max_height" field.
+func MaxHeightNotIn(vs ...int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldNotIn(FieldMaxHeight, vs...))
+}
+
+// MaxHeightGT applies the GT predicate on the "max_height" field.
+func MaxHeightGT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGT(FieldMaxHeight, v))
+}
+
+// MaxHeightGTE applies the GTE predicate on the "max_height" field.
+func MaxHeightGTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldGTE(FieldMaxHeight, v))
+}
+
+// MaxHeightLT applies the LT predicate on the "max_height" field.
+func MaxHeightLT(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLT(FieldMaxHeight, v))
+}
+
+// MaxHeightLTE applies the LTE predicate on the "max_height" field.
+func MaxHeightLTE(v int) predicate.ModelAccountModel {
+	return predicate.ModelAccountModel(sql.FieldLTE(FieldMaxHeight, v))
 }
 
 // ModerationIsNil applies the IsNil predicate on the "moderation" field.

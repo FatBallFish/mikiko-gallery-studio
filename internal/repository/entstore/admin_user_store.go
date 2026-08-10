@@ -96,7 +96,12 @@ func (s *AdminUserStore) CreateUser(ctx context.Context, req domainadminuser.Cre
 	if err != nil {
 		return domainadminuser.UserSummary{}, err
 	}
-	create := s.client.User.Create().
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainadminuser.UserSummary{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	create := tx.User.Create().
 		SetEmail(req.Email).
 		SetNickname(req.Nickname).
 		SetStatus(req.Status).
@@ -110,6 +115,12 @@ func (s *AdminUserStore) CreateUser(ctx context.Context, req domainadminuser.Cre
 		if isConstraintError(err) {
 			return domainadminuser.UserSummary{}, repoerr.ErrConflict
 		}
+		return domainadminuser.UserSummary{}, err
+	}
+	if _, err := createDefaultProjectInTx(ctx, tx, int64(entity.ID)); err != nil {
+		return domainadminuser.UserSummary{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return domainadminuser.UserSummary{}, err
 	}
 	return s.mapUser(ctx, entity)

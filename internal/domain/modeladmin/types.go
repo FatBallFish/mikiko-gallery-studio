@@ -2,6 +2,17 @@ package modeladmin
 
 import "time"
 
+type LifecycleAudit struct {
+	ActorType  string
+	ActorID    string
+	Action     string
+	TargetType string
+	TargetID   string
+	RequestID  string
+	IPAddr     string
+	UserAgent  string
+}
+
 const (
 	AdapterTypeOpenAICompatible = "openai_compatible"
 	AdapterTypeOpenRouter       = "openrouter"
@@ -85,10 +96,16 @@ type ModelAccountModel struct {
 	SizeModes                 []string       `json:"size_modes"`
 	SupportedRatios           []string       `json:"supported_ratios"`
 	SupportedPixelSizes       []string       `json:"supported_pixel_sizes"`
+	SupportsCustomRatio       bool           `json:"supports_custom_ratio"`
 	OutputFormat              []string       `json:"output_format"`
+	SupportedBackgrounds      []string       `json:"supported_backgrounds"`
 	OutputCompression         int            `json:"output_compression"`
 	SupportsOutputCompression bool           `json:"supports_output_compression"`
 	SupportsCustomSize        bool           `json:"supports_custom_size"`
+	MinWidth                  int            `json:"min_width"`
+	MaxWidth                  int            `json:"max_width"`
+	MinHeight                 int            `json:"min_height"`
+	MaxHeight                 int            `json:"max_height"`
 	Moderation                []string       `json:"moderation"`
 	CostPerImage              string         `json:"cost_per_image"`
 	Currency                  string         `json:"currency"`
@@ -110,10 +127,16 @@ type ModelAccountModelWriteRequest struct {
 	SizeModes                 []string
 	SupportedRatios           []string
 	SupportedPixelSizes       []string
+	SupportsCustomRatio       bool
 	OutputFormat              []string
+	SupportedBackgrounds      []string
 	OutputCompression         int
 	SupportsOutputCompression bool
 	SupportsCustomSize        bool
+	MinWidth                  int
+	MaxWidth                  int
+	MinHeight                 int
+	MaxHeight                 int
 	Moderation                []string
 	CostPerImage              string
 	Currency                  string

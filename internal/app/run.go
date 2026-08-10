@@ -32,8 +32,11 @@ import (
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
+	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	objectcleanupservice "github.com/fatballfish/pic-gallery/internal/service/objectcleanup"
+	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
@@ -297,10 +300,15 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	if err := storageConfigSvc.Bootstrap(startupContext, 0); err != nil {
 		return fmt.Errorf("bootstrap storage config: %w", err)
 	}
+	if err := requireLegacyStorageIdentityBackfill(startupContext, client, storageConfigSvc, cfg.Storage.Driver); err != nil {
+		return fmt.Errorf("prepare object cleanup storage identities: %w", err)
+	}
 	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
 	if err := probeDefaultStorageAtStartup(startupContext, storageConfigSvc, storageRegistry); err != nil {
 		return err
 	}
+	cleanupRuntime := startObjectCleanupLoop(metricsContext, objectcleanupservice.NewProcessor(entstore.NewObjectCleanupStore(client), storageRegistry, objectcleanupservice.ProcessorOptions{}), 2*time.Second, 6*time.Hour)
+	defer cleanupRuntime.Stop()
 	var storageInvalidationBus *storage.RedisInvalidationBus
 	if redisClient != nil {
 		storageInvalidationBus = storage.NewRedisInvalidationBus(redisClient, cfg.Redis.KeyPrefix)
@@ -313,8 +321,11 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
 	billingSvc.SetAdminConfigResolver(adminSvc)
+	aliasRolloutStore := entstore.NewAliasRolloutStore(client)
 	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, entstore.NewAssetsStore(client), storageRegistry)
+	projectSvc := projectservice.NewService(entstore.NewProjectStore(client))
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, entstore.NewImageTaskStore(client), assetSvc, billingSvc, storageRegistry)
+	taskSvc.SetProjectResolver(projectSvc)
 	modelAdminStore := entstore.NewModelAdminStore(client)
 	taskSvc.SetModelRoutingSource(modelAdminStore)
 	if redisClient != nil {
@@ -331,7 +342,8 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	clusterSvc := clusterservice.NewService(clusterservice.ServiceOptions{
 		Store:          clusterStore,
 		InstallationID: cfg.Runtime.InstallationID, DeploymentRole: domaincluster.NodeRole(cfg.Runtime.DeploymentRole),
-		RuntimeValues: startup.Bootstrap.Values, EnrollmentSealKey: startup.Bootstrap.Values["CLUSTER_ENROLLMENT_SEAL_KEY"],
+		SingleComponents: runtimeClusterNodeRoles(cfg.Runtime),
+		RuntimeValues:    startup.Bootstrap.Values, EnrollmentSealKey: startup.Bootstrap.Values["CLUSTER_ENROLLMENT_SEAL_KEY"],
 	})
 	adminUserSvc := adminuserservice.NewServiceWithStore(entstore.NewAdminUserStore(client, billingStore), billingSvc)
 	redeemSvc := redeemservice.NewServiceWithStore(entstore.NewRedeemAdminStore(client))
@@ -343,12 +355,15 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	slog.Info("database-backed stores enabled")
 
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
+	api.SetGalleryExportService(galleryexportservice.NewService(entstore.NewGalleryExportStore(client), storageRegistry, galleryexportservice.Options{}))
+	api.SetAliasRolloutStore(aliasRolloutStore)
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)
 	api.SetTextModelServices(textModelSvc, promptOptimizerSvc)
 	api.SetStorageConfigService(storageConfigSvc, storageRegistry, storageInvalidationBus)
 	api.SetClusterService(clusterSvc)
-	heartbeat, err := startRuntimeHeartbeat(metricsContext, cfg, clusterStore)
+	api.SetProjectService(projectSvc)
+	heartbeat, err := startRuntimeHeartbeat(metricsContext, cfg, clusterStore, domaincluster.NodeRoleAPI)
 	if err != nil {
 		return err
 	}

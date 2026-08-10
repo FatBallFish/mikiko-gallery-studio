@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
@@ -17,6 +18,48 @@ type RouteModelPriceCreate struct {
 	config
 	mutation *RouteModelPriceMutation
 	hooks    []Hook
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (_c *RouteModelPriceCreate) SetCreatedAt(v time.Time) *RouteModelPriceCreate {
+	_c.mutation.SetCreatedAt(v)
+	return _c
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (_c *RouteModelPriceCreate) SetNillableCreatedAt(v *time.Time) *RouteModelPriceCreate {
+	if v != nil {
+		_c.SetCreatedAt(*v)
+	}
+	return _c
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (_c *RouteModelPriceCreate) SetUpdatedAt(v time.Time) *RouteModelPriceCreate {
+	_c.mutation.SetUpdatedAt(v)
+	return _c
+}
+
+// SetNillableUpdatedAt sets the "updated_at" field if the given value is not nil.
+func (_c *RouteModelPriceCreate) SetNillableUpdatedAt(v *time.Time) *RouteModelPriceCreate {
+	if v != nil {
+		_c.SetUpdatedAt(*v)
+	}
+	return _c
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_c *RouteModelPriceCreate) SetDeletedAt(v time.Time) *RouteModelPriceCreate {
+	_c.mutation.SetDeletedAt(v)
+	return _c
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_c *RouteModelPriceCreate) SetNillableDeletedAt(v *time.Time) *RouteModelPriceCreate {
+	if v != nil {
+		_c.SetDeletedAt(*v)
+	}
+	return _c
 }
 
 // SetRouteModelID sets the "route_model_id" field.
@@ -114,6 +157,14 @@ func (_c *RouteModelPriceCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *RouteModelPriceCreate) defaults() {
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		v := routemodelprice.DefaultCreatedAt()
+		_c.mutation.SetCreatedAt(v)
+	}
+	if _, ok := _c.mutation.UpdatedAt(); !ok {
+		v := routemodelprice.DefaultUpdatedAt()
+		_c.mutation.SetUpdatedAt(v)
+	}
 	if _, ok := _c.mutation.BasePoints(); !ok {
 		v := routemodelprice.DefaultBasePoints
 		_c.mutation.SetBasePoints(v)
@@ -130,6 +181,12 @@ func (_c *RouteModelPriceCreate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_c *RouteModelPriceCreate) check() error {
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "RouteModelPrice.created_at"`)}
+	}
+	if _, ok := _c.mutation.UpdatedAt(); !ok {
+		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "RouteModelPrice.updated_at"`)}
+	}
 	if _, ok := _c.mutation.RouteModelID(); !ok {
 		return &ValidationError{Name: "route_model_id", err: errors.New(`ent: missing required field "RouteModelPrice.route_model_id"`)}
 	}
@@ -184,6 +241,18 @@ func (_c *RouteModelPriceCreate) createSpec() (*RouteModelPrice, *sqlgraph.Creat
 		_node = &RouteModelPrice{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(routemodelprice.Table, sqlgraph.NewFieldSpec(routemodelprice.FieldID, field.TypeInt))
 	)
+	if value, ok := _c.mutation.CreatedAt(); ok {
+		_spec.SetField(routemodelprice.FieldCreatedAt, field.TypeTime, value)
+		_node.CreatedAt = value
+	}
+	if value, ok := _c.mutation.UpdatedAt(); ok {
+		_spec.SetField(routemodelprice.FieldUpdatedAt, field.TypeTime, value)
+		_node.UpdatedAt = value
+	}
+	if value, ok := _c.mutation.DeletedAt(); ok {
+		_spec.SetField(routemodelprice.FieldDeletedAt, field.TypeTime, value)
+		_node.DeletedAt = &value
+	}
 	if value, ok := _c.mutation.RouteModelID(); ok {
 		_spec.SetField(routemodelprice.FieldRouteModelID, field.TypeInt64, value)
 		_node.RouteModelID = value

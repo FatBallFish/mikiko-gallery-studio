@@ -157,9 +157,10 @@ export const adminApi = {
     delete: (admin_id: string | number) => sharedApiClient.request<SystemAdminUser>(API_PATHS.ops.adminUserDetail, { method: 'DELETE', pathParams: { admin_id } }),
   },
   dashboard: async (): Promise<AdminDashboard> => {
-    const raw: any = await sharedApiClient.request(API_PATHS.ops.dashboard)
+    const raw: any = await sharedApiClient.request(API_PATHS.ops.dashboard, { query: { window: '24h' } })
     return {
       operations: toDashboardOperations(raw.operations),
+      call_distribution: raw.call_distribution ?? { window: { from: '', to: '' }, total_calls: 0, groups: [], preflight_failure_count: 0 },
       metrics: (raw.metrics ?? []).map(toMetric),
       providers: (raw.providers ?? []).map(toProviderHealth),
       queue: raw.queue ?? [],

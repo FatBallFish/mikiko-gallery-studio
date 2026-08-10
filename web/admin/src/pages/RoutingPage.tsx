@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import type { AdminMetric, ModelAccount, ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelPrice, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader } from '../components'
+import { Trash2 } from 'lucide-react'
+import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
 import { FilterToolbar } from '../ui/dataTable'
 import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
+import { modelLifecycleErrorMessage } from './adminModelLifecycle'
 import {
   routeCandidateLabel,
   routeCandidateSummary,
@@ -21,6 +23,7 @@ import {
 
 type RouteDialog = { row?: RouteModel; code: string; name: string; description: string; visibility: RouteModelVisibility; enabled: boolean; sortOrder: string; groupIds: string[] }
 type CandidateDialog = { route: RouteModel; row?: RouteModelCandidate; accountModelId: string; priority: string; weight: string; fallbackOrder: string; enabled: boolean }
+type DeleteTarget = { kind: 'route'; route: RouteModel } | { kind: 'candidate'; route: RouteModel; candidate: RouteModelCandidate }
 
 const routingClasses = {
   actionRow: 'flex flex-wrap items-center gap-2',
@@ -62,6 +65,8 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = async (preferredRouteId?: string) => {
     setLoading(true)
@@ -186,6 +191,24 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
     }
   }
 
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setMutationError(null)
+    try {
+      if (deleteTarget.kind === 'route') await adminApi.deleteRouteModel(deleteTarget.route.id)
+      else await adminApi.deleteRouteModelCandidate(deleteTarget.route.id, deleteTarget.candidate.id)
+      const deletedLabel = deleteTarget.kind === 'route' ? deleteTarget.route.code : deleteTarget.candidate.model_code || String(deleteTarget.candidate.id)
+      setDeleteTarget(null)
+      setNotice(`${deletedLabel} 已删除。`)
+      await load()
+    } catch (caught) {
+      setMutationError(modelLifecycleErrorMessage(caught, '删除路由配置失败'))
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const openRouteDialog = (dialog: RouteDialog) => {
     setMutationError(null)
     setRouteDialog(dialog)
@@ -274,6 +297,8 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
               onEditRoute={() => openRouteDialog(editRouteDialog(selectedRoute))}
               onAddCandidate={() => openCandidateDialog(newCandidateDialog(selectedRoute, accountModels))}
               onEditCandidate={(candidate) => openCandidateDialog(editCandidateDialog(selectedRoute, candidate))}
+              onDeleteRoute={() => { setMutationError(null); setDeleteTarget({ kind: 'route', route: selectedRoute }) }}
+              onDeleteCandidate={(candidate) => { setMutationError(null); setDeleteTarget({ kind: 'candidate', route: selectedRoute, candidate }) }}
             />
           ) : <EmptyBlock title="选择路由模型" detail="从左侧选择一个路由，查看候选、能力与价格状态。" />}
         </section>
@@ -304,6 +329,17 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
             <Field label={routingFieldLabels.fallbackOrder} hint={routingFieldHints.fallbackOrder}><input type="number" min="1" value={candidateDialog.fallbackOrder} onChange={(event) => setCandidateDialog({ ...candidateDialog, fallbackOrder: event.target.value })} /></Field>
             <Field label="状态"><select value={candidateDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setCandidateDialog({ ...candidateDialog, enabled: event.target.value === 'enabled' })}>{routeEnabledOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
           </div>
+        </Modal>
+      ) : null}
+      {deleteTarget ? (
+        <Modal
+          title={deleteTarget.kind === 'route' ? '删除路由模型' : '删除候选模型'}
+          detail={deleteTarget.kind === 'route' ? deleteTarget.route.name : `${deleteTarget.route.name} / ${deleteTarget.candidate.model_code || deleteTarget.candidate.id}`}
+          onClose={() => { if (!deleting) setDeleteTarget(null) }}
+          footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={deleting} onClick={() => setDeleteTarget(null)}>取消</button><button className={cn(adminButton.base, adminButton.danger)} type="button" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? '删除中...' : '确认删除'}</button></>}
+        >
+          {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
+          <p className="m-0 text-sm leading-6 text-[var(--muted)]">删除后配置不再参与新请求，历史调用继续使用任务中保存的路由与价格快照。</p>
         </Modal>
       ) : null}
     </section>
@@ -340,6 +376,8 @@ function RouteDetailWorkspace({
   onEditRoute,
   onAddCandidate,
   onEditCandidate,
+  onDeleteRoute,
+  onDeleteCandidate,
 }: {
   route: RouteModel
   groups: UserGroup[]
@@ -350,6 +388,8 @@ function RouteDetailWorkspace({
   onEditRoute: () => void
   onAddCandidate: () => void
   onEditCandidate: (candidate: RouteModelCandidate) => void
+  onDeleteRoute: () => void
+  onDeleteCandidate: (candidate: RouteModelCandidate) => void
 }) {
   const readiness = routeReadinessBadge({
     enabled: route.enabled,
@@ -372,6 +412,7 @@ function RouteDetailWorkspace({
         </div>
         <div className={routingClasses.actionRow}>
           <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={onEditRoute}>编辑路由</button>
+          <TooltipIconButton label={`删除路由 ${route.code}`} onClick={onDeleteRoute}><Trash2 /></TooltipIconButton>
           <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={onAddCandidate}>配置候选</button>
         </div>
       </header>
@@ -405,7 +446,7 @@ function RouteDetailWorkspace({
           </div>
           <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={onAddCandidate}>新增候选</button>
         </div>
-        <CandidatePanel candidates={routeCandidates} accountModels={accountModels} modelAccounts={modelAccounts} onAddCandidate={onAddCandidate} onEditCandidate={onEditCandidate} />
+        <CandidatePanel candidates={routeCandidates} accountModels={accountModels} modelAccounts={modelAccounts} onAddCandidate={onAddCandidate} onEditCandidate={onEditCandidate} onDeleteCandidate={onDeleteCandidate} />
       </section>
     </article>
   )
@@ -427,12 +468,14 @@ function CandidatePanel({
   modelAccounts,
   onAddCandidate,
   onEditCandidate,
+  onDeleteCandidate,
 }: {
   candidates: RouteModelCandidate[]
   accountModels: ModelAccountModel[]
   modelAccounts: ModelAccount[]
   onAddCandidate: () => void
   onEditCandidate: (candidate: RouteModelCandidate) => void
+  onDeleteCandidate: (candidate: RouteModelCandidate) => void
 }) {
   if (!candidates.length) {
     return (
@@ -475,7 +518,7 @@ function CandidatePanel({
               <td className={routingClasses.candidateTd}>{candidateCapabilitySummary(model)}</td>
               <td className={routingClasses.candidateTd}><Badge tone={effective ? 'success' : 'warning'}>{effective ? '可路由' : candidate.enabled ? '底层不可用' : '候选停用'}</Badge></td>
               <td className={routingClasses.candidateTd}>
-                <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onEditCandidate(candidate)}>编辑</button>
+                <span className={routingClasses.actionRow}><button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => onEditCandidate(candidate)}>编辑</button><TooltipIconButton label={`删除候选 ${candidate.model_code || candidate.id}`} onClick={() => onDeleteCandidate(candidate)}><Trash2 /></TooltipIconButton></span>
               </td>
             </tr>
           )})}

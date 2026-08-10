@@ -4,6 +4,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
@@ -17,6 +18,7 @@ func (ImageResult) Fields() []ent.Field {
 		field.UUID("id", uuid.UUID{}).Default(uuid.New).Immutable(),
 		field.UUID("task_id", uuid.UUID{}),
 		field.Int64("user_id"),
+		field.UUID("project_id", uuid.UUID{}).Optional().Nillable(),
 		field.String("image_role").MaxLen(16).Default("output"),
 		field.UUID("storage_config_id", uuid.UUID{}).Optional().Nillable(),
 		field.String("storage_driver").MaxLen(16).Default("local"),
@@ -32,8 +34,15 @@ func (ImageResult) Fields() []ent.Field {
 		field.Time("published_at").Optional().Nillable(),
 	}
 }
+
+func (ImageResult) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("project", Project.Type).Ref("image_results").Field("project_id").Unique(),
+	}
+}
+
 func (ImageResult) Indexes() []ent.Index {
-	return []ent.Index{index.Fields("task_id"), index.Fields("user_id"), index.Fields("image_role"), index.Fields("storage_config_id"), index.Fields("object_key").Unique(), index.Fields("sha256"), index.Fields("visibility_status")}
+	return []ent.Index{index.Fields("task_id"), index.Fields("user_id"), index.Fields("project_id"), index.Fields("user_id", "project_id", "created_at"), index.Fields("image_role"), index.Fields("storage_config_id"), index.Fields("object_key").Unique(), index.Fields("sha256"), index.Fields("visibility_status")}
 }
 func (ImageResult) Annotations() []schema.Annotation {
 	return []schema.Annotation{entsql.Annotation{Table: "task_images"}}

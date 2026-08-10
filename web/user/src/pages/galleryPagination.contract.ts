@@ -44,7 +44,7 @@ if (removedPage.items.length !== 2 || removedPage.items[0] !== localPage.items[0
 
 const pageSource = readFileSync(new URL('./GalleryPage.tsx', import.meta.url), 'utf8')
 for (const contract of [
-  'userApi.listGalleryImages(pageNumber, GALLERY_PAGE_SIZE)',
+  'userApi.listGalleryImages(pageNumber, GALLERY_PAGE_SIZE, selectedProjectID)',
   'loadingMore',
   'hasMore',
   'loadMoreRef',

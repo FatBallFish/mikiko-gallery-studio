@@ -66,6 +66,9 @@ for (const required of [
   'output_format: outputFormat',
   'output_compression: compressionVisible ? outputCompression : 100',
   'moderation,',
+  'capability_version: estimate?.capability_version',
+  "err.code === 'capability_changed'",
+  'userApi.estimate(estimatePayload)',
 ]) {
   if (!source.includes(required)) throw new Error(`creative workspace should include ${required}`)
 }
@@ -110,6 +113,21 @@ const createRequest = createTaskSource.indexOf('userApi.createTask')
 if (!(referenceGuard >= 0 && createRequest > referenceGuard)) {
   throw new Error('createTask must defensively reject missing references before issuing the API request')
 }
+const capabilityChangedStart = createTaskSource.indexOf("err.code === 'capability_changed'")
+const capabilityChangedEnd = createTaskSource.indexOf("app.notify('error'", capabilityChangedStart)
+const capabilityChangedSource = createTaskSource.slice(capabilityChangedStart, capabilityChangedEnd)
+for (const required of [
+	'await userApi.getCapabilities()',
+	'setCapability(nextCapability)',
+	"setEstimateSnapshot({ key: '', estimate: null, error: '' })",
+]) {
+  if (!capabilityChangedSource.includes(required)) {
+    throw new Error(`capability_changed recovery must refresh capabilities and invalidate the stale estimate: missing ${required}`)
+  }
+}
+if (capabilityChangedSource.includes('userApi.estimate(')) {
+  throw new Error('capability_changed recovery must let normalized capability state drive the next estimate instead of reusing the stale payload')
+}
 
 const historyEditStart = source.indexOf('async function applyAsEditSource')
 const historyEditEnd = source.indexOf('\n  function removeEditAsset', historyEditStart)
@@ -148,6 +166,47 @@ if (/Math\.round\(task\.progress/.test(source) || /task\.progress\s*\?\?/.test(s
 
 if (!source.includes("task.size_mode === 'pixel' ? `尺寸: ${task.requested_size || task.aspect_ratio}` : `比例: ${task.aspect_ratio}`")) {
   throw new Error('pixel-mode task results must display requested pixel size instead of an aspect-ratio label')
+}
+
+if (!source.includes("'redesign-prompt-input pb-11'")) {
+  throw new Error('the outer prompt textarea must reserve only bottom clearance for floating actions')
+}
+if (source.includes("'redesign-prompt-input pb-11 pr-20'")) {
+  throw new Error('the outer prompt textarea must use its full width instead of reserving a right-side text column')
+}
+for (const required of [
+  'function HistoryTaskGalleryModal',
+  '历史创作总览',
+  'onPreviewImage',
+  'setHistoryTaskDialog(null)',
+]) {
+  if (!source.includes(required)) throw new Error(`multi-image history must open an overview before image detail: missing ${required}`)
+}
+const historyOverviewStart = source.indexOf('function HistoryTaskGalleryModal')
+const generationOutputStart = source.indexOf('function GenerationOutput', historyOverviewStart)
+const historyOverviewSource = source.slice(historyOverviewStart, generationOutputStart)
+if (historyOverviewSource.includes('<ImageDetailModal')) {
+  throw new Error('the multi-image history overview must not duplicate the shared image detail modal')
+}
+for (const stateContract of [
+  'historyTaskDialog && !previewImage',
+  'onPreviewImage={openHistoryPreview}',
+  'onClose={() => setPreviewImage(null)}',
+  'historyPreviewReturnTarget',
+  'data-history-image-id={image.id}',
+  "document.querySelectorAll<HTMLElement>('[data-history-image-id]')",
+  'window.requestAnimationFrame',
+  'setHistoryPreviewReturnTarget(null)',
+]) {
+  if (!source.includes(stateContract)) {
+    throw new Error(`closing shared image detail must restore the task overview: missing ${stateContract}`)
+  }
+}
+
+const focusRestoreEffect = source.indexOf("document.querySelectorAll<HTMLElement>('[data-history-image-id]')")
+const historyOverviewRender = source.indexOf('{historyTaskDialog && !previewImage ? (')
+if (!(focusRestoreEffect >= 0 && focusRestoreEffect < historyOverviewRender)) {
+  throw new Error('closing image detail must restore focus after the history overview remounts')
 }
 
 const recentHandlerStart = source.indexOf('function selectRecentTask')

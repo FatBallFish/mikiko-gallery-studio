@@ -112,6 +112,153 @@ func CalculateImageSize(baseResolution, aspectRatio string) (string, error) {
 	return fmt.Sprintf("%dx%d", bestWidth, bestHeight), nil
 }
 
+// CalculateImageSizeWithinCapability resolves a ratio-mode size without changing
+// the nominal result unless configured bounds make that result unavailable.
+func CalculateImageSizeWithinCapability(baseResolution, aspectRatio string, capability ImageModelCapability) (string, error) {
+	nominal, err := CalculateImageSize(baseResolution, aspectRatio)
+	if err != nil {
+		return "", err
+	}
+	nominalWidth, nominalHeight, ok := ParseImageSize(nominal)
+	if !ok {
+		return "", fmt.Errorf("invalid nominal image size")
+	}
+	resolution := normalizeSizeBaseResolution(baseResolution)
+	pixelBudget := minInt(imageTierPixelBudget[resolution], imageMaxPixels)
+	if legalExplicitDimensions(nominalWidth, nominalHeight, capability) && nominalWidth*nominalHeight <= pixelBudget {
+		return nominal, nil
+	}
+
+	ratioWidth, ratioHeight, ok := parseRatio(aspectRatio)
+	if !ok {
+		return "", fmt.Errorf("invalid aspect ratio")
+	}
+	targetRatio := float64(ratioWidth) / float64(ratioHeight)
+	minWidth, maxWidth := effectiveRatioDimensionBounds(capability.MinWidth, capability.MaxWidth)
+	minHeight, maxHeight := effectiveRatioDimensionBounds(capability.MinHeight, capability.MaxHeight)
+	if minWidth > maxWidth || minHeight > maxHeight {
+		return "", fmt.Errorf("no legal image size for ratio")
+	}
+
+	bestWidth, bestHeight := 0, 0
+	bestDistance, bestRatioError := math.Inf(1), math.Inf(1)
+	for width := minWidth; width <= maxWidth; width += imageSizeMultiple {
+		lower := maxInt(minHeight, maxInt(ceilDiv(imageMinPixels, width), ceilDiv(width, imageMaxAspectRatioInt)))
+		upper := minInt(maxHeight, minInt(pixelBudget/width, width*imageMaxAspectRatioInt))
+		if lower > upper {
+			continue
+		}
+		lower = maxInt(lower, int(math.Ceil(float64(width)/(targetRatio*(1+imageMaxRatioError)))))
+		upper = minInt(upper, int(math.Floor(float64(width)/(targetRatio*(1-imageMaxRatioError)))))
+		lower = roundUpToImageGrid(lower)
+		upper = roundDownToImageGrid(upper)
+		if lower > upper {
+			continue
+		}
+		for _, height := range nearestGridValues(nominalHeight, lower, upper) {
+			if !IsLegalCustomImageSize(width, height) || width*height > pixelBudget {
+				continue
+			}
+			currentRatioError := ratioError(float64(width)/float64(height), targetRatio)
+			if currentRatioError > imageMaxRatioError+1e-12 {
+				continue
+			}
+			distance := math.Abs(float64(width-nominalWidth))/float64(nominalWidth) + math.Abs(float64(height-nominalHeight))/float64(nominalHeight)
+			if betterRatioSize(distance, currentRatioError, width, height, bestDistance, bestRatioError, bestWidth, bestHeight) {
+				bestWidth, bestHeight = width, height
+				bestDistance, bestRatioError = distance, currentRatioError
+			}
+		}
+	}
+	if bestWidth == 0 || bestHeight == 0 {
+		return "", fmt.Errorf("no legal image size for ratio")
+	}
+	return fmt.Sprintf("%dx%d", bestWidth, bestHeight), nil
+}
+
+func IsLegalResolvedRatioSize(baseResolution, aspectRatio, size string) bool {
+	width, height, ok := ParseImageSize(size)
+	if !ok || !IsLegalCustomImageSize(width, height) {
+		return false
+	}
+	resolution := normalizeSizeBaseResolution(baseResolution)
+	if width*height > imageTierPixelBudget[resolution] {
+		return false
+	}
+	nominal, err := CalculateImageSize(resolution, aspectRatio)
+	if err != nil {
+		return false
+	}
+	if NormalizePixelSize(size) == nominal {
+		return true
+	}
+	ratioWidth, ratioHeight, ok := parseRatio(aspectRatio)
+	if !ok {
+		return false
+	}
+	return ratioError(float64(width)/float64(height), float64(ratioWidth)/float64(ratioHeight)) <= imageMaxRatioError+1e-12
+}
+
+func effectiveRatioDimensionBounds(minimum, maximum int) (int, int) {
+	if minimum <= 0 {
+		minimum = imageSizeMultiple
+	}
+	if maximum <= 0 {
+		maximum = imageMaxEdge
+	}
+	return roundUpToImageGrid(maxInt(minimum, imageSizeMultiple)), roundDownToImageGrid(minInt(maximum, imageMaxEdge))
+}
+
+func nearestGridValues(target, lower, upper int) []int {
+	if target <= lower {
+		return []int{lower}
+	}
+	if target >= upper {
+		return []int{upper}
+	}
+	down := roundDownToImageGrid(target)
+	up := roundUpToImageGrid(target)
+	values := make([]int, 0, 2)
+	if down >= lower && down <= upper {
+		values = append(values, down)
+	}
+	if up >= lower && up <= upper && up != down {
+		values = append(values, up)
+	}
+	return values
+}
+
+func betterRatioSize(distance, currentRatioError float64, width, height int, bestDistance, bestRatioError float64, bestWidth, bestHeight int) bool {
+	const epsilon = 1e-12
+	if distance < bestDistance-epsilon {
+		return true
+	}
+	if math.Abs(distance-bestDistance) > epsilon {
+		return false
+	}
+	if currentRatioError < bestRatioError-epsilon {
+		return true
+	}
+	if math.Abs(currentRatioError-bestRatioError) > epsilon {
+		return false
+	}
+	currentPixels, bestPixels := width*height, bestWidth*bestHeight
+	if currentPixels != bestPixels {
+		return currentPixels > bestPixels
+	}
+	if width != bestWidth {
+		return width < bestWidth
+	}
+	return height < bestHeight
+}
+
+func ratioError(actual, target float64) float64 {
+	if actual <= 0 || target <= 0 {
+		return math.Inf(1)
+	}
+	return math.Abs(actual-target) / target
+}
+
 func NormalizeCustomImageSize(width, height int) (string, error) {
 	if width <= 0 || height <= 0 {
 		return "", fmt.Errorf("image width and height must be positive")

@@ -133,13 +133,19 @@ func RuntimeFromBootstrap(bootstrap BootstrapConfig) (Config, error) {
 
 	cfg := configFromRuntimeValues(bootstrap.Values)
 	cfg.Runtime = RuntimeConfig{
+		DeploymentMode:      bootstrap.Deployment.Mode,
 		DeploymentRole:      bootstrap.Deployment.Role,
+		DeploymentModules:   append([]string(nil), bootstrap.DeploymentModules...),
 		Path:                bootstrap.Path,
 		InstallationID:      bootstrap.InstallationID,
 		ClusterNodeID:       bootstrap.ClusterNodeID,
 		ApplicationVersion:  bootstrap.ApplicationVersion,
 		ConfigSchemaVersion: bootstrap.SchemaVersion,
 		ConfigRevision:      bootstrap.ConfigRevision,
+		PublicAPIURL:        envString(bootstrap.Values, "PUBLIC_API_URL", ""),
+		DocsURL:             envString(bootstrap.Values, "PIC_GALLERY_DOCS_URL", "/developer-docs/"),
+		DocsProbeURL:        envString(bootstrap.Values, "PIC_GALLERY_DOCS_PROBE_URL", ""),
+		GatewayPort:         envString(bootstrap.Values, "GATEWAY_PORT", ""),
 	}
 	applyDefaults(&cfg)
 	if bootstrap.Deployment.Role != DeploymentRoleWeb {
@@ -242,9 +248,6 @@ func configFromRuntimeValues(fileEnv map[string]string) Config {
 	cfg.Providers.OpenRouter.Enabled = envBool(fileEnv, "OPENROUTER_ENABLED", false)
 	cfg.Providers.OpenRouter.BaseURL = envString(fileEnv, "OPENROUTER_BASE_URL", "")
 	cfg.Providers.OpenRouter.APIKey = envString(fileEnv, "OPENROUTER_API_KEY", "")
-
-	cfg.Docs.Title = envString(fileEnv, "DOCS_TITLE", "")
-	cfg.Docs.BasePath = envString(fileEnv, "DOCS_BASE_PATH", "")
 
 	return cfg
 }

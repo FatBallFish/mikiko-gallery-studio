@@ -22,8 +22,8 @@ import (
 )
 
 func TestSchemaV2MigratesLegacyRefreshSessions(t *testing.T) {
-	if repositorydb.CurrentDatabaseSchemaVersion != 2 {
-		t.Fatalf("database schema version = %d, want 2 for refresh session token_version", repositorydb.CurrentDatabaseSchemaVersion)
+	if repositorydb.CurrentDatabaseSchemaVersion < 2 {
+		t.Fatalf("database schema version = %d, want at least 2 for refresh session token_version", repositorydb.CurrentDatabaseSchemaVersion)
 	}
 
 	adminURL := strings.TrimSpace(os.Getenv("PIC_GALLERY_TEST_POSTGRES_URL"))
@@ -102,7 +102,7 @@ func TestSchemaV2MigratesLegacyRefreshSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migrate schema v1 to v2: %v", err)
 	}
-	if result.Previous == nil || result.Previous.DatabaseSchemaVersion != 1 || result.Current.DatabaseSchemaVersion != 2 || !result.Changed {
+	if result.Previous == nil || result.Previous.DatabaseSchemaVersion != 1 || result.Current.DatabaseSchemaVersion != repositorydb.CurrentDatabaseSchemaVersion || !result.Changed {
 		t.Fatalf("unexpected schema v2 migration result: %#v", result)
 	}
 

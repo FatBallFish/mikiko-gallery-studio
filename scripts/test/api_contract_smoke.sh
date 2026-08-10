@@ -698,15 +698,16 @@ assert_admin_user_detail_core() {
   local user_id="$2"
   local email="$3"
   local expected_available="$4"
-  local expected_recharge="$5"
-  local expected_trial="$6"
-  JSON="$json" python3 - "$user_id" "$email" "$expected_available" "$expected_recharge" "$expected_trial" <<'PY'
+  local expected_subscription="$5"
+  local expected_recharge="$6"
+  local expected_trial="$7"
+  JSON="$json" python3 - "$user_id" "$email" "$expected_available" "$expected_subscription" "$expected_recharge" "$expected_trial" <<'PY'
 import json
 import os
 import sys
 
 data = json.loads(os.environ["JSON"])
-user_id, email, expected_available, expected_recharge, expected_trial = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+user_id, email, expected_available, expected_subscription, expected_recharge, expected_trial = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
 payload = data.get("data", {})
 user = payload.get("user", {})
 balance = payload.get("balance", {})
@@ -714,12 +715,14 @@ if user.get("id") != user_id or user.get("email") != email:
     raise SystemExit(f"admin detail returned wrong user: {user!r}")
 if balance.get("available_points") != expected_available:
     raise SystemExit(f"unexpected available balance: want {expected_available}, got {balance!r}")
+if balance.get("subscription_points") != expected_subscription:
+    raise SystemExit(f"unexpected subscription balance: want {expected_subscription}, got {balance!r}")
 if balance.get("recharge_points") != expected_recharge:
     raise SystemExit(f"unexpected recharge balance: want {expected_recharge}, got {balance!r}")
 if balance.get("trial_points") != expected_trial:
     raise SystemExit(f"unexpected trial balance: want {expected_trial}, got {balance!r}")
 buckets = {item.get("bucket"): item for item in balance.get("buckets", [])}
-for bucket in ("trial", "recharge"):
+for bucket in ("trial", "subscription"):
     if bucket not in buckets:
         raise SystemExit(f"admin detail missing {bucket} bucket: {balance!r}")
 print(user_id)
@@ -1088,18 +1091,20 @@ assert_cashier_chargeback_state() {
   local json="$1"
   local order_id="$2"
   local expected_available="$3"
-  local expected_recharge="$4"
-  local expected_points="${5:-}"
-  local expected_reason="${6:-}"
-  local expected_key="${7:-}"
-  JSON="$json" python3 - "$order_id" "$expected_available" "$expected_recharge" "$expected_points" "$expected_reason" "$expected_key" <<'PY'
+  local expected_subscription="$4"
+  local expected_recharge="$5"
+  local expected_gift="$6"
+  local expected_points="${7:-}"
+  local expected_reason="${8:-}"
+  local expected_key="${9:-}"
+  JSON="$json" python3 - "$order_id" "$expected_available" "$expected_subscription" "$expected_recharge" "$expected_gift" "$expected_points" "$expected_reason" "$expected_key" <<'PY'
 import json
 import os
 import sys
 
 data = json.loads(os.environ["JSON"])
-order_id, expected_available, expected_recharge = int(sys.argv[1]), sys.argv[2], sys.argv[3]
-expected_points, expected_reason, expected_key = sys.argv[4], sys.argv[5], sys.argv[6]
+order_id, expected_available, expected_subscription, expected_recharge, expected_gift = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+expected_points, expected_reason, expected_key = sys.argv[6], sys.argv[7], sys.argv[8]
 payload = data.get("data", {})
 order = payload.get("order") or {}
 balance = payload.get("balance") or {}
@@ -1107,8 +1112,12 @@ if order.get("id") != order_id or not order.get("order_no"):
     raise SystemExit(f"chargeback response returned wrong order: {payload!r}")
 if balance.get("available_points") != expected_available:
     raise SystemExit(f"unexpected chargeback available balance: want {expected_available}, got {balance!r}")
+if balance.get("subscription_points") != expected_subscription:
+    raise SystemExit(f"unexpected chargeback subscription balance: want {expected_subscription}, got {balance!r}")
 if balance.get("recharge_points") != expected_recharge:
     raise SystemExit(f"unexpected chargeback recharge balance: want {expected_recharge}, got {balance!r}")
+if balance.get("gift_points") != expected_gift:
+    raise SystemExit(f"unexpected chargeback gift balance: want {expected_gift}, got {balance!r}")
 if expected_points and order.get("chargeback_points") != expected_points:
     raise SystemExit(f"unexpected chargeback points: want {expected_points}, got {order!r}")
 if expected_reason and order.get("chargeback_reason") != expected_reason:
@@ -1403,8 +1412,6 @@ OPENAI_API_KEY=
 OPENROUTER_ENABLED=true
 OPENROUTER_BASE_URL=${FAKE_PROVIDER_URL:-http://127.0.0.1:1}
 OPENROUTER_API_KEY=
-DOCS_TITLE=Pic Gallery API Docs
-DOCS_BASE_PATH=/developers/docs
 API_PORT=$SMOKE_PORT
 IMAGE_TAG=api-contract-smoke
 INSTALLATION_ID=api-contract-smoke-${SMOKE_ID}
@@ -1636,9 +1643,19 @@ start_smoke_middleware
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/entstore -run '^TestTextModelStore.*Postgres' -count=1
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
-  go test ./internal/repository/entstore -run '^TestBillingStorePostgres(CancelAndPaidReconciliationEndsCompleted|ConcurrentDuplicatePaidCallbacksAreIdempotent)$' -count=2
+  go test ./internal/repository/entstore -run '^TestObjectCleanupReconcileIgnoresPostgresJSONNullArtifactKeys$' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/entstore -run '^TestCallDistributionProviderTraceBoundariesPostgres$' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/entstore -run '^TestBillingStore(Postgres(CancelAndPaidReconciliationEndsCompleted|ConcurrentDuplicatePaidCallbacksAreIdempotent)|UpdatePlanSerializesWithLifecycleTransitionsPostgres)$' -count=2
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/db -run '^TestSchemaV2MigratesLegacyRefreshSessions$' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/db -run '^TestListLegacyStorageDriversIgnoresPostgresJSONNullArtifactKeys$' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/db -run '^TestPrepareLegacyDataBackfillsLifecycleColumnsForExistingRows$' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/entstore -run '^TestModelAdminParentLocksPreventWritesAcrossDeletionPostgres$' -count=1
 start_fake_provider
 write_smoke_config true
 assert_api_port_free
@@ -1844,10 +1861,11 @@ mock_pay_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${ORDER_
 assert_json_field "$mock_pay_body" "data.ledger_id" >/dev/null
 
 recharged_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$recharged_balance_body" "data.recharge_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$recharged_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$recharged_balance_body" "data.recharge_points")" == "0.00000" ]]
 [[ "$(assert_json_field "$recharged_balance_body" "data.trial_points")" == "20.00000" ]]
 recharge_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=10" -H "Authorization: Bearer $ACCESS_TOKEN")"
-assert_ledger_entry "$recharge_ledger_body" "recharge" "recharge" "payment_order" >/dev/null
+assert_ledger_entry "$recharge_ledger_body" "order_paid" "subscription" "payment_order" >/dev/null
 
 psql_exec \
   -v "user_id=$USER_ID" <<'SQL'
@@ -2135,9 +2153,9 @@ WX_PROVIDER_INSTANCE_ID="$(assert_json_field "$wx_provider_body" "data.id")"
 assert_provider_instance_secrets_redacted "$wx_provider_body" "Smoke WxPay Redaction" "$wx_api_v3_secret" "$wx_private_key" >/dev/null
 
 admin_user_detail_body="$(request "$BASE_URL/api/ops/admin/v1/users/${USER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
-assert_admin_user_detail_core "$admin_user_detail_body" "$USER_ID" "$SMOKE_USER_EMAIL" "118.00000" "100.00000" "18.00000" >/dev/null
+assert_admin_user_detail_core "$admin_user_detail_body" "$USER_ID" "$SMOKE_USER_EMAIL" "118.00000" "100.00000" "0.00000" "18.00000" >/dev/null
 assert_admin_user_detail_ledger "$admin_user_detail_body" "trial_grant" "trial" "signup" >/dev/null
-assert_admin_user_detail_ledger "$admin_user_detail_body" "recharge" "recharge" "payment_order" >/dev/null
+assert_admin_user_detail_ledger "$admin_user_detail_body" "order_paid" "subscription" "payment_order" >/dev/null
 assert_admin_user_detail_order "$admin_user_detail_body" "$ORDER_ID" "completed" >/dev/null
 assert_admin_user_detail_task "$admin_user_detail_body" "$OPEN_TASK_ID" "succeeded" >/dev/null
 assert_admin_user_detail_api_key "$admin_user_detail_body" "smoke-key" "$ACCESS_KEY" >/dev/null
@@ -2168,7 +2186,7 @@ admin_point_adjustment_conflict_status="$(curl --silent --output "$TMP_DIR/admin
 [[ "$(assert_json_field "$(cat "$TMP_DIR/admin-adjust-conflict.json")" "error.code")" == "CONFLICT" ]]
 
 admin_user_detail_after_adjust_body="$(request "$BASE_URL/api/ops/admin/v1/users/${USER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
-assert_admin_user_detail_core "$admin_user_detail_after_adjust_body" "$USER_ID" "$SMOKE_USER_EMAIL" "125.00000" "100.00000" "18.00000" >/dev/null
+assert_admin_user_detail_core "$admin_user_detail_after_adjust_body" "$USER_ID" "$SMOKE_USER_EMAIL" "125.00000" "100.00000" "0.00000" "18.00000" >/dev/null
 assert_admin_user_detail_ledger "$admin_user_detail_after_adjust_body" "admin_adjust" "recharge" "admin" >/dev/null
 
 custom_amount_config_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/cashier/custom-amount-config" \
@@ -2208,7 +2226,8 @@ partial_refund_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/order
 assert_cashier_refund_state "$partial_refund_body" "partially_refunded" "$partial_refund_trade_no" "5.00000" "10.00000" >/dev/null
 
 partial_refunded_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$partial_refunded_balance_body" "data.recharge_points")" == "130.00000" ]]
+[[ "$(assert_json_field "$partial_refunded_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$partial_refunded_balance_body" "data.recharge_points")" == "30.00000" ]]
 [[ "$(assert_json_field "$partial_refunded_balance_body" "data.trial_points")" == "18.00000" ]]
 [[ "$(assert_json_field "$partial_refunded_balance_body" "data.frozen_points")" == "0.00000" ]]
 
@@ -2260,7 +2279,8 @@ manual_complete_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orde
 assert_cashier_manual_complete_state "$manual_complete_body" "$MANUAL_COMPLETE_ORDER_ID" "manual_alipay" "$manual_trade_no" >/dev/null
 
 manual_completed_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$manual_completed_balance_body" "data.recharge_points")" == "140.00000" ]]
+[[ "$(assert_json_field "$manual_completed_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$manual_completed_balance_body" "data.recharge_points")" == "40.00000" ]]
 [[ "$(assert_json_field "$manual_completed_balance_body" "data.trial_points")" == "18.00000" ]]
 [[ "$(assert_json_field "$manual_completed_balance_body" "data.frozen_points")" == "0.00000" ]]
 
@@ -2274,7 +2294,8 @@ manual_complete_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashi
 assert_cashier_manual_complete_state "$manual_complete_replay_body" "$MANUAL_COMPLETE_ORDER_ID" "manual_alipay" "$manual_trade_no" >/dev/null
 
 manual_complete_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.recharge_points")" == "140.00000" ]]
+[[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.recharge_points")" == "40.00000" ]]
 [[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.trial_points")" == "18.00000" ]]
 [[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
@@ -2325,7 +2346,8 @@ sync_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${SYNC_O
 assert_cashier_sync_state "$sync_body" "$SYNC_ORDER_ID" "$sync_trade_no" "10.00000" "true" >/dev/null
 
 sync_completed_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$sync_completed_balance_body" "data.recharge_points")" == "140.00000" ]]
+[[ "$(assert_json_field "$sync_completed_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$sync_completed_balance_body" "data.recharge_points")" == "40.00000" ]]
 [[ "$(assert_json_field "$sync_completed_balance_body" "data.trial_points")" == "18.00000" ]]
 [[ "$(assert_json_field "$sync_completed_balance_body" "data.frozen_points")" == "0.00000" ]]
 
@@ -2337,7 +2359,8 @@ sync_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/$
 assert_cashier_sync_state "$sync_replay_body" "$SYNC_ORDER_ID" "$sync_trade_no" "10.00000" "false" >/dev/null
 
 sync_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$sync_replay_balance_body" "data.recharge_points")" == "140.00000" ]]
+[[ "$(assert_json_field "$sync_replay_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$sync_replay_balance_body" "data.recharge_points")" == "40.00000" ]]
 [[ "$(assert_json_field "$sync_replay_balance_body" "data.trial_points")" == "18.00000" ]]
 [[ "$(assert_json_field "$sync_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
@@ -2635,7 +2658,8 @@ pending_limit_status="$(curl --silent --output "$TMP_DIR/pending-limit.json" --w
 [[ "$(assert_json_field "$(cat "$TMP_DIR/pending-limit.json")" "error.code")" == "PAYMENT_TOO_MANY_PENDING_ORDERS" ]]
 
 custom_recharged_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$custom_recharged_balance_body" "data.recharge_points")" == "120.00000" ]]
+[[ "$(assert_json_field "$custom_recharged_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$custom_recharged_balance_body" "data.recharge_points")" == "20.00000" ]]
 [[ "$(assert_json_field "$custom_recharged_balance_body" "data.trial_points")" == "18.00000" ]]
 [[ "$(assert_json_field "$custom_recharged_balance_body" "data.frozen_points")" == "0.00000" ]]
 
@@ -2647,7 +2671,8 @@ custom_refund_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders
 assert_cashier_refund_state "$custom_refund_body" "refunded" "$refund_trade_no" "10.00000" "20.00000" >/dev/null
 
 refunded_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$refunded_balance_body" "data.recharge_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$refunded_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$refunded_balance_body" "data.recharge_points")" == "0.00000" ]]
 [[ "$(assert_json_field "$refunded_balance_body" "data.trial_points")" == "18.00000" ]]
 [[ "$(assert_json_field "$refunded_balance_body" "data.frozen_points")" == "0.00000" ]]
 
@@ -2658,7 +2683,8 @@ refund_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders
 assert_cashier_refund_state "$refund_replay_body" "refunded" "$refund_trade_no" "10.00000" "20.00000" >/dev/null
 
 refund_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$refund_replay_balance_body" "data.recharge_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$refund_replay_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$refund_replay_balance_body" "data.recharge_points")" == "0.00000" ]]
 [[ "$(assert_json_field "$refund_replay_balance_body" "data.trial_points")" == "18.00000" ]]
 [[ "$(assert_json_field "$refund_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
@@ -2671,7 +2697,7 @@ chargeback_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: ${chargeback_key}" \
   --data '{"charge_points":"5.00000","reason":"api smoke provider chargeback"}')"
-assert_cashier_chargeback_state "$chargeback_body" "$ORDER_ID" "120.00000" "95.00000" "5.00000" "api smoke provider chargeback" "$chargeback_key" >/dev/null
+assert_cashier_chargeback_state "$chargeback_body" "$ORDER_ID" "120.00000" "100.00000" "0.00000" "2.00000" "5.00000" "api smoke provider chargeback" "$chargeback_key" >/dev/null
 
 chargeback_order_detail_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orders/${ORDER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
 [[ "$(assert_json_field "$chargeback_order_detail_body" "data.chargeback_points")" == "5.00000" ]]
@@ -2681,7 +2707,9 @@ assert_json_path_exists "$chargeback_order_detail_body" "data.chargeback_at" >/d
 
 chargeback_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$chargeback_balance_body" "data.available_points")" == "120.00000" ]]
-[[ "$(assert_json_field "$chargeback_balance_body" "data.recharge_points")" == "95.00000" ]]
+[[ "$(assert_json_field "$chargeback_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$chargeback_balance_body" "data.recharge_points")" == "0.00000" ]]
+[[ "$(assert_json_field "$chargeback_balance_body" "data.gift_points")" == "2.00000" ]]
 [[ "$(assert_json_field "$chargeback_balance_body" "data.trial_points")" == "18.00000" ]]
 [[ "$(assert_json_field "$chargeback_balance_body" "data.frozen_points")" == "0.00000" ]]
 
@@ -2690,11 +2718,13 @@ chargeback_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/or
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: ${chargeback_key}" \
   --data '{"charge_points":"5.00000","reason":"api smoke provider chargeback"}')"
-assert_cashier_chargeback_state "$chargeback_replay_body" "$ORDER_ID" "120.00000" "95.00000" "5.00000" "api smoke provider chargeback" "$chargeback_key" >/dev/null
+assert_cashier_chargeback_state "$chargeback_replay_body" "$ORDER_ID" "120.00000" "100.00000" "0.00000" "2.00000" "5.00000" "api smoke provider chargeback" "$chargeback_key" >/dev/null
 
 chargeback_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.available_points")" == "120.00000" ]]
-[[ "$(assert_json_field "$chargeback_replay_balance_body" "data.recharge_points")" == "95.00000" ]]
+[[ "$(assert_json_field "$chargeback_replay_balance_body" "data.subscription_points")" == "100.00000" ]]
+[[ "$(assert_json_field "$chargeback_replay_balance_body" "data.recharge_points")" == "0.00000" ]]
+[[ "$(assert_json_field "$chargeback_replay_balance_body" "data.gift_points")" == "2.00000" ]]
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.trial_points")" == "18.00000" ]]
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 

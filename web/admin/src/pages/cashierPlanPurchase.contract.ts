@@ -1,5 +1,9 @@
 import type { CashierPlan } from '../../../shared/api-types'
 import { cashierPlanActions, cashierPlanEmptyState, cashierPlanFilterOptions, cashierPlanPurchaseBadge, cashierPlanSavePayload, cashierPlanSectionCopy } from './cashierPlanPurchase'
+// @ts-ignore contract scripts run in tsx/node; the admin app tsconfig does not include node types.
+import { readFileSync } from 'node:fs'
+
+const cashierPageSource = readFileSync(new URL('./CashierPage.tsx', import.meta.url), 'utf8')
 
 const subscriptionPayload = cashierPlanSavePayload({
   plan_code: 'sub-monthly',
@@ -10,8 +14,8 @@ const subscriptionPayload = cashierPlanSavePayload({
   price_cny: '59.90000',
   points: '500.00000',
   bonus_points: '0.00000',
+  credit_expiry_enabled: true,
   duration_days: '30',
-  currency: 'CNY',
   sort_order: '10',
   description: '保留订阅定义但不开放购买',
 })
@@ -29,13 +33,13 @@ const pointsPayload = cashierPlanSavePayload({
   price_cny: '19.90000',
   points: '100.00000',
   bonus_points: '0.00000',
+  credit_expiry_enabled: false,
   duration_days: '30',
-  currency: 'CNY',
   sort_order: '5',
   description: '可购买积分包',
 })
 
-if (pointsPayload.purchase_enabled !== true || pointsPayload.sort_order !== 5 || pointsPayload.duration_days !== 30) {
+if (pointsPayload.purchase_enabled !== true || pointsPayload.sort_order !== 5 || pointsPayload.credit_expiry_enabled !== false || pointsPayload.duration_days !== null || 'currency' in pointsPayload) {
   throw new Error(`points package should preserve purchasable payload fields, got ${JSON.stringify(pointsPayload)}`)
 }
 
@@ -103,4 +107,10 @@ if (disabledActions.map((action) => action.action).join(',') !== 'enable,archive
 const archivedActions = cashierPlanActions({ ...subscriptionPlan, plan_type: 'points_package', purchase_enabled: false, status: 'archived' })
 if (archivedActions.map((action) => action.action).join(',') !== 'restore') {
   throw new Error(`archived plan actions must only restore, got ${JSON.stringify(archivedActions)}`)
+}
+
+for (const lifecycleContract of ['cashierPlanActions(plan).map', '<TooltipIconButton', 'setPlanTransition({ plan, action })', 'planTransition ? <Modal', 'disabled={savingPlan}', "savingPlan ? '处理中...' : '确认'"]) {
+  if (!cashierPageSource.includes(lifecycleContract)) {
+    throw new Error(`plan lifecycle must retain visible controls, confirmation and loading state with ${lifecycleContract}`)
+  }
 }

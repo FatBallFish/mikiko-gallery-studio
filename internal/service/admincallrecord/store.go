@@ -11,6 +11,81 @@ import (
 
 type Store interface {
 	ListCallRecords(ctx context.Context, req domainadmincallrecord.ListRequest) (domainadmincallrecord.ListPage, error)
+	CallDistribution(ctx context.Context, req domainadmincallrecord.DistributionRequest) (domainadmincallrecord.Distribution, error)
+}
+
+func (s *MemoryStore) CallDistribution(_ context.Context, req domainadmincallrecord.DistributionRequest) (domainadmincallrecord.Distribution, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return AggregateCallDistribution(s.records, req), nil
+}
+
+func AggregateCallDistribution(records []domainadmincallrecord.Record, req domainadmincallrecord.DistributionRequest) domainadmincallrecord.Distribution {
+	accumulator := NewDistributionAccumulator(req)
+	for _, record := range records {
+		accumulator.Add(record)
+	}
+	return accumulator.Result()
+}
+
+type DistributionAccumulator struct {
+	result domainadmincallrecord.Distribution
+	counts map[string]int
+	req    domainadmincallrecord.DistributionRequest
+}
+
+func NewDistributionAccumulator(req domainadmincallrecord.DistributionRequest) *DistributionAccumulator {
+	return &DistributionAccumulator{
+		result: domainadmincallrecord.Distribution{
+			Window: domainadmincallrecord.DistributionWindow{From: req.From, To: req.To},
+			Groups: []domainadmincallrecord.DistributionGroup{},
+		},
+		counts: map[string]int{},
+		req:    req,
+	}
+}
+
+func (a *DistributionAccumulator) Add(record domainadmincallrecord.Record) {
+	for _, attempt := range record.Attempts {
+		at := record.CreatedAt
+		if attempt.StartedAt != nil {
+			at = *attempt.StartedAt
+		}
+		if at.Before(a.req.From) || !at.Before(a.req.To) {
+			continue
+		}
+		key := strings.TrimSpace(record.RouteModelCode)
+		if key == "" {
+			key = "unrouted"
+		}
+		a.counts[key]++
+		a.result.TotalCalls++
+	}
+	if len(record.Attempts) == 0 && record.UpstreamSucceededAt == nil && !record.CreatedAt.Before(a.req.From) && record.CreatedAt.Before(a.req.To) &&
+		(record.Status == "failed" || record.Status == "rejected") {
+		a.result.PreflightFailureCount++
+	}
+}
+
+func (a *DistributionAccumulator) Result() domainadmincallrecord.Distribution {
+	result := a.result
+	result.Groups = make([]domainadmincallrecord.DistributionGroup, 0, len(a.counts))
+	for key, calls := range a.counts {
+		percentage := float64(0)
+		if result.TotalCalls > 0 {
+			percentage = float64(calls) * 100 / float64(result.TotalCalls)
+		}
+		result.Groups = append(result.Groups, domainadmincallrecord.DistributionGroup{
+			Key: key, Calls: calls, Percentage: percentage,
+		})
+	}
+	sort.Slice(result.Groups, func(i, j int) bool {
+		if result.Groups[i].Calls == result.Groups[j].Calls {
+			return result.Groups[i].Key < result.Groups[j].Key
+		}
+		return result.Groups[i].Calls > result.Groups[j].Calls
+	})
+	return result
 }
 
 type MemoryStore struct {

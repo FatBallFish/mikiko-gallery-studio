@@ -10,6 +10,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/google/uuid"
 )
 
@@ -28,6 +29,8 @@ type ImageResult struct {
 	TaskID uuid.UUID `json:"task_id,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID int64 `json:"user_id,omitempty"`
+	// ProjectID holds the value of the "project_id" field.
+	ProjectID *uuid.UUID `json:"project_id,omitempty"`
 	// ImageRole holds the value of the "image_role" field.
 	ImageRole string `json:"image_role,omitempty"`
 	// StorageConfigID holds the value of the "storage_config_id" field.
@@ -53,8 +56,31 @@ type ImageResult struct {
 	// ReviewReason holds the value of the "review_reason" field.
 	ReviewReason *string `json:"review_reason,omitempty"`
 	// PublishedAt holds the value of the "published_at" field.
-	PublishedAt  *time.Time `json:"published_at,omitempty"`
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the ImageResultQuery when eager-loading is set.
+	Edges        ImageResultEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// ImageResultEdges holds the relations/edges for other nodes in the graph.
+type ImageResultEdges struct {
+	// Project holds the value of the project edge.
+	Project *Project `json:"project,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// ProjectOrErr returns the Project value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e ImageResultEdges) ProjectOrErr() (*Project, error) {
+	if e.Project != nil {
+		return e.Project, nil
+	} else if e.loadedTypes[0] {
+		return nil, &NotFoundError{label: project.Label}
+	}
+	return nil, &NotLoadedError{edge: "project"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -62,7 +88,7 @@ func (*ImageResult) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case imageresult.FieldStorageConfigID:
+		case imageresult.FieldProjectID, imageresult.FieldStorageConfigID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
 		case imageresult.FieldUserID, imageresult.FieldFileSizeBytes, imageresult.FieldWidth, imageresult.FieldHeight:
 			values[i] = new(sql.NullInt64)
@@ -123,6 +149,13 @@ func (_m *ImageResult) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
 				_m.UserID = value.Int64
+			}
+		case imageresult.FieldProjectID:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field project_id", values[i])
+			} else if value.Valid {
+				_m.ProjectID = new(uuid.UUID)
+				*_m.ProjectID = *value.S.(*uuid.UUID)
 			}
 		case imageresult.FieldImageRole:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -218,6 +251,11 @@ func (_m *ImageResult) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
 }
 
+// QueryProject queries the "project" edge of the ImageResult entity.
+func (_m *ImageResult) QueryProject() *ProjectQuery {
+	return NewImageResultClient(_m.config).QueryProject(_m)
+}
+
 // Update returns a builder for updating this ImageResult.
 // Note that you need to call ImageResult.Unwrap() before calling this method if this ImageResult
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -257,6 +295,11 @@ func (_m *ImageResult) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
+	builder.WriteString(", ")
+	if v := _m.ProjectID; v != nil {
+		builder.WriteString("project_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("image_role=")
 	builder.WriteString(_m.ImageRole)

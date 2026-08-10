@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,37 @@ type staticRoutingSource struct {
 }
 
 func (s staticRoutingSource) ModelRoutingConfig(context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	return s.snapshot, nil
+}
+
+type countingRoutingSource struct {
+	snapshot modelhub.ModelRoutingSnapshot
+	reads    int
+}
+
+type contextObservingRoutingSource struct {
+	err error
+}
+
+type auditedPlanStore struct {
+	Store
+	request domainbilling.TransitionSubscriptionPlanRequest
+	audit   domainbilling.PlanLifecycleAudit
+}
+
+func (s *auditedPlanStore) TransitionPlanAudited(_ context.Context, req domainbilling.TransitionSubscriptionPlanRequest, audit domainbilling.PlanLifecycleAudit) (domainbilling.SubscriptionPlan, error) {
+	s.request = req
+	s.audit = audit
+	return domainbilling.SubscriptionPlan{ID: req.PlanID, Status: domainbilling.SubscriptionPlanStatusActive}, nil
+}
+
+func (s *contextObservingRoutingSource) ModelRoutingConfig(ctx context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	s.err = ctx.Err()
+	return modelhub.ModelRoutingSnapshot{}, ctx.Err()
+}
+
+func (s *countingRoutingSource) ModelRoutingConfig(context.Context) (modelhub.ModelRoutingSnapshot, error) {
+	s.reads++
 	return s.snapshot, nil
 }
 
@@ -178,10 +210,11 @@ func TestPlanStateTransitionsAreSafeAndIdempotent(t *testing.T) {
 		t.Fatalf("restored plan must require explicit enable: %#v", restored)
 	}
 
+	durationDays := 30
 	subscription, err := svc.CreatePlan(t.Context(), domainbilling.CreateSubscriptionPlanRequest{
 		PlanCode: "subscription-placeholder", PlanName: "Subscription", PlanType: "subscription",
 		PurchaseEnabled: false, Status: "disabled", PriceCNY: "99.00000", Points: "500.00000",
-		Currency: "CNY", DurationDays: 30,
+		Currency: "CNY", DurationDays: &durationDays,
 	})
 	if err != nil {
 		t.Fatalf("CreatePlan subscription: %v", err)
@@ -194,6 +227,134 @@ func TestPlanStateTransitionsAreSafeAndIdempotent(t *testing.T) {
 		t.Fatalf("non-points plan must not become purchasable: %#v", subscription)
 	}
 }
+
+func TestAuditedPlanTransitionValidatesAndForwardsAuditContext(t *testing.T) {
+	store := &auditedPlanStore{}
+	svc := NewServiceWithStore(config.BillingConfig{}, store)
+	audit := domainbilling.PlanLifecycleAudit{
+		ActorType: "admin", ActorID: "9", Action: "cashier.plan.enable", TargetType: "cashier_plan", TargetID: "42", RequestID: "request-42",
+	}
+	result, err := svc.TransitionPlanAudited(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 42, Action: " ENABLE "}, audit)
+	if err != nil {
+		t.Fatalf("TransitionPlanAudited: %v", err)
+	}
+	if result.ID != 42 || store.request.Action != domainbilling.SubscriptionPlanActionEnable || store.audit.RequestID != "request-42" {
+		t.Fatalf("audited transition was not normalized and forwarded: result=%#v request=%#v audit=%#v", result, store.request, store.audit)
+	}
+	if _, err := svc.TransitionPlanAudited(t.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: 0, Action: "enable"}, audit); err == nil {
+		t.Fatal("invalid audited transition plan_id was accepted")
+	}
+}
+
+func TestPlanExpiryPolicyCreateListAndUpdateTransitions(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	created, err := svc.CreatePlan(t.Context(), domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "expiry-policy", PlanName: "Expiry Policy", PlanType: "points_package", PurchaseEnabled: true,
+		Status: "active", PriceCNY: "10.00000", Points: "20.00000", BonusPoints: "2.00000", Currency: "CNY",
+	})
+	if err != nil {
+		t.Fatalf("legacy CreatePlan: %v", err)
+	}
+	if !created.CreditExpiryEnabled || created.DurationDays == nil || *created.DurationDays != 30 {
+		t.Fatalf("legacy create must default to 30-day expiry: %#v", created)
+	}
+
+	update := func(enabled *bool, days *int) domainbilling.SubscriptionPlan {
+		t.Helper()
+		updated, err := svc.UpdatePlan(t.Context(), domainbilling.UpdateSubscriptionPlanRequest{
+			PlanID: created.ID, PlanName: created.PlanName, PlanType: created.PlanType, PurchaseEnabled: created.PurchaseEnabled,
+			Status: created.Status, PriceCNY: created.PriceCNY, Points: created.Points, BonusPoints: created.BonusPoints,
+			CreditExpiryEnabled: enabled, DurationDays: days, Currency: created.Currency,
+		})
+		if err != nil {
+			t.Fatalf("UpdatePlan enabled=%v days=%v: %v", enabled, days, err)
+		}
+		created = updated
+		return updated
+	}
+
+	if updated := update(boolPointerTest(true), intPointer(60)); !updated.CreditExpiryEnabled || updated.DurationDays == nil || *updated.DurationDays != 60 {
+		t.Fatalf("expiring -> expiring lost policy: %#v", updated)
+	}
+	if updated := update(boolPointerTest(false), nil); updated.CreditExpiryEnabled || updated.DurationDays != nil {
+		t.Fatalf("expiring -> permanent lost policy: %#v", updated)
+	}
+	if updated := update(boolPointerTest(true), intPointer(45)); !updated.CreditExpiryEnabled || updated.DurationDays == nil || *updated.DurationDays != 45 {
+		t.Fatalf("permanent -> expiring lost policy: %#v", updated)
+	}
+	if updated := update(nil, nil); !updated.CreditExpiryEnabled || updated.DurationDays == nil || *updated.DurationDays != 30 {
+		t.Fatalf("legacy update must default to 30-day expiry: %#v", updated)
+	}
+
+	items, err := svc.ListPlans(t.Context(), domainbilling.SubscriptionPlanListRequest{})
+	if err != nil {
+		t.Fatalf("ListPlans: %v", err)
+	}
+	found := false
+	for _, item := range items {
+		if item.ID == created.ID {
+			found = item.CreditExpiryEnabled && item.DurationDays != nil && *item.DurationDays == 30
+		}
+	}
+	if !found {
+		t.Fatalf("list did not preserve final expiry policy: %#v", items)
+	}
+}
+
+func TestPlanExpiryPolicyRequiresPositiveDurationWhenExplicitlyEnabled(t *testing.T) {
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	enabled := true
+
+	for name, days := range map[string]*int{
+		"missing":  nil,
+		"zero":     intPointer(0),
+		"negative": intPointer(-1),
+	} {
+		t.Run("create "+name, func(t *testing.T) {
+			_, err := svc.CreatePlan(t.Context(), domainbilling.CreateSubscriptionPlanRequest{
+				PlanCode: "invalid-expiry-" + name, PlanName: "Invalid Expiry", PlanType: "points_package",
+				Status: "active", PriceCNY: "10.00000", Points: "20.00000", BonusPoints: "0.00000",
+				CreditExpiryEnabled: &enabled, DurationDays: days,
+			})
+			if err == nil {
+				t.Fatalf("explicit expiry with %s duration must be rejected", name)
+			}
+		})
+	}
+
+	created, err := svc.CreatePlan(t.Context(), domainbilling.CreateSubscriptionPlanRequest{
+		PlanCode: "valid-expiry-update", PlanName: "Valid Expiry", PlanType: "points_package",
+		Status: "active", PriceCNY: "10.00000", Points: "20.00000", BonusPoints: "0.00000",
+	})
+	if err != nil {
+		t.Fatalf("legacy CreatePlan: %v", err)
+	}
+	_, err = svc.UpdatePlan(t.Context(), domainbilling.UpdateSubscriptionPlanRequest{
+		PlanID: created.ID, PlanName: created.PlanName, PlanType: created.PlanType, Status: created.Status,
+		PriceCNY: created.PriceCNY, Points: created.Points, BonusPoints: created.BonusPoints,
+		CreditExpiryEnabled: &enabled,
+	})
+	if err == nil {
+		t.Fatal("explicit expiry update without duration must be rejected")
+	}
+}
+
+func TestMemoryStoreFixedPackageOrderAlwaysSnapshotsCNY(t *testing.T) {
+	store := NewMemoryStore(5)
+	store.plans[0].Currency = "USD"
+
+	order, err := store.CreateOrder(t.Context(), domainbilling.CreateOrderRequest{
+		UserID: 903, PlanCode: store.plans[0].PlanCode, Provider: "mock",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	if order.Currency != "CNY" {
+		t.Fatalf("fixed package order must snapshot CNY despite legacy plan currency, got %q", order.Currency)
+	}
+}
+
+func boolPointerTest(value bool) *bool { return &value }
 
 func TestPlanHistoricalOrderUsesSnapshotAfterArchive(t *testing.T) {
 	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
@@ -575,7 +736,7 @@ func TestEstimateRouteModelAutoBaseResolutionUsesExplicitSize(t *testing.T) {
 			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "4k", BasePoints: "8.00000", Enabled: true},
 		},
 		ProviderModels: []modelhub.ProviderCandidate{
-			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"2k"}},
+			{AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-1", SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"2k"}, SupportedAspectRatios: []string{"3:2"}},
 		},
 		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
 	}})
@@ -638,6 +799,217 @@ func TestEstimateRouteModelPixelModeUsesPixelCapabilityWithoutQualityFilter(t *t
 	}
 }
 
+func TestEstimateRouteModelAutoOmitsResolvedSize(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint: "0.31250", PointsScale: 5,
+		TaskMultipliers:                  map[string]string{"text_to_image": "1.00000"},
+		AutoBaseResolutionDefaultByGroup: map[string]string{"plus": "1k"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"},
+			SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"auto", "ratio"}, SupportedAspectRatios: []string{"1:1"},
+			Quality: []string{"auto"}, OutputFormat: []string{"png", "jpeg"}, SupportedBackgrounds: []string{"auto", "transparent"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "auto",
+		Quality: "auto", OutputFormat: "png", Background: "auto", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("Estimate auto: %v", err)
+	}
+	if result.ResolvedSize != nil || result.PricingSnapshot.RequestedSize != "" || result.PricingSnapshot.SizeMode != "auto" {
+		t.Fatalf("auto estimate must omit resolved size, got %#v", result)
+	}
+}
+
+func TestEstimateRouteModelAcceptsEnabledCustomRatio(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint: "0.31250", PointsScale: 5,
+		TaskMultipliers: map[string]string{"text_to_image": "1.00000"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"},
+			SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, SupportsCustomRatio: true,
+			Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+			MinWidth: 16, MaxWidth: 3840, MinHeight: 16, MaxHeight: 3840,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "7:5",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("Estimate custom ratio: %v", err)
+	}
+	if result.ResolvedSize == nil || *result.ResolvedSize != "1488x1056" {
+		t.Fatalf("custom-ratio resolved size = %#v, want 1488x1056", result.ResolvedSize)
+	}
+}
+
+func TestEstimateRouteModelReturnsBoundedRatioSize(t *testing.T) {
+	svc := NewService(config.BillingConfig{TaskMultipliers: map[string]string{"text_to_image": "1.00000"}})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "tight", Name: "Tight", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"},
+			SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+			MinWidth: 512, MaxWidth: 900, MinHeight: 512, MaxHeight: 900,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Enabled: true}},
+	}})
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "tight", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil || result.ResolvedSize == nil || *result.ResolvedSize != "896x896" || result.PricingSnapshot.RequestedSize != "896x896" {
+		t.Fatalf("bounded estimate = %#v, %v; want resolved/requested size 896x896", result, err)
+	}
+}
+
+func TestEstimateRouteModelRejectsTransparentJPEG(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint: "0.31250", PointsScale: 5,
+		TaskMultipliers:                  map[string]string{"text_to_image": "1.00000"},
+		AutoBaseResolutionDefaultByGroup: map[string]string{"plus": "1k"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"},
+			SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"auto"}, Quality: []string{"auto"},
+			OutputFormat: []string{"png", "jpeg"}, SupportedBackgrounds: []string{"transparent"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	_, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "auto",
+		Quality: "auto", OutputFormat: "jpeg", Background: "transparent", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	appErr, ok := err.(*errs.Error)
+	if !ok || appErr.StatusCode != 400 || appErr.Code != modelhub.CodeTransparentFormatConflict {
+		t.Fatalf("transparent JPEG estimate error = %#v, want 400/%s", err, modelhub.CodeTransparentFormatConflict)
+	}
+}
+
+func TestEstimateRouteModelPreservesTypedSizeValidationErrors(t *testing.T) {
+	svc := NewService(config.BillingConfig{
+		CNYPerPoint: "0.31250", PointsScale: 5,
+		TaskMultipliers: map[string]string{"text_to_image": "1.00000"},
+	})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, ModelAccountID: 102, ModelCode: "gpt-image-2", SupportedTaskTypes: []string{"text_to_image"},
+			SupportedBaseResolution: []string{"1k"}, SizeModes: []string{"ratio", "pixel"}, SupportedAspectRatios: []string{"1:1"},
+			SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+			MinWidth: 512, MaxWidth: 2048, MinHeight: 512, MaxHeight: 2048,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Priority: 1, Enabled: true}},
+	}})
+
+	tests := []struct {
+		name string
+		req  domainbilling.EstimateRequest
+		code string
+	}{
+		{name: "ratio bounds", req: domainbilling.EstimateRequest{SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "4:1"}, code: modelhub.CodeInvalidAspectRatio},
+		{name: "illegal pixels", req: domainbilling.EstimateRequest{SizeMode: "pixel", RequestedSize: "1001x777"}, code: modelhub.CodeInvalidExplicitDimensions},
+		{name: "mixed ratio", req: domainbilling.EstimateRequest{SizeMode: "ratio", BaseResolution: "auto", AspectRatio: "1:1", RequestedSize: "1024x1024"}, code: modelhub.CodeInvalidSizeMode},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.req.TaskType, tt.req.RouteModelCode = "text_to_image", "plus"
+			tt.req.Quality, tt.req.OutputFormat, tt.req.Moderation = "auto", "png", "auto"
+			tt.req.RequestedOutputImageCount = 1
+			_, err := svc.Estimate(tt.req)
+			appErr, ok := err.(*errs.Error)
+			if !ok || appErr.StatusCode != 400 || appErr.Code != tt.code {
+				t.Fatalf("Estimate error = %#v, want 400/%s", err, tt.code)
+			}
+		})
+	}
+}
+
+func TestEstimateRouteModelUsesOneRoutingSnapshotAndReturnsCapabilityVersion(t *testing.T) {
+	source := &countingRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true}},
+		Prices:      []modelhub.RoutePriceConfig{{ID: 1, RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true}},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"},
+			SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Enabled: true}},
+	}}
+	svc := NewService(config.BillingConfig{TaskMultipliers: map[string]string{"text_to_image": "1.00000"}})
+	svc.SetModelRoutingSource(source)
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("Estimate: %v", err)
+	}
+	if source.reads != 1 {
+		t.Fatalf("routing source reads = %d, want exactly one immutable snapshot", source.reads)
+	}
+	if result.CapabilityVersion == "" {
+		t.Fatal("estimate must return capability_version")
+	}
+}
+
+func TestResolveAndEstimateRouteTaskPropagatesCanceledContext(t *testing.T) {
+	source := &contextObservingRoutingSource{}
+	svc := NewService(config.BillingConfig{})
+	svc.SetModelRoutingSource(source)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, _, _ = svc.ResolveAndEstimateRouteTask(ctx, domainbilling.EstimateRequest{RouteModelCode: "plus", TaskType: "text_to_image"}, config.GenerationLimitsConfig{})
+	if !errors.Is(source.err, context.Canceled) {
+		t.Fatalf("routing source context error = %v, want context.Canceled", source.err)
+	}
+}
+
+func TestEstimateRouteModelIgnoresInvalidPricesOnUnrelatedRoutes(t *testing.T) {
+	svc := NewService(config.BillingConfig{TaskMultipliers: map[string]string{"text_to_image": "1.00000"}})
+	svc.SetModelRoutingSource(staticRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		RouteModels: []modelhub.RouteModelConfig{
+			{ID: 1, Code: "plus", Name: "Plus", Visibility: "public", Enabled: true},
+			{ID: 2, Code: "unrelated", Name: "Unrelated", Visibility: "public", Enabled: true},
+		},
+		Prices: []modelhub.RoutePriceConfig{
+			{RouteModelID: 1, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "2.00000", Enabled: true},
+			{RouteModelID: 2, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "not-a-decimal", Enabled: true},
+		},
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID: 12, SupportedTaskTypes: []string{"text_to_image"}, SupportedBaseResolution: []string{"1k"},
+			SizeModes: []string{"ratio"}, SupportedAspectRatios: []string{"1:1"}, Quality: []string{"auto"}, OutputFormat: []string{"png"}, Moderation: []string{"auto"}, MaxImageCount: 1,
+		}},
+		Candidates: []modelhub.RouteCandidateConfig{{RouteModelID: 1, AccountModelID: 12, Enabled: true}},
+	}})
+	result, err := svc.Estimate(domainbilling.EstimateRequest{
+		TaskType: "text_to_image", RouteModelCode: "plus", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1",
+		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
+	})
+	if err != nil || result.EstimatedPoints != "2.00000" {
+		t.Fatalf("target route estimate = %#v, %v", result, err)
+	}
+}
+
 func TestEstimateRouteModelRejectsWhenNoCandidateSupportsResolvedBaseResolution(t *testing.T) {
 	svc := NewService(config.BillingConfig{
 		CNYPerPoint:                      "0.31250",
@@ -661,7 +1033,7 @@ func TestEstimateRouteModelRejectsWhenNoCandidateSupportsResolvedBaseResolution(
 		RequestedOutputImageCount: 1,
 	})
 	appErr, ok := err.(*errs.Error)
-	if !ok || appErr.StatusCode != 409 || appErr.Code != errs.CodeImageCapabilityMismatch {
+	if !ok || appErr.StatusCode != 400 || appErr.Code != errs.CodeImageCapabilityMismatch {
 		t.Fatalf("expected estimate to reject route model without matching candidate, got %#v", err)
 	}
 }

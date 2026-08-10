@@ -53,6 +53,8 @@ func NewTUICommandFormLocalized(entry CommandCatalogEntry, language string) TUIC
 		"runtime-dir": ".", "storage-driver": "s3", "image-tag": "latest",
 		"api-port": "8080", "gateway-port": "80", "user-web-port": "5173",
 		"admin-web-port": "5174", "docs-web-port": "5175", "monitoring-port": "9090",
+		"docs-url":         "/developer-docs/",
+		"docs-probe-url":   "",
 		"external-gateway": "false", "migrate": "false", "overwrite": "false", "yes": "false",
 	}
 	form.installSelected = selectedComponents(fullPreset)
@@ -331,6 +333,8 @@ func (form *TUICommandForm) rebuildInstallFields(focusName string) {
 		choice("role", form.installValues["role"], "single", "control"), components,
 		text("runtime-dir", form.installValues["runtime-dir"]),
 		choice("storage-driver", form.installValues["storage-driver"], "local", "s3"),
+		text("docs-url", form.installValues["docs-url"]),
+		text("docs-probe-url", form.installValues["docs-probe-url"]),
 	}
 	if form.installValues["mode"] == "docker" {
 		fields = append(fields, text("image-tag", form.installValues["image-tag"]))
@@ -454,7 +458,7 @@ func tuiFieldsForCommand(path, language string) []TUIField {
 	case "cluster token create":
 		return []TUIField{choice("role", "worker", "api", "worker", "web"), text("ttl", "10m"), text("runtime-dir", "")}
 	case "cluster join":
-		return []TUIField{text("server", "http://127.0.0.1:8080"), {Name: "token", Label: tuiMessage(form.Locale, "field.token"), Kind: tuiFieldText, Value: "pgjoin.v1.placeholder", Sensitive: true}, text("runtime-dir", "."), choice("mode", "docker", "docker", "native"), text("application-version", DefaultApplicationVersion), text("image-registry", ""), text("image-tag", DefaultApplicationVersion), text("release-version", ""), text("api-port", "8080"), text("gateway-port", "80"), text("user-web-port", "5173"), text("admin-web-port", "5174"), text("docs-web-port", "5175")}
+		return []TUIField{text("server", "http://127.0.0.1:8080"), {Name: "token", Label: tuiMessage(form.Locale, "field.token"), Kind: tuiFieldText, Value: "pgjoin.v1.placeholder", Sensitive: true}, text("runtime-dir", "."), choice("mode", "docker", "docker", "native"), text("application-version", DefaultApplicationVersion), text("image-registry", ""), text("image-tag", DefaultApplicationVersion), text("release-version", ""), text("api-port", "8080"), text("gateway-port", "80"), text("user-web-port", "5173"), text("admin-web-port", "5174"), text("docs-web-port", "5175"), text("docs-probe-url", "")}
 	default:
 		return nil
 	}

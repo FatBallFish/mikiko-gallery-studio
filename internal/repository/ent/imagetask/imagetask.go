@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/google/uuid"
 )
 
@@ -22,6 +23,8 @@ const (
 	FieldDeletedAt = "deleted_at"
 	// FieldUserID holds the string denoting the user_id field in the database.
 	FieldUserID = "user_id"
+	// FieldProjectID holds the string denoting the project_id field in the database.
+	FieldProjectID = "project_id"
 	// FieldAPIKeyID holds the string denoting the api_key_id field in the database.
 	FieldAPIKeyID = "api_key_id"
 	// FieldSourceChannel holds the string denoting the source_channel field in the database.
@@ -56,6 +59,8 @@ const (
 	FieldAspectRatio = "aspect_ratio"
 	// FieldOutputFormat holds the string denoting the output_format field in the database.
 	FieldOutputFormat = "output_format"
+	// FieldBackground holds the string denoting the background field in the database.
+	FieldBackground = "background"
 	// FieldOutputCompression holds the string denoting the output_compression field in the database.
 	FieldOutputCompression = "output_compression"
 	// FieldModeration holds the string denoting the moderation field in the database.
@@ -128,6 +133,12 @@ const (
 	FieldArtifactLastDiagnostic = "artifact_last_diagnostic"
 	// FieldArtifactStorageConfigID holds the string denoting the artifact_storage_config_id field in the database.
 	FieldArtifactStorageConfigID = "artifact_storage_config_id"
+	// FieldArtifactStorageDriver holds the string denoting the artifact_storage_driver field in the database.
+	FieldArtifactStorageDriver = "artifact_storage_driver"
+	// FieldArtifactStorageBucket holds the string denoting the artifact_storage_bucket field in the database.
+	FieldArtifactStorageBucket = "artifact_storage_bucket"
+	// FieldArtifactObjectKeys holds the string denoting the artifact_object_keys field in the database.
+	FieldArtifactObjectKeys = "artifact_object_keys"
 	// FieldArtifactStorageVersion holds the string denoting the artifact_storage_version field in the database.
 	FieldArtifactStorageVersion = "artifact_storage_version"
 	// FieldLeaseOwner holds the string denoting the lease_owner field in the database.
@@ -142,8 +153,17 @@ const (
 	FieldStartedAt = "started_at"
 	// FieldFinishedAt holds the string denoting the finished_at field in the database.
 	FieldFinishedAt = "finished_at"
+	// EdgeProject holds the string denoting the project edge name in mutations.
+	EdgeProject = "project"
 	// Table holds the table name of the imagetask in the database.
 	Table = "image_tasks"
+	// ProjectTable is the table that holds the project relation/edge.
+	ProjectTable = "image_tasks"
+	// ProjectInverseTable is the table name for the Project entity.
+	// It exists in this package in order to avoid circular dependency with the "project" package.
+	ProjectInverseTable = "projects"
+	// ProjectColumn is the table column denoting the project relation/edge.
+	ProjectColumn = "project_id"
 )
 
 // Columns holds all SQL columns for imagetask fields.
@@ -153,6 +173,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldDeletedAt,
 	FieldUserID,
+	FieldProjectID,
 	FieldAPIKeyID,
 	FieldSourceChannel,
 	FieldTaskType,
@@ -170,6 +191,7 @@ var Columns = []string{
 	FieldResolvedHeight,
 	FieldAspectRatio,
 	FieldOutputFormat,
+	FieldBackground,
 	FieldOutputCompression,
 	FieldModeration,
 	FieldRequestedOutputImageCount,
@@ -206,6 +228,9 @@ var Columns = []string{
 	FieldArtifactNextRetryAt,
 	FieldArtifactLastDiagnostic,
 	FieldArtifactStorageConfigID,
+	FieldArtifactStorageDriver,
+	FieldArtifactStorageBucket,
+	FieldArtifactObjectKeys,
 	FieldArtifactStorageVersion,
 	FieldLeaseOwner,
 	FieldLeaseExpiresAt,
@@ -272,6 +297,8 @@ var (
 	DefaultOutputFormat string
 	// OutputFormatValidator is a validator for the "output_format" field. It is called by the builders before save.
 	OutputFormatValidator func(string) error
+	// BackgroundValidator is a validator for the "background" field. It is called by the builders before save.
+	BackgroundValidator func(string) error
 	// DefaultOutputCompression holds the default value on creation for the "output_compression" field.
 	DefaultOutputCompression int
 	// DefaultModeration holds the default value on creation for the "moderation" field.
@@ -328,6 +355,14 @@ var (
 	ArtifactRecoveryStatusValidator func(string) error
 	// DefaultArtifactAttemptCount holds the default value on creation for the "artifact_attempt_count" field.
 	DefaultArtifactAttemptCount int
+	// DefaultArtifactStorageDriver holds the default value on creation for the "artifact_storage_driver" field.
+	DefaultArtifactStorageDriver string
+	// ArtifactStorageDriverValidator is a validator for the "artifact_storage_driver" field. It is called by the builders before save.
+	ArtifactStorageDriverValidator func(string) error
+	// DefaultArtifactStorageBucket holds the default value on creation for the "artifact_storage_bucket" field.
+	DefaultArtifactStorageBucket string
+	// ArtifactStorageBucketValidator is a validator for the "artifact_storage_bucket" field. It is called by the builders before save.
+	ArtifactStorageBucketValidator func(string) error
 	// DefaultArtifactStorageVersion holds the default value on creation for the "artifact_storage_version" field.
 	DefaultArtifactStorageVersion int64
 	// LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
@@ -364,6 +399,11 @@ func ByDeletedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByUserID orders the results by the user_id field.
 func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserID, opts...).ToFunc()
+}
+
+// ByProjectID orders the results by the project_id field.
+func ByProjectID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProjectID, opts...).ToFunc()
 }
 
 // ByAPIKeyID orders the results by the api_key_id field.
@@ -449,6 +489,11 @@ func ByAspectRatio(opts ...sql.OrderTermOption) OrderOption {
 // ByOutputFormat orders the results by the output_format field.
 func ByOutputFormat(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldOutputFormat, opts...).ToFunc()
+}
+
+// ByBackground orders the results by the background field.
+func ByBackground(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBackground, opts...).ToFunc()
 }
 
 // ByOutputCompression orders the results by the output_compression field.
@@ -606,6 +651,16 @@ func ByArtifactStorageConfigID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldArtifactStorageConfigID, opts...).ToFunc()
 }
 
+// ByArtifactStorageDriver orders the results by the artifact_storage_driver field.
+func ByArtifactStorageDriver(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactStorageDriver, opts...).ToFunc()
+}
+
+// ByArtifactStorageBucket orders the results by the artifact_storage_bucket field.
+func ByArtifactStorageBucket(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactStorageBucket, opts...).ToFunc()
+}
+
 // ByArtifactStorageVersion orders the results by the artifact_storage_version field.
 func ByArtifactStorageVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldArtifactStorageVersion, opts...).ToFunc()
@@ -639,4 +694,18 @@ func ByStartedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByFinishedAt orders the results by the finished_at field.
 func ByFinishedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFinishedAt, opts...).ToFunc()
+}
+
+// ByProjectField orders the results by project field.
+func ByProjectField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newProjectStep(), sql.OrderByField(field, opts...))
+	}
+}
+func newProjectStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ProjectInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, ProjectTable, ProjectColumn),
+	)
 }

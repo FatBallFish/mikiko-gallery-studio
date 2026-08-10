@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -125,6 +126,175 @@ func TestOpenAICompatGenerateUsesCurrentRouteModelConfiguration(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected current route model generation to return 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestOpenAICompatGenerationMapsCurrentGPTImageFieldsToProvider(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want map[string]any
+	}{
+		{
+			name: "omitted size and transparent png",
+			body: `{"model":"basic","prompt":"transparent product","background":"transparent","output_format":"png","moderation":"low","n":1}`,
+			want: map[string]any{"background": "transparent", "output_format": "png", "moderation": "low"},
+		},
+		{
+			name: "auto size and compressed webp",
+			body: `{"model":"basic","prompt":"transparent webp","size":"auto","background":"transparent","output_format":"webp","output_compression":72,"moderation":"low","n":1}`,
+			want: map[string]any{"background": "transparent", "output_format": "webp", "output_compression": float64(72), "moderation": "low"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			captured := make(chan map[string]any, 1)
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v1/images/generations" {
+					t.Fatalf("unexpected upstream path %s", r.URL.Path)
+				}
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatalf("decode upstream payload: %v", err)
+				}
+				captured <- payload
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"created":1770000044,"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="}]}`)
+			}))
+			defer upstream.Close()
+			handler, apiSecret := newGPTImageCompatHandler(t, upstream.URL)
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(tt.body))
+			req.Header.Set("Authorization", "Bearer "+apiSecret)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			payload := <-captured
+			if _, exists := payload["size"]; exists {
+				t.Fatalf("auto generation payload must omit size: %#v", payload)
+			}
+			for key, want := range tt.want {
+				if got := payload[key]; got != want {
+					t.Fatalf("payload[%q] = %#v, want %#v: %#v", key, got, want, payload)
+				}
+			}
+			for _, unsupported := range []string{"stream", "partial_images", "response_format"} {
+				if _, exists := payload[unsupported]; exists {
+					t.Fatalf("payload must omit %q: %#v", unsupported, payload)
+				}
+			}
+		})
+	}
+}
+
+func TestOpenAICompatGenerationPreservesDynamicRouteQuality(t *testing.T) {
+	for _, quality := range []string{"low", "medium", "high"} {
+		t.Run(quality, func(t *testing.T) {
+			captured := make(chan map[string]any, 1)
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatalf("decode upstream payload: %v", err)
+				}
+				captured <- payload
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"created":1770000045,"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="}]}`)
+			}))
+			defer upstream.Close()
+			handler, apiSecret := newGPTImageCompatHandler(t, upstream.URL)
+
+			body := fmt.Sprintf(`{"model":"basic","prompt":"quality contract","quality":%q,"n":1}`, quality)
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(body))
+			req.Header.Set("Authorization", "Bearer "+apiSecret)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			if got := (<-captured)["quality"]; got != quality {
+				t.Fatalf("provider quality = %#v, want %q", got, quality)
+			}
+		})
+	}
+}
+
+func TestOpenAICompatGenerationUsesAuthoritativePixelValidationForExplicitSize(t *testing.T) {
+	tests := []struct {
+		name         string
+		size         string
+		wantStatus   int
+		wantProvider bool
+	}{
+		{name: "illegal explicit pixels", size: "1001x777", wantStatus: http.StatusBadRequest},
+		{name: "legal explicit pixels", size: "1024x768", wantStatus: http.StatusOK, wantProvider: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			providerCalls := 0
+			captured := map[string]any{}
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				providerCalls++
+				if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+					t.Fatalf("decode upstream payload: %v", err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"created":1770000046,"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lqR5DQAAAABJRU5ErkJggg=="}]}`)
+			}))
+			defer upstream.Close()
+			handler, apiSecret := newGPTImageCompatHandler(t, upstream.URL)
+
+			body := fmt.Sprintf(`{"model":"basic","prompt":"pixel contract","size":%q,"n":1}`, tt.size)
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(body))
+			req.Header.Set("Authorization", "Bearer "+apiSecret)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d provider_calls=%d provider_size=%#v body=%s", rec.Code, tt.wantStatus, providerCalls, captured["size"], rec.Body.String())
+			}
+			if tt.wantProvider {
+				if providerCalls != 1 || captured["size"] != tt.size {
+					t.Fatalf("provider calls=%d size=%#v, want one call with %q", providerCalls, captured["size"], tt.size)
+				}
+				return
+			}
+			if providerCalls != 0 {
+				t.Fatalf("invalid explicit pixels reached provider %d times", providerCalls)
+			}
+			if !bytes.Contains(rec.Body.Bytes(), []byte("invalid_explicit_dimensions")) {
+				t.Fatalf("expected typed explicit-dimensions error, got body=%s", rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestOpenAICompatGenerationRejectsTransparentJPEGBeforeProvider(t *testing.T) {
+	providerCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		providerCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	}))
+	defer upstream.Close()
+	handler, apiSecret := newGPTImageCompatHandler(t, upstream.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(`{"model":"basic","prompt":"invalid transparent jpeg","background":"transparent","output_format":"jpeg","n":1}`))
+	req.Header.Set("Authorization", "Bearer "+apiSecret)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("transparent_format_conflict")) {
+		t.Fatalf("expected typed transparent conflict, got body=%s", rec.Body.String())
+	}
+	if providerCalls != 0 {
+		t.Fatalf("invalid transparent jpeg reached provider %d times", providerCalls)
 	}
 }
 
@@ -455,7 +625,10 @@ func newRouteModelCompatHandler(t *testing.T, cfg config.Config, upstreamURL str
 	}
 	accountModel, err := modelAdminSvc.CreateModelAccountModel(context.Background(), domainmodeladmin.ModelAccountModelWriteRequest{
 		AccountID: account.ID, ModelCode: "openrouter/vision", DisplayName: "Route image model",
-		TaskTypes: []string{"text_to_image"}, BaseResolution: []string{"1k"}, Quality: []string{"auto"}, CostPerImage: "0.00000", Currency: "USD", Enabled: true,
+		TaskTypes: []string{"text_to_image"}, BaseResolution: []string{"1k"}, Quality: []string{"auto"}, MaxImageCount: 1,
+		SizeModes: []string{"pixel"}, SupportedPixelSizes: []string{"1024x1024"},
+		MinWidth: 1024, MaxWidth: 1024, MinHeight: 1024, MaxHeight: 1024,
+		CostPerImage: "0.00000", Currency: "USD", Enabled: true,
 	})
 	if err != nil {
 		t.Fatalf("CreateModelAccountModel: %v", err)
@@ -471,6 +644,69 @@ func newRouteModelCompatHandler(t *testing.T, cfg config.Config, upstreamURL str
 		t.Fatalf("CreateRouteModelPrice: %v", err)
 	}
 
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
+	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, taskSvc, nil, billingSvc, keySvc, nil, nil, nil, nil, nil, modelAdminSvc)
+	return apphttp.NewWithAPI(api), created.Secret
+}
+
+func newGPTImageCompatHandler(t *testing.T, upstreamURL string) (http.Handler, string) {
+	t.Helper()
+	cfg := compatTestConfig()
+	cfg.Storage.LocalRoot = t.TempDir()
+	cfg.Providers.OpenAI.Enabled = false
+	cfg.Providers.OpenRouter.Enabled = false
+	const email = "compat-gpt-image-fields@example.com"
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test",
+		AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	if err := authSvc.SendEmailCode(email, "login"); err != nil {
+		t.Fatalf("SendEmailCode: %v", err)
+	}
+	user, _, err := authSvc.LoginWithEmailCode(email, "123456")
+	if err != nil {
+		t.Fatalf("LoginWithEmailCode: %v", err)
+	}
+	billingSvc := billingservice.NewService(cfg.Billing)
+	if _, err := billingSvc.AdminAdjust(context.Background(), domainbilling.AdjustRequest{UserID: user.ID, ChangePoints: "100.00000", Reason: "seed balance"}); err != nil {
+		t.Fatalf("AdminAdjust: %v", err)
+	}
+	keySvc := apikeyservice.NewService(nil)
+	created, err := keySvc.CreateKey(context.Background(), apikeyservice.CreateRequest{UserID: user.ID, Name: "compat-gpt-image", GroupCode: "basic", Secret: "sk-compat-gpt-image"})
+	if err != nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+	modelAdminSvc := modeladminservice.NewServiceWithStore(modeladminservice.NewMemoryStore())
+	account, err := modelAdminSvc.CreateModelAccount(context.Background(), domainmodeladmin.ModelAccountWriteRequest{
+		Name: "GPT Image Account", AdapterType: "openai_compatible", AuthType: "api_key", BaseURL: upstreamURL,
+		Credentials: map[string]string{"api_key": "test-route-key"}, Status: "enabled", ConcurrencyLimit: 1, TimeoutMS: 30000,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccount: %v", err)
+	}
+	accountModel, err := modelAdminSvc.CreateModelAccountModel(context.Background(), domainmodeladmin.ModelAccountModelWriteRequest{
+		AccountID: account.ID, ModelCode: "gpt-image-2", DisplayName: "GPT Image 2", TaskTypes: []string{"text_to_image"},
+		BaseResolution: []string{"1k"}, Quality: []string{"auto", "low", "medium", "high"}, MaxImageCount: 1,
+		SizeModes: []string{"auto", "ratio", "pixel"}, SupportedRatios: []string{"1:1"}, SupportsCustomRatio: true,
+		SupportedPixelSizes: []string{"1024x1024"}, SupportsCustomSize: true,
+		MinWidth: 512, MaxWidth: 1024, MinHeight: 512, MaxHeight: 1024,
+		SupportedBackgrounds: []string{"auto", "opaque", "transparent"},
+		OutputFormat:         []string{"png", "webp", "jpeg"}, OutputCompression: 100, SupportsOutputCompression: true,
+		Moderation: []string{"auto", "low"}, CostPerImage: "0.00000", Currency: "USD", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateModelAccountModel: %v", err)
+	}
+	routeModel, err := modelAdminSvc.CreateRouteModel(context.Background(), domainmodeladmin.RouteModelWriteRequest{Code: "basic", Name: "Basic", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatalf("CreateRouteModel: %v", err)
+	}
+	if _, err := modelAdminSvc.CreateRouteModelCandidate(context.Background(), domainmodeladmin.RouteModelCandidateWriteRequest{RouteModelID: routeModel.ID, AccountModelID: accountModel.ID, Priority: 1, Weight: 100, FallbackOrder: 1, Enabled: true}); err != nil {
+		t.Fatalf("CreateRouteModelCandidate: %v", err)
+	}
+	if _, err := modelAdminSvc.CreateRouteModelPrice(context.Background(), domainmodeladmin.RouteModelPriceWriteRequest{RouteModelID: routeModel.ID, TaskType: "text_to_image", BaseResolution: "1k", BasePoints: "1.00000", ReferenceMultiplier: "1.00000", Enabled: true}); err != nil {
+		t.Fatalf("CreateRouteModelPrice: %v", err)
+	}
 	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, nil, taskSvc, nil, billingSvc, keySvc, nil, nil, nil, nil, nil, modelAdminSvc)
 	return apphttp.NewWithAPI(api), created.Secret

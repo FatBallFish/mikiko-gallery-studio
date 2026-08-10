@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
+	domainadmincallrecord "github.com/fatballfish/pic-gallery/internal/domain/admincallrecord"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	"github.com/fatballfish/pic-gallery/internal/provider"
@@ -20,8 +21,145 @@ import (
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
+	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+func TestAdminDashboardReportsRealAttemptDistributionForWindow(t *testing.T) {
+	cfg := adminConfigAPIConfig()
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test",
+		AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	adminStore := adminauthservice.NewMemoryStore()
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{Email: "admin-call-records@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: "super_admin", Status: "active"}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	now := time.Now().UTC()
+	inside := now.Add(-time.Hour)
+	callRecords := admincallrecordservice.NewServiceWithStore(admincallrecordservice.NewMemoryStore(
+		domainadmincallrecord.Record{TaskID: "route-main", RouteModelCode: "image-main", Status: domainimagetask.StatusSucceeded, CreatedAt: inside, Attempts: []domainadmincallrecord.Attempt{{StartedAt: &inside}, {StartedAt: &inside}}},
+		domainadmincallrecord.Record{TaskID: "unrouted", Status: domainimagetask.StatusFailed, CreatedAt: inside, Attempts: []domainadmincallrecord.Attempt{{StartedAt: &inside}}},
+		domainadmincallrecord.Record{TaskID: "preflight", Status: domainimagetask.StatusRejected, CreatedAt: inside},
+	))
+	api := handlers.NewAPIWithCallRecordService(cfg, authSvc, nil, nil, nil, nil, nil, adminauthservice.NewService(cfg.Auth, adminStore), nil, nil, nil, callRecords)
+	handler := NewWithAPI(api)
+	token := loginAdminForCallRecordsTest(t, handler)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/metrics/dashboard?window=24h", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dashboard status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Data struct {
+			CallDistribution domainadmincallrecord.Distribution `json:"call_distribution"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("decode dashboard: %v", err)
+	}
+	distribution := response.Data.CallDistribution
+	if distribution.TotalCalls != 3 || distribution.PreflightFailureCount != 1 || len(distribution.Groups) != 2 || distribution.Window.From.IsZero() || distribution.Window.To.IsZero() {
+		t.Fatalf("dashboard distribution = %#v", distribution)
+	}
+	if distribution.Groups[0].Key != "image-main" || distribution.Groups[0].Calls != 2 || distribution.Groups[1].Key != "unrouted" || distribution.Groups[1].Calls != 1 {
+		t.Fatalf("dashboard groups = %#v", distribution.Groups)
+	}
+
+	badReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/metrics/dashboard?window=forever", nil)
+	badReq.Header.Set("Authorization", "Bearer "+token)
+	badRec := httptest.NewRecorder()
+	handler.ServeHTTP(badRec, badReq)
+	if badRec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid dashboard window status=%d body=%s", badRec.Code, badRec.Body.String())
+	}
+}
+
+func TestAdminDashboardDistributionIncludesSoftDeletedTasks(t *testing.T) {
+	cfg := adminConfigAPIConfig()
+	client, err := repoent.Open(dialect.SQLite, "file:admin-dashboard-soft-deleted-distribution?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	now := time.Now().UTC()
+	taskStore := entstore.NewImageTaskStore(client)
+	seeds := []domainimagetask.Task{
+		{
+			UserID: 77, ID: "66666666-6666-4666-8666-666666666666", Status: domainimagetask.StatusSucceeded,
+			RouteModelCode: "image-deleted", TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k",
+			Attempts: []domainimagetask.Attempt{{StartedAt: &now}, {StartedAt: &now}},
+		},
+		{
+			UserID: 77, ID: "77777777-7777-4777-8777-777777777777", Status: domainimagetask.StatusFailed,
+			TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", BaseResolution: "1k",
+		},
+	}
+	for _, seed := range seeds {
+		if _, err := client.ImageTask.Create().
+			SetID(uuid.MustParse(seed.ID)).
+			SetUserID(seed.UserID).
+			SetTaskType(seed.TaskType).
+			SetStatus(seed.Status).
+			SetPrompt(seed.Prompt).
+			SetAbstractModel(seed.AbstractModel).
+			SetBaseResolution(seed.BaseResolution).
+			SetRouteModelCode(seed.RouteModelCode).
+			SetProviderTrace(map[string]any{"attempts": seed.Attempts}).
+			SetCreatedAt(now.Add(-time.Hour)).
+			SetUpdatedAt(now.Add(-time.Hour)).
+			Save(t.Context()); err != nil {
+			t.Fatalf("save task %s: %v", seed.ID, err)
+		}
+		if err := taskStore.DeleteByID(t.Context(), seed.UserID, seed.ID); err != nil {
+			t.Fatalf("soft-delete task %s: %v", seed.ID, err)
+		}
+	}
+
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test",
+		AccessTokenSecret: "secret", RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	adminStore := adminauthservice.NewMemoryStore()
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{Email: "admin-call-records@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: "super_admin", Status: "active"}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	callRecords := admincallrecordservice.NewServiceWithStore(entstore.NewAdminCallRecordStore(client))
+	api := handlers.NewAPIWithCallRecordService(cfg, authSvc, nil, nil, nil, nil, nil, adminauthservice.NewService(cfg.Auth, adminStore), nil, nil, nil, callRecords)
+	handler := NewWithAPI(api)
+	token := loginAdminForCallRecordsTest(t, handler)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/metrics/dashboard?window=24h", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dashboard status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Data struct {
+			CallDistribution domainadmincallrecord.Distribution `json:"call_distribution"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("decode dashboard: %v", err)
+	}
+	distribution := response.Data.CallDistribution
+	if distribution.TotalCalls != 2 || distribution.PreflightFailureCount != 1 || len(distribution.Groups) != 1 || distribution.Groups[0].Key != "image-deleted" || distribution.Groups[0].Calls != 2 || distribution.Groups[0].Percentage != 100 {
+		t.Fatalf("soft-deleted dashboard distribution = %#v", distribution)
+	}
+	visible, err := entstore.NewAdminCallRecordStore(client).ListCallRecords(t.Context(), domainadmincallrecord.ListRequest{Page: 1, PageSize: 10})
+	if err != nil || visible.Total != 0 || len(visible.Items) != 0 {
+		t.Fatalf("soft-deleted tasks remain visible in call-record list: page=%#v err=%v", visible, err)
+	}
+}
 
 func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 	cfg := adminConfigAPIConfig()

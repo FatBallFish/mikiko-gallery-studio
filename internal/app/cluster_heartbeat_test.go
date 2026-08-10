@@ -11,7 +11,7 @@ import (
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 )
 
-func TestStartRuntimeHeartbeatSkipsSingleAndStartsClusterNode(t *testing.T) {
+func TestStartRuntimeHeartbeatStartsStableSingleComponentsAndClusterNode(t *testing.T) {
 	store := clusterservice.NewMemoryStore(domaincluster.Installation{
 		InstallationID: "installation-a", Initialized: true,
 		ApplicationVersion: "v1", RuntimeSchemaVersion: 1, ConfigRevision: 3,
@@ -20,20 +20,47 @@ func TestStartRuntimeHeartbeatSkipsSingleAndStartsClusterNode(t *testing.T) {
 		DeploymentRole: config.DeploymentRoleSingle, InstallationID: "installation-a",
 		ApplicationVersion: "v1", ConfigSchemaVersion: 1, ConfigRevision: 3,
 	}}
-	handle, err := startRuntimeHeartbeat(t.Context(), cfg, store)
-	if err != nil || handle != nil {
-		t.Fatalf("single heartbeat handle=%#v err=%v", handle, err)
+	apiHandle, err := startRuntimeHeartbeat(t.Context(), cfg, store, domaincluster.NodeRoleAPI)
+	if err != nil || apiHandle == nil {
+		t.Fatalf("single API heartbeat handle=%#v err=%v", apiHandle, err)
+	}
+	apiHandle.Stop()
+	workerHandle, err := startRuntimeHeartbeat(t.Context(), cfg, store, domaincluster.NodeRoleWorker)
+	if err != nil || workerHandle == nil {
+		t.Fatalf("single Worker heartbeat handle=%#v err=%v", workerHandle, err)
+	}
+	workerHandle.Stop()
+	nodes, total, err := store.ListNodes(t.Context(), "installation-a", domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
+	if err != nil || total != 2 || nodes[0].NodeID == nodes[1].NodeID {
+		t.Fatalf("single component nodes=%#v total=%d err=%v", nodes, total, err)
+	}
+	apiID := clusterservice.LogicalSingleComponentNodeID("installation-a", domaincluster.NodeRoleAPI)
+	apiHandle, err = startRuntimeHeartbeat(t.Context(), cfg, store, domaincluster.NodeRoleAPI)
+	if err != nil || apiHandle == nil {
+		t.Fatalf("restart single API heartbeat handle=%#v err=%v", apiHandle, err)
+	}
+	apiHandle.Stop()
+	nodes, total, err = store.ListNodes(t.Context(), "installation-a", domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
+	if err != nil || total != 2 {
+		t.Fatalf("single component restart nodes=%#v total=%d err=%v", nodes, total, err)
+	}
+	foundAPI := false
+	for _, node := range nodes {
+		foundAPI = foundAPI || node.NodeID == apiID
+	}
+	if !foundAPI {
+		t.Fatalf("stable single API node %q missing from %#v", apiID, nodes)
 	}
 
 	cfg.Runtime.DeploymentRole = config.DeploymentRoleAPI
 	cfg.Runtime.ClusterNodeID = "api-a"
-	handle, err = startRuntimeHeartbeat(t.Context(), cfg, store)
+	handle, err := startRuntimeHeartbeat(t.Context(), cfg, store, domaincluster.NodeRoleAPI)
 	if err != nil || handle == nil {
 		t.Fatalf("cluster heartbeat handle=%#v err=%v", handle, err)
 	}
 	handle.Stop()
-	nodes, total, err := store.ListNodes(t.Context(), "installation-a", domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
-	if err != nil || total != 1 || nodes[0].Health != domaincluster.NodeHealthHealthy {
+	nodes, total, err = store.ListNodes(t.Context(), "installation-a", domaincluster.ListNodesRequest{Page: 1, PageSize: 20})
+	if err != nil || total != 3 || nodes[0].Health != domaincluster.NodeHealthHealthy {
 		t.Fatalf("cluster heartbeat nodes=%#v total=%d err=%v", nodes, total, err)
 	}
 }
@@ -68,7 +95,7 @@ func TestStartRuntimeHeartbeatRejectsIncompatibleSchemaAfterRecordingUnready(t *
 		DeploymentRole: config.DeploymentRoleWorker, InstallationID: "installation-a", ClusterNodeID: "worker-a",
 		ApplicationVersion: "v1", ConfigSchemaVersion: 1, ConfigRevision: 3,
 	}}
-	if _, err := startRuntimeHeartbeat(t.Context(), cfg, store); !errors.Is(err, clusterservice.ErrRuntimeSchemaMismatch) {
+	if _, err := startRuntimeHeartbeat(t.Context(), cfg, store, domaincluster.NodeRoleWorker); !errors.Is(err, clusterservice.ErrRuntimeSchemaMismatch) {
 		t.Fatalf("schema mismatch error = %v", err)
 	}
 	nodes, _, _ := store.ListNodes(t.Context(), "installation-a", domaincluster.ListNodesRequest{Page: 1, PageSize: 20})

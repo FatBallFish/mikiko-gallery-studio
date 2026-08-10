@@ -152,9 +152,29 @@ func (_c *ModelAccountModelCreate) SetSupportedPixelSizes(v []string) *ModelAcco
 	return _c
 }
 
+// SetSupportsCustomRatio sets the "supports_custom_ratio" field.
+func (_c *ModelAccountModelCreate) SetSupportsCustomRatio(v bool) *ModelAccountModelCreate {
+	_c.mutation.SetSupportsCustomRatio(v)
+	return _c
+}
+
+// SetNillableSupportsCustomRatio sets the "supports_custom_ratio" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableSupportsCustomRatio(v *bool) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetSupportsCustomRatio(*v)
+	}
+	return _c
+}
+
 // SetOutputFormat sets the "output_format" field.
 func (_c *ModelAccountModelCreate) SetOutputFormat(v []string) *ModelAccountModelCreate {
 	_c.mutation.SetOutputFormat(v)
+	return _c
+}
+
+// SetSupportedBackgrounds sets the "supported_backgrounds" field.
+func (_c *ModelAccountModelCreate) SetSupportedBackgrounds(v []string) *ModelAccountModelCreate {
+	_c.mutation.SetSupportedBackgrounds(v)
 	return _c
 }
 
@@ -196,6 +216,62 @@ func (_c *ModelAccountModelCreate) SetSupportsCustomSize(v bool) *ModelAccountMo
 func (_c *ModelAccountModelCreate) SetNillableSupportsCustomSize(v *bool) *ModelAccountModelCreate {
 	if v != nil {
 		_c.SetSupportsCustomSize(*v)
+	}
+	return _c
+}
+
+// SetMinWidth sets the "min_width" field.
+func (_c *ModelAccountModelCreate) SetMinWidth(v int) *ModelAccountModelCreate {
+	_c.mutation.SetMinWidth(v)
+	return _c
+}
+
+// SetNillableMinWidth sets the "min_width" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableMinWidth(v *int) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetMinWidth(*v)
+	}
+	return _c
+}
+
+// SetMaxWidth sets the "max_width" field.
+func (_c *ModelAccountModelCreate) SetMaxWidth(v int) *ModelAccountModelCreate {
+	_c.mutation.SetMaxWidth(v)
+	return _c
+}
+
+// SetNillableMaxWidth sets the "max_width" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableMaxWidth(v *int) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetMaxWidth(*v)
+	}
+	return _c
+}
+
+// SetMinHeight sets the "min_height" field.
+func (_c *ModelAccountModelCreate) SetMinHeight(v int) *ModelAccountModelCreate {
+	_c.mutation.SetMinHeight(v)
+	return _c
+}
+
+// SetNillableMinHeight sets the "min_height" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableMinHeight(v *int) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetMinHeight(*v)
+	}
+	return _c
+}
+
+// SetMaxHeight sets the "max_height" field.
+func (_c *ModelAccountModelCreate) SetMaxHeight(v int) *ModelAccountModelCreate {
+	_c.mutation.SetMaxHeight(v)
+	return _c
+}
+
+// SetNillableMaxHeight sets the "max_height" field if the given value is not nil.
+func (_c *ModelAccountModelCreate) SetNillableMaxHeight(v *int) *ModelAccountModelCreate {
+	if v != nil {
+		_c.SetMaxHeight(*v)
 	}
 	return _c
 }
@@ -309,6 +385,10 @@ func (_c *ModelAccountModelCreate) defaults() {
 		v := modelaccountmodel.DefaultMaxImageCount
 		_c.mutation.SetMaxImageCount(v)
 	}
+	if _, ok := _c.mutation.SupportsCustomRatio(); !ok {
+		v := modelaccountmodel.DefaultSupportsCustomRatio
+		_c.mutation.SetSupportsCustomRatio(v)
+	}
 	if _, ok := _c.mutation.OutputCompression(); !ok {
 		v := modelaccountmodel.DefaultOutputCompression
 		_c.mutation.SetOutputCompression(v)
@@ -320,6 +400,22 @@ func (_c *ModelAccountModelCreate) defaults() {
 	if _, ok := _c.mutation.SupportsCustomSize(); !ok {
 		v := modelaccountmodel.DefaultSupportsCustomSize
 		_c.mutation.SetSupportsCustomSize(v)
+	}
+	if _, ok := _c.mutation.MinWidth(); !ok {
+		v := modelaccountmodel.DefaultMinWidth
+		_c.mutation.SetMinWidth(v)
+	}
+	if _, ok := _c.mutation.MaxWidth(); !ok {
+		v := modelaccountmodel.DefaultMaxWidth
+		_c.mutation.SetMaxWidth(v)
+	}
+	if _, ok := _c.mutation.MinHeight(); !ok {
+		v := modelaccountmodel.DefaultMinHeight
+		_c.mutation.SetMinHeight(v)
+	}
+	if _, ok := _c.mutation.MaxHeight(); !ok {
+		v := modelaccountmodel.DefaultMaxHeight
+		_c.mutation.SetMaxHeight(v)
 	}
 	if _, ok := _c.mutation.CostPerImage(); !ok {
 		v := modelaccountmodel.DefaultCostPerImage
@@ -368,6 +464,14 @@ func (_c *ModelAccountModelCreate) check() error {
 	if _, ok := _c.mutation.MaxImageCount(); !ok {
 		return &ValidationError{Name: "max_image_count", err: errors.New(`ent: missing required field "ModelAccountModel.max_image_count"`)}
 	}
+	if v, ok := _c.mutation.MaxImageCount(); ok {
+		if err := modelaccountmodel.MaxImageCountValidator(v); err != nil {
+			return &ValidationError{Name: "max_image_count", err: fmt.Errorf(`ent: validator failed for field "ModelAccountModel.max_image_count": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.SupportsCustomRatio(); !ok {
+		return &ValidationError{Name: "supports_custom_ratio", err: errors.New(`ent: missing required field "ModelAccountModel.supports_custom_ratio"`)}
+	}
 	if _, ok := _c.mutation.OutputCompression(); !ok {
 		return &ValidationError{Name: "output_compression", err: errors.New(`ent: missing required field "ModelAccountModel.output_compression"`)}
 	}
@@ -376,6 +480,18 @@ func (_c *ModelAccountModelCreate) check() error {
 	}
 	if _, ok := _c.mutation.SupportsCustomSize(); !ok {
 		return &ValidationError{Name: "supports_custom_size", err: errors.New(`ent: missing required field "ModelAccountModel.supports_custom_size"`)}
+	}
+	if _, ok := _c.mutation.MinWidth(); !ok {
+		return &ValidationError{Name: "min_width", err: errors.New(`ent: missing required field "ModelAccountModel.min_width"`)}
+	}
+	if _, ok := _c.mutation.MaxWidth(); !ok {
+		return &ValidationError{Name: "max_width", err: errors.New(`ent: missing required field "ModelAccountModel.max_width"`)}
+	}
+	if _, ok := _c.mutation.MinHeight(); !ok {
+		return &ValidationError{Name: "min_height", err: errors.New(`ent: missing required field "ModelAccountModel.min_height"`)}
+	}
+	if _, ok := _c.mutation.MaxHeight(); !ok {
+		return &ValidationError{Name: "max_height", err: errors.New(`ent: missing required field "ModelAccountModel.max_height"`)}
 	}
 	if _, ok := _c.mutation.CostPerImage(); !ok {
 		return &ValidationError{Name: "cost_per_image", err: errors.New(`ent: missing required field "ModelAccountModel.cost_per_image"`)}
@@ -473,9 +589,17 @@ func (_c *ModelAccountModelCreate) createSpec() (*ModelAccountModel, *sqlgraph.C
 		_spec.SetField(modelaccountmodel.FieldSupportedPixelSizes, field.TypeJSON, value)
 		_node.SupportedPixelSizes = value
 	}
+	if value, ok := _c.mutation.SupportsCustomRatio(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportsCustomRatio, field.TypeBool, value)
+		_node.SupportsCustomRatio = value
+	}
 	if value, ok := _c.mutation.OutputFormat(); ok {
 		_spec.SetField(modelaccountmodel.FieldOutputFormat, field.TypeJSON, value)
 		_node.OutputFormat = value
+	}
+	if value, ok := _c.mutation.SupportedBackgrounds(); ok {
+		_spec.SetField(modelaccountmodel.FieldSupportedBackgrounds, field.TypeJSON, value)
+		_node.SupportedBackgrounds = value
 	}
 	if value, ok := _c.mutation.OutputCompression(); ok {
 		_spec.SetField(modelaccountmodel.FieldOutputCompression, field.TypeInt, value)
@@ -488,6 +612,22 @@ func (_c *ModelAccountModelCreate) createSpec() (*ModelAccountModel, *sqlgraph.C
 	if value, ok := _c.mutation.SupportsCustomSize(); ok {
 		_spec.SetField(modelaccountmodel.FieldSupportsCustomSize, field.TypeBool, value)
 		_node.SupportsCustomSize = value
+	}
+	if value, ok := _c.mutation.MinWidth(); ok {
+		_spec.SetField(modelaccountmodel.FieldMinWidth, field.TypeInt, value)
+		_node.MinWidth = value
+	}
+	if value, ok := _c.mutation.MaxWidth(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxWidth, field.TypeInt, value)
+		_node.MaxWidth = value
+	}
+	if value, ok := _c.mutation.MinHeight(); ok {
+		_spec.SetField(modelaccountmodel.FieldMinHeight, field.TypeInt, value)
+		_node.MinHeight = value
+	}
+	if value, ok := _c.mutation.MaxHeight(); ok {
+		_spec.SetField(modelaccountmodel.FieldMaxHeight, field.TypeInt, value)
+		_node.MaxHeight = value
 	}
 	if value, ok := _c.mutation.Moderation(); ok {
 		_spec.SetField(modelaccountmodel.FieldModeration, field.TypeJSON, value)

@@ -10,6 +10,8 @@ import (
 
 type RouteModelCandidate struct{ ent.Schema }
 
+func (RouteModelCandidate) Mixin() []ent.Mixin { return []ent.Mixin{TimeMixin{}, SoftDeleteMixin{}} }
+
 func (RouteModelCandidate) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("route_model_id"),

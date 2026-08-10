@@ -3,6 +3,7 @@ import type { ApiKey } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { Button, CopyButton, EmptyState, Field, Modal, useApp } from '../components'
+import { openDocsEntry } from '../docsUrl'
 import { userButton, userForm } from '../ui/classes'
 import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { errorMessage, useApiResource } from '../useApiResource'
@@ -237,7 +238,7 @@ export function ApiKeysPage() {
             <pre className={apiKeyClasses.codePre}>{quickstart.code}</pre>
           </div>
         </div>
-        <p className={apiKeyClasses.docHint}>查看完整 <button type="button" className={cn(apiKeyClasses.docLink, 'border-0 bg-transparent p-0')} onClick={() => app.navigate('docs')}>开发文档</button> 获取更多语言示例。</p>
+        <p className={apiKeyClasses.docHint}>查看完整 <button type="button" className={cn(apiKeyClasses.docLink, 'border-0 bg-transparent p-0')} onClick={() => openDocsEntry('api-keys')}>开发文档</button> 获取更多语言示例。</p>
         </div>
         <div className={apiKeyClasses.securityCard}>
           <h3 className="mb-4 text-xl font-black">安全建议</h3>

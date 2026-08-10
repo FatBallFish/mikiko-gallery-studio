@@ -13,7 +13,7 @@ import { isSystemSettingsHash, systemSettingsTabFromHash, type SystemSettingsTab
 export { isSystemSettingsHash, systemSettingsTabFromHash } from './systemSettingsTabs'
 
 const tabItems = [
-  { id: 'general', label: '通用配置', description: '文档、公开内容和低风险运行参数', dangerous: false },
+  { id: 'general', label: '通用配置', description: '公开内容和低风险运行参数', dangerous: false },
   { id: 'point-conversion', label: '积分换算', description: '每积分对应的人民币金额', dangerous: false },
   { id: 'attachment-policy', label: '附件策略', description: '文件体积与格式限制', dangerous: false },
   { id: 'security', label: '安全配置', description: 'SMTP 与敏感安全项', dangerous: true },

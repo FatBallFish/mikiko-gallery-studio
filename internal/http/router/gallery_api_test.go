@@ -26,6 +26,7 @@ import (
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
 
@@ -514,12 +515,17 @@ func TestDirectMediaURLProjectionAcrossImageAPIs(t *testing.T) {
 	publishedAt := time.Now().UTC()
 	const taskID = "91919191-9191-9191-9191-919191919191"
 	const imageID = "91919191-0000-0000-0000-919191919191"
+	projectSvc := projectservice.NewService(projectservice.NewMemoryStore())
+	defaultProject, err := projectSvc.EnsureDefault(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("EnsureDefault: %v", err)
+	}
 	if err := store.Save(t.Context(), domainimagetask.Task{
-		UserID: 1, ID: taskID, Status: domainimagetask.StatusSucceeded, Prompt: "direct object media",
+		UserID: 1, ID: taskID, ProjectID: defaultProject.ID, Status: domainimagetask.StatusSucceeded, Prompt: "direct object media",
 		AbstractModel: "plus", RouteModelCode: "plus", TaskType: string(provider.TaskTypeTextToImage), BaseResolution: "2k", AspectRatio: "1:1",
 		ReferenceAssetIDs: []string{asset.ID},
 		Results: []provider.ImageResult{{
-			ID: imageID, StorageDriver: "s3", StorageConfigID: "bfss-primary", ObjectKey: "generated/direct.png", MimeType: "image/png",
+			ID: imageID, ProjectID: defaultProject.ID, StorageDriver: "s3", StorageConfigID: "bfss-primary", ObjectKey: "generated/direct.png", MimeType: "image/png",
 			VisibilityStatus: domainimagetask.VisibilityApproved, PublishedAt: &publishedAt,
 		}},
 	}); err != nil {
@@ -533,6 +539,7 @@ func TestDirectMediaURLProjectionAcrossImageAPIs(t *testing.T) {
 	}
 	adminAuth := adminauthservice.NewService(config.AuthConfig{AccessTokenTTL: 10 * time.Minute, RefreshTokenTTL: 2 * time.Hour, Issuer: "test", AccessTokenSecret: "admin-secret", RefreshCookieName: "pg_admin_refresh"}, adminStore)
 	api := handlers.NewAPIWithAdminServices(cfg, authSvc, assetSvc, taskSvc, adminconfigservice.NewService(cfg), nil, nil, adminAuth, auditservice.NewService(nil), nil, nil)
+	api.SetProjectService(projectSvc)
 	handler := NewWithAPI(api)
 	adminToken := loginAdminForDirectMediaTest(t, handler)
 

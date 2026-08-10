@@ -1,5 +1,5 @@
 import type { CashierPlan } from '../../../shared/api-types'
-import { checkoutPurchasablePlans } from './checkoutPlans'
+import { checkoutPlanValidityLabel, checkoutPurchasablePlans } from './checkoutPlans'
 
 function plan(input: Partial<CashierPlan> & Pick<CashierPlan, 'id' | 'plan_code' | 'plan_name'>): CashierPlan {
   return {
@@ -27,4 +27,26 @@ const plans = checkoutPurchasablePlans([
 
 if (plans.length !== 1 || plans[0]?.plan_code !== 'points-100') {
   throw new Error(`checkout should expose only purchasable points packages, got ${JSON.stringify(plans)}`)
+}
+
+const permanent = checkoutPlanValidityLabel(plan({
+  id: 5,
+  plan_code: 'points-permanent',
+  plan_name: '永久积分包',
+  credit_expiry_enabled: false,
+  duration_days: undefined,
+}))
+if (permanent !== '永久有效') {
+  throw new Error(`permanent package validity should be explicit, got ${permanent}`)
+}
+
+const expiring = checkoutPlanValidityLabel(plan({
+  id: 6,
+  plan_code: 'points-expiring',
+  plan_name: '限时积分包',
+  credit_expiry_enabled: true,
+  duration_days: 45,
+}))
+if (expiring !== '45 天有效') {
+  throw new Error(`expiring package validity should be explicit, got ${expiring}`)
 }

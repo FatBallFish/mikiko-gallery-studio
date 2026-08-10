@@ -5,6 +5,7 @@ package ent
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
@@ -16,6 +17,12 @@ type RouteModelPrice struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
+	// CreatedAt holds the value of the "created_at" field.
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	// UpdatedAt holds the value of the "updated_at" field.
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	// DeletedAt holds the value of the "deleted_at" field.
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	// RouteModelID holds the value of the "route_model_id" field.
 	RouteModelID int64 `json:"route_model_id,omitempty"`
 	// TaskType holds the value of the "task_type" field.
@@ -42,6 +49,8 @@ func (*RouteModelPrice) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case routemodelprice.FieldTaskType, routemodelprice.FieldBaseResolution, routemodelprice.FieldBasePoints, routemodelprice.FieldReferenceMultiplier:
 			values[i] = new(sql.NullString)
+		case routemodelprice.FieldCreatedAt, routemodelprice.FieldUpdatedAt, routemodelprice.FieldDeletedAt:
+			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
 		}
@@ -63,6 +72,25 @@ func (_m *RouteModelPrice) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
 			_m.ID = int(value.Int64)
+		case routemodelprice.FieldCreatedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field created_at", values[i])
+			} else if value.Valid {
+				_m.CreatedAt = value.Time
+			}
+		case routemodelprice.FieldUpdatedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field updated_at", values[i])
+			} else if value.Valid {
+				_m.UpdatedAt = value.Time
+			}
+		case routemodelprice.FieldDeletedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field deleted_at", values[i])
+			} else if value.Valid {
+				_m.DeletedAt = new(time.Time)
+				*_m.DeletedAt = value.Time
+			}
 		case routemodelprice.FieldRouteModelID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field route_model_id", values[i])
@@ -135,6 +163,17 @@ func (_m *RouteModelPrice) String() string {
 	var builder strings.Builder
 	builder.WriteString("RouteModelPrice(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
+	builder.WriteString("created_at=")
+	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))
+	builder.WriteString(", ")
+	builder.WriteString("updated_at=")
+	builder.WriteString(_m.UpdatedAt.Format(time.ANSIC))
+	builder.WriteString(", ")
+	if v := _m.DeletedAt; v != nil {
+		builder.WriteString("deleted_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
 	builder.WriteString("route_model_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RouteModelID))
 	builder.WriteString(", ")

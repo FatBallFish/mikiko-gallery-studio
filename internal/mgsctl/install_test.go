@@ -79,6 +79,9 @@ func TestBuildRuntimeArtifactsPrepopulatesManagedDockerFullMiddleware(t *testing
 			t.Errorf("%s = %q, want true", key, document.Values[key])
 		}
 	}
+	if document.Values["PIC_GALLERY_DOCS_URL"] != "/developer-docs/" || document.Values["PIC_GALLERY_DOCS_PROBE_URL"] != "http://gateway/developer-docs/" {
+		t.Fatalf("full Docker documentation targets = user %q probe %q", document.Values["PIC_GALLERY_DOCS_URL"], document.Values["PIC_GALLERY_DOCS_PROBE_URL"])
+	}
 	for _, key := range []string{"POSTGRES_PASSWORD", "REDIS_PASSWORD", "MINIO_ROOT_PASSWORD", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "STORAGE_S3_ACCESS_KEY_ID", "STORAGE_S3_SECRET_ACCESS_KEY"} {
 		if document.Values[key] == "" {
 			t.Errorf("managed full runtime missing %s", key)
@@ -93,6 +96,49 @@ func TestBuildRuntimeArtifactsPrepopulatesManagedDockerFullMiddleware(t *testing
 		if !strings.HasPrefix(document.Values[key], prefix) {
 			t.Errorf("managed credential %s must use a CLI-safe prefix %q", key, prefix)
 		}
+	}
+}
+
+func TestBuildRuntimeArtifactsPersistsNativeGatewayProbe(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{
+		Mode: config.DeploymentModeNative, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologySingle,
+		Role: config.DeploymentRoleSingle, RuntimeDir: "runtime", StorageDriver: "local", ApplicationVersion: "v1", GatewayPort: "18000",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := BuildRuntimeArtifacts(plan, bytes.NewReader(bytes.Repeat([]byte{0x25}, 128)), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := config.ParseRuntimeEnv(artifacts.RuntimeEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Values["PIC_GALLERY_DOCS_PROBE_URL"] != "http://127.0.0.1:18000/developer-docs/" {
+		t.Fatalf("native probe URL = %q", document.Values["PIC_GALLERY_DOCS_PROBE_URL"])
+	}
+}
+
+func TestBuildRuntimeArtifactsPersistsAbsoluteDocsWithoutInternalProbe(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{
+		Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCore, Topology: config.DeploymentTopologySingle,
+		Role: config.DeploymentRoleSingle, RuntimeDir: "runtime", StorageDriver: "local", ApplicationVersion: "v1",
+		DocsURL: "https://docs.example.test/reference/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := BuildRuntimeArtifacts(plan, bytes.NewReader(bytes.Repeat([]byte{0x26}, 128)), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := config.ParseRuntimeEnv(artifacts.RuntimeEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Values["PIC_GALLERY_DOCS_URL"] != plan.DocsURL || document.Values["PIC_GALLERY_DOCS_PROBE_URL"] != "" {
+		t.Fatalf("runtime docs = user %q probe %q", document.Values["PIC_GALLERY_DOCS_URL"], document.Values["PIC_GALLERY_DOCS_PROBE_URL"])
 	}
 }
 

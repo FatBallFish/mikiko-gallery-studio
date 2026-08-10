@@ -11,7 +11,7 @@ import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import { checkoutPaymentErrorMessage } from './checkoutPaymentError'
 import { closePaymentWindow, dispatchPaymentWindow, paymentMethodNeedsReservedWindow, reservePaymentWindow } from './checkoutPaymentWindow'
 import { checkoutCancelResultState, checkoutMoney, checkoutOrderActionState, checkoutPaymentMethodOptionModel, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
-import { checkoutPurchasablePlans } from './checkoutPlans'
+import { checkoutPlanValidityLabel, checkoutPurchasablePlans } from './checkoutPlans'
 import { cnyPerPointLabel, customAmountPoints, normalizeCustomAmount } from './checkoutCustomAmount'
 import { RedeemCodeForm } from './RedeemCodeForm'
 import { PaymentMonitorModal } from './PaymentMonitorModal'
@@ -31,6 +31,7 @@ const checkoutClasses = {
   optionLabel: 'text-[13px] text-[var(--muted)]',
   planPoints: rdBilling.planPrice,
   planPrice: 'text-[13px] not-italic text-[var(--fg)]',
+  optionMeta: 'text-xs font-semibold text-[var(--muted)]',
   methodGrid: 'grid grid-cols-1 gap-3',
   methodButton: 'group flex min-h-[68px] cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-4 text-left text-[var(--fg)] transition-colors hover:border-[var(--accent)] motion-reduce:transition-none',
   methodIcon: 'grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)]',
@@ -205,7 +206,7 @@ export function CheckoutPage() {
       setDetailOrder((current) => current?.id === next.id ? next : current)
       if (cancelResult === 'paid') {
         if (!monitoredPayment) {
-          app.notify('success', '支付成功，充值余额已刷新')
+          app.notify('success', '支付成功，积分余额已刷新')
           void app.refreshAccount()
           void loadRecentOrders()
         }
@@ -243,7 +244,7 @@ export function CheckoutPage() {
         <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
             <h1 className={checkoutClasses.title}>积分充值</h1>
-            <p className={checkoutClasses.detail}>固定积分包和自定义金额统一通过收银台创建订单，支付成功后进入充值余额桶且不过期。</p>
+            <p className={checkoutClasses.detail}>自定义金额充值积分长期有效。</p>
           </div>
           <Button tone="ghost" onClick={() => void load()}>刷新配置</Button>
         </div>
@@ -335,7 +336,8 @@ export function CheckoutPage() {
                 </span>
                 <span className={checkoutClasses.recentCell}>
                   <strong className={checkoutClasses.recentStrong}>{row.amount}</strong>
-                  <em className={checkoutClasses.recentMeta}>{row.points} 积分</em>
+                  <em className={checkoutClasses.recentMeta}>{row.order.purchase_type === 'custom_amount' ? `到账 ${row.points} 积分` : `套餐 ${row.basePoints} · 赠送 ${row.bonusPoints}`}</em>
+                  <em className={checkoutClasses.recentMeta}>{row.creditValidity}</em>
                 </span>
                 <span className={checkoutClasses.recentCell}>
                   <strong className={checkoutClasses.recentStrong}>{row.status}</strong>
@@ -373,7 +375,7 @@ export function CheckoutPage() {
           onOrderChange={setMonitorOrder}
           onSuccess={(next) => {
             setMonitorOrder(next)
-            app.notify('success', '支付成功，充值余额已刷新')
+            app.notify('success', '支付成功，积分余额已刷新')
             void app.refreshAccount()
             void loadRecentOrders()
           }}
@@ -419,6 +421,7 @@ function PlanButton({ plan, active, onSelect }: { plan: CashierPlan; active: boo
       <span className={checkoutClasses.optionLabel}>{plan.plan_name}</span>
       <strong className={checkoutClasses.planPoints}>{checkoutPoints(plan.points)} 积分</strong>
       <em className={checkoutClasses.planPrice}>{checkoutMoney(plan.price_cny)}{Number(plan.bonus_points ?? '0') > 0 ? ` / 赠 ${checkoutPoints(plan.bonus_points)}` : ''}</em>
+      <span className={checkoutClasses.optionMeta}>{checkoutPlanValidityLabel(plan)}</span>
     </button>
   )
 }

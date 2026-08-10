@@ -53,6 +53,18 @@ func TestValidateMigrationRequestRejectsUnsafeInputs(t *testing.T) {
 	}
 }
 
+func TestRequireCompletedProjectBackfillBlocksSchemaVersionAdvance(t *testing.T) {
+	progress := ProjectBackfillProgress{Phase: projectBackfillPhaseTasks, Batches: 100, ProcessedRows: 5000}
+	err := requireCompletedProjectBackfill(progress)
+	var incomplete *ProjectBackfillIncompleteError
+	if !errors.As(err, &incomplete) || incomplete.Progress.Phase != projectBackfillPhaseTasks {
+		t.Fatalf("incomplete project backfill error = %#v, want typed tasks progress", err)
+	}
+	if err := requireCompletedProjectBackfill(ProjectBackfillProgress{Phase: projectBackfillPhaseDone, Completed: true}); err != nil {
+		t.Fatalf("completed project backfill rejected: %v", err)
+	}
+}
+
 func TestValidateSchemaVersionRejectsInvalidDatabaseVersion(t *testing.T) {
 	err := validateSchemaVersion(SchemaVersion{
 		InstallationID: "installation-test",
@@ -396,6 +408,10 @@ func TestMigrateSerializesAndIsIdempotentOnPostgres(t *testing.T) {
 	defer client.Close()
 	if count, err := client.Installation.Query().Count(context.Background()); err != nil || count != 1 {
 		t.Fatalf("installation count = %d, err=%v, want 1", count, err)
+	}
+	checkpoint, err := client.MigrationCheckpoint.Query().Only(context.Background())
+	if err != nil || !checkpoint.Completed || checkpoint.Phase != projectBackfillPhaseDone {
+		t.Fatalf("project ownership checkpoint = %#v, err=%v, want completed", checkpoint, err)
 	}
 	if _, err := database.Exec(`INSERT INTO ` + schemaName + `.installations
 		(singleton_key, installation_id, config_schema_version, database_schema_version, app_version, initialized_at, migrated_at, created_at, updated_at)

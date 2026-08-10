@@ -144,8 +144,8 @@ func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
 	if err := json.NewDecoder(balanceRec.Body).Decode(&balanceResp); err != nil {
 		t.Fatalf("decode balance: %v", err)
 	}
-	if balanceResp.Data.RechargePoints != "100.00000" || len(balanceResp.Data.Buckets) == 0 || balanceResp.Data.Buckets[0].Bucket != "recharge" {
-		t.Fatalf("expected recharge bucket after mock pay, got %#v", balanceResp.Data)
+	if balanceResp.Data.SubscriptionPoints != "100.00000" || balanceResp.Data.RechargePoints != "0.00000" || len(balanceResp.Data.Buckets) == 0 || balanceResp.Data.Buckets[0].Bucket != "subscription" {
+		t.Fatalf("expected purchased package bucket after mock pay, got %#v", balanceResp.Data)
 	}
 
 	secondMockPayReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders/"+jsonInt64(createResp.Data.ID)+"/mock-pay", nil)
@@ -177,7 +177,7 @@ func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
 	if err := json.NewDecoder(afterSecondPayRec.Body).Decode(&afterSecondPayResp); err != nil {
 		t.Fatalf("decode balance after second mock pay: %v", err)
 	}
-	if afterSecondPayResp.Data.RechargePoints != "100.00000" || afterSecondPayResp.Data.AvailablePoints != "100.00000" {
+	if afterSecondPayResp.Data.SubscriptionPoints != "100.00000" || afterSecondPayResp.Data.RechargePoints != "0.00000" || afterSecondPayResp.Data.AvailablePoints != "100.00000" {
 		t.Fatalf("expected idempotent mock pay to keep balance unchanged, got %#v", afterSecondPayResp.Data)
 	}
 
@@ -220,7 +220,7 @@ func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
 	if err := json.NewDecoder(finalBalanceRec.Body).Decode(&finalBalanceResp); err != nil {
 		t.Fatalf("decode final balance: %v", err)
 	}
-	if finalBalanceResp.Data.RechargePoints != "200.00000" || finalBalanceResp.Data.AvailablePoints != "200.00000" {
+	if finalBalanceResp.Data.SubscriptionPoints != "100.00000" || finalBalanceResp.Data.RechargePoints != "100.00000" || finalBalanceResp.Data.AvailablePoints != "200.00000" {
 		t.Fatalf("expected custom amount recharge to add another 100 points, got %#v", finalBalanceResp.Data)
 	}
 }
@@ -482,8 +482,8 @@ func TestCashierCancelInitializedOrderReconcilesPaidProvider(t *testing.T) {
 		t.Fatalf("expected one query and no close, query=%d close=%d", queryCalls, closeCalls)
 	}
 	balance, err := billingSvc.GetBalance(context.Background(), order.UserID, "")
-	if err != nil || balance.RechargePoints != "100.00000" {
-		t.Fatalf("expected one recharge credit, balance=%#v err=%v", balance, err)
+	if err != nil || balance.SubscriptionPoints != "100.00000" || balance.RechargePoints != "0.00000" {
+		t.Fatalf("expected one purchased package credit, balance=%#v err=%v", balance, err)
 	}
 }
 
@@ -841,8 +841,8 @@ func TestCashierWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 	if err := json.NewDecoder(balanceRec.Body).Decode(&balanceResp); err != nil {
 		t.Fatalf("decode balance: %v", err)
 	}
-	if balanceResp.Data.RechargePoints != "100.00000" || balanceResp.Data.AvailablePoints != "100.00000" {
-		t.Fatalf("expected webhook to credit recharge bucket once, got %#v", balanceResp.Data)
+	if balanceResp.Data.SubscriptionPoints != "100.00000" || balanceResp.Data.RechargePoints != "0.00000" || balanceResp.Data.AvailablePoints != "100.00000" {
+		t.Fatalf("expected webhook to credit purchased package bucket once, got %#v", balanceResp.Data)
 	}
 }
 

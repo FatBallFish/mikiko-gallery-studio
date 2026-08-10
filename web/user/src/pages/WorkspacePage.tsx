@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ArrowLeft, ArrowRight, ChevronUp, SlidersHorizontal } from 'lucide-react'
+import { ChevronUp, SlidersHorizontal } from 'lucide-react'
 import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
@@ -14,8 +14,8 @@ import { errorMessage } from '../useApiResource'
 import { mediaAccess, type MediaResource } from '../mediaAccess'
 import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
 import { displayPoints, publicUnavailableReason, WORKSPACE_REFERENCE_REQUIRED_MESSAGE } from './workspaceGenerateReadiness'
-import { currentWorkspaceEstimate, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
-import { defaultGalleryImportFilter, filterGalleryImportImages, galleryImportOptions, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
+import { currentWorkspaceEstimate, workspaceDisplayedResolvedSize, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
+import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, galleryImportSuccessMessage, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
 import { WorkspaceStatusRail } from './WorkspaceStatusRail'
 import { workspaceTaskCardView, workspaceTaskFailureView } from './workspaceTaskFailure'
 import { generationSlots, workspaceBaseResolutionLabel } from './workspaceTaskProgress'
@@ -27,12 +27,13 @@ import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHi
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
 import { projectWorkspaceImageDetail } from './workspaceImageDetail'
 import { referenceImageAccept, referenceImagePolicy, validateReferenceImageFile } from './referenceImageUpload'
-import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceCompressionVisible, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspaceRatioPixelEstimate } from './workspaceParameters'
+import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceBackgroundForFormat, workspaceBackgroundOptions, workspaceCompressionVisible, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspacePixelOptions, workspaceRatioOptions, workspaceRatioPixelEstimate, workspaceSizeModeOptions, type WorkspaceSizeMode } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
+import { ProjectSelector, useProjects } from '../ProjectContext'
+import { workspaceProjectReadiness, workspaceSubmissionIsCurrent, type WorkspaceProjectSelection } from './workspaceProjectLifecycle'
 
 type OutputTab = 'current' | 'history'
-type WorkspaceSizeMode = 'ratio' | 'pixel'
 type WorkspacePixelSelection = 'preset' | 'custom'
 type RestoreParameters = {
   routeModelCode?: string
@@ -41,7 +42,8 @@ type RestoreParameters = {
   aspectRatio?: string
   pixelSize?: string
   quality?: string
-  outputFormat?: string
+	outputFormat?: string
+	background?: string
   outputCompression?: number
   moderation?: string
   imageCount?: number
@@ -56,21 +58,6 @@ function selectableModels(capability: Capability, taskType: ImageTaskType) {
 
 function baseResolutionOptions(model: CapabilityModelGroup | undefined) {
   return model?.base_resolution?.length ? model.base_resolution : []
-}
-
-function ratioOptions(model: CapabilityModelGroup | undefined, capability: Capability | null) {
-  if (!model) return []
-  return model.aspect_ratios?.length ? model.aspect_ratios : capability?.aspect_ratios ?? []
-}
-
-function sizeModeOptions(model: CapabilityModelGroup | undefined): WorkspaceSizeMode[] {
-  const modes = model?.size_modes?.filter((mode): mode is WorkspaceSizeMode => mode === 'ratio' || mode === 'pixel') ?? []
-  return modes.length ? Array.from(new Set(modes)) : ['ratio']
-}
-
-function pixelOptions(model: CapabilityModelGroup | undefined, capability: Capability | null) {
-  if (!model) return []
-  return model.pixel_sizes?.length ? model.pixel_sizes : capability?.pixel_sizes ?? []
 }
 
 function isTerminalStatus(status: ImageTaskStatus | string) {
@@ -279,6 +266,8 @@ const workspaceClasses = {
 
 export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const app = useApp()
+  const projects = useProjects()
+  const selectedProjectID = projects.selectedProjectID
   const compactViewport = useCompactWorkspaceViewport()
 
   const [capability, setCapability] = useState<Capability | null>(null)
@@ -290,20 +279,26 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [model, setModel] = useState('')
   const [sizeMode, setSizeMode] = useState<WorkspaceSizeMode>('ratio')
   const [baseResolution, setBaseResolution] = useState('')
-  const [ratio, setRatio] = useState('')
+	const [ratio, setRatio] = useState('')
+	const [customRatio, setCustomRatio] = useState('')
   const [pixelSize, setPixelSize] = useState('')
   const [pixelSelection, setPixelSelection] = useState<WorkspacePixelSelection>('preset')
   const [customWidth, setCustomWidth] = useState('')
   const [customHeight, setCustomHeight] = useState('')
   const [count, setCount] = useState(1)
   const [quality, setQuality] = useState('auto')
-  const [outputFormat, setOutputFormat] = useState('png')
+	const [outputFormat, setOutputFormat] = useState('png')
+	const [background, setBackground] = useState('')
   const [outputCompression, setOutputCompression] = useState(100)
   const [moderation, setModeration] = useState('auto')
   const [estimateSnapshot, setEstimateSnapshot] = useState<WorkspaceEstimateSnapshot>({ key: '', estimate: null, error: '' })
   const [records, setRecords] = useState<ImageTask[]>([])
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => initialTaskId?.trim() || null)
   const selectedTaskIdRef = useRef<string | null>(selectedTaskId)
+  const projectSelectionRef = useRef<WorkspaceProjectSelection>({
+    projectID: projects.selectedProjectID,
+    generation: projects.selectionGeneration,
+  })
   const [initialTaskLoading, setInitialTaskLoading] = useState(false)
   const [initialTaskError, setInitialTaskError] = useState('')
   const [initialTaskReloadKey, setInitialTaskReloadKey] = useState(0)
@@ -325,6 +320,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   } : null)
   const [outputTab, setOutputTab] = useState<OutputTab>('current')
   const [historyTaskDialog, setHistoryTaskDialog] = useState<ImageTask | null>(null)
+  const [historyPreviewReturnTarget, setHistoryPreviewReturnTarget] = useState<{ taskId: string; imageId: string } | null>(null)
   const [galleryImportTarget, setGalleryImportTarget] = useState<'edit' | null>(null)
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([])
   const [galleryImportLoading, setGalleryImportLoading] = useState(false)
@@ -354,13 +350,49 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const taskType: ImageTaskType = editRefs.length ? 'image_edit' : 'text_to_image'
   const referenceCount = editRefs.length
   const requiredReferencesReady = workspaceRequiredReferencesReady(taskType, referenceCount)
+  const projectReadiness = workspaceProjectReadiness({
+    loading: projects.loading,
+    error: projects.error,
+    selectedProjectID: projects.selectedProjectID,
+    selectedProject: projects.selectedProject,
+  })
+  const projectIDsKey = projects.projects
+    .filter((project) => project.status === 'active')
+    .map((project) => project.id)
+    .sort()
+    .join(',')
 
   notifyRef.current = app.notify
   refreshAccountRef.current = app.refreshAccount
+  projectSelectionRef.current = {
+    projectID: projects.selectedProjectID,
+    generation: projects.selectionGeneration,
+  }
 
   useEffect(() => {
     selectedTaskIdRef.current = selectedTaskId
   }, [selectedTaskId])
+
+  useEffect(() => {
+    setRecords((items) => items.filter((task) => task.project_id === selectedProjectID))
+    setHistoryTaskDialog(null)
+    setHistoryPreviewReturnTarget(null)
+    setPreviewImage(null)
+    setGalleryImages([])
+    setGalleryImportTarget(null)
+  }, [selectedProjectID])
+
+  useEffect(() => {
+    if (!historyPreviewReturnTarget || previewImage || historyTaskDialog?.id !== historyPreviewReturnTarget.taskId) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      const target = Array.from(document.querySelectorAll<HTMLElement>('[data-history-image-id]')).find((element) => (
+        element.dataset.historyImageId === historyPreviewReturnTarget.imageId
+      ))
+      target?.focus()
+      setHistoryPreviewReturnTarget((current) => current?.taskId === historyPreviewReturnTarget.taskId && current.imageId === historyPreviewReturnTarget.imageId ? null : current)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [historyPreviewReturnTarget, historyTaskDialog?.id, previewImage])
 
   // Load capability and refs on mount only (not on mode change)
   useEffect(() => {
@@ -389,12 +421,32 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       setInitialTaskLoading(false)
       return undefined
     }
+    if (projects.loading) {
+      setInitialTaskLoading(true)
+      return undefined
+    }
+    if (projects.error) {
+      setInitialTaskLoading(false)
+      setInitialTaskError(projects.error)
+      return undefined
+    }
+    if (!projectIDsKey) {
+      setInitialTaskLoading(false)
+      setInitialTaskError('没有可用项目，无法打开该任务。')
+      return undefined
+    }
     let cancelled = false
     setInitialTaskLoading(true)
     async function loadInitialTask() {
       try {
         const task = await userApi.getTask(taskId)
         if (cancelled) return
+        const taskProject = projects.projects.find((project) => project.status === 'active' && project.id === task.project_id)
+        if (!task.project_id || !taskProject) {
+          setInitialTaskError('任务所属项目不存在或无权访问。')
+          return
+        }
+        if (projects.selectedProjectID !== task.project_id) projects.selectProject(task.project_id)
         setRecords((items) => mergeWorkspaceTaskRecords(items, task, { limit: 20, preserveIds: [taskId] }))
       } catch (err) {
         if (!cancelled) setInitialTaskError(errorMessage(err))
@@ -404,7 +456,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
     void loadInitialTask()
     return () => { cancelled = true }
-  }, [initialTaskId, initialTaskReloadKey])
+  }, [initialTaskId, initialTaskReloadKey, projectIDsKey, projects.error, projects.loading])
 
   useEffect(() => () => {
     if (sheetClickResetRef.current !== null) window.clearTimeout(sheetClickResetRef.current)
@@ -418,7 +470,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       window.clearTimeout(streamRecoveryTimerRef.current)
       streamRecoveryTimerRef.current = null
     }
-    if (!token) {
+    if (!token || !projectReadiness.ready) {
       streamGenerationRef.current = null
       streamTokenRef.current = null
       streamRetryCountRef.current = 0
@@ -433,9 +485,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       streamDisconnectNoticeRef.current = false
       streamExhaustedNoticeRef.current = false
     }
-    const generation = createWorkspaceStreamGeneration(token, streamRetryCountRef.current)
+    const generation = createWorkspaceStreamGeneration(token, selectedProjectID, streamRetryCountRef.current)
     streamGenerationRef.current = generation
-    const source = new EventSource(userApi.taskStreamUrl(token))
+    const source = new EventSource(userApi.taskStreamUrl(token, selectedProjectID))
     function markStreamHealthy() {
       if (!workspaceStreamEventIsCurrent(generation, streamGenerationRef.current)) return
       markWorkspaceStreamHealthy(generation)
@@ -446,7 +498,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     source.addEventListener('open', () => { markStreamHealthy() })
     source.addEventListener('history', (event) => {
       if (!workspaceStreamEventIsCurrent(generation, streamGenerationRef.current)) return
-      const tasks = JSON.parse((event as MessageEvent).data).map(toTask) as ImageTask[]
+      const tasks = (JSON.parse((event as MessageEvent).data).map(toTask) as ImageTask[])
+        .filter((task) => task.project_id === selectedProjectID)
       markStreamHealthy()
       setRecords((current) => replaceWorkspaceTaskRecords(current, tasks, {
         limit: 20,
@@ -457,15 +510,16 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       if (!workspaceStreamEventIsCurrent(generation, streamGenerationRef.current)) return
       const next = toTask(JSON.parse((event as MessageEvent).data))
       markStreamHealthy()
+      if (isTerminalStatus(next.status) && next.status === 'succeeded' && !completedNoticeRef.current.has(next.id)) {
+        completedNoticeRef.current.add(next.id)
+        if (selectedProjectID && next.project_id === selectedProjectID) notifyRef.current('success', '任务已完成，结果已同步到历史资产')
+        void refreshAccountRef.current()
+      }
+      if (!selectedProjectID || next.project_id !== selectedProjectID) return
       setRecords((items) => mergeWorkspaceTaskRecords(items, next, {
         limit: 20,
         preserveIds: selectedTaskIdRef.current ? [selectedTaskIdRef.current] : [],
       }))
-      if (isTerminalStatus(next.status) && next.status === 'succeeded' && !completedNoticeRef.current.has(next.id)) {
-        completedNoticeRef.current.add(next.id)
-        notifyRef.current('success', '任务已完成，结果已同步到历史资产')
-        void refreshAccountRef.current()
-      }
     })
     let recovering = false
     async function recoverStream() {
@@ -488,7 +542,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         notifyRef.current('info', '任务状态连接已断开，正在自动恢复。')
       }
       try {
-        const tasks = await userApi.listTasks()
+        const tasks = await userApi.listTasks({ project_id: selectedProjectID })
         if (!workspaceStreamRecoveryIsCurrent(generation, streamGenerationRef.current)) return
         setRecords((current) => replaceWorkspaceTaskRecords(current, tasks, {
           limit: 20,
@@ -516,7 +570,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       closeWorkspaceStreamGeneration(generation)
       if (workspaceStreamRecoveryIsCurrent(generation, streamGenerationRef.current)) streamGenerationRef.current = null
     }
-  }, [app.session?.token, streamRetryKey])
+  }, [app.session?.token, projectReadiness.ready, selectedProjectID, streamRetryKey])
 
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
@@ -541,12 +595,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const values = normalized.values
     restoreParametersRef.current = {
       routeModelCode: values.route_model_code,
-      sizeMode: values.size_mode === 'pixel' ? 'pixel' : 'ratio',
+		sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio',
       baseResolution: values.base_resolution,
       aspectRatio: values.aspect_ratio,
       pixelSize: values.pixel_size,
       quality: values.quality,
-      outputFormat: values.output_format,
+		outputFormat: values.output_format,
+		background: values.background,
       outputCompression: values.output_compression,
       moderation: values.moderation,
       imageCount: values.image_count,
@@ -554,12 +609,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setPrompt(values.prompt)
     setNegative('')
     setModel(values.route_model_code)
-    setSizeMode(values.size_mode === 'pixel' ? 'pixel' : 'ratio')
+	setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
     setBaseResolution(values.base_resolution)
     setRatio(values.aspect_ratio)
     setPixelSize(values.pixel_size)
     setQuality(values.quality)
-    setOutputFormat(values.output_format)
+	setOutputFormat(values.output_format)
+	setBackground(values.background)
     setOutputCompression(values.output_compression)
     setModeration(values.moderation)
     setCount(values.image_count)
@@ -605,20 +661,23 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const availableModels = useMemo(() => capability ? selectableModels(capability, taskType) : [], [capability, taskType])
   const rawSelectedModel = useMemo(() => availableModels.find((item) => item.code === model), [availableModels, model])
   const selectedModel = useMemo(() => workspaceModelForTask(rawSelectedModel, taskType), [rawSelectedModel, taskType])
-  const sizeModes = useMemo(() => sizeModeOptions(selectedModel), [selectedModel])
+	const sizeModes = useMemo(() => workspaceSizeModeOptions(selectedModel), [selectedModel])
   const baseResolutionOptionsForModel = useMemo(() => baseResolutionOptions(selectedModel), [selectedModel])
-  const ratios = useMemo(() => ratioOptions(selectedModel, capability), [selectedModel, capability])
-  const pixelSizes = useMemo(() => pixelOptions(selectedModel, capability), [selectedModel, capability])
-  const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
+	const ratios = useMemo(() => workspaceRatioOptions(selectedModel, capability?.aspect_ratios ?? []), [selectedModel, capability])
+	const pixelSizes = useMemo(() => workspacePixelOptions(selectedModel, capability?.pixel_sizes ?? []), [selectedModel, capability])
+	const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
+	const backgroundOptions = useMemo(() => workspaceBackgroundOptions(selectedModel), [selectedModel])
   const compressionVisible = workspaceCompressionVisible(selectedModel, outputFormat)
   const customSizeSupported = workspaceCustomSizeSupported(selectedModel) && sizeModes.includes('pixel')
-  const customSizeNormalization = useMemo(() => normalizeWorkspaceCustomSize(customWidth, customHeight), [customWidth, customHeight])
+	const customSizeNormalization = useMemo(() => normalizeWorkspaceCustomSize(customWidth, customHeight, selectedModel), [customWidth, customHeight, selectedModel])
   const effectivePixelSize = pixelSelection === 'custom' && customSizeSupported
     ? customSizeNormalization.valid ? customSizeNormalization.size : ''
-    : pixelSize
-  const ratioPixelEstimate = useMemo(
-    () => workspaceRatioPixelEstimate(baseResolution, ratio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
-    [baseResolution, ratio, selectedModel, taskType],
+		: pixelSize
+	const customRatioSupported = workspaceCustomRatioSupported(selectedModel) && sizeModes.includes('ratio')
+	const effectiveRatio = ratio === 'custom' ? customRatio : ratio
+	const ratioPixelEstimate = useMemo(
+		() => workspaceRatioPixelEstimate(baseResolution, effectiveRatio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
+		[baseResolution, effectiveRatio, selectedModel, taskType],
   )
 
   useEffect(() => {
@@ -633,7 +692,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
     setSizeMode((current) => restoreParameters?.sizeMode && sizeModes.includes(restoreParameters.sizeMode) ? restoreParameters.sizeMode : sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
     setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
-    setRatio(restoreParameters?.aspectRatio && ratios.includes(restoreParameters.aspectRatio) ? restoreParameters.aspectRatio : ratios[0] ?? '')
+	const restoredRatio = restoreParameters?.aspectRatio
+	if (customRatioSupported && restoredRatio && !ratios.includes(restoredRatio) && workspaceCustomRatioValid(restoredRatio)) {
+		setRatio('custom')
+		setCustomRatio(restoredRatio)
+	} else {
+		setRatio(restoredRatio && ratios.includes(restoredRatio) ? restoredRatio : ratios[0] ?? '')
+		setCustomRatio('')
+	}
     const restoredPixelSize = restoreParameters?.pixelSize
     const restoredCustomDimensions = customSizeSupported && restoredPixelSize && !pixelSizes.includes(restoredPixelSize)
       ? parsePixelDimensions(restoredPixelSize)
@@ -648,13 +714,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       setCustomHeight('')
     }
     setPixelSize(restoredPixelSize && pixelSizes.includes(restoredPixelSize) ? restoredPixelSize : pixelSizes[0] ?? '')
-    setQuality(matchWorkspaceCapabilityOption(outputOptions.quality, restoreParameters?.quality) ?? outputOptions.quality[0])
-    setOutputFormat(matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0])
+	setQuality(matchWorkspaceCapabilityOption(outputOptions.quality, restoreParameters?.quality) ?? outputOptions.quality[0] ?? '')
+	setOutputFormat(matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0] ?? '')
+	setBackground(workspaceBackgroundForFormat(selectedModel, restoreParameters?.background ?? background, matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0] ?? ''))
     setOutputCompression(restoreParameters?.outputCompression ?? 100)
-    setModeration(matchWorkspaceCapabilityOption(outputOptions.moderation, restoreParameters?.moderation) ?? outputOptions.moderation[0])
+	setModeration(matchWorkspaceCapabilityOption(outputOptions.moderation, restoreParameters?.moderation) ?? outputOptions.moderation[0] ?? '')
     setCount((current) => normalizeWorkspaceImageCount(restoreParameters?.imageCount ?? current))
     restoreParametersRef.current = null
-  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions, customSizeSupported])
+  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions, customSizeSupported, customRatioSupported])
 
   useEffect(() => {
     if (!selectedModel) return
@@ -662,12 +729,17 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (normalized.quality !== quality) setQuality(normalized.quality)
     if (normalized.outputFormat !== outputFormat) setOutputFormat(normalized.outputFormat)
     if (normalized.outputCompression !== outputCompression) setOutputCompression(normalized.outputCompression)
-    if (normalized.moderation !== moderation) setModeration(normalized.moderation)
+	if (normalized.moderation !== moderation) setModeration(normalized.moderation)
   }, [selectedModel, quality, outputFormat, outputCompression, moderation])
 
-  const sizeParametersReady = sizeMode === 'pixel'
-    ? Boolean(effectivePixelSize && (pixelSelection === 'custom' ? customSizeSupported && customSizeNormalization.valid : pixelSizes.includes(pixelSize)))
-    : Boolean(baseResolution && ratio && baseResolutionOptionsForModel.includes(baseResolution) && ratios.includes(ratio))
+	useEffect(() => {
+		const next = workspaceBackgroundForFormat(selectedModel, background, outputFormat)
+		if (next !== background) setBackground(next)
+	}, [selectedModel, background, outputFormat])
+
+	const sizeParametersReady = sizeMode === 'auto' ? true : sizeMode === 'pixel'
+		? Boolean(effectivePixelSize && (pixelSelection === 'custom' ? customSizeSupported && customSizeNormalization.valid : pixelSizes.includes(pixelSize)))
+		: Boolean(baseResolution && effectiveRatio && baseResolutionOptionsForModel.includes(baseResolution) && (ratios.includes(effectiveRatio) || customRatioSupported && workspaceCustomRatioValid(effectiveRatio)))
 
   const parametersReady = Boolean(
     selectedModel
@@ -677,29 +749,31 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	&& outputOptions.quality.includes(quality)
 	&& outputOptions.outputFormat.includes(outputFormat)
 	&& outputOptions.moderation.includes(moderation)
+	&& (!background || backgroundOptions.includes(background))
 	&& (!compressionVisible || (outputCompression >= 1 && outputCompression <= 100))
     && count >= 1
     && requiredReferencesReady,
   )
 
   const estimatePayload = useMemo<EstimateRequest>(() => ({
-    task_type: taskType,
-    route_model_code: model,
-	size_mode: sizeMode,
-	base_resolution: sizeMode === 'ratio' ? baseResolution : 'auto',
+		task_type: taskType,
+		route_model_code: model,
+		size_mode: sizeMode,
+		...(sizeMode === 'ratio' ? { base_resolution: baseResolution, aspect_ratio: effectiveRatio } : {}),
+		...(sizeMode === 'pixel' ? { pixel_size: effectivePixelSize } : {}),
 	quality,
 	output_format: outputFormat,
+	...(background ? { background } : {}),
 	output_compression: compressionVisible ? outputCompression : 100,
 	moderation,
-	aspect_ratio: sizeMode === 'ratio' ? ratio : '',
-	pixel_size: sizeMode === 'pixel' ? effectivePixelSize : undefined,
     image_count: count,
     reference_asset_ids: taskType === 'image_edit' ? editRefs.map((item) => item.id) : [],
-  }), [taskType, model, sizeMode, baseResolution, quality, outputFormat, compressionVisible, outputCompression, moderation, ratio, effectivePixelSize, count, editRefs])
+  }), [taskType, model, sizeMode, baseResolution, effectiveRatio, quality, outputFormat, background, compressionVisible, outputCompression, moderation, effectivePixelSize, count, editRefs])
   const estimateKey = useMemo(() => workspaceEstimateKey(estimatePayload), [estimatePayload])
   const currentEstimate = currentWorkspaceEstimate(estimateKey, estimateSnapshot)
   const estimate = currentEstimate.estimate
   const estimateError = currentEstimate.error
+  const displayedResolvedSize = workspaceDisplayedResolvedSize(estimateKey, estimateSnapshot, ratioPixelEstimate)
 
   useEffect(() => {
     if (!capability || !model || !parametersReady) {
@@ -753,7 +827,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     busy,
     task: latestTask,
   }), [capability, taskType, referenceCount, requiredReferencesReady, model, parametersReady, prompt, estimateError, estimate, busy, latestTask])
-  const generateReadiness = workspaceView.generate
+  const generateReadiness = projectReadiness.ready
+    ? workspaceView.generate
+    : { disabled: true, reason: projectReadiness.reason, showRechargeAction: false }
   const historyTasks = useMemo(() => (
     [...records].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   ), [records])
@@ -831,7 +907,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setGalleryImportFilter(defaultGalleryImportFilter)
     setGalleryImportLoading(true)
     try {
-      setGalleryImages(await userApi.listGalleryImages())
+      setGalleryImages(await userApi.listGalleryImages(1, 100, selectedProjectID))
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -850,10 +926,26 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (!limited.accepted.length) return
     setGalleryImportBusy(true)
     try {
-      const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted)
+      const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted, selectedProjectID)
+	  const reused = capability ? firstGalleryReferenceReuse(editRefs.length, assets, capability) : null
       setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
+	  if (reused) {
+		const values = reused.values
+		restoreParametersRef.current = { routeModelCode: values.route_model_code, sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio', baseResolution: values.base_resolution, aspectRatio: values.aspect_ratio, pixelSize: values.pixel_size, quality: values.quality, outputFormat: values.output_format, background: values.background, outputCompression: values.output_compression, moderation: values.moderation, imageCount: values.image_count }
+		setModel(values.route_model_code)
+		setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
+		setBaseResolution(values.base_resolution)
+		setRatio(values.aspect_ratio)
+		setPixelSize(values.pixel_size)
+		setQuality(values.quality)
+		setOutputFormat(values.output_format)
+		setBackground(values.background)
+		setOutputCompression(values.output_compression)
+		setModeration(values.moderation)
+		setCount(values.image_count)
+      }
       setGalleryImportTarget(null)
-      app.notify('success', `已从资产导入 ${assets.length} 张参考图`)
+      app.notify(reused?.notices.length ? 'info' : 'success', galleryImportSuccessMessage(assets.length, reused?.notices))
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -931,6 +1023,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }
 
   async function createTask() {
+    if (!projectReadiness.ready) {
+      app.notify('error', projectReadiness.reason)
+      return
+    }
     if (!requiredReferencesReady) {
       app.notify('error', WORKSPACE_REFERENCE_REQUIRED_MESSAGE)
       return
@@ -941,9 +1037,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
     const activeTaskType = taskType
     const editSourceAssets = activeTaskType === 'image_edit' ? [...editRefs] : []
+    const submissionProject = projectSelectionRef.current
     setBusy(true)
     try {
-      const task = await userApi.createTask({ ...estimatePayload, prompt, negative_prompt: negative, idempotency_key: crypto.randomUUID() })
+      const task = await userApi.createTask({ ...estimatePayload, project_id: submissionProject.projectID, prompt, negative_prompt: negative, capability_version: estimate?.capability_version, idempotency_key: crypto.randomUUID() })
+      if (!workspaceSubmissionIsCurrent(submissionProject, projectSelectionRef.current)) {
+        void app.refreshAccount()
+        return
+      }
       const nextTask = editSourceAssets.length ? { ...task, reference_assets: editSourceAssets } : task
       setRecords((items) => mergeWorkspaceTaskRecords(items, nextTask, {
         limit: 20,
@@ -960,6 +1061,16 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       app.notify('info', '任务已进入队列，正在等待实时状态')
       await app.refreshAccount()
     } catch (err) {
+      if (!workspaceSubmissionIsCurrent(submissionProject, projectSelectionRef.current)) return
+      if (err instanceof ApiError && err.code === 'capability_changed') {
+        try {
+          const nextCapability = await userApi.getCapabilities()
+          setCapability(nextCapability)
+          setEstimateSnapshot({ key: '', estimate: null, error: '' })
+        } catch (refreshError) {
+          setEstimateSnapshot({ key: '', estimate: null, error: errorMessage(refreshError) })
+        }
+      }
       app.notify('error', errorMessage(err))
     } finally {
       setBusy(false)
@@ -1021,7 +1132,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
     setBusy(true)
     try {
-      const imported = await userApi.importReferenceAssetsFromGallery([addition.item.id])
+      const imported = await userApi.importReferenceAssetsFromGallery([addition.item.id], selectedProjectID)
       if (!imported.length) throw new Error('图片导入失败，请稍后重试。')
       setEditRefs((items) => mergeReferenceAssets(items, imported, maxReferenceImages))
       app.notify('success', '已加入图片编辑')
@@ -1048,11 +1159,27 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (interaction.navigateHash) app.navigate('genpic', { taskId: task.id })
     if (interaction.outputTab === 'current') setOutputTab('current')
     setHistoryTaskDialog(null)
+    setHistoryPreviewReturnTarget(null)
   }
 
   function openHistoryTaskDialog(task: ImageTask) {
     const interaction = workspaceTaskHistoryInteraction({ surface: 'history', status: task.status, resultCount: task.results.length })
-    if (interaction.openDialog) setHistoryTaskDialog(task)
+    if (interaction.openDialog) {
+      setHistoryPreviewReturnTarget(null)
+      setHistoryTaskDialog(task)
+    }
+  }
+
+  function openHistoryPreview(image: ImagePreviewPayload) {
+    if (historyTaskDialog && image.mediaResource?.kind === 'image') {
+      setHistoryPreviewReturnTarget({ taskId: historyTaskDialog.id, imageId: image.mediaResource.id })
+    }
+    setPreviewImage(image)
+  }
+
+  function closeHistoryTaskDialog() {
+    setHistoryPreviewReturnTarget(null)
+    setHistoryTaskDialog(null)
   }
 
   function handleSheetPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
@@ -1204,7 +1331,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             <label className={workspaceClasses.fieldLabel}>提示词</label>
             <div className={cn(rdWorkspace.promptWrapper, 'relative')}>
               <textarea
-                className={cn(rdWorkspace.textarea, 'redesign-prompt-input pb-11 pr-20')}
+                className={cn(rdWorkspace.textarea, 'redesign-prompt-input pb-11')}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={5}
@@ -1272,7 +1399,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                         className={cn(workspaceClasses.selectItem, sizeMode === value && workspaceClasses.selectItemActive)}
                         onClick={() => setSizeMode(value)}
                       >
-                        <span className={rdWorkspace.itemLabel}>{value === 'pixel' ? '按像素' : '按比例'}</span>
+						<span className={rdWorkspace.itemLabel}>{value === 'auto' ? '自动' : value === 'pixel' ? '按像素' : '按比例'}</span>
                       </button>
                     ))}
                   </div>
@@ -1303,7 +1430,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel}>比例</label>
                   <div className={workspaceClasses.selectGridThree}>
-                    {ratios.map((r) => (
+					{ratios.map((r) => (
                       <button
                         key={r}
                         type="button"
@@ -1313,14 +1440,30 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                         <AspectRatioIcon ratio={r} active={ratio === r} />
                         <span className={rdWorkspace.itemLabel}>{r}</span>
                       </button>
-                    ))}
-                  </div>
-                </div>
+					))}
+					{customRatioSupported ? (
+						<button
+							type="button"
+							className={cn(workspaceClasses.selectItem, ratio === 'custom' && workspaceClasses.selectItemActive)}
+							onClick={() => setRatio('custom')}
+						>
+							<span className={rdWorkspace.itemLabel}>自定义比例</span>
+						</button>
+					) : null}
+				  </div>
+				  {customRatioSupported && ratio === 'custom' ? (
+					<label className="mt-3 grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-ratio">
+						比例
+						<input id="workspace-custom-ratio" className={userForm.input} value={customRatio} placeholder="例如 7:5" onChange={(event) => setCustomRatio(event.target.value)} />
+						<span role="status">{workspaceCustomRatioValid(customRatio) ? `预计比例：${customRatio}` : '请输入 1:3 至 3:1 范围内的有效比例。'}</span>
+					</label>
+				  ) : null}
+				</div>
               ) : null}
 
-              {sizeMode === 'ratio' && ratioPixelEstimate ? (
+              {sizeMode === 'ratio' && displayedResolvedSize ? (
                 <p className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]/45 px-3 py-2 text-xs leading-5 text-[var(--muted)]" role="status">
-                  预计输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{ratioPixelEstimate}</strong>
+                  预计输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{displayedResolvedSize}</strong>
                 </p>
               ) : null}
 
@@ -1353,17 +1496,17 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                       <div className="grid grid-cols-2 gap-3">
                         <label className="grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-width">
                           Width
-                          <input id="workspace-custom-width" className={userForm.input} type="number" inputMode="numeric" min="1" max="3840" step="1" value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
+						  <input id="workspace-custom-width" className={userForm.input} type="number" inputMode="numeric" min={selectedModel.min_width ?? 16} max={selectedModel.max_width ?? 3840} step="16" value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
                         </label>
                         <label className="grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-height">
                           Height
-                          <input id="workspace-custom-height" className={userForm.input} type="number" inputMode="numeric" min="1" max="3840" step="1" value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
+						  <input id="workspace-custom-height" className={userForm.input} type="number" inputMode="numeric" min={selectedModel.min_height ?? 16} max={selectedModel.max_height ?? 3840} step="16" value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
                         </label>
                       </div>
                       <p className="text-xs leading-5 text-[var(--muted)]" role="status">
-                        {customSizeNormalization.valid ? <>最终输出：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : '请输入有效的 Width 和 Height。'}
-                      </p>
-                      <p className="text-xs leading-5 text-[var(--muted)]">由于模型限制，最终输出会自动规整到合法尺寸：宽高均为 16 的倍数，最大边长 3840px，宽高比不超过 3:1，总像素限制为 655360-8294400。</p>
+						{customSizeNormalization.valid ? <>输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : '尺寸不符合当前模型限制，请直接修改 Width 和 Height。'}
+					  </p>
+					  <p className="text-xs leading-5 text-[var(--muted)]">宽高必须为 16 的倍数，并满足当前模型配置区间、1:3 至 3:1 比例及平台像素上限。</p>
                     </div>
                   ) : null}
                 </div>
@@ -1405,7 +1548,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 </div>
               ) : null}
 
-              {compressionVisible ? (
+			  {compressionVisible ? (
                 <div className={workspaceClasses.fieldBlock}>
                   <label className={workspaceClasses.fieldLabel} htmlFor="workspace-output-compression">压缩质量</label>
                   <div className="grid grid-cols-[minmax(0,1fr)_5rem] items-center gap-3">
@@ -1428,7 +1571,25 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                     />
                   </div>
                 </div>
-              ) : null}
+			  ) : null}
+
+			  {backgroundOptions.length ? (
+				<div className={workspaceClasses.fieldBlock}>
+				  <label className={workspaceClasses.fieldLabel}>背景</label>
+				  <div className={workspaceClasses.selectGridThree}>
+					{backgroundOptions.map((value) => (
+					  <button key={value} type="button" className={cn(workspaceClasses.selectItem, background === value && workspaceClasses.selectItemActive)} onClick={() => {
+						if (value === 'transparent' && !['png', 'webp'].includes(outputFormat)) {
+						  setOutputFormat(outputOptions.outputFormat.find((format) => format === 'png' || format === 'webp') ?? outputFormat)
+						}
+						setBackground(value)
+					  }}>
+						<span className={rdWorkspace.itemLabel}>{value === 'auto' ? '自动' : value === 'opaque' ? '不透明' : '透明'}</span>
+					  </button>
+					))}
+				  </div>
+				</div>
+			  ) : null}
 
               {outputOptions.moderation.length > 1 ? (
                 <div className={workspaceClasses.fieldBlock}>
@@ -1550,6 +1711,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
       {/* Right Canvas */}
       <section className={workspaceClasses.canvas}>
+        <div className="flex shrink-0 justify-end border-b border-[var(--border)] px-4 py-3 sm:px-5">
+          <ProjectSelector className="w-full sm:w-auto" />
+        </div>
         {initialTaskLoading ? <div className="border-b border-[var(--border)] px-5 py-3"><LoadingState label="正在读取指定任务..." /></div> : null}
         {initialTaskError ? (
           <div className="border-b border-[var(--border)] px-5 py-3">
@@ -1638,6 +1802,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           title="图片详情"
           image={previewDetailImage}
           imageUrl={previewImage?.url}
+          referenceImages={previewImage?.referenceImages}
           showPublicStats={false}
           onDownload={() => {
             if (!previewImage?.mediaResource) return
@@ -1657,6 +1822,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             onClick: () => {
               stageWorkspaceCreationDraft(previewImage.creationDraft!, window.sessionStorage, window.history)
               setPreviewImage(null)
+              setHistoryTaskDialog(null)
+              setHistoryPreviewReturnTarget(null)
               app.navigate('genpic')
             },
           }] : []}
@@ -1664,14 +1831,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           onMediaRefresh={previewImage?.mediaResource ? () => refreshWorkspaceResource(previewImage.mediaResource!) : undefined}
           onClose={() => setPreviewImage(null)}
         />
-        {historyTaskDialog ? (
-          <HistoryTaskDialog
+        {historyTaskDialog && !previewImage ? (
+          <HistoryTaskGalleryModal
             task={historyTaskDialog}
             accessToken={app.session?.token}
-            onDownloadImage={downloadWorkspaceImage}
+            onPreviewImage={openHistoryPreview}
             onImageMediaRefresh={refreshWorkspaceImage}
             onReferenceMediaRefresh={refreshWorkspaceReference}
-            onClose={() => setHistoryTaskDialog(null)}
+            onClose={closeHistoryTaskDialog}
           />
         ) : null}
         {galleryImportTarget ? (
@@ -2070,56 +2237,72 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
   )
 }
 
-function HistoryTaskDialog({ task, accessToken, onDownloadImage, onImageMediaRefresh, onReferenceMediaRefresh, onClose }: {
+function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMediaRefresh, onReferenceMediaRefresh, onClose }: {
   task: ImageTask
   accessToken?: string | null
-  onDownloadImage: (image: ImageResult) => Promise<void>
+  onPreviewImage: (image: ImagePreviewPayload) => void
   onImageMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
   onReferenceMediaRefresh: (assetId: string) => string | undefined | void | Promise<string | undefined | void>
   onClose: () => void
 }) {
   const app = useApp()
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  useEffect(() => setSelectedIndex(0), [task.id])
-  const image = task.results[selectedIndex] ?? task.results[0]
-  if (!image) return null
-  const detailImage = projectWorkspaceImageDetail(image, task, app.profile)
-  const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
-  const reuseConfiguration = () => {
-    stageWorkspaceCreationDraft(workspaceCreationDraftFromSnapshot(task), window.sessionStorage, window.history)
-    onClose()
-    app.navigate('genpic')
-  }
+  if (!task.results.length) return null
+  const requested = Math.max(Number(task.image_count || 1), task.results.length)
+  const referenceImages = task.reference_assets.map((asset) => ({
+    id: asset.id,
+    url: referenceAssetPreviewURL(asset, accessToken),
+    alt: asset.name || '原图引用',
+    mediaExpiresAt: asset.preview_expires_at,
+    onMediaRefresh: asset.id ? () => onReferenceMediaRefresh(asset.id) : undefined,
+  })).filter((item) => item.url)
+
   return (
-    <ImageDetailModal
-      title={`历史创作图片 ${selectedIndex + 1}/${task.results.length}`}
-      image={detailImage}
-      imageUrl={imageUrl}
-      referenceImages={task.reference_assets.map((asset) => {
-        const url = referenceAssetPreviewURL(asset, accessToken)
-        return {
-          id: asset.id,
-          url,
-          alt: asset.name || '原图引用',
-          mediaExpiresAt: asset.preview_expires_at,
-          onMediaRefresh: asset.id ? () => onReferenceMediaRefresh(asset.id) : undefined,
-        }
-      }).filter((item) => item.url)}
-      showPublicStats={false}
-      onDownload={() => void onDownloadImage(image)}
-      onCopyPrompt={async (value) => {
-        await copyText(value)
-        app.notify('success', 'Prompt 已复制')
-      }}
-      actions={[
-        { key: 'previous', label: '上一张', icon: <ArrowLeft size={18} strokeWidth={1.5} aria-hidden="true" />, onClick: () => setSelectedIndex((current) => Math.max(0, current - 1)), disabled: selectedIndex === 0 },
-        { key: 'next', label: '下一张', icon: <ArrowRight size={18} strokeWidth={1.5} aria-hidden="true" />, onClick: () => setSelectedIndex((current) => Math.min(task.results.length - 1, current + 1)), disabled: selectedIndex >= task.results.length - 1 },
-        { key: 'reuse', label: '复用配置', icon: <PublicDetailIcon name="edit" />, onClick: reuseConfiguration },
-      ]}
-      previewSourceLabel="历史创作"
-      onMediaRefresh={() => onImageMediaRefresh(image.id)}
-      onClose={onClose}
-    />
+    <Modal title="历史创作总览" onClose={onClose} className="max-h-[90vh] w-[min(960px,calc(100vw-2rem))] max-w-none overflow-y-auto">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-[var(--border)] py-3 text-xs text-[var(--muted)]">
+        <span className="min-w-0 flex-1 truncate" title={task.prompt || task.title}>{task.prompt || task.title || '未命名创作'}</span>
+        <span>{task.results.length}/{requested} 张</span>
+        <span>{formatHistoryTime(task.created_at)}</span>
+      </div>
+      <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+        {task.results.map((image, index) => {
+          const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
+          return (
+            <button
+              key={image.id}
+              type="button"
+              data-history-image-id={image.id}
+              className="group grid min-w-0 gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-2 text-left transition hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]"
+              aria-label={`查看第 ${index + 1} 张图片详情`}
+              onClick={() => onPreviewImage({
+                url: imageUrl,
+                downloadUrl: userApi.imageAssetUrl(image.download_url ?? image.url, accessToken),
+                alt: image.prompt || `${task.title || '历史创作'} ${index + 1}`,
+                prompt: image.prompt || task.prompt,
+                width: image.width,
+                height: image.height,
+                ratio: task.aspect_ratio,
+                model: image.route_model_code || task.route_model_code || task.model_group,
+                source: '历史创作',
+                creationDraft: workspaceCreationDraftFromSnapshot(task),
+                detailImage: projectWorkspaceImageDetail(image, task, app.profile),
+                mediaResource: { kind: 'image', scope: 'private', id: image.id },
+                mediaExpiresAt: image.preview_expires_at,
+                referenceImages,
+              })}
+            >
+              <RefreshableMediaImage
+                className="aspect-square w-full rounded-lg bg-[var(--surface)] object-cover"
+                src={imageUrl}
+                mediaExpiresAt={image.preview_expires_at}
+                alt={image.prompt || `${task.title || '历史创作'} ${index + 1}`}
+                onMediaRefresh={() => onImageMediaRefresh(image.id)}
+              />
+              <span className="truncate text-xs font-semibold text-[var(--fg)]">第 {index + 1} 张</span>
+            </button>
+          )
+        })}
+      </div>
+    </Modal>
   )
 }
 

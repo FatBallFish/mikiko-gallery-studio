@@ -22,13 +22,17 @@ import (
 	"log/slog"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,6 +57,7 @@ import (
 	domainsecureconfig "github.com/fatballfish/pic-gallery/internal/domain/secureconfig"
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/provider"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
@@ -66,8 +71,10 @@ import (
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	compatservice "github.com/fatballfish/pic-gallery/internal/service/compat"
+	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
@@ -81,32 +88,41 @@ import (
 )
 
 type API struct {
-	auth        *authservice.Service
-	adminAuth   *adminauthservice.Service
-	apiKeys     *apikeyservice.Service
-	billing     *billingservice.Service
-	assets      *assetservice.Service
-	caps        *capserv.Service
-	compat      *compatservice.Service
-	tasks       *imagetaskservice.Service
-	admin       *adminconfigservice.Service
-	cashierCfg  *cashierservice.ConfigFacade
-	adminUser   *adminuserservice.Service
-	callRecord  *admincallrecordservice.Service
-	modelAdmin  *modeladminservice.Service
-	textModels  *textmodelservice.Service
-	promptOpt   *promptoptimizerservice.Service
-	secureCfg   *secureconfigservice.Service
-	storageCfg  *storageconfigservice.Service
-	storageReg  *storage.Registry
-	storagePub  storage.InvalidationPublisher
-	redeem      *redeemservice.Service
-	audit       *auditservice.Service
-	cluster     *clusterservice.Service
-	adminPerms  domainadminauth.PermissionResolver
-	docsReady   DocsReadinessChecker
-	cashierSync cashierOrderSyncCoordinator
-	cfg         config.Config
+	auth          *authservice.Service
+	adminAuth     *adminauthservice.Service
+	apiKeys       *apikeyservice.Service
+	billing       *billingservice.Service
+	assets        *assetservice.Service
+	aliasRollout  assetservice.AliasRolloutStore
+	caps          *capserv.Service
+	compat        *compatservice.Service
+	tasks         *imagetaskservice.Service
+	admin         *adminconfigservice.Service
+	cashierCfg    *cashierservice.ConfigFacade
+	adminUser     *adminuserservice.Service
+	callRecord    *admincallrecordservice.Service
+	modelAdmin    *modeladminservice.Service
+	textModels    *textmodelservice.Service
+	promptOpt     *promptoptimizerservice.Service
+	secureCfg     *secureconfigservice.Service
+	storageCfg    *storageconfigservice.Service
+	storageReg    *storage.Registry
+	storagePub    storage.InvalidationPublisher
+	redeem        *redeemservice.Service
+	audit         *auditservice.Service
+	cluster       *clusterservice.Service
+	projects      *projectservice.Service
+	galleryExport *galleryexportservice.Service
+	adminPerms    domainadminauth.PermissionResolver
+	docsReady     DocsReadinessChecker
+	cashierSync   cashierOrderSyncCoordinator
+	readinessMu   sync.Mutex
+	readinessData []adminReadinessCheck
+	readinessTill time.Time
+	readinessGen  uint64
+	readinessRun  *adminReadinessFlight
+	readinessWait time.Duration
+	cfg           config.Config
 }
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
@@ -115,17 +131,34 @@ type cashierProviderInstance = domaincashier.ProviderInstance
 type cashierProviderInstanceWriteRequest = domaincashier.ProviderInstanceWriteRequest
 
 type adminReadinessCheck struct {
-	Key         string    `json:"key"`
-	Label       string    `json:"label"`
-	Status      string    `json:"status"`
-	Detail      string    `json:"detail"`
-	Summary     string    `json:"summary"`
-	FixRoute    string    `json:"fix_route,omitempty"`
-	FixAction   string    `json:"fix_action,omitempty"`
-	ActionRoute string    `json:"action_route,omitempty"`
-	ActionLabel string    `json:"action_label,omitempty"`
-	Blocking    bool      `json:"blocking"`
-	CheckedAt   time.Time `json:"checked_at"`
+	Key          string    `json:"key"`
+	Label        string    `json:"label"`
+	Status       string    `json:"status"`
+	Availability string    `json:"availability"`
+	Detail       string    `json:"detail"`
+	Summary      string    `json:"summary"`
+	FixRoute     string    `json:"fix_route,omitempty"`
+	FixAction    string    `json:"fix_action,omitempty"`
+	ActionRoute  string    `json:"action_route,omitempty"`
+	ActionLabel  string    `json:"action_label,omitempty"`
+	Blocking     bool      `json:"blocking"`
+	CheckedAt    time.Time `json:"checked_at"`
+}
+
+type adminReadinessFlight struct {
+	generation uint64
+	checkedAt  time.Time
+	docsReady  DocsReadinessChecker
+	done       chan struct{}
+	checks     []adminReadinessCheck
+}
+
+type adminReadinessProbe struct {
+	key         string
+	label       string
+	fixRoute    string
+	actionLabel string
+	run         func(context.Context, time.Time) (adminReadinessCheck, error)
 }
 
 type adminDashboardOperations struct {
@@ -174,6 +207,12 @@ type DocsReadinessResult struct {
 }
 
 type DocsReadinessChecker func(ctx context.Context) DocsReadinessResult
+
+const docsReadinessProbeTimeout = 2 * time.Second
+const adminReadinessTimeout = 3 * time.Second
+const adminReadinessCacheTTL = 5 * time.Second
+
+var errDocsProbeURLNotConfigured = errors.New("documentation probe URL is not configured")
 
 func NewAPI(cfg config.Config, authSvc *authservice.Service, assetSvc *assetservice.Service) *API {
 	return NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, nil, nil, nil)
@@ -230,13 +269,17 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 		adminUserSvc = adminuserservice.NewServiceWithStore(nil, billingSvc)
 	}
 	callRecordSvc := admincallrecordservice.NewServiceWithStore(nil)
+	capsSvc := capserv.NewServiceWithAttachmentPolicy(cfg, attachmentPolicy)
+	capsSvc.SetBillingConfigResolver(billingSvc)
+	projects := projectservice.NewService(nil)
+	taskSvc.SetProjectResolver(projects)
 	return &API{
 		auth:       authSvc,
 		adminAuth:  adminAuthSvc,
 		apiKeys:    apiKeySvc,
 		billing:    billingSvc,
 		assets:     assetSvc,
-		caps:       capserv.NewServiceWithAttachmentPolicy(cfg, attachmentPolicy),
+		caps:       capsSvc,
 		compat:     compatservice.NewServiceWithTaskService(cfg, taskSvc),
 		tasks:      taskSvc,
 		admin:      adminSvc,
@@ -246,7 +289,8 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 		redeem:     redeemservice.NewServiceWithStore(nil),
 		audit:      auditSvc,
 		adminPerms: domainadminauth.RolePermissionResolver{},
-		docsReady:  defaultDocsReadinessChecker,
+		docsReady:  newDocsReadinessChecker(cfg, nil, docsReadinessProbeTimeout),
+		projects:   projects,
 		cfg:        cfg,
 	}
 }
@@ -259,16 +303,34 @@ func (a *API) SetAdminPermissionResolver(resolver domainadminauth.PermissionReso
 	a.adminPerms = resolver
 }
 
+func (a *API) SetAliasRolloutStore(store assetservice.AliasRolloutStore) {
+	a.aliasRollout = store
+	a.assets.SetAliasCreationGate(store)
+}
+
 func (a *API) SetDocsReadinessChecker(checker DocsReadinessChecker) {
+	a.readinessMu.Lock()
+	defer a.readinessMu.Unlock()
 	if checker == nil {
-		a.docsReady = defaultDocsReadinessChecker
-		return
+		a.docsReady = newDocsReadinessChecker(a.cfg, nil, docsReadinessProbeTimeout)
+	} else {
+		a.docsReady = checker
 	}
-	a.docsReady = checker
+	a.invalidateReadinessLocked()
 }
 
 func (a *API) SetCashierProviderInstanceStore(store cashierservice.ProviderInstanceStore) {
+	a.readinessMu.Lock()
+	defer a.readinessMu.Unlock()
 	a.cashierConfigFacade().WithProviderInstanceStore(store)
+	a.invalidateReadinessLocked()
+}
+
+func (a *API) invalidateReadinessLocked() {
+	a.readinessGen++
+	a.readinessData = nil
+	a.readinessTill = time.Time{}
+	a.readinessRun = nil
 }
 
 func (a *API) SetSecureConfigService(service *secureconfigservice.Service) {
@@ -288,6 +350,17 @@ func (a *API) SetStorageConfigService(service *storageconfigservice.Service, reg
 
 func (a *API) SetClusterService(service *clusterservice.Service) {
 	a.cluster = service
+}
+
+func (a *API) SetProjectService(service *projectservice.Service) {
+	if service != nil {
+		a.projects = service
+		a.tasks.SetProjectResolver(service)
+	}
+}
+
+func (a *API) SetGalleryExportService(service *galleryexportservice.Service) {
+	a.galleryExport = service
 }
 
 func (a *API) cashierConfigFacade() *cashierservice.ConfigFacade {
@@ -824,7 +897,7 @@ func (a *API) HandleEstimate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	result, err := a.billing.Estimate(domainbilling.EstimateRequest{
+	result, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
 		RouteModelCode:            r.URL.Query().Get("route_model_code"),
@@ -833,6 +906,7 @@ func (a *API) HandleEstimate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution:            r.URL.Query().Get("base_resolution"),
 		Quality:                   r.URL.Query().Get("quality"),
 		OutputFormat:              r.URL.Query().Get("output_format"),
+		Background:                r.URL.Query().Get("background"),
 		OutputCompression:         parseOptionalIntQueryValue(r.URL.Query().Get("output_compression")),
 		Moderation:                r.URL.Query().Get("moderation"),
 		RequestedSize:             r.URL.Query().Get("requested_size"),
@@ -1518,7 +1592,7 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	result, err := a.billing.Estimate(domainbilling.EstimateRequest{
+	result, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
 		RouteModelCode:            r.URL.Query().Get("route_model_code"),
@@ -1527,6 +1601,7 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution:            r.URL.Query().Get("base_resolution"),
 		Quality:                   r.URL.Query().Get("quality"),
 		OutputFormat:              r.URL.Query().Get("output_format"),
+		Background:                r.URL.Query().Get("background"),
 		OutputCompression:         parseOptionalIntQueryValue(r.URL.Query().Get("output_compression")),
 		Moderation:                r.URL.Query().Get("moderation"),
 		RequestedSize:             r.URL.Query().Get("requested_size"),
@@ -1553,7 +1628,7 @@ func (a *API) HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	result, err := a.caps.ListForGroups(r.Context(), userGroupCodes(user), a.cfg.Billing.TaskMultipliers)
+	result, err := a.caps.ListForGroups(r.Context(), userGroupCodes(user))
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -1572,7 +1647,7 @@ func (a *API) HandleOpenCapabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer cleanup()
-	result, err := a.caps.ListForGroups(r.Context(), []string{identity.GroupCode}, a.cfg.Billing.TaskMultipliers)
+	result, err := a.caps.ListForGroups(r.Context(), []string{identity.GroupCode})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -2366,6 +2441,7 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 	}
 	var req struct {
 		GalleryImageIDs []string `json:"gallery_image_ids"`
+		ProjectID       string   `json:"project_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -2392,12 +2468,21 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 		httpx.WriteError(w, r, errs.BadRequest("gallery_image_ids exceeds limit"))
 		return
 	}
+	selectedProject, err := a.projects.ResolveForWrite(r.Context(), user.ID, req.ProjectID)
+	if err != nil {
+		httpx.WriteError(w, r, projectAppError(err))
+		return
+	}
 
 	items := make([]domainassets.ReferenceAsset, 0, len(ids))
 	for _, imageID := range ids {
 		result, err := a.tasks.GetOwnedImageResult(r.Context(), user.ID, imageID)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if result.ProjectID != selectedProject.ID {
+			httpx.WriteError(w, r, projectAppError(projectservice.ErrNotFound))
 			return
 		}
 		asset, svcErr := a.assets.ImportGalleryImage(r.Context(), user.ID, result)
@@ -2458,7 +2543,7 @@ func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
-		if err := a.assets.Delete(user.ID, assetID); err != nil {
+		if err := a.assets.DeleteWithContext(r.Context(), user.ID, assetID); err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
@@ -2751,24 +2836,30 @@ func (a *API) handleAgentTaskStream(w http.ResponseWriter, r *http.Request, user
 		httpx.WriteError(w, r, errs.New(http.StatusInternalServerError, errs.CodeInternal, "streaming is not supported"))
 		return
 	}
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	initialTasks, err := a.latestUserTasks(r.Context(), user.ID, projectID, 20)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	seen := map[string]string{}
-	sendSnapshot := func(initial bool) {
-		tasks, err := a.latestUserTasks(r.Context(), user.ID, 20)
+	writeSSE(w, "history", initialTasks)
+	for _, task := range initialTasks {
+		seen[task.ID] = taskStreamSignature(task)
+	}
+	flusher.Flush()
+	if strings.EqualFold(r.URL.Query().Get("once"), "true") {
+		return
+	}
+	sendSnapshot := func() {
+		tasks, err := a.latestUserTasks(r.Context(), user.ID, projectID, 20)
 		if err != nil {
 			writeSSE(w, "error", normalizeAppError(err))
-			flusher.Flush()
-			return
-		}
-		if initial {
-			writeSSE(w, "history", tasks)
-			for _, task := range tasks {
-				seen[task.ID] = taskStreamSignature(task)
-			}
 			flusher.Flush()
 			return
 		}
@@ -2788,10 +2879,6 @@ func (a *API) handleAgentTaskStream(w http.ResponseWriter, r *http.Request, user
 		flusher.Flush()
 	}
 
-	sendSnapshot(true)
-	if strings.EqualFold(r.URL.Query().Get("once"), "true") {
-		return
-	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -2799,13 +2886,13 @@ func (a *API) handleAgentTaskStream(w http.ResponseWriter, r *http.Request, user
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			sendSnapshot(false)
+			sendSnapshot()
 		}
 	}
 }
 
-func (a *API) latestUserTasks(ctx context.Context, userID int64, limit int) ([]domainimagetask.Task, error) {
-	tasks, err := a.tasks.ListByUser(ctx, userID)
+func (a *API) latestUserTasks(ctx context.Context, userID int64, projectID string, limit int) ([]domainimagetask.Task, error) {
+	tasks, err := a.tasks.ListRecentByUserProject(ctx, userID, projectID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -2970,9 +3057,10 @@ func (a *API) HandleAgentGalleryImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := a.tasks.ListGalleryByUser(r.Context(), user.ID, domainimagetask.GalleryListRequest{
-		Page:     page,
-		PageSize: pageSize,
-		Status:   r.URL.Query().Get("visibility_status"),
+		Page:      page,
+		PageSize:  pageSize,
+		ProjectID: r.URL.Query().Get("project_id"),
+		Status:    r.URL.Query().Get("visibility_status"),
 	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
@@ -2986,6 +3074,233 @@ func (a *API) HandleAgentGalleryImages(w http.ResponseWriter, r *http.Request) {
 			"total":     result.Total,
 		},
 	})
+}
+
+func (a *API) HandleAgentGalleryBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	var payload struct {
+		ImageIDs        []string `json:"image_ids"`
+		IDs             []string `json:"ids"`
+		ProjectID       string   `json:"project_id"`
+		TargetProjectID string   `json:"target_project_id"`
+		ImageGroup      string   `json:"image_group"`
+		Publish         *bool    `json:"publish"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	imageIDs := payload.ImageIDs
+	if len(imageIDs) == 0 {
+		imageIDs = payload.IDs
+	}
+	action := strings.TrimPrefix(r.URL.Path, "/api/agent/gallery/v1/images:batch-")
+	var (
+		result domainimagetask.GalleryBatchResult
+		err    error
+	)
+	switch action {
+	case "publish":
+		publish := true
+		if payload.Publish != nil {
+			publish = *payload.Publish
+		}
+		if publish {
+			result, err = a.tasks.BatchPublishImagesWithAction(r.Context(), user.ID, payload.ProjectID, imageIDs, func(ctx context.Context, imageID, projectID string) (domainimagetask.GalleryImage, error) {
+				image, _, publishErr := a.publishGalleryImage(ctx, r, user.ID, imageID, projectID)
+				return image, publishErr
+			})
+		} else {
+			result, err = a.tasks.BatchPublishImagesWithAction(r.Context(), user.ID, payload.ProjectID, imageIDs, func(ctx context.Context, imageID, projectID string) (domainimagetask.GalleryImage, error) {
+				image, cancelErr := a.tasks.CancelPublishInProject(ctx, user.ID, imageID, projectID)
+				if cancelErr == nil {
+					a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_cancel", "image_result", imageID, map[string]any{"status": image.VisibilityStatus})
+				}
+				return image, cancelErr
+			})
+		}
+	case "group":
+		result, err = a.tasks.BatchSetImageGroup(r.Context(), user.ID, payload.ProjectID, imageIDs, payload.ImageGroup)
+	case "delete":
+		result, err = a.tasks.BatchDeleteImages(r.Context(), user.ID, payload.ProjectID, imageIDs)
+	case "transfer-project":
+		result, err = a.tasks.BatchTransferImages(r.Context(), user.ID, payload.ProjectID, payload.TargetProjectID, imageIDs)
+	case "download":
+		a.handleAgentGalleryBatchDownload(w, r, user.ID, payload.ProjectID, imageIDs)
+		return
+	default:
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery batch route not found"))
+		return
+	}
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	metadata := map[string]any{
+		"project_id": payload.ProjectID, "target_project_id": payload.TargetProjectID,
+		"succeeded": len(result.Succeeded), "failed": len(result.Failed),
+	}
+	if action == "publish" {
+		publish := true
+		if payload.Publish != nil {
+			publish = *payload.Publish
+		}
+		metadata["publish"] = publish
+	}
+	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.batch_"+strings.ReplaceAll(action, "-", "_"), "image_result", "batch", metadata)
+	httpx.WriteSuccess(w, r, http.StatusOK, result)
+}
+
+func (a *API) handleAgentGalleryBatchDownload(w http.ResponseWriter, r *http.Request, userID int64, projectID string, imageIDs []string) {
+	if a.galleryExport == nil {
+		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeInternal, "gallery export is unavailable"))
+		return
+	}
+	result, err := a.galleryExport.CreateDownload(r.Context(), galleryexportservice.CreateDownloadRequest{
+		UserID: userID, ProjectID: projectID, ImageIDs: imageIDs,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, galleryexportservice.ErrBatchEmpty):
+			httpx.WriteError(w, r, errs.BadRequest("image_ids is required"))
+		case errors.Is(err, galleryexportservice.ErrBatchTooLarge),
+			errors.Is(err, galleryexportservice.ErrSourceLimitExceeded),
+			errors.Is(err, galleryexportservice.ErrArchiveLimitExceeded):
+			httpx.WriteError(w, r, errs.New(http.StatusRequestEntityTooLarge, errs.CodeExportTooLarge, "gallery export exceeds the configured size limit"))
+		case errors.Is(err, repoerr.ErrNotFound):
+			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "one or more gallery images were not found"))
+		default:
+			httpx.WriteError(w, r, normalizeAppError(err))
+		}
+		return
+	}
+	if result.Job != nil {
+		httpx.WriteSuccess(w, r, http.StatusAccepted, map[string]any{
+			"job": result.Job, "status_url": "/api/agent/gallery/v1/export-jobs/" + result.Job.ID,
+		})
+		return
+	}
+	if result.Archive == nil {
+		httpx.WriteError(w, r, errs.Internal("gallery export did not produce an archive"))
+		return
+	}
+	if started, err := streamGalleryArchive(w, r, result.Archive); err != nil {
+		if !started {
+			httpx.WriteError(w, r, errs.Internal("gallery export archive is unavailable"))
+		}
+	}
+}
+
+func (a *API) HandleAgentGalleryExportJob(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if a.galleryExport == nil {
+		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeInternal, "gallery export is unavailable"))
+		return
+	}
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/agent/gallery/v1/export-jobs/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" || len(parts) > 2 || (len(parts) == 2 && parts[1] != "download") {
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery export route not found"))
+		return
+	}
+	jobID := parts[0]
+	if len(parts) == 2 {
+		archive, err := a.galleryExport.DownloadJob(r.Context(), user.ID, jobID)
+		if err != nil {
+			switch {
+			case errors.Is(err, repoerr.ErrNotFound):
+				httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery export was not found"))
+			case errors.Is(err, galleryexportservice.ErrExportNotReady):
+				httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodeConflict, "gallery export is not ready or has expired"))
+			default:
+				httpx.WriteError(w, r, normalizeAppError(err))
+			}
+			return
+		}
+		if started, err := streamGalleryArchive(w, r, &archive); err != nil && !started {
+			httpx.WriteError(w, r, errs.Internal("gallery export archive is unavailable"))
+		}
+		return
+	}
+	job, err := a.galleryExport.GetJob(r.Context(), user.ID, jobID)
+	if err != nil {
+		if errors.Is(err, repoerr.ErrNotFound) {
+			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery export was not found"))
+		} else {
+			httpx.WriteError(w, r, normalizeAppError(err))
+		}
+		return
+	}
+	payload := map[string]any{"job": job}
+	if job.State == galleryexportservice.StateSucceeded && job.ExpiresAt != nil && job.ExpiresAt.After(time.Now().UTC()) {
+		payload["download_url"] = "/api/agent/gallery/v1/export-jobs/" + job.ID + "/download"
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, payload)
+}
+
+func streamGalleryArchive(w http.ResponseWriter, r *http.Request, archive *galleryexportservice.Archive) (bool, error) {
+	if archive == nil {
+		return false, errors.New("gallery archive is nil")
+	}
+	defer archive.Close()
+	reader := io.Reader(archive.Reader)
+	var file *os.File
+	if reader == nil {
+		opened, err := os.Open(archive.Path)
+		if err != nil {
+			return false, err
+		}
+		file = opened
+		defer file.Close()
+		reader = file
+	}
+	controller := http.NewResponseController(w)
+	if !archive.ResponseDeadline.IsZero() {
+		if err := controller.SetWriteDeadline(archive.ResponseDeadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return false, err
+		}
+		defer func() { _ = controller.SetWriteDeadline(time.Time{}) }()
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="gallery-assets.zip"`)
+	if archive.Size >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(archive.Size, 10))
+	}
+	w.WriteHeader(http.StatusOK)
+	_, err := io.Copy(w, requestContextReader{ctx: r.Context(), reader: reader})
+	return true, err
+}
+
+type requestContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (reader requestContextReader) Read(buffer []byte) (int, error) {
+	if err := reader.ctx.Err(); err != nil {
+		return 0, err
+	}
+	count, err := reader.reader.Read(buffer)
+	if contextErr := reader.ctx.Err(); contextErr != nil {
+		return count, contextErr
+	}
+	return count, err
 }
 
 func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Request) {
@@ -3080,34 +3395,49 @@ func (a *API) HandleAgentGalleryImageDetail(w http.ResponseWriter, r *http.Reque
 		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery image route not found"))
 		return
 	}
-	ownedImage, err := a.findOwnedGalleryImage(r.Context(), user.ID, imageID)
+	image, rejected, err := a.publishGalleryImage(r.Context(), r, user.ID, imageID, "")
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
-	allowed, reason, err := a.moderatePublishRequest(r.Context(), ownedImage.Prompt)
+	if rejected {
+		httpx.WriteSuccess(w, r, http.StatusOK, image)
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusAccepted, image)
+}
+
+func (a *API) publishGalleryImage(ctx context.Context, r *http.Request, userID int64, imageID, expectedProjectID string) (domainimagetask.GalleryImage, bool, error) {
+	ownedImage, err := a.findOwnedGalleryImage(ctx, userID, imageID)
 	if err != nil {
-		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_moderation_skipped", "image_result", imageID, map[string]any{"reason": err.Error()})
+		return domainimagetask.GalleryImage{}, false, err
+	}
+	projectID := ownedImage.ProjectID
+	if expectedProjectID != "" {
+		if projectID != expectedProjectID {
+			return domainimagetask.GalleryImage{}, false, errs.New(http.StatusNotFound, errs.CodeNotFound, "image not found")
+		}
+		projectID = expectedProjectID
+	}
+	allowed, reason, moderationErr := a.moderatePublishRequest(ctx, ownedImage.Prompt)
+	if moderationErr != nil {
+		a.recordAudit(r, "user", fmt.Sprintf("%d", userID), "gallery.publish_moderation_skipped", "image_result", imageID, map[string]any{"reason": moderationErr.Error()})
 		allowed = true
 	}
 	if !allowed {
-		rejected, reviewErr := a.tasks.ReviewImage(r.Context(), imageID, domainimagetask.VisibilityRejected, defaultString(reason, "auto_moderation_blocked"), nil)
-		if reviewErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(reviewErr))
-			return
+		rejected, rejectErr := a.tasks.RejectPublishInProject(ctx, userID, imageID, projectID, defaultString(reason, "auto_moderation_blocked"))
+		if rejectErr != nil {
+			return domainimagetask.GalleryImage{}, false, rejectErr
 		}
-		a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_rejected", "image_result", imageID, map[string]any{"reason": rejected.ReviewReason})
-		httpx.WriteSuccess(w, r, http.StatusOK, rejected)
-		return
+		a.recordAudit(r, "user", fmt.Sprintf("%d", userID), "gallery.publish_rejected", "image_result", imageID, map[string]any{"reason": rejected.ReviewReason})
+		return rejected, true, nil
 	}
-
-	image, err := a.tasks.RequestPublish(r.Context(), user.ID, imageID)
+	image, err := a.tasks.RequestPublishInProject(ctx, userID, imageID, projectID)
 	if err != nil {
-		httpx.WriteError(w, r, normalizeAppError(err))
-		return
+		return domainimagetask.GalleryImage{}, false, err
 	}
-	a.recordAudit(r, "user", fmt.Sprintf("%d", user.ID), "gallery.publish_request", "image_result", imageID, map[string]any{"status": image.VisibilityStatus})
-	httpx.WriteSuccess(w, r, http.StatusAccepted, image)
+	a.recordAudit(r, "user", fmt.Sprintf("%d", userID), "gallery.publish_request", "image_result", imageID, map[string]any{"status": image.VisibilityStatus})
+	return image, false, nil
 }
 
 func (a *API) HandleAgentHistoryTasks(w http.ResponseWriter, r *http.Request) {
@@ -3669,8 +3999,19 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	now := time.Now().UTC()
+	distributionFrom, ok := dashboardDistributionWindow(now, r.URL.Query().Get("window"))
+	if !ok {
+		httpx.WriteError(w, r, errs.BadRequest("window must be one of 24h, 7d, or 30d"))
+		return
+	}
+	callDistribution, err := a.callRecord.CallDistribution(r.Context(), domainadmincallrecord.DistributionRequest{From: distributionFrom, To: now})
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
 
-	callRecords, err := a.callRecord.ListCallRecords(r.Context(), domainadmincallrecord.ListRequest{Page: 1, PageSize: 200})
+	callRecords, err := a.callRecord.ListCallRecords(r.Context(), domainadmincallrecord.ListRequest{Page: 1, PageSize: 200, CreatedFrom: distributionFrom, CreatedTo: now})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
@@ -3714,7 +4055,6 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		totalActualPoints float64
 	)
 	preflightFailuresByCode := map[string]int{}
-	preflightFailureCount := 0
 	platformLossCount := 0
 	platformLossProviderCost := decimal.Zero
 	for _, item := range callRecords.Items {
@@ -3726,7 +4066,6 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		if item.ErrorCode != nil && isPreflightErrorCode(*item.ErrorCode) {
 			preflightFailuresByCode[*item.ErrorCode]++
-			preflightFailureCount++
 		}
 		if item.PlatformLoss {
 			platformLossCount++
@@ -3751,7 +4090,6 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	if durationCount > 0 {
 		avgDuration = totalDurationSec / float64(durationCount)
 	}
-	now := time.Now().UTC()
 	activeUsers := 0
 	closedUsers := 0
 	disabledUsers := 0
@@ -3826,7 +4164,7 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		MockEnabled:                    mockEnabled,
 		SignupTrialGrantedUserCount:    signupTrialGrantedUserCount,
 		TrialExpiringUserCount:         trialExpiringUserCount,
-		PreflightFailureCount:          preflightFailureCount,
+		PreflightFailureCount:          callDistribution.PreflightFailureCount,
 		PreflightFailuresByErrorCode:   preflightFailuresByCode,
 		PlatformLossCount:              platformLossCount,
 		PlatformLossProviderCost:       platformLossProviderCost.StringFixed(5),
@@ -3837,7 +4175,8 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
-		"operations": ops,
+		"operations":        ops,
+		"call_distribution": callDistribution,
 		"metrics": []map[string]any{
 			{"key": "payment_success_rate", "label": "支付成功率", "value": ops.PaymentSuccessRate, "trend": fmt.Sprintf("今日 %d 单", ops.TodayOrderCount), "detail": "今日收银台订单支付完成率", "tone": dashboardMetricTone(ops.FailedWebhookCount == 0, ops.FailedWebhookCount > 0)},
 			{"key": "failed_webhook_count", "label": "失败回调", "value": strconv.Itoa(ops.FailedWebhookCount), "trend": boolTrend(ops.FailedWebhookCount == 0, "正常", "需处理"), "detail": "当前失败支付回调事件数", "tone": dashboardMetricTone(ops.FailedWebhookCount == 0, ops.FailedWebhookCount > 0)},
@@ -3859,6 +4198,19 @@ func (a *API) HandleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		},
 		"audit": audits.Items,
 	})
+}
+
+func dashboardDistributionWindow(now time.Time, value string) (time.Time, bool) {
+	switch strings.TrimSpace(value) {
+	case "", "24h":
+		return now.Add(-24 * time.Hour), true
+	case "7d":
+		return now.Add(-7 * 24 * time.Hour), true
+	case "30d":
+		return now.Add(-30 * 24 * time.Hour), true
+	default:
+		return time.Time{}, false
+	}
 }
 
 func (a *API) HandleAdminMonitoringSnapshot(w http.ResponseWriter, r *http.Request) {
@@ -4106,26 +4458,26 @@ func (a *API) HandleAdminCashierPlanDetail(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if r.Method == http.MethodPost && action != "" {
-		plan, err := a.billing.TransitionPlan(r.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: action})
+		plan, err := a.billing.TransitionPlanAudited(
+			r.Context(),
+			domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: action},
+			cashierPlanLifecycleAudit(r, admin.AdminID, action, planID),
+		)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan."+action, "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, cashierPlanPayload(plan))
 		return
 	}
 	if r.Method == http.MethodDelete && action == "" {
-		plan, err := a.billing.TransitionPlan(r.Context(), domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: domainbilling.SubscriptionPlanActionArchive})
+		plan, err := a.billing.TransitionPlanAudited(
+			r.Context(),
+			domainbilling.TransitionSubscriptionPlanRequest{PlanID: planID, Action: domainbilling.SubscriptionPlanActionArchive},
+			cashierPlanLifecycleAudit(r, admin.AdminID, domainbilling.SubscriptionPlanActionArchive, planID),
+		)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		if auditErr := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "cashier.plan.archive", "cashier_plan", fmt.Sprintf("%d", plan.ID), map[string]any{"plan_code": plan.PlanCode, "status": plan.Status}); auditErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, cashierPlanPayload(plan))
@@ -4898,6 +5250,62 @@ func (a *API) HandleAdminConfigTabs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": tabs})
+}
+
+func (a *API) HandleAdminAliasCreationRollout(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if a.aliasRollout == nil {
+		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeReferenceAliasCreationNotReady, "alias rollout store is unavailable"))
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		status, err := a.aliasRollout.GetAliasCreationRollout(r.Context())
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, status)
+	case http.MethodPost:
+		var req struct {
+			Enabled                 bool  `json:"enabled"`
+			ExpectedVersion         int64 `json:"expected_version"`
+			AllAPINodesCleanupAware bool  `json:"all_api_nodes_cleanup_aware"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		if req.ExpectedVersion < 0 {
+			httpx.WriteError(w, r, errs.BadRequest("expected_version must not be negative"))
+			return
+		}
+		if req.Enabled && !req.AllAPINodesCleanupAware {
+			httpx.WriteError(w, r, errs.BadRequest("all_api_nodes_cleanup_aware must be confirmed before activation"))
+			return
+		}
+		status, err := a.aliasRollout.UpdateAliasCreationRollout(r.Context(), domainassets.UpdateAliasCreationRolloutRequest{
+			Enabled: req.Enabled, ExpectedVersion: req.ExpectedVersion, UpdatedBy: admin.AdminID,
+			AllAPINodesCleanupAware: req.AllAPINodesCleanupAware,
+			ActorType:               "admin", ActorID: fmt.Sprintf("%d", admin.AdminID),
+			RequestID: httpx.RequestIDFromContext(r.Context()), IPAddr: r.RemoteAddr, UserAgent: r.UserAgent(),
+		})
+		if errors.Is(err, domainassets.ErrAliasRolloutChanged) {
+			httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodeConflict, "alias creation rollout version conflict"))
+			return
+		}
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, status)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
 }
 
 func (a *API) HandleAdminConfigTabDetail(w http.ResponseWriter, r *http.Request) {
@@ -6338,11 +6746,10 @@ func (a *API) HandleAdminModelAccountDetail(w http.ResponseWriter, r *http.Reque
 		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_account.update", "model_account", fmt.Sprintf("%d", updated.ID), map[string]any{"adapter_type": updated.AdapterType, "status": updated.Status})
 		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	case http.MethodDelete:
-		if deleteErr := a.modelAdmin.DeleteModelAccount(r.Context(), accountID); deleteErr != nil {
+		if deleteErr := a.modelAdmin.DeleteModelAccountAudited(r.Context(), accountID, modelLifecycleAudit(r, admin.AdminID, "model_account.delete", "model_account", accountID)); deleteErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(deleteErr))
 			return
 		}
-		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "model_account.delete", "model_account", fmt.Sprintf("%d", accountID), nil)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		writeMethodNotAllowed(w, r)
@@ -6392,6 +6799,8 @@ func (a *API) handleAdminModelAccountTestImage(w http.ResponseWriter, r *http.Re
 		SupportedAspectRatios: append([]string(nil),
 			model.SupportedRatios...),
 		SupportedPixelSizes:       append([]string(nil), model.SupportedPixelSizes...),
+		SupportsCustomRatio:       model.SupportsCustomRatio,
+		SupportedBackgrounds:      append([]string(nil), model.SupportedBackgrounds...),
 		MaxImageCount:             model.MaxImageCount,
 		MaxReferenceImageCount:    model.MaxReferenceImageCount,
 		SupportsImageInput:        model.MaxReferenceImageCount > 0,
@@ -6399,6 +6808,10 @@ func (a *API) handleAdminModelAccountTestImage(w http.ResponseWriter, r *http.Re
 		OutputCompression:         model.OutputCompression,
 		SupportsOutputCompression: model.SupportsOutputCompression,
 		SupportsCustomSize:        model.SupportsCustomSize,
+		MinWidth:                  model.MinWidth,
+		MaxWidth:                  model.MaxWidth,
+		MinHeight:                 model.MinHeight,
+		MaxHeight:                 model.MaxHeight,
 		Moderation:                append([]string(nil), model.Moderation...),
 		HealthStatus:              account.Status,
 		TimeoutMS:                 account.TimeoutMS,
@@ -6419,6 +6832,7 @@ func (a *API) handleAdminModelAccountTestImage(w http.ResponseWriter, r *http.Re
 		BaseResolution:    req.BaseResolution,
 		Quality:           req.Quality,
 		OutputFormat:      req.OutputFormat,
+		Background:        req.Background,
 		OutputCompression: req.OutputCompression,
 		Moderation:        req.Moderation,
 		AspectRatio:       req.AspectRatio,
@@ -6480,11 +6894,10 @@ func (a *API) handleAdminModelAccountModels(w http.ResponseWriter, r *http.Reque
 		a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "model_account_model.update", "model_account_model", fmt.Sprintf("%d", updated.ID), map[string]any{"account_id": accountID, "model_code": updated.ModelCode})
 		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	case http.MethodDelete:
-		if err := a.modelAdmin.DeleteModelAccountModel(r.Context(), modelID); err != nil {
+		if err := a.modelAdmin.DeleteModelAccountModelAudited(r.Context(), accountID, modelID, modelLifecycleAudit(r, adminID, "model_account_model.delete", "model_account_model", modelID)); err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "model_account_model.delete", "model_account_model", fmt.Sprintf("%d", modelID), nil)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		writeMethodNotAllowed(w, r)
@@ -6559,11 +6972,10 @@ func (a *API) HandleAdminRouteModelDetail(w http.ResponseWriter, r *http.Request
 		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model.update", "route_model", fmt.Sprintf("%d", updated.ID), map[string]any{"code": updated.Code, "visibility": updated.Visibility})
 		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	case http.MethodDelete:
-		if deleteErr := a.modelAdmin.DeleteRouteModel(r.Context(), routeModelID); deleteErr != nil {
+		if deleteErr := a.modelAdmin.DeleteRouteModelAudited(r.Context(), routeModelID, modelLifecycleAudit(r, admin.AdminID, "route_model.delete", "route_model", routeModelID)); deleteErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(deleteErr))
 			return
 		}
-		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model.delete", "route_model", fmt.Sprintf("%d", routeModelID), nil)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		writeMethodNotAllowed(w, r)
@@ -6616,11 +7028,10 @@ func (a *API) handleAdminRouteModelCandidates(w http.ResponseWriter, r *http.Req
 		a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "route_model_candidate.update", "route_model_candidate", fmt.Sprintf("%d", updated.ID), nil)
 		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	case http.MethodDelete:
-		if err := a.modelAdmin.DeleteRouteModelCandidate(r.Context(), candidateID); err != nil {
+		if err := a.modelAdmin.DeleteRouteModelCandidateAudited(r.Context(), routeModelID, candidateID, modelLifecycleAudit(r, adminID, "route_model_candidate.delete", "route_model_candidate", candidateID)); err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "route_model_candidate.delete", "route_model_candidate", fmt.Sprintf("%d", candidateID), nil)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		writeMethodNotAllowed(w, r)
@@ -6687,11 +7098,10 @@ func (a *API) HandleAdminRouteModelPriceDetail(w http.ResponseWriter, r *http.Re
 		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model_price.update", "route_model_price", fmt.Sprintf("%d", updated.ID), nil)
 		httpx.WriteSuccess(w, r, http.StatusOK, updated)
 	case http.MethodDelete:
-		if deleteErr := a.modelAdmin.DeleteRouteModelPrice(r.Context(), priceID); deleteErr != nil {
+		if deleteErr := a.modelAdmin.DeleteRouteModelPriceAudited(r.Context(), priceID, modelLifecycleAudit(r, admin.AdminID, "route_model_price.delete", "route_model_price", priceID)); deleteErr != nil {
 			httpx.WriteError(w, r, normalizeAppError(deleteErr))
 			return
 		}
-		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model_price.delete", "route_model_price", fmt.Sprintf("%d", priceID), nil)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		writeMethodNotAllowed(w, r)
@@ -7185,6 +7595,379 @@ func defaultDocsReadinessChecker(_ context.Context) DocsReadinessResult {
 	}
 }
 
+func newDocsReadinessChecker(cfg config.Config, client *http.Client, timeout time.Duration) DocsReadinessChecker {
+	if timeout <= 0 {
+		timeout = docsReadinessProbeTimeout
+	}
+	return func(ctx context.Context) DocsReadinessResult {
+		local := defaultDocsReadinessChecker(ctx)
+		if local.Status != "pass" || strings.TrimSpace(cfg.Runtime.DocsURL) == "" {
+			return local
+		}
+		target, err := resolveDocsReadinessProbeTarget(cfg.Runtime)
+		if err != nil {
+			if errors.Is(err, errDocsProbeURLNotConfigured) {
+				return DocsReadinessResult{Status: "fail", Detail: "未配置可探测文档地址"}
+			}
+			return DocsReadinessResult{Status: "fail", Detail: "开发文档部署地址无效"}
+		}
+		targetClass := docsReadinessTargetClass(target)
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, target.URL.String(), nil)
+		if err != nil {
+			return DocsReadinessResult{Status: "fail", Detail: "开发文档部署地址无效"}
+		}
+		request.Header.Set("User-Agent", "mikiko-gallery-studio-readiness/1")
+		probeClient := client
+		if probeClient == nil {
+			probeClient = newDocsReadinessHTTPClient(timeout, target, nil, nil)
+		}
+		response, err := probeClient.Do(request)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(probeCtx.Err(), context.DeadlineExceeded) {
+				return DocsReadinessResult{Status: "fail", Detail: targetClass + "探测超时"}
+			}
+			return DocsReadinessResult{Status: "fail", Detail: targetClass + "不可访问"}
+		}
+		defer response.Body.Close()
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			return DocsReadinessResult{Status: "fail", Detail: fmt.Sprintf("%s返回 HTTP %d", targetClass, response.StatusCode)}
+		}
+		return DocsReadinessResult{
+			Status: "pass",
+			Detail: fmt.Sprintf("%s；%s HTTP %d", local.Detail, targetClass, response.StatusCode),
+		}
+	}
+}
+
+type docsReadinessTargetProvenance string
+
+const (
+	docsReadinessTargetConfiguredPublic docsReadinessTargetProvenance = "configured_public"
+	docsReadinessTargetTrustedTopology  docsReadinessTargetProvenance = "trusted_topology"
+)
+
+type docsReadinessResolvedTarget struct {
+	URL        *url.URL
+	Provenance docsReadinessTargetProvenance
+	Probe      bool
+}
+
+func docsReadinessTargetClass(target docsReadinessResolvedTarget) string {
+	if target.Provenance == docsReadinessTargetTrustedTopology {
+		return "本机网关入口"
+	}
+	if !target.Probe && target.URL != nil && target.URL.IsAbs() {
+		return "独立部署入口"
+	}
+	return "部署探测入口"
+}
+
+func resolveDocsReadinessTarget(runtime config.RuntimeConfig) (*url.URL, error) {
+	target, err := resolveDocsReadinessProbeTarget(runtime)
+	if err != nil {
+		return nil, err
+	}
+	return target.URL, nil
+}
+
+func resolveDocsReadinessProbeTarget(runtime config.RuntimeConfig) (docsReadinessResolvedTarget, error) {
+	rawDocsURL := strings.TrimSpace(runtime.DocsURL)
+	if rawDocsURL == "" || strings.Contains(rawDocsURL, "\\") {
+		return docsReadinessResolvedTarget{}, errors.New("documentation URL is missing or invalid")
+	}
+	docsTarget, err := url.Parse(rawDocsURL)
+	if err != nil || docsTarget.Opaque != "" || docsTarget.User != nil || docsTarget.RawQuery != "" || docsTarget.Fragment != "" {
+		return docsReadinessResolvedTarget{}, errors.New("documentation URL is invalid")
+	}
+	if !docsTarget.IsAbs() && (docsTarget.Host != "" || !strings.HasPrefix(docsTarget.Path, "/")) {
+		return docsReadinessResolvedTarget{}, errors.New("relative documentation URL is invalid")
+	}
+	if docsTarget.IsAbs() {
+		if !validDocsHTTPURL(docsTarget) {
+			return docsReadinessResolvedTarget{}, errors.New("documentation URL must use HTTP or HTTPS")
+		}
+		return docsReadinessResolvedTarget{URL: docsTarget, Provenance: docsReadinessTargetConfiguredPublic}, nil
+	}
+
+	var target *url.URL
+	rawProbeURL := strings.TrimSpace(runtime.DocsProbeURL)
+	if rawProbeURL != "" {
+		if strings.Contains(rawProbeURL, "\\") {
+			return docsReadinessResolvedTarget{}, errors.New("documentation probe URL is invalid")
+		}
+		target, err = url.Parse(rawProbeURL)
+		if err != nil || !validDocsHTTPURL(target) {
+			return docsReadinessResolvedTarget{}, errors.New("documentation probe URL is invalid")
+		}
+	} else {
+		base, deriveErr := docsProbeBaseFromTopology(runtime)
+		if deriveErr != nil {
+			return docsReadinessResolvedTarget{}, deriveErr
+		}
+		target = base.ResolveReference(docsTarget)
+	}
+	if !validDocsHTTPURL(target) {
+		return docsReadinessResolvedTarget{}, errors.New("documentation URL must use HTTP or HTTPS")
+	}
+	if target.EscapedPath() != docsTarget.EscapedPath() {
+		return docsReadinessResolvedTarget{}, errors.New("documentation probe URL must address the configured documentation path")
+	}
+	provenance := docsReadinessTargetConfiguredPublic
+	if docsReadinessTargetMatchesTopology(runtime, target) {
+		provenance = docsReadinessTargetTrustedTopology
+	}
+	return docsReadinessResolvedTarget{URL: target, Provenance: provenance, Probe: true}, nil
+}
+
+func docsProbeBaseFromTopology(runtime config.RuntimeConfig) (*url.URL, error) {
+	hasGateway := false
+	for _, module := range runtime.DeploymentModules {
+		if strings.TrimSpace(module) == "gateway" {
+			hasGateway = true
+			break
+		}
+	}
+	if !hasGateway {
+		return nil, errDocsProbeURLNotConfigured
+	}
+	switch runtime.DeploymentMode {
+	case config.DeploymentModeDocker:
+		return url.Parse("http://gateway/")
+	case config.DeploymentModeNative:
+		port, err := strconv.Atoi(strings.TrimSpace(runtime.GatewayPort))
+		if err != nil || port < 1 || port > 65535 {
+			return nil, errors.New("native gateway port is invalid")
+		}
+		return url.Parse("http://127.0.0.1:" + strconv.Itoa(port) + "/")
+	default:
+		return nil, errDocsProbeURLNotConfigured
+	}
+}
+
+func docsReadinessTargetMatchesTopology(runtime config.RuntimeConfig, target *url.URL) bool {
+	if target == nil || !validDocsHTTPURL(target) {
+		return false
+	}
+	if target.Scheme != "http" {
+		return false
+	}
+	switch runtime.DeploymentMode {
+	case config.DeploymentModeDocker:
+		port := target.Port()
+		if port != "" && port != "80" {
+			return false
+		}
+		switch target.Hostname() {
+		case "gateway":
+			return runtimeHasDeploymentModule(runtime, "gateway")
+		case "nginx":
+			return runtimeHasDeploymentModule(runtime, "nginx") && target.EscapedPath() == "/developer-docs/"
+		default:
+			return false
+		}
+	case config.DeploymentModeNative:
+		if !runtimeHasDeploymentModule(runtime, "gateway") {
+			return false
+		}
+		port, err := strconv.Atoi(strings.TrimSpace(runtime.GatewayPort))
+		if err != nil || port < 1 || port > 65535 {
+			return false
+		}
+		return target.Hostname() == "127.0.0.1" && target.Port() == strconv.Itoa(port)
+	default:
+		return false
+	}
+}
+
+func runtimeHasDeploymentModule(runtime config.RuntimeConfig, expected string) bool {
+	for _, module := range runtime.DeploymentModules {
+		if strings.TrimSpace(module) == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func validDocsHTTPURL(target *url.URL) bool {
+	if target == nil ||
+		(target.Scheme != "http" && target.Scheme != "https") ||
+		target.Host == "" || target.Hostname() == "" || target.User != nil || target.Opaque != "" ||
+		target.RawQuery != "" || target.Fragment != "" || !docsReadinessCanonicalPath(target) {
+		return false
+	}
+	if port := target.Port(); port != "" {
+		parsedPort, err := strconv.Atoi(port)
+		if err != nil || parsedPort < 1 || parsedPort > 65535 {
+			return false
+		}
+	}
+	return true
+}
+
+type docsReadinessResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
+
+type docsReadinessContextDialer interface {
+	DialContext(context.Context, string, string) (net.Conn, error)
+}
+
+type docsReadinessPinnedRoundTripper struct {
+	target   docsReadinessResolvedTarget
+	resolver docsReadinessResolver
+	dialer   docsReadinessContextDialer
+}
+
+func (transport docsReadinessPinnedRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request == nil || request.URL == nil || transport.target.URL == nil || !sameDocsOrigin(request.URL, transport.target.URL) || !docsReadinessRedirectPathAllowed(request.URL, transport.target.URL) {
+		return nil, errors.New("documentation request target is not allowed")
+	}
+	addresses, err := resolveDocsReadinessAddresses(request.Context(), request.URL.Hostname(), transport.resolver)
+	if err != nil || len(addresses) == 0 {
+		return nil, errors.New("documentation target address is unavailable")
+	}
+	for _, address := range addresses {
+		if !docsReadinessAddressAllowed(address, transport.target.Provenance) {
+			return nil, errors.New("documentation target address is not allowed")
+		}
+	}
+	port := request.URL.Port()
+	if port == "" {
+		if request.URL.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	base.Proxy = nil
+	base.DisableKeepAlives = true
+	base.DialContext = func(ctx context.Context, network, rawAddress string) (net.Conn, error) {
+		host, requestedPort, splitErr := net.SplitHostPort(rawAddress)
+		if splitErr != nil || !strings.EqualFold(strings.TrimSuffix(host, "."), strings.TrimSuffix(request.URL.Hostname(), ".")) || requestedPort != port {
+			return nil, errors.New("documentation dial target is not allowed")
+		}
+		var dialErr error
+		for _, address := range addresses {
+			pinned := net.JoinHostPort(address.String(), port)
+			connection, currentErr := transport.dialer.DialContext(ctx, network, pinned)
+			if currentErr == nil {
+				return connection, nil
+			}
+			dialErr = currentErr
+		}
+		if dialErr == nil {
+			dialErr = errors.New("documentation target address is unavailable")
+		}
+		return nil, dialErr
+	}
+	return base.RoundTrip(request)
+}
+
+func newDocsReadinessHTTPClient(timeout time.Duration, target docsReadinessResolvedTarget, resolver docsReadinessResolver, dialer docsReadinessContextDialer) *http.Client {
+	if timeout <= 0 {
+		timeout = docsReadinessProbeTimeout
+	}
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	if dialer == nil {
+		dialer = &net.Dialer{Timeout: timeout}
+	}
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: docsReadinessPinnedRoundTripper{target: target, resolver: resolver, dialer: dialer},
+		CheckRedirect: func(request *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return errors.New("documentation redirect limit exceeded")
+			}
+			if !validDocsHTTPURL(request.URL) || len(via) == 0 || !sameDocsOrigin(request.URL, target.URL) || !sameDocsOrigin(request.URL, via[0].URL) || !docsReadinessRedirectPathAllowed(request.URL, target.URL) {
+				return errors.New("documentation redirect target is not allowed")
+			}
+			return nil
+		},
+	}
+}
+
+func sameDocsOrigin(left, right *url.URL) bool {
+	return left != nil && right != nil && strings.EqualFold(left.Scheme, right.Scheme) && strings.EqualFold(left.Host, right.Host)
+}
+
+func docsReadinessRedirectPathAllowed(candidate, configured *url.URL) bool {
+	if candidate == nil || configured == nil || !docsReadinessCanonicalPath(candidate) || !docsReadinessCanonicalPath(configured) {
+		return false
+	}
+	configuredPath := pathpkg.Clean(configured.Path)
+	candidatePath := pathpkg.Clean(candidate.Path)
+	if strings.HasSuffix(configured.Path, "/") {
+		return candidatePath == configuredPath || strings.HasPrefix(candidatePath, configuredPath+"/")
+	}
+	return candidatePath == configuredPath
+}
+
+func docsReadinessCanonicalPath(target *url.URL) bool {
+	if target == nil || target.Path == "" {
+		return true
+	}
+	cleaned := pathpkg.Clean(target.Path)
+	return target.Path == cleaned || (strings.HasSuffix(target.Path, "/") && strings.TrimSuffix(target.Path, "/") == cleaned)
+}
+
+func resolveDocsReadinessAddresses(ctx context.Context, host string, resolver docsReadinessResolver) ([]netip.Addr, error) {
+	if literal, err := netip.ParseAddr(strings.TrimSpace(host)); err == nil {
+		return []netip.Addr{literal.Unmap()}, nil
+	}
+	resolved, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	addresses := make([]netip.Addr, 0, len(resolved))
+	for _, value := range resolved {
+		address, ok := netip.AddrFromSlice(value.IP)
+		if !ok {
+			return nil, errors.New("documentation target resolved an invalid address")
+		}
+		addresses = append(addresses, address.Unmap())
+	}
+	return addresses, nil
+}
+
+var docsReadinessNonPublicNetworks = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"), netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"), netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"), netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("64:ff9b:1::/48"), netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001:db8::/32"),
+}
+
+func docsReadinessAddressAllowed(address netip.Addr, provenance docsReadinessTargetProvenance) bool {
+	address = address.Unmap()
+	if !address.IsValid() || address.IsUnspecified() || address.IsMulticast() || address.IsLinkLocalUnicast() {
+		return false
+	}
+	if provenance == docsReadinessTargetTrustedTopology {
+		return address.IsPrivate() || address.IsLoopback()
+	}
+	if !address.IsGlobalUnicast() || address.IsPrivate() || address.IsLoopback() {
+		return false
+	}
+	if address == netip.MustParseAddr("168.63.129.16") {
+		return false
+	}
+	for _, network := range docsReadinessNonPublicNetworks {
+		if network.Contains(address) {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		a.writeCompatError(w, methodNotAllowedError())
@@ -7197,13 +7980,17 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		Model          string `json:"model"`
-		Prompt         string `json:"prompt"`
-		Size           string `json:"size"`
-		N              int    `json:"n"`
-		Quality        string `json:"quality"`
-		ResponseFormat string `json:"response_format"`
-		User           string `json:"user"`
+		Model             string `json:"model"`
+		Prompt            string `json:"prompt"`
+		Size              string `json:"size"`
+		N                 int    `json:"n"`
+		Quality           string `json:"quality"`
+		OutputFormat      string `json:"output_format"`
+		Background        string `json:"background"`
+		OutputCompression int    `json:"output_compression"`
+		Moderation        string `json:"moderation"`
+		ResponseFormat    string `json:"response_format"`
+		User              string `json:"user"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		a.writeCompatError(w, errs.BadRequest("invalid json body"))
@@ -7219,13 +8006,20 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		a.writeCompatError(w, compatservice.MapError(err))
 		return
 	}
-	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
+	sizeMode, baseResolution, requestedSize := compatGenerationSizeFields(req.Size)
+	quality := compatGenerationQuality(req.Quality)
+	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeTextToImage),
 		AbstractModel:             modelSelection.AbstractModel,
 		RouteModelCode:            modelSelection.RouteModelCode,
-		BaseResolution:            "auto",
-		Quality:                   compatQuality(req.Quality),
-		RequestedSize:             req.Size,
+		SizeMode:                  sizeMode,
+		BaseResolution:            baseResolution,
+		Quality:                   quality,
+		OutputFormat:              req.OutputFormat,
+		Background:                req.Background,
+		OutputCompression:         req.OutputCompression,
+		Moderation:                req.Moderation,
+		RequestedSize:             requestedSize,
 		RequestedOutputImageCount: req.N,
 		UserGroupCode:             identity.GroupCode,
 		UserGroupCodes:            []string{identity.GroupCode},
@@ -7250,9 +8044,15 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		AbstractModel:       modelSelection.AbstractModel,
 		RouteModelCode:      modelSelection.RouteModelCode,
 		Prompt:              req.Prompt,
-		Size:                req.Size,
+		SizeMode:            sizeMode,
+		BaseResolution:      baseResolution,
+		Size:                requestedSize,
 		N:                   req.N,
-		Quality:             req.Quality,
+		Quality:             quality,
+		OutputFormat:        req.OutputFormat,
+		Background:          req.Background,
+		OutputCompression:   req.OutputCompression,
+		Moderation:          req.Moderation,
 		ResponseFormat:      req.ResponseFormat,
 		User:                req.User,
 	})
@@ -7262,6 +8062,22 @@ func (a *API) HandleOpenAIImageGeneration(w http.ResponseWriter, r *http.Request
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func compatGenerationSizeFields(rawSize string) (sizeMode, baseResolution, requestedSize string) {
+	size := strings.TrimSpace(rawSize)
+	if size == "" || strings.EqualFold(size, "auto") {
+		return domainmodelhub.SizeModeAuto, "", ""
+	}
+	return domainmodelhub.SizeModePixel, "", size
+}
+
+func compatGenerationQuality(value string) string {
+	quality := strings.ToLower(strings.TrimSpace(value))
+	if quality == "" {
+		return "auto"
+	}
+	return quality
 }
 
 func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
@@ -7316,7 +8132,7 @@ func (a *API) HandleOpenAIImageEdit(w http.ResponseWriter, r *http.Request) {
 		a.writeCompatError(w, compatservice.MapError(err))
 		return
 	}
-	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
+	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  string(provider.TaskTypeImageEdit),
 		AbstractModel:             modelSelection.AbstractModel,
 		RouteModelCode:            modelSelection.RouteModelCode,
@@ -7414,6 +8230,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
+		ProjectID                 string   `json:"project_id"`
 		TaskType                  string   `json:"task_type"`
 		Prompt                    string   `json:"prompt"`
 		AbstractModel             string   `json:"abstract_model"`
@@ -7423,12 +8240,14 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution            string   `json:"base_resolution"`
 		Quality                   string   `json:"quality"`
 		OutputFormat              string   `json:"output_format"`
+		Background                string   `json:"background"`
 		OutputCompression         int      `json:"output_compression"`
 		Moderation                string   `json:"moderation"`
 		RequestedSize             string   `json:"requested_size"`
 		RequestedOutputImageCount int      `json:"requested_output_image_count"`
 		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
 		ResponseMode              string   `json:"response_mode"`
+		CapabilityVersion         string   `json:"capability_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -7442,6 +8261,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 	result, err := a.tasks.CreateTask(r.Context(), domainimagetask.CreateRequest{
 		TaskID:              idempotentTaskID(user.ID, r.Header.Get("Idempotency-Key"), req),
 		UserID:              user.ID,
+		ProjectID:           req.ProjectID,
 		AbstractModel:       req.AbstractModel,
 		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
@@ -7452,6 +8272,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution:      req.BaseResolution,
 		Quality:             req.Quality,
 		OutputFormat:        req.OutputFormat,
+		Background:          req.Background,
 		OutputCompression:   req.OutputCompression,
 		Moderation:          req.Moderation,
 		OutputImageCount:    req.RequestedOutputImageCount,
@@ -7462,6 +8283,7 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		UserGroupMultiplier: user.GroupMultiplier,
 		ResponseMode:        req.ResponseMode,
 		SavePolicy:          "private",
+		CapabilityVersion:   req.CapabilityVersion,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, compatservice.MapError(err))
@@ -7480,6 +8302,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	defer cleanup()
 
 	var req struct {
+		ProjectID                 string   `json:"project_id"`
 		TaskType                  string   `json:"task_type"`
 		Prompt                    string   `json:"prompt"`
 		AbstractModel             string   `json:"abstract_model"`
@@ -7489,12 +8312,14 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution            string   `json:"base_resolution"`
 		Quality                   string   `json:"quality"`
 		OutputFormat              string   `json:"output_format"`
+		Background                string   `json:"background"`
 		OutputCompression         int      `json:"output_compression"`
 		Moderation                string   `json:"moderation"`
 		RequestedSize             string   `json:"requested_size"`
 		RequestedOutputImageCount int      `json:"requested_output_image_count"`
 		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
 		ResponseMode              string   `json:"response_mode"`
+		CapabilityVersion         string   `json:"capability_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -7509,7 +8334,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if taskID == "" {
 		taskID = uuid.NewString()
 	}
-	estimate, err := a.billing.Estimate(domainbilling.EstimateRequest{
+	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
 		TaskType:                  req.TaskType,
 		AbstractModel:             req.AbstractModel,
 		RouteModelCode:            req.RouteModelCode,
@@ -7518,6 +8343,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution:            req.BaseResolution,
 		Quality:                   req.Quality,
 		OutputFormat:              req.OutputFormat,
+		Background:                req.Background,
 		OutputCompression:         req.OutputCompression,
 		Moderation:                req.Moderation,
 		RequestedSize:             req.RequestedSize,
@@ -7526,6 +8352,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		UserGroupCode:             identity.GroupCode,
 		UserGroupCodes:            []string{identity.GroupCode},
 		UserGroupMultiplier:       a.userGroupMultiplier(identity.GroupCode),
+		CapabilityVersion:         req.CapabilityVersion,
 	})
 	if err != nil {
 		httpx.WriteError(w, r, compatservice.MapError(err))
@@ -7538,6 +8365,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	result, err := a.tasks.CreateTask(r.Context(), domainimagetask.CreateRequest{
 		TaskID:              taskID,
 		UserID:              identity.UserID,
+		ProjectID:           req.ProjectID,
 		APIKeyID:            identity.APIKeyID,
 		SourceChannel:       "openapi",
 		AbstractModel:       req.AbstractModel,
@@ -7550,6 +8378,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		BaseResolution:      req.BaseResolution,
 		Quality:             req.Quality,
 		OutputFormat:        req.OutputFormat,
+		Background:          req.Background,
 		OutputCompression:   req.OutputCompression,
 		Moderation:          req.Moderation,
 		OutputImageCount:    req.RequestedOutputImageCount,
@@ -7560,6 +8389,7 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
 		ResponseMode:        req.ResponseMode,
 		SavePolicy:          "private",
+		CapabilityVersion:   firstNonEmptyString(req.CapabilityVersion, estimate.CapabilityVersion),
 	})
 	if err != nil {
 		a.apiKeys.ReleaseQuota(r.Context(), identity, taskID)
@@ -7576,9 +8406,9 @@ func (a *API) handleAgentTaskList(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
-	tasks, err := a.tasks.ListByUser(r.Context(), user.ID)
+	tasks, err := a.tasks.ListByUserProject(r.Context(), user.ID, r.URL.Query().Get("project_id"))
 	if err != nil {
-		httpx.WriteError(w, r, err.(*errs.Error))
+		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
 	tasks = decorateTaskProgressList(tasks)
@@ -7819,6 +8649,22 @@ func (a *API) recordAudit(r *http.Request, actorType, actorID, action, targetTyp
 		UserAgent:  r.UserAgent(),
 	})
 	return err
+}
+
+func modelLifecycleAudit(r *http.Request, adminID int64, action, targetType string, targetID int64) domainmodeladmin.LifecycleAudit {
+	return domainmodeladmin.LifecycleAudit{
+		ActorType: "admin", ActorID: fmt.Sprintf("%d", adminID), Action: action,
+		TargetType: targetType, TargetID: fmt.Sprintf("%d", targetID),
+		RequestID: httpx.RequestIDFromContext(r.Context()), IPAddr: r.RemoteAddr, UserAgent: r.UserAgent(),
+	}
+}
+
+func cashierPlanLifecycleAudit(r *http.Request, adminID int64, action string, planID int64) domainbilling.PlanLifecycleAudit {
+	return domainbilling.PlanLifecycleAudit{
+		ActorType: "admin", ActorID: fmt.Sprintf("%d", adminID), Action: "cashier.plan." + action,
+		TargetType: "cashier_plan", TargetID: fmt.Sprintf("%d", planID),
+		RequestID: httpx.RequestIDFromContext(r.Context()), IPAddr: r.RemoteAddr, UserAgent: r.UserAgent(),
+	}
 }
 
 func parseAdminUserAction(path string) (int64, string, *errs.Error) {
@@ -8162,101 +9008,229 @@ func defaultPositiveInt(value, fallback int) int {
 }
 
 func (a *API) adminReadinessChecks(ctx context.Context) ([]adminReadinessCheck, *errs.Error) {
-	checkedAt := time.Now().UTC()
-	checks := make([]adminReadinessCheck, 0, 10)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	a.readinessMu.Lock()
+	now := time.Now().UTC()
+	if now.Before(a.readinessTill) && a.readinessData != nil {
+		checks := append([]adminReadinessCheck(nil), a.readinessData...)
+		a.readinessMu.Unlock()
+		return checks, nil
+	}
+	flight := a.readinessRun
+	start := false
+	if flight == nil || flight.generation != a.readinessGen {
+		flight = &adminReadinessFlight{
+			generation: a.readinessGen,
+			checkedAt:  now,
+			docsReady:  a.docsReady,
+			done:       make(chan struct{}),
+		}
+		a.readinessRun = flight
+		start = true
+	}
+	a.readinessMu.Unlock()
+	if start {
+		// The shared flight is bounded by its individual probes and intentionally
+		// does not inherit the first waiter's cancellation.
+		go a.runAdminReadinessFlight(flight)
+	}
+	select {
+	case <-ctx.Done():
+		return nil, errs.New(http.StatusServiceUnavailable, errs.CodeUpstreamUnavailable, "readiness request was canceled")
+	case <-flight.done:
+		return append([]adminReadinessCheck(nil), flight.checks...), nil
+	}
+}
 
-	enabled := true
+func (a *API) runAdminReadinessFlight(flight *adminReadinessFlight) {
+	checks := a.computeAdminReadinessChecks(flight.checkedAt, flight.docsReady)
+	a.readinessMu.Lock()
+	flight.checks = append([]adminReadinessCheck(nil), checks...)
+	if a.readinessGen == flight.generation && a.readinessRun == flight {
+		a.readinessData = append([]adminReadinessCheck(nil), checks...)
+		a.readinessTill = time.Now().UTC().Add(adminReadinessCacheTTL)
+		a.readinessRun = nil
+	}
+	close(flight.done)
+	a.readinessMu.Unlock()
+}
+
+func (a *API) computeAdminReadinessChecks(checkedAt time.Time, docsReady DocsReadinessChecker) []adminReadinessCheck {
+	probes := a.adminReadinessProbes(docsReady)
+	checks := make([]adminReadinessCheck, len(probes))
+	var wait sync.WaitGroup
+	wait.Add(len(probes))
+	for index := range probes {
+		index := index
+		go func() {
+			defer wait.Done()
+			checks[index] = a.runAdminReadinessProbe(probes[index], checkedAt)
+		}()
+	}
+	wait.Wait()
+	return checks
+}
+
+func (a *API) adminReadinessProbes(docsReady DocsReadinessChecker) []adminReadinessProbe {
+	return []adminReadinessProbe{
+		{key: "model_accounts", label: "模型接入账号", fixRoute: "provider-models", actionLabel: "去配置", run: a.modelAccountsReadinessCheck},
+		{key: "provider_models", label: "真实模型", fixRoute: "provider-models", actionLabel: "去配置", run: a.providerModelsReadinessCheck},
+		{key: "route_models", label: "路由模型", fixRoute: "routing", actionLabel: "去配置", run: a.routeModelsReadinessCheck},
+		{key: "route_candidates", label: "候选模型", fixRoute: "routing", actionLabel: "去配置", run: a.routeCandidatesReadinessCheck},
+		{key: "route_prices", label: "价格策略", fixRoute: "pricing", actionLabel: "去配置", run: a.routePricesReadinessCheck},
+		{key: "payments", label: "支付配置", fixRoute: "cashier", actionLabel: "去配置", run: a.paymentReadinessProbe},
+		{key: "refund_compensation", label: "退款补偿", fixRoute: "cashier", actionLabel: "去处理", run: func(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+			check, appErr := a.refundCompensationReadinessCheck(ctx, checkedAt)
+			if appErr != nil {
+				return adminReadinessCheck{}, appErr
+			}
+			return check, nil
+		}},
+		{key: "signup_trial", label: "注册送体验额度", fixRoute: "config", actionLabel: "去配置", run: func(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+			return a.signupTrialReadinessCheck(ctx, checkedAt), nil
+		}},
+		{key: "public_gallery", label: "公开广场", fixRoute: "reviews", actionLabel: "去审核", run: a.publicGalleryReadinessProbe},
+		{key: "docs", label: "开发文档", fixRoute: "monitoring", actionLabel: "查看诊断", run: func(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+			return a.docsReadinessCheckWith(ctx, checkedAt, docsReady), nil
+		}},
+	}
+}
+
+type adminReadinessProbeResult struct {
+	check adminReadinessCheck
+	err   error
+}
+
+func (a *API) runAdminReadinessProbe(probe adminReadinessProbe, checkedAt time.Time) adminReadinessCheck {
+	timeout := a.readinessWait
+	if timeout <= 0 {
+		timeout = adminReadinessTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	result := make(chan adminReadinessProbeResult, 1)
+	go func() {
+		defer func() {
+			if recover() != nil {
+				result <- adminReadinessProbeResult{err: errors.New("readiness probe panicked")}
+			}
+		}()
+		check, err := probe.run(ctx, checkedAt)
+		result <- adminReadinessProbeResult{check: check, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return readinessCheck(probe.key, probe.label, "fail", probe.label+"检查超时", probe.fixRoute, probe.actionLabel, checkedAt)
+	case resolved := <-result:
+		if resolved.err != nil {
+			return readinessCheck(probe.key, probe.label, "fail", probe.label+"检查暂时不可用", probe.fixRoute, probe.actionLabel, checkedAt)
+		}
+		return resolved.check
+	}
+}
+
+func (a *API) modelAccountsReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
 	accounts, err := a.modelAdmin.ListModelAccounts(ctx, domainmodeladmin.ModelAccountListRequest{Page: 1, PageSize: 200, Status: domainmodeladmin.ModelAccountStatusEnabled})
 	if err != nil {
-		return nil, normalizeAppError(err)
+		return adminReadinessCheck{}, err
 	}
-	checks = append(checks, readinessCheck("model_accounts", "模型接入账号", statusByPositiveCount(accounts.Total), fmt.Sprintf("%d 个已启用账号", accounts.Total), "provider-models", "去配置", checkedAt))
+	return readinessCheck("model_accounts", "模型接入账号", statusByPositiveCount(accounts.Total), fmt.Sprintf("%d 个已启用账号", accounts.Total), "provider-models", "去配置", checkedAt), nil
+}
 
-	providerModels, err := a.modelAdmin.ListModelAccountModels(ctx, domainmodeladmin.ModelAccountModelListRequest{Page: 1, PageSize: 200, Enabled: &enabled})
+func (a *API) providerModelsReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+	enabled := true
+	models, err := a.modelAdmin.ListModelAccountModels(ctx, domainmodeladmin.ModelAccountModelListRequest{Page: 1, PageSize: 200, Enabled: &enabled})
 	if err != nil {
-		return nil, normalizeAppError(err)
+		return adminReadinessCheck{}, err
 	}
-	checks = append(checks, readinessCheck("provider_models", "真实模型", statusByPositiveCount(providerModels.Total), fmt.Sprintf("%d 个已启用真实模型", providerModels.Total), "provider-models", "去配置", checkedAt))
+	return readinessCheck("provider_models", "真实模型", statusByPositiveCount(models.Total), fmt.Sprintf("%d 个已启用真实模型", models.Total), "provider-models", "去配置", checkedAt), nil
+}
 
-	routeModels, err := a.modelAdmin.ListRouteModels(ctx, domainmodeladmin.RouteModelListRequest{Page: 1, PageSize: 200, Enabled: &enabled})
+func (a *API) visibleRouteModelsForReadiness(ctx context.Context) ([]domainmodeladmin.RouteModel, error) {
+	enabled := true
+	page, err := a.modelAdmin.ListRouteModels(ctx, domainmodeladmin.RouteModelListRequest{Page: 1, PageSize: 200, Enabled: &enabled})
 	if err != nil {
-		return nil, normalizeAppError(err)
+		return nil, err
 	}
-	visibleRouteModels := make([]domainmodeladmin.RouteModel, 0, len(routeModels.Items))
-	for _, item := range routeModels.Items {
+	items := make([]domainmodeladmin.RouteModel, 0, len(page.Items))
+	for _, item := range page.Items {
 		if item.Visibility == domainmodeladmin.RouteModelVisibilityPublic || item.Visibility == domainmodeladmin.RouteModelVisibilityGroups {
-			visibleRouteModels = append(visibleRouteModels, item)
+			items = append(items, item)
 		}
 	}
-	routeModelStatus := statusByPositiveCount(len(visibleRouteModels))
-	checks = append(checks, readinessCheck("route_models", "路由模型", routeModelStatus, fmt.Sprintf("%d 个可见启用路由模型", len(visibleRouteModels)), "routing", "去配置", checkedAt))
+	return items, nil
+}
 
-	routeCandidateStatus := "fail"
-	routeCandidateDetail := "暂无可见启用路由模型"
-	if len(visibleRouteModels) > 0 {
+func (a *API) routeModelsReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+	models, err := a.visibleRouteModelsForReadiness(ctx)
+	if err != nil {
+		return adminReadinessCheck{}, err
+	}
+	return readinessCheck("route_models", "路由模型", statusByPositiveCount(len(models)), fmt.Sprintf("%d 个可见启用路由模型", len(models)), "routing", "去配置", checkedAt), nil
+}
+
+func (a *API) routeCandidatesReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+	models, err := a.visibleRouteModelsForReadiness(ctx)
+	if err != nil {
+		return adminReadinessCheck{}, err
+	}
+	status, detail := "fail", "暂无可见启用路由模型"
+	if len(models) > 0 {
 		missing := 0
-		for _, routeModel := range visibleRouteModels {
-			candidates, candidateErr := a.modelAdmin.ListRouteModelCandidates(ctx, routeModel.ID)
+		for _, model := range models {
+			candidates, candidateErr := a.modelAdmin.ListRouteModelCandidates(ctx, model.ID)
 			if candidateErr != nil {
-				return nil, normalizeAppError(candidateErr)
+				return adminReadinessCheck{}, candidateErr
 			}
-			hasEnabledCandidate := false
+			hasEnabled := false
 			for _, candidate := range candidates {
 				if candidate.Enabled {
-					hasEnabledCandidate = true
+					hasEnabled = true
 					break
 				}
 			}
-			if !hasEnabledCandidate {
+			if !hasEnabled {
 				missing++
 			}
 		}
 		switch {
 		case missing == 0:
-			routeCandidateStatus = "pass"
-			routeCandidateDetail = fmt.Sprintf("%d 个路由模型均有启用候选", len(visibleRouteModels))
-		case missing == len(visibleRouteModels):
-			routeCandidateStatus = "fail"
-			routeCandidateDetail = fmt.Sprintf("%d 个路由模型缺少启用候选", missing)
+			status, detail = "pass", fmt.Sprintf("%d 个路由模型均有启用候选", len(models))
+		case missing == len(models):
+			status, detail = "fail", fmt.Sprintf("%d 个路由模型缺少启用候选", missing)
 		default:
-			routeCandidateStatus = "warn"
-			routeCandidateDetail = fmt.Sprintf("%d 个路由模型缺少启用候选", missing)
+			status, detail = "warn", fmt.Sprintf("%d 个路由模型缺少启用候选", missing)
 		}
 	}
-	checks = append(checks, readinessCheck("route_candidates", "候选模型", routeCandidateStatus, routeCandidateDetail, "routing", "去配置", checkedAt))
+	return readinessCheck("route_candidates", "候选模型", status, detail, "routing", "去配置", checkedAt), nil
+}
 
+func (a *API) routePricesReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+	models, err := a.visibleRouteModelsForReadiness(ctx)
+	if err != nil {
+		return adminReadinessCheck{}, err
+	}
+	enabled := true
 	prices, err := a.modelAdmin.ListRouteModelPrices(ctx, domainmodeladmin.RouteModelPriceListRequest{Page: 1, PageSize: 200, Enabled: &enabled})
 	if err != nil {
-		return nil, normalizeAppError(err)
+		return adminReadinessCheck{}, err
 	}
-	routePriceStatus := statusByPositiveCount(prices.Total)
-	if len(visibleRouteModels) > 0 && routePriceStatus == "pass" {
-		priceRouteIDs := map[int64]struct{}{}
+	status := statusByPositiveCount(prices.Total)
+	if len(models) > 0 && status == "pass" {
+		priced := make(map[int64]struct{}, len(prices.Items))
 		for _, price := range prices.Items {
-			priceRouteIDs[price.RouteModelID] = struct{}{}
+			priced[price.RouteModelID] = struct{}{}
 		}
-		missing := 0
-		for _, routeModel := range visibleRouteModels {
-			if _, ok := priceRouteIDs[routeModel.ID]; !ok {
-				missing++
+		for _, model := range models {
+			if _, ok := priced[model.ID]; !ok {
+				status = "warn"
+				break
 			}
 		}
-		if missing > 0 {
-			routePriceStatus = "warn"
-		}
 	}
-	checks = append(checks, readinessCheck("route_prices", "价格策略", routePriceStatus, fmt.Sprintf("%d 条已启用价格", prices.Total), "pricing", "去配置", checkedAt))
-
-	checks = append(checks, a.paymentReadinessCheck(ctx, checkedAt))
-	refundCompensationCheck, appErr := a.refundCompensationReadinessCheck(ctx, checkedAt)
-	if appErr != nil {
-		return nil, appErr
-	}
-	checks = append(checks, refundCompensationCheck)
-	checks = append(checks, a.signupTrialReadinessCheck(ctx, checkedAt))
-	checks = append(checks, a.publicGalleryReadinessCheck(ctx, checkedAt))
-	checks = append(checks, a.docsReadinessCheck(ctx, checkedAt))
-	return checks, nil
+	return readinessCheck("route_prices", "价格策略", status, fmt.Sprintf("%d 条已启用价格", prices.Total), "pricing", "去配置", checkedAt), nil
 }
 
 func (a *API) adminUserDetailPayload(ctx context.Context, userID int64, detail domainadminuser.Detail) (map[string]any, *errs.Error) {
@@ -8293,17 +9267,29 @@ func (a *API) adminUserDetailPayload(ctx context.Context, userID int64, detail d
 
 func readinessCheck(key, label, status, detail, fixRoute, actionLabel string, checkedAt time.Time) adminReadinessCheck {
 	return adminReadinessCheck{
-		Key:         key,
-		Label:       label,
-		Status:      status,
-		Detail:      detail,
-		Summary:     detail,
-		FixRoute:    fixRoute,
-		FixAction:   actionLabel,
-		ActionRoute: fixRoute,
-		ActionLabel: actionLabel,
-		Blocking:    status == "fail",
-		CheckedAt:   checkedAt,
+		Key:          key,
+		Label:        label,
+		Status:       status,
+		Availability: readinessAvailability(status),
+		Detail:       detail,
+		Summary:      detail,
+		FixRoute:     fixRoute,
+		FixAction:    actionLabel,
+		ActionRoute:  fixRoute,
+		ActionLabel:  actionLabel,
+		Blocking:     status == "fail",
+		CheckedAt:    checkedAt,
+	}
+}
+
+func readinessAvailability(status string) string {
+	switch status {
+	case "pass":
+		return "healthy"
+	case "warn":
+		return "degraded"
+	default:
+		return "unavailable"
 	}
 }
 
@@ -8335,31 +9321,51 @@ func summarizeReadinessChecks(checks []adminReadinessCheck) (string, map[string]
 }
 
 func (a *API) paymentReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
-	if !a.adminConfigBool(ctx, "payments", "enabled", a.cfg.Cashier.Enabled) {
-		return readinessCheck("payments", "支付配置", "warn", "收银台未启用，用户无法在线充值", "cashier", "去配置", checkedAt)
+	check, err := a.paymentReadinessProbe(ctx, checkedAt)
+	if err != nil {
+		return readinessCheck("payments", "支付配置", "fail", "支付配置检查暂时不可用", "cashier", "去配置", checkedAt)
 	}
-	methods := a.cashierVisibleMethods(ctx, false)
+	return check
+}
+
+func (a *API) paymentReadinessProbe(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
+	methods, err := a.cashierConfigFacade().VisibleMethods(ctx, false)
+	if err != nil {
+		return adminReadinessCheck{}, err
+	}
 	if len(methods) == 0 {
-		return readinessCheck("payments", "支付配置", "fail", "暂无可见支付方式", "cashier", "去配置", checkedAt)
+		return readinessCheck("payments", "支付配置", "fail", "暂无可见支付方式", "cashier", "去配置", checkedAt), nil
 	}
-	instances := a.cashierProviderInstances(ctx)
-	enabledInstanceCount := 0
-	for _, instance := range instances {
-		if !instance.Enabled {
+	instances, err := a.cashierConfigFacade().ProviderInstances(ctx)
+	if err != nil {
+		return adminReadinessCheck{}, err
+	}
+	if isProductionAppEnv(a.cfg.App.Env) {
+		filtered := make([]cashierProviderInstance, 0, len(instances))
+		for _, instance := range instances {
+			if !strings.EqualFold(strings.TrimSpace(instance.ProviderType), "mock") {
+				filtered = append(filtered, instance)
+			}
+		}
+		instances = filtered
+	}
+	eligibleCount := 0
+	unavailableMethods := make([]string, 0)
+	for _, method := range methods {
+		eligible := cashierservice.EligibleProviderInstances(method, instances)
+		if len(eligible) == 0 {
+			unavailableMethods = append(unavailableMethods, method.Method)
 			continue
 		}
-		if isProductionAppEnv(a.cfg.App.Env) && instance.ProviderType == "mock" {
-			continue
-		}
-		if instance.ProviderType != "mock" && instance.ConfigStatus != "configured" {
-			continue
-		}
-		enabledInstanceCount++
+		eligibleCount += len(eligible)
 	}
-	if enabledInstanceCount == 0 {
-		return readinessCheck("payments", "支付配置", "fail", "暂无可用支付渠道实例", "cashier", "去配置", checkedAt)
+	if len(unavailableMethods) == len(methods) {
+		return readinessCheck("payments", "支付配置", "fail", "可见支付方式均无可服务渠道实例", "cashier", "去配置", checkedAt), nil
 	}
-	return readinessCheck("payments", "支付配置", "pass", fmt.Sprintf("%d 个可见支付方式，%d 个可用渠道实例", len(methods), enabledInstanceCount), "cashier", "去配置", checkedAt)
+	if len(unavailableMethods) > 0 {
+		return readinessCheck("payments", "支付配置", "warn", fmt.Sprintf("%d 个支付方式可用，%s 暂不可用", len(methods)-len(unavailableMethods), strings.Join(unavailableMethods, "、")), "cashier", "去配置", checkedAt), nil
+	}
+	return readinessCheck("payments", "支付配置", "pass", fmt.Sprintf("%d 个支付方式均可服务，匹配 %d 个渠道实例", len(methods), eligibleCount), "cashier", "去配置", checkedAt), nil
 }
 
 func (a *API) refundCompensationReadinessCheck(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, *errs.Error) {
@@ -8394,31 +9400,39 @@ func (a *API) signupTrialReadinessCheck(ctx context.Context, checkedAt time.Time
 }
 
 func (a *API) publicGalleryReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
+	check, err := a.publicGalleryReadinessProbe(ctx, checkedAt)
+	if err != nil {
+		return readinessCheck("public_gallery", "公开广场", "fail", "公开广场检查暂时不可用", "reviews", "去审核", checkedAt)
+	}
+	return check
+}
+
+func (a *API) publicGalleryReadinessProbe(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
 	if !a.adminConfigBool(ctx, "public_gallery", "gallery_enabled", true) {
-		return readinessCheck("public_gallery", "公开广场", "warn", "公开广场入口未启用", "reviews", "去审核", checkedAt)
+		return readinessCheck("public_gallery", "公开广场", "warn", "公开广场入口未启用", "reviews", "去审核", checkedAt), nil
 	}
 	pending, err := a.tasks.ListGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 1, Status: domainimagetask.VisibilityPendingReview})
 	if err != nil {
-		return readinessCheck("public_gallery", "公开广场", "warn", "审核队列读取失败", "reviews", "去审核", checkedAt)
+		return adminReadinessCheck{}, err
 	}
 	public, err := a.tasks.ListPublicGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 1})
 	if err != nil {
-		return readinessCheck("public_gallery", "公开广场", "warn", "公开作品读取失败", "reviews", "去审核", checkedAt)
+		return adminReadinessCheck{}, err
 	}
 	status := "pass"
 	if public.Total == 0 {
 		status = "warn"
 	}
-	return readinessCheck("public_gallery", "公开广场", status, fmt.Sprintf("%d 个公开作品，%d 个待审核", public.Total, pending.Total), "reviews", "去审核", checkedAt)
+	return readinessCheck("public_gallery", "公开广场", status, fmt.Sprintf("%d 个公开作品，%d 个待审核", public.Total, pending.Total), "reviews", "去审核", checkedAt), nil
 }
 
 func (a *API) docsReadinessCheck(ctx context.Context, checkedAt time.Time) adminReadinessCheck {
-	if strings.TrimSpace(a.cfg.Docs.Title) == "" || strings.TrimSpace(a.cfg.Docs.BasePath) == "" {
-		return readinessCheck("docs", "开发文档", "warn", "开发文档标题或 base path 未配置", "config", "去配置", checkedAt)
-	}
-	checker := a.docsReady
+	return a.docsReadinessCheckWith(ctx, checkedAt, a.docsReady)
+}
+
+func (a *API) docsReadinessCheckWith(ctx context.Context, checkedAt time.Time, checker DocsReadinessChecker) adminReadinessCheck {
 	if checker == nil {
-		checker = defaultDocsReadinessChecker
+		checker = newDocsReadinessChecker(a.cfg, nil, docsReadinessProbeTimeout)
 	}
 	result := checker(ctx)
 	status := strings.TrimSpace(result.Status)
@@ -8429,7 +9443,7 @@ func (a *API) docsReadinessCheck(ctx context.Context, checkedAt time.Time) admin
 	if detail == "" {
 		detail = "OpenAPI、示例和错误码文档可解析"
 	}
-	return readinessCheck("docs", "开发文档", status, detail, "config", "去配置", checkedAt)
+	return readinessCheck("docs", "开发文档", status, detail, "monitoring", "查看诊断", checkedAt)
 }
 
 func (a *API) moderatePublishRequest(ctx context.Context, prompt string) (bool, string, error) {
@@ -8499,6 +9513,7 @@ func (a *API) findOwnedGalleryImage(ctx context.Context, userID int64, imageID s
 				ID:                result.ID,
 				TaskID:            task.ID,
 				UserID:            task.UserID,
+				ProjectID:         defaultString(result.ProjectID, task.ProjectID),
 				Prompt:            task.Prompt,
 				AbstractModel:     task.AbstractModel,
 				TaskType:          task.TaskType,
@@ -8685,6 +9700,12 @@ func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request,
 		SizeModes                 []string       `json:"size_modes"`
 		SupportedRatios           []string       `json:"supported_ratios"`
 		SupportedPixelSizes       []string       `json:"supported_pixel_sizes"`
+		SupportsCustomRatio       bool           `json:"supports_custom_ratio"`
+		SupportedBackgrounds      []string       `json:"supported_backgrounds"`
+		MinWidth                  int            `json:"min_width"`
+		MaxWidth                  int            `json:"max_width"`
+		MinHeight                 int            `json:"min_height"`
+		MaxHeight                 int            `json:"max_height"`
 		OutputFormat              []string       `json:"output_format"`
 		OutputCompression         *int           `json:"output_compression"`
 		SupportsOutputCompression bool           `json:"supports_output_compression"`
@@ -8711,7 +9732,7 @@ func decodeModelAccountModelWriteRequest(w http.ResponseWriter, r *http.Request,
 	if req.OutputCompression != nil {
 		outputCompression = *req.OutputCompression
 	}
-	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, BaseResolution: req.BaseResolution, Quality: req.Quality, MaxReferenceImageCount: maxReferenceCount, MaxImageCount: maxImageCount, SizeModes: req.SizeModes, SupportedRatios: req.SupportedRatios, SupportedPixelSizes: req.SupportedPixelSizes, OutputFormat: req.OutputFormat, OutputCompression: outputCompression, SupportsOutputCompression: req.SupportsOutputCompression, SupportsCustomSize: req.SupportsCustomSize, Moderation: req.Moderation, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
+	return domainmodeladmin.ModelAccountModelWriteRequest{AccountID: accountID, ModelCode: req.ModelCode, DisplayName: req.DisplayName, TaskTypes: req.TaskTypes, BaseResolution: req.BaseResolution, Quality: req.Quality, MaxReferenceImageCount: maxReferenceCount, MaxImageCount: maxImageCount, SizeModes: req.SizeModes, SupportedRatios: req.SupportedRatios, SupportedPixelSizes: req.SupportedPixelSizes, SupportsCustomRatio: req.SupportsCustomRatio, SupportedBackgrounds: req.SupportedBackgrounds, MinWidth: req.MinWidth, MaxWidth: req.MaxWidth, MinHeight: req.MinHeight, MaxHeight: req.MaxHeight, OutputFormat: req.OutputFormat, OutputCompression: outputCompression, SupportsOutputCompression: req.SupportsOutputCompression, SupportsCustomSize: req.SupportsCustomSize, Moderation: req.Moderation, CostPerImage: req.CostPerImage, Currency: req.Currency, Enabled: req.Enabled, Extra: req.Extra}, true
 }
 
 func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) (domainimagetask.TestModelAccountRequest, bool) {
@@ -8725,6 +9746,7 @@ func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) 
 		BaseResolution    string `json:"base_resolution"`
 		Quality           string `json:"quality"`
 		OutputFormat      string `json:"output_format"`
+		Background        string `json:"background"`
 		OutputCompression int    `json:"output_compression"`
 		Moderation        string `json:"moderation"`
 		AspectRatio       string `json:"aspect_ratio"`
@@ -8743,6 +9765,7 @@ func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) 
 		BaseResolution:    req.BaseResolution,
 		Quality:           req.Quality,
 		OutputFormat:      req.OutputFormat,
+		Background:        req.Background,
 		OutputCompression: req.OutputCompression,
 		Moderation:        req.Moderation,
 		AspectRatio:       req.AspectRatio,
@@ -8886,21 +9909,22 @@ func pagedPayload[T any](items []T, page, pageSize, total int) map[string]any {
 
 func cashierPlanPayload(plan domainbilling.SubscriptionPlan) map[string]any {
 	return map[string]any{
-		"id":               plan.ID,
-		"plan_code":        plan.PlanCode,
-		"plan_name":        plan.PlanName,
-		"status":           plan.Status,
-		"price_cny":        plan.PriceCNY,
-		"points":           plan.Points,
-		"bonus_points":     plan.BonusPoints,
-		"duration_days":    plan.DurationDays,
-		"currency":         plan.Currency,
-		"sort_order":       plan.SortOrder,
-		"description":      plan.Description,
-		"created_at":       plan.CreatedAt,
-		"updated_at":       plan.UpdatedAt,
-		"plan_type":        plan.PlanType,
-		"purchase_enabled": plan.PurchaseEnabled,
+		"id":                    plan.ID,
+		"plan_code":             plan.PlanCode,
+		"plan_name":             plan.PlanName,
+		"status":                plan.Status,
+		"price_cny":             plan.PriceCNY,
+		"points":                plan.Points,
+		"bonus_points":          plan.BonusPoints,
+		"credit_expiry_enabled": plan.CreditExpiryEnabled,
+		"duration_days":         plan.DurationDays,
+		"currency":              plan.Currency,
+		"sort_order":            plan.SortOrder,
+		"description":           plan.Description,
+		"created_at":            plan.CreatedAt,
+		"updated_at":            plan.UpdatedAt,
+		"plan_type":             plan.PlanType,
+		"purchase_enabled":      plan.PurchaseEnabled,
 	}
 }
 

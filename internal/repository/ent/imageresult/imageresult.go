@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/google/uuid"
 )
 
@@ -24,6 +25,8 @@ const (
 	FieldTaskID = "task_id"
 	// FieldUserID holds the string denoting the user_id field in the database.
 	FieldUserID = "user_id"
+	// FieldProjectID holds the string denoting the project_id field in the database.
+	FieldProjectID = "project_id"
 	// FieldImageRole holds the string denoting the image_role field in the database.
 	FieldImageRole = "image_role"
 	// FieldStorageConfigID holds the string denoting the storage_config_id field in the database.
@@ -50,8 +53,17 @@ const (
 	FieldReviewReason = "review_reason"
 	// FieldPublishedAt holds the string denoting the published_at field in the database.
 	FieldPublishedAt = "published_at"
+	// EdgeProject holds the string denoting the project edge name in mutations.
+	EdgeProject = "project"
 	// Table holds the table name of the imageresult in the database.
 	Table = "task_images"
+	// ProjectTable is the table that holds the project relation/edge.
+	ProjectTable = "task_images"
+	// ProjectInverseTable is the table name for the Project entity.
+	// It exists in this package in order to avoid circular dependency with the "project" package.
+	ProjectInverseTable = "projects"
+	// ProjectColumn is the table column denoting the project relation/edge.
+	ProjectColumn = "project_id"
 )
 
 // Columns holds all SQL columns for imageresult fields.
@@ -62,6 +74,7 @@ var Columns = []string{
 	FieldDeletedAt,
 	FieldTaskID,
 	FieldUserID,
+	FieldProjectID,
 	FieldImageRole,
 	FieldStorageConfigID,
 	FieldStorageDriver,
@@ -161,6 +174,11 @@ func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserID, opts...).ToFunc()
 }
 
+// ByProjectID orders the results by the project_id field.
+func ByProjectID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProjectID, opts...).ToFunc()
+}
+
 // ByImageRole orders the results by the image_role field.
 func ByImageRole(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldImageRole, opts...).ToFunc()
@@ -224,4 +242,18 @@ func ByReviewReason(opts ...sql.OrderTermOption) OrderOption {
 // ByPublishedAt orders the results by the published_at field.
 func ByPublishedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPublishedAt, opts...).ToFunc()
+}
+
+// ByProjectField orders the results by project field.
+func ByProjectField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newProjectStep(), sql.OrderByField(field, opts...))
+	}
+}
+func newProjectStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ProjectInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, ProjectTable, ProjectColumn),
+	)
 }

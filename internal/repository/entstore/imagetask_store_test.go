@@ -6,17 +6,372 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+func TestTaskProjectOwnershipCheckUsesCompatibleRowLock(t *testing.T) {
+	table := entsql.Table("projects")
+	selector := entsql.Dialect(dialect.Postgres).Select().From(table)
+	lockProjectForTaskWrite()(selector)
+	query, _ := selector.Query()
+	if !strings.Contains(query, "FOR SHARE") {
+		t.Fatalf("task project ownership query = %q, want FOR SHARE to serialize with project deletion", query)
+	}
+}
+
+func TestGalleryTransferTargetCheckUsesProjectRowLock(t *testing.T) {
+	table := entsql.Table("projects")
+	selector := entsql.Dialect(dialect.Postgres).Select().From(table)
+	lockProjectForGalleryTransfer()(selector)
+	query, _ := selector.Query()
+	if !strings.Contains(query, "FOR SHARE") {
+		t.Fatalf("gallery transfer target query = %q, want FOR SHARE to serialize with project deletion", query)
+	}
+}
+
+func TestReviewImageConcurrentDecisionsUseCompareAndSwap(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	dsn := "file:review-image-cas-" + uuid.NewString() + "?mode=memory&cache=shared&_fk=1"
+	client, err := repoent.Open(dialect.SQLite, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	concurrentClient, err := repoent.Open(dialect.SQLite, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = concurrentClient.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewImageTaskStore(client)
+	task := domainimagetask.Task{
+		UserID: 91, ID: uuid.NewString(), Status: domainimagetask.StatusSucceeded,
+		AbstractModel: "basic", TaskType: string(provider.TaskTypeTextToImage), Prompt: "concurrent review",
+		Results: []provider.ImageResult{{
+			ID: uuid.NewString(), ObjectKey: "generated/concurrent-review.png", MimeType: "image/png",
+			StorageDriver: "local", VisibilityStatus: domainimagetask.VisibilityPendingReview,
+		}},
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+
+	reviewWriteReached := make(chan struct{})
+	release := make(chan struct{})
+	client.Use(func(next repoent.Mutator) repoent.Mutator {
+		return repoent.MutateFunc(func(ctx context.Context, mutation repoent.Mutation) (repoent.Value, error) {
+			if _, ok := mutation.(*repoent.ImageResultMutation); ok {
+				close(reviewWriteReached)
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+
+	reviewDone := make(chan error, 1)
+	go func() {
+		publishedAt := time.Now().UTC()
+		_, reviewErr := store.ReviewImage(ctx, task.Results[0].ID, domainimagetask.VisibilityApproved, "", &publishedAt)
+		reviewDone <- reviewErr
+	}()
+	select {
+	case <-reviewWriteReached:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	imageUUID := uuid.MustParse(task.Results[0].ID)
+	if _, err := concurrentClient.ImageResult.UpdateOneID(imageUUID).
+		SetVisibilityStatus(domainimagetask.VisibilityRejected).
+		SetReviewReason("concurrent decision").
+		Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if reviewErr := <-reviewDone; !errors.Is(reviewErr, repoerr.ErrConflict) {
+		t.Fatalf("stale concurrent review error=%v, want conflict", reviewErr)
+	}
+	persisted, err := concurrentClient.ImageResult.Get(ctx, imageUUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.VisibilityStatus != domainimagetask.VisibilityRejected {
+		t.Fatalf("stale review overwrote concurrent decision: status=%q", persisted.VisibilityStatus)
+	}
+}
+
+func TestTransferImageProjectRejectsDeletedTargetAtomically(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:gallery-transfer-target-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	source, err := client.Project.Create().SetUserID(77).SetName("Source").SetNameKey("source").SetStatus(domainproject.StatusActive).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletedAt := time.Now().UTC()
+	target, err := client.Project.Create().SetUserID(77).SetName("Deleted").SetNameKey("deleted").SetStatus(domainproject.StatusDeleted).SetDeletedAt(deletedAt).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := client.ImageTask.Create().SetUserID(77).SetProjectID(source.ID).SetTaskType("text_to_image").SetPrompt("transfer").SetAbstractModel("plus").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(77).SetProjectID(source.ID).SetObjectKey("one.png").SetMimeType("image/png").SetSha256(strings.Repeat("a", 64)).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewImageTaskStore(client).TransferImageProject(ctx, 77, image.ID.String(), source.ID.String(), target.ID.String()); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("deleted target transfer error=%v, want not found", err)
+	}
+	persisted, err := client.ImageResult.Get(ctx, image.ID)
+	if err != nil || persisted.ProjectID == nil || *persisted.ProjectID != source.ID {
+		t.Fatalf("image project=%v err=%v, want source %s", persisted.ProjectID, err, source.ID)
+	}
+}
+
+func TestCleanupClaimUsesSkipLockedOnPostgres(t *testing.T) {
+	table := entsql.Table("object_deletion_jobs")
+	selector := entsql.Dialect(dialect.Postgres).Select().From(table)
+	lockCleanupJobForClaim()(selector)
+	query, _ := selector.Query()
+	if !strings.Contains(query, "FOR UPDATE SKIP LOCKED") {
+		t.Fatalf("cleanup claim query=%q", query)
+	}
+}
+
+func TestDeleteImageResultSoftDeletesAndEnqueuesCleanupAtomically(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-delete-cleanup?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	task, err := client.ImageTask.Create().SetUserID(81).SetTaskType("text_to_image").SetPrompt("cleanup").SetAbstractModel("plus").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(81).SetStorageDriver("local").SetObjectKey("generated/delete-me.png").SetMimeType("image/png").SetSha256("delete-hash").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := NewImageTaskStore(client).DeleteImageResult(ctx, 81, image.ID.String())
+	if err != nil || deleted.ID != image.ID.String() {
+		t.Fatalf("deleted=%#v err=%v", deleted, err)
+	}
+	row, err := client.ImageResult.Query().Where(imageresult.IDEQ(image.ID)).Only(ctx)
+	if err != nil || row.DeletedAt == nil {
+		t.Fatalf("row=%#v err=%v", row, err)
+	}
+	job, err := client.ObjectDeletionJob.Query().Only(ctx)
+	if err != nil || job.ObjectKey != image.ObjectKey || job.State != "pending" {
+		t.Fatalf("job=%#v err=%v", job, err)
+	}
+}
+
+func TestDeleteTaskEnqueuesEveryGeneratedObject(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-task-delete-cleanup?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	task, err := client.ImageTask.Create().SetUserID(82).SetTaskType("text_to_image").SetPrompt("cleanup all").SetAbstractModel("plus").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range 2 {
+		if _, err := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(82).SetStorageDriver("local").SetObjectKey(fmt.Sprintf("generated/task-%d.png", index)).SetMimeType("image/png").SetSha256(fmt.Sprintf("hash-%d", index)).Save(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := NewImageTaskStore(client).DeleteByID(ctx, 82, task.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := client.ObjectDeletionJob.Query().Count(ctx); err != nil || count != 2 {
+		t.Fatalf("jobs=%d err=%v", count, err)
+	}
+}
+
+func TestImageTaskStoreRecentProjectQueryFiltersBeforeLimit(t *testing.T) {
+	ctx := context.Background()
+	client, err := repoent.Open(dialect.SQLite, fmt.Sprintf("file:imagetask-project-recent-%s?mode=memory&cache=shared&_fk=1", uuid.NewString()))
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	projectA, err := client.Project.Create().SetUserID(919).SetName("A").SetNameKey("a").SetStatus(domainproject.StatusActive).Save(ctx)
+	if err != nil {
+		t.Fatalf("create project A: %v", err)
+	}
+	projectB, err := client.Project.Create().SetUserID(919).SetName("B").SetNameKey("b").SetStatus(domainproject.StatusActive).Save(ctx)
+	if err != nil {
+		t.Fatalf("create project B: %v", err)
+	}
+	oldCreatedAt := time.Now().UTC().Add(-24 * time.Hour)
+	oldTaskID := uuid.MustParse("00000000-0000-4000-8000-000000000001")
+	if _, err := client.ImageTask.Create().SetID(oldTaskID).SetUserID(919).SetProjectID(projectA.ID).
+		SetTaskType("text_to_image").SetPrompt("old A").SetAbstractModel("plus").SetCreatedAt(oldCreatedAt).Save(ctx); err != nil {
+		t.Fatalf("create old project A task: %v", err)
+	}
+	for index := range 21 {
+		if _, err := client.ImageTask.Create().SetID(uuid.New()).SetUserID(919).SetProjectID(projectB.ID).
+			SetTaskType("text_to_image").SetPrompt(fmt.Sprintf("new B %d", index)).SetAbstractModel("plus").
+			SetCreatedAt(oldCreatedAt.Add(time.Duration(index+1) * time.Minute)).Save(ctx); err != nil {
+			t.Fatalf("create project B task %d: %v", index, err)
+		}
+	}
+	store := NewImageTaskStore(client)
+	lister, ok := any(store).(interface {
+		ListRecentByUserProject(context.Context, int64, string, int) ([]domainimagetask.Task, error)
+	})
+	if !ok {
+		t.Fatal("ImageTaskStore must expose a project-scoped recent query")
+	}
+	projectATasks, err := lister.ListRecentByUserProject(ctx, 919, projectA.ID.String(), 20)
+	if err != nil || len(projectATasks) != 1 || projectATasks[0].ID != oldTaskID.String() {
+		t.Fatalf("project A recent tasks = %#v, %v", projectATasks, err)
+	}
+	projectBTasks, err := lister.ListRecentByUserProject(ctx, 919, projectB.ID.String(), 20)
+	if err != nil || len(projectBTasks) != 20 || projectBTasks[0].Prompt != "new B 20" {
+		t.Fatalf("project B recent tasks len=%d first=%#v err=%v", len(projectBTasks), firstTask(projectBTasks), err)
+	}
+}
+
+func firstTask(tasks []domainimagetask.Task) domainimagetask.Task {
+	if len(tasks) == 0 {
+		return domainimagetask.Task{}
+	}
+	return tasks[0]
+}
+
+func TestWorkerTaskUpdateUsesRowLock(t *testing.T) {
+	table := entsql.Table("image_tasks")
+	selector := entsql.Dialect(dialect.Postgres).Select().From(table)
+	lockImageTaskForWorkerUpdate()(selector)
+	query, _ := selector.Query()
+	if !strings.Contains(query, "FOR UPDATE") {
+		t.Fatalf("worker task query = %q, want FOR UPDATE to reload ownership after project transfer", query)
+	}
+
+	sqliteSelector := entsql.Dialect(dialect.SQLite).Select().From(table)
+	lockImageTaskForWorkerUpdate()(sqliteSelector)
+	sqliteQuery, _ := sqliteSelector.Query()
+	if strings.Contains(sqliteQuery, "FOR UPDATE") {
+		t.Fatalf("SQLite worker task query = %q, must not contain unsupported FOR UPDATE", sqliteQuery)
+	}
+}
+
+func TestUpdatedTaskResultsFollowPersistedProjectAfterTransferDelete(t *testing.T) {
+	tests := []struct {
+		name string
+		save func(context.Context, *ImageTaskStore, domainimagetask.Task, time.Time) error
+	}{
+		{name: "ordinary save", save: func(ctx context.Context, store *ImageTaskStore, task domainimagetask.Task, _ time.Time) error {
+			task.Status = domainimagetask.StatusSucceeded
+			return store.Save(ctx, task)
+		}},
+		{name: "lease-owned save", save: func(ctx context.Context, store *ImageTaskStore, task domainimagetask.Task, now time.Time) error {
+			return store.SaveIfOwned(ctx, task, task.LeaseOwner, now)
+		}},
+		{name: "terminal save", save: func(ctx context.Context, store *ImageTaskStore, task domainimagetask.Task, now time.Time) error {
+			task.Status = domainimagetask.StatusSucceeded
+			return store.SaveTerminalState(ctx, task, task.LeaseOwner, now)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client, err := repoent.Open(dialect.SQLite, fmt.Sprintf("file:imagetask-project-transfer-worker-%s?mode=memory&cache=shared&_fk=1", uuid.NewString()))
+			if err != nil {
+				t.Fatalf("open ent client: %v", err)
+			}
+			t.Cleanup(func() { _ = client.Close() })
+			if err := client.Schema.Create(ctx); err != nil {
+				t.Fatalf("create schema: %v", err)
+			}
+			projects := projectservice.NewService(NewProjectStore(client))
+			target, err := projects.EnsureDefault(ctx, 909)
+			if err != nil {
+				t.Fatalf("ensure target project: %v", err)
+			}
+			source, err := projects.Create(ctx, 909, domainproject.CreateRequest{Name: "Worker source"})
+			if err != nil {
+				t.Fatalf("create source project: %v", err)
+			}
+			now := time.Now().UTC()
+			expiresAt := now.Add(time.Minute)
+			task := domainimagetask.Task{
+				ID: uuid.NewString(), UserID: 909, ProjectID: source.ID,
+				Status: domainimagetask.StatusRunning, LeaseOwner: "worker-project-transfer", LeaseExpiresAt: &expiresAt,
+				TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "plus", Prompt: "persist in transferred project",
+			}
+			store := NewImageTaskStore(client)
+			if err := store.Save(ctx, task); err != nil {
+				t.Fatalf("seed running task: %v", err)
+			}
+			if _, err := projects.Delete(ctx, 909, source.ID, domainproject.DeleteRequest{TargetProjectID: target.ID, ExpectedVersion: source.Version}); err != nil {
+				t.Fatalf("transfer-delete source project: %v", err)
+			}
+			task.Results = []provider.ImageResult{{ID: uuid.NewString(), ObjectKey: "worker/transferred.png", MimeType: "image/png"}}
+			if err := tt.save(ctx, store, task, now); err != nil {
+				t.Fatalf("save stale task result: %v", err)
+			}
+			taskEntity, err := client.ImageTask.Query().Where(imagetask.IDEQ(uuid.MustParse(task.ID))).Only(ctx)
+			if err != nil {
+				t.Fatalf("query transferred task: %v", err)
+			}
+			resultEntity, err := client.ImageResult.Query().Where(imageresult.TaskIDEQ(taskEntity.ID)).Only(ctx)
+			if err != nil {
+				t.Fatalf("query saved result: %v", err)
+			}
+			targetID := uuid.MustParse(target.ID)
+			if taskEntity.ProjectID == nil || *taskEntity.ProjectID != targetID || resultEntity.ProjectID == nil || *resultEntity.ProjectID != targetID {
+				t.Fatalf("task/result project after stale save = task %v, result %v, want %s", taskEntity.ProjectID, resultEntity.ProjectID, target.ID)
+			}
+			if count, countErr := client.ImageResult.Query().Where(imageresult.ProjectIDEQ(uuid.MustParse(source.ID))).Count(ctx); countErr != nil || count != 0 {
+				t.Fatalf("deleted source gained results: count=%d err=%v", count, countErr)
+			}
+		})
+	}
+}
 
 func TestImageTaskStoreLoadsUserConcurrencyLimit(t *testing.T) {
 	ctx := context.Background()
@@ -68,9 +423,13 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 		OutputImageCount:    2,
 		ReferenceImageCount: 2,
 		ReferenceAssetIDs:   []string{"asset-a", "asset-b"},
-		EstimatedPoints:     "16.00000",
-		ActualPoints:        "8.00000",
-		Results:             []provider.ImageResult{{URL: "https://cdn.example.com/task.png"}},
+		GenerationSnapshot: domainimagetask.GenerationSnapshot{
+			CapabilityVersion: "capability-v1", SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "1:1",
+			ResolvedSize: "896x896", ResolvedWidth: 896, ResolvedHeight: 896,
+		},
+		EstimatedPoints: "16.00000",
+		ActualPoints:    "8.00000",
+		Results:         []provider.ImageResult{{URL: "https://cdn.example.com/task.png"}},
 	}
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -91,6 +450,9 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 	}
 	if len(loaded.ReferenceAssetIDs) != 2 || loaded.ReferenceAssetIDs[0] != "asset-a" || loaded.ReferenceAssetIDs[1] != "asset-b" {
 		t.Fatalf("expected reference asset ids to round-trip, got %#v", loaded.ReferenceAssetIDs)
+	}
+	if loaded.GenerationSnapshot != task.GenerationSnapshot {
+		t.Fatalf("expected immutable generation snapshot to round-trip, got %#v", loaded.GenerationSnapshot)
 	}
 	if len(loaded.Results) != 1 {
 		t.Fatalf("expected persisted image result, got %#v", loaded.Results)
@@ -125,6 +487,82 @@ func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Fatalf("expected empty list after delete, got %#v", list)
+	}
+}
+
+func TestImageTaskStorePreservesExplicitAutoSizeWithoutLegacyDefaults(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-auto-size-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	task := domainimagetask.Task{
+		UserID: 93, ID: uuid.NewString(), Status: domainimagetask.StatusQueued,
+		AbstractModel: "plus", TaskType: string(provider.TaskTypeTextToImage), Prompt: "automatic size",
+		SizeMode: "auto",
+		GenerationSnapshot: domainimagetask.GenerationSnapshot{
+			CapabilityVersion: "capability-auto-v1",
+			SizeMode:          "auto",
+		},
+	}
+	store := NewImageTaskStore(client)
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	assertExplicitAutoTaskSnapshot(t, loaded, task.GenerationSnapshot)
+
+	loaded.ProgressMessage = "ordinary update"
+	if err := store.Save(ctx, loaded); err != nil {
+		t.Fatalf("update Save: %v", err)
+	}
+	loaded, err = store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID after ordinary update: %v", err)
+	}
+	assertExplicitAutoTaskSnapshot(t, loaded, task.GenerationSnapshot)
+
+	now := time.Now().UTC()
+	leased, err := store.AcquireNextQueuedTask(ctx, "worker-auto", now, time.Minute)
+	if err != nil {
+		t.Fatalf("AcquireNextQueuedTask: %v", err)
+	}
+	if err := store.SaveIfOwned(ctx, leased, "worker-auto", now); err != nil {
+		t.Fatalf("SaveIfOwned: %v", err)
+	}
+	loaded, err = store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID after lease-owned update: %v", err)
+	}
+	assertExplicitAutoTaskSnapshot(t, loaded, task.GenerationSnapshot)
+
+	loaded.Status = domainimagetask.StatusSucceeded
+	if err := store.SaveTerminalState(ctx, loaded, "worker-auto", now); err != nil {
+		t.Fatalf("SaveTerminalState: %v", err)
+	}
+	loaded, err = store.GetByID(ctx, task.UserID, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID after terminal update: %v", err)
+	}
+	assertExplicitAutoTaskSnapshot(t, loaded, task.GenerationSnapshot)
+}
+
+func assertExplicitAutoTaskSnapshot(t *testing.T, task domainimagetask.Task, wantGeneration domainimagetask.GenerationSnapshot) {
+	t.Helper()
+	if task.BaseResolution != "" || task.AspectRatio != "" || task.RequestedSize != "" || task.ResolvedWidth != 0 || task.ResolvedHeight != 0 {
+		t.Fatalf("explicit auto task gained legacy size defaults: %#v", task)
+	}
+	if task.GenerationSnapshot != wantGeneration {
+		t.Fatalf("explicit auto generation snapshot changed: got %#v want %#v", task.GenerationSnapshot, wantGeneration)
 	}
 }
 

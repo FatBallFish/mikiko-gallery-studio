@@ -4,6 +4,7 @@ import (
 	"time"
 
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 )
 
@@ -37,6 +38,7 @@ const (
 type ExecuteRequest struct {
 	TaskID              string
 	UserID              int64
+	ProjectID           string
 	APIKeyID            int64
 	SourceChannel       string
 	UserGroupCode       string
@@ -51,6 +53,7 @@ type ExecuteRequest struct {
 	BaseResolution      string
 	Quality             string
 	OutputFormat        string
+	Background          string
 	OutputCompression   int
 	Moderation          string
 	AspectRatio         string
@@ -65,6 +68,7 @@ type ExecuteRequest struct {
 type CreateRequest struct {
 	TaskID              string
 	UserID              int64
+	ProjectID           string
 	APIKeyID            int64
 	SourceChannel       string
 	AbstractModel       string
@@ -77,6 +81,7 @@ type CreateRequest struct {
 	BaseResolution      string
 	Quality             string
 	OutputFormat        string
+	Background          string
 	OutputCompression   int
 	Moderation          string
 	AspectRatio         string
@@ -91,6 +96,7 @@ type CreateRequest struct {
 	MaskPresent         bool
 	ResponseMode        string
 	SavePolicy          string
+	CapabilityVersion   string
 }
 
 type RetryRequest struct {
@@ -110,6 +116,7 @@ type TestModelAccountRequest struct {
 	BaseResolution    string
 	Quality           string
 	OutputFormat      string
+	Background        string
 	OutputCompression int
 	Moderation        string
 	AspectRatio       string
@@ -128,18 +135,26 @@ type TestModelAccountResult struct {
 }
 
 type Attempt struct {
-	Provider       string         `json:"provider,omitempty"`
-	AdapterType    string         `json:"adapter_type,omitempty"`
-	AccountModelID int64          `json:"account_model_id,omitempty"`
-	ModelAccountID int64          `json:"model_account_id,omitempty"`
-	ModelCode      string         `json:"model_code,omitempty"`
-	Status         string         `json:"status,omitempty"`
-	Error          string         `json:"error,omitempty"`
-	ErrorCode      string         `json:"error_code,omitempty"`
-	ErrorMessage   string         `json:"error_message,omitempty"`
-	ErrorDetail    map[string]any `json:"error_detail,omitempty"`
-	StartedAt      *time.Time     `json:"started_at,omitempty"`
-	FinishedAt     *time.Time     `json:"finished_at,omitempty"`
+	Provider            string         `json:"provider,omitempty"`
+	AdapterType         string         `json:"adapter_type,omitempty"`
+	AccountModelID      int64          `json:"account_model_id,omitempty"`
+	ModelAccountID      int64          `json:"model_account_id,omitempty"`
+	ModelCode           string         `json:"model_code,omitempty"`
+	SourceSizeMode      string         `json:"source_size_mode,omitempty"`
+	OutboundSize        string         `json:"outbound_size,omitempty"`
+	ReturnedWidth       int            `json:"returned_width,omitempty"`
+	ReturnedHeight      int            `json:"returned_height,omitempty"`
+	SizeDiagnostic      string         `json:"size_diagnostic,omitempty"`
+	ProviderRequestID   string         `json:"provider_request_id,omitempty"`
+	RequestedImageCount int            `json:"requested_image_count,omitempty"`
+	ReturnedImageCount  int            `json:"returned_image_count,omitempty"`
+	Status              string         `json:"status,omitempty"`
+	Error               string         `json:"error,omitempty"`
+	ErrorCode           string         `json:"error_code,omitempty"`
+	ErrorMessage        string         `json:"error_message,omitempty"`
+	ErrorDetail         map[string]any `json:"error_detail,omitempty"`
+	StartedAt           *time.Time     `json:"started_at,omitempty"`
+	FinishedAt          *time.Time     `json:"finished_at,omitempty"`
 }
 
 type ArtifactDiagnostic struct {
@@ -169,11 +184,26 @@ type ArtifactRecovery struct {
 	LastDiagnostic   ArtifactDiagnostic   `json:"last_diagnostic,omitempty"`
 	Diagnostics      []ArtifactDiagnostic `json:"diagnostics,omitempty"`
 	StorageConfigID  string               `json:"storage_config_id,omitempty"`
+	StorageDriver    string               `json:"storage_driver,omitempty"`
+	StorageBucket    string               `json:"storage_bucket,omitempty"`
+	ObjectKeys       []string             `json:"object_keys,omitempty"`
 	StorageVersion   int64                `json:"storage_version,omitempty"`
+}
+
+type GenerationSnapshot struct {
+	CapabilityVersion string `json:"capability_version"`
+	SizeMode          string `json:"size_mode"`
+	BaseResolution    string `json:"base_resolution,omitempty"`
+	AspectRatio       string `json:"aspect_ratio,omitempty"`
+	ResolvedSize      string `json:"resolved_size,omitempty"`
+	ResolvedWidth     int    `json:"resolved_width,omitempty"`
+	ResolvedHeight    int    `json:"resolved_height,omitempty"`
 }
 
 type Task struct {
 	UserID               int64                         `json:"-"`
+	ProjectID            string                        `json:"project_id"`
+	Project              *domainproject.Snapshot       `json:"project,omitempty"`
 	APIKeyID             int64                         `json:"-"`
 	SourceChannel        string                        `json:"-"`
 	ID                   string                        `json:"id"`
@@ -200,9 +230,12 @@ type Task struct {
 	SizeMode             string                        `json:"size_mode,omitempty"`
 	AspectRatio          string                        `json:"aspect_ratio,omitempty"`
 	RequestedSize        string                        `json:"requested_size,omitempty"`
+	ResolvedWidth        int                           `json:"resolved_width,omitempty"`
+	ResolvedHeight       int                           `json:"resolved_height,omitempty"`
 	BaseResolution       string                        `json:"base_resolution"`
 	Quality              string                        `json:"quality"`
 	OutputFormat         string                        `json:"output_format,omitempty"`
+	Background           string                        `json:"background,omitempty"`
 	OutputCompression    int                           `json:"output_compression,omitempty"`
 	Moderation           string                        `json:"moderation,omitempty"`
 	ResponseMode         string                        `json:"response_mode,omitempty"`
@@ -224,6 +257,7 @@ type Task struct {
 	ArtifactRecovery     ArtifactRecovery              `json:"artifact_recovery,omitempty"`
 	Results              []provider.ImageResult        `json:"results,omitempty"`
 	PricingSnapshot      domainbilling.PricingSnapshot `json:"-"`
+	GenerationSnapshot   GenerationSnapshot            `json:"-"`
 	CreatedAt            time.Time                     `json:"created_at"`
 	UpdatedAt            time.Time                     `json:"updated_at"`
 }
@@ -237,6 +271,8 @@ type GalleryImage struct {
 	ID                string                  `json:"id"`
 	TaskID            string                  `json:"task_id"`
 	UserID            int64                   `json:"user_id,omitempty"`
+	ProjectID         string                  `json:"project_id"`
+	Project           *domainproject.Snapshot `json:"project,omitempty"`
 	Prompt            string                  `json:"prompt,omitempty"`
 	PromptExcerpt     string                  `json:"prompt_excerpt,omitempty"`
 	AbstractModel     string                  `json:"abstract_model,omitempty"`
@@ -279,6 +315,22 @@ type GalleryImage struct {
 	CreatedAt         time.Time               `json:"created_at"`
 }
 
+type GalleryBatchSuccess struct {
+	ID     string       `json:"id"`
+	Entity GalleryImage `json:"entity"`
+}
+
+type GalleryBatchFailure struct {
+	ID      string `json:"id"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type GalleryBatchResult struct {
+	Succeeded []GalleryBatchSuccess `json:"succeeded"`
+	Failed    []GalleryBatchFailure `json:"failed"`
+}
+
 type GalleryReferenceAsset struct {
 	ID               string     `json:"id"`
 	Name             string     `json:"name,omitempty"`
@@ -289,6 +341,7 @@ type GalleryReferenceAsset struct {
 type GalleryListRequest struct {
 	Page           int
 	PageSize       int
+	ProjectID      string
 	Status         string
 	ReviewOnly     bool
 	Sort           string
@@ -311,6 +364,8 @@ type GalleryListRequest struct {
 	LikedOnly      bool
 	FavoritedOnly  bool
 }
+
+type ProjectSnapshot = domainproject.Snapshot
 
 type GalleryPage struct {
 	Items    []GalleryImage `json:"items"`

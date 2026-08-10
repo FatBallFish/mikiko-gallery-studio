@@ -59,7 +59,7 @@ for (const groupingContract of ['expandedGroups', 'adminTaskTypeLabel(group.task
   }
 }
 
-for (const rowExpansionContract of ['renderAfterRow', 'pricingExpandedGroup(group, openDialog)']) {
+for (const rowExpansionContract of ['renderAfterRow', 'pricingExpandedGroup(group, openDialog,']) {
   if (!pricingPageSource.includes(rowExpansionContract)) {
     throw new Error(`expanded pricing details must render directly after their route-model row with ${rowExpansionContract}`)
   }

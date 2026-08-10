@@ -7,7 +7,19 @@ import (
 	"time"
 )
 
+type PlanLifecycleAudit struct {
+	ActorType  string
+	ActorID    string
+	Action     string
+	TargetType string
+	TargetID   string
+	RequestID  string
+	IPAddr     string
+	UserAgent  string
+}
+
 type EstimateRequest struct {
+	RouteKey                  string
 	TaskType                  string
 	AbstractModel             string
 	RouteModelCode            string
@@ -16,18 +28,23 @@ type EstimateRequest struct {
 	BaseResolution            string
 	Quality                   string
 	OutputFormat              string
+	Background                string
 	OutputCompression         int
 	Moderation                string
 	RequestedSize             string
 	RequestedOutputImageCount int
 	ReferenceImageCount       int
+	MaskPresent               bool
 	UserGroupCode             string
 	UserGroupCodes            []string
 	UserGroupMultiplier       string
+	CapabilityVersion         string
 }
 
 type EstimateResult struct {
+	CapabilityVersion         string          `json:"capability_version,omitempty"`
 	BaseResolution            string          `json:"base_resolution"`
+	ResolvedSize              *string         `json:"resolved_size"`
 	EstimatedPoints           string          `json:"estimated_points"`
 	ChargedPoints             string          `json:"charged_points,omitempty"`
 	DisplayPoints             string          `json:"display_points,omitempty"`
@@ -49,6 +66,7 @@ type PricingSnapshot struct {
 	BaseResolution            string `json:"base_resolution"`
 	Quality                   string `json:"quality,omitempty"`
 	OutputFormat              string `json:"output_format,omitempty"`
+	Background                string `json:"background,omitempty"`
 	OutputCompression         int    `json:"output_compression,omitempty"`
 	Moderation                string `json:"moderation,omitempty"`
 	RequestedSize             string `json:"requested_size,omitempty"`
@@ -83,6 +101,7 @@ type BalanceBucket struct {
 	FrozenPoints    string     `json:"frozen_points,omitempty"`
 	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
 	ExpireWarning   bool       `json:"expire_warning"`
+	MixedExpiry     bool       `json:"mixed_expiry,omitempty"`
 	SourceType      string     `json:"source_type,omitempty"`
 	SortOrder       int        `json:"sort_order,omitempty"`
 }
@@ -95,21 +114,22 @@ type GrantExpirySummary struct {
 }
 
 type SubscriptionPlan struct {
-	ID              int64     `json:"id"`
-	PlanCode        string    `json:"plan_code"`
-	PlanName        string    `json:"plan_name"`
-	PlanType        string    `json:"plan_type,omitempty"`
-	PurchaseEnabled bool      `json:"purchase_enabled"`
-	Status          string    `json:"status"`
-	PriceCNY        string    `json:"price_cny"`
-	Points          string    `json:"points"`
-	BonusPoints     string    `json:"bonus_points"`
-	DurationDays    int       `json:"duration_days"`
-	Currency        string    `json:"currency"`
-	SortOrder       int       `json:"sort_order,omitempty"`
-	Description     string    `json:"description,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                  int64     `json:"id"`
+	PlanCode            string    `json:"plan_code"`
+	PlanName            string    `json:"plan_name"`
+	PlanType            string    `json:"plan_type,omitempty"`
+	PurchaseEnabled     bool      `json:"purchase_enabled"`
+	Status              string    `json:"status"`
+	PriceCNY            string    `json:"price_cny"`
+	Points              string    `json:"points"`
+	BonusPoints         string    `json:"bonus_points"`
+	CreditExpiryEnabled bool      `json:"credit_expiry_enabled"`
+	DurationDays        *int      `json:"duration_days,omitempty"`
+	Currency            string    `json:"currency"`
+	SortOrder           int       `json:"sort_order,omitempty"`
+	Description         string    `json:"description,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 const (
@@ -133,33 +153,35 @@ type TransitionSubscriptionPlanRequest struct {
 }
 
 type CreateSubscriptionPlanRequest struct {
-	PlanCode        string `json:"plan_code"`
-	PlanName        string `json:"plan_name"`
-	PlanType        string `json:"plan_type"`
-	PurchaseEnabled bool   `json:"purchase_enabled"`
-	Status          string `json:"status"`
-	PriceCNY        string `json:"price_cny"`
-	Points          string `json:"points"`
-	BonusPoints     string `json:"bonus_points"`
-	DurationDays    int    `json:"duration_days"`
-	Currency        string `json:"currency"`
-	SortOrder       int    `json:"sort_order"`
-	Description     string `json:"description"`
+	PlanCode            string `json:"plan_code"`
+	PlanName            string `json:"plan_name"`
+	PlanType            string `json:"plan_type"`
+	PurchaseEnabled     bool   `json:"purchase_enabled"`
+	Status              string `json:"status"`
+	PriceCNY            string `json:"price_cny"`
+	Points              string `json:"points"`
+	BonusPoints         string `json:"bonus_points"`
+	CreditExpiryEnabled *bool  `json:"credit_expiry_enabled,omitempty"`
+	DurationDays        *int   `json:"duration_days,omitempty"`
+	Currency            string `json:"-"`
+	SortOrder           int    `json:"sort_order"`
+	Description         string `json:"description"`
 }
 
 type UpdateSubscriptionPlanRequest struct {
-	PlanID          int64
-	PlanName        string `json:"plan_name"`
-	PlanType        string `json:"plan_type"`
-	PurchaseEnabled bool   `json:"purchase_enabled"`
-	Status          string `json:"status"`
-	PriceCNY        string `json:"price_cny"`
-	Points          string `json:"points"`
-	BonusPoints     string `json:"bonus_points"`
-	DurationDays    int    `json:"duration_days"`
-	Currency        string `json:"currency"`
-	SortOrder       int    `json:"sort_order"`
-	Description     string `json:"description"`
+	PlanID              int64
+	PlanName            string `json:"plan_name"`
+	PlanType            string `json:"plan_type"`
+	PurchaseEnabled     bool   `json:"purchase_enabled"`
+	Status              string `json:"status"`
+	PriceCNY            string `json:"price_cny"`
+	Points              string `json:"points"`
+	BonusPoints         string `json:"bonus_points"`
+	CreditExpiryEnabled *bool  `json:"credit_expiry_enabled,omitempty"`
+	DurationDays        *int   `json:"duration_days,omitempty"`
+	Currency            string `json:"-"`
+	SortOrder           int    `json:"sort_order"`
+	Description         string `json:"description"`
 }
 
 type UserSubscriptionSummary struct {
@@ -196,6 +218,10 @@ type PaymentOrder struct {
 	AmountCNY           string         `json:"amount_cny"`
 	Points              string         `json:"points"`
 	BonusPoints         string         `json:"bonus_points"`
+	CreditExpiryEnabled bool           `json:"credit_expiry_enabled"`
+	CreditValidDays     *int           `json:"credit_valid_days,omitempty"`
+	CreditedAt          *time.Time     `json:"credited_at,omitempty"`
+	CreditExpiresAt     *time.Time     `json:"credit_expires_at,omitempty"`
 	TradeNo             string         `json:"trade_no,omitempty"`
 	RefundTradeNo       string         `json:"refund_trade_no,omitempty"`
 	ChannelRefundNo     string         `json:"channel_refund_no,omitempty"`
@@ -251,29 +277,33 @@ type PaymentWebhookEventPage struct {
 }
 
 type LedgerEntry struct {
-	ID                 int64     `json:"id"`
-	UserID             int64     `json:"user_id,omitempty"`
-	APIKeyID           int64     `json:"api_key_id,omitempty"`
-	TaskID             string    `json:"task_id,omitempty"`
-	OrderID            int64     `json:"order_id,omitempty"`
-	RedeemCodeID       int64     `json:"redeem_code_id,omitempty"`
-	LedgerType         string    `json:"ledger_type"`
-	ChangePoints       string    `json:"change_points"`
-	BalanceAfter       string    `json:"balance_after"`
-	FrozenAfter        string    `json:"frozen_after,omitempty"`
-	BalanceBucket      string    `json:"balance_bucket,omitempty"`
-	BucketType         string    `json:"bucket_type,omitempty"`
-	SourceType         string    `json:"source_type,omitempty"`
-	SourceID           any       `json:"source_id,omitempty"`
-	BucketBalanceAfter string    `json:"bucket_balance_after,omitempty"`
-	ExpiresAt          *string   `json:"expires_at,omitempty"`
-	Reason             string    `json:"reason,omitempty"`
-	CreatedAt          time.Time `json:"created_at"`
-	Title              string    `json:"title,omitempty"`
-	OccurredAt         string    `json:"occurred_at,omitempty"`
-	Amount             string    `json:"amount,omitempty"`
-	Type               string    `json:"type,omitempty"`
-	Detail             string    `json:"detail,omitempty"`
+	ID                   int64     `json:"id"`
+	UserID               int64     `json:"user_id,omitempty"`
+	APIKeyID             int64     `json:"api_key_id,omitempty"`
+	TaskID               string    `json:"task_id,omitempty"`
+	OrderID              int64     `json:"order_id,omitempty"`
+	RedeemCodeID         int64     `json:"redeem_code_id,omitempty"`
+	LedgerType           string    `json:"ledger_type"`
+	ChangePoints         string    `json:"change_points"`
+	BalanceAfter         string    `json:"balance_after"`
+	FrozenAfter          string    `json:"frozen_after,omitempty"`
+	BalanceBucket        string    `json:"balance_bucket,omitempty"`
+	BucketType           string    `json:"bucket_type,omitempty"`
+	SourceType           string    `json:"source_type,omitempty"`
+	SourceID             any       `json:"source_id,omitempty"`
+	BucketBalanceAfter   string    `json:"bucket_balance_after,omitempty"`
+	ExpiresAt            *string   `json:"expires_at,omitempty"`
+	Reason               string    `json:"reason,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
+	Title                string    `json:"title,omitempty"`
+	OccurredAt           string    `json:"occurred_at,omitempty"`
+	Amount               string    `json:"amount,omitempty"`
+	Type                 string    `json:"type,omitempty"`
+	Detail               string    `json:"detail,omitempty"`
+	SuccessfulImageCount int       `json:"successful_image_count,omitempty"`
+	EffectiveUnitPoints  string    `json:"effective_unit_points,omitempty"`
+	TotalChargedPoints   string    `json:"total_charged_points,omitempty"`
+	PartialSuccess       bool      `json:"partial_success,omitempty"`
 }
 
 func PopulateLedgerDisplayFields(entry LedgerEntry) LedgerEntry {
@@ -288,7 +318,8 @@ func PopulateLedgerDisplayFields(entry LedgerEntry) LedgerEntry {
 	if strings.TrimSpace(entry.BalanceBucket) == "" {
 		entry.BalanceBucket = entry.BucketType
 	}
-	if strings.TrimSpace(entry.SourceType) == "" {
+	entry.SourceType = NormalizeLedgerSourceType(entry.SourceType)
+	if entry.SourceType == "" {
 		entry.SourceType = LedgerSourceType(entry)
 	}
 	if entry.SourceID == nil {
@@ -303,6 +334,14 @@ func PopulateLedgerDisplayFields(entry LedgerEntry) LedgerEntry {
 	entry.Amount = formatLedgerAmount(entry.ChangePoints)
 	entry.Detail = LedgerDetail(entry)
 	return entry
+}
+
+func NormalizeLedgerSourceType(sourceType string) string {
+	sourceType = strings.TrimSpace(sourceType)
+	if sourceType == "payment_order_bonus" {
+		return "payment_order"
+	}
+	return sourceType
 }
 
 func LedgerBucketType(entry LedgerEntry) string {
@@ -365,9 +404,9 @@ func LedgerTitle(ledgerType string) string {
 	case "trial_grant":
 		return "体验额度发放"
 	case "order_paid":
-		return "订阅额度到账"
+		return "套餐积分到账"
 	case "recharge":
-		return "充值额度到账"
+		return "充值积分到账"
 	case "payment_refund":
 		return "充值退款"
 	case "redeem":
@@ -421,6 +460,8 @@ func bucketLabel(bucket string) string {
 		return "订阅额度"
 	case "recharge":
 		return "充值额度"
+	case "gift":
+		return "赠送积分"
 	case "usage":
 		return "使用中额度"
 	default:

@@ -10,13 +10,16 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
+	domaincluster "github.com/fatballfish/pic-gallery/internal/domain/cluster"
 	"github.com/fatballfish/pic-gallery/internal/repository/db"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	objectcleanupservice "github.com/fatballfish/pic-gallery/internal/service/objectcleanup"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/internal/worker"
@@ -92,7 +95,7 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 		defer redisClient.Close()
 	}
 	clusterStore := entstore.NewClusterStore(client)
-	heartbeat, err := startRuntimeHeartbeat(ctx, cfg, clusterStore)
+	heartbeat, err := startRuntimeHeartbeat(ctx, cfg, clusterStore, domaincluster.NodeRoleWorker)
 	if err != nil {
 		return err
 	}
@@ -104,6 +107,9 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	)
 	if err := storageConfigSvc.Bootstrap(startupContext, 0); err != nil {
 		return fmt.Errorf("bootstrap storage config: %w", err)
+	}
+	if err := requireLegacyStorageIdentityBackfill(startupContext, client, storageConfigSvc, cfg.Storage.Driver); err != nil {
+		return fmt.Errorf("prepare object cleanup storage identities: %w", err)
 	}
 	cancelStartup()
 	storageRegistry := storage.NewRegistry(storageConfigSvc, 30*time.Second)
@@ -131,8 +137,9 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	}
 	slog.Info("database-backed task store enabled for worker")
 
+	owner := workerOwner()
 	runner := worker.NewRunner(taskSvc, worker.Config{
-		Owner:                 workerOwner(),
+		Owner:                 owner,
 		LeaseTTL:              30 * time.Second,
 		HeartbeatInterval:     10 * time.Second,
 		PollInterval:          500 * time.Millisecond,
@@ -143,6 +150,8 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 		},
 	})
 	runner.SetCompensationService(billingSvc)
+	runner.SetCleanupService(objectcleanupservice.NewProcessor(entstore.NewObjectCleanupStore(client), storageRegistry, objectcleanupservice.ProcessorOptions{}))
+	runner.SetGalleryExportService(galleryexportservice.NewProcessor(entstore.NewGalleryExportStore(client), storageRegistry, galleryexportservice.ProcessorOptions{Owner: owner}))
 
 	slog.Info("starting pic-gallery worker")
 	err = runner.Run(ctx)

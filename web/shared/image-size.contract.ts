@@ -1,4 +1,4 @@
-import { calculateImageSizeForBaseResolution, normalizeCustomImageSize } from './image-size'
+import { calculateImageSizeForBaseResolution, normalizeCustomImageSize, validateCustomImageSize } from './image-size'
 
 if (calculateImageSizeForBaseResolution('1K', '16:9') !== '1280x720') {
   throw new Error('1K 16:9 should map to 1280x720')
@@ -49,5 +49,15 @@ for (const fixture of customCases) {
 for (const [width, height] of [[0, 1024], [1024, -1], [Number.NaN, 1024]]) {
   if (normalizeCustomImageSize(width, height).valid) {
     throw new Error(`invalid custom size should be rejected: ${width}x${height}`)
+  }
+}
+
+const exact = validateCustomImageSize(1280, 720, { minWidth: 512, maxWidth: 2048, minHeight: 512, maxHeight: 1536 })
+if (!exact.valid || exact.size !== '1280x720' || exact.wasNormalized) {
+  throw new Error(`valid explicit size must remain exact: ${JSON.stringify(exact)}`)
+}
+for (const [width, height] of [[1001, 777], [256, 256], [4096, 1024], [1280, 496]]) {
+  if (validateCustomImageSize(width, height, { minWidth: 512, maxWidth: 2048, minHeight: 512, maxHeight: 1536 }).valid) {
+    throw new Error(`invalid explicit size must be rejected without normalization: ${width}x${height}`)
   }
 }

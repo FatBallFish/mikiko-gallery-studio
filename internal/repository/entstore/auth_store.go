@@ -53,7 +53,12 @@ func (s *AuthStore) CreateUser(ctx context.Context, user domainauth.User) (domai
 		return domainauth.User{}, err
 	}
 
-	entity, err := s.client.User.Create().
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return domainauth.User{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	entity, err := tx.User.Create().
 		SetEmail(user.Email).
 		SetNillablePasswordHash(authNullableString(user.PasswordHash)).
 		SetNillableEmailVerifiedAt(user.EmailVerifiedAt).
@@ -68,6 +73,12 @@ func (s *AuthStore) CreateUser(ctx context.Context, user domainauth.User) (domai
 		SetNillableClosedAt(user.ClosedAt).
 		Save(ctx)
 	if err != nil {
+		return domainauth.User{}, err
+	}
+	if _, err := createDefaultProjectInTx(ctx, tx, int64(entity.ID)); err != nil {
+		return domainauth.User{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return domainauth.User{}, err
 	}
 	return s.mapUserEntity(ctx, entity)

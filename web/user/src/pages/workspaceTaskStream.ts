@@ -5,14 +5,16 @@ let nextGenerationId = 1
 export type WorkspaceStreamGeneration = {
   id: number
   token: string
+  projectID: string
   retryCount: number
   acceptsEvents: boolean
 }
 
-export function createWorkspaceStreamGeneration(token: string, retryCount = 0): WorkspaceStreamGeneration {
+export function createWorkspaceStreamGeneration(token: string, projectID = '', retryCount = 0): WorkspaceStreamGeneration {
   return {
     id: nextGenerationId++,
     token,
+    projectID,
     retryCount: Math.max(0, Math.min(WORKSPACE_STREAM_MAX_RETRIES, Math.floor(retryCount))),
     acceptsEvents: true,
   }
@@ -45,5 +47,5 @@ export function workspaceStreamRecoveryIsCurrent(
   source: WorkspaceStreamGeneration,
   current: WorkspaceStreamGeneration | null,
 ) {
-  return current?.id === source.id && current.token === source.token
+  return current?.id === source.id && current.token === source.token && current.projectID === source.projectID
 }

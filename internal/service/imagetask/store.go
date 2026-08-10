@@ -206,12 +206,41 @@ func (s *MemoryStore) GetImageResultForAdmin(_ context.Context, imageID string) 
 }
 
 func (s *MemoryStore) ListByUser(_ context.Context, userID int64) ([]domainimagetask.Task, error) {
+	return s.listByUserProject(userID, "")
+}
+
+func (s *MemoryStore) ListByUserProject(_ context.Context, userID int64, projectID string) ([]domainimagetask.Task, error) {
+	return s.listByUserProject(userID, projectID)
+}
+
+func (s *MemoryStore) ListRecentByUserProject(_ context.Context, userID int64, projectID string, limit int) ([]domainimagetask.Task, error) {
+	list, err := s.listByUserProject(userID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		return taskListSortTime(list[i]).After(taskListSortTime(list[j]))
+	})
+	if limit > 0 && len(list) > limit {
+		list = list[:limit]
+	}
+	return list, nil
+}
+
+func taskListSortTime(task domainimagetask.Task) time.Time {
+	if !task.CreatedAt.IsZero() {
+		return task.CreatedAt
+	}
+	return task.UpdatedAt
+}
+
+func (s *MemoryStore) listByUserProject(userID int64, projectID string) ([]domainimagetask.Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	list := make([]domainimagetask.Task, 0, len(s.tasksByID))
 	for _, task := range s.tasksByID {
-		if task.UserID != userID {
+		if task.UserID != userID || (projectID != "" && task.ProjectID != projectID) {
 			continue
 		}
 		list = append(list, cloneTask(task))
@@ -220,6 +249,10 @@ func (s *MemoryStore) ListByUser(_ context.Context, userID int64) ([]domainimage
 }
 
 func (s *MemoryStore) RequestPublish(_ context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.RequestPublishInProject(context.Background(), userID, imageID, "")
+}
+
+func (s *MemoryStore) RequestPublishInProject(_ context.Context, userID int64, imageID, projectID string) (domainimagetask.GalleryImage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -228,7 +261,7 @@ func (s *MemoryStore) RequestPublish(_ context.Context, userID int64, imageID st
 			continue
 		}
 		for idx, result := range task.Results {
-			if result.ID != imageID {
+			if result.ID != imageID || (projectID != "" && result.ProjectID != projectID) {
 				continue
 			}
 			status := defaultVisibilityStatus(result.VisibilityStatus)
@@ -252,6 +285,10 @@ func (s *MemoryStore) RequestPublish(_ context.Context, userID int64, imageID st
 }
 
 func (s *MemoryStore) CancelPublish(_ context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	return s.CancelPublishInProject(context.Background(), userID, imageID, "")
+}
+
+func (s *MemoryStore) CancelPublishInProject(_ context.Context, userID int64, imageID, projectID string) (domainimagetask.GalleryImage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -260,7 +297,7 @@ func (s *MemoryStore) CancelPublish(_ context.Context, userID int64, imageID str
 			continue
 		}
 		for idx, result := range task.Results {
-			if result.ID != imageID {
+			if result.ID != imageID || (projectID != "" && result.ProjectID != projectID) {
 				continue
 			}
 			switch defaultVisibilityStatus(result.VisibilityStatus) {
@@ -280,6 +317,10 @@ func (s *MemoryStore) CancelPublish(_ context.Context, userID int64, imageID str
 }
 
 func (s *MemoryStore) SetImageGroup(_ context.Context, userID int64, imageID, imageGroup string) (domainimagetask.GalleryImage, error) {
+	return s.SetImageGroupInProject(context.Background(), userID, imageID, "", imageGroup)
+}
+
+func (s *MemoryStore) SetImageGroupInProject(_ context.Context, userID int64, imageID, projectID, imageGroup string) (domainimagetask.GalleryImage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -289,13 +330,35 @@ func (s *MemoryStore) SetImageGroup(_ context.Context, userID int64, imageID, im
 			continue
 		}
 		for idx, result := range task.Results {
-			if result.ID != imageID {
+			if result.ID != imageID || (projectID != "" && result.ProjectID != projectID) {
 				continue
 			}
 			result.ImageGroup = imageGroup
 			task.Results[idx] = result
 			s.tasksByID[taskID] = cloneTask(task)
 			return galleryImageFromMemoryTask(task, result), nil
+		}
+	}
+	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+}
+
+func (s *MemoryStore) TransferImageProject(_ context.Context, userID int64, imageID, sourceProjectID, targetProjectID string) (domainimagetask.GalleryImage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for taskID, task := range s.tasksByID {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for index, result := range task.Results {
+			if result.ID != imageID || result.ProjectID != sourceProjectID {
+				continue
+			}
+			result.ProjectID = targetProjectID
+			task.Results[index] = result
+			s.tasksByID[taskID] = cloneTask(task)
+			image := galleryImageFromMemoryTask(task, result)
+			image.ProjectID = targetProjectID
+			return image, nil
 		}
 	}
 	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
@@ -328,7 +391,33 @@ func (s *MemoryStore) ReviewImage(_ context.Context, imageID, nextStatus, review
 	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 }
 
+func (s *MemoryStore) ReviewImageInProject(_ context.Context, userID int64, imageID, projectID, nextStatus, reviewReason string, publishedAt *time.Time) (domainimagetask.GalleryImage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for taskID, task := range s.tasksByID {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for idx, result := range task.Results {
+			if result.ID != imageID || result.ProjectID != projectID {
+				continue
+			}
+			result.VisibilityStatus = nextStatus
+			result.ReviewReason = strings.TrimSpace(reviewReason)
+			result.PublishedAt = publishedAt
+			task.Results[idx] = result
+			s.tasksByID[taskID] = cloneTask(task)
+			return galleryImageFromMemoryTask(task, result), nil
+		}
+	}
+	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+}
+
 func (s *MemoryStore) DeleteImageResult(_ context.Context, userID int64, imageID string) (provider.ImageResult, error) {
+	return s.DeleteImageResultInProject(context.Background(), userID, imageID, "")
+}
+
+func (s *MemoryStore) DeleteImageResultInProject(_ context.Context, userID int64, imageID, projectID string) (provider.ImageResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -337,7 +426,7 @@ func (s *MemoryStore) DeleteImageResult(_ context.Context, userID int64, imageID
 			continue
 		}
 		for idx, result := range task.Results {
-			if result.ID != imageID {
+			if result.ID != imageID || (projectID != "" && result.ProjectID != projectID) {
 				continue
 			}
 			task.Results = append(task.Results[:idx], task.Results[idx+1:]...)
@@ -354,7 +443,7 @@ func (s *MemoryStore) ListGalleryByUser(_ context.Context, userID int64, req dom
 	page, pageSize := normalizeGalleryPage(req.Page, req.PageSize)
 	items := make([]domainimagetask.GalleryImage, 0)
 	for _, task := range s.tasksByID {
-		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted || (req.ProjectID != "" && task.ProjectID != req.ProjectID) {
 			continue
 		}
 		for _, result := range task.Results {
@@ -717,6 +806,8 @@ func galleryImageFromMemoryTask(task domainimagetask.Task, result provider.Image
 		ID:                result.ID,
 		TaskID:            task.ID,
 		UserID:            task.UserID,
+		ProjectID:         task.ProjectID,
+		Project:           cloneProjectSnapshot(task.Project),
 		Prompt:            task.Prompt,
 		AbstractModel:     task.AbstractModel,
 		RouteModelCode:    task.RouteModelCode,
@@ -749,6 +840,14 @@ func galleryImageFromMemoryTask(task domainimagetask.Task, result provider.Image
 		ReviewReason:      result.ReviewReason,
 		PublishedAt:       result.PublishedAt,
 	}
+}
+
+func cloneProjectSnapshot(value *domainimagetask.ProjectSnapshot) *domainimagetask.ProjectSnapshot {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func galleryReferenceAssets(assetIDs []string) []domainimagetask.GalleryReferenceAsset {

@@ -61,21 +61,10 @@ func (s *Service) ScheduleProviderInstanceWithDailyUsage(_ context.Context, meth
 		return domaincashier.ProviderInstance{}, ErrPaymentProviderUnavailable
 	}
 
-	candidates := make([]domaincashier.ProviderInstance, 0, len(instances))
-	for _, instance := range instances {
-		if !instance.Enabled {
-			continue
-		}
-		if strings.TrimSpace(method.SourceProviderType) != "" && !strings.EqualFold(instance.ProviderType, method.SourceProviderType) {
-			continue
-		}
-		if !stringListContains(instance.SupportedMethods, method.Method) {
-			continue
-		}
+	eligible := EligibleProviderInstances(method, instances)
+	candidates := make([]domaincashier.ProviderInstance, 0, len(eligible))
+	for _, instance := range eligible {
 		if !domaincashier.ProviderInstanceAmountAllowedWithDailyUsage(instance, amount, dailyUsage[instance.ID]) {
-			continue
-		}
-		if instance.ProviderType != "mock" && instance.ConfigStatus != "configured" {
 			continue
 		}
 		candidates = append(candidates, instance)
@@ -90,6 +79,29 @@ func (s *Service) ScheduleProviderInstanceWithDailyUsage(_ context.Context, meth
 		return s.nextRoundRobinProviderInstance(method, candidates), nil
 	}
 	return candidates[0], nil
+}
+
+func EligibleProviderInstances(method domaincashier.VisibleMethod, instances []domaincashier.ProviderInstance) []domaincashier.ProviderInstance {
+	if strings.TrimSpace(method.Method) == "" || !method.Enabled {
+		return nil
+	}
+	eligible := make([]domaincashier.ProviderInstance, 0, len(instances))
+	for _, instance := range instances {
+		if !instance.Enabled {
+			continue
+		}
+		if strings.TrimSpace(method.SourceProviderType) != "" && !strings.EqualFold(instance.ProviderType, method.SourceProviderType) {
+			continue
+		}
+		if !stringListContains(instance.SupportedMethods, method.Method) {
+			continue
+		}
+		if instance.ProviderType != "mock" && instance.ConfigStatus != "configured" {
+			continue
+		}
+		eligible = append(eligible, instance)
+	}
+	return eligible
 }
 
 func (s *Service) nextRoundRobinProviderInstance(method domaincashier.VisibleMethod, candidates []domaincashier.ProviderInstance) domaincashier.ProviderInstance {
