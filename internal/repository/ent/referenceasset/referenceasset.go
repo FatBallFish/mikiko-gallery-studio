@@ -22,6 +22,10 @@ const (
 	FieldDeletedAt = "deleted_at"
 	// FieldUserID holds the string denoting the user_id field in the database.
 	FieldUserID = "user_id"
+	// FieldName holds the string denoting the name field in the database.
+	FieldName = "name"
+	// FieldNameNormalized holds the string denoting the name_normalized field in the database.
+	FieldNameNormalized = "name_normalized"
 	// FieldAPIKeyID holds the string denoting the api_key_id field in the database.
 	FieldAPIKeyID = "api_key_id"
 	// FieldUploadSource holds the string denoting the upload_source field in the database.
@@ -63,6 +67,8 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldDeletedAt,
 	FieldUserID,
+	FieldName,
+	FieldNameNormalized,
 	FieldAPIKeyID,
 	FieldUploadSource,
 	FieldStatus,
@@ -97,6 +103,10 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
+	// NameValidator is a validator for the "name" field. It is called by the builders before save.
+	NameValidator func(string) error
+	// NameNormalizedValidator is a validator for the "name_normalized" field. It is called by the builders before save.
+	NameNormalizedValidator func(string) error
 	// DefaultUploadSource holds the default value on creation for the "upload_source" field.
 	DefaultUploadSource string
 	// UploadSourceValidator is a validator for the "upload_source" field. It is called by the builders before save.
@@ -151,6 +161,16 @@ func ByDeletedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByUserID orders the results by the user_id field.
 func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserID, opts...).ToFunc()
+}
+
+// ByName orders the results by the name field.
+func ByName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldName, opts...).ToFunc()
+}
+
+// ByNameNormalized orders the results by the name_normalized field.
+func ByNameNormalized(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldNameNormalized, opts...).ToFunc()
 }
 
 // ByAPIKeyID orders the results by the api_key_id field.

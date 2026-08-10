@@ -480,6 +480,9 @@ var (
 		{Name: "progress_stage", Type: field.TypeString, Size: 32, Default: ""},
 		{Name: "progress_message", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "prompt", Type: field.TypeString, Size: 2147483647},
+		{Name: "prompt_template", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "prompt_template_version", Type: field.TypeInt, Default: 0},
+		{Name: "prompt_binding_snapshot", Type: field.TypeJSON, Nullable: true},
 		{Name: "negative_prompt", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "abstract_model", Type: field.TypeString, Size: 64},
 		{Name: "size_mode", Type: field.TypeString, Size: 16, Default: "ratio"},
@@ -547,7 +550,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "image_tasks_projects_image_tasks",
-				Columns:    []*schema.Column{ImageTasksColumns[69]},
+				Columns:    []*schema.Column{ImageTasksColumns[72]},
 				RefColumns: []*schema.Column{ProjectsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -561,12 +564,12 @@ var (
 			{
 				Name:    "imagetask_project_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[69]},
+				Columns: []*schema.Column{ImageTasksColumns[72]},
 			},
 			{
 				Name:    "imagetask_user_id_project_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[4], ImageTasksColumns[69], ImageTasksColumns[1]},
+				Columns: []*schema.Column{ImageTasksColumns[4], ImageTasksColumns[72], ImageTasksColumns[1]},
 			},
 			{
 				Name:    "imagetask_api_key_id",
@@ -591,57 +594,57 @@ var (
 			{
 				Name:    "imagetask_abstract_model",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[13]},
+				Columns: []*schema.Column{ImageTasksColumns[16]},
 			},
 			{
 				Name:    "imagetask_route_model_code",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[36]},
+				Columns: []*schema.Column{ImageTasksColumns[39]},
 			},
 			{
 				Name:    "imagetask_base_resolution",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[15]},
+				Columns: []*schema.Column{ImageTasksColumns[18]},
 			},
 			{
 				Name:    "imagetask_provider_model_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[42]},
+				Columns: []*schema.Column{ImageTasksColumns[45]},
 			},
 			{
 				Name:    "imagetask_account_model_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[37]},
+				Columns: []*schema.Column{ImageTasksColumns[40]},
 			},
 			{
 				Name:    "imagetask_model_account_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[38]},
+				Columns: []*schema.Column{ImageTasksColumns[41]},
 			},
 			{
 				Name:    "imagetask_lease_owner",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[63]},
+				Columns: []*schema.Column{ImageTasksColumns[66]},
 			},
 			{
 				Name:    "imagetask_lease_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[64]},
+				Columns: []*schema.Column{ImageTasksColumns[67]},
 			},
 			{
 				Name:    "imagetask_artifact_recovery_status_artifact_next_retry_at",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[53], ImageTasksColumns[56]},
+				Columns: []*schema.Column{ImageTasksColumns[56], ImageTasksColumns[59]},
 			},
 			{
 				Name:    "imagetask_artifact_recovery_status_artifact_storage_config_id",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[53], ImageTasksColumns[58]},
+				Columns: []*schema.Column{ImageTasksColumns[56], ImageTasksColumns[61]},
 			},
 			{
 				Name:    "imagetask_error_code",
 				Unique:  false,
-				Columns: []*schema.Column{ImageTasksColumns[65]},
+				Columns: []*schema.Column{ImageTasksColumns[68]},
 			},
 			{
 				Name:    "imagetask_created_at",
@@ -1592,6 +1595,8 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "name", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "name_normalized", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "upload_source", Type: field.TypeString, Size: 16, Default: "web"},
 		{Name: "status", Type: field.TypeString, Size: 32, Default: "uploading"},
@@ -1617,17 +1622,17 @@ var (
 			{
 				Name:    "referenceasset_object_key",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[10]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[12]},
 			},
 			{
 				Name:    "referenceasset_source_image_result_id",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[16]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[18]},
 			},
 			{
 				Name:    "referenceasset_storage_config_id",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[8]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[10]},
 			},
 			{
 				Name:    "referenceasset_user_id",
@@ -1637,24 +1642,32 @@ var (
 			{
 				Name:    "referenceasset_status",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[7]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[9]},
 			},
 			{
 				Name:    "referenceasset_sha256",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[15]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[17]},
 			},
 			{
 				Name:    "referenceasset_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[19]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[21]},
 			},
 			{
 				Name:    "reference_asset_active_source",
 				Unique:  true,
-				Columns: []*schema.Column{ReferenceAssetsColumns[4], ReferenceAssetsColumns[16]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[4], ReferenceAssetsColumns[18]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "source_image_result_id IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'",
+				},
+			},
+			{
+				Name:    "reference_asset_active_name",
+				Unique:  true,
+				Columns: []*schema.Column{ReferenceAssetsColumns[4], ReferenceAssetsColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "name_normalized IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'",
 				},
 			},
 		},

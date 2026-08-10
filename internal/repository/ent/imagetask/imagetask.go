@@ -39,6 +39,12 @@ const (
 	FieldProgressMessage = "progress_message"
 	// FieldPrompt holds the string denoting the prompt field in the database.
 	FieldPrompt = "prompt"
+	// FieldPromptTemplate holds the string denoting the prompt_template field in the database.
+	FieldPromptTemplate = "prompt_template"
+	// FieldPromptTemplateVersion holds the string denoting the prompt_template_version field in the database.
+	FieldPromptTemplateVersion = "prompt_template_version"
+	// FieldPromptBindingSnapshot holds the string denoting the prompt_binding_snapshot field in the database.
+	FieldPromptBindingSnapshot = "prompt_binding_snapshot"
 	// FieldNegativePrompt holds the string denoting the negative_prompt field in the database.
 	FieldNegativePrompt = "negative_prompt"
 	// FieldAbstractModel holds the string denoting the abstract_model field in the database.
@@ -181,6 +187,9 @@ var Columns = []string{
 	FieldProgressStage,
 	FieldProgressMessage,
 	FieldPrompt,
+	FieldPromptTemplate,
+	FieldPromptTemplateVersion,
+	FieldPromptBindingSnapshot,
 	FieldNegativePrompt,
 	FieldAbstractModel,
 	FieldSizeMode,
@@ -273,6 +282,8 @@ var (
 	ProgressStageValidator func(string) error
 	// DefaultProgressMessage holds the default value on creation for the "progress_message" field.
 	DefaultProgressMessage string
+	// DefaultPromptTemplateVersion holds the default value on creation for the "prompt_template_version" field.
+	DefaultPromptTemplateVersion int
 	// AbstractModelValidator is a validator for the "abstract_model" field. It is called by the builders before save.
 	AbstractModelValidator func(string) error
 	// DefaultSizeMode holds the default value on creation for the "size_mode" field.
@@ -439,6 +450,16 @@ func ByProgressMessage(opts ...sql.OrderTermOption) OrderOption {
 // ByPrompt orders the results by the prompt field.
 func ByPrompt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPrompt, opts...).ToFunc()
+}
+
+// ByPromptTemplate orders the results by the prompt_template field.
+func ByPromptTemplate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPromptTemplate, opts...).ToFunc()
+}
+
+// ByPromptTemplateVersion orders the results by the prompt_template_version field.
+func ByPromptTemplateVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPromptTemplateVersion, opts...).ToFunc()
 }
 
 // ByNegativePrompt orders the results by the negative_prompt field.

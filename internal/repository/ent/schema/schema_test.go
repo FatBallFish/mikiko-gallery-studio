@@ -286,6 +286,33 @@ func TestImageSchemasCarryProjectAndCapabilityContracts(t *testing.T) {
 	}
 }
 
+func TestV012PromptTemplateSchemaContracts(t *testing.T) {
+	referenceFields := schemaFieldDescriptors(ReferenceAsset{}.Fields())
+	for _, name := range []string{"name", "name_normalized"} {
+		descriptor := requireSchemaField(t, referenceFields, name)
+		if !descriptor.Optional || !descriptor.Nillable {
+			t.Fatalf("reference_assets.%s must be nullable during rolling migration", name)
+		}
+	}
+	if referenceFields["name"].Size != 64 || referenceFields["name_normalized"].Size != 64 {
+		t.Fatalf("reference asset names must be limited to 64 characters")
+	}
+	if !hasIndexFields(ReferenceAsset{}.Indexes(), []string{"user_id", "name_normalized"}, true) {
+		t.Fatal("active reference asset names must be unique per user")
+	}
+
+	taskFields := schemaFieldDescriptors(ImageTask{}.Fields())
+	promptTemplate := requireSchemaField(t, taskFields, "prompt_template")
+	if !promptTemplate.Optional || !promptTemplate.Nillable {
+		t.Fatal("image_tasks.prompt_template must be nullable for legacy tasks")
+	}
+	version := requireSchemaField(t, taskFields, "prompt_template_version")
+	if defaultValue, ok := version.Default.(int); !ok || defaultValue != 0 {
+		t.Fatalf("prompt_template_version default = %#v, want 0", version.Default)
+	}
+	requireSchemaField(t, taskFields, "prompt_binding_snapshot")
+}
+
 func TestModelLifecycleSchemasRetainTombstonesForHistoricalSafety(t *testing.T) {
 	for name, mixins := range map[string][]ent.Mixin{
 		"route_model_candidates": RouteModelCandidate{}.Mixin(),

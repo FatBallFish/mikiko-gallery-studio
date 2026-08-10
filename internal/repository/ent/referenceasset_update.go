@@ -76,6 +76,46 @@ func (_u *ReferenceAssetUpdate) AddUserID(v int64) *ReferenceAssetUpdate {
 	return _u
 }
 
+// SetName sets the "name" field.
+func (_u *ReferenceAssetUpdate) SetName(v string) *ReferenceAssetUpdate {
+	_u.mutation.SetName(v)
+	return _u
+}
+
+// SetNillableName sets the "name" field if the given value is not nil.
+func (_u *ReferenceAssetUpdate) SetNillableName(v *string) *ReferenceAssetUpdate {
+	if v != nil {
+		_u.SetName(*v)
+	}
+	return _u
+}
+
+// ClearName clears the value of the "name" field.
+func (_u *ReferenceAssetUpdate) ClearName() *ReferenceAssetUpdate {
+	_u.mutation.ClearName()
+	return _u
+}
+
+// SetNameNormalized sets the "name_normalized" field.
+func (_u *ReferenceAssetUpdate) SetNameNormalized(v string) *ReferenceAssetUpdate {
+	_u.mutation.SetNameNormalized(v)
+	return _u
+}
+
+// SetNillableNameNormalized sets the "name_normalized" field if the given value is not nil.
+func (_u *ReferenceAssetUpdate) SetNillableNameNormalized(v *string) *ReferenceAssetUpdate {
+	if v != nil {
+		_u.SetNameNormalized(*v)
+	}
+	return _u
+}
+
+// ClearNameNormalized clears the value of the "name_normalized" field.
+func (_u *ReferenceAssetUpdate) ClearNameNormalized() *ReferenceAssetUpdate {
+	_u.mutation.ClearNameNormalized()
+	return _u
+}
+
 // SetAPIKeyID sets the "api_key_id" field.
 func (_u *ReferenceAssetUpdate) SetAPIKeyID(v int64) *ReferenceAssetUpdate {
 	_u.mutation.ResetAPIKeyID()
@@ -393,6 +433,16 @@ func (_u *ReferenceAssetUpdate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *ReferenceAssetUpdate) check() error {
+	if v, ok := _u.mutation.Name(); ok {
+		if err := referenceasset.NameValidator(v); err != nil {
+			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "ReferenceAsset.name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.NameNormalized(); ok {
+		if err := referenceasset.NameNormalizedValidator(v); err != nil {
+			return &ValidationError{Name: "name_normalized", err: fmt.Errorf(`ent: validator failed for field "ReferenceAsset.name_normalized": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UploadSource(); ok {
 		if err := referenceasset.UploadSourceValidator(v); err != nil {
 			return &ValidationError{Name: "upload_source", err: fmt.Errorf(`ent: validator failed for field "ReferenceAsset.upload_source": %w`, err)}
@@ -452,6 +502,18 @@ func (_u *ReferenceAssetUpdate) sqlSave(ctx context.Context) (_node int, err err
 	}
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(referenceasset.FieldUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.Name(); ok {
+		_spec.SetField(referenceasset.FieldName, field.TypeString, value)
+	}
+	if _u.mutation.NameCleared() {
+		_spec.ClearField(referenceasset.FieldName, field.TypeString)
+	}
+	if value, ok := _u.mutation.NameNormalized(); ok {
+		_spec.SetField(referenceasset.FieldNameNormalized, field.TypeString, value)
+	}
+	if _u.mutation.NameNormalizedCleared() {
+		_spec.ClearField(referenceasset.FieldNameNormalized, field.TypeString)
 	}
 	if value, ok := _u.mutation.APIKeyID(); ok {
 		_spec.SetField(referenceasset.FieldAPIKeyID, field.TypeInt64, value)
@@ -592,6 +654,46 @@ func (_u *ReferenceAssetUpdateOne) SetNillableUserID(v *int64) *ReferenceAssetUp
 // AddUserID adds value to the "user_id" field.
 func (_u *ReferenceAssetUpdateOne) AddUserID(v int64) *ReferenceAssetUpdateOne {
 	_u.mutation.AddUserID(v)
+	return _u
+}
+
+// SetName sets the "name" field.
+func (_u *ReferenceAssetUpdateOne) SetName(v string) *ReferenceAssetUpdateOne {
+	_u.mutation.SetName(v)
+	return _u
+}
+
+// SetNillableName sets the "name" field if the given value is not nil.
+func (_u *ReferenceAssetUpdateOne) SetNillableName(v *string) *ReferenceAssetUpdateOne {
+	if v != nil {
+		_u.SetName(*v)
+	}
+	return _u
+}
+
+// ClearName clears the value of the "name" field.
+func (_u *ReferenceAssetUpdateOne) ClearName() *ReferenceAssetUpdateOne {
+	_u.mutation.ClearName()
+	return _u
+}
+
+// SetNameNormalized sets the "name_normalized" field.
+func (_u *ReferenceAssetUpdateOne) SetNameNormalized(v string) *ReferenceAssetUpdateOne {
+	_u.mutation.SetNameNormalized(v)
+	return _u
+}
+
+// SetNillableNameNormalized sets the "name_normalized" field if the given value is not nil.
+func (_u *ReferenceAssetUpdateOne) SetNillableNameNormalized(v *string) *ReferenceAssetUpdateOne {
+	if v != nil {
+		_u.SetNameNormalized(*v)
+	}
+	return _u
+}
+
+// ClearNameNormalized clears the value of the "name_normalized" field.
+func (_u *ReferenceAssetUpdateOne) ClearNameNormalized() *ReferenceAssetUpdateOne {
+	_u.mutation.ClearNameNormalized()
 	return _u
 }
 
@@ -925,6 +1027,16 @@ func (_u *ReferenceAssetUpdateOne) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *ReferenceAssetUpdateOne) check() error {
+	if v, ok := _u.mutation.Name(); ok {
+		if err := referenceasset.NameValidator(v); err != nil {
+			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "ReferenceAsset.name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.NameNormalized(); ok {
+		if err := referenceasset.NameNormalizedValidator(v); err != nil {
+			return &ValidationError{Name: "name_normalized", err: fmt.Errorf(`ent: validator failed for field "ReferenceAsset.name_normalized": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UploadSource(); ok {
 		if err := referenceasset.UploadSourceValidator(v); err != nil {
 			return &ValidationError{Name: "upload_source", err: fmt.Errorf(`ent: validator failed for field "ReferenceAsset.upload_source": %w`, err)}
@@ -1001,6 +1113,18 @@ func (_u *ReferenceAssetUpdateOne) sqlSave(ctx context.Context) (_node *Referenc
 	}
 	if value, ok := _u.mutation.AddedUserID(); ok {
 		_spec.AddField(referenceasset.FieldUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.Name(); ok {
+		_spec.SetField(referenceasset.FieldName, field.TypeString, value)
+	}
+	if _u.mutation.NameCleared() {
+		_spec.ClearField(referenceasset.FieldName, field.TypeString)
+	}
+	if value, ok := _u.mutation.NameNormalized(); ok {
+		_spec.SetField(referenceasset.FieldNameNormalized, field.TypeString, value)
+	}
+	if _u.mutation.NameNormalizedCleared() {
+		_spec.ClearField(referenceasset.FieldNameNormalized, field.TypeString)
 	}
 	if value, ok := _u.mutation.APIKeyID(); ok {
 		_spec.SetField(referenceasset.FieldAPIKeyID, field.TypeInt64, value)

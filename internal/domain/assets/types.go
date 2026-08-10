@@ -28,6 +28,7 @@ type UpdateAliasCreationRolloutRequest struct {
 
 type ReferenceAsset struct {
 	ID                  string              `json:"id"`
+	Name                string              `json:"name"`
 	APIKeyID            *int64              `json:"-"`
 	UploadSource        string              `json:"-"`
 	Status              string              `json:"status"`

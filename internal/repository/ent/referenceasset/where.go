@@ -75,6 +75,16 @@ func UserID(v int64) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldEQ(FieldUserID, v))
 }
 
+// Name applies equality check predicate on the "name" field. It's identical to NameEQ.
+func Name(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldName, v))
+}
+
+// NameNormalized applies equality check predicate on the "name_normalized" field. It's identical to NameNormalizedEQ.
+func NameNormalized(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldNameNormalized, v))
+}
+
 // APIKeyID applies equality check predicate on the "api_key_id" field. It's identical to APIKeyIDEQ.
 func APIKeyID(v int64) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldEQ(FieldAPIKeyID, v))
@@ -318,6 +328,156 @@ func UserIDLT(v int64) predicate.ReferenceAsset {
 // UserIDLTE applies the LTE predicate on the "user_id" field.
 func UserIDLTE(v int64) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldLTE(FieldUserID, v))
+}
+
+// NameEQ applies the EQ predicate on the "name" field.
+func NameEQ(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldName, v))
+}
+
+// NameNEQ applies the NEQ predicate on the "name" field.
+func NameNEQ(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNEQ(FieldName, v))
+}
+
+// NameIn applies the In predicate on the "name" field.
+func NameIn(vs ...string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldIn(FieldName, vs...))
+}
+
+// NameNotIn applies the NotIn predicate on the "name" field.
+func NameNotIn(vs ...string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNotIn(FieldName, vs...))
+}
+
+// NameGT applies the GT predicate on the "name" field.
+func NameGT(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldGT(FieldName, v))
+}
+
+// NameGTE applies the GTE predicate on the "name" field.
+func NameGTE(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldGTE(FieldName, v))
+}
+
+// NameLT applies the LT predicate on the "name" field.
+func NameLT(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldLT(FieldName, v))
+}
+
+// NameLTE applies the LTE predicate on the "name" field.
+func NameLTE(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldLTE(FieldName, v))
+}
+
+// NameContains applies the Contains predicate on the "name" field.
+func NameContains(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldContains(FieldName, v))
+}
+
+// NameHasPrefix applies the HasPrefix predicate on the "name" field.
+func NameHasPrefix(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldHasPrefix(FieldName, v))
+}
+
+// NameHasSuffix applies the HasSuffix predicate on the "name" field.
+func NameHasSuffix(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldHasSuffix(FieldName, v))
+}
+
+// NameIsNil applies the IsNil predicate on the "name" field.
+func NameIsNil() predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldIsNull(FieldName))
+}
+
+// NameNotNil applies the NotNil predicate on the "name" field.
+func NameNotNil() predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNotNull(FieldName))
+}
+
+// NameEqualFold applies the EqualFold predicate on the "name" field.
+func NameEqualFold(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEqualFold(FieldName, v))
+}
+
+// NameContainsFold applies the ContainsFold predicate on the "name" field.
+func NameContainsFold(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldContainsFold(FieldName, v))
+}
+
+// NameNormalizedEQ applies the EQ predicate on the "name_normalized" field.
+func NameNormalizedEQ(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldNameNormalized, v))
+}
+
+// NameNormalizedNEQ applies the NEQ predicate on the "name_normalized" field.
+func NameNormalizedNEQ(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNEQ(FieldNameNormalized, v))
+}
+
+// NameNormalizedIn applies the In predicate on the "name_normalized" field.
+func NameNormalizedIn(vs ...string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldIn(FieldNameNormalized, vs...))
+}
+
+// NameNormalizedNotIn applies the NotIn predicate on the "name_normalized" field.
+func NameNormalizedNotIn(vs ...string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNotIn(FieldNameNormalized, vs...))
+}
+
+// NameNormalizedGT applies the GT predicate on the "name_normalized" field.
+func NameNormalizedGT(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldGT(FieldNameNormalized, v))
+}
+
+// NameNormalizedGTE applies the GTE predicate on the "name_normalized" field.
+func NameNormalizedGTE(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldGTE(FieldNameNormalized, v))
+}
+
+// NameNormalizedLT applies the LT predicate on the "name_normalized" field.
+func NameNormalizedLT(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldLT(FieldNameNormalized, v))
+}
+
+// NameNormalizedLTE applies the LTE predicate on the "name_normalized" field.
+func NameNormalizedLTE(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldLTE(FieldNameNormalized, v))
+}
+
+// NameNormalizedContains applies the Contains predicate on the "name_normalized" field.
+func NameNormalizedContains(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldContains(FieldNameNormalized, v))
+}
+
+// NameNormalizedHasPrefix applies the HasPrefix predicate on the "name_normalized" field.
+func NameNormalizedHasPrefix(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldHasPrefix(FieldNameNormalized, v))
+}
+
+// NameNormalizedHasSuffix applies the HasSuffix predicate on the "name_normalized" field.
+func NameNormalizedHasSuffix(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldHasSuffix(FieldNameNormalized, v))
+}
+
+// NameNormalizedIsNil applies the IsNil predicate on the "name_normalized" field.
+func NameNormalizedIsNil() predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldIsNull(FieldNameNormalized))
+}
+
+// NameNormalizedNotNil applies the NotNil predicate on the "name_normalized" field.
+func NameNormalizedNotNil() predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNotNull(FieldNameNormalized))
+}
+
+// NameNormalizedEqualFold applies the EqualFold predicate on the "name_normalized" field.
+func NameNormalizedEqualFold(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEqualFold(FieldNameNormalized, v))
+}
+
+// NameNormalizedContainsFold applies the ContainsFold predicate on the "name_normalized" field.
+func NameNormalizedContainsFold(v string) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldContainsFold(FieldNameNormalized, v))
 }
 
 // APIKeyIDEQ applies the EQ predicate on the "api_key_id" field.

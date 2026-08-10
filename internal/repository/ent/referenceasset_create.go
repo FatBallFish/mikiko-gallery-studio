@@ -69,6 +69,34 @@ func (_c *ReferenceAssetCreate) SetUserID(v int64) *ReferenceAssetCreate {
 	return _c
 }
 
+// SetName sets the "name" field.
+func (_c *ReferenceAssetCreate) SetName(v string) *ReferenceAssetCreate {
+	_c.mutation.SetName(v)
+	return _c
+}
+
+// SetNillableName sets the "name" field if the given value is not nil.
+func (_c *ReferenceAssetCreate) SetNillableName(v *string) *ReferenceAssetCreate {
+	if v != nil {
+		_c.SetName(*v)
+	}
+	return _c
+}
+
+// SetNameNormalized sets the "name_normalized" field.
+func (_c *ReferenceAssetCreate) SetNameNormalized(v string) *ReferenceAssetCreate {
+	_c.mutation.SetNameNormalized(v)
+	return _c
+}
+
+// SetNillableNameNormalized sets the "name_normalized" field if the given value is not nil.
+func (_c *ReferenceAssetCreate) SetNillableNameNormalized(v *string) *ReferenceAssetCreate {
+	if v != nil {
+		_c.SetNameNormalized(*v)
+	}
+	return _c
+}
+
 // SetAPIKeyID sets the "api_key_id" field.
 func (_c *ReferenceAssetCreate) SetAPIKeyID(v int64) *ReferenceAssetCreate {
 	_c.mutation.SetAPIKeyID(v)
@@ -353,6 +381,16 @@ func (_c *ReferenceAssetCreate) check() error {
 	if _, ok := _c.mutation.UserID(); !ok {
 		return &ValidationError{Name: "user_id", err: errors.New(`ent: missing required field "ReferenceAsset.user_id"`)}
 	}
+	if v, ok := _c.mutation.Name(); ok {
+		if err := referenceasset.NameValidator(v); err != nil {
+			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "ReferenceAsset.name": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.NameNormalized(); ok {
+		if err := referenceasset.NameNormalizedValidator(v); err != nil {
+			return &ValidationError{Name: "name_normalized", err: fmt.Errorf(`ent: validator failed for field "ReferenceAsset.name_normalized": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.UploadSource(); !ok {
 		return &ValidationError{Name: "upload_source", err: errors.New(`ent: missing required field "ReferenceAsset.upload_source"`)}
 	}
@@ -460,6 +498,14 @@ func (_c *ReferenceAssetCreate) createSpec() (*ReferenceAsset, *sqlgraph.CreateS
 	if value, ok := _c.mutation.UserID(); ok {
 		_spec.SetField(referenceasset.FieldUserID, field.TypeInt64, value)
 		_node.UserID = value
+	}
+	if value, ok := _c.mutation.Name(); ok {
+		_spec.SetField(referenceasset.FieldName, field.TypeString, value)
+		_node.Name = &value
+	}
+	if value, ok := _c.mutation.NameNormalized(); ok {
+		_spec.SetField(referenceasset.FieldNameNormalized, field.TypeString, value)
+		_node.NameNormalized = &value
 	}
 	if value, ok := _c.mutation.APIKeyID(); ok {
 		_spec.SetField(referenceasset.FieldAPIKeyID, field.TypeInt64, value)

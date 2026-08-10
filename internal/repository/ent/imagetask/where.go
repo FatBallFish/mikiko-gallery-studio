@@ -116,6 +116,16 @@ func Prompt(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldPrompt, v))
 }
 
+// PromptTemplate applies equality check predicate on the "prompt_template" field. It's identical to PromptTemplateEQ.
+func PromptTemplate(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldPromptTemplate, v))
+}
+
+// PromptTemplateVersion applies equality check predicate on the "prompt_template_version" field. It's identical to PromptTemplateVersionEQ.
+func PromptTemplateVersion(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldPromptTemplateVersion, v))
+}
+
 // NegativePrompt applies equality check predicate on the "negative_prompt" field. It's identical to NegativePromptEQ.
 func NegativePrompt(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldEQ(FieldNegativePrompt, v))
@@ -1009,6 +1019,131 @@ func PromptEqualFold(v string) predicate.ImageTask {
 // PromptContainsFold applies the ContainsFold predicate on the "prompt" field.
 func PromptContainsFold(v string) predicate.ImageTask {
 	return predicate.ImageTask(sql.FieldContainsFold(FieldPrompt, v))
+}
+
+// PromptTemplateEQ applies the EQ predicate on the "prompt_template" field.
+func PromptTemplateEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldPromptTemplate, v))
+}
+
+// PromptTemplateNEQ applies the NEQ predicate on the "prompt_template" field.
+func PromptTemplateNEQ(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldPromptTemplate, v))
+}
+
+// PromptTemplateIn applies the In predicate on the "prompt_template" field.
+func PromptTemplateIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldPromptTemplate, vs...))
+}
+
+// PromptTemplateNotIn applies the NotIn predicate on the "prompt_template" field.
+func PromptTemplateNotIn(vs ...string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldPromptTemplate, vs...))
+}
+
+// PromptTemplateGT applies the GT predicate on the "prompt_template" field.
+func PromptTemplateGT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldPromptTemplate, v))
+}
+
+// PromptTemplateGTE applies the GTE predicate on the "prompt_template" field.
+func PromptTemplateGTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldPromptTemplate, v))
+}
+
+// PromptTemplateLT applies the LT predicate on the "prompt_template" field.
+func PromptTemplateLT(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldPromptTemplate, v))
+}
+
+// PromptTemplateLTE applies the LTE predicate on the "prompt_template" field.
+func PromptTemplateLTE(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldPromptTemplate, v))
+}
+
+// PromptTemplateContains applies the Contains predicate on the "prompt_template" field.
+func PromptTemplateContains(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContains(FieldPromptTemplate, v))
+}
+
+// PromptTemplateHasPrefix applies the HasPrefix predicate on the "prompt_template" field.
+func PromptTemplateHasPrefix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasPrefix(FieldPromptTemplate, v))
+}
+
+// PromptTemplateHasSuffix applies the HasSuffix predicate on the "prompt_template" field.
+func PromptTemplateHasSuffix(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldHasSuffix(FieldPromptTemplate, v))
+}
+
+// PromptTemplateIsNil applies the IsNil predicate on the "prompt_template" field.
+func PromptTemplateIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldPromptTemplate))
+}
+
+// PromptTemplateNotNil applies the NotNil predicate on the "prompt_template" field.
+func PromptTemplateNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldPromptTemplate))
+}
+
+// PromptTemplateEqualFold applies the EqualFold predicate on the "prompt_template" field.
+func PromptTemplateEqualFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEqualFold(FieldPromptTemplate, v))
+}
+
+// PromptTemplateContainsFold applies the ContainsFold predicate on the "prompt_template" field.
+func PromptTemplateContainsFold(v string) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldContainsFold(FieldPromptTemplate, v))
+}
+
+// PromptTemplateVersionEQ applies the EQ predicate on the "prompt_template_version" field.
+func PromptTemplateVersionEQ(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldEQ(FieldPromptTemplateVersion, v))
+}
+
+// PromptTemplateVersionNEQ applies the NEQ predicate on the "prompt_template_version" field.
+func PromptTemplateVersionNEQ(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNEQ(FieldPromptTemplateVersion, v))
+}
+
+// PromptTemplateVersionIn applies the In predicate on the "prompt_template_version" field.
+func PromptTemplateVersionIn(vs ...int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIn(FieldPromptTemplateVersion, vs...))
+}
+
+// PromptTemplateVersionNotIn applies the NotIn predicate on the "prompt_template_version" field.
+func PromptTemplateVersionNotIn(vs ...int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotIn(FieldPromptTemplateVersion, vs...))
+}
+
+// PromptTemplateVersionGT applies the GT predicate on the "prompt_template_version" field.
+func PromptTemplateVersionGT(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGT(FieldPromptTemplateVersion, v))
+}
+
+// PromptTemplateVersionGTE applies the GTE predicate on the "prompt_template_version" field.
+func PromptTemplateVersionGTE(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldGTE(FieldPromptTemplateVersion, v))
+}
+
+// PromptTemplateVersionLT applies the LT predicate on the "prompt_template_version" field.
+func PromptTemplateVersionLT(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLT(FieldPromptTemplateVersion, v))
+}
+
+// PromptTemplateVersionLTE applies the LTE predicate on the "prompt_template_version" field.
+func PromptTemplateVersionLTE(v int) predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldLTE(FieldPromptTemplateVersion, v))
+}
+
+// PromptBindingSnapshotIsNil applies the IsNil predicate on the "prompt_binding_snapshot" field.
+func PromptBindingSnapshotIsNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldIsNull(FieldPromptBindingSnapshot))
+}
+
+// PromptBindingSnapshotNotNil applies the NotNil predicate on the "prompt_binding_snapshot" field.
+func PromptBindingSnapshotNotNil() predicate.ImageTask {
+	return predicate.ImageTask(sql.FieldNotNull(FieldPromptBindingSnapshot))
 }
 
 // NegativePromptEQ applies the EQ predicate on the "negative_prompt" field.

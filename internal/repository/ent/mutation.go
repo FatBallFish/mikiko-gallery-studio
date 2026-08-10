@@ -11076,6 +11076,10 @@ type ImageTaskMutation struct {
 	progress_stage                  *string
 	progress_message                *string
 	prompt                          *string
+	prompt_template                 *string
+	prompt_template_version         *int
+	addprompt_template_version      *int
+	prompt_binding_snapshot         *map[string]interface{}
 	negative_prompt                 *string
 	abstract_model                  *string
 	size_mode                       *string
@@ -11771,6 +11775,160 @@ func (m *ImageTaskMutation) OldPrompt(ctx context.Context) (v string, err error)
 // ResetPrompt resets all changes to the "prompt" field.
 func (m *ImageTaskMutation) ResetPrompt() {
 	m.prompt = nil
+}
+
+// SetPromptTemplate sets the "prompt_template" field.
+func (m *ImageTaskMutation) SetPromptTemplate(s string) {
+	m.prompt_template = &s
+}
+
+// PromptTemplate returns the value of the "prompt_template" field in the mutation.
+func (m *ImageTaskMutation) PromptTemplate() (r string, exists bool) {
+	v := m.prompt_template
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPromptTemplate returns the old "prompt_template" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldPromptTemplate(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPromptTemplate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPromptTemplate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPromptTemplate: %w", err)
+	}
+	return oldValue.PromptTemplate, nil
+}
+
+// ClearPromptTemplate clears the value of the "prompt_template" field.
+func (m *ImageTaskMutation) ClearPromptTemplate() {
+	m.prompt_template = nil
+	m.clearedFields[imagetask.FieldPromptTemplate] = struct{}{}
+}
+
+// PromptTemplateCleared returns if the "prompt_template" field was cleared in this mutation.
+func (m *ImageTaskMutation) PromptTemplateCleared() bool {
+	_, ok := m.clearedFields[imagetask.FieldPromptTemplate]
+	return ok
+}
+
+// ResetPromptTemplate resets all changes to the "prompt_template" field.
+func (m *ImageTaskMutation) ResetPromptTemplate() {
+	m.prompt_template = nil
+	delete(m.clearedFields, imagetask.FieldPromptTemplate)
+}
+
+// SetPromptTemplateVersion sets the "prompt_template_version" field.
+func (m *ImageTaskMutation) SetPromptTemplateVersion(i int) {
+	m.prompt_template_version = &i
+	m.addprompt_template_version = nil
+}
+
+// PromptTemplateVersion returns the value of the "prompt_template_version" field in the mutation.
+func (m *ImageTaskMutation) PromptTemplateVersion() (r int, exists bool) {
+	v := m.prompt_template_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPromptTemplateVersion returns the old "prompt_template_version" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldPromptTemplateVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPromptTemplateVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPromptTemplateVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPromptTemplateVersion: %w", err)
+	}
+	return oldValue.PromptTemplateVersion, nil
+}
+
+// AddPromptTemplateVersion adds i to the "prompt_template_version" field.
+func (m *ImageTaskMutation) AddPromptTemplateVersion(i int) {
+	if m.addprompt_template_version != nil {
+		*m.addprompt_template_version += i
+	} else {
+		m.addprompt_template_version = &i
+	}
+}
+
+// AddedPromptTemplateVersion returns the value that was added to the "prompt_template_version" field in this mutation.
+func (m *ImageTaskMutation) AddedPromptTemplateVersion() (r int, exists bool) {
+	v := m.addprompt_template_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPromptTemplateVersion resets all changes to the "prompt_template_version" field.
+func (m *ImageTaskMutation) ResetPromptTemplateVersion() {
+	m.prompt_template_version = nil
+	m.addprompt_template_version = nil
+}
+
+// SetPromptBindingSnapshot sets the "prompt_binding_snapshot" field.
+func (m *ImageTaskMutation) SetPromptBindingSnapshot(value map[string]interface{}) {
+	m.prompt_binding_snapshot = &value
+}
+
+// PromptBindingSnapshot returns the value of the "prompt_binding_snapshot" field in the mutation.
+func (m *ImageTaskMutation) PromptBindingSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.prompt_binding_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPromptBindingSnapshot returns the old "prompt_binding_snapshot" field's value of the ImageTask entity.
+// If the ImageTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImageTaskMutation) OldPromptBindingSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPromptBindingSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPromptBindingSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPromptBindingSnapshot: %w", err)
+	}
+	return oldValue.PromptBindingSnapshot, nil
+}
+
+// ClearPromptBindingSnapshot clears the value of the "prompt_binding_snapshot" field.
+func (m *ImageTaskMutation) ClearPromptBindingSnapshot() {
+	m.prompt_binding_snapshot = nil
+	m.clearedFields[imagetask.FieldPromptBindingSnapshot] = struct{}{}
+}
+
+// PromptBindingSnapshotCleared returns if the "prompt_binding_snapshot" field was cleared in this mutation.
+func (m *ImageTaskMutation) PromptBindingSnapshotCleared() bool {
+	_, ok := m.clearedFields[imagetask.FieldPromptBindingSnapshot]
+	return ok
+}
+
+// ResetPromptBindingSnapshot resets all changes to the "prompt_binding_snapshot" field.
+func (m *ImageTaskMutation) ResetPromptBindingSnapshot() {
+	m.prompt_binding_snapshot = nil
+	delete(m.clearedFields, imagetask.FieldPromptBindingSnapshot)
 }
 
 // SetNegativePrompt sets the "negative_prompt" field.
@@ -14574,7 +14732,7 @@ func (m *ImageTaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ImageTaskMutation) Fields() []string {
-	fields := make([]string, 0, 69)
+	fields := make([]string, 0, 72)
 	if m.created_at != nil {
 		fields = append(fields, imagetask.FieldCreatedAt)
 	}
@@ -14610,6 +14768,15 @@ func (m *ImageTaskMutation) Fields() []string {
 	}
 	if m.prompt != nil {
 		fields = append(fields, imagetask.FieldPrompt)
+	}
+	if m.prompt_template != nil {
+		fields = append(fields, imagetask.FieldPromptTemplate)
+	}
+	if m.prompt_template_version != nil {
+		fields = append(fields, imagetask.FieldPromptTemplateVersion)
+	}
+	if m.prompt_binding_snapshot != nil {
+		fields = append(fields, imagetask.FieldPromptBindingSnapshot)
 	}
 	if m.negative_prompt != nil {
 		fields = append(fields, imagetask.FieldNegativePrompt)
@@ -14814,6 +14981,12 @@ func (m *ImageTaskMutation) Field(name string) (ent.Value, bool) {
 		return m.ProgressMessage()
 	case imagetask.FieldPrompt:
 		return m.Prompt()
+	case imagetask.FieldPromptTemplate:
+		return m.PromptTemplate()
+	case imagetask.FieldPromptTemplateVersion:
+		return m.PromptTemplateVersion()
+	case imagetask.FieldPromptBindingSnapshot:
+		return m.PromptBindingSnapshot()
 	case imagetask.FieldNegativePrompt:
 		return m.NegativePrompt()
 	case imagetask.FieldAbstractModel:
@@ -14961,6 +15134,12 @@ func (m *ImageTaskMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldProgressMessage(ctx)
 	case imagetask.FieldPrompt:
 		return m.OldPrompt(ctx)
+	case imagetask.FieldPromptTemplate:
+		return m.OldPromptTemplate(ctx)
+	case imagetask.FieldPromptTemplateVersion:
+		return m.OldPromptTemplateVersion(ctx)
+	case imagetask.FieldPromptBindingSnapshot:
+		return m.OldPromptBindingSnapshot(ctx)
 	case imagetask.FieldNegativePrompt:
 		return m.OldNegativePrompt(ctx)
 	case imagetask.FieldAbstractModel:
@@ -15167,6 +15346,27 @@ func (m *ImageTaskMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPrompt(v)
+		return nil
+	case imagetask.FieldPromptTemplate:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPromptTemplate(v)
+		return nil
+	case imagetask.FieldPromptTemplateVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPromptTemplateVersion(v)
+		return nil
+	case imagetask.FieldPromptBindingSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPromptBindingSnapshot(v)
 		return nil
 	case imagetask.FieldNegativePrompt:
 		v, ok := value.(string)
@@ -15581,6 +15781,9 @@ func (m *ImageTaskMutation) AddedFields() []string {
 	if m.addapi_key_id != nil {
 		fields = append(fields, imagetask.FieldAPIKeyID)
 	}
+	if m.addprompt_template_version != nil {
+		fields = append(fields, imagetask.FieldPromptTemplateVersion)
+	}
 	if m.addresolved_width != nil {
 		fields = append(fields, imagetask.FieldResolvedWidth)
 	}
@@ -15638,6 +15841,8 @@ func (m *ImageTaskMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedUserID()
 	case imagetask.FieldAPIKeyID:
 		return m.AddedAPIKeyID()
+	case imagetask.FieldPromptTemplateVersion:
+		return m.AddedPromptTemplateVersion()
 	case imagetask.FieldResolvedWidth:
 		return m.AddedResolvedWidth()
 	case imagetask.FieldResolvedHeight:
@@ -15690,6 +15895,13 @@ func (m *ImageTaskMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddAPIKeyID(v)
+		return nil
+	case imagetask.FieldPromptTemplateVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPromptTemplateVersion(v)
 		return nil
 	case imagetask.FieldResolvedWidth:
 		v, ok := value.(int)
@@ -15813,6 +16025,12 @@ func (m *ImageTaskMutation) ClearedFields() []string {
 	if m.FieldCleared(imagetask.FieldAPIKeyID) {
 		fields = append(fields, imagetask.FieldAPIKeyID)
 	}
+	if m.FieldCleared(imagetask.FieldPromptTemplate) {
+		fields = append(fields, imagetask.FieldPromptTemplate)
+	}
+	if m.FieldCleared(imagetask.FieldPromptBindingSnapshot) {
+		fields = append(fields, imagetask.FieldPromptBindingSnapshot)
+	}
 	if m.FieldCleared(imagetask.FieldNegativePrompt) {
 		fields = append(fields, imagetask.FieldNegativePrompt)
 	}
@@ -15919,6 +16137,12 @@ func (m *ImageTaskMutation) ClearField(name string) error {
 		return nil
 	case imagetask.FieldAPIKeyID:
 		m.ClearAPIKeyID()
+		return nil
+	case imagetask.FieldPromptTemplate:
+		m.ClearPromptTemplate()
+		return nil
+	case imagetask.FieldPromptBindingSnapshot:
+		m.ClearPromptBindingSnapshot()
 		return nil
 	case imagetask.FieldNegativePrompt:
 		m.ClearNegativePrompt()
@@ -16047,6 +16271,15 @@ func (m *ImageTaskMutation) ResetField(name string) error {
 		return nil
 	case imagetask.FieldPrompt:
 		m.ResetPrompt()
+		return nil
+	case imagetask.FieldPromptTemplate:
+		m.ResetPromptTemplate()
+		return nil
+	case imagetask.FieldPromptTemplateVersion:
+		m.ResetPromptTemplateVersion()
+		return nil
+	case imagetask.FieldPromptBindingSnapshot:
+		m.ResetPromptBindingSnapshot()
 		return nil
 	case imagetask.FieldNegativePrompt:
 		m.ResetNegativePrompt()
@@ -42008,6 +42241,8 @@ type ReferenceAssetMutation struct {
 	deleted_at             *time.Time
 	user_id                *int64
 	adduser_id             *int64
+	name                   *string
+	name_normalized        *string
 	api_key_id             *int64
 	addapi_key_id          *int64
 	upload_source          *string
@@ -42312,6 +42547,104 @@ func (m *ReferenceAssetMutation) AddedUserID() (r int64, exists bool) {
 func (m *ReferenceAssetMutation) ResetUserID() {
 	m.user_id = nil
 	m.adduser_id = nil
+}
+
+// SetName sets the "name" field.
+func (m *ReferenceAssetMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *ReferenceAssetMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the ReferenceAsset entity.
+// If the ReferenceAsset object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ReferenceAssetMutation) OldName(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ClearName clears the value of the "name" field.
+func (m *ReferenceAssetMutation) ClearName() {
+	m.name = nil
+	m.clearedFields[referenceasset.FieldName] = struct{}{}
+}
+
+// NameCleared returns if the "name" field was cleared in this mutation.
+func (m *ReferenceAssetMutation) NameCleared() bool {
+	_, ok := m.clearedFields[referenceasset.FieldName]
+	return ok
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *ReferenceAssetMutation) ResetName() {
+	m.name = nil
+	delete(m.clearedFields, referenceasset.FieldName)
+}
+
+// SetNameNormalized sets the "name_normalized" field.
+func (m *ReferenceAssetMutation) SetNameNormalized(s string) {
+	m.name_normalized = &s
+}
+
+// NameNormalized returns the value of the "name_normalized" field in the mutation.
+func (m *ReferenceAssetMutation) NameNormalized() (r string, exists bool) {
+	v := m.name_normalized
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNameNormalized returns the old "name_normalized" field's value of the ReferenceAsset entity.
+// If the ReferenceAsset object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ReferenceAssetMutation) OldNameNormalized(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNameNormalized is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNameNormalized requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNameNormalized: %w", err)
+	}
+	return oldValue.NameNormalized, nil
+}
+
+// ClearNameNormalized clears the value of the "name_normalized" field.
+func (m *ReferenceAssetMutation) ClearNameNormalized() {
+	m.name_normalized = nil
+	m.clearedFields[referenceasset.FieldNameNormalized] = struct{}{}
+}
+
+// NameNormalizedCleared returns if the "name_normalized" field was cleared in this mutation.
+func (m *ReferenceAssetMutation) NameNormalizedCleared() bool {
+	_, ok := m.clearedFields[referenceasset.FieldNameNormalized]
+	return ok
+}
+
+// ResetNameNormalized resets all changes to the "name_normalized" field.
+func (m *ReferenceAssetMutation) ResetNameNormalized() {
+	m.name_normalized = nil
+	delete(m.clearedFields, referenceasset.FieldNameNormalized)
 }
 
 // SetAPIKeyID sets the "api_key_id" field.
@@ -43049,7 +43382,7 @@ func (m *ReferenceAssetMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ReferenceAssetMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 21)
 	if m.created_at != nil {
 		fields = append(fields, referenceasset.FieldCreatedAt)
 	}
@@ -43061,6 +43394,12 @@ func (m *ReferenceAssetMutation) Fields() []string {
 	}
 	if m.user_id != nil {
 		fields = append(fields, referenceasset.FieldUserID)
+	}
+	if m.name != nil {
+		fields = append(fields, referenceasset.FieldName)
+	}
+	if m.name_normalized != nil {
+		fields = append(fields, referenceasset.FieldNameNormalized)
 	}
 	if m.api_key_id != nil {
 		fields = append(fields, referenceasset.FieldAPIKeyID)
@@ -43123,6 +43462,10 @@ func (m *ReferenceAssetMutation) Field(name string) (ent.Value, bool) {
 		return m.DeletedAt()
 	case referenceasset.FieldUserID:
 		return m.UserID()
+	case referenceasset.FieldName:
+		return m.Name()
+	case referenceasset.FieldNameNormalized:
+		return m.NameNormalized()
 	case referenceasset.FieldAPIKeyID:
 		return m.APIKeyID()
 	case referenceasset.FieldUploadSource:
@@ -43170,6 +43513,10 @@ func (m *ReferenceAssetMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldDeletedAt(ctx)
 	case referenceasset.FieldUserID:
 		return m.OldUserID(ctx)
+	case referenceasset.FieldName:
+		return m.OldName(ctx)
+	case referenceasset.FieldNameNormalized:
+		return m.OldNameNormalized(ctx)
 	case referenceasset.FieldAPIKeyID:
 		return m.OldAPIKeyID(ctx)
 	case referenceasset.FieldUploadSource:
@@ -43236,6 +43583,20 @@ func (m *ReferenceAssetMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUserID(v)
+		return nil
+	case referenceasset.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case referenceasset.FieldNameNormalized:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNameNormalized(v)
 		return nil
 	case referenceasset.FieldAPIKeyID:
 		v, ok := value.(int64)
@@ -43438,6 +43799,12 @@ func (m *ReferenceAssetMutation) ClearedFields() []string {
 	if m.FieldCleared(referenceasset.FieldDeletedAt) {
 		fields = append(fields, referenceasset.FieldDeletedAt)
 	}
+	if m.FieldCleared(referenceasset.FieldName) {
+		fields = append(fields, referenceasset.FieldName)
+	}
+	if m.FieldCleared(referenceasset.FieldNameNormalized) {
+		fields = append(fields, referenceasset.FieldNameNormalized)
+	}
 	if m.FieldCleared(referenceasset.FieldAPIKeyID) {
 		fields = append(fields, referenceasset.FieldAPIKeyID)
 	}
@@ -43472,6 +43839,12 @@ func (m *ReferenceAssetMutation) ClearField(name string) error {
 	switch name {
 	case referenceasset.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case referenceasset.FieldName:
+		m.ClearName()
+		return nil
+	case referenceasset.FieldNameNormalized:
+		m.ClearNameNormalized()
 		return nil
 	case referenceasset.FieldAPIKeyID:
 		m.ClearAPIKeyID()
@@ -43510,6 +43883,12 @@ func (m *ReferenceAssetMutation) ResetField(name string) error {
 		return nil
 	case referenceasset.FieldUserID:
 		m.ResetUserID()
+		return nil
+	case referenceasset.FieldName:
+		m.ResetName()
+		return nil
+	case referenceasset.FieldNameNormalized:
+		m.ResetNameNormalized()
 		return nil
 	case referenceasset.FieldAPIKeyID:
 		m.ResetAPIKeyID()

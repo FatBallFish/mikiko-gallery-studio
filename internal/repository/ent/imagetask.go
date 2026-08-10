@@ -44,6 +44,12 @@ type ImageTask struct {
 	ProgressMessage string `json:"progress_message,omitempty"`
 	// Prompt holds the value of the "prompt" field.
 	Prompt string `json:"prompt,omitempty"`
+	// PromptTemplate holds the value of the "prompt_template" field.
+	PromptTemplate *string `json:"prompt_template,omitempty"`
+	// PromptTemplateVersion holds the value of the "prompt_template_version" field.
+	PromptTemplateVersion int `json:"prompt_template_version,omitempty"`
+	// PromptBindingSnapshot holds the value of the "prompt_binding_snapshot" field.
+	PromptBindingSnapshot map[string]interface{} `json:"prompt_binding_snapshot,omitempty"`
 	// NegativePrompt holds the value of the "negative_prompt" field.
 	NegativePrompt *string `json:"negative_prompt,omitempty"`
 	// AbstractModel holds the value of the "abstract_model" field.
@@ -191,13 +197,13 @@ func (*ImageTask) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case imagetask.FieldProjectID, imagetask.FieldArtifactStorageConfigID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
-		case imagetask.FieldPricingSnapshot, imagetask.FieldRoutingSnapshot, imagetask.FieldErrorPolicySnapshot, imagetask.FieldProviderTrace, imagetask.FieldArtifactLastDiagnostic, imagetask.FieldArtifactObjectKeys:
+		case imagetask.FieldPromptBindingSnapshot, imagetask.FieldPricingSnapshot, imagetask.FieldRoutingSnapshot, imagetask.FieldErrorPolicySnapshot, imagetask.FieldProviderTrace, imagetask.FieldArtifactLastDiagnostic, imagetask.FieldArtifactObjectKeys:
 			values[i] = new([]byte)
 		case imagetask.FieldMaskPresent:
 			values[i] = new(sql.NullBool)
-		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldOutputCompression, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed, imagetask.FieldRouteModelID, imagetask.FieldAccountModelID, imagetask.FieldModelAccountID, imagetask.FieldProviderModelID, imagetask.FieldFallbackCount, imagetask.FieldArtifactAttemptCount, imagetask.FieldArtifactStorageVersion:
+		case imagetask.FieldUserID, imagetask.FieldAPIKeyID, imagetask.FieldPromptTemplateVersion, imagetask.FieldResolvedWidth, imagetask.FieldResolvedHeight, imagetask.FieldOutputCompression, imagetask.FieldRequestedOutputImageCount, imagetask.FieldSuccessOutputImageCount, imagetask.FieldReferenceImageCount, imagetask.FieldReferenceStrength, imagetask.FieldSeed, imagetask.FieldRouteModelID, imagetask.FieldAccountModelID, imagetask.FieldModelAccountID, imagetask.FieldProviderModelID, imagetask.FieldFallbackCount, imagetask.FieldArtifactAttemptCount, imagetask.FieldArtifactStorageVersion:
 			values[i] = new(sql.NullInt64)
-		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldProgressStage, imagetask.FieldProgressMessage, imagetask.FieldPrompt, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldSizeMode, imagetask.FieldBaseResolution, imagetask.FieldQuality, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldOutputFormat, imagetask.FieldBackground, imagetask.FieldModeration, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldProviderRequestID, imagetask.FieldArtifactRecoveryStatus, imagetask.FieldArtifactRecoveryPayload, imagetask.FieldArtifactStorageDriver, imagetask.FieldArtifactStorageBucket, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
+		case imagetask.FieldSourceChannel, imagetask.FieldTaskType, imagetask.FieldStatus, imagetask.FieldProgressStage, imagetask.FieldProgressMessage, imagetask.FieldPrompt, imagetask.FieldPromptTemplate, imagetask.FieldNegativePrompt, imagetask.FieldAbstractModel, imagetask.FieldSizeMode, imagetask.FieldBaseResolution, imagetask.FieldQuality, imagetask.FieldRequestedSize, imagetask.FieldAspectRatio, imagetask.FieldOutputFormat, imagetask.FieldBackground, imagetask.FieldModeration, imagetask.FieldResponseMode, imagetask.FieldSavePolicy, imagetask.FieldEstimatedPoints, imagetask.FieldActualPoints, imagetask.FieldRouteModelCode, imagetask.FieldUpstreamModelCode, imagetask.FieldEffectiveMultiplier, imagetask.FieldChargedPoints, imagetask.FieldProviderCost, imagetask.FieldGrossMargin, imagetask.FieldRouteSnapshotVersion, imagetask.FieldProviderRequestID, imagetask.FieldArtifactRecoveryStatus, imagetask.FieldArtifactRecoveryPayload, imagetask.FieldArtifactStorageDriver, imagetask.FieldArtifactStorageBucket, imagetask.FieldLeaseOwner, imagetask.FieldErrorCode, imagetask.FieldErrorMessage:
 			values[i] = new(sql.NullString)
 		case imagetask.FieldCreatedAt, imagetask.FieldUpdatedAt, imagetask.FieldDeletedAt, imagetask.FieldUpstreamSucceededAt, imagetask.FieldArtifactNextRetryAt, imagetask.FieldLeaseExpiresAt, imagetask.FieldStartedAt, imagetask.FieldFinishedAt:
 			values[i] = new(sql.NullTime)
@@ -298,6 +304,27 @@ func (_m *ImageTask) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field prompt", values[i])
 			} else if value.Valid {
 				_m.Prompt = value.String
+			}
+		case imagetask.FieldPromptTemplate:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field prompt_template", values[i])
+			} else if value.Valid {
+				_m.PromptTemplate = new(string)
+				*_m.PromptTemplate = value.String
+			}
+		case imagetask.FieldPromptTemplateVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field prompt_template_version", values[i])
+			} else if value.Valid {
+				_m.PromptTemplateVersion = int(value.Int64)
+			}
+		case imagetask.FieldPromptBindingSnapshot:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field prompt_binding_snapshot", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.PromptBindingSnapshot); err != nil {
+					return fmt.Errorf("unmarshal field prompt_binding_snapshot: %w", err)
+				}
 			}
 		case imagetask.FieldNegativePrompt:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -757,6 +784,17 @@ func (_m *ImageTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("prompt=")
 	builder.WriteString(_m.Prompt)
+	builder.WriteString(", ")
+	if v := _m.PromptTemplate; v != nil {
+		builder.WriteString("prompt_template=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	builder.WriteString("prompt_template_version=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PromptTemplateVersion))
+	builder.WriteString(", ")
+	builder.WriteString("prompt_binding_snapshot=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PromptBindingSnapshot))
 	builder.WriteString(", ")
 	if v := _m.NegativePrompt; v != nil {
 		builder.WriteString("negative_prompt=")
