@@ -11,6 +11,7 @@ type WorkspaceViewModelInput = {
   requiredReferencesReady: boolean
   selectedModelCode: string
   parametersReady: boolean
+  parameterError?: string
   prompt: string
   estimatePending: boolean
   estimateError: string
@@ -52,11 +53,7 @@ export function normalizeWorkspaceImageCount(value: number) {
 }
 
 function taskModels(capability: Capability | null, taskType: ImageTaskType) {
-  return capability?.model_groups.filter((model) => (
-    model.task_types.includes(taskType)
-    && Boolean(model.base_resolution?.length)
-    && Boolean(model.aspect_ratios?.length || capability.aspect_ratios.length)
-  )) ?? []
+  return capability?.model_groups.filter((model) => model.task_types.includes(taskType)) ?? []
 }
 
 function selectedModel(models: CapabilityModelGroup[], code: string) {
@@ -97,6 +94,7 @@ export function createWorkspaceViewModel(input: WorkspaceViewModelInput) {
     requiredReferencesReady: input.requiredReferencesReady,
     unavailableReason: input.capability?.unavailable_reason,
     parametersReady: input.parametersReady,
+    parameterError: input.parameterError,
     prompt: input.prompt,
     estimate: input.estimate,
     estimateError: input.estimateError,
@@ -109,7 +107,7 @@ export function createWorkspaceViewModel(input: WorkspaceViewModelInput) {
         ? { state: 'insufficient' as const, label: `${input.estimate.display_points ?? displayPoints(input.estimate.points)} 积分`, detail: `余额不足，还差 ${displayPoints(input.estimate.insufficient_points)} 积分。` }
         : input.estimate
           ? { state: 'ready' as const, label: `${input.estimate.display_points ?? displayPoints(input.estimate.points)} 积分`, detail: '生成前仅冻结预估积分，最终按实际结果结算。' }
-          : { state: 'unavailable' as const, label: '等待参数', detail: readiness.reason }
+          : { state: 'unavailable' as const, label: input.parameterError ? '参数有误' : '等待参数', detail: readiness.reason }
 
   return {
     capability: models.length

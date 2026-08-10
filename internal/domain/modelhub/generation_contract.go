@@ -62,26 +62,29 @@ func NormalizeGenerationRequest(capability ImageModelCapability, req GenerationR
 	case SizeModeRatio:
 		base := strings.ToLower(strings.TrimSpace(req.BaseResolution))
 		if base == "" || base == SizeModeAuto || !containsString(capability.BaseResolution, base) {
-			return NormalizedGenerationRequest{}, errs.New(400, errs.CodeImageCapabilityMismatch, "base_resolution is unsupported")
+			return NormalizedGenerationRequest{}, generationFieldError("base_resolution", "unsupported", "基础分辨率不受当前模型支持", nil)
 		}
 		if strings.TrimSpace(req.RequestedSize) != "" {
 			return NormalizedGenerationRequest{}, errs.New(400, CodeInvalidSizeMode, "ratio size_mode does not accept requested_size")
 		}
 		ratio := NormalizeRatio(req.AspectRatio)
 		widthRatio, heightRatio, ok := parseRatio(ratio)
-		if !ok || maxFloat(float64(widthRatio)/float64(heightRatio), float64(heightRatio)/float64(widthRatio)) > imageMaxAspectRatio {
-			return NormalizedGenerationRequest{}, errs.New(400, CodeInvalidAspectRatio, "aspect_ratio is invalid")
+		if !ok {
+			return NormalizedGenerationRequest{}, generationFieldError("aspect_ratio", "format", "比例格式不合法", map[string]any{"example": "16:9"})
+		}
+		if maxFloat(float64(widthRatio)/float64(heightRatio), float64(heightRatio)/float64(widthRatio)) > imageMaxAspectRatio {
+			return NormalizedGenerationRequest{}, generationFieldError("aspect_ratio", "max_ratio", "比例超出当前模型限制", map[string]any{"max": int(imageMaxAspectRatio)})
 		}
 		if !containsString(capability.SupportedRatios, ratio) && !capability.SupportsCustomRatio {
-			return NormalizedGenerationRequest{}, errs.New(400, CodeInvalidAspectRatio, "custom aspect_ratio is unsupported")
+			return NormalizedGenerationRequest{}, generationFieldError("aspect_ratio", "unsupported", "当前模型不支持自定义比例", nil)
 		}
 		size, err := CalculateImageSizeWithinCapability(base, ratio, capability)
 		if err != nil {
-			return NormalizedGenerationRequest{}, errs.New(400, CodeInvalidAspectRatio, "aspect_ratio cannot be resolved")
+			return NormalizedGenerationRequest{}, generationFieldError("aspect_ratio", "unresolvable", "当前比例无法生成符合模型限制的尺寸", nil)
 		}
 		width, height, _ := ParseImageSize(size)
 		if !legalExplicitDimensions(width, height, capability) {
-			return NormalizedGenerationRequest{}, errs.New(400, CodeInvalidAspectRatio, "resolved size violates model limits")
+			return NormalizedGenerationRequest{}, generationFieldError("aspect_ratio", "resolved_size_range", "比例计算结果超出当前模型尺寸限制", nil)
 		}
 		result.BaseResolution, result.AspectRatio = base, ratio
 		result.RequestedSize, result.OutboundSize, result.Width, result.Height = size, size, width, height
@@ -92,17 +95,53 @@ func NormalizeGenerationRequest(capability ImageModelCapability, req GenerationR
 		}
 		size := NormalizePixelSize(req.RequestedSize)
 		width, height, ok := ParseImageSize(size)
-		if !ok || !legalExplicitDimensions(width, height, capability) {
-			return NormalizedGenerationRequest{}, errs.New(400, CodeInvalidExplicitDimensions, "explicit dimensions violate model limits")
+		if !ok {
+			return NormalizedGenerationRequest{}, generationFieldError("pixel_size", "format", "像素尺寸格式不合法", map[string]any{"example": "1024x1024"})
+		}
+		if width%imageSizeMultiple != 0 || height%imageSizeMultiple != 0 {
+			return NormalizedGenerationRequest{}, generationFieldError("pixel_size", "multiple_of_16", "宽高必须为 16 的倍数", map[string]any{"multiple": imageSizeMultiple})
+		}
+		minWidth, maxWidth := effectiveExplicitDimensionBounds(capability.MinWidth, capability.MaxWidth)
+		minHeight, maxHeight := effectiveExplicitDimensionBounds(capability.MinHeight, capability.MaxHeight)
+		if width < minWidth || width > maxWidth {
+			return NormalizedGenerationRequest{}, generationFieldError("width", "range", "宽度超出当前模型限制", map[string]any{"min": minWidth, "max": maxWidth})
+		}
+		if height < minHeight || height > maxHeight {
+			return NormalizedGenerationRequest{}, generationFieldError("height", "range", "高度超出当前模型限制", map[string]any{"min": minHeight, "max": maxHeight})
+		}
+		pixels := width * height
+		if pixels < imageMinPixels || pixels > imageMaxPixels {
+			return NormalizedGenerationRequest{}, generationFieldError("pixel_size", "pixel_count", "总像素数超出平台限制", map[string]any{"min": imageMinPixels, "max": imageMaxPixels})
+		}
+		if maxFloat(float64(width)/float64(height), float64(height)/float64(width)) > imageMaxAspectRatio {
+			return NormalizedGenerationRequest{}, generationFieldError("pixel_size", "max_ratio", "宽高比例超出平台限制", map[string]any{"max": int(imageMaxAspectRatio)})
 		}
 		if !containsString(capability.SupportedPixelSizes, size) && !capability.SupportsCustomSize {
-			return NormalizedGenerationRequest{}, errs.New(400, CodeInvalidExplicitDimensions, "custom dimensions are unsupported")
+			return NormalizedGenerationRequest{}, generationFieldError("pixel_size", "unsupported", "当前模型不支持该像素尺寸", nil)
 		}
 		result.RequestedSize, result.OutboundSize, result.Width, result.Height = size, size, width, height
 		return result, nil
 	default:
 		return NormalizedGenerationRequest{}, errs.New(400, CodeInvalidSizeMode, "size_mode is unsupported")
 	}
+}
+
+func generationFieldError(field, rule, message string, extra map[string]any) *errs.Error {
+	details := map[string]any{"field": field, "rule": rule}
+	for key, value := range extra {
+		details[key] = value
+	}
+	return errs.WithDetails(errs.New(400, errs.CodeImageCapabilityMismatch, message), details)
+}
+
+func effectiveExplicitDimensionBounds(minimum, maximum int) (int, int) {
+	if minimum <= 0 {
+		minimum = imageSizeMultiple
+	}
+	if maximum <= 0 || maximum > imageMaxEdge {
+		maximum = imageMaxEdge
+	}
+	return minimum, maximum
 }
 
 func FilterEffectiveCapability(raw ImageModelCapability) ImageModelCapability {

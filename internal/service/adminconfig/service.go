@@ -235,7 +235,6 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 				valueItem("generation_limits", "reference_image_max_mb", cfg.GenerationLimits.ReferenceImageMaxMB),
 				valueItem("generation_limits", "reference_image_max_count", cfg.GenerationLimits.ReferenceImageMaxCount),
 				valueItem("generation_limits", "prompt_max_chars", cfg.GenerationLimits.PromptMaxChars),
-				valueItem("generation_limits", "negative_prompt_max_chars", cfg.GenerationLimits.NegativePromptMaxChars),
 			},
 		},
 		{

@@ -62,6 +62,16 @@ if (autoDraft.values.size_mode !== 'auto' || autoDraft.values.base_resolution ||
   throw new Error(`auto mode must clear size fields and resolve transparent JPEG conflict: ${JSON.stringify(autoDraft)}`)
 }
 
+const autoByDefault = normalizeWorkspaceCreationDraft({
+  version: 1, prompt: 'automatic by default', task_type: 'text_to_image', route_model_code: 'auto-default',
+}, {
+  task_types: ['text_to_image'], aspect_ratios: ['1:1'], max_image_count: 1,
+  model_groups: [{ id: 'auto-default', code: 'auto-default', name: 'Auto Default', task_types: ['text_to_image'], base_resolution: ['1K'], size_modes: ['ratio', 'auto'], aspect_ratios: ['1:1'], quality: ['auto'], output_format: ['png'], moderation: ['auto'], max_output_image_count: 1, max_reference_image_count: 0, prices: [], supports_reference: false }],
+})
+if (autoByDefault.values.size_mode !== 'auto') {
+  throw new Error(`a new draft must prefer auto whenever the model supports it: ${JSON.stringify(autoByDefault)}`)
+}
+
 const presetOnlySize = normalizeWorkspaceCreationDraft({
   version: 1, prompt: 'preset only', task_type: 'text_to_image', route_model_code: 'custom', size_mode: 'pixel', pixel_size: '1001x777',
 }, { ...customSizeCapability, model_groups: [{ ...customSizeCapability.model_groups[0], supports_custom_size: false }] })

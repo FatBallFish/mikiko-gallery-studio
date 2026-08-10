@@ -1040,8 +1040,8 @@ func TestVisibleRouteCapabilityEstimateAndCreateAcceptSameRatioRequests(t *testi
 		wantCode string
 	}{
 		{name: "common preset", ratio: "1:1"},
-		{name: "preset absent from intersection", ratio: "16:9", wantCode: modelhub.CodeInvalidAspectRatio},
-		{name: "custom disabled by intersection", ratio: "7:5", wantCode: modelhub.CodeInvalidAspectRatio},
+		{name: "preset absent from intersection", ratio: "16:9", wantCode: errs.CodeImageCapabilityMismatch},
+		{name: "custom disabled by intersection", ratio: "7:5", wantCode: errs.CodeImageCapabilityMismatch},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

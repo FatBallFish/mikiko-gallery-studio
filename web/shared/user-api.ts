@@ -221,8 +221,8 @@ export function buildCreateTaskWireRequest(req: CreateTaskRequest): { body: Back
   return {
     body: {
       ...estimateFields,
-	  ...(req.project_id ? { project_id: req.project_id } : {}),
-      prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
+      ...(req.project_id ? { project_id: req.project_id } : {}),
+      prompt: req.prompt,
       reference_asset_ids: req.reference_asset_ids ?? [],
       response_mode: 'async',
       ...(req.capability_version ? { capability_version: req.capability_version } : {}),
@@ -351,6 +351,11 @@ function normalizeTaskCapability(source: unknown): CapabilityTaskOptions {
 	return result
 }
 
+function minimumDisplayPoints(prices: Array<{ charged_points: string }>) {
+  const values = prices.map((price) => Number(price.charged_points)).filter(Number.isFinite)
+  return values.length ? Math.min(...values).toFixed(2) : undefined
+}
+
 export function normalizeCapabilities(raw: any): Capability {
   const models = pick<any[]>(raw, 'model_groups', 'ModelGroups', 'abstract_models', 'AbstractModels', 'models', 'Models', 'items', 'Items') ?? []
   const normalizedModels: Capability['model_groups'] = models.flatMap((item: any) => {
@@ -394,6 +399,7 @@ export function normalizeCapabilities(raw: any): Capability {
       max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
       max_reference_image_count: maxReference,
       effective_multiplier: pick<string>(item, 'effective_multiplier', 'EffectiveMultiplier'),
+      minimum_points: pick<string>(item, 'minimum_points', 'MinimumPoints') ?? minimumDisplayPoints(prices),
       prices,
       supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.includes('image_edit'))),
       display_points: pick<string>(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,

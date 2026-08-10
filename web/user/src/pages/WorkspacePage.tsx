@@ -27,7 +27,7 @@ import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHi
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
 import { projectWorkspaceImageDetail } from './workspaceImageDetail'
 import { referenceImageAccept, referenceImagePolicy, validateReferenceImageFile } from './referenceImageUpload'
-import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceBackgroundForFormat, workspaceBackgroundOptions, workspaceCompressionVisible, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspacePixelOptions, workspaceRatioOptions, workspaceRatioPixelEstimate, workspaceSizeModeOptions, type WorkspaceSizeMode } from './workspaceParameters'
+import { chooseWorkspaceSizeMode, normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceBackgroundForFormat, workspaceBackgroundOptions, workspaceCompressionVisible, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspacePixelOptions, workspaceRatioOptions, workspaceRatioPixelEstimate, workspaceSizeModeOptions, workspaceSizeParameterError, type WorkspaceSizeMode } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 import { ProjectSelector, useProjects } from '../ProjectContext'
@@ -126,6 +126,22 @@ function uploadErrorMessage(error: unknown) {
     if (maxBytes > 0 && actualBytes > 0) {
       return `单张参考图最大 ${formatFileSize(maxBytes)}，当前文件 ${formatFileSize(actualBytes)}。`
     }
+  }
+  return errorMessage(error)
+}
+
+function generationParameterErrorMessage(error: unknown) {
+  if (error instanceof ApiError && error.code === 'IMAGE_CAPABILITY_MISMATCH') {
+    const field = String(error.details?.field ?? '')
+    const rule = String(error.details?.rule ?? '')
+    const label = field === 'width' ? '宽度' : field === 'height' ? '高度' : field === 'aspect_ratio' ? '比例' : field === 'pixel_size' ? '像素尺寸' : '生成参数'
+    const minimum = Number(error.details?.min)
+    const maximum = Number(error.details?.max)
+    if (rule === 'range' && Number.isFinite(minimum) && Number.isFinite(maximum)) return `${label}必须在 ${minimum} 至 ${maximum} 像素之间。`
+    if (rule === 'multiple_of_16') return '宽度和高度必须为 16 的倍数。'
+    if (rule === 'format') return field === 'aspect_ratio' ? '比例请使用“宽:高”格式，例如 16:9。' : '像素尺寸格式不合法。'
+    if (rule === 'max_ratio') return `${label}必须在 1:3 至 3:1 范围内。`
+    if (rule === 'pixel_count') return '像素尺寸的总像素数超出平台限制。'
   }
   return errorMessage(error)
 }
@@ -275,12 +291,11 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [prompt, setPrompt] = useState('')
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [promptOptimization, setPromptOptimization] = useState(initialPromptOptimizationState)
-  const [negative, setNegative] = useState('')
   const [model, setModel] = useState('')
-  const [sizeMode, setSizeMode] = useState<WorkspaceSizeMode>('ratio')
+  const [sizeMode, setSizeMode] = useState<WorkspaceSizeMode>('auto')
   const [baseResolution, setBaseResolution] = useState('')
-	const [ratio, setRatio] = useState('')
-	const [customRatio, setCustomRatio] = useState('')
+  const [ratio, setRatio] = useState('')
+  const [customRatio, setCustomRatio] = useState('')
   const [pixelSize, setPixelSize] = useState('')
   const [pixelSelection, setPixelSelection] = useState<WorkspacePixelSelection>('preset')
   const [customWidth, setCustomWidth] = useState('')
@@ -607,9 +622,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       imageCount: values.image_count,
     }
     setPrompt(values.prompt)
-    setNegative('')
     setModel(values.route_model_code)
-	setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
+    setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
     setBaseResolution(values.base_resolution)
     setRatio(values.aspect_ratio)
     setPixelSize(values.pixel_size)
@@ -673,11 +687,12 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const effectivePixelSize = pixelSelection === 'custom' && customSizeSupported
     ? customSizeNormalization.valid ? customSizeNormalization.size : ''
 		: pixelSize
-	const customRatioSupported = workspaceCustomRatioSupported(selectedModel) && sizeModes.includes('ratio')
-	const effectiveRatio = ratio === 'custom' ? customRatio : ratio
-	const ratioPixelEstimate = useMemo(
-		() => workspaceRatioPixelEstimate(baseResolution, effectiveRatio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
-		[baseResolution, effectiveRatio, selectedModel, taskType],
+  const customRatioSupported = workspaceCustomRatioSupported(selectedModel) && sizeModes.includes('ratio')
+  const effectiveRatio = ratio === 'custom' ? customRatio : ratio
+  const sizeParameterError = workspaceSizeParameterError({ sizeMode, pixelSelection, customWidth, customHeight, ratio, customRatio, customRatioSupported, model: selectedModel })
+  const ratioPixelEstimate = useMemo(
+    () => workspaceRatioPixelEstimate(baseResolution, effectiveRatio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
+    [baseResolution, effectiveRatio, selectedModel, taskType],
   )
 
   useEffect(() => {
@@ -690,7 +705,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     )
     if (waitingForPreferredModel) return
 
-    setSizeMode((current) => restoreParameters?.sizeMode && sizeModes.includes(restoreParameters.sizeMode) ? restoreParameters.sizeMode : sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
+    setSizeMode((current) => chooseWorkspaceSizeMode(sizeModes, restoreParameters?.sizeMode, current))
     setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
 	const restoredRatio = restoreParameters?.aspectRatio
 	if (customRatioSupported && restoredRatio && !ratios.includes(restoredRatio) && workspaceCustomRatioValid(restoredRatio)) {
@@ -790,7 +805,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         }
       } catch (err) {
         if (!cancelled) {
-          const message = errorMessage(err)
+          const message = generationParameterErrorMessage(err)
           setEstimateSnapshot({ key: requestedKey, estimate: null, error: message })
           notifyRef.current('error', message)
         }
@@ -820,13 +835,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     requiredReferencesReady,
     selectedModelCode: model,
     parametersReady,
+    parameterError: sizeParameterError,
     prompt,
     estimatePending: Boolean(capability && model && parametersReady && currentEstimate.pending),
     estimateError,
     estimate,
     busy,
     task: latestTask,
-  }), [capability, taskType, referenceCount, requiredReferencesReady, model, parametersReady, prompt, estimateError, estimate, busy, latestTask])
+  }), [capability, taskType, referenceCount, requiredReferencesReady, model, parametersReady, sizeParameterError, prompt, estimateError, estimate, busy, latestTask])
   const generateReadiness = projectReadiness.ready
     ? workspaceView.generate
     : { disabled: true, reason: projectReadiness.reason, showRechargeAction: false }
@@ -1040,7 +1056,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const submissionProject = projectSelectionRef.current
     setBusy(true)
     try {
-      const task = await userApi.createTask({ ...estimatePayload, project_id: submissionProject.projectID, prompt, negative_prompt: negative, capability_version: estimate?.capability_version, idempotency_key: crypto.randomUUID() })
+      const task = await userApi.createTask({ ...estimatePayload, project_id: submissionProject.projectID, prompt, capability_version: estimate?.capability_version, idempotency_key: crypto.randomUUID() })
       if (!workspaceSubmissionIsCurrent(submissionProject, projectSelectionRef.current)) {
         void app.refreshAccount()
         return
@@ -1055,7 +1071,6 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       setParametersExpanded(false)
       if (activeTaskType === 'image_edit') {
         setPrompt('')
-        setNegative('')
         setEditRefs([])
       }
       app.notify('info', '任务已进入队列，正在等待实时状态')
@@ -1071,7 +1086,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           setEstimateSnapshot({ key: '', estimate: null, error: errorMessage(refreshError) })
         }
       }
-      app.notify('error', errorMessage(err))
+      app.notify('error', generationParameterErrorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -1286,6 +1301,21 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           </div>
           <p className={workspaceClasses.panelCopy}>通过文字生成图片；添加图片后会自动进入图片编辑模式。</p>
 
+          <div className={workspaceClasses.fieldBlock}>
+            <label className={workspaceClasses.fieldLabel} htmlFor="workspace-model-group">模型分组</label>
+            {loading && !capability ? <LoadingState label="正在加载可用模型..." /> : null}
+            {!loading && availableModels.length ? (
+              <select id="workspace-model-group" className={userForm.input} value={model} onChange={(event) => setModel(event.target.value)}>
+                {availableModels.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.name}{item.minimum_points ? ` · 最低 ${item.minimum_points} 积分` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
+          </div>
+
           <div className={workspaceClasses.editSourcePanel}>
               <button type="button" className={workspaceClasses.editSourceTrigger} onClick={() => setEditSourceOpen((open) => !open)}>
                 <span className={workspaceClasses.editSourceTitle}>
@@ -1350,42 +1380,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             </div>
           </div>
 
-          {/* Negative prompt (collapsed) */}
-          <details className={workspaceClasses.details}>
-            <summary className={workspaceClasses.summary}>限制词</summary>
-            <div className={cn(rdWorkspace.promptWrapper, workspaceClasses.negativeArea)}>
-              <textarea
-                className={cn(rdWorkspace.textarea, 'redesign-prompt-input')}
-                value={negative}
-                onChange={(e) => setNegative(e.target.value)}
-                rows={2}
-              />
-            </div>
-          </details>
         </div>
 
         {/* Parameters */}
         <div className={workspaceClasses.panelSection}>
-          {/* Model */}
-          <div className={workspaceClasses.fieldBlock}>
-            <label className={workspaceClasses.fieldLabel}>模型选择</label>
-            {loading && !capability ? <LoadingState label="正在加载可用模型..." /> : null}
-            {!loading && availableModels.length ? availableModels.map((m) => (
-              <button
-                key={m.code}
-                type="button"
-                className={cn(workspaceClasses.modelButton, model === m.code && workspaceClasses.modelButtonActive)}
-                onClick={() => setModel(m.code)}
-              >
-                <span className={rdWorkspace.modelInfo}>
-                  <span className={rdWorkspace.itemLabel}>{m.name}</span>
-                </span>
-                <span className={cn(workspaceClasses.modelMeta, model === m.code && workspaceClasses.modelMetaActive)}>{m.display_points ? `${m.display_points} ◈` : m.effective_multiplier ? `${m.effective_multiplier}x` : ''}</span>
-              </button>
-            )) : null}
-            {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
-          </div>
-
           {selectedModel ? (
             <>
               {sizeModes.length > 1 ? (
@@ -1455,7 +1453,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 					<label className="mt-3 grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-ratio">
 						比例
 						<input id="workspace-custom-ratio" className={userForm.input} value={customRatio} placeholder="例如 7:5" onChange={(event) => setCustomRatio(event.target.value)} />
-						<span role="status">{workspaceCustomRatioValid(customRatio) ? `预计比例：${customRatio}` : '请输入 1:3 至 3:1 范围内的有效比例。'}</span>
+						<span role="status" className={sizeParameterError ? 'text-[var(--danger)]' : undefined}>{sizeParameterError || `预计比例：${customRatio}`}</span>
 					</label>
 				  ) : null}
 				</div>
@@ -1504,7 +1502,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                         </label>
                       </div>
                       <p className="text-xs leading-5 text-[var(--muted)]" role="status">
-						{customSizeNormalization.valid ? <>输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : '尺寸不符合当前模型限制，请直接修改 Width 和 Height。'}
+						{customSizeNormalization.valid ? <>输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : <span className="text-[var(--danger)]">{sizeParameterError}</span>}
 					  </p>
 					  <p className="text-xs leading-5 text-[var(--muted)]">宽高必须为 16 的倍数，并满足当前模型配置区间、1:3 至 3:1 比例及平台像素上限。</p>
                     </div>

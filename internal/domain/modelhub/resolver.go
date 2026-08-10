@@ -97,6 +97,8 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			continue
 		}
 		prices := make([]VisibleRouteModelPrice, 0, len(pricesByRoute[routeModel.ID]))
+		minimumPoints := ""
+		var minimumCharged decimal.Decimal
 		taskTypes := map[string]struct{}{}
 		baseResolution := map[string]struct{}{}
 		for _, price := range pricesByRoute[routeModel.ID] {
@@ -113,6 +115,10 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 				taskMul = parsed
 			}
 			charged := base.Mul(multiplier).Mul(taskMul).Round(5)
+			if minimumPoints == "" || charged.LessThan(minimumCharged) {
+				minimumCharged = charged
+				minimumPoints = charged.Round(2).StringFixed(2)
+			}
 			prices = append(prices, VisibleRouteModelPrice{
 				TaskType:       price.TaskType,
 				BaseResolution: price.BaseResolution,
@@ -164,6 +170,7 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 			MaxReferenceImageCount:       aggregateCapability.MaxReferenceImageCount,
 			CapabilitiesByTaskType:       capabilitiesByTaskType,
 			EffectiveMultiplier:          multiplier.StringFixed(5),
+			MinimumPoints:                minimumPoints,
 			Prices:                       prices,
 		})
 	}
@@ -694,6 +701,7 @@ type VisibleRouteModel struct {
 	MaxReferenceImageCount       int                                        `json:"max_reference_image_count"`
 	CapabilitiesByTaskType       map[string]VisibleRouteModelTaskCapability `json:"capabilities_by_task_type"`
 	EffectiveMultiplier          string                                     `json:"effective_multiplier"`
+	MinimumPoints                string                                     `json:"minimum_points,omitempty"`
 	Prices                       []VisibleRouteModelPrice                   `json:"prices"`
 }
 

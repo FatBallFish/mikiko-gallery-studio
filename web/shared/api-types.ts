@@ -607,6 +607,7 @@ export type CapabilityModelGroup = {
   capabilities_by_task_type?: Partial<Record<ImageTaskType, CapabilityTaskOptions>>
   moderation?: string[]
   effective_multiplier?: string
+  minimum_points?: string
   prices: RouteModelPriceQuote[]
   supports_reference: boolean
   display_points?: string
@@ -815,7 +816,7 @@ export type ImageTask = {
   results: ImageResult[]
 }
 export type BackendCreateTaskRequest = Omit<BackendEstimateRequest, 'reference_image_count'> & { project_id?: string; prompt: string; reference_asset_ids?: string[]; response_mode: 'async'; capability_version?: string }
-export type CreateTaskRequest = EstimateRequest & { project_id?: string; prompt: string; negative_prompt?: string; idempotency_key?: string; response_mode?: 'sync' | 'async' | string; capability_version?: string }
+export type CreateTaskRequest = EstimateRequest & { project_id?: string; prompt: string; idempotency_key?: string; response_mode?: 'sync' | 'async' | string; capability_version?: string }
 export type LoginResult = LoginResponse
 
 export type ApiKey = {

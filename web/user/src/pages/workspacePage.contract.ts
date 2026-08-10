@@ -2,6 +2,20 @@ import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')
 
+for (const removed of ['模型选择', '限制词', 'negative_prompt: negative']) {
+  if (source.includes(removed)) throw new Error(`creative workspace must remove ${removed}`)
+}
+for (const required of ['模型分组', '<select', 'minimum_points']) {
+  if (!source.includes(required)) throw new Error(`creative workspace model group selector must include ${required}`)
+}
+const modelGroupPosition = source.indexOf('模型分组')
+const referencePosition = source.indexOf('图片编辑来源')
+const promptPosition = source.indexOf('>提示词</label>')
+const sizeModePosition = source.indexOf('>尺寸模式</label>')
+if (!(modelGroupPosition >= 0 && modelGroupPosition < referencePosition && referencePosition < promptPosition && promptPosition < sizeModePosition)) {
+  throw new Error('creative workspace order must be model group, references, prompt, then generation parameters')
+}
+
 for (const required of [
   'createWorkspaceViewModel',
   '<WorkspaceStatusRail',

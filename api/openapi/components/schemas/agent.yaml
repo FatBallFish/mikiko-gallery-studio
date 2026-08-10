@@ -1114,8 +1114,6 @@ components:
           enum: [text_to_image, image_edit]
         prompt:
           type: string
-        negative_prompt:
-          type: string
         route_model_code:
           type: string
           minLength: 1

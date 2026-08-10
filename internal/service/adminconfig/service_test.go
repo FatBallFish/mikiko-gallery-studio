@@ -60,6 +60,12 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 		"task_multipliers",
 	})
 	assertTabKeys(t, tabs, "openai_compat", []string{"openai_compat_model_map"})
+	assertTabKeys(t, tabs, "generation_limits", []string{
+		"max_image_count",
+		"prompt_max_chars",
+		"reference_image_max_count",
+		"reference_image_max_mb",
+	})
 	assertTabKeys(t, tabs, "payments", []string{
 		"custom_amount_enabled",
 		"custom_amount_max_cny",

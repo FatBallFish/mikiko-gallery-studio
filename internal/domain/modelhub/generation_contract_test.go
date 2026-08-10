@@ -55,10 +55,10 @@ func TestNormalizeGenerationRequestRejectsInvalidExplicitInput(t *testing.T) {
 	}{
 		{name: "auto stale base", in: GenerationRequest{SizeMode: "auto", BaseResolution: "1k", OutputFormat: "png"}, code: CodeInvalidSizeMode},
 		{name: "auto stale size", in: GenerationRequest{SizeMode: "auto", RequestedSize: "1024x1024", OutputFormat: "png"}, code: CodeInvalidSizeMode},
-		{name: "ratio custom disabled", in: GenerationRequest{SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "7:5", OutputFormat: "png"}, code: CodeInvalidAspectRatio},
-		{name: "pixel is never rounded", in: GenerationRequest{SizeMode: "pixel", RequestedSize: "1001x777", OutputFormat: "png"}, code: CodeInvalidExplicitDimensions},
-		{name: "pixel inside bounds is still never rounded", in: GenerationRequest{SizeMode: "pixel", RequestedSize: "899x899", OutputFormat: "png"}, code: CodeInvalidExplicitDimensions},
-		{name: "pixel outside bounds", in: GenerationRequest{SizeMode: "pixel", RequestedSize: "3840x2160", OutputFormat: "png"}, code: CodeInvalidExplicitDimensions},
+		{name: "ratio custom disabled", in: GenerationRequest{SizeMode: "ratio", BaseResolution: "1k", AspectRatio: "7:5", OutputFormat: "png"}, code: errs.CodeImageCapabilityMismatch},
+		{name: "pixel is never rounded", in: GenerationRequest{SizeMode: "pixel", RequestedSize: "1001x777", OutputFormat: "png"}, code: errs.CodeImageCapabilityMismatch},
+		{name: "pixel inside bounds is still never rounded", in: GenerationRequest{SizeMode: "pixel", RequestedSize: "899x899", OutputFormat: "png"}, code: errs.CodeImageCapabilityMismatch},
+		{name: "pixel outside bounds", in: GenerationRequest{SizeMode: "pixel", RequestedSize: "3840x2160", OutputFormat: "png"}, code: errs.CodeImageCapabilityMismatch},
 		{name: "transparent jpeg", in: GenerationRequest{SizeMode: "auto", Background: "transparent", OutputFormat: "jpeg"}, code: CodeTransparentFormatConflict},
 		{name: "unsupported background", in: GenerationRequest{SizeMode: "auto", Background: "opaque", OutputFormat: "png"}, code: errs.CodeImageCapabilityMismatch},
 	}
@@ -68,6 +68,43 @@ func TestNormalizeGenerationRequestRejectsInvalidExplicitInput(t *testing.T) {
 			var appErr *errs.Error
 			if !errors.As(err, &appErr) || appErr.Code != tt.code {
 				t.Fatalf("error = %#v, want code %s", err, tt.code)
+			}
+		})
+	}
+}
+
+func TestNormalizeGenerationRequestReportsSafeFieldDetails(t *testing.T) {
+	tests := []struct {
+		name    string
+		request GenerationRequest
+		field   string
+		rule    string
+		wantMin int
+		wantMax int
+	}{
+		{name: "pixel width range", request: GenerationRequest{SizeMode: SizeModePixel, RequestedSize: "4096x1024", OutputFormat: "png"}, field: "width", rule: "range", wantMin: 512, wantMax: 2560},
+		{name: "pixel grid", request: GenerationRequest{SizeMode: SizeModePixel, RequestedSize: "1001x777", OutputFormat: "png"}, field: "pixel_size", rule: "multiple_of_16"},
+		{name: "ratio format", request: GenerationRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "wide", OutputFormat: "png"}, field: "aspect_ratio", rule: "format"},
+		{name: "ratio limit", request: GenerationRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "4:1", OutputFormat: "png"}, field: "aspect_ratio", rule: "max_ratio", wantMax: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NormalizeGenerationRequest(generationTestCapability(), tt.request)
+			var appErr *errs.Error
+			if !errors.As(err, &appErr) {
+				t.Fatalf("error = %#v, want *errs.Error", err)
+			}
+			if appErr.Code != errs.CodeImageCapabilityMismatch {
+				t.Fatalf("code = %q, want %q", appErr.Code, errs.CodeImageCapabilityMismatch)
+			}
+			if appErr.Details["field"] != tt.field || appErr.Details["rule"] != tt.rule {
+				t.Fatalf("details = %#v, want field=%q rule=%q", appErr.Details, tt.field, tt.rule)
+			}
+			if tt.wantMin > 0 && appErr.Details["min"] != tt.wantMin {
+				t.Fatalf("details min = %#v, want %d", appErr.Details["min"], tt.wantMin)
+			}
+			if tt.wantMax > 0 && appErr.Details["max"] != tt.wantMax {
+				t.Fatalf("details max = %#v, want %d", appErr.Details["max"], tt.wantMax)
 			}
 		})
 	}
@@ -93,8 +130,8 @@ func TestNormalizeGenerationRequestReturnsTypedErrorWhenRatioHasNoBoundedSolutio
 		SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "1:1", OutputFormat: "png",
 	})
 	var appErr *errs.Error
-	if !errors.As(err, &appErr) || appErr.StatusCode != 400 || appErr.Code != CodeInvalidAspectRatio {
-		t.Fatalf("bounded ratio error = %#v, want 400/%s", err, CodeInvalidAspectRatio)
+	if !errors.As(err, &appErr) || appErr.StatusCode != 400 || appErr.Code != errs.CodeImageCapabilityMismatch {
+		t.Fatalf("bounded ratio error = %#v, want 400/%s", err, errs.CodeImageCapabilityMismatch)
 	}
 }
 
@@ -109,11 +146,11 @@ func TestNormalizeResolveRequestRejectsMixedDiscriminatedSizeFields(t *testing.T
 		{name: "auto pixels", req: ResolveRequest{SizeMode: SizeModeAuto, RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
 		{name: "ratio auto base", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "auto", AspectRatio: "1:1"}, code: CodeInvalidSizeMode},
 		{name: "ratio requested size", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "1:1", RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
-		{name: "ratio missing aspect", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k"}, code: CodeInvalidAspectRatio},
+		{name: "ratio missing aspect", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k"}, code: errs.CodeImageCapabilityMismatch},
 		{name: "pixel base", req: ResolveRequest{SizeMode: SizeModePixel, BaseResolution: "1k", RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
 		{name: "pixel aspect", req: ResolveRequest{SizeMode: SizeModePixel, AspectRatio: "1:1", RequestedSize: "1024x1024"}, code: CodeInvalidSizeMode},
-		{name: "ratio hard bound", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "4:1"}, code: CodeInvalidAspectRatio},
-		{name: "illegal pixels", req: ResolveRequest{SizeMode: SizeModePixel, RequestedSize: "1001x777"}, code: CodeInvalidExplicitDimensions},
+		{name: "ratio hard bound", req: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "4:1"}, code: errs.CodeImageCapabilityMismatch},
+		{name: "illegal pixels", req: ResolveRequest{SizeMode: SizeModePixel, RequestedSize: "1001x777"}, code: errs.CodeImageCapabilityMismatch},
 		{name: "transparent jpeg", req: ResolveRequest{SizeMode: SizeModeAuto, Background: "transparent", OutputFormat: "jpeg"}, code: CodeTransparentFormatConflict},
 	}
 	for _, tt := range tests {
@@ -122,6 +159,32 @@ func TestNormalizeResolveRequestRejectsMixedDiscriminatedSizeFields(t *testing.T
 			var appErr *errs.Error
 			if !errors.As(err, &appErr) || appErr.StatusCode != 400 || appErr.Code != tt.code {
 				t.Fatalf("NormalizeResolveRequest() error = %#v, want 400/%s", err, tt.code)
+			}
+		})
+	}
+}
+
+func TestNormalizeResolveRequestReportsExplicitFieldDetails(t *testing.T) {
+	tests := []struct {
+		name    string
+		request ResolveRequest
+		field   string
+		rule    string
+	}{
+		{name: "ratio format", request: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "wide"}, field: "aspect_ratio", rule: "format"},
+		{name: "ratio maximum", request: ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "4:1"}, field: "aspect_ratio", rule: "max_ratio"},
+		{name: "pixel grid", request: ResolveRequest{SizeMode: SizeModePixel, RequestedSize: "1001x777"}, field: "pixel_size", rule: "multiple_of_16"},
+		{name: "pixel width range", request: ResolveRequest{SizeMode: SizeModePixel, RequestedSize: "4096x1024"}, field: "width", rule: "range"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NormalizeResolveRequest(tt.request)
+			var appErr *errs.Error
+			if !errors.As(err, &appErr) || appErr.Code != errs.CodeImageCapabilityMismatch {
+				t.Fatalf("error = %#v, want %s", err, errs.CodeImageCapabilityMismatch)
+			}
+			if appErr.Details["field"] != tt.field || appErr.Details["rule"] != tt.rule {
+				t.Fatalf("details = %#v, want field=%q rule=%q", appErr.Details, tt.field, tt.rule)
 			}
 		})
 	}

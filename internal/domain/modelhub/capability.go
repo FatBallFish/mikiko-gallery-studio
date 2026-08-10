@@ -241,11 +241,18 @@ func NormalizeResolveRequest(req ResolveRequest) (ResolveRequest, error) {
 		}
 		ratio := NormalizeRatio(req.AspectRatio)
 		if ratio == "" {
-			return req, errs.New(400, CodeInvalidAspectRatio, "aspect_ratio is required")
+			rule := "required"
+			if strings.TrimSpace(req.AspectRatio) != "" {
+				rule = "format"
+			}
+			return req, generationFieldError("aspect_ratio", rule, "比例格式不合法", map[string]any{"example": "16:9"})
 		}
 		widthRatio, heightRatio, ok := parseRatio(ratio)
-		if !ok || maxFloat(float64(widthRatio)/float64(heightRatio), float64(heightRatio)/float64(widthRatio)) > imageMaxAspectRatio {
-			return req, errs.New(400, CodeInvalidAspectRatio, "aspect_ratio is invalid")
+		if !ok {
+			return req, generationFieldError("aspect_ratio", "format", "比例格式不合法", map[string]any{"example": "16:9"})
+		}
+		if maxFloat(float64(widthRatio)/float64(heightRatio), float64(heightRatio)/float64(widthRatio)) > imageMaxAspectRatio {
+			return req, generationFieldError("aspect_ratio", "max_ratio", "比例超出平台限制", map[string]any{"max": int(imageMaxAspectRatio)})
 		}
 		req.SizeMode = SizeModeRatio
 		req.AspectRatio = ratio
@@ -265,8 +272,24 @@ func NormalizeResolveRequest(req ResolveRequest) (ResolveRequest, error) {
 			return req, errs.New(400, CodeInvalidSizeMode, "pixel size_mode does not accept ratio fields")
 		}
 		width, height, ok := ParseImageSize(req.RequestedSize)
-		if !ok || !IsLegalCustomImageSize(width, height) {
-			return req, errs.New(400, CodeInvalidExplicitDimensions, "explicit dimensions violate hard limits")
+		if !ok {
+			return req, generationFieldError("pixel_size", "format", "像素尺寸格式不合法", map[string]any{"example": "1024x1024"})
+		}
+		if width%imageSizeMultiple != 0 || height%imageSizeMultiple != 0 {
+			return req, generationFieldError("pixel_size", "multiple_of_16", "宽高必须为 16 的倍数", map[string]any{"multiple": imageSizeMultiple})
+		}
+		if width > imageMaxEdge {
+			return req, generationFieldError("width", "range", "宽度超出平台限制", map[string]any{"min": imageSizeMultiple, "max": imageMaxEdge})
+		}
+		if height > imageMaxEdge {
+			return req, generationFieldError("height", "range", "高度超出平台限制", map[string]any{"min": imageSizeMultiple, "max": imageMaxEdge})
+		}
+		pixels := width * height
+		if pixels < imageMinPixels || pixels > imageMaxPixels {
+			return req, generationFieldError("pixel_size", "pixel_count", "总像素数超出平台限制", map[string]any{"min": imageMinPixels, "max": imageMaxPixels})
+		}
+		if maxFloat(float64(width)/float64(height), float64(height)/float64(width)) > imageMaxAspectRatio {
+			return req, generationFieldError("pixel_size", "max_ratio", "宽高比例超出平台限制", map[string]any{"max": int(imageMaxAspectRatio)})
 		}
 		size := fmt.Sprintf("%dx%d", width, height)
 		req.SizeMode = SizeModePixel

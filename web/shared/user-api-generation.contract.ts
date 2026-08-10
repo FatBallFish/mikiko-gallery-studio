@@ -199,7 +199,6 @@ const createWire = buildCreateTaskWireRequest({
   ...ratioRequest,
   project_id: 'project-a',
   prompt: 'Paint a quiet harbor',
-  negative_prompt: 'text, watermark',
   capability_version: 'capability-v1',
   response_mode: 'sync',
   idempotency_key: 'generation-idem-1',
@@ -208,7 +207,7 @@ assertDeepEqual(createWire, {
   body: {
     project_id: 'project-a',
     task_type: 'image_edit',
-    prompt: 'Paint a quiet harbor\n\nNegative prompt: text, watermark',
+    prompt: 'Paint a quiet harbor',
     route_model_code: 'plus-image',
     size_mode: 'ratio',
     aspect_ratio: '16:9',
@@ -224,7 +223,7 @@ assertDeepEqual(createWire, {
     capability_version: 'capability-v1',
   },
   headers: { 'Idempotency-Key': 'generation-idem-1' },
-}, 'create conversion should preserve negative prompts and emit the native async Go contract')
+}, 'create conversion should emit the native async Go contract without negative prompts')
 assertAbsent(createWire.body, [
   'idempotency_key',
   'negative_prompt',

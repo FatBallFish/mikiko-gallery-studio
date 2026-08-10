@@ -15,9 +15,30 @@ import {
   workspacePixelOptions,
   workspaceRatioOptions,
   workspaceSizeModeOptions,
+  workspaceSizeParameterError,
+  chooseWorkspaceSizeMode,
 } from './workspaceParameters'
 
 const workspaceSource = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')
+
+if (chooseWorkspaceSizeMode(['ratio', 'auto', 'pixel'], 'ratio', 'pixel') !== 'ratio') throw new Error('restored size mode must win')
+if (chooseWorkspaceSizeMode(['ratio', 'auto', 'pixel'], undefined, 'pixel') !== 'pixel') throw new Error('current user selection must win')
+if (chooseWorkspaceSizeMode(['ratio', 'auto'], undefined, 'pixel') !== 'auto') throw new Error('auto must be the default when no explicit supported selection exists')
+if (chooseWorkspaceSizeMode(['ratio', 'pixel'], undefined, 'auto') !== 'ratio') throw new Error('models without auto must retain the existing ratio fallback')
+
+const invalidCustomPixel = workspaceSizeParameterError({
+  sizeMode: 'pixel', pixelSelection: 'custom', customWidth: '4096', customHeight: '1024',
+  model: { id: 'bounded', code: 'bounded', name: 'Bounded', task_types: ['text_to_image'], size_modes: ['pixel'], supports_custom_size: true, min_width: 512, max_width: 2048, min_height: 512, max_height: 1536, prices: [], supports_reference: false },
+})
+if (!invalidCustomPixel.includes('宽度') || !invalidCustomPixel.includes('512') || !invalidCustomPixel.includes('2048')) {
+  throw new Error(`custom pixel errors must name the invalid field and configured range, got ${invalidCustomPixel}`)
+}
+const invalidCustomRatio = workspaceSizeParameterError({
+  sizeMode: 'ratio', ratio: 'custom', customRatio: '4:1', customRatioSupported: true,
+})
+if (!invalidCustomRatio.includes('比例') || !invalidCustomRatio.includes('3:1')) {
+  throw new Error(`custom ratio errors must explain the supported ratio, got ${invalidCustomRatio}`)
+}
 
 for (const expected of [
   'workspaceModelForTask(rawSelectedModel, taskType)',
