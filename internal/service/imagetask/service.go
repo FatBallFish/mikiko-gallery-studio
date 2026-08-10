@@ -33,6 +33,7 @@ import (
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
+	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	openaiprovider "github.com/fatballfish/pic-gallery/internal/provider/openai"
 	openrouterprovider "github.com/fatballfish/pic-gallery/internal/provider/openrouter"
@@ -106,6 +107,14 @@ type AssetLoader interface {
 
 type assetMediaURLLoader interface {
 	GetWithContext(ctx context.Context, userID int64, assetID string) (domainassets.ReferenceAsset, error)
+}
+
+type promptAssetLoader interface {
+	GetManyWithContext(ctx context.Context, userID int64, assetIDs []string) ([]domainassets.ReferenceAsset, error)
+}
+
+type promptTemplateRepairStore interface {
+	RepairTerminalPromptTemplates(ctx context.Context, limit int) (int, error)
 }
 
 type BillingManager interface {
@@ -202,6 +211,14 @@ func (s *Service) BillingManager() BillingManager {
 	return s.billing
 }
 
+func (s *Service) RepairTerminalPromptTemplates(ctx context.Context, limit int) (int, error) {
+	store, ok := s.store.(promptTemplateRepairStore)
+	if !ok {
+		return 0, nil
+	}
+	return store.RepairTerminalPromptTemplates(ctx, limit)
+}
+
 func (s *Service) SetAPIKeyUsageManager(apiKeys APIKeyUsageManager) {
 	s.apiKeys = apiKeys
 }
@@ -263,6 +280,9 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 			return domainimagetask.Task{}, errs.Internal("failed to load existing image task")
 		}
 	}
+	if err := s.resolvePromptTemplate(ctx, &req); err != nil {
+		return domainimagetask.Task{}, err
+	}
 
 	var prefetchedEstimate *domainbilling.EstimateResult
 	var resolved modelhub.ResolvedRequest
@@ -304,6 +324,73 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 		return domainimagetask.Task{}, err
 	}
 	return cloneTask(task), nil
+}
+
+func (s *Service) resolvePromptTemplate(ctx context.Context, req *domainimagetask.CreateRequest) error {
+	maxRunes := s.cfg.GenerationLimits.PromptMaxChars
+	if maxRunes <= 0 {
+		maxRunes = 4000
+	}
+	limits := prompttemplate.DefaultLimits()
+	limits.MaxTemplateRunes = maxRunes
+	limits.MaxExpandedRunes = maxRunes
+	document, err := prompttemplate.Parse(req.Prompt, limits)
+	if err != nil {
+		return mapPromptTemplateError(err)
+	}
+	assets := make([]prompttemplate.Asset, 0, len(req.ReferenceAssetIDs))
+	if len(document.ReferenceNames) > 0 {
+		loader, ok := s.assets.(promptAssetLoader)
+		if !ok {
+			return errs.New(500, errs.CodeImageReferenceRequired, "reference asset loader unavailable")
+		}
+		loaded, loadErr := loader.GetManyWithContext(ctx, req.UserID, req.ReferenceAssetIDs)
+		if loadErr != nil {
+			return loadErr
+		}
+		for _, asset := range loaded {
+			assets = append(assets, prompttemplate.Asset{ID: asset.ID, Name: asset.Name})
+		}
+	}
+	referenceBindings := make([]prompttemplate.ReferenceBinding, 0, len(req.ReferenceBindings))
+	for _, binding := range req.ReferenceBindings {
+		referenceBindings = append(referenceBindings, prompttemplate.ReferenceBinding{Name: binding.Name, AssetID: binding.AssetID})
+	}
+	variableBindings := make([]prompttemplate.VariableBinding, 0, len(req.PromptVariables))
+	for _, binding := range req.PromptVariables {
+		variableBindings = append(variableBindings, prompttemplate.VariableBinding{Name: binding.Name, Value: binding.Value})
+	}
+	resolved, err := prompttemplate.Resolve(prompttemplate.ResolveRequest{
+		Template: req.Prompt, ReferenceAssetIDs: req.ReferenceAssetIDs, ReferenceBindings: referenceBindings,
+		VariableBindings: variableBindings, Assets: assets, Limits: limits,
+	})
+	if err != nil {
+		return mapPromptTemplateError(err)
+	}
+	req.PromptTemplate = resolved.CanonicalTemplate
+	req.PromptTemplateVersion = 1
+	req.Prompt = resolved.Expanded
+	req.PromptBindingSnapshot = domainimagetask.PromptBindingSnapshot{VariableNames: append([]string(nil), resolved.Snapshot.VariableNames...)}
+	for _, binding := range resolved.Snapshot.References {
+		req.PromptBindingSnapshot.References = append(req.PromptBindingSnapshot.References, domainimagetask.PromptReferenceBinding{Name: binding.Name, AssetID: binding.AssetID, Index: binding.Index})
+	}
+	return nil
+}
+
+func mapPromptTemplateError(err error) error {
+	var templateErr *prompttemplate.Error
+	if !errors.As(err, &templateErr) {
+		return err
+	}
+	status := 400
+	if templateErr.Code == prompttemplate.CodeStale {
+		status = 409
+	}
+	details := map[string]any{"field": templateErr.Field, "rule": templateErr.Rule, "offset": templateErr.Offset}
+	if templateErr.Name != "" {
+		details["name"] = templateErr.Name
+	}
+	return errs.WithDetails(errs.New(status, templateErr.Code, templateErr.Message), details)
 }
 
 func (s *Service) persistPreflightFailedRequest(ctx context.Context, req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequest, failure error) error {
@@ -513,11 +600,18 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 
 	task.LeaseOwner = owner
 	return s.executeResolvedTask(ctx, task, owner, resolved, executionOptions{
-		prompt:             task.Prompt,
+		prompt:             taskExecutionPrompt(task),
 		responseFormat:     string(provider.ResponseFormatURL),
 		referenceImages:    referenceImages,
 		preferredProviders: preferredProviders,
 	})
+}
+
+func taskExecutionPrompt(task domainimagetask.Task) string {
+	if task.ExecutionPrompt != "" {
+		return task.ExecutionPrompt
+	}
+	return task.Prompt
 }
 
 func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.TestModelAccountRequest, candidate modelhub.ProviderCandidate) (domainimagetask.TestModelAccountResult, error) {
@@ -2697,35 +2791,39 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 		taskID = uuid.NewString()
 	}
 	task := domainimagetask.Task{
-		UserID:               req.UserID,
-		ProjectID:            req.ProjectID,
-		APIKeyID:             req.APIKeyID,
-		SourceChannel:        defaultString(req.SourceChannel, "web"),
-		ID:                   taskID,
-		Status:               status,
-		AbstractModel:        defaultString(req.AbstractModel, req.RouteModelCode),
-		RouteModelCode:       defaultString(resolved.RouteModelCode, req.RouteModelCode),
-		RouteModelID:         resolved.RouteModelID,
-		RouteSnapshotVersion: resolved.RouteSnapshotVersion,
-		TaskType:             req.TaskType,
-		Prompt:               req.Prompt,
-		NegativePrompt:       req.NegativePrompt,
-		SizeMode:             modelhub.PublicSizeMode(req.SizeMode),
-		RequestedSize:        req.RequestedSize,
-		BaseResolution:       resolved.BaseResolution,
-		Quality:              defaultString(modelhub.NormalizeQuality(req.Quality), "auto"),
-		OutputFormat:         defaultString(modelhub.NormalizeOutputFormat(req.OutputFormat), "png"),
-		Background:           strings.ToLower(strings.TrimSpace(req.Background)),
-		OutputCompression:    defaultPositive(req.OutputCompression, 100),
-		Moderation:           defaultString(modelhub.NormalizeModeration(req.Moderation), "auto"),
-		AspectRatio:          req.AspectRatio,
-		ResponseMode:         defaultString(req.ResponseMode, "async"),
-		SavePolicy:           defaultString(req.SavePolicy, "private"),
-		OutputImageCount:     normalizedCount(req.OutputImageCount),
-		ReferenceImageCount:  req.ReferenceImageCount,
-		ReferenceAssetIDs:    append([]string(nil), req.ReferenceAssetIDs...),
-		ReferenceStrength:    req.ReferenceStrength,
-		Seed:                 req.Seed,
+		UserID:                req.UserID,
+		ProjectID:             req.ProjectID,
+		APIKeyID:              req.APIKeyID,
+		SourceChannel:         defaultString(req.SourceChannel, "web"),
+		ID:                    taskID,
+		Status:                status,
+		AbstractModel:         defaultString(req.AbstractModel, req.RouteModelCode),
+		RouteModelCode:        defaultString(resolved.RouteModelCode, req.RouteModelCode),
+		RouteModelID:          resolved.RouteModelID,
+		RouteSnapshotVersion:  resolved.RouteSnapshotVersion,
+		TaskType:              req.TaskType,
+		Prompt:                defaultString(req.PromptTemplate, req.Prompt),
+		ExecutionPrompt:       req.Prompt,
+		PromptTemplate:        req.PromptTemplate,
+		PromptTemplateVersion: req.PromptTemplateVersion,
+		PromptBindingSnapshot: req.PromptBindingSnapshot,
+		NegativePrompt:        req.NegativePrompt,
+		SizeMode:              modelhub.PublicSizeMode(req.SizeMode),
+		RequestedSize:         req.RequestedSize,
+		BaseResolution:        resolved.BaseResolution,
+		Quality:               defaultString(modelhub.NormalizeQuality(req.Quality), "auto"),
+		OutputFormat:          defaultString(modelhub.NormalizeOutputFormat(req.OutputFormat), "png"),
+		Background:            strings.ToLower(strings.TrimSpace(req.Background)),
+		OutputCompression:     defaultPositive(req.OutputCompression, 100),
+		Moderation:            defaultString(modelhub.NormalizeModeration(req.Moderation), "auto"),
+		AspectRatio:           req.AspectRatio,
+		ResponseMode:          defaultString(req.ResponseMode, "async"),
+		SavePolicy:            defaultString(req.SavePolicy, "private"),
+		OutputImageCount:      normalizedCount(req.OutputImageCount),
+		ReferenceImageCount:   req.ReferenceImageCount,
+		ReferenceAssetIDs:     append([]string(nil), req.ReferenceAssetIDs...),
+		ReferenceStrength:     req.ReferenceStrength,
+		Seed:                  req.Seed,
 	}
 	switch task.SizeMode {
 	case modelhub.SizeModeAuto:
@@ -3219,6 +3317,8 @@ func cloneTask(task domainimagetask.Task) domainimagetask.Task {
 	task.Results = append([]provider.ImageResult(nil), task.Results...)
 	task.ArtifactRecovery.Diagnostics = append([]domainimagetask.ArtifactDiagnostic(nil), task.ArtifactRecovery.Diagnostics...)
 	task.ReferenceAssetIDs = append([]string(nil), task.ReferenceAssetIDs...)
+	task.PromptBindingSnapshot.References = append([]domainimagetask.PromptReferenceBinding(nil), task.PromptBindingSnapshot.References...)
+	task.PromptBindingSnapshot.VariableNames = append([]string(nil), task.PromptBindingSnapshot.VariableNames...)
 	if task.Project != nil {
 		snapshot := *task.Project
 		task.Project = &snapshot

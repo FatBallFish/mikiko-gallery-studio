@@ -1,7 +1,11 @@
 package assets
 
 import (
+	"fmt"
+	"strings"
 	"time"
+
+	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
 )
 
 type ReferenceAsset struct {
@@ -48,4 +52,25 @@ type GenerationSnapshot struct {
 type UploadMetadata struct {
 	APIKeyID     *int64
 	UploadSource string
+}
+
+func NormalizeReferenceName(raw string) (string, error) {
+	return prompttemplate.NormalizeName(raw, 64)
+}
+
+func ReferenceNameCandidate(preferred string, sequence int) string {
+	preferred = strings.TrimSpace(preferred)
+	if preferred == "" {
+		return fmt.Sprintf("图片%d", sequence)
+	}
+	if sequence <= 1 {
+		return preferred
+	}
+	suffix := fmt.Sprintf(" %d", sequence)
+	maxBaseRunes := 64 - len([]rune(suffix))
+	baseRunes := []rune(preferred)
+	if len(baseRunes) > maxBaseRunes {
+		baseRunes = baseRunes[:maxBaseRunes]
+	}
+	return string(baseRunes) + suffix
 }

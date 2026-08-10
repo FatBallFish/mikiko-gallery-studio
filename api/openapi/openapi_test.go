@@ -1762,6 +1762,106 @@ func TestOpenAPISpecDocumentsCurrentImageTaskRequestContract(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpecDocumentsPromptTemplateAndReferenceNamingContract(t *testing.T) {
+	agentContent, err := os.ReadFile("components/schemas/agent.yaml")
+	if err != nil {
+		t.Fatalf("read agent schema: %v", err)
+	}
+	type property struct {
+		Ref         string `yaml:"$ref"`
+		Deprecated  bool   `yaml:"deprecated"`
+		Description string `yaml:"description"`
+		Items       struct {
+			Ref string `yaml:"$ref"`
+		} `yaml:"items"`
+	}
+	var agentDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string            `yaml:"required"`
+				Properties map[string]property `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(agentContent, &agentDoc); err != nil {
+		t.Fatalf("unmarshal agent schema: %v", err)
+	}
+	for _, schemaName := range []string{"ReferenceAssetRenameRequest", "PromptReferenceBinding", "PromptVariableInput"} {
+		if _, ok := agentDoc.Components.Schemas[schemaName]; !ok {
+			t.Errorf("agent schema must document %s", schemaName)
+		}
+	}
+	createTask := agentDoc.Components.Schemas["CreateImageTaskRequest"]
+	if got := createTask.Properties["reference_bindings"].Items.Ref; got != "#/components/schemas/PromptReferenceBinding" {
+		t.Errorf("reference_bindings must use PromptReferenceBinding, got %q", got)
+	}
+	if got := createTask.Properties["prompt_variables"].Items.Ref; got != "#/components/schemas/PromptVariableInput" {
+		t.Errorf("prompt_variables must use PromptVariableInput, got %q", got)
+	}
+	legacyProject := agentDoc.Components.Schemas["ReferenceAssetsImportFromGalleryRequest"].Properties["project_id"]
+	if !legacyProject.Deprecated || !strings.Contains(strings.ToLower(legacyProject.Description), "ignored") {
+		t.Errorf("legacy import project_id must be documented as deprecated and ignored: %#v", legacyProject)
+	}
+
+	commonContent, err := os.ReadFile("components/schemas/common.yaml")
+	if err != nil {
+		t.Fatalf("read common schema: %v", err)
+	}
+	var commonDoc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string       `yaml:"required"`
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(commonContent, &commonDoc); err != nil {
+		t.Fatalf("unmarshal common schema: %v", err)
+	}
+	referenceAsset := commonDoc.Components.Schemas["ReferenceAsset"]
+	if _, ok := referenceAsset.Properties["name"]; !ok || !containsString(referenceAsset.Required, "name") {
+		t.Errorf("ReferenceAsset.name must be documented and required")
+	}
+
+	rootContent, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+	var rootDoc struct {
+		Paths map[string]map[string]struct {
+			RequestBody struct {
+				Content map[string]struct {
+					Schema struct {
+						Ref string `yaml:"$ref"`
+					} `yaml:"schema"`
+				} `yaml:"content"`
+			} `yaml:"requestBody"`
+			Responses map[string]any `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(rootContent, &rootDoc); err != nil {
+		t.Fatalf("unmarshal root spec: %v", err)
+	}
+	patch := rootDoc.Paths["/api/agent/image/v1/reference-assets/{asset_id}"]["patch"]
+	if got := patch.RequestBody.Content["application/json"].Schema.Ref; got != "./components/schemas/agent.yaml#/components/schemas/ReferenceAssetRenameRequest" {
+		t.Errorf("reference rename PATCH must use ReferenceAssetRenameRequest, got %q", got)
+	}
+	for _, status := range []string{"200", "400", "404", "409"} {
+		if _, ok := patch.Responses[status]; !ok {
+			t.Errorf("reference rename PATCH must document response %s", status)
+		}
+	}
+}
+
+func containsString(items []string, expected string) bool {
+	for _, item := range items {
+		if item == expected {
+			return true
+		}
+	}
+	return false
+}
+
 func TestOpenAPISpecDocumentsRouteModelSelectionContract(t *testing.T) {
 	content, err := os.ReadFile("openapi.yaml")
 	if err != nil {

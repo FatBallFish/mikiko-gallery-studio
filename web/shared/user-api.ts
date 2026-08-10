@@ -224,11 +224,17 @@ export function buildCreateTaskWireRequest(req: CreateTaskRequest): { body: Back
       ...(req.project_id ? { project_id: req.project_id } : {}),
       prompt: req.prompt,
       reference_asset_ids: req.reference_asset_ids ?? [],
+      ...(req.reference_bindings?.length ? { reference_bindings: req.reference_bindings } : {}),
+      ...(req.prompt_variables?.length ? { prompt_variables: req.prompt_variables } : {}),
       response_mode: 'async',
       ...(req.capability_version ? { capability_version: req.capability_version } : {}),
     },
     headers: req.idempotency_key ? { 'Idempotency-Key': req.idempotency_key } : {},
   }
+}
+
+export function buildGalleryReferenceImportRequest(galleryImageIds: string[]) {
+  return { gallery_image_ids: galleryImageIds }
 }
 
 export function toEstimate(raw: any, req?: EstimateRequest): EstimateResult {
@@ -519,15 +525,16 @@ export const userApi = {
     return toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssets, { method: 'POST', formData }))
   },
   listReferenceAssets: async () => [] as ReferenceAsset[],
-  importReferenceAssetsFromGallery: async (galleryImageIds: string[], projectID?: string) => {
+  importReferenceAssetsFromGallery: async (galleryImageIds: string[]) => {
     const response = await sharedApiClient.request<{ items?: any[]; assets?: any[]; references?: any[] } | any[]>(API_PATHS.agent.importReferenceAssetsFromGallery, {
       method: 'POST',
-	  body: { gallery_image_ids: galleryImageIds, project_id: projectID },
+      body: buildGalleryReferenceImportRequest(galleryImageIds),
     })
     const items = Array.isArray(response) ? response : response.items ?? response.assets ?? response.references ?? []
     return items.map(toReferenceAsset)
   },
   getReferenceAsset: async (asset_id: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { pathParams: { asset_id } })),
+  renameReferenceAsset: async (asset_id: string, name: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { method: 'PATCH', pathParams: { asset_id }, body: { name } })),
   refreshReferenceAssetAccess: (asset_id: string, purpose: MediaAccessPurpose = 'preview') =>
     sharedApiClient.request<MediaAccessProjection>(API_PATHS.agent.referenceAssetAccess, { pathParams: { asset_id }, query: { purpose } }),
   refreshImageAccess: (image_id: string, purpose: MediaAccessPurpose = 'preview') =>

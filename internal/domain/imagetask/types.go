@@ -66,37 +66,42 @@ type ExecuteRequest struct {
 }
 
 type CreateRequest struct {
-	TaskID              string
-	UserID              int64
-	ProjectID           string
-	APIKeyID            int64
-	SourceChannel       string
-	AbstractModel       string
-	RouteModelCode      string
-	TaskType            string
-	Prompt              string
-	NegativePrompt      string
-	SizeMode            string
-	RequestedSize       string
-	BaseResolution      string
-	Quality             string
-	OutputFormat        string
-	Background          string
-	OutputCompression   int
-	Moderation          string
-	AspectRatio         string
-	OutputImageCount    int
-	ReferenceImageCount int
-	ReferenceAssetIDs   []string
-	ReferenceStrength   int
-	Seed                *int64
-	UserGroupCode       string
-	UserGroupCodes      []string
-	UserGroupMultiplier string
-	MaskPresent         bool
-	ResponseMode        string
-	SavePolicy          string
-	CapabilityVersion   string
+	TaskID                string
+	UserID                int64
+	ProjectID             string
+	APIKeyID              int64
+	SourceChannel         string
+	AbstractModel         string
+	RouteModelCode        string
+	TaskType              string
+	Prompt                string
+	PromptVariables       []PromptVariableInput
+	ReferenceBindings     []PromptReferenceInput
+	PromptTemplate        string
+	PromptTemplateVersion int
+	PromptBindingSnapshot PromptBindingSnapshot
+	NegativePrompt        string
+	SizeMode              string
+	RequestedSize         string
+	BaseResolution        string
+	Quality               string
+	OutputFormat          string
+	Background            string
+	OutputCompression     int
+	Moderation            string
+	AspectRatio           string
+	OutputImageCount      int
+	ReferenceImageCount   int
+	ReferenceAssetIDs     []string
+	ReferenceStrength     int
+	Seed                  *int64
+	UserGroupCode         string
+	UserGroupCodes        []string
+	UserGroupMultiplier   string
+	MaskPresent           bool
+	ResponseMode          string
+	SavePolicy            string
+	CapabilityVersion     string
 }
 
 type RetryRequest struct {
@@ -226,6 +231,7 @@ type Task struct {
 	ChargedPoints         string                        `json:"charged_points,omitempty"`
 	TaskType              string                        `json:"task_type"`
 	Prompt                string                        `json:"prompt,omitempty"`
+	ExecutionPrompt       string                        `json:"-"`
 	PromptTemplate        string                        `json:"-"`
 	PromptTemplateVersion int                           `json:"-"`
 	PromptBindingSnapshot PromptBindingSnapshot         `json:"-"`
@@ -263,6 +269,16 @@ type Task struct {
 	GenerationSnapshot    GenerationSnapshot            `json:"-"`
 	CreatedAt             time.Time                     `json:"created_at"`
 	UpdatedAt             time.Time                     `json:"updated_at"`
+}
+
+type PromptReferenceInput struct {
+	Name    string `json:"name"`
+	AssetID string `json:"asset_id"`
+}
+
+type PromptVariableInput struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 type PromptReferenceBinding struct {

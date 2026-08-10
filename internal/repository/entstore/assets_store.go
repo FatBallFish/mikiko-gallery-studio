@@ -2,6 +2,7 @@ package entstore
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -37,7 +38,7 @@ func (s *AssetsStore) GetByUserAndHash(ctx context.Context, userID int64, sha st
 		}
 		return domainassets.ReferenceAsset{}, err
 	}
-	return mapReferenceAssetEntity(entity), nil
+	return s.ensureReferenceAssetName(ctx, userID, entity)
 }
 
 func (s *AssetsStore) Save(ctx context.Context, userID int64, asset domainassets.ReferenceAsset) error {
@@ -45,9 +46,14 @@ func (s *AssetsStore) Save(ctx context.Context, userID int64, asset domainassets
 }
 
 func (s *AssetsStore) SaveWithMetadata(ctx context.Context, userID int64, asset domainassets.ReferenceAsset, metadata domainassets.UploadMetadata) error {
+	_, err := s.saveWithMetadata(ctx, userID, asset, metadata)
+	return err
+}
+
+func (s *AssetsStore) saveWithMetadata(ctx context.Context, userID int64, asset domainassets.ReferenceAsset, metadata domainassets.UploadMetadata) (domainassets.ReferenceAsset, error) {
 	id, err := uuid.Parse(asset.ID)
 	if err != nil {
-		return err
+		return domainassets.ReferenceAsset{}, err
 	}
 	ownsObject := asset.OwnsObject || strings.TrimSpace(asset.SourceImageResultID) == ""
 	create := s.client.ReferenceAsset.Create().
@@ -64,17 +70,24 @@ func (s *AssetsStore) SaveWithMetadata(ctx context.Context, userID int64, asset 
 		SetSha256(asset.SHA256).
 		SetOwnsObject(ownsObject).
 		SetExpiresAt(asset.CreatedAt.Add(24 * time.Hour))
+	if strings.TrimSpace(asset.Name) != "" {
+		name, normalizeErr := domainassets.NormalizeReferenceName(asset.Name)
+		if normalizeErr != nil {
+			return domainassets.ReferenceAsset{}, normalizeErr
+		}
+		create.SetName(name).SetNameNormalized(name)
+	}
 	if strings.TrimSpace(asset.SourceImageResultID) != "" {
 		sourceID, parseErr := uuid.Parse(asset.SourceImageResultID)
 		if parseErr != nil {
-			return parseErr
+			return domainassets.ReferenceAsset{}, parseErr
 		}
 		create.SetSourceImageResultID(sourceID)
 	}
 	if asset.StorageConfigID != "" {
 		storageConfigID, parseErr := uuid.Parse(asset.StorageConfigID)
 		if parseErr != nil {
-			return parseErr
+			return domainassets.ReferenceAsset{}, parseErr
 		}
 		create.SetStorageConfigID(storageConfigID)
 	}
@@ -84,11 +97,34 @@ func (s *AssetsStore) SaveWithMetadata(ctx context.Context, userID int64, asset 
 	if strings.TrimSpace(asset.StorageConfigID) != "" {
 		storageConfigID, err := uuid.Parse(asset.StorageConfigID)
 		if err != nil {
-			return err
+			return domainassets.ReferenceAsset{}, err
 		}
 		create.SetStorageConfigID(storageConfigID)
 	}
-	return create.Exec(ctx)
+	entity, err := create.Save(ctx)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, err
+	}
+	return mapReferenceAssetEntity(entity), nil
+}
+
+func (s *AssetsStore) SaveWithGeneratedName(ctx context.Context, userID int64, asset domainassets.ReferenceAsset, metadata domainassets.UploadMetadata, preferredName string) (domainassets.ReferenceAsset, error) {
+	if normalized, err := domainassets.NormalizeReferenceName(preferredName); err == nil {
+		preferredName = normalized
+	} else {
+		preferredName = ""
+	}
+	for sequence := 1; sequence <= 10000; sequence++ {
+		asset.Name = domainassets.ReferenceNameCandidate(preferredName, sequence)
+		saved, err := s.saveWithMetadata(ctx, userID, asset, metadata)
+		if err == nil {
+			return saved, nil
+		}
+		if !repoent.IsConstraintError(err) {
+			return domainassets.ReferenceAsset{}, err
+		}
+	}
+	return domainassets.ReferenceAsset{}, repoerr.ErrConflict
 }
 
 func (s *AssetsStore) GetByUserAndSourceImageResultID(ctx context.Context, userID int64, sourceImageResultID string) (domainassets.ReferenceAsset, error) {
@@ -108,7 +144,7 @@ func (s *AssetsStore) GetByUserAndSourceImageResultID(ctx context.Context, userI
 		}
 		return domainassets.ReferenceAsset{}, err
 	}
-	return mapReferenceAssetEntity(entity), nil
+	return s.ensureReferenceAssetName(ctx, userID, entity)
 }
 
 func (s *AssetsStore) ImportGalleryAlias(ctx context.Context, userID int64, result provider.ImageResult) (domainassets.ReferenceAsset, error) {
@@ -154,6 +190,19 @@ func (s *AssetsStore) ImportGalleryAlias(ctx context.Context, userID int64, resu
 		referenceasset.DeletedAtIsNil(),
 		referenceasset.StatusNEQ("deleted"),
 	).First(ctx); err == nil {
+		if existing.Name == nil {
+			name, nameErr := nextReferenceAssetName(ctx, tx.Client(), userID, "")
+			if nameErr != nil {
+				return domainassets.ReferenceAsset{}, nameErr
+			}
+			existing, nameErr = tx.ReferenceAsset.UpdateOneID(existing.ID).SetName(name).SetNameNormalized(name).Save(ctx)
+			if nameErr != nil {
+				if repoent.IsConstraintError(nameErr) {
+					return domainassets.ReferenceAsset{}, repoerr.ErrConflict
+				}
+				return domainassets.ReferenceAsset{}, nameErr
+			}
+		}
 		asset := mapReferenceAssetEntity(existing)
 		asset.GenerationSnapshot = snapshot
 		if err := tx.Commit(); err != nil {
@@ -164,6 +213,10 @@ func (s *AssetsStore) ImportGalleryAlias(ctx context.Context, userID int64, resu
 		return domainassets.ReferenceAsset{}, err
 	}
 	assetID := uuid.New()
+	name, err := nextReferenceAssetName(ctx, tx.Client(), userID, "")
+	if err != nil {
+		return domainassets.ReferenceAsset{}, err
+	}
 	create := tx.ReferenceAsset.Create().
 		SetID(assetID).
 		SetUserID(userID).
@@ -178,12 +231,17 @@ func (s *AssetsStore) ImportGalleryAlias(ctx context.Context, userID int64, resu
 		SetSha256(source.Sha256).
 		SetSourceImageResultID(source.ID).
 		SetOwnsObject(false).
+		SetName(name).
+		SetNameNormalized(name).
 		SetExpiresAt(time.Now().Add(24 * time.Hour))
 	if source.StorageConfigID != nil {
 		create.SetStorageConfigID(*source.StorageConfigID)
 	}
 	entity, err := create.Save(ctx)
 	if err != nil {
+		if repoent.IsConstraintError(err) {
+			return domainassets.ReferenceAsset{}, repoerr.ErrConflict
+		}
 		return domainassets.ReferenceAsset{}, err
 	}
 	asset := mapReferenceAssetEntity(entity)
@@ -239,7 +297,112 @@ func (s *AssetsStore) GetByUserAndID(ctx context.Context, userID int64, assetID 
 		}
 		return domainassets.ReferenceAsset{}, err
 	}
+	return s.ensureReferenceAssetName(ctx, userID, entity)
+}
+
+func (s *AssetsStore) GetManyByUserAndIDs(ctx context.Context, userID int64, assetIDs []string) ([]domainassets.ReferenceAsset, error) {
+	ids := make([]uuid.UUID, 0, len(assetIDs))
+	for _, raw := range assetIDs {
+		id, err := uuid.Parse(strings.TrimSpace(raw))
+		if err != nil {
+			return nil, repoerr.ErrNotFound
+		}
+		ids = append(ids, id)
+	}
+	entities, err := s.client.ReferenceAsset.Query().Where(
+		referenceasset.IDIn(ids...), referenceasset.UserIDEQ(userID), referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted"),
+	).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]*repoent.ReferenceAsset, len(entities))
+	for _, entity := range entities {
+		byID[entity.ID.String()] = entity
+	}
+	result := make([]domainassets.ReferenceAsset, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		entity, exists := byID[strings.TrimSpace(id)]
+		if !exists {
+			return nil, repoerr.ErrNotFound
+		}
+		asset, nameErr := s.ensureReferenceAssetName(ctx, userID, entity)
+		if nameErr != nil {
+			return nil, nameErr
+		}
+		result = append(result, asset)
+	}
+	return result, nil
+}
+
+func (s *AssetsStore) RenameByUserAndID(ctx context.Context, userID int64, assetID, name, normalizedName string) (domainassets.ReferenceAsset, error) {
+	id, err := uuid.Parse(assetID)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
+	}
+	entity, err := s.client.ReferenceAsset.UpdateOneID(id).
+		Where(referenceasset.UserIDEQ(userID), referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted")).
+		SetName(name).SetNameNormalized(normalizedName).Save(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
+		}
+		if repoent.IsConstraintError(err) {
+			return domainassets.ReferenceAsset{}, repoerr.ErrConflict
+		}
+		return domainassets.ReferenceAsset{}, err
+	}
 	return mapReferenceAssetEntity(entity), nil
+}
+
+func nextReferenceAssetName(ctx context.Context, client *repoent.Client, userID int64, preferred string) (string, error) {
+	entities, err := client.ReferenceAsset.Query().Where(
+		referenceasset.UserIDEQ(userID), referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted"), referenceasset.NameNormalizedNotNil(),
+	).Select(referenceasset.FieldNameNormalized).All(ctx)
+	if err != nil {
+		return "", err
+	}
+	used := make(map[string]struct{}, len(entities))
+	for _, entity := range entities {
+		if entity.NameNormalized != nil {
+			used[*entity.NameNormalized] = struct{}{}
+		}
+	}
+	for sequence := 1; sequence <= 10000; sequence++ {
+		candidate := domainassets.ReferenceNameCandidate(preferred, sequence)
+		if _, exists := used[candidate]; !exists {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("reference asset name space exhausted")
+}
+
+func (s *AssetsStore) ensureReferenceAssetName(ctx context.Context, userID int64, entity *repoent.ReferenceAsset) (domainassets.ReferenceAsset, error) {
+	if entity.Name != nil && strings.TrimSpace(*entity.Name) != "" {
+		return mapReferenceAssetEntity(entity), nil
+	}
+	for attempt := 0; attempt < 20; attempt++ {
+		name, err := nextReferenceAssetName(ctx, s.client, userID, "")
+		if err != nil {
+			return domainassets.ReferenceAsset{}, err
+		}
+		updated, err := s.client.ReferenceAsset.UpdateOneID(entity.ID).
+			Where(referenceasset.UserIDEQ(userID), referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted"), referenceasset.NameIsNil()).
+			SetName(name).SetNameNormalized(name).Save(ctx)
+		if err == nil {
+			return mapReferenceAssetEntity(updated), nil
+		}
+		if repoent.IsNotFound(err) {
+			reloaded, reloadErr := s.client.ReferenceAsset.Query().Where(referenceasset.IDEQ(entity.ID), referenceasset.UserIDEQ(userID), referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted")).Only(ctx)
+			if reloadErr != nil {
+				return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
+			}
+			return mapReferenceAssetEntity(reloaded), nil
+		}
+		if !repoent.IsConstraintError(err) {
+			return domainassets.ReferenceAsset{}, err
+		}
+	}
+	return domainassets.ReferenceAsset{}, repoerr.ErrConflict
 }
 
 func (s *AssetsStore) DeleteByUserAndID(ctx context.Context, userID int64, assetID string) error {
@@ -284,6 +447,7 @@ func (s *AssetsStore) DeleteByUserAndID(ctx context.Context, userID int64, asset
 func mapReferenceAssetEntity(entity *repoent.ReferenceAsset) domainassets.ReferenceAsset {
 	asset := domainassets.ReferenceAsset{
 		ID:              entity.ID.String(),
+		Name:            nullableString(entity.Name),
 		APIKeyID:        entity.APIKeyID,
 		UploadSource:    entity.UploadSource,
 		Status:          entity.Status,

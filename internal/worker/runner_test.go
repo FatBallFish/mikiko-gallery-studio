@@ -47,6 +47,21 @@ func TestRunnerProcessesCleanupBeforeLookingForImageTask(t *testing.T) {
 	}
 }
 
+func TestRunnerRepairsTerminalPromptTemplatesInBoundedBatches(t *testing.T) {
+	var calls atomic.Int32
+	runner := NewRunner(fakeTaskService{repairFunc: func(_ context.Context, limit int) (int, error) {
+		calls.Add(1)
+		if limit != 100 {
+			t.Fatalf("repair limit = %d", limit)
+		}
+		return 1, nil
+	}}, Config{Owner: "prompt-repair-worker"})
+	processed, err := runner.ProcessOnce(t.Context())
+	if err != nil || !processed || calls.Load() != 1 {
+		t.Fatalf("processed=%v err=%v calls=%d", processed, err, calls.Load())
+	}
+}
+
 func TestRunnerProcessesGalleryExportBeforeLookingForImageTask(t *testing.T) {
 	exports := &fakeGalleryExportService{}
 	runner := NewRunner(fakeTaskService{}, Config{Owner: "export-worker"})
@@ -426,6 +441,14 @@ type fakeTaskService struct {
 	acquireFunc   func(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error)
 	heartbeatFunc func(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error)
 	executeFunc   func(ctx context.Context, task domainimagetask.Task, owner string, preferredProviders []string) (domainimagetask.ExecuteResult, error)
+	repairFunc    func(context.Context, int) (int, error)
+}
+
+func (f fakeTaskService) RepairTerminalPromptTemplates(ctx context.Context, limit int) (int, error) {
+	if f.repairFunc == nil {
+		return 0, nil
+	}
+	return f.repairFunc(ctx, limit)
 }
 
 func (f fakeTaskService) AcquireNextTask(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {

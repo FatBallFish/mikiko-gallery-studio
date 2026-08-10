@@ -1,0 +1,45 @@
+{
+  "valid": [
+    {
+      "name": "mixed_references_and_variables",
+      "template": "让 {{@主体}} 穿着 {{$服装}}，参考 {{@主体}}，地点 {{$地点}}。",
+      "canonical": "让 {{@主体}} 穿着 {{$服装}}，参考 {{@主体}}，地点 {{$地点}}。",
+      "references": ["主体"],
+      "variables": ["服装", "地点"],
+      "occurrences": [
+        {"kind": "reference", "name": "主体", "start": 2, "end": 9},
+        {"kind": "variable", "name": "服装", "start": 13, "end": 20},
+        {"kind": "reference", "name": "主体", "start": 24, "end": 31},
+        {"kind": "variable", "name": "地点", "start": 35, "end": 42}
+      ]
+    },
+    {
+      "name": "escaped_tokens_are_plain_text",
+      "template": "保留 \\{{@主体}} 和 \\{{$地点}}，使用 {{@风格}}。",
+      "canonical": "保留 \\{{@主体}} 和 \\{{$地点}}，使用 {{@风格}}。",
+      "references": ["风格"],
+      "variables": [],
+      "occurrences": [
+        {"kind": "reference", "name": "风格", "start": 26, "end": 33}
+      ]
+    },
+    {
+      "name": "names_are_trimmed_and_nfc_normalized",
+      "template": "{{@  Café  }} + {{$  色彩  }}",
+      "canonical": "{{@Café}} + {{$色彩}}",
+      "references": ["Café"],
+      "variables": ["色彩"],
+      "occurrences": [
+        {"kind": "reference", "name": "Café", "start": 0, "end": 14},
+        {"kind": "variable", "name": "色彩", "start": 17, "end": 28}
+      ]
+    }
+  ],
+  "invalid": [
+    {"name": "empty_name", "template": "{{@   }}", "rule": "name_empty", "offset": 0},
+    {"name": "unclosed", "template": "前景 {{@主体", "rule": "unclosed", "offset": 3},
+    {"name": "nested", "template": "{{@主体 {{@风格}} }}", "rule": "nested", "offset": 0},
+    {"name": "line_break", "template": "{{$地\n点}}", "rule": "name_character", "offset": 0},
+    {"name": "control_character", "template": "{{@主\u0001体}}", "rule": "name_character", "offset": 0}
+  ]
+}

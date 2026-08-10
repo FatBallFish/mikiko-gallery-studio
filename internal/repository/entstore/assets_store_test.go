@@ -91,6 +91,78 @@ func TestAssetsStorePersistsAndQueriesByHash(t *testing.T) {
 	}
 }
 
+func TestAssetsStoreAssignsUniqueNamesRenamesAndBatchLoads(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:assetstore-names?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewAssetsStore(client)
+	first := domainassets.ReferenceAsset{ID: uuid.NewString(), Status: "ready", StorageDriver: "local", ObjectKey: "a.png", MimeType: "image/png", SHA256: "hash-a", OwnsObject: true, CreatedAt: time.Now()}
+	second := domainassets.ReferenceAsset{ID: uuid.NewString(), Status: "ready", StorageDriver: "local", ObjectKey: "b.png", MimeType: "image/png", SHA256: "hash-b", OwnsObject: true, CreatedAt: time.Now()}
+	first, err = store.SaveWithGeneratedName(ctx, 90, first, domainassets.UploadMetadata{UploadSource: "web"}, "主体")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err = store.SaveWithGeneratedName(ctx, 90, second, domainassets.UploadMetadata{UploadSource: "web"}, "主体")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Name != "主体" || second.Name != "主体 2" {
+		t.Fatalf("names = %q, %q", first.Name, second.Name)
+	}
+	if _, err := store.RenameByUserAndID(ctx, 90, second.ID, "主体", "主体"); !errors.Is(err, repoerr.ErrConflict) {
+		t.Fatalf("rename conflict = %v", err)
+	}
+	renamed, err := store.RenameByUserAndID(ctx, 90, second.ID, "风格", "风格")
+	if err != nil || renamed.Name != "风格" {
+		t.Fatalf("renamed = %#v err=%v", renamed, err)
+	}
+	items, err := store.GetManyByUserAndIDs(ctx, 90, []string{second.ID, first.ID})
+	if err != nil || len(items) != 2 || items[0].ID != second.ID || items[1].ID != first.ID {
+		t.Fatalf("batch = %#v err=%v", items, err)
+	}
+	if _, err := store.GetManyByUserAndIDs(ctx, 91, []string{first.ID}); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("cross-user batch = %v", err)
+	}
+}
+
+func TestAssetsStoreLazilyBackfillsHistoricalUnnamedAssets(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:assetstore-name-backfill?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	first, err := client.ReferenceAsset.Create().SetUserID(93).SetStatus("ready").SetStorageDriver("local").SetObjectKey("legacy-a.png").SetMimeType("image/png").SetSha256("legacy-a").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := client.ReferenceAsset.Create().SetUserID(93).SetStatus("ready").SetStorageDriver("local").SetObjectKey("legacy-b.png").SetMimeType("image/png").SetSha256("legacy-b").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewAssetsStore(client)
+	items, err := store.GetManyByUserAndIDs(ctx, 93, []string{first.ID.String(), second.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if items[0].Name != "图片1" || items[1].Name != "图片2" {
+		t.Fatalf("backfilled names = %q, %q", items[0].Name, items[1].Name)
+	}
+	reloaded, err := store.GetByUserAndID(ctx, 93, first.ID.String())
+	if err != nil || reloaded.Name != "图片1" {
+		t.Fatalf("reloaded = %#v err=%v", reloaded, err)
+	}
+}
+
 func TestAssetsStoreDeleteSoftDeletesAndEnqueuesCanonicalObjectOnce(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:assetstore-cleanup?mode=memory&cache=shared&_fk=1")

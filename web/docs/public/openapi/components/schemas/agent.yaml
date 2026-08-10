@@ -863,6 +863,35 @@ components:
         file:
           type: string
           format: binary
+    ReferenceAssetRenameRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+    PromptReferenceBinding:
+      type: object
+      required: [name, asset_id]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        asset_id:
+          type: string
+          format: uuid
+    PromptVariableInput:
+      type: object
+      required: [name, value]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        value:
+          type: string
     ProjectCreateRequest:
       type: object
       required: [name]
@@ -941,7 +970,8 @@ components:
             format: uuid
         project_id:
           type: string
-          description: Current owned project. Omission resolves the caller's default project.
+          deprecated: true
+          description: Deprecated compatibility field. This value is accepted but ignored; gallery references may cross projects.
     ReferenceAssetsImportFromGalleryResponse:
       type: object
       properties:
@@ -1163,6 +1193,14 @@ components:
           items:
             type: string
             format: uuid
+        reference_bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromptReferenceBinding'
+        prompt_variables:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromptVariableInput'
         mask_asset_id:
           type: string
           format: uuid

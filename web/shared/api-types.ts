@@ -681,7 +681,7 @@ export type Project = {
 export type ProjectSnapshot = Pick<Project, 'id' | 'name' | 'is_default'>
 export type ReferenceAsset = {
   id: string
-  name?: string
+  name: string
   preview_url?: string
   download_url?: string
   preview_expires_at?: string
@@ -701,6 +701,8 @@ export type ReferenceAsset = {
   generation_snapshot?: ReferenceGenerationSnapshot
   created_at: string
 }
+export type PromptReferenceBinding = { name: string; asset_id: string }
+export type PromptVariableInput = { name: string; value: string }
 export type ReferenceGenerationSnapshot = {
   task_type?: ImageTaskType
   abstract_model?: string
@@ -815,8 +817,8 @@ export type ImageTask = {
   reference_assets: ReferenceAsset[]
   results: ImageResult[]
 }
-export type BackendCreateTaskRequest = Omit<BackendEstimateRequest, 'reference_image_count'> & { project_id?: string; prompt: string; reference_asset_ids?: string[]; response_mode: 'async'; capability_version?: string }
-export type CreateTaskRequest = EstimateRequest & { project_id?: string; prompt: string; idempotency_key?: string; response_mode?: 'sync' | 'async' | string; capability_version?: string }
+export type BackendCreateTaskRequest = Omit<BackendEstimateRequest, 'reference_image_count'> & { project_id?: string; prompt: string; reference_asset_ids?: string[]; reference_bindings?: PromptReferenceBinding[]; prompt_variables?: PromptVariableInput[]; response_mode: 'async'; capability_version?: string }
+export type CreateTaskRequest = EstimateRequest & { project_id?: string; prompt: string; reference_bindings?: PromptReferenceBinding[]; prompt_variables?: PromptVariableInput[]; idempotency_key?: string; response_mode?: 'sync' | 'async' | string; capability_version?: string }
 export type LoginResult = LoginResponse
 
 export type ApiKey = {

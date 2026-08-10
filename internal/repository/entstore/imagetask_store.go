@@ -48,6 +48,40 @@ func (s *ImageTaskStore) UserConcurrencyLimit(ctx context.Context, userID int64)
 	return entity.ConcurrencyLimit, nil
 }
 
+func (s *ImageTaskStore) RepairTerminalPromptTemplates(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	entities, err := s.client.ImageTask.Query().Where(
+		imagetask.PromptTemplateNotNil(),
+		imagetask.Or(
+			imagetask.DeletedAtNotNil(),
+			imagetask.StatusIn(domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted),
+		),
+	).Order(repoent.Asc(imagetask.FieldUpdatedAt)).Limit(limit).All(ctx)
+	if err != nil {
+		return 0, err
+	}
+	repaired := 0
+	for _, entity := range entities {
+		if entity.PromptTemplate == nil || entity.Prompt == *entity.PromptTemplate {
+			continue
+		}
+		count, err := s.client.ImageTask.Update().Where(
+			imagetask.IDEQ(entity.ID), imagetask.PromptEQ(entity.Prompt),
+			imagetask.Or(
+				imagetask.DeletedAtNotNil(),
+				imagetask.StatusIn(domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted),
+			),
+		).SetPrompt(*entity.PromptTemplate).Save(ctx)
+		if err != nil {
+			return repaired, err
+		}
+		repaired += count
+	}
+	return repaired, nil
+}
+
 func (s *ImageTaskStore) Save(ctx context.Context, task domainimagetask.Task) error {
 	taskUUID, err := uuid.Parse(task.ID)
 	if err != nil {
@@ -1097,7 +1131,12 @@ func (s *ImageTaskStore) DeleteByID(ctx context.Context, userID int64, taskID st
 		return err
 	}
 	deletedAt := time.Now().UTC()
-	if err := tx.ImageTask.UpdateOneID(entity.ID).SetDeletedAt(deletedAt).Exec(ctx); err != nil {
+	taskDelete := tx.ImageTask.UpdateOneID(entity.ID).
+		SetDeletedAt(deletedAt)
+	if entity.PromptTemplate != nil && strings.TrimSpace(*entity.PromptTemplate) != "" {
+		taskDelete.SetPrompt(*entity.PromptTemplate)
+	}
+	if err := taskDelete.Exec(ctx); err != nil {
 		return err
 	}
 	if _, err := tx.ImageResult.Update().
@@ -1255,7 +1294,7 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetProgressStage(task.ProgressStage).
 		SetProgressMessage(task.ProgressMessage).
-		SetPrompt(task.Prompt).
+		SetPrompt(persistedTaskPrompt(task)).
 		SetAbstractModel(task.AbstractModel).
 		SetSizeMode(sizeMode).
 		SetAspectRatio(aspectRatio).
@@ -1307,6 +1346,7 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		builder.SetProjectID(parsedProjectID)
 	}
 	setImageTaskCreateArtifactFields(builder, task)
+	setImageTaskCreatePromptFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	}
@@ -1389,7 +1429,7 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetProgressStage(task.ProgressStage).
 		SetProgressMessage(task.ProgressMessage).
-		SetPrompt(task.Prompt).
+		SetPrompt(persistedTaskPrompt(task)).
 		SetAbstractModel(task.AbstractModel).
 		SetSizeMode(sizeMode).
 		SetAspectRatio(aspectRatio).
@@ -1424,6 +1464,7 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
 	setImageTaskUpdateOneArtifactFields(builder, task)
+	setImageTaskUpdateOnePromptFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
@@ -1541,7 +1582,7 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetProgressStage(task.ProgressStage).
 		SetProgressMessage(task.ProgressMessage).
-		SetPrompt(task.Prompt).
+		SetPrompt(persistedTaskPrompt(task)).
 		SetAbstractModel(task.AbstractModel).
 		SetSizeMode(sizeMode).
 		SetAspectRatio(aspectRatio).
@@ -1576,6 +1617,7 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
 	setImageTaskUpdateArtifactFields(builder, task)
+	setImageTaskUpdatePromptFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
@@ -1678,7 +1720,7 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetProgressStage(task.ProgressStage).
 		SetProgressMessage(task.ProgressMessage).
-		SetPrompt(task.Prompt).
+		SetPrompt(persistedTaskPrompt(task)).
 		SetAbstractModel(task.AbstractModel).
 		SetSizeMode(sizeMode).
 		SetAspectRatio(aspectRatio).
@@ -1713,6 +1755,7 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
 	setImageTaskUpdateArtifactFields(builder, task)
+	setImageTaskUpdatePromptFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
@@ -1872,6 +1915,69 @@ func artifactDiagnosticsMap(recovery domainimagetask.ArtifactRecovery) map[strin
 	return decoded
 }
 
+func persistedTaskPrompt(task domainimagetask.Task) string {
+	if strings.TrimSpace(task.PromptTemplate) != "" && isTerminalStatus(task.Status) {
+		return task.PromptTemplate
+	}
+	if task.ExecutionPrompt != "" {
+		return task.ExecutionPrompt
+	}
+	return task.Prompt
+}
+
+func setImageTaskCreatePromptFields(builder *repoent.ImageTaskCreate, task domainimagetask.Task) {
+	if strings.TrimSpace(task.PromptTemplate) == "" {
+		return
+	}
+	builder.SetPromptTemplate(task.PromptTemplate).
+		SetPromptTemplateVersion(task.PromptTemplateVersion).
+		SetPromptBindingSnapshot(promptBindingSnapshotMap(task.PromptBindingSnapshot))
+}
+
+func setImageTaskUpdateOnePromptFields(builder *repoent.ImageTaskUpdateOne, task domainimagetask.Task) {
+	if strings.TrimSpace(task.PromptTemplate) == "" {
+		builder.ClearPromptTemplate().SetPromptTemplateVersion(0).SetPromptBindingSnapshot(map[string]any{})
+		return
+	}
+	builder.SetPromptTemplate(task.PromptTemplate).
+		SetPromptTemplateVersion(task.PromptTemplateVersion).
+		SetPromptBindingSnapshot(promptBindingSnapshotMap(task.PromptBindingSnapshot))
+}
+
+func setImageTaskUpdatePromptFields(builder *repoent.ImageTaskUpdate, task domainimagetask.Task) {
+	if strings.TrimSpace(task.PromptTemplate) == "" {
+		builder.ClearPromptTemplate().SetPromptTemplateVersion(0).SetPromptBindingSnapshot(map[string]any{})
+		return
+	}
+	builder.SetPromptTemplate(task.PromptTemplate).
+		SetPromptTemplateVersion(task.PromptTemplateVersion).
+		SetPromptBindingSnapshot(promptBindingSnapshotMap(task.PromptBindingSnapshot))
+}
+
+func promptBindingSnapshotMap(snapshot domainimagetask.PromptBindingSnapshot) map[string]any {
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return map[string]any{}
+	}
+	decoded := map[string]any{}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return map[string]any{}
+	}
+	return decoded
+}
+
+func decodePromptBindingSnapshot(value map[string]any) (domainimagetask.PromptBindingSnapshot, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return domainimagetask.PromptBindingSnapshot{}, err
+	}
+	var snapshot domainimagetask.PromptBindingSnapshot
+	if err := json.Unmarshal(encoded, &snapshot); err != nil {
+		return domainimagetask.PromptBindingSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
 func decodeArtifactDiagnostics(value map[string]any) (domainimagetask.ArtifactDiagnostic, []domainimagetask.ArtifactDiagnostic) {
 	if _, hasEnvelope := value["last"]; !hasEnvelope {
 		encoded, err := json.Marshal(value)
@@ -1980,55 +2086,62 @@ func imageResultUUID(value string) (uuid.UUID, error) {
 }
 
 func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.ImageResult) (domainimagetask.Task, error) {
+	publicPrompt := entity.Prompt
+	if entity.PromptTemplate != nil {
+		publicPrompt = *entity.PromptTemplate
+	}
 	task := domainimagetask.Task{
-		UserID:               entity.UserID,
-		SourceChannel:        entity.SourceChannel,
-		ID:                   entity.ID.String(),
-		Status:               entity.Status,
-		ProgressStage:        entity.ProgressStage,
-		ProgressMessage:      entity.ProgressMessage,
-		AbstractModel:        entity.AbstractModel,
-		RouteModelCode:       entity.RouteModelCode,
-		RouteModelID:         nullableInt64(entity.RouteModelID),
-		AccountModelID:       nullableInt64(entity.AccountModelID),
-		ModelAccountID:       nullableInt64(entity.ModelAccountID),
-		UpstreamModelCode:    entity.UpstreamModelCode,
-		EffectiveMultiplier:  entity.EffectiveMultiplier,
-		ChargedPoints:        entity.ChargedPoints,
-		TaskType:             entity.TaskType,
-		Prompt:               entity.Prompt,
-		NegativePrompt:       nullableString(entity.NegativePrompt),
-		AspectRatio:          entity.AspectRatio,
-		RequestedSize:        nullableString(entity.RequestedSize),
-		ResolvedWidth:        nullableInt(entity.ResolvedWidth),
-		ResolvedHeight:       nullableInt(entity.ResolvedHeight),
-		SizeMode:             entity.SizeMode,
-		BaseResolution:       entity.BaseResolution,
-		Quality:              entity.Quality,
-		OutputFormat:         entity.OutputFormat,
-		Background:           nullableString(entity.Background),
-		OutputCompression:    entity.OutputCompression,
-		Moderation:           entity.Moderation,
-		ResponseMode:         entity.ResponseMode,
-		SavePolicy:           entity.SavePolicy,
-		OutputImageCount:     entity.RequestedOutputImageCount,
-		ReferenceImageCount:  entity.ReferenceImageCount,
-		ReferenceAssetIDs:    decodeReferenceAssetIDs(entity.RoutingSnapshot),
-		ReferenceStrength:    nullableInt(entity.ReferenceStrength),
-		Seed:                 entity.Seed,
-		EstimatedPoints:      entity.EstimatedPoints,
-		ActualPoints:         entity.ActualPoints,
-		ProviderModelID:      nullableInt64(entity.ProviderModelID),
-		ProviderCost:         entity.ProviderCost,
-		GrossMargin:          entity.GrossMargin,
-		FallbackCount:        entity.FallbackCount,
-		RouteSnapshotVersion: entity.RouteSnapshotVersion,
-		LeaseOwner:           nullableString(entity.LeaseOwner),
-		LeaseExpiresAt:       entity.LeaseExpiresAt,
-		ErrorCode:            nullableString(entity.ErrorCode),
-		ErrorMessage:         nullableString(entity.ErrorMessage),
-		ProviderRequestID:    nullableString(entity.ProviderRequestID),
-		UpstreamSucceededAt:  entity.UpstreamSucceededAt,
+		UserID:                entity.UserID,
+		SourceChannel:         entity.SourceChannel,
+		ID:                    entity.ID.String(),
+		Status:                entity.Status,
+		ProgressStage:         entity.ProgressStage,
+		ProgressMessage:       entity.ProgressMessage,
+		AbstractModel:         entity.AbstractModel,
+		RouteModelCode:        entity.RouteModelCode,
+		RouteModelID:          nullableInt64(entity.RouteModelID),
+		AccountModelID:        nullableInt64(entity.AccountModelID),
+		ModelAccountID:        nullableInt64(entity.ModelAccountID),
+		UpstreamModelCode:     entity.UpstreamModelCode,
+		EffectiveMultiplier:   entity.EffectiveMultiplier,
+		ChargedPoints:         entity.ChargedPoints,
+		TaskType:              entity.TaskType,
+		Prompt:                publicPrompt,
+		ExecutionPrompt:       entity.Prompt,
+		PromptTemplate:        nullableString(entity.PromptTemplate),
+		PromptTemplateVersion: entity.PromptTemplateVersion,
+		NegativePrompt:        nullableString(entity.NegativePrompt),
+		AspectRatio:           entity.AspectRatio,
+		RequestedSize:         nullableString(entity.RequestedSize),
+		ResolvedWidth:         nullableInt(entity.ResolvedWidth),
+		ResolvedHeight:        nullableInt(entity.ResolvedHeight),
+		SizeMode:              entity.SizeMode,
+		BaseResolution:        entity.BaseResolution,
+		Quality:               entity.Quality,
+		OutputFormat:          entity.OutputFormat,
+		Background:            nullableString(entity.Background),
+		OutputCompression:     entity.OutputCompression,
+		Moderation:            entity.Moderation,
+		ResponseMode:          entity.ResponseMode,
+		SavePolicy:            entity.SavePolicy,
+		OutputImageCount:      entity.RequestedOutputImageCount,
+		ReferenceImageCount:   entity.ReferenceImageCount,
+		ReferenceAssetIDs:     decodeReferenceAssetIDs(entity.RoutingSnapshot),
+		ReferenceStrength:     nullableInt(entity.ReferenceStrength),
+		Seed:                  entity.Seed,
+		EstimatedPoints:       entity.EstimatedPoints,
+		ActualPoints:          entity.ActualPoints,
+		ProviderModelID:       nullableInt64(entity.ProviderModelID),
+		ProviderCost:          entity.ProviderCost,
+		GrossMargin:           entity.GrossMargin,
+		FallbackCount:         entity.FallbackCount,
+		RouteSnapshotVersion:  entity.RouteSnapshotVersion,
+		LeaseOwner:            nullableString(entity.LeaseOwner),
+		LeaseExpiresAt:        entity.LeaseExpiresAt,
+		ErrorCode:             nullableString(entity.ErrorCode),
+		ErrorMessage:          nullableString(entity.ErrorMessage),
+		ProviderRequestID:     nullableString(entity.ProviderRequestID),
+		UpstreamSucceededAt:   entity.UpstreamSucceededAt,
 		ArtifactRecovery: domainimagetask.ArtifactRecovery{
 			Status:           entity.ArtifactRecoveryStatus,
 			EncryptedPayload: nullableString(entity.ArtifactRecoveryPayload),
@@ -2041,6 +2154,13 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		},
 		CreatedAt: entity.CreatedAt,
 		UpdatedAt: entity.UpdatedAt,
+	}
+	if entity.PromptBindingSnapshot != nil {
+		snapshot, err := decodePromptBindingSnapshot(entity.PromptBindingSnapshot)
+		if err != nil {
+			return domainimagetask.Task{}, err
+		}
+		task.PromptBindingSnapshot = snapshot
 	}
 	if entity.ProjectID != nil {
 		task.ProjectID = entity.ProjectID.String()

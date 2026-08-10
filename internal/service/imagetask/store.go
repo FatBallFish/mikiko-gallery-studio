@@ -44,6 +44,28 @@ type MemoryStore struct {
 	interactions map[string]map[int64]*memoryPublicInteraction
 }
 
+func (s *MemoryStore) RepairTerminalPromptTemplates(_ context.Context, limit int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 {
+		limit = 100
+	}
+	repaired := 0
+	for id, task := range s.tasksByID {
+		if repaired >= limit || task.PromptTemplate == "" || task.ExecutionPrompt == task.PromptTemplate {
+			continue
+		}
+		switch task.Status {
+		case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted:
+			task.Prompt = task.PromptTemplate
+			task.ExecutionPrompt = task.PromptTemplate
+			s.tasksByID[id] = cloneTask(task)
+			repaired++
+		}
+	}
+	return repaired, nil
+}
+
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		tasksByID:    map[string]domainimagetask.Task{},
@@ -75,6 +97,7 @@ func (s *MemoryStore) Save(_ context.Context, task domainimagetask.Task) error {
 		task.CreatedAt = now
 	}
 	task.UpdatedAt = now
+	clearTerminalExecutionPrompt(&task)
 	s.tasksByID[task.ID] = cloneTask(task)
 	return nil
 }
@@ -108,6 +131,7 @@ func (s *MemoryStore) SaveIfOwned(_ context.Context, task domainimagetask.Task, 
 	task.CreatedAt = current.CreatedAt
 	task.UpdatedAt = now.UTC()
 
+	clearTerminalExecutionPrompt(&task)
 	s.tasksByID[task.ID] = cloneTask(task)
 	return nil
 }
@@ -156,8 +180,20 @@ func (s *MemoryStore) SaveTerminalState(_ context.Context, task domainimagetask.
 	task.CreatedAt = current.CreatedAt
 	task.UpdatedAt = now.UTC()
 
+	clearTerminalExecutionPrompt(&task)
 	s.tasksByID[task.ID] = cloneTask(task)
 	return nil
+}
+
+func clearTerminalExecutionPrompt(task *domainimagetask.Task) {
+	if task == nil || task.PromptTemplate == "" {
+		return
+	}
+	switch task.Status {
+	case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted:
+		task.Prompt = task.PromptTemplate
+		task.ExecutionPrompt = task.PromptTemplate
+	}
 }
 
 func (s *MemoryStore) GetByID(_ context.Context, userID int64, taskID string) (domainimagetask.Task, error) {

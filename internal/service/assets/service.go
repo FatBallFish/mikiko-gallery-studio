@@ -159,20 +159,60 @@ func (s *Service) UploadWithMetadataContext(ctx context.Context, userID int64, f
 		return domainassets.ReferenceAsset{}, errs.New(500, errs.CodeImageStorageFailed, "failed to store reference asset")
 	}
 	asset := domainassets.ReferenceAsset{ID: assetID, APIKeyID: metadata.APIKeyID, UploadSource: defaultString(metadata.UploadSource, "web"), Status: "ready", StorageConfigID: writer.ConfigID, StorageDriver: writer.Driver, MimeType: detectedMIME, FileSizeBytes: int64(len(content)), Width: imageConfig.Width, Height: imageConfig.Height, SHA256: sha, ObjectKey: objectKey, OwnsObject: true, CreatedAt: time.Now()}
+	preferredName := uploadReferenceName(filename)
 	if s.store != nil {
-		if metadataStore, ok := s.store.(MetadataStore); ok {
+		if generatedNameStore, ok := s.store.(GeneratedNameStore); ok {
+			asset, err = generatedNameStore.SaveWithGeneratedName(ctx, userID, asset, metadata, preferredName)
+		} else if metadataStore, ok := s.store.(MetadataStore); ok {
+			asset.Name = s.availableReferenceNameLocked(userID, preferredName, "")
 			err = metadataStore.SaveWithMetadata(ctx, userID, asset, metadata)
 		} else {
+			asset.Name = s.availableReferenceNameLocked(userID, preferredName, "")
 			err = s.store.Save(ctx, userID, asset)
 		}
 		if err != nil {
 			_ = writer.Backend.Delete(ctx, objectKey)
 			return domainassets.ReferenceAsset{}, err
 		}
+	} else {
+		asset.Name = s.availableReferenceNameLocked(userID, preferredName, "")
 	}
 	s.assetsByID[assetID] = storedAsset{UserID: userID, Asset: asset}
 	s.assetsByHash[key] = assetID
 	return asset, nil
+}
+
+func uploadReferenceName(filename string) string {
+	value := strings.TrimSpace(filename)
+	base := strings.TrimSuffix(filepath.Base(value), filepath.Ext(value))
+	name, err := domainassets.NormalizeReferenceName(base)
+	if err != nil {
+		return ""
+	}
+	return name
+}
+
+func (s *Service) availableReferenceNameLocked(userID int64, preferred, excludeID string) string {
+	used := map[string]struct{}{}
+	for id, stored := range s.assetsByID {
+		if id == excludeID || stored.UserID != userID || stored.Asset.Status == "deleted" {
+			continue
+		}
+		if normalized, err := domainassets.NormalizeReferenceName(stored.Asset.Name); err == nil {
+			used[normalized] = struct{}{}
+		}
+	}
+	for sequence := 1; sequence <= 10000; sequence++ {
+		candidate := domainassets.ReferenceNameCandidate(preferred, sequence)
+		normalized, err := domainassets.NormalizeReferenceName(candidate)
+		if err != nil {
+			continue
+		}
+		if _, exists := used[normalized]; !exists {
+			return candidate
+		}
+	}
+	return "图片"
 }
 
 func validateImageContent(filename, declaredContentType string, content []byte, policy FilePolicy) (image.Config, string, string, error) {
@@ -265,6 +305,70 @@ func (s *Service) getStored(ctx context.Context, userID int64, assetID string) (
 	if !ok || stored.UserID != userID || stored.Asset.Status == "deleted" {
 		return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "reference asset not found")
 	}
+	return stored.Asset, nil
+}
+
+func (s *Service) GetManyWithContext(ctx context.Context, userID int64, assetIDs []string) ([]domainassets.ReferenceAsset, error) {
+	if len(assetIDs) == 0 {
+		return nil, nil
+	}
+	if batchStore, ok := s.store.(BatchStore); ok {
+		assets, err := batchStore.GetManyByUserAndIDs(ctx, userID, assetIDs)
+		if err != nil {
+			if err == repoerr.ErrNotFound {
+				return nil, errs.New(404, errs.CodeNotFound, "reference asset not found")
+			}
+			return nil, err
+		}
+		return assets, nil
+	}
+	assets := make([]domainassets.ReferenceAsset, 0, len(assetIDs))
+	for _, assetID := range assetIDs {
+		asset, err := s.getStored(ctx, userID, assetID)
+		if err != nil {
+			return nil, err
+		}
+		assets = append(assets, asset)
+	}
+	return assets, nil
+}
+
+func (s *Service) RenameWithContext(ctx context.Context, userID int64, assetID, rawName string) (domainassets.ReferenceAsset, error) {
+	name, err := domainassets.NormalizeReferenceName(rawName)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, errs.WithDetails(errs.New(400, "PROMPT_TEMPLATE_INVALID", err.Error()), map[string]any{"field": "name", "rule": "name_invalid"})
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if renameStore, ok := s.store.(RenameStore); ok {
+		asset, renameErr := renameStore.RenameByUserAndID(ctx, userID, assetID, name, name)
+		if renameErr != nil {
+			switch renameErr {
+			case repoerr.ErrNotFound:
+				return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "reference asset not found")
+			case repoerr.ErrConflict:
+				return domainassets.ReferenceAsset{}, errs.New(409, "REFERENCE_ASSET_NAME_CONFLICT", "引用资产名称已被使用")
+			default:
+				return domainassets.ReferenceAsset{}, renameErr
+			}
+		}
+		s.assetsByID[asset.ID] = storedAsset{UserID: userID, Asset: asset}
+		return asset, nil
+	}
+	stored, exists := s.assetsByID[assetID]
+	if !exists || stored.UserID != userID || stored.Asset.Status == "deleted" {
+		return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "reference asset not found")
+	}
+	for id, candidate := range s.assetsByID {
+		if id == assetID || candidate.UserID != userID || candidate.Asset.Status == "deleted" {
+			continue
+		}
+		if normalized, normalizeErr := domainassets.NormalizeReferenceName(candidate.Asset.Name); normalizeErr == nil && normalized == name {
+			return domainassets.ReferenceAsset{}, errs.New(409, "REFERENCE_ASSET_NAME_CONFLICT", "引用资产名称已被使用")
+		}
+	}
+	stored.Asset.Name = name
+	s.assetsByID[assetID] = stored
 	return stored.Asset, nil
 }
 

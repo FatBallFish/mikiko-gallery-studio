@@ -2532,6 +2532,30 @@ func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusOK, referenceAssetPayload(asset, false))
+	case http.MethodPatch:
+		user, appErr := a.requireUser(r)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		asset, err := a.assets.RenameWithContext(r.Context(), user.ID, assetID, req.Name)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		asset, err = a.assets.ProjectURLs(r.Context(), asset)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, referenceAssetPayload(asset, false))
 	case http.MethodDelete:
 		user, appErr := a.requireUser(r)
 		if appErr != nil {
@@ -8178,24 +8202,26 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ProjectID                 string   `json:"project_id"`
-		TaskType                  string   `json:"task_type"`
-		Prompt                    string   `json:"prompt"`
-		AbstractModel             string   `json:"abstract_model"`
-		RouteModelCode            string   `json:"route_model_code"`
-		SizeMode                  string   `json:"size_mode"`
-		AspectRatio               string   `json:"aspect_ratio"`
-		BaseResolution            string   `json:"base_resolution"`
-		Quality                   string   `json:"quality"`
-		OutputFormat              string   `json:"output_format"`
-		Background                string   `json:"background"`
-		OutputCompression         int      `json:"output_compression"`
-		Moderation                string   `json:"moderation"`
-		RequestedSize             string   `json:"requested_size"`
-		RequestedOutputImageCount int      `json:"requested_output_image_count"`
-		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
-		ResponseMode              string   `json:"response_mode"`
-		CapabilityVersion         string   `json:"capability_version"`
+		ProjectID                 string                                 `json:"project_id"`
+		TaskType                  string                                 `json:"task_type"`
+		Prompt                    string                                 `json:"prompt"`
+		AbstractModel             string                                 `json:"abstract_model"`
+		RouteModelCode            string                                 `json:"route_model_code"`
+		SizeMode                  string                                 `json:"size_mode"`
+		AspectRatio               string                                 `json:"aspect_ratio"`
+		BaseResolution            string                                 `json:"base_resolution"`
+		Quality                   string                                 `json:"quality"`
+		OutputFormat              string                                 `json:"output_format"`
+		Background                string                                 `json:"background"`
+		OutputCompression         int                                    `json:"output_compression"`
+		Moderation                string                                 `json:"moderation"`
+		RequestedSize             string                                 `json:"requested_size"`
+		RequestedOutputImageCount int                                    `json:"requested_output_image_count"`
+		ReferenceAssetIDs         []string                               `json:"reference_asset_ids"`
+		ReferenceBindings         []domainimagetask.PromptReferenceInput `json:"reference_bindings"`
+		PromptVariables           []domainimagetask.PromptVariableInput  `json:"prompt_variables"`
+		ResponseMode              string                                 `json:"response_mode"`
+		CapabilityVersion         string                                 `json:"capability_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -8226,6 +8252,8 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		OutputImageCount:    req.RequestedOutputImageCount,
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
+		ReferenceBindings:   append([]domainimagetask.PromptReferenceInput(nil), req.ReferenceBindings...),
+		PromptVariables:     append([]domainimagetask.PromptVariableInput(nil), req.PromptVariables...),
 		UserGroupCode:       user.GroupCode,
 		UserGroupCodes:      userGroupCodes(user),
 		UserGroupMultiplier: user.GroupMultiplier,
@@ -8250,24 +8278,26 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	defer cleanup()
 
 	var req struct {
-		ProjectID                 string   `json:"project_id"`
-		TaskType                  string   `json:"task_type"`
-		Prompt                    string   `json:"prompt"`
-		AbstractModel             string   `json:"abstract_model"`
-		RouteModelCode            string   `json:"route_model_code"`
-		SizeMode                  string   `json:"size_mode"`
-		AspectRatio               string   `json:"aspect_ratio"`
-		BaseResolution            string   `json:"base_resolution"`
-		Quality                   string   `json:"quality"`
-		OutputFormat              string   `json:"output_format"`
-		Background                string   `json:"background"`
-		OutputCompression         int      `json:"output_compression"`
-		Moderation                string   `json:"moderation"`
-		RequestedSize             string   `json:"requested_size"`
-		RequestedOutputImageCount int      `json:"requested_output_image_count"`
-		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
-		ResponseMode              string   `json:"response_mode"`
-		CapabilityVersion         string   `json:"capability_version"`
+		ProjectID                 string                                 `json:"project_id"`
+		TaskType                  string                                 `json:"task_type"`
+		Prompt                    string                                 `json:"prompt"`
+		AbstractModel             string                                 `json:"abstract_model"`
+		RouteModelCode            string                                 `json:"route_model_code"`
+		SizeMode                  string                                 `json:"size_mode"`
+		AspectRatio               string                                 `json:"aspect_ratio"`
+		BaseResolution            string                                 `json:"base_resolution"`
+		Quality                   string                                 `json:"quality"`
+		OutputFormat              string                                 `json:"output_format"`
+		Background                string                                 `json:"background"`
+		OutputCompression         int                                    `json:"output_compression"`
+		Moderation                string                                 `json:"moderation"`
+		RequestedSize             string                                 `json:"requested_size"`
+		RequestedOutputImageCount int                                    `json:"requested_output_image_count"`
+		ReferenceAssetIDs         []string                               `json:"reference_asset_ids"`
+		ReferenceBindings         []domainimagetask.PromptReferenceInput `json:"reference_bindings"`
+		PromptVariables           []domainimagetask.PromptVariableInput  `json:"prompt_variables"`
+		ResponseMode              string                                 `json:"response_mode"`
+		CapabilityVersion         string                                 `json:"capability_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -8332,6 +8362,8 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		OutputImageCount:    req.RequestedOutputImageCount,
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
+		ReferenceBindings:   append([]domainimagetask.PromptReferenceInput(nil), req.ReferenceBindings...),
+		PromptVariables:     append([]domainimagetask.PromptVariableInput(nil), req.PromptVariables...),
 		UserGroupCode:       identity.GroupCode,
 		UserGroupCodes:      []string{identity.GroupCode},
 		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),

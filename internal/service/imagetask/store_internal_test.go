@@ -75,6 +75,30 @@ func TestMemoryStoreSaveTerminalStateRejectsReclaimedOwner(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreTerminalStateClearsExpandedPromptValues(t *testing.T) {
+	store := NewMemoryStore()
+	now := time.Now().UTC()
+	expires := now.Add(time.Minute)
+	task := domainimagetask.Task{
+		ID: "template-task", UserID: 42, Status: domainimagetask.StatusRunning, LeaseOwner: "worker-a", LeaseExpiresAt: &expires,
+		Prompt: "{{$地点}}", PromptTemplate: "{{$地点}}", PromptTemplateVersion: 1, ExecutionPrompt: "隐私地点值",
+	}
+	if err := store.Save(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	task.Status = domainimagetask.StatusSucceeded
+	if err := store.SaveTerminalState(context.Background(), task, "worker-a", now); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.GetByID(context.Background(), 42, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Prompt != "{{$地点}}" || loaded.ExecutionPrompt != "{{$地点}}" {
+		t.Fatalf("terminal prompt fields = public %q execution %q", loaded.Prompt, loaded.ExecutionPrompt)
+	}
+}
+
 func TestGalleryImageFromMemoryTaskPreservesReusableCreationConfiguration(t *testing.T) {
 	task := domainimagetask.Task{
 		ID: "reuse-task", UserID: 42, Prompt: "reuse prompt", TaskType: string(provider.TaskTypeImageEdit),

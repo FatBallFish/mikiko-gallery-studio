@@ -11,6 +11,7 @@ import (
 
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	"github.com/fatballfish/pic-gallery/internal/provider"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -31,7 +32,13 @@ func (s *Service) ImportGalleryImage(ctx context.Context, userID int64, result p
 	defer s.mu.Unlock()
 
 	if aliasStore, ok := s.store.(AliasStore); ok {
-		return aliasStore.ImportGalleryAlias(ctx, userID, result)
+		for attempt := 0; attempt < 5; attempt++ {
+			asset, importErr := aliasStore.ImportGalleryAlias(ctx, userID, result)
+			if importErr != repoerr.ErrConflict {
+				return asset, importErr
+			}
+		}
+		return domainassets.ReferenceAsset{}, errs.New(409, "REFERENCE_ASSET_NAME_CONFLICT", "引用资产名称分配冲突，请重试")
 	}
 	if assetID, ok := s.assetsBySource[key]; ok {
 		if stored, exists := s.assetsByID[assetID]; exists && stored.Asset.Status != "deleted" {
@@ -48,6 +55,7 @@ func (s *Service) ImportGalleryImage(ctx context.Context, userID int64, result p
 		Width: result.Width, Height: result.Height, SHA256: result.SHA256,
 		ObjectKey: result.ObjectKey, SourceImageResultID: result.ID, OwnsObject: false, CreatedAt: time.Now(),
 	}
+	asset.Name = s.availableReferenceNameLocked(userID, "", "")
 	if s.store != nil {
 		var err error
 		metadata := domainassets.UploadMetadata{UploadSource: "gallery_import"}

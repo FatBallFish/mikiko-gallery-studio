@@ -13,19 +13,21 @@ import (
 )
 
 type Config struct {
-	Owner                       string
-	LeaseTTL                    time.Duration
-	HeartbeatInterval           time.Duration
-	PollInterval                time.Duration
-	PreferredProviders          []string
-	RefundCompensationBatchSize int
-	MaxConcurrentTasks          int
-	MaxConcurrentTasksResolver  func(context.Context) (int, error)
-	ConfigRefreshInterval       time.Duration
-	CleanupReconcileInterval    time.Duration
-	CleanupReconcileBatchSize   int
-	PaymentOrderExpiryInterval  time.Duration
-	PaymentOrderExpiryBatchSize int
+	Owner                         string
+	LeaseTTL                      time.Duration
+	HeartbeatInterval             time.Duration
+	PollInterval                  time.Duration
+	PreferredProviders            []string
+	RefundCompensationBatchSize   int
+	MaxConcurrentTasks            int
+	MaxConcurrentTasksResolver    func(context.Context) (int, error)
+	ConfigRefreshInterval         time.Duration
+	CleanupReconcileInterval      time.Duration
+	CleanupReconcileBatchSize     int
+	PaymentOrderExpiryInterval    time.Duration
+	PaymentOrderExpiryBatchSize   int
+	PromptTemplateRepairInterval  time.Duration
+	PromptTemplateRepairBatchSize int
 }
 
 type Runner struct {
@@ -41,6 +43,7 @@ type Runner struct {
 	nextBackgroundExport bool
 	lastCleanupReconcile time.Time
 	lastPaymentExpiry    time.Time
+	lastPromptRepair     time.Time
 }
 
 const maxBackgroundStreak = 1
@@ -62,6 +65,10 @@ type compensationService interface {
 
 type paymentExpiryService interface {
 	ExpirePendingOrders(ctx context.Context, now time.Time, limit int) (int, error)
+}
+
+type promptTemplateRepairService interface {
+	RepairTerminalPromptTemplates(ctx context.Context, limit int) (int, error)
 }
 
 type cleanupService interface {
@@ -109,6 +116,12 @@ func NewRunner(tasks taskService, cfg Config) *Runner {
 	}
 	if cfg.PaymentOrderExpiryBatchSize <= 0 {
 		cfg.PaymentOrderExpiryBatchSize = 500
+	}
+	if cfg.PromptTemplateRepairInterval <= 0 {
+		cfg.PromptTemplateRepairInterval = 5 * time.Minute
+	}
+	if cfg.PromptTemplateRepairBatchSize <= 0 {
+		cfg.PromptTemplateRepairBatchSize = 100
 	}
 	return &Runner{tasks: tasks, cfg: cfg}
 }
@@ -298,6 +311,9 @@ func normalizeMaxConcurrentTasks(value int) int {
 }
 
 func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
+	if processed, err := r.processPromptTemplateRepairOnce(ctx); err != nil || processed {
+		return processed, err
+	}
 	if processed, err := r.processPaymentExpiryOnce(ctx); err != nil || processed {
 		return processed, err
 	}
@@ -328,6 +344,26 @@ func (r *Runner) ProcessOnce(ctx context.Context) (bool, error) {
 		r.resetBackgroundStreak()
 	}
 	return processed, err
+}
+
+func (r *Runner) processPromptTemplateRepairOnce(ctx context.Context) (bool, error) {
+	service, ok := r.tasks.(promptTemplateRepairService)
+	if !ok {
+		return false, nil
+	}
+	now := time.Now().UTC()
+	if !r.lastPromptRepair.IsZero() && now.Sub(r.lastPromptRepair) < r.cfg.PromptTemplateRepairInterval {
+		return false, nil
+	}
+	r.lastPromptRepair = now
+	count, err := service.RepairTerminalPromptTemplates(ctx, r.cfg.PromptTemplateRepairBatchSize)
+	if err != nil {
+		if repoerr.IsTransientContention(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (r *Runner) processPaymentExpiryOnce(ctx context.Context) (bool, error) {

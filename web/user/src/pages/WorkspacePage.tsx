@@ -942,23 +942,23 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (!limited.accepted.length) return
     setGalleryImportBusy(true)
     try {
-      const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted, selectedProjectID)
-	  const reused = capability ? firstGalleryReferenceReuse(editRefs.length, assets, capability) : null
+      const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted)
+      const reused = capability ? firstGalleryReferenceReuse(editRefs.length, assets, capability) : null
       setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
-	  if (reused) {
-		const values = reused.values
-		restoreParametersRef.current = { routeModelCode: values.route_model_code, sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio', baseResolution: values.base_resolution, aspectRatio: values.aspect_ratio, pixelSize: values.pixel_size, quality: values.quality, outputFormat: values.output_format, background: values.background, outputCompression: values.output_compression, moderation: values.moderation, imageCount: values.image_count }
-		setModel(values.route_model_code)
-		setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
-		setBaseResolution(values.base_resolution)
-		setRatio(values.aspect_ratio)
-		setPixelSize(values.pixel_size)
-		setQuality(values.quality)
-		setOutputFormat(values.output_format)
-		setBackground(values.background)
-		setOutputCompression(values.output_compression)
-		setModeration(values.moderation)
-		setCount(values.image_count)
+      if (reused) {
+        const values = reused.values
+        restoreParametersRef.current = { routeModelCode: values.route_model_code, sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio', baseResolution: values.base_resolution, aspectRatio: values.aspect_ratio, pixelSize: values.pixel_size, quality: values.quality, outputFormat: values.output_format, background: values.background, outputCompression: values.output_compression, moderation: values.moderation, imageCount: values.image_count }
+        setModel(values.route_model_code)
+        setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
+        setBaseResolution(values.base_resolution)
+        setRatio(values.aspect_ratio)
+        setPixelSize(values.pixel_size)
+        setQuality(values.quality)
+        setOutputFormat(values.output_format)
+        setBackground(values.background)
+        setOutputCompression(values.output_compression)
+        setModeration(values.moderation)
+        setCount(values.image_count)
       }
       setGalleryImportTarget(null)
       app.notify(reused?.notices.length ? 'info' : 'success', galleryImportSuccessMessage(assets.length, reused?.notices))
@@ -1147,7 +1147,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
     setBusy(true)
     try {
-      const imported = await userApi.importReferenceAssetsFromGallery([addition.item.id], selectedProjectID)
+      const imported = await userApi.importReferenceAssetsFromGallery([addition.item.id])
       if (!imported.length) throw new Error('图片导入失败，请稍后重试。')
       setEditRefs((items) => mergeReferenceAssets(items, imported, maxReferenceImages))
       app.notify('success', '已加入图片编辑')

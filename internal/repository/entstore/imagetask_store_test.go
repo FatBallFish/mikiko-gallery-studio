@@ -523,6 +523,112 @@ func TestImageTaskStoreLoadsUserConcurrencyLimit(t *testing.T) {
 	}
 }
 
+func TestImageTaskStorePersistsTemplateSnapshotAndClearsExecutionPromptAtTerminal(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-template?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewImageTaskStore(client)
+	task := domainimagetask.Task{
+		UserID: 92, ID: uuid.NewString(), Status: domainimagetask.StatusQueued, AbstractModel: "basic", TaskType: "image_edit",
+		Prompt: "{{@主体}} {{$地点}}", ExecutionPrompt: "图片1 隐私地点", PromptTemplate: "{{@主体}} {{$地点}}", PromptTemplateVersion: 1,
+		PromptBindingSnapshot: domainimagetask.PromptBindingSnapshot{
+			References: []domainimagetask.PromptReferenceBinding{{Name: "主体", AssetID: "asset-1", Index: 1}}, VariableNames: []string{"地点"},
+		},
+		ReferenceAssetIDs: []string{"asset-1"}, OutputImageCount: 1,
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	row, err := client.ImageTask.Get(ctx, uuid.MustParse(task.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Prompt != "图片1 隐私地点" || row.PromptTemplate == nil || *row.PromptTemplate != task.Prompt || row.PromptTemplateVersion != 1 || len(row.PromptBindingSnapshot) == 0 {
+		t.Fatalf("persisted row = %#v", row)
+	}
+	loaded, err := store.GetByID(ctx, 92, task.ID)
+	if err != nil || loaded.Prompt != task.Prompt || loaded.ExecutionPrompt != "图片1 隐私地点" || len(loaded.PromptBindingSnapshot.VariableNames) != 1 {
+		t.Fatalf("loaded = %#v err=%v", loaded, err)
+	}
+
+	expires := time.Now().UTC().Add(time.Minute)
+	loaded.Status, loaded.LeaseOwner, loaded.LeaseExpiresAt = domainimagetask.StatusRunning, "worker-template", &expires
+	if err := store.Save(ctx, loaded); err != nil {
+		t.Fatal(err)
+	}
+	loaded.Status = domainimagetask.StatusSucceeded
+	if err := store.SaveTerminalState(ctx, loaded, "worker-template", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	row, err = client.ImageTask.Get(ctx, uuid.MustParse(task.ID))
+	if err != nil || row.Prompt != task.Prompt {
+		t.Fatalf("terminal prompt = %q err=%v", row.Prompt, err)
+	}
+	loaded, err = store.GetByID(ctx, 92, task.ID)
+	if err != nil || loaded.ExecutionPrompt != task.Prompt || loaded.Prompt != task.Prompt {
+		t.Fatalf("terminal loaded = %#v err=%v", loaded, err)
+	}
+	if err := client.ImageTask.UpdateOneID(row.ID).SetPrompt("遗留隐私值").Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := store.RepairTerminalPromptTemplates(ctx, 10)
+	if err != nil || repaired != 1 {
+		t.Fatalf("repaired=%d err=%v", repaired, err)
+	}
+	row, err = client.ImageTask.Get(ctx, row.ID)
+	if err != nil || row.Prompt != task.Prompt {
+		t.Fatalf("repaired prompt=%q err=%v", row.Prompt, err)
+	}
+}
+
+func TestImageTaskStoreDeleteScrubsActiveTemplateExecutionPrompt(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-template-delete?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewImageTaskStore(client)
+	task := domainimagetask.Task{
+		UserID: 94, ID: uuid.NewString(), Status: domainimagetask.StatusQueued, AbstractModel: "basic", TaskType: "text_to_image",
+		Prompt: "位置 {{$地点}}", ExecutionPrompt: "位置 私密变量值", PromptTemplate: "位置 {{$地点}}", PromptTemplateVersion: 1,
+		PromptBindingSnapshot: domainimagetask.PromptBindingSnapshot{VariableNames: []string{"地点"}}, OutputImageCount: 1,
+	}
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteByID(ctx, task.UserID, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	row, err := client.ImageTask.Get(ctx, uuid.MustParse(task.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.DeletedAt == nil || row.Status != domainimagetask.StatusQueued || row.Prompt != task.Prompt {
+		t.Fatalf("deleted template task retained execution data: status=%q prompt=%q deleted_at=%v", row.Status, row.Prompt, row.DeletedAt)
+	}
+	if err := client.ImageTask.UpdateOneID(row.ID).SetPrompt("历史删除任务的私密值").Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := store.RepairTerminalPromptTemplates(ctx, 10)
+	if err != nil || repaired != 1 {
+		t.Fatalf("repair deleted template task: repaired=%d err=%v", repaired, err)
+	}
+	row, err = client.ImageTask.Get(ctx, row.ID)
+	if err != nil || row.Prompt != task.Prompt {
+		t.Fatalf("deleted template repair left prompt=%q err=%v", row.Prompt, err)
+	}
+}
+
 func TestImageTaskStorePersistsAndQueriesTasks(t *testing.T) {
 	ctx := context.Background()
 	client, err := repoent.Open(dialect.SQLite, "file:imagetaskstore?mode=memory&cache=shared&_fk=1")
