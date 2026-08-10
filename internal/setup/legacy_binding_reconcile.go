@@ -16,6 +16,11 @@ type LegacySetupReleaseIdentity struct {
 	ReleaseVersion     string
 }
 
+var preDocumentationSetupFields = map[string]struct{}{
+	"PIC_GALLERY_DOCS_URL":       {},
+	"PIC_GALLERY_DOCS_PROBE_URL": {},
+}
+
 func (identity LegacySetupReleaseIdentity) apply(values map[string]string) map[string]string {
 	legacyValues := make(map[string]string, len(values))
 	for key, value := range values {
@@ -29,7 +34,7 @@ func (identity LegacySetupReleaseIdentity) apply(values map[string]string) map[s
 }
 
 // ReconcileLegacyCompletedBinding migrates only bindings that are provably
-// derived from the pre-release-field-exclusion digest algorithm.
+// derived from an allowlisted historical digest algorithm and runtime schema.
 func ReconcileLegacyCompletedBinding(
 	ctx context.Context,
 	bootstrap config.BootstrapConfig,
@@ -78,7 +83,8 @@ func ReconcileLegacyCompletedBinding(
 	if binding.OperationID != proof.OperationID || binding.InstallationID != proof.InstallationID || binding.ConfigRevision != proof.ConfigRevision {
 		return false, ErrSetupBindingMismatch
 	}
-	legacyDigest, err := legacySetupRequestDigest(previousRelease.apply(bootstrap.Values), binding.AdminEmail)
+	legacyValues := previousRelease.apply(bootstrap.Values)
+	legacyDigest, err := legacySetupRequestDigest(legacyValues, binding.AdminEmail)
 	if err != nil {
 		return false, fmt.Errorf("derive legacy setup binding digest: %w", err)
 	}
@@ -86,11 +92,26 @@ func ReconcileLegacyCompletedBinding(
 	if err != nil {
 		return false, fmt.Errorf("derive canonical setup binding digest: %w", err)
 	}
-	stateLegacy := constantTimeDigestEqual(proof.RequestDigest, legacyDigest)
+	trustedDigests := []string{canonicalDigest, legacyDigest}
+	docsURL, docsURLExists := bootstrap.Values["PIC_GALLERY_DOCS_URL"]
+	docsProbeURL, docsProbeURLExists := bootstrap.Values["PIC_GALLERY_DOCS_PROBE_URL"]
+	if docsURLExists && docsProbeURLExists && docsURL == "/developer-docs/" && docsProbeURL == "" {
+		preDocumentationCanonical, digestErr := setupRequestDigestWithOmittedFields(bootstrap.Values, binding.AdminEmail, false, preDocumentationSetupFields)
+		if digestErr != nil {
+			return false, fmt.Errorf("derive pre-documentation canonical setup binding digest: %w", digestErr)
+		}
+		preDocumentationLegacy, digestErr := setupRequestDigestWithOmittedFields(legacyValues, binding.AdminEmail, true, preDocumentationSetupFields)
+		if digestErr != nil {
+			return false, fmt.Errorf("derive pre-documentation legacy setup binding digest: %w", digestErr)
+		}
+		trustedDigests = append(trustedDigests, preDocumentationCanonical, preDocumentationLegacy)
+	}
 	stateCanonical := constantTimeDigestEqual(proof.RequestDigest, canonicalDigest)
-	bindingLegacy := constantTimeDigestEqual(binding.RequestDigest, legacyDigest)
 	bindingCanonical := constantTimeDigestEqual(binding.RequestDigest, canonicalDigest)
-	if (!stateLegacy && !stateCanonical) || (!bindingLegacy && !bindingCanonical) {
+	if !matchesSetupDigest(proof.RequestDigest, trustedDigests) || !matchesSetupDigest(binding.RequestDigest, trustedDigests) {
+		return false, ErrSetupBindingMismatch
+	}
+	if !stateCanonical && !bindingCanonical && !constantTimeDigestEqual(proof.RequestDigest, binding.RequestDigest) {
 		return false, ErrSetupBindingMismatch
 	}
 	if stateCanonical && bindingCanonical {
@@ -102,23 +123,24 @@ func ReconcileLegacyCompletedBinding(
 	}
 
 	databaseChanged := false
-	if bindingLegacy && !bindingCanonical {
+	previousBindingDigest := binding.RequestDigest
+	if !bindingCanonical {
 		if _, err := reconciler.ReconcileRequestDigest(ctx, SetupBindingDigestUpdate{
 			OperationID: proof.OperationID, InstallationID: proof.InstallationID, ConfigRevision: proof.ConfigRevision,
-			ExpectedRequestDigest: legacyDigest, RequestDigest: canonicalDigest,
+			ExpectedRequestDigest: previousBindingDigest, RequestDigest: canonicalDigest,
 		}); err != nil {
 			return false, fmt.Errorf("reconcile database setup binding digest: %w", err)
 		}
 		databaseChanged = true
 	}
-	if stateLegacy && !stateCanonical {
+	if !stateCanonical {
 		canonicalProof := proof
 		canonicalProof.RequestDigest = canonicalDigest
 		if _, err := stateStore.ReconcileCompletedCommit(canonicalProof, time.Now().UTC()); err != nil {
 			if databaseChanged {
 				_, rollbackErr := reconciler.ReconcileRequestDigest(context.WithoutCancel(ctx), SetupBindingDigestUpdate{
 					OperationID: proof.OperationID, InstallationID: proof.InstallationID, ConfigRevision: proof.ConfigRevision,
-					ExpectedRequestDigest: canonicalDigest, RequestDigest: legacyDigest,
+					ExpectedRequestDigest: canonicalDigest, RequestDigest: previousBindingDigest,
 				})
 				if rollbackErr != nil {
 					return false, errors.Join(fmt.Errorf("reconcile install-state setup binding digest: %w", err), fmt.Errorf("restore legacy database setup binding digest: %w", rollbackErr))
@@ -128,4 +150,13 @@ func ReconcileLegacyCompletedBinding(
 		}
 	}
 	return true, nil
+}
+
+func matchesSetupDigest(digest string, candidates []string) bool {
+	for _, candidate := range candidates {
+		if constantTimeDigestEqual(digest, candidate) {
+			return true
+		}
+	}
+	return false
 }
