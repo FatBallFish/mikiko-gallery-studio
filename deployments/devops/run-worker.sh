@@ -18,6 +18,13 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 2
 fi
 
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "warning: ffmpeg is unavailable; media processing readiness will fail until it is installed" >&2
+fi
+if ! command -v ffprobe >/dev/null 2>&1; then
+  echo "warning: ffprobe is unavailable; media processing readiness will fail until it is installed" >&2
+fi
+
 run_as_root() {
   if [ "$(id -u)" -eq 0 ]; then
     "$@"

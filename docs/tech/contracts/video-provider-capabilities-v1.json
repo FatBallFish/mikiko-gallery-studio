@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "contract_id": "video-provider-capabilities-v1",
+  "models": [
+    {
+      "provider_code": "seedance",
+      "model_code": "doubao-seedance-2-5-260628",
+      "display_name": "Seedance 2.5",
+      "validation_status": "untested",
+      "execution_mode": "poll",
+      "task_types": ["text_to_video", "image_to_video", "first_last_frame_to_video"],
+      "input_formats": ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif"],
+      "output_formats": ["mp4", "mov"],
+      "provider_native_max_n": 1,
+      "source_reference": "https://console.volcengine.com/ark/region:cn-beijing/docs/82379/2607688?lang=zh",
+      "notes": [
+        "模型代码来自已确认产品输入。",
+        "参数组合、音频、回调、限流与结果 URL 生命周期必须由真实账号 PoC 后才能标记 valid。"
+      ]
+    },
+    {
+      "provider_code": "seedance",
+      "model_code": "doubao-seedance-2-0-260128",
+      "display_name": "Seedance 2.0",
+      "validation_status": "untested",
+      "execution_mode": "poll",
+      "task_types": ["text_to_video", "image_to_video", "first_last_frame_to_video"],
+      "input_formats": ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif"],
+      "output_formats": ["mp4", "mov"],
+      "provider_native_max_n": 1,
+      "source_reference": "https://console.volcengine.com/ark/region:cn-beijing/docs/82379/2607688?lang=zh",
+      "notes": [
+        "模型代码来自已确认产品输入。",
+        "参数组合、音频、回调、限流与结果 URL 生命周期必须由真实账号 PoC 后才能标记 valid。"
+      ]
+    },
+    {
+      "provider_code": "minimax",
+      "model_code": "MiniMax-H3",
+      "display_name": "MiniMax H3",
+      "validation_status": "untested",
+      "execution_mode": "callback_poll",
+      "task_types": ["text_to_video", "image_to_video", "first_last_frame_to_video"],
+      "input_formats": ["jpg", "jpeg", "png", "webp", "heic", "heif"],
+      "output_formats": ["mp4"],
+      "provider_native_max_n": 1,
+      "source_reference": "https://platform.minimaxi.com/docs/guides/video-generation",
+      "notes": [
+        "模型代码来自已确认产品输入。",
+        "参数组合、音频、回调、限流与结果 URL 生命周期必须由真实账号 PoC 后才能标记 valid。"
+      ]
+    }
+  ]
+}

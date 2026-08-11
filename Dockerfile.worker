@@ -12,8 +12,9 @@ COPY . .
 RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/mikiko-gallery-studio-worker ./cmd/worker
 
 FROM alpine:3.22
+ARG FFMPEG_VERSION=6.1.2-r2
 WORKDIR /app
-RUN apk add --no-cache ca-certificates su-exec tzdata && \
+RUN apk add --no-cache ca-certificates "ffmpeg=${FFMPEG_VERSION}" su-exec tzdata && \
     addgroup -S picgallery && adduser -S -G picgallery picgallery && \
     mkdir -p /var/lib/pic-gallery/storage && \
     chown -R picgallery:picgallery /app /var/lib/pic-gallery

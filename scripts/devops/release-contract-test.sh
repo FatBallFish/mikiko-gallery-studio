@@ -12,6 +12,8 @@ NATIVE_CONTRACT="$ROOT/scripts/workflow/native-package-contract.sh"
 PROD_COMPOSE="$ROOT/deployments/docker-compose/docker-compose.prod.yml"
 APP_PACKAGER="$ROOT/scripts/devops/package.sh"
 ADMIN_DOCKERFILE="$ROOT/Dockerfile.admin-web"
+WORKER_DOCKERFILE="$ROOT/Dockerfile.worker"
+WORKER_RUNNER="$ROOT/deployments/devops/run-worker.sh"
 RELEASE_NOTES_TEMPLATE="$ROOT/.github/release-notes-template.md"
 RELEASE_NOTES_RENDERER="$ROOT/scripts/devops/render-release-notes.sh"
 RELEASE_NOTES_CONTRACT="$ROOT/scripts/devops/release-notes-contract-test.sh"
@@ -50,11 +52,16 @@ require_file "$NATIVE_PACKAGER"
 require_file "$NATIVE_CONTRACT"
 require_file "$PROD_COMPOSE"
 require_file "$ADMIN_DOCKERFILE"
+require_file "$WORKER_DOCKERFILE"
+require_file "$WORKER_RUNNER"
 require_file "$RELEASE_NOTES_TEMPLATE"
 require_file "$RELEASE_NOTES_RENDERER"
 require_file "$RELEASE_NOTES_CONTRACT"
 
 require_text "$ADMIN_DOCKERFILE" 'FROM --platform=$BUILDPLATFORM node:${NODE_VERSION} AS build'
+require_text "$WORKER_DOCKERFILE" 'ffmpeg'
+require_text "$WORKER_RUNNER" 'command -v ffmpeg'
+require_text "$WORKER_RUNNER" 'command -v ffprobe'
 "$RELEASE_NOTES_CONTRACT"
 
 for heading in \
