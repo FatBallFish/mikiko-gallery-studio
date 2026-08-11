@@ -10,6 +10,7 @@ export type WorkspaceGenerateReadinessInput = {
   requiredReferencesReady: boolean
   unavailableReason?: { code: string; message: string } | null
   parametersReady: boolean
+  parameterError?: string
   prompt: string
   estimate: EstimateResult | null
   estimateError?: string
@@ -27,6 +28,7 @@ export function workspaceGenerateReadiness(input: WorkspaceGenerateReadinessInpu
   if (input.taskType !== 'text_to_image' && (!input.requiredReferencesReady || input.referenceCount < 1)) {
     return { disabled: true, reason: WORKSPACE_REFERENCE_REQUIRED_MESSAGE, showRechargeAction: false }
   }
+  if (input.parameterError) return { disabled: true, reason: input.parameterError, showRechargeAction: false }
   if (!input.parametersReady) return { disabled: true, reason: '请选择完整的模型、基础分辨率、比例和图片数量。', showRechargeAction: false }
   if (input.prompt.trim().length < 8) return { disabled: true, reason: '提示词至少需要 8 个字符。', showRechargeAction: false }
   if (input.estimateError) return { disabled: true, reason: input.estimateError, showRechargeAction: false }

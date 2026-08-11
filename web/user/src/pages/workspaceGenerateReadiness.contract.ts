@@ -84,6 +84,21 @@ if (!unsupportedEstimate.disabled || !unsupportedEstimate.reason.includes('暂�
   throw new Error(`workspace should block generation when estimate failed, got ${JSON.stringify(unsupportedEstimate)}`)
 }
 
+const invalidPixel = workspaceGenerateReadiness({
+  busy: false,
+  hasModel: true,
+  taskType: 'text_to_image',
+  referenceCount: 0,
+  requiredReferencesReady: true,
+  parametersReady: false,
+  parameterError: '宽度必须在 512 至 2048 像素之间。',
+  prompt: '一张未来城市里的雨夜街景',
+  estimate: null,
+})
+if (!invalidPixel.disabled || invalidPixel.reason !== '宽度必须在 512 至 2048 像素之间。' || invalidPixel.reason.includes('请选择完整')) {
+  throw new Error(`field validation must take priority over waiting parameters, got ${JSON.stringify(invalidPixel)}`)
+}
+
 const ready = workspaceGenerateReadiness({
   busy: false,
   hasModel: true,

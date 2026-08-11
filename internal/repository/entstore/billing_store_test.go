@@ -16,6 +16,7 @@ import (
 	"entgo.io/ent/dialect"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentorder"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/paymentwebhookevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
@@ -27,6 +28,211 @@ import (
 
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
+
+func TestBillingStoreExpiresPendingOrdersInBoundedIdempotentBatches(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-order-expiry?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	now := time.Now().UTC()
+	for i := 0; i < 3; i++ {
+		order, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+			UserID: 801, OrderNo: fmt.Sprintf("PGO-ENT-EXPIRY-%d", i), AmountCNY: "10.00000",
+			CNYPerPoint: "0.31250", Provider: "mock", ExpiresAt: now.Add(time.Duration(i-3) * time.Minute),
+		})
+		if err != nil {
+			t.Fatalf("CreateCustomAmountOrder %d: %v", i, err)
+		}
+		if !order.ExpiresAt.Equal(now.Add(time.Duration(i-3) * time.Minute)) {
+			t.Fatalf("order %d did not preserve expiry: %#v", i, order)
+		}
+	}
+
+	first, err := store.ExpirePendingOrders(ctx, now, 2)
+	if err != nil || first != 2 {
+		t.Fatalf("first sweep count=%d err=%v", first, err)
+	}
+	remaining, err := client.PaymentOrder.Query().Where(paymentorder.StatusEQ("pending")).Count(ctx)
+	if err != nil || remaining != 1 {
+		t.Fatalf("pending after bounded sweep=%d err=%v", remaining, err)
+	}
+	second, err := store.ExpirePendingOrders(ctx, now, 2)
+	if err != nil || second != 1 {
+		t.Fatalf("second sweep count=%d err=%v", second, err)
+	}
+	third, err := store.ExpirePendingOrders(ctx, now, 2)
+	if err != nil || third != 0 {
+		t.Fatalf("idempotent sweep count=%d err=%v", third, err)
+	}
+	closed, err := client.PaymentOrder.Query().Where(paymentorder.StatusEQ("expired"), paymentorder.ClosedAtNotNil()).Count(ctx)
+	if err != nil || closed != 3 {
+		t.Fatalf("expired closed orders=%d err=%v", closed, err)
+	}
+}
+
+func TestBillingStoreExpiresPendingOrdersForRequestScopeAndExactOrder(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-request-scope-expiry?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewBillingStore(client, 5)
+	now := time.Now().UTC()
+	first, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 811, OrderNo: "PGO-SCOPED-FIRST", AmountCNY: "10.00000", CNYPerPoint: "0.31250", Provider: "mock", ExpiresAt: now.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 812, OrderNo: "PGO-SCOPED-SECOND", AmountCNY: "10.00000", CNYPerPoint: "0.31250", Provider: "mock", ExpiresAt: now.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := store.ExpirePendingOrdersForList(ctx, now, domainbilling.ListOrdersRequest{UserID: first.UserID, Status: "expired"})
+	if err != nil || count != 1 {
+		t.Fatalf("scoped expiry count=%d err=%v", count, err)
+	}
+	secondBefore, err := store.GetOrder(ctx, second.UserID, second.ID)
+	if err != nil || secondBefore.Status != "pending" {
+		t.Fatalf("unrelated order=%#v err=%v", secondBefore, err)
+	}
+	updated, err := store.ExpirePendingOrder(ctx, now, second.ID)
+	if err != nil || !updated {
+		t.Fatalf("exact expiry updated=%t err=%v", updated, err)
+	}
+	updatedAgain, err := store.ExpirePendingOrder(ctx, now, second.ID)
+	if err != nil || updatedAgain {
+		t.Fatalf("exact expiry must be idempotent, updated=%t err=%v", updatedAgain, err)
+	}
+}
+
+func TestBillingStoreBoundsUnfilteredListExpiryToWorkerBatchSize(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-bounded-list-expiry?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewBillingStore(client, 5)
+	now := time.Now().UTC()
+	for index := 0; index < 600; index++ {
+		if _, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+			UserID: int64(9000 + index), OrderNo: fmt.Sprintf("PGO-BOUNDED-%03d", index),
+			AmountCNY: "10.00000", CNYPerPoint: "0.31250", Provider: "mock", ExpiresAt: now.Add(-time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	count, err := store.ExpirePendingOrdersForList(ctx, now, domainbilling.ListOrdersRequest{})
+	if err != nil || count != 500 {
+		t.Fatalf("bounded list expiry count=%d err=%v, want 500", count, err)
+	}
+	remaining, err := client.PaymentOrder.Query().Where(paymentorder.StatusEQ("pending")).Count(ctx)
+	if err != nil || remaining != 100 {
+		t.Fatalf("remaining pending=%d err=%v, want 100", remaining, err)
+	}
+}
+
+func TestBillingStoreVerifiedLatePaymentRecoversExpiredPlanExactlyOnce(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-expired-plan-payment?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	order, err := store.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 802, OrderNo: "PGO-ENT-LATE-PLAN", PlanCode: "basic-monthly", Provider: "mock",
+		ExpiresAt: time.Now().UTC().Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count, err := store.ExpirePendingOrders(ctx, time.Now().UTC(), 10); err != nil || count != 1 {
+		t.Fatalf("expire plan count=%d err=%v", count, err)
+	}
+	req := domainbilling.MarkOrderPaidRequest{
+		Provider: "mock", OrderNo: order.OrderNo, TradeNo: "MOCK-ENT-LATE-PLAN", AmountCNY: order.AmountCNY,
+		ReconciliationSource: domainbilling.PaymentReconciliationSourceProviderWebhook,
+	}
+	first, err := store.MarkOrderPaid(ctx, req)
+	if err != nil {
+		t.Fatalf("first late payment: %v", err)
+	}
+	second, err := store.MarkOrderPaid(ctx, req)
+	if err != nil {
+		t.Fatalf("second late payment: %v", err)
+	}
+	if first.Status != "paid" || second.Status != "paid" || first.LedgerID == 0 || second.LedgerID != first.LedgerID {
+		t.Fatalf("late payment must be idempotent: first=%#v second=%#v", first, second)
+	}
+	ledgers, err := client.PointLedger.Query().Where(pointledger.UserIDEQ(order.UserID), pointledger.LedgerTypeEQ("order_paid")).Count(ctx)
+	if err != nil || ledgers != 1 {
+		t.Fatalf("order_paid ledgers=%d err=%v", ledgers, err)
+	}
+}
+
+func TestBillingStoreAdminOrdersBatchProjectUsersAndPointTotals(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-admin-orders?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	alice, err := client.User.Create().SetEmail("alice-orders@example.com").SetNickname("Alice Orders").SetStatus("active").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := client.User.Create().SetEmail("bob-orders@example.com").SetNickname("Bob Orders").SetStatus("active").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewBillingStore(client, 5)
+	for _, userID := range []int64{int64(alice.ID), int64(bob.ID)} {
+		if _, err := store.CreateOrder(ctx, domainbilling.CreateOrderRequest{UserID: userID, PlanCode: "plus-monthly", Provider: "mock"}); err != nil {
+			t.Fatalf("CreateOrder user=%d: %v", userID, err)
+		}
+	}
+
+	page, err := store.ListAdminOrders(ctx, domainbilling.ListOrdersRequest{Query: "alice orders", Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 {
+		t.Fatalf("unexpected admin order page %#v", page)
+	}
+	item := page.Items[0]
+	if item.UserID != int64(alice.ID) || item.UserEmail != alice.Email || item.UserNickname != alice.Nickname {
+		t.Fatalf("missing user projection %#v", item)
+	}
+	wantTotal := mustDecimal(item.Points).Add(mustDecimal(item.BonusPoints)).StringFixed(5)
+	if item.TotalPoints != wantTotal || item.BonusPoints == "0.00000" {
+		t.Fatalf("point projection must include base, bonus and total: %#v", item)
+	}
+}
 
 func TestBillingStorePlanListAndStateTransitions(t *testing.T) {
 	ctx := t.Context()
@@ -88,6 +294,46 @@ func TestBillingStorePlanListAndStateTransitions(t *testing.T) {
 	}
 	if restoredAgain.Status != "disabled" || restoredAgain.PurchaseEnabled {
 		t.Fatalf("repeated restore must be idempotent: %#v", restoredAgain)
+	}
+}
+
+func TestBillingStorePlanPageFiltersSortsAndPaginatesInDatabase(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-plan-page?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	store := NewBillingStore(client, 5)
+	for _, req := range []domainbilling.CreateSubscriptionPlanRequest{
+		{PlanCode: "v012-alpha", PlanName: "V012 高价包", PlanType: "points_package", Status: "active", PurchaseEnabled: true, PriceCNY: "30.00000", Points: "10.00000", BonusPoints: "0.00000", SortOrder: 2},
+		{PlanCode: "v012-beta", PlanName: "V012 低价包", PlanType: "points_package", Status: "active", PurchaseEnabled: true, PriceCNY: "10.00000", Points: "30.00000", BonusPoints: "0.00000", SortOrder: 1},
+		{PlanCode: "v012-subscription", PlanName: "V012 订阅", PlanType: "subscription", Status: "active", PurchaseEnabled: false, PriceCNY: "5.00000", Points: "50.00000", BonusPoints: "0.00000", SortOrder: 3},
+	} {
+		if _, err := store.CreatePlan(ctx, req); err != nil {
+			t.Fatalf("CreatePlan %s: %v", req.PlanCode, err)
+		}
+	}
+
+	page, err := store.ListPlansPage(ctx, domainbilling.SubscriptionPlanListRequest{
+		Query: "v012", PlanType: "points_package", Status: "active",
+		SortBy: "price_cny", SortOrder: "asc", Page: 1, PageSize: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 || len(page.Items) != 1 || page.Items[0].PlanCode != "v012-beta" {
+		t.Fatalf("unexpected filtered page %#v", page)
+	}
+	points, err := store.ListPlansPage(ctx, domainbilling.SubscriptionPlanListRequest{
+		Query: "V012", PlanType: "points_package", Status: "active",
+		SortBy: "points", SortOrder: "desc", Page: 1, PageSize: 10,
+	})
+	if err != nil || len(points.Items) != 2 || points.Items[0].PlanCode != "v012-beta" {
+		t.Fatalf("unexpected points sort %#v err=%v", points, err)
 	}
 }
 

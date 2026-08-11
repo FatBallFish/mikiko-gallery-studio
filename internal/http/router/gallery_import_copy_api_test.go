@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	"github.com/google/uuid"
@@ -28,10 +28,9 @@ import (
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/fatballfish/pic-gallery/internal/storage"
-	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
-func TestGalleryAliasRolloutCompatibilityAcrossActivationAndRollback(t *testing.T) {
+func TestGalleryAliasCreationDoesNotRequireRolloutConfiguration(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:gallery-alias-rollout-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
 	if err != nil {
@@ -63,10 +62,8 @@ func TestGalleryAliasRolloutCompatibilityAcrossActivationAndRollback(t *testing.
 	}
 	backend := &galleryImportCopyBackend{objects: map[string][]byte{results[0].ObjectKey: content, results[1].ObjectKey: content}}
 	storageRouter := storage.NewStaticRouter(backend)
-	rolloutStore := entstore.NewAliasRolloutStore(client)
 	assetsStore := entstore.NewAssetsStore(client)
 	assetSvc := assetservice.NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{}, assetsStore, storageRouter)
-	assetSvc.SetAliasCreationGate(rolloutStore)
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(taskAPIConfig("http://provider.invalid"), nil, entstore.NewImageTaskStore(client), assetSvc, nil, storageRouter)
 	projectSvc := projectservice.NewService(entstore.NewProjectStore(client))
 	taskSvc.SetProjectResolver(projectSvc)
@@ -83,25 +80,9 @@ func TestGalleryAliasRolloutCompatibilityAcrossActivationAndRollback(t *testing.
 		handler.ServeHTTP(rec, req)
 		return rec
 	}
-	if rec := importResult(results[0].ID.String()); rec.Code != http.StatusConflict {
-		t.Fatalf("disabled import status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if count, err := client.ReferenceAsset.Query().Count(ctx); err != nil || count != 0 {
-		t.Fatalf("disabled rollout created aliases: count=%d err=%v", count, err)
-	}
-	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.putCalls.Load() != 0 {
-		t.Fatalf("disabled rollout performed storage IO: copy=%d get=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.putCalls.Load())
-	}
-	activated, err := rolloutStore.UpdateAliasCreationRollout(ctx, domainassets.UpdateAliasCreationRolloutRequest{
-		Enabled: true, ExpectedVersion: 0, UpdatedBy: 1, AllAPINodesCleanupAware: true,
-		ActorType: "admin", ActorID: "1",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	created := importResult(results[0].ID.String())
 	if created.Code != http.StatusCreated {
-		t.Fatalf("activated import status=%d body=%s", created.Code, created.Body.String())
+		t.Fatalf("import without rollout status=%d body=%s", created.Code, created.Body.String())
 	}
 	var response struct {
 		Data struct {
@@ -111,17 +92,17 @@ func TestGalleryAliasRolloutCompatibilityAcrossActivationAndRollback(t *testing.
 	if err := json.Unmarshal(created.Body.Bytes(), &response); err != nil || len(response.Data.Items) != 1 {
 		t.Fatalf("decode activated alias: %v body=%s", err, created.Body.String())
 	}
-	if _, err := rolloutStore.UpdateAliasCreationRollout(ctx, domainassets.UpdateAliasCreationRolloutRequest{
-		Enabled: false, ExpectedVersion: activated.Version, UpdatedBy: 1,
-		ActorType: "admin", ActorID: "1",
-	}); err != nil {
-		t.Fatal(err)
+	if err := client.ImageTask.UpdateOneID(task.ID).SetDeletedAt(time.Now().UTC()).Exec(ctx); err != nil {
+		t.Fatalf("soft delete source task: %v", err)
 	}
-	if rec := importResult(results[1].ID.String()); rec.Code != http.StatusConflict {
-		t.Fatalf("rollback import status=%d body=%s", rec.Code, rec.Body.String())
+	if rec := importResult(results[1].ID.String()); rec.Code != http.StatusCreated {
+		t.Fatalf("import from soft-deleted source task status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if loaded, err := assetsStore.GetByUserAndID(ctx, 1, response.Data.Items[0].ID); err != nil || loaded.SourceImageResultID != results[0].ID.String() {
-		t.Fatalf("rollback lost existing alias: asset=%#v err=%v", loaded, err)
+	if count, err := client.ReferenceAsset.Query().Count(ctx); err != nil || count != 2 {
+		t.Fatalf("imports without rollout aliases: count=%d err=%v", count, err)
+	}
+	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.putCalls.Load() != 0 {
+		t.Fatalf("imports performed storage IO: copy=%d get=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.putCalls.Load())
 	}
 }
 
@@ -151,18 +132,6 @@ func TestGalleryImportRouteCreatesAliasWithoutStorageIO(t *testing.T) {
 	api.SetProjectService(projectSvc)
 	handler := NewWithAPI(api)
 
-	disabledReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/reference-assets:import-from-gallery", bytes.NewBufferString(`{"gallery_image_ids":["copy-route-image"]}`))
-	disabledReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
-	disabledReq.Header.Set("Content-Type", "application/json")
-	disabledRec := httptest.NewRecorder()
-	handler.ServeHTTP(disabledRec, disabledReq)
-	if disabledRec.Code != http.StatusConflict || !strings.Contains(disabledRec.Body.String(), errs.CodeReferenceAliasCreationNotReady) {
-		t.Fatalf("disabled import status=%d body=%s", disabledRec.Code, disabledRec.Body.String())
-	}
-	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.putCalls.Load() != 0 {
-		t.Fatalf("disabled rollout must perform no storage IO: copy=%d get=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.putCalls.Load())
-	}
-	assetSvc.SetAliasCreationGate(enabledAliasCreationGate{})
 	req := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/reference-assets:import-from-gallery", bytes.NewBufferString(`{"gallery_image_ids":["copy-route-image"]}`))
 	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -188,7 +157,7 @@ func TestGalleryImportRouteCreatesAliasWithoutStorageIO(t *testing.T) {
 	}
 }
 
-func TestGalleryImportRejectsImageFromAnotherProject(t *testing.T) {
+func TestGalleryImportAllowsImageFromAnotherProject(t *testing.T) {
 	content := tinyPNG(t)
 	hash := sha256.Sum256(content)
 	backend := &galleryImportCopyBackend{objects: map[string][]byte{"generated/source.png": content}}
@@ -215,7 +184,6 @@ func TestGalleryImportRejectsImageFromAnotherProject(t *testing.T) {
 	taskSvc := imagetaskservice.NewServiceWithProvidersStoreAssetsBillingAndRouter(cfg, nil, imageStore, nil, nil, storageRouter)
 	taskSvc.SetProjectResolver(projectSvc)
 	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, nil, storageRouter)
-	assetSvc.SetAliasCreationGate(enabledAliasCreationGate{})
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, nil, nil)
 	api.SetProjectService(projectSvc)
 	handler := NewWithAPI(api)
@@ -225,11 +193,29 @@ func TestGalleryImportRejectsImageFromAnotherProject(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("cross-project import status=%d body=%s, want 404", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("cross-project import status=%d body=%s, want 201", rec.Code, rec.Body.String())
 	}
-	if backend.copyCalls.Load() != 0 {
-		t.Fatalf("cross-project import copied %d objects, want 0", backend.copyCalls.Load())
+	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.putCalls.Load() != 0 {
+		t.Fatalf("cross-project import performed storage IO: copy=%d get=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.putCalls.Load())
+	}
+
+	foreign := result
+	foreign.ID = "foreign-user-image"
+	foreign.ObjectKey = "generated/foreign.png"
+	if err := imageStore.Save(t.Context(), domainimagetask.Task{
+		ID: "foreign-user-task", UserID: 2, ProjectID: sourceProject.ID,
+		Status: domainimagetask.StatusSucceeded, Results: []provider.ImageResult{foreign},
+	}); err != nil {
+		t.Fatalf("save foreign image: %v", err)
+	}
+	foreignReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/reference-assets:import-from-gallery", bytes.NewBufferString(`{"gallery_image_ids":["foreign-user-image"]}`))
+	foreignReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	foreignReq.Header.Set("Content-Type", "application/json")
+	foreignRec := httptest.NewRecorder()
+	handler.ServeHTTP(foreignRec, foreignReq)
+	if foreignRec.Code != http.StatusNotFound {
+		t.Fatalf("foreign-user import status=%d body=%s, want 404", foreignRec.Code, foreignRec.Body.String())
 	}
 }
 
@@ -239,10 +225,6 @@ type galleryImportCopyBackend struct {
 	getCalls  atomic.Int32
 	putCalls  atomic.Int32
 }
-
-type enabledAliasCreationGate struct{}
-
-func (enabledAliasCreationGate) AliasCreationEnabled(context.Context) (bool, error) { return true, nil }
 
 func (*galleryImportCopyBackend) Driver() string { return "s3" }
 func (b *galleryImportCopyBackend) Put(_ context.Context, key, _ string, content []byte) error {

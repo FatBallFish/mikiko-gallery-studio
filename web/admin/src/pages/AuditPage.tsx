@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AuditLog } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader, RefreshIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import type { ColumnDef } from '../ui/dataTable'
 import { DataTable, FilterToolbar, ListPage } from '../ui/dataTable'
-import { FilterIcon, XIcon } from '../ui/listIcons'
+import { XIcon } from '../ui/listIcons'
 import {
   auditActionOptions,
   auditExportFilename,
@@ -15,6 +15,7 @@ import {
   auditSearchText,
   auditTimelineRow,
 } from './auditRows'
+import { createLatestListRequestGuard } from './listRefresh'
 
 const auditClasses = {
   identity: 'flex min-w-0 items-center gap-3',
@@ -31,21 +32,28 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
   const [actionFilter, setActionFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = async () => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
-      setRows(await adminApi.listAudit({ page: 1, page_size: 100 }))
+      const nextRows = await adminApi.listAudit({ page: 1, page_size: 100 })
+      if (!requestGuard.isCurrent(request)) return
+      setRows(nextRows)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '审计日志载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
   useEffect(() => {
     void load()
+    return () => requestGuard.invalidate()
   }, [])
 
   const actionOptions = useMemo(() => auditActionOptions(rows), [rows])
@@ -75,8 +83,8 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
     onFeedback('审计日志已导出', `${visibleRows.length} 行 CSV 已下载`)
   }
 
-  if (loading) return <LoadingBlock label="载入审计日志" />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
+  if (loading && !rows.length) return <LoadingBlock label="载入审计日志" />
+  if (error && !rows.length) return <ErrorBlock message={error} onRetry={load} />
 
   return (
     <section className={adminPage.stack}>
@@ -84,8 +92,10 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
         eyebrow="Audit"
         title="审计日志"
         detail="查询关键写操作及其操作人、目标、结果与来源信息。"
-        actions={<button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={exportVisibleRows} disabled={!visibleRows.length}>导出日志</button>}
+        primaryAction={<button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={exportVisibleRows} disabled={!visibleRows.length}>导出日志</button>}
+        secondaryActions={<RefreshIconButton label="刷新审计日志" refreshing={loading} onClick={() => void load()} />}
       />
+      {error ? <InlineFeedback tone="danger" message={`审计日志刷新失败：${error}`} /> : null}
       <ListPage
         filters={(
           <FilterToolbar
@@ -96,7 +106,6 @@ export function AuditPage({ onFeedback }: { onFeedback: (title: string, detail?:
             actions={(
               <>
                 <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={clearFilters}><XIcon className="size-4" /><span>清空</span></button>
-                <button type="button" className={cn(adminButton.base, adminButton.secondary, adminButton.small)} onClick={() => void load()}><FilterIcon className="size-4" /><span>刷新</span></button>
               </>
             )}
             resultSummary={`共载入 ${rows.length} 条审计 · 当前显示 ${visibleRows.length} 条`}

@@ -883,18 +883,18 @@ export function GalleryImageFrame({ src, mediaExpiresAt, alt, width, height, asp
     >
       {imageState === 'loading' ? <div className="pg-skeleton absolute inset-0" role="status" aria-label={`正在加载${alt}`} /> : null}
       {onOpen && imageState !== 'error' ? (
-        <button type="button" className="absolute inset-0 z-[1] block size-full cursor-zoom-in border-0 bg-transparent p-0 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[var(--focus-ring)]" onClick={onOpen} aria-label={`查看${alt}`}>
+        <button type="button" data-gallery-card-open className="absolute inset-0 z-[1] block size-full cursor-zoom-in border-0 bg-transparent p-0 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[var(--focus-ring)]" onClick={onOpen} aria-label={`查看${alt}`}>
           {media}
         </button>
       ) : media}
       {imageState === 'error' ? (
-        <div className="absolute inset-0 z-[2] grid place-items-center gap-2 bg-[var(--canvas-bg)] p-5 text-center text-sm text-[var(--muted)]" role="status">
+        <div className="absolute inset-0 z-[5] grid place-items-center gap-2 bg-[var(--canvas-bg)] p-5 text-center text-sm text-[var(--muted)]" role="status">
           <span>图片暂时无法显示</span>
           {src ? <button type="button" className="min-h-10 rounded-xl border border-[var(--border)] px-3 text-[var(--fg)] hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]" onClick={() => { resetMediaRefresh(); setImageState('loading'); setRetryKey((value) => value + 1) }}>重试</button> : null}
         </div>
       ) : null}
-      {topAction ? <div className="absolute left-3 top-3 z-[4]">{topAction}</div> : null}
-      {actions ? <div className={cn(imageFrameActionsClass, 'absolute inset-x-3 bottom-3 z-[4] flex translate-y-2 flex-wrap justify-end gap-2 opacity-0 transition-all duration-[var(--motion-fast)] group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 motion-reduce:transition-none')}>{actions}</div> : null}
+      {topAction ? <div data-gallery-selection-control className="absolute left-3 top-3 z-[4]">{topAction}</div> : null}
+      {actions ? <div data-gallery-card-actions className={cn(imageFrameActionsClass, 'absolute inset-x-3 bottom-3 z-[4] flex translate-y-2 flex-wrap justify-end gap-2 opacity-0 transition-all duration-[var(--motion-fast)] group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 motion-reduce:transition-none')}>{actions}</div> : null}
     </figure>
   )
 }

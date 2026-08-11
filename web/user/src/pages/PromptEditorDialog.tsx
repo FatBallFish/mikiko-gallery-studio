@@ -5,6 +5,8 @@ import { userApi } from '../../../shared/user-api'
 import { Button, Modal } from '../components'
 import { RefreshableMediaImage } from '../ui/mediaRefresh'
 import type { PromptOptimizationState } from './workspacePromptOptimization'
+import { PromptTemplateEditor, type PromptTemplateEditorHandle } from './PromptTemplateEditor'
+import { PromptVariableForm } from './PromptVariableForm'
 
 export function PromptEditorActions({ optimizing, canUndo, onExpand, onOptimize, onUndo }: {
   optimizing: boolean
@@ -16,12 +18,16 @@ export function PromptEditorActions({ optimizing, canUndo, onExpand, onOptimize,
   return <div className="flex items-center gap-1">{canUndo ? <IconAction label="撤销提示词优化" onClick={onUndo}><Undo2 size={15} /></IconAction> : null}{onExpand ? <IconAction label="展开提示词编辑器" onClick={onExpand}><Maximize2 size={15} /></IconAction> : null}<IconAction label="优化提示词" disabled={optimizing} onClick={onOptimize}><Sparkles size={15} /></IconAction></div>
 }
 
-export function PromptEditorDialog({ prompt, assets, accessToken, optimization, onPromptChange, onClose, onOptimize, onConfirm, onApply, onCancel, onUndo, onMediaRefresh }: {
+export function PromptEditorDialog({ promptEditorRef, prompt, assets, variables, accessToken, optimization, onPromptChange, onVariableChange, onAddAsset, onClose, onOptimize, onConfirm, onApply, onCancel, onUndo, onMediaRefresh }: {
+  promptEditorRef?: React.Ref<PromptTemplateEditorHandle>
   prompt: string
   assets: ReferenceAsset[]
+  variables: Readonly<Record<string, string>>
   accessToken?: string | null
   optimization: PromptOptimizationState
   onPromptChange: (prompt: string) => void
+  onVariableChange: (name: string, value: string) => void
+  onAddAsset: () => void
   onClose: () => void
   onOptimize: () => void
   onConfirm: () => void
@@ -34,9 +40,9 @@ export function PromptEditorDialog({ prompt, assets, accessToken, optimization, 
   return <Modal title="提示词编辑器" onClose={onClose} className="max-[600px]:h-[calc(100dvh-3rem)] max-[600px]:max-h-[calc(100dvh-3rem)] max-[600px]:w-[calc(100vw-3rem)] max-[600px]:rounded-lg max-[600px]:p-4">
     <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_240px]">
       <div className="min-w-0">
-        <div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-bold" htmlFor="expanded-prompt-editor">提示词</label><PromptEditorActions optimizing={busy} canUndo={optimization.stage === 'applied'} onOptimize={onOptimize} onUndo={onUndo} /></div>
-        <textarea id="expanded-prompt-editor" autoFocus maxLength={4000} className="min-h-[48vh] w-full resize-y rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 text-sm leading-7 text-[var(--fg)] outline-none focus:border-[var(--accent)]" value={prompt} disabled={busy} onChange={(event) => onPromptChange(event.target.value)} />
-        <p className="m-0 mt-2 text-right text-xs text-[var(--muted)]">{Array.from(prompt).length} / 4000</p>
+        <div className="mb-2 flex items-center justify-between gap-3"><span className="text-sm font-bold">提示词</span><PromptEditorActions optimizing={busy} canUndo={optimization.stage === 'applied'} onOptimize={onOptimize} onUndo={onUndo} /></div>
+        <PromptTemplateEditor ref={promptEditorRef} value={prompt} assets={assets} variables={variables} accessToken={accessToken} disabled={busy} autoFocus expanded onChange={onPromptChange} onAddAsset={onAddAsset} />
+        <PromptVariableForm template={prompt} values={variables} disabled={busy} onChange={onVariableChange} />
         {optimization.stage !== 'idle' && optimization.stage !== 'applied' ? <PromptOptimizationPanel state={optimization} onConfirm={onConfirm} onApply={onApply} onCancel={onCancel} /> : null}
       </div>
       <aside className="min-w-0 border-l border-[var(--border)] pl-5 max-lg:border-l-0 max-lg:border-t max-lg:pl-0 max-lg:pt-4">

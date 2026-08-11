@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { MouseEvent, ReactNode } from 'react'
+import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import type { GalleryImage, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
 import { cn } from '../../../shared/classnames'
@@ -10,9 +10,10 @@ import { userForm, userState } from '../ui/classes'
 import { rdGallery } from '../ui/redesign-classes'
 import { Check, Copy, Download, Edit, FolderPlus, Globe, RotateCcw, Trash2, X } from '../ui/icons'
 import { OverlayPortal } from '../ui/overlayPortal'
+import { RefreshCw } from 'lucide-react'
 import { stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot } from './workspaceCreationDraft'
 import { invertLoadedGallerySelection, pollGalleryExportJob, reconcileGalleryBatchSelection } from './galleryBatchActions'
-import { areAllVisibleGalleryItemsSelected, galleryImageAspect, pruneGallerySelection, selectVisibleGalleryImages, selectedVisibleGalleryItems, toggleGalleryImageSelection } from './galleryExperience'
+import { areAllVisibleGalleryItemsSelected, galleryImageAspect, galleryMarqueeSelection, gallerySelectionClickAction, gallerySelectionDragDistance, gallerySelectionRectangle, pruneGallerySelection, selectVisibleGalleryImages, selectedVisibleGalleryItems, toggleGalleryImageSelection, type GallerySelectionPoint, type GallerySelectionRect } from './galleryExperience'
 import { applyGalleryPage, initialGalleryPageState, patchGalleryPageItems, removeGalleryPageItems } from './galleryPagination'
 import { filterGalleryImages, galleryImageCard, galleryPublishActionPresentation, galleryPublishStatus, type GalleryPublishActionPresentation } from './galleryRows'
 import { ProjectSelector, useProjects } from '../ProjectContext'
@@ -46,7 +47,7 @@ const galleryClasses = {
   card: 'group/asset mb-8 block w-full break-inside-avoid',
   assetSelectHitArea: 'group/select grid size-10 place-items-center rounded-lg border-0 bg-transparent p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]',
   assetSelectVisual: 'grid size-[22px] place-items-center rounded-md border border-[var(--image-action-border)] bg-[var(--image-action-bg)] text-[var(--image-action-text)] opacity-80 shadow-sm backdrop-blur transition-[opacity,transform,background-color,border-color,color] duration-200 group-hover/asset:opacity-100 group-hover/select:opacity-100 group-focus-visible/select:opacity-100 group-active/select:scale-90 motion-reduce:transition-none [&_svg]:size-3.5',
-  assetSelectVisualSelected: 'border-[var(--accent)] bg-[var(--accent)] text-white opacity-100',
+  assetSelectVisualSelected: 'border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] opacity-100 ring-2 ring-[var(--bg)] shadow-md',
   thumbImage: 'object-cover',
   info: 'grid gap-2 pt-3',
   titleLine: rdGallery.itemTitle,
@@ -228,12 +229,36 @@ export function GalleryPage() {
   const [groupDraft, setGroupDraft] = useState('')
 	const [deleteDialog, setDeleteDialog] = useState<{ images: GalleryImage[] } | null>(null)
   const [publishDialog, setPublishDialog] = useState<{ image: GalleryImage; label: string } | null>(null)
-	const [transferDialog, setTransferDialog] = useState<{ ids: string[]; targetProjectID: string } | null>(null)
-	const exportAbortRef = useRef<AbortController | null>(null)
+		const [transferDialog, setTransferDialog] = useState<{ ids: string[]; targetProjectID: string } | null>(null)
+		const exportAbortRef = useRef<AbortController | null>(null)
+	const selectionSurfaceRef = useRef<HTMLDivElement | null>(null)
+	const suppressGalleryOpenRef = useRef(false)
+	const marqueeFrameRef = useRef<number | null>(null)
+	const marqueeDragRef = useRef<{ pointerID: number; start: GallerySelectionPoint; current: GallerySelectionPoint; additive: boolean; dragged: boolean; baseSelection: Set<string>; targetImageID: string } | null>(null)
+	const [marquee, setMarquee] = useState<GallerySelectionRect | null>(null)
 
 	useEffect(() => () => {
 	  const controller = exportAbortRef.current
 	  if (controller) controller.abort()
+	  if (marqueeFrameRef.current !== null) window.cancelAnimationFrame(marqueeFrameRef.current)
+	}, [])
+
+	useEffect(() => {
+	  const clearSelection = (event: KeyboardEvent) => {
+	    if (event.key !== 'Escape') return
+	    const drag = marqueeDragRef.current
+	    const surface = selectionSurfaceRef.current
+	    if (drag && surface?.hasPointerCapture(drag.pointerID)) surface.releasePointerCapture(drag.pointerID)
+	    marqueeDragRef.current = null
+	    if (marqueeFrameRef.current !== null) {
+	      window.cancelAnimationFrame(marqueeFrameRef.current)
+	      marqueeFrameRef.current = null
+	    }
+	    setMarquee(null)
+	    setSelectedIds(new Set())
+	  }
+	  window.addEventListener('keydown', clearSelection)
+	  return () => window.removeEventListener('keydown', clearSelection)
 	}, [])
 
   async function loadPage(pageNumber: number, mode: 'replace' | 'append') {
@@ -514,6 +539,119 @@ export function GalleryPage() {
     setSelectedIds((current) => toggleGalleryImageSelection(current, imageID, checked))
   }
 
+	function beginMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
+	  if ((event.pointerType !== 'mouse' && event.pointerType !== 'pen') || event.button !== 0) return
+	  const target = event.target as HTMLElement
+	  if (target.closest('[data-gallery-selection-control],[data-gallery-card-actions]')) return
+	  const interactive = target.closest<HTMLElement>('button,a,input,select,textarea,[role="button"]')
+	  if (interactive && !interactive.matches('[data-gallery-card-open]')) return
+	  event.preventDefault()
+	  const point = { x: event.clientX, y: event.clientY }
+	  marqueeDragRef.current = {
+	    pointerID: event.pointerId,
+	    start: point,
+	    current: point,
+	    additive: event.metaKey || event.ctrlKey || event.shiftKey,
+	    dragged: false,
+	    baseSelection: new Set(selectedIds),
+	    targetImageID: target.closest<HTMLElement>('[data-gallery-image-id]')?.dataset.galleryImageId ?? '',
+	  }
+	  event.currentTarget.setPointerCapture(event.pointerId)
+	}
+
+	function marqueeSelectionItems() {
+	  return Array.from(selectionSurfaceRef.current?.querySelectorAll<HTMLElement>('[data-gallery-image-id]') ?? []).map((element) => {
+	    const bounds = element.getBoundingClientRect()
+	    return { id: element.dataset.galleryImageId ?? '', rect: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } }
+	  }).filter((item) => item.id)
+	}
+
+	function galleryScrollContainer() {
+	  let element = selectionSurfaceRef.current?.parentElement ?? null
+	  while (element) {
+	    const overflowY = window.getComputedStyle(element).overflowY
+	    if ((overflowY === 'auto' || overflowY === 'scroll') && element.scrollHeight > element.clientHeight) return element
+	    element = element.parentElement
+	  }
+	  return document.scrollingElement instanceof HTMLElement ? document.scrollingElement : document.documentElement
+	}
+
+	function scheduleMarqueeFrame() {
+	  if (marqueeFrameRef.current !== null) return
+	  marqueeFrameRef.current = window.requestAnimationFrame(() => {
+	    marqueeFrameRef.current = null
+	    const drag = marqueeDragRef.current
+	    if (!drag?.dragged) return
+	    const rectangle = gallerySelectionRectangle(drag.start, drag.current)
+	    setMarquee(rectangle)
+	    setSelectedIds(galleryMarqueeSelection(drag.baseSelection, marqueeSelectionItems(), rectangle, drag.additive))
+
+	    const scrollContainer = galleryScrollContainer()
+	    const scrollBounds = scrollContainer.getBoundingClientRect()
+	    const documentScroller = scrollContainer === document.documentElement || scrollContainer === document.body
+	    const scrollTopEdge = documentScroller ? 0 : scrollBounds.top
+	    const scrollBottomEdge = documentScroller ? window.innerHeight : scrollBounds.bottom
+	    const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
+	    let keepScrolling = false
+	    if (drag.current.y < scrollTopEdge + 56 && scrollContainer.scrollTop > 0) {
+	      scrollContainer.scrollBy({ top: -12 })
+	      keepScrolling = true
+	    } else if (drag.current.y > scrollBottomEdge - 56 && scrollContainer.scrollTop < maxScrollTop) {
+	      scrollContainer.scrollBy({ top: 12 })
+	      keepScrolling = true
+	    }
+	    if (keepScrolling) scheduleMarqueeFrame()
+	  })
+	}
+
+	function moveMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
+	  const drag = marqueeDragRef.current
+	  if (!drag || drag.pointerID !== event.pointerId) return
+	  drag.current = { x: event.clientX, y: event.clientY }
+	  if (!drag.dragged && gallerySelectionDragDistance(drag.start, drag.current) < 6) return
+	  if (!drag.dragged) {
+	    drag.dragged = true
+	  }
+	  event.preventDefault()
+	  scheduleMarqueeFrame()
+	}
+
+	function finishMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
+	  const drag = marqueeDragRef.current
+	  if (!drag || drag.pointerID !== event.pointerId) return
+	  if (marqueeFrameRef.current !== null) {
+	    window.cancelAnimationFrame(marqueeFrameRef.current)
+	    marqueeFrameRef.current = null
+	  }
+	  if (drag.dragged) {
+	    const rectangle = gallerySelectionRectangle(drag.start, drag.current)
+	    setSelectedIds(galleryMarqueeSelection(drag.baseSelection, marqueeSelectionItems(), rectangle, drag.additive))
+	    suppressGalleryOpenRef.current = true
+	    window.setTimeout(() => { suppressGalleryOpenRef.current = false }, 0)
+	  } else if (drag.targetImageID) {
+	    const image = filtered.find((item) => item.id === drag.targetImageID)
+	    if (image) {
+	      suppressGalleryOpenRef.current = true
+	      if (gallerySelectionClickAction(selectedIds.size) === 'toggle') toggleSelected(image.id)
+	      else setSelected(image)
+	      window.setTimeout(() => { suppressGalleryOpenRef.current = false }, 0)
+	    }
+	  }
+	  if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+	  marqueeDragRef.current = null
+	  setMarquee(null)
+	}
+
+	function cancelMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
+	  if (marqueeDragRef.current?.pointerID !== event.pointerId) return
+	  if (marqueeFrameRef.current !== null) {
+	    window.cancelAnimationFrame(marqueeFrameRef.current)
+	    marqueeFrameRef.current = null
+	  }
+	  marqueeDragRef.current = null
+	  setMarquee(null)
+	}
+
   function selectAllVisible(checked: boolean) {
 		setSelectedIds((current) => selectVisibleGalleryImages(current, filteredIDs, checked))
   }
@@ -600,7 +738,12 @@ export function GalleryPage() {
           <h1 className={galleryClasses.title}>历史资产</h1>
           <p className="mb-0 mt-3 max-w-[56ch] text-sm leading-6 text-[var(--muted)]">筛选、分组和重用已生成的图片，每一张资产都保留原始参数与公开状态。</p>
         </div>
-        <ProjectSelector className="w-full sm:w-auto" />
+        <div className="flex w-full items-end justify-end gap-2 sm:w-auto">
+          <button type="button" className="grid size-10 shrink-0 place-items-center rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45" title="刷新资产" aria-label="刷新资产" disabled={loading} onClick={() => void loadPage(1, 'replace')}>
+            <RefreshCw className={cn('size-[18px]', loading && 'animate-spin')} aria-hidden="true" />
+          </button>
+          <ProjectSelector className="min-w-0 flex-1 sm:w-auto" />
+        </div>
       </div>
 
       <div className={galleryClasses.filterToolbar}>
@@ -663,24 +806,38 @@ export function GalleryPage() {
             </OverlayPortal>
           ) : null}
 
-      <ImageGrid
-        rows={filtered}
-        accessToken={app.session?.token}
-        busyId={busyId}
-        selectedIds={selectedIds}
-        onToggleSelected={toggleSelected}
-        onOpen={setSelected}
-        onCopyPrompt={async (image) => {
-          await copyText(image.prompt || image.id)
-          app.notify('success', '提示词已复制')
-        }}
-        onReuse={reuseConfiguration}
-        onDownload={(image) => void downloadImage(image)}
-			onPublish={handlePublishAction}
-        onDelete={(image) => requestDeleteImages([image])}
-        onGroup={(image) => openGroupDialog([image])}
-        onMediaRefresh={refreshPrivateImage}
-      />
+      <div
+        ref={selectionSurfaceRef}
+        data-gallery-selection-surface
+        onPointerDown={beginMarqueeSelection}
+        onPointerMove={moveMarqueeSelection}
+        onPointerUp={finishMarqueeSelection}
+        onPointerCancel={cancelMarqueeSelection}
+      >
+        <ImageGrid
+          rows={filtered}
+          accessToken={app.session?.token}
+          busyId={busyId}
+          selectedIds={selectedIds}
+          onToggleSelected={toggleSelected}
+          onOpen={(image) => {
+            if (suppressGalleryOpenRef.current) return
+            if (gallerySelectionClickAction(selectedIds.size) === 'toggle') toggleSelected(image.id)
+            else setSelected(image)
+          }}
+          onCopyPrompt={async (image) => {
+            await copyText(image.prompt || image.id)
+            app.notify('success', '提示词已复制')
+          }}
+          onReuse={reuseConfiguration}
+          onDownload={(image) => void downloadImage(image)}
+				onPublish={handlePublishAction}
+          onDelete={(image) => requestDeleteImages([image])}
+          onGroup={(image) => openGroupDialog([image])}
+          onMediaRefresh={refreshPrivateImage}
+        />
+      </div>
+      {marquee ? <div className="gallery-selection-marquee" style={{ left: marquee.left, top: marquee.top, width: marquee.right - marquee.left, height: marquee.bottom - marquee.top }} aria-hidden="true" /> : null}
 
       <div ref={loadMoreRef} className="flex min-h-16 items-center justify-center py-4 text-sm text-[var(--muted)]" aria-live="polite">
         {loadError && rows.length ? (
@@ -823,7 +980,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
         const card = galleryImageCard(image)
         const publishAction = publishActionPresentation(image)
         return (
-          <article key={image.id} className={galleryClasses.card}>
+          <article key={image.id} data-gallery-image-id={image.id} className={galleryClasses.card}>
             <GalleryImageFrame
               src={card.assetPath ? userApi.imageAssetUrl(card.assetPath, accessToken) : undefined}
               mediaExpiresAt={image.preview_expires_at}
@@ -836,9 +993,10 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
               onMediaRefresh={() => onMediaRefresh(image.id)}
               imageClassName={galleryClasses.thumbImage}
               topAction={(
-                <button
-                  type="button"
-                  className={galleryClasses.assetSelectHitArea}
+	                <button
+	                  type="button"
+	                  data-gallery-selection-control
+	                  className={galleryClasses.assetSelectHitArea}
                   title="选择图片"
                   aria-label={`选择 ${card.title}`}
                   aria-pressed={selectedIds.has(image.id)}
@@ -849,7 +1007,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
                   </span>
                 </button>
               )}
-              actions={<div className={galleryClasses.iconActions}>
+	              actions={<div className={galleryClasses.iconActions} data-gallery-card-actions>
                 {iconButton('复制提示词', <ActionIcon name="copy" />, () => void onCopyPrompt(image), !card.prompt)}
                 {iconButton('复用配置', <ActionIcon name="edit" />, () => onReuse(image))}
                 {iconButton('下载', <ActionIcon name="download" />, () => onDownload(image), !card.canDownload)}

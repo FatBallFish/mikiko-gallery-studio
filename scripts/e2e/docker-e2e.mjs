@@ -743,8 +743,8 @@ async function happyPathAgentBilling() {
     body: { purchase_type: 'plan', plan_code: 'basic-monthly', visible_method: 'mock' },
   })
   state.ids.orderId = String(data(order).id)
-  if (data(order).provider !== 'mock' || data(order).visible_method !== 'mock' || data(order).status !== 'pending') {
-    fail('Cashier order did not use the mock provider pending flow', { body: order.text })
+  if (data(order).visible_method !== 'mock' || data(order).status !== 'pending' || Object.hasOwn(data(order), 'provider')) {
+    fail('Cashier order did not expose the public mock pending flow', { body: order.text })
   }
   if (data(order).payment_display?.type !== 'mock' || data(order).payment_url || data(order).payment_display?.payment_url) {
     fail('Cashier order did not use in-page mock payment without legacy payment_url', { body: order.text })
@@ -755,7 +755,9 @@ async function happyPathAgentBilling() {
   await expectStatus('GET', `${BASE_URL}/api/agent/billing/v1/orders`, 200, { headers: bearer(state.user.token) })
   await expectStatus('GET', `${BASE_URL}/api/agent/cashier/v1/orders/${state.ids.orderId}`, 200, { headers: bearer(state.user.token) })
   const paid = await expectStatus('POST', `${BASE_URL}/api/agent/cashier/v1/orders/${state.ids.orderId}/mock-pay`, 200, { headers: bearer(state.user.token) })
-  if (data(paid).status !== 'completed' || !data(paid).ledger_id) fail('Mock cashier payment did not complete and attach a ledger id', { body: paid.text })
+  if (data(paid).status !== 'completed' || Object.hasOwn(data(paid), 'ledger_id')) {
+    fail('Mock cashier payment did not complete without exposing its internal ledger id', { body: paid.text })
+  }
   if (!data(paid).credited_at || !data(paid).credit_expires_at || data(paid).credit_valid_days !== 30) {
     fail('Completed expiring package did not expose its snapshotted credit timestamps', { body: paid.text })
   }

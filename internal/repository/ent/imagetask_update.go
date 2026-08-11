@@ -209,6 +209,59 @@ func (_u *ImageTaskUpdate) SetNillablePrompt(v *string) *ImageTaskUpdate {
 	return _u
 }
 
+// SetPromptTemplate sets the "prompt_template" field.
+func (_u *ImageTaskUpdate) SetPromptTemplate(v string) *ImageTaskUpdate {
+	_u.mutation.SetPromptTemplate(v)
+	return _u
+}
+
+// SetNillablePromptTemplate sets the "prompt_template" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillablePromptTemplate(v *string) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetPromptTemplate(*v)
+	}
+	return _u
+}
+
+// ClearPromptTemplate clears the value of the "prompt_template" field.
+func (_u *ImageTaskUpdate) ClearPromptTemplate() *ImageTaskUpdate {
+	_u.mutation.ClearPromptTemplate()
+	return _u
+}
+
+// SetPromptTemplateVersion sets the "prompt_template_version" field.
+func (_u *ImageTaskUpdate) SetPromptTemplateVersion(v int) *ImageTaskUpdate {
+	_u.mutation.ResetPromptTemplateVersion()
+	_u.mutation.SetPromptTemplateVersion(v)
+	return _u
+}
+
+// SetNillablePromptTemplateVersion sets the "prompt_template_version" field if the given value is not nil.
+func (_u *ImageTaskUpdate) SetNillablePromptTemplateVersion(v *int) *ImageTaskUpdate {
+	if v != nil {
+		_u.SetPromptTemplateVersion(*v)
+	}
+	return _u
+}
+
+// AddPromptTemplateVersion adds value to the "prompt_template_version" field.
+func (_u *ImageTaskUpdate) AddPromptTemplateVersion(v int) *ImageTaskUpdate {
+	_u.mutation.AddPromptTemplateVersion(v)
+	return _u
+}
+
+// SetPromptBindingSnapshot sets the "prompt_binding_snapshot" field.
+func (_u *ImageTaskUpdate) SetPromptBindingSnapshot(v map[string]interface{}) *ImageTaskUpdate {
+	_u.mutation.SetPromptBindingSnapshot(v)
+	return _u
+}
+
+// ClearPromptBindingSnapshot clears the value of the "prompt_binding_snapshot" field.
+func (_u *ImageTaskUpdate) ClearPromptBindingSnapshot() *ImageTaskUpdate {
+	_u.mutation.ClearPromptBindingSnapshot()
+	return _u
+}
+
 // SetNegativePrompt sets the "negative_prompt" field.
 func (_u *ImageTaskUpdate) SetNegativePrompt(v string) *ImageTaskUpdate {
 	_u.mutation.SetNegativePrompt(v)
@@ -1469,6 +1522,24 @@ func (_u *ImageTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Prompt(); ok {
 		_spec.SetField(imagetask.FieldPrompt, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.PromptTemplate(); ok {
+		_spec.SetField(imagetask.FieldPromptTemplate, field.TypeString, value)
+	}
+	if _u.mutation.PromptTemplateCleared() {
+		_spec.ClearField(imagetask.FieldPromptTemplate, field.TypeString)
+	}
+	if value, ok := _u.mutation.PromptTemplateVersion(); ok {
+		_spec.SetField(imagetask.FieldPromptTemplateVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPromptTemplateVersion(); ok {
+		_spec.AddField(imagetask.FieldPromptTemplateVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.PromptBindingSnapshot(); ok {
+		_spec.SetField(imagetask.FieldPromptBindingSnapshot, field.TypeJSON, value)
+	}
+	if _u.mutation.PromptBindingSnapshotCleared() {
+		_spec.ClearField(imagetask.FieldPromptBindingSnapshot, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.NegativePrompt(); ok {
 		_spec.SetField(imagetask.FieldNegativePrompt, field.TypeString, value)
 	}
@@ -1998,6 +2069,59 @@ func (_u *ImageTaskUpdateOne) SetNillablePrompt(v *string) *ImageTaskUpdateOne {
 	if v != nil {
 		_u.SetPrompt(*v)
 	}
+	return _u
+}
+
+// SetPromptTemplate sets the "prompt_template" field.
+func (_u *ImageTaskUpdateOne) SetPromptTemplate(v string) *ImageTaskUpdateOne {
+	_u.mutation.SetPromptTemplate(v)
+	return _u
+}
+
+// SetNillablePromptTemplate sets the "prompt_template" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillablePromptTemplate(v *string) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetPromptTemplate(*v)
+	}
+	return _u
+}
+
+// ClearPromptTemplate clears the value of the "prompt_template" field.
+func (_u *ImageTaskUpdateOne) ClearPromptTemplate() *ImageTaskUpdateOne {
+	_u.mutation.ClearPromptTemplate()
+	return _u
+}
+
+// SetPromptTemplateVersion sets the "prompt_template_version" field.
+func (_u *ImageTaskUpdateOne) SetPromptTemplateVersion(v int) *ImageTaskUpdateOne {
+	_u.mutation.ResetPromptTemplateVersion()
+	_u.mutation.SetPromptTemplateVersion(v)
+	return _u
+}
+
+// SetNillablePromptTemplateVersion sets the "prompt_template_version" field if the given value is not nil.
+func (_u *ImageTaskUpdateOne) SetNillablePromptTemplateVersion(v *int) *ImageTaskUpdateOne {
+	if v != nil {
+		_u.SetPromptTemplateVersion(*v)
+	}
+	return _u
+}
+
+// AddPromptTemplateVersion adds value to the "prompt_template_version" field.
+func (_u *ImageTaskUpdateOne) AddPromptTemplateVersion(v int) *ImageTaskUpdateOne {
+	_u.mutation.AddPromptTemplateVersion(v)
+	return _u
+}
+
+// SetPromptBindingSnapshot sets the "prompt_binding_snapshot" field.
+func (_u *ImageTaskUpdateOne) SetPromptBindingSnapshot(v map[string]interface{}) *ImageTaskUpdateOne {
+	_u.mutation.SetPromptBindingSnapshot(v)
+	return _u
+}
+
+// ClearPromptBindingSnapshot clears the value of the "prompt_binding_snapshot" field.
+func (_u *ImageTaskUpdateOne) ClearPromptBindingSnapshot() *ImageTaskUpdateOne {
+	_u.mutation.ClearPromptBindingSnapshot()
 	return _u
 }
 
@@ -3290,6 +3414,24 @@ func (_u *ImageTaskUpdateOne) sqlSave(ctx context.Context) (_node *ImageTask, er
 	}
 	if value, ok := _u.mutation.Prompt(); ok {
 		_spec.SetField(imagetask.FieldPrompt, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PromptTemplate(); ok {
+		_spec.SetField(imagetask.FieldPromptTemplate, field.TypeString, value)
+	}
+	if _u.mutation.PromptTemplateCleared() {
+		_spec.ClearField(imagetask.FieldPromptTemplate, field.TypeString)
+	}
+	if value, ok := _u.mutation.PromptTemplateVersion(); ok {
+		_spec.SetField(imagetask.FieldPromptTemplateVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPromptTemplateVersion(); ok {
+		_spec.AddField(imagetask.FieldPromptTemplateVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.PromptBindingSnapshot(); ok {
+		_spec.SetField(imagetask.FieldPromptBindingSnapshot, field.TypeJSON, value)
+	}
+	if _u.mutation.PromptBindingSnapshotCleared() {
+		_spec.ClearField(imagetask.FieldPromptBindingSnapshot, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.NegativePrompt(); ok {
 		_spec.SetField(imagetask.FieldNegativePrompt, field.TypeString, value)

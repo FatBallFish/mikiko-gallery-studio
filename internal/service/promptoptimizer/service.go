@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
 	domaintextmodel "github.com/fatballfish/pic-gallery/internal/domain/textmodel"
 	textprovider "github.com/fatballfish/pic-gallery/internal/provider/text"
 	textopenai "github.com/fatballfish/pic-gallery/internal/provider/text/openai"
@@ -147,10 +148,18 @@ func (s *Service) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeRe
 	if _, err := s.runs.SaveOptimizationRun(ctx, run); err != nil {
 		return OptimizeResult{}, fmt.Errorf("persist prompt optimization run: %w", err)
 	}
+	protected, err := protectPromptTemplate(prompt)
+	if err != nil {
+		run.Status = "failed"
+		run.ErrorCode = prompttemplate.CodeInvalid
+		run.ErrorMessage = "prompt template is invalid"
+		_, _ = s.runs.SaveOptimizationRun(ctx, run)
+		return OptimizeResult{}, promptTemplateValidationError(err)
+	}
 	response, optimizeErr := client.Optimize(ctx, textprovider.OptimizeRequest{
 		Model:        model.ModelCode,
-		SystemPrompt: "Rewrite the user's image-generation prompt with precise subject, composition, lighting, style, and constraints. Preserve intent. Return only the rewritten prompt.",
-		Prompt:       prompt, MaxOutputTokens: 2000,
+		SystemPrompt: "Rewrite the user's image-generation prompt with precise subject, composition, lighting, style, and constraints. Preserve intent. Strings shaped like MGS_TOKEN markers are protected placeholders: you must not modify, translate, duplicate, remove, split, or add them. Return only the rewritten prompt.",
+		Prompt:       protected.Text, MaxOutputTokens: 2000,
 	})
 	if optimizeErr != nil {
 		run.Status = "failed"
@@ -159,8 +168,8 @@ func (s *Service) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeRe
 		_, _ = s.runs.SaveOptimizationRun(ctx, run)
 		return OptimizeResult{}, errs.New(502, "PROMPT_OPTIMIZATION_FAILED", "prompt optimization failed; the original prompt was not changed")
 	}
-	optimized := strings.TrimSpace(response.Text)
-	if optimized == "" || len([]rune(optimized)) > 8000 {
+	optimized, restoreErr := protected.Restore(strings.TrimSpace(response.Text))
+	if restoreErr != nil || optimized == "" || len([]rune(optimized)) > prompttemplate.DefaultLimits().MaxExpandedRunes {
 		run.Status = "failed"
 		run.ErrorCode = "INVALID_OPTIMIZATION_RESULT"
 		run.ErrorMessage = "text model returned an invalid optimization result"
@@ -178,6 +187,89 @@ func (s *Service) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeRe
 		RunID: run.ID, OptimizedPrompt: optimized, InputTokens: response.InputTokens, OutputTokens: response.OutputTokens,
 		EstimatedPoints: zeroPoints, ActualPoints: zeroPoints,
 	}, nil
+}
+
+type protectedPrompt struct {
+	Text         string
+	replacements map[string]string
+	expected     map[string]int
+}
+
+func protectPromptTemplate(prompt string) (protectedPrompt, error) {
+	document, err := prompttemplate.Parse(prompt, prompttemplate.DefaultLimits())
+	if err != nil {
+		return protectedPrompt{}, err
+	}
+	nonce := strings.ReplaceAll(uuid.NewString(), "-", "")
+	result := protectedPrompt{
+		replacements: make(map[string]string, len(document.Occurrences)),
+		expected:     make(map[string]int, len(document.Occurrences)),
+	}
+	builder := strings.Builder{}
+	tokenIndex := 0
+	for _, segment := range document.Segments {
+		if segment.Kind == prompttemplate.KindText {
+			builder.WriteString(segment.Source)
+			continue
+		}
+		tokenIndex++
+		sentinel := fmt.Sprintf("⟦MGS_TOKEN_%s_%04d⟧", nonce, tokenIndex)
+		placeholder := "{{@" + segment.Name + "}}"
+		if segment.Kind == prompttemplate.KindVariable {
+			placeholder = "{{$" + segment.Name + "}}"
+		}
+		result.replacements[sentinel] = placeholder
+		result.expected[promptTokenKey(segment.Kind, segment.Name)]++
+		builder.WriteString(sentinel)
+	}
+	result.Text = builder.String()
+	return result, nil
+}
+
+func (p protectedPrompt) Restore(raw string) (string, error) {
+	restored := raw
+	for sentinel, placeholder := range p.replacements {
+		if strings.Count(restored, sentinel) != 1 {
+			return "", errors.New("protected prompt sentinel mismatch")
+		}
+		restored = strings.Replace(restored, sentinel, placeholder, 1)
+	}
+	if strings.Contains(restored, "⟦MGS_TOKEN_") {
+		return "", errors.New("unknown protected prompt sentinel")
+	}
+	document, err := prompttemplate.Parse(restored, prompttemplate.DefaultLimits())
+	if err != nil {
+		return "", err
+	}
+	actual := make(map[string]int, len(document.Occurrences))
+	for _, occurrence := range document.Occurrences {
+		actual[promptTokenKey(occurrence.Kind, occurrence.Name)]++
+	}
+	if len(actual) != len(p.expected) {
+		return "", errors.New("protected prompt placeholder set mismatch")
+	}
+	for key, expected := range p.expected {
+		if actual[key] != expected {
+			return "", errors.New("protected prompt placeholder set mismatch")
+		}
+	}
+	return document.Canonical, nil
+}
+
+func promptTokenKey(kind prompttemplate.Kind, name string) string {
+	return string(kind) + "\x00" + name
+}
+
+func promptTemplateValidationError(err error) error {
+	var templateErr *prompttemplate.Error
+	if !errors.As(err, &templateErr) {
+		return errs.BadRequest("prompt template is invalid")
+	}
+	details := map[string]any{"field": templateErr.Field, "rule": templateErr.Rule, "offset": templateErr.Offset}
+	if templateErr.Name != "" {
+		details["name"] = templateErr.Name
+	}
+	return errs.WithDetails(errs.New(400, templateErr.Code, templateErr.Message), details)
 }
 
 func validatePrompt(userID int64, raw string) (string, error) {

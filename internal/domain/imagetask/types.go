@@ -66,37 +66,42 @@ type ExecuteRequest struct {
 }
 
 type CreateRequest struct {
-	TaskID              string
-	UserID              int64
-	ProjectID           string
-	APIKeyID            int64
-	SourceChannel       string
-	AbstractModel       string
-	RouteModelCode      string
-	TaskType            string
-	Prompt              string
-	NegativePrompt      string
-	SizeMode            string
-	RequestedSize       string
-	BaseResolution      string
-	Quality             string
-	OutputFormat        string
-	Background          string
-	OutputCompression   int
-	Moderation          string
-	AspectRatio         string
-	OutputImageCount    int
-	ReferenceImageCount int
-	ReferenceAssetIDs   []string
-	ReferenceStrength   int
-	Seed                *int64
-	UserGroupCode       string
-	UserGroupCodes      []string
-	UserGroupMultiplier string
-	MaskPresent         bool
-	ResponseMode        string
-	SavePolicy          string
-	CapabilityVersion   string
+	TaskID                string
+	UserID                int64
+	ProjectID             string
+	APIKeyID              int64
+	SourceChannel         string
+	AbstractModel         string
+	RouteModelCode        string
+	TaskType              string
+	Prompt                string
+	PromptVariables       []PromptVariableInput
+	ReferenceBindings     []PromptReferenceInput
+	PromptTemplate        string
+	PromptTemplateVersion int
+	PromptBindingSnapshot PromptBindingSnapshot
+	NegativePrompt        string
+	SizeMode              string
+	RequestedSize         string
+	BaseResolution        string
+	Quality               string
+	OutputFormat          string
+	Background            string
+	OutputCompression     int
+	Moderation            string
+	AspectRatio           string
+	OutputImageCount      int
+	ReferenceImageCount   int
+	ReferenceAssetIDs     []string
+	ReferenceStrength     int
+	Seed                  *int64
+	UserGroupCode         string
+	UserGroupCodes        []string
+	UserGroupMultiplier   string
+	MaskPresent           bool
+	ResponseMode          string
+	SavePolicy            string
+	CapabilityVersion     string
 }
 
 type RetryRequest struct {
@@ -201,65 +206,90 @@ type GenerationSnapshot struct {
 }
 
 type Task struct {
-	UserID               int64                         `json:"-"`
-	ProjectID            string                        `json:"project_id"`
-	Project              *domainproject.Snapshot       `json:"project,omitempty"`
-	APIKeyID             int64                         `json:"-"`
-	SourceChannel        string                        `json:"-"`
-	ID                   string                        `json:"id"`
-	Status               string                        `json:"status"`
-	ProgressStage        string                        `json:"progress_stage,omitempty"`
-	ProgressMessage      string                        `json:"progress_message,omitempty"`
-	Provider             string                        `json:"provider,omitempty"`
-	ProviderModelID      int64                         `json:"provider_model_id,omitempty"`
-	ProviderCost         string                        `json:"provider_cost,omitempty"`
-	GrossMargin          string                        `json:"gross_margin,omitempty"`
-	FallbackCount        int                           `json:"fallback_count,omitempty"`
-	RouteSnapshotVersion string                        `json:"route_snapshot_version,omitempty"`
-	AbstractModel        string                        `json:"abstract_model"`
-	RouteModelCode       string                        `json:"route_model_code,omitempty"`
-	RouteModelID         int64                         `json:"route_model_id,omitempty"`
-	AccountModelID       int64                         `json:"account_model_id,omitempty"`
-	ModelAccountID       int64                         `json:"model_account_id,omitempty"`
-	UpstreamModelCode    string                        `json:"upstream_model_code,omitempty"`
-	EffectiveMultiplier  string                        `json:"effective_multiplier,omitempty"`
-	ChargedPoints        string                        `json:"charged_points,omitempty"`
-	TaskType             string                        `json:"task_type"`
-	Prompt               string                        `json:"prompt,omitempty"`
-	NegativePrompt       string                        `json:"negative_prompt,omitempty"`
-	SizeMode             string                        `json:"size_mode,omitempty"`
-	AspectRatio          string                        `json:"aspect_ratio,omitempty"`
-	RequestedSize        string                        `json:"requested_size,omitempty"`
-	ResolvedWidth        int                           `json:"resolved_width,omitempty"`
-	ResolvedHeight       int                           `json:"resolved_height,omitempty"`
-	BaseResolution       string                        `json:"base_resolution"`
-	Quality              string                        `json:"quality"`
-	OutputFormat         string                        `json:"output_format,omitempty"`
-	Background           string                        `json:"background,omitempty"`
-	OutputCompression    int                           `json:"output_compression,omitempty"`
-	Moderation           string                        `json:"moderation,omitempty"`
-	ResponseMode         string                        `json:"response_mode,omitempty"`
-	SavePolicy           string                        `json:"save_policy,omitempty"`
-	OutputImageCount     int                           `json:"requested_output_image_count"`
-	ReferenceImageCount  int                           `json:"reference_image_count"`
-	ReferenceAssetIDs    []string                      `json:"reference_asset_ids,omitempty"`
-	ReferenceStrength    int                           `json:"reference_strength,omitempty"`
-	Seed                 *int64                        `json:"seed,omitempty"`
-	EstimatedPoints      string                        `json:"estimated_points,omitempty"`
-	ActualPoints         string                        `json:"actual_points,omitempty"`
-	LeaseOwner           string                        `json:"lease_owner,omitempty"`
-	LeaseExpiresAt       *time.Time                    `json:"lease_expires_at,omitempty"`
-	ErrorCode            string                        `json:"error_code,omitempty"`
-	Attempts             []Attempt                     `json:"attempts,omitempty"`
-	ErrorMessage         string                        `json:"error_message,omitempty"`
-	ProviderRequestID    string                        `json:"provider_request_id,omitempty"`
-	UpstreamSucceededAt  *time.Time                    `json:"upstream_succeeded_at,omitempty"`
-	ArtifactRecovery     ArtifactRecovery              `json:"artifact_recovery,omitempty"`
-	Results              []provider.ImageResult        `json:"results,omitempty"`
-	PricingSnapshot      domainbilling.PricingSnapshot `json:"-"`
-	GenerationSnapshot   GenerationSnapshot            `json:"-"`
-	CreatedAt            time.Time                     `json:"created_at"`
-	UpdatedAt            time.Time                     `json:"updated_at"`
+	UserID                int64                         `json:"-"`
+	ProjectID             string                        `json:"project_id"`
+	Project               *domainproject.Snapshot       `json:"project,omitempty"`
+	APIKeyID              int64                         `json:"-"`
+	SourceChannel         string                        `json:"-"`
+	ID                    string                        `json:"id"`
+	Status                string                        `json:"status"`
+	ProgressStage         string                        `json:"progress_stage,omitempty"`
+	ProgressMessage       string                        `json:"progress_message,omitempty"`
+	Provider              string                        `json:"provider,omitempty"`
+	ProviderModelID       int64                         `json:"provider_model_id,omitempty"`
+	ProviderCost          string                        `json:"provider_cost,omitempty"`
+	GrossMargin           string                        `json:"gross_margin,omitempty"`
+	FallbackCount         int                           `json:"fallback_count,omitempty"`
+	RouteSnapshotVersion  string                        `json:"route_snapshot_version,omitempty"`
+	AbstractModel         string                        `json:"abstract_model"`
+	RouteModelCode        string                        `json:"route_model_code,omitempty"`
+	RouteModelID          int64                         `json:"route_model_id,omitempty"`
+	AccountModelID        int64                         `json:"account_model_id,omitempty"`
+	ModelAccountID        int64                         `json:"model_account_id,omitempty"`
+	UpstreamModelCode     string                        `json:"upstream_model_code,omitempty"`
+	EffectiveMultiplier   string                        `json:"effective_multiplier,omitempty"`
+	ChargedPoints         string                        `json:"charged_points,omitempty"`
+	TaskType              string                        `json:"task_type"`
+	Prompt                string                        `json:"prompt,omitempty"`
+	ExecutionPrompt       string                        `json:"-"`
+	PromptTemplate        string                        `json:"-"`
+	PromptTemplateVersion int                           `json:"-"`
+	PromptBindingSnapshot PromptBindingSnapshot         `json:"-"`
+	NegativePrompt        string                        `json:"-"`
+	SizeMode              string                        `json:"size_mode,omitempty"`
+	AspectRatio           string                        `json:"aspect_ratio,omitempty"`
+	RequestedSize         string                        `json:"requested_size,omitempty"`
+	ResolvedWidth         int                           `json:"resolved_width,omitempty"`
+	ResolvedHeight        int                           `json:"resolved_height,omitempty"`
+	BaseResolution        string                        `json:"base_resolution"`
+	Quality               string                        `json:"quality"`
+	OutputFormat          string                        `json:"output_format,omitempty"`
+	Background            string                        `json:"background,omitempty"`
+	OutputCompression     int                           `json:"output_compression,omitempty"`
+	Moderation            string                        `json:"moderation,omitempty"`
+	ResponseMode          string                        `json:"response_mode,omitempty"`
+	SavePolicy            string                        `json:"save_policy,omitempty"`
+	OutputImageCount      int                           `json:"requested_output_image_count"`
+	ReferenceImageCount   int                           `json:"reference_image_count"`
+	ReferenceAssetIDs     []string                      `json:"reference_asset_ids,omitempty"`
+	ReferenceStrength     int                           `json:"reference_strength,omitempty"`
+	Seed                  *int64                        `json:"seed,omitempty"`
+	EstimatedPoints       string                        `json:"estimated_points,omitempty"`
+	ActualPoints          string                        `json:"actual_points,omitempty"`
+	LeaseOwner            string                        `json:"lease_owner,omitempty"`
+	LeaseExpiresAt        *time.Time                    `json:"lease_expires_at,omitempty"`
+	ErrorCode             string                        `json:"error_code,omitempty"`
+	Attempts              []Attempt                     `json:"attempts,omitempty"`
+	ErrorMessage          string                        `json:"error_message,omitempty"`
+	ProviderRequestID     string                        `json:"provider_request_id,omitempty"`
+	UpstreamSucceededAt   *time.Time                    `json:"upstream_succeeded_at,omitempty"`
+	ArtifactRecovery      ArtifactRecovery              `json:"artifact_recovery,omitempty"`
+	Results               []provider.ImageResult        `json:"results,omitempty"`
+	PricingSnapshot       domainbilling.PricingSnapshot `json:"-"`
+	GenerationSnapshot    GenerationSnapshot            `json:"-"`
+	CreatedAt             time.Time                     `json:"created_at"`
+	UpdatedAt             time.Time                     `json:"updated_at"`
+}
+
+type PromptReferenceInput struct {
+	Name    string `json:"name"`
+	AssetID string `json:"asset_id"`
+}
+
+type PromptVariableInput struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type PromptReferenceBinding struct {
+	Name    string `json:"name"`
+	AssetID string `json:"asset_id"`
+	Index   int    `json:"index"`
+}
+
+type PromptBindingSnapshot struct {
+	References    []PromptReferenceBinding `json:"references,omitempty"`
+	VariableNames []string                 `json:"variable_names,omitempty"`
 }
 
 type ExecuteResult struct {

@@ -26,7 +26,6 @@ const itemMeta: Record<string, ConfigFieldMeta> = {
   reference_image_max_mb: { label: '参考图大小上限 MB', hint: '单张参考图允许上传的最大体积。', type: 'number' },
   reference_image_max_count: { label: '参考图数量上限', hint: '图生图或参考图生成时允许携带的参考图数量。', type: 'number' },
   prompt_max_chars: { label: '提示词字数上限', hint: '用户主提示词允许输入的最大字符数。', type: 'number' },
-  negative_prompt_max_chars: { label: '负面提示词字数上限', hint: '负面提示词允许输入的最大字符数。', type: 'number' },
   cny_per_point: { label: '人民币积分汇率', hint: '每积分对应的人民币金额，用于成本和充值核算。', type: 'text' },
   auto_base_resolution_default_by_group: { label: '自动基础分辨率默认值', hint: '不同模型分组在 auto 基础分辨率下默认解析到的 1K/2K/4K 档位。', type: 'map' },
   task_multipliers: { label: '任务类型倍率', hint: '文生图、图生图、参考图等任务类型的计费倍率。', type: 'map' },

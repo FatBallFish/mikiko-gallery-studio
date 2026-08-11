@@ -17,6 +17,8 @@ func (ReferenceAsset) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).Default(uuid.New).Immutable(),
 		field.Int64("user_id"),
+		field.String("name").MaxLen(64).Optional().Nillable(),
+		field.String("name_normalized").MaxLen(64).Optional().Nillable(),
 		field.Int64("api_key_id").Optional().Nillable(),
 		field.String("upload_source").MaxLen(16).Default("web"),
 		field.String("status").MaxLen(32).Default("uploading"),
@@ -47,5 +49,9 @@ func (ReferenceAsset) Indexes() []ent.Index {
 			StorageKey("reference_asset_active_source").
 			Unique().
 			Annotations(entsql.IndexWhere("source_image_result_id IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'")),
+		index.Fields("user_id", "name_normalized").
+			StorageKey("reference_asset_active_name").
+			Unique().
+			Annotations(entsql.IndexWhere("name_normalized IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'")),
 	}
 }

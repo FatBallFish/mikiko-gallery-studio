@@ -167,7 +167,9 @@ for (const behaviorContract of [
   'decisionTriggerRef',
   "querySelector<HTMLElement>('textarea, button')",
   'decisionTriggerRef.current?.focus()',
-  'disabled={refreshing || Boolean(drawer) || busy}',
+  '<RefreshIconButton label="刷新审核队列"',
+  'refreshing={refreshing}',
+  'disabled={Boolean(drawer) || busy}',
   'interactionLocked={refreshing}',
   'requestGenerationRef.current += 1',
 ]) {

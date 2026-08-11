@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { RefreshCw } from 'lucide-react'
 import type { AdminMetric, AdminSession, ProviderHealth, UserGroup } from '../../shared/api-types'
 import { cn } from '../../shared/classnames'
 import { navGroups, normalizeRoute, protectedRoutes, routeHref, routeTitles } from './layout/admin-navigation'
@@ -852,6 +853,15 @@ export function TooltipIconButton({
       ) : null}
     </span>
   )
+}
+
+export function RefreshIconButton({ label = '刷新列表', refreshing = false, disabled = false, onClick }: {
+  label?: string
+  refreshing?: boolean
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return <TooltipIconButton label={label} disabled={disabled || refreshing} onClick={onClick}><RefreshCw className={cn('size-4', refreshing && 'animate-spin')} aria-hidden="true" /></TooltipIconButton>
 }
 
 export function SegmentedControl<T extends string>({

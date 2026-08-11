@@ -19,13 +19,13 @@ if (source.includes('document.write') || source.includes('.write(display.formHtm
 if (!source.includes("new DOMParser().parseFromString(formHtml, 'text/html')") || !source.includes("createElement('form')")) {
   throw new Error('provider form HTML must be parsed and rebuilt from an allowlisted projection')
 }
-if (paymentMethodNeedsReservedWindow({ method: 'stripe', label: 'Stripe', enabled: true, source_provider_type: 'stripe', display_order: 1 })) {
+if (paymentMethodNeedsReservedWindow({ method: 'stripe', label: 'Stripe', enabled: true, display_order: 1 })) {
   throw new Error('Stripe should stay in the payment monitor without opening a blank window')
 }
-if (paymentMethodNeedsReservedWindow({ method: 'mock', label: 'Mock', enabled: true, source_provider_type: 'mock', display_order: 2 })) {
+if (paymentMethodNeedsReservedWindow({ method: 'mock', label: 'Mock', enabled: true, display_order: 2 })) {
   throw new Error('Mock payment should stay in the payment monitor without opening a blank window')
 }
-if (!paymentMethodNeedsReservedWindow({ method: 'alipay', label: '支付宝', enabled: true, source_provider_type: 'jeepay_alipay', display_order: 3 })) {
+if (!paymentMethodNeedsReservedWindow({ method: 'alipay', label: '支付宝', enabled: true, display_order: 3 })) {
   throw new Error('redirect/form-capable methods must reserve a window during the user gesture')
 }
 

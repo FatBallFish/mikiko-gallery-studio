@@ -2,6 +2,20 @@ import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')
 
+for (const removed of ['模型选择', '限制词', 'negative_prompt: negative']) {
+  if (source.includes(removed)) throw new Error(`creative workspace must remove ${removed}`)
+}
+for (const required of ['模型分组', '<select', 'minimum_points']) {
+  if (!source.includes(required)) throw new Error(`creative workspace model group selector must include ${required}`)
+}
+const modelGroupPosition = source.indexOf('模型分组')
+const referencePosition = source.indexOf('图片编辑来源')
+const promptPosition = source.indexOf('>提示词</label>')
+const sizeModePosition = source.indexOf('>尺寸模式</label>')
+if (!(modelGroupPosition >= 0 && modelGroupPosition < referencePosition && referencePosition < promptPosition && promptPosition < sizeModePosition)) {
+  throw new Error('creative workspace order must be model group, references, prompt, then generation parameters')
+}
+
 for (const required of [
   'createWorkspaceViewModel',
   '<WorkspaceStatusRail',
@@ -129,6 +143,23 @@ if (capabilityChangedSource.includes('userApi.estimate(')) {
   throw new Error('capability_changed recovery must let normalized capability state drive the next estimate instead of reusing the stale payload')
 }
 
+const promptTemplateStaleStart = createTaskSource.indexOf("err.code === 'PROMPT_TEMPLATE_STALE'")
+const promptTemplateStaleEnd = createTaskSource.indexOf("app.notify('error'", promptTemplateStaleStart)
+const promptTemplateStaleSource = createTaskSource.slice(promptTemplateStaleStart, promptTemplateStaleEnd)
+for (const required of [
+  'userApi.getReferenceAsset(asset.id)',
+  'setEditRefs(',
+  '引用资产名称已变化',
+  '请检查红色标记',
+]) {
+  if (!promptTemplateStaleSource.includes(required)) {
+    throw new Error(`PROMPT_TEMPLATE_STALE recovery must refresh reference state and require explicit confirmation: missing ${required}`)
+  }
+}
+if (promptTemplateStaleSource.includes('setPrompt(')) {
+  throw new Error('PROMPT_TEMPLATE_STALE recovery must not silently rewrite the prompt template')
+}
+
 const historyEditStart = source.indexOf('async function applyAsEditSource')
 const historyEditEnd = source.indexOf('\n  function removeEditAsset', historyEditStart)
 const historyEditSource = source.slice(historyEditStart, historyEditEnd)
@@ -168,11 +199,8 @@ if (!source.includes("task.size_mode === 'pixel' ? `尺寸: ${task.requested_siz
   throw new Error('pixel-mode task results must display requested pixel size instead of an aspect-ratio label')
 }
 
-if (!source.includes("'redesign-prompt-input pb-11'")) {
-  throw new Error('the outer prompt textarea must reserve only bottom clearance for floating actions')
-}
-if (source.includes("'redesign-prompt-input pb-11 pr-20'")) {
-  throw new Error('the outer prompt textarea must use its full width instead of reserving a right-side text column')
+if (!source.includes('<PromptTemplateEditor') || source.includes('redesign-prompt-input pb-11 pr-20')) {
+  throw new Error('the outer prompt editor must use the full width and render template tokens')
 }
 for (const required of [
   'function HistoryTaskGalleryModal',

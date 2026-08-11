@@ -1,12 +1,13 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { AdminMetric, AdminRole, AdminSession, SystemAdminUser } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader } from '../components'
+import { ActionMenu, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, RefreshIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import type { ColumnDef } from '../ui/dataTable'
 import { DataTable, FilterToolbar, ListPage, Pager } from '../ui/dataTable'
 import { FilterIcon, XIcon } from '../ui/listIcons'
+import { createLatestListRequestGuard } from './listRefresh'
 
 const systemUserClasses = {
   identity: 'flex min-w-0 items-center gap-3',
@@ -46,24 +47,31 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
+  const [reloadKey, setReloadKey] = useState(0)
 
   const load = async (nextFilters = appliedFilters, nextPage = page, nextPageize = pageSize) => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
       const result = await adminApi.systemAdmins.list({ ...nextFilters, page: nextPage, page_size: nextPageize })
+      if (!requestGuard.isCurrent(request)) return
       setRows(result.items)
       setTotal(result.total)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '系统账户载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
   useEffect(() => {
     void load(appliedFilters, page, pageSize)
-  }, [appliedFilters, page, pageSize])
+    return () => requestGuard.invalidate()
+  }, [appliedFilters, page, pageSize, reloadKey])
 
   const summary = useMemo(() => ({
     total,
@@ -82,6 +90,7 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
     event.preventDefault()
     setPage(1)
     setAppliedFilters(filters)
+    setReloadKey((value) => value + 1)
   }
 
   const clearFilters = () => {
@@ -143,8 +152,10 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
         title="系统账户"
         detail="管理独立后台管理员账号、角色、状态和密码重置。"
         primaryAction={<button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={() => openDialog({ type: 'create', email: '', password: '', role: 'admin', status: 'active' })}>创建账户</button>}
+        secondaryActions={<RefreshIconButton label="刷新系统账户" refreshing={loading} onClick={() => void load(appliedFilters, page, pageSize)} />}
       />
       <InlineFeedback tone="warning" message="敏感操作会写入审计日志；停用、删除和密码重置前请确认目标账户。" />
+      {error && rows.length ? <InlineFeedback tone="danger" message={`系统账户刷新失败：${error}`} /> : null}
       <MetricStrip metrics={metrics} />
       <form onSubmit={applyFilters}>
         <FilterToolbar
@@ -162,7 +173,9 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
           resultSummary={`共 ${total} 个系统账户 · 当前显示 ${rows.length} 个`}
         />
       </form>
-      {loading ? <LoadingBlock label="正在载入系统账户" /> : error ? <ErrorBlock message={error} onRetry={() => void load()} /> : (
+      {loading && !rows.length ? <LoadingBlock label="正在载入系统账户" /> : null}
+      {error && !rows.length ? <ErrorBlock message={error} onRetry={() => void load()} /> : null}
+      {rows.length || (!loading && !error) ? (
         <ListPage pagination={<Pager page={page} pageSize={pageSize} total={total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}>
           <DataTable
             columns={systemUserColumns(session, openDialog)}
@@ -171,7 +184,7 @@ export function SystemUsersPage({ session, onFeedback }: { session: AdminSession
             empty={<EmptyBlock title="暂无系统账户" detail="调整筛选条件，或创建新的后台管理员账户。" />}
           />
         </ListPage>
-      )}
+      ) : null}
       {dialog ? (
         <Modal
           title={dialogTitle(dialog)}

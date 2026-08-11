@@ -166,6 +166,40 @@ func (_c *ImageTaskCreate) SetPrompt(v string) *ImageTaskCreate {
 	return _c
 }
 
+// SetPromptTemplate sets the "prompt_template" field.
+func (_c *ImageTaskCreate) SetPromptTemplate(v string) *ImageTaskCreate {
+	_c.mutation.SetPromptTemplate(v)
+	return _c
+}
+
+// SetNillablePromptTemplate sets the "prompt_template" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillablePromptTemplate(v *string) *ImageTaskCreate {
+	if v != nil {
+		_c.SetPromptTemplate(*v)
+	}
+	return _c
+}
+
+// SetPromptTemplateVersion sets the "prompt_template_version" field.
+func (_c *ImageTaskCreate) SetPromptTemplateVersion(v int) *ImageTaskCreate {
+	_c.mutation.SetPromptTemplateVersion(v)
+	return _c
+}
+
+// SetNillablePromptTemplateVersion sets the "prompt_template_version" field if the given value is not nil.
+func (_c *ImageTaskCreate) SetNillablePromptTemplateVersion(v *int) *ImageTaskCreate {
+	if v != nil {
+		_c.SetPromptTemplateVersion(*v)
+	}
+	return _c
+}
+
+// SetPromptBindingSnapshot sets the "prompt_binding_snapshot" field.
+func (_c *ImageTaskCreate) SetPromptBindingSnapshot(v map[string]interface{}) *ImageTaskCreate {
+	_c.mutation.SetPromptBindingSnapshot(v)
+	return _c
+}
+
 // SetNegativePrompt sets the "negative_prompt" field.
 func (_c *ImageTaskCreate) SetNegativePrompt(v string) *ImageTaskCreate {
 	_c.mutation.SetNegativePrompt(v)
@@ -986,6 +1020,10 @@ func (_c *ImageTaskCreate) defaults() {
 		v := imagetask.DefaultProgressMessage
 		_c.mutation.SetProgressMessage(v)
 	}
+	if _, ok := _c.mutation.PromptTemplateVersion(); !ok {
+		v := imagetask.DefaultPromptTemplateVersion
+		_c.mutation.SetPromptTemplateVersion(v)
+	}
 	if _, ok := _c.mutation.SizeMode(); !ok {
 		v := imagetask.DefaultSizeMode
 		_c.mutation.SetSizeMode(v)
@@ -1152,6 +1190,9 @@ func (_c *ImageTaskCreate) check() error {
 	}
 	if _, ok := _c.mutation.Prompt(); !ok {
 		return &ValidationError{Name: "prompt", err: errors.New(`ent: missing required field "ImageTask.prompt"`)}
+	}
+	if _, ok := _c.mutation.PromptTemplateVersion(); !ok {
+		return &ValidationError{Name: "prompt_template_version", err: errors.New(`ent: missing required field "ImageTask.prompt_template_version"`)}
 	}
 	if _, ok := _c.mutation.AbstractModel(); !ok {
 		return &ValidationError{Name: "abstract_model", err: errors.New(`ent: missing required field "ImageTask.abstract_model"`)}
@@ -1418,6 +1459,18 @@ func (_c *ImageTaskCreate) createSpec() (*ImageTask, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Prompt(); ok {
 		_spec.SetField(imagetask.FieldPrompt, field.TypeString, value)
 		_node.Prompt = value
+	}
+	if value, ok := _c.mutation.PromptTemplate(); ok {
+		_spec.SetField(imagetask.FieldPromptTemplate, field.TypeString, value)
+		_node.PromptTemplate = &value
+	}
+	if value, ok := _c.mutation.PromptTemplateVersion(); ok {
+		_spec.SetField(imagetask.FieldPromptTemplateVersion, field.TypeInt, value)
+		_node.PromptTemplateVersion = value
+	}
+	if value, ok := _c.mutation.PromptBindingSnapshot(); ok {
+		_spec.SetField(imagetask.FieldPromptBindingSnapshot, field.TypeJSON, value)
+		_node.PromptBindingSnapshot = value
 	}
 	if value, ok := _c.mutation.NegativePrompt(); ok {
 		_spec.SetField(imagetask.FieldNegativePrompt, field.TypeString, value)

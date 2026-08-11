@@ -70,7 +70,8 @@ export function workspaceCreationDraftFromSnapshot(snapshot: WorkspaceCreationSn
     output_compression: typeof snapshot.output_compression === 'number' ? snapshot.output_compression : undefined,
     moderation: clean(snapshot.moderation),
     image_count: snapshot.requested_output_image_count ?? snapshot.image_count ?? 1,
-    reference_asset_ids: snapshot.reference_asset_ids ?? [],
+    // Reusing history intentionally starts references unresolved; users must bind current assets explicitly.
+    reference_asset_ids: [],
   }
 }
 
@@ -122,7 +123,7 @@ export function normalizeWorkspaceCreationDraft(
   if (model.code !== clean(draft.route_model_code)) notices.push(`模型 ${clean(draft.route_model_code) || '未指定'} 当前不可用，已切换为 ${model.name || model.code}。`)
 
 	const sizeModes = unique(model.size_modes?.filter((item) => item === 'auto' || item === 'ratio' || item === 'pixel') ?? [])
-	const sizeMode = chooseOption(sizeModes.length ? sizeModes : ['ratio'], draft.size_mode, '尺寸模式', notices)
+	const sizeMode = chooseSizeMode(sizeModes.length ? sizeModes : ['ratio'], draft.size_mode, notices)
 	const baseResolution = sizeMode === 'ratio' ? chooseOption(model.base_resolution ?? capability.base_resolution ?? [], draft.base_resolution, '基础分辨率', notices) : ''
   const aspectRatios = model.aspect_ratios?.length ? model.aspect_ratios : capability.aspect_ratios
   const pixelSizes = model.pixel_sizes?.length ? model.pixel_sizes : capability.pixel_sizes ?? []
@@ -223,6 +224,14 @@ function chooseOption(options: string[], requested: string | undefined, label: s
   const candidates = unique(options.map((item) => item.trim()).filter(Boolean))
   const selected = candidates.find((item) => item.toLowerCase() === clean(requested)?.toLowerCase()) ?? candidates[0] ?? ''
   if (selected !== clean(requested)) notices.push(`${label} ${clean(requested) || '未指定'} 当前不可用，已调整为 ${selected || '未设置'}。`)
+  return selected
+}
+
+function chooseSizeMode(options: string[], requested: string | undefined, notices: string[]) {
+  const candidates = unique(options.map((item) => item.trim()).filter(Boolean))
+  const explicit = candidates.find((item) => item.toLowerCase() === clean(requested)?.toLowerCase())
+  const selected = explicit ?? (candidates.includes('auto') ? 'auto' : candidates.includes('ratio') ? 'ratio' : candidates[0] ?? '')
+  if (selected !== clean(requested)) notices.push(`尺寸模式 ${clean(requested) || '未指定'} 当前不可用，已调整为 ${selected || '未设置'}。`)
   return selected
 }
 

@@ -70,6 +70,9 @@ func TestListVisibleRouteModelsMergesGroupsAndUsesLowestMultiplier(t *testing.T)
 	if got := items[1].Prices[0].DisplayPoints; got != "6.00" {
 		t.Fatalf("expected display points at 2 decimal places, got %s", got)
 	}
+	if got := items[1].MinimumPoints; got != "6.00" {
+		t.Fatalf("expected minimum visible charged points 6.00, got %s", got)
+	}
 	if !containsString(items[1].TaskTypes, "image_edit") || items[1].MaxReferenceImageCount != 3 || items[1].MaxOutputImageCount != 4 {
 		t.Fatalf("expected visible reference capabilities, got %#v", items[1])
 	}
@@ -283,7 +286,7 @@ func TestResolveRouteModelMatchesRatioAndRejectsInvalidAspectRatio(t *testing.T)
 		RequestedOutputImageCount: 1,
 	})
 	appErr, ok := err.(*errs.Error)
-	if !ok || appErr.Code != CodeInvalidAspectRatio {
+	if !ok || appErr.Code != errs.CodeImageCapabilityMismatch {
 		t.Fatalf("invalid aspect ratio must not bypass configured ratios, got %#v", err)
 	}
 }
@@ -603,8 +606,8 @@ func TestRouteListAndResolveUseSameBoundedRatioCapability(t *testing.T) {
 		Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
 	})
 	var appErr *errs.Error
-	if !errors.As(err, &appErr) || appErr.StatusCode != 400 || appErr.Code != CodeInvalidAspectRatio {
-		t.Fatalf("filtered ratio resolve error = %#v, want 400/%s", err, CodeInvalidAspectRatio)
+	if !errors.As(err, &appErr) || appErr.StatusCode != 400 || appErr.Code != errs.CodeImageCapabilityMismatch {
+		t.Fatalf("filtered ratio resolve error = %#v, want 400/%s", err, errs.CodeImageCapabilityMismatch)
 	}
 }
 
@@ -700,7 +703,7 @@ func TestVisibleCapabilityAndRouteResolutionUseSameSafeIntersection(t *testing.T
 				second.SizeModes, second.SupportedAspectRatios = []string{SizeModeRatio}, []string{"1:1"}
 			},
 			request:  ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "16:9"},
-			wantCode: CodeInvalidAspectRatio,
+			wantCode: errs.CodeImageCapabilityMismatch,
 			assertVisible: func(t *testing.T, capability VisibleRouteModelTaskCapability) {
 				if !reflect.DeepEqual(capability.AspectRatios, []string{"1:1"}) {
 					t.Fatalf("visible aspect_ratios = %#v, want [1:1]", capability.AspectRatios)
@@ -714,7 +717,7 @@ func TestVisibleCapabilityAndRouteResolutionUseSameSafeIntersection(t *testing.T
 				second.SizeModes, second.SupportedAspectRatios = []string{SizeModeRatio}, []string{"1:1"}
 			},
 			request:  ResolveRequest{SizeMode: SizeModeRatio, BaseResolution: "1k", AspectRatio: "7:5"},
-			wantCode: CodeInvalidAspectRatio,
+			wantCode: errs.CodeImageCapabilityMismatch,
 			assertVisible: func(t *testing.T, capability VisibleRouteModelTaskCapability) {
 				if capability.SupportsCustomRatio {
 					t.Fatal("visible capability must disable custom ratio")
@@ -728,7 +731,7 @@ func TestVisibleCapabilityAndRouteResolutionUseSameSafeIntersection(t *testing.T
 				second.SizeModes, second.SupportedPixelSizes = []string{SizeModePixel}, []string{"1024x1024"}
 			},
 			request:  ResolveRequest{SizeMode: SizeModePixel, RequestedSize: "1280x720"},
-			wantCode: CodeInvalidExplicitDimensions,
+			wantCode: errs.CodeImageCapabilityMismatch,
 			assertVisible: func(t *testing.T, capability VisibleRouteModelTaskCapability) {
 				if !reflect.DeepEqual(capability.PixelSizes, []string{"1024x1024"}) {
 					t.Fatalf("visible pixel_sizes = %#v, want [1024x1024]", capability.PixelSizes)
@@ -742,7 +745,7 @@ func TestVisibleCapabilityAndRouteResolutionUseSameSafeIntersection(t *testing.T
 				second.SizeModes, second.SupportedPixelSizes = []string{SizeModePixel}, []string{"1024x1024"}
 			},
 			request:  ResolveRequest{SizeMode: SizeModePixel, RequestedSize: "1280x720"},
-			wantCode: CodeInvalidExplicitDimensions,
+			wantCode: errs.CodeImageCapabilityMismatch,
 			assertVisible: func(t *testing.T, capability VisibleRouteModelTaskCapability) {
 				if capability.SupportsCustomSize {
 					t.Fatal("visible capability must disable custom pixels")
@@ -810,7 +813,7 @@ func TestVisibleCapabilityAndRouteResolutionUseSameSafeIntersection(t *testing.T
 				second.SizeModes, second.SupportedAspectRatios = []string{SizeModeRatio}, []string{"1:1"}
 			},
 			request:  ResolveRequest{BaseResolution: "1k", AspectRatio: "16:9"},
-			wantCode: CodeInvalidAspectRatio,
+			wantCode: errs.CodeImageCapabilityMismatch,
 			assertVisible: func(t *testing.T, capability VisibleRouteModelTaskCapability) {
 				if !reflect.DeepEqual(capability.AspectRatios, []string{"1:1"}) {
 					t.Fatalf("visible aspect_ratios = %#v, want [1:1]", capability.AspectRatios)
@@ -908,8 +911,8 @@ func TestVisibleCapabilityFiltersPixelSizesWithoutPriceAndRejectsCustomBucket(t 
 			Quality: "auto", OutputFormat: "png", Moderation: "auto", RequestedOutputImageCount: 1,
 		})
 		var appErr *errs.Error
-		if !errors.As(err, &appErr) || appErr.StatusCode != 400 || appErr.Code != CodeInvalidExplicitDimensions {
-			t.Fatalf("ResolveContext(%s) error = %#v, want 400/%s", size, err, CodeInvalidExplicitDimensions)
+		if !errors.As(err, &appErr) || appErr.StatusCode != 400 || appErr.Code != errs.CodeImageCapabilityMismatch {
+			t.Fatalf("ResolveContext(%s) error = %#v, want 400/%s", size, err, errs.CodeImageCapabilityMismatch)
 		}
 	}
 }

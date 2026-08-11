@@ -150,6 +150,7 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 		},
 	})
 	runner.SetCompensationService(billingSvc)
+	runner.SetPaymentExpiryService(billingSvc)
 	runner.SetCleanupService(objectcleanupservice.NewProcessor(entstore.NewObjectCleanupStore(client), storageRegistry, objectcleanupservice.ProcessorOptions{}))
 	runner.SetGalleryExportService(galleryexportservice.NewProcessor(entstore.NewGalleryExportStore(client), storageRegistry, galleryexportservice.ProcessorOptions{Owner: owner}))
 

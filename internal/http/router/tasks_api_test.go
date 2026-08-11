@@ -68,6 +68,65 @@ func TestReferenceAssetUploadUsesDynamicAttachmentPolicy(t *testing.T) {
 	}
 }
 
+func TestReferenceAssetRenameAndPromptTemplateTaskContract(t *testing.T) {
+	cfg := taskAPIConfig("http://provider.invalid")
+	cfg.Storage.LocalRoot = t.TempDir()
+	authSvc, session := loginTestUser(t, "prompt-template-api@example.com")
+	assetSvc := assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
+	asset, err := assetSvc.Upload(1, "subject.png", "image/png", tinyPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskStore := imagetaskservice.NewMemoryStore()
+	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, taskStore, assetSvc, nil)
+	handler := NewWithAPI(handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, nil, nil))
+
+	renameBody := bytes.NewBufferString(`{"name":"  主体  "}`)
+	renameReq := httptest.NewRequest(http.MethodPatch, "/api/agent/image/v1/reference-assets/"+asset.ID, renameBody)
+	renameReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	renameReq.Header.Set("Content-Type", "application/json")
+	renameRec := httptest.NewRecorder()
+	handler.ServeHTTP(renameRec, renameReq)
+	if renameRec.Code != http.StatusOK || !strings.Contains(renameRec.Body.String(), `"name":"主体"`) {
+		t.Fatalf("rename status=%d body=%s", renameRec.Code, renameRec.Body.String())
+	}
+
+	createBody := bytes.NewBufferString(`{
+		"task_type":"image_edit",
+		"prompt":"让 {{@主体}} 位于 {{$地点}}",
+		"abstract_model":"plus",
+		"size_mode":"auto",
+		"requested_output_image_count":1,
+		"reference_asset_ids":["` + asset.ID + `"],
+		"reference_bindings":[{"name":"主体","asset_id":"` + asset.ID + `"}],
+		"prompt_variables":[{"name":"地点","value":"秘密地点"}],
+		"response_mode":"async"
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", createBody)
+	createReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusAccepted {
+		t.Fatalf("create status=%d body=%s", createRec.Code, createRec.Body.String())
+	}
+	if strings.Contains(createRec.Body.String(), "秘密地点") || !strings.Contains(createRec.Body.String(), `"prompt":"让 {{@主体}} 位于 {{$地点}}"`) {
+		t.Fatalf("create leaked expanded prompt: %s", createRec.Body.String())
+	}
+	var response struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(createRec.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := taskStore.GetByID(t.Context(), 1, response.Data.ID)
+	if err != nil || stored.ExecutionPrompt != "让 图片1 位于 秘密地点" {
+		t.Fatalf("stored execution prompt=%q err=%v", stored.ExecutionPrompt, err)
+	}
+}
+
 func assertReferenceCapabilityLimit(t *testing.T, handler http.Handler, token string, wantMB int) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/agent/image/v1/capabilities", nil)
@@ -702,7 +761,6 @@ func TestReferenceAssetsImportFromGalleryCreatesDownloadableReference(t *testing
 	}
 	taskSvc := imagetaskservice.NewServiceWithStoreAssetsAndBilling(cfg, imagetaskservice.NewMemoryStore(), nil, billingSvc)
 	assetSvc := assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
-	assetSvc.SetAliasCreationGate(enabledAliasCreationGate{})
 	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, assetSvc, taskSvc, nil, billingSvc)
 	handler := NewWithAPI(api)
 

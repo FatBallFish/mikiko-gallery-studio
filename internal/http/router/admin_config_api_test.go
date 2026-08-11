@@ -2,133 +2,38 @@ package router
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
-
-	"entgo.io/ent/dialect"
-	"github.com/google/uuid"
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminauth "github.com/fatballfish/pic-gallery/internal/domain/adminauth"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
-	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
-	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
 	adminauthservice "github.com/fatballfish/pic-gallery/internal/service/adminauth"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 )
 
-func TestAdminAliasRolloutRequiresDangerousPermissionAndExplicitCohortAttestation(t *testing.T) {
-	client, err := repoent.Open(dialect.SQLite, "file:admin-alias-rollout-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = client.Close() })
-	if err := client.Schema.Create(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	var failAudit atomic.Bool
-	injectedAuditErr := errors.New("injected rollout audit failure")
-	client.Use(func(next repoent.Mutator) repoent.Mutator {
-		return repoent.MutateFunc(func(ctx context.Context, mutation repoent.Mutation) (repoent.Value, error) {
-			if _, ok := mutation.(*repoent.AuditLogMutation); ok && failAudit.Load() {
-				return nil, injectedAuditErr
-			}
-			return next.Mutate(ctx, mutation)
-		})
-	})
+func TestAdminAliasRolloutRouteIsRemoved(t *testing.T) {
 	cfg := adminConfigAPIConfig()
 	authSvc := authservice.NewService(cfg.Auth, map[string]string{"basic": "1.00000"})
 	adminStore := adminauthservice.NewMemoryStore()
-	var rootAdmin domainadminauth.AdminUser
-	for _, admin := range []domainadminauth.AdminUser{
-		{Email: "rollout-ops@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: domainadminauth.RoleAdmin, Status: "active"},
-		{Email: "rollout-root@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"), Role: domainadminauth.RoleSuperAdmin, Status: "active"},
-	} {
-		created, err := adminStore.CreateAdmin(t.Context(), admin)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if created.Email == "rollout-root@example.com" {
-			rootAdmin = created
-		}
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{
+		Email: "rollout-root@example.com", PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"),
+		Role: domainadminauth.RoleSuperAdmin, Status: "active",
+	}); err != nil {
+		t.Fatal(err)
 	}
 	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, nil, nil, adminauthservice.NewService(cfg.Auth, adminStore), nil)
-	rollout := entstore.NewAliasRolloutStore(client)
-	api.SetAliasRolloutStore(rollout)
 	handler := NewWithAPI(api)
-	opsToken := loginAdminWithCredentials(t, handler, "rollout-ops@example.com", "password")
 	rootToken := loginAdminWithCredentials(t, handler, "rollout-root@example.com", "password")
 	statusReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/runtime-rollouts/no-copy-reference-aliases", nil)
 	statusReq.Header.Set("Authorization", "Bearer "+rootToken)
 	statusRec := httptest.NewRecorder()
 	handler.ServeHTTP(statusRec, statusReq)
-	if statusRec.Code != http.StatusOK || !strings.Contains(statusRec.Body.String(), `"enabled":false`) || !strings.Contains(statusRec.Body.String(), `"version":0`) {
-		t.Fatalf("initial rollout status=%d body=%s", statusRec.Code, statusRec.Body.String())
-	}
-
-	request := func(token, body string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/runtime-rollouts/no-copy-reference-aliases", bytes.NewBufferString(body))
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Request-Id", "req-admin-alias-rollout")
-		req.Header.Set("User-Agent", "admin-rollout-contract/1.0")
-		req.RemoteAddr = "198.51.100.9:8443"
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-		return rec
-	}
-	if rec := request(opsToken, `{"enabled":true,"expected_version":0,"all_api_nodes_cleanup_aware":true}`); rec.Code != http.StatusForbidden {
-		t.Fatalf("ordinary admin activation status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if rec := request(rootToken, `{"enabled":true,"expected_version":0}`); rec.Code != http.StatusBadRequest {
-		t.Fatalf("activation without cohort attestation status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	failAudit.Store(true)
-	if rec := request(rootToken, `{"enabled":true,"expected_version":0,"all_api_nodes_cleanup_aware":true}`); rec.Code != http.StatusInternalServerError {
-		t.Fatalf("activation with failed audit status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	failAudit.Store(false)
-	status, err := rollout.GetAliasCreationRollout(t.Context())
-	if err != nil || status.Enabled || status.Version != 0 {
-		t.Fatalf("failed audit committed rollout: status=%#v err=%v", status, err)
-	}
-	if count, err := client.AuditLog.Query().Count(t.Context()); err != nil || count != 0 {
-		t.Fatalf("failed audit wrote partial event: count=%d err=%v", count, err)
-	}
-	activated := request(rootToken, `{"enabled":true,"expected_version":0,"all_api_nodes_cleanup_aware":true}`)
-	if activated.Code != http.StatusOK || !strings.Contains(activated.Body.String(), `"enabled":true`) || !strings.Contains(activated.Body.String(), `"version":1`) {
-		t.Fatalf("activation status=%d body=%s", activated.Code, activated.Body.String())
-	}
-	if rec := request(rootToken, `{"enabled":false,"expected_version":0}`); rec.Code != http.StatusConflict {
-		t.Fatalf("stale rollback status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	disabled := request(rootToken, `{"enabled":false,"expected_version":1}`)
-	if disabled.Code != http.StatusOK || !strings.Contains(disabled.Body.String(), `"enabled":false`) || !strings.Contains(disabled.Body.String(), `"version":2`) {
-		t.Fatalf("rollback status=%d body=%s", disabled.Code, disabled.Body.String())
-	}
-	audits, err := client.AuditLog.Query().All(t.Context())
-	if err != nil || len(audits) != 2 {
-		t.Fatalf("transactional rollout audits=%#v err=%v", audits, err)
-	}
-	var disableAudit *repoent.AuditLog
-	for _, audit := range audits {
-		if audit.Action == "runtime_rollout.alias_creation.disable" {
-			disableAudit = audit
-		}
-	}
-	if disableAudit == nil || disableAudit.ActorType != "admin" || disableAudit.ActorID != fmt.Sprintf("%d", rootAdmin.ID) || disableAudit.TargetID != "no_copy_reference_aliases" || disableAudit.IPAddr != "198.51.100.9:8443" || disableAudit.UserAgent != "admin-rollout-contract/1.0" {
-		t.Fatalf("transactional rollout disable audit=%#v", disableAudit)
-	}
-	if disableAudit.Metadata["request_id"] != "req-admin-alias-rollout" || disableAudit.Metadata["expected_version"] != float64(1) || disableAudit.Metadata["version"] != float64(2) {
-		t.Fatalf("transactional rollout disable metadata=%#v", disableAudit.Metadata)
+	if statusRec.Code != http.StatusNotFound {
+		t.Fatalf("removed rollout route status=%d body=%s", statusRec.Code, statusRec.Body.String())
 	}
 }
 

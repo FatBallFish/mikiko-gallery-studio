@@ -151,10 +151,6 @@ const errorMessages: Record<string, Record<ErrorLocale, string>> = {
     zh: '请求频率过高，请稍后再试。',
     en: 'Rate limit exceeded. Please try again later.',
   },
-  REFERENCE_ALIAS_CREATION_NOT_READY: {
-    zh: '资产引用功能正在完成升级，请稍后再试。',
-    en: 'Gallery reference reuse is not ready yet. Please try again later.',
-  },
 }
 
 const statusMessages: Record<number, Record<ErrorLocale, string>> = {

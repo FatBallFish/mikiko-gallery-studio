@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Archive, Pause, Pencil, Play, RotateCcw } from 'lucide-react'
 import type { CashierCustomAmountConfig, CashierOverview, CashierPlan, CashierPlanStatus, CashierPlanTransitionAction, PageResult, PaymentOrder, PaymentProviderInstance, PaymentProviderType, PaymentSchedulerStrategy, PaymentVisibleMethod, PaymentWebhookEvent } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { AdminTabs, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader, TooltipIconButton } from '../components'
+import { AdminTabs, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader, RefreshIconButton, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
 import { FilterBar, ListPage, Pager } from '../ui/dataTable'
@@ -33,6 +33,7 @@ import {
   cashierWebhookStatusBadge,
 } from './cashierStatusRows'
 import { cashierWebhookEventAction } from './cashierWebhookEventActions'
+import { createLatestListRequestGuard } from './listRefresh'
 
 type CashierData = {
   overview: CashierOverview
@@ -217,8 +218,10 @@ export function CashierPage({
   const [refundingOrder, setRefundingOrder] = useState(false)
   const [chargingBackOrder, setChargingBackOrder] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   async function load() {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
@@ -232,14 +235,17 @@ export function CashierPage({
         adminApi.listPaymentWebhookEvents({ page: eventsPage, page_size: eventsPageSize }),
         adminApi.listConfigTabs(),
       ])
+      if (!requestGuard.isCurrent(request)) return
       const trial = cashierTrialConfigSummary(configTabs)
       setData({ overview, plans, customAmount, methods, instances, orders, events, trial })
       setCustomDraft(customAmount)
       setTrialDraft(cashierTrialConfigDraft(trial))
       setMethodsDraft(methods)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '收银台数据载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
@@ -621,12 +627,15 @@ export function CashierPage({
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    void load()
+    return () => requestGuard.invalidate()
+  }, [])
   useEffect(() => {
     setActiveTab(safeInitialTab)
   }, [safeInitialTab])
 
-  if (loading) return <LoadingBlock label="读取收银台配置" />
+  if (loading && !data) return <LoadingBlock label="读取收银台配置" />
   if (error && !data) return <ErrorBlock message={error} onRetry={load} />
   if (!data) return <EmptyBlock title="暂无收银台数据" detail="后台尚未返回收银台配置。" />
 
@@ -644,6 +653,7 @@ export function CashierPage({
       <PageHeader
         title={pageTitle}
         description={isConfigPage ? '管理支付方式、渠道实例和体验额度，长表单使用抽屉分步配置。' : '管理收银台相关套餐、订单和支付配置。'}
+        secondaryActions={<RefreshIconButton label={`刷新${pageTitle}`} refreshing={loading} onClick={() => void load()} />}
       />
       {showSoloTabs ? (
         <AdminTabs

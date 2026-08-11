@@ -47,6 +47,21 @@ func TestRunnerProcessesCleanupBeforeLookingForImageTask(t *testing.T) {
 	}
 }
 
+func TestRunnerRepairsTerminalPromptTemplatesInBoundedBatches(t *testing.T) {
+	var calls atomic.Int32
+	runner := NewRunner(fakeTaskService{repairFunc: func(_ context.Context, limit int) (int, error) {
+		calls.Add(1)
+		if limit != 100 {
+			t.Fatalf("repair limit = %d", limit)
+		}
+		return 1, nil
+	}}, Config{Owner: "prompt-repair-worker"})
+	processed, err := runner.ProcessOnce(t.Context())
+	if err != nil || !processed || calls.Load() != 1 {
+		t.Fatalf("processed=%v err=%v calls=%d", processed, err, calls.Load())
+	}
+}
+
 func TestRunnerProcessesGalleryExportBeforeLookingForImageTask(t *testing.T) {
 	exports := &fakeGalleryExportService{}
 	runner := NewRunner(fakeTaskService{}, Config{Owner: "export-worker"})
@@ -426,6 +441,14 @@ type fakeTaskService struct {
 	acquireFunc   func(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error)
 	heartbeatFunc func(ctx context.Context, taskID, owner string, leaseTTL time.Duration) (domainimagetask.Task, error)
 	executeFunc   func(ctx context.Context, task domainimagetask.Task, owner string, preferredProviders []string) (domainimagetask.ExecuteResult, error)
+	repairFunc    func(context.Context, int) (int, error)
+}
+
+func (f fakeTaskService) RepairTerminalPromptTemplates(ctx context.Context, limit int) (int, error) {
+	if f.repairFunc == nil {
+		return 0, nil
+	}
+	return f.repairFunc(ctx, limit)
 }
 
 func (f fakeTaskService) AcquireNextTask(ctx context.Context, owner string, leaseTTL time.Duration) (domainimagetask.Task, bool, error) {
@@ -443,6 +466,16 @@ func (f fakeTaskService) ExecuteLeasedTask(ctx context.Context, task domainimage
 type fakeCompensationService struct {
 	calls int
 	fn    func(ctx context.Context, limit int) (int, error)
+}
+
+type fakePaymentExpiryService struct {
+	calls int
+	fn    func(ctx context.Context, now time.Time, limit int) (int, error)
+}
+
+func (f *fakePaymentExpiryService) ExpirePendingOrders(ctx context.Context, now time.Time, limit int) (int, error) {
+	f.calls++
+	return f.fn(ctx, now, limit)
 }
 
 func (f *fakeCompensationService) ProcessRefundFinalizeFailures(ctx context.Context, limit int) (int, error) {
@@ -571,6 +604,49 @@ func TestRunnerProcessOnceProcessesRefundCompensationBeforeTasks(t *testing.T) {
 	}
 	if acquireCalls != 0 {
 		t.Fatalf("expected task acquisition to be skipped when compensation was processed, got %d", acquireCalls)
+	}
+}
+
+func TestRunnerSweepsExpiredOrdersInBoundedBatchesBeforeTasks(t *testing.T) {
+	var acquireCalls int
+	tasks := fakeTaskService{
+		acquireFunc: func(context.Context, string, time.Duration) (domainimagetask.Task, bool, error) {
+			acquireCalls++
+			return domainimagetask.Task{}, false, nil
+		},
+		heartbeatFunc: func(context.Context, string, string, time.Duration) (domainimagetask.Task, error) {
+			return domainimagetask.Task{}, nil
+		},
+		executeFunc: func(context.Context, domainimagetask.Task, string, []string) (domainimagetask.ExecuteResult, error) {
+			return domainimagetask.ExecuteResult{}, nil
+		},
+	}
+	expiry := &fakePaymentExpiryService{}
+	expiry.fn = func(_ context.Context, now time.Time, limit int) (int, error) {
+		if now.IsZero() || limit != 500 {
+			t.Fatalf("unexpected expiry request now=%s limit=%d", now, limit)
+		}
+		if expiry.calls == 1 {
+			return 500, nil
+		}
+		return 2, nil
+	}
+	runner := NewRunner(tasks, Config{Owner: "worker-order-expiry", PaymentOrderExpiryBatchSize: 500, PaymentOrderExpiryInterval: 30 * time.Second})
+	runner.SetPaymentExpiryService(expiry)
+
+	processed, err := runner.ProcessOnce(t.Context())
+	if err != nil || !processed {
+		t.Fatalf("first ProcessOnce processed=%v err=%v", processed, err)
+	}
+	if expiry.calls != 2 || acquireCalls != 0 {
+		t.Fatalf("expiry calls=%d acquire calls=%d", expiry.calls, acquireCalls)
+	}
+	processed, err = runner.ProcessOnce(t.Context())
+	if err != nil || processed {
+		t.Fatalf("second ProcessOnce processed=%v err=%v", processed, err)
+	}
+	if expiry.calls != 2 || acquireCalls != 1 {
+		t.Fatalf("interval must suppress immediate rescan: expiry=%d acquire=%d", expiry.calls, acquireCalls)
 	}
 }
 

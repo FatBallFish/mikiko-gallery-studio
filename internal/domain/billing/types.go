@@ -144,7 +144,20 @@ const (
 )
 
 type SubscriptionPlanListRequest struct {
-	Status string
+	Query     string
+	PlanType  string
+	Status    string
+	SortBy    string
+	SortOrder string
+	Page      int
+	PageSize  int
+}
+
+type SubscriptionPlanPage struct {
+	Items    []SubscriptionPlan `json:"items"`
+	Page     int                `json:"page"`
+	PageSize int                `json:"page_size"`
+	Total    int                `json:"total"`
 }
 
 type TransitionSubscriptionPlanRequest struct {
@@ -251,6 +264,20 @@ type PaymentOrderPage struct {
 	Page     int            `json:"page"`
 	PageSize int            `json:"page_size"`
 	Total    int            `json:"total"`
+}
+
+type AdminPaymentOrder struct {
+	PaymentOrder
+	UserEmail    string `json:"user_email,omitempty"`
+	UserNickname string `json:"user_nickname,omitempty"`
+	TotalPoints  string `json:"total_points"`
+}
+
+type AdminPaymentOrderPage struct {
+	Items    []AdminPaymentOrder `json:"items"`
+	Page     int                 `json:"page"`
+	PageSize int                 `json:"page_size"`
+	Total    int                 `json:"total"`
 }
 
 type PaymentWebhookEvent struct {
@@ -539,6 +566,7 @@ type CreateOrderRequest struct {
 	QRCode             string
 	ClientToken        string
 	IdempotencyKey     string
+	ExpiresAt          time.Time
 }
 
 type CreateCustomAmountOrderRequest struct {
@@ -556,6 +584,7 @@ type CreateCustomAmountOrderRequest struct {
 	QRCode             string
 	ClientToken        string
 	IdempotencyKey     string
+	ExpiresAt          time.Time
 }
 
 type InitializePaymentOrderRequest struct {
@@ -575,6 +604,7 @@ type FailPaymentOrderInitializationRequest struct {
 }
 
 type ListOrdersRequest struct {
+	Query         string
 	UserID        int64
 	Status        string
 	OrderNo       string
@@ -598,6 +628,7 @@ const (
 	PaymentReconciliationSourceProviderWebhook  = "provider_webhook"
 	PaymentReconciliationSourceProviderQuery    = "provider_query"
 	PaymentReconciliationSourceMockConfirmation = "mock_confirmation"
+	PaymentOrderLazyExpiryBatchSize             = 500
 )
 
 type CompleteRechargeOrderRequest struct {

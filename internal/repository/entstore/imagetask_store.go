@@ -48,6 +48,47 @@ func (s *ImageTaskStore) UserConcurrencyLimit(ctx context.Context, userID int64)
 	return entity.ConcurrencyLimit, nil
 }
 
+func (s *ImageTaskStore) RepairTerminalPromptTemplates(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	entities, err := s.client.ImageTask.Query().Where(
+		imagetask.PromptTemplateNotNil(),
+		promptDiffersFromTemplate(),
+		imagetask.Or(
+			imagetask.DeletedAtNotNil(),
+			imagetask.StatusIn(domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted),
+		),
+	).Order(repoent.Asc(imagetask.FieldUpdatedAt)).Limit(limit).All(ctx)
+	if err != nil {
+		return 0, err
+	}
+	repaired := 0
+	for _, entity := range entities {
+		if entity.PromptTemplate == nil || entity.Prompt == *entity.PromptTemplate {
+			continue
+		}
+		count, err := s.client.ImageTask.Update().Where(
+			imagetask.IDEQ(entity.ID), imagetask.PromptEQ(entity.Prompt),
+			imagetask.Or(
+				imagetask.DeletedAtNotNil(),
+				imagetask.StatusIn(domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted),
+			),
+		).SetPrompt(*entity.PromptTemplate).Save(ctx)
+		if err != nil {
+			return repaired, err
+		}
+		repaired += count
+	}
+	return repaired, nil
+}
+
+func promptDiffersFromTemplate() predicate.ImageTask {
+	return predicate.ImageTask(func(selector *entsql.Selector) {
+		selector.Where(entsql.ExprP(selector.C(imagetask.FieldPrompt) + " <> " + selector.C(imagetask.FieldPromptTemplate)))
+	})
+}
+
 func (s *ImageTaskStore) Save(ctx context.Context, task domainimagetask.Task) error {
 	taskUUID, err := uuid.Parse(task.ID)
 	if err != nil {
@@ -255,6 +296,7 @@ func (s *ImageTaskStore) GetByID(ctx context.Context, userID int64, taskID strin
 	}
 	results, err := s.client.ImageResult.Query().
 		Where(imageresult.TaskIDEQ(taskUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Order(repoent.Asc(imageresult.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
@@ -270,15 +312,7 @@ func (s *ImageTaskStore) GetImageResultByID(ctx context.Context, userID int64, i
 	}
 	result, err := s.client.ImageResult.Query().
 		Where(imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
-		Only(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return provider.ImageResult{}, repoerr.ErrNotFound
-		}
-		return provider.ImageResult{}, err
-	}
-	_, err = s.client.ImageTask.Query().
-		Where(imagetask.IDEQ(result.TaskID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+		WithProject().
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -289,6 +323,34 @@ func (s *ImageTaskStore) GetImageResultByID(ctx context.Context, userID int64, i
 	return mapImageResultEntity(result), nil
 }
 
+func (s *ImageTaskStore) GetOwnedGalleryImage(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	imageUUID, err := uuid.Parse(imageID)
+	if err != nil {
+		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+	}
+	entity, err := s.client.ImageResult.Query().
+		Where(imageresult.IDEQ(imageUUID), imageresult.UserIDEQ(userID), imageresult.DeletedAtIsNil()).
+		WithProject().
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+		}
+		return domainimagetask.GalleryImage{}, err
+	}
+	taskEntity, err := s.client.ImageTask.Query().
+		Where(imagetask.IDEQ(entity.TaskID)).
+		WithProject().
+		Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
+		}
+		return domainimagetask.GalleryImage{}, err
+	}
+	return mapGalleryImageEntity(entity, taskEntity), nil
+}
+
 func (s *ImageTaskStore) GetImageResultForAdmin(ctx context.Context, imageID string) (provider.ImageResult, error) {
 	imageUUID, err := uuid.Parse(imageID)
 	if err != nil {
@@ -296,15 +358,7 @@ func (s *ImageTaskStore) GetImageResultForAdmin(ctx context.Context, imageID str
 	}
 	result, err := s.client.ImageResult.Query().
 		Where(imageresult.IDEQ(imageUUID), imageresult.DeletedAtIsNil()).
-		Only(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return provider.ImageResult{}, repoerr.ErrNotFound
-		}
-		return provider.ImageResult{}, err
-	}
-	_, err = s.client.ImageTask.Query().
-		Where(imagetask.IDEQ(result.TaskID), imagetask.DeletedAtIsNil()).
+		WithProject().
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -357,6 +411,7 @@ func (s *ImageTaskStore) listByUserProject(ctx context.Context, userID int64, pr
 	}
 	resultEntities, err := s.client.ImageResult.Query().
 		Where(imageresult.UserIDEQ(userID), imageresult.TaskIDIn(taskIDs...), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Order(repoent.Asc(imageresult.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
@@ -392,7 +447,7 @@ func (s *ImageTaskStore) RequestPublishInProject(ctx context.Context, userID int
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	if taskEntity.UserID != userID || (projectID != "" && (entity.ProjectID == nil || entity.ProjectID.String() != projectID)) {
+	if entity.UserID != userID || (projectID != "" && (entity.ProjectID == nil || entity.ProjectID.String() != projectID)) {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
 	currentStatus := defaultString(entity.VisibilityStatus, domainimagetask.VisibilityPrivate)
@@ -462,7 +517,7 @@ func (s *ImageTaskStore) CancelPublishInProject(ctx context.Context, userID int6
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	if taskEntity.UserID != userID {
+	if entity.UserID != userID {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
 	return mapGalleryImageEntity(entity, taskEntity), nil
@@ -535,7 +590,7 @@ func (s *ImageTaskStore) TransferImageProject(ctx context.Context, userID int64,
 	if updated != 1 {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
-	entity, err := tx.ImageResult.Query().Where(imageresult.IDEQ(imageUUID), imageresult.DeletedAtIsNil()).Only(ctx)
+	entity, err := tx.ImageResult.Query().Where(imageresult.IDEQ(imageUUID), imageresult.DeletedAtIsNil()).WithProject().Only(ctx)
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
@@ -664,14 +719,6 @@ func (s *ImageTaskStore) DeleteImageResultInProject(ctx context.Context, userID 
 		}
 		return provider.ImageResult{}, err
 	}
-	if _, err := tx.ImageTask.Query().
-		Where(imagetask.IDEQ(entity.TaskID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
-		Only(ctx); err != nil {
-		if repoent.IsNotFound(err) {
-			return provider.ImageResult{}, repoerr.ErrNotFound
-		}
-		return provider.ImageResult{}, err
-	}
 	result := mapImageResultEntity(entity)
 	updated, err := tx.ImageResult.Update().Where(writePredicates...).SetDeletedAt(time.Now().UTC()).Save(ctx)
 	if err != nil {
@@ -749,7 +796,10 @@ func (s *ImageTaskStore) applyAdminGalleryFilters(ctx context.Context, query *re
 
 	taskPredicates := make([]predicate.ImageTask, 0, 8)
 	if prompt := strings.TrimSpace(req.PromptQuery); prompt != "" {
-		taskPredicates = append(taskPredicates, imagetask.PromptContainsFold(prompt))
+		taskPredicates = append(taskPredicates, imagetask.Or(
+			imagetask.PromptTemplateContainsFold(prompt),
+			imagetask.And(imagetask.PromptTemplateIsNil(), imagetask.PromptContainsFold(prompt)),
+		))
 	}
 	if model := strings.TrimSpace(req.ModelQuery); model != "" {
 		taskPredicates = append(taskPredicates, imagetask.Or(imagetask.AbstractModelContainsFold(model), imagetask.RouteModelCodeContainsFold(model)))
@@ -768,7 +818,6 @@ func (s *ImageTaskStore) applyAdminGalleryFilters(ctx context.Context, query *re
 	}
 	if len(taskPredicates) > 0 {
 		taskIDs, err := s.client.ImageTask.Query().
-			Where(imagetask.DeletedAtIsNil()).
 			Where(taskPredicates...).
 			IDs(ctx)
 		if err != nil {
@@ -852,7 +901,7 @@ func (s *ImageTaskStore) ListPublicGallery(ctx context.Context, req domainimaget
 	if err != nil {
 		return domainimagetask.GalleryPage{}, err
 	}
-	entities, err := query.All(ctx)
+	entities, err := query.WithProject().All(ctx)
 	if err != nil {
 		return domainimagetask.GalleryPage{}, err
 	}
@@ -1065,7 +1114,12 @@ func (s *ImageTaskStore) DeleteByID(ctx context.Context, userID int64, taskID st
 		return err
 	}
 	deletedAt := time.Now().UTC()
-	if err := tx.ImageTask.UpdateOneID(entity.ID).SetDeletedAt(deletedAt).Exec(ctx); err != nil {
+	taskDelete := tx.ImageTask.UpdateOneID(entity.ID).
+		SetDeletedAt(deletedAt)
+	if entity.PromptTemplate != nil && strings.TrimSpace(*entity.PromptTemplate) != "" {
+		taskDelete.SetPrompt(*entity.PromptTemplate)
+	}
+	if err := taskDelete.Exec(ctx); err != nil {
 		return err
 	}
 	if _, err := tx.ImageResult.Update().
@@ -1126,12 +1180,13 @@ func (s *ImageTaskStore) AcquireNextQueuedTask(ctx context.Context, owner string
 		return domainimagetask.Task{}, repoerr.ErrNotFound
 	}
 
-	updated, err := tx.ImageTask.Query().Where(imagetask.IDEQ(entity.ID)).Only(ctx)
+	updated, err := tx.ImageTask.Query().Where(imagetask.IDEQ(entity.ID)).WithProject().Only(ctx)
 	if err != nil {
 		return domainimagetask.Task{}, err
 	}
 	results, err := tx.ImageResult.Query().
 		Where(imageresult.TaskIDEQ(entity.ID), imageresult.UserIDEQ(updated.UserID), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Order(repoent.Asc(imageresult.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
@@ -1189,12 +1244,13 @@ func (s *ImageTaskStore) RenewTaskLease(ctx context.Context, taskID, owner strin
 		return domainimagetask.Task{}, repoerr.ErrConflict
 	}
 
-	updated, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID)).Only(ctx)
+	updated, err := tx.ImageTask.Query().Where(imagetask.IDEQ(taskUUID)).WithProject().Only(ctx)
 	if err != nil {
 		return domainimagetask.Task{}, err
 	}
 	results, err := tx.ImageResult.Query().
 		Where(imageresult.TaskIDEQ(taskUUID), imageresult.UserIDEQ(updated.UserID), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Order(repoent.Asc(imageresult.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
@@ -1221,7 +1277,7 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetProgressStage(task.ProgressStage).
 		SetProgressMessage(task.ProgressMessage).
-		SetPrompt(task.Prompt).
+		SetPrompt(persistedTaskPrompt(task)).
 		SetAbstractModel(task.AbstractModel).
 		SetSizeMode(sizeMode).
 		SetAspectRatio(aspectRatio).
@@ -1273,6 +1329,7 @@ func createImageTask(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, ta
 		builder.SetProjectID(parsedProjectID)
 	}
 	setImageTaskCreateArtifactFields(builder, task)
+	setImageTaskCreatePromptFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	}
@@ -1355,7 +1412,7 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetProgressStage(task.ProgressStage).
 		SetProgressMessage(task.ProgressMessage).
-		SetPrompt(task.Prompt).
+		SetPrompt(persistedTaskPrompt(task)).
 		SetAbstractModel(task.AbstractModel).
 		SetSizeMode(sizeMode).
 		SetAspectRatio(aspectRatio).
@@ -1390,6 +1447,7 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
 	setImageTaskUpdateOneArtifactFields(builder, task)
+	setImageTaskUpdateOnePromptFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
@@ -1507,7 +1565,7 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetProgressStage(task.ProgressStage).
 		SetProgressMessage(task.ProgressMessage).
-		SetPrompt(task.Prompt).
+		SetPrompt(persistedTaskPrompt(task)).
 		SetAbstractModel(task.AbstractModel).
 		SetSizeMode(sizeMode).
 		SetAspectRatio(aspectRatio).
@@ -1542,6 +1600,7 @@ func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repo
 		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
 	setImageTaskUpdateArtifactFields(builder, task)
+	setImageTaskUpdatePromptFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
@@ -1644,7 +1703,7 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetStatus(defaultTaskStatus(task.Status)).
 		SetProgressStage(task.ProgressStage).
 		SetProgressMessage(task.ProgressMessage).
-		SetPrompt(task.Prompt).
+		SetPrompt(persistedTaskPrompt(task)).
 		SetAbstractModel(task.AbstractModel).
 		SetSizeMode(sizeMode).
 		SetAspectRatio(aspectRatio).
@@ -1679,6 +1738,7 @@ func updateRecoverableImageTask(ctx context.Context, tx *repoent.Tx, entity *rep
 		SetArtifactLastDiagnostic(artifactDiagnosticsMap(task.ArtifactRecovery)).
 		SetArtifactStorageVersion(task.ArtifactRecovery.StorageVersion)
 	setImageTaskUpdateArtifactFields(builder, task)
+	setImageTaskUpdatePromptFields(builder, task)
 	if task.APIKeyID > 0 {
 		builder.SetAPIKeyID(task.APIKeyID)
 	} else {
@@ -1838,6 +1898,69 @@ func artifactDiagnosticsMap(recovery domainimagetask.ArtifactRecovery) map[strin
 	return decoded
 }
 
+func persistedTaskPrompt(task domainimagetask.Task) string {
+	if strings.TrimSpace(task.PromptTemplate) != "" && isTerminalStatus(task.Status) {
+		return task.PromptTemplate
+	}
+	if task.ExecutionPrompt != "" {
+		return task.ExecutionPrompt
+	}
+	return task.Prompt
+}
+
+func setImageTaskCreatePromptFields(builder *repoent.ImageTaskCreate, task domainimagetask.Task) {
+	if strings.TrimSpace(task.PromptTemplate) == "" {
+		return
+	}
+	builder.SetPromptTemplate(task.PromptTemplate).
+		SetPromptTemplateVersion(task.PromptTemplateVersion).
+		SetPromptBindingSnapshot(promptBindingSnapshotMap(task.PromptBindingSnapshot))
+}
+
+func setImageTaskUpdateOnePromptFields(builder *repoent.ImageTaskUpdateOne, task domainimagetask.Task) {
+	if strings.TrimSpace(task.PromptTemplate) == "" {
+		builder.ClearPromptTemplate().SetPromptTemplateVersion(0).SetPromptBindingSnapshot(map[string]any{})
+		return
+	}
+	builder.SetPromptTemplate(task.PromptTemplate).
+		SetPromptTemplateVersion(task.PromptTemplateVersion).
+		SetPromptBindingSnapshot(promptBindingSnapshotMap(task.PromptBindingSnapshot))
+}
+
+func setImageTaskUpdatePromptFields(builder *repoent.ImageTaskUpdate, task domainimagetask.Task) {
+	if strings.TrimSpace(task.PromptTemplate) == "" {
+		builder.ClearPromptTemplate().SetPromptTemplateVersion(0).SetPromptBindingSnapshot(map[string]any{})
+		return
+	}
+	builder.SetPromptTemplate(task.PromptTemplate).
+		SetPromptTemplateVersion(task.PromptTemplateVersion).
+		SetPromptBindingSnapshot(promptBindingSnapshotMap(task.PromptBindingSnapshot))
+}
+
+func promptBindingSnapshotMap(snapshot domainimagetask.PromptBindingSnapshot) map[string]any {
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return map[string]any{}
+	}
+	decoded := map[string]any{}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return map[string]any{}
+	}
+	return decoded
+}
+
+func decodePromptBindingSnapshot(value map[string]any) (domainimagetask.PromptBindingSnapshot, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return domainimagetask.PromptBindingSnapshot{}, err
+	}
+	var snapshot domainimagetask.PromptBindingSnapshot
+	if err := json.Unmarshal(encoded, &snapshot); err != nil {
+		return domainimagetask.PromptBindingSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
 func decodeArtifactDiagnostics(value map[string]any) (domainimagetask.ArtifactDiagnostic, []domainimagetask.ArtifactDiagnostic) {
 	if _, hasEnvelope := value["last"]; !hasEnvelope {
 		encoded, err := json.Marshal(value)
@@ -1947,54 +2070,57 @@ func imageResultUUID(value string) (uuid.UUID, error) {
 
 func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.ImageResult) (domainimagetask.Task, error) {
 	task := domainimagetask.Task{
-		UserID:               entity.UserID,
-		SourceChannel:        entity.SourceChannel,
-		ID:                   entity.ID.String(),
-		Status:               entity.Status,
-		ProgressStage:        entity.ProgressStage,
-		ProgressMessage:      entity.ProgressMessage,
-		AbstractModel:        entity.AbstractModel,
-		RouteModelCode:       entity.RouteModelCode,
-		RouteModelID:         nullableInt64(entity.RouteModelID),
-		AccountModelID:       nullableInt64(entity.AccountModelID),
-		ModelAccountID:       nullableInt64(entity.ModelAccountID),
-		UpstreamModelCode:    entity.UpstreamModelCode,
-		EffectiveMultiplier:  entity.EffectiveMultiplier,
-		ChargedPoints:        entity.ChargedPoints,
-		TaskType:             entity.TaskType,
-		Prompt:               entity.Prompt,
-		NegativePrompt:       nullableString(entity.NegativePrompt),
-		AspectRatio:          entity.AspectRatio,
-		RequestedSize:        nullableString(entity.RequestedSize),
-		ResolvedWidth:        nullableInt(entity.ResolvedWidth),
-		ResolvedHeight:       nullableInt(entity.ResolvedHeight),
-		SizeMode:             entity.SizeMode,
-		BaseResolution:       entity.BaseResolution,
-		Quality:              entity.Quality,
-		OutputFormat:         entity.OutputFormat,
-		Background:           nullableString(entity.Background),
-		OutputCompression:    entity.OutputCompression,
-		Moderation:           entity.Moderation,
-		ResponseMode:         entity.ResponseMode,
-		SavePolicy:           entity.SavePolicy,
-		OutputImageCount:     entity.RequestedOutputImageCount,
-		ReferenceImageCount:  entity.ReferenceImageCount,
-		ReferenceAssetIDs:    decodeReferenceAssetIDs(entity.RoutingSnapshot),
-		ReferenceStrength:    nullableInt(entity.ReferenceStrength),
-		Seed:                 entity.Seed,
-		EstimatedPoints:      entity.EstimatedPoints,
-		ActualPoints:         entity.ActualPoints,
-		ProviderModelID:      nullableInt64(entity.ProviderModelID),
-		ProviderCost:         entity.ProviderCost,
-		GrossMargin:          entity.GrossMargin,
-		FallbackCount:        entity.FallbackCount,
-		RouteSnapshotVersion: entity.RouteSnapshotVersion,
-		LeaseOwner:           nullableString(entity.LeaseOwner),
-		LeaseExpiresAt:       entity.LeaseExpiresAt,
-		ErrorCode:            nullableString(entity.ErrorCode),
-		ErrorMessage:         nullableString(entity.ErrorMessage),
-		ProviderRequestID:    nullableString(entity.ProviderRequestID),
-		UpstreamSucceededAt:  entity.UpstreamSucceededAt,
+		UserID:                entity.UserID,
+		SourceChannel:         entity.SourceChannel,
+		ID:                    entity.ID.String(),
+		Status:                entity.Status,
+		ProgressStage:         entity.ProgressStage,
+		ProgressMessage:       entity.ProgressMessage,
+		AbstractModel:         entity.AbstractModel,
+		RouteModelCode:        entity.RouteModelCode,
+		RouteModelID:          nullableInt64(entity.RouteModelID),
+		AccountModelID:        nullableInt64(entity.AccountModelID),
+		ModelAccountID:        nullableInt64(entity.ModelAccountID),
+		UpstreamModelCode:     entity.UpstreamModelCode,
+		EffectiveMultiplier:   entity.EffectiveMultiplier,
+		ChargedPoints:         entity.ChargedPoints,
+		TaskType:              entity.TaskType,
+		Prompt:                publicImageTaskPrompt(entity),
+		ExecutionPrompt:       entity.Prompt,
+		PromptTemplate:        nullableString(entity.PromptTemplate),
+		PromptTemplateVersion: entity.PromptTemplateVersion,
+		NegativePrompt:        nullableString(entity.NegativePrompt),
+		AspectRatio:           entity.AspectRatio,
+		RequestedSize:         nullableString(entity.RequestedSize),
+		ResolvedWidth:         nullableInt(entity.ResolvedWidth),
+		ResolvedHeight:        nullableInt(entity.ResolvedHeight),
+		SizeMode:              entity.SizeMode,
+		BaseResolution:        entity.BaseResolution,
+		Quality:               entity.Quality,
+		OutputFormat:          entity.OutputFormat,
+		Background:            nullableString(entity.Background),
+		OutputCompression:     entity.OutputCompression,
+		Moderation:            entity.Moderation,
+		ResponseMode:          entity.ResponseMode,
+		SavePolicy:            entity.SavePolicy,
+		OutputImageCount:      entity.RequestedOutputImageCount,
+		ReferenceImageCount:   entity.ReferenceImageCount,
+		ReferenceAssetIDs:     decodeReferenceAssetIDs(entity.RoutingSnapshot),
+		ReferenceStrength:     nullableInt(entity.ReferenceStrength),
+		Seed:                  entity.Seed,
+		EstimatedPoints:       entity.EstimatedPoints,
+		ActualPoints:          entity.ActualPoints,
+		ProviderModelID:       nullableInt64(entity.ProviderModelID),
+		ProviderCost:          entity.ProviderCost,
+		GrossMargin:           entity.GrossMargin,
+		FallbackCount:         entity.FallbackCount,
+		RouteSnapshotVersion:  entity.RouteSnapshotVersion,
+		LeaseOwner:            nullableString(entity.LeaseOwner),
+		LeaseExpiresAt:        entity.LeaseExpiresAt,
+		ErrorCode:             nullableString(entity.ErrorCode),
+		ErrorMessage:          nullableString(entity.ErrorMessage),
+		ProviderRequestID:     nullableString(entity.ProviderRequestID),
+		UpstreamSucceededAt:   entity.UpstreamSucceededAt,
 		ArtifactRecovery: domainimagetask.ArtifactRecovery{
 			Status:           entity.ArtifactRecoveryStatus,
 			EncryptedPayload: nullableString(entity.ArtifactRecoveryPayload),
@@ -2007,6 +2133,13 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		},
 		CreatedAt: entity.CreatedAt,
 		UpdatedAt: entity.UpdatedAt,
+	}
+	if entity.PromptBindingSnapshot != nil {
+		snapshot, err := decodePromptBindingSnapshot(entity.PromptBindingSnapshot)
+		if err != nil {
+			return domainimagetask.Task{}, err
+		}
+		task.PromptBindingSnapshot = snapshot
 	}
 	if entity.ProjectID != nil {
 		task.ProjectID = entity.ProjectID.String()
@@ -2048,13 +2181,6 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		}
 	}
 	task.Results = mapFallbackResults(resultEntities)
-	for index := range task.Results {
-		task.Results[index].ProjectID = task.ProjectID
-		if task.Project != nil {
-			snapshot := *task.Project
-			task.Results[index].Project = &snapshot
-		}
-	}
 	return task, nil
 }
 
@@ -2219,6 +2345,10 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 	if entity.ProjectID != nil {
 		item.ProjectID = entity.ProjectID.String()
 		item.Project = &domainimagetask.ProjectSnapshot{ID: item.ProjectID}
+		if entity.Edges.Project != nil {
+			item.Project.Name = entity.Edges.Project.Name
+			item.Project.IsDefault = entity.Edges.Project.IsDefault
+		}
 	}
 	if entity.StorageConfigID != nil {
 		item.StorageConfigID = entity.StorageConfigID.String()
@@ -2240,6 +2370,7 @@ func mapImageResultEntity(entity *repoent.ImageResult) provider.ImageResult {
 func (s *ImageTaskStore) loadGalleryImageWithTask(ctx context.Context, imageID uuid.UUID) (*repoent.ImageResult, *repoent.ImageTask, error) {
 	entity, err := s.client.ImageResult.Query().
 		Where(imageresult.IDEQ(imageID), imageresult.DeletedAtIsNil()).
+		WithProject().
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -2248,7 +2379,7 @@ func (s *ImageTaskStore) loadGalleryImageWithTask(ctx context.Context, imageID u
 		return nil, nil, err
 	}
 	taskEntity, err := s.client.ImageTask.Query().
-		Where(imagetask.IDEQ(entity.TaskID), imagetask.DeletedAtIsNil()).
+		Where(imagetask.IDEQ(entity.TaskID)).
 		WithProject().
 		Only(ctx)
 	if err != nil {
@@ -2265,7 +2396,7 @@ func (s *ImageTaskStore) galleryPageFromQuery(ctx context.Context, query *repoen
 	if err != nil {
 		return domainimagetask.GalleryPage{}, err
 	}
-	entities, err := query.Offset((page - 1) * pageSize).Limit(pageSize).All(ctx)
+	entities, err := query.Offset((page - 1) * pageSize).Limit(pageSize).WithProject().All(ctx)
 	if err != nil {
 		return domainimagetask.GalleryPage{}, err
 	}
@@ -2288,7 +2419,7 @@ func (s *ImageTaskStore) galleryImagesFromEntities(ctx context.Context, entities
 	}
 	taskMap := map[uuid.UUID]*repoent.ImageTask{}
 	if len(taskIDs) > 0 {
-		tasks, err := s.client.ImageTask.Query().Where(imagetask.IDIn(taskIDs...), imagetask.DeletedAtIsNil()).WithProject().All(ctx)
+		tasks, err := s.client.ImageTask.Query().Where(imagetask.IDIn(taskIDs...)).WithProject().All(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -2420,10 +2551,10 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 	return domainimagetask.GalleryImage{
 		ID:                entity.ID.String(),
 		TaskID:            entity.TaskID.String(),
-		UserID:            taskEntity.UserID,
+		UserID:            entity.UserID,
 		ProjectID:         item.ProjectID,
-		Project:           projectSnapshotFromTaskEntity(taskEntity),
-		Prompt:            taskEntity.Prompt,
+		Project:           item.Project,
+		Prompt:            publicImageTaskPrompt(taskEntity),
 		AbstractModel:     taskEntity.AbstractModel,
 		RouteModelCode:    taskEntity.RouteModelCode,
 		TaskType:          taskEntity.TaskType,
@@ -2456,6 +2587,16 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		PublishedAt:       entity.PublishedAt,
 		CreatedAt:         entity.CreatedAt,
 	}
+}
+
+func publicImageTaskPrompt(entity *repoent.ImageTask) string {
+	if entity == nil {
+		return ""
+	}
+	if entity.PromptTemplate != nil {
+		return *entity.PromptTemplate
+	}
+	return entity.Prompt
 }
 
 func projectSnapshotFromTaskEntity(entity *repoent.ImageTask) *domainimagetask.ProjectSnapshot {
@@ -2594,7 +2735,12 @@ func defaultPositive(value, fallback int) int {
 }
 
 func isTerminalStatus(status string) bool {
-	return status == domainimagetask.StatusSucceeded || status == domainimagetask.StatusFailed
+	switch status {
+	case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted:
+		return true
+	default:
+		return false
+	}
 }
 
 func nullableString(value *string) string {

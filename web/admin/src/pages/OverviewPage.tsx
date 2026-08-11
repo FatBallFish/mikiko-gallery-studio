@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AdminCallDistribution, AdminDashboardOperations, AdminMetric, AdminUser, AuditLog, ProviderHealth, ReadinessReport } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, MetricStrip, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, MetricStrip, PageHeader, RefreshIconButton } from '../components'
 import { adminButton, adminPage, adminSurface } from '../ui/classes'
 import type { ColumnDef } from '../ui/dataTable'
 import { DataTable } from '../ui/dataTable'
 import { overviewReadinessRows, type OverviewReadinessRow } from './overviewReadinessRows'
 import { overviewRecentUserRows } from './overviewRows'
+import { createLatestListRequestGuard } from './listRefresh'
 
 type DashboardData = {
   operations: AdminDashboardOperations
@@ -59,30 +60,36 @@ export function OverviewPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = async () => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
       const [dashboard, users, readiness] = await Promise.all([adminApi.dashboard(), adminApi.listUsers(), adminApi.getReadiness()])
+      if (!requestGuard.isCurrent(request)) return
       setData({
         ...dashboard,
         readiness,
         users,
       })
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '无法载入总览')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
   useEffect(() => {
     void load()
+    return () => requestGuard.invalidate()
   }, [])
 
-  if (loading) return <LoadingBlock />
-  if (error) return <ErrorBlock message={error} onRetry={load} />
+  if (loading && !data) return <LoadingBlock />
+  if (error && !data) return <ErrorBlock message={error} onRetry={load} />
   if (!data) return <EmptyBlock title="暂无总览数据" detail="后台接口未返回指标。" />
 
   const readinessRisks = overviewReadinessRows(data.readiness.checks)
@@ -91,7 +98,12 @@ export function OverviewPage() {
 
   return (
     <section className={overviewClasses.content}>
-      <PageHeader title="运营总览" description="今日生成、积分消耗、待处理风险与关键运营明细。" />
+      <PageHeader
+        title="运营总览"
+        description="今日生成、积分消耗、待处理风险与关键运营明细。"
+        secondaryActions={<RefreshIconButton label="刷新运营总览" refreshing={loading} onClick={() => void load()} />}
+      />
+      {error ? <InlineFeedback tone="danger" message={`总览刷新失败：${error}`} /> : null}
       <MetricStrip metrics={metricRows} />
       <OperationsInsightPanel users={data.users} operations={data.operations} distribution={data.call_distribution} queue={data.queue} risks={readinessRisks} />
       <section className="grid gap-4" aria-label="运营支持信息">

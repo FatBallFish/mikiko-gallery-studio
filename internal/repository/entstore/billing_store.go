@@ -28,6 +28,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/redeemcode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
@@ -129,6 +130,58 @@ func (s *BillingStore) ListPlans(ctx context.Context, req domainbilling.Subscrip
 		items = append(items, mapSubscriptionPlan(plan))
 	}
 	return items, nil
+}
+
+func (s *BillingStore) ListPlansPage(ctx context.Context, req domainbilling.SubscriptionPlanListRequest) (domainbilling.SubscriptionPlanPage, error) {
+	if err := s.ensureDefaultPlans(ctx); err != nil {
+		return domainbilling.SubscriptionPlanPage{}, err
+	}
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+	query := s.client.SubscriptionPlan.Query()
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status == "" {
+		query = query.Where(subscriptionplan.StatusNEQ(domainbilling.SubscriptionPlanStatusArchived))
+	} else if status != "all" {
+		query = query.Where(subscriptionplan.StatusEQ(status))
+	}
+	if planType := strings.ToLower(strings.TrimSpace(req.PlanType)); planType != "" && planType != "all" {
+		query = query.Where(subscriptionplan.PlanTypeEQ(planType))
+	}
+	if search := strings.TrimSpace(req.Query); search != "" {
+		query = query.Where(subscriptionplan.Or(subscriptionplan.PlanCodeContainsFold(search), subscriptionplan.PlanNameContainsFold(search)))
+	}
+	total, err := query.Count(ctx)
+	if err != nil {
+		return domainbilling.SubscriptionPlanPage{}, err
+	}
+	field := subscriptionplan.FieldSortOrder
+	switch strings.ToLower(strings.TrimSpace(req.SortBy)) {
+	case "price_cny":
+		field = subscriptionplan.FieldPriceCny
+	case "points":
+		field = subscriptionplan.FieldPoints
+	case "sort_order", "":
+		field = subscriptionplan.FieldSortOrder
+	}
+	order := repoent.Asc(field)
+	if strings.EqualFold(strings.TrimSpace(req.SortOrder), "desc") {
+		order = repoent.Desc(field)
+	}
+	plans, err := query.Order(order, repoent.Asc(subscriptionplan.FieldID)).
+		Offset((req.Page - 1) * req.PageSize).Limit(req.PageSize).All(ctx)
+	if err != nil {
+		return domainbilling.SubscriptionPlanPage{}, err
+	}
+	items := make([]domainbilling.SubscriptionPlan, 0, len(plans))
+	for _, plan := range plans {
+		items = append(items, mapSubscriptionPlan(plan))
+	}
+	return domainbilling.SubscriptionPlanPage{Items: items, Page: req.Page, PageSize: req.PageSize, Total: total}, nil
 }
 
 func (s *BillingStore) CreatePlan(ctx context.Context, req domainbilling.CreateSubscriptionPlanRequest) (domainbilling.SubscriptionPlan, error) {
@@ -352,11 +405,97 @@ func (s *BillingStore) ListOrders(ctx context.Context, req domainbilling.ListOrd
 	if err != nil {
 		return domainbilling.PaymentOrderPage{}, err
 	}
-	items := make([]domainbilling.PaymentOrder, 0, len(orders))
-	for _, order := range orders {
-		items = append(items, s.mapPaymentOrder(ctx, order))
+	items, err := s.mapPaymentOrders(ctx, orders)
+	if err != nil {
+		return domainbilling.PaymentOrderPage{}, err
 	}
 	return domainbilling.PaymentOrderPage{Items: items, Page: req.Page, PageSize: req.PageSize, Total: total}, nil
+}
+
+func (s *BillingStore) ListAdminOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.AdminPaymentOrderPage, error) {
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+	query := s.client.PaymentOrder.Query()
+	if req.UserID > 0 {
+		query = query.Where(paymentorder.UserIDEQ(req.UserID))
+	}
+	if value := strings.TrimSpace(req.Status); value != "" {
+		query = query.Where(paymentorder.StatusEQ(value))
+	}
+	if value := strings.TrimSpace(req.OrderNo); value != "" {
+		query = query.Where(paymentorder.OrderNoContainsFold(value))
+	}
+	if value := strings.TrimSpace(req.VisibleMethod); value != "" {
+		query = query.Where(paymentorder.VisibleMethodEQ(strings.ToLower(value)))
+	}
+	if value := strings.TrimSpace(req.ProviderType); value != "" {
+		query = query.Where(paymentorder.ProviderTypeEQ(strings.ToLower(value)))
+	}
+	if value := strings.TrimSpace(req.PurchaseType); value != "" {
+		query = query.Where(paymentorder.PurchaseTypeEQ(strings.ToLower(value)))
+	}
+	if search := strings.TrimSpace(req.Query); search != "" {
+		users, err := s.client.User.Query().Where(user.Or(user.EmailContainsFold(search), user.NicknameContainsFold(search))).IDs(ctx)
+		if err != nil {
+			return domainbilling.AdminPaymentOrderPage{}, err
+		}
+		userIDs := make([]int64, 0, len(users)+1)
+		for _, id := range users {
+			userIDs = append(userIDs, int64(id))
+		}
+		if id, err := strconv.ParseInt(search, 10, 64); err == nil && id > 0 {
+			userIDs = append(userIDs, id)
+		}
+		predicates := []predicate.PaymentOrder{
+			paymentorder.OrderNoContainsFold(search),
+			paymentorder.TradeNoContainsFold(search),
+		}
+		if len(userIDs) > 0 {
+			predicates = append(predicates, paymentorder.UserIDIn(userIDs...))
+		}
+		query = query.Where(paymentorder.Or(predicates...))
+	}
+	total, err := query.Count(ctx)
+	if err != nil {
+		return domainbilling.AdminPaymentOrderPage{}, err
+	}
+	orders, err := query.Order(repoent.Desc(paymentorder.FieldID)).Offset((req.Page - 1) * req.PageSize).Limit(req.PageSize).All(ctx)
+	if err != nil {
+		return domainbilling.AdminPaymentOrderPage{}, err
+	}
+	baseItems, err := s.mapPaymentOrders(ctx, orders)
+	if err != nil {
+		return domainbilling.AdminPaymentOrderPage{}, err
+	}
+	userIDs := make([]int, 0, len(orders))
+	for _, order := range orders {
+		userIDs = append(userIDs, int(order.UserID))
+	}
+	users, err := s.client.User.Query().Where(user.IDIn(userIDs...)).All(ctx)
+	if err != nil {
+		return domainbilling.AdminPaymentOrderPage{}, err
+	}
+	usersByID := make(map[int64]*repoent.User, len(users))
+	for _, entity := range users {
+		usersByID[int64(entity.ID)] = entity
+	}
+	items := make([]domainbilling.AdminPaymentOrder, 0, len(baseItems))
+	for _, order := range baseItems {
+		item := domainbilling.AdminPaymentOrder{
+			PaymentOrder: order,
+			TotalPoints:  mustDecimal(order.Points).Add(mustDecimal(order.BonusPoints)).Round(s.scale).StringFixed(s.scale),
+		}
+		if entity := usersByID[order.UserID]; entity != nil {
+			item.UserEmail = entity.Email
+			item.UserNickname = entity.Nickname
+		}
+		items = append(items, item)
+	}
+	return domainbilling.AdminPaymentOrderPage{Items: items, Page: req.Page, PageSize: req.PageSize, Total: total}, nil
 }
 
 func (s *BillingStore) ListWebhookEvents(ctx context.Context, page, pageSize int) (domainbilling.PaymentWebhookEventPage, error) {
@@ -609,6 +748,10 @@ func (s *BillingStore) CreateOrder(ctx context.Context, req domainbilling.Create
 		return domainbilling.PaymentOrder{}, errs.BadRequest("provider is required")
 	}
 	now := time.Now().UTC()
+	expiresAt := req.ExpiresAt
+	if expiresAt.IsZero() {
+		expiresAt = now.Add(15 * time.Minute)
+	}
 	orderNo := strings.TrimSpace(req.OrderNo)
 	if orderNo == "" {
 		orderNo = fmt.Sprintf("PGO-%d-%06d", now.Unix(), time.Now().Nanosecond()%1000000)
@@ -636,7 +779,7 @@ func (s *BillingStore) CreateOrder(ctx context.Context, req domainbilling.Create
 		SetPoints(plan.Points).
 		SetBonusPoints(plan.BonusPoints).
 		SetCreditExpiryEnabled(plan.CreditExpiryEnabled).
-		SetExpiresAt(now.Add(15 * time.Minute)).
+		SetExpiresAt(expiresAt).
 		SetProviderPayload(providerPayload)
 	if plan.CreditExpiryEnabled {
 		create.SetCreditValidDays(plan.DurationDays)
@@ -692,6 +835,10 @@ func (s *BillingStore) CreateCustomAmountOrder(ctx context.Context, req domainbi
 		return domainbilling.PaymentOrder{}, errs.BadRequest("provider is required")
 	}
 	now := time.Now().UTC()
+	expiresAt := req.ExpiresAt
+	if expiresAt.IsZero() {
+		expiresAt = now.Add(15 * time.Minute)
+	}
 	orderNo := strings.TrimSpace(req.OrderNo)
 	if orderNo == "" {
 		orderNo = fmt.Sprintf("PGO-%d-%06d", now.Unix(), time.Now().Nanosecond()%1000000)
@@ -721,7 +868,7 @@ func (s *BillingStore) CreateCustomAmountOrder(ctx context.Context, req domainbi
 		SetAmountCny(amount.Round(s.scale).StringFixed(s.scale)).
 		SetPoints(points.StringFixed(s.scale)).
 		SetBonusPoints(decimal.Zero.StringFixed(s.scale)).
-		SetExpiresAt(now.Add(15 * time.Minute)).
+		SetExpiresAt(expiresAt).
 		SetProviderPayload(providerPayload)
 	if len(req.PaymentDisplay) > 0 {
 		create.SetPaymentDisplay(cloneMap(req.PaymentDisplay))
@@ -746,6 +893,109 @@ func (s *BillingStore) CreateCustomAmountOrder(ctx context.Context, req domainbi
 		return domainbilling.PaymentOrder{}, err
 	}
 	return s.mapPaymentOrder(ctx, order), nil
+}
+
+func (s *BillingStore) ExpirePendingOrders(ctx context.Context, now time.Time, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+	ids, err := s.client.PaymentOrder.Query().
+		Where(paymentorder.StatusEQ("pending"), paymentorder.ExpiresAtLTE(now)).
+		Order(repoent.Asc(paymentorder.FieldExpiresAt), repoent.Asc(paymentorder.FieldID)).
+		Limit(limit).
+		IDs(ctx)
+	if err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	return s.client.PaymentOrder.Update().
+		Where(
+			paymentorder.IDIn(ids...),
+			paymentorder.StatusEQ("pending"),
+			paymentorder.ExpiresAtLTE(now),
+		).
+		SetStatus("expired").
+		SetClosedAt(now).
+		SetUpdatedAt(now).
+		Save(ctx)
+}
+
+func (s *BillingStore) ExpirePendingOrdersForList(ctx context.Context, now time.Time, req domainbilling.ListOrdersRequest) (int, error) {
+	status := strings.TrimSpace(req.Status)
+	if status != "" && status != "pending" && status != "expired" {
+		return 0, nil
+	}
+	predicates := []predicate.PaymentOrder{
+		paymentorder.StatusEQ("pending"),
+		paymentorder.ExpiresAtLTE(now),
+	}
+	if req.UserID > 0 {
+		predicates = append(predicates, paymentorder.UserIDEQ(req.UserID))
+	}
+	if value := strings.TrimSpace(req.OrderNo); value != "" {
+		predicates = append(predicates, paymentorder.OrderNoContainsFold(value))
+	}
+	if value := strings.TrimSpace(req.VisibleMethod); value != "" {
+		predicates = append(predicates, paymentorder.VisibleMethodEQ(strings.ToLower(value)))
+	}
+	if value := strings.TrimSpace(req.ProviderType); value != "" {
+		predicates = append(predicates, paymentorder.ProviderTypeEQ(strings.ToLower(value)))
+	}
+	if value := strings.TrimSpace(req.PurchaseType); value != "" {
+		predicates = append(predicates, paymentorder.PurchaseTypeEQ(strings.ToLower(value)))
+	}
+	if search := strings.TrimSpace(req.Query); search != "" {
+		users, err := s.client.User.Query().Where(user.Or(user.EmailContainsFold(search), user.NicknameContainsFold(search))).IDs(ctx)
+		if err != nil {
+			return 0, err
+		}
+		userIDs := make([]int64, 0, len(users)+1)
+		for _, id := range users {
+			userIDs = append(userIDs, int64(id))
+		}
+		if id, err := strconv.ParseInt(search, 10, 64); err == nil && id > 0 {
+			userIDs = append(userIDs, id)
+		}
+		searchPredicates := []predicate.PaymentOrder{
+			paymentorder.OrderNoContainsFold(search),
+			paymentorder.TradeNoContainsFold(search),
+		}
+		if len(userIDs) > 0 {
+			searchPredicates = append(searchPredicates, paymentorder.UserIDIn(userIDs...))
+		}
+		predicates = append(predicates, paymentorder.Or(searchPredicates...))
+	}
+	ids, err := s.client.PaymentOrder.Query().
+		Where(predicates...).
+		Order(repoent.Asc(paymentorder.FieldID)).
+		Limit(domainbilling.PaymentOrderLazyExpiryBatchSize).
+		IDs(ctx)
+	if err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	return s.client.PaymentOrder.Update().
+		Where(
+			paymentorder.IDIn(ids...),
+			paymentorder.StatusEQ("pending"),
+			paymentorder.ExpiresAtLTE(now),
+		).
+		SetStatus("expired").
+		SetClosedAt(now).
+		SetUpdatedAt(now).
+		Save(ctx)
+}
+
+func (s *BillingStore) ExpirePendingOrder(ctx context.Context, now time.Time, orderID int64) (bool, error) {
+	updated, err := s.client.PaymentOrder.Update().
+		Where(
+			paymentorder.IDEQ(int(orderID)),
+			paymentorder.StatusEQ("pending"),
+			paymentorder.ExpiresAtLTE(now),
+		).
+		SetStatus("expired").
+		SetClosedAt(now).
+		SetUpdatedAt(now).
+		Save(ctx)
+	return updated > 0, err
 }
 
 func (s *BillingStore) InitializePaymentOrder(ctx context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error) {
@@ -1226,7 +1476,7 @@ func (s *BillingStore) MarkOrderPaid(ctx context.Context, req domainbilling.Mark
 			}
 			return s.mapPaymentOrder(ctx, order), nil
 		}
-		if order.Status != "pending" {
+		if !billingservice.PaymentSuccessCanRecoverStatus(order.Status) {
 			return domainbilling.PaymentOrder{}, errs.New(http.StatusConflict, errs.CodeConflict, "payment order cannot transition to paid")
 		}
 		now := time.Now().UTC()
@@ -1241,6 +1491,18 @@ func (s *BillingStore) MarkOrderPaid(ctx context.Context, req domainbilling.Mark
 			return domainbilling.PaymentOrder{}, err
 		}
 		if _, err := s.grantOrderCredits(ctx, tx, order); err != nil {
+			return domainbilling.PaymentOrder{}, err
+		}
+		ledger, err := tx.PointLedger.Query().
+			Where(pointledger.IdempotencyKeyEQ("order:" + order.OrderNo + ":paid")).
+			Only(ctx)
+		if err != nil {
+			return domainbilling.PaymentOrder{}, err
+		}
+		if _, err := tx.PaymentOrder.UpdateOneID(order.ID).
+			SetLedgerID(int64(ledger.ID)).
+			ClearClosedAt().
+			Save(ctx); err != nil {
 			return domainbilling.PaymentOrder{}, err
 		}
 		updated, err := tx.PaymentOrder.Query().Where(paymentorder.IDEQ(order.ID)).Only(ctx)
@@ -3058,6 +3320,15 @@ func boolString(ok bool, yes string, no string) string {
 }
 
 func (s *BillingStore) mapPaymentOrder(ctx context.Context, order *repoent.PaymentOrder) domainbilling.PaymentOrder {
+	item := s.mapPaymentOrderWithoutPlan(order)
+	if plan, err := s.client.SubscriptionPlan.Query().Where(subscriptionplan.IDEQ(int(order.PlanID))).Only(ctx); err == nil {
+		item.PlanCode = plan.PlanCode
+		item.PlanName = plan.PlanName
+	}
+	return item
+}
+
+func (s *BillingStore) mapPaymentOrderWithoutPlan(order *repoent.PaymentOrder) domainbilling.PaymentOrder {
 	item := domainbilling.PaymentOrder{
 		ID:                  int64(order.ID),
 		OrderNo:             order.OrderNo,
@@ -3110,11 +3381,38 @@ func (s *BillingStore) mapPaymentOrder(ctx context.Context, order *repoent.Payme
 	if order.FailureReason != nil {
 		item.FailureReason = *order.FailureReason
 	}
-	if plan, err := s.client.SubscriptionPlan.Query().Where(subscriptionplan.IDEQ(int(order.PlanID))).Only(ctx); err == nil {
-		item.PlanCode = plan.PlanCode
-		item.PlanName = plan.PlanName
-	}
 	return item
+}
+
+func (s *BillingStore) mapPaymentOrders(ctx context.Context, orders []*repoent.PaymentOrder) ([]domainbilling.PaymentOrder, error) {
+	planIDs := make([]int, 0, len(orders))
+	for _, order := range orders {
+		if order.PlanID > 0 {
+			planIDs = append(planIDs, int(order.PlanID))
+		}
+	}
+	plans := make([]*repoent.SubscriptionPlan, 0, len(planIDs))
+	if len(planIDs) > 0 {
+		var err error
+		plans, err = s.client.SubscriptionPlan.Query().Where(subscriptionplan.IDIn(planIDs...)).All(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	plansByID := make(map[int64]*repoent.SubscriptionPlan, len(plans))
+	for _, plan := range plans {
+		plansByID[int64(plan.ID)] = plan
+	}
+	items := make([]domainbilling.PaymentOrder, 0, len(orders))
+	for _, order := range orders {
+		item := s.mapPaymentOrderWithoutPlan(order)
+		if plan := plansByID[order.PlanID]; plan != nil {
+			item.PlanCode = plan.PlanCode
+			item.PlanName = plan.PlanName
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func paymentOrderProviderPayload(purchaseType, visibleMethod, providerType string, providerInstanceID int64, paymentDisplay map[string]any) map[string]any {

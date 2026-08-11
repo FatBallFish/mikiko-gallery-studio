@@ -22,6 +22,7 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
+	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
@@ -147,6 +148,7 @@ func TestCreateTaskPersistsNormalizationFailureInResolvedDefaultProject(t *testi
 
 type fakeAssetLoader struct {
 	inputs map[string]provider.ImageInput
+	assets map[string]domainassets.ReferenceAsset
 	calls  []string
 }
 
@@ -157,6 +159,66 @@ func (f *fakeAssetLoader) LoadInput(userID int64, assetID string) (provider.Imag
 		return provider.ImageInput{}, errors.New("asset not found")
 	}
 	return input, nil
+}
+
+func (f *fakeAssetLoader) GetManyWithContext(_ context.Context, userID int64, assetIDs []string) ([]domainassets.ReferenceAsset, error) {
+	assets := make([]domainassets.ReferenceAsset, 0, len(assetIDs))
+	for _, assetID := range assetIDs {
+		asset, ok := f.assets[assetID]
+		if !ok {
+			return nil, errs.New(404, errs.CodeNotFound, "reference asset not found")
+		}
+		assets = append(assets, asset)
+	}
+	return assets, nil
+}
+
+func TestCreateTaskResolvesPromptTemplateWithoutExposingVariableValues(t *testing.T) {
+	store := imagetask.NewMemoryStore()
+	assets := &fakeAssetLoader{assets: map[string]domainassets.ReferenceAsset{
+		"style-id":   {ID: "style-id", Name: "风格"},
+		"subject-id": {ID: "subject-id", Name: "主体"},
+	}}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndRouter(taskTestConfig(), nil, store, assets, nil, nil)
+	created, err := svc.CreateTask(t.Context(), domainimagetask.CreateRequest{
+		TaskID: "50550550-5505-4505-8505-505505505505", UserID: 505, AbstractModel: "plus", TaskType: "image_edit",
+		Prompt: "让 {{@主体}} 穿着 {{$服装}}，保留 \\{{@字面量}}", SizeMode: "auto", OutputImageCount: 1,
+		ReferenceImageCount: 2, ReferenceAssetIDs: []string{"style-id", "subject-id"},
+		ReferenceBindings: []domainimagetask.PromptReferenceInput{{Name: "主体", AssetID: "subject-id"}},
+		PromptVariables:   []domainimagetask.PromptVariableInput{{Name: "服装", Value: "蓝色风衣"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if created.Prompt != "让 {{@主体}} 穿着 {{$服装}}，保留 \\{{@字面量}}" || strings.Contains(created.Prompt, "蓝色风衣") {
+		t.Fatalf("public prompt = %q", created.Prompt)
+	}
+	if created.ExecutionPrompt != "让 图片2 穿着 蓝色风衣，保留 {{@字面量}}" {
+		t.Fatalf("execution prompt = %q", created.ExecutionPrompt)
+	}
+	if created.PromptTemplateVersion != 1 || created.PromptTemplate != created.Prompt {
+		t.Fatalf("template metadata = version %d template %q", created.PromptTemplateVersion, created.PromptTemplate)
+	}
+	if len(created.PromptBindingSnapshot.References) != 1 || created.PromptBindingSnapshot.References[0].Index != 2 || len(created.PromptBindingSnapshot.VariableNames) != 1 {
+		t.Fatalf("binding snapshot = %#v", created.PromptBindingSnapshot)
+	}
+	loaded, err := store.GetByID(t.Context(), 505, created.ID)
+	if err != nil || loaded.ExecutionPrompt != created.ExecutionPrompt || strings.Contains(loaded.Prompt, "蓝色风衣") {
+		t.Fatalf("persisted task = %#v err=%v", loaded, err)
+	}
+}
+
+func TestCreateTaskRejectsStalePromptReferenceBinding(t *testing.T) {
+	assets := &fakeAssetLoader{assets: map[string]domainassets.ReferenceAsset{"asset-id": {ID: "asset-id", Name: "已改名"}}}
+	svc := imagetask.NewServiceWithProvidersStoreAssetsBillingAndRouter(taskTestConfig(), nil, imagetask.NewMemoryStore(), assets, nil, nil)
+	_, err := svc.CreateTask(t.Context(), domainimagetask.CreateRequest{
+		UserID: 506, AbstractModel: "plus", TaskType: "image_edit", Prompt: "使用 {{@主体}}", SizeMode: "auto", OutputImageCount: 1,
+		ReferenceImageCount: 1, ReferenceAssetIDs: []string{"asset-id"}, ReferenceBindings: []domainimagetask.PromptReferenceInput{{Name: "主体", AssetID: "asset-id"}},
+	})
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.StatusCode != 409 || appErr.Code != "PROMPT_TEMPLATE_STALE" || appErr.Details["rule"] != "reference_name_changed" {
+		t.Fatalf("error = %#v", err)
+	}
 }
 
 type fakeProvider struct {
@@ -1040,8 +1102,8 @@ func TestVisibleRouteCapabilityEstimateAndCreateAcceptSameRatioRequests(t *testi
 		wantCode string
 	}{
 		{name: "common preset", ratio: "1:1"},
-		{name: "preset absent from intersection", ratio: "16:9", wantCode: modelhub.CodeInvalidAspectRatio},
-		{name: "custom disabled by intersection", ratio: "7:5", wantCode: modelhub.CodeInvalidAspectRatio},
+		{name: "preset absent from intersection", ratio: "16:9", wantCode: errs.CodeImageCapabilityMismatch},
+		{name: "custom disabled by intersection", ratio: "7:5", wantCode: errs.CodeImageCapabilityMismatch},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -26,7 +26,6 @@ import type {
   MediaAccessPurpose,
   NormalLoginResponse,
   PageResult,
-  PaymentOrder,
 	Project,
   PromptOptimizationEstimate,
   PromptOptimizationResult,
@@ -221,14 +220,20 @@ export function buildCreateTaskWireRequest(req: CreateTaskRequest): { body: Back
   return {
     body: {
       ...estimateFields,
-	  ...(req.project_id ? { project_id: req.project_id } : {}),
-      prompt: req.negative_prompt ? `${req.prompt}\n\nNegative prompt: ${req.negative_prompt}` : req.prompt,
+      ...(req.project_id ? { project_id: req.project_id } : {}),
+      prompt: req.prompt,
       reference_asset_ids: req.reference_asset_ids ?? [],
+      ...(req.reference_bindings?.length ? { reference_bindings: req.reference_bindings } : {}),
+      ...(req.prompt_variables?.length ? { prompt_variables: req.prompt_variables } : {}),
       response_mode: 'async',
       ...(req.capability_version ? { capability_version: req.capability_version } : {}),
     },
     headers: req.idempotency_key ? { 'Idempotency-Key': req.idempotency_key } : {},
   }
+}
+
+export function buildGalleryReferenceImportRequest(galleryImageIds: string[]) {
+  return { gallery_image_ids: galleryImageIds }
 }
 
 export function toEstimate(raw: any, req?: EstimateRequest): EstimateResult {
@@ -351,6 +356,11 @@ function normalizeTaskCapability(source: unknown): CapabilityTaskOptions {
 	return result
 }
 
+function minimumDisplayPoints(prices: Array<{ charged_points: string }>) {
+  const values = prices.map((price) => Number(price.charged_points)).filter(Number.isFinite)
+  return values.length ? Math.min(...values).toFixed(2) : undefined
+}
+
 export function normalizeCapabilities(raw: any): Capability {
   const models = pick<any[]>(raw, 'model_groups', 'ModelGroups', 'abstract_models', 'AbstractModels', 'models', 'Models', 'items', 'Items') ?? []
   const normalizedModels: Capability['model_groups'] = models.flatMap((item: any) => {
@@ -394,6 +404,7 @@ export function normalizeCapabilities(raw: any): Capability {
       max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
       max_reference_image_count: maxReference,
       effective_multiplier: pick<string>(item, 'effective_multiplier', 'EffectiveMultiplier'),
+      minimum_points: pick<string>(item, 'minimum_points', 'MinimumPoints') ?? minimumDisplayPoints(prices),
       prices,
       supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.includes('image_edit'))),
       display_points: pick<string>(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,
@@ -483,10 +494,10 @@ export const userApi = {
   },
   listPlans: async () => (await sharedApiClient.request<{ items: BillingPlan[] }>(API_PATHS.agent.plans)).items ?? [],
   getSubscription: async () => (await sharedApiClient.request<{ item: Subscription | null }>(API_PATHS.agent.subscription)).item,
-  listOrders: async (page = 1, page_size = 20) => normalizePage<PaymentOrder>(await sharedApiClient.request(API_PATHS.agent.orders, { query: { page, page_size } })),
-  createOrder: (plan_code: string, provider = 'alipay') => sharedApiClient.request<PaymentOrder>(API_PATHS.agent.orders, { method: 'POST', body: { plan_code, provider } }),
-  getOrder: (order_id: string | number) => sharedApiClient.request<PaymentOrder>(API_PATHS.agent.orderDetail, { pathParams: { order_id } }),
-  cancelOrder: (order_id: string | number) => sharedApiClient.request<PaymentOrder>(API_PATHS.agent.orderCancel, { method: 'POST', pathParams: { order_id } }),
+  listOrders: async (page = 1, page_size = 20) => normalizePage<CashierOrder>(await sharedApiClient.request(API_PATHS.agent.orders, { query: { page, page_size } })),
+  createOrder: (plan_code: string, provider = 'alipay') => sharedApiClient.request<CashierOrder>(API_PATHS.agent.orders, { method: 'POST', body: { plan_code, provider } }),
+  getOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.orderDetail, { pathParams: { order_id } }),
+  cancelOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.orderCancel, { method: 'POST', pathParams: { order_id } }),
   getCashierOptions: () => sharedApiClient.request<CashierOptions>(API_PATHS.agent.cashierOptions),
   listCashierOrders: async (page = 1, page_size = 20) => normalizePage<CashierOrder>(await sharedApiClient.request(API_PATHS.agent.cashierOrders, { query: { page, page_size } })),
   createCashierOrder: (input: CreateCashierOrderRequest, idempotencyKey: string = crypto.randomUUID()) =>
@@ -513,15 +524,16 @@ export const userApi = {
     return toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssets, { method: 'POST', formData }))
   },
   listReferenceAssets: async () => [] as ReferenceAsset[],
-  importReferenceAssetsFromGallery: async (galleryImageIds: string[], projectID?: string) => {
+  importReferenceAssetsFromGallery: async (galleryImageIds: string[]) => {
     const response = await sharedApiClient.request<{ items?: any[]; assets?: any[]; references?: any[] } | any[]>(API_PATHS.agent.importReferenceAssetsFromGallery, {
       method: 'POST',
-	  body: { gallery_image_ids: galleryImageIds, project_id: projectID },
+      body: buildGalleryReferenceImportRequest(galleryImageIds),
     })
     const items = Array.isArray(response) ? response : response.items ?? response.assets ?? response.references ?? []
     return items.map(toReferenceAsset)
   },
   getReferenceAsset: async (asset_id: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { pathParams: { asset_id } })),
+  renameReferenceAsset: async (asset_id: string, name: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { method: 'PATCH', pathParams: { asset_id }, body: { name } })),
   refreshReferenceAssetAccess: (asset_id: string, purpose: MediaAccessPurpose = 'preview') =>
     sharedApiClient.request<MediaAccessProjection>(API_PATHS.agent.referenceAssetAccess, { pathParams: { asset_id }, query: { purpose } }),
   refreshImageAccess: (image_id: string, purpose: MediaAccessPurpose = 'preview') =>

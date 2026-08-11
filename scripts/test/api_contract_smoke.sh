@@ -946,7 +946,7 @@ import os
 import sys
 
 data = json.loads(os.environ["JSON"])
-status, amount_cny, points, expect_ledger = sys.argv[1:]
+status, amount_cny, points, _expect_ledger = sys.argv[1:]
 item = data.get("data", {})
 if item.get("status") != status:
     raise SystemExit(f"unexpected order status: want {status}, got {item!r}")
@@ -954,11 +954,8 @@ if amount_cny and item.get("amount_cny") != amount_cny:
     raise SystemExit(f"unexpected order amount: want {amount_cny}, got {item!r}")
 if points and item.get("points") != points:
     raise SystemExit(f"unexpected order points: want {points}, got {item!r}")
-ledger_id = item.get("ledger_id") or 0
-if expect_ledger == "yes" and not ledger_id:
-    raise SystemExit(f"expected ledger id on order: {item!r}")
-if expect_ledger == "no" and ledger_id:
-    raise SystemExit(f"expected no ledger id on order: {item!r}")
+if "ledger_id" in item:
+    raise SystemExit(f"public cashier order exposed internal ledger id: {item!r}")
 print(item.get("id", "matched"))
 PY
 }
@@ -1855,10 +1852,9 @@ cashier_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \
 ORDER_ID="$(assert_json_field "$cashier_order_body" "data.id")"
 [[ "$(assert_json_field "$cashier_order_body" "data.status")" == "pending" ]]
 
-mock_pay_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${ORDER_ID}/mock-pay" \
-  -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$mock_pay_body" "data.status")" == "completed" ]]
-assert_json_field "$mock_pay_body" "data.ledger_id" >/dev/null
+	mock_pay_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${ORDER_ID}/mock-pay" \
+	  -H "Authorization: Bearer $ACCESS_TOKEN")"
+	[[ "$(assert_json_field "$mock_pay_body" "data.status")" == "completed" ]]
 
 recharged_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$recharged_balance_body" "data.subscription_points")" == "100.00000" ]]
@@ -2339,7 +2335,8 @@ sync_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \
   --data '{"purchase_type":"custom_amount","amount_cny":"10.00000","visible_method":"mock"}')"
 SYNC_ORDER_ID="$(assert_json_field "$sync_order_body" "data.id")"
 assert_cashier_order_state "$sync_order_body" "pending" "10.00000" "20.00000" "no" >/dev/null
-[[ "$(assert_json_field "$sync_order_body" "data.provider_instance_id")" == "$SYNC_PROVIDER_INSTANCE_ID" ]]
+sync_order_admin_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orders/${SYNC_ORDER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$sync_order_admin_body" "data.provider_instance_id")" == "$SYNC_PROVIDER_INSTANCE_ID" ]]
 
 sync_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${SYNC_ORDER_ID}/sync" \
   -H "Authorization: Bearer $ADMIN_TOKEN")"
@@ -2433,7 +2430,8 @@ round_robin_order_a_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orde
   --data '{"purchase_type":"custom_amount","amount_cny":"10.00000","visible_method":"mock"}')"
 ROUND_ROBIN_ORDER_A_ID="$(assert_json_field "$round_robin_order_a_body" "data.id")"
 assert_cashier_order_state "$round_robin_order_a_body" "pending" "10.00000" "20.00000" "no" >/dev/null
-[[ "$(assert_json_field "$round_robin_order_a_body" "data.provider_instance_id")" == "$ROUND_ROBIN_PROVIDER_A_ID" ]]
+round_robin_order_a_admin_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orders/${ROUND_ROBIN_ORDER_A_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$round_robin_order_a_admin_body" "data.provider_instance_id")" == "$ROUND_ROBIN_PROVIDER_A_ID" ]]
 
 round_robin_order_b_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
@@ -2441,7 +2439,8 @@ round_robin_order_b_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orde
   --data '{"purchase_type":"custom_amount","amount_cny":"10.00000","visible_method":"mock"}')"
 ROUND_ROBIN_ORDER_B_ID="$(assert_json_field "$round_robin_order_b_body" "data.id")"
 assert_cashier_order_state "$round_robin_order_b_body" "pending" "10.00000" "20.00000" "no" >/dev/null
-[[ "$(assert_json_field "$round_robin_order_b_body" "data.provider_instance_id")" == "$ROUND_ROBIN_PROVIDER_B_ID" ]]
+round_robin_order_b_admin_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orders/${ROUND_ROBIN_ORDER_B_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$round_robin_order_b_admin_body" "data.provider_instance_id")" == "$ROUND_ROBIN_PROVIDER_B_ID" ]]
 
 round_robin_cancel_a_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders/${ROUND_ROBIN_ORDER_A_ID}/cancel" \
   -H "Authorization: Bearer $ACCESS_TOKEN")"
@@ -2507,7 +2506,8 @@ sync_risk_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" 
   --data '{"purchase_type":"custom_amount","amount_cny":"10.00000","visible_method":"mock"}')"
 SYNC_RISK_ORDER_ID="$(assert_json_field "$sync_risk_order_body" "data.id")"
 assert_cashier_order_state "$sync_risk_order_body" "pending" "10.00000" "20.00000" "no" >/dev/null
-[[ "$(assert_json_field "$sync_risk_order_body" "data.provider_instance_id")" == "$SYNC_RISK_PROVIDER_INSTANCE_ID" ]]
+sync_risk_order_admin_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orders/${SYNC_RISK_ORDER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$sync_risk_order_admin_body" "data.provider_instance_id")" == "$SYNC_RISK_PROVIDER_INSTANCE_ID" ]]
 
 sync_risk_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${SYNC_RISK_ORDER_ID}/sync" \
   -H "Authorization: Bearer $ADMIN_TOKEN")"
@@ -2597,7 +2597,8 @@ wxpay_limit_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders
   --data '{"purchase_type":"custom_amount","amount_cny":"10.00000","visible_method":"wxpay"}')"
 WXPAY_LIMIT_ORDER_ID="$(assert_json_field "$wxpay_limit_order_body" "data.id")"
 assert_cashier_order_state "$wxpay_limit_order_body" "pending" "10.00000" "20.00000" "no" >/dev/null
-[[ "$(assert_json_field "$wxpay_limit_order_body" "data.provider_instance_id")" == "$WXPAY_LIMITED_PROVIDER_ID" ]]
+wxpay_limit_order_admin_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orders/${WXPAY_LIMIT_ORDER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$wxpay_limit_order_admin_body" "data.provider_instance_id")" == "$WXPAY_LIMITED_PROVIDER_ID" ]]
 [[ "$(assert_json_field "$wxpay_limit_order_body" "data.payment_display.type")" == "qr_code" ]]
 
 wxpay_limit_cancel_status="$(curl --silent --output "$TMP_DIR/wxpay-limit-cancel.json" --write-out "%{http_code}" \
@@ -3152,7 +3153,8 @@ stripe_order_body="$(request -X POST "$BASE_URL/api/agent/cashier/v1/orders" \
 STRIPE_ORDER_ID="$(assert_json_field "$stripe_order_body" "data.id")"
 STRIPE_ORDER_NO="$(assert_json_field "$stripe_order_body" "data.order_no")"
 STRIPE_INTENT_ID="$(assert_json_field "$stripe_order_body" "data.client_token")"
-[[ "$(assert_json_field "$stripe_order_body" "data.provider_instance_id")" == "$STRIPE_PROVIDER_ID" ]]
+stripe_order_admin_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orders/${STRIPE_ORDER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$stripe_order_admin_body" "data.provider_instance_id")" == "$STRIPE_PROVIDER_ID" ]]
 [[ "$(assert_json_field "$stripe_order_body" "data.payment_display.type")" == "stripe_payment_element" ]]
 [[ "$(assert_json_field "$stripe_order_body" "data.payment_display.publishable_key")" == "pk_test_smoke" ]]
 [[ "$(assert_json_field "$stripe_order_body" "data.payment_display.client_secret")" == "${STRIPE_INTENT_ID}_secret_client" ]]
@@ -3201,7 +3203,8 @@ for _ in 1 2; do
 done
 stripe_order_after_webhook_body="$(request "$BASE_URL/api/agent/cashier/v1/orders/${STRIPE_ORDER_ID}" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$stripe_order_after_webhook_body" "data.status")" == "completed" ]]
-[[ "$(assert_json_field "$stripe_order_after_webhook_body" "data.trade_no")" == "$STRIPE_INTENT_ID" ]]
+stripe_order_after_webhook_admin_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orders/${STRIPE_ORDER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
+[[ "$(assert_json_field "$stripe_order_after_webhook_admin_body" "data.trade_no")" == "$STRIPE_INTENT_ID" ]]
 stripe_balance_after_webhook_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 stripe_balance_after_duplicate_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$stripe_balance_after_webhook_body" "data.recharge_points")" == "$(assert_json_field "$stripe_balance_after_duplicate_body" "data.recharge_points")" ]]

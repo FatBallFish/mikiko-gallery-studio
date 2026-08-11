@@ -21,9 +21,30 @@ for (const apiContract of ['adminApi.listPaymentOrders', 'page_size: nextPageize
   }
 }
 
+for (const orderProjectionContract of ['user_email', 'user_nickname', 'bonus_points', 'total_points', "value: 'expired'"]) {
+  if (!ordersSource.includes(orderProjectionContract)) {
+    throw new Error(`orders page must render admin projection ${orderProjectionContract}`)
+  }
+}
+
 for (const packageContract of ['adminApi.listCashierPlans', 'adminApi.createCashierPlan', 'adminApi.updateCashierPlan', '<CashierPlanEditorDialog', 'cashierPlanStatusBadge', 'cashierPlanPurchaseBadge']) {
   if (!packagesSource.includes(packageContract)) {
     throw new Error(`packages redesign must preserve ${packageContract}`)
+  }
+}
+
+for (const packageManagementContract of [
+  'query: query.trim() || undefined',
+  'plan_type: planType || undefined',
+  'sort_by: sortBy',
+  'sort_order: sortOrder',
+  'cashierPlanActions(plan).map',
+  'adminApi.transitionCashierPlan',
+  '<TooltipIconButton',
+  '<Pager',
+]) {
+  if (!packagesSource.includes(packageManagementContract)) {
+    throw new Error(`packages management must expose ${packageManagementContract}`)
   }
 }
 

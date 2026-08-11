@@ -26,6 +26,10 @@ type ReferenceAsset struct {
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID int64 `json:"user_id,omitempty"`
+	// Name holds the value of the "name" field.
+	Name *string `json:"name,omitempty"`
+	// NameNormalized holds the value of the "name_normalized" field.
+	NameNormalized *string `json:"name_normalized,omitempty"`
 	// APIKeyID holds the value of the "api_key_id" field.
 	APIKeyID *int64 `json:"api_key_id,omitempty"`
 	// UploadSource holds the value of the "upload_source" field.
@@ -70,7 +74,7 @@ func (*ReferenceAsset) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case referenceasset.FieldUserID, referenceasset.FieldAPIKeyID, referenceasset.FieldFileSizeBytes, referenceasset.FieldWidth, referenceasset.FieldHeight:
 			values[i] = new(sql.NullInt64)
-		case referenceasset.FieldUploadSource, referenceasset.FieldStatus, referenceasset.FieldStorageDriver, referenceasset.FieldObjectKey, referenceasset.FieldMimeType, referenceasset.FieldSha256:
+		case referenceasset.FieldName, referenceasset.FieldNameNormalized, referenceasset.FieldUploadSource, referenceasset.FieldStatus, referenceasset.FieldStorageDriver, referenceasset.FieldObjectKey, referenceasset.FieldMimeType, referenceasset.FieldSha256:
 			values[i] = new(sql.NullString)
 		case referenceasset.FieldCreatedAt, referenceasset.FieldUpdatedAt, referenceasset.FieldDeletedAt, referenceasset.FieldExpiresAt:
 			values[i] = new(sql.NullTime)
@@ -121,6 +125,20 @@ func (_m *ReferenceAsset) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
 				_m.UserID = value.Int64
+			}
+		case referenceasset.FieldName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field name", values[i])
+			} else if value.Valid {
+				_m.Name = new(string)
+				*_m.Name = value.String
+			}
+		case referenceasset.FieldNameNormalized:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field name_normalized", values[i])
+			} else if value.Valid {
+				_m.NameNormalized = new(string)
+				*_m.NameNormalized = value.String
 			}
 		case referenceasset.FieldAPIKeyID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -267,6 +285,16 @@ func (_m *ReferenceAsset) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
+	builder.WriteString(", ")
+	if v := _m.Name; v != nil {
+		builder.WriteString("name=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.NameNormalized; v != nil {
+		builder.WriteString("name_normalized=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	if v := _m.APIKeyID; v != nil {
 		builder.WriteString("api_key_id=")

@@ -42,6 +42,7 @@ function assertAbsent(record: Record<string, unknown>, keys: string[], message: 
 const normalizeCapabilities = requireFunction('normalizeCapabilities')
 const buildEstimateWireRequest = requireFunction('buildEstimateWireRequest')
 const buildCreateTaskWireRequest = requireFunction('buildCreateTaskWireRequest')
+const buildGalleryReferenceImportRequest = requireFunction('buildGalleryReferenceImportRequest')
 const normalizeTaskList = requireFunction('normalizeTaskList')
 const toEstimate = requireFunction('toEstimate')
 const toGalleryImage = requireFunction('toGalleryImage')
@@ -199,16 +200,17 @@ const createWire = buildCreateTaskWireRequest({
   ...ratioRequest,
   project_id: 'project-a',
   prompt: 'Paint a quiet harbor',
-  negative_prompt: 'text, watermark',
   capability_version: 'capability-v1',
   response_mode: 'sync',
   idempotency_key: 'generation-idem-1',
+  reference_bindings: [{ name: '主体', asset_id: 'ref-1' }],
+  prompt_variables: [{ name: '地点', value: '海边' }],
 })
 assertDeepEqual(createWire, {
   body: {
     project_id: 'project-a',
     task_type: 'image_edit',
-    prompt: 'Paint a quiet harbor\n\nNegative prompt: text, watermark',
+    prompt: 'Paint a quiet harbor',
     route_model_code: 'plus-image',
     size_mode: 'ratio',
     aspect_ratio: '16:9',
@@ -220,11 +222,17 @@ assertDeepEqual(createWire, {
     moderation: 'low',
     requested_output_image_count: 2,
     reference_asset_ids: ['ref-1'],
+    reference_bindings: [{ name: '主体', asset_id: 'ref-1' }],
+    prompt_variables: [{ name: '地点', value: '海边' }],
     response_mode: 'async',
     capability_version: 'capability-v1',
   },
   headers: { 'Idempotency-Key': 'generation-idem-1' },
-}, 'create conversion should preserve negative prompts and emit the native async Go contract')
+}, 'create conversion should emit the native async Go contract without negative prompts')
+
+assertDeepEqual(buildGalleryReferenceImportRequest(['image-a', 'image-b']), {
+  gallery_image_ids: ['image-a', 'image-b'],
+}, 'new gallery-reference imports must not send the deprecated project_id compatibility field')
 assertAbsent(createWire.body, [
   'idempotency_key',
   'negative_prompt',

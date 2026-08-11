@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -37,17 +38,6 @@ func TestImportGalleryImageCreatesAliasWithoutStorageIO(t *testing.T) {
 	svc := NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{}, newMemoryAssetStore(), router)
 	result := galleryImportResult(content, "bfss")
 
-	_, err := svc.ImportGalleryImage(t.Context(), 31, result)
-	var rolloutErr *errs.Error
-	if !errors.As(err, &rolloutErr) || rolloutErr.Code != errs.CodeReferenceAliasCreationNotReady || rolloutErr.StatusCode != 409 {
-		t.Fatalf("disabled rollout error = %#v", err)
-	}
-	if backend.copyCalls.Load() != 0 || backend.getCalls.Load() != 0 || backend.getBoundedCalls.Load() != 0 || backend.putCalls.Load() != 0 {
-		t.Fatalf("disabled alias rollout must perform no storage IO: copy=%d get=%d bounded=%d put=%d", backend.copyCalls.Load(), backend.getCalls.Load(), backend.getBoundedCalls.Load(), backend.putCalls.Load())
-	}
-
-	svc.SetAliasCreationGate(staticAliasCreationGate{enabled: true})
-
 	asset, err := svc.ImportGalleryImage(t.Context(), 31, result)
 	if err != nil {
 		t.Fatalf("ImportGalleryImage: %v", err)
@@ -64,6 +54,117 @@ func TestImportGalleryImageCreatesAliasWithoutStorageIO(t *testing.T) {
 	}
 }
 
+func TestReferenceAssetNamesPreferUploadStemAndAllocateGallerySequence(t *testing.T) {
+	pngContent := encodedTestImage(t, "png")
+	jpegContent := encodedTestImage(t, "jpeg")
+	store := newMemoryAssetStore()
+	svc := NewServiceWithStore(config.StorageConfig{LocalRoot: t.TempDir()}, config.GenerationLimitsConfig{ReferenceImageMaxMB: 10}, store)
+
+	first, err := svc.Upload(77, "  主体角色.png ", "image/png", pngContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.Upload(77, "主体角色.jpg", "image/jpeg", jpegContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Name != "主体角色" || second.Name != "主体角色 2" {
+		t.Fatalf("upload names = %q, %q", first.Name, second.Name)
+	}
+
+	galleryA := galleryImportResult(pngContent, "bfss")
+	galleryA.ID = "gallery-name-a"
+	galleryB := galleryA
+	galleryB.ID = "gallery-name-b"
+	galleryB.ObjectKey = "generated/gallery-name-b.png"
+	galleryB.SHA256 = strings.Repeat("b", 64)
+	importedA, err := svc.ImportGalleryImage(t.Context(), 77, galleryA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	importedB, err := svc.ImportGalleryImage(t.Context(), 77, galleryB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if importedA.Name != "图片1" || importedB.Name != "图片2" {
+		t.Fatalf("gallery names = %q, %q", importedA.Name, importedB.Name)
+	}
+}
+
+func TestReferenceAssetNameSuffixStaysWithinNameLimit(t *testing.T) {
+	content := encodedTestImage(t, "png")
+	store := newMemoryAssetStore()
+	svc := NewServiceWithStore(config.StorageConfig{LocalRoot: t.TempDir()}, config.GenerationLimitsConfig{ReferenceImageMaxMB: 10}, store)
+	stem := strings.Repeat("图", 64)
+	first, err := svc.Upload(82, stem+".png", "image/png", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondContent := append(append([]byte(nil), content...), 0)
+	second, err := svc.Upload(82, stem+".png", "image/png", secondContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len([]rune(first.Name)) != 64 || len([]rune(second.Name)) > 64 || second.Name == first.Name || !strings.HasSuffix(second.Name, " 2") {
+		t.Fatalf("allocated names = %q (%d), %q (%d)", first.Name, len([]rune(first.Name)), second.Name, len([]rune(second.Name)))
+	}
+}
+
+func TestRenameReferenceAssetNormalizesAndProtectsActiveUserNames(t *testing.T) {
+	store := newMemoryAssetStore()
+	svc := NewServiceWithStore(config.StorageConfig{LocalRoot: t.TempDir()}, config.GenerationLimitsConfig{ReferenceImageMaxMB: 10}, store)
+	first, err := svc.Upload(78, "first.png", "image/png", encodedTestImage(t, "png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.Upload(78, "second.jpg", "image/jpeg", encodedTestImage(t, "jpeg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	renamed, err := svc.RenameWithContext(t.Context(), 78, first.ID, "  Café  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed.Name != "Café" {
+		t.Fatalf("normalized name = %q", renamed.Name)
+	}
+	_, err = svc.RenameWithContext(t.Context(), 78, second.ID, "Café")
+	var conflict *errs.Error
+	if !errors.As(err, &conflict) || conflict.Code != "REFERENCE_ASSET_NAME_CONFLICT" || conflict.StatusCode != 409 {
+		t.Fatalf("rename conflict = %#v", err)
+	}
+	if err := svc.DeleteWithContext(t.Context(), 78, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	renamed, err = svc.RenameWithContext(t.Context(), 78, second.ID, "Café")
+	if err != nil || renamed.Name != "Café" {
+		t.Fatalf("reuse deleted name = %#v err=%v", renamed, err)
+	}
+	if _, err := svc.RenameWithContext(t.Context(), 79, second.ID, "other"); err == nil {
+		t.Fatal("cross-user rename succeeded")
+	}
+}
+
+func TestGetManyWithContextPreservesRequestedOrderAndHidesOtherUsers(t *testing.T) {
+	store := newMemoryAssetStore()
+	svc := NewServiceWithStore(config.StorageConfig{LocalRoot: t.TempDir()}, config.GenerationLimitsConfig{ReferenceImageMaxMB: 10}, store)
+	a, _ := svc.Upload(80, "a.png", "image/png", encodedTestImage(t, "png"))
+	b, _ := svc.Upload(80, "b.jpg", "image/jpeg", encodedTestImage(t, "jpeg"))
+	other, _ := svc.Upload(81, "other.png", "image/png", encodedTestImage(t, "png"))
+
+	items, err := svc.GetManyWithContext(t.Context(), 80, []string{b.ID, a.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].ID != b.ID || items[1].ID != a.ID {
+		t.Fatalf("ordered items = %#v", items)
+	}
+	if _, err := svc.GetManyWithContext(t.Context(), 80, []string{other.ID}); err == nil {
+		t.Fatal("cross-user batch read succeeded")
+	}
+}
+
 func TestImportGalleryImageAliasesOriginalStorageAcrossDefaultWriterChanges(t *testing.T) {
 	content := encodedTestImage(t, "png")
 	source := newImportTrackingBackend(content)
@@ -75,7 +176,6 @@ func TestImportGalleryImageAliasesOriginalStorageAcrossDefaultWriterChanges(t *t
 		},
 	}
 	svc := NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{ReferenceImageMaxMB: 1}, newMemoryAssetStore(), router)
-	svc.SetAliasCreationGate(staticAliasCreationGate{enabled: true})
 	result := galleryImportResult(content, "source")
 
 	asset, err := svc.ImportGalleryImage(t.Context(), 32, result)
@@ -96,7 +196,6 @@ func TestImportGalleryImageRejectsMissingLegacyMetadataWithoutReadingSameStorage
 	ref := storage.BackendRef{ConfigID: "bfss", Version: 7, Driver: "s3", Backend: backend}
 	router := &switchingAssetRouter{defaultRef: ref, refs: map[string]storage.BackendRef{"bfss": ref}}
 	svc := NewServiceWithStoreAndRouter(config.GenerationLimitsConfig{}, newMemoryAssetStore(), router)
-	svc.SetAliasCreationGate(staticAliasCreationGate{enabled: true})
 	result := galleryImportResult(content, "bfss")
 	result.FileSizeBytes, result.Width, result.Height, result.SHA256 = 0, 0, 0, ""
 
@@ -108,12 +207,6 @@ func TestImportGalleryImageRejectsMissingLegacyMetadataWithoutReadingSameStorage
 	if backend.copyCalls.Load() != 0 || backend.getBoundedCalls.Load() != 0 || backend.putCalls.Load() != 0 {
 		t.Fatalf("same-storage legacy metadata must fail closed without proxying bytes: copy=%d bounded=%d put=%d", backend.copyCalls.Load(), backend.getBoundedCalls.Load(), backend.putCalls.Load())
 	}
-}
-
-type staticAliasCreationGate struct{ enabled bool }
-
-func (g staticAliasCreationGate) AliasCreationEnabled(context.Context) (bool, error) {
-	return g.enabled, nil
 }
 
 func galleryImportResult(content []byte, configID string) provider.ImageResult {

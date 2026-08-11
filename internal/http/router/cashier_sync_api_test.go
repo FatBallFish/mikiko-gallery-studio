@@ -59,14 +59,14 @@ func TestCashierOrderSyncReconcilesPaidProvider(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
 		t.Fatalf("decode sync response: %v", err)
 	}
-	if response.Data.Order.Status != "completed" || response.Data.Order.TradeNo != "EP-INIT-001" || response.Data.Order.LedgerID == 0 {
+	if response.Data.Order.Status != "completed" || response.Data.Order.CompletedAt == nil {
 		t.Fatalf("unexpected reconciled order %#v", response.Data.Order)
 	}
 	if !response.Data.Sync.Paid || !response.Data.Sync.Completed || response.Data.Sync.Raw != nil || queryCalls != 1 {
 		t.Fatalf("unexpected sanitized sync result %#v queryCalls=%d", response.Data.Sync, queryCalls)
 	}
 	stored, err := billingSvc.GetOrder(t.Context(), order.UserID, order.ID)
-	if err != nil || stored.Status != "completed" || stored.LedgerID == 0 {
+	if err != nil || stored.Status != "completed" || stored.TradeNo != "EP-INIT-001" || stored.LedgerID == 0 {
 		t.Fatalf("sync did not persist completion: order=%#v err=%v", stored, err)
 	}
 }

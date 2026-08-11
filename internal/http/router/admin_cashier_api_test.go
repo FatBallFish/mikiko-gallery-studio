@@ -88,6 +88,16 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	if invalidCreateRec.Code != http.StatusBadRequest {
 		t.Fatalf("explicit expiry create without duration must fail: status=%d body=%s", invalidCreateRec.Code, invalidCreateRec.Body.String())
 	}
+	unrelatedReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/plans", bytes.NewBufferString(
+		`{"plan_code":"unrelated-plan","plan_name":"其他套餐","plan_type":"points_package","purchase_enabled":false,"status":"disabled","price_cny":"8.00000","points":"8.00000","bonus_points":"0.00000","duration_days":30}`,
+	))
+	unrelatedReq.Header.Set("Authorization", "Bearer "+adminToken)
+	unrelatedReq.Header.Set("Content-Type", "application/json")
+	unrelatedRec := httptest.NewRecorder()
+	handler.ServeHTTP(unrelatedRec, unrelatedReq)
+	if unrelatedRec.Code != http.StatusCreated {
+		t.Fatalf("create unrelated plan: status=%d body=%s", unrelatedRec.Code, unrelatedRec.Body.String())
+	}
 
 	transition := func(action string, wantStatus string, wantPurchase bool) {
 		t.Helper()
@@ -170,6 +180,24 @@ func TestAdminCashierPlanLifecycleAndFilter(t *testing.T) {
 	handler.ServeHTTP(disabledRec, disabledReq)
 	if disabledRec.Code != http.StatusOK || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"lifecycle-plan"`)) || !bytes.Contains(disabledRec.Body.Bytes(), []byte(`"credit_expiry_enabled":true`)) {
 		t.Fatalf("disabled filter must return restored plan: status=%d body=%s", disabledRec.Code, disabledRec.Body.String())
+	}
+	searchReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/plans?query=lifecycle&plan_type=points_package&status=all&sort_by=points&sort_order=desc&page=1&page_size=1", nil)
+	searchReq.Header.Set("Authorization", "Bearer "+adminToken)
+	searchRec := httptest.NewRecorder()
+	handler.ServeHTTP(searchRec, searchReq)
+	var searchResponse struct {
+		Data struct {
+			Items      []domainbilling.SubscriptionPlan `json:"items"`
+			Pagination struct {
+				Total int `json:"total"`
+			} `json:"pagination"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(searchRec.Body).Decode(&searchResponse); err != nil {
+		t.Fatalf("decode search response: %v", err)
+	}
+	if searchRec.Code != http.StatusOK || len(searchResponse.Data.Items) != 1 || searchResponse.Data.Items[0].PlanCode != "lifecycle-plan" || searchResponse.Data.Pagination.Total != 1 {
+		t.Fatalf("search and database pagination must return one matching plan: status=%d body=%s", searchRec.Code, searchRec.Body.String())
 	}
 
 	logs, err := auditSvc.List(t.Context(), domainaudit.ListRequest{Page: 1, PageSize: 20, TargetType: "cashier_plan", TargetID: fmt.Sprintf("%d", created.Data.ID)})
@@ -316,8 +344,12 @@ func TestAdminCashierReadEndpoints(t *testing.T) {
 	var ordersResp struct {
 		Data struct {
 			Items []struct {
-				OrderNo string `json:"order_no"`
-				Status  string `json:"status"`
+				OrderNo     string `json:"order_no"`
+				Status      string `json:"status"`
+				UserID      int64  `json:"user_id"`
+				Points      string `json:"points"`
+				BonusPoints string `json:"bonus_points"`
+				TotalPoints string `json:"total_points"`
 			} `json:"items"`
 			Pagination struct {
 				Total int `json:"total"`
@@ -327,7 +359,8 @@ func TestAdminCashierReadEndpoints(t *testing.T) {
 	if err := json.NewDecoder(ordersRec.Body).Decode(&ordersResp); err != nil {
 		t.Fatalf("decode admin orders: %v", err)
 	}
-	if ordersResp.Data.Pagination.Total != 2 || len(ordersResp.Data.Items) != 2 || ordersResp.Data.Items[0].Status != "pending" || ordersResp.Data.Items[0].OrderNo == "" {
+	firstOrder := ordersResp.Data.Items[0]
+	if ordersResp.Data.Pagination.Total != 2 || len(ordersResp.Data.Items) != 2 || firstOrder.Status != "pending" || firstOrder.OrderNo == "" || firstOrder.UserID <= 0 || firstOrder.Points == "" || firstOrder.BonusPoints == "" || firstOrder.TotalPoints != firstOrder.Points {
 		t.Fatalf("expected admin cashier orders to include user order, got %#v", ordersResp.Data)
 	}
 
@@ -577,7 +610,6 @@ func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	var createResp struct {
 		Data struct {
 			ID      int64  `json:"id"`
-			UserID  int64  `json:"user_id"`
 			OrderNo string `json:"order_no"`
 			Status  string `json:"status"`
 		} `json:"data"`
@@ -585,7 +617,7 @@ func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
 		t.Fatalf("decode created order: %v", err)
 	}
-	if createResp.Data.Status != "pending" || createResp.Data.UserID != user.ID {
+	if createResp.Data.Status != "pending" || createResp.Data.ID == 0 {
 		t.Fatalf("expected pending order for user, got %#v", createResp.Data)
 	}
 
@@ -1467,8 +1499,12 @@ func TestAdminCashierStripeQueryAndPartialRefund(t *testing.T) {
 		t.Fatalf("expected pending order sync to use client token, got query path %q", queryPath)
 	}
 	completed := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
-	if completed.Status != "completed" || completed.TradeNo != "pi_admin_stripe" {
+	if completed.Status != "completed" {
 		t.Fatalf("expected Stripe sync to complete order, got %#v", completed)
+	}
+	storedCompleted, err := billingSvc.GetOrderForAdmin(t.Context(), orderID)
+	if err != nil || storedCompleted.TradeNo != "pi_admin_stripe" {
+		t.Fatalf("expected Stripe sync internals to persist, order=%#v err=%v", storedCompleted, err)
 	}
 
 	refundReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(`{"refund_trade_no":"REFUND-STRIPE-001","refund_amount_cny":"5.25","reason":"partial refund"}`))
@@ -1483,8 +1519,12 @@ func TestAdminCashierStripeQueryAndPartialRefund(t *testing.T) {
 		t.Fatalf("unexpected Stripe refund request idempotency=%q values=%#v", refundIdempotencyKey, refundValues)
 	}
 	refunded := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
-	if refunded.Status != "partially_refunded" || refunded.RefundTradeNo != "REFUND-STRIPE-001" || refunded.RefundedAmountCNY != "5.25000" {
+	if refunded.Status != "partially_refunded" {
 		t.Fatalf("unexpected local Stripe refund state %#v", refunded)
+	}
+	storedRefunded, err := billingSvc.GetOrderForAdmin(t.Context(), orderID)
+	if err != nil || storedRefunded.RefundTradeNo != "REFUND-STRIPE-001" || storedRefunded.RefundedAmountCNY != "5.25000" {
+		t.Fatalf("unexpected persisted Stripe refund state order=%#v err=%v", storedRefunded, err)
 	}
 	balance, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
 	if err != nil {
@@ -1561,8 +1601,12 @@ func TestAdminCashierStripeRefundWaitsForProviderSuccess(t *testing.T) {
 				t.Fatalf("unexpected first refund response status=%d body=%s", refundRec.Code, refundRec.Body.String())
 			}
 			pending := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
-			if pending.Status != "completed" || pending.RefundedAmountCNY != "" || pending.RefundedPoints != "" {
+			if pending.Status != "completed" {
 				t.Fatalf("provider %s must not settle local refund, got %#v", tt.initialStatus, pending)
+			}
+			storedPending, err := billingSvc.GetOrderForAdmin(t.Context(), orderID)
+			if err != nil || storedPending.RefundedAmountCNY != "" || storedPending.RefundedPoints != "" {
+				t.Fatalf("provider %s changed internal refund state, order=%#v err=%v", tt.initialStatus, storedPending, err)
 			}
 
 			if tt.wantRetrySuccess {
@@ -1575,8 +1619,12 @@ func TestAdminCashierStripeRefundWaitsForProviderSuccess(t *testing.T) {
 					t.Fatalf("expected queried Stripe refund to settle, status=%d body=%s", retryRec.Code, retryRec.Body.String())
 				}
 				settled := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
-				if settled.Status != "partially_refunded" || settled.RefundedAmountCNY != "5.00000" {
+				if settled.Status != "partially_refunded" {
 					t.Fatalf("unexpected queried Stripe refund state %#v", settled)
+				}
+				storedSettled, err := billingSvc.GetOrderForAdmin(t.Context(), orderID)
+				if err != nil || storedSettled.RefundedAmountCNY != "5.00000" {
+					t.Fatalf("unexpected persisted queried Stripe refund state order=%#v err=%v", storedSettled, err)
 				}
 			}
 			if refundCreates != 1 || refundQueries != boolInt(tt.wantRetrySuccess) {
@@ -1672,8 +1720,12 @@ func TestAdminCashierStripeRefundKeepsFreezeWhenProviderOutcomeIsUncertain(t *te
 		t.Fatalf("expected one idempotent retry after uncertain response, got %d Stripe creates", refundCreates)
 	}
 	settled := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
-	if settled.Status != "partially_refunded" || settled.RefundedAmountCNY != "5.00000" {
+	if settled.Status != "partially_refunded" {
 		t.Fatalf("unexpected settled Stripe refund %#v", settled)
+	}
+	storedSettled, err := billingSvc.GetOrderForAdmin(t.Context(), orderID)
+	if err != nil || storedSettled.RefundedAmountCNY != "5.00000" {
+		t.Fatalf("unexpected persisted settled Stripe refund order=%#v err=%v", storedSettled, err)
 	}
 }
 

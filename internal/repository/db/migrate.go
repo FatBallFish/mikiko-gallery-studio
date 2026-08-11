@@ -20,19 +20,22 @@ import (
 const (
 	// CurrentDatabaseSchemaVersion is advanced whenever an application release
 	// requires a database migration before ordinary nodes may start.
-	CurrentDatabaseSchemaVersion = 3
+	CurrentDatabaseSchemaVersion = 4
 
 	// A fixed signed 64-bit key coordinates every explicit migrator for one
 	// PostgreSQL database. Session locks are scoped by database, so installations
 	// in different databases do not block one another.
 	migrationAdvisoryLockKey int64 = 0x5047434D49475231
 
-	acquireMigrationLockSQL   = `SELECT pg_advisory_lock($1)`
-	releaseMigrationLockSQL   = `SELECT pg_advisory_unlock($1)`
-	installationSingletonKey  = "installation"
-	projectBackfillBatchSize  = 100
-	projectBackfillMaxBatches = 100
-	projectBackfillBatchPause = 10 * time.Millisecond
+	acquireMigrationLockSQL              = `SELECT pg_advisory_lock($1)`
+	releaseMigrationLockSQL              = `SELECT pg_advisory_unlock($1)`
+	installationSingletonKey             = "installation"
+	projectBackfillBatchSize             = 100
+	projectBackfillMaxBatches            = 100
+	projectBackfillBatchPause            = 10 * time.Millisecond
+	referenceAssetNameBackfillBatchSize  = 100
+	referenceAssetNameBackfillMaxBatches = 100
+	referenceAssetNameBackfillBatchPause = 10 * time.Millisecond
 )
 
 var migrationIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
@@ -240,11 +243,20 @@ func migrateLocked(ctx context.Context, database *sql.DB, req MigrationRequest) 
 	if err := requireCompletedProjectBackfill(projectProgress); err != nil {
 		return MigrationResult{}, err
 	}
+	referenceAssetNameProgress, err := RunReferenceAssetNameBackfill(ctx, client, ReferenceAssetNameBackfillOptions{
+		BatchSize: referenceAssetNameBackfillBatchSize, MaxBatches: referenceAssetNameBackfillMaxBatches, BatchPause: referenceAssetNameBackfillBatchPause,
+	})
+	if err != nil {
+		return MigrationResult{}, fmt.Errorf("backfill historical reference asset names: %w", err)
+	}
+	if err := requireCompletedReferenceAssetNameBackfill(referenceAssetNameProgress); err != nil {
+		return MigrationResult{}, err
+	}
 	result, err := recordInstallationMigration(ctx, client, req)
 	if err != nil {
 		return MigrationResult{}, err
 	}
-	result.BackfilledRows = backfilled + sizeBoundsBackfilled + projectProgress.UpdatedRows
+	result.BackfilledRows = backfilled + sizeBoundsBackfilled + projectProgress.UpdatedRows + referenceAssetNameProgress.UpdatedRows
 	return result, nil
 }
 

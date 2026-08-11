@@ -1,33 +1,16 @@
 package assets
 
 import (
-	"errors"
+	"fmt"
+	"strings"
 	"time"
+
+	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
 )
-
-var ErrAliasRolloutChanged = errors.New("alias creation rollout changed")
-
-type AliasCreationRollout struct {
-	Enabled   bool      `json:"enabled"`
-	Version   int64     `json:"version"`
-	UpdatedBy int64     `json:"updated_by,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
-}
-
-type UpdateAliasCreationRolloutRequest struct {
-	Enabled                 bool
-	ExpectedVersion         int64
-	UpdatedBy               int64
-	AllAPINodesCleanupAware bool
-	ActorType               string
-	ActorID                 string
-	RequestID               string
-	IPAddr                  string
-	UserAgent               string
-}
 
 type ReferenceAsset struct {
 	ID                  string              `json:"id"`
+	Name                string              `json:"name"`
 	APIKeyID            *int64              `json:"-"`
 	UploadSource        string              `json:"-"`
 	Status              string              `json:"status"`
@@ -69,4 +52,25 @@ type GenerationSnapshot struct {
 type UploadMetadata struct {
 	APIKeyID     *int64
 	UploadSource string
+}
+
+func NormalizeReferenceName(raw string) (string, error) {
+	return prompttemplate.NormalizeName(raw, 64)
+}
+
+func ReferenceNameCandidate(preferred string, sequence int) string {
+	preferred = strings.TrimSpace(preferred)
+	if preferred == "" {
+		return fmt.Sprintf("图片%d", sequence)
+	}
+	if sequence <= 1 {
+		return preferred
+	}
+	suffix := fmt.Sprintf(" %d", sequence)
+	maxBaseRunes := 64 - len([]rune(suffix))
+	baseRunes := []rune(preferred)
+	if len(baseRunes) > maxBaseRunes {
+		baseRunes = baseRunes[:maxBaseRunes]
+	}
+	return string(baseRunes) + suffix
 }

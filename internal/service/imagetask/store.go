@@ -44,6 +44,28 @@ type MemoryStore struct {
 	interactions map[string]map[int64]*memoryPublicInteraction
 }
 
+func (s *MemoryStore) RepairTerminalPromptTemplates(_ context.Context, limit int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 {
+		limit = 100
+	}
+	repaired := 0
+	for id, task := range s.tasksByID {
+		if repaired >= limit || task.PromptTemplate == "" || task.ExecutionPrompt == task.PromptTemplate {
+			continue
+		}
+		switch task.Status {
+		case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted:
+			task.Prompt = task.PromptTemplate
+			task.ExecutionPrompt = task.PromptTemplate
+			s.tasksByID[id] = cloneTask(task)
+			repaired++
+		}
+	}
+	return repaired, nil
+}
+
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		tasksByID:    map[string]domainimagetask.Task{},
@@ -75,6 +97,7 @@ func (s *MemoryStore) Save(_ context.Context, task domainimagetask.Task) error {
 		task.CreatedAt = now
 	}
 	task.UpdatedAt = now
+	clearTerminalExecutionPrompt(&task)
 	s.tasksByID[task.ID] = cloneTask(task)
 	return nil
 }
@@ -108,6 +131,7 @@ func (s *MemoryStore) SaveIfOwned(_ context.Context, task domainimagetask.Task, 
 	task.CreatedAt = current.CreatedAt
 	task.UpdatedAt = now.UTC()
 
+	clearTerminalExecutionPrompt(&task)
 	s.tasksByID[task.ID] = cloneTask(task)
 	return nil
 }
@@ -156,8 +180,20 @@ func (s *MemoryStore) SaveTerminalState(_ context.Context, task domainimagetask.
 	task.CreatedAt = current.CreatedAt
 	task.UpdatedAt = now.UTC()
 
+	clearTerminalExecutionPrompt(&task)
 	s.tasksByID[task.ID] = cloneTask(task)
 	return nil
+}
+
+func clearTerminalExecutionPrompt(task *domainimagetask.Task) {
+	if task == nil || task.PromptTemplate == "" {
+		return
+	}
+	switch task.Status {
+	case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted:
+		task.Prompt = task.PromptTemplate
+		task.ExecutionPrompt = task.PromptTemplate
+	}
 }
 
 func (s *MemoryStore) GetByID(_ context.Context, userID int64, taskID string) (domainimagetask.Task, error) {
@@ -186,6 +222,22 @@ func (s *MemoryStore) GetImageResultByID(_ context.Context, userID int64, imageI
 		}
 	}
 	return provider.ImageResult{}, repoerr.ErrNotFound
+}
+
+func (s *MemoryStore) GetOwnedGalleryImage(_ context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, task := range s.tasksByID {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
+			continue
+		}
+		for _, result := range task.Results {
+			if result.ID == imageID && strings.TrimSpace(result.VisibilityStatus) != "deleted" {
+				return galleryImageFromMemoryTask(task, result), nil
+			}
+		}
+	}
+	return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 }
 
 func (s *MemoryStore) GetImageResultForAdmin(_ context.Context, imageID string) (provider.ImageResult, error) {
@@ -443,11 +495,14 @@ func (s *MemoryStore) ListGalleryByUser(_ context.Context, userID int64, req dom
 	page, pageSize := normalizeGalleryPage(req.Page, req.PageSize)
 	items := make([]domainimagetask.GalleryImage, 0)
 	for _, task := range s.tasksByID {
-		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted || (req.ProjectID != "" && task.ProjectID != req.ProjectID) {
+		if task.UserID != userID || task.Status == domainimagetask.StatusDeleted {
 			continue
 		}
 		for _, result := range task.Results {
 			image := galleryImageFromMemoryTask(task, result)
+			if req.ProjectID != "" && image.ProjectID != req.ProjectID {
+				continue
+			}
 			if req.ReviewOnly && image.VisibilityStatus == domainimagetask.VisibilityPrivate {
 				continue
 			}
@@ -802,12 +857,18 @@ func taskEligibleForLease(task domainimagetask.Task, now time.Time) bool {
 }
 
 func galleryImageFromMemoryTask(task domainimagetask.Task, result provider.ImageResult) domainimagetask.GalleryImage {
+	projectID := result.ProjectID
+	project := cloneProjectSnapshot(result.Project)
+	if projectID == "" {
+		projectID = task.ProjectID
+		project = cloneProjectSnapshot(task.Project)
+	}
 	return domainimagetask.GalleryImage{
 		ID:                result.ID,
 		TaskID:            task.ID,
 		UserID:            task.UserID,
-		ProjectID:         task.ProjectID,
-		Project:           cloneProjectSnapshot(task.Project),
+		ProjectID:         projectID,
+		Project:           project,
 		Prompt:            task.Prompt,
 		AbstractModel:     task.AbstractModel,
 		RouteModelCode:    task.RouteModelCode,

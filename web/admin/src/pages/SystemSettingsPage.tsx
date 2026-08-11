@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AdminSession } from '../../../shared/api-types'
-import { AdminTabs, EmptyBlock, PageHeader } from '../components'
+import { AdminTabs, EmptyBlock, PageHeader, RefreshIconButton } from '../components'
 import { canAdmin } from '../types'
 import { adminPage } from '../ui/classes'
 import { ConfigPage } from './ConfigPage'
@@ -29,6 +29,7 @@ export function SystemSettingsPage({
   onFeedback: (title: string, detail?: string) => void
 }) {
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>(() => systemSettingsTabFromHash(window.location.hash))
+  const [refreshGeneration, setRefreshGeneration] = useState(0)
   const [dirtyTabs, setDirtyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, 'attachment-policy': false, security: false, storage: false, 'text-models': false })
   const [busyTabs, setBusyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, 'attachment-policy': false, security: false, storage: false, 'text-models': false })
   const activeTabRef = useRef(activeTab)
@@ -99,6 +100,7 @@ export function SystemSettingsPage({
       <PageHeader
         title="系统设置"
         description="通用、安全、存储和文本模型配置聚合在一个页面内，通过横向子 Tab 切换。"
+        secondaryActions={<RefreshIconButton label="刷新当前设置分区" disabled={dirtyTabs[activeTab] || busyTabs[activeTab]} onClick={() => setRefreshGeneration((value) => value + 1)} />}
       />
       <AdminTabs
         ariaLabel="系统设置分区"
@@ -107,9 +109,10 @@ export function SystemSettingsPage({
         value={activeTab}
         onChange={switchTab}
       />
-      {activeTab === 'general' ? <ConfigPage session={session} onFeedback={onFeedback} onDirtyChange={onGeneralDirtyChange} onBusyChange={onGeneralBusyChange} compact /> : null}
+      {activeTab === 'general' ? <ConfigPage key={`general:${refreshGeneration}`} session={session} onFeedback={onFeedback} onDirtyChange={onGeneralDirtyChange} onBusyChange={onGeneralBusyChange} compact /> : null}
       {activeTab === 'point-conversion' ? (
         <ConfigPage
+          key={`point-conversion:${refreshGeneration}`}
           session={session}
           onFeedback={onFeedback}
           onDirtyChange={onPointConversionDirtyChange}
@@ -119,10 +122,10 @@ export function SystemSettingsPage({
           compact
         />
       ) : null}
-      {activeTab === 'attachment-policy' ? <AttachmentPolicyPage session={session} onFeedback={onFeedback} onDirtyChange={onAttachmentPolicyDirtyChange} onBusyChange={onAttachmentPolicyBusyChange} compact /> : null}
-      {activeTab === 'security' && canManageDangerous ? <SecurityConfigPage onFeedback={onFeedback} onDirtyChange={onSecurityDirtyChange} onBusyChange={onSecurityBusyChange} compact /> : null}
-      {activeTab === 'storage' && canManageDangerous ? <StorageConfigPage onFeedback={onFeedback} onDirtyChange={onStorageDirtyChange} onBusyChange={onStorageBusyChange} compact /> : null}
-      {activeTab === 'text-models' && canManageDangerous ? <TextModelsPage onFeedback={onFeedback} onDirtyChange={onTextModelsDirtyChange} onBusyChange={onTextModelsBusyChange} /> : null}
+      {activeTab === 'attachment-policy' ? <AttachmentPolicyPage key={`attachment-policy:${refreshGeneration}`} session={session} onFeedback={onFeedback} onDirtyChange={onAttachmentPolicyDirtyChange} onBusyChange={onAttachmentPolicyBusyChange} compact /> : null}
+      {activeTab === 'security' && canManageDangerous ? <SecurityConfigPage key={`security:${refreshGeneration}`} onFeedback={onFeedback} onDirtyChange={onSecurityDirtyChange} onBusyChange={onSecurityBusyChange} compact /> : null}
+      {activeTab === 'storage' && canManageDangerous ? <StorageConfigPage key={`storage:${refreshGeneration}`} onFeedback={onFeedback} onDirtyChange={onStorageDirtyChange} onBusyChange={onStorageBusyChange} compact /> : null}
+      {activeTab === 'text-models' && canManageDangerous ? <TextModelsPage key={`text-models:${refreshGeneration}`} onFeedback={onFeedback} onDirtyChange={onTextModelsDirtyChange} onBusyChange={onTextModelsBusyChange} /> : null}
       {tabItems.find((item) => item.id === activeTab)?.dangerous && !canManageDangerous ? (
         <EmptyBlock title="暂无敏感配置权限" detail="安全、存储和文本模型配置需要 manage:dangerous_config 权限，请联系超级管理员处理。" />
       ) : null}

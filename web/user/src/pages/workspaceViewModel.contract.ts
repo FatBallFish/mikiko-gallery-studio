@@ -39,6 +39,18 @@ const ready = createWorkspaceViewModel(baseInput)
 if (ready.capability.state !== 'ready' || ready.generate.disabled || ready.estimate.state !== 'ready') {
   throw new Error(`ready workspace should enable generation, got ${JSON.stringify(ready)}`)
 }
+
+const autoOnly = createWorkspaceViewModel({
+  ...baseInput,
+  capability: {
+    ...capability,
+    model_groups: [{ id: 'auto-only', code: 'auto-only', name: 'Auto', task_types: ['text_to_image'], base_resolution: [], size_modes: ['auto'], aspect_ratios: [], prices: [], supports_reference: false, minimum_points: '1.00' }],
+  },
+  selectedModelCode: 'auto-only',
+})
+if (autoOnly.capability.state !== 'ready' || autoOnly.generate.disabled) {
+  throw new Error(`auto-only model groups must remain selectable without ratio fields: ${JSON.stringify(autoOnly)}`)
+}
 if (ready.parameters.models.map((item) => item.value).join(',') !== 'plus') {
   throw new Error(`models must come from live task capabilities, got ${JSON.stringify(ready.parameters.models)}`)
 }

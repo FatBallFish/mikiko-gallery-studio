@@ -1,18 +1,21 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import type { PaymentOrder } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, EmptyBlock, ErrorBlock, LoadingBlock, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader, RefreshIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { ColumnDef, DataTable, FilterToolbar, ListPage, Pager } from '../ui/dataTable'
 import { FilterIcon } from '../ui/listIcons'
 import { cashierAdminDateTime, cashierOrderPaymentLabel, cashierOrderPurchaseTypeLabel } from './cashierPaymentDisplay'
 import { cashierOrderStatusBadge } from './cashierStatusRows'
+import { createLatestListRequestGuard } from './listRefresh'
 
 const quickFilters = [
   { label: '全部', value: '' },
   { label: '待支付', value: 'pending' },
   { label: '支付失败', value: 'failed' },
+  { label: '支付超时', value: 'expired' },
+  { label: '人工取消', value: 'canceled' },
   { label: '待回调', value: 'paid' },
   { label: '退款中', value: 'partially_refunded' },
   { label: '同步失败', value: 'sync_failed' },
@@ -27,8 +30,10 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const requestGuard = useRef(createLatestListRequestGuard()).current
 
   const load = async (nextPage = page, nextPageize = pageSize) => {
+    const request = requestGuard.begin()
     setLoading(true)
     setError(null)
     try {
@@ -38,22 +43,26 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
         query: query.trim() || undefined,
         status: status || undefined,
       })
+      if (!requestGuard.isCurrent(request)) return
       setRows(result.items)
       setTotal(result.total)
       setPage(nextPage)
     } catch (caught) {
+      if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '订单载入失败')
     } finally {
+      if (!requestGuard.isCurrent(request)) return
       setLoading(false)
     }
   }
 
   useEffect(() => {
     void load(1)
+    return () => requestGuard.invalidate()
   }, [status])
 
-  if (loading) return <LoadingBlock label="载入订单列表" />
-  if (error) return <ErrorBlock message={error} onRetry={() => void load(page)} />
+  if (loading && !rows.length) return <LoadingBlock label="载入订单列表" />
+  if (error && !rows.length) return <ErrorBlock message={error} onRetry={() => void load(page)} />
 
   const columns: ColumnDef<PaymentOrder>[] = [
     {
@@ -65,6 +74,17 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
           <strong className="text-[var(--text)]">{order.order_no}</strong>
           <span className="text-xs text-[var(--soft)]">{order.plan_name || order.plan_code}</span>
         </div>
+      ),
+    },
+    {
+      key: 'user',
+      title: '用户',
+      width: 'minmax(200px,1.5fr)',
+      render: (order) => (
+        <span className="grid min-w-0 gap-1">
+          <strong className="truncate text-[var(--text)]">{order.user_nickname || order.user_email || `用户 ${order.user_id ?? '-'}`}</strong>
+          <span className="truncate text-xs text-[var(--soft)]">{order.user_email || `ID ${order.user_id ?? '-'}`}</span>
+        </span>
       ),
     },
     {
@@ -90,9 +110,10 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
     },
     {
       key: 'points',
-      title: '积分',
-      width: 'minmax(100px,0.8fr)',
-      render: (order) => <code>{order.points}</code>,
+      title: '积分明细',
+      width: 'minmax(150px,1fr)',
+      align: 'right',
+      render: (order) => <span className="grid gap-1 text-right text-xs"><span>基础 <code className="font-semibold text-[var(--text)]">{order.points}</code></span><span>赠送 <code>{order.bonus_points}</code></span><span className="text-[var(--soft)]">合计 <code>{order.total_points ?? order.points}</code></span></span>,
     },
     {
       key: 'payment',
@@ -113,8 +134,9 @@ export function OrdersPage({ onFeedback }: { onFeedback: (title: string, detail?
       <PageHeader
         title="订单管理"
         description="按订单号、用户、渠道流水号定位订单，并优先处理异常状态。"
-        secondaryActions={<button type="button" className={cn(adminButton.base, adminButton.ghost)} onClick={() => void load(page)}>刷新</button>}
+        secondaryActions={<RefreshIconButton label="刷新订单列表" refreshing={loading} onClick={() => void load(page)} />}
       />
+      {error ? <InlineFeedback tone="danger" message={`订单列表刷新失败：${error}`} /> : null}
       <ListPage
         filters={(
           <form onSubmit={(event: FormEvent) => { event.preventDefault(); void load(1) }}>

@@ -1,4 +1,5 @@
-import type { CashierOrder, CashierPurchaseType, PaymentProviderType, PaymentVisibleMethod } from '../../../shared/api-types'
+import type { CashierOrder, CashierPurchaseType, PublicPaymentVisibleMethod } from '../../../shared/api-types'
+import { checkoutPublicPaymentMethod } from './checkoutPaymentMethods'
 
 export function checkoutMoney(value?: string) {
   return value ? `¥${Number(value).toFixed(2)}` : '¥0.00'
@@ -46,7 +47,7 @@ const CHECKOUT_ORDER_STATUS_LABELS: Record<string, string> = {
   cancelled: '已取消',
   closed: '已关闭',
   failed: '支付失败',
-  expired: '已过期',
+	expired: '已取消（支付超时）',
   refunded: '已退款',
   partially_refunded: '部分退款',
 }
@@ -57,13 +58,13 @@ const CHECKOUT_PAYMENT_METHOD_LABELS: Record<string, string> = {
   alipay_direct: '支付宝',
   wxpay: '微信支付',
   wxpay_direct: '微信支付',
-  easypay_alipay: '易支付支付宝',
-  easypay_wxpay: '易支付微信',
-  jeepay_alipay: 'JeePay 支付宝',
-  jeepay_wxpay: 'JeePay 微信',
-  manual_alipay: '人工确认 · 支付宝',
-  manual_wxpay: '人工确认 · 微信支付',
-  manual_bank: '人工确认 · 银行转账',
+  easypay_alipay: '支付宝',
+  easypay_wxpay: '微信支付',
+  jeepay_alipay: '支付宝',
+  jeepay_wxpay: '微信支付',
+  manual_alipay: '支付宝',
+  manual_wxpay: '微信支付',
+  manual_bank: '银行转账',
 }
 
 export function checkoutOrderStatusLabel(status?: string) {
@@ -80,8 +81,6 @@ type CheckoutRecentOrder = {
   points: string
   created_at: string
   visible_method?: string
-  provider?: string
-  provider_type?: PaymentProviderType
   plan_name?: string
   plan_code?: string
   purchase_type?: CashierPurchaseType
@@ -95,38 +94,16 @@ type CheckoutRecentOrder = {
   updated_at?: string
 }
 
-export function checkoutPaymentMethodLabel(order: { visible_method?: string; provider?: string; provider_type?: PaymentProviderType }) {
-  const candidates = [order.visible_method, order.provider_type, order.provider]
-    .map((value) => (value ?? '').trim())
-    .filter(Boolean)
-  const raw = candidates[0]
+export function checkoutPaymentMethodLabel(order: { visible_method?: string }) {
+  const raw = (order.visible_method ?? '').trim()
   if (!raw) return '-'
   const normalized = raw.toLowerCase()
   return CHECKOUT_PAYMENT_METHOD_LABELS[normalized] ?? raw
 }
 
-export function checkoutPaymentMethodOptionModel(method: PaymentVisibleMethod): CheckoutPaymentMethodOptionModel {
-  const rawMethod = method.method.trim()
-  const rawProvider = (method.source_provider_type ?? '').trim()
-  const label = method.label.trim() || checkoutPaymentMethodLabel({
-    visible_method: rawMethod,
-    provider_type: rawProvider,
-    provider: '',
-  })
-  const providerLabel = checkoutPaymentMethodLabel({
-    visible_method: '',
-    provider_type: rawProvider,
-    provider: '',
-  })
-  const detail = method.description?.trim()
-    || (rawMethod === 'mock' || rawProvider === 'mock'
-      ? '测试环境模拟支付'
-      : providerLabel !== '-' ? (providerLabel === rawProvider ? providerLabel : `${providerLabel} 渠道`) : rawMethod || '-')
-  return {
-    rawMethod,
-    label,
-    detail,
-  }
+export function checkoutPaymentMethodOptionModel(method: PublicPaymentVisibleMethod): CheckoutPaymentMethodOptionModel {
+  const publicMethod = checkoutPublicPaymentMethod(method)
+  return { rawMethod: publicMethod.rawMethod, label: publicMethod.label, detail: publicMethod.detail }
 }
 
 export function checkoutRecentOrderRows(orders: CheckoutRecentOrder[], limit = 10): CheckoutRecentOrderRow[] {
@@ -165,7 +142,7 @@ function toCashierOrder(order: CheckoutRecentOrder): CashierOrder {
     expires_at: order.expires_at ?? '',
     updated_at: order.updated_at ?? order.created_at,
     purchase_type: order.purchase_type ?? 'plan',
-    visible_method: order.visible_method ?? order.provider ?? '',
+    visible_method: order.visible_method ?? '',
   }
 }
 
@@ -204,14 +181,14 @@ export function checkoutOrderRuntimeState(order: CashierOrder | null, nowMs = Da
     return { step: 'success', shouldPoll: false, label: '支付成功', detail: '积分已到账，可立即用于生成图片。' }
   }
   if (status === 'expired') {
-    return { step: 'expired', shouldPoll: false, label: '订单已过期', detail: '该订单已超过支付有效期，请重新创建订单。' }
+		return { step: 'expired', shouldPoll: false, label: '已取消（支付超时）', detail: '该订单已超过支付有效期，请重新创建订单。' }
   }
   if (status === 'failed' || status === 'closed' || status === 'canceled' || status === 'cancelled' || status === 'refunded') {
     return { step: 'failed', shouldPoll: false, label: '订单未完成', detail: '订单已关闭或支付失败，可重新创建订单。' }
   }
   const expiresAt = Date.parse(order.expires_at)
   if (Number.isFinite(expiresAt) && expiresAt <= nowMs) {
-    return { step: 'expired', shouldPoll: false, label: '订单已过期', detail: '该订单已超过支付有效期，请重新创建订单。' }
+		return { step: 'expired', shouldPoll: false, label: '已取消（支付超时）', detail: '该订单已超过支付有效期，请重新创建订单。' }
   }
   return { step: 'paying', shouldPoll: true, label: '等待支付', detail: '完成支付后页面会自动刷新订单状态和账户余额。' }
 }
@@ -228,7 +205,7 @@ export function checkoutOrderActionState(order: CashierOrder | null, nowMs = Dat
   return {
     canContinuePay: true,
     canCancel: true,
-    canMockPay: order.provider_type === 'mock' || order.visible_method === 'mock' || order.provider === 'mock',
+    canMockPay: order.visible_method === 'mock',
     cancelLabel: '取消订单',
   }
 }

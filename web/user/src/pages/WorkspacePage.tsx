@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ChevronUp, SlidersHorizontal } from 'lucide-react'
+import { Check, ChevronUp, Pencil, SlidersHorizontal, X } from 'lucide-react'
 import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
@@ -27,8 +27,12 @@ import { mergeWorkspaceTaskRecords, replaceWorkspaceTaskRecords, workspaceTaskHi
 import { closeWorkspaceStreamGeneration, createWorkspaceStreamGeneration, markWorkspaceStreamHealthy, nextWorkspaceStreamRetry, workspaceStreamEventIsCurrent, workspaceStreamRecoveryIsCurrent, type WorkspaceStreamGeneration } from './workspaceTaskStream'
 import { projectWorkspaceImageDetail } from './workspaceImageDetail'
 import { referenceImageAccept, referenceImagePolicy, validateReferenceImageFile } from './referenceImageUpload'
-import { normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceBackgroundForFormat, workspaceBackgroundOptions, workspaceCompressionVisible, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspacePixelOptions, workspaceRatioOptions, workspaceRatioPixelEstimate, workspaceSizeModeOptions, type WorkspaceSizeMode } from './workspaceParameters'
+import { chooseWorkspaceSizeMode, normalizeWorkspaceCustomSize, normalizeWorkspaceOutputParameters, workspaceBackgroundForFormat, workspaceBackgroundOptions, workspaceCompressionVisible, workspaceCustomRatioSupported, workspaceCustomRatioValid, workspaceCustomSizeSupported, workspaceModelForTask, workspaceOutputOptions, workspacePixelOptions, workspaceRatioOptions, workspaceRatioPixelEstimate, workspaceSizeModeOptions, workspaceSizeParameterError, type WorkspaceSizeMode } from './workspaceParameters'
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
+import { PromptTemplateEditor, type PromptTemplateEditorHandle } from './PromptTemplateEditor'
+import { PromptVariableForm } from './PromptVariableForm'
+import { buildPromptReferenceBindings, buildPromptVariableInputs, expandedPromptCodePointLength, promptVariableValidation, reconcilePromptVariables, renamePromptReference } from './promptTemplateEditorModel'
+import { parsePromptTemplate } from './promptTemplateParser'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 import { ProjectSelector, useProjects } from '../ProjectContext'
 import { workspaceProjectReadiness, workspaceSubmissionIsCurrent, type WorkspaceProjectSelection } from './workspaceProjectLifecycle'
@@ -126,6 +130,22 @@ function uploadErrorMessage(error: unknown) {
     if (maxBytes > 0 && actualBytes > 0) {
       return `单张参考图最大 ${formatFileSize(maxBytes)}，当前文件 ${formatFileSize(actualBytes)}。`
     }
+  }
+  return errorMessage(error)
+}
+
+function generationParameterErrorMessage(error: unknown) {
+  if (error instanceof ApiError && error.code === 'IMAGE_CAPABILITY_MISMATCH') {
+    const field = String(error.details?.field ?? '')
+    const rule = String(error.details?.rule ?? '')
+    const label = field === 'width' ? '宽度' : field === 'height' ? '高度' : field === 'aspect_ratio' ? '比例' : field === 'pixel_size' ? '像素尺寸' : '生成参数'
+    const minimum = Number(error.details?.min)
+    const maximum = Number(error.details?.max)
+    if (rule === 'range' && Number.isFinite(minimum) && Number.isFinite(maximum)) return `${label}必须在 ${minimum} 至 ${maximum} 像素之间。`
+    if (rule === 'multiple_of_16') return '宽度和高度必须为 16 的倍数。'
+    if (rule === 'format') return field === 'aspect_ratio' ? '比例请使用“宽:高”格式，例如 16:9。' : '像素尺寸格式不合法。'
+    if (rule === 'max_ratio') return `${label}必须在 1:3 至 3:1 范围内。`
+    if (rule === 'pixel_count') return '像素尺寸的总像素数超出平台限制。'
   }
   return errorMessage(error)
 }
@@ -273,14 +293,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [capability, setCapability] = useState<Capability | null>(null)
   const [editRefs, setEditRefs] = useState<ReferenceAsset[]>([])
   const [prompt, setPrompt] = useState('')
+  const [promptVariables, setPromptVariables] = useState<Record<string, string>>({})
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [promptOptimization, setPromptOptimization] = useState(initialPromptOptimizationState)
-  const [negative, setNegative] = useState('')
   const [model, setModel] = useState('')
-  const [sizeMode, setSizeMode] = useState<WorkspaceSizeMode>('ratio')
+  const [sizeMode, setSizeMode] = useState<WorkspaceSizeMode>('auto')
   const [baseResolution, setBaseResolution] = useState('')
-	const [ratio, setRatio] = useState('')
-	const [customRatio, setCustomRatio] = useState('')
+  const [ratio, setRatio] = useState('')
+  const [customRatio, setCustomRatio] = useState('')
   const [pixelSize, setPixelSize] = useState('')
   const [pixelSelection, setPixelSelection] = useState<WorkspacePixelSelection>('preset')
   const [customWidth, setCustomWidth] = useState('')
@@ -327,6 +347,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [galleryImportBusy, setGalleryImportBusy] = useState(false)
   const [galleryImportFilter, setGalleryImportFilter] = useState<GalleryImportFilter>(defaultGalleryImportFilter)
   const [dragUpload, setDragUpload] = useState<DragUploadState>({ edit: false })
+  const [renamingReferenceID, setRenamingReferenceID] = useState<string | null>(null)
+  const [renamingReferenceName, setRenamingReferenceName] = useState('')
+  const [renamingReferenceBusy, setRenamingReferenceBusy] = useState(false)
   const [parametersExpanded, setParametersExpanded] = useState(false)
   const [sheetDragOffset, setSheetDragOffset] = useState(0)
   const parametersHidden = workspaceParametersHidden(compactViewport, parametersExpanded)
@@ -342,6 +365,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const refreshAccountRef = useRef(app.refreshAccount)
   const completedNoticeRef = useRef<Set<string>>(new Set())
   const feedEndRef = useRef<HTMLDivElement | null>(null)
+  const compactPromptEditorRef = useRef<PromptTemplateEditorHandle | null>(null)
+  const expandedPromptEditorRef = useRef<PromptTemplateEditorHandle | null>(null)
+  const pendingPromptAssetInsertRef = useRef<'compact' | 'expanded' | null>(null)
   const restoreParametersRef = useRef<RestoreParameters | null>(null)
   const pendingCreationDraftRef = useRef<WorkspaceCreationDraft | null | undefined>(undefined)
   const sheetDragRef = useRef<SheetDragState | null>(null)
@@ -363,6 +389,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     .join(',')
 
   notifyRef.current = app.notify
+
+  useEffect(() => {
+    setPromptVariables((current) => reconcilePromptVariables(prompt, current))
+  }, [prompt])
   refreshAccountRef.current = app.refreshAccount
   projectSelectionRef.current = {
     projectID: projects.selectedProjectID,
@@ -607,9 +637,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       imageCount: values.image_count,
     }
     setPrompt(values.prompt)
-    setNegative('')
     setModel(values.route_model_code)
-	setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
+    setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
     setBaseResolution(values.base_resolution)
     setRatio(values.aspect_ratio)
     setPixelSize(values.pixel_size)
@@ -673,11 +702,12 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const effectivePixelSize = pixelSelection === 'custom' && customSizeSupported
     ? customSizeNormalization.valid ? customSizeNormalization.size : ''
 		: pixelSize
-	const customRatioSupported = workspaceCustomRatioSupported(selectedModel) && sizeModes.includes('ratio')
-	const effectiveRatio = ratio === 'custom' ? customRatio : ratio
-	const ratioPixelEstimate = useMemo(
-		() => workspaceRatioPixelEstimate(baseResolution, effectiveRatio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
-		[baseResolution, effectiveRatio, selectedModel, taskType],
+  const customRatioSupported = workspaceCustomRatioSupported(selectedModel) && sizeModes.includes('ratio')
+  const effectiveRatio = ratio === 'custom' ? customRatio : ratio
+  const sizeParameterError = workspaceSizeParameterError({ sizeMode, pixelSelection, customWidth, customHeight, ratio, customRatio, customRatioSupported, model: selectedModel })
+  const ratioPixelEstimate = useMemo(
+    () => workspaceRatioPixelEstimate(baseResolution, effectiveRatio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
+    [baseResolution, effectiveRatio, selectedModel, taskType],
   )
 
   useEffect(() => {
@@ -690,7 +720,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     )
     if (waitingForPreferredModel) return
 
-    setSizeMode((current) => restoreParameters?.sizeMode && sizeModes.includes(restoreParameters.sizeMode) ? restoreParameters.sizeMode : sizeModes.includes(current) ? current : sizeModes.includes('ratio') ? 'ratio' : sizeModes[0] ?? 'ratio')
+    setSizeMode((current) => chooseWorkspaceSizeMode(sizeModes, restoreParameters?.sizeMode, current))
     setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
 	const restoredRatio = restoreParameters?.aspectRatio
 	if (customRatioSupported && restoredRatio && !ratios.includes(restoredRatio) && workspaceCustomRatioValid(restoredRatio)) {
@@ -790,7 +820,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         }
       } catch (err) {
         if (!cancelled) {
-          const message = errorMessage(err)
+          const message = generationParameterErrorMessage(err)
           setEstimateSnapshot({ key: requestedKey, estimate: null, error: message })
           notifyRef.current('error', message)
         }
@@ -810,6 +840,15 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const maxReferenceImages = workspaceReferenceMaximum(selectedModel?.max_reference_image_count)
   const editRemainingLimit = remainingReferenceCapacity(maxReferenceImages, editRefs.length)
   const remainingGalleryImportLimit = editRemainingLimit
+  const promptTemplateParse = useMemo(() => parsePromptTemplate(prompt), [prompt])
+  const promptReferenceBindings = useMemo(() => buildPromptReferenceBindings(prompt, editRefs), [editRefs, prompt])
+  const promptVariableState = useMemo(() => promptVariableValidation(prompt, promptVariables), [prompt, promptVariables])
+  const promptExpandedLength = useMemo(() => expandedPromptCodePointLength(prompt, promptVariables, promptReferenceBindings.bindings), [prompt, promptReferenceBindings.bindings, promptVariables])
+  const promptTemplateIssue = promptTemplateParse.error?.message
+    || (promptReferenceBindings.unresolved.length ? `未关联资产：${promptReferenceBindings.unresolved.join('、')}` : '')
+    || (promptVariableState.missing.length ? `请填写变量：${promptVariableState.missing.join('、')}` : '')
+    || (promptVariableState.tooLong.length ? `变量内容超过长度限制：${promptVariableState.tooLong.join('、')}` : '')
+    || (promptExpandedLength > 4000 ? '变量填充后的提示词超过 4000 个字符。' : '')
   const newestTask = records[records.length - 1] ?? null
   const selectedTask = selectedTaskId ? records.find((task) => task.id === selectedTaskId) ?? null : null
   const latestTask = selectedTask ?? newestTask
@@ -820,16 +859,20 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     requiredReferencesReady,
     selectedModelCode: model,
     parametersReady,
+    parameterError: sizeParameterError,
     prompt,
     estimatePending: Boolean(capability && model && parametersReady && currentEstimate.pending),
     estimateError,
     estimate,
     busy,
     task: latestTask,
-  }), [capability, taskType, referenceCount, requiredReferencesReady, model, parametersReady, prompt, estimateError, estimate, busy, latestTask])
-  const generateReadiness = projectReadiness.ready
+  }), [capability, taskType, referenceCount, requiredReferencesReady, model, parametersReady, sizeParameterError, prompt, estimateError, estimate, busy, latestTask])
+  const baseGenerateReadiness = projectReadiness.ready
     ? workspaceView.generate
     : { disabled: true, reason: projectReadiness.reason, showRechargeAction: false }
+  const generateReadiness = promptTemplateIssue
+    ? { disabled: true, reason: promptTemplateIssue, showRechargeAction: false }
+    : baseGenerateReadiness
   const historyTasks = useMemo(() => (
     [...records].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   ), [records])
@@ -897,12 +940,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
   }
 
-  async function openGalleryImport(target: 'edit') {
+  async function openGalleryImport(target: 'edit', promptInsertTarget: 'compact' | 'expanded' | null = null) {
     const remaining = editRemainingLimit
     if (remaining <= 0) {
+      pendingPromptAssetInsertRef.current = null
       app.notify('error', '当前模型的参考图数量已达上限，请先移除一张。')
       return
     }
+    pendingPromptAssetInsertRef.current = promptInsertTarget
     setGalleryImportTarget(target)
     setGalleryImportFilter(defaultGalleryImportFilter)
     setGalleryImportLoading(true)
@@ -926,24 +971,31 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     if (!limited.accepted.length) return
     setGalleryImportBusy(true)
     try {
-      const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted, selectedProjectID)
-	  const reused = capability ? firstGalleryReferenceReuse(editRefs.length, assets, capability) : null
+      const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted)
+      const promptInsertTarget = pendingPromptAssetInsertRef.current
+      const reused = capability ? firstGalleryReferenceReuse(editRefs.length, assets, capability) : null
       setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
-	  if (reused) {
-		const values = reused.values
-		restoreParametersRef.current = { routeModelCode: values.route_model_code, sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio', baseResolution: values.base_resolution, aspectRatio: values.aspect_ratio, pixelSize: values.pixel_size, quality: values.quality, outputFormat: values.output_format, background: values.background, outputCompression: values.output_compression, moderation: values.moderation, imageCount: values.image_count }
-		setModel(values.route_model_code)
-		setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
-		setBaseResolution(values.base_resolution)
-		setRatio(values.aspect_ratio)
-		setPixelSize(values.pixel_size)
-		setQuality(values.quality)
-		setOutputFormat(values.output_format)
-		setBackground(values.background)
-		setOutputCompression(values.output_compression)
-		setModeration(values.moderation)
-		setCount(values.image_count)
+      const promptEditorRef = promptInsertTarget === 'expanded' ? expandedPromptEditorRef : promptInsertTarget === 'compact' ? compactPromptEditorRef : null
+      for (const asset of assets) {
+        const name = asset.name?.trim()
+        if (name) promptEditorRef?.current?.insertToken('reference', name)
       }
+      if (reused) {
+        const values = reused.values
+        restoreParametersRef.current = { routeModelCode: values.route_model_code, sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio', baseResolution: values.base_resolution, aspectRatio: values.aspect_ratio, pixelSize: values.pixel_size, quality: values.quality, outputFormat: values.output_format, background: values.background, outputCompression: values.output_compression, moderation: values.moderation, imageCount: values.image_count }
+        setModel(values.route_model_code)
+        setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
+        setBaseResolution(values.base_resolution)
+        setRatio(values.aspect_ratio)
+        setPixelSize(values.pixel_size)
+        setQuality(values.quality)
+        setOutputFormat(values.output_format)
+        setBackground(values.background)
+        setOutputCompression(values.output_compression)
+        setModeration(values.moderation)
+        setCount(values.image_count)
+      }
+      pendingPromptAssetInsertRef.current = null
       setGalleryImportTarget(null)
       app.notify(reused?.notices.length ? 'info' : 'success', galleryImportSuccessMessage(assets.length, reused?.notices))
     } catch (err) {
@@ -1040,7 +1092,15 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const submissionProject = projectSelectionRef.current
     setBusy(true)
     try {
-      const task = await userApi.createTask({ ...estimatePayload, project_id: submissionProject.projectID, prompt, negative_prompt: negative, capability_version: estimate?.capability_version, idempotency_key: crypto.randomUUID() })
+      const task = await userApi.createTask({
+        ...estimatePayload,
+        project_id: submissionProject.projectID,
+        prompt,
+        reference_bindings: promptReferenceBindings.bindings,
+        prompt_variables: buildPromptVariableInputs(prompt, promptVariables),
+        capability_version: estimate?.capability_version,
+        idempotency_key: crypto.randomUUID(),
+      })
       if (!workspaceSubmissionIsCurrent(submissionProject, projectSelectionRef.current)) {
         void app.refreshAccount()
         return
@@ -1055,13 +1115,31 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       setParametersExpanded(false)
       if (activeTaskType === 'image_edit') {
         setPrompt('')
-        setNegative('')
+        setPromptVariables({})
         setEditRefs([])
       }
       app.notify('info', '任务已进入队列，正在等待实时状态')
       await app.refreshAccount()
     } catch (err) {
       if (!workspaceSubmissionIsCurrent(submissionProject, projectSelectionRef.current)) return
+      if (err instanceof ApiError && err.code === 'PROMPT_TEMPLATE_STALE') {
+        const refreshedResults = await Promise.allSettled(editRefs.map((asset) => userApi.getReferenceAsset(asset.id)))
+        let refreshFailed = false
+        const refreshedAssets = refreshedResults.flatMap((result, index) => {
+          if (result.status === 'fulfilled') return [result.value]
+          if (result.reason instanceof ApiError && result.reason.status === 404) return []
+          refreshFailed = true
+          return [editRefs[index]]
+        })
+        setEditRefs(refreshedAssets)
+        app.notify(
+          'error',
+          refreshFailed
+            ? '引用资产名称已变化，部分资产状态刷新失败。请刷新页面并检查红色标记后重新确认创作。'
+            : '引用资产名称已变化，已刷新资产状态。请检查红色标记后重新确认创作。',
+        )
+        return
+      }
       if (err instanceof ApiError && err.code === 'capability_changed') {
         try {
           const nextCapability = await userApi.getCapabilities()
@@ -1071,7 +1149,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           setEstimateSnapshot({ key: '', estimate: null, error: errorMessage(refreshError) })
         }
       }
-      app.notify('error', errorMessage(err))
+      app.notify('error', generationParameterErrorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -1132,7 +1210,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
     setBusy(true)
     try {
-      const imported = await userApi.importReferenceAssetsFromGallery([addition.item.id], selectedProjectID)
+      const imported = await userApi.importReferenceAssetsFromGallery([addition.item.id])
       if (!imported.length) throw new Error('图片导入失败，请稍后重试。')
       setEditRefs((items) => mergeReferenceAssets(items, imported, maxReferenceImages))
       app.notify('success', '已加入图片编辑')
@@ -1147,6 +1225,31 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setEditRefs((items) => items.filter((item) => (
       asset.id ? item.id !== asset.id : item.preview_url !== asset.preview_url
     )))
+  }
+
+  function beginRenameReference(asset: ReferenceAsset) {
+    setRenamingReferenceID(asset.id)
+    setRenamingReferenceName(asset.name)
+  }
+
+  async function saveReferenceName(asset: ReferenceAsset) {
+    const nextName = renamingReferenceName.trim()
+    if (!nextName || nextName === asset.name) {
+      setRenamingReferenceID(null)
+      return
+    }
+    setRenamingReferenceBusy(true)
+    try {
+      const renamed = await userApi.renameReferenceAsset(asset.id, nextName)
+      setEditRefs((items) => items.map((item) => item.id === asset.id ? renamed : item))
+      setPrompt((current) => renamePromptReference(current, asset.name, renamed.name))
+      setRenamingReferenceID(null)
+      app.notify('success', '资产名称已更新')
+    } catch (err) {
+      app.notify('error', errorMessage(err))
+    } finally {
+      setRenamingReferenceBusy(false)
+    }
   }
 
   function updateImageCount(value: number) {
@@ -1286,6 +1389,21 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           </div>
           <p className={workspaceClasses.panelCopy}>通过文字生成图片；添加图片后会自动进入图片编辑模式。</p>
 
+          <div className={workspaceClasses.fieldBlock}>
+            <label className={workspaceClasses.fieldLabel} htmlFor="workspace-model-group">模型分组</label>
+            {loading && !capability ? <LoadingState label="正在加载可用模型..." /> : null}
+            {!loading && availableModels.length ? (
+              <select id="workspace-model-group" className={userForm.input} value={model} onChange={(event) => setModel(event.target.value)}>
+                {availableModels.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.name}{item.minimum_points ? ` · 最低 ${item.minimum_points} 积分` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
+          </div>
+
           <div className={workspaceClasses.editSourcePanel}>
               <button type="button" className={workspaceClasses.editSourceTrigger} onClick={() => setEditSourceOpen((open) => !open)}>
                 <span className={workspaceClasses.editSourceTitle}>
@@ -1319,6 +1437,18 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                           onMediaRefresh={() => refreshWorkspaceReference(asset.id)}
                         />
                         <button type="button" className={workspaceClasses.refRemove} title="移除编辑图片" onClick={() => removeEditAsset(asset)}><CloseGlyph /></button>
+                        {renamingReferenceID === asset.id ? (
+                          <div className="reference-name-editor">
+                            <input autoFocus value={renamingReferenceName} maxLength={64} aria-label="资产名称" onChange={(event) => setRenamingReferenceName(event.target.value)} onKeyDown={(event) => {
+                              if (event.key === 'Enter') void saveReferenceName(asset)
+                              if (event.key === 'Escape') setRenamingReferenceID(null)
+                            }} />
+                            <button type="button" title="保存名称" aria-label="保存名称" disabled={renamingReferenceBusy} onClick={() => void saveReferenceName(asset)}><Check size={13} /></button>
+                            <button type="button" title="取消重命名" aria-label="取消重命名" disabled={renamingReferenceBusy} onClick={() => setRenamingReferenceID(null)}><X size={13} /></button>
+                          </div>
+                        ) : (
+                          <button type="button" className="reference-name-button" title="重命名资产" onClick={() => beginRenameReference(asset)}><span>{asset.name}</span><Pencil size={12} /></button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1328,64 +1458,33 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
           {/* Prompt */}
           <div className={workspaceClasses.promptBlock}>
-            <label className={workspaceClasses.fieldLabel}>提示词</label>
-            <div className={cn(rdWorkspace.promptWrapper, 'relative')}>
-              <textarea
-                className={cn(rdWorkspace.textarea, 'redesign-prompt-input pb-11')}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                rows={5}
-                maxLength={4000}
-                placeholder="描述想要生成的内容..."
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <label className={workspaceClasses.fieldLabel}>提示词</label>
+              <PromptEditorActions
+                optimizing={promptOptimization.stage === 'estimating' || promptOptimization.stage === 'optimizing'}
+                canUndo={promptOptimization.stage === 'applied'}
+                onExpand={() => setPromptExpanded(true)}
+                onOptimize={() => void startPromptOptimization()}
+                onUndo={undoOptimization}
               />
-              <div className="absolute bottom-2 right-2">
-                <PromptEditorActions
-                  optimizing={promptOptimization.stage === 'estimating' || promptOptimization.stage === 'optimizing'}
-                  canUndo={promptOptimization.stage === 'applied'}
-                  onExpand={() => setPromptExpanded(true)}
-                  onOptimize={() => void startPromptOptimization()}
-                  onUndo={undoOptimization}
-                />
-              </div>
             </div>
+            <PromptTemplateEditor
+              ref={compactPromptEditorRef}
+              value={prompt}
+              assets={editRefs}
+              variables={promptVariables}
+              accessToken={app.session?.token}
+              disabled={busy || promptExpanded}
+              onChange={setPrompt}
+              onAddAsset={() => { setEditSourceOpen(true); void openGalleryImport('edit', 'compact') }}
+            />
+            <PromptVariableForm template={prompt} values={promptVariables} disabled={busy} onChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))} />
           </div>
 
-          {/* Negative prompt (collapsed) */}
-          <details className={workspaceClasses.details}>
-            <summary className={workspaceClasses.summary}>限制词</summary>
-            <div className={cn(rdWorkspace.promptWrapper, workspaceClasses.negativeArea)}>
-              <textarea
-                className={cn(rdWorkspace.textarea, 'redesign-prompt-input')}
-                value={negative}
-                onChange={(e) => setNegative(e.target.value)}
-                rows={2}
-              />
-            </div>
-          </details>
         </div>
 
         {/* Parameters */}
         <div className={workspaceClasses.panelSection}>
-          {/* Model */}
-          <div className={workspaceClasses.fieldBlock}>
-            <label className={workspaceClasses.fieldLabel}>模型选择</label>
-            {loading && !capability ? <LoadingState label="正在加载可用模型..." /> : null}
-            {!loading && availableModels.length ? availableModels.map((m) => (
-              <button
-                key={m.code}
-                type="button"
-                className={cn(workspaceClasses.modelButton, model === m.code && workspaceClasses.modelButtonActive)}
-                onClick={() => setModel(m.code)}
-              >
-                <span className={rdWorkspace.modelInfo}>
-                  <span className={rdWorkspace.itemLabel}>{m.name}</span>
-                </span>
-                <span className={cn(workspaceClasses.modelMeta, model === m.code && workspaceClasses.modelMetaActive)}>{m.display_points ? `${m.display_points} ◈` : m.effective_multiplier ? `${m.effective_multiplier}x` : ''}</span>
-              </button>
-            )) : null}
-            {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
-          </div>
-
           {selectedModel ? (
             <>
               {sizeModes.length > 1 ? (
@@ -1455,7 +1554,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 					<label className="mt-3 grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-ratio">
 						比例
 						<input id="workspace-custom-ratio" className={userForm.input} value={customRatio} placeholder="例如 7:5" onChange={(event) => setCustomRatio(event.target.value)} />
-						<span role="status">{workspaceCustomRatioValid(customRatio) ? `预计比例：${customRatio}` : '请输入 1:3 至 3:1 范围内的有效比例。'}</span>
+						<span role="status" className={sizeParameterError ? 'text-[var(--danger)]' : undefined}>{sizeParameterError || `预计比例：${customRatio}`}</span>
 					</label>
 				  ) : null}
 				</div>
@@ -1504,7 +1603,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                         </label>
                       </div>
                       <p className="text-xs leading-5 text-[var(--muted)]" role="status">
-						{customSizeNormalization.valid ? <>输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : '尺寸不符合当前模型限制，请直接修改 Width 和 Height。'}
+						{customSizeNormalization.valid ? <>输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : <span className="text-[var(--danger)]">{sizeParameterError}</span>}
 					  </p>
 					  <p className="text-xs leading-5 text-[var(--muted)]">宽高必须为 16 的倍数，并满足当前模型配置区间、1:3 至 3:1 比例及平台像素上限。</p>
                     </div>
@@ -1689,12 +1788,16 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       {compactViewport ? <OverlayPortal>{parameterPanel}</OverlayPortal> : parameterPanel}
       {promptExpanded ? (
         <PromptEditorDialog
+          promptEditorRef={expandedPromptEditorRef}
           prompt={prompt}
           assets={editRefs}
+          variables={promptVariables}
           accessToken={app.session?.token}
           optimization={promptOptimization}
           onPromptChange={setPrompt}
-          onClose={() => setPromptExpanded(false)}
+          onVariableChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))}
+          onAddAsset={() => { setEditSourceOpen(true); void openGalleryImport('edit', 'expanded') }}
+          onClose={() => { setPromptExpanded(false); window.setTimeout(() => compactPromptEditorRef.current?.focus(), 0) }}
           onOptimize={() => void startPromptOptimization()}
           onConfirm={() => void confirmOptimization()}
           onApply={applyOptimization}
@@ -1852,7 +1955,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             onFilterChange={setGalleryImportFilter}
             onConfirm={(ids) => void confirmGalleryImport(ids)}
             onMediaRefresh={refreshGalleryImportImage}
-            onClose={() => setGalleryImportTarget(null)}
+            onClose={() => {
+              pendingPromptAssetInsertRef.current = null
+              setGalleryImportTarget(null)
+            }}
           />
         ) : null}
 

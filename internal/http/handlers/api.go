@@ -93,7 +93,6 @@ type API struct {
 	apiKeys       *apikeyservice.Service
 	billing       *billingservice.Service
 	assets        *assetservice.Service
-	aliasRollout  assetservice.AliasRolloutStore
 	caps          *capserv.Service
 	compat        *compatservice.Service
 	tasks         *imagetaskservice.Service
@@ -127,6 +126,12 @@ type API struct {
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
 type cashierVisibleMethod = domaincashier.VisibleMethod
+type publicCashierVisibleMethod struct {
+	Method       string `json:"method"`
+	Label        string `json:"label"`
+	Enabled      bool   `json:"enabled"`
+	DisplayOrder int    `json:"display_order"`
+}
 type cashierProviderInstance = domaincashier.ProviderInstance
 type cashierProviderInstanceWriteRequest = domaincashier.ProviderInstanceWriteRequest
 
@@ -197,6 +202,52 @@ type adminCashierOrderSyncResult = cashierservice.QueryOrderStatusResult
 type adminCashierOrderSyncResponse struct {
 	Order domainbilling.PaymentOrder  `json:"order"`
 	Sync  adminCashierOrderSyncResult `json:"sync"`
+}
+
+type publicCashierOrderResponse struct {
+	ID                  int64          `json:"id"`
+	OrderNo             string         `json:"order_no"`
+	PlanID              int64          `json:"plan_id,omitempty"`
+	PlanCode            string         `json:"plan_code,omitempty"`
+	PlanName            string         `json:"plan_name,omitempty"`
+	PurchaseType        string         `json:"purchase_type"`
+	VisibleMethod       string         `json:"visible_method"`
+	PaymentDisplay      map[string]any `json:"payment_display,omitempty"`
+	Status              string         `json:"status"`
+	Currency            string         `json:"currency"`
+	AmountCNY           string         `json:"amount_cny"`
+	Points              string         `json:"points"`
+	BonusPoints         string         `json:"bonus_points"`
+	CreditExpiryEnabled bool           `json:"credit_expiry_enabled"`
+	CreditValidDays     *int           `json:"credit_valid_days,omitempty"`
+	CreditedAt          *time.Time     `json:"credited_at,omitempty"`
+	CreditExpiresAt     *time.Time     `json:"credit_expires_at,omitempty"`
+	PaymentURL          string         `json:"payment_url,omitempty"`
+	QRCode              string         `json:"qr_code,omitempty"`
+	ClientToken         string         `json:"client_token,omitempty"`
+	FailureReason       string         `json:"failure_reason,omitempty"`
+	ExpiresAt           time.Time      `json:"expires_at"`
+	PaidAt              *time.Time     `json:"paid_at,omitempty"`
+	CompletedAt         *time.Time     `json:"completed_at,omitempty"`
+	ClosedAt            *time.Time     `json:"closed_at,omitempty"`
+	RefundedAt          *time.Time     `json:"refunded_at,omitempty"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
+}
+
+type publicCashierOrderSyncResult struct {
+	QueryStatus  string    `json:"query_status"`
+	RiskCategory string    `json:"risk_category,omitempty"`
+	Paid         bool      `json:"paid"`
+	Completed    bool      `json:"completed"`
+	AmountCNY    string    `json:"amount_cny,omitempty"`
+	Message      string    `json:"message,omitempty"`
+	SyncedAt     time.Time `json:"synced_at"`
+}
+
+type publicCashierOrderSyncResponse struct {
+	Order publicCashierOrderResponse   `json:"order"`
+	Sync  publicCashierOrderSyncResult `json:"sync"`
 }
 
 type cashierProviderRefundResult = cashierservice.RefundPaymentResult
@@ -301,11 +352,6 @@ func (a *API) SetAdminPermissionResolver(resolver domainadminauth.PermissionReso
 		return
 	}
 	a.adminPerms = resolver
-}
-
-func (a *API) SetAliasRolloutStore(store assetservice.AliasRolloutStore) {
-	a.aliasRollout = store
-	a.assets.SetAliasCreationGate(store)
 }
 
 func (a *API) SetDocsReadinessChecker(checker DocsReadinessChecker) {
@@ -1017,7 +1063,7 @@ func (a *API) HandleBillingOrders(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrderPage(result))
 	case http.MethodPost:
 		var req struct {
 			PlanCode string `json:"plan_code"`
@@ -1037,7 +1083,7 @@ func (a *API) HandleBillingOrders(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusCreated, result)
+		httpx.WriteSuccess(w, r, http.StatusCreated, publicCashierOrder(result))
 	default:
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 	}
@@ -1061,14 +1107,14 @@ func (a *API) HandleBillingOrderDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(result))
 	case r.Method == http.MethodPost && action == "cancel":
 		result, cancelErr := a.cancelCashierOrderSafely(r.Context(), user.ID, orderID)
 		if cancelErr != nil {
 			httpx.WriteError(w, r, cancelErr)
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(result))
 	default:
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 	}
@@ -1199,7 +1245,7 @@ func (a *API) HandleCashierOptions(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
 		"plans":                 cashierPlans,
 		"custom_amount":         a.cashierCustomAmountConfig(r.Context()),
-		"visible_methods":       a.cashierVisibleMethods(r.Context(), false),
+		"visible_methods":       a.publicCashierVisibleMethods(r.Context()),
 		"order_timeout_seconds": a.cashierOrderTimeoutSeconds(r.Context()),
 	})
 }
@@ -1226,7 +1272,7 @@ func (a *API) HandleCashierOrders(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(result.Items, result.Page, result.PageSize, result.Total))
+		httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(publicCashierOrders(result.Items), result.Page, result.PageSize, result.Total))
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -1256,7 +1302,7 @@ func (a *API) HandleCashierOrders(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, createErr)
 		return
 	}
-	httpx.WriteSuccess(w, r, http.StatusCreated, result)
+	httpx.WriteSuccess(w, r, http.StatusCreated, publicCashierOrder(result))
 }
 
 type cashierOrderCreateInput struct {
@@ -1295,6 +1341,7 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 	if !ok {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusBadRequest, errs.CodePaymentMethodUnavailable, "payment method is unavailable")
 	}
+	expiresAt := time.Now().UTC().Add(time.Duration(a.cashierOrderTimeoutSeconds(ctx)) * time.Second)
 	if purchaseType == "custom_amount" {
 		customAmountConfig := a.cashierCustomAmountConfig(ctx)
 		if !customAmountConfig.Enabled {
@@ -1319,6 +1366,7 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 			ProviderType:       instance.ProviderType,
 			ProviderInstanceID: instance.ID,
 			IdempotencyKey:     idempotencyKey,
+			ExpiresAt:          expiresAt,
 		})
 		if err != nil {
 			return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1362,6 +1410,7 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 		ProviderType:       instance.ProviderType,
 		ProviderInstanceID: instance.ID,
 		IdempotencyKey:     idempotencyKey,
+		ExpiresAt:          expiresAt,
 	})
 	if err != nil {
 		return domainbilling.PaymentOrder{}, normalizeAppError(err)
@@ -1436,6 +1485,72 @@ func legacyBillingProviderToVisibleMethod(provider string) string {
 	}
 }
 
+func publicCashierOrderPage(page domainbilling.PaymentOrderPage) map[string]any {
+	return pagedPayload(publicCashierOrders(page.Items), page.Page, page.PageSize, page.Total)
+}
+
+func publicCashierOrders(orders []domainbilling.PaymentOrder) []publicCashierOrderResponse {
+	items := make([]publicCashierOrderResponse, 0, len(orders))
+	for _, order := range orders {
+		items = append(items, publicCashierOrder(order))
+	}
+	return items
+}
+
+func publicCashierOrder(order domainbilling.PaymentOrder) publicCashierOrderResponse {
+	visibleMethod := strings.ToLower(strings.TrimSpace(order.VisibleMethod))
+	if visibleMethod == "" {
+		switch legacyBillingProviderToVisibleMethod(cashierOrderProviderType(order, cashierProviderInstance{})) {
+		case "alipay":
+			visibleMethod = "alipay"
+		case "wxpay":
+			visibleMethod = "wxpay"
+		case "stripe":
+			visibleMethod = "stripe"
+		case "mock":
+			visibleMethod = "mock"
+		default:
+			visibleMethod = "unknown"
+		}
+	}
+	return publicCashierOrderResponse{
+		ID: order.ID, OrderNo: order.OrderNo, PlanID: order.PlanID, PlanCode: order.PlanCode, PlanName: order.PlanName,
+		PurchaseType: order.PurchaseType, VisibleMethod: visibleMethod, PaymentDisplay: publicPaymentDisplay(order.PaymentDisplay),
+		Status: order.Status, Currency: order.Currency, AmountCNY: order.AmountCNY, Points: order.Points, BonusPoints: order.BonusPoints,
+		CreditExpiryEnabled: order.CreditExpiryEnabled, CreditValidDays: order.CreditValidDays, CreditedAt: order.CreditedAt, CreditExpiresAt: order.CreditExpiresAt,
+		PaymentURL: order.PaymentURL, QRCode: order.QRCode, ClientToken: order.ClientToken, FailureReason: order.FailureReason,
+		ExpiresAt: order.ExpiresAt, PaidAt: order.PaidAt, CompletedAt: order.CompletedAt, ClosedAt: order.ClosedAt, RefundedAt: order.RefundedAt,
+		CreatedAt: order.CreatedAt, UpdatedAt: order.UpdatedAt,
+	}
+}
+
+func publicPaymentDisplay(display map[string]any) map[string]any {
+	if len(display) == 0 {
+		return nil
+	}
+	allowed := map[string]struct{}{
+		"type": {}, "qr_code": {}, "payment_url": {}, "client_token": {}, "client_secret": {},
+		"publishable_key": {}, "form_html": {}, "expires_at": {},
+	}
+	result := make(map[string]any, len(allowed))
+	for key, value := range display {
+		if _, ok := allowed[key]; ok {
+			result[key] = value
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func publicCashierSyncResult(result cashierservice.QueryOrderStatusResult) publicCashierOrderSyncResult {
+	return publicCashierOrderSyncResult{
+		QueryStatus: result.QueryStatus, RiskCategory: result.RiskCategory,
+		Paid: result.Paid, Completed: result.Completed, AmountCNY: result.AmountCNY, Message: result.Message, SyncedAt: result.SyncedAt,
+	}
+}
+
 func (a *API) ensureCashierPendingOrderLimit(ctx context.Context, userID int64) *errs.Error {
 	limit := a.cashierMaxPendingOrdersPerUser(ctx)
 	page, err := a.billing.ListOrders(ctx, domainbilling.ListOrdersRequest{UserID: userID, Status: "pending", Page: 1, PageSize: limit})
@@ -1449,7 +1564,15 @@ func (a *API) ensureCashierPendingOrderLimit(ctx context.Context, userID int64) 
 }
 
 func (a *API) cashierOrderTimeoutSeconds(ctx context.Context) int {
-	return a.adminConfigInt(ctx, "payments", "order_timeout_seconds", defaultPositiveInt(a.cfg.Cashier.OrderTimeoutSeconds, 1800))
+	fallback := defaultPositiveInt(a.cfg.Cashier.OrderTimeoutSeconds, 900)
+	if fallback < 60 || fallback > 86400 {
+		fallback = 900
+	}
+	value := a.adminConfigInt(ctx, "payments", "order_timeout_seconds", fallback)
+	if value < 60 || value > 86400 {
+		return fallback
+	}
+	return value
 }
 
 func (a *API) cashierMaxPendingOrdersPerUser(ctx context.Context) int {
@@ -1474,14 +1597,14 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(result))
 	case r.Method == http.MethodPost && action == "cancel":
 		result, cancelErr := a.cancelCashierOrderSafely(r.Context(), user.ID, orderID)
 		if cancelErr != nil {
 			httpx.WriteError(w, r, cancelErr)
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(result))
 	case r.Method == http.MethodPost && action == "sync":
 		result, syncErr := a.syncUserCashierOrder(r.Context(), user.ID, orderID)
 		if syncErr != nil {
@@ -1504,7 +1627,7 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if order.Status == "completed" {
-			httpx.WriteSuccess(w, r, http.StatusOK, order)
+			httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(order))
 			return
 		}
 		result, err := a.billing.CompleteRechargeOrder(r.Context(), domainbilling.CompleteRechargeOrderRequest{
@@ -1517,45 +1640,45 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(result))
 	default:
 		writeMethodNotAllowed(w, r)
 	}
 }
 
-func (a *API) syncUserCashierOrder(ctx context.Context, userID, orderID int64) (adminCashierOrderSyncResponse, *errs.Error) {
+func (a *API) syncUserCashierOrder(ctx context.Context, userID, orderID int64) (publicCashierOrderSyncResponse, *errs.Error) {
 	order, err := a.billing.GetOrder(ctx, userID, orderID)
 	if err != nil {
-		return adminCashierOrderSyncResponse{}, normalizeAppError(err)
+		return publicCashierOrderSyncResponse{}, normalizeAppError(err)
 	}
 	if order.Status == "completed" || order.Status == "paid" {
-		return adminCashierOrderSyncResponse{Order: order, Sync: cashierservice.QueryOrderStatusResult{
+		return publicCashierOrderSyncResponse{Order: publicCashierOrder(order), Sync: publicCashierSyncResult(cashierservice.QueryOrderStatusResult{
 			ProviderType: cashierOrderProviderType(order, cashierProviderInstance{}), ProviderInstanceID: order.ProviderInstanceID,
 			QueryStatus: "paid", Paid: true, Completed: true, TradeNo: order.TradeNo, AmountCNY: order.AmountCNY,
 			Message: "渠道订单已支付", SyncedAt: time.Now().UTC(),
-		}}, nil
+		})}, nil
 	}
 	instance, ok := a.cashierProviderInstanceForOrder(ctx, order)
 	if !ok {
-		return adminCashierOrderSyncResponse{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return publicCashierOrderSyncResponse{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	syncResult, syncErr := a.cashierSync.Do(ctx, order.ID, func(queryCtx context.Context) (adminCashierOrderSyncResult, *errs.Error) {
 		return a.queryCashierOrderStatus(queryCtx, order, instance)
 	})
 	if syncErr != nil {
-		return adminCashierOrderSyncResponse{}, syncErr
+		return publicCashierOrderSyncResponse{}, syncErr
 	}
 	if syncResult.Paid {
 		completed, reconcileErr := a.reconcileCashierOrderFromProviderQuery(ctx, order, instance, syncResult)
 		if reconcileErr != nil {
-			return adminCashierOrderSyncResponse{}, reconcileErr
+			return publicCashierOrderSyncResponse{}, reconcileErr
 		}
 		order = completed
 		syncResult.Completed = true
 	} else {
 		latest, latestErr := a.billing.GetOrder(ctx, userID, orderID)
 		if latestErr != nil {
-			return adminCashierOrderSyncResponse{}, normalizeAppError(latestErr)
+			return publicCashierOrderSyncResponse{}, normalizeAppError(latestErr)
 		}
 		order = latest
 		if order.Status == "completed" || order.Status == "paid" {
@@ -1568,7 +1691,7 @@ func (a *API) syncUserCashierOrder(ctx context.Context, userID, orderID int64) (
 		}
 	}
 	syncResult.Raw = nil
-	return adminCashierOrderSyncResponse{Order: order, Sync: syncResult}, nil
+	return publicCashierOrderSyncResponse{Order: publicCashierOrder(order), Sync: publicCashierSyncResult(syncResult)}, nil
 }
 
 func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
@@ -2441,7 +2564,7 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 	}
 	var req struct {
 		GalleryImageIDs []string `json:"gallery_image_ids"`
-		ProjectID       string   `json:"project_id"`
+		ProjectID       string   `json:"project_id"` // Deprecated: accepted for one compatibility window and ignored.
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -2468,21 +2591,11 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 		httpx.WriteError(w, r, errs.BadRequest("gallery_image_ids exceeds limit"))
 		return
 	}
-	selectedProject, err := a.projects.ResolveForWrite(r.Context(), user.ID, req.ProjectID)
-	if err != nil {
-		httpx.WriteError(w, r, projectAppError(err))
-		return
-	}
-
 	items := make([]domainassets.ReferenceAsset, 0, len(ids))
 	for _, imageID := range ids {
 		result, err := a.tasks.GetOwnedImageResult(r.Context(), user.ID, imageID)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		if result.ProjectID != selectedProject.ID {
-			httpx.WriteError(w, r, projectAppError(projectservice.ErrNotFound))
 			return
 		}
 		asset, svcErr := a.assets.ImportGalleryImage(r.Context(), user.ID, result)
@@ -2532,6 +2645,30 @@ func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		asset, err := a.assets.GetWithContext(r.Context(), user.ID, assetID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, referenceAssetPayload(asset, false))
+	case http.MethodPatch:
+		user, appErr := a.requireUser(r)
+		if appErr != nil {
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+			return
+		}
+		asset, err := a.assets.RenameWithContext(r.Context(), user.ID, assetID, req.Name)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		asset, err = a.assets.ProjectURLs(r.Context(), asset)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
@@ -4434,16 +4571,24 @@ func (a *API) HandleAdminCashierPlans(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	plans, err := a.billing.ListPlans(r.Context(), domainbilling.SubscriptionPlanListRequest{Status: r.URL.Query().Get("status")})
+	plans, err := a.billing.ListPlansPage(r.Context(), domainbilling.SubscriptionPlanListRequest{
+		Query:     r.URL.Query().Get("query"),
+		PlanType:  r.URL.Query().Get("plan_type"),
+		Status:    r.URL.Query().Get("status"),
+		SortBy:    r.URL.Query().Get("sort_by"),
+		SortOrder: r.URL.Query().Get("sort_order"),
+		Page:      page,
+		PageSize:  pageSize,
+	})
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
-	items := make([]map[string]any, 0, len(plans))
-	for _, plan := range plans {
+	items := make([]map[string]any, 0, len(plans.Items))
+	for _, plan := range plans.Items {
 		items = append(items, cashierPlanPayload(plan))
 	}
-	httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(paginateAny(items, page, pageSize), page, pageSize, len(items)))
+	httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(items, plans.Page, plans.PageSize, plans.Total))
 }
 
 func (a *API) HandleAdminCashierPlanDetail(w http.ResponseWriter, r *http.Request) {
@@ -4697,7 +4842,8 @@ func (a *API) HandleAdminCashierOrders(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
-	result, err := a.billing.ListOrders(r.Context(), domainbilling.ListOrdersRequest{
+	result, err := a.billing.ListAdminOrders(r.Context(), domainbilling.ListOrdersRequest{
+		Query:         strings.TrimSpace(r.URL.Query().Get("query")),
 		UserID:        userID,
 		Status:        strings.TrimSpace(r.URL.Query().Get("status")),
 		OrderNo:       strings.TrimSpace(r.URL.Query().Get("order_no")),
@@ -5250,62 +5396,6 @@ func (a *API) HandleAdminConfigTabs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": tabs})
-}
-
-func (a *API) HandleAdminAliasCreationRollout(w http.ResponseWriter, r *http.Request) {
-	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageDangerousConfig)
-	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
-		return
-	}
-	if a.aliasRollout == nil {
-		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeReferenceAliasCreationNotReady, "alias rollout store is unavailable"))
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		status, err := a.aliasRollout.GetAliasCreationRollout(r.Context())
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		httpx.WriteSuccess(w, r, http.StatusOK, status)
-	case http.MethodPost:
-		var req struct {
-			Enabled                 bool  `json:"enabled"`
-			ExpectedVersion         int64 `json:"expected_version"`
-			AllAPINodesCleanupAware bool  `json:"all_api_nodes_cleanup_aware"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
-			return
-		}
-		if req.ExpectedVersion < 0 {
-			httpx.WriteError(w, r, errs.BadRequest("expected_version must not be negative"))
-			return
-		}
-		if req.Enabled && !req.AllAPINodesCleanupAware {
-			httpx.WriteError(w, r, errs.BadRequest("all_api_nodes_cleanup_aware must be confirmed before activation"))
-			return
-		}
-		status, err := a.aliasRollout.UpdateAliasCreationRollout(r.Context(), domainassets.UpdateAliasCreationRolloutRequest{
-			Enabled: req.Enabled, ExpectedVersion: req.ExpectedVersion, UpdatedBy: admin.AdminID,
-			AllAPINodesCleanupAware: req.AllAPINodesCleanupAware,
-			ActorType:               "admin", ActorID: fmt.Sprintf("%d", admin.AdminID),
-			RequestID: httpx.RequestIDFromContext(r.Context()), IPAddr: r.RemoteAddr, UserAgent: r.UserAgent(),
-		})
-		if errors.Is(err, domainassets.ErrAliasRolloutChanged) {
-			httpx.WriteError(w, r, errs.New(http.StatusConflict, errs.CodeConflict, "alias creation rollout version conflict"))
-			return
-		}
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		httpx.WriteSuccess(w, r, http.StatusOK, status)
-	default:
-		writeMethodNotAllowed(w, r)
-	}
 }
 
 func (a *API) HandleAdminConfigTabDetail(w http.ResponseWriter, r *http.Request) {
@@ -8230,24 +8320,26 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ProjectID                 string   `json:"project_id"`
-		TaskType                  string   `json:"task_type"`
-		Prompt                    string   `json:"prompt"`
-		AbstractModel             string   `json:"abstract_model"`
-		RouteModelCode            string   `json:"route_model_code"`
-		SizeMode                  string   `json:"size_mode"`
-		AspectRatio               string   `json:"aspect_ratio"`
-		BaseResolution            string   `json:"base_resolution"`
-		Quality                   string   `json:"quality"`
-		OutputFormat              string   `json:"output_format"`
-		Background                string   `json:"background"`
-		OutputCompression         int      `json:"output_compression"`
-		Moderation                string   `json:"moderation"`
-		RequestedSize             string   `json:"requested_size"`
-		RequestedOutputImageCount int      `json:"requested_output_image_count"`
-		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
-		ResponseMode              string   `json:"response_mode"`
-		CapabilityVersion         string   `json:"capability_version"`
+		ProjectID                 string                                 `json:"project_id"`
+		TaskType                  string                                 `json:"task_type"`
+		Prompt                    string                                 `json:"prompt"`
+		AbstractModel             string                                 `json:"abstract_model"`
+		RouteModelCode            string                                 `json:"route_model_code"`
+		SizeMode                  string                                 `json:"size_mode"`
+		AspectRatio               string                                 `json:"aspect_ratio"`
+		BaseResolution            string                                 `json:"base_resolution"`
+		Quality                   string                                 `json:"quality"`
+		OutputFormat              string                                 `json:"output_format"`
+		Background                string                                 `json:"background"`
+		OutputCompression         int                                    `json:"output_compression"`
+		Moderation                string                                 `json:"moderation"`
+		RequestedSize             string                                 `json:"requested_size"`
+		RequestedOutputImageCount int                                    `json:"requested_output_image_count"`
+		ReferenceAssetIDs         []string                               `json:"reference_asset_ids"`
+		ReferenceBindings         []domainimagetask.PromptReferenceInput `json:"reference_bindings"`
+		PromptVariables           []domainimagetask.PromptVariableInput  `json:"prompt_variables"`
+		ResponseMode              string                                 `json:"response_mode"`
+		CapabilityVersion         string                                 `json:"capability_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -8278,6 +8370,8 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 		OutputImageCount:    req.RequestedOutputImageCount,
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
+		ReferenceBindings:   append([]domainimagetask.PromptReferenceInput(nil), req.ReferenceBindings...),
+		PromptVariables:     append([]domainimagetask.PromptVariableInput(nil), req.PromptVariables...),
 		UserGroupCode:       user.GroupCode,
 		UserGroupCodes:      userGroupCodes(user),
 		UserGroupMultiplier: user.GroupMultiplier,
@@ -8302,24 +8396,26 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	defer cleanup()
 
 	var req struct {
-		ProjectID                 string   `json:"project_id"`
-		TaskType                  string   `json:"task_type"`
-		Prompt                    string   `json:"prompt"`
-		AbstractModel             string   `json:"abstract_model"`
-		RouteModelCode            string   `json:"route_model_code"`
-		SizeMode                  string   `json:"size_mode"`
-		AspectRatio               string   `json:"aspect_ratio"`
-		BaseResolution            string   `json:"base_resolution"`
-		Quality                   string   `json:"quality"`
-		OutputFormat              string   `json:"output_format"`
-		Background                string   `json:"background"`
-		OutputCompression         int      `json:"output_compression"`
-		Moderation                string   `json:"moderation"`
-		RequestedSize             string   `json:"requested_size"`
-		RequestedOutputImageCount int      `json:"requested_output_image_count"`
-		ReferenceAssetIDs         []string `json:"reference_asset_ids"`
-		ResponseMode              string   `json:"response_mode"`
-		CapabilityVersion         string   `json:"capability_version"`
+		ProjectID                 string                                 `json:"project_id"`
+		TaskType                  string                                 `json:"task_type"`
+		Prompt                    string                                 `json:"prompt"`
+		AbstractModel             string                                 `json:"abstract_model"`
+		RouteModelCode            string                                 `json:"route_model_code"`
+		SizeMode                  string                                 `json:"size_mode"`
+		AspectRatio               string                                 `json:"aspect_ratio"`
+		BaseResolution            string                                 `json:"base_resolution"`
+		Quality                   string                                 `json:"quality"`
+		OutputFormat              string                                 `json:"output_format"`
+		Background                string                                 `json:"background"`
+		OutputCompression         int                                    `json:"output_compression"`
+		Moderation                string                                 `json:"moderation"`
+		RequestedSize             string                                 `json:"requested_size"`
+		RequestedOutputImageCount int                                    `json:"requested_output_image_count"`
+		ReferenceAssetIDs         []string                               `json:"reference_asset_ids"`
+		ReferenceBindings         []domainimagetask.PromptReferenceInput `json:"reference_bindings"`
+		PromptVariables           []domainimagetask.PromptVariableInput  `json:"prompt_variables"`
+		ResponseMode              string                                 `json:"response_mode"`
+		CapabilityVersion         string                                 `json:"capability_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
@@ -8384,6 +8480,8 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		OutputImageCount:    req.RequestedOutputImageCount,
 		ReferenceImageCount: len(req.ReferenceAssetIDs),
 		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
+		ReferenceBindings:   append([]domainimagetask.PromptReferenceInput(nil), req.ReferenceBindings...),
+		PromptVariables:     append([]domainimagetask.PromptVariableInput(nil), req.PromptVariables...),
 		UserGroupCode:       identity.GroupCode,
 		UserGroupCodes:      []string{identity.GroupCode},
 		UserGroupMultiplier: a.userGroupMultiplier(identity.GroupCode),
@@ -9500,51 +9598,7 @@ func (a *API) moderatePublishRequest(ctx context.Context, prompt string) (bool, 
 }
 
 func (a *API) findOwnedGalleryImage(ctx context.Context, userID int64, imageID string) (domainimagetask.GalleryImage, error) {
-	tasks, err := a.tasks.ListByUser(ctx, userID)
-	if err != nil {
-		return domainimagetask.GalleryImage{}, err
-	}
-	for _, task := range tasks {
-		for _, result := range task.Results {
-			if result.ID != imageID {
-				continue
-			}
-			return domainimagetask.GalleryImage{
-				ID:                result.ID,
-				TaskID:            task.ID,
-				UserID:            task.UserID,
-				ProjectID:         defaultString(result.ProjectID, task.ProjectID),
-				Prompt:            task.Prompt,
-				AbstractModel:     task.AbstractModel,
-				TaskType:          task.TaskType,
-				RouteModelCode:    task.RouteModelCode,
-				SizeMode:          task.SizeMode,
-				RequestedSize:     task.RequestedSize,
-				BaseResolution:    task.BaseResolution,
-				Quality:           task.Quality,
-				AspectRatio:       task.AspectRatio,
-				OutputFormat:      task.OutputFormat,
-				OutputCompression: task.OutputCompression,
-				Moderation:        task.Moderation,
-				OutputImageCount:  task.OutputImageCount,
-				ReferenceAssetIDs: append([]string(nil), task.ReferenceAssetIDs...),
-				URL:               result.URL,
-				DownloadURL:       result.DownloadURL,
-				MimeType:          result.MimeType,
-				FileSizeBytes:     result.FileSizeBytes,
-				Width:             result.Width,
-				Height:            result.Height,
-				SHA256:            result.SHA256,
-				StorageConfigID:   result.StorageConfigID,
-				ObjectKey:         result.ObjectKey,
-				StorageDriver:     result.StorageDriver,
-				VisibilityStatus:  defaultString(result.VisibilityStatus, domainimagetask.VisibilityPrivate),
-				ReviewReason:      result.ReviewReason,
-				PublishedAt:       result.PublishedAt,
-			}, nil
-		}
-	}
-	return domainimagetask.GalleryImage{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "image not found")
+	return a.tasks.GetOwnedGalleryImage(ctx, userID, imageID)
 }
 
 func parseOptionalTime(raw, field string) (time.Time, *errs.Error) {
@@ -10213,6 +10267,20 @@ func (a *API) cashierVisibleMethods(ctx context.Context, includeDisabled bool) [
 		return cashierservice.DefaultVisibleMethods()
 	}
 	return methods
+}
+
+func (a *API) publicCashierVisibleMethods(ctx context.Context) []publicCashierVisibleMethod {
+	methods := a.cashierVisibleMethods(ctx, false)
+	public := make([]publicCashierVisibleMethod, 0, len(methods))
+	for _, method := range methods {
+		public = append(public, publicCashierVisibleMethod{
+			Method:       method.Method,
+			Label:        method.Label,
+			Enabled:      method.Enabled,
+			DisplayOrder: method.DisplayOrder,
+		})
+	}
+	return public
 }
 
 func (a *API) cashierVisibleMethod(ctx context.Context, methodName string) (cashierVisibleMethod, bool) {

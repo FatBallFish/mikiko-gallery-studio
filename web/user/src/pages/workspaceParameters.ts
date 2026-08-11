@@ -66,6 +66,14 @@ export function workspaceSizeModeOptions(model: CapabilityModelGroup | undefined
 	return Array.from(new Set(values.filter((mode): mode is WorkspaceSizeMode => mode === 'auto' || mode === 'ratio' || mode === 'pixel')))
 }
 
+export function chooseWorkspaceSizeMode(options: WorkspaceSizeMode[], restored?: WorkspaceSizeMode, current?: WorkspaceSizeMode) {
+  if (restored && options.includes(restored)) return restored
+  if (current && options.includes(current)) return current
+  if (options.includes('auto')) return 'auto'
+  if (options.includes('ratio')) return 'ratio'
+  return options[0] ?? 'ratio'
+}
+
 export function workspaceRatioOptions(model: CapabilityModelGroup | undefined, legacyFallback: string[]) {
 	if (!model) return []
 	return model.aspect_ratios === undefined ? legacyFallback : model.aspect_ratios
@@ -96,6 +104,40 @@ export function workspaceCustomRatioValid(value: string) {
 	const height = Number(match[2])
 	if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false
 	return Math.max(width / height, height / width) <= 3
+}
+
+export function workspaceSizeParameterError(input: {
+  sizeMode: WorkspaceSizeMode
+  pixelSelection?: 'preset' | 'custom'
+  customWidth?: string
+  customHeight?: string
+  ratio?: string
+  customRatio?: string
+  customRatioSupported?: boolean
+  model?: CapabilityModelGroup
+}) {
+  if (input.sizeMode === 'ratio' && input.ratio === 'custom' && input.customRatioSupported) {
+    const value = input.customRatio?.trim() ?? ''
+    if (!/^\d+\s*:\s*\d+$/.test(value)) return '自定义比例请使用“宽:高”格式，例如 16:9。'
+    if (!workspaceCustomRatioValid(value)) return '自定义比例必须在 1:3 至 3:1 范围内。'
+  }
+  if (input.sizeMode !== 'pixel' || input.pixelSelection !== 'custom') return ''
+  const widthText = input.customWidth?.trim() ?? ''
+  const heightText = input.customHeight?.trim() ?? ''
+  if (!/^\d+$/.test(widthText)) return '宽度必须填写正整数。'
+  if (!/^\d+$/.test(heightText)) return '高度必须填写正整数。'
+  const width = Number(widthText)
+  const height = Number(heightText)
+  const minWidth = input.model?.min_width ?? 16
+  const maxWidth = input.model?.max_width ?? 3840
+  const minHeight = input.model?.min_height ?? 16
+  const maxHeight = input.model?.max_height ?? 3840
+  if (width < minWidth || width > maxWidth) return `宽度必须在 ${minWidth} 至 ${maxWidth} 像素之间。`
+  if (height < minHeight || height > maxHeight) return `高度必须在 ${minHeight} 至 ${maxHeight} 像素之间。`
+  if (width % 16 !== 0) return '宽度必须为 16 的倍数。'
+  if (height % 16 !== 0) return '高度必须为 16 的倍数。'
+  const normalized = normalizeWorkspaceCustomSize(widthText, heightText, input.model)
+  return normalized.valid ? '' : '像素尺寸需满足 1:3 至 3:1 比例及平台总像素限制。'
 }
 
 export function workspaceRatioPixelEstimate(baseResolution: string, ratio: string, autoBaseResolution = '') {
