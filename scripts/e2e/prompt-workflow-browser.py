@@ -24,7 +24,19 @@ def prompt_editor(scope):
 
 
 def expect_prompt(editor, value):
-    expect(editor).to_have_text(value, use_inner_text=True)
+    actual = editor.evaluate("""root => {
+      const serialize = node => {
+        if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
+        if (!(node instanceof HTMLElement)) return '';
+        const kind = node.dataset.promptTokenKind;
+        const name = node.dataset.promptTokenName;
+        if (kind && name) return kind === 'reference' ? `{{@${name}}}` : `{{$${name}}}`;
+        if (node.tagName === 'BR') return node.nextSibling ? '\\n' : '';
+        return Array.from(node.childNodes).map(serialize).join('');
+      };
+      return Array.from(root.childNodes).map(serialize).join('');
+    }""")
+    assert actual == value, f"expected prompt {value!r}, got {actual!r}"
 
 
 def replace_prompt(page, editor, value):
@@ -209,9 +221,23 @@ def verify_prompt_optimization(page):
     page.goto(f"{USER_WEB_URL}/#/genpic", wait_until="domcontentloaded")
     compact_prompt = prompt_editor(page)
     expect(compact_prompt).to_be_visible(timeout=15000)
+    model_group = page.locator("#workspace-model-group")
+    expect(model_group.locator(".model-group-select-copy strong")).not_to_be_empty()
+    expect(model_group.locator(".model-group-select-subject")).to_contain_text("◈")
+    model_group.click()
+    model_listbox = page.get_by_role("listbox", name="选择模型分组")
+    expect(model_listbox).to_be_visible()
+    selected_model_option = model_listbox.get_by_role("option", selected=True)
+    expect(selected_model_option.locator(".model-group-select-copy strong")).not_to_be_empty()
+    expect(selected_model_option.locator(".model-group-select-subject")).to_contain_text("◈")
+    expect(selected_model_option).to_be_focused()
+    page.keyboard.press("Escape")
+    expect(model_group).to_be_focused()
     compact_prompt.fill("Create a {{$subject}} portrait")
     variable_token = compact_prompt.locator('[data-prompt-token-kind="variable"][data-prompt-token-name="subject"]')
     expect(variable_token).to_be_visible(timeout=15000)
+    expect(variable_token.locator(".prompt-token-label")).to_have_text("subject")
+    expect(variable_token).not_to_contain_text("{{$")
     variable_input = page.get_by_placeholder('填写“subject”的内容')
     expect(variable_input).to_be_visible()
     variable_input.fill("glass astronaut")
@@ -312,8 +338,48 @@ def verify_prompt_optimization(page):
     compact_prompt.press("End")
     compact_prompt.press("$")
     expect(page.get_by_role("listbox", name="选择或添加变量")).to_be_visible()
+    assert compact_prompt.evaluate("node => document.activeElement === node"), "typing $ must keep focus in the prompt editor"
     compact_prompt.press("Escape")
     expect_prompt(compact_prompt, "中文文本$")
+    page.keyboard.insert_text("普通文本")
+    expect_prompt(compact_prompt, "中文文本$普通文本")
+    expect(page.get_by_role("listbox", name="选择或添加变量")).to_have_count(0)
+    page.keyboard.insert_text(" $")
+    expect_prompt(compact_prompt, "中文文本$普通文本 $")
+    variable_menu = page.get_by_role("listbox", name="选择或添加变量")
+    expect(variable_menu).to_be_visible()
+    page.get_by_text("图片创作", exact=True).click()
+    expect(variable_menu).to_have_count(0)
+    compact_prompt.click()
+    set_prompt_caret_at_end(compact_prompt)
+    expect(variable_menu).to_have_count(0)
+    page.keyboard.insert_text("继续输入")
+    expect(variable_menu).to_have_count(0)
+
+    replace_prompt(page, compact_prompt, "$普通文本 @")
+    reference_menu = page.get_by_role("listbox", name="选择资产")
+    expect(reference_menu).to_be_visible()
+    compact_prompt.press("Escape")
+    set_prompt_caret(compact_prompt, 1)
+    expect(page.get_by_role("listbox", name="选择或添加变量")).to_be_visible()
+    compact_prompt.press("Escape")
+
+    replace_prompt(page, compact_prompt, "删除后重输")
+    compact_prompt.press("End")
+    compact_prompt.press("$")
+    expect(page.get_by_role("listbox", name="选择或添加变量")).to_be_visible()
+    compact_prompt.press("Escape")
+    compact_prompt.press("Backspace")
+    compact_prompt.press("$")
+    expect(page.get_by_role("listbox", name="选择或添加变量")).to_be_visible()
+    compact_prompt.press("Escape")
+
+    replace_prompt(page, compact_prompt, "{{$重复}} + {{$重复}}")
+    repeated_tokens = compact_prompt.locator('[data-prompt-token-name="重复"]')
+    expect(repeated_tokens).to_have_count(2)
+    repeated_tokens.first.get_by_role("button", name="删除当前变量 重复").click()
+    expect(repeated_tokens).to_have_count(1)
+    expect_prompt(compact_prompt, " + {{$重复}}")
 
     replace_prompt(page, compact_prompt, "使用 ")
     compact_prompt.press("End")
@@ -328,10 +394,12 @@ def verify_prompt_optimization(page):
     reference_name = reference_token.get_attribute("data-prompt-token-name")
     assert reference_name, "gallery toolbar insertion did not create a named reference token"
 
-    page.get_by_title("重命名资产").filter(has_text=reference_name).click()
+    page.get_by_role("button", name=f"重命名资产 {reference_name}").click()
     renamed_reference = f"浏览器引用-{RUN_ID}"
-    page.get_by_role("textbox", name="资产名称").fill(renamed_reference)
-    page.get_by_role("button", name="保存名称").click()
+    rename_dialog = page.get_by_role("dialog", name="重命名资产")
+    expect(rename_dialog).to_be_visible()
+    rename_dialog.get_by_role("textbox", name="资产名称").fill(renamed_reference)
+    rename_dialog.get_by_role("button", name="保存", exact=True).click()
     expect(compact_prompt.locator(f'[data-prompt-token-name="{renamed_reference}"]')).to_be_visible(timeout=15000)
     expect(compact_prompt.locator(f'[data-prompt-token-name="{reference_name}"]')).to_have_count(0)
     reference_name = renamed_reference
@@ -593,7 +661,7 @@ def verify_prompt_copy_and_reuse(context, page):
     dialog.get_by_role("button", name="复用配置").click()
     prompt = prompt_editor(page)
     expect(prompt).to_have_text("docker e2e prompt", timeout=15000)
-    expect(page.get_by_role("combobox", name="模型分组")).to_have_value("basic")
+    expect(page.locator("#workspace-model-group")).to_have_attribute("data-value", "basic")
     assert_no_overlap(page)
     page.screenshot(path=OUTPUT_DIR / "desktop-reused-configuration.png", full_page=True)
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { ImageResult, MediaAccessProjection } from '../../../shared/api-types'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
@@ -45,6 +45,7 @@ export function HomePage() {
   const publicGallery = useApiResource(() => openApi.listPublicGallery(1, 12, { sort: 'hot', accessToken: null }), [])
   const [selectedImage, setSelectedImage] = useState<ImageResult | null>(null)
   const [publicImageAccess, setPublicImageAccess] = useState<Record<string, MediaAccessProjection>>({})
+  const publicDetailRequestRef = useRef(0)
 
   const latestTask = useMemo(() => newestHomeTask(tasks.data ?? []), [tasks.data])
   const continuation = useMemo(() => homeContinuationView(tasks.data ?? []), [tasks.data])
@@ -53,12 +54,31 @@ export function HomePage() {
   const models = homeModelReadinessView(capabilities.data, capabilities.loading)
   const curated = useMemo(() => curatedHomeGallery(publicGallery.data?.items ?? [], 6), [publicGallery.data?.items])
 
-  function openImage(image: ImageResult) {
+  async function openImage(image: ImageResult) {
     const access = publicImageAccess[image.id]
     const resolvedImage = access ? { ...image, url: access.url, download_url: access.url, preview_expires_at: access.expires_at } : image
     const source = resolvedImage.url || resolvedImage.download_url
     if (!source) return
-    setSelectedImage(homePublicDetailImage(resolvedImage))
+    const request = publicDetailRequestRef.current + 1
+    publicDetailRequestRef.current = request
+    const summary = homePublicDetailImage(resolvedImage)
+    setSelectedImage({ ...summary, prompt: undefined })
+    try {
+      const detail = await openApi.getPublicGalleryImage(image.id, { accessToken: app.session?.token })
+      if (publicDetailRequestRef.current !== request) return
+      if (!detail.prompt?.trim()) throw new Error('完整 Prompt 暂时无法读取，请稍后再试。')
+      setSelectedImage({
+        ...summary,
+        ...detail,
+        url: access?.url || detail.url || summary.url,
+        download_url: access?.url || detail.download_url || summary.download_url,
+        preview_expires_at: access?.expires_at || detail.preview_expires_at || summary.preview_expires_at,
+        prompt: detail.prompt,
+      })
+    } catch (error) {
+      if (publicDetailRequestRef.current !== request) return
+      app.notify('error', error instanceof Error ? error.message : '完整 Prompt 读取失败')
+    }
   }
 
   async function refreshPublicImage(imageId: string) {
@@ -150,7 +170,7 @@ export function HomePage() {
                     width={image.width}
                     height={image.height}
                     aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
-                    onOpen={() => openImage(image)}
+                    onOpen={() => void openImage(image)}
                     onMediaRefresh={() => refreshPublicImage(image.id)}
                   />
                   <h3 className={homeClasses.galleryTitle}>{card.title}</h3>
@@ -172,7 +192,7 @@ export function HomePage() {
         }}
         previewSourceLabel="精选灵感"
         onMediaRefresh={selectedImage ? () => refreshPublicImage(selectedImage.id) : undefined}
-        onClose={() => setSelectedImage(null)}
+        onClose={() => { publicDetailRequestRef.current += 1; setSelectedImage(null) }}
       />
     </main>
   )

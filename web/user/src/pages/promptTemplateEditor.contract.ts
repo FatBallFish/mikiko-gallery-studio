@@ -49,7 +49,14 @@ equal(renamePromptReference('{{@主体}} 与 {{$主体}}，再次 {{@主体}}', 
 const editorSource = readFileSync(new URL('./PromptTemplateEditor.tsx', import.meta.url), 'utf8')
 for (const marker of [
   'PromptTokenNode',
+  'DecoratorNode',
   'data-prompt-token-kind',
+  'prompt-token-label',
+  'prompt-token-remove',
+  'removeCurrentToken',
+  'dismissedAutocompleteRef',
+  'triggerOccurrence',
+  "document.addEventListener('pointerdown'",
   'HistoryPlugin',
   'LexicalPlainTextPlugin',
   'compositionstart',
@@ -58,6 +65,9 @@ for (const marker of [
   '插入变量',
 ]) {
   if (!editorSource.includes(marker)) throw new Error(`prompt editor must implement ${marker}`)
+}
+if (editorSource.includes('super(promptTokenSource(kind, name)')) {
+  throw new Error('prompt token DOM must display only its key while retaining canonical source through getTextContent')
 }
 if (editorSource.includes('LexicalRichTextPlugin')) {
   throw new Error('prompt editor must use Lexical plain-text Enter semantics so one Enter serializes to one newline')

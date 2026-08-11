@@ -1,0 +1,1339 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mikiko Studio · 多媒体创作一期原型</title>
+  <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #ecefeb;
+      --surface: #ffffff;
+      --surface-2: #f6f7f4;
+      --surface-3: #e8ebe6;
+      --ink: #1b211e;
+      --muted: #69716c;
+      --border: #d9ded8;
+      --border-strong: #bec6bf;
+      --blue: #295cff;
+      --blue-soft: #e9efff;
+      --green: #008c69;
+      --green-soft: #e2f5ef;
+      --orange: #d95f2c;
+      --orange-soft: #fff0e9;
+      --yellow: #b17a05;
+      --yellow-soft: #fff4d3;
+      --shadow: 0 14px 42px rgba(29, 39, 34, .09);
+      --radius: 6px;
+      --sidebar: 88px;
+      font-family: "Noto Sans SC", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      letter-spacing: 0;
+    }
+    button, input, textarea, select { font: inherit; letter-spacing: 0; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
+    .app { display: grid; grid-template-columns: var(--sidebar) 1fr; height: 100%; }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      border-right: 1px solid var(--border);
+      background: #f8f9f6;
+      padding: 18px 10px;
+      z-index: 20;
+    }
+    .brand {
+      display: grid;
+      place-items: center;
+      width: 48px;
+      height: 48px;
+      margin-bottom: 16px;
+      border: 0;
+      border-radius: var(--radius);
+      background: var(--ink);
+      color: white;
+      font-family: "DM Sans", sans-serif;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .nav-button {
+      display: grid;
+      place-items: center;
+      gap: 5px;
+      width: 68px;
+      min-height: 58px;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: background .16s ease, color .16s ease, border-color .16s ease;
+    }
+    .nav-button:hover { background: var(--surface-3); color: var(--ink); }
+    .nav-button.active { border-color: #cbd5ff; background: var(--blue-soft); color: var(--blue); }
+    .nav-button span { font-size: 11px; font-weight: 600; }
+    .nav-spacer { flex: 1; }
+    .shell { min-width: 0; display: grid; grid-template-rows: 64px 1fr; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(248, 249, 246, .96);
+      padding: 0 24px;
+      z-index: 15;
+    }
+    .topbar-left, .topbar-right, .row { display: flex; align-items: center; gap: 10px; }
+    .product-name { font-family: "DM Sans", "Noto Sans SC", sans-serif; font-size: 16px; font-weight: 700; }
+    .prototype-badge {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      padding: 4px 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .project-select, .select, .input {
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--ink);
+      padding: 0 10px;
+    }
+    .balance {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 0 12px;
+      font-family: "DM Sans", sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .diamond { color: var(--blue); }
+    .icon-button {
+      display: inline-grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      flex: 0 0 38px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      cursor: pointer;
+    }
+    .icon-button:hover { border-color: var(--border-strong); background: var(--surface-2); }
+    .main { min-width: 0; min-height: 0; overflow: hidden; }
+    .view { display: none; height: 100%; min-height: 0; }
+    .view.active { display: flex; flex-direction: column; }
+    .page-scroll { height: 100%; overflow: auto; padding: 24px; }
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .eyebrow { margin: 0 0 4px; color: var(--blue); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 4px; font-family: "DM Sans", "Noto Sans SC", sans-serif; font-size: 25px; line-height: 1.25; }
+    h2 { margin-bottom: 12px; font-size: 16px; }
+    h3 { margin-bottom: 8px; font-size: 13px; }
+    .subtle { margin: 0; color: var(--muted); font-size: 13px; }
+    .segmented {
+      display: inline-flex;
+      min-height: 40px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-3);
+      padding: 3px;
+    }
+    .segment {
+      min-width: 112px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      padding: 7px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .segment.active { background: var(--surface); color: var(--ink); box-shadow: 0 2px 8px rgba(30, 40, 34, .08); }
+    .workspace-grid { display: grid; grid-template-columns: minmax(340px, 430px) minmax(460px, 1fr); gap: 18px; min-height: 620px; }
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: 0 4px 16px rgba(31, 39, 35, .04);
+    }
+    .form-panel { padding: 18px; }
+    .section { padding: 16px 0; border-top: 1px solid var(--border); }
+    .section:first-child { padding-top: 0; border-top: 0; }
+    .field { display: grid; gap: 8px; }
+    .field + .field { margin-top: 14px; }
+    .label-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .label { font-size: 12px; font-weight: 700; }
+    .hint { color: var(--muted); font-size: 11px; }
+    .model-picker { position: relative; }
+    .model-trigger {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      width: 100%;
+      min-height: 66px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      padding: 10px 12px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .model-trigger:hover { border-color: var(--border-strong); }
+    .model-title { display: block; font-size: 13px; font-weight: 700; }
+    .model-subtitle { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+    .model-subject { color: var(--blue); font-family: "DM Sans", sans-serif; font-size: 13px; font-weight: 700; }
+    .model-menu {
+      position: absolute;
+      inset: calc(100% + 6px) 0 auto;
+      display: none;
+      z-index: 30;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 6px;
+      box-shadow: var(--shadow);
+    }
+    .model-menu.open { display: grid; gap: 4px; }
+    .model-option {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      min-height: 58px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      padding: 8px 10px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .model-option:hover, .model-option.selected { background: var(--blue-soft); }
+    .prompt {
+      width: 100%;
+      min-height: 128px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      padding: 12px;
+      color: var(--ink);
+      line-height: 1.7;
+    }
+    .asset-slot {
+      display: grid;
+      grid-template-columns: 68px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 80px;
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      padding: 8px;
+    }
+    .asset-slot img { width: 68px; height: 62px; border-radius: 4px; object-fit: cover; }
+    .asset-placeholder { display: grid; place-items: center; width: 68px; height: 62px; border-radius: 4px; background: var(--surface-3); color: var(--muted); }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 0 13px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .button:hover { border-color: var(--border-strong); background: var(--surface-2); }
+    .button.primary { border-color: var(--blue); background: var(--blue); color: white; }
+    .button.primary:hover { background: #184aeb; }
+    .button.dark { border-color: var(--ink); background: var(--ink); color: white; }
+    .button.danger { color: var(--orange); }
+    .button:disabled { opacity: .45; cursor: not-allowed; }
+    .parameter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .parameter { display: grid; gap: 6px; }
+    .parameter .select { width: 100%; }
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 42px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0 10px;
+    }
+    .switch { position: relative; width: 38px; height: 22px; }
+    .switch input { position: absolute; opacity: 0; }
+    .switch span { position: absolute; inset: 0; border-radius: 999px; background: #c9cfca; cursor: pointer; transition: background .15s; }
+    .switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: white; transition: transform .15s; }
+    .switch input:checked + span { background: var(--green); }
+    .switch input:checked + span::after { transform: translateX(16px); }
+    .estimate {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid #cad4ff;
+      border-radius: var(--radius);
+      background: var(--blue-soft);
+      padding: 12px;
+    }
+    .estimate strong { display: block; font-family: "DM Sans", sans-serif; font-size: 19px; }
+    .estimate small { color: var(--muted); }
+    .generate-button { min-width: 154px; min-height: 46px; }
+    .output-panel { display: grid; grid-template-rows: auto 1fr; min-height: 0; overflow: hidden; }
+    .output-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); padding: 14px 16px; }
+    .output-body { min-height: 0; overflow: auto; padding: 16px; }
+    .task-empty { display: grid; place-items: center; min-height: 260px; color: var(--muted); text-align: center; }
+    .task-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); overflow: hidden; }
+    .task-visual { position: relative; display: grid; place-items: center; min-height: 300px; background: #dde2dc; overflow: hidden; }
+    .task-visual img, .task-visual video { width: 100%; height: 100%; min-height: 300px; max-height: 430px; object-fit: cover; }
+    .task-status {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border-radius: 999px;
+      background: rgba(25, 31, 28, .86);
+      color: white;
+      padding: 7px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      backdrop-filter: blur(8px);
+    }
+    .pulse { width: 7px; height: 7px; border-radius: 50%; background: #73e7ba; box-shadow: 0 0 0 0 rgba(115, 231, 186, .5); animation: pulse 1.5s infinite; }
+    @keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(115, 231, 186, 0); } 100% { box-shadow: 0 0 0 0 rgba(115, 231, 186, 0); } }
+    .task-meta { padding: 14px; }
+    .task-meta-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .status-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 14px 0; }
+    .status-step { height: 4px; border-radius: 999px; background: var(--surface-3); }
+    .status-step.done { background: var(--green); }
+    .history-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+    .history-item { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); cursor: pointer; }
+    .history-item img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+    .history-item span { display: block; overflow: hidden; padding: 8px; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .canvas-home { padding: 24px; overflow: auto; }
+    .canvas-list { display: grid; grid-template-columns: repeat(3, minmax(250px, 1fr)); gap: 16px; }
+    .canvas-card { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+    .canvas-preview { position: relative; height: 210px; background-color: #f7f8f5; background-image: radial-gradient(#bfc7c0 1px, transparent 1px); background-size: 18px 18px; }
+    .mini-node { position: absolute; border: 1px solid #aeb7af; border-radius: 3px; background: white; box-shadow: 0 3px 8px rgba(20, 28, 23, .08); }
+    .canvas-card-body { padding: 13px; }
+    .canvas-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+    .new-canvas { display: grid; place-items: center; min-height: 310px; border: 1px dashed var(--border-strong); box-shadow: none; cursor: pointer; }
+    .canvas-editor { display: none; height: 100%; min-height: 0; grid-template-rows: 50px 1fr; }
+    .canvas-editor.active { display: grid; }
+    .canvas-editor-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); background: var(--surface); padding: 6px 12px; }
+    .save-state { display: inline-flex; align-items: center; gap: 6px; color: var(--green); font-size: 11px; font-weight: 600; }
+    .canvas-stage {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      background-color: #f8f9f6;
+      background-image: radial-gradient(#c7cec8 1px, transparent 1px);
+      background-size: 22px 22px;
+      cursor: grab;
+    }
+    .canvas-stage.panning { cursor: grabbing; }
+    .canvas-toolbar {
+      position: absolute;
+      left: 50%;
+      top: 12px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transform: translateX(-50%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, .96);
+      padding: 5px;
+      box-shadow: var(--shadow);
+    }
+    .tool-button { display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 4px; background: transparent; cursor: pointer; }
+    .tool-button:hover { background: var(--surface-3); }
+    .tool-divider { width: 1px; height: 24px; background: var(--border); margin: 0 3px; }
+    .canvas-world { position: absolute; inset: 0; width: 1600px; height: 900px; transform-origin: 0 0; }
+    .connections { position: absolute; inset: 0; width: 1600px; height: 900px; pointer-events: none; overflow: visible; }
+    .connections path { fill: none; stroke: #8d9a91; stroke-width: 2; }
+    .canvas-node {
+      position: absolute;
+      display: grid;
+      grid-template-rows: 34px 1fr;
+      width: 250px;
+      min-height: 150px;
+      border: 1px solid #bac2bb;
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: 0 10px 28px rgba(31, 42, 35, .10);
+      cursor: default;
+      overflow: hidden;
+    }
+    .canvas-node.selected { border-color: var(--blue); box-shadow: 0 0 0 2px #cbd6ff, 0 12px 34px rgba(31, 42, 35, .13); }
+    .node-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--border); background: var(--surface-2); padding: 0 10px; cursor: move; }
+    .node-head strong { font-size: 11px; }
+    .node-type { color: var(--muted); font-size: 10px; }
+    .node-body { min-height: 0; padding: 10px; }
+    .node-image { width: 100%; height: 145px; border-radius: 4px; object-fit: cover; }
+    .node-video { width: 100%; height: 140px; border-radius: 4px; object-fit: cover; background: #202522; }
+    .node-prompt { width: 100%; min-height: 130px; resize: none; border: 0; background: transparent; color: var(--ink); line-height: 1.6; outline: 0; }
+    .node-note { min-height: 110px; background: var(--yellow-soft); }
+    .node-note textarea { width: 100%; min-height: 100px; border: 0; resize: none; background: transparent; outline: 0; }
+    .node-config-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+    .node-config-row:last-of-type { border-bottom: 0; }
+    .node-generate { width: 100%; margin-top: 10px; }
+    .node-port { position: absolute; top: 50%; width: 12px; height: 12px; border: 2px solid white; border-radius: 50%; background: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+    .node-port.input { left: -6px; }
+    .node-port.output { right: -6px; background: var(--green); box-shadow: 0 0 0 1px var(--green); }
+    .canvas-zoom { position: absolute; left: 14px; bottom: 14px; z-index: 10; display: flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 5px; box-shadow: var(--shadow); }
+    .zoom-label { width: 48px; text-align: center; color: var(--muted); font-family: "DM Sans", sans-serif; font-size: 11px; }
+    .asset-drawer {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 20;
+      display: none;
+      width: min(340px, calc(100% - 24px));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .asset-drawer.open { display: grid; grid-template-rows: auto 1fr; }
+    .drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--border); }
+    .drawer-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; overflow: auto; padding: 10px; }
+    .drawer-asset { border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); padding: 0; overflow: hidden; text-align: left; cursor: pointer; }
+    .drawer-asset img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+    .drawer-asset span { display: block; overflow: hidden; padding: 7px; font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .assets-page { padding: 24px; overflow: auto; }
+    .filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .search { min-width: 230px; flex: 1; }
+    .asset-grid { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 14px; }
+    .asset-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; }
+    .asset-card.selected { border-color: var(--blue); box-shadow: 0 0 0 2px #cbd6ff; }
+    .asset-media { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; background: #e2e6e1; }
+    .asset-media img, .asset-media video { width: 100%; height: 100%; object-fit: cover; }
+    .asset-media audio { width: calc(100% - 20px); }
+    .asset-duration { position: absolute; right: 8px; bottom: 8px; border-radius: 3px; background: rgba(24, 30, 27, .82); color: white; padding: 3px 6px; font-size: 10px; font-weight: 700; }
+    .asset-type { position: absolute; left: 8px; top: 8px; display: inline-flex; align-items: center; gap: 4px; border-radius: 3px; background: rgba(255, 255, 255, .9); padding: 4px 6px; font-size: 10px; font-weight: 700; }
+    .asset-check { position: absolute; right: 8px; top: 8px; z-index: 5; width: 22px; height: 22px; accent-color: var(--blue); cursor: pointer; }
+    .asset-info { padding: 10px; }
+    .asset-name { display: block; overflow: hidden; margin-bottom: 4px; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    .asset-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; }
+    .batch-bar {
+      position: fixed;
+      left: calc(var(--sidebar) + 50%);
+      bottom: 20px;
+      z-index: 30;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      transform: translateX(-50%);
+      border: 1px solid #3d4641;
+      border-radius: var(--radius);
+      background: #202622;
+      color: white;
+      padding: 7px;
+      box-shadow: 0 16px 38px rgba(24, 31, 27, .25);
+    }
+    .batch-bar.open { display: flex; }
+    .batch-bar .button { border-color: #465049; background: #2d3530; color: white; }
+    .batch-count { padding: 0 8px; font-size: 12px; font-weight: 700; }
+    .modal-backdrop { position: fixed; inset: 0; z-index: 60; display: none; place-items: center; background: rgba(22, 28, 25, .54); padding: 20px; }
+    .modal-backdrop.open { display: grid; }
+    .modal { width: min(720px, 100%); max-height: min(760px, 90vh); overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: 0 28px 80px rgba(15, 21, 18, .3); }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding: 14px 16px; }
+    .modal-body { padding: 16px; }
+    .picker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .picker-item { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 0; text-align: left; cursor: pointer; }
+    .picker-item img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+    .picker-item span { display: block; padding: 8px; font-size: 11px; font-weight: 600; }
+    .detail-media { display: grid; place-items: center; min-height: 320px; overflow: hidden; border-radius: var(--radius); background: #e2e6e1; }
+    .detail-media img, .detail-media video { max-width: 100%; max-height: 480px; object-fit: contain; }
+    .detail-media audio { width: min(540px, calc(100% - 30px)); }
+    .detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    .toast-stack { position: fixed; right: 18px; bottom: 18px; z-index: 100; display: grid; gap: 8px; width: min(340px, calc(100vw - 36px)); }
+    .toast { display: flex; align-items: center; gap: 9px; border: 1px solid #414c46; border-radius: var(--radius); background: #202622; color: white; padding: 11px 12px; box-shadow: var(--shadow); font-size: 12px; animation: toast-in .2s ease-out; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+    .mobile-nav { display: none; }
+    .hidden { display: none !important; }
+
+    @media (max-width: 1080px) {
+      .workspace-grid { grid-template-columns: minmax(320px, 390px) 1fr; }
+      .asset-grid { grid-template-columns: repeat(3, minmax(170px, 1fr)); }
+      .canvas-list { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      body { overflow: auto; }
+      .app { display: block; min-height: 100%; }
+      .sidebar { display: none; }
+      .shell { min-height: 100vh; grid-template-rows: 58px 1fr 62px; }
+      .topbar { padding: 0 12px; }
+      .product-name, .prototype-badge { display: none; }
+      .project-select { max-width: 130px; }
+      .main { overflow: visible; }
+      .view, .view.active { min-height: calc(100vh - 120px); height: auto; }
+      .page-scroll, .assets-page, .canvas-home { overflow: visible; padding: 14px; }
+      .page-header { align-items: stretch; flex-direction: column; margin-bottom: 14px; }
+      .segmented { width: 100%; }
+      .segment { min-width: 0; flex: 1; }
+      .workspace-grid { display: block; min-height: 0; }
+      .form-panel { margin-bottom: 12px; }
+      .output-panel { min-height: 520px; }
+      .parameter-grid { grid-template-columns: 1fr; }
+      .estimate { grid-template-columns: 1fr; }
+      .generate-button { width: 100%; }
+      .history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .canvas-list { grid-template-columns: 1fr; }
+      .asset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .filter-bar .select { max-width: calc(50% - 4px); }
+      .search { min-width: 100%; }
+      .asset-card { border-radius: 4px; }
+      .asset-info { padding: 8px; }
+      .picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .batch-bar { left: 50%; bottom: 72px; max-width: calc(100vw - 20px); overflow-x: auto; }
+      .canvas-editor { min-height: calc(100vh - 120px); }
+      .canvas-editor-bar .canvas-project, .save-state span { display: none; }
+      .canvas-toolbar { left: 10px; right: 10px; transform: none; overflow-x: auto; justify-content: flex-start; }
+      .mobile-nav { display: grid; grid-template-columns: repeat(5, 1fr); position: sticky; bottom: 0; z-index: 50; border-top: 1px solid var(--border); background: #f8f9f6; }
+      .mobile-nav button { display: grid; place-items: center; gap: 2px; min-height: 62px; border: 0; background: transparent; color: var(--muted); font-size: 9px; }
+      .mobile-nav button.active { color: var(--blue); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="主导航">
+      <button class="brand" title="Mikiko Studio" onclick="navigate('create')">M</button>
+      <button class="nav-button active" data-nav="create" onclick="navigate('create')"><i data-lucide="sparkles" size="20"></i><span>创作</span></button>
+      <button class="nav-button" data-nav="canvas" onclick="navigate('canvas')"><i data-lucide="workflow" size="20"></i><span>创意画布</span></button>
+      <button class="nav-button" data-nav="assets" onclick="navigate('assets')"><i data-lucide="library-big" size="20"></i><span>资产</span></button>
+      <div class="nav-spacer"></div>
+      <button class="nav-button" title="项目"><i data-lucide="folder-kanban" size="20"></i><span>项目</span></button>
+      <button class="nav-button" title="设置"><i data-lucide="settings" size="20"></i><span>设置</span></button>
+    </aside>
+
+    <section class="shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <span class="product-name">Mikiko Studio</span>
+          <span class="prototype-badge">交互原型</span>
+          <select class="project-select" id="globalProject" aria-label="当前项目" onchange="changeProject(this.value)">
+            <option value="default">默认项目</option>
+            <option value="autumn">秋日短片</option>
+            <option value="brand">品牌视觉</option>
+          </select>
+        </div>
+        <div class="topbar-right">
+          <div class="balance" title="可用积分"><span class="diamond">◈</span><span id="balanceValue">842.50</span></div>
+          <button class="icon-button" title="通知" aria-label="通知"><i data-lucide="bell" size="18"></i></button>
+          <button class="icon-button" title="账户" aria-label="账户"><i data-lucide="circle-user-round" size="19"></i></button>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="view active" id="view-create">
+          <div class="page-scroll">
+            <header class="page-header">
+              <div>
+                <p class="eyebrow">Create</p>
+                <h1>创作</h1>
+                <p class="subtle">快速完成单次图片或视频生成</p>
+              </div>
+              <div class="segmented" role="tablist" aria-label="媒体生成模式">
+                <button class="segment" id="imageTab" role="tab" onclick="switchMedia('image')">图片生成</button>
+                <button class="segment active" id="videoTab" role="tab" onclick="switchMedia('video')">视频生成</button>
+              </div>
+            </header>
+
+            <div class="workspace-grid">
+              <section class="panel form-panel" aria-label="生成参数">
+                <div class="section">
+                  <div class="field">
+                    <span class="label">模型分组</span>
+                    <div class="model-picker" id="modelPicker">
+                      <button class="model-trigger" id="modelTrigger" type="button" aria-haspopup="listbox" onclick="toggleModelMenu()">
+                        <span><span class="model-title" id="modelTitle">电影叙事</span><span class="model-subtitle" id="modelSubtitle">稳定运镜与自然声音</span></span>
+                        <span class="model-subject" id="modelSubject">◈37.50</span>
+                      </button>
+                      <div class="model-menu" id="modelMenu" role="listbox"></div>
+                    </div>
+                  </div>
+
+                  <div class="field video-only">
+                    <span class="label">生成方式</span>
+                    <div class="segmented">
+                      <button class="segment active" data-generation="text" onclick="switchGenerationMode('text')">文本生成视频</button>
+                      <button class="segment" data-generation="image" onclick="switchGenerationMode('image')">图片生成视频</button>
+                    </div>
+                  </div>
+
+                  <div class="field video-only hidden" id="firstFrameField">
+                    <div class="label-row"><span class="label">首帧图片</span><span class="hint">跟随素材比例</span></div>
+                    <div class="asset-slot" id="firstFrameSlot">
+                      <div class="asset-placeholder"><i data-lucide="image" size="20"></i></div>
+                      <div><strong style="font-size:12px">未选择图片</strong><p class="subtle" style="font-size:11px;margin-top:3px">从资产选择或本地上传</p></div>
+                      <button class="button" onclick="openAssetPicker()">选择</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="field">
+                    <div class="label-row"><span class="label">提示词</span><button class="button" style="min-height:30px" onclick="optimizePrompt()"><i data-lucide="wand-sparkles" size="14"></i>优化</button></div>
+                    <textarea class="prompt" id="promptInput" oninput="updateEstimate()">镜头缓慢穿过雨后的城市街道，霓虹灯倒映在路面，人物撑伞走向远处，电影质感，稳定运镜。</textarea>
+                    <div class="row"><span class="prototype-badge">@ 资产</span><span class="prototype-badge">$ 变量</span><span class="hint" style="margin-left:auto" id="promptCount">45 / 7000</span></div>
+                  </div>
+                </div>
+
+                <div class="section video-only" id="videoParams">
+                  <div class="parameter-grid">
+                    <label class="parameter"><span class="label">时长</span><select class="select" id="duration" onchange="updateEstimate()"><option value="5">5 秒</option><option value="10">10 秒</option><option value="15">15 秒</option></select></label>
+                    <label class="parameter"><span class="label">画面比例</span><select class="select" id="ratio" onchange="updateEstimate()"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option></select></label>
+                    <label class="parameter"><span class="label">清晰度</span><select class="select" id="resolution" onchange="updateEstimate()"><option value="720">720P</option><option value="480">480P</option></select></label>
+                    <div class="parameter"><span class="label">声音</span><div class="switch-row"><span class="hint">生成音频</span><label class="switch"><input id="audioToggle" type="checkbox" checked onchange="updateEstimate()"><span></span></label></div></div>
+                  </div>
+                </div>
+
+                <div class="section image-only hidden" id="imageParams">
+                  <div class="parameter-grid">
+                    <label class="parameter"><span class="label">尺寸模式</span><select class="select"><option>自动</option><option>按比例</option><option>按像素</option></select></label>
+                    <label class="parameter"><span class="label">画面比例</span><select class="select"><option>1:1</option><option>16:9</option><option>9:16</option></select></label>
+                    <label class="parameter"><span class="label">清晰度</span><select class="select"><option>1K</option><option>2K</option></select></label>
+                    <label class="parameter"><span class="label">生成数量</span><select class="select"><option>1 张</option><option>2 张</option><option>4 张</option></select></label>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="estimate">
+                    <div><small id="estimateLabel">预计积分 · 5 秒 · 720P · 有声</small><strong><span class="diamond">◈</span><span id="estimateValue">37.50</span></strong></div>
+                    <button class="button primary generate-button" id="generateButton" onclick="startGeneration()"><i data-lucide="sparkles" size="16"></i><span id="generateLabel">生成视频 · ◈37.50</span></button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel output-panel" aria-label="任务与结果">
+                <div class="output-header"><div><strong style="font-size:13px">当前任务</strong><span class="hint" id="taskHint" style="margin-left:8px">暂无运行任务</span></div><button class="icon-button" title="刷新任务" aria-label="刷新任务" onclick="toast('任务状态已刷新')"><i data-lucide="refresh-cw" size="16"></i></button></div>
+                <div class="output-body" id="outputBody"></div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-canvas">
+          <div class="canvas-home" id="canvasHome">
+            <header class="page-header">
+              <div><p class="eyebrow">Visual Workspace</p><h1>创意画布</h1><p class="subtle">可视化编排图片与视频生成</p></div>
+              <button class="button primary" onclick="openCanvas('new')"><i data-lucide="plus" size="16"></i>新建画布</button>
+            </header>
+            <div class="filter-bar"><input class="input search" placeholder="搜索画布"><select class="select"><option>最近修改</option><option>最近创建</option><option>名称</option></select><button class="icon-button" title="刷新" onclick="toast('画布列表已刷新')"><i data-lucide="refresh-cw" size="16"></i></button></div>
+            <div class="canvas-list">
+              <article class="canvas-card">
+                <div class="canvas-preview"><span class="mini-node" style="left:10%;top:20%;width:24%;height:45%;background-image:url('../../web/user/public/landing/mode-reference.webp');background-size:cover"></span><span class="mini-node" style="left:42%;top:14%;width:24%;height:34%"></span><span class="mini-node" style="left:73%;top:33%;width:19%;height:44%;background:#e9efff"></span></div>
+                <div class="canvas-card-body"><strong>秋日城市短片</strong><p class="subtle" style="margin-top:4px">7 个节点 · 刚刚修改</p><div class="canvas-card-actions"><button class="button" onclick="openCanvas('autumn')"><i data-lucide="folder-open" size="14"></i>打开</button><div class="row"><button class="icon-button" title="复制" onclick="event.stopPropagation();toast('已复制为“秋日城市短片 副本”')"><i data-lucide="copy" size="15"></i></button><button class="icon-button" title="删除" onclick="event.stopPropagation();toast('原型中保留画布')"><i data-lucide="trash-2" size="15"></i></button></div></div></div>
+              </article>
+              <article class="canvas-card">
+                <div class="canvas-preview"><span class="mini-node" style="left:8%;top:17%;width:22%;height:40%;background-image:url('../../web/user/public/landing/mode-text.webp');background-size:cover"></span><span class="mini-node" style="left:39%;top:35%;width:25%;height:38%;background:#fff4d3"></span><span class="mini-node" style="left:72%;top:18%;width:20%;height:52%;background-image:url('../../web/user/public/landing/workspace.webp');background-size:cover"></span></div>
+                <div class="canvas-card-body"><strong>品牌视觉探索</strong><p class="subtle" style="margin-top:4px">5 个节点 · 昨天修改</p><div class="canvas-card-actions"><button class="button" onclick="openCanvas('brand')"><i data-lucide="folder-open" size="14"></i>打开</button><div class="row"><button class="icon-button" title="复制" onclick="event.stopPropagation();toast('已复制画布')"><i data-lucide="copy" size="15"></i></button><button class="icon-button" title="删除" onclick="event.stopPropagation();toast('原型中保留画布')"><i data-lucide="trash-2" size="15"></i></button></div></div></div>
+              </article>
+              <button class="canvas-card new-canvas" onclick="openCanvas('new')"><span><i data-lucide="plus" size="30"></i><strong style="display:block;margin-top:10px">新建空白画布</strong></span></button>
+            </div>
+          </div>
+
+          <div class="canvas-editor" id="canvasEditor">
+            <div class="canvas-editor-bar">
+              <div class="row"><button class="icon-button" title="返回画布列表" onclick="closeCanvas()"><i data-lucide="arrow-left" size="17"></i></button><strong id="canvasTitle" style="font-size:13px">秋日城市短片</strong><span class="prototype-badge canvas-project">秋日短片</span></div>
+              <div class="row"><span class="save-state"><i data-lucide="cloud" size="15"></i><span id="saveStateText">已保存</span></span><button class="icon-button" title="资产抽屉" onclick="toggleAssetDrawer()"><i data-lucide="library-big" size="16"></i></button></div>
+            </div>
+            <div class="canvas-stage" id="canvasStage">
+              <div class="canvas-toolbar" aria-label="画布工具栏">
+                <button class="tool-button" title="选择" aria-label="选择"><i data-lucide="mouse-pointer-2" size="17"></i></button>
+                <button class="tool-button" title="添加提示词" onclick="addCanvasNode('prompt')"><i data-lucide="type" size="17"></i></button>
+                <button class="tool-button" title="添加图片生成" onclick="addCanvasNode('image-gen')"><i data-lucide="image-plus" size="17"></i></button>
+                <button class="tool-button" title="添加视频生成" onclick="addCanvasNode('video-gen')"><i data-lucide="clapperboard" size="17"></i></button>
+                <button class="tool-button" title="添加便签" onclick="addCanvasNode('note')"><i data-lucide="sticky-note" size="17"></i></button>
+                <span class="tool-divider"></span>
+                <button class="tool-button" title="撤销" onclick="canvasUndo()"><i data-lucide="undo-2" size="17"></i></button>
+                <button class="tool-button" title="重做" onclick="canvasRedo()"><i data-lucide="redo-2" size="17"></i></button>
+                <span class="tool-divider"></span>
+                <button class="tool-button" title="适应视图" onclick="fitCanvas()"><i data-lucide="scan" size="17"></i></button>
+                <button class="tool-button" title="搜索节点" onclick="toast('节点搜索：提示词、资产名称、节点名称')"><i data-lucide="search" size="17"></i></button>
+              </div>
+              <div class="canvas-world" id="canvasWorld"><svg class="connections" id="connections"></svg><div id="nodeLayer"></div></div>
+              <div class="canvas-zoom"><button class="tool-button" title="缩小" onclick="changeZoom(-.1)"><i data-lucide="minus" size="16"></i></button><span class="zoom-label" id="zoomLabel">100%</span><button class="tool-button" title="放大" onclick="changeZoom(.1)"><i data-lucide="plus" size="16"></i></button></div>
+              <aside class="asset-drawer" id="assetDrawer"><div class="drawer-header"><strong style="font-size:13px">添加资产</strong><button class="icon-button" title="关闭" onclick="toggleAssetDrawer(false)"><i data-lucide="x" size="16"></i></button></div><div class="drawer-grid" id="drawerGrid"></div></aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-assets">
+          <div class="assets-page">
+            <header class="page-header">
+              <div><p class="eyebrow">Media Library</p><h1>资产</h1><p class="subtle">图片、视频与音频统一管理</p></div>
+              <div class="row"><input id="uploadInput" type="file" accept="image/*,video/*,audio/*" multiple hidden onchange="handleUpload(this.files)"><button class="button primary" onclick="document.getElementById('uploadInput').click()"><i data-lucide="upload" size="16"></i>上传资产</button></div>
+            </header>
+            <div class="filter-bar">
+              <input class="input search" id="assetSearch" placeholder="搜索资产名称" oninput="renderAssets()">
+              <select class="select" id="assetType" onchange="renderAssets()"><option value="all">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="audio">音频</option></select>
+              <select class="select" id="assetSource" onchange="renderAssets()"><option value="all">全部来源</option><option value="generated">平台生成</option><option value="upload">本地上传</option></select>
+              <select class="select" id="assetGroup" onchange="renderAssets()"><option value="all">全部分组</option><option value="none">未分组</option><option value="scene">场景</option><option value="character">角色</option></select>
+              <select class="select"><option>最近创建</option><option>名称</option><option>文件大小</option><option>时长</option></select>
+              <button class="icon-button" title="刷新资产" onclick="toast('资产列表已刷新')"><i data-lucide="refresh-cw" size="16"></i></button>
+            </div>
+            <div class="asset-grid" id="assetGrid"></div>
+          </div>
+        </section>
+      </main>
+
+      <nav class="mobile-nav" aria-label="移动端导航">
+        <button onclick="navigate('create')"><i data-lucide="home" size="18"></i>首页</button>
+        <button class="active" data-mobile-nav="create" onclick="navigate('create')"><i data-lucide="sparkles" size="18"></i>创作</button>
+        <button data-mobile-nav="canvas" onclick="navigate('canvas')"><i data-lucide="workflow" size="18"></i>画布</button>
+        <button data-mobile-nav="assets" onclick="navigate('assets')"><i data-lucide="library-big" size="18"></i>资产</button>
+        <button onclick="toast('项目、积分、密钥与设置')"><i data-lucide="circle-user-round" size="18"></i>我的</button>
+      </nav>
+    </section>
+  </div>
+
+  <div class="batch-bar" id="batchBar"><span class="batch-count" id="batchCount">已选 0 项</span><button class="button" onclick="batchAction('打包下载')"><i data-lucide="download" size="14"></i>下载</button><button class="button" onclick="batchAction('设置分组')"><i data-lucide="tags" size="14"></i>分组</button><button class="button" onclick="batchAction('转移项目')"><i data-lucide="folder-input" size="14"></i>转移</button><button class="button" onclick="batchDelete()"><i data-lucide="trash-2" size="14"></i>删除</button><button class="icon-button" title="清空选择" onclick="clearSelection()"><i data-lucide="x" size="15"></i></button></div>
+
+  <div class="modal-backdrop" id="modalBackdrop" onclick="backdropClose(event)"><div class="modal" id="modal"></div></div>
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+  <script>
+    const sample = {
+      city: '../../web/user/public/landing/mode-text.webp',
+      portrait: '../../web/user/public/landing/mode-reference.webp',
+      product: '../../web/user/public/landing/workspace.webp',
+      detail: '../../web/user/public/landing/studio-showcase-1280.webp',
+      video: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+      audio: 'https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3'
+    };
+
+    let balance = 842.50;
+    let activeView = 'create';
+    let mediaMode = 'video';
+    let generationMode = 'text';
+    let selectedModel = 'cinema';
+    let selectedFirstFrame = null;
+    let currentTask = null;
+    let selectedAssets = new Set();
+    let currentProject = localStorage.getItem('mgs-demo-project') || 'default';
+
+    const models = {
+      video: [
+        { id: 'cinema', title: '电影叙事', subtitle: '稳定运镜与自然声音', base: 7.5, subject: '◈37.50' },
+        { id: 'draft', title: '快速草稿', subtitle: '更快生成，适合方向探索', base: 3.2, subject: '◈16.00' },
+        { id: 'detail', title: '细节增强', subtitle: '更高画面细节与一致性', base: 10.4, subject: '◈52.00' }
+      ],
+      image: [
+        { id: 'image-pro', title: '图像创作 Pro', subtitle: '均衡质量与速度', base: 2.8, subject: '◈2.80' },
+        { id: 'image-fast', title: '图像快速', subtitle: '适合批量探索', base: 1.2, subject: '◈1.20' }
+      ]
+    };
+
+    let assets = [
+      { id: 'a1', type: 'image', name: '雨后城市氛围图', source: 'generated', group: 'scene', project: 'default', url: sample.city, meta: '1536 × 1024' },
+      { id: 'a2', type: 'video', name: '花丛镜头测试', source: 'generated', group: 'scene', project: 'default', url: sample.video, poster: sample.detail, meta: '10 秒 · 720P' },
+      { id: 'a3', type: 'image', name: '人物造型参考', source: 'upload', group: 'character', project: 'default', url: sample.portrait, meta: '1024 × 1024' },
+      { id: 'a4', type: 'audio', name: '环境声音样本', source: 'upload', group: 'none', project: 'default', url: sample.audio, meta: '0:07 · MP3' },
+      { id: 'a5', type: 'image', name: '品牌产品主视觉', source: 'generated', group: 'none', project: 'default', url: sample.product, meta: '1600 × 1000' },
+      { id: 'a6', type: 'video', name: '竖屏动作预览', source: 'generated', group: 'character', project: 'default', url: sample.video, poster: sample.portrait, meta: '5 秒 · 720P' }
+    ];
+
+    const historyItems = [
+      { type: 'video', name: '雨夜城市镜头', image: sample.city },
+      { type: 'image', name: '人物光影探索', image: sample.portrait },
+      { type: 'image', name: '品牌构图方案', image: sample.product }
+    ];
+
+    function iconRefresh() {
+      if (window.lucide) window.lucide.createIcons({ attrs: { 'stroke-width': 1.7 } });
+    }
+
+    function esc(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
+    }
+
+    function navigate(view) {
+      activeView = view;
+      document.querySelectorAll('.view').forEach(el => el.classList.toggle('active', el.id === `view-${view}`));
+      document.querySelectorAll('[data-nav]').forEach(el => el.classList.toggle('active', el.dataset.nav === view));
+      document.querySelectorAll('[data-mobile-nav]').forEach(el => el.classList.toggle('active', el.dataset.mobileNav === view));
+      if (view === 'assets') renderAssets();
+      if (view === 'canvas') closeCanvas();
+      iconRefresh();
+    }
+
+    function changeProject(project) {
+      currentProject = project;
+      localStorage.setItem('mgs-demo-project', project);
+      document.getElementById('globalProject').value = project;
+      toast(`已切换到${document.getElementById('globalProject').selectedOptions[0].text}`);
+      if (activeView === 'assets') renderAssets();
+    }
+
+    function switchMedia(mode) {
+      mediaMode = mode;
+      document.getElementById('imageTab').classList.toggle('active', mode === 'image');
+      document.getElementById('videoTab').classList.toggle('active', mode === 'video');
+      document.querySelectorAll('.video-only').forEach(el => el.classList.toggle('hidden', mode !== 'video'));
+      document.querySelectorAll('.image-only').forEach(el => el.classList.toggle('hidden', mode !== 'image'));
+      selectedModel = models[mode][0].id;
+      renderModelMenu();
+      updateEstimate();
+      renderOutput();
+    }
+
+    function switchGenerationMode(mode) {
+      generationMode = mode;
+      document.querySelectorAll('[data-generation]').forEach(el => el.classList.toggle('active', el.dataset.generation === mode));
+      document.getElementById('firstFrameField').classList.toggle('hidden', mode !== 'image');
+      document.getElementById('ratio').disabled = mode === 'image';
+      if (mode === 'image') document.getElementById('ratio').value = '16:9';
+      updateEstimate();
+    }
+
+    function toggleModelMenu() {
+      document.getElementById('modelMenu').classList.toggle('open');
+    }
+
+    function renderModelMenu() {
+      const list = models[mediaMode];
+      if (!list.some(model => model.id === selectedModel)) selectedModel = list[0].id;
+      const current = list.find(model => model.id === selectedModel);
+      document.getElementById('modelTitle').textContent = current.title;
+      document.getElementById('modelSubtitle').textContent = current.subtitle;
+      document.getElementById('modelSubject').textContent = current.subject;
+      document.getElementById('modelMenu').innerHTML = list.map(model => `<button class="model-option ${model.id === selectedModel ? 'selected' : ''}" onclick="selectModel('${model.id}')"><span><span class="model-title">${esc(model.title)}</span><span class="model-subtitle">${esc(model.subtitle)}</span></span><span class="model-subject">${esc(model.subject)}</span></button>`).join('');
+    }
+
+    function selectModel(id) {
+      selectedModel = id;
+      document.getElementById('modelMenu').classList.remove('open');
+      renderModelMenu();
+      updateEstimate();
+    }
+
+    function currentCost() {
+      const model = models[mediaMode].find(item => item.id === selectedModel);
+      if (mediaMode === 'image') return model.base;
+      const duration = Number(document.getElementById('duration').value);
+      const resolution = document.getElementById('resolution').value;
+      const audio = document.getElementById('audioToggle').checked;
+      const multiplier = resolution === '480' ? .65 : 1;
+      return model.base * duration * multiplier + (audio ? 0 : -Math.min(2, model.base * .15));
+    }
+
+    function updateEstimate() {
+      const prompt = document.getElementById('promptInput').value;
+      document.getElementById('promptCount').textContent = `${[...prompt].length} / 7000`;
+      const cost = Math.max(0, currentCost());
+      document.getElementById('estimateValue').textContent = cost.toFixed(2);
+      if (mediaMode === 'video') {
+        const duration = document.getElementById('duration').value;
+        const resolution = document.getElementById('resolution').value;
+        const audio = document.getElementById('audioToggle').checked ? '有声' : '无声';
+        document.getElementById('estimateLabel').textContent = `预计积分 · ${duration} 秒 · ${resolution}P · ${audio}`;
+        document.getElementById('generateLabel').textContent = `生成视频 · ◈${cost.toFixed(2)}`;
+      } else {
+        document.getElementById('estimateLabel').textContent = '预计积分 · 1 张 · 自动尺寸';
+        document.getElementById('generateLabel').textContent = `生成图片 · ◈${cost.toFixed(2)}`;
+      }
+      const blocked = !prompt.trim() || (mediaMode === 'video' && generationMode === 'image' && !selectedFirstFrame) || cost > balance || Boolean(currentTask && !currentTask.terminal);
+      document.getElementById('generateButton').disabled = blocked;
+    }
+
+    function optimizePrompt() {
+      const input = document.getElementById('promptInput');
+      if (!input.value.includes('自然景深')) input.value = `${input.value.trim()} 自然景深，细腻光影，主体动作连贯。`;
+      updateEstimate();
+      toast('已保留变量与资产引用并优化提示词');
+    }
+
+    function openAssetPicker() {
+      const images = assets.filter(asset => asset.type === 'image');
+      showModal('选择首帧图片', `<div class="picker-grid">${images.map(asset => `<button class="picker-item" onclick="chooseFirstFrame('${asset.id}')"><img src="${esc(asset.url)}" alt=""><span>${esc(asset.name)}</span></button>`).join('')}</div><div class="detail-actions"><button class="button" onclick="document.getElementById('frameUpload').click()"><i data-lucide="upload" size="14"></i>本地上传</button><input id="frameUpload" type="file" accept="image/*" hidden onchange="uploadFirstFrame(this.files[0])"></div>`);
+    }
+
+    function chooseFirstFrame(id) {
+      selectedFirstFrame = assets.find(asset => asset.id === id);
+      renderFirstFrame();
+      closeModal();
+      updateEstimate();
+    }
+
+    function uploadFirstFrame(file) {
+      if (!file) return;
+      const asset = { id: `u${Date.now()}`, type: 'image', name: file.name, source: 'upload', group: 'none', project: currentProject, url: URL.createObjectURL(file), meta: `${(file.size / 1024 / 1024).toFixed(1)} MB` };
+      assets.unshift(asset);
+      selectedFirstFrame = asset;
+      renderFirstFrame();
+      closeModal();
+      updateEstimate();
+      toast('图片已上传到资产并设为首帧');
+    }
+
+    function renderFirstFrame() {
+      const slot = document.getElementById('firstFrameSlot');
+      if (!selectedFirstFrame) return;
+      slot.innerHTML = `<img src="${esc(selectedFirstFrame.url)}" alt="首帧"><div><strong style="font-size:12px">${esc(selectedFirstFrame.name)}</strong><p class="subtle" style="font-size:11px;margin-top:3px">${esc(selectedFirstFrame.meta)} · ${selectedFirstFrame.source === 'upload' ? '本地上传' : '平台生成'}</p></div><button class="icon-button" title="移除" onclick="removeFirstFrame()"><i data-lucide="x" size="16"></i></button>`;
+      iconRefresh();
+    }
+
+    function removeFirstFrame() {
+      selectedFirstFrame = null;
+      document.getElementById('firstFrameSlot').innerHTML = `<div class="asset-placeholder"><i data-lucide="image" size="20"></i></div><div><strong style="font-size:12px">未选择图片</strong><p class="subtle" style="font-size:11px;margin-top:3px">从资产选择或本地上传</p></div><button class="button" onclick="openAssetPicker()">选择</button>`;
+      iconRefresh();
+      updateEstimate();
+    }
+
+    function startGeneration() {
+      const cost = currentCost();
+      if (cost > balance) return toast('积分不足');
+      if (!document.getElementById('promptInput').value.trim()) return toast('请填写提示词');
+      if (mediaMode === 'video' && generationMode === 'image' && !selectedFirstFrame) return toast('请选择首帧图片');
+      balance -= cost;
+      updateBalance();
+      currentTask = { id: `T${Date.now()}`, media: mediaMode, status: '排队中', stage: 0, cost, terminal: false, started: Date.now() };
+      renderOutput();
+      updateEstimate();
+      const stages = mediaMode === 'video' ? [
+        [1200, '生成中', 1], [4200, '正在保存', 2], [5900, '正在准备预览', 3], [7200, '已完成', 4]
+      ] : [[900, '生成中', 1], [2500, '正在保存', 2], [3600, '已完成', 4]];
+      stages.forEach(([delay, status, stage]) => setTimeout(() => advanceTask(status, stage), delay));
+    }
+
+    function advanceTask(status, stage) {
+      if (!currentTask || currentTask.terminal) return;
+      currentTask.status = status;
+      currentTask.stage = stage;
+      if (status === '已完成') {
+        currentTask.terminal = true;
+        const isVideo = currentTask.media === 'video';
+        const asset = { id: `g${Date.now()}`, type: isVideo ? 'video' : 'image', name: isVideo ? '雨后城市镜头' : '雨后城市画面', source: 'generated', group: 'scene', project: currentProject, url: isVideo ? sample.video : sample.city, poster: sample.city, meta: isVideo ? `${document.getElementById('duration').value} 秒 · ${document.getElementById('resolution').value}P` : '1536 × 1024' };
+        assets.unshift(asset);
+        currentTask.asset = asset;
+        historyItems.unshift({ type: asset.type, name: asset.name, image: asset.poster || asset.url });
+      }
+      renderOutput();
+      updateEstimate();
+    }
+
+    function renderOutput() {
+      const body = document.getElementById('outputBody');
+      const hint = document.getElementById('taskHint');
+      if (!currentTask) {
+        hint.textContent = '暂无运行任务';
+        body.innerHTML = `<div class="task-empty"><span><i data-lucide="clapperboard" size="34"></i><strong style="display:block;margin:10px 0 4px;color:var(--ink)">准备生成</strong><small>提交后将在这里显示任务阶段与结果</small></span></div>${renderHistory()}`;
+      } else {
+        hint.textContent = currentTask.terminal ? '已结算' : `已等待 ${Math.max(1, Math.round((Date.now() - currentTask.started) / 1000))} 秒`;
+        const isVideo = currentTask.media === 'video';
+        const complete = currentTask.status === '已完成';
+        const visual = complete
+          ? (isVideo ? `<video src="${sample.video}" poster="${sample.city}" controls muted loop></video>` : `<img src="${sample.city}" alt="生成结果">`)
+          : `<img src="${isVideo ? sample.city : sample.portrait}" alt="任务预览" style="filter:saturate(.65) brightness(.82)">`;
+        body.innerHTML = `<article class="task-card"><div class="task-visual">${visual}<span class="task-status"><span class="pulse"></span>${esc(currentTask.status)}</span></div><div class="task-meta"><div class="task-meta-top"><div><strong>${isVideo ? '雨后城市镜头' : '雨后城市画面'}</strong><p class="subtle" style="margin-top:4px">${esc(models[currentTask.media].find(item => item.id === selectedModel)?.title || '模型分组')} · ${isVideo ? `${document.getElementById('duration').value} 秒 · ${document.getElementById('resolution').value}P` : '自动尺寸'}</p></div><div style="text-align:right"><span class="hint">${complete ? '实际扣除' : '已预留'}</span><strong style="display:block;font-family:'DM Sans'">◈${currentTask.cost.toFixed(2)}</strong></div></div><div class="status-steps">${[1,2,3,4].map(n => `<span class="status-step ${currentTask.stage >= n ? 'done' : ''}"></span>`).join('')}</div><div class="row">${complete ? `<button class="button" onclick="navigate('assets')"><i data-lucide="library-big" size="14"></i>查看资产</button><button class="button" onclick="addGeneratedToCanvas()"><i data-lucide="workflow" size="14"></i>添加到画布</button><button class="button dark" onclick="toast('已复用本次参数')"><i data-lucide="rotate-ccw" size="14"></i>复用参数</button>` : `<span class="hint">任务可离开页面继续运行</span>`}</div></div></article>${renderHistory()}`;
+      }
+      iconRefresh();
+    }
+
+    function renderHistory() {
+      return `<h2 style="margin-top:20px">最近任务</h2><div class="history-grid">${historyItems.slice(0, 6).map(item => `<button class="history-item" onclick="toast('${esc(item.name)}')"><img src="${esc(item.image)}" alt=""><span>${item.type === 'video' ? '视频 · ' : '图片 · '}${esc(item.name)}</span></button>`).join('')}</div>`;
+    }
+
+    function addGeneratedToCanvas() {
+      navigate('canvas');
+      openCanvas('autumn');
+      if (currentTask?.asset) addAssetToCanvas(currentTask.asset.id);
+    }
+
+    function updateBalance() {
+      document.getElementById('balanceValue').textContent = balance.toFixed(2);
+    }
+
+    let canvasNodes = [];
+    let canvasConnections = [];
+    let canvasHistory = [];
+    let canvasFuture = [];
+    let canvasSelected = null;
+    let zoom = 1;
+    let pan = { x: 0, y: 0 };
+
+    function initialCanvasNodes() {
+      return [
+        { id: 'image-1', type: 'image', title: '城市氛围参考', x: 90, y: 170, w: 230, h: 230, assetId: 'a1' },
+        { id: 'prompt-1', type: 'prompt', title: '镜头提示词', x: 390, y: 90, w: 280, h: 220, content: '镜头缓慢穿过雨后的城市街道，霓虹灯倒映在路面，人物撑伞走向远处。' },
+        { id: 'video-gen-1', type: 'video-gen', title: '视频生成', x: 770, y: 170, w: 260, h: 250, status: 'ready' }
+      ];
+    }
+
+    function openCanvas(kind) {
+      document.getElementById('canvasHome').classList.add('hidden');
+      document.getElementById('canvasEditor').classList.add('active');
+      document.getElementById('canvasTitle').textContent = kind === 'brand' ? '品牌视觉探索' : kind === 'new' ? '未命名画布' : '秋日城市短片';
+      canvasNodes = initialCanvasNodes();
+      canvasConnections = [{ from: 'image-1', to: 'video-gen-1' }, { from: 'prompt-1', to: 'video-gen-1' }];
+      canvasHistory = [];
+      canvasFuture = [];
+      zoom = 1;
+      pan = { x: 0, y: 0 };
+      renderCanvas();
+      fitCanvas();
+    }
+
+    function closeCanvas() {
+      document.getElementById('canvasHome').classList.remove('hidden');
+      document.getElementById('canvasEditor').classList.remove('active');
+      document.getElementById('assetDrawer').classList.remove('open');
+    }
+
+    function nodeHTML(node) {
+      const asset = node.assetId ? assets.find(item => item.id === node.assetId) : null;
+      let body = '';
+      if (node.type === 'image') body = `<img class="node-image" src="${esc(asset?.url || sample.city)}" alt=""><p class="subtle" style="margin-top:7px">${esc(asset?.meta || '图片资产')}</p>`;
+      if (node.type === 'video') body = `<video class="node-video" src="${esc(asset?.url || sample.video)}" poster="${esc(asset?.poster || sample.city)}" controls muted></video><p class="subtle" style="margin-top:7px">${esc(asset?.meta || '视频资产')}</p>`;
+      if (node.type === 'audio') body = `<div style="display:grid;place-items:center;min-height:80px;background:var(--green-soft);border-radius:4px"><i data-lucide="audio-lines" size="28"></i></div><audio src="${esc(asset?.url || sample.audio)}" controls preload="none" style="width:100%;margin-top:8px"></audio>`;
+      if (node.type === 'prompt') body = `<textarea class="node-prompt" oninput="updateNodeContent('${node.id}',this.value)">${esc(node.content || '')}</textarea>`;
+      if (node.type === 'note') body = `<div class="node-note"><textarea oninput="updateNodeContent('${node.id}',this.value)" placeholder="记录想法">${esc(node.content || '')}</textarea></div>`;
+      if (node.type === 'image-gen') body = `<div class="node-config-row"><span>模型分组</span><strong>图像创作 Pro</strong></div><div class="node-config-row"><span>尺寸</span><strong>自动</strong></div><div class="node-config-row"><span>预计积分</span><strong class="diamond">◈2.80</strong></div><button class="button primary node-generate" onclick="canvasGenerate('${node.id}','image')"><i data-lucide="sparkles" size="14"></i>${node.status === 'running' ? '生成中' : '生成图片'}</button>`;
+      if (node.type === 'video-gen') body = `<div class="node-config-row"><span>模型分组</span><strong>电影叙事</strong></div><div class="node-config-row"><span>时长 / 清晰度</span><strong>5 秒 / 720P</strong></div><div class="node-config-row"><span>预计积分</span><strong class="diamond">◈37.50</strong></div><button class="button primary node-generate" onclick="canvasGenerate('${node.id}','video')" ${node.status === 'running' ? 'disabled' : ''}><i data-lucide="sparkles" size="14"></i>${node.status === 'running' ? '生成中' : '生成视频'}</button>`;
+      const typeName = { image: '图片', video: '视频', audio: '音频', prompt: '提示词', note: '便签', 'image-gen': '图片生成', 'video-gen': '视频生成' }[node.type];
+      return `<article class="canvas-node ${canvasSelected === node.id ? 'selected' : ''}" data-node="${node.id}" style="left:${node.x}px;top:${node.y}px;width:${node.w}px;min-height:${node.h}px" onclick="selectCanvasNode('${node.id}',event)"><span class="node-port input"></span><div class="node-head" onpointerdown="startNodeDrag(event,'${node.id}')"><strong>${esc(node.title)}</strong><span class="node-type">${typeName}</span></div><div class="node-body">${body}</div><span class="node-port output"></span></article>`;
+    }
+
+    function renderCanvas() {
+      document.getElementById('nodeLayer').innerHTML = canvasNodes.map(nodeHTML).join('');
+      applyWorldTransform();
+      updateConnections();
+      renderDrawer();
+      iconRefresh();
+      markCanvasSaved();
+    }
+
+    function updateConnections() {
+      const svg = document.getElementById('connections');
+      svg.innerHTML = canvasConnections.map(connection => {
+        const from = canvasNodes.find(node => node.id === connection.from);
+        const to = canvasNodes.find(node => node.id === connection.to);
+        if (!from || !to) return '';
+        const x1 = from.x + from.w, y1 = from.y + from.h / 2, x2 = to.x, y2 = to.y + to.h / 2;
+        const bend = Math.max(70, Math.abs(x2 - x1) * .45);
+        return `<path d="M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}"></path>`;
+      }).join('');
+    }
+
+    function pushCanvasHistory() {
+      canvasHistory.push(JSON.stringify({ nodes: canvasNodes, connections: canvasConnections }));
+      if (canvasHistory.length > 30) canvasHistory.shift();
+      canvasFuture = [];
+    }
+
+    function canvasUndo() {
+      if (!canvasHistory.length) return toast('没有可撤销的操作');
+      canvasFuture.push(JSON.stringify({ nodes: canvasNodes, connections: canvasConnections }));
+      const state = JSON.parse(canvasHistory.pop());
+      canvasNodes = state.nodes;
+      canvasConnections = state.connections;
+      renderCanvas();
+    }
+
+    function canvasRedo() {
+      if (!canvasFuture.length) return toast('没有可重做的操作');
+      canvasHistory.push(JSON.stringify({ nodes: canvasNodes, connections: canvasConnections }));
+      const state = JSON.parse(canvasFuture.pop());
+      canvasNodes = state.nodes;
+      canvasConnections = state.connections;
+      renderCanvas();
+    }
+
+    function addCanvasNode(type) {
+      pushCanvasHistory();
+      const labels = { prompt: '新提示词', 'image-gen': '图片生成', 'video-gen': '视频生成', note: '创作便签' };
+      canvasNodes.push({ id: `${type}-${Date.now()}`, type, title: labels[type], x: 430 + Math.random() * 160, y: 320 + Math.random() * 100, w: type.includes('gen') ? 260 : 250, h: type === 'prompt' ? 210 : 180, content: type === 'note' ? '记录镜头方向、修改点或备选方案。' : '' });
+      renderCanvas();
+    }
+
+    function selectCanvasNode(id, event) {
+      if (event.target.closest('textarea,button,audio,video')) return;
+      canvasSelected = id;
+      renderCanvas();
+    }
+
+    function updateNodeContent(id, value) {
+      const node = canvasNodes.find(item => item.id === id);
+      if (node) node.content = value;
+      markCanvasSaved(false);
+    }
+
+    function startNodeDrag(event, id) {
+      event.stopPropagation();
+      const node = canvasNodes.find(item => item.id === id);
+      if (!node) return;
+      pushCanvasHistory();
+      canvasSelected = id;
+      const start = { x: event.clientX, y: event.clientY, nodeX: node.x, nodeY: node.y };
+      const move = e => { node.x = start.nodeX + (e.clientX - start.x) / zoom; node.y = start.nodeY + (e.clientY - start.y) / zoom; const el = document.querySelector(`[data-node="${id}"]`); if (el) { el.style.left = `${node.x}px`; el.style.top = `${node.y}px`; } updateConnections(); markCanvasSaved(false); };
+      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); markCanvasSaved(); };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+
+    function canvasGenerate(id, type) {
+      const node = canvasNodes.find(item => item.id === id);
+      if (!node || node.status === 'running') return;
+      const cost = type === 'video' ? 37.5 : 2.8;
+      if (balance < cost) return toast('积分不足');
+      pushCanvasHistory();
+      balance -= cost;
+      updateBalance();
+      node.status = 'running';
+      renderCanvas();
+      toast(`${type === 'video' ? '视频' : '图片'}任务已提交，已预留 ◈${cost.toFixed(2)}`);
+      setTimeout(() => {
+        node.status = 'done';
+        const asset = { id: `cg${Date.now()}`, type, name: type === 'video' ? '画布生成视频' : '画布生成图片', source: 'generated', group: 'none', project: currentProject, url: type === 'video' ? sample.video : sample.detail, poster: sample.detail, meta: type === 'video' ? '5 秒 · 720P' : '1536 × 1024' };
+        assets.unshift(asset);
+        const result = { id: `${type}-${Date.now()}`, type, title: asset.name, x: node.x + 350, y: node.y + 30, w: 240, h: type === 'video' ? 220 : 230, assetId: asset.id };
+        canvasNodes.push(result);
+        canvasConnections.push({ from: node.id, to: result.id });
+        renderCanvas();
+        toast(`${type === 'video' ? '视频' : '图片'}已生成并保存到资产`);
+      }, type === 'video' ? 3200 : 1800);
+    }
+
+    function addAssetToCanvas(assetId) {
+      const asset = assets.find(item => item.id === assetId);
+      if (!asset) return;
+      pushCanvasHistory();
+      canvasNodes.push({ id: `${asset.type}-${Date.now()}`, type: asset.type, title: asset.name, x: 310 + Math.random() * 380, y: 420 + Math.random() * 120, w: 240, h: asset.type === 'audio' ? 170 : 230, assetId });
+      renderCanvas();
+      toggleAssetDrawer(false);
+      toast('资产已添加到画布');
+    }
+
+    function toggleAssetDrawer(force) {
+      const drawer = document.getElementById('assetDrawer');
+      drawer.classList.toggle('open', typeof force === 'boolean' ? force : !drawer.classList.contains('open'));
+      renderDrawer();
+    }
+
+    function renderDrawer() {
+      const grid = document.getElementById('drawerGrid');
+      if (!grid) return;
+      grid.innerHTML = assets.slice(0, 10).map(asset => `<button class="drawer-asset" onclick="addAssetToCanvas('${asset.id}')"><img src="${esc(asset.poster || (asset.type === 'image' ? asset.url : sample.product))}" alt=""><span>${esc(asset.name)}</span></button>`).join('');
+    }
+
+    function changeZoom(delta) {
+      zoom = Math.max(.5, Math.min(1.5, zoom + delta));
+      applyWorldTransform();
+    }
+
+    function fitCanvas() {
+      zoom = window.innerWidth < 760 ? .65 : .9;
+      pan = { x: 32, y: 34 };
+      applyWorldTransform();
+    }
+
+    function applyWorldTransform() {
+      const world = document.getElementById('canvasWorld');
+      if (!world) return;
+      world.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+      document.getElementById('zoomLabel').textContent = `${Math.round(zoom * 100)}%`;
+    }
+
+    function markCanvasSaved(done = true) {
+      const text = document.getElementById('saveStateText');
+      if (!text) return;
+      text.textContent = done ? '已保存' : '保存中';
+      if (!done) setTimeout(() => { if (text) text.textContent = '已保存'; }, 600);
+    }
+
+    let panStart = null;
+    document.getElementById('canvasStage').addEventListener('pointerdown', event => {
+      if (event.target.closest('.canvas-node,.canvas-toolbar,.canvas-zoom,.asset-drawer')) return;
+      panStart = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
+      event.currentTarget.classList.add('panning');
+    });
+    window.addEventListener('pointermove', event => {
+      if (!panStart) return;
+      pan.x = panStart.panX + event.clientX - panStart.x;
+      pan.y = panStart.panY + event.clientY - panStart.y;
+      applyWorldTransform();
+    });
+    window.addEventListener('pointerup', () => { panStart = null; document.getElementById('canvasStage').classList.remove('panning'); });
+    document.getElementById('canvasStage').addEventListener('wheel', event => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      changeZoom(event.deltaY > 0 ? -.05 : .05);
+    }, { passive: false });
+
+    function renderAssets() {
+      const type = document.getElementById('assetType')?.value || 'all';
+      const source = document.getElementById('assetSource')?.value || 'all';
+      const group = document.getElementById('assetGroup')?.value || 'all';
+      const query = (document.getElementById('assetSearch')?.value || '').trim().toLowerCase();
+      const filtered = assets.filter(asset => (type === 'all' || asset.type === type) && (source === 'all' || asset.source === source) && (group === 'all' || asset.group === group) && (!query || asset.name.toLowerCase().includes(query)));
+      document.getElementById('assetGrid').innerHTML = filtered.map(asset => assetCard(asset)).join('') || `<div class="task-empty" style="grid-column:1/-1"><span><i data-lucide="search-x" size="30"></i><strong style="display:block;margin-top:8px">没有匹配的资产</strong></span></div>`;
+      updateBatchBar();
+      iconRefresh();
+      document.querySelectorAll('[data-video-preview]').forEach(video => {
+        video.closest('.asset-card').addEventListener('mouseenter', () => video.play().catch(() => {}));
+        video.closest('.asset-card').addEventListener('mouseleave', () => { video.pause(); video.currentTime = 0; });
+      });
+    }
+
+    function assetCard(asset) {
+      let media = '';
+      if (asset.type === 'image') media = `<img src="${esc(asset.url)}" alt="${esc(asset.name)}" loading="lazy">`;
+      if (asset.type === 'video') media = `<video data-video-preview src="${esc(asset.url)}" poster="${esc(asset.poster || sample.city)}" muted loop preload="none"></video><span class="asset-duration">${esc(asset.meta.split('·')[0].trim())}</span>`;
+      if (asset.type === 'audio') media = `<div style="width:100%;padding:18px"><div style="height:58px;background:repeating-linear-gradient(90deg,var(--green) 0 2px,transparent 2px 7px);opacity:.48;clip-path:polygon(0 45%,5% 30%,10% 55%,15% 15%,20% 65%,25% 38%,30% 72%,35% 20%,40% 55%,45% 35%,50% 68%,55% 18%,60% 62%,65% 28%,70% 72%,75% 38%,80% 58%,85% 22%,90% 65%,95% 35%,100% 48%,100% 54%,0 54%)"></div><audio src="${esc(asset.url)}" controls preload="none" onclick="event.stopPropagation()"></audio></div>`;
+      const typeLabel = asset.type === 'image' ? '图片' : asset.type === 'video' ? '视频' : '音频';
+      return `<article class="asset-card ${selectedAssets.has(asset.id) ? 'selected' : ''}" onclick="openAssetDetail('${asset.id}')"><input class="asset-check" type="checkbox" aria-label="选择${esc(asset.name)}" ${selectedAssets.has(asset.id) ? 'checked' : ''} onclick="toggleAssetSelection(event,'${asset.id}')"><div class="asset-media">${media}<span class="asset-type"><i data-lucide="${asset.type === 'image' ? 'image' : asset.type === 'video' ? 'clapperboard' : 'audio-lines'}" size="12"></i>${typeLabel}</span></div><div class="asset-info"><span class="asset-name" title="${esc(asset.name)}">${esc(asset.name)}</span><div class="asset-meta"><span>${asset.source === 'upload' ? '本地上传' : '平台生成'}</span><span>${esc(asset.meta)}</span></div></div></article>`;
+    }
+
+    function toggleAssetSelection(event, id) {
+      event.stopPropagation();
+      if (selectedAssets.has(id)) selectedAssets.delete(id); else selectedAssets.add(id);
+      renderAssets();
+    }
+
+    function clearSelection() { selectedAssets.clear(); renderAssets(); }
+
+    function updateBatchBar() {
+      document.getElementById('batchBar').classList.toggle('open', selectedAssets.size > 0);
+      document.getElementById('batchCount').textContent = `已选 ${selectedAssets.size} 项`;
+    }
+
+    function batchAction(name) { toast(`${name}：将处理 ${selectedAssets.size} 项资产`); }
+
+    function batchDelete() {
+      assets = assets.filter(asset => !selectedAssets.has(asset.id));
+      const count = selectedAssets.size;
+      selectedAssets.clear();
+      renderAssets();
+      toast(`已删除 ${count} 项；被画布引用的文件将延迟清理`);
+    }
+
+    function handleUpload(fileList) {
+      const files = [...fileList];
+      if (!files.length) return;
+      files.forEach(file => {
+        const type = file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : file.type.startsWith('image/') ? 'image' : null;
+        if (!type) return toast(`${file.name}：不支持的文件类型`);
+        const url = URL.createObjectURL(file);
+        assets.unshift({ id: `up${Date.now()}${Math.random()}`, type, name: file.name, source: 'upload', group: 'none', project: currentProject, url, poster: type === 'video' ? sample.product : undefined, meta: type === 'video' ? `${(file.size / 1024 / 1024).toFixed(1)} MB · 处理中` : type === 'audio' ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${(file.size / 1024 / 1024).toFixed(1)} MB` });
+      });
+      renderAssets();
+      toast(`${files.length} 个文件已上传并进入媒体处理`);
+      document.getElementById('uploadInput').value = '';
+    }
+
+    function openAssetDetail(id) {
+      const asset = assets.find(item => item.id === id);
+      if (!asset) return;
+      let media = asset.type === 'image' ? `<img src="${esc(asset.url)}" alt="${esc(asset.name)}">` : asset.type === 'video' ? `<video src="${esc(asset.url)}" poster="${esc(asset.poster || sample.city)}" controls></video>` : `<audio src="${esc(asset.url)}" controls></audio>`;
+      const action = asset.type === 'image' ? `<button class="button primary" onclick="useAssetForVideo('${asset.id}')"><i data-lucide="clapperboard" size="14"></i>生成视频</button>` : asset.type === 'video' ? `<button class="button primary" onclick="reuseVideo('${asset.id}')"><i data-lucide="rotate-ccw" size="14"></i>复用参数</button>` : '';
+      showModal(asset.name, `<div class="detail-media">${media}</div><div class="row" style="justify-content:space-between;margin-top:12px"><div><strong style="font-size:12px">${asset.type === 'image' ? '图片' : asset.type === 'video' ? '视频' : '音频'} · ${asset.source === 'upload' ? '本地上传' : '平台生成'}</strong><p class="subtle" style="margin-top:3px">${esc(asset.meta)} · 默认项目</p></div></div><div class="detail-actions"><button class="button" onclick="addDetailAssetToCanvas('${asset.id}')"><i data-lucide="workflow" size="14"></i>添加到画布</button><button class="button" onclick="toast('开始下载原文件')"><i data-lucide="download" size="14"></i>下载</button>${action}</div>`);
+    }
+
+    function useAssetForVideo(id) {
+      selectedFirstFrame = assets.find(item => item.id === id);
+      closeModal();
+      navigate('create');
+      switchMedia('video');
+      switchGenerationMode('image');
+      renderFirstFrame();
+      toast('图片已作为首帧带入视频创作');
+    }
+
+    function reuseVideo() {
+      closeModal();
+      navigate('create');
+      switchMedia('video');
+      toast('已复用模型分组与常规参数，未自动绑定原素材');
+    }
+
+    function addDetailAssetToCanvas(id) {
+      closeModal();
+      navigate('canvas');
+      openCanvas('autumn');
+      addAssetToCanvas(id);
+    }
+
+    function showModal(title, body) {
+      document.getElementById('modal').innerHTML = `<div class="modal-header"><strong>${esc(title)}</strong><button class="icon-button" title="关闭" onclick="closeModal()"><i data-lucide="x" size="16"></i></button></div><div class="modal-body">${body}</div>`;
+      document.getElementById('modalBackdrop').classList.add('open');
+      iconRefresh();
+    }
+
+    function closeModal() { document.getElementById('modalBackdrop').classList.remove('open'); }
+    function backdropClose(event) { if (event.target.id === 'modalBackdrop') closeModal(); }
+
+    function toast(message) {
+      const item = document.createElement('div');
+      item.className = 'toast';
+      item.innerHTML = `<i data-lucide="circle-check" size="16"></i><span>${esc(message)}</span>`;
+      document.getElementById('toastStack').appendChild(item);
+      iconRefresh();
+      setTimeout(() => item.remove(), 3200);
+    }
+
+    document.addEventListener('click', event => {
+      if (!event.target.closest('#modelPicker')) document.getElementById('modelMenu').classList.remove('open');
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { closeModal(); document.getElementById('modelMenu').classList.remove('open'); toggleAssetDrawer(false); }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && document.getElementById('canvasEditor').classList.contains('active') && !event.target.matches('textarea,input')) { event.preventDefault(); event.shiftKey ? canvasRedo() : canvasUndo(); }
+    });
+
+    document.getElementById('globalProject').value = currentProject;
+    renderModelMenu();
+    updateEstimate();
+    renderOutput();
+    renderAssets();
+    updateBalance();
+    iconRefresh();
+  </script>
+</body>
+</html>
