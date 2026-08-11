@@ -58,7 +58,15 @@ type Processor struct {
 	reconcileMu        sync.Mutex
 }
 
-var ownedObjectPrefixes = []string{"generated-images/", "reference-assets/", "gallery-exports/"}
+var ownedObjectPrefixes = []string{
+	"generated-images/",
+	"reference-assets/",
+	"gallery-exports/",
+	"media/original/",
+	"media/derivatives/",
+	"media/uploads/",
+	"canvas/previews/",
+}
 
 func NewProcessor(store Store, router storage.Router, options ProcessorOptions) *Processor {
 	if options.Now == nil {

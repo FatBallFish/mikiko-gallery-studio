@@ -230,7 +230,7 @@ func TestReconcileScansOnlyOwnedPrefixesWithPaginationGraceAndRestart(t *testing
 		ObjectListPageSize: 1,
 	}
 	processor := NewProcessor(store, storage.NewStaticRouter(backend), options)
-	for range 7 {
+	for range 10 {
 		if _, err := processor.Reconcile(t.Context(), 1); err != nil {
 			t.Fatal(err)
 		}
@@ -244,7 +244,7 @@ func TestReconcileScansOnlyOwnedPrefixesWithPaginationGraceAndRestart(t *testing
 		}
 	}
 	for _, prefix := range backend.prefixes {
-		if prefix != "generated-images/" && prefix != "reference-assets/" && prefix != "gallery-exports/" {
+		if !slices.Contains(ownedObjectPrefixes, prefix) {
 			t.Fatalf("listed non-owned prefix %q in %v", prefix, backend.prefixes)
 		}
 	}
@@ -258,6 +258,14 @@ func TestReconcileScansOnlyOwnedPrefixesWithPaginationGraceAndRestart(t *testing
 	}
 	if len(store.Jobs()) != 3 {
 		t.Fatalf("restart created duplicates: %#v", store.Jobs())
+	}
+}
+
+func TestOwnedObjectPrefixesIncludeMultimediaNamespaces(t *testing.T) {
+	for _, prefix := range []string{"media/original/", "media/derivatives/", "media/uploads/", "canvas/previews/"} {
+		if !slices.Contains(ownedObjectPrefixes, prefix) {
+			t.Fatalf("multimedia object prefix %q is not cleanup-owned: %v", prefix, ownedObjectPrefixes)
+		}
 	}
 }
 
@@ -315,11 +323,11 @@ func TestReconcilePersistsObjectCursorAcrossProcessorRestart(t *testing.T) {
 	store.AddLiveReference(Identity{StorageConfigID: ref.ConfigID, StorageDriver: ref.Driver, ObjectKey: liveKey}, "result:live")
 	options := ProcessorOptions{Now: func() time.Time { return now }, OrphanGracePeriod: time.Hour, ObjectListPageSize: 1}
 
-	if _, err := NewProcessor(store, &multiCleanupRouter{defaultRef: ref, refs: []storage.BackendRef{ref}}, options).Reconcile(t.Context(), 2); err != nil {
+	if _, err := NewProcessor(store, &multiCleanupRouter{defaultRef: ref, refs: []storage.BackendRef{ref}}, options).Reconcile(t.Context(), 7); err != nil {
 		t.Fatal(err)
 	}
 	restarted := NewProcessor(store, &multiCleanupRouter{defaultRef: ref, refs: []storage.BackendRef{ref}}, options)
-	if _, err := restarted.Reconcile(t.Context(), 2); err != nil {
+	if _, err := restarted.Reconcile(t.Context(), 7); err != nil {
 		t.Fatal(err)
 	}
 	jobs := store.Jobs()
