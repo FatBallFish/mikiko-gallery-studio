@@ -45,6 +45,12 @@ const (
 	EdgeImageTasks = "image_tasks"
 	// EdgeImageResults holds the string denoting the image_results edge name in mutations.
 	EdgeImageResults = "image_results"
+	// EdgeVideoTasks holds the string denoting the video_tasks edge name in mutations.
+	EdgeVideoTasks = "video_tasks"
+	// EdgeMediaAssets holds the string denoting the media_assets edge name in mutations.
+	EdgeMediaAssets = "media_assets"
+	// EdgeCreativeCanvases holds the string denoting the creative_canvases edge name in mutations.
+	EdgeCreativeCanvases = "creative_canvases"
 	// Table holds the table name of the project in the database.
 	Table = "projects"
 	// ImageTasksTable is the table that holds the image_tasks relation/edge.
@@ -61,6 +67,27 @@ const (
 	ImageResultsInverseTable = "task_images"
 	// ImageResultsColumn is the table column denoting the image_results relation/edge.
 	ImageResultsColumn = "project_id"
+	// VideoTasksTable is the table that holds the video_tasks relation/edge.
+	VideoTasksTable = "video_tasks"
+	// VideoTasksInverseTable is the table name for the VideoTask entity.
+	// It exists in this package in order to avoid circular dependency with the "videotask" package.
+	VideoTasksInverseTable = "video_tasks"
+	// VideoTasksColumn is the table column denoting the video_tasks relation/edge.
+	VideoTasksColumn = "project_id"
+	// MediaAssetsTable is the table that holds the media_assets relation/edge.
+	MediaAssetsTable = "media_assets"
+	// MediaAssetsInverseTable is the table name for the MediaAsset entity.
+	// It exists in this package in order to avoid circular dependency with the "mediaasset" package.
+	MediaAssetsInverseTable = "media_assets"
+	// MediaAssetsColumn is the table column denoting the media_assets relation/edge.
+	MediaAssetsColumn = "project_id"
+	// CreativeCanvasesTable is the table that holds the creative_canvases relation/edge.
+	CreativeCanvasesTable = "creative_canvas"
+	// CreativeCanvasesInverseTable is the table name for the CreativeCanvas entity.
+	// It exists in this package in order to avoid circular dependency with the "creativecanvas" package.
+	CreativeCanvasesInverseTable = "creative_canvas"
+	// CreativeCanvasesColumn is the table column denoting the creative_canvases relation/edge.
+	CreativeCanvasesColumn = "project_id"
 )
 
 // Columns holds all SQL columns for project fields.
@@ -222,6 +249,48 @@ func ByImageResults(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newImageResultsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByVideoTasksCount orders the results by video_tasks count.
+func ByVideoTasksCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newVideoTasksStep(), opts...)
+	}
+}
+
+// ByVideoTasks orders the results by video_tasks terms.
+func ByVideoTasks(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newVideoTasksStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByMediaAssetsCount orders the results by media_assets count.
+func ByMediaAssetsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newMediaAssetsStep(), opts...)
+	}
+}
+
+// ByMediaAssets orders the results by media_assets terms.
+func ByMediaAssets(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newMediaAssetsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByCreativeCanvasesCount orders the results by creative_canvases count.
+func ByCreativeCanvasesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCreativeCanvasesStep(), opts...)
+	}
+}
+
+// ByCreativeCanvases orders the results by creative_canvases terms.
+func ByCreativeCanvases(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCreativeCanvasesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newImageTasksStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -234,5 +303,26 @@ func newImageResultsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(ImageResultsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, ImageResultsTable, ImageResultsColumn),
+	)
+}
+func newVideoTasksStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(VideoTasksInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, VideoTasksTable, VideoTasksColumn),
+	)
+}
+func newMediaAssetsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(MediaAssetsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, MediaAssetsTable, MediaAssetsColumn),
+	)
+}
+func newCreativeCanvasesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CreativeCanvasesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CreativeCanvasesTable, CreativeCanvasesColumn),
 	)
 }

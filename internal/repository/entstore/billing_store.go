@@ -1538,6 +1538,13 @@ func (s *BillingStore) APIKeyUsage(ctx context.Context, apiKeyID int64, since *t
 }
 
 func (s *BillingStore) ReserveTask(ctx context.Context, req billingservice.ReserveStoreRequest) (billingservice.BalanceState, error) {
+	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (billingservice.BalanceState, error) {
+		return s.ReserveTaskTx(ctx, tx, req, "image")
+	})
+}
+
+// ReserveTaskTx applies the existing wallet reservation algorithm inside a caller-owned transaction.
+func (s *BillingStore) ReserveTaskTx(ctx context.Context, tx *repoent.Tx, req billingservice.ReserveStoreRequest, taskMediaType string) (billingservice.BalanceState, error) {
 	if strings.TrimSpace(req.TaskID) == "" {
 		return billingservice.BalanceState{}, errs.BadRequest("task id is required")
 	}
@@ -1549,45 +1556,50 @@ func (s *BillingStore) ReserveTask(ctx context.Context, req billingservice.Reser
 		return billingservice.BalanceState{}, errs.BadRequest("estimated points must be non-negative")
 	}
 
-	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (billingservice.BalanceState, error) {
-		ledgerState, err := s.taskLedgerState(ctx, tx, req.TaskID, req.UserID)
+	ledgerState, err := s.taskLedgerState(ctx, tx, req.TaskID, req.UserID)
+	if err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	if ledgerState.ActiveCycle >= 0 {
+		_, state, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
 		if err != nil {
 			return billingservice.BalanceState{}, err
 		}
-		if ledgerState.ActiveCycle >= 0 {
-			_, state, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
-			if err != nil {
-				return billingservice.BalanceState{}, err
-			}
-			return state, nil
-		}
-		reserveKey := reserveLedgerKey(req.TaskID, ledgerState.MaxCycle+1)
+		return state, nil
+	}
+	reserveKey := reserveLedgerKey(req.TaskID, ledgerState.MaxCycle+1)
 
-		state, _, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
-		if err != nil {
-			return billingservice.BalanceState{}, err
-		}
-		if state.Available.LessThan(amount) {
-			return billingservice.BalanceState{}, errs.New(400, errs.CodeInsufficientPoints, "insufficient points")
-		}
-		if err := s.checkAPIKeyQuota(ctx, tx.Client(), req, amount); err != nil {
-			return billingservice.BalanceState{}, err
-		}
-		if _, err := s.reserveAcrossGrants(ctx, tx, req.UserID, req.TaskID, ledgerState.MaxCycle+1, amount); err != nil {
-			return billingservice.BalanceState{}, err
-		}
-		state, summary, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
-		if err != nil {
-			return billingservice.BalanceState{}, err
-		}
-		if _, err := s.insertLedger(ctx, tx, req.UserID, req.APIKeyID, req.TaskID, "reserve", amount.Neg(), state, req.Reason, 0, reserveKey); err != nil {
-			return billingservice.BalanceState{}, err
-		}
-		return summary, nil
-	})
+	state, _, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
+	if err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	if state.Available.LessThan(amount) {
+		return billingservice.BalanceState{}, errs.New(400, errs.CodeInsufficientPoints, "insufficient points")
+	}
+	if err := s.checkAPIKeyQuota(ctx, tx.Client(), req, amount); err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	if _, err := s.reserveAcrossGrants(ctx, tx, req.UserID, req.TaskID, ledgerState.MaxCycle+1, amount); err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	state, summary, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
+	if err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	if _, err := s.insertLedgerWithMetadata(ctx, tx, req.UserID, req.APIKeyID, req.TaskID, "reserve", amount.Neg(), state, req.Reason, 0, reserveKey, ledgerMetadata{TaskMediaType: taskMediaType}); err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	return summary, nil
 }
 
 func (s *BillingStore) FinalizeTask(ctx context.Context, req billingservice.FinalizeStoreRequest) (billingservice.BalanceState, error) {
+	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (billingservice.BalanceState, error) {
+		return s.FinalizeTaskTx(ctx, tx, req, "image", nil)
+	})
+}
+
+// FinalizeTaskTx settles a reservation inside a caller-owned transaction.
+func (s *BillingStore) FinalizeTaskTx(ctx context.Context, tx *repoent.Tx, req billingservice.FinalizeStoreRequest, taskMediaType string, usageSummary map[string]any) (billingservice.BalanceState, error) {
 	if strings.TrimSpace(req.TaskID) == "" {
 		return billingservice.BalanceState{}, errs.BadRequest("task id is required")
 	}
@@ -1606,124 +1618,122 @@ func (s *BillingStore) FinalizeTask(ctx context.Context, req billingservice.Fina
 		actual = decimal.Zero
 	}
 
-	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (billingservice.BalanceState, error) {
-		settledAt := time.Now().UTC()
-		if err := s.expireExpiredGrants(ctx, tx, req.UserID, settledAt); err != nil {
-			return billingservice.BalanceState{}, err
-		}
-		ledgerState, err := s.taskLedgerState(ctx, tx, req.TaskID, req.UserID)
-		if err != nil {
-			return billingservice.BalanceState{}, err
-		}
-		if ledgerState.ActiveCycle < 0 {
-			if ledgerState.MaxCycle >= 0 {
-				_, state, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
-				if err != nil {
-					return billingservice.BalanceState{}, err
-				}
-				return state, nil
+	settledAt := time.Now().UTC()
+	if err := s.expireExpiredGrants(ctx, tx, req.UserID, settledAt); err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	ledgerState, err := s.taskLedgerState(ctx, tx, req.TaskID, req.UserID)
+	if err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	if ledgerState.ActiveCycle < 0 {
+		if ledgerState.MaxCycle >= 0 {
+			_, state, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
+			if err != nil {
+				return billingservice.BalanceState{}, err
 			}
-			return billingservice.BalanceState{}, errs.New(409, errs.CodeConflict, "image task points were not reserved")
+			return state, nil
 		}
-		taskUUID, err := uuid.Parse(req.TaskID)
-		if err != nil {
-			return billingservice.BalanceState{}, err
-		}
-		allocations, err := tx.WalletReservationAllocation.Query().
+		return billingservice.BalanceState{}, errs.New(409, errs.CodeConflict, "image task points were not reserved")
+	}
+	taskUUID, err := uuid.Parse(req.TaskID)
+	if err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	allocations, err := tx.WalletReservationAllocation.Query().
+		Where(
+			walletreservationallocation.UserIDEQ(req.UserID),
+			walletreservationallocation.TaskIDEQ(taskUUID),
+			walletreservationallocation.ReservationCycleEQ(ledgerState.ActiveCycle),
+			walletreservationallocation.StatusEQ("reserved"),
+		).
+		Order(repoent.Asc(walletreservationallocation.FieldID)).
+		All(ctx)
+	if err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	if len(allocations) == 0 {
+		reserveEntry, err := tx.PointLedger.Query().
 			Where(
-				walletreservationallocation.UserIDEQ(req.UserID),
-				walletreservationallocation.TaskIDEQ(taskUUID),
-				walletreservationallocation.ReservationCycleEQ(ledgerState.ActiveCycle),
-				walletreservationallocation.StatusEQ("reserved"),
+				pointledger.UserIDEQ(req.UserID),
+				pointledger.IdempotencyKeyEQ(reserveLedgerKey(req.TaskID, ledgerState.ActiveCycle)),
 			).
-			Order(repoent.Asc(walletreservationallocation.FieldID)).
-			All(ctx)
+			Only(ctx)
 		if err != nil {
-			return billingservice.BalanceState{}, err
-		}
-		if len(allocations) == 0 {
-			reserveEntry, err := tx.PointLedger.Query().
-				Where(
-					pointledger.UserIDEQ(req.UserID),
-					pointledger.IdempotencyKeyEQ(reserveLedgerKey(req.TaskID, ledgerState.ActiveCycle)),
-				).
-				Only(ctx)
-			if err != nil {
-				if repoent.IsNotFound(err) {
-					return billingservice.BalanceState{}, errs.New(409, errs.CodeConflict, "image task points were not reserved")
-				}
-				return billingservice.BalanceState{}, err
-			}
-			reservedAmount, err := decimal.NewFromString(reserveEntry.ChangePoints)
-			if err != nil {
-				return billingservice.BalanceState{}, err
-			}
-			if !reservedAmount.Abs().IsZero() {
+			if repoent.IsNotFound(err) {
 				return billingservice.BalanceState{}, errs.New(409, errs.CodeConflict, "image task points were not reserved")
 			}
-			state, summary, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
-			if err != nil {
-				return billingservice.BalanceState{}, err
-			}
-			if _, err := s.insertLedger(ctx, tx, req.UserID, req.APIKeyID, req.TaskID, "refund", decimal.Zero, state, req.Reason, 0, refundLedgerKey(req.TaskID, ledgerState.ActiveCycle)); err != nil {
-				return billingservice.BalanceState{}, err
-			}
-			return summary, nil
+			return billingservice.BalanceState{}, err
 		}
-		reservedAmount := decimal.Zero
-		for _, allocation := range allocations {
-			value, parseErr := decimal.NewFromString(allocation.ReservedPoints)
-			if parseErr != nil {
-				return billingservice.BalanceState{}, parseErr
-			}
-			reservedAmount = reservedAmount.Add(value)
-		}
-		state, _, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
+		reservedAmount, err := decimal.NewFromString(reserveEntry.ChangePoints)
 		if err != nil {
 			return billingservice.BalanceState{}, err
 		}
-
-		if actual.GreaterThan(reservedAmount) {
-			actual = reservedAmount
+		if !reservedAmount.Abs().IsZero() {
+			return billingservice.BalanceState{}, errs.New(409, errs.CodeConflict, "image task points were not reserved")
 		}
-		if actual.IsZero() {
-			if err := s.settleAllocations(ctx, tx, allocations, decimal.Zero, settledAt); err != nil {
-				return billingservice.BalanceState{}, err
-			}
-			state, summary, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
-			if err != nil {
-				return billingservice.BalanceState{}, err
-			}
-			if _, err := s.insertLedger(ctx, tx, req.UserID, req.APIKeyID, req.TaskID, "refund", reservedAmount, state, req.Reason, 0, refundLedgerKey(req.TaskID, ledgerState.ActiveCycle)); err != nil {
-				return billingservice.BalanceState{}, err
-			}
-			return summary, nil
-		}
-
-		if err := s.settleAllocations(ctx, tx, allocations, actual, settledAt); err != nil {
-			return billingservice.BalanceState{}, err
-		}
-		diff := reservedAmount.Sub(actual)
 		state, summary, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
 		if err != nil {
 			return billingservice.BalanceState{}, err
 		}
-		apiKeyID := req.APIKeyID
-		if diff.GreaterThan(decimal.Zero) {
-			refundState := decimalState{Available: state.Available, Frozen: state.Frozen}
-			if _, err := s.insertLedger(ctx, tx, req.UserID, apiKeyID, req.TaskID, "consume", actual.Neg(), refundState, req.Reason, 0, consumeLedgerKey(req.TaskID, ledgerState.ActiveCycle)); err != nil {
-				return billingservice.BalanceState{}, err
-			}
-			if _, err := s.insertLedger(ctx, tx, req.UserID, apiKeyID, req.TaskID, "refund", diff, refundState, req.Reason, 0, refundLedgerKey(req.TaskID, ledgerState.ActiveCycle)); err != nil {
-				return billingservice.BalanceState{}, err
-			}
-			return summary, nil
-		}
-		if _, err := s.insertLedger(ctx, tx, req.UserID, apiKeyID, req.TaskID, "consume", actual.Neg(), state, req.Reason, 0, consumeLedgerKey(req.TaskID, ledgerState.ActiveCycle)); err != nil {
+		if _, err := s.insertLedgerWithMetadata(ctx, tx, req.UserID, req.APIKeyID, req.TaskID, "refund", decimal.Zero, state, req.Reason, 0, refundLedgerKey(req.TaskID, ledgerState.ActiveCycle), ledgerMetadata{TaskMediaType: taskMediaType, UsageSummary: usageSummary}); err != nil {
 			return billingservice.BalanceState{}, err
 		}
 		return summary, nil
-	})
+	}
+	reservedAmount := decimal.Zero
+	for _, allocation := range allocations {
+		value, parseErr := decimal.NewFromString(allocation.ReservedPoints)
+		if parseErr != nil {
+			return billingservice.BalanceState{}, parseErr
+		}
+		reservedAmount = reservedAmount.Add(value)
+	}
+	state, _, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
+	if err != nil {
+		return billingservice.BalanceState{}, err
+	}
+
+	if actual.GreaterThan(reservedAmount) {
+		actual = reservedAmount
+	}
+	if actual.IsZero() {
+		if err := s.settleAllocations(ctx, tx, allocations, decimal.Zero, settledAt); err != nil {
+			return billingservice.BalanceState{}, err
+		}
+		state, summary, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
+		if err != nil {
+			return billingservice.BalanceState{}, err
+		}
+		if _, err := s.insertLedgerWithMetadata(ctx, tx, req.UserID, req.APIKeyID, req.TaskID, "refund", reservedAmount, state, req.Reason, 0, refundLedgerKey(req.TaskID, ledgerState.ActiveCycle), ledgerMetadata{TaskMediaType: taskMediaType, UsageSummary: usageSummary}); err != nil {
+			return billingservice.BalanceState{}, err
+		}
+		return summary, nil
+	}
+
+	if err := s.settleAllocations(ctx, tx, allocations, actual, settledAt); err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	diff := reservedAmount.Sub(actual)
+	state, summary, err := s.currentStateWithDetails(ctx, tx.Client(), req.UserID)
+	if err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	apiKeyID := req.APIKeyID
+	if diff.GreaterThan(decimal.Zero) {
+		refundState := decimalState{Available: state.Available, Frozen: state.Frozen}
+		if _, err := s.insertLedgerWithMetadata(ctx, tx, req.UserID, apiKeyID, req.TaskID, "consume", actual.Neg(), refundState, req.Reason, 0, consumeLedgerKey(req.TaskID, ledgerState.ActiveCycle), ledgerMetadata{TaskMediaType: taskMediaType, UsageSummary: usageSummary}); err != nil {
+			return billingservice.BalanceState{}, err
+		}
+		if _, err := s.insertLedgerWithMetadata(ctx, tx, req.UserID, apiKeyID, req.TaskID, "refund", diff, refundState, req.Reason, 0, refundLedgerKey(req.TaskID, ledgerState.ActiveCycle), ledgerMetadata{TaskMediaType: taskMediaType, UsageSummary: usageSummary}); err != nil {
+			return billingservice.BalanceState{}, err
+		}
+		return summary, nil
+	}
+	if _, err := s.insertLedgerWithMetadata(ctx, tx, req.UserID, apiKeyID, req.TaskID, "consume", actual.Neg(), state, req.Reason, 0, consumeLedgerKey(req.TaskID, ledgerState.ActiveCycle), ledgerMetadata{TaskMediaType: taskMediaType, UsageSummary: usageSummary}); err != nil {
+		return billingservice.BalanceState{}, err
+	}
+	return summary, nil
 }
 
 func (s *BillingStore) Adjust(ctx context.Context, req billingservice.AdjustStoreRequest) (billingservice.BalanceState, error) {
@@ -2247,6 +2257,8 @@ type ledgerMetadata struct {
 	SourceID           *int64
 	BucketBalanceAfter string
 	ExpiresAt          *time.Time
+	TaskMediaType      string
+	UsageSummary       map[string]any
 }
 
 func (s *BillingStore) insertLedgerWithMetadata(ctx context.Context, tx *repoent.Tx, userID, apiKeyID int64, taskID, ledgerType string, change decimal.Decimal, state decimalState, reason string, operatorAdminID int64, idempotencyKey string, metadata ledgerMetadata) (int64, error) {
@@ -2261,6 +2273,12 @@ func (s *BillingStore) insertLedgerWithMetadata(ctx context.Context, tx *repoent
 		SetSourceType(metadata.SourceType).
 		SetBucketBalanceAfter(metadata.BucketBalanceAfter).
 		SetReason(reason)
+	if strings.TrimSpace(metadata.TaskMediaType) != "" {
+		builder.SetTaskMediaType(normalizeTaskMediaType(metadata.TaskMediaType))
+	}
+	if metadata.UsageSummary != nil {
+		builder.SetUsageSummary(cloneMap(metadata.UsageSummary))
+	}
 	if metadata.SourceID != nil {
 		builder.SetSourceID(*metadata.SourceID)
 	}
@@ -2337,6 +2355,13 @@ func normalizeLedgerMetadata(ledgerType string, state decimalState, scale int32,
 		metadata.BucketBalanceAfter = state.Available.Round(scale).StringFixed(scale)
 	}
 	return metadata
+}
+
+func normalizeTaskMediaType(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "video") {
+		return "video"
+	}
+	return "image"
 }
 
 func (s *BillingStore) checkAPIKeyQuota(ctx context.Context, client *repoent.Client, req billingservice.ReserveStoreRequest, amount decimal.Decimal) error {

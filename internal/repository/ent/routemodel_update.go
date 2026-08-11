@@ -110,6 +110,20 @@ func (_u *RouteModelUpdate) SetNillableVisibility(v *string) *RouteModelUpdate {
 	return _u
 }
 
+// SetMediaType sets the "media_type" field.
+func (_u *RouteModelUpdate) SetMediaType(v string) *RouteModelUpdate {
+	_u.mutation.SetMediaType(v)
+	return _u
+}
+
+// SetNillableMediaType sets the "media_type" field if the given value is not nil.
+func (_u *RouteModelUpdate) SetNillableMediaType(v *string) *RouteModelUpdate {
+	if v != nil {
+		_u.SetMediaType(*v)
+	}
+	return _u
+}
+
 // SetEnabled sets the "enabled" field.
 func (_u *RouteModelUpdate) SetEnabled(v bool) *RouteModelUpdate {
 	_u.mutation.SetEnabled(v)
@@ -203,6 +217,11 @@ func (_u *RouteModelUpdate) check() error {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "RouteModel.visibility": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.MediaType(); ok {
+		if err := routemodel.MediaTypeValidator(v); err != nil {
+			return &ValidationError{Name: "media_type", err: fmt.Errorf(`ent: validator failed for field "RouteModel.media_type": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -238,6 +257,9 @@ func (_u *RouteModelUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	}
 	if value, ok := _u.mutation.Visibility(); ok {
 		_spec.SetField(routemodel.FieldVisibility, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.MediaType(); ok {
+		_spec.SetField(routemodel.FieldMediaType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(routemodel.FieldEnabled, field.TypeBool, value)
@@ -350,6 +372,20 @@ func (_u *RouteModelUpdateOne) SetNillableVisibility(v *string) *RouteModelUpdat
 	return _u
 }
 
+// SetMediaType sets the "media_type" field.
+func (_u *RouteModelUpdateOne) SetMediaType(v string) *RouteModelUpdateOne {
+	_u.mutation.SetMediaType(v)
+	return _u
+}
+
+// SetNillableMediaType sets the "media_type" field if the given value is not nil.
+func (_u *RouteModelUpdateOne) SetNillableMediaType(v *string) *RouteModelUpdateOne {
+	if v != nil {
+		_u.SetMediaType(*v)
+	}
+	return _u
+}
+
 // SetEnabled sets the "enabled" field.
 func (_u *RouteModelUpdateOne) SetEnabled(v bool) *RouteModelUpdateOne {
 	_u.mutation.SetEnabled(v)
@@ -456,6 +492,11 @@ func (_u *RouteModelUpdateOne) check() error {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "RouteModel.visibility": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.MediaType(); ok {
+		if err := routemodel.MediaTypeValidator(v); err != nil {
+			return &ValidationError{Name: "media_type", err: fmt.Errorf(`ent: validator failed for field "RouteModel.media_type": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -508,6 +549,9 @@ func (_u *RouteModelUpdateOne) sqlSave(ctx context.Context) (_node *RouteModel, 
 	}
 	if value, ok := _u.mutation.Visibility(); ok {
 		_spec.SetField(routemodel.FieldVisibility, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.MediaType(); ok {
+		_spec.SetField(routemodel.FieldMediaType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(routemodel.FieldEnabled, field.TypeBool, value)

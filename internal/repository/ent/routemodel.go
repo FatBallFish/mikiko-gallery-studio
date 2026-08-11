@@ -31,6 +31,8 @@ type RouteModel struct {
 	Description string `json:"description,omitempty"`
 	// Visibility holds the value of the "visibility" field.
 	Visibility string `json:"visibility,omitempty"`
+	// MediaType holds the value of the "media_type" field.
+	MediaType string `json:"media_type,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
 	// SortOrder holds the value of the "sort_order" field.
@@ -47,7 +49,7 @@ func (*RouteModel) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case routemodel.FieldID, routemodel.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
-		case routemodel.FieldCode, routemodel.FieldName, routemodel.FieldDescription, routemodel.FieldVisibility:
+		case routemodel.FieldCode, routemodel.FieldName, routemodel.FieldDescription, routemodel.FieldVisibility, routemodel.FieldMediaType:
 			values[i] = new(sql.NullString)
 		case routemodel.FieldCreatedAt, routemodel.FieldUpdatedAt, routemodel.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
@@ -114,6 +116,12 @@ func (_m *RouteModel) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field visibility", values[i])
 			} else if value.Valid {
 				_m.Visibility = value.String
+			}
+		case routemodel.FieldMediaType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field media_type", values[i])
+			} else if value.Valid {
+				_m.MediaType = value.String
 			}
 		case routemodel.FieldEnabled:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -185,6 +193,9 @@ func (_m *RouteModel) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("visibility=")
 	builder.WriteString(_m.Visibility)
+	builder.WriteString(", ")
+	builder.WriteString("media_type=")
+	builder.WriteString(_m.MediaType)
 	builder.WriteString(", ")
 	builder.WriteString("enabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Enabled))

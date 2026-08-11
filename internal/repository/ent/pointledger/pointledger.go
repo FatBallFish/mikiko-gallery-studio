@@ -23,6 +23,10 @@ const (
 	FieldAPIKeyID = "api_key_id"
 	// FieldTaskID holds the string denoting the task_id field in the database.
 	FieldTaskID = "task_id"
+	// FieldTaskMediaType holds the string denoting the task_media_type field in the database.
+	FieldTaskMediaType = "task_media_type"
+	// FieldUsageSummary holds the string denoting the usage_summary field in the database.
+	FieldUsageSummary = "usage_summary"
 	// FieldOrderID holds the string denoting the order_id field in the database.
 	FieldOrderID = "order_id"
 	// FieldRedeemCodeID holds the string denoting the redeem_code_id field in the database.
@@ -63,6 +67,8 @@ var Columns = []string{
 	FieldUserID,
 	FieldAPIKeyID,
 	FieldTaskID,
+	FieldTaskMediaType,
+	FieldUsageSummary,
 	FieldOrderID,
 	FieldRedeemCodeID,
 	FieldLedgerType,
@@ -96,6 +102,10 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
+	// DefaultTaskMediaType holds the default value on creation for the "task_media_type" field.
+	DefaultTaskMediaType string
+	// TaskMediaTypeValidator is a validator for the "task_media_type" field. It is called by the builders before save.
+	TaskMediaTypeValidator func(string) error
 	// LedgerTypeValidator is a validator for the "ledger_type" field. It is called by the builders before save.
 	LedgerTypeValidator func(string) error
 	// DefaultChangePoints holds the default value on creation for the "change_points" field.
@@ -153,6 +163,11 @@ func ByAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
 // ByTaskID orders the results by the task_id field.
 func ByTaskID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTaskID, opts...).ToFunc()
+}
+
+// ByTaskMediaType orders the results by the task_media_type field.
+func ByTaskMediaType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTaskMediaType, opts...).ToFunc()
 }
 
 // ByOrderID orders the results by the order_id field.

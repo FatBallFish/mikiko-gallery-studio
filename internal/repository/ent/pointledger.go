@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -28,6 +29,10 @@ type PointLedger struct {
 	APIKeyID *int64 `json:"api_key_id,omitempty"`
 	// TaskID holds the value of the "task_id" field.
 	TaskID *uuid.UUID `json:"task_id,omitempty"`
+	// TaskMediaType holds the value of the "task_media_type" field.
+	TaskMediaType string `json:"task_media_type,omitempty"`
+	// UsageSummary holds the value of the "usage_summary" field.
+	UsageSummary map[string]interface{} `json:"usage_summary,omitempty"`
 	// OrderID holds the value of the "order_id" field.
 	OrderID *int64 `json:"order_id,omitempty"`
 	// RedeemCodeID holds the value of the "redeem_code_id" field.
@@ -66,9 +71,11 @@ func (*PointLedger) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case pointledger.FieldTaskID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
+		case pointledger.FieldUsageSummary:
+			values[i] = new([]byte)
 		case pointledger.FieldID, pointledger.FieldUserID, pointledger.FieldAPIKeyID, pointledger.FieldOrderID, pointledger.FieldRedeemCodeID, pointledger.FieldSourceID, pointledger.FieldOperatorAdminID:
 			values[i] = new(sql.NullInt64)
-		case pointledger.FieldLedgerType, pointledger.FieldChangePoints, pointledger.FieldBalanceAfter, pointledger.FieldFrozenAfter, pointledger.FieldBalanceBucket, pointledger.FieldSourceType, pointledger.FieldBucketBalanceAfter, pointledger.FieldReason, pointledger.FieldIdempotencyKey:
+		case pointledger.FieldTaskMediaType, pointledger.FieldLedgerType, pointledger.FieldChangePoints, pointledger.FieldBalanceAfter, pointledger.FieldFrozenAfter, pointledger.FieldBalanceBucket, pointledger.FieldSourceType, pointledger.FieldBucketBalanceAfter, pointledger.FieldReason, pointledger.FieldIdempotencyKey:
 			values[i] = new(sql.NullString)
 		case pointledger.FieldCreatedAt, pointledger.FieldUpdatedAt, pointledger.FieldExpiresAt:
 			values[i] = new(sql.NullTime)
@@ -124,6 +131,20 @@ func (_m *PointLedger) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TaskID = new(uuid.UUID)
 				*_m.TaskID = *value.S.(*uuid.UUID)
+			}
+		case pointledger.FieldTaskMediaType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field task_media_type", values[i])
+			} else if value.Valid {
+				_m.TaskMediaType = value.String
+			}
+		case pointledger.FieldUsageSummary:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_summary", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.UsageSummary); err != nil {
+					return fmt.Errorf("unmarshal field usage_summary: %w", err)
+				}
 			}
 		case pointledger.FieldOrderID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -269,6 +290,12 @@ func (_m *PointLedger) String() string {
 		builder.WriteString("task_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("task_media_type=")
+	builder.WriteString(_m.TaskMediaType)
+	builder.WriteString(", ")
+	builder.WriteString("usage_summary=")
+	builder.WriteString(fmt.Sprintf("%v", _m.UsageSummary))
 	builder.WriteString(", ")
 	if v := _m.OrderID; v != nil {
 		builder.WriteString("order_id=")

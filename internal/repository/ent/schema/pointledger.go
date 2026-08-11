@@ -16,6 +16,8 @@ func (PointLedger) Fields() []ent.Field {
 		field.Int64("user_id"),
 		field.Int64("api_key_id").Optional().Nillable(),
 		field.UUID("task_id", uuid.UUID{}).Optional().Nillable(),
+		field.String("task_media_type").MaxLen(16).Default("image"),
+		field.JSON("usage_summary", map[string]any{}).Optional(),
 		field.Int64("order_id").Optional().Nillable(),
 		field.Int64("redeem_code_id").Optional().Nillable(),
 		field.String("ledger_type").MaxLen(32).NotEmpty(),

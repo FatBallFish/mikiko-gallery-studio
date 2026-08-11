@@ -16,14 +16,22 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/canvasgenerationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusterchallenge"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvas"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvasrevision"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaassetreference"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaderivative"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediauploadsession"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
@@ -57,6 +65,15 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskattempt"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskinput"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
 )
@@ -123,14 +140,22 @@ func checkColumn(t, c string) error {
 			apikeyquotareservation.Table:      apikeyquotareservation.ValidColumn,
 			adminuser.Table:                   adminuser.ValidColumn,
 			auditlog.Table:                    auditlog.ValidColumn,
+			canvasgenerationrun.Table:         canvasgenerationrun.ValidColumn,
 			clusterchallenge.Table:            clusterchallenge.ValidColumn,
 			clusternode.Table:                 clusternode.ValidColumn,
 			clustertoken.Table:                clustertoken.ValidColumn,
 			configitem.Table:                  configitem.ValidColumn,
+			creativecanvas.Table:              creativecanvas.ValidColumn,
+			creativecanvasrevision.Table:      creativecanvasrevision.ValidColumn,
 			galleryexportjob.Table:            galleryexportjob.ValidColumn,
 			imageresult.Table:                 imageresult.ValidColumn,
 			imagetask.Table:                   imagetask.ValidColumn,
 			installation.Table:                installation.ValidColumn,
+			mediaasset.Table:                  mediaasset.ValidColumn,
+			mediaassetreference.Table:         mediaassetreference.ValidColumn,
+			mediaderivative.Table:             mediaderivative.ValidColumn,
+			mediaprocessingjob.Table:          mediaprocessingjob.ValidColumn,
+			mediauploadsession.Table:          mediauploadsession.ValidColumn,
 			migrationcheckpoint.Table:         migrationcheckpoint.ValidColumn,
 			modelaccount.Table:                modelaccount.ValidColumn,
 			modelaccountmodel.Table:           modelaccountmodel.ValidColumn,
@@ -164,6 +189,15 @@ func checkColumn(t, c string) error {
 			usergroup.Table:                   usergroup.ValidColumn,
 			usergroupmember.Table:             usergroupmember.ValidColumn,
 			usersubscription.Table:            usersubscription.ValidColumn,
+			videomodelcapability.Table:        videomodelcapability.ValidColumn,
+			videopricerule.Table:              videopricerule.ValidColumn,
+			videopricingstrategy.Table:        videopricingstrategy.ValidColumn,
+			videoprovidercostrule.Table:       videoprovidercostrule.ValidColumn,
+			videorouteconfig.Table:            videorouteconfig.ValidColumn,
+			videotask.Table:                   videotask.ValidColumn,
+			videotaskattempt.Table:            videotaskattempt.ValidColumn,
+			videotaskinput.Table:              videotaskinput.ValidColumn,
+			videotaskitem.Table:               videotaskitem.ValidColumn,
 			walletgrant.Table:                 walletgrant.ValidColumn,
 			walletreservationallocation.Table: walletreservationallocation.ValidColumn,
 		})

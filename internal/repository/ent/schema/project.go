@@ -33,6 +33,9 @@ func (Project) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("image_tasks", ImageTask.Type),
 		edge.To("image_results", ImageResult.Type),
+		edge.To("video_tasks", VideoTask.Type),
+		edge.To("media_assets", MediaAsset.Type),
+		edge.To("creative_canvases", CreativeCanvas.Type),
 	}
 }
 

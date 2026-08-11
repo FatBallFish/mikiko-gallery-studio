@@ -12,22 +12,28 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvas"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
 	"github.com/google/uuid"
 )
 
 // ProjectQuery is the builder for querying Project entities.
 type ProjectQuery struct {
 	config
-	ctx              *QueryContext
-	order            []project.OrderOption
-	inters           []Interceptor
-	predicates       []predicate.Project
-	withImageTasks   *ImageTaskQuery
-	withImageResults *ImageResultQuery
+	ctx                  *QueryContext
+	order                []project.OrderOption
+	inters               []Interceptor
+	predicates           []predicate.Project
+	withImageTasks       *ImageTaskQuery
+	withImageResults     *ImageResultQuery
+	withVideoTasks       *VideoTaskQuery
+	withMediaAssets      *MediaAssetQuery
+	withCreativeCanvases *CreativeCanvasQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -101,6 +107,72 @@ func (_q *ProjectQuery) QueryImageResults() *ImageResultQuery {
 			sqlgraph.From(project.Table, project.FieldID, selector),
 			sqlgraph.To(imageresult.Table, imageresult.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, project.ImageResultsTable, project.ImageResultsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryVideoTasks chains the current query on the "video_tasks" edge.
+func (_q *ProjectQuery) QueryVideoTasks() *VideoTaskQuery {
+	query := (&VideoTaskClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(project.Table, project.FieldID, selector),
+			sqlgraph.To(videotask.Table, videotask.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, project.VideoTasksTable, project.VideoTasksColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryMediaAssets chains the current query on the "media_assets" edge.
+func (_q *ProjectQuery) QueryMediaAssets() *MediaAssetQuery {
+	query := (&MediaAssetClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(project.Table, project.FieldID, selector),
+			sqlgraph.To(mediaasset.Table, mediaasset.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, project.MediaAssetsTable, project.MediaAssetsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCreativeCanvases chains the current query on the "creative_canvases" edge.
+func (_q *ProjectQuery) QueryCreativeCanvases() *CreativeCanvasQuery {
+	query := (&CreativeCanvasClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(project.Table, project.FieldID, selector),
+			sqlgraph.To(creativecanvas.Table, creativecanvas.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, project.CreativeCanvasesTable, project.CreativeCanvasesColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -295,13 +367,16 @@ func (_q *ProjectQuery) Clone() *ProjectQuery {
 		return nil
 	}
 	return &ProjectQuery{
-		config:           _q.config,
-		ctx:              _q.ctx.Clone(),
-		order:            append([]project.OrderOption{}, _q.order...),
-		inters:           append([]Interceptor{}, _q.inters...),
-		predicates:       append([]predicate.Project{}, _q.predicates...),
-		withImageTasks:   _q.withImageTasks.Clone(),
-		withImageResults: _q.withImageResults.Clone(),
+		config:               _q.config,
+		ctx:                  _q.ctx.Clone(),
+		order:                append([]project.OrderOption{}, _q.order...),
+		inters:               append([]Interceptor{}, _q.inters...),
+		predicates:           append([]predicate.Project{}, _q.predicates...),
+		withImageTasks:       _q.withImageTasks.Clone(),
+		withImageResults:     _q.withImageResults.Clone(),
+		withVideoTasks:       _q.withVideoTasks.Clone(),
+		withMediaAssets:      _q.withMediaAssets.Clone(),
+		withCreativeCanvases: _q.withCreativeCanvases.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -327,6 +402,39 @@ func (_q *ProjectQuery) WithImageResults(opts ...func(*ImageResultQuery)) *Proje
 		opt(query)
 	}
 	_q.withImageResults = query
+	return _q
+}
+
+// WithVideoTasks tells the query-builder to eager-load the nodes that are connected to
+// the "video_tasks" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *ProjectQuery) WithVideoTasks(opts ...func(*VideoTaskQuery)) *ProjectQuery {
+	query := (&VideoTaskClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withVideoTasks = query
+	return _q
+}
+
+// WithMediaAssets tells the query-builder to eager-load the nodes that are connected to
+// the "media_assets" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *ProjectQuery) WithMediaAssets(opts ...func(*MediaAssetQuery)) *ProjectQuery {
+	query := (&MediaAssetClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withMediaAssets = query
+	return _q
+}
+
+// WithCreativeCanvases tells the query-builder to eager-load the nodes that are connected to
+// the "creative_canvases" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *ProjectQuery) WithCreativeCanvases(opts ...func(*CreativeCanvasQuery)) *ProjectQuery {
+	query := (&CreativeCanvasClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withCreativeCanvases = query
 	return _q
 }
 
@@ -408,9 +516,12 @@ func (_q *ProjectQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Proj
 	var (
 		nodes       = []*Project{}
 		_spec       = _q.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [5]bool{
 			_q.withImageTasks != nil,
 			_q.withImageResults != nil,
+			_q.withVideoTasks != nil,
+			_q.withMediaAssets != nil,
+			_q.withCreativeCanvases != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -442,6 +553,27 @@ func (_q *ProjectQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Proj
 		if err := _q.loadImageResults(ctx, query, nodes,
 			func(n *Project) { n.Edges.ImageResults = []*ImageResult{} },
 			func(n *Project, e *ImageResult) { n.Edges.ImageResults = append(n.Edges.ImageResults, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withVideoTasks; query != nil {
+		if err := _q.loadVideoTasks(ctx, query, nodes,
+			func(n *Project) { n.Edges.VideoTasks = []*VideoTask{} },
+			func(n *Project, e *VideoTask) { n.Edges.VideoTasks = append(n.Edges.VideoTasks, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withMediaAssets; query != nil {
+		if err := _q.loadMediaAssets(ctx, query, nodes,
+			func(n *Project) { n.Edges.MediaAssets = []*MediaAsset{} },
+			func(n *Project, e *MediaAsset) { n.Edges.MediaAssets = append(n.Edges.MediaAssets, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withCreativeCanvases; query != nil {
+		if err := _q.loadCreativeCanvases(ctx, query, nodes,
+			func(n *Project) { n.Edges.CreativeCanvases = []*CreativeCanvas{} },
+			func(n *Project, e *CreativeCanvas) { n.Edges.CreativeCanvases = append(n.Edges.CreativeCanvases, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -509,6 +641,96 @@ func (_q *ProjectQuery) loadImageResults(ctx context.Context, query *ImageResult
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "project_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *ProjectQuery) loadVideoTasks(ctx context.Context, query *VideoTaskQuery, nodes []*Project, init func(*Project), assign func(*Project, *VideoTask)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*Project)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(videotask.FieldProjectID)
+	}
+	query.Where(predicate.VideoTask(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(project.VideoTasksColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.ProjectID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "project_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *ProjectQuery) loadMediaAssets(ctx context.Context, query *MediaAssetQuery, nodes []*Project, init func(*Project), assign func(*Project, *MediaAsset)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*Project)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(mediaasset.FieldProjectID)
+	}
+	query.Where(predicate.MediaAsset(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(project.MediaAssetsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.ProjectID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "project_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *ProjectQuery) loadCreativeCanvases(ctx context.Context, query *CreativeCanvasQuery, nodes []*Project, init func(*Project), assign func(*Project, *CreativeCanvas)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*Project)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(creativecanvas.FieldProjectID)
+	}
+	query.Where(predicate.CreativeCanvas(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(project.CreativeCanvasesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.ProjectID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "project_id" returned %v for node %v`, fk, n.ID)
 		}
 		assign(node, n)
 	}

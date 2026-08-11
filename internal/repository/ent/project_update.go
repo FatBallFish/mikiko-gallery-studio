@@ -11,10 +11,13 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvas"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
 	"github.com/google/uuid"
 )
 
@@ -267,6 +270,51 @@ func (_u *ProjectUpdate) AddImageResults(v ...*ImageResult) *ProjectUpdate {
 	return _u.AddImageResultIDs(ids...)
 }
 
+// AddVideoTaskIDs adds the "video_tasks" edge to the VideoTask entity by IDs.
+func (_u *ProjectUpdate) AddVideoTaskIDs(ids ...uuid.UUID) *ProjectUpdate {
+	_u.mutation.AddVideoTaskIDs(ids...)
+	return _u
+}
+
+// AddVideoTasks adds the "video_tasks" edges to the VideoTask entity.
+func (_u *ProjectUpdate) AddVideoTasks(v ...*VideoTask) *ProjectUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddVideoTaskIDs(ids...)
+}
+
+// AddMediaAssetIDs adds the "media_assets" edge to the MediaAsset entity by IDs.
+func (_u *ProjectUpdate) AddMediaAssetIDs(ids ...uuid.UUID) *ProjectUpdate {
+	_u.mutation.AddMediaAssetIDs(ids...)
+	return _u
+}
+
+// AddMediaAssets adds the "media_assets" edges to the MediaAsset entity.
+func (_u *ProjectUpdate) AddMediaAssets(v ...*MediaAsset) *ProjectUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddMediaAssetIDs(ids...)
+}
+
+// AddCreativeCanvaseIDs adds the "creative_canvases" edge to the CreativeCanvas entity by IDs.
+func (_u *ProjectUpdate) AddCreativeCanvaseIDs(ids ...uuid.UUID) *ProjectUpdate {
+	_u.mutation.AddCreativeCanvaseIDs(ids...)
+	return _u
+}
+
+// AddCreativeCanvases adds the "creative_canvases" edges to the CreativeCanvas entity.
+func (_u *ProjectUpdate) AddCreativeCanvases(v ...*CreativeCanvas) *ProjectUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddCreativeCanvaseIDs(ids...)
+}
+
 // Mutation returns the ProjectMutation object of the builder.
 func (_u *ProjectUpdate) Mutation() *ProjectMutation {
 	return _u.mutation
@@ -312,6 +360,69 @@ func (_u *ProjectUpdate) RemoveImageResults(v ...*ImageResult) *ProjectUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveImageResultIDs(ids...)
+}
+
+// ClearVideoTasks clears all "video_tasks" edges to the VideoTask entity.
+func (_u *ProjectUpdate) ClearVideoTasks() *ProjectUpdate {
+	_u.mutation.ClearVideoTasks()
+	return _u
+}
+
+// RemoveVideoTaskIDs removes the "video_tasks" edge to VideoTask entities by IDs.
+func (_u *ProjectUpdate) RemoveVideoTaskIDs(ids ...uuid.UUID) *ProjectUpdate {
+	_u.mutation.RemoveVideoTaskIDs(ids...)
+	return _u
+}
+
+// RemoveVideoTasks removes "video_tasks" edges to VideoTask entities.
+func (_u *ProjectUpdate) RemoveVideoTasks(v ...*VideoTask) *ProjectUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveVideoTaskIDs(ids...)
+}
+
+// ClearMediaAssets clears all "media_assets" edges to the MediaAsset entity.
+func (_u *ProjectUpdate) ClearMediaAssets() *ProjectUpdate {
+	_u.mutation.ClearMediaAssets()
+	return _u
+}
+
+// RemoveMediaAssetIDs removes the "media_assets" edge to MediaAsset entities by IDs.
+func (_u *ProjectUpdate) RemoveMediaAssetIDs(ids ...uuid.UUID) *ProjectUpdate {
+	_u.mutation.RemoveMediaAssetIDs(ids...)
+	return _u
+}
+
+// RemoveMediaAssets removes "media_assets" edges to MediaAsset entities.
+func (_u *ProjectUpdate) RemoveMediaAssets(v ...*MediaAsset) *ProjectUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveMediaAssetIDs(ids...)
+}
+
+// ClearCreativeCanvases clears all "creative_canvases" edges to the CreativeCanvas entity.
+func (_u *ProjectUpdate) ClearCreativeCanvases() *ProjectUpdate {
+	_u.mutation.ClearCreativeCanvases()
+	return _u
+}
+
+// RemoveCreativeCanvaseIDs removes the "creative_canvases" edge to CreativeCanvas entities by IDs.
+func (_u *ProjectUpdate) RemoveCreativeCanvaseIDs(ids ...uuid.UUID) *ProjectUpdate {
+	_u.mutation.RemoveCreativeCanvaseIDs(ids...)
+	return _u
+}
+
+// RemoveCreativeCanvases removes "creative_canvases" edges to CreativeCanvas entities.
+func (_u *ProjectUpdate) RemoveCreativeCanvases(v ...*CreativeCanvas) *ProjectUpdate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveCreativeCanvaseIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -532,6 +643,141 @@ func (_u *ProjectUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(imageresult.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.VideoTasksCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.VideoTasksTable,
+			Columns: []string{project.VideoTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(videotask.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedVideoTasksIDs(); len(nodes) > 0 && !_u.mutation.VideoTasksCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.VideoTasksTable,
+			Columns: []string{project.VideoTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(videotask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.VideoTasksIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.VideoTasksTable,
+			Columns: []string{project.VideoTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(videotask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.MediaAssetsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.MediaAssetsTable,
+			Columns: []string{project.MediaAssetsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediaasset.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedMediaAssetsIDs(); len(nodes) > 0 && !_u.mutation.MediaAssetsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.MediaAssetsTable,
+			Columns: []string{project.MediaAssetsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediaasset.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.MediaAssetsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.MediaAssetsTable,
+			Columns: []string{project.MediaAssetsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediaasset.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.CreativeCanvasesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.CreativeCanvasesTable,
+			Columns: []string{project.CreativeCanvasesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creativecanvas.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedCreativeCanvasesIDs(); len(nodes) > 0 && !_u.mutation.CreativeCanvasesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.CreativeCanvasesTable,
+			Columns: []string{project.CreativeCanvasesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creativecanvas.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreativeCanvasesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.CreativeCanvasesTable,
+			Columns: []string{project.CreativeCanvasesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creativecanvas.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
@@ -795,6 +1041,51 @@ func (_u *ProjectUpdateOne) AddImageResults(v ...*ImageResult) *ProjectUpdateOne
 	return _u.AddImageResultIDs(ids...)
 }
 
+// AddVideoTaskIDs adds the "video_tasks" edge to the VideoTask entity by IDs.
+func (_u *ProjectUpdateOne) AddVideoTaskIDs(ids ...uuid.UUID) *ProjectUpdateOne {
+	_u.mutation.AddVideoTaskIDs(ids...)
+	return _u
+}
+
+// AddVideoTasks adds the "video_tasks" edges to the VideoTask entity.
+func (_u *ProjectUpdateOne) AddVideoTasks(v ...*VideoTask) *ProjectUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddVideoTaskIDs(ids...)
+}
+
+// AddMediaAssetIDs adds the "media_assets" edge to the MediaAsset entity by IDs.
+func (_u *ProjectUpdateOne) AddMediaAssetIDs(ids ...uuid.UUID) *ProjectUpdateOne {
+	_u.mutation.AddMediaAssetIDs(ids...)
+	return _u
+}
+
+// AddMediaAssets adds the "media_assets" edges to the MediaAsset entity.
+func (_u *ProjectUpdateOne) AddMediaAssets(v ...*MediaAsset) *ProjectUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddMediaAssetIDs(ids...)
+}
+
+// AddCreativeCanvaseIDs adds the "creative_canvases" edge to the CreativeCanvas entity by IDs.
+func (_u *ProjectUpdateOne) AddCreativeCanvaseIDs(ids ...uuid.UUID) *ProjectUpdateOne {
+	_u.mutation.AddCreativeCanvaseIDs(ids...)
+	return _u
+}
+
+// AddCreativeCanvases adds the "creative_canvases" edges to the CreativeCanvas entity.
+func (_u *ProjectUpdateOne) AddCreativeCanvases(v ...*CreativeCanvas) *ProjectUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddCreativeCanvaseIDs(ids...)
+}
+
 // Mutation returns the ProjectMutation object of the builder.
 func (_u *ProjectUpdateOne) Mutation() *ProjectMutation {
 	return _u.mutation
@@ -840,6 +1131,69 @@ func (_u *ProjectUpdateOne) RemoveImageResults(v ...*ImageResult) *ProjectUpdate
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveImageResultIDs(ids...)
+}
+
+// ClearVideoTasks clears all "video_tasks" edges to the VideoTask entity.
+func (_u *ProjectUpdateOne) ClearVideoTasks() *ProjectUpdateOne {
+	_u.mutation.ClearVideoTasks()
+	return _u
+}
+
+// RemoveVideoTaskIDs removes the "video_tasks" edge to VideoTask entities by IDs.
+func (_u *ProjectUpdateOne) RemoveVideoTaskIDs(ids ...uuid.UUID) *ProjectUpdateOne {
+	_u.mutation.RemoveVideoTaskIDs(ids...)
+	return _u
+}
+
+// RemoveVideoTasks removes "video_tasks" edges to VideoTask entities.
+func (_u *ProjectUpdateOne) RemoveVideoTasks(v ...*VideoTask) *ProjectUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveVideoTaskIDs(ids...)
+}
+
+// ClearMediaAssets clears all "media_assets" edges to the MediaAsset entity.
+func (_u *ProjectUpdateOne) ClearMediaAssets() *ProjectUpdateOne {
+	_u.mutation.ClearMediaAssets()
+	return _u
+}
+
+// RemoveMediaAssetIDs removes the "media_assets" edge to MediaAsset entities by IDs.
+func (_u *ProjectUpdateOne) RemoveMediaAssetIDs(ids ...uuid.UUID) *ProjectUpdateOne {
+	_u.mutation.RemoveMediaAssetIDs(ids...)
+	return _u
+}
+
+// RemoveMediaAssets removes "media_assets" edges to MediaAsset entities.
+func (_u *ProjectUpdateOne) RemoveMediaAssets(v ...*MediaAsset) *ProjectUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveMediaAssetIDs(ids...)
+}
+
+// ClearCreativeCanvases clears all "creative_canvases" edges to the CreativeCanvas entity.
+func (_u *ProjectUpdateOne) ClearCreativeCanvases() *ProjectUpdateOne {
+	_u.mutation.ClearCreativeCanvases()
+	return _u
+}
+
+// RemoveCreativeCanvaseIDs removes the "creative_canvases" edge to CreativeCanvas entities by IDs.
+func (_u *ProjectUpdateOne) RemoveCreativeCanvaseIDs(ids ...uuid.UUID) *ProjectUpdateOne {
+	_u.mutation.RemoveCreativeCanvaseIDs(ids...)
+	return _u
+}
+
+// RemoveCreativeCanvases removes "creative_canvases" edges to CreativeCanvas entities.
+func (_u *ProjectUpdateOne) RemoveCreativeCanvases(v ...*CreativeCanvas) *ProjectUpdateOne {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveCreativeCanvaseIDs(ids...)
 }
 
 // Where appends a list predicates to the ProjectUpdate builder.
@@ -1090,6 +1444,141 @@ func (_u *ProjectUpdateOne) sqlSave(ctx context.Context) (_node *Project, err er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(imageresult.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.VideoTasksCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.VideoTasksTable,
+			Columns: []string{project.VideoTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(videotask.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedVideoTasksIDs(); len(nodes) > 0 && !_u.mutation.VideoTasksCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.VideoTasksTable,
+			Columns: []string{project.VideoTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(videotask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.VideoTasksIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.VideoTasksTable,
+			Columns: []string{project.VideoTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(videotask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.MediaAssetsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.MediaAssetsTable,
+			Columns: []string{project.MediaAssetsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediaasset.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedMediaAssetsIDs(); len(nodes) > 0 && !_u.mutation.MediaAssetsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.MediaAssetsTable,
+			Columns: []string{project.MediaAssetsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediaasset.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.MediaAssetsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.MediaAssetsTable,
+			Columns: []string{project.MediaAssetsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediaasset.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.CreativeCanvasesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.CreativeCanvasesTable,
+			Columns: []string{project.CreativeCanvasesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creativecanvas.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedCreativeCanvasesIDs(); len(nodes) > 0 && !_u.mutation.CreativeCanvasesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.CreativeCanvasesTable,
+			Columns: []string{project.CreativeCanvasesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creativecanvas.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.CreativeCanvasesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.CreativeCanvasesTable,
+			Columns: []string{project.CreativeCanvasesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creativecanvas.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {

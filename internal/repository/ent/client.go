@@ -20,14 +20,22 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/canvasgenerationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusterchallenge"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvas"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvasrevision"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaassetreference"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaderivative"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediauploadsession"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
@@ -61,6 +69,15 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskattempt"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskinput"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
 )
@@ -78,6 +95,8 @@ type Client struct {
 	AdminUser *AdminUserClient
 	// AuditLog is the client for interacting with the AuditLog builders.
 	AuditLog *AuditLogClient
+	// CanvasGenerationRun is the client for interacting with the CanvasGenerationRun builders.
+	CanvasGenerationRun *CanvasGenerationRunClient
 	// ClusterChallenge is the client for interacting with the ClusterChallenge builders.
 	ClusterChallenge *ClusterChallengeClient
 	// ClusterNode is the client for interacting with the ClusterNode builders.
@@ -86,6 +105,10 @@ type Client struct {
 	ClusterToken *ClusterTokenClient
 	// ConfigItem is the client for interacting with the ConfigItem builders.
 	ConfigItem *ConfigItemClient
+	// CreativeCanvas is the client for interacting with the CreativeCanvas builders.
+	CreativeCanvas *CreativeCanvasClient
+	// CreativeCanvasRevision is the client for interacting with the CreativeCanvasRevision builders.
+	CreativeCanvasRevision *CreativeCanvasRevisionClient
 	// GalleryExportJob is the client for interacting with the GalleryExportJob builders.
 	GalleryExportJob *GalleryExportJobClient
 	// ImageResult is the client for interacting with the ImageResult builders.
@@ -94,6 +117,16 @@ type Client struct {
 	ImageTask *ImageTaskClient
 	// Installation is the client for interacting with the Installation builders.
 	Installation *InstallationClient
+	// MediaAsset is the client for interacting with the MediaAsset builders.
+	MediaAsset *MediaAssetClient
+	// MediaAssetReference is the client for interacting with the MediaAssetReference builders.
+	MediaAssetReference *MediaAssetReferenceClient
+	// MediaDerivative is the client for interacting with the MediaDerivative builders.
+	MediaDerivative *MediaDerivativeClient
+	// MediaProcessingJob is the client for interacting with the MediaProcessingJob builders.
+	MediaProcessingJob *MediaProcessingJobClient
+	// MediaUploadSession is the client for interacting with the MediaUploadSession builders.
+	MediaUploadSession *MediaUploadSessionClient
 	// MigrationCheckpoint is the client for interacting with the MigrationCheckpoint builders.
 	MigrationCheckpoint *MigrationCheckpointClient
 	// ModelAccount is the client for interacting with the ModelAccount builders.
@@ -160,6 +193,24 @@ type Client struct {
 	UserGroupMember *UserGroupMemberClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
+	// VideoModelCapability is the client for interacting with the VideoModelCapability builders.
+	VideoModelCapability *VideoModelCapabilityClient
+	// VideoPriceRule is the client for interacting with the VideoPriceRule builders.
+	VideoPriceRule *VideoPriceRuleClient
+	// VideoPricingStrategy is the client for interacting with the VideoPricingStrategy builders.
+	VideoPricingStrategy *VideoPricingStrategyClient
+	// VideoProviderCostRule is the client for interacting with the VideoProviderCostRule builders.
+	VideoProviderCostRule *VideoProviderCostRuleClient
+	// VideoRouteConfig is the client for interacting with the VideoRouteConfig builders.
+	VideoRouteConfig *VideoRouteConfigClient
+	// VideoTask is the client for interacting with the VideoTask builders.
+	VideoTask *VideoTaskClient
+	// VideoTaskAttempt is the client for interacting with the VideoTaskAttempt builders.
+	VideoTaskAttempt *VideoTaskAttemptClient
+	// VideoTaskInput is the client for interacting with the VideoTaskInput builders.
+	VideoTaskInput *VideoTaskInputClient
+	// VideoTaskItem is the client for interacting with the VideoTaskItem builders.
+	VideoTaskItem *VideoTaskItemClient
 	// WalletGrant is the client for interacting with the WalletGrant builders.
 	WalletGrant *WalletGrantClient
 	// WalletReservationAllocation is the client for interacting with the WalletReservationAllocation builders.
@@ -179,14 +230,22 @@ func (c *Client) init() {
 	c.APIKeyQuotaReservation = NewAPIKeyQuotaReservationClient(c.config)
 	c.AdminUser = NewAdminUserClient(c.config)
 	c.AuditLog = NewAuditLogClient(c.config)
+	c.CanvasGenerationRun = NewCanvasGenerationRunClient(c.config)
 	c.ClusterChallenge = NewClusterChallengeClient(c.config)
 	c.ClusterNode = NewClusterNodeClient(c.config)
 	c.ClusterToken = NewClusterTokenClient(c.config)
 	c.ConfigItem = NewConfigItemClient(c.config)
+	c.CreativeCanvas = NewCreativeCanvasClient(c.config)
+	c.CreativeCanvasRevision = NewCreativeCanvasRevisionClient(c.config)
 	c.GalleryExportJob = NewGalleryExportJobClient(c.config)
 	c.ImageResult = NewImageResultClient(c.config)
 	c.ImageTask = NewImageTaskClient(c.config)
 	c.Installation = NewInstallationClient(c.config)
+	c.MediaAsset = NewMediaAssetClient(c.config)
+	c.MediaAssetReference = NewMediaAssetReferenceClient(c.config)
+	c.MediaDerivative = NewMediaDerivativeClient(c.config)
+	c.MediaProcessingJob = NewMediaProcessingJobClient(c.config)
+	c.MediaUploadSession = NewMediaUploadSessionClient(c.config)
 	c.MigrationCheckpoint = NewMigrationCheckpointClient(c.config)
 	c.ModelAccount = NewModelAccountClient(c.config)
 	c.ModelAccountModel = NewModelAccountModelClient(c.config)
@@ -220,6 +279,15 @@ func (c *Client) init() {
 	c.UserGroup = NewUserGroupClient(c.config)
 	c.UserGroupMember = NewUserGroupMemberClient(c.config)
 	c.UserSubscription = NewUserSubscriptionClient(c.config)
+	c.VideoModelCapability = NewVideoModelCapabilityClient(c.config)
+	c.VideoPriceRule = NewVideoPriceRuleClient(c.config)
+	c.VideoPricingStrategy = NewVideoPricingStrategyClient(c.config)
+	c.VideoProviderCostRule = NewVideoProviderCostRuleClient(c.config)
+	c.VideoRouteConfig = NewVideoRouteConfigClient(c.config)
+	c.VideoTask = NewVideoTaskClient(c.config)
+	c.VideoTaskAttempt = NewVideoTaskAttemptClient(c.config)
+	c.VideoTaskInput = NewVideoTaskInputClient(c.config)
+	c.VideoTaskItem = NewVideoTaskItemClient(c.config)
 	c.WalletGrant = NewWalletGrantClient(c.config)
 	c.WalletReservationAllocation = NewWalletReservationAllocationClient(c.config)
 }
@@ -318,14 +386,22 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		APIKeyQuotaReservation:      NewAPIKeyQuotaReservationClient(cfg),
 		AdminUser:                   NewAdminUserClient(cfg),
 		AuditLog:                    NewAuditLogClient(cfg),
+		CanvasGenerationRun:         NewCanvasGenerationRunClient(cfg),
 		ClusterChallenge:            NewClusterChallengeClient(cfg),
 		ClusterNode:                 NewClusterNodeClient(cfg),
 		ClusterToken:                NewClusterTokenClient(cfg),
 		ConfigItem:                  NewConfigItemClient(cfg),
+		CreativeCanvas:              NewCreativeCanvasClient(cfg),
+		CreativeCanvasRevision:      NewCreativeCanvasRevisionClient(cfg),
 		GalleryExportJob:            NewGalleryExportJobClient(cfg),
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
 		Installation:                NewInstallationClient(cfg),
+		MediaAsset:                  NewMediaAssetClient(cfg),
+		MediaAssetReference:         NewMediaAssetReferenceClient(cfg),
+		MediaDerivative:             NewMediaDerivativeClient(cfg),
+		MediaProcessingJob:          NewMediaProcessingJobClient(cfg),
+		MediaUploadSession:          NewMediaUploadSessionClient(cfg),
 		MigrationCheckpoint:         NewMigrationCheckpointClient(cfg),
 		ModelAccount:                NewModelAccountClient(cfg),
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
@@ -359,6 +435,15 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		UserGroup:                   NewUserGroupClient(cfg),
 		UserGroupMember:             NewUserGroupMemberClient(cfg),
 		UserSubscription:            NewUserSubscriptionClient(cfg),
+		VideoModelCapability:        NewVideoModelCapabilityClient(cfg),
+		VideoPriceRule:              NewVideoPriceRuleClient(cfg),
+		VideoPricingStrategy:        NewVideoPricingStrategyClient(cfg),
+		VideoProviderCostRule:       NewVideoProviderCostRuleClient(cfg),
+		VideoRouteConfig:            NewVideoRouteConfigClient(cfg),
+		VideoTask:                   NewVideoTaskClient(cfg),
+		VideoTaskAttempt:            NewVideoTaskAttemptClient(cfg),
+		VideoTaskInput:              NewVideoTaskInputClient(cfg),
+		VideoTaskItem:               NewVideoTaskItemClient(cfg),
 		WalletGrant:                 NewWalletGrantClient(cfg),
 		WalletReservationAllocation: NewWalletReservationAllocationClient(cfg),
 	}, nil
@@ -384,14 +469,22 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		APIKeyQuotaReservation:      NewAPIKeyQuotaReservationClient(cfg),
 		AdminUser:                   NewAdminUserClient(cfg),
 		AuditLog:                    NewAuditLogClient(cfg),
+		CanvasGenerationRun:         NewCanvasGenerationRunClient(cfg),
 		ClusterChallenge:            NewClusterChallengeClient(cfg),
 		ClusterNode:                 NewClusterNodeClient(cfg),
 		ClusterToken:                NewClusterTokenClient(cfg),
 		ConfigItem:                  NewConfigItemClient(cfg),
+		CreativeCanvas:              NewCreativeCanvasClient(cfg),
+		CreativeCanvasRevision:      NewCreativeCanvasRevisionClient(cfg),
 		GalleryExportJob:            NewGalleryExportJobClient(cfg),
 		ImageResult:                 NewImageResultClient(cfg),
 		ImageTask:                   NewImageTaskClient(cfg),
 		Installation:                NewInstallationClient(cfg),
+		MediaAsset:                  NewMediaAssetClient(cfg),
+		MediaAssetReference:         NewMediaAssetReferenceClient(cfg),
+		MediaDerivative:             NewMediaDerivativeClient(cfg),
+		MediaProcessingJob:          NewMediaProcessingJobClient(cfg),
+		MediaUploadSession:          NewMediaUploadSessionClient(cfg),
 		MigrationCheckpoint:         NewMigrationCheckpointClient(cfg),
 		ModelAccount:                NewModelAccountClient(cfg),
 		ModelAccountModel:           NewModelAccountModelClient(cfg),
@@ -425,6 +518,15 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		UserGroup:                   NewUserGroupClient(cfg),
 		UserGroupMember:             NewUserGroupMemberClient(cfg),
 		UserSubscription:            NewUserSubscriptionClient(cfg),
+		VideoModelCapability:        NewVideoModelCapabilityClient(cfg),
+		VideoPriceRule:              NewVideoPriceRuleClient(cfg),
+		VideoPricingStrategy:        NewVideoPricingStrategyClient(cfg),
+		VideoProviderCostRule:       NewVideoProviderCostRuleClient(cfg),
+		VideoRouteConfig:            NewVideoRouteConfigClient(cfg),
+		VideoTask:                   NewVideoTaskClient(cfg),
+		VideoTaskAttempt:            NewVideoTaskAttemptClient(cfg),
+		VideoTaskInput:              NewVideoTaskInputClient(cfg),
+		VideoTaskItem:               NewVideoTaskItemClient(cfg),
 		WalletGrant:                 NewWalletGrantClient(cfg),
 		WalletReservationAllocation: NewWalletReservationAllocationClient(cfg),
 	}, nil
@@ -456,9 +558,12 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
-		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.GalleryExportJob, c.ImageResult,
-		c.ImageTask, c.Installation, c.MigrationCheckpoint, c.ModelAccount,
+		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog,
+		c.CanvasGenerationRun, c.ClusterChallenge, c.ClusterNode, c.ClusterToken,
+		c.ConfigItem, c.CreativeCanvas, c.CreativeCanvasRevision, c.GalleryExportJob,
+		c.ImageResult, c.ImageTask, c.Installation, c.MediaAsset,
+		c.MediaAssetReference, c.MediaDerivative, c.MediaProcessingJob,
+		c.MediaUploadSession, c.MigrationCheckpoint, c.ModelAccount,
 		c.ModelAccountModel, c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
 		c.ObjectReconcileCheckpoint, c.ObjectStorageConfig, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
@@ -467,7 +572,10 @@ func (c *Client) Use(hooks ...Hook) {
 		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
 		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
-		c.WalletGrant, c.WalletReservationAllocation,
+		c.VideoModelCapability, c.VideoPriceRule, c.VideoPricingStrategy,
+		c.VideoProviderCostRule, c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt,
+		c.VideoTaskInput, c.VideoTaskItem, c.WalletGrant,
+		c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
 	}
@@ -477,9 +585,12 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog, c.ClusterChallenge,
-		c.ClusterNode, c.ClusterToken, c.ConfigItem, c.GalleryExportJob, c.ImageResult,
-		c.ImageTask, c.Installation, c.MigrationCheckpoint, c.ModelAccount,
+		c.APIKey, c.APIKeyQuotaReservation, c.AdminUser, c.AuditLog,
+		c.CanvasGenerationRun, c.ClusterChallenge, c.ClusterNode, c.ClusterToken,
+		c.ConfigItem, c.CreativeCanvas, c.CreativeCanvasRevision, c.GalleryExportJob,
+		c.ImageResult, c.ImageTask, c.Installation, c.MediaAsset,
+		c.MediaAssetReference, c.MediaDerivative, c.MediaProcessingJob,
+		c.MediaUploadSession, c.MigrationCheckpoint, c.ModelAccount,
 		c.ModelAccountModel, c.ModelProvider, c.ModelRoute, c.ObjectDeletionJob,
 		c.ObjectReconcileCheckpoint, c.ObjectStorageConfig, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
@@ -488,7 +599,10 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
 		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
-		c.WalletGrant, c.WalletReservationAllocation,
+		c.VideoModelCapability, c.VideoPriceRule, c.VideoPricingStrategy,
+		c.VideoProviderCostRule, c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt,
+		c.VideoTaskInput, c.VideoTaskItem, c.WalletGrant,
+		c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -505,6 +619,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AdminUser.mutate(ctx, m)
 	case *AuditLogMutation:
 		return c.AuditLog.mutate(ctx, m)
+	case *CanvasGenerationRunMutation:
+		return c.CanvasGenerationRun.mutate(ctx, m)
 	case *ClusterChallengeMutation:
 		return c.ClusterChallenge.mutate(ctx, m)
 	case *ClusterNodeMutation:
@@ -513,6 +629,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ClusterToken.mutate(ctx, m)
 	case *ConfigItemMutation:
 		return c.ConfigItem.mutate(ctx, m)
+	case *CreativeCanvasMutation:
+		return c.CreativeCanvas.mutate(ctx, m)
+	case *CreativeCanvasRevisionMutation:
+		return c.CreativeCanvasRevision.mutate(ctx, m)
 	case *GalleryExportJobMutation:
 		return c.GalleryExportJob.mutate(ctx, m)
 	case *ImageResultMutation:
@@ -521,6 +641,16 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ImageTask.mutate(ctx, m)
 	case *InstallationMutation:
 		return c.Installation.mutate(ctx, m)
+	case *MediaAssetMutation:
+		return c.MediaAsset.mutate(ctx, m)
+	case *MediaAssetReferenceMutation:
+		return c.MediaAssetReference.mutate(ctx, m)
+	case *MediaDerivativeMutation:
+		return c.MediaDerivative.mutate(ctx, m)
+	case *MediaProcessingJobMutation:
+		return c.MediaProcessingJob.mutate(ctx, m)
+	case *MediaUploadSessionMutation:
+		return c.MediaUploadSession.mutate(ctx, m)
 	case *MigrationCheckpointMutation:
 		return c.MigrationCheckpoint.mutate(ctx, m)
 	case *ModelAccountMutation:
@@ -587,6 +717,24 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.UserGroupMember.mutate(ctx, m)
 	case *UserSubscriptionMutation:
 		return c.UserSubscription.mutate(ctx, m)
+	case *VideoModelCapabilityMutation:
+		return c.VideoModelCapability.mutate(ctx, m)
+	case *VideoPriceRuleMutation:
+		return c.VideoPriceRule.mutate(ctx, m)
+	case *VideoPricingStrategyMutation:
+		return c.VideoPricingStrategy.mutate(ctx, m)
+	case *VideoProviderCostRuleMutation:
+		return c.VideoProviderCostRule.mutate(ctx, m)
+	case *VideoRouteConfigMutation:
+		return c.VideoRouteConfig.mutate(ctx, m)
+	case *VideoTaskMutation:
+		return c.VideoTask.mutate(ctx, m)
+	case *VideoTaskAttemptMutation:
+		return c.VideoTaskAttempt.mutate(ctx, m)
+	case *VideoTaskInputMutation:
+		return c.VideoTaskInput.mutate(ctx, m)
+	case *VideoTaskItemMutation:
+		return c.VideoTaskItem.mutate(ctx, m)
 	case *WalletGrantMutation:
 		return c.WalletGrant.mutate(ctx, m)
 	case *WalletReservationAllocationMutation:
@@ -1128,6 +1276,155 @@ func (c *AuditLogClient) mutate(ctx context.Context, m *AuditLogMutation) (Value
 	}
 }
 
+// CanvasGenerationRunClient is a client for the CanvasGenerationRun schema.
+type CanvasGenerationRunClient struct {
+	config
+}
+
+// NewCanvasGenerationRunClient returns a client for the CanvasGenerationRun from the given config.
+func NewCanvasGenerationRunClient(c config) *CanvasGenerationRunClient {
+	return &CanvasGenerationRunClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `canvasgenerationrun.Hooks(f(g(h())))`.
+func (c *CanvasGenerationRunClient) Use(hooks ...Hook) {
+	c.hooks.CanvasGenerationRun = append(c.hooks.CanvasGenerationRun, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `canvasgenerationrun.Intercept(f(g(h())))`.
+func (c *CanvasGenerationRunClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CanvasGenerationRun = append(c.inters.CanvasGenerationRun, interceptors...)
+}
+
+// Create returns a builder for creating a CanvasGenerationRun entity.
+func (c *CanvasGenerationRunClient) Create() *CanvasGenerationRunCreate {
+	mutation := newCanvasGenerationRunMutation(c.config, OpCreate)
+	return &CanvasGenerationRunCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CanvasGenerationRun entities.
+func (c *CanvasGenerationRunClient) CreateBulk(builders ...*CanvasGenerationRunCreate) *CanvasGenerationRunCreateBulk {
+	return &CanvasGenerationRunCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CanvasGenerationRunClient) MapCreateBulk(slice any, setFunc func(*CanvasGenerationRunCreate, int)) *CanvasGenerationRunCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CanvasGenerationRunCreateBulk{err: fmt.Errorf("calling to CanvasGenerationRunClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CanvasGenerationRunCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CanvasGenerationRunCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CanvasGenerationRun.
+func (c *CanvasGenerationRunClient) Update() *CanvasGenerationRunUpdate {
+	mutation := newCanvasGenerationRunMutation(c.config, OpUpdate)
+	return &CanvasGenerationRunUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CanvasGenerationRunClient) UpdateOne(_m *CanvasGenerationRun) *CanvasGenerationRunUpdateOne {
+	mutation := newCanvasGenerationRunMutation(c.config, OpUpdateOne, withCanvasGenerationRun(_m))
+	return &CanvasGenerationRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CanvasGenerationRunClient) UpdateOneID(id uuid.UUID) *CanvasGenerationRunUpdateOne {
+	mutation := newCanvasGenerationRunMutation(c.config, OpUpdateOne, withCanvasGenerationRunID(id))
+	return &CanvasGenerationRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CanvasGenerationRun.
+func (c *CanvasGenerationRunClient) Delete() *CanvasGenerationRunDelete {
+	mutation := newCanvasGenerationRunMutation(c.config, OpDelete)
+	return &CanvasGenerationRunDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CanvasGenerationRunClient) DeleteOne(_m *CanvasGenerationRun) *CanvasGenerationRunDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CanvasGenerationRunClient) DeleteOneID(id uuid.UUID) *CanvasGenerationRunDeleteOne {
+	builder := c.Delete().Where(canvasgenerationrun.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CanvasGenerationRunDeleteOne{builder}
+}
+
+// Query returns a query builder for CanvasGenerationRun.
+func (c *CanvasGenerationRunClient) Query() *CanvasGenerationRunQuery {
+	return &CanvasGenerationRunQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCanvasGenerationRun},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CanvasGenerationRun entity by its id.
+func (c *CanvasGenerationRunClient) Get(ctx context.Context, id uuid.UUID) (*CanvasGenerationRun, error) {
+	return c.Query().Where(canvasgenerationrun.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CanvasGenerationRunClient) GetX(ctx context.Context, id uuid.UUID) *CanvasGenerationRun {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryCanvas queries the canvas edge of a CanvasGenerationRun.
+func (c *CanvasGenerationRunClient) QueryCanvas(_m *CanvasGenerationRun) *CreativeCanvasQuery {
+	query := (&CreativeCanvasClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(canvasgenerationrun.Table, canvasgenerationrun.FieldID, id),
+			sqlgraph.To(creativecanvas.Table, creativecanvas.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, canvasgenerationrun.CanvasTable, canvasgenerationrun.CanvasColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CanvasGenerationRunClient) Hooks() []Hook {
+	return c.hooks.CanvasGenerationRun
+}
+
+// Interceptors returns the client interceptors.
+func (c *CanvasGenerationRunClient) Interceptors() []Interceptor {
+	return c.inters.CanvasGenerationRun
+}
+
+func (c *CanvasGenerationRunClient) mutate(ctx context.Context, m *CanvasGenerationRunMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CanvasGenerationRunCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CanvasGenerationRunUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CanvasGenerationRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CanvasGenerationRunDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CanvasGenerationRun mutation op: %q", m.Op())
+	}
+}
+
 // ClusterChallengeClient is a client for the ClusterChallenge schema.
 type ClusterChallengeClient struct {
 	config
@@ -1657,6 +1954,336 @@ func (c *ConfigItemClient) mutate(ctx context.Context, m *ConfigItemMutation) (V
 		return (&ConfigItemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ConfigItem mutation op: %q", m.Op())
+	}
+}
+
+// CreativeCanvasClient is a client for the CreativeCanvas schema.
+type CreativeCanvasClient struct {
+	config
+}
+
+// NewCreativeCanvasClient returns a client for the CreativeCanvas from the given config.
+func NewCreativeCanvasClient(c config) *CreativeCanvasClient {
+	return &CreativeCanvasClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `creativecanvas.Hooks(f(g(h())))`.
+func (c *CreativeCanvasClient) Use(hooks ...Hook) {
+	c.hooks.CreativeCanvas = append(c.hooks.CreativeCanvas, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `creativecanvas.Intercept(f(g(h())))`.
+func (c *CreativeCanvasClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CreativeCanvas = append(c.inters.CreativeCanvas, interceptors...)
+}
+
+// Create returns a builder for creating a CreativeCanvas entity.
+func (c *CreativeCanvasClient) Create() *CreativeCanvasCreate {
+	mutation := newCreativeCanvasMutation(c.config, OpCreate)
+	return &CreativeCanvasCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CreativeCanvas entities.
+func (c *CreativeCanvasClient) CreateBulk(builders ...*CreativeCanvasCreate) *CreativeCanvasCreateBulk {
+	return &CreativeCanvasCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CreativeCanvasClient) MapCreateBulk(slice any, setFunc func(*CreativeCanvasCreate, int)) *CreativeCanvasCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CreativeCanvasCreateBulk{err: fmt.Errorf("calling to CreativeCanvasClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CreativeCanvasCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CreativeCanvasCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CreativeCanvas.
+func (c *CreativeCanvasClient) Update() *CreativeCanvasUpdate {
+	mutation := newCreativeCanvasMutation(c.config, OpUpdate)
+	return &CreativeCanvasUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CreativeCanvasClient) UpdateOne(_m *CreativeCanvas) *CreativeCanvasUpdateOne {
+	mutation := newCreativeCanvasMutation(c.config, OpUpdateOne, withCreativeCanvas(_m))
+	return &CreativeCanvasUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CreativeCanvasClient) UpdateOneID(id uuid.UUID) *CreativeCanvasUpdateOne {
+	mutation := newCreativeCanvasMutation(c.config, OpUpdateOne, withCreativeCanvasID(id))
+	return &CreativeCanvasUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CreativeCanvas.
+func (c *CreativeCanvasClient) Delete() *CreativeCanvasDelete {
+	mutation := newCreativeCanvasMutation(c.config, OpDelete)
+	return &CreativeCanvasDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CreativeCanvasClient) DeleteOne(_m *CreativeCanvas) *CreativeCanvasDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CreativeCanvasClient) DeleteOneID(id uuid.UUID) *CreativeCanvasDeleteOne {
+	builder := c.Delete().Where(creativecanvas.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CreativeCanvasDeleteOne{builder}
+}
+
+// Query returns a query builder for CreativeCanvas.
+func (c *CreativeCanvasClient) Query() *CreativeCanvasQuery {
+	return &CreativeCanvasQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCreativeCanvas},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CreativeCanvas entity by its id.
+func (c *CreativeCanvasClient) Get(ctx context.Context, id uuid.UUID) (*CreativeCanvas, error) {
+	return c.Query().Where(creativecanvas.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CreativeCanvasClient) GetX(ctx context.Context, id uuid.UUID) *CreativeCanvas {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryProject queries the project edge of a CreativeCanvas.
+func (c *CreativeCanvasClient) QueryProject(_m *CreativeCanvas) *ProjectQuery {
+	query := (&ProjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(creativecanvas.Table, creativecanvas.FieldID, id),
+			sqlgraph.To(project.Table, project.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, creativecanvas.ProjectTable, creativecanvas.ProjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRevisions queries the revisions edge of a CreativeCanvas.
+func (c *CreativeCanvasClient) QueryRevisions(_m *CreativeCanvas) *CreativeCanvasRevisionQuery {
+	query := (&CreativeCanvasRevisionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(creativecanvas.Table, creativecanvas.FieldID, id),
+			sqlgraph.To(creativecanvasrevision.Table, creativecanvasrevision.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, creativecanvas.RevisionsTable, creativecanvas.RevisionsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryGenerationRuns queries the generation_runs edge of a CreativeCanvas.
+func (c *CreativeCanvasClient) QueryGenerationRuns(_m *CreativeCanvas) *CanvasGenerationRunQuery {
+	query := (&CanvasGenerationRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(creativecanvas.Table, creativecanvas.FieldID, id),
+			sqlgraph.To(canvasgenerationrun.Table, canvasgenerationrun.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, creativecanvas.GenerationRunsTable, creativecanvas.GenerationRunsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CreativeCanvasClient) Hooks() []Hook {
+	return c.hooks.CreativeCanvas
+}
+
+// Interceptors returns the client interceptors.
+func (c *CreativeCanvasClient) Interceptors() []Interceptor {
+	return c.inters.CreativeCanvas
+}
+
+func (c *CreativeCanvasClient) mutate(ctx context.Context, m *CreativeCanvasMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CreativeCanvasCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CreativeCanvasUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CreativeCanvasUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CreativeCanvasDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CreativeCanvas mutation op: %q", m.Op())
+	}
+}
+
+// CreativeCanvasRevisionClient is a client for the CreativeCanvasRevision schema.
+type CreativeCanvasRevisionClient struct {
+	config
+}
+
+// NewCreativeCanvasRevisionClient returns a client for the CreativeCanvasRevision from the given config.
+func NewCreativeCanvasRevisionClient(c config) *CreativeCanvasRevisionClient {
+	return &CreativeCanvasRevisionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `creativecanvasrevision.Hooks(f(g(h())))`.
+func (c *CreativeCanvasRevisionClient) Use(hooks ...Hook) {
+	c.hooks.CreativeCanvasRevision = append(c.hooks.CreativeCanvasRevision, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `creativecanvasrevision.Intercept(f(g(h())))`.
+func (c *CreativeCanvasRevisionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CreativeCanvasRevision = append(c.inters.CreativeCanvasRevision, interceptors...)
+}
+
+// Create returns a builder for creating a CreativeCanvasRevision entity.
+func (c *CreativeCanvasRevisionClient) Create() *CreativeCanvasRevisionCreate {
+	mutation := newCreativeCanvasRevisionMutation(c.config, OpCreate)
+	return &CreativeCanvasRevisionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CreativeCanvasRevision entities.
+func (c *CreativeCanvasRevisionClient) CreateBulk(builders ...*CreativeCanvasRevisionCreate) *CreativeCanvasRevisionCreateBulk {
+	return &CreativeCanvasRevisionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CreativeCanvasRevisionClient) MapCreateBulk(slice any, setFunc func(*CreativeCanvasRevisionCreate, int)) *CreativeCanvasRevisionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CreativeCanvasRevisionCreateBulk{err: fmt.Errorf("calling to CreativeCanvasRevisionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CreativeCanvasRevisionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CreativeCanvasRevisionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CreativeCanvasRevision.
+func (c *CreativeCanvasRevisionClient) Update() *CreativeCanvasRevisionUpdate {
+	mutation := newCreativeCanvasRevisionMutation(c.config, OpUpdate)
+	return &CreativeCanvasRevisionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CreativeCanvasRevisionClient) UpdateOne(_m *CreativeCanvasRevision) *CreativeCanvasRevisionUpdateOne {
+	mutation := newCreativeCanvasRevisionMutation(c.config, OpUpdateOne, withCreativeCanvasRevision(_m))
+	return &CreativeCanvasRevisionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CreativeCanvasRevisionClient) UpdateOneID(id uuid.UUID) *CreativeCanvasRevisionUpdateOne {
+	mutation := newCreativeCanvasRevisionMutation(c.config, OpUpdateOne, withCreativeCanvasRevisionID(id))
+	return &CreativeCanvasRevisionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CreativeCanvasRevision.
+func (c *CreativeCanvasRevisionClient) Delete() *CreativeCanvasRevisionDelete {
+	mutation := newCreativeCanvasRevisionMutation(c.config, OpDelete)
+	return &CreativeCanvasRevisionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CreativeCanvasRevisionClient) DeleteOne(_m *CreativeCanvasRevision) *CreativeCanvasRevisionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CreativeCanvasRevisionClient) DeleteOneID(id uuid.UUID) *CreativeCanvasRevisionDeleteOne {
+	builder := c.Delete().Where(creativecanvasrevision.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CreativeCanvasRevisionDeleteOne{builder}
+}
+
+// Query returns a query builder for CreativeCanvasRevision.
+func (c *CreativeCanvasRevisionClient) Query() *CreativeCanvasRevisionQuery {
+	return &CreativeCanvasRevisionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCreativeCanvasRevision},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CreativeCanvasRevision entity by its id.
+func (c *CreativeCanvasRevisionClient) Get(ctx context.Context, id uuid.UUID) (*CreativeCanvasRevision, error) {
+	return c.Query().Where(creativecanvasrevision.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CreativeCanvasRevisionClient) GetX(ctx context.Context, id uuid.UUID) *CreativeCanvasRevision {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryCanvas queries the canvas edge of a CreativeCanvasRevision.
+func (c *CreativeCanvasRevisionClient) QueryCanvas(_m *CreativeCanvasRevision) *CreativeCanvasQuery {
+	query := (&CreativeCanvasClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(creativecanvasrevision.Table, creativecanvasrevision.FieldID, id),
+			sqlgraph.To(creativecanvas.Table, creativecanvas.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, creativecanvasrevision.CanvasTable, creativecanvasrevision.CanvasColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CreativeCanvasRevisionClient) Hooks() []Hook {
+	return c.hooks.CreativeCanvasRevision
+}
+
+// Interceptors returns the client interceptors.
+func (c *CreativeCanvasRevisionClient) Interceptors() []Interceptor {
+	return c.inters.CreativeCanvasRevision
+}
+
+func (c *CreativeCanvasRevisionClient) mutate(ctx context.Context, m *CreativeCanvasRevisionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CreativeCanvasRevisionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CreativeCanvasRevisionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CreativeCanvasRevisionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CreativeCanvasRevisionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CreativeCanvasRevision mutation op: %q", m.Op())
 	}
 }
 
@@ -2221,6 +2848,799 @@ func (c *InstallationClient) mutate(ctx context.Context, m *InstallationMutation
 		return (&InstallationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Installation mutation op: %q", m.Op())
+	}
+}
+
+// MediaAssetClient is a client for the MediaAsset schema.
+type MediaAssetClient struct {
+	config
+}
+
+// NewMediaAssetClient returns a client for the MediaAsset from the given config.
+func NewMediaAssetClient(c config) *MediaAssetClient {
+	return &MediaAssetClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `mediaasset.Hooks(f(g(h())))`.
+func (c *MediaAssetClient) Use(hooks ...Hook) {
+	c.hooks.MediaAsset = append(c.hooks.MediaAsset, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `mediaasset.Intercept(f(g(h())))`.
+func (c *MediaAssetClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MediaAsset = append(c.inters.MediaAsset, interceptors...)
+}
+
+// Create returns a builder for creating a MediaAsset entity.
+func (c *MediaAssetClient) Create() *MediaAssetCreate {
+	mutation := newMediaAssetMutation(c.config, OpCreate)
+	return &MediaAssetCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MediaAsset entities.
+func (c *MediaAssetClient) CreateBulk(builders ...*MediaAssetCreate) *MediaAssetCreateBulk {
+	return &MediaAssetCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MediaAssetClient) MapCreateBulk(slice any, setFunc func(*MediaAssetCreate, int)) *MediaAssetCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MediaAssetCreateBulk{err: fmt.Errorf("calling to MediaAssetClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MediaAssetCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MediaAssetCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MediaAsset.
+func (c *MediaAssetClient) Update() *MediaAssetUpdate {
+	mutation := newMediaAssetMutation(c.config, OpUpdate)
+	return &MediaAssetUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MediaAssetClient) UpdateOne(_m *MediaAsset) *MediaAssetUpdateOne {
+	mutation := newMediaAssetMutation(c.config, OpUpdateOne, withMediaAsset(_m))
+	return &MediaAssetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MediaAssetClient) UpdateOneID(id uuid.UUID) *MediaAssetUpdateOne {
+	mutation := newMediaAssetMutation(c.config, OpUpdateOne, withMediaAssetID(id))
+	return &MediaAssetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MediaAsset.
+func (c *MediaAssetClient) Delete() *MediaAssetDelete {
+	mutation := newMediaAssetMutation(c.config, OpDelete)
+	return &MediaAssetDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MediaAssetClient) DeleteOne(_m *MediaAsset) *MediaAssetDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MediaAssetClient) DeleteOneID(id uuid.UUID) *MediaAssetDeleteOne {
+	builder := c.Delete().Where(mediaasset.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MediaAssetDeleteOne{builder}
+}
+
+// Query returns a query builder for MediaAsset.
+func (c *MediaAssetClient) Query() *MediaAssetQuery {
+	return &MediaAssetQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMediaAsset},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MediaAsset entity by its id.
+func (c *MediaAssetClient) Get(ctx context.Context, id uuid.UUID) (*MediaAsset, error) {
+	return c.Query().Where(mediaasset.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MediaAssetClient) GetX(ctx context.Context, id uuid.UUID) *MediaAsset {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryProject queries the project edge of a MediaAsset.
+func (c *MediaAssetClient) QueryProject(_m *MediaAsset) *ProjectQuery {
+	query := (&ProjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediaasset.Table, mediaasset.FieldID, id),
+			sqlgraph.To(project.Table, project.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, mediaasset.ProjectTable, mediaasset.ProjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryDerivatives queries the derivatives edge of a MediaAsset.
+func (c *MediaAssetClient) QueryDerivatives(_m *MediaAsset) *MediaDerivativeQuery {
+	query := (&MediaDerivativeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediaasset.Table, mediaasset.FieldID, id),
+			sqlgraph.To(mediaderivative.Table, mediaderivative.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, mediaasset.DerivativesTable, mediaasset.DerivativesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryProcessingJobs queries the processing_jobs edge of a MediaAsset.
+func (c *MediaAssetClient) QueryProcessingJobs(_m *MediaAsset) *MediaProcessingJobQuery {
+	query := (&MediaProcessingJobClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediaasset.Table, mediaasset.FieldID, id),
+			sqlgraph.To(mediaprocessingjob.Table, mediaprocessingjob.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, mediaasset.ProcessingJobsTable, mediaasset.ProcessingJobsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryReferences queries the references edge of a MediaAsset.
+func (c *MediaAssetClient) QueryReferences(_m *MediaAsset) *MediaAssetReferenceQuery {
+	query := (&MediaAssetReferenceClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediaasset.Table, mediaasset.FieldID, id),
+			sqlgraph.To(mediaassetreference.Table, mediaassetreference.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, mediaasset.ReferencesTable, mediaasset.ReferencesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryVideoTaskInputs queries the video_task_inputs edge of a MediaAsset.
+func (c *MediaAssetClient) QueryVideoTaskInputs(_m *MediaAsset) *VideoTaskInputQuery {
+	query := (&VideoTaskInputClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediaasset.Table, mediaasset.FieldID, id),
+			sqlgraph.To(videotaskinput.Table, videotaskinput.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, mediaasset.VideoTaskInputsTable, mediaasset.VideoTaskInputsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MediaAssetClient) Hooks() []Hook {
+	return c.hooks.MediaAsset
+}
+
+// Interceptors returns the client interceptors.
+func (c *MediaAssetClient) Interceptors() []Interceptor {
+	return c.inters.MediaAsset
+}
+
+func (c *MediaAssetClient) mutate(ctx context.Context, m *MediaAssetMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MediaAssetCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MediaAssetUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MediaAssetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MediaAssetDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MediaAsset mutation op: %q", m.Op())
+	}
+}
+
+// MediaAssetReferenceClient is a client for the MediaAssetReference schema.
+type MediaAssetReferenceClient struct {
+	config
+}
+
+// NewMediaAssetReferenceClient returns a client for the MediaAssetReference from the given config.
+func NewMediaAssetReferenceClient(c config) *MediaAssetReferenceClient {
+	return &MediaAssetReferenceClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `mediaassetreference.Hooks(f(g(h())))`.
+func (c *MediaAssetReferenceClient) Use(hooks ...Hook) {
+	c.hooks.MediaAssetReference = append(c.hooks.MediaAssetReference, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `mediaassetreference.Intercept(f(g(h())))`.
+func (c *MediaAssetReferenceClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MediaAssetReference = append(c.inters.MediaAssetReference, interceptors...)
+}
+
+// Create returns a builder for creating a MediaAssetReference entity.
+func (c *MediaAssetReferenceClient) Create() *MediaAssetReferenceCreate {
+	mutation := newMediaAssetReferenceMutation(c.config, OpCreate)
+	return &MediaAssetReferenceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MediaAssetReference entities.
+func (c *MediaAssetReferenceClient) CreateBulk(builders ...*MediaAssetReferenceCreate) *MediaAssetReferenceCreateBulk {
+	return &MediaAssetReferenceCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MediaAssetReferenceClient) MapCreateBulk(slice any, setFunc func(*MediaAssetReferenceCreate, int)) *MediaAssetReferenceCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MediaAssetReferenceCreateBulk{err: fmt.Errorf("calling to MediaAssetReferenceClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MediaAssetReferenceCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MediaAssetReferenceCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MediaAssetReference.
+func (c *MediaAssetReferenceClient) Update() *MediaAssetReferenceUpdate {
+	mutation := newMediaAssetReferenceMutation(c.config, OpUpdate)
+	return &MediaAssetReferenceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MediaAssetReferenceClient) UpdateOne(_m *MediaAssetReference) *MediaAssetReferenceUpdateOne {
+	mutation := newMediaAssetReferenceMutation(c.config, OpUpdateOne, withMediaAssetReference(_m))
+	return &MediaAssetReferenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MediaAssetReferenceClient) UpdateOneID(id uuid.UUID) *MediaAssetReferenceUpdateOne {
+	mutation := newMediaAssetReferenceMutation(c.config, OpUpdateOne, withMediaAssetReferenceID(id))
+	return &MediaAssetReferenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MediaAssetReference.
+func (c *MediaAssetReferenceClient) Delete() *MediaAssetReferenceDelete {
+	mutation := newMediaAssetReferenceMutation(c.config, OpDelete)
+	return &MediaAssetReferenceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MediaAssetReferenceClient) DeleteOne(_m *MediaAssetReference) *MediaAssetReferenceDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MediaAssetReferenceClient) DeleteOneID(id uuid.UUID) *MediaAssetReferenceDeleteOne {
+	builder := c.Delete().Where(mediaassetreference.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MediaAssetReferenceDeleteOne{builder}
+}
+
+// Query returns a query builder for MediaAssetReference.
+func (c *MediaAssetReferenceClient) Query() *MediaAssetReferenceQuery {
+	return &MediaAssetReferenceQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMediaAssetReference},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MediaAssetReference entity by its id.
+func (c *MediaAssetReferenceClient) Get(ctx context.Context, id uuid.UUID) (*MediaAssetReference, error) {
+	return c.Query().Where(mediaassetreference.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MediaAssetReferenceClient) GetX(ctx context.Context, id uuid.UUID) *MediaAssetReference {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryAsset queries the asset edge of a MediaAssetReference.
+func (c *MediaAssetReferenceClient) QueryAsset(_m *MediaAssetReference) *MediaAssetQuery {
+	query := (&MediaAssetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediaassetreference.Table, mediaassetreference.FieldID, id),
+			sqlgraph.To(mediaasset.Table, mediaasset.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, mediaassetreference.AssetTable, mediaassetreference.AssetColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MediaAssetReferenceClient) Hooks() []Hook {
+	return c.hooks.MediaAssetReference
+}
+
+// Interceptors returns the client interceptors.
+func (c *MediaAssetReferenceClient) Interceptors() []Interceptor {
+	return c.inters.MediaAssetReference
+}
+
+func (c *MediaAssetReferenceClient) mutate(ctx context.Context, m *MediaAssetReferenceMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MediaAssetReferenceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MediaAssetReferenceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MediaAssetReferenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MediaAssetReferenceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MediaAssetReference mutation op: %q", m.Op())
+	}
+}
+
+// MediaDerivativeClient is a client for the MediaDerivative schema.
+type MediaDerivativeClient struct {
+	config
+}
+
+// NewMediaDerivativeClient returns a client for the MediaDerivative from the given config.
+func NewMediaDerivativeClient(c config) *MediaDerivativeClient {
+	return &MediaDerivativeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `mediaderivative.Hooks(f(g(h())))`.
+func (c *MediaDerivativeClient) Use(hooks ...Hook) {
+	c.hooks.MediaDerivative = append(c.hooks.MediaDerivative, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `mediaderivative.Intercept(f(g(h())))`.
+func (c *MediaDerivativeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MediaDerivative = append(c.inters.MediaDerivative, interceptors...)
+}
+
+// Create returns a builder for creating a MediaDerivative entity.
+func (c *MediaDerivativeClient) Create() *MediaDerivativeCreate {
+	mutation := newMediaDerivativeMutation(c.config, OpCreate)
+	return &MediaDerivativeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MediaDerivative entities.
+func (c *MediaDerivativeClient) CreateBulk(builders ...*MediaDerivativeCreate) *MediaDerivativeCreateBulk {
+	return &MediaDerivativeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MediaDerivativeClient) MapCreateBulk(slice any, setFunc func(*MediaDerivativeCreate, int)) *MediaDerivativeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MediaDerivativeCreateBulk{err: fmt.Errorf("calling to MediaDerivativeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MediaDerivativeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MediaDerivativeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MediaDerivative.
+func (c *MediaDerivativeClient) Update() *MediaDerivativeUpdate {
+	mutation := newMediaDerivativeMutation(c.config, OpUpdate)
+	return &MediaDerivativeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MediaDerivativeClient) UpdateOne(_m *MediaDerivative) *MediaDerivativeUpdateOne {
+	mutation := newMediaDerivativeMutation(c.config, OpUpdateOne, withMediaDerivative(_m))
+	return &MediaDerivativeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MediaDerivativeClient) UpdateOneID(id uuid.UUID) *MediaDerivativeUpdateOne {
+	mutation := newMediaDerivativeMutation(c.config, OpUpdateOne, withMediaDerivativeID(id))
+	return &MediaDerivativeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MediaDerivative.
+func (c *MediaDerivativeClient) Delete() *MediaDerivativeDelete {
+	mutation := newMediaDerivativeMutation(c.config, OpDelete)
+	return &MediaDerivativeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MediaDerivativeClient) DeleteOne(_m *MediaDerivative) *MediaDerivativeDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MediaDerivativeClient) DeleteOneID(id uuid.UUID) *MediaDerivativeDeleteOne {
+	builder := c.Delete().Where(mediaderivative.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MediaDerivativeDeleteOne{builder}
+}
+
+// Query returns a query builder for MediaDerivative.
+func (c *MediaDerivativeClient) Query() *MediaDerivativeQuery {
+	return &MediaDerivativeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMediaDerivative},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MediaDerivative entity by its id.
+func (c *MediaDerivativeClient) Get(ctx context.Context, id uuid.UUID) (*MediaDerivative, error) {
+	return c.Query().Where(mediaderivative.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MediaDerivativeClient) GetX(ctx context.Context, id uuid.UUID) *MediaDerivative {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryAsset queries the asset edge of a MediaDerivative.
+func (c *MediaDerivativeClient) QueryAsset(_m *MediaDerivative) *MediaAssetQuery {
+	query := (&MediaAssetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediaderivative.Table, mediaderivative.FieldID, id),
+			sqlgraph.To(mediaasset.Table, mediaasset.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, mediaderivative.AssetTable, mediaderivative.AssetColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MediaDerivativeClient) Hooks() []Hook {
+	return c.hooks.MediaDerivative
+}
+
+// Interceptors returns the client interceptors.
+func (c *MediaDerivativeClient) Interceptors() []Interceptor {
+	return c.inters.MediaDerivative
+}
+
+func (c *MediaDerivativeClient) mutate(ctx context.Context, m *MediaDerivativeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MediaDerivativeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MediaDerivativeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MediaDerivativeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MediaDerivativeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MediaDerivative mutation op: %q", m.Op())
+	}
+}
+
+// MediaProcessingJobClient is a client for the MediaProcessingJob schema.
+type MediaProcessingJobClient struct {
+	config
+}
+
+// NewMediaProcessingJobClient returns a client for the MediaProcessingJob from the given config.
+func NewMediaProcessingJobClient(c config) *MediaProcessingJobClient {
+	return &MediaProcessingJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `mediaprocessingjob.Hooks(f(g(h())))`.
+func (c *MediaProcessingJobClient) Use(hooks ...Hook) {
+	c.hooks.MediaProcessingJob = append(c.hooks.MediaProcessingJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `mediaprocessingjob.Intercept(f(g(h())))`.
+func (c *MediaProcessingJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MediaProcessingJob = append(c.inters.MediaProcessingJob, interceptors...)
+}
+
+// Create returns a builder for creating a MediaProcessingJob entity.
+func (c *MediaProcessingJobClient) Create() *MediaProcessingJobCreate {
+	mutation := newMediaProcessingJobMutation(c.config, OpCreate)
+	return &MediaProcessingJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MediaProcessingJob entities.
+func (c *MediaProcessingJobClient) CreateBulk(builders ...*MediaProcessingJobCreate) *MediaProcessingJobCreateBulk {
+	return &MediaProcessingJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MediaProcessingJobClient) MapCreateBulk(slice any, setFunc func(*MediaProcessingJobCreate, int)) *MediaProcessingJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MediaProcessingJobCreateBulk{err: fmt.Errorf("calling to MediaProcessingJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MediaProcessingJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MediaProcessingJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MediaProcessingJob.
+func (c *MediaProcessingJobClient) Update() *MediaProcessingJobUpdate {
+	mutation := newMediaProcessingJobMutation(c.config, OpUpdate)
+	return &MediaProcessingJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MediaProcessingJobClient) UpdateOne(_m *MediaProcessingJob) *MediaProcessingJobUpdateOne {
+	mutation := newMediaProcessingJobMutation(c.config, OpUpdateOne, withMediaProcessingJob(_m))
+	return &MediaProcessingJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MediaProcessingJobClient) UpdateOneID(id uuid.UUID) *MediaProcessingJobUpdateOne {
+	mutation := newMediaProcessingJobMutation(c.config, OpUpdateOne, withMediaProcessingJobID(id))
+	return &MediaProcessingJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MediaProcessingJob.
+func (c *MediaProcessingJobClient) Delete() *MediaProcessingJobDelete {
+	mutation := newMediaProcessingJobMutation(c.config, OpDelete)
+	return &MediaProcessingJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MediaProcessingJobClient) DeleteOne(_m *MediaProcessingJob) *MediaProcessingJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MediaProcessingJobClient) DeleteOneID(id uuid.UUID) *MediaProcessingJobDeleteOne {
+	builder := c.Delete().Where(mediaprocessingjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MediaProcessingJobDeleteOne{builder}
+}
+
+// Query returns a query builder for MediaProcessingJob.
+func (c *MediaProcessingJobClient) Query() *MediaProcessingJobQuery {
+	return &MediaProcessingJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMediaProcessingJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MediaProcessingJob entity by its id.
+func (c *MediaProcessingJobClient) Get(ctx context.Context, id uuid.UUID) (*MediaProcessingJob, error) {
+	return c.Query().Where(mediaprocessingjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MediaProcessingJobClient) GetX(ctx context.Context, id uuid.UUID) *MediaProcessingJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryAsset queries the asset edge of a MediaProcessingJob.
+func (c *MediaProcessingJobClient) QueryAsset(_m *MediaProcessingJob) *MediaAssetQuery {
+	query := (&MediaAssetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mediaprocessingjob.Table, mediaprocessingjob.FieldID, id),
+			sqlgraph.To(mediaasset.Table, mediaasset.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, mediaprocessingjob.AssetTable, mediaprocessingjob.AssetColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MediaProcessingJobClient) Hooks() []Hook {
+	return c.hooks.MediaProcessingJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *MediaProcessingJobClient) Interceptors() []Interceptor {
+	return c.inters.MediaProcessingJob
+}
+
+func (c *MediaProcessingJobClient) mutate(ctx context.Context, m *MediaProcessingJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MediaProcessingJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MediaProcessingJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MediaProcessingJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MediaProcessingJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MediaProcessingJob mutation op: %q", m.Op())
+	}
+}
+
+// MediaUploadSessionClient is a client for the MediaUploadSession schema.
+type MediaUploadSessionClient struct {
+	config
+}
+
+// NewMediaUploadSessionClient returns a client for the MediaUploadSession from the given config.
+func NewMediaUploadSessionClient(c config) *MediaUploadSessionClient {
+	return &MediaUploadSessionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `mediauploadsession.Hooks(f(g(h())))`.
+func (c *MediaUploadSessionClient) Use(hooks ...Hook) {
+	c.hooks.MediaUploadSession = append(c.hooks.MediaUploadSession, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `mediauploadsession.Intercept(f(g(h())))`.
+func (c *MediaUploadSessionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MediaUploadSession = append(c.inters.MediaUploadSession, interceptors...)
+}
+
+// Create returns a builder for creating a MediaUploadSession entity.
+func (c *MediaUploadSessionClient) Create() *MediaUploadSessionCreate {
+	mutation := newMediaUploadSessionMutation(c.config, OpCreate)
+	return &MediaUploadSessionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MediaUploadSession entities.
+func (c *MediaUploadSessionClient) CreateBulk(builders ...*MediaUploadSessionCreate) *MediaUploadSessionCreateBulk {
+	return &MediaUploadSessionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MediaUploadSessionClient) MapCreateBulk(slice any, setFunc func(*MediaUploadSessionCreate, int)) *MediaUploadSessionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MediaUploadSessionCreateBulk{err: fmt.Errorf("calling to MediaUploadSessionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MediaUploadSessionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MediaUploadSessionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MediaUploadSession.
+func (c *MediaUploadSessionClient) Update() *MediaUploadSessionUpdate {
+	mutation := newMediaUploadSessionMutation(c.config, OpUpdate)
+	return &MediaUploadSessionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MediaUploadSessionClient) UpdateOne(_m *MediaUploadSession) *MediaUploadSessionUpdateOne {
+	mutation := newMediaUploadSessionMutation(c.config, OpUpdateOne, withMediaUploadSession(_m))
+	return &MediaUploadSessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MediaUploadSessionClient) UpdateOneID(id uuid.UUID) *MediaUploadSessionUpdateOne {
+	mutation := newMediaUploadSessionMutation(c.config, OpUpdateOne, withMediaUploadSessionID(id))
+	return &MediaUploadSessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MediaUploadSession.
+func (c *MediaUploadSessionClient) Delete() *MediaUploadSessionDelete {
+	mutation := newMediaUploadSessionMutation(c.config, OpDelete)
+	return &MediaUploadSessionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MediaUploadSessionClient) DeleteOne(_m *MediaUploadSession) *MediaUploadSessionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MediaUploadSessionClient) DeleteOneID(id uuid.UUID) *MediaUploadSessionDeleteOne {
+	builder := c.Delete().Where(mediauploadsession.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MediaUploadSessionDeleteOne{builder}
+}
+
+// Query returns a query builder for MediaUploadSession.
+func (c *MediaUploadSessionClient) Query() *MediaUploadSessionQuery {
+	return &MediaUploadSessionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMediaUploadSession},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MediaUploadSession entity by its id.
+func (c *MediaUploadSessionClient) Get(ctx context.Context, id uuid.UUID) (*MediaUploadSession, error) {
+	return c.Query().Where(mediauploadsession.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MediaUploadSessionClient) GetX(ctx context.Context, id uuid.UUID) *MediaUploadSession {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *MediaUploadSessionClient) Hooks() []Hook {
+	return c.hooks.MediaUploadSession
+}
+
+// Interceptors returns the client interceptors.
+func (c *MediaUploadSessionClient) Interceptors() []Interceptor {
+	return c.inters.MediaUploadSession
+}
+
+func (c *MediaUploadSessionClient) mutate(ctx context.Context, m *MediaUploadSessionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MediaUploadSessionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MediaUploadSessionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MediaUploadSessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MediaUploadSessionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MediaUploadSession mutation op: %q", m.Op())
 	}
 }
 
@@ -3953,6 +5373,54 @@ func (c *ProjectClient) QueryImageResults(_m *Project) *ImageResultQuery {
 			sqlgraph.From(project.Table, project.FieldID, id),
 			sqlgraph.To(imageresult.Table, imageresult.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, project.ImageResultsTable, project.ImageResultsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryVideoTasks queries the video_tasks edge of a Project.
+func (c *ProjectClient) QueryVideoTasks(_m *Project) *VideoTaskQuery {
+	query := (&VideoTaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(project.Table, project.FieldID, id),
+			sqlgraph.To(videotask.Table, videotask.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, project.VideoTasksTable, project.VideoTasksColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMediaAssets queries the media_assets edge of a Project.
+func (c *ProjectClient) QueryMediaAssets(_m *Project) *MediaAssetQuery {
+	query := (&MediaAssetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(project.Table, project.FieldID, id),
+			sqlgraph.To(mediaasset.Table, mediaasset.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, project.MediaAssetsTable, project.MediaAssetsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCreativeCanvases queries the creative_canvases edge of a Project.
+func (c *ProjectClient) QueryCreativeCanvases(_m *Project) *CreativeCanvasQuery {
+	query := (&CreativeCanvasClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(project.Table, project.FieldID, id),
+			sqlgraph.To(creativecanvas.Table, creativecanvas.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, project.CreativeCanvasesTable, project.CreativeCanvasesColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil
@@ -6645,6 +8113,1331 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 	}
 }
 
+// VideoModelCapabilityClient is a client for the VideoModelCapability schema.
+type VideoModelCapabilityClient struct {
+	config
+}
+
+// NewVideoModelCapabilityClient returns a client for the VideoModelCapability from the given config.
+func NewVideoModelCapabilityClient(c config) *VideoModelCapabilityClient {
+	return &VideoModelCapabilityClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `videomodelcapability.Hooks(f(g(h())))`.
+func (c *VideoModelCapabilityClient) Use(hooks ...Hook) {
+	c.hooks.VideoModelCapability = append(c.hooks.VideoModelCapability, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `videomodelcapability.Intercept(f(g(h())))`.
+func (c *VideoModelCapabilityClient) Intercept(interceptors ...Interceptor) {
+	c.inters.VideoModelCapability = append(c.inters.VideoModelCapability, interceptors...)
+}
+
+// Create returns a builder for creating a VideoModelCapability entity.
+func (c *VideoModelCapabilityClient) Create() *VideoModelCapabilityCreate {
+	mutation := newVideoModelCapabilityMutation(c.config, OpCreate)
+	return &VideoModelCapabilityCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of VideoModelCapability entities.
+func (c *VideoModelCapabilityClient) CreateBulk(builders ...*VideoModelCapabilityCreate) *VideoModelCapabilityCreateBulk {
+	return &VideoModelCapabilityCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VideoModelCapabilityClient) MapCreateBulk(slice any, setFunc func(*VideoModelCapabilityCreate, int)) *VideoModelCapabilityCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VideoModelCapabilityCreateBulk{err: fmt.Errorf("calling to VideoModelCapabilityClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VideoModelCapabilityCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VideoModelCapabilityCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for VideoModelCapability.
+func (c *VideoModelCapabilityClient) Update() *VideoModelCapabilityUpdate {
+	mutation := newVideoModelCapabilityMutation(c.config, OpUpdate)
+	return &VideoModelCapabilityUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VideoModelCapabilityClient) UpdateOne(_m *VideoModelCapability) *VideoModelCapabilityUpdateOne {
+	mutation := newVideoModelCapabilityMutation(c.config, OpUpdateOne, withVideoModelCapability(_m))
+	return &VideoModelCapabilityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VideoModelCapabilityClient) UpdateOneID(id int) *VideoModelCapabilityUpdateOne {
+	mutation := newVideoModelCapabilityMutation(c.config, OpUpdateOne, withVideoModelCapabilityID(id))
+	return &VideoModelCapabilityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for VideoModelCapability.
+func (c *VideoModelCapabilityClient) Delete() *VideoModelCapabilityDelete {
+	mutation := newVideoModelCapabilityMutation(c.config, OpDelete)
+	return &VideoModelCapabilityDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VideoModelCapabilityClient) DeleteOne(_m *VideoModelCapability) *VideoModelCapabilityDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VideoModelCapabilityClient) DeleteOneID(id int) *VideoModelCapabilityDeleteOne {
+	builder := c.Delete().Where(videomodelcapability.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VideoModelCapabilityDeleteOne{builder}
+}
+
+// Query returns a query builder for VideoModelCapability.
+func (c *VideoModelCapabilityClient) Query() *VideoModelCapabilityQuery {
+	return &VideoModelCapabilityQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVideoModelCapability},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a VideoModelCapability entity by its id.
+func (c *VideoModelCapabilityClient) Get(ctx context.Context, id int) (*VideoModelCapability, error) {
+	return c.Query().Where(videomodelcapability.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VideoModelCapabilityClient) GetX(ctx context.Context, id int) *VideoModelCapability {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *VideoModelCapabilityClient) Hooks() []Hook {
+	return c.hooks.VideoModelCapability
+}
+
+// Interceptors returns the client interceptors.
+func (c *VideoModelCapabilityClient) Interceptors() []Interceptor {
+	return c.inters.VideoModelCapability
+}
+
+func (c *VideoModelCapabilityClient) mutate(ctx context.Context, m *VideoModelCapabilityMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VideoModelCapabilityCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VideoModelCapabilityUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VideoModelCapabilityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VideoModelCapabilityDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown VideoModelCapability mutation op: %q", m.Op())
+	}
+}
+
+// VideoPriceRuleClient is a client for the VideoPriceRule schema.
+type VideoPriceRuleClient struct {
+	config
+}
+
+// NewVideoPriceRuleClient returns a client for the VideoPriceRule from the given config.
+func NewVideoPriceRuleClient(c config) *VideoPriceRuleClient {
+	return &VideoPriceRuleClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `videopricerule.Hooks(f(g(h())))`.
+func (c *VideoPriceRuleClient) Use(hooks ...Hook) {
+	c.hooks.VideoPriceRule = append(c.hooks.VideoPriceRule, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `videopricerule.Intercept(f(g(h())))`.
+func (c *VideoPriceRuleClient) Intercept(interceptors ...Interceptor) {
+	c.inters.VideoPriceRule = append(c.inters.VideoPriceRule, interceptors...)
+}
+
+// Create returns a builder for creating a VideoPriceRule entity.
+func (c *VideoPriceRuleClient) Create() *VideoPriceRuleCreate {
+	mutation := newVideoPriceRuleMutation(c.config, OpCreate)
+	return &VideoPriceRuleCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of VideoPriceRule entities.
+func (c *VideoPriceRuleClient) CreateBulk(builders ...*VideoPriceRuleCreate) *VideoPriceRuleCreateBulk {
+	return &VideoPriceRuleCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VideoPriceRuleClient) MapCreateBulk(slice any, setFunc func(*VideoPriceRuleCreate, int)) *VideoPriceRuleCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VideoPriceRuleCreateBulk{err: fmt.Errorf("calling to VideoPriceRuleClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VideoPriceRuleCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VideoPriceRuleCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for VideoPriceRule.
+func (c *VideoPriceRuleClient) Update() *VideoPriceRuleUpdate {
+	mutation := newVideoPriceRuleMutation(c.config, OpUpdate)
+	return &VideoPriceRuleUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VideoPriceRuleClient) UpdateOne(_m *VideoPriceRule) *VideoPriceRuleUpdateOne {
+	mutation := newVideoPriceRuleMutation(c.config, OpUpdateOne, withVideoPriceRule(_m))
+	return &VideoPriceRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VideoPriceRuleClient) UpdateOneID(id int) *VideoPriceRuleUpdateOne {
+	mutation := newVideoPriceRuleMutation(c.config, OpUpdateOne, withVideoPriceRuleID(id))
+	return &VideoPriceRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for VideoPriceRule.
+func (c *VideoPriceRuleClient) Delete() *VideoPriceRuleDelete {
+	mutation := newVideoPriceRuleMutation(c.config, OpDelete)
+	return &VideoPriceRuleDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VideoPriceRuleClient) DeleteOne(_m *VideoPriceRule) *VideoPriceRuleDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VideoPriceRuleClient) DeleteOneID(id int) *VideoPriceRuleDeleteOne {
+	builder := c.Delete().Where(videopricerule.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VideoPriceRuleDeleteOne{builder}
+}
+
+// Query returns a query builder for VideoPriceRule.
+func (c *VideoPriceRuleClient) Query() *VideoPriceRuleQuery {
+	return &VideoPriceRuleQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVideoPriceRule},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a VideoPriceRule entity by its id.
+func (c *VideoPriceRuleClient) Get(ctx context.Context, id int) (*VideoPriceRule, error) {
+	return c.Query().Where(videopricerule.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VideoPriceRuleClient) GetX(ctx context.Context, id int) *VideoPriceRule {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *VideoPriceRuleClient) Hooks() []Hook {
+	return c.hooks.VideoPriceRule
+}
+
+// Interceptors returns the client interceptors.
+func (c *VideoPriceRuleClient) Interceptors() []Interceptor {
+	return c.inters.VideoPriceRule
+}
+
+func (c *VideoPriceRuleClient) mutate(ctx context.Context, m *VideoPriceRuleMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VideoPriceRuleCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VideoPriceRuleUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VideoPriceRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VideoPriceRuleDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown VideoPriceRule mutation op: %q", m.Op())
+	}
+}
+
+// VideoPricingStrategyClient is a client for the VideoPricingStrategy schema.
+type VideoPricingStrategyClient struct {
+	config
+}
+
+// NewVideoPricingStrategyClient returns a client for the VideoPricingStrategy from the given config.
+func NewVideoPricingStrategyClient(c config) *VideoPricingStrategyClient {
+	return &VideoPricingStrategyClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `videopricingstrategy.Hooks(f(g(h())))`.
+func (c *VideoPricingStrategyClient) Use(hooks ...Hook) {
+	c.hooks.VideoPricingStrategy = append(c.hooks.VideoPricingStrategy, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `videopricingstrategy.Intercept(f(g(h())))`.
+func (c *VideoPricingStrategyClient) Intercept(interceptors ...Interceptor) {
+	c.inters.VideoPricingStrategy = append(c.inters.VideoPricingStrategy, interceptors...)
+}
+
+// Create returns a builder for creating a VideoPricingStrategy entity.
+func (c *VideoPricingStrategyClient) Create() *VideoPricingStrategyCreate {
+	mutation := newVideoPricingStrategyMutation(c.config, OpCreate)
+	return &VideoPricingStrategyCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of VideoPricingStrategy entities.
+func (c *VideoPricingStrategyClient) CreateBulk(builders ...*VideoPricingStrategyCreate) *VideoPricingStrategyCreateBulk {
+	return &VideoPricingStrategyCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VideoPricingStrategyClient) MapCreateBulk(slice any, setFunc func(*VideoPricingStrategyCreate, int)) *VideoPricingStrategyCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VideoPricingStrategyCreateBulk{err: fmt.Errorf("calling to VideoPricingStrategyClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VideoPricingStrategyCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VideoPricingStrategyCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for VideoPricingStrategy.
+func (c *VideoPricingStrategyClient) Update() *VideoPricingStrategyUpdate {
+	mutation := newVideoPricingStrategyMutation(c.config, OpUpdate)
+	return &VideoPricingStrategyUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VideoPricingStrategyClient) UpdateOne(_m *VideoPricingStrategy) *VideoPricingStrategyUpdateOne {
+	mutation := newVideoPricingStrategyMutation(c.config, OpUpdateOne, withVideoPricingStrategy(_m))
+	return &VideoPricingStrategyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VideoPricingStrategyClient) UpdateOneID(id int) *VideoPricingStrategyUpdateOne {
+	mutation := newVideoPricingStrategyMutation(c.config, OpUpdateOne, withVideoPricingStrategyID(id))
+	return &VideoPricingStrategyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for VideoPricingStrategy.
+func (c *VideoPricingStrategyClient) Delete() *VideoPricingStrategyDelete {
+	mutation := newVideoPricingStrategyMutation(c.config, OpDelete)
+	return &VideoPricingStrategyDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VideoPricingStrategyClient) DeleteOne(_m *VideoPricingStrategy) *VideoPricingStrategyDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VideoPricingStrategyClient) DeleteOneID(id int) *VideoPricingStrategyDeleteOne {
+	builder := c.Delete().Where(videopricingstrategy.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VideoPricingStrategyDeleteOne{builder}
+}
+
+// Query returns a query builder for VideoPricingStrategy.
+func (c *VideoPricingStrategyClient) Query() *VideoPricingStrategyQuery {
+	return &VideoPricingStrategyQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVideoPricingStrategy},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a VideoPricingStrategy entity by its id.
+func (c *VideoPricingStrategyClient) Get(ctx context.Context, id int) (*VideoPricingStrategy, error) {
+	return c.Query().Where(videopricingstrategy.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VideoPricingStrategyClient) GetX(ctx context.Context, id int) *VideoPricingStrategy {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *VideoPricingStrategyClient) Hooks() []Hook {
+	return c.hooks.VideoPricingStrategy
+}
+
+// Interceptors returns the client interceptors.
+func (c *VideoPricingStrategyClient) Interceptors() []Interceptor {
+	return c.inters.VideoPricingStrategy
+}
+
+func (c *VideoPricingStrategyClient) mutate(ctx context.Context, m *VideoPricingStrategyMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VideoPricingStrategyCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VideoPricingStrategyUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VideoPricingStrategyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VideoPricingStrategyDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown VideoPricingStrategy mutation op: %q", m.Op())
+	}
+}
+
+// VideoProviderCostRuleClient is a client for the VideoProviderCostRule schema.
+type VideoProviderCostRuleClient struct {
+	config
+}
+
+// NewVideoProviderCostRuleClient returns a client for the VideoProviderCostRule from the given config.
+func NewVideoProviderCostRuleClient(c config) *VideoProviderCostRuleClient {
+	return &VideoProviderCostRuleClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `videoprovidercostrule.Hooks(f(g(h())))`.
+func (c *VideoProviderCostRuleClient) Use(hooks ...Hook) {
+	c.hooks.VideoProviderCostRule = append(c.hooks.VideoProviderCostRule, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `videoprovidercostrule.Intercept(f(g(h())))`.
+func (c *VideoProviderCostRuleClient) Intercept(interceptors ...Interceptor) {
+	c.inters.VideoProviderCostRule = append(c.inters.VideoProviderCostRule, interceptors...)
+}
+
+// Create returns a builder for creating a VideoProviderCostRule entity.
+func (c *VideoProviderCostRuleClient) Create() *VideoProviderCostRuleCreate {
+	mutation := newVideoProviderCostRuleMutation(c.config, OpCreate)
+	return &VideoProviderCostRuleCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of VideoProviderCostRule entities.
+func (c *VideoProviderCostRuleClient) CreateBulk(builders ...*VideoProviderCostRuleCreate) *VideoProviderCostRuleCreateBulk {
+	return &VideoProviderCostRuleCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VideoProviderCostRuleClient) MapCreateBulk(slice any, setFunc func(*VideoProviderCostRuleCreate, int)) *VideoProviderCostRuleCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VideoProviderCostRuleCreateBulk{err: fmt.Errorf("calling to VideoProviderCostRuleClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VideoProviderCostRuleCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VideoProviderCostRuleCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for VideoProviderCostRule.
+func (c *VideoProviderCostRuleClient) Update() *VideoProviderCostRuleUpdate {
+	mutation := newVideoProviderCostRuleMutation(c.config, OpUpdate)
+	return &VideoProviderCostRuleUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VideoProviderCostRuleClient) UpdateOne(_m *VideoProviderCostRule) *VideoProviderCostRuleUpdateOne {
+	mutation := newVideoProviderCostRuleMutation(c.config, OpUpdateOne, withVideoProviderCostRule(_m))
+	return &VideoProviderCostRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VideoProviderCostRuleClient) UpdateOneID(id int) *VideoProviderCostRuleUpdateOne {
+	mutation := newVideoProviderCostRuleMutation(c.config, OpUpdateOne, withVideoProviderCostRuleID(id))
+	return &VideoProviderCostRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for VideoProviderCostRule.
+func (c *VideoProviderCostRuleClient) Delete() *VideoProviderCostRuleDelete {
+	mutation := newVideoProviderCostRuleMutation(c.config, OpDelete)
+	return &VideoProviderCostRuleDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VideoProviderCostRuleClient) DeleteOne(_m *VideoProviderCostRule) *VideoProviderCostRuleDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VideoProviderCostRuleClient) DeleteOneID(id int) *VideoProviderCostRuleDeleteOne {
+	builder := c.Delete().Where(videoprovidercostrule.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VideoProviderCostRuleDeleteOne{builder}
+}
+
+// Query returns a query builder for VideoProviderCostRule.
+func (c *VideoProviderCostRuleClient) Query() *VideoProviderCostRuleQuery {
+	return &VideoProviderCostRuleQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVideoProviderCostRule},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a VideoProviderCostRule entity by its id.
+func (c *VideoProviderCostRuleClient) Get(ctx context.Context, id int) (*VideoProviderCostRule, error) {
+	return c.Query().Where(videoprovidercostrule.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VideoProviderCostRuleClient) GetX(ctx context.Context, id int) *VideoProviderCostRule {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *VideoProviderCostRuleClient) Hooks() []Hook {
+	return c.hooks.VideoProviderCostRule
+}
+
+// Interceptors returns the client interceptors.
+func (c *VideoProviderCostRuleClient) Interceptors() []Interceptor {
+	return c.inters.VideoProviderCostRule
+}
+
+func (c *VideoProviderCostRuleClient) mutate(ctx context.Context, m *VideoProviderCostRuleMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VideoProviderCostRuleCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VideoProviderCostRuleUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VideoProviderCostRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VideoProviderCostRuleDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown VideoProviderCostRule mutation op: %q", m.Op())
+	}
+}
+
+// VideoRouteConfigClient is a client for the VideoRouteConfig schema.
+type VideoRouteConfigClient struct {
+	config
+}
+
+// NewVideoRouteConfigClient returns a client for the VideoRouteConfig from the given config.
+func NewVideoRouteConfigClient(c config) *VideoRouteConfigClient {
+	return &VideoRouteConfigClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `videorouteconfig.Hooks(f(g(h())))`.
+func (c *VideoRouteConfigClient) Use(hooks ...Hook) {
+	c.hooks.VideoRouteConfig = append(c.hooks.VideoRouteConfig, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `videorouteconfig.Intercept(f(g(h())))`.
+func (c *VideoRouteConfigClient) Intercept(interceptors ...Interceptor) {
+	c.inters.VideoRouteConfig = append(c.inters.VideoRouteConfig, interceptors...)
+}
+
+// Create returns a builder for creating a VideoRouteConfig entity.
+func (c *VideoRouteConfigClient) Create() *VideoRouteConfigCreate {
+	mutation := newVideoRouteConfigMutation(c.config, OpCreate)
+	return &VideoRouteConfigCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of VideoRouteConfig entities.
+func (c *VideoRouteConfigClient) CreateBulk(builders ...*VideoRouteConfigCreate) *VideoRouteConfigCreateBulk {
+	return &VideoRouteConfigCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VideoRouteConfigClient) MapCreateBulk(slice any, setFunc func(*VideoRouteConfigCreate, int)) *VideoRouteConfigCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VideoRouteConfigCreateBulk{err: fmt.Errorf("calling to VideoRouteConfigClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VideoRouteConfigCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VideoRouteConfigCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for VideoRouteConfig.
+func (c *VideoRouteConfigClient) Update() *VideoRouteConfigUpdate {
+	mutation := newVideoRouteConfigMutation(c.config, OpUpdate)
+	return &VideoRouteConfigUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VideoRouteConfigClient) UpdateOne(_m *VideoRouteConfig) *VideoRouteConfigUpdateOne {
+	mutation := newVideoRouteConfigMutation(c.config, OpUpdateOne, withVideoRouteConfig(_m))
+	return &VideoRouteConfigUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VideoRouteConfigClient) UpdateOneID(id int) *VideoRouteConfigUpdateOne {
+	mutation := newVideoRouteConfigMutation(c.config, OpUpdateOne, withVideoRouteConfigID(id))
+	return &VideoRouteConfigUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for VideoRouteConfig.
+func (c *VideoRouteConfigClient) Delete() *VideoRouteConfigDelete {
+	mutation := newVideoRouteConfigMutation(c.config, OpDelete)
+	return &VideoRouteConfigDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VideoRouteConfigClient) DeleteOne(_m *VideoRouteConfig) *VideoRouteConfigDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VideoRouteConfigClient) DeleteOneID(id int) *VideoRouteConfigDeleteOne {
+	builder := c.Delete().Where(videorouteconfig.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VideoRouteConfigDeleteOne{builder}
+}
+
+// Query returns a query builder for VideoRouteConfig.
+func (c *VideoRouteConfigClient) Query() *VideoRouteConfigQuery {
+	return &VideoRouteConfigQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVideoRouteConfig},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a VideoRouteConfig entity by its id.
+func (c *VideoRouteConfigClient) Get(ctx context.Context, id int) (*VideoRouteConfig, error) {
+	return c.Query().Where(videorouteconfig.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VideoRouteConfigClient) GetX(ctx context.Context, id int) *VideoRouteConfig {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *VideoRouteConfigClient) Hooks() []Hook {
+	return c.hooks.VideoRouteConfig
+}
+
+// Interceptors returns the client interceptors.
+func (c *VideoRouteConfigClient) Interceptors() []Interceptor {
+	return c.inters.VideoRouteConfig
+}
+
+func (c *VideoRouteConfigClient) mutate(ctx context.Context, m *VideoRouteConfigMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VideoRouteConfigCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VideoRouteConfigUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VideoRouteConfigUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VideoRouteConfigDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown VideoRouteConfig mutation op: %q", m.Op())
+	}
+}
+
+// VideoTaskClient is a client for the VideoTask schema.
+type VideoTaskClient struct {
+	config
+}
+
+// NewVideoTaskClient returns a client for the VideoTask from the given config.
+func NewVideoTaskClient(c config) *VideoTaskClient {
+	return &VideoTaskClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `videotask.Hooks(f(g(h())))`.
+func (c *VideoTaskClient) Use(hooks ...Hook) {
+	c.hooks.VideoTask = append(c.hooks.VideoTask, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `videotask.Intercept(f(g(h())))`.
+func (c *VideoTaskClient) Intercept(interceptors ...Interceptor) {
+	c.inters.VideoTask = append(c.inters.VideoTask, interceptors...)
+}
+
+// Create returns a builder for creating a VideoTask entity.
+func (c *VideoTaskClient) Create() *VideoTaskCreate {
+	mutation := newVideoTaskMutation(c.config, OpCreate)
+	return &VideoTaskCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of VideoTask entities.
+func (c *VideoTaskClient) CreateBulk(builders ...*VideoTaskCreate) *VideoTaskCreateBulk {
+	return &VideoTaskCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VideoTaskClient) MapCreateBulk(slice any, setFunc func(*VideoTaskCreate, int)) *VideoTaskCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VideoTaskCreateBulk{err: fmt.Errorf("calling to VideoTaskClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VideoTaskCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VideoTaskCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for VideoTask.
+func (c *VideoTaskClient) Update() *VideoTaskUpdate {
+	mutation := newVideoTaskMutation(c.config, OpUpdate)
+	return &VideoTaskUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VideoTaskClient) UpdateOne(_m *VideoTask) *VideoTaskUpdateOne {
+	mutation := newVideoTaskMutation(c.config, OpUpdateOne, withVideoTask(_m))
+	return &VideoTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VideoTaskClient) UpdateOneID(id uuid.UUID) *VideoTaskUpdateOne {
+	mutation := newVideoTaskMutation(c.config, OpUpdateOne, withVideoTaskID(id))
+	return &VideoTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for VideoTask.
+func (c *VideoTaskClient) Delete() *VideoTaskDelete {
+	mutation := newVideoTaskMutation(c.config, OpDelete)
+	return &VideoTaskDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VideoTaskClient) DeleteOne(_m *VideoTask) *VideoTaskDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VideoTaskClient) DeleteOneID(id uuid.UUID) *VideoTaskDeleteOne {
+	builder := c.Delete().Where(videotask.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VideoTaskDeleteOne{builder}
+}
+
+// Query returns a query builder for VideoTask.
+func (c *VideoTaskClient) Query() *VideoTaskQuery {
+	return &VideoTaskQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVideoTask},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a VideoTask entity by its id.
+func (c *VideoTaskClient) Get(ctx context.Context, id uuid.UUID) (*VideoTask, error) {
+	return c.Query().Where(videotask.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VideoTaskClient) GetX(ctx context.Context, id uuid.UUID) *VideoTask {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryProject queries the project edge of a VideoTask.
+func (c *VideoTaskClient) QueryProject(_m *VideoTask) *ProjectQuery {
+	query := (&ProjectClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(videotask.Table, videotask.FieldID, id),
+			sqlgraph.To(project.Table, project.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, videotask.ProjectTable, videotask.ProjectColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryItems queries the items edge of a VideoTask.
+func (c *VideoTaskClient) QueryItems(_m *VideoTask) *VideoTaskItemQuery {
+	query := (&VideoTaskItemClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(videotask.Table, videotask.FieldID, id),
+			sqlgraph.To(videotaskitem.Table, videotaskitem.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, videotask.ItemsTable, videotask.ItemsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryInputs queries the inputs edge of a VideoTask.
+func (c *VideoTaskClient) QueryInputs(_m *VideoTask) *VideoTaskInputQuery {
+	query := (&VideoTaskInputClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(videotask.Table, videotask.FieldID, id),
+			sqlgraph.To(videotaskinput.Table, videotaskinput.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, videotask.InputsTable, videotask.InputsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *VideoTaskClient) Hooks() []Hook {
+	return c.hooks.VideoTask
+}
+
+// Interceptors returns the client interceptors.
+func (c *VideoTaskClient) Interceptors() []Interceptor {
+	return c.inters.VideoTask
+}
+
+func (c *VideoTaskClient) mutate(ctx context.Context, m *VideoTaskMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VideoTaskCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VideoTaskUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VideoTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VideoTaskDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown VideoTask mutation op: %q", m.Op())
+	}
+}
+
+// VideoTaskAttemptClient is a client for the VideoTaskAttempt schema.
+type VideoTaskAttemptClient struct {
+	config
+}
+
+// NewVideoTaskAttemptClient returns a client for the VideoTaskAttempt from the given config.
+func NewVideoTaskAttemptClient(c config) *VideoTaskAttemptClient {
+	return &VideoTaskAttemptClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `videotaskattempt.Hooks(f(g(h())))`.
+func (c *VideoTaskAttemptClient) Use(hooks ...Hook) {
+	c.hooks.VideoTaskAttempt = append(c.hooks.VideoTaskAttempt, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `videotaskattempt.Intercept(f(g(h())))`.
+func (c *VideoTaskAttemptClient) Intercept(interceptors ...Interceptor) {
+	c.inters.VideoTaskAttempt = append(c.inters.VideoTaskAttempt, interceptors...)
+}
+
+// Create returns a builder for creating a VideoTaskAttempt entity.
+func (c *VideoTaskAttemptClient) Create() *VideoTaskAttemptCreate {
+	mutation := newVideoTaskAttemptMutation(c.config, OpCreate)
+	return &VideoTaskAttemptCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of VideoTaskAttempt entities.
+func (c *VideoTaskAttemptClient) CreateBulk(builders ...*VideoTaskAttemptCreate) *VideoTaskAttemptCreateBulk {
+	return &VideoTaskAttemptCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VideoTaskAttemptClient) MapCreateBulk(slice any, setFunc func(*VideoTaskAttemptCreate, int)) *VideoTaskAttemptCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VideoTaskAttemptCreateBulk{err: fmt.Errorf("calling to VideoTaskAttemptClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VideoTaskAttemptCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VideoTaskAttemptCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for VideoTaskAttempt.
+func (c *VideoTaskAttemptClient) Update() *VideoTaskAttemptUpdate {
+	mutation := newVideoTaskAttemptMutation(c.config, OpUpdate)
+	return &VideoTaskAttemptUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VideoTaskAttemptClient) UpdateOne(_m *VideoTaskAttempt) *VideoTaskAttemptUpdateOne {
+	mutation := newVideoTaskAttemptMutation(c.config, OpUpdateOne, withVideoTaskAttempt(_m))
+	return &VideoTaskAttemptUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VideoTaskAttemptClient) UpdateOneID(id uuid.UUID) *VideoTaskAttemptUpdateOne {
+	mutation := newVideoTaskAttemptMutation(c.config, OpUpdateOne, withVideoTaskAttemptID(id))
+	return &VideoTaskAttemptUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for VideoTaskAttempt.
+func (c *VideoTaskAttemptClient) Delete() *VideoTaskAttemptDelete {
+	mutation := newVideoTaskAttemptMutation(c.config, OpDelete)
+	return &VideoTaskAttemptDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VideoTaskAttemptClient) DeleteOne(_m *VideoTaskAttempt) *VideoTaskAttemptDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VideoTaskAttemptClient) DeleteOneID(id uuid.UUID) *VideoTaskAttemptDeleteOne {
+	builder := c.Delete().Where(videotaskattempt.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VideoTaskAttemptDeleteOne{builder}
+}
+
+// Query returns a query builder for VideoTaskAttempt.
+func (c *VideoTaskAttemptClient) Query() *VideoTaskAttemptQuery {
+	return &VideoTaskAttemptQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVideoTaskAttempt},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a VideoTaskAttempt entity by its id.
+func (c *VideoTaskAttemptClient) Get(ctx context.Context, id uuid.UUID) (*VideoTaskAttempt, error) {
+	return c.Query().Where(videotaskattempt.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VideoTaskAttemptClient) GetX(ctx context.Context, id uuid.UUID) *VideoTaskAttempt {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryItem queries the item edge of a VideoTaskAttempt.
+func (c *VideoTaskAttemptClient) QueryItem(_m *VideoTaskAttempt) *VideoTaskItemQuery {
+	query := (&VideoTaskItemClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(videotaskattempt.Table, videotaskattempt.FieldID, id),
+			sqlgraph.To(videotaskitem.Table, videotaskitem.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, videotaskattempt.ItemTable, videotaskattempt.ItemColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *VideoTaskAttemptClient) Hooks() []Hook {
+	return c.hooks.VideoTaskAttempt
+}
+
+// Interceptors returns the client interceptors.
+func (c *VideoTaskAttemptClient) Interceptors() []Interceptor {
+	return c.inters.VideoTaskAttempt
+}
+
+func (c *VideoTaskAttemptClient) mutate(ctx context.Context, m *VideoTaskAttemptMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VideoTaskAttemptCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VideoTaskAttemptUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VideoTaskAttemptUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VideoTaskAttemptDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown VideoTaskAttempt mutation op: %q", m.Op())
+	}
+}
+
+// VideoTaskInputClient is a client for the VideoTaskInput schema.
+type VideoTaskInputClient struct {
+	config
+}
+
+// NewVideoTaskInputClient returns a client for the VideoTaskInput from the given config.
+func NewVideoTaskInputClient(c config) *VideoTaskInputClient {
+	return &VideoTaskInputClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `videotaskinput.Hooks(f(g(h())))`.
+func (c *VideoTaskInputClient) Use(hooks ...Hook) {
+	c.hooks.VideoTaskInput = append(c.hooks.VideoTaskInput, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `videotaskinput.Intercept(f(g(h())))`.
+func (c *VideoTaskInputClient) Intercept(interceptors ...Interceptor) {
+	c.inters.VideoTaskInput = append(c.inters.VideoTaskInput, interceptors...)
+}
+
+// Create returns a builder for creating a VideoTaskInput entity.
+func (c *VideoTaskInputClient) Create() *VideoTaskInputCreate {
+	mutation := newVideoTaskInputMutation(c.config, OpCreate)
+	return &VideoTaskInputCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of VideoTaskInput entities.
+func (c *VideoTaskInputClient) CreateBulk(builders ...*VideoTaskInputCreate) *VideoTaskInputCreateBulk {
+	return &VideoTaskInputCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VideoTaskInputClient) MapCreateBulk(slice any, setFunc func(*VideoTaskInputCreate, int)) *VideoTaskInputCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VideoTaskInputCreateBulk{err: fmt.Errorf("calling to VideoTaskInputClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VideoTaskInputCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VideoTaskInputCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for VideoTaskInput.
+func (c *VideoTaskInputClient) Update() *VideoTaskInputUpdate {
+	mutation := newVideoTaskInputMutation(c.config, OpUpdate)
+	return &VideoTaskInputUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VideoTaskInputClient) UpdateOne(_m *VideoTaskInput) *VideoTaskInputUpdateOne {
+	mutation := newVideoTaskInputMutation(c.config, OpUpdateOne, withVideoTaskInput(_m))
+	return &VideoTaskInputUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VideoTaskInputClient) UpdateOneID(id uuid.UUID) *VideoTaskInputUpdateOne {
+	mutation := newVideoTaskInputMutation(c.config, OpUpdateOne, withVideoTaskInputID(id))
+	return &VideoTaskInputUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for VideoTaskInput.
+func (c *VideoTaskInputClient) Delete() *VideoTaskInputDelete {
+	mutation := newVideoTaskInputMutation(c.config, OpDelete)
+	return &VideoTaskInputDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VideoTaskInputClient) DeleteOne(_m *VideoTaskInput) *VideoTaskInputDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VideoTaskInputClient) DeleteOneID(id uuid.UUID) *VideoTaskInputDeleteOne {
+	builder := c.Delete().Where(videotaskinput.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VideoTaskInputDeleteOne{builder}
+}
+
+// Query returns a query builder for VideoTaskInput.
+func (c *VideoTaskInputClient) Query() *VideoTaskInputQuery {
+	return &VideoTaskInputQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVideoTaskInput},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a VideoTaskInput entity by its id.
+func (c *VideoTaskInputClient) Get(ctx context.Context, id uuid.UUID) (*VideoTaskInput, error) {
+	return c.Query().Where(videotaskinput.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VideoTaskInputClient) GetX(ctx context.Context, id uuid.UUID) *VideoTaskInput {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryTask queries the task edge of a VideoTaskInput.
+func (c *VideoTaskInputClient) QueryTask(_m *VideoTaskInput) *VideoTaskQuery {
+	query := (&VideoTaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(videotaskinput.Table, videotaskinput.FieldID, id),
+			sqlgraph.To(videotask.Table, videotask.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, videotaskinput.TaskTable, videotaskinput.TaskColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAsset queries the asset edge of a VideoTaskInput.
+func (c *VideoTaskInputClient) QueryAsset(_m *VideoTaskInput) *MediaAssetQuery {
+	query := (&MediaAssetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(videotaskinput.Table, videotaskinput.FieldID, id),
+			sqlgraph.To(mediaasset.Table, mediaasset.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, videotaskinput.AssetTable, videotaskinput.AssetColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *VideoTaskInputClient) Hooks() []Hook {
+	return c.hooks.VideoTaskInput
+}
+
+// Interceptors returns the client interceptors.
+func (c *VideoTaskInputClient) Interceptors() []Interceptor {
+	return c.inters.VideoTaskInput
+}
+
+func (c *VideoTaskInputClient) mutate(ctx context.Context, m *VideoTaskInputMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VideoTaskInputCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VideoTaskInputUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VideoTaskInputUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VideoTaskInputDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown VideoTaskInput mutation op: %q", m.Op())
+	}
+}
+
+// VideoTaskItemClient is a client for the VideoTaskItem schema.
+type VideoTaskItemClient struct {
+	config
+}
+
+// NewVideoTaskItemClient returns a client for the VideoTaskItem from the given config.
+func NewVideoTaskItemClient(c config) *VideoTaskItemClient {
+	return &VideoTaskItemClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `videotaskitem.Hooks(f(g(h())))`.
+func (c *VideoTaskItemClient) Use(hooks ...Hook) {
+	c.hooks.VideoTaskItem = append(c.hooks.VideoTaskItem, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `videotaskitem.Intercept(f(g(h())))`.
+func (c *VideoTaskItemClient) Intercept(interceptors ...Interceptor) {
+	c.inters.VideoTaskItem = append(c.inters.VideoTaskItem, interceptors...)
+}
+
+// Create returns a builder for creating a VideoTaskItem entity.
+func (c *VideoTaskItemClient) Create() *VideoTaskItemCreate {
+	mutation := newVideoTaskItemMutation(c.config, OpCreate)
+	return &VideoTaskItemCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of VideoTaskItem entities.
+func (c *VideoTaskItemClient) CreateBulk(builders ...*VideoTaskItemCreate) *VideoTaskItemCreateBulk {
+	return &VideoTaskItemCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VideoTaskItemClient) MapCreateBulk(slice any, setFunc func(*VideoTaskItemCreate, int)) *VideoTaskItemCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VideoTaskItemCreateBulk{err: fmt.Errorf("calling to VideoTaskItemClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VideoTaskItemCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VideoTaskItemCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for VideoTaskItem.
+func (c *VideoTaskItemClient) Update() *VideoTaskItemUpdate {
+	mutation := newVideoTaskItemMutation(c.config, OpUpdate)
+	return &VideoTaskItemUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VideoTaskItemClient) UpdateOne(_m *VideoTaskItem) *VideoTaskItemUpdateOne {
+	mutation := newVideoTaskItemMutation(c.config, OpUpdateOne, withVideoTaskItem(_m))
+	return &VideoTaskItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VideoTaskItemClient) UpdateOneID(id uuid.UUID) *VideoTaskItemUpdateOne {
+	mutation := newVideoTaskItemMutation(c.config, OpUpdateOne, withVideoTaskItemID(id))
+	return &VideoTaskItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for VideoTaskItem.
+func (c *VideoTaskItemClient) Delete() *VideoTaskItemDelete {
+	mutation := newVideoTaskItemMutation(c.config, OpDelete)
+	return &VideoTaskItemDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VideoTaskItemClient) DeleteOne(_m *VideoTaskItem) *VideoTaskItemDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VideoTaskItemClient) DeleteOneID(id uuid.UUID) *VideoTaskItemDeleteOne {
+	builder := c.Delete().Where(videotaskitem.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VideoTaskItemDeleteOne{builder}
+}
+
+// Query returns a query builder for VideoTaskItem.
+func (c *VideoTaskItemClient) Query() *VideoTaskItemQuery {
+	return &VideoTaskItemQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVideoTaskItem},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a VideoTaskItem entity by its id.
+func (c *VideoTaskItemClient) Get(ctx context.Context, id uuid.UUID) (*VideoTaskItem, error) {
+	return c.Query().Where(videotaskitem.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VideoTaskItemClient) GetX(ctx context.Context, id uuid.UUID) *VideoTaskItem {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryTask queries the task edge of a VideoTaskItem.
+func (c *VideoTaskItemClient) QueryTask(_m *VideoTaskItem) *VideoTaskQuery {
+	query := (&VideoTaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(videotaskitem.Table, videotaskitem.FieldID, id),
+			sqlgraph.To(videotask.Table, videotask.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, videotaskitem.TaskTable, videotaskitem.TaskColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAttempts queries the attempts edge of a VideoTaskItem.
+func (c *VideoTaskItemClient) QueryAttempts(_m *VideoTaskItem) *VideoTaskAttemptQuery {
+	query := (&VideoTaskAttemptClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(videotaskitem.Table, videotaskitem.FieldID, id),
+			sqlgraph.To(videotaskattempt.Table, videotaskattempt.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, videotaskitem.AttemptsTable, videotaskitem.AttemptsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *VideoTaskItemClient) Hooks() []Hook {
+	return c.hooks.VideoTaskItem
+}
+
+// Interceptors returns the client interceptors.
+func (c *VideoTaskItemClient) Interceptors() []Interceptor {
+	return c.inters.VideoTaskItem
+}
+
+func (c *VideoTaskItemClient) mutate(ctx context.Context, m *VideoTaskItemMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VideoTaskItemCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VideoTaskItemUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VideoTaskItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VideoTaskItemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown VideoTaskItem mutation op: %q", m.Op())
+	}
+}
+
 // WalletGrantClient is a client for the WalletGrant schema.
 type WalletGrantClient struct {
 	config
@@ -6914,9 +9707,11 @@ func (c *WalletReservationAllocationClient) mutate(ctx context.Context, m *Walle
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
-		ClusterNode, ClusterToken, ConfigItem, GalleryExportJob, ImageResult,
-		ImageTask, Installation, MigrationCheckpoint, ModelAccount, ModelAccountModel,
+		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, CanvasGenerationRun,
+		ClusterChallenge, ClusterNode, ClusterToken, ConfigItem, CreativeCanvas,
+		CreativeCanvasRevision, GalleryExportJob, ImageResult, ImageTask, Installation,
+		MediaAsset, MediaAssetReference, MediaDerivative, MediaProcessingJob,
+		MediaUploadSession, MigrationCheckpoint, ModelAccount, ModelAccountModel,
 		ModelProvider, ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint,
 		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
 		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
@@ -6924,12 +9719,17 @@ type (
 		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
 		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
 		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
-		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Hook
+		UserSubscription, VideoModelCapability, VideoPriceRule, VideoPricingStrategy,
+		VideoProviderCostRule, VideoRouteConfig, VideoTask, VideoTaskAttempt,
+		VideoTaskInput, VideoTaskItem, WalletGrant,
+		WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
-		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, ClusterChallenge,
-		ClusterNode, ClusterToken, ConfigItem, GalleryExportJob, ImageResult,
-		ImageTask, Installation, MigrationCheckpoint, ModelAccount, ModelAccountModel,
+		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, CanvasGenerationRun,
+		ClusterChallenge, ClusterNode, ClusterToken, ConfigItem, CreativeCanvas,
+		CreativeCanvasRevision, GalleryExportJob, ImageResult, ImageTask, Installation,
+		MediaAsset, MediaAssetReference, MediaDerivative, MediaProcessingJob,
+		MediaUploadSession, MigrationCheckpoint, ModelAccount, ModelAccountModel,
 		ModelProvider, ModelRoute, ObjectDeletionJob, ObjectReconcileCheckpoint,
 		ObjectStorageConfig, PaymentOrder, PaymentProviderInstance,
 		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
@@ -6937,6 +9737,9 @@ type (
 		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
 		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
 		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
-		UserSubscription, WalletGrant, WalletReservationAllocation []ent.Interceptor
+		UserSubscription, VideoModelCapability, VideoPriceRule, VideoPricingStrategy,
+		VideoProviderCostRule, VideoRouteConfig, VideoTask, VideoTaskAttempt,
+		VideoTaskInput, VideoTaskItem, WalletGrant,
+		WalletReservationAllocation []ent.Interceptor
 	}
 )

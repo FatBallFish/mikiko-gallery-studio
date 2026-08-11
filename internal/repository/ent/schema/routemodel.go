@@ -18,6 +18,7 @@ func (RouteModel) Fields() []ent.Field {
 		field.String("name").MaxLen(128).NotEmpty(),
 		field.Text("description").Default(""),
 		field.String("visibility").MaxLen(32).Default("hidden"),
+		field.String("media_type").MaxLen(16).Default("image"),
 		field.Bool("enabled").Default(false),
 		field.Int("sort_order").Default(0),
 	}
@@ -27,6 +28,7 @@ func (RouteModel) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("code").Unique(),
 		index.Fields("visibility", "enabled"),
+		index.Fields("media_type", "enabled"),
 	}
 }
 

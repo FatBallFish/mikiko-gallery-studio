@@ -80,6 +80,11 @@ func TaskID(v uuid.UUID) predicate.PointLedger {
 	return predicate.PointLedger(sql.FieldEQ(FieldTaskID, v))
 }
 
+// TaskMediaType applies equality check predicate on the "task_media_type" field. It's identical to TaskMediaTypeEQ.
+func TaskMediaType(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldTaskMediaType, v))
+}
+
 // OrderID applies equality check predicate on the "order_id" field. It's identical to OrderIDEQ.
 func OrderID(v int64) predicate.PointLedger {
 	return predicate.PointLedger(sql.FieldEQ(FieldOrderID, v))
@@ -368,6 +373,81 @@ func TaskIDIsNil() predicate.PointLedger {
 // TaskIDNotNil applies the NotNil predicate on the "task_id" field.
 func TaskIDNotNil() predicate.PointLedger {
 	return predicate.PointLedger(sql.FieldNotNull(FieldTaskID))
+}
+
+// TaskMediaTypeEQ applies the EQ predicate on the "task_media_type" field.
+func TaskMediaTypeEQ(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEQ(FieldTaskMediaType, v))
+}
+
+// TaskMediaTypeNEQ applies the NEQ predicate on the "task_media_type" field.
+func TaskMediaTypeNEQ(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNEQ(FieldTaskMediaType, v))
+}
+
+// TaskMediaTypeIn applies the In predicate on the "task_media_type" field.
+func TaskMediaTypeIn(vs ...string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIn(FieldTaskMediaType, vs...))
+}
+
+// TaskMediaTypeNotIn applies the NotIn predicate on the "task_media_type" field.
+func TaskMediaTypeNotIn(vs ...string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotIn(FieldTaskMediaType, vs...))
+}
+
+// TaskMediaTypeGT applies the GT predicate on the "task_media_type" field.
+func TaskMediaTypeGT(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGT(FieldTaskMediaType, v))
+}
+
+// TaskMediaTypeGTE applies the GTE predicate on the "task_media_type" field.
+func TaskMediaTypeGTE(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldGTE(FieldTaskMediaType, v))
+}
+
+// TaskMediaTypeLT applies the LT predicate on the "task_media_type" field.
+func TaskMediaTypeLT(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLT(FieldTaskMediaType, v))
+}
+
+// TaskMediaTypeLTE applies the LTE predicate on the "task_media_type" field.
+func TaskMediaTypeLTE(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldLTE(FieldTaskMediaType, v))
+}
+
+// TaskMediaTypeContains applies the Contains predicate on the "task_media_type" field.
+func TaskMediaTypeContains(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldContains(FieldTaskMediaType, v))
+}
+
+// TaskMediaTypeHasPrefix applies the HasPrefix predicate on the "task_media_type" field.
+func TaskMediaTypeHasPrefix(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldHasPrefix(FieldTaskMediaType, v))
+}
+
+// TaskMediaTypeHasSuffix applies the HasSuffix predicate on the "task_media_type" field.
+func TaskMediaTypeHasSuffix(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldHasSuffix(FieldTaskMediaType, v))
+}
+
+// TaskMediaTypeEqualFold applies the EqualFold predicate on the "task_media_type" field.
+func TaskMediaTypeEqualFold(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldEqualFold(FieldTaskMediaType, v))
+}
+
+// TaskMediaTypeContainsFold applies the ContainsFold predicate on the "task_media_type" field.
+func TaskMediaTypeContainsFold(v string) predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldContainsFold(FieldTaskMediaType, v))
+}
+
+// UsageSummaryIsNil applies the IsNil predicate on the "usage_summary" field.
+func UsageSummaryIsNil() predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldIsNull(FieldUsageSummary))
+}
+
+// UsageSummaryNotNil applies the NotNil predicate on the "usage_summary" field.
+func UsageSummaryNotNil() predicate.PointLedger {
+	return predicate.PointLedger(sql.FieldNotNull(FieldUsageSummary))
 }
 
 // OrderIDEQ applies the EQ predicate on the "order_id" field.

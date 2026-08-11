@@ -10,9 +10,12 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvas"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
 	"github.com/google/uuid"
 )
 
@@ -223,6 +226,51 @@ func (_c *ProjectCreate) AddImageResults(v ...*ImageResult) *ProjectCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddImageResultIDs(ids...)
+}
+
+// AddVideoTaskIDs adds the "video_tasks" edge to the VideoTask entity by IDs.
+func (_c *ProjectCreate) AddVideoTaskIDs(ids ...uuid.UUID) *ProjectCreate {
+	_c.mutation.AddVideoTaskIDs(ids...)
+	return _c
+}
+
+// AddVideoTasks adds the "video_tasks" edges to the VideoTask entity.
+func (_c *ProjectCreate) AddVideoTasks(v ...*VideoTask) *ProjectCreate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddVideoTaskIDs(ids...)
+}
+
+// AddMediaAssetIDs adds the "media_assets" edge to the MediaAsset entity by IDs.
+func (_c *ProjectCreate) AddMediaAssetIDs(ids ...uuid.UUID) *ProjectCreate {
+	_c.mutation.AddMediaAssetIDs(ids...)
+	return _c
+}
+
+// AddMediaAssets adds the "media_assets" edges to the MediaAsset entity.
+func (_c *ProjectCreate) AddMediaAssets(v ...*MediaAsset) *ProjectCreate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddMediaAssetIDs(ids...)
+}
+
+// AddCreativeCanvaseIDs adds the "creative_canvases" edge to the CreativeCanvas entity by IDs.
+func (_c *ProjectCreate) AddCreativeCanvaseIDs(ids ...uuid.UUID) *ProjectCreate {
+	_c.mutation.AddCreativeCanvaseIDs(ids...)
+	return _c
+}
+
+// AddCreativeCanvases adds the "creative_canvases" edges to the CreativeCanvas entity.
+func (_c *ProjectCreate) AddCreativeCanvases(v ...*CreativeCanvas) *ProjectCreate {
+	ids := make([]uuid.UUID, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddCreativeCanvaseIDs(ids...)
 }
 
 // Mutation returns the ProjectMutation object of the builder.
@@ -463,6 +511,54 @@ func (_c *ProjectCreate) createSpec() (*Project, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(imageresult.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.VideoTasksIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.VideoTasksTable,
+			Columns: []string{project.VideoTasksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(videotask.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.MediaAssetsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.MediaAssetsTable,
+			Columns: []string{project.MediaAssetsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mediaasset.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.CreativeCanvasesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   project.CreativeCanvasesTable,
+			Columns: []string{project.CreativeCanvasesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creativecanvas.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
