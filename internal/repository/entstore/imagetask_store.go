@@ -54,6 +54,7 @@ func (s *ImageTaskStore) RepairTerminalPromptTemplates(ctx context.Context, limi
 	}
 	entities, err := s.client.ImageTask.Query().Where(
 		imagetask.PromptTemplateNotNil(),
+		promptDiffersFromTemplate(),
 		imagetask.Or(
 			imagetask.DeletedAtNotNil(),
 			imagetask.StatusIn(domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted),
@@ -80,6 +81,12 @@ func (s *ImageTaskStore) RepairTerminalPromptTemplates(ctx context.Context, limi
 		repaired += count
 	}
 	return repaired, nil
+}
+
+func promptDiffersFromTemplate() predicate.ImageTask {
+	return predicate.ImageTask(func(selector *entsql.Selector) {
+		selector.Where(entsql.ExprP(selector.C(imagetask.FieldPrompt) + " <> " + selector.C(imagetask.FieldPromptTemplate)))
+	})
 }
 
 func (s *ImageTaskStore) Save(ctx context.Context, task domainimagetask.Task) error {
@@ -313,15 +320,6 @@ func (s *ImageTaskStore) GetImageResultByID(ctx context.Context, userID int64, i
 		}
 		return provider.ImageResult{}, err
 	}
-	_, err = s.client.ImageTask.Query().
-		Where(imagetask.IDEQ(result.TaskID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
-		Only(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return provider.ImageResult{}, repoerr.ErrNotFound
-		}
-		return provider.ImageResult{}, err
-	}
 	return mapImageResultEntity(result), nil
 }
 
@@ -341,7 +339,7 @@ func (s *ImageTaskStore) GetOwnedGalleryImage(ctx context.Context, userID int64,
 		return domainimagetask.GalleryImage{}, err
 	}
 	taskEntity, err := s.client.ImageTask.Query().
-		Where(imagetask.IDEQ(entity.TaskID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
+		Where(imagetask.IDEQ(entity.TaskID)).
 		WithProject().
 		Only(ctx)
 	if err != nil {
@@ -361,15 +359,6 @@ func (s *ImageTaskStore) GetImageResultForAdmin(ctx context.Context, imageID str
 	result, err := s.client.ImageResult.Query().
 		Where(imageresult.IDEQ(imageUUID), imageresult.DeletedAtIsNil()).
 		WithProject().
-		Only(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return provider.ImageResult{}, repoerr.ErrNotFound
-		}
-		return provider.ImageResult{}, err
-	}
-	_, err = s.client.ImageTask.Query().
-		Where(imagetask.IDEQ(result.TaskID), imagetask.DeletedAtIsNil()).
 		Only(ctx)
 	if err != nil {
 		if repoent.IsNotFound(err) {
@@ -458,7 +447,7 @@ func (s *ImageTaskStore) RequestPublishInProject(ctx context.Context, userID int
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	if taskEntity.UserID != userID || (projectID != "" && (entity.ProjectID == nil || entity.ProjectID.String() != projectID)) {
+	if entity.UserID != userID || (projectID != "" && (entity.ProjectID == nil || entity.ProjectID.String() != projectID)) {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
 	currentStatus := defaultString(entity.VisibilityStatus, domainimagetask.VisibilityPrivate)
@@ -528,7 +517,7 @@ func (s *ImageTaskStore) CancelPublishInProject(ctx context.Context, userID int6
 	if err != nil {
 		return domainimagetask.GalleryImage{}, err
 	}
-	if taskEntity.UserID != userID {
+	if entity.UserID != userID {
 		return domainimagetask.GalleryImage{}, repoerr.ErrNotFound
 	}
 	return mapGalleryImageEntity(entity, taskEntity), nil
@@ -730,14 +719,6 @@ func (s *ImageTaskStore) DeleteImageResultInProject(ctx context.Context, userID 
 		}
 		return provider.ImageResult{}, err
 	}
-	if _, err := tx.ImageTask.Query().
-		Where(imagetask.IDEQ(entity.TaskID), imagetask.UserIDEQ(userID), imagetask.DeletedAtIsNil()).
-		Only(ctx); err != nil {
-		if repoent.IsNotFound(err) {
-			return provider.ImageResult{}, repoerr.ErrNotFound
-		}
-		return provider.ImageResult{}, err
-	}
 	result := mapImageResultEntity(entity)
 	updated, err := tx.ImageResult.Update().Where(writePredicates...).SetDeletedAt(time.Now().UTC()).Save(ctx)
 	if err != nil {
@@ -815,7 +796,10 @@ func (s *ImageTaskStore) applyAdminGalleryFilters(ctx context.Context, query *re
 
 	taskPredicates := make([]predicate.ImageTask, 0, 8)
 	if prompt := strings.TrimSpace(req.PromptQuery); prompt != "" {
-		taskPredicates = append(taskPredicates, imagetask.PromptContainsFold(prompt))
+		taskPredicates = append(taskPredicates, imagetask.Or(
+			imagetask.PromptTemplateContainsFold(prompt),
+			imagetask.And(imagetask.PromptTemplateIsNil(), imagetask.PromptContainsFold(prompt)),
+		))
 	}
 	if model := strings.TrimSpace(req.ModelQuery); model != "" {
 		taskPredicates = append(taskPredicates, imagetask.Or(imagetask.AbstractModelContainsFold(model), imagetask.RouteModelCodeContainsFold(model)))
@@ -834,7 +818,6 @@ func (s *ImageTaskStore) applyAdminGalleryFilters(ctx context.Context, query *re
 	}
 	if len(taskPredicates) > 0 {
 		taskIDs, err := s.client.ImageTask.Query().
-			Where(imagetask.DeletedAtIsNil()).
 			Where(taskPredicates...).
 			IDs(ctx)
 		if err != nil {
@@ -2086,10 +2069,6 @@ func imageResultUUID(value string) (uuid.UUID, error) {
 }
 
 func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.ImageResult) (domainimagetask.Task, error) {
-	publicPrompt := entity.Prompt
-	if entity.PromptTemplate != nil {
-		publicPrompt = *entity.PromptTemplate
-	}
 	task := domainimagetask.Task{
 		UserID:                entity.UserID,
 		SourceChannel:         entity.SourceChannel,
@@ -2106,7 +2085,7 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		EffectiveMultiplier:   entity.EffectiveMultiplier,
 		ChargedPoints:         entity.ChargedPoints,
 		TaskType:              entity.TaskType,
-		Prompt:                publicPrompt,
+		Prompt:                publicImageTaskPrompt(entity),
 		ExecutionPrompt:       entity.Prompt,
 		PromptTemplate:        nullableString(entity.PromptTemplate),
 		PromptTemplateVersion: entity.PromptTemplateVersion,
@@ -2400,7 +2379,7 @@ func (s *ImageTaskStore) loadGalleryImageWithTask(ctx context.Context, imageID u
 		return nil, nil, err
 	}
 	taskEntity, err := s.client.ImageTask.Query().
-		Where(imagetask.IDEQ(entity.TaskID), imagetask.DeletedAtIsNil()).
+		Where(imagetask.IDEQ(entity.TaskID)).
 		WithProject().
 		Only(ctx)
 	if err != nil {
@@ -2440,7 +2419,7 @@ func (s *ImageTaskStore) galleryImagesFromEntities(ctx context.Context, entities
 	}
 	taskMap := map[uuid.UUID]*repoent.ImageTask{}
 	if len(taskIDs) > 0 {
-		tasks, err := s.client.ImageTask.Query().Where(imagetask.IDIn(taskIDs...), imagetask.DeletedAtIsNil()).WithProject().All(ctx)
+		tasks, err := s.client.ImageTask.Query().Where(imagetask.IDIn(taskIDs...)).WithProject().All(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -2572,10 +2551,10 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 	return domainimagetask.GalleryImage{
 		ID:                entity.ID.String(),
 		TaskID:            entity.TaskID.String(),
-		UserID:            taskEntity.UserID,
+		UserID:            entity.UserID,
 		ProjectID:         item.ProjectID,
 		Project:           item.Project,
-		Prompt:            taskEntity.Prompt,
+		Prompt:            publicImageTaskPrompt(taskEntity),
 		AbstractModel:     taskEntity.AbstractModel,
 		RouteModelCode:    taskEntity.RouteModelCode,
 		TaskType:          taskEntity.TaskType,
@@ -2608,6 +2587,16 @@ func mapGalleryImageEntity(entity *repoent.ImageResult, taskEntity *repoent.Imag
 		PublishedAt:       entity.PublishedAt,
 		CreatedAt:         entity.CreatedAt,
 	}
+}
+
+func publicImageTaskPrompt(entity *repoent.ImageTask) string {
+	if entity == nil {
+		return ""
+	}
+	if entity.PromptTemplate != nil {
+		return *entity.PromptTemplate
+	}
+	return entity.Prompt
 }
 
 func projectSnapshotFromTaskEntity(entity *repoent.ImageTask) *domainimagetask.ProjectSnapshot {
@@ -2746,7 +2735,12 @@ func defaultPositive(value, fallback int) int {
 }
 
 func isTerminalStatus(status string) bool {
-	return status == domainimagetask.StatusSucceeded || status == domainimagetask.StatusFailed
+	switch status {
+	case domainimagetask.StatusSucceeded, domainimagetask.StatusPartialFailed, domainimagetask.StatusFailed, domainimagetask.StatusRejected, domainimagetask.StatusDeleted:
+		return true
+	default:
+		return false
+	}
 }
 
 func nullableString(value *string) string {

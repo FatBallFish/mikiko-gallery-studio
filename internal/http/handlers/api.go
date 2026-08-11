@@ -204,6 +204,52 @@ type adminCashierOrderSyncResponse struct {
 	Sync  adminCashierOrderSyncResult `json:"sync"`
 }
 
+type publicCashierOrderResponse struct {
+	ID                  int64          `json:"id"`
+	OrderNo             string         `json:"order_no"`
+	PlanID              int64          `json:"plan_id,omitempty"`
+	PlanCode            string         `json:"plan_code,omitempty"`
+	PlanName            string         `json:"plan_name,omitempty"`
+	PurchaseType        string         `json:"purchase_type"`
+	VisibleMethod       string         `json:"visible_method"`
+	PaymentDisplay      map[string]any `json:"payment_display,omitempty"`
+	Status              string         `json:"status"`
+	Currency            string         `json:"currency"`
+	AmountCNY           string         `json:"amount_cny"`
+	Points              string         `json:"points"`
+	BonusPoints         string         `json:"bonus_points"`
+	CreditExpiryEnabled bool           `json:"credit_expiry_enabled"`
+	CreditValidDays     *int           `json:"credit_valid_days,omitempty"`
+	CreditedAt          *time.Time     `json:"credited_at,omitempty"`
+	CreditExpiresAt     *time.Time     `json:"credit_expires_at,omitempty"`
+	PaymentURL          string         `json:"payment_url,omitempty"`
+	QRCode              string         `json:"qr_code,omitempty"`
+	ClientToken         string         `json:"client_token,omitempty"`
+	FailureReason       string         `json:"failure_reason,omitempty"`
+	ExpiresAt           time.Time      `json:"expires_at"`
+	PaidAt              *time.Time     `json:"paid_at,omitempty"`
+	CompletedAt         *time.Time     `json:"completed_at,omitempty"`
+	ClosedAt            *time.Time     `json:"closed_at,omitempty"`
+	RefundedAt          *time.Time     `json:"refunded_at,omitempty"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
+}
+
+type publicCashierOrderSyncResult struct {
+	QueryStatus  string    `json:"query_status"`
+	RiskCategory string    `json:"risk_category,omitempty"`
+	Paid         bool      `json:"paid"`
+	Completed    bool      `json:"completed"`
+	AmountCNY    string    `json:"amount_cny,omitempty"`
+	Message      string    `json:"message,omitempty"`
+	SyncedAt     time.Time `json:"synced_at"`
+}
+
+type publicCashierOrderSyncResponse struct {
+	Order publicCashierOrderResponse   `json:"order"`
+	Sync  publicCashierOrderSyncResult `json:"sync"`
+}
+
 type cashierProviderRefundResult = cashierservice.RefundPaymentResult
 
 type DocsReadinessResult struct {
@@ -1017,7 +1063,7 @@ func (a *API) HandleBillingOrders(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrderPage(result))
 	case http.MethodPost:
 		var req struct {
 			PlanCode string `json:"plan_code"`
@@ -1037,7 +1083,7 @@ func (a *API) HandleBillingOrders(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, appErr)
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusCreated, result)
+		httpx.WriteSuccess(w, r, http.StatusCreated, publicCashierOrder(result))
 	default:
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 	}
@@ -1061,14 +1107,14 @@ func (a *API) HandleBillingOrderDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(result))
 	case r.Method == http.MethodPost && action == "cancel":
 		result, cancelErr := a.cancelCashierOrderSafely(r.Context(), user.ID, orderID)
 		if cancelErr != nil {
 			httpx.WriteError(w, r, cancelErr)
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(result))
 	default:
 		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
 	}
@@ -1226,7 +1272,7 @@ func (a *API) HandleCashierOrders(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(result.Items, result.Page, result.PageSize, result.Total))
+		httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(publicCashierOrders(result.Items), result.Page, result.PageSize, result.Total))
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -1256,7 +1302,7 @@ func (a *API) HandleCashierOrders(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, createErr)
 		return
 	}
-	httpx.WriteSuccess(w, r, http.StatusCreated, result)
+	httpx.WriteSuccess(w, r, http.StatusCreated, publicCashierOrder(result))
 }
 
 type cashierOrderCreateInput struct {
@@ -1439,6 +1485,72 @@ func legacyBillingProviderToVisibleMethod(provider string) string {
 	}
 }
 
+func publicCashierOrderPage(page domainbilling.PaymentOrderPage) map[string]any {
+	return pagedPayload(publicCashierOrders(page.Items), page.Page, page.PageSize, page.Total)
+}
+
+func publicCashierOrders(orders []domainbilling.PaymentOrder) []publicCashierOrderResponse {
+	items := make([]publicCashierOrderResponse, 0, len(orders))
+	for _, order := range orders {
+		items = append(items, publicCashierOrder(order))
+	}
+	return items
+}
+
+func publicCashierOrder(order domainbilling.PaymentOrder) publicCashierOrderResponse {
+	visibleMethod := strings.ToLower(strings.TrimSpace(order.VisibleMethod))
+	if visibleMethod == "" {
+		switch legacyBillingProviderToVisibleMethod(cashierOrderProviderType(order, cashierProviderInstance{})) {
+		case "alipay":
+			visibleMethod = "alipay"
+		case "wxpay":
+			visibleMethod = "wxpay"
+		case "stripe":
+			visibleMethod = "stripe"
+		case "mock":
+			visibleMethod = "mock"
+		default:
+			visibleMethod = "unknown"
+		}
+	}
+	return publicCashierOrderResponse{
+		ID: order.ID, OrderNo: order.OrderNo, PlanID: order.PlanID, PlanCode: order.PlanCode, PlanName: order.PlanName,
+		PurchaseType: order.PurchaseType, VisibleMethod: visibleMethod, PaymentDisplay: publicPaymentDisplay(order.PaymentDisplay),
+		Status: order.Status, Currency: order.Currency, AmountCNY: order.AmountCNY, Points: order.Points, BonusPoints: order.BonusPoints,
+		CreditExpiryEnabled: order.CreditExpiryEnabled, CreditValidDays: order.CreditValidDays, CreditedAt: order.CreditedAt, CreditExpiresAt: order.CreditExpiresAt,
+		PaymentURL: order.PaymentURL, QRCode: order.QRCode, ClientToken: order.ClientToken, FailureReason: order.FailureReason,
+		ExpiresAt: order.ExpiresAt, PaidAt: order.PaidAt, CompletedAt: order.CompletedAt, ClosedAt: order.ClosedAt, RefundedAt: order.RefundedAt,
+		CreatedAt: order.CreatedAt, UpdatedAt: order.UpdatedAt,
+	}
+}
+
+func publicPaymentDisplay(display map[string]any) map[string]any {
+	if len(display) == 0 {
+		return nil
+	}
+	allowed := map[string]struct{}{
+		"type": {}, "qr_code": {}, "payment_url": {}, "client_token": {}, "client_secret": {},
+		"publishable_key": {}, "form_html": {}, "expires_at": {},
+	}
+	result := make(map[string]any, len(allowed))
+	for key, value := range display {
+		if _, ok := allowed[key]; ok {
+			result[key] = value
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func publicCashierSyncResult(result cashierservice.QueryOrderStatusResult) publicCashierOrderSyncResult {
+	return publicCashierOrderSyncResult{
+		QueryStatus: result.QueryStatus, RiskCategory: result.RiskCategory,
+		Paid: result.Paid, Completed: result.Completed, AmountCNY: result.AmountCNY, Message: result.Message, SyncedAt: result.SyncedAt,
+	}
+}
+
 func (a *API) ensureCashierPendingOrderLimit(ctx context.Context, userID int64) *errs.Error {
 	limit := a.cashierMaxPendingOrdersPerUser(ctx)
 	page, err := a.billing.ListOrders(ctx, domainbilling.ListOrdersRequest{UserID: userID, Status: "pending", Page: 1, PageSize: limit})
@@ -1485,14 +1597,14 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(result))
 	case r.Method == http.MethodPost && action == "cancel":
 		result, cancelErr := a.cancelCashierOrderSafely(r.Context(), user.ID, orderID)
 		if cancelErr != nil {
 			httpx.WriteError(w, r, cancelErr)
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(result))
 	case r.Method == http.MethodPost && action == "sync":
 		result, syncErr := a.syncUserCashierOrder(r.Context(), user.ID, orderID)
 		if syncErr != nil {
@@ -1515,7 +1627,7 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if order.Status == "completed" {
-			httpx.WriteSuccess(w, r, http.StatusOK, order)
+			httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(order))
 			return
 		}
 		result, err := a.billing.CompleteRechargeOrder(r.Context(), domainbilling.CompleteRechargeOrderRequest{
@@ -1528,45 +1640,45 @@ func (a *API) HandleCashierOrderDetail(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
+		httpx.WriteSuccess(w, r, http.StatusOK, publicCashierOrder(result))
 	default:
 		writeMethodNotAllowed(w, r)
 	}
 }
 
-func (a *API) syncUserCashierOrder(ctx context.Context, userID, orderID int64) (adminCashierOrderSyncResponse, *errs.Error) {
+func (a *API) syncUserCashierOrder(ctx context.Context, userID, orderID int64) (publicCashierOrderSyncResponse, *errs.Error) {
 	order, err := a.billing.GetOrder(ctx, userID, orderID)
 	if err != nil {
-		return adminCashierOrderSyncResponse{}, normalizeAppError(err)
+		return publicCashierOrderSyncResponse{}, normalizeAppError(err)
 	}
 	if order.Status == "completed" || order.Status == "paid" {
-		return adminCashierOrderSyncResponse{Order: order, Sync: cashierservice.QueryOrderStatusResult{
+		return publicCashierOrderSyncResponse{Order: publicCashierOrder(order), Sync: publicCashierSyncResult(cashierservice.QueryOrderStatusResult{
 			ProviderType: cashierOrderProviderType(order, cashierProviderInstance{}), ProviderInstanceID: order.ProviderInstanceID,
 			QueryStatus: "paid", Paid: true, Completed: true, TradeNo: order.TradeNo, AmountCNY: order.AmountCNY,
 			Message: "渠道订单已支付", SyncedAt: time.Now().UTC(),
-		}}, nil
+		})}, nil
 	}
 	instance, ok := a.cashierProviderInstanceForOrder(ctx, order)
 	if !ok {
-		return adminCashierOrderSyncResponse{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
+		return publicCashierOrderSyncResponse{}, errs.New(http.StatusConflict, errs.CodePaymentProviderUnavailable, "payment provider instance is unavailable")
 	}
 	syncResult, syncErr := a.cashierSync.Do(ctx, order.ID, func(queryCtx context.Context) (adminCashierOrderSyncResult, *errs.Error) {
 		return a.queryCashierOrderStatus(queryCtx, order, instance)
 	})
 	if syncErr != nil {
-		return adminCashierOrderSyncResponse{}, syncErr
+		return publicCashierOrderSyncResponse{}, syncErr
 	}
 	if syncResult.Paid {
 		completed, reconcileErr := a.reconcileCashierOrderFromProviderQuery(ctx, order, instance, syncResult)
 		if reconcileErr != nil {
-			return adminCashierOrderSyncResponse{}, reconcileErr
+			return publicCashierOrderSyncResponse{}, reconcileErr
 		}
 		order = completed
 		syncResult.Completed = true
 	} else {
 		latest, latestErr := a.billing.GetOrder(ctx, userID, orderID)
 		if latestErr != nil {
-			return adminCashierOrderSyncResponse{}, normalizeAppError(latestErr)
+			return publicCashierOrderSyncResponse{}, normalizeAppError(latestErr)
 		}
 		order = latest
 		if order.Status == "completed" || order.Status == "paid" {
@@ -1579,7 +1691,7 @@ func (a *API) syncUserCashierOrder(ctx context.Context, userID, orderID int64) (
 		}
 	}
 	syncResult.Raw = nil
-	return adminCashierOrderSyncResponse{Order: order, Sync: syncResult}, nil
+	return publicCashierOrderSyncResponse{Order: publicCashierOrder(order), Sync: publicCashierSyncResult(syncResult)}, nil
 }
 
 func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {

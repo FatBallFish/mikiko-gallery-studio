@@ -162,6 +162,47 @@ func TestProjectOpenAPIContractDocumentsLifecycleAndScoping(t *testing.T) {
 	}
 }
 
+func TestAgentCashierOpenAPIUsesPublicOrderAndSyncSchemas(t *testing.T) {
+	type schema struct {
+		Properties map[string]any `yaml:"properties"`
+	}
+	var document struct {
+		Components struct {
+			Schemas map[string]schema `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	for _, path := range []string{
+		"../../../api/openapi/components/schemas/agent.yaml",
+		"../../../web/docs/public/openapi/components/schemas/agent.yaml",
+	} {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if err := yaml.Unmarshal(source, &document); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		order, ok := document.Components.Schemas["CashierOrder"]
+		if !ok {
+			t.Fatalf("%s must define CashierOrder", path)
+		}
+		for _, field := range []string{"provider", "provider_type", "provider_instance_id", "trade_no", "ledger_id", "user_id"} {
+			if _, exists := order.Properties[field]; exists {
+				t.Fatalf("%s public CashierOrder exposes %s", path, field)
+			}
+		}
+		syncResult, ok := document.Components.Schemas["CashierOrderSyncResult"]
+		if !ok {
+			t.Fatalf("%s must define CashierOrderSyncResult", path)
+		}
+		for _, field := range []string{"provider_type", "provider_instance_id", "trade_no", "action_hint"} {
+			if _, exists := syncResult.Properties[field]; exists {
+				t.Fatalf("%s public CashierOrderSyncResult exposes %s", path, field)
+			}
+		}
+	}
+}
+
 func normalMuxPatternHasPreflightMetadata(pattern string, openAPIPaths map[string]any) bool {
 	if separator := strings.IndexByte(pattern, ' '); separator >= 0 {
 		pattern = pattern[separator+1:]

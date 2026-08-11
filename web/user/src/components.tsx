@@ -888,7 +888,7 @@ export function GalleryImageFrame({ src, mediaExpiresAt, alt, width, height, asp
         </button>
       ) : media}
       {imageState === 'error' ? (
-        <div className="absolute inset-0 z-[2] grid place-items-center gap-2 bg-[var(--canvas-bg)] p-5 text-center text-sm text-[var(--muted)]" role="status">
+        <div className="absolute inset-0 z-[5] grid place-items-center gap-2 bg-[var(--canvas-bg)] p-5 text-center text-sm text-[var(--muted)]" role="status">
           <span>图片暂时无法显示</span>
           {src ? <button type="button" className="min-h-10 rounded-xl border border-[var(--border)] px-3 text-[var(--fg)] hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]" onClick={() => { resetMediaRefresh(); setImageState('loading'); setRetryKey((value) => value + 1) }}>重试</button> : null}
         </div>

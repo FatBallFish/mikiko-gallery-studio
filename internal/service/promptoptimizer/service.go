@@ -169,7 +169,7 @@ func (s *Service) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeRe
 		return OptimizeResult{}, errs.New(502, "PROMPT_OPTIMIZATION_FAILED", "prompt optimization failed; the original prompt was not changed")
 	}
 	optimized, restoreErr := protected.Restore(strings.TrimSpace(response.Text))
-	if restoreErr != nil || optimized == "" || len([]rune(optimized)) > 8000 {
+	if restoreErr != nil || optimized == "" || len([]rune(optimized)) > prompttemplate.DefaultLimits().MaxExpandedRunes {
 		run.Status = "failed"
 		run.ErrorCode = "INVALID_OPTIMIZATION_RESULT"
 		run.ErrorMessage = "text model returned an invalid optimization result"

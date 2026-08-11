@@ -234,13 +234,31 @@ export function GalleryPage() {
 	const selectionSurfaceRef = useRef<HTMLDivElement | null>(null)
 	const suppressGalleryOpenRef = useRef(false)
 	const marqueeFrameRef = useRef<number | null>(null)
-	const marqueeDragRef = useRef<{ pointerID: number; start: GallerySelectionPoint; current: GallerySelectionPoint; additive: boolean; dragged: boolean } | null>(null)
+	const marqueeDragRef = useRef<{ pointerID: number; start: GallerySelectionPoint; current: GallerySelectionPoint; additive: boolean; dragged: boolean; baseSelection: Set<string>; targetImageID: string } | null>(null)
 	const [marquee, setMarquee] = useState<GallerySelectionRect | null>(null)
 
 	useEffect(() => () => {
 	  const controller = exportAbortRef.current
 	  if (controller) controller.abort()
 	  if (marqueeFrameRef.current !== null) window.cancelAnimationFrame(marqueeFrameRef.current)
+	}, [])
+
+	useEffect(() => {
+	  const clearSelection = (event: KeyboardEvent) => {
+	    if (event.key !== 'Escape') return
+	    const drag = marqueeDragRef.current
+	    const surface = selectionSurfaceRef.current
+	    if (drag && surface?.hasPointerCapture(drag.pointerID)) surface.releasePointerCapture(drag.pointerID)
+	    marqueeDragRef.current = null
+	    if (marqueeFrameRef.current !== null) {
+	      window.cancelAnimationFrame(marqueeFrameRef.current)
+	      marqueeFrameRef.current = null
+	    }
+	    setMarquee(null)
+	    setSelectedIds(new Set())
+	  }
+	  window.addEventListener('keydown', clearSelection)
+	  return () => window.removeEventListener('keydown', clearSelection)
 	}, [])
 
   async function loadPage(pageNumber: number, mode: 'replace' | 'append') {
@@ -522,9 +540,12 @@ export function GalleryPage() {
   }
 
 	function beginMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
-	  if (event.pointerType !== 'mouse' || event.button !== 0) return
+	  if ((event.pointerType !== 'mouse' && event.pointerType !== 'pen') || event.button !== 0) return
 	  const target = event.target as HTMLElement
 	  if (target.closest('[data-gallery-selection-control],[data-gallery-card-actions]')) return
+	  const interactive = target.closest<HTMLElement>('button,a,input,select,textarea,[role="button"]')
+	  if (interactive && !interactive.matches('[data-gallery-card-open]')) return
+	  event.preventDefault()
 	  const point = { x: event.clientX, y: event.clientY }
 	  marqueeDragRef.current = {
 	    pointerID: event.pointerId,
@@ -532,8 +553,55 @@ export function GalleryPage() {
 	    current: point,
 	    additive: event.metaKey || event.ctrlKey || event.shiftKey,
 	    dragged: false,
+	    baseSelection: new Set(selectedIds),
+	    targetImageID: target.closest<HTMLElement>('[data-gallery-image-id]')?.dataset.galleryImageId ?? '',
 	  }
 	  event.currentTarget.setPointerCapture(event.pointerId)
+	}
+
+	function marqueeSelectionItems() {
+	  return Array.from(selectionSurfaceRef.current?.querySelectorAll<HTMLElement>('[data-gallery-image-id]') ?? []).map((element) => {
+	    const bounds = element.getBoundingClientRect()
+	    return { id: element.dataset.galleryImageId ?? '', rect: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } }
+	  }).filter((item) => item.id)
+	}
+
+	function galleryScrollContainer() {
+	  let element = selectionSurfaceRef.current?.parentElement ?? null
+	  while (element) {
+	    const overflowY = window.getComputedStyle(element).overflowY
+	    if ((overflowY === 'auto' || overflowY === 'scroll') && element.scrollHeight > element.clientHeight) return element
+	    element = element.parentElement
+	  }
+	  return document.scrollingElement instanceof HTMLElement ? document.scrollingElement : document.documentElement
+	}
+
+	function scheduleMarqueeFrame() {
+	  if (marqueeFrameRef.current !== null) return
+	  marqueeFrameRef.current = window.requestAnimationFrame(() => {
+	    marqueeFrameRef.current = null
+	    const drag = marqueeDragRef.current
+	    if (!drag?.dragged) return
+	    const rectangle = gallerySelectionRectangle(drag.start, drag.current)
+	    setMarquee(rectangle)
+	    setSelectedIds(galleryMarqueeSelection(drag.baseSelection, marqueeSelectionItems(), rectangle, drag.additive))
+
+	    const scrollContainer = galleryScrollContainer()
+	    const scrollBounds = scrollContainer.getBoundingClientRect()
+	    const documentScroller = scrollContainer === document.documentElement || scrollContainer === document.body
+	    const scrollTopEdge = documentScroller ? 0 : scrollBounds.top
+	    const scrollBottomEdge = documentScroller ? window.innerHeight : scrollBounds.bottom
+	    const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
+	    let keepScrolling = false
+	    if (drag.current.y < scrollTopEdge + 56 && scrollContainer.scrollTop > 0) {
+	      scrollContainer.scrollBy({ top: -12 })
+	      keepScrolling = true
+	    } else if (drag.current.y > scrollBottomEdge - 56 && scrollContainer.scrollTop < maxScrollTop) {
+	      scrollContainer.scrollBy({ top: 12 })
+	      keepScrolling = true
+	    }
+	    if (keepScrolling) scheduleMarqueeFrame()
+	  })
 	}
 
 	function moveMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
@@ -541,31 +609,33 @@ export function GalleryPage() {
 	  if (!drag || drag.pointerID !== event.pointerId) return
 	  drag.current = { x: event.clientX, y: event.clientY }
 	  if (!drag.dragged && gallerySelectionDragDistance(drag.start, drag.current) < 6) return
-	  drag.dragged = true
+	  if (!drag.dragged) {
+	    drag.dragged = true
+	  }
 	  event.preventDefault()
-	  if (marqueeFrameRef.current !== null) return
-	  marqueeFrameRef.current = window.requestAnimationFrame(() => {
-	    marqueeFrameRef.current = null
-	    const current = marqueeDragRef.current
-	    if (!current?.dragged) return
-	    setMarquee(gallerySelectionRectangle(current.start, current.current))
-	    if (current.current.y < 56) window.scrollBy({ top: -12 })
-	    else if (current.current.y > window.innerHeight - 56) window.scrollBy({ top: 12 })
-	  })
+	  scheduleMarqueeFrame()
 	}
 
 	function finishMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
 	  const drag = marqueeDragRef.current
 	  if (!drag || drag.pointerID !== event.pointerId) return
+	  if (marqueeFrameRef.current !== null) {
+	    window.cancelAnimationFrame(marqueeFrameRef.current)
+	    marqueeFrameRef.current = null
+	  }
 	  if (drag.dragged) {
 	    const rectangle = gallerySelectionRectangle(drag.start, drag.current)
-	    const items = Array.from(selectionSurfaceRef.current?.querySelectorAll<HTMLElement>('[data-gallery-image-id]') ?? []).map((element) => {
-	      const bounds = element.getBoundingClientRect()
-	      return { id: element.dataset.galleryImageId ?? '', rect: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } }
-	    }).filter((item) => item.id)
-	    setSelectedIds((current) => galleryMarqueeSelection(current, items, rectangle, drag.additive))
+	    setSelectedIds(galleryMarqueeSelection(drag.baseSelection, marqueeSelectionItems(), rectangle, drag.additive))
 	    suppressGalleryOpenRef.current = true
 	    window.setTimeout(() => { suppressGalleryOpenRef.current = false }, 0)
+	  } else if (drag.targetImageID) {
+	    const image = filtered.find((item) => item.id === drag.targetImageID)
+	    if (image) {
+	      suppressGalleryOpenRef.current = true
+	      if (gallerySelectionClickAction(selectedIds.size) === 'toggle') toggleSelected(image.id)
+	      else setSelected(image)
+	      window.setTimeout(() => { suppressGalleryOpenRef.current = false }, 0)
+	    }
 	  }
 	  if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
 	  marqueeDragRef.current = null
@@ -574,6 +644,10 @@ export function GalleryPage() {
 
 	function cancelMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
 	  if (marqueeDragRef.current?.pointerID !== event.pointerId) return
+	  if (marqueeFrameRef.current !== null) {
+	    window.cancelAnimationFrame(marqueeFrameRef.current)
+	    marqueeFrameRef.current = null
+	  }
 	  marqueeDragRef.current = null
 	  setMarquee(null)
 	}
@@ -919,9 +993,10 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
               onMediaRefresh={() => onMediaRefresh(image.id)}
               imageClassName={galleryClasses.thumbImage}
               topAction={(
-                <button
-                  type="button"
-                  className={galleryClasses.assetSelectHitArea}
+	                <button
+	                  type="button"
+	                  data-gallery-selection-control
+	                  className={galleryClasses.assetSelectHitArea}
                   title="选择图片"
                   aria-label={`选择 ${card.title}`}
                   aria-pressed={selectedIds.has(image.id)}
@@ -932,7 +1007,7 @@ function ImageGrid({ rows, accessToken, busyId, selectedIds, onToggleSelected, o
                   </span>
                 </button>
               )}
-              actions={<div className={galleryClasses.iconActions}>
+	              actions={<div className={galleryClasses.iconActions} data-gallery-card-actions>
                 {iconButton('复制提示词', <ActionIcon name="copy" />, () => void onCopyPrompt(image), !card.prompt)}
                 {iconButton('复用配置', <ActionIcon name="edit" />, () => onReuse(image))}
                 {iconButton('下载', <ActionIcon name="download" />, () => onDownload(image), !card.canDownload)}

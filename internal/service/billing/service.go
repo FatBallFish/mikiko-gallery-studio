@@ -565,7 +565,7 @@ func (s *Service) GetSubscription(ctx context.Context, userID int64) (*domainbil
 }
 
 func (s *Service) ListOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.PaymentOrderPage, error) {
-	if _, err := s.store.ExpirePendingOrders(ctx, time.Now().UTC(), 500); err != nil {
+	if _, err := s.store.ExpirePendingOrdersForList(ctx, time.Now().UTC(), req); err != nil {
 		return domainbilling.PaymentOrderPage{}, errs.Internal("failed to expire payment orders")
 	}
 	items, err := s.store.ListOrders(ctx, req)
@@ -576,7 +576,7 @@ func (s *Service) ListOrders(ctx context.Context, req domainbilling.ListOrdersRe
 }
 
 func (s *Service) ListAdminOrders(ctx context.Context, req domainbilling.ListOrdersRequest) (domainbilling.AdminPaymentOrderPage, error) {
-	if _, err := s.store.ExpirePendingOrders(ctx, time.Now().UTC(), 500); err != nil {
+	if _, err := s.store.ExpirePendingOrdersForList(ctx, time.Now().UTC(), req); err != nil {
 		return domainbilling.AdminPaymentOrderPage{}, errs.Internal("failed to expire payment orders")
 	}
 	items, err := s.store.ListAdminOrders(ctx, req)
@@ -595,12 +595,14 @@ func (s *Service) ListWebhookEvents(ctx context.Context, page, pageSize int) (do
 }
 
 func (s *Service) GetOrder(ctx context.Context, userID, orderID int64) (domainbilling.PaymentOrder, error) {
-	if _, err := s.store.ExpirePendingOrders(ctx, time.Now().UTC(), 500); err != nil {
-		return domainbilling.PaymentOrder{}, errs.Internal("failed to expire payment orders")
-	}
 	item, err := s.store.GetOrder(ctx, userID, orderID)
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
+	}
+	if shouldReload, err := s.expireOrderOnRead(ctx, item); err != nil {
+		return domainbilling.PaymentOrder{}, err
+	} else if shouldReload {
+		return s.store.GetOrder(ctx, userID, orderID)
 	}
 	return item, nil
 }
@@ -609,12 +611,14 @@ func (s *Service) GetOrderByIdempotencyKey(ctx context.Context, userID int64, id
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return domainbilling.PaymentOrder{}, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment order not found")
 	}
-	if _, err := s.store.ExpirePendingOrders(ctx, time.Now().UTC(), 500); err != nil {
-		return domainbilling.PaymentOrder{}, errs.Internal("failed to expire payment orders")
-	}
 	item, err := s.store.GetOrderByIdempotencyKey(ctx, userID, idempotencyKey)
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
+	}
+	if shouldReload, err := s.expireOrderOnRead(ctx, item); err != nil {
+		return domainbilling.PaymentOrder{}, err
+	} else if shouldReload {
+		return s.store.GetOrderByIdempotencyKey(ctx, userID, idempotencyKey)
 	}
 	return item, nil
 }
@@ -623,14 +627,27 @@ func (s *Service) GetOrderForAdmin(ctx context.Context, orderID int64) (domainbi
 	if orderID <= 0 {
 		return domainbilling.PaymentOrder{}, errs.BadRequest("order_id is required")
 	}
-	if _, err := s.store.ExpirePendingOrders(ctx, time.Now().UTC(), 500); err != nil {
-		return domainbilling.PaymentOrder{}, errs.Internal("failed to expire payment orders")
-	}
 	item, err := s.store.GetOrderForAdmin(ctx, orderID)
 	if err != nil {
 		return domainbilling.PaymentOrder{}, err
 	}
+	if shouldReload, err := s.expireOrderOnRead(ctx, item); err != nil {
+		return domainbilling.PaymentOrder{}, err
+	} else if shouldReload {
+		return s.store.GetOrderForAdmin(ctx, orderID)
+	}
 	return item, nil
+}
+
+func (s *Service) expireOrderOnRead(ctx context.Context, order domainbilling.PaymentOrder) (bool, error) {
+	now := time.Now().UTC()
+	if order.Status != "pending" || order.ExpiresAt.After(now) {
+		return false, nil
+	}
+	if _, err := s.store.ExpirePendingOrder(ctx, now, order.ID); err != nil {
+		return false, errs.Internal("failed to expire payment order")
+	}
+	return true, nil
 }
 
 func (s *Service) RecordChargebackSummary(ctx context.Context, req ChargebackSummaryStoreRequest) (domainbilling.PaymentOrder, error) {

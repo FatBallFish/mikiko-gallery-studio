@@ -51,7 +51,7 @@ for (const marker of [
   'PromptTokenNode',
   'data-prompt-token-kind',
   'HistoryPlugin',
-  'PASTE_COMMAND',
+  'LexicalPlainTextPlugin',
   'compositionstart',
   'aria-invalid',
   '插入资产',
@@ -59,9 +59,20 @@ for (const marker of [
 ]) {
   if (!editorSource.includes(marker)) throw new Error(`prompt editor must implement ${marker}`)
 }
+if (editorSource.includes('LexicalRichTextPlugin')) {
+  throw new Error('prompt editor must use Lexical plain-text Enter semantics so one Enter serializes to one newline')
+}
+for (const marker of ['tabIndex = 0', 'onFocus=', 'onBlur=', 'aria-label']) {
+  if (!editorSource.includes(marker)) throw new Error(`prompt tokens must expose keyboard preview behavior through ${marker}`)
+}
+
+const variableFormSource = readFileSync(new URL('./PromptVariableForm.tsx', import.meta.url), 'utf8')
+if (!variableFormSource.includes('<textarea') || variableFormSource.includes('<input')) {
+  throw new Error('prompt variable values must use multiline textarea controls')
+}
 
 const workspaceSource = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')
-for (const marker of ['reference_bindings:', 'prompt_variables:', '<PromptVariableForm', '<PromptTemplateEditor']) {
+for (const marker of ['reference_bindings:', 'prompt_variables:', '<PromptVariableForm', '<PromptTemplateEditor', 'pendingPromptAssetInsertRef', "insertToken('reference'"]) {
   if (!workspaceSource.includes(marker)) throw new Error(`workspace must wire ${marker}`)
 }
 

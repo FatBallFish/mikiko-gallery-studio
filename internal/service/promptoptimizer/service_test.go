@@ -102,6 +102,26 @@ func TestServiceRejectsOptimizationThatDamagesOrInjectsTemplateSentinels(t *test
 	}
 }
 
+func TestServiceRejectsOptimizationResultOverGenerationPromptLimit(t *testing.T) {
+	ctx := t.Context()
+	textStore := textmodelservice.NewMemoryStore()
+	textService := textmodelservice.NewService(textStore, "encryption-key")
+	configureDefaultTextModel(t, ctx, textService, "gpt-too-long")
+	optimizer := &fakeOptimizer{result: textprovider.OptimizeResponse{Text: strings.Repeat("a", 4001)}}
+	svc := promptoptimizer.NewService(textService, textStore, "quote-signing-key", func(domaintextmodel.AccountRecord, string) (textprovider.Optimizer, error) {
+		return optimizer, nil
+	})
+	estimate, err := svc.Estimate(ctx, promptoptimizer.EstimateRequest{UserID: 45, Prompt: "a concise portrait prompt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.Optimize(ctx, promptoptimizer.OptimizeRequest{UserID: 45, Prompt: "a concise portrait prompt", Quote: estimate.Quote})
+	var appErr *errs.Error
+	if !errors.As(err, &appErr) || appErr.Code != "INVALID_OPTIMIZATION_RESULT" {
+		t.Fatalf("error = %#v", err)
+	}
+}
+
 func TestServiceEstimatesZeroAndPersistsSuccessfulOptimization(t *testing.T) {
 	ctx := context.Background()
 	textStore := textmodelservice.NewMemoryStore()

@@ -610,7 +610,6 @@ func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	var createResp struct {
 		Data struct {
 			ID      int64  `json:"id"`
-			UserID  int64  `json:"user_id"`
 			OrderNo string `json:"order_no"`
 			Status  string `json:"status"`
 		} `json:"data"`
@@ -618,7 +617,7 @@ func TestAdminCashierOrderCompleteManuallyCreditsRechargeBalance(t *testing.T) {
 	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
 		t.Fatalf("decode created order: %v", err)
 	}
-	if createResp.Data.Status != "pending" || createResp.Data.UserID != user.ID {
+	if createResp.Data.Status != "pending" || createResp.Data.ID == 0 {
 		t.Fatalf("expected pending order for user, got %#v", createResp.Data)
 	}
 
@@ -1500,8 +1499,12 @@ func TestAdminCashierStripeQueryAndPartialRefund(t *testing.T) {
 		t.Fatalf("expected pending order sync to use client token, got query path %q", queryPath)
 	}
 	completed := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
-	if completed.Status != "completed" || completed.TradeNo != "pi_admin_stripe" {
+	if completed.Status != "completed" {
 		t.Fatalf("expected Stripe sync to complete order, got %#v", completed)
+	}
+	storedCompleted, err := billingSvc.GetOrderForAdmin(t.Context(), orderID)
+	if err != nil || storedCompleted.TradeNo != "pi_admin_stripe" {
+		t.Fatalf("expected Stripe sync internals to persist, order=%#v err=%v", storedCompleted, err)
 	}
 
 	refundReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID)+"/refund", bytes.NewBufferString(`{"refund_trade_no":"REFUND-STRIPE-001","refund_amount_cny":"5.25","reason":"partial refund"}`))
@@ -1516,8 +1519,12 @@ func TestAdminCashierStripeQueryAndPartialRefund(t *testing.T) {
 		t.Fatalf("unexpected Stripe refund request idempotency=%q values=%#v", refundIdempotencyKey, refundValues)
 	}
 	refunded := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
-	if refunded.Status != "partially_refunded" || refunded.RefundTradeNo != "REFUND-STRIPE-001" || refunded.RefundedAmountCNY != "5.25000" {
+	if refunded.Status != "partially_refunded" {
 		t.Fatalf("unexpected local Stripe refund state %#v", refunded)
+	}
+	storedRefunded, err := billingSvc.GetOrderForAdmin(t.Context(), orderID)
+	if err != nil || storedRefunded.RefundTradeNo != "REFUND-STRIPE-001" || storedRefunded.RefundedAmountCNY != "5.25000" {
+		t.Fatalf("unexpected persisted Stripe refund state order=%#v err=%v", storedRefunded, err)
 	}
 	balance, err := billingSvc.GetBalance(t.Context(), user.ID, "1.00000")
 	if err != nil {
@@ -1594,8 +1601,12 @@ func TestAdminCashierStripeRefundWaitsForProviderSuccess(t *testing.T) {
 				t.Fatalf("unexpected first refund response status=%d body=%s", refundRec.Code, refundRec.Body.String())
 			}
 			pending := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
-			if pending.Status != "completed" || pending.RefundedAmountCNY != "" || pending.RefundedPoints != "" {
+			if pending.Status != "completed" {
 				t.Fatalf("provider %s must not settle local refund, got %#v", tt.initialStatus, pending)
+			}
+			storedPending, err := billingSvc.GetOrderForAdmin(t.Context(), orderID)
+			if err != nil || storedPending.RefundedAmountCNY != "" || storedPending.RefundedPoints != "" {
+				t.Fatalf("provider %s changed internal refund state, order=%#v err=%v", tt.initialStatus, storedPending, err)
 			}
 
 			if tt.wantRetrySuccess {
@@ -1608,8 +1619,12 @@ func TestAdminCashierStripeRefundWaitsForProviderSuccess(t *testing.T) {
 					t.Fatalf("expected queried Stripe refund to settle, status=%d body=%s", retryRec.Code, retryRec.Body.String())
 				}
 				settled := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
-				if settled.Status != "partially_refunded" || settled.RefundedAmountCNY != "5.00000" {
+				if settled.Status != "partially_refunded" {
 					t.Fatalf("unexpected queried Stripe refund state %#v", settled)
+				}
+				storedSettled, err := billingSvc.GetOrderForAdmin(t.Context(), orderID)
+				if err != nil || storedSettled.RefundedAmountCNY != "5.00000" {
+					t.Fatalf("unexpected persisted queried Stripe refund state order=%#v err=%v", storedSettled, err)
 				}
 			}
 			if refundCreates != 1 || refundQueries != boolInt(tt.wantRetrySuccess) {
@@ -1705,8 +1720,12 @@ func TestAdminCashierStripeRefundKeepsFreezeWhenProviderOutcomeIsUncertain(t *te
 		t.Fatalf("expected one idempotent retry after uncertain response, got %d Stripe creates", refundCreates)
 	}
 	settled := getCashierOrderForTest(t, handler, userSession.AccessToken, orderID)
-	if settled.Status != "partially_refunded" || settled.RefundedAmountCNY != "5.00000" {
+	if settled.Status != "partially_refunded" {
 		t.Fatalf("unexpected settled Stripe refund %#v", settled)
+	}
+	storedSettled, err := billingSvc.GetOrderForAdmin(t.Context(), orderID)
+	if err != nil || storedSettled.RefundedAmountCNY != "5.00000" {
+		t.Fatalf("unexpected persisted settled Stripe refund order=%#v err=%v", storedSettled, err)
 	}
 }
 

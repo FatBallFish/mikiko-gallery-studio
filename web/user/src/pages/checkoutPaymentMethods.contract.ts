@@ -1,5 +1,26 @@
 import { existsSync, readFileSync } from 'node:fs'
+import type { CashierOrder, CashierOrderSyncResult, ImageTask } from '../../../shared/api-types'
 import { checkoutPublicPaymentMethod } from './checkoutPaymentMethods'
+
+type AssertFalse<T extends false> = T
+type CashierOrderLeaksProvider = 'provider' extends keyof CashierOrder ? true : false
+type CashierOrderLeaksProviderType = 'provider_type' extends keyof CashierOrder ? true : false
+type CashierOrderLeaksProviderInstance = 'provider_instance_id' extends keyof CashierOrder ? true : false
+type CashierOrderLeaksTrade = 'trade_no' extends keyof CashierOrder ? true : false
+type CashierSyncLeaksProvider = 'provider_type' extends keyof CashierOrderSyncResult ? true : false
+type CashierSyncLeaksTrade = 'trade_no' extends keyof CashierOrderSyncResult ? true : false
+type ImageTaskLeaksNegativePrompt = 'negative_prompt' extends keyof ImageTask ? true : false
+
+const publicContractAssertions: [
+  AssertFalse<CashierOrderLeaksProvider>,
+  AssertFalse<CashierOrderLeaksProviderType>,
+  AssertFalse<CashierOrderLeaksProviderInstance>,
+  AssertFalse<CashierOrderLeaksTrade>,
+  AssertFalse<CashierSyncLeaksProvider>,
+  AssertFalse<CashierSyncLeaksTrade>,
+  AssertFalse<ImageTaskLeaksNegativePrompt>,
+] = [false, false, false, false, false, false, false]
+void publicContractAssertions
 
 const alipay = checkoutPublicPaymentMethod({ method: 'alipay', label: '', enabled: true, display_order: 10 })
 if (alipay.label !== '支付宝' || alipay.icon !== 'alipay' || !alipay.detail.includes('支付宝')) {

@@ -211,6 +211,60 @@ func TestPaymentOrderReadsLazilyExpirePendingOrders(t *testing.T) {
 	}
 }
 
+func TestPaymentOrderDetailLazilyExpiresTargetBeyondSweepBatch(t *testing.T) {
+	ctx := t.Context()
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	expiresAt := time.Now().UTC().Add(-time.Second)
+	for index := 0; index < 500; index++ {
+		if _, err := svc.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+			UserID: int64(10000 + index), PlanCode: "basic-monthly", Provider: "mock", ExpiresAt: expiresAt,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target, err := svc.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 20000, OrderNo: "PGO-LAZY-TARGET", PlanCode: "basic-monthly", Provider: "mock", ExpiresAt: expiresAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := svc.GetOrder(ctx, target.UserID, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status != "expired" || loaded.ClosedAt == nil {
+		t.Fatalf("target order beyond the sweep batch must expire on detail read, got %#v", loaded)
+	}
+}
+
+func TestPaymentOrderListLazilyExpiresRequestScopeBeyondSweepBatch(t *testing.T) {
+	ctx := t.Context()
+	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})
+	expiresAt := time.Now().UTC().Add(-time.Second)
+	for index := 0; index < 500; index++ {
+		if _, err := svc.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+			UserID: int64(30000 + index), PlanCode: "basic-monthly", Provider: "mock", ExpiresAt: expiresAt,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target, err := svc.CreateOrder(ctx, domainbilling.CreateOrderRequest{
+		UserID: 40000, OrderNo: "PGO-LAZY-LIST-TARGET", PlanCode: "basic-monthly", Provider: "mock", ExpiresAt: expiresAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := svc.ListOrders(ctx, domainbilling.ListOrdersRequest{UserID: target.UserID, Status: "expired"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != target.ID {
+		t.Fatalf("request-scoped overdue order must be visible through expired filter, got %#v", page)
+	}
+}
+
 func TestExpiredPlanOrderCanCompleteFromVerifiedLatePaymentExactlyOnce(t *testing.T) {
 	ctx := t.Context()
 	svc := NewService(config.BillingConfig{CNYPerPoint: "0.31250", PointsScale: 5})

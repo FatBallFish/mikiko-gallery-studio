@@ -1461,9 +1461,14 @@ func TestOpenAPISpecDocumentsCashierAndReadinessContracts(t *testing.T) {
 	for _, value := range paymentDisplay.Properties["type"].Enum {
 		displayTypes[value] = true
 	}
-	for _, value := range []string{"qr_code", "redirect", "form_html", "form", "jsapi", "mock", "none"} {
+	for _, value := range []string{"qr_code", "redirect", "form_html", "form", "jsapi", "stripe_payment_element", "mock", "none"} {
 		if !displayTypes[value] {
 			t.Fatalf("expected PaymentDisplay.type enum to document %q, got %#v", value, paymentDisplay.Properties["type"].Enum)
+		}
+	}
+	for _, field := range []string{"client_secret", "publishable_key"} {
+		if _, ok := paymentDisplay.Properties[field]; !ok {
+			t.Fatalf("expected PaymentDisplay to document Stripe field %q", field)
 		}
 	}
 

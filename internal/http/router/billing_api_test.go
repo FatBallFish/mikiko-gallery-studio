@@ -68,7 +68,7 @@ func TestBillingPlansOrdersWebhookAndSubscriptionFlow(t *testing.T) {
 	if orderResp.Data.ID == 0 || orderResp.Data.OrderNo == "" {
 		t.Fatalf("unexpected order payload %#v", orderResp)
 	}
-	if orderResp.Data.VisibleMethod != "mock" || orderResp.Data.ProviderType != "mock" || orderResp.Data.PaymentDisplay["type"] != "mock" {
+	if orderResp.Data.VisibleMethod != "mock" || orderResp.Data.PaymentDisplay["type"] != "mock" {
 		t.Fatalf("expected legacy billing order to be created through cashier, got %#v", orderResp.Data)
 	}
 	if orderResp.Data.PaymentURL != "" || orderResp.Data.PaymentDisplay["payment_url"] != nil {

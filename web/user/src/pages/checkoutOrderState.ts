@@ -1,4 +1,4 @@
-import type { CashierOrder, CashierPurchaseType, PaymentProviderType, PublicPaymentVisibleMethod } from '../../../shared/api-types'
+import type { CashierOrder, CashierPurchaseType, PublicPaymentVisibleMethod } from '../../../shared/api-types'
 import { checkoutPublicPaymentMethod } from './checkoutPaymentMethods'
 
 export function checkoutMoney(value?: string) {
@@ -81,8 +81,6 @@ type CheckoutRecentOrder = {
   points: string
   created_at: string
   visible_method?: string
-  provider?: string
-  provider_type?: PaymentProviderType
   plan_name?: string
   plan_code?: string
   purchase_type?: CashierPurchaseType
@@ -96,11 +94,8 @@ type CheckoutRecentOrder = {
   updated_at?: string
 }
 
-export function checkoutPaymentMethodLabel(order: { visible_method?: string; provider?: string; provider_type?: PaymentProviderType }) {
-  const candidates = [order.visible_method, order.provider_type, order.provider]
-    .map((value) => (value ?? '').trim())
-    .filter(Boolean)
-  const raw = candidates[0]
+export function checkoutPaymentMethodLabel(order: { visible_method?: string }) {
+  const raw = (order.visible_method ?? '').trim()
   if (!raw) return '-'
   const normalized = raw.toLowerCase()
   return CHECKOUT_PAYMENT_METHOD_LABELS[normalized] ?? raw
@@ -147,7 +142,7 @@ function toCashierOrder(order: CheckoutRecentOrder): CashierOrder {
     expires_at: order.expires_at ?? '',
     updated_at: order.updated_at ?? order.created_at,
     purchase_type: order.purchase_type ?? 'plan',
-    visible_method: order.visible_method ?? order.provider ?? '',
+    visible_method: order.visible_method ?? '',
   }
 }
 
@@ -210,7 +205,7 @@ export function checkoutOrderActionState(order: CashierOrder | null, nowMs = Dat
   return {
     canContinuePay: true,
     canCancel: true,
-    canMockPay: order.provider_type === 'mock' || order.visible_method === 'mock' || order.provider === 'mock',
+    canMockPay: order.visible_method === 'mock',
     cancelLabel: '取消订单',
   }
 }

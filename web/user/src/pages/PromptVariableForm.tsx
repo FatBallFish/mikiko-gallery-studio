@@ -19,9 +19,10 @@ export function PromptVariableForm({ template, values, disabled = false, onChang
           return (
             <label key={name} className="prompt-variable-field">
               <span>{name}{invalid ? <AlertCircle size={14} aria-label="尚未填写" /> : null}</span>
-              <input
+              <textarea
                 value={value}
                 maxLength={4000}
+                rows={2}
                 aria-invalid={invalid}
                 placeholder={`填写“${name}”的内容`}
                 onChange={(event) => onChange(name, event.target.value)}
@@ -33,4 +34,3 @@ export function PromptVariableForm({ template, values, disabled = false, onChang
     </fieldset>
   )
 }
-

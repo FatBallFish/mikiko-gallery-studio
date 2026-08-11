@@ -606,12 +606,16 @@ components:
       properties:
         type:
           type: string
-          enum: [qr_code, redirect, form_html, form, jsapi, mock, none]
+          enum: [qr_code, redirect, form_html, form, jsapi, stripe_payment_element, mock, none]
         qr_code:
           type: string
         payment_url:
           type: string
         client_token:
+          type: string
+        client_secret:
+          type: string
+        publishable_key:
           type: string
         form_html:
           type: string
@@ -635,33 +639,106 @@ components:
         client_return_url:
           type: string
           format: uri
+    CashierOrder:
+      type: object
+      additionalProperties: false
+      required: [id, order_no, purchase_type, visible_method, status, currency, amount_cny, points, bonus_points, credit_expiry_enabled, expires_at, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        order_no:
+          type: string
+        plan_id:
+          type: integer
+          format: int64
+        plan_code:
+          type: string
+        plan_name:
+          type: string
+        purchase_type:
+          type: string
+          enum: [plan, custom_amount]
+        visible_method:
+          type: string
+          enum: [alipay, wxpay, stripe, mock, unknown]
+        payment_display:
+          $ref: '#/components/schemas/PaymentDisplay'
+        status:
+          type: string
+          enum: [pending, paid, completed, partially_refunded, canceled, expired, failed, refunded]
+        currency:
+          type: string
+        amount_cny:
+          type: string
+        points:
+          type: string
+        bonus_points:
+          type: string
+        credit_expiry_enabled:
+          type: boolean
+        credit_valid_days:
+          type: integer
+          nullable: true
+        credited_at:
+          type: string
+          format: date-time
+          nullable: true
+        credit_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        payment_url:
+          type: string
+        qr_code:
+          type: string
+        client_token:
+          type: string
+        failure_reason:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+        refunded_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     CashierOrderResponse:
       type: object
       properties:
         data:
-          $ref: '#/components/schemas/PaymentOrder'
+          $ref: '#/components/schemas/CashierOrder'
     CashierOrderSyncResult:
       type: object
-      required: [provider_type, query_status, paid, completed, synced_at]
+      required: [query_status, paid, completed, synced_at]
       properties:
-        provider_type:
-          type: string
-        provider_instance_id:
-          type: integer
-          format: int64
         query_status:
           type: string
           enum: [pending, paid, closed, failed, refunded]
         risk_category:
           type: string
-        action_hint:
-          type: string
         paid:
           type: boolean
         completed:
           type: boolean
-        trade_no:
-          type: string
         amount_cny:
           type: string
         message:
@@ -678,14 +755,14 @@ components:
           required: [order, sync]
           properties:
             order:
-              $ref: '#/components/schemas/PaymentOrder'
+              $ref: '#/components/schemas/CashierOrder'
             sync:
               $ref: '#/components/schemas/CashierOrderSyncResult'
     PaymentOrderResponse:
       type: object
       properties:
         data:
-          $ref: '#/components/schemas/PaymentOrder'
+          $ref: '#/components/schemas/CashierOrder'
     PaymentOrderListResponse:
       type: object
       properties:
@@ -695,7 +772,7 @@ components:
             items:
               type: array
               items:
-                $ref: '#/components/schemas/PaymentOrder'
+                $ref: '#/components/schemas/CashierOrder'
             pagination:
               $ref: ./common.yaml#/components/schemas/Pagination
     CapabilityTaskOptions:

@@ -14,6 +14,7 @@ func TestTaskPromptTemplateRuntimeFieldsStayInternal(t *testing.T) {
 			References:    []PromptReferenceBinding{{Name: "主体", AssetID: "asset-1", Index: 1}},
 			VariableNames: []string{"服装"},
 		},
+		NegativePrompt: "historical internal value",
 	}
 	payload, err := json.Marshal(task)
 	if err != nil {
@@ -23,7 +24,7 @@ func TestTaskPromptTemplateRuntimeFieldsStayInternal(t *testing.T) {
 	if err := json.Unmarshal(payload, &decoded); err != nil {
 		t.Fatalf("decode task: %v", err)
 	}
-	for _, key := range []string{"prompt_template", "prompt_template_version", "prompt_binding_snapshot"} {
+	for _, key := range []string{"prompt_template", "prompt_template_version", "prompt_binding_snapshot", "negative_prompt"} {
 		if _, exists := decoded[key]; exists {
 			t.Fatalf("runtime field %s must not be exposed in task JSON", key)
 		}

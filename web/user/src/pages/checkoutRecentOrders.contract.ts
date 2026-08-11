@@ -1,13 +1,12 @@
-import type { PaymentOrder } from '../../../shared/api-types'
+import type { CashierOrder } from '../../../shared/api-types'
 import { checkoutDateTime, checkoutPaymentMethodOptionModel, checkoutRecentOrderRows } from './checkoutOrderState'
 
-const baseOrder: PaymentOrder = {
+const baseOrder: CashierOrder = {
   id: 1,
   order_no: 'ord_1',
   plan_id: 1,
   plan_code: 'points-100',
   plan_name: '100 积分包',
-  provider: 'mock',
   purchase_type: 'plan',
   visible_method: 'mock',
   status: 'completed',
@@ -100,18 +99,11 @@ for (const [status, expected] of statusCases) {
   }
 }
 
-const methodCases: Array<[Partial<PaymentOrder>, string]> = [
-  [{ visible_method: 'mock', provider: 'mock', provider_type: 'mock' }, 'Mock 测试'],
-  [{ visible_method: 'alipay', provider: '', provider_type: 'alipay_direct' }, '支付宝'],
-  [{ visible_method: 'wxpay', provider: '', provider_type: 'wxpay_direct' }, '微信支付'],
-  [{ visible_method: '', provider: 'easypay_alipay', provider_type: 'easypay_alipay' }, '支付宝'],
-  [{ visible_method: '', provider: 'easypay_wxpay', provider_type: 'easypay_wxpay' }, '微信支付'],
-  [{ visible_method: '', provider: 'jeepay_alipay', provider_type: 'jeepay_alipay' }, '支付宝'],
-  [{ visible_method: '', provider: 'jeepay_wxpay', provider_type: 'jeepay_wxpay' }, '微信支付'],
-  [{ visible_method: '', provider: 'manual_alipay', provider_type: 'manual_alipay' }, '支付宝'],
-  [{ visible_method: '', provider: 'manual_wxpay', provider_type: 'manual_wxpay' }, '微信支付'],
-  [{ visible_method: '', provider: 'manual_bank', provider_type: 'manual_bank' }, '银行转账'],
-  [{ visible_method: '', provider: '', provider_type: '' }, '-'],
+const methodCases: Array<[Partial<CashierOrder>, string]> = [
+  [{ visible_method: 'mock' }, 'Mock 测试'],
+  [{ visible_method: 'alipay' }, '支付宝'],
+  [{ visible_method: 'wxpay' }, '微信支付'],
+  [{ visible_method: '' }, '-'],
 ]
 
 for (const [orderFields, expected] of methodCases) {

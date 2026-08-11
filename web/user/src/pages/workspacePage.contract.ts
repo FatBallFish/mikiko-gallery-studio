@@ -143,6 +143,23 @@ if (capabilityChangedSource.includes('userApi.estimate(')) {
   throw new Error('capability_changed recovery must let normalized capability state drive the next estimate instead of reusing the stale payload')
 }
 
+const promptTemplateStaleStart = createTaskSource.indexOf("err.code === 'PROMPT_TEMPLATE_STALE'")
+const promptTemplateStaleEnd = createTaskSource.indexOf("app.notify('error'", promptTemplateStaleStart)
+const promptTemplateStaleSource = createTaskSource.slice(promptTemplateStaleStart, promptTemplateStaleEnd)
+for (const required of [
+  'userApi.getReferenceAsset(asset.id)',
+  'setEditRefs(',
+  '引用资产名称已变化',
+  '请检查红色标记',
+]) {
+  if (!promptTemplateStaleSource.includes(required)) {
+    throw new Error(`PROMPT_TEMPLATE_STALE recovery must refresh reference state and require explicit confirmation: missing ${required}`)
+  }
+}
+if (promptTemplateStaleSource.includes('setPrompt(')) {
+  throw new Error('PROMPT_TEMPLATE_STALE recovery must not silently rewrite the prompt template')
+}
+
 const historyEditStart = source.indexOf('async function applyAsEditSource')
 const historyEditEnd = source.indexOf('\n  function removeEditAsset', historyEditStart)
 const historyEditSource = source.slice(historyEditStart, historyEditEnd)

@@ -245,6 +245,41 @@ func TestAssetsStoreImportsLockedSourceAliasWithGenerationSnapshot(t *testing.T)
 	}
 }
 
+func TestAssetsStoreImportsAliasWhenSourceTaskIsSoftDeleted(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:assetstore-alias-soft-deleted-task?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	projectID := uuid.New()
+	if _, err := client.Project.Create().SetID(projectID).SetUserID(18).SetName("P").SetNameKey("p").SetStatus("active").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	task, err := client.ImageTask.Create().SetUserID(18).SetProjectID(projectID).SetTaskType("image_generation").SetPrompt("source").SetAbstractModel("plus").SetRouteModelCode("route-plus").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(18).SetProjectID(projectID).SetStorageDriver("s3").SetObjectKey("generated/soft-deleted-task.png").SetMimeType("image/png").SetFileSizeBytes(99).SetWidth(1024).SetHeight(1024).SetSha256(strings.Repeat("b", 64)).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.ImageTask.UpdateOneID(task.ID).SetDeletedAt(time.Now().UTC()).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	asset, err := NewAssetsStore(client).ImportGalleryAlias(ctx, 18, provider.ImageResult{ID: result.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asset.SourceImageResultID != result.ID.String() || asset.OwnsObject || asset.ObjectKey != result.ObjectKey {
+		t.Fatalf("asset=%#v", asset)
+	}
+}
+
 func ptrInt64(value int64) *int64 {
 	return &value
 }

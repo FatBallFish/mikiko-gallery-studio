@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { AlertCircle, AtSign, Braces, ImagePlus, Redo2, Undo2 } from 'lucide-react'
 import {
   $createLineBreakNode,
@@ -10,7 +10,9 @@ import {
   $isRangeSelection,
   $isTextNode,
   COMMAND_PRIORITY_HIGH,
-  PASTE_COMMAND,
+  KEY_BACKSPACE_COMMAND,
+  KEY_DELETE_COMMAND,
+  KEY_SPACE_COMMAND,
   REDO_COMMAND,
   UNDO_COMMAND,
   TextNode,
@@ -26,7 +28,7 @@ import { ContentEditable } from '@lexical/react/LexicalContentEditable'
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin'
-import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin'
+import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import type { ReferenceAsset } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
@@ -61,7 +63,7 @@ export class PromptTokenNode extends TextNode {
     super(promptTokenSource(kind, name), key)
     this.__kind = kind
     this.__name = name
-    this.setMode('token')
+    this.__mode = 1
   }
 
   exportJSON(): SerializedPromptTokenNode {
@@ -73,6 +75,8 @@ export class PromptTokenNode extends TextNode {
     element.classList.add('prompt-token')
     element.dataset.promptTokenKind = this.__kind
     element.dataset.promptTokenName = this.__name
+    element.tabIndex = 0
+    element.setAttribute('aria-label', `${this.__kind === 'reference' ? '资产' : '变量'}：${this.__name}`)
     return element
   }
 
@@ -80,6 +84,8 @@ export class PromptTokenNode extends TextNode {
     const changed = super.updateDOM(previous, element, config)
     element.dataset.promptTokenKind = this.__kind
     element.dataset.promptTokenName = this.__name
+    element.tabIndex = 0
+    element.setAttribute('aria-label', `${this.__kind === 'reference' ? '资产' : '变量'}：${this.__name}`)
     return changed
   }
 
@@ -90,6 +96,10 @@ export class PromptTokenNode extends TextNode {
 
 export function $createPromptTokenNode(kind: PromptTemplateTokenKind, name: string) {
   return new PromptTokenNode(kind, name)
+}
+
+function $isPromptTokenNode(node: LexicalNode | null | undefined): node is PromptTokenNode {
+  return node?.getType() === PromptTokenNode.getType()
 }
 
 function $appendTemplate(template: string) {
@@ -144,6 +154,8 @@ export const PromptTemplateEditor = forwardRef<PromptTemplateEditorHandle, {
 }, ref) => {
   const editorRef = useRef<LexicalEditor | null>(null)
   const composingRef = useRef(false)
+  const keyboardNavigatingRef = useRef(false)
+  const variableNameErrorID = useId()
   const [autocomplete, setAutocomplete] = useState<AutoCompleteRange | null>(null)
   const [manualMenu, setManualMenu] = useState<PromptTemplateTokenKind | null>(null)
   const [variableName, setVariableName] = useState('')
@@ -200,25 +212,34 @@ export const PromptTemplateEditor = forwardRef<PromptTemplateEditorHandle, {
     return []
   }, [assets, menuKind, query, variables])
 
-  useEffect(() => setActiveIndex(0), [menuKind, query])
+  useEffect(() => {
+    setActiveIndex(0)
+    keyboardNavigatingRef.current = false
+  }, [menuKind, query])
 
   function closeMenu() {
     setAutocomplete(null)
     setManualMenu(null)
     setVariableName('')
+    keyboardNavigatingRef.current = false
     window.setTimeout(() => editorRef.current?.focus(), 0)
   }
 
   function handleMenuKeyDown(event: React.KeyboardEvent) {
     if (!menuKind || composingRef.current) return
+    const target = event.target instanceof HTMLElement ? event.target : null
+    const inVariableForm = Boolean(target?.closest('.prompt-token-menu-create'))
+    if (inVariableForm && event.key === 'Enter' && !keyboardNavigatingRef.current) return
     if (event.key === 'Escape') {
       event.preventDefault()
       closeMenu()
     } else if (event.key === 'ArrowDown' && menuItems.length) {
       event.preventDefault()
+      keyboardNavigatingRef.current = true
       setActiveIndex((index) => (index + 1) % menuItems.length)
     } else if (event.key === 'ArrowUp' && menuItems.length) {
       event.preventDefault()
+      keyboardNavigatingRef.current = true
       setActiveIndex((index) => (index - 1 + menuItems.length) % menuItems.length)
     } else if (event.key === 'Enter' && menuItems[activeIndex]) {
       event.preventDefault()
@@ -227,8 +248,21 @@ export const PromptTemplateEditor = forwardRef<PromptTemplateEditorHandle, {
   }
 
   const parsed = parsePromptTemplate(value)
+  const variableDraft = variableName || autocomplete?.query || ''
+  const normalizedVariableDraft = normalizePromptTemplateName(variableDraft)
+  const variableDraftError = variableDraft ? normalizedVariableDraft.error : undefined
   const hoveredAsset = hovered?.kind === 'reference' ? assets.find((asset) => asset.name === hovered.name) : undefined
   const hoveredValue = hovered?.kind === 'variable' ? variables[hovered.name] : undefined
+
+  function showTokenPreview(target: EventTarget | null) {
+    const token = target instanceof HTMLElement ? target.closest<HTMLElement>('[data-prompt-token-kind]') : null
+    if (!token) {
+      setHovered(null)
+      return
+    }
+    const rect = token.getBoundingClientRect()
+    setHovered({ kind: token.dataset.promptTokenKind as PromptTemplateTokenKind, name: token.dataset.promptTokenName ?? '', x: rect.left + rect.width / 2, y: rect.top })
+  }
 
   return (
     <div className="prompt-template-shell" data-expanded={expanded || undefined} onKeyDownCapture={handleMenuKeyDown}>
@@ -248,15 +282,18 @@ export const PromptTemplateEditor = forwardRef<PromptTemplateEditorHandle, {
       }}>
         <div
           className="prompt-template-editor-frame"
-          onMouseOver={(event) => {
-            const target = (event.target as HTMLElement).closest<HTMLElement>('[data-prompt-token-kind]')
-            if (!target) return
-            const rect = target.getBoundingClientRect()
-            setHovered({ kind: target.dataset.promptTokenKind as PromptTemplateTokenKind, name: target.dataset.promptTokenName ?? '', x: rect.left + rect.width / 2, y: rect.top })
-          }}
+          onMouseOver={(event) => showTokenPreview(event.target)}
           onMouseLeave={() => setHovered(null)}
+          onFocus={(event) => showTokenPreview(event.target)}
+          onBlur={(event) => {
+            if (event.relatedTarget instanceof HTMLElement && event.currentTarget.contains(event.relatedTarget)) {
+              showTokenPreview(event.relatedTarget)
+              return
+            }
+            setHovered(null)
+          }}
         >
-          <RichTextPlugin
+          <PlainTextPlugin
             contentEditable={<ContentEditable className="prompt-template-editor" aria-label="提示词" aria-invalid={Boolean(parsed.error)} />}
             placeholder={<div className="prompt-template-placeholder">{placeholder}</div>}
             ErrorBoundary={LexicalErrorBoundary}
@@ -266,8 +303,8 @@ export const PromptTemplateEditor = forwardRef<PromptTemplateEditorHandle, {
           <EditorCapturePlugin editorRef={editorRef} autoFocus={autoFocus} />
           <ExternalValuePlugin value={value} />
           <TokenizeTextPlugin />
+          <SelectedTextDeletionPlugin />
           <TokenStatusPlugin assets={assets} variables={variables} />
-          <PlainTextPastePlugin />
           <CompositionGuardPlugin composingRef={composingRef} />
           <AutoCompletePlugin composingRef={composingRef} onChange={setAutocomplete} />
         </div>
@@ -284,9 +321,13 @@ export const PromptTemplateEditor = forwardRef<PromptTemplateEditorHandle, {
           ))}
           {menuKind === 'reference' && onAddAsset ? <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { closeMenu(); onAddAsset() }}><ImagePlus size={15} /><span><strong>添加资产</strong><small>上传或从资产库导入</small></span></button> : null}
           {menuKind === 'variable' ? (
-            <form className="prompt-token-menu-create" onSubmit={(event) => { event.preventDefault(); insertToken('variable', variableName || autocomplete?.query || '') }}>
-              <input autoFocus value={variableName} maxLength={64} placeholder="新变量名称" onChange={(event) => setVariableName(event.target.value)} />
-              <button type="submit" disabled={!normalizePromptTemplateName(variableName || autocomplete?.query || '').name}>添加</button>
+            <form className="prompt-token-menu-create" onSubmit={(event) => {
+              event.preventDefault()
+              if (!normalizedVariableDraft.error) insertToken('variable', normalizedVariableDraft.name)
+            }}>
+              <input autoFocus value={variableName} maxLength={64} placeholder="新变量名称" aria-invalid={Boolean(variableDraftError)} aria-describedby={variableDraftError ? variableNameErrorID : undefined} onChange={(event) => { keyboardNavigatingRef.current = false; setVariableName(event.target.value) }} />
+              <button type="submit" disabled={Boolean(normalizedVariableDraft.error)}>添加</button>
+              {variableDraftError ? <p id={variableNameErrorID} className="prompt-token-menu-create-error" role="alert">{variableDraftError.message}</p> : null}
             </form>
           ) : null}
           {!menuItems.length && menuKind === 'reference' ? <p>没有匹配的资产</p> : null}
@@ -327,7 +368,7 @@ function ExternalValuePlugin({ value }: { value: string }) {
 function TokenizeTextPlugin() {
   const [editor] = useLexicalComposerContext()
   useEffect(() => editor.registerNodeTransform(TextNode, (node) => {
-    if (node instanceof PromptTokenNode || !node.isSimpleText()) return
+    if ($isPromptTokenNode(node) || !node.isSimpleText()) return
     const parsed = parsePromptTemplate(node.getTextContent())
     if (parsed.error || !parsed.occurrences.length) return
     const replacements: LexicalNode[] = parsed.segments.map((segment) => (
@@ -347,6 +388,69 @@ function TokenizeTextPlugin() {
   return null
 }
 
+function SelectedTextDeletionPlugin() {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => {
+    const applyDOMSelection = (selection: ReturnType<typeof $getSelection>) => {
+      if (!$isRangeSelection(selection) || !selection.isCollapsed()) return selection
+      const domSelection = window.getSelection()
+      const rootElement = editor.getRootElement()
+      if (!rootElement || !domSelection || domSelection.rangeCount === 0) return selection
+      const domRange = domSelection.getRangeAt(0)
+      if (!rootElement.contains(domRange.commonAncestorContainer)) return selection
+      selection.applyDOMRange(domRange)
+      return selection
+    }
+    const deleteSelection = (event: KeyboardEvent) => {
+      const selection = $getSelection()
+      if (!$isRangeSelection(selection)) return false
+      const domSelection = window.getSelection()
+      const rootElement = editor.getRootElement()
+      if (rootElement && domSelection && !domSelection.isCollapsed && domSelection.rangeCount > 0) {
+        const domRange = domSelection.getRangeAt(0)
+        const selectionIsInsideEditor = rootElement.contains(domRange.startContainer) && rootElement.contains(domRange.endContainer)
+        if (selectionIsInsideEditor && domSelection.toString() === $getRoot().getTextContent()) {
+          event.preventDefault()
+          $appendTemplate('')
+          $getRoot().selectEnd()
+          return true
+        }
+      }
+      if (selection.isCollapsed()) {
+        if (!rootElement || !domSelection || domSelection.isCollapsed || domSelection.rangeCount === 0) return false
+        const domRange = domSelection.getRangeAt(0)
+        if (!rootElement.contains(domRange.commonAncestorContainer)) return false
+        selection.applyDOMRange(domRange)
+      }
+      if (selection.isCollapsed()) return false
+      event.preventDefault()
+      selection.removeText()
+      return true
+    }
+    const insertSpaceAtTokenBoundary = (event: KeyboardEvent) => {
+      const selection = applyDOMSelection($getSelection())
+      if (!$isRangeSelection(selection) || !selection.isCollapsed()) return false
+      const anchorNode = selection.anchor.getNode()
+      if (!$isPromptTokenNode(anchorNode)) return false
+      event.preventDefault()
+      const trailing = $createTextNode(' ')
+      if (selection.anchor.offset === 0) anchorNode.insertBefore(trailing)
+      else anchorNode.insertAfter(trailing)
+      trailing.selectEnd()
+      return true
+    }
+    const unregisterBackspace = editor.registerCommand(KEY_BACKSPACE_COMMAND, deleteSelection, COMMAND_PRIORITY_HIGH)
+    const unregisterDelete = editor.registerCommand(KEY_DELETE_COMMAND, deleteSelection, COMMAND_PRIORITY_HIGH)
+    const unregisterSpace = editor.registerCommand(KEY_SPACE_COMMAND, insertSpaceAtTokenBoundary, COMMAND_PRIORITY_HIGH)
+    return () => {
+      unregisterBackspace()
+      unregisterDelete()
+      unregisterSpace()
+    }
+  }, [editor])
+  return null
+}
+
 function TokenStatusPlugin({ assets, variables }: { assets: ReferenceAsset[]; variables: Readonly<Record<string, string>> }) {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
@@ -361,24 +465,12 @@ function TokenStatusPlugin({ assets, variables }: { assets: ReferenceAsset[]; va
         element.classList.toggle('prompt-token--invalid', !valid)
         element.setAttribute('aria-invalid', String(!valid))
         element.title = valid ? (kind === 'reference' ? `资产：${name}` : `变量：${name}`) : (kind === 'reference' ? `未关联资产：${name}` : `变量尚未填写：${name}`)
+        element.setAttribute('aria-label', element.title)
       })
     }
     update()
     return editor.registerUpdateListener(update)
   }, [assets, editor, variables])
-  return null
-}
-
-function PlainTextPastePlugin() {
-  const [editor] = useLexicalComposerContext()
-  useEffect(() => editor.registerCommand(PASTE_COMMAND, (event) => {
-    const text = event instanceof ClipboardEvent ? event.clipboardData?.getData('text/plain') : ''
-    if (text === undefined) return false
-    event?.preventDefault()
-    const selection = $getSelection()
-    if ($isRangeSelection(selection)) selection.insertText(text ?? '')
-    return true
-  }, COMMAND_PRIORITY_HIGH), [editor])
   return null
 }
 
@@ -406,13 +498,13 @@ function AutoCompletePlugin({ composingRef, onChange }: { composingRef: React.Mu
     const selection = $getSelection()
     if (!$isRangeSelection(selection) || !selection.isCollapsed()) return onChange(null)
     const node = selection.anchor.getNode()
-    if (!$isTextNode(node) || node instanceof PromptTokenNode) return onChange(null)
+    if (!$isTextNode(node) || $isPromptTokenNode(node)) return onChange(null)
     const end = selection.anchor.offset
     const before = node.getTextContent().slice(0, end)
-    const match = before.match(/(^|[\s([{])([@$])([^@${}\s]*)$/u)
-    if (!match || (match.index !== undefined && match.index > 0 && before[match.index - 1] === '\\')) return onChange(null)
-    const start = end - match[2].length - match[3].length
-    onChange({ nodeKey: node.getKey(), start, end, kind: match[2] === '@' ? 'reference' : 'variable', query: match[3] })
+    const match = before.match(/(?<!\\)([@$])([^@${}\s]*)$/u)
+    if (!match) return onChange(null)
+    const start = end - match[1].length - match[2].length
+    onChange({ nodeKey: node.getKey(), start, end, kind: match[1] === '@' ? 'reference' : 'variable', query: match[2] })
   })), [composingRef, editor, onChange])
   return null
 }

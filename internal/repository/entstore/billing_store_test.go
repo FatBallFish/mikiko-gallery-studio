@@ -76,6 +76,80 @@ func TestBillingStoreExpiresPendingOrdersInBoundedIdempotentBatches(t *testing.T
 	}
 }
 
+func TestBillingStoreExpiresPendingOrdersForRequestScopeAndExactOrder(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-request-scope-expiry?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewBillingStore(client, 5)
+	now := time.Now().UTC()
+	first, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 811, OrderNo: "PGO-SCOPED-FIRST", AmountCNY: "10.00000", CNYPerPoint: "0.31250", Provider: "mock", ExpiresAt: now.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+		UserID: 812, OrderNo: "PGO-SCOPED-SECOND", AmountCNY: "10.00000", CNYPerPoint: "0.31250", Provider: "mock", ExpiresAt: now.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := store.ExpirePendingOrdersForList(ctx, now, domainbilling.ListOrdersRequest{UserID: first.UserID, Status: "expired"})
+	if err != nil || count != 1 {
+		t.Fatalf("scoped expiry count=%d err=%v", count, err)
+	}
+	secondBefore, err := store.GetOrder(ctx, second.UserID, second.ID)
+	if err != nil || secondBefore.Status != "pending" {
+		t.Fatalf("unrelated order=%#v err=%v", secondBefore, err)
+	}
+	updated, err := store.ExpirePendingOrder(ctx, now, second.ID)
+	if err != nil || !updated {
+		t.Fatalf("exact expiry updated=%t err=%v", updated, err)
+	}
+	updatedAgain, err := store.ExpirePendingOrder(ctx, now, second.ID)
+	if err != nil || updatedAgain {
+		t.Fatalf("exact expiry must be idempotent, updated=%t err=%v", updatedAgain, err)
+	}
+}
+
+func TestBillingStoreBoundsUnfilteredListExpiryToWorkerBatchSize(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:billingstore-bounded-list-expiry?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewBillingStore(client, 5)
+	now := time.Now().UTC()
+	for index := 0; index < 600; index++ {
+		if _, err := store.CreateCustomAmountOrder(ctx, domainbilling.CreateCustomAmountOrderRequest{
+			UserID: int64(9000 + index), OrderNo: fmt.Sprintf("PGO-BOUNDED-%03d", index),
+			AmountCNY: "10.00000", CNYPerPoint: "0.31250", Provider: "mock", ExpiresAt: now.Add(-time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	count, err := store.ExpirePendingOrdersForList(ctx, now, domainbilling.ListOrdersRequest{})
+	if err != nil || count != 500 {
+		t.Fatalf("bounded list expiry count=%d err=%v, want 500", count, err)
+	}
+	remaining, err := client.PaymentOrder.Query().Where(paymentorder.StatusEQ("pending")).Count(ctx)
+	if err != nil || remaining != 100 {
+		t.Fatalf("remaining pending=%d err=%v, want 100", remaining, err)
+	}
+}
+
 func TestBillingStoreVerifiedLatePaymentRecoversExpiredPlanExactlyOnce(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:billingstore-expired-plan-payment?mode=memory&cache=shared&_fk=1")

@@ -628,6 +628,7 @@ const (
 	PaymentReconciliationSourceProviderWebhook  = "provider_webhook"
 	PaymentReconciliationSourceProviderQuery    = "provider_query"
 	PaymentReconciliationSourceMockConfirmation = "mock_confirmation"
+	PaymentOrderLazyExpiryBatchSize             = 500
 )
 
 type CompleteRechargeOrderRequest struct {

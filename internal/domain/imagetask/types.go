@@ -235,7 +235,7 @@ type Task struct {
 	PromptTemplate        string                        `json:"-"`
 	PromptTemplateVersion int                           `json:"-"`
 	PromptBindingSnapshot PromptBindingSnapshot         `json:"-"`
-	NegativePrompt        string                        `json:"negative_prompt,omitempty"`
+	NegativePrompt        string                        `json:"-"`
 	SizeMode              string                        `json:"size_mode,omitempty"`
 	AspectRatio           string                        `json:"aspect_ratio,omitempty"`
 	RequestedSize         string                        `json:"requested_size,omitempty"`

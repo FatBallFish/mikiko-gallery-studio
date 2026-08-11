@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	"github.com/google/uuid"
@@ -91,8 +92,11 @@ func TestGalleryAliasCreationDoesNotRequireRolloutConfiguration(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &response); err != nil || len(response.Data.Items) != 1 {
 		t.Fatalf("decode activated alias: %v body=%s", err, created.Body.String())
 	}
+	if err := client.ImageTask.UpdateOneID(task.ID).SetDeletedAt(time.Now().UTC()).Exec(ctx); err != nil {
+		t.Fatalf("soft delete source task: %v", err)
+	}
 	if rec := importResult(results[1].ID.String()); rec.Code != http.StatusCreated {
-		t.Fatalf("second import without rollout status=%d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("import from soft-deleted source task status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	if count, err := client.ReferenceAsset.Query().Count(ctx); err != nil || count != 2 {
 		t.Fatalf("imports without rollout aliases: count=%d err=%v", count, err)

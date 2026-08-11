@@ -71,6 +71,9 @@ func TestGalleryPublishUsesTransferredImageProject(t *testing.T) {
 	if _, err := store.TransferImageProject(ctx, 1, images[0].ID.String(), source.ID.String(), target.ID.String()); err != nil {
 		t.Fatal(err)
 	}
+	if err := client.ImageTask.UpdateOneID(task.ID).SetDeletedAt(time.Now().UTC()).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := taskAPIConfig("http://provider.invalid")
 	cfg.Storage.LocalRoot = t.TempDir()
@@ -99,12 +102,30 @@ func TestGalleryPublishUsesTransferredImageProject(t *testing.T) {
 		t.Fatalf("published project=%#v project_id=%q", response.Data.Project, response.Data.ProjectID)
 	}
 	persistedTask, err := client.ImageTask.Get(ctx, task.ID)
-	if err != nil || persistedTask.ProjectID == nil || *persistedTask.ProjectID != source.ID {
-		t.Fatalf("publish changed task project=%v err=%v", persistedTask.ProjectID, err)
+	if err != nil || persistedTask.DeletedAt == nil || persistedTask.ProjectID == nil || *persistedTask.ProjectID != source.ID {
+		t.Fatalf("publish changed soft-deleted task: project=%v deleted_at=%v err=%v", persistedTask.ProjectID, persistedTask.DeletedAt, err)
 	}
 	persistedSibling, err := client.ImageResult.Get(ctx, images[1].ID)
 	if err != nil || persistedSibling.ProjectID == nil || *persistedSibling.ProjectID != source.ID {
 		t.Fatalf("publish changed sibling project=%v err=%v", persistedSibling.ProjectID, err)
+	}
+	listReq := httptest.NewRequest(http.MethodGet, "/api/agent/gallery/v1/images?project_id="+target.ID.String(), nil)
+	listReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	listRec := httptest.NewRecorder()
+	handler.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK || !bytes.Contains(listRec.Body.Bytes(), []byte(images[0].ID.String())) {
+		t.Fatalf("soft-deleted task image missing from gallery list: status=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/agent/gallery/v1/images/"+images[1].ID.String(), nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	deleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("delete image from soft-deleted task status=%d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+	deletedSibling, err := client.ImageResult.Get(ctx, images[1].ID)
+	if err != nil || deletedSibling.DeletedAt == nil {
+		t.Fatalf("deleted sibling row=%#v err=%v", deletedSibling, err)
 	}
 }
 

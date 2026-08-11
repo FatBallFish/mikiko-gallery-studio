@@ -8,7 +8,6 @@ export function promptTemplateSegments(template: string): PromptEditorSegment[] 
   if (parsed.error) return [{ kind: 'text', source: template }]
   return parsed.segments.map(({ kind, source, name }) => ({ kind, source, name }))
 }
-
 export function promptTemplateText(segments: readonly PromptEditorSegment[]) {
   return segments.map((segment) => segment.source).join('')
 }
@@ -88,4 +87,3 @@ export function expandedPromptCodePointLength(
     return segment.source
   }).join('')).length
 }
-

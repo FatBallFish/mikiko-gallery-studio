@@ -172,17 +172,16 @@ func (s *AssetsStore) ImportGalleryAlias(ctx context.Context, userID int64, resu
 	task, err := tx.ImageTask.Query().Where(
 		imagetask.IDEQ(source.TaskID),
 		imagetask.UserIDEQ(userID),
-		imagetask.DeletedAtIsNil(),
 	).Only(ctx)
-	if err != nil {
-		if repoent.IsNotFound(err) {
-			return domainassets.ReferenceAsset{}, repoerr.ErrNotFound
-		}
+	if err != nil && !repoent.IsNotFound(err) {
 		return domainassets.ReferenceAsset{}, err
 	}
-	snapshot, err := referenceGenerationSnapshot(task)
-	if err != nil {
-		return domainassets.ReferenceAsset{}, err
+	var snapshot *domainassets.GenerationSnapshot
+	if task != nil {
+		snapshot, err = referenceGenerationSnapshot(task)
+		if err != nil {
+			return domainassets.ReferenceAsset{}, err
+		}
 	}
 	if existing, err := tx.ReferenceAsset.Query().Where(
 		referenceasset.UserIDEQ(userID),

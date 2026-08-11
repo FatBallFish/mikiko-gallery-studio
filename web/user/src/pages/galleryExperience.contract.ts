@@ -168,10 +168,15 @@ for (const interactionContract of [
   'data-gallery-selection-surface',
   'data-gallery-image-id={image.id}',
   'onPointerDown={beginMarqueeSelection}',
+  'data-gallery-selection-control',
+  'data-gallery-card-actions',
   'gallery-selection-marquee',
   'gallerySelectionClickAction(selectedIds.size)',
   'RefreshCw',
   'aria-label="刷新资产"',
+	"event.pointerType !== 'mouse' && event.pointerType !== 'pen'",
+	"event.key !== 'Escape'",
+	'scheduleMarqueeFrame',
 ]) {
   if (!privateGallerySource.includes(interactionContract)) {
     throw new Error(`private gallery selection and refresh must wire ${interactionContract}`)

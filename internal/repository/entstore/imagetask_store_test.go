@@ -587,6 +587,49 @@ func TestImageTaskStorePersistsTemplateSnapshotAndClearsExecutionPromptAtTermina
 	}
 }
 
+func TestPersistedTaskPromptScrubsPartialFailureExecutionValues(t *testing.T) {
+	task := domainimagetask.Task{
+		Status:          domainimagetask.StatusPartialFailed,
+		Prompt:          "位置 {{$地点}}",
+		PromptTemplate:  "位置 {{$地点}}",
+		ExecutionPrompt: "位置 不应持久化的变量值",
+	}
+	if got := persistedTaskPrompt(task); got != task.PromptTemplate {
+		t.Fatalf("partial failure persisted prompt=%q, want template %q", got, task.PromptTemplate)
+	}
+}
+
+func TestRepairTerminalPromptTemplatesSkipsCleanPrefixWithinLimit(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:imagetask-template-repair-starvation-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for index := range 2 {
+		template := fmt.Sprintf("已清理模板 %d", index)
+		if _, err := client.ImageTask.Create().SetUserID(95).SetTaskType("text_to_image").SetAbstractModel("basic").SetStatus(domainimagetask.StatusSucceeded).SetPrompt(template).SetPromptTemplate(template).Save(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dirtyTemplate := "遗留 {{$变量}}"
+	dirty, err := client.ImageTask.Create().SetUserID(95).SetTaskType("text_to_image").SetAbstractModel("basic").SetStatus(domainimagetask.StatusPartialFailed).SetPrompt("遗留 私密值").SetPromptTemplate(dirtyTemplate).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := NewImageTaskStore(client).RepairTerminalPromptTemplates(ctx, 2)
+	if err != nil || repaired != 1 {
+		t.Fatalf("repair after clean prefix: repaired=%d err=%v", repaired, err)
+	}
+	row, err := client.ImageTask.Get(ctx, dirty.ID)
+	if err != nil || row.Prompt != dirtyTemplate {
+		t.Fatalf("dirty row prompt=%q err=%v", row.Prompt, err)
+	}
+}
+
 func TestImageTaskStoreDeleteScrubsActiveTemplateExecutionPrompt(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:imagetask-template-delete?mode=memory&cache=shared&_fk=1")
@@ -945,6 +988,68 @@ func TestAdminReviewFilterUsesCombinedDatabasePredicatesAndExactTotal(t *testing
 	}
 	if byID.Total != 1 || len(byID.Items) != 1 || byID.Items[0].UserID != int64(alice.ID) {
 		t.Fatalf("numeric user query must match exact user id, got %#v", byID)
+	}
+}
+
+func TestImageTaskStoreGalleryUsesTemplatePromptWithoutExecutionPromptSearchSideChannel(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:gallery-template-prompt-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	userEntity, err := client.User.Create().SetEmail("gallery-template-prompt@example.com").SetStatus("active").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := "位置 {{$地点}}"
+	taskEntity, err := client.ImageTask.Create().
+		SetUserID(int64(userEntity.ID)).
+		SetTaskType(string(provider.TaskTypeTextToImage)).
+		SetPrompt("位置 不应公开的变量值").
+		SetPromptTemplate(template).
+		SetPromptTemplateVersion(1).
+		SetAbstractModel("basic").
+		SetStatus(domainimagetask.StatusRunning).
+		Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publishedAt := time.Now().UTC()
+	resultEntity, err := client.ImageResult.Create().
+		SetTaskID(taskEntity.ID).
+		SetUserID(int64(userEntity.ID)).
+		SetObjectKey("generated/gallery-template-prompt.png").
+		SetMimeType("image/png").
+		SetSha256("gallery-template-prompt").
+		SetVisibilityStatus(domainimagetask.VisibilityApproved).
+		SetPublishedAt(publishedAt).
+		Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewImageTaskStore(client)
+	page, err := store.ListGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 10, ReviewOnly: true, PromptQuery: "{{$地点}}"})
+	if err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].Prompt != template {
+		t.Fatalf("template prompt gallery projection = %#v, err=%v", page, err)
+	}
+	secret, err := store.ListGallery(ctx, domainimagetask.GalleryListRequest{Page: 1, PageSize: 10, ReviewOnly: true, PromptQuery: "不应公开的变量值"})
+	if err != nil || secret.Total != 0 || len(secret.Items) != 0 {
+		t.Fatalf("execution prompt must not be searchable through gallery: %#v, err=%v", secret, err)
+	}
+	if _, err := client.ImageTask.UpdateOneID(taskEntity.ID).SetDeletedAt(time.Now().UTC()).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	softDeletedSource, err := store.ListGallery(ctx, domainimagetask.GalleryListRequest{
+		Page: 1, PageSize: 10, ReviewOnly: true,
+		PromptQuery: "{{$地点}}", ModelQuery: "basic",
+	})
+	if err != nil || softDeletedSource.Total != 1 || len(softDeletedSource.Items) != 1 || softDeletedSource.Items[0].ID != resultEntity.ID.String() {
+		t.Fatalf("valid image must remain filterable after its source task is soft deleted: %#v, err=%v", softDeletedSource, err)
 	}
 }
 

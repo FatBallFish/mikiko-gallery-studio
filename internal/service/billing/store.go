@@ -120,6 +120,8 @@ type Store interface {
 	CreateOrder(ctx context.Context, req domainbilling.CreateOrderRequest) (domainbilling.PaymentOrder, error)
 	CreateCustomAmountOrder(ctx context.Context, req domainbilling.CreateCustomAmountOrderRequest) (domainbilling.PaymentOrder, error)
 	ExpirePendingOrders(ctx context.Context, now time.Time, limit int) (int, error)
+	ExpirePendingOrdersForList(ctx context.Context, now time.Time, req domainbilling.ListOrdersRequest) (int, error)
+	ExpirePendingOrder(ctx context.Context, now time.Time, orderID int64) (bool, error)
 	InitializePaymentOrder(ctx context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error)
 	FailPaymentOrderInitialization(ctx context.Context, req domainbilling.FailPaymentOrderInitializationRequest) (domainbilling.PaymentOrder, error)
 	CancelOrder(ctx context.Context, userID int64, orderID int64) (domainbilling.PaymentOrder, error)
@@ -887,6 +889,73 @@ func (s *MemoryStore) ExpirePendingOrders(_ context.Context, now time.Time, limi
 		expired++
 	}
 	return expired, nil
+}
+
+func (s *MemoryStore) ExpirePendingOrdersForList(_ context.Context, now time.Time, req domainbilling.ListOrdersRequest) (int, error) {
+	status := strings.TrimSpace(req.Status)
+	if status != "" && status != "pending" && status != "expired" {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]int64, 0, len(s.orders))
+	for id := range s.orders {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	expired := 0
+	for _, id := range ids {
+		if expired >= domainbilling.PaymentOrderLazyExpiryBatchSize {
+			break
+		}
+		order := s.orders[id]
+		if order.Status != "pending" || order.ExpiresAt.After(now) {
+			continue
+		}
+		if req.UserID > 0 && order.UserID != req.UserID {
+			continue
+		}
+		if value := strings.TrimSpace(req.OrderNo); value != "" && !strings.Contains(strings.ToLower(order.OrderNo), strings.ToLower(value)) {
+			continue
+		}
+		if value := strings.TrimSpace(req.Query); value != "" {
+			value = strings.ToLower(value)
+			if !strings.Contains(strings.ToLower(order.OrderNo), value) && !strings.Contains(strings.ToLower(order.TradeNo), value) && strconv.FormatInt(order.UserID, 10) != value {
+				continue
+			}
+		}
+		if value := strings.TrimSpace(req.VisibleMethod); value != "" && !strings.EqualFold(order.VisibleMethod, value) {
+			continue
+		}
+		if value := strings.TrimSpace(req.ProviderType); value != "" && !strings.EqualFold(order.ProviderType, value) {
+			continue
+		}
+		if value := strings.TrimSpace(req.PurchaseType); value != "" && !strings.EqualFold(order.PurchaseType, value) {
+			continue
+		}
+		closedAt := now
+		order.Status = "expired"
+		order.ClosedAt = &closedAt
+		order.UpdatedAt = now
+		s.orders[id] = order
+		expired++
+	}
+	return expired, nil
+}
+
+func (s *MemoryStore) ExpirePendingOrder(_ context.Context, now time.Time, orderID int64) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.orders[orderID]
+	if !ok || order.Status != "pending" || order.ExpiresAt.After(now) {
+		return false, nil
+	}
+	closedAt := now
+	order.Status = "expired"
+	order.ClosedAt = &closedAt
+	order.UpdatedAt = now
+	s.orders[orderID] = order
+	return true, nil
 }
 
 func (s *MemoryStore) InitializePaymentOrder(_ context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error) {

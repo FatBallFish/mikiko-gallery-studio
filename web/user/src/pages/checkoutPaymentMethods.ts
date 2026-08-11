@@ -8,7 +8,6 @@ export type CheckoutPublicPaymentMethod = {
   detail: string
   icon: CheckoutPaymentBrand
 }
-
 const INTERNAL_PAYMENT_COPY = /jeepay|easypay|direct|manual|round.?robin|channel|provider|渠道|实例/i
 
 export function checkoutPublicPaymentMethod(method: PublicPaymentVisibleMethod): CheckoutPublicPaymentMethod {
@@ -29,4 +28,3 @@ export function checkoutPublicPaymentMethod(method: PublicPaymentVisibleMethod):
   const label = configuredLabel && !INTERNAL_PAYMENT_COPY.test(configuredLabel) ? configuredLabel : '在线支付'
   return { rawMethod: method.method, label, detail: '通过安全支付页面完成付款', icon: 'generic' }
 }
-

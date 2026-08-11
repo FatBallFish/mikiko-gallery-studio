@@ -478,18 +478,45 @@ export type CreateCashierOrderRequest = {
   visible_method: string
   client_return_url?: string
 }
-export type CashierOrder = Omit<PaymentOrder, 'plan_id' | 'plan_code' | 'plan_name' | 'provider'> & {
+export type CashierOrder = {
+  id: number
+  order_no: string
   plan_id?: number
   plan_code?: string
   plan_name?: string
-  provider?: string
   purchase_type: CashierPurchaseType
   visible_method: string
-  provider_type?: PaymentProviderType
-  provider_instance_id?: ID
+  status: string
+  currency: string
+  amount_cny: string
+  points: string
+  bonus_points: string
+  credit_expiry_enabled?: boolean
+  credit_valid_days?: number | null
+  credited_at?: string | null
+  credit_expires_at?: string | null
+  payment_url?: string
+  qr_code?: string
+  client_token?: string
   payment_display?: PaymentDisplay
+  failure_reason?: string
+  expires_at: string
+  paid_at?: string | null
+  completed_at?: string | null
+  closed_at?: string | null
+  refunded_at?: string | null
+  created_at: string
+  updated_at: string
 }
-export type CashierOrderSyncResult = Omit<PaymentOrderSyncResult, 'raw'>
+export type CashierOrderSyncResult = {
+  query_status: PaymentOrderSyncStatus
+  risk_category?: PaymentOrderSyncResult['risk_category']
+  paid: boolean
+  completed: boolean
+  amount_cny?: string
+  message?: string
+  synced_at: string
+}
 export type CashierOrderSyncResponse = {
   order: CashierOrder
   sync: CashierOrderSyncResult
@@ -770,7 +797,6 @@ export type ImageTask = {
   project?: ProjectSnapshot
   title: string
   prompt: string
-  negative_prompt?: string
   task_type: ImageTaskType
   status: ImageTaskStatus
   progress_stage?: string

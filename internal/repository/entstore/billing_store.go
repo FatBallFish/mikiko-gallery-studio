@@ -919,6 +919,85 @@ func (s *BillingStore) ExpirePendingOrders(ctx context.Context, now time.Time, l
 		Save(ctx)
 }
 
+func (s *BillingStore) ExpirePendingOrdersForList(ctx context.Context, now time.Time, req domainbilling.ListOrdersRequest) (int, error) {
+	status := strings.TrimSpace(req.Status)
+	if status != "" && status != "pending" && status != "expired" {
+		return 0, nil
+	}
+	predicates := []predicate.PaymentOrder{
+		paymentorder.StatusEQ("pending"),
+		paymentorder.ExpiresAtLTE(now),
+	}
+	if req.UserID > 0 {
+		predicates = append(predicates, paymentorder.UserIDEQ(req.UserID))
+	}
+	if value := strings.TrimSpace(req.OrderNo); value != "" {
+		predicates = append(predicates, paymentorder.OrderNoContainsFold(value))
+	}
+	if value := strings.TrimSpace(req.VisibleMethod); value != "" {
+		predicates = append(predicates, paymentorder.VisibleMethodEQ(strings.ToLower(value)))
+	}
+	if value := strings.TrimSpace(req.ProviderType); value != "" {
+		predicates = append(predicates, paymentorder.ProviderTypeEQ(strings.ToLower(value)))
+	}
+	if value := strings.TrimSpace(req.PurchaseType); value != "" {
+		predicates = append(predicates, paymentorder.PurchaseTypeEQ(strings.ToLower(value)))
+	}
+	if search := strings.TrimSpace(req.Query); search != "" {
+		users, err := s.client.User.Query().Where(user.Or(user.EmailContainsFold(search), user.NicknameContainsFold(search))).IDs(ctx)
+		if err != nil {
+			return 0, err
+		}
+		userIDs := make([]int64, 0, len(users)+1)
+		for _, id := range users {
+			userIDs = append(userIDs, int64(id))
+		}
+		if id, err := strconv.ParseInt(search, 10, 64); err == nil && id > 0 {
+			userIDs = append(userIDs, id)
+		}
+		searchPredicates := []predicate.PaymentOrder{
+			paymentorder.OrderNoContainsFold(search),
+			paymentorder.TradeNoContainsFold(search),
+		}
+		if len(userIDs) > 0 {
+			searchPredicates = append(searchPredicates, paymentorder.UserIDIn(userIDs...))
+		}
+		predicates = append(predicates, paymentorder.Or(searchPredicates...))
+	}
+	ids, err := s.client.PaymentOrder.Query().
+		Where(predicates...).
+		Order(repoent.Asc(paymentorder.FieldID)).
+		Limit(domainbilling.PaymentOrderLazyExpiryBatchSize).
+		IDs(ctx)
+	if err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	return s.client.PaymentOrder.Update().
+		Where(
+			paymentorder.IDIn(ids...),
+			paymentorder.StatusEQ("pending"),
+			paymentorder.ExpiresAtLTE(now),
+		).
+		SetStatus("expired").
+		SetClosedAt(now).
+		SetUpdatedAt(now).
+		Save(ctx)
+}
+
+func (s *BillingStore) ExpirePendingOrder(ctx context.Context, now time.Time, orderID int64) (bool, error) {
+	updated, err := s.client.PaymentOrder.Update().
+		Where(
+			paymentorder.IDEQ(int(orderID)),
+			paymentorder.StatusEQ("pending"),
+			paymentorder.ExpiresAtLTE(now),
+		).
+		SetStatus("expired").
+		SetClosedAt(now).
+		SetUpdatedAt(now).
+		Save(ctx)
+	return updated > 0, err
+}
+
 func (s *BillingStore) InitializePaymentOrder(ctx context.Context, req domainbilling.InitializePaymentOrderRequest) (domainbilling.PaymentOrder, error) {
 	update := s.client.PaymentOrder.Update().
 		Where(paymentorder.IDEQ(int(req.OrderID)), paymentorder.UserIDEQ(req.UserID), paymentorder.StatusEQ("pending")).

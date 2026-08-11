@@ -106,7 +106,7 @@ func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
 	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
 		t.Fatalf("decode create order: %v", err)
 	}
-	if createResp.Data.ID == 0 || createResp.Data.Status != "pending" || createResp.Data.Provider != "mock" {
+	if createResp.Data.ID == 0 || createResp.Data.Status != "pending" || createResp.Data.VisibleMethod != "mock" {
 		t.Fatalf("unexpected created cashier order %#v", createResp.Data)
 	}
 	if createResp.Data.PaymentURL != "" || createResp.Data.PaymentDisplay["type"] != "mock" || createResp.Data.PaymentDisplay["payment_url"] != nil {
@@ -126,8 +126,12 @@ func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
 	if err := json.NewDecoder(mockPayRec.Body).Decode(&mockPayResp); err != nil {
 		t.Fatalf("decode mock pay: %v", err)
 	}
-	if mockPayResp.Data.Status != "completed" || mockPayResp.Data.TradeNo == "" || mockPayResp.Data.PaidAt == nil || mockPayResp.Data.CompletedAt == nil || mockPayResp.Data.LedgerID == 0 {
+	if mockPayResp.Data.Status != "completed" || mockPayResp.Data.PaidAt == nil || mockPayResp.Data.CompletedAt == nil {
 		t.Fatalf("expected completed mock order, got %#v", mockPayResp.Data)
+	}
+	storedMockOrder, err := billingSvc.GetOrderForAdmin(t.Context(), mockPayResp.Data.ID)
+	if err != nil || storedMockOrder.TradeNo == "" || storedMockOrder.LedgerID == 0 {
+		t.Fatalf("expected completed mock order internals to persist, order=%#v err=%v", storedMockOrder, err)
 	}
 
 	detailReq := httptest.NewRequest(http.MethodGet, "/api/agent/cashier/v1/orders/"+jsonInt64(createResp.Data.ID), nil)
@@ -143,7 +147,7 @@ func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
 	if err := json.NewDecoder(detailRec.Body).Decode(&detailResp); err != nil {
 		t.Fatalf("decode order detail: %v", err)
 	}
-	if detailResp.Data.Status != "completed" || detailResp.Data.PaidAt == nil || detailResp.Data.CompletedAt == nil || detailResp.Data.LedgerID != mockPayResp.Data.LedgerID {
+	if detailResp.Data.Status != "completed" || detailResp.Data.PaidAt == nil || detailResp.Data.CompletedAt == nil {
 		t.Fatalf("expected completed order detail, got %#v", detailResp.Data)
 	}
 
@@ -177,8 +181,12 @@ func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
 	if err := json.NewDecoder(secondMockPayRec.Body).Decode(&secondMockPayResp); err != nil {
 		t.Fatalf("decode second mock pay: %v", err)
 	}
-	if secondMockPayResp.Data.Status != "completed" || secondMockPayResp.Data.LedgerID != mockPayResp.Data.LedgerID {
+	if secondMockPayResp.Data.Status != "completed" {
 		t.Fatalf("expected idempotent completed mock order, got %#v", secondMockPayResp.Data)
+	}
+	storedSecondMockOrder, err := billingSvc.GetOrderForAdmin(t.Context(), secondMockPayResp.Data.ID)
+	if err != nil || storedSecondMockOrder.LedgerID != storedMockOrder.LedgerID {
+		t.Fatalf("expected idempotent mock payment ledger, order=%#v err=%v", storedSecondMockOrder, err)
 	}
 	afterSecondPayReq := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/balance", nil)
 	afterSecondPayReq.Header.Set("Authorization", "Bearer "+session.AccessToken)
@@ -211,7 +219,7 @@ func TestCashierMockPaymentCreditsRechargeBucket(t *testing.T) {
 	if err := json.NewDecoder(customRec.Body).Decode(&customResp); err != nil {
 		t.Fatalf("decode custom order: %v", err)
 	}
-	if customResp.Data.AmountCNY != "31.25000" || customResp.Data.Points != "100.00000" || customResp.Data.Provider != "mock" {
+	if customResp.Data.AmountCNY != "31.25000" || customResp.Data.Points != "100.00000" || customResp.Data.VisibleMethod != "mock" {
 		t.Fatalf("unexpected custom amount order %#v", customResp.Data)
 	}
 
@@ -288,13 +296,18 @@ func TestCashierCreateOrderReusesIdempotencyKey(t *testing.T) {
 		t.Fatalf("list orders expected 200, got %d body=%s", listRec.Code, listRec.Body.String())
 	}
 	var listResp struct {
-		Data domainbilling.PaymentOrderPage `json:"data"`
+		Data struct {
+			Items      []domainbilling.PaymentOrder `json:"items"`
+			Pagination struct {
+				Total int `json:"total"`
+			} `json:"pagination"`
+		} `json:"data"`
 	}
 	if err := json.NewDecoder(listRec.Body).Decode(&listResp); err != nil {
 		t.Fatalf("decode order list: %v", err)
 	}
-	if listResp.Data.Total != 1 {
-		t.Fatalf("expected idempotency replay to keep one order, got total=%d items=%#v", listResp.Data.Total, listResp.Data.Items)
+	if listResp.Data.Pagination.Total != 1 {
+		t.Fatalf("expected idempotency replay to keep one order, got total=%d items=%#v", listResp.Data.Pagination.Total, listResp.Data.Items)
 	}
 }
 
@@ -477,8 +490,12 @@ func TestCashierCancelPendingOrderCanRecoverFromTrustedMockPayment(t *testing.T)
 	if err := json.NewDecoder(detailRec.Body).Decode(&detailResp); err != nil {
 		t.Fatalf("decode detail after cancel: %v", err)
 	}
-	if detailResp.Data.Status != "completed" || detailResp.Data.LedgerID == 0 || detailResp.Data.CompletedAt == nil {
+	if detailResp.Data.Status != "completed" || detailResp.Data.CompletedAt == nil {
 		t.Fatalf("expected trusted payment to recover canceled order, got %#v", detailResp.Data)
+	}
+	stored, err := billingSvc.GetOrderForAdmin(t.Context(), detailResp.Data.ID)
+	if err != nil || stored.LedgerID == 0 {
+		t.Fatalf("expected trusted payment to persist one ledger, order=%#v err=%v", stored, err)
 	}
 }
 
@@ -507,12 +524,20 @@ func TestCashierCancelInitializedOrderReconcilesPaidProvider(t *testing.T) {
 
 	handler, billingSvc, session, order := setupSafeCashierCancelTest(t, upstream.URL, true, true)
 	first := cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusOK)
-	if first.Status != "completed" || first.LedgerID == 0 || first.TradeNo != "EP-INIT-001" {
+	if first.Status != "completed" {
 		t.Fatalf("paid provider must complete instead of cancel: %#v", first)
 	}
+	storedFirst, err := billingSvc.GetOrderForAdmin(t.Context(), first.ID)
+	if err != nil || storedFirst.LedgerID == 0 || storedFirst.TradeNo != "EP-INIT-001" {
+		t.Fatalf("paid provider completion internals were not persisted: order=%#v err=%v", storedFirst, err)
+	}
 	second := cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusOK)
-	if second.Status != "completed" || second.LedgerID != first.LedgerID {
+	if second.Status != "completed" {
 		t.Fatalf("repeated cancel must return idempotent completed order: %#v", second)
+	}
+	storedSecond, err := billingSvc.GetOrderForAdmin(t.Context(), second.ID)
+	if err != nil || storedSecond.LedgerID != storedFirst.LedgerID {
+		t.Fatalf("repeated cancel must preserve the completion ledger: order=%#v err=%v", storedSecond, err)
 	}
 	if queryCalls != 1 || closeCalls != 0 {
 		t.Fatalf("expected one query and no close, query=%d close=%d", queryCalls, closeCalls)
@@ -643,8 +668,12 @@ func TestCashierPaymentSuccessWinsCloseCancelRace(t *testing.T) {
 	billingSvc, order = service, created
 
 	result := cancelCashierOrderForTest(t, handler, session.AccessToken, order.ID, http.StatusOK)
-	if result.Status != "completed" || result.LedgerID == 0 || result.TradeNo != order.TradeNo {
+	if result.Status != "completed" {
 		t.Fatalf("payment must win close/cancel race: %#v", result)
+	}
+	stored, err := billingSvc.GetOrderForAdmin(t.Context(), result.ID)
+	if err != nil || stored.LedgerID == 0 || stored.TradeNo != order.TradeNo {
+		t.Fatalf("payment race completion internals were not persisted: order=%#v err=%v", stored, err)
 	}
 }
 
@@ -883,13 +912,17 @@ func TestCashierWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 }
 
 func TestCashierJeePayDisplayIsSignedAndPersisted(t *testing.T) {
-	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-display-user@example.com")
+	handler, userToken, adminToken := setupJeePayCashierTest(t, "cashier-jeepay-display-user@example.com")
 	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
-	if order.Provider != "jeepay_alipay" || order.ProviderType != "jeepay_alipay" || order.ProviderInstanceID == 0 || order.PaymentURL != "https://jeepay.example.com/pay/session" {
-		t.Fatalf("expected jeepay order provider metadata and payment url, got %#v", order)
+	if order.VisibleMethod != "alipay" || order.PaymentURL != "https://jeepay.example.com/pay/session" {
+		t.Fatalf("expected public jeepay order payment method and url, got %#v", order)
 	}
-	if order.PaymentDisplay["type"] != "redirect" || order.PaymentDisplay["payment_url"] != order.PaymentURL || order.PaymentDisplay["prepay_mode"] != "api" || order.PaymentDisplay["way_code"] != "ALI_PC" {
+	if order.PaymentDisplay["type"] != "redirect" || order.PaymentDisplay["payment_url"] != order.PaymentURL {
 		t.Fatalf("expected jeepay display to mirror payment url, got %#v", order.PaymentDisplay)
+	}
+	stored := getAdminCashierOrderForTest(t, handler, adminToken, order.ID)
+	if stored.Provider != "jeepay_alipay" || stored.ProviderType != "jeepay_alipay" || stored.ProviderInstanceID == 0 || stored.PaymentDisplay["prepay_mode"] != "api" || stored.PaymentDisplay["way_code"] != "ALI_PC" {
+		t.Fatalf("expected jeepay provider metadata to persist for administrators, got %#v", stored)
 	}
 	if _, ok := order.PaymentDisplay["sign"]; ok {
 		t.Fatalf("jeepay order response must not expose the merchant request signature: %#v", order.PaymentDisplay)
@@ -915,7 +948,7 @@ func TestCashierJeePayDisplayIsSignedAndPersisted(t *testing.T) {
 
 func TestCashierProviderFailurePersistsOneFailedOrderPerIdempotencyKey(t *testing.T) {
 	var upstreamCalls int
-	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-failed-order@example.com", func(w http.ResponseWriter, r *http.Request) {
+	handler, userToken, adminToken := setupJeePayCashierTest(t, "cashier-jeepay-failed-order@example.com", func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":1008,"msg":"merchant configuration rejected"}`))
@@ -953,8 +986,12 @@ func TestCashierProviderFailurePersistsOneFailedOrderPerIdempotencyKey(t *testin
 		t.Fatalf("expected exactly one durable failed order, got %#v", listResp.Data)
 	}
 	order := listResp.Data.Items[0]
-	if order.Status != "failed" || order.IdempotencyKey != idempotencyKey || strings.TrimSpace(order.FailureReason) == "" {
+	if order.Status != "failed" || strings.TrimSpace(order.FailureReason) == "" {
 		t.Fatalf("expected failed order with safe diagnostic, got %#v", order)
+	}
+	stored := getAdminCashierOrderForTest(t, handler, adminToken, order.ID)
+	if stored.IdempotencyKey != idempotencyKey {
+		t.Fatalf("expected failed order idempotency key to persist for administrators, got %#v", stored)
 	}
 	if upstreamCalls != 1 {
 		t.Fatalf("expected known failed initialization to call provider once, got %d", upstreamCalls)
@@ -962,7 +999,7 @@ func TestCashierProviderFailurePersistsOneFailedOrderPerIdempotencyKey(t *testin
 }
 
 func TestCashierTransportUncertaintyKeepsOrderPendingForCallback(t *testing.T) {
-	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-uncertain-order@example.com", func(w http.ResponseWriter, _ *http.Request) {
+	handler, userToken, adminToken := setupJeePayCashierTest(t, "cashier-jeepay-uncertain-order@example.com", func(w http.ResponseWriter, _ *http.Request) {
 		connection, _, err := w.(http.Hijacker).Hijack()
 		if err != nil {
 			t.Fatalf("hijack upstream connection: %v", err)
@@ -1006,8 +1043,12 @@ func TestCashierTransportUncertaintyKeepsOrderPendingForCallback(t *testing.T) {
 		t.Fatalf("callback must reconcile an uncertain order, status=%d body=%s", webhookRec.Code, webhookRec.Body.String())
 	}
 	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
-	if completed.Status != "completed" || completed.TradeNo != "jeepay-trade-after-uncertain-response" {
+	if completed.Status != "completed" {
 		t.Fatalf("expected callback to complete uncertain order: %#v", completed)
+	}
+	stored := getAdminCashierOrderForTest(t, handler, adminToken, order.ID)
+	if stored.TradeNo != "jeepay-trade-after-uncertain-response" || stored.LedgerID == 0 {
+		t.Fatalf("expected callback internals to persist for administrators, got %#v", stored)
 	}
 }
 
@@ -1034,7 +1075,7 @@ func TestCashierStripeOrderCreatesPaymentIntentAndPersistsNarrowDisplay(t *testi
 	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
 	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
 
-	handler, userToken := setupStripeCashierTest(t, "cashier-stripe-order-user@example.com")
+	handler, userToken, adminToken := setupStripeCashierTest(t, "cashier-stripe-order-user@example.com")
 	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"custom_amount","amount_cny":"10.25","visible_method":"stripe"}`))
 	createReq.Header.Set("Authorization", "Bearer "+userToken)
 	createReq.Header.Set("Content-Type", "application/json")
@@ -1050,8 +1091,12 @@ func TestCashierStripeOrderCreatesPaymentIntentAndPersistsNarrowDisplay(t *testi
 		t.Fatalf("decode Stripe order: %v", err)
 	}
 	order := createResp.Data
-	if order.ProviderType != "stripe" || order.ClientToken != "pi_route_123" {
-		t.Fatalf("expected persisted Stripe provider and PaymentIntent ID, got %#v", order)
+	if order.VisibleMethod != "stripe" || order.ClientToken != "pi_route_123" {
+		t.Fatalf("expected public Stripe method and PaymentIntent client token, got %#v", order)
+	}
+	stored := getAdminCashierOrderForTest(t, handler, adminToken, order.ID)
+	if stored.ProviderType != "stripe" || stored.ProviderInstanceID == 0 {
+		t.Fatalf("expected Stripe provider metadata to persist for administrators, got %#v", stored)
 	}
 	if len(order.PaymentDisplay) != 3 || order.PaymentDisplay["type"] != "stripe_payment_element" || order.PaymentDisplay["client_secret"] != "pi_route_123_secret_client" || order.PaymentDisplay["publishable_key"] != "pk_test_route" {
 		t.Fatalf("unexpected Stripe payment display %#v", order.PaymentDisplay)
@@ -1079,7 +1124,7 @@ func TestCashierStripeWebhookVerifiesExactBodyAndCreditsOnce(t *testing.T) {
 	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{URL: stripe.String(upstream.URL), MaxNetworkRetries: stripe.Int64(0)}))
 	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
 
-	handler, userToken := setupStripeCashierTest(t, "cashier-stripe-webhook-user@example.com")
+	handler, userToken, adminToken := setupStripeCashierTest(t, "cashier-stripe-webhook-user@example.com")
 	order := createStripeCustomAmountOrderForWebhookTest(t, handler, userToken, "10.25")
 	payload := func(eventID, eventType string, amountFen int64) []byte {
 		return []byte(fmt.Sprintf(`{"id":%q,"object":"event","api_version":%q,"type":%q,"data":{"object":{"id":"pi_webhook_route","object":"payment_intent","amount":%d,"currency":"cny","metadata":{"order_no":%q},"status":"succeeded"}}}`, eventID, stripe.APIVersion, eventType, amountFen, order.OrderNo))
@@ -1111,8 +1156,11 @@ func TestCashierStripeWebhookVerifiesExactBodyAndCreditsOnce(t *testing.T) {
 	if rec := send(failed, sign(failed)); rec.Code != http.StatusOK {
 		t.Fatalf("expected failed Stripe event acknowledgement, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if pending := getCashierOrderForTest(t, handler, userToken, order.ID); pending.Status != "pending" || pending.LedgerID != 0 {
+	if pending := getCashierOrderForTest(t, handler, userToken, order.ID); pending.Status != "pending" {
 		t.Fatalf("non-success Stripe events mutated order %#v", pending)
+	}
+	if pending := getAdminCashierOrderForTest(t, handler, adminToken, order.ID); pending.LedgerID != 0 {
+		t.Fatalf("non-success Stripe events created a ledger %#v", pending)
 	}
 
 	mismatch := payload("evt_mismatch", "payment_intent.succeeded", 1000)
@@ -1125,15 +1173,19 @@ func TestCashierStripeWebhookVerifiesExactBodyAndCreditsOnce(t *testing.T) {
 		t.Fatalf("expected Stripe success webhook 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
-	if completed.Status != "completed" || completed.TradeNo != "pi_webhook_route" || completed.LedgerID == 0 {
+	if completed.Status != "completed" {
 		t.Fatalf("expected completed Stripe order, got %#v", completed)
+	}
+	storedCompleted := getAdminCashierOrderForTest(t, handler, adminToken, order.ID)
+	if storedCompleted.TradeNo != "pi_webhook_route" || storedCompleted.LedgerID == 0 {
+		t.Fatalf("expected completed Stripe internals to persist, got %#v", storedCompleted)
 	}
 	if rec := send(success, sign(success)); rec.Code != http.StatusOK {
 		t.Fatalf("expected duplicate Stripe webhook 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	duplicate := getCashierOrderForTest(t, handler, userToken, order.ID)
-	if duplicate.LedgerID != completed.LedgerID || duplicate.TradeNo != completed.TradeNo {
-		t.Fatalf("duplicate Stripe event was not idempotent: first=%#v second=%#v", completed, duplicate)
+	duplicate := getAdminCashierOrderForTest(t, handler, adminToken, order.ID)
+	if duplicate.LedgerID != storedCompleted.LedgerID || duplicate.TradeNo != storedCompleted.TradeNo {
+		t.Fatalf("duplicate Stripe event was not idempotent: first=%#v second=%#v", storedCompleted, duplicate)
 	}
 
 	balanceReq := httptest.NewRequest(http.MethodGet, "/api/agent/billing/v1/balance", nil)
@@ -1221,8 +1273,9 @@ func TestCashierJeePayAPIModePostsUnifiedOrderAndPersistsDisplay(t *testing.T) {
 	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
 		t.Fatalf("decode created order: %v", err)
 	}
-	if createResp.Data.ProviderType != "jeepay_alipay" || createResp.Data.ProviderInstanceID != providerID {
-		t.Fatalf("expected jeepay api provider metadata, got %#v", createResp.Data)
+	storedOrder, err := billingSvc.GetOrderForAdmin(t.Context(), createResp.Data.ID)
+	if err != nil || storedOrder.ProviderType != "jeepay_alipay" || storedOrder.ProviderInstanceID != providerID {
+		t.Fatalf("expected jeepay api provider metadata to persist, order=%#v err=%v", storedOrder, err)
 	}
 	if upstreamPath != "/api/pay/unifiedOrder" {
 		t.Fatalf("expected jeepay unified order path, got %q", upstreamPath)
@@ -1233,8 +1286,11 @@ func TestCashierJeePayAPIModePostsUnifiedOrderAndPersistsDisplay(t *testing.T) {
 	if createResp.Data.PaymentURL != "https://jeepay.example.com/pay/session" || createResp.Data.QRCode != "https://jeepay.example.com/qr/session" {
 		t.Fatalf("expected jeepay api display fields, got %#v", createResp.Data)
 	}
-	if createResp.Data.PaymentDisplay["type"] != "qr_code" || createResp.Data.PaymentDisplay["payment_url"] != createResp.Data.PaymentURL || createResp.Data.PaymentDisplay["qr_code"] != createResp.Data.QRCode || createResp.Data.PaymentDisplay["prepay_mode"] != "api" || createResp.Data.PaymentDisplay["channel_trade_no"] != "JEEPAY-API-PAY-001" {
+	if createResp.Data.PaymentDisplay["type"] != "qr_code" || createResp.Data.PaymentDisplay["payment_url"] != createResp.Data.PaymentURL || createResp.Data.PaymentDisplay["qr_code"] != createResp.Data.QRCode {
 		t.Fatalf("expected jeepay api display to mirror payment fields, got %#v", createResp.Data.PaymentDisplay)
+	}
+	if storedOrder.PaymentDisplay["prepay_mode"] != "api" || storedOrder.PaymentDisplay["channel_trade_no"] != "JEEPAY-API-PAY-001" {
+		t.Fatalf("expected jeepay channel details to remain available to administrators, got %#v", storedOrder.PaymentDisplay)
 	}
 }
 
@@ -1414,8 +1470,9 @@ func TestCashierJeePayWebhookRejectsMissingApplicationIdentity(t *testing.T) {
 }
 
 func TestCashierJeePayJSONWebhookCompletesRechargeOrderAndFormReplayIsIdempotent(t *testing.T) {
-	handler, userToken, _ := setupJeePayCashierTest(t, "cashier-jeepay-success-user@example.com")
-	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	handler, userToken, adminToken := setupJeePayCashierTest(t, "cashier-jeepay-success-user@example.com")
+	publicOrder := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	order := getAdminCashierOrderForTest(t, handler, adminToken, publicOrder.ID)
 	values := jeepayWebhookValuesForTest(order, "MCH10001", "merchant-secret", "1250", order.TradeNo)
 	jsonBody := jeepayWebhookJSONForTest(t, values)
 
@@ -1430,8 +1487,12 @@ func TestCashierJeePayJSONWebhookCompletesRechargeOrderAndFormReplayIsIdempotent
 		t.Fatalf("expected raw jeepay success response, got body=%s", webhookRec.Body.String())
 	}
 	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
-	if completed.Status != "completed" || completed.LedgerID == 0 || completed.TradeNo != order.TradeNo {
+	if completed.Status != "completed" {
 		t.Fatalf("expected completed jeepay recharge order, got %#v", completed)
+	}
+	storedCompleted := getAdminCashierOrderForTest(t, handler, adminToken, order.ID)
+	if storedCompleted.LedgerID == 0 || storedCompleted.TradeNo != order.TradeNo {
+		t.Fatalf("expected completed jeepay internals to persist, got %#v", storedCompleted)
 	}
 
 	secondReq := httptest.NewRequest(http.MethodPost, "/api/open/image/v1/payments/webhooks/jeepay_alipay", strings.NewReader(values.Encode()))
@@ -1469,7 +1530,8 @@ func TestCashierJeePayJSONWebhookCompletesRechargeOrderAndFormReplayIsIdempotent
 
 func TestCashierJeePayWebhookCompletesOrderAfterProviderInstanceDisabled(t *testing.T) {
 	handler, userToken, adminToken := setupJeePayCashierTest(t, "cashier-jeepay-disabled-provider@example.com")
-	order := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	publicOrder := createJeePayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
+	order := getAdminCashierOrderForTest(t, handler, adminToken, publicOrder.ID)
 	disabledProviderBody := `{"provider_type":"jeepay_alipay","name":"JeePay 支付宝","enabled":false,"supported_methods":["alipay"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"gateway_url":"https://pay.example.test","mch_no":"MCH10001","app_id":"APP10001","key":"merchant-secret","notify_url":"https://merchant.example.com/api/open/image/v1/payments/webhooks/jeepay_alipay","return_url":"https://merchant.example.com/checkout/return","way_code":"ALI_PC"}}`
 	disableReq := httptest.NewRequest(http.MethodPut, "/api/ops/admin/v1/cashier/provider-instances/"+jsonInt64(order.ProviderInstanceID), bytes.NewBufferString(disabledProviderBody))
 	disableReq.Header.Set("Authorization", "Bearer "+adminToken)
@@ -1489,8 +1551,12 @@ func TestCashierJeePayWebhookCompletesOrderAfterProviderInstanceDisabled(t *test
 		t.Fatalf("disabled provider must still accept a valid in-flight payment webhook, got %d body=%s", webhookRec.Code, webhookRec.Body.String())
 	}
 	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
-	if completed.Status != "completed" || completed.LedgerID == 0 || completed.TradeNo != order.TradeNo {
+	if completed.Status != "completed" {
 		t.Fatalf("disabled provider webhook must complete the existing order exactly once, got %#v", completed)
+	}
+	storedCompleted := getAdminCashierOrderForTest(t, handler, adminToken, order.ID)
+	if storedCompleted.LedgerID == 0 || storedCompleted.TradeNo != order.TradeNo {
+		t.Fatalf("disabled provider webhook internals were not persisted, got %#v", storedCompleted)
 	}
 }
 
@@ -1579,8 +1645,12 @@ func TestCashierOrderSchedulesConfiguredProviderInstance(t *testing.T) {
 	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
 		t.Fatalf("decode created order: %v", err)
 	}
-	if createResp.Data.Provider != "alipay_direct" || createResp.Data.VisibleMethod != "alipay" || createResp.Data.ProviderType != "alipay_direct" || createResp.Data.ProviderInstanceID != providerResp.Data.ID {
-		t.Fatalf("expected order to include selected provider instance, got %#v", createResp.Data)
+	if createResp.Data.VisibleMethod != "alipay" {
+		t.Fatalf("expected public order to include selected payment method, got %#v", createResp.Data)
+	}
+	storedOrder, err := billingSvc.GetOrderForAdmin(t.Context(), createResp.Data.ID)
+	if err != nil || storedOrder.Provider != "alipay_direct" || storedOrder.ProviderType != "alipay_direct" || storedOrder.ProviderInstanceID != providerResp.Data.ID {
+		t.Fatalf("expected selected provider instance to persist, order=%#v err=%v", storedOrder, err)
 	}
 	if createResp.Data.PaymentURL == "" || createResp.Data.PaymentDisplay["payment_url"] == "" {
 		t.Fatalf("expected alipay order to include payment url display, got %#v", createResp.Data)
@@ -1603,8 +1673,11 @@ func TestCashierOrderSchedulesConfiguredProviderInstance(t *testing.T) {
 	if query.Get("notify_url") == "" || query.Get("return_url") == "" || bizContent["out_trade_no"] != createResp.Data.OrderNo || bizContent["total_amount"] != createResp.Data.AmountCNY {
 		t.Fatalf("expected alipay url to carry callback and order payload, got %s", createResp.Data.PaymentURL)
 	}
-	if query.Get("sign_type") != "RSA2" || query.Get("sign") == "" || createResp.Data.PaymentDisplay["signed"] != true {
+	if query.Get("sign_type") != "RSA2" || query.Get("sign") == "" {
 		t.Fatalf("expected alipay url to be RSA2 signed, url=%s display=%#v", createResp.Data.PaymentURL, createResp.Data.PaymentDisplay)
+	}
+	if storedOrder.PaymentDisplay["signed"] != true {
+		t.Fatalf("expected alipay signature diagnostic to persist for administrators, got %#v", storedOrder.PaymentDisplay)
 	}
 
 	disabledProviderBody := alipayProviderBodyForTest(t, "支付宝沙箱主账号", "app-123", false, 10)
@@ -1764,8 +1837,12 @@ func TestCashierEasyPayPopupDisplayIsSignedAndPersisted(t *testing.T) {
 	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
 		t.Fatalf("decode created order: %v", err)
 	}
-	if createResp.Data.ProviderType != "easypay_alipay" || createResp.Data.ProviderInstanceID != providerID || createResp.Data.PaymentURL == "" {
+	if createResp.Data.VisibleMethod != "alipay" || createResp.Data.PaymentURL == "" {
 		t.Fatalf("expected easypay payment display, got %#v", createResp.Data)
+	}
+	storedOrder, err := billingSvc.GetOrderForAdmin(t.Context(), createResp.Data.ID)
+	if err != nil || storedOrder.ProviderType != "easypay_alipay" || storedOrder.ProviderInstanceID != providerID {
+		t.Fatalf("expected easypay provider metadata to persist, order=%#v err=%v", storedOrder, err)
 	}
 	payURL, err := url.Parse(createResp.Data.PaymentURL)
 	if err != nil {
@@ -1872,8 +1949,9 @@ func TestCashierEasyPayAPIModeUsesMAPIAndPersistsDisplay(t *testing.T) {
 	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
 		t.Fatalf("decode created order: %v", err)
 	}
-	if createResp.Data.ProviderType != "easypay_alipay" || createResp.Data.ProviderInstanceID != providerID {
-		t.Fatalf("expected easypay api provider metadata, got %#v", createResp.Data)
+	storedOrder, err := billingSvc.GetOrderForAdmin(t.Context(), createResp.Data.ID)
+	if err != nil || storedOrder.ProviderType != "easypay_alipay" || storedOrder.ProviderInstanceID != providerID {
+		t.Fatalf("expected easypay api provider metadata to persist, order=%#v err=%v", storedOrder, err)
 	}
 	if upstreamPath != "/mapi.php" {
 		t.Fatalf("expected easypay mapi path, got %q", upstreamPath)
@@ -1884,8 +1962,11 @@ func TestCashierEasyPayAPIModeUsesMAPIAndPersistsDisplay(t *testing.T) {
 	if createResp.Data.PaymentURL != "https://pay.example.com/h5/session" || createResp.Data.QRCode != "https://pay.example.com/qr/session" {
 		t.Fatalf("expected easypay api display fields, got %#v", createResp.Data)
 	}
-	if createResp.Data.PaymentDisplay["type"] != "qr_code" || createResp.Data.PaymentDisplay["payment_url"] != createResp.Data.PaymentURL || createResp.Data.PaymentDisplay["qr_code"] != createResp.Data.QRCode || createResp.Data.PaymentDisplay["prepay_mode"] != "api" {
+	if createResp.Data.PaymentDisplay["type"] != "qr_code" || createResp.Data.PaymentDisplay["payment_url"] != createResp.Data.PaymentURL || createResp.Data.PaymentDisplay["qr_code"] != createResp.Data.QRCode {
 		t.Fatalf("expected easypay api display to mirror payment fields, got %#v", createResp.Data.PaymentDisplay)
+	}
+	if storedOrder.PaymentDisplay["prepay_mode"] != "api" {
+		t.Fatalf("expected easypay channel details to persist for administrators, got %#v", storedOrder.PaymentDisplay)
 	}
 }
 
@@ -1959,7 +2040,7 @@ func TestCashierEasyPayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 		t.Fatalf("expected raw easypay success response, got body=%s", webhookRec.Body.String())
 	}
 	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
-	if completed.Status != "completed" || completed.LedgerID == 0 || completed.TradeNo != "easypay-trade-success" {
+	if completed.Status != "completed" {
 		t.Fatalf("expected completed easypay recharge order, got %#v", completed)
 	}
 
@@ -2123,7 +2204,7 @@ func TestCashierAlipayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 		t.Fatalf("expected raw alipay success response, got body=%s", webhookRec.Body.String())
 	}
 	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
-	if completed.Status != "completed" || completed.LedgerID == 0 || completed.TradeNo != "alipay-trade-success" {
+	if completed.Status != "completed" {
 		t.Fatalf("expected completed alipay recharge order, got %#v", completed)
 	}
 
@@ -2281,7 +2362,7 @@ func TestCashierWxPayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 		t.Fatalf("expected raw wxpay success response, got body=%s", webhookRec.Body.String())
 	}
 	completed := getCashierOrderForTest(t, handler, userToken, order.ID)
-	if completed.Status != "completed" || completed.LedgerID == 0 || completed.TradeNo != "wxpay-trade-success" {
+	if completed.Status != "completed" {
 		t.Fatalf("expected completed wxpay recharge order, got %#v", completed)
 	}
 
@@ -2361,10 +2442,10 @@ func TestCashierWxPayDirectOrderUsesNativePrepayCodeURL(t *testing.T) {
 
 	handler, userToken := setupWxPayNativeCashierTest(t, "cashier-wxpay-native-user@example.com", privateKey, upstream.URL)
 	order := createWxPayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
-	if order.Provider != "wxpay_direct" || order.ProviderType != "wxpay_direct" || order.QRCode != "weixin://wxpay/bizpayurl?pr=native-prepay" {
+	if order.VisibleMethod != "wxpay" || order.QRCode != "weixin://wxpay/bizpayurl?pr=native-prepay" {
 		t.Fatalf("expected wxpay native code_url to populate qr_code, got %#v", order)
 	}
-	if order.PaymentDisplay["type"] != "qr_code" || order.PaymentDisplay["qr_code"] != order.QRCode || order.PaymentDisplay["prepay_mode"] != "native" {
+	if order.PaymentDisplay["type"] != "qr_code" || order.PaymentDisplay["qr_code"] != order.QRCode {
 		t.Fatalf("expected qr_code payment display from native prepay, got %#v", order.PaymentDisplay)
 	}
 	if upstreamPath != "/v3/pay/transactions/native" {
@@ -2425,10 +2506,10 @@ func TestCashierWxPayDirectOrderUsesH5PrepayURL(t *testing.T) {
 
 	handler, userToken := setupWxPayPrepayCashierTest(t, "cashier-wxpay-h5-user@example.com", privateKey, upstream.URL, "h5")
 	order := createWxPayCustomAmountOrderForWebhookTest(t, handler, userToken, "13.50000")
-	if order.Provider != "wxpay_direct" || order.ProviderType != "wxpay_direct" || order.PaymentURL != "https://wx.tenpay.example/h5pay?prepay_id=h5-prepay" {
+	if order.VisibleMethod != "wxpay" || order.PaymentURL != "https://wx.tenpay.example/h5pay?prepay_id=h5-prepay" {
 		t.Fatalf("expected wxpay h5_url to populate payment_url, got %#v", order)
 	}
-	if order.QRCode != "" || order.PaymentDisplay["type"] != "redirect" || order.PaymentDisplay["payment_url"] != order.PaymentURL || order.PaymentDisplay["prepay_mode"] != "h5" {
+	if order.QRCode != "" || order.PaymentDisplay["type"] != "redirect" || order.PaymentDisplay["payment_url"] != order.PaymentURL {
 		t.Fatalf("expected redirect payment display from h5 prepay, got order=%#v display=%#v", order, order.PaymentDisplay)
 	}
 	if upstreamPath != "/v3/pay/transactions/h5" {
@@ -2489,7 +2570,7 @@ func TestCashierWxPayDirectOrderUsesJSAPIPrepayToken(t *testing.T) {
 
 	handler, userToken := setupWxPayPrepayCashierTest(t, "cashier-wxpay-jsapi-user@example.com", privateKey, upstream.URL, "jsapi", `"openid":"wx-openid-001"`)
 	order := createWxPayCustomAmountOrderForWebhookTest(t, handler, userToken, "14.50000")
-	if order.Provider != "wxpay_direct" || order.ProviderType != "wxpay_direct" || order.ClientToken == "" {
+	if order.VisibleMethod != "wxpay" || order.ClientToken == "" {
 		t.Fatalf("expected wxpay jsapi prepay to populate client_token, got %#v", order)
 	}
 	var clientToken map[string]string
@@ -2499,7 +2580,7 @@ func TestCashierWxPayDirectOrderUsesJSAPIPrepayToken(t *testing.T) {
 	if clientToken["appId"] != "wx-app-123" || clientToken["package"] != "prepay_id=wx-jsapi-prepay" || clientToken["signType"] != "RSA" || clientToken["nonceStr"] == "" || clientToken["timeStamp"] == "" || clientToken["paySign"] == "" {
 		t.Fatalf("unexpected jsapi client token %#v", clientToken)
 	}
-	if order.PaymentDisplay["type"] != "jsapi" || order.PaymentDisplay["client_token"] != order.ClientToken || order.PaymentDisplay["prepay_mode"] != "jsapi" {
+	if order.PaymentDisplay["type"] != "jsapi" || order.PaymentDisplay["client_token"] != order.ClientToken {
 		t.Fatalf("expected jsapi payment display, got order=%#v display=%#v", order, order.PaymentDisplay)
 	}
 	if upstreamPath != "/v3/pay/transactions/jsapi" {
@@ -2560,11 +2641,13 @@ func TestCashierRoundRobinSchedulesAcrossProviderInstances(t *testing.T) {
 
 	firstOrder := createCashierOrderForSchedulingTest(t, handler, userSession.AccessToken, "alipay")
 	secondOrder := createCashierOrderForSchedulingTest(t, handler, userSession.AccessToken, "alipay")
-	if firstOrder.ProviderInstanceID != firstProviderID {
-		t.Fatalf("expected first order to use first provider %d, got %#v", firstProviderID, firstOrder)
+	storedFirst, err := billingSvc.GetOrderForAdmin(t.Context(), firstOrder.ID)
+	if err != nil || storedFirst.ProviderInstanceID != firstProviderID {
+		t.Fatalf("expected first order to use first provider %d, got order=%#v err=%v", firstProviderID, storedFirst, err)
 	}
-	if secondOrder.ProviderInstanceID != secondProviderID {
-		t.Fatalf("expected second order to round-robin to second provider %d, got %#v", secondProviderID, secondOrder)
+	storedSecond, err := billingSvc.GetOrderForAdmin(t.Context(), secondOrder.ID)
+	if err != nil || storedSecond.ProviderInstanceID != secondProviderID {
+		t.Fatalf("expected second order to round-robin to second provider %d, got order=%#v err=%v", secondProviderID, storedSecond, err)
 	}
 }
 
@@ -3010,7 +3093,7 @@ func setupEasyPayCashierTest(t *testing.T, userEmail string) (http.Handler, stri
 	return handler, userSession.AccessToken, adminToken
 }
 
-func setupStripeCashierTest(t *testing.T, userEmail string) (http.Handler, string) {
+func setupStripeCashierTest(t *testing.T, userEmail string) (http.Handler, string, string) {
 	t.Helper()
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	authSvc := authservice.NewService(config.AuthConfig{
@@ -3045,7 +3128,7 @@ func setupStripeCashierTest(t *testing.T, userEmail string) (http.Handler, strin
 
 	providerBody := `{"provider_type":"stripe","name":"Stripe Test","enabled":true,"supported_methods":["stripe"],"sort_order":10,"scheduler_weight":100,"limits":{"min_amount_cny":"1.00000","max_amount_cny":"500.00000"},"config":{"publishable_key":"pk_test_route"},"secrets":{"secret_key":"sk_test_route","webhook_secret":"whsec_route"}}`
 	createCashierProviderInstanceForSchedulingTest(t, handler, adminToken, providerBody)
-	return handler, userSession.AccessToken
+	return handler, userSession.AccessToken, adminToken
 }
 
 func createStripeCustomAmountOrderForWebhookTest(t *testing.T, handler http.Handler, userToken, amountCNY string) domainbilling.PaymentOrder {
@@ -3564,6 +3647,24 @@ func getCashierOrderForTest(t *testing.T, handler http.Handler, userToken string
 		t.Fatalf("decode cashier order detail: %v", err)
 	}
 	return resp.Data
+}
+
+func getAdminCashierOrderForTest(t *testing.T, handler http.Handler, adminToken string, orderID int64) domainbilling.PaymentOrder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/orders/"+jsonInt64(orderID), nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin order detail expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Data domainbilling.PaymentOrder `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("decode admin order detail: %v", err)
+	}
+	return response.Data
 }
 
 func wxPaySignForTest(t *testing.T, privateKeyPEM string, timestamp string, nonce string, body string) string {

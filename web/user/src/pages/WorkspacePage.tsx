@@ -366,6 +366,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const completedNoticeRef = useRef<Set<string>>(new Set())
   const feedEndRef = useRef<HTMLDivElement | null>(null)
   const compactPromptEditorRef = useRef<PromptTemplateEditorHandle | null>(null)
+  const expandedPromptEditorRef = useRef<PromptTemplateEditorHandle | null>(null)
+  const pendingPromptAssetInsertRef = useRef<'compact' | 'expanded' | null>(null)
   const restoreParametersRef = useRef<RestoreParameters | null>(null)
   const pendingCreationDraftRef = useRef<WorkspaceCreationDraft | null | undefined>(undefined)
   const sheetDragRef = useRef<SheetDragState | null>(null)
@@ -938,12 +940,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
   }
 
-  async function openGalleryImport(target: 'edit') {
+  async function openGalleryImport(target: 'edit', promptInsertTarget: 'compact' | 'expanded' | null = null) {
     const remaining = editRemainingLimit
     if (remaining <= 0) {
+      pendingPromptAssetInsertRef.current = null
       app.notify('error', '当前模型的参考图数量已达上限，请先移除一张。')
       return
     }
+    pendingPromptAssetInsertRef.current = promptInsertTarget
     setGalleryImportTarget(target)
     setGalleryImportFilter(defaultGalleryImportFilter)
     setGalleryImportLoading(true)
@@ -968,8 +972,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     setGalleryImportBusy(true)
     try {
       const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted)
+      const promptInsertTarget = pendingPromptAssetInsertRef.current
       const reused = capability ? firstGalleryReferenceReuse(editRefs.length, assets, capability) : null
       setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
+      const promptEditorRef = promptInsertTarget === 'expanded' ? expandedPromptEditorRef : promptInsertTarget === 'compact' ? compactPromptEditorRef : null
+      for (const asset of assets) {
+        const name = asset.name?.trim()
+        if (name) promptEditorRef?.current?.insertToken('reference', name)
+      }
       if (reused) {
         const values = reused.values
         restoreParametersRef.current = { routeModelCode: values.route_model_code, sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio', baseResolution: values.base_resolution, aspectRatio: values.aspect_ratio, pixelSize: values.pixel_size, quality: values.quality, outputFormat: values.output_format, background: values.background, outputCompression: values.output_compression, moderation: values.moderation, imageCount: values.image_count }
@@ -985,6 +995,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         setModeration(values.moderation)
         setCount(values.image_count)
       }
+      pendingPromptAssetInsertRef.current = null
       setGalleryImportTarget(null)
       app.notify(reused?.notices.length ? 'info' : 'success', galleryImportSuccessMessage(assets.length, reused?.notices))
     } catch (err) {
@@ -1111,6 +1122,24 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       await app.refreshAccount()
     } catch (err) {
       if (!workspaceSubmissionIsCurrent(submissionProject, projectSelectionRef.current)) return
+      if (err instanceof ApiError && err.code === 'PROMPT_TEMPLATE_STALE') {
+        const refreshedResults = await Promise.allSettled(editRefs.map((asset) => userApi.getReferenceAsset(asset.id)))
+        let refreshFailed = false
+        const refreshedAssets = refreshedResults.flatMap((result, index) => {
+          if (result.status === 'fulfilled') return [result.value]
+          if (result.reason instanceof ApiError && result.reason.status === 404) return []
+          refreshFailed = true
+          return [editRefs[index]]
+        })
+        setEditRefs(refreshedAssets)
+        app.notify(
+          'error',
+          refreshFailed
+            ? '引用资产名称已变化，部分资产状态刷新失败。请刷新页面并检查红色标记后重新确认创作。'
+            : '引用资产名称已变化，已刷新资产状态。请检查红色标记后重新确认创作。',
+        )
+        return
+      }
       if (err instanceof ApiError && err.code === 'capability_changed') {
         try {
           const nextCapability = await userApi.getCapabilities()
@@ -1447,7 +1476,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
               accessToken={app.session?.token}
               disabled={busy || promptExpanded}
               onChange={setPrompt}
-              onAddAsset={() => { setEditSourceOpen(true); void openGalleryImport('edit') }}
+              onAddAsset={() => { setEditSourceOpen(true); void openGalleryImport('edit', 'compact') }}
             />
             <PromptVariableForm template={prompt} values={promptVariables} disabled={busy} onChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))} />
           </div>
@@ -1759,6 +1788,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       {compactViewport ? <OverlayPortal>{parameterPanel}</OverlayPortal> : parameterPanel}
       {promptExpanded ? (
         <PromptEditorDialog
+          promptEditorRef={expandedPromptEditorRef}
           prompt={prompt}
           assets={editRefs}
           variables={promptVariables}
@@ -1766,7 +1796,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           optimization={promptOptimization}
           onPromptChange={setPrompt}
           onVariableChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))}
-          onAddAsset={() => { setPromptExpanded(false); setEditSourceOpen(true); void openGalleryImport('edit') }}
+          onAddAsset={() => { setEditSourceOpen(true); void openGalleryImport('edit', 'expanded') }}
           onClose={() => { setPromptExpanded(false); window.setTimeout(() => compactPromptEditorRef.current?.focus(), 0) }}
           onOptimize={() => void startPromptOptimization()}
           onConfirm={() => void confirmOptimization()}
@@ -1925,7 +1955,10 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             onFilterChange={setGalleryImportFilter}
             onConfirm={(ids) => void confirmGalleryImport(ids)}
             onMediaRefresh={refreshGalleryImportImage}
-            onClose={() => setGalleryImportTarget(null)}
+            onClose={() => {
+              pendingPromptAssetInsertRef.current = null
+              setGalleryImportTarget(null)
+            }}
           />
         ) : null}
 
