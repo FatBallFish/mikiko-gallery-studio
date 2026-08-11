@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -44,6 +45,9 @@ import (
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
+	videopricingservice "github.com/fatballfish/pic-gallery/internal/service/videopricing"
+	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
+	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/fatballfish/pic-gallery/internal/setup"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
@@ -357,6 +361,10 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
 	api.SetMediaAssetService(mediaassetservice.NewService(entstore.NewMediaStore(client), storageRegistry, mediaassetservice.Options{Policy: domainmedia.DefaultPolicy()}))
+	videoConfigStore := entstore.NewVideoConfigStore(client)
+	videoRoutingSvc := videoroutingservice.NewService(videoConfigStore)
+	videoQuoteKey := sha256.Sum256([]byte("video-quote:" + cfg.Security.PromptOptimizationQuoteSigningKey))
+	api.SetVideoServices(videoRoutingSvc, videotaskservice.NewQuoteService(videoRoutingSvc, videopricingservice.NewService(videoConfigStore, nil), videoQuoteKey[:], nil))
 	api.SetGalleryExportService(galleryexportservice.NewService(entstore.NewGalleryExportStore(client), storageRegistry, galleryexportservice.Options{}))
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)

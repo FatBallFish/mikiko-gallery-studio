@@ -1371,6 +1371,46 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /api/agent/video/v1/capabilities:
+    get:
+      tags: [Agent Media]
+      summary: Get verified video combinations for one route model
+      operationId: getAgentVideoCapabilities
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: route_model_code, in: query, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Candidate-backed capability union}
+        '404': {description: Route model not found}
+        '409': {description: No verified enabled candidate}
+  /api/agent/video/v1/estimates:
+    post:
+      tags: [Agent Media]
+      summary: Validate a complete video combination and create a 120-second signed quote
+      operationId: postAgentVideoEstimate
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [route_model_code, task_type, prompt, duration_seconds, resolution, aspect_ratio, audio_mode, output_count]
+              properties:
+                route_model_code: {type: string}
+                task_type: {type: string, enum: [text_to_video, image_to_video, first_last_frame_to_video]}
+                prompt: {type: string}
+                duration_seconds: {type: integer, minimum: 1}
+                resolution: {type: string}
+                aspect_ratio: {type: string}
+                audio_mode: {type: string, enum: [silent, generated]}
+                output_count: {type: integer, minimum: 1, maximum: 4}
+                inputs: {type: array, items: {type: object}}
+              additionalProperties: false
+      responses:
+        '200': {description: Signed version-bound video quote}
+        '400': {description: Unsupported complete parameter combination}
+        '409': {description: Pricing or verified capability is unavailable}
   /api/agent/media/v1/assets:batch-group:
     post:
       tags: [Agent Media]

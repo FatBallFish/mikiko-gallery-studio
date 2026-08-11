@@ -77,6 +77,8 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/media/v1/assets/", api.HandleMediaAssetDetail)
 		mux.HandleFunc("/api/agent/media/v1/uploads", api.HandleMediaUploads)
 		mux.HandleFunc("/api/agent/media/v1/uploads/", api.HandleMediaUploadDetail)
+		mux.HandleFunc("/api/agent/video/v1/capabilities", api.HandleVideoCapabilities)
+		mux.HandleFunc("/api/agent/video/v1/estimates", api.HandleVideoEstimates)
 		mux.HandleFunc("/api/agent/billing/v1/balance", api.HandleBalance)
 		mux.HandleFunc("/api/agent/billing/v1/ledger", api.HandleLedger)
 		mux.HandleFunc("/api/agent/billing/v1/plans", api.HandleBillingPlans)

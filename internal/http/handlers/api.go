@@ -82,6 +82,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/service/smtpdelivery"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
+	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
+	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/fatballfish/pic-gallery/pkg/httpx"
@@ -114,6 +116,8 @@ type API struct {
 	projects      *projectservice.Service
 	galleryExport *galleryexportservice.Service
 	mediaAssets   *mediaassetservice.Service
+	videoRouting  *videoroutingservice.Service
+	videoQuotes   *videotaskservice.QuoteService
 	adminPerms    domainadminauth.PermissionResolver
 	docsReady     DocsReadinessChecker
 	cashierSync   cashierOrderSyncCoordinator
@@ -128,6 +132,11 @@ type API struct {
 
 func (a *API) SetMediaAssetService(service *mediaassetservice.Service) {
 	a.mediaAssets = service
+}
+
+func (a *API) SetVideoServices(routing *videoroutingservice.Service, quotes *videotaskservice.QuoteService) {
+	a.videoRouting = routing
+	a.videoQuotes = quotes
 }
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig

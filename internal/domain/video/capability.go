@@ -66,12 +66,12 @@ type Candidate struct {
 }
 
 type Combination struct {
-	CandidateID     int64
-	TaskType        TaskType
-	DurationSeconds int
-	Resolution      Resolution
-	AspectRatio     AspectRatio
-	AudioMode       AudioMode
+	CandidateID     int64       `json:"candidate_id,omitempty"`
+	TaskType        TaskType    `json:"task_type"`
+	DurationSeconds int         `json:"duration_seconds"`
+	Resolution      Resolution  `json:"resolution"`
+	AspectRatio     AspectRatio `json:"aspect_ratio"`
+	AudioMode       AudioMode   `json:"audio_mode"`
 }
 
 type VisibleCapability struct {
