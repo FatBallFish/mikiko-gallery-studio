@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Check, ChevronUp, Pencil, SlidersHorizontal, X } from 'lucide-react'
+import { ChevronUp, Pencil, SlidersHorizontal } from 'lucide-react'
 import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
@@ -31,6 +31,7 @@ import { chooseWorkspaceSizeMode, normalizeWorkspaceCustomSize, normalizeWorkspa
 import { PromptEditorActions, PromptEditorDialog, PromptOptimizationPanel } from './PromptEditorDialog'
 import { PromptTemplateEditor, type PromptTemplateEditorHandle } from './PromptTemplateEditor'
 import { PromptVariableForm } from './PromptVariableForm'
+import { ModelGroupSelect } from './ModelGroupSelect'
 import { buildPromptReferenceBindings, buildPromptVariableInputs, expandedPromptCodePointLength, promptVariableValidation, reconcilePromptVariables, renamePromptReference } from './promptTemplateEditorModel'
 import { parsePromptTemplate } from './promptTemplateParser'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
@@ -171,7 +172,8 @@ const workspaceClasses = {
   refThumbImport: 'border-dashed',
   hiddenInput: 'hidden',
   refGrid: rdWorkspace.uploadGrid,
-  refTile: rdWorkspace.uploadThumb,
+  refTile: 'group min-w-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)]',
+  refPreview: 'relative aspect-square overflow-hidden bg-[var(--canvas-bg)]',
   refImage: rdWorkspace.uploadImg,
   refPlaceholder: 'grid size-full place-items-center px-2 text-center text-[11px] leading-snug text-[var(--muted)]',
   refRemove: 'absolute right-1 top-1 grid size-6 place-items-center rounded-xl border border-[var(--image-action-border)] bg-[var(--image-action-bg)] text-[var(--image-action-text)] opacity-0 backdrop-blur transition hover:bg-[var(--accent-coral)] hover:text-[var(--fg)] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 max-[760px]:opacity-100 [@media(pointer:coarse)]:opacity-100',
@@ -1393,13 +1395,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             <label className={workspaceClasses.fieldLabel} htmlFor="workspace-model-group">模型分组</label>
             {loading && !capability ? <LoadingState label="正在加载可用模型..." /> : null}
             {!loading && availableModels.length ? (
-              <select id="workspace-model-group" className={userForm.input} value={model} onChange={(event) => setModel(event.target.value)}>
-                {availableModels.map((item) => (
-                  <option key={item.code} value={item.code}>
-                    {item.name}{item.minimum_points ? ` · 最低 ${item.minimum_points} 积分` : ''}
-                  </option>
-                ))}
-              </select>
+              <ModelGroupSelect options={availableModels} value={model} onChange={setModel} />
             ) : null}
             {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
           </div>
@@ -1431,24 +1427,18 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                   <div className={workspaceClasses.refGrid}>
                     {editRefs.map((asset) => (
                       <div key={asset.id || asset.preview_url} className={workspaceClasses.refTile}>
-                        <ReferenceAssetPreview
-                          asset={asset}
-                          accessToken={app.session?.token}
-                          onMediaRefresh={() => refreshWorkspaceReference(asset.id)}
-                        />
-                        <button type="button" className={workspaceClasses.refRemove} title="移除编辑图片" onClick={() => removeEditAsset(asset)}><CloseGlyph /></button>
-                        {renamingReferenceID === asset.id ? (
-                          <div className="reference-name-editor">
-                            <input autoFocus value={renamingReferenceName} maxLength={64} aria-label="资产名称" onChange={(event) => setRenamingReferenceName(event.target.value)} onKeyDown={(event) => {
-                              if (event.key === 'Enter') void saveReferenceName(asset)
-                              if (event.key === 'Escape') setRenamingReferenceID(null)
-                            }} />
-                            <button type="button" title="保存名称" aria-label="保存名称" disabled={renamingReferenceBusy} onClick={() => void saveReferenceName(asset)}><Check size={13} /></button>
-                            <button type="button" title="取消重命名" aria-label="取消重命名" disabled={renamingReferenceBusy} onClick={() => setRenamingReferenceID(null)}><X size={13} /></button>
-                          </div>
-                        ) : (
-                          <button type="button" className="reference-name-button" title="重命名资产" onClick={() => beginRenameReference(asset)}><span>{asset.name}</span><Pencil size={12} /></button>
-                        )}
+                        <div className={workspaceClasses.refPreview}>
+                          <ReferenceAssetPreview
+                            asset={asset}
+                            accessToken={app.session?.token}
+                            onMediaRefresh={() => refreshWorkspaceReference(asset.id)}
+                          />
+                          <button type="button" className={workspaceClasses.refRemove} title="移除编辑图片" onClick={() => removeEditAsset(asset)}><CloseGlyph /></button>
+                        </div>
+                        <div className="reference-name-row">
+                          <span title={asset.name}>{asset.name}</span>
+                          <button type="button" title="重命名资产" aria-label={`重命名资产 ${asset.name}`} onClick={() => beginRenameReference(asset)}><Pencil size={13} /></button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1811,6 +1801,22 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           <PromptOptimizationPanel state={promptOptimization} onConfirm={() => void confirmOptimization()} onApply={applyOptimization} onCancel={cancelOptimization} />
         </Modal>
       ) : null}
+      {renamingReferenceID ? (() => {
+        const asset = editRefs.find((item) => item.id === renamingReferenceID)
+        if (!asset) return null
+        return (
+          <Modal title="重命名资产" onClose={() => setRenamingReferenceID(null)}>
+            <form className="reference-rename-dialog" onSubmit={(event) => { event.preventDefault(); void saveReferenceName(asset) }}>
+              <label htmlFor="reference-rename-input">资产名称</label>
+              <input id="reference-rename-input" autoFocus className={userForm.input} value={renamingReferenceName} maxLength={64} onChange={(event) => setRenamingReferenceName(event.target.value)} />
+              <div className="reference-rename-dialog-actions">
+                <Button type="button" tone="ghost" disabled={renamingReferenceBusy} onClick={() => setRenamingReferenceID(null)}>取消</Button>
+                <Button type="submit" busy={renamingReferenceBusy} disabled={!renamingReferenceName.trim() || renamingReferenceName.trim() === asset.name}>保存</Button>
+              </div>
+            </form>
+          </Modal>
+        )
+      })() : null}
 
       {/* Right Canvas */}
       <section className={workspaceClasses.canvas}>

@@ -1,12 +1,29 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')
 
 for (const removed of ['模型选择', '限制词', 'negative_prompt: negative']) {
   if (source.includes(removed)) throw new Error(`creative workspace must remove ${removed}`)
 }
-for (const required of ['模型分组', '<select', 'minimum_points']) {
+for (const required of ['模型分组', '<ModelGroupSelect', 'options={availableModels}']) {
   if (!source.includes(required)) throw new Error(`creative workspace model group selector must include ${required}`)
+}
+if (source.includes('<select id="workspace-model-group"')) {
+  throw new Error('creative workspace model group selector must not use the browser-native select')
+}
+
+const modelGroupSelectURL = new URL('./ModelGroupSelect.tsx', import.meta.url)
+if (!existsSync(modelGroupSelectURL)) throw new Error('creative workspace must provide the platform-style ModelGroupSelect')
+const modelGroupSelectSource = readFileSync(modelGroupSelectURL, 'utf8')
+for (const required of ['role="listbox"', 'role="option"', 'aria-haspopup="listbox"', 'aria-expanded', '◈', 'description', 'minimum_points']) {
+  if (!modelGroupSelectSource.includes(required)) throw new Error(`model group listbox must implement ${required}`)
+}
+
+for (const required of ['className="reference-name-row"', 'title={asset.name}', '<Modal title="重命名资产"']) {
+  if (!source.includes(required)) throw new Error(`reference asset naming must implement ${required}`)
+}
+if (source.includes('className="reference-name-editor"')) {
+  throw new Error('reference asset naming must use the full-size rename dialog instead of the thumbnail editor')
 }
 const modelGroupPosition = source.indexOf('模型分组')
 const referencePosition = source.indexOf('图片编辑来源')
