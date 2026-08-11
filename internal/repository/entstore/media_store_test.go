@@ -14,9 +14,46 @@ import (
 	domainmedia "github.com/fatballfish/pic-gallery/internal/domain/media"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
+
+func TestDeleteMediaAssetEnqueuesOriginalAndDerivativeCleanup(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:media-delete-cleanup-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	project, err := client.Project.Create().SetUserID(44).SetName("Default").SetNameKey("default").SetIsDefault(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := client.MediaAsset.Create().SetUserID(44).SetProjectID(project.ID).SetName("clip.mp4").SetNameKey("clip.mp4").SetMediaType("video").
+		SetSourceType("generated").SetStatus("ready").SetStorageDriver("local").SetObjectKey("media/original/44/clip.mp4").
+		SetMimeType("video/mp4").SetFileSizeBytes(100).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.MediaDerivative.Create().SetAssetID(asset.ID).SetKind("proxy").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("media/derivatives/44/clip.mp4").SetMimeType("video/mp4").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewMediaStore(client).DeleteAsset(ctx, mediaassetservice.DeleteAssetRequest{UserID: 44, AssetID: asset.ID, ExpectedVersion: 1}); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := client.ObjectDeletionJob.Query().Where(objectdeletionjob.StateEQ("pending")).All(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("cleanup jobs=%d want 2", len(jobs))
+	}
+}
 
 func TestMediaUploadServiceIsIdempotentAndCompletesAssetTransaction(t *testing.T) {
 	ctx := t.Context()

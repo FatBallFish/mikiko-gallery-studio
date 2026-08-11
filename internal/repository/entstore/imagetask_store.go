@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	projectent "github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
@@ -1544,6 +1546,112 @@ func updateImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageT
 	return builder.Exec(ctx)
 }
 
+func upsertImageMediaAsset(
+	ctx context.Context,
+	tx *repoent.Tx,
+	taskID uuid.UUID,
+	userID int64,
+	projectID string,
+	resultID uuid.UUID,
+	storageDriver string,
+	objectKey string,
+	mimeType string,
+	shaValue string,
+	result provider.ImageResult,
+) error {
+	projectValue := strings.TrimSpace(projectID)
+	parsedProjectID, err := uuid.Parse(projectValue)
+	if err != nil {
+		if projectValue != "" {
+			return repoerr.ErrNotFound
+		}
+		defaultProject, findErr := tx.Project.Query().Where(
+			projectent.UserIDEQ(userID), projectent.IsDefaultEQ(true), projectent.StatusEQ("active"), projectent.DeletedAtIsNil(),
+		).Only(ctx)
+		if repoent.IsNotFound(findErr) {
+			return nil
+		}
+		if findErr != nil {
+			return findErr
+		}
+		parsedProjectID = defaultProject.ID
+	}
+	var storageConfigID *uuid.UUID
+	if value := strings.TrimSpace(result.StorageConfigID); value != "" {
+		parsed, parseErr := uuid.Parse(value)
+		if parseErr != nil {
+			return parseErr
+		}
+		storageConfigID = &parsed
+	}
+	name := strings.TrimSpace(path.Base(objectKey))
+	if name == "" || name == "." || name == "/" {
+		name = "image-" + resultID.String()
+	}
+	if len(name) > 255 {
+		name = name[:255]
+	}
+	entity, err := tx.MediaAsset.Query().Where(mediaasset.IDEQ(resultID)).Only(ctx)
+	if err != nil && !repoent.IsNotFound(err) {
+		return err
+	}
+	if repoent.IsNotFound(err) {
+		builder := tx.MediaAsset.Create().
+			SetID(resultID).
+			SetUserID(userID).
+			SetProjectID(parsedProjectID).
+			SetLegacyImageResultID(resultID).
+			SetName(name).
+			SetNameKey(strings.ToLower(name)).
+			SetGroupName(strings.TrimSpace(result.ImageGroup)).
+			SetMediaType("image").
+			SetSourceType("generated").
+			SetStatus("ready").
+			SetVisibilityStatus(defaultString(result.VisibilityStatus, "private")).
+			SetStorageDriver(storageDriver).
+			SetObjectKey(objectKey).
+			SetMimeType(mimeType).
+			SetFileSizeBytes(result.FileSizeBytes).
+			SetSha256(shaValue).
+			SetSourceTaskKind("image").
+			SetSourceTaskID(taskID)
+		if storageConfigID != nil {
+			builder.SetStorageConfigID(*storageConfigID)
+		}
+		if result.Width > 0 {
+			builder.SetWidth(result.Width)
+		}
+		if result.Height > 0 {
+			builder.SetHeight(result.Height)
+		}
+		return builder.Exec(ctx)
+	}
+	update := tx.MediaAsset.UpdateOne(entity).
+		SetProjectID(parsedProjectID).
+		SetLegacyImageResultID(resultID).
+		SetGroupName(strings.TrimSpace(result.ImageGroup)).
+		SetVisibilityStatus(defaultString(result.VisibilityStatus, "private")).
+		SetStorageDriver(storageDriver).
+		SetObjectKey(objectKey).
+		SetMimeType(mimeType).
+		SetFileSizeBytes(result.FileSizeBytes).
+		SetSha256(shaValue).
+		SetSourceTaskKind("image").
+		SetSourceTaskID(taskID).
+		SetNillableStorageConfigID(storageConfigID)
+	if result.Width > 0 {
+		update.SetWidth(result.Width)
+	} else {
+		update.ClearWidth()
+	}
+	if result.Height > 0 {
+		update.SetHeight(result.Height)
+	} else {
+		update.ClearHeight()
+	}
+	return update.Exec(ctx)
+}
+
 func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageTask, task domainimagetask.Task, owner string, now time.Time, trace map[string]any, routingSnapshot map[string]any) (int, error) {
 	pricingSnapshot, err := buildPricingSnapshot(task)
 	if err != nil {
@@ -2051,7 +2159,10 @@ func createImageResult(ctx context.Context, tx *repoent.Tx, taskUUID uuid.UUID, 
 		}
 		builder.SetStorageConfigID(storageConfigID)
 	}
-	return builder.Exec(ctx)
+	if err := builder.Exec(ctx); err != nil {
+		return err
+	}
+	return upsertImageMediaAsset(ctx, tx, taskUUID, userID, projectID, resultID, storageDriver, objectKey, defaultString(mimeType, "application/octet-stream"), shaValue, result)
 }
 
 func persistedImageTaskProjectID(entity *repoent.ImageTask) string {

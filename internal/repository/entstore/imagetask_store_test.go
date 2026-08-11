@@ -18,11 +18,61 @@ import (
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+func TestImageTaskSaveWritesUnifiedMediaAssetWithSameResultID(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:image-media-dual-write-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	const userID int64 = 88
+	project, err := client.Project.Create().SetUserID(userID).SetName("Default").SetNameKey("default").SetIsDefault(true).SetStatus("active").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultID := uuid.New()
+	task := domainimagetask.Task{
+		ID: uuid.NewString(), UserID: userID, ProjectID: project.ID.String(), Status: domainimagetask.StatusSucceeded,
+		TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", Prompt: "dual write",
+		Results: []provider.ImageResult{{
+			ID: resultID.String(), ProjectID: project.ID.String(), ObjectKey: "generated-images/dual.png", MimeType: "image/png",
+			StorageDriver: "local", FileSizeBytes: 123, Width: 1024, Height: 768, SHA256: strings.Repeat("d", 64), ImageGroup: "Drafts",
+		}},
+	}
+	store := NewImageTaskStore(client)
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	asset, err := client.MediaAsset.Query().Where(mediaasset.IDEQ(resultID)).Only(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asset.LegacyImageResultID == nil || *asset.LegacyImageResultID != resultID || asset.ObjectKey != task.Results[0].ObjectKey || asset.ProjectID != project.ID || asset.SourceTaskID == nil || asset.SourceTaskID.String() != task.ID {
+		t.Fatalf("dual-written asset=%+v", asset)
+	}
+
+	task.Results[0].ImageGroup = "Finals"
+	if err := store.Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	assets, err := client.MediaAsset.Query().Where(mediaasset.IDEQ(resultID)).All(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assets) != 1 || assets[0].GroupName != "Finals" {
+		t.Fatalf("replayed media assets=%+v", assets)
+	}
+}
 
 func TestTaskProjectOwnershipCheckUsesCompatibleRowLock(t *testing.T) {
 	table := entsql.Table("projects")

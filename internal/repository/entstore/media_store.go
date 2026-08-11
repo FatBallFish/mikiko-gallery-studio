@@ -285,10 +285,13 @@ func mapMediaAsset(entity *repoent.MediaAsset) mediaassetservice.Asset {
 		storageConfigID = entity.StorageConfigID.String()
 	}
 	return mediaassetservice.Asset{
-		ID: entity.ID, UserID: entity.UserID, ProjectID: entity.ProjectID, Name: entity.Name, GroupName: entity.GroupName,
+		ID: entity.ID, UserID: entity.UserID, ProjectID: entity.ProjectID, LegacyImageID: entity.LegacyImageResultID, Name: entity.Name, GroupName: entity.GroupName,
 		MediaType: domainmedia.MediaType(entity.MediaType), SourceType: entity.SourceType, Status: entity.Status,
 		VisibilityStatus: entity.VisibilityStatus, StorageConfigID: storageConfigID, StorageDriver: entity.StorageDriver,
-		Bucket: entity.Bucket, ObjectKey: entity.ObjectKey, MIMEType: entity.MimeType, FileSizeBytes: entity.FileSizeBytes, SHA256: entity.Sha256,
+		Bucket: entity.Bucket, ObjectKey: entity.ObjectKey, MIMEType: entity.MimeType, Container: entity.Container, Codec: entity.Codec,
+		FileSizeBytes: entity.FileSizeBytes, SHA256: entity.Sha256, Width: entity.Width, Height: entity.Height, DurationMS: entity.DurationMs,
+		FrameRateMilli: entity.FrameRateMilli, AudioCodec: entity.AudioCodec, Channels: entity.Channels, SampleRate: entity.SampleRate,
+		Version: entity.Version, CreatedAt: entity.CreatedAt, UpdatedAt: entity.UpdatedAt, DeletedAt: entity.DeletedAt,
 	}
 }
 

@@ -18,6 +18,7 @@ tags:
   - name: Agent Cashier
   - name: Agent Projects
   - name: Agent Image
+  - name: Agent Media
   - name: Agent Text
   - name: Open Image API
   - name: Admin Config
@@ -1345,6 +1346,282 @@ paths:
       responses:
         '204':
           description: History task hidden
+  /api/agent/media/v1/assets:
+    get:
+      tags: [Agent Media]
+      summary: List unified image, video, and audio assets
+      operationId: listAgentMediaAssets
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: project_id, in: query, schema: {type: string, format: uuid}}
+        - {name: media_type, in: query, schema: {type: string, enum: [image, video, audio]}}
+        - {name: source_type, in: query, schema: {type: string}}
+        - {name: group_name, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {type: string}}
+        - {name: keyword, in: query, schema: {type: string}}
+        - {name: sort_by, in: query, schema: {type: string}}
+        - {name: sort_order, in: query, schema: {type: string, enum: [asc, desc]}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200':
+          description: Unified media page, including compatible projections of unbackfilled images
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /api/agent/media/v1/assets:batch-group:
+    post:
+      tags: [Agent Media]
+      summary: Set a group on up to 100 media assets with per-item results
+      operationId: batchGroupAgentMediaAssets
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: '#/components/requestBodies/MediaAssetBatchRequest'}
+      responses:
+        '200': {description: Per-item batch results}
+  /api/agent/media/v1/assets:batch-transfer-project:
+    post:
+      tags: [Agent Media]
+      summary: Transfer up to 100 media assets with per-item results
+      operationId: batchTransferAgentMediaAssets
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: '#/components/requestBodies/MediaAssetBatchRequest'}
+      responses:
+        '200': {description: Per-item batch results}
+  /api/agent/media/v1/assets:batch-delete:
+    post:
+      tags: [Agent Media]
+      summary: Soft-delete up to 100 media assets with per-item results
+      operationId: batchDeleteAgentMediaAssets
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: '#/components/requestBodies/MediaAssetBatchRequest'}
+      responses:
+        '200': {description: Per-item batch results}
+  /api/agent/media/v1/assets:batch-download:
+    post:
+      tags: [Agent Media]
+      summary: Create per-item short-lived download access for up to 100 assets
+      operationId: batchDownloadAgentMediaAssets
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: '#/components/requestBodies/MediaAssetBatchRequest'}
+      responses:
+        '200': {description: Per-item download access results}
+  /api/agent/media/v1/assets/{asset_id}:
+    get:
+      tags: [Agent Media]
+      summary: Get an owned media asset
+      operationId: getAgentMediaAsset
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Media asset detail}
+        '404': {description: Asset is missing or belongs to another user}
+    patch:
+      tags: [Agent Media]
+      summary: Rename, group, or transfer an owned media asset
+      operationId: patchAgentMediaAsset
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                name: {type: string, maxLength: 255}
+                group_name: {type: string, maxLength: 64}
+                project_id: {type: string, format: uuid}
+                expected_version: {type: integer, minimum: 1}
+              additionalProperties: false
+      responses:
+        '200': {description: Updated media asset}
+        '409': {description: Asset version changed}
+    delete:
+      tags: [Agent Media]
+      summary: Soft-delete an owned media asset and enqueue object cleanup
+      operationId: deleteAgentMediaAsset
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                expected_version: {type: integer, minimum: 1}
+              additionalProperties: false
+      responses:
+        '200': {description: Soft-deleted media asset}
+        '409': {description: Asset version changed}
+  /api/agent/media/v1/assets/{asset_id}/access:
+    get:
+      tags: [Agent Media]
+      summary: Create short-lived preview or download access
+      operationId: getAgentMediaAssetAccess
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: purpose, in: query, required: true, schema: {type: string, enum: [preview, download]}}
+      responses:
+        '200': {description: Short-lived storage access}
+  /api/agent/media/v1/assets/{asset_id}/content:
+    get:
+      tags: [Agent Media]
+      summary: Stream media from the local compatibility backend with single-range support
+      operationId: getAgentMediaAssetContent
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: purpose, in: query, required: true, schema: {type: string, enum: [preview, download]}}
+      responses:
+        '200': {description: Full media content}
+        '206': {description: Requested byte range}
+        '416': {description: Unsatisfiable or unsupported range}
+  /api/agent/media/v1/assets/{asset_id}:retry-processing:
+    post:
+      tags: [Agent Media]
+      summary: Retry probe and derivative processing for an owned asset
+      operationId: retryAgentMediaAssetProcessing
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Processing was requeued}
+  /api/agent/media/v1/uploads:
+    post:
+      tags: [Agent Media]
+      summary: Initialize a resumable local or object-storage upload
+      operationId: postAgentMediaUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_id, filename, media_type, mime_type, size_bytes]
+              properties:
+                project_id: {type: string, format: uuid}
+                group_name: {type: string, maxLength: 64}
+                filename: {type: string, maxLength: 255}
+                media_type: {type: string, enum: [image, video, audio]}
+                mime_type: {type: string}
+                size_bytes: {type: integer, minimum: 1, maximum: 1073741824}
+                checksum: {type: string}
+              additionalProperties: false
+      responses:
+        '201': {description: Upload session created or idempotently replayed}
+        '409': {description: Idempotency conflict or quota exceeded}
+  /api/agent/media/v1/uploads/{upload_id}:
+    get:
+      tags: [Agent Media]
+      summary: Get upload status and completed parts
+      operationId: getAgentMediaUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: upload_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Upload session status}
+    delete:
+      tags: [Agent Media]
+      summary: Abort an upload and release its reserved quota
+      operationId: deleteAgentMediaUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: upload_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Upload aborted}
+  /api/agent/media/v1/uploads/{upload_id}/parts/{part_number}:
+    put:
+      tags: [Agent Media]
+      summary: Stream one local-storage upload part
+      operationId: putAgentMediaUploadPart
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: upload_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: part_number, in: path, required: true, schema: {type: integer, minimum: 1, maximum: 10000}}
+        - {name: X-Content-SHA256, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        '200': {description: Completed local part}
+  /api/agent/media/v1/uploads/{upload_id}/parts/{part_number}:sign:
+    post:
+      tags: [Agent Media]
+      summary: Sign one direct object-storage upload part
+      operationId: signAgentMediaUploadPart
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: upload_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: part_number, in: path, required: true, schema: {type: integer, minimum: 1, maximum: 10000}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checksum]
+              properties:
+                checksum: {type: string}
+              additionalProperties: false
+      responses:
+        '200': {description: Short-lived signed part URL and required headers}
+  /api/agent/media/v1/uploads/{upload_id}:complete:
+    post:
+      tags: [Agent Media]
+      summary: Complete a multipart upload and create a processing media asset
+      operationId: completeAgentMediaUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: upload_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parts]
+              properties:
+                parts:
+                  type: array
+                  minItems: 1
+                  maxItems: 10000
+                  items:
+                    type: object
+                    required: [part_number, etag]
+                    properties:
+                      part_number: {type: integer}
+                      etag: {type: string}
+                      checksum: {type: string}
+                      size_bytes: {type: integer}
+              additionalProperties: false
+      responses:
+        '201': {description: Media asset created and probe queued}
   /api/open/image/v1/reference-assets/uploads:
     post:
       tags: [Open Image API]
@@ -4815,6 +5092,29 @@ paths:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminLoginResponse
 components:
+  requestBodies:
+    MediaAssetBatchRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items:
+                type: array
+                minItems: 1
+                maxItems: 100
+                items:
+                  type: object
+                  required: [id]
+                  properties:
+                    id: {type: string, format: uuid}
+                    expected_version: {type: integer, minimum: 1}
+                  additionalProperties: false
+              group_name: {type: string, maxLength: 64}
+              target_project_id: {type: string, format: uuid}
+            additionalProperties: false
   securitySchemes:
     bearerAuth:
       type: http

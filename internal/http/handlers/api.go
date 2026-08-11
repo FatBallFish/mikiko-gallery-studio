@@ -73,6 +73,7 @@ import (
 	compatservice "github.com/fatballfish/pic-gallery/internal/service/compat"
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
@@ -112,6 +113,7 @@ type API struct {
 	cluster       *clusterservice.Service
 	projects      *projectservice.Service
 	galleryExport *galleryexportservice.Service
+	mediaAssets   *mediaassetservice.Service
 	adminPerms    domainadminauth.PermissionResolver
 	docsReady     DocsReadinessChecker
 	cashierSync   cashierOrderSyncCoordinator
@@ -122,6 +124,10 @@ type API struct {
 	readinessRun  *adminReadinessFlight
 	readinessWait time.Duration
 	cfg           config.Config
+}
+
+func (a *API) SetMediaAssetService(service *mediaassetservice.Service) {
+	a.mediaAssets = service
 }
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig

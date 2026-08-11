@@ -14,6 +14,9 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaassetreference"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaderivative"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectdeletionjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/objectreconcilecheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
@@ -255,6 +258,30 @@ func hasLiveObjectReferences(ctx context.Context, client *repoent.Client, identi
 		return exists, err
 	}
 	if exists, err := assetQuery.Exist(ctx); err != nil || exists {
+		return exists, err
+	}
+	mediaQuery := client.MediaAsset.Query().Where(
+		mediaasset.ObjectKeyEQ(identity.ObjectKey),
+		mediaasset.Or(
+			mediaasset.And(mediaasset.DeletedAtIsNil(), mediaasset.StatusNEQ("deleted")),
+			mediaasset.HasReferencesWith(mediaassetreference.DeletedAtIsNil()),
+		),
+	)
+	derivativeQuery := client.MediaDerivative.Query().Where(
+		mediaderivative.ObjectKeyEQ(identity.ObjectKey), mediaderivative.DeletedAtIsNil(),
+	)
+	if parsed, err := uuid.Parse(identity.StorageConfigID); err == nil {
+		mediaQuery.Where(mediaasset.StorageConfigIDEQ(parsed))
+		derivativeQuery.Where(mediaderivative.StorageConfigIDEQ(parsed))
+	} else {
+		driver := defaultString(identity.StorageDriver, "local")
+		mediaQuery.Where(mediaasset.StorageConfigIDIsNil(), mediaasset.StorageDriverEQ(driver))
+		derivativeQuery.Where(mediaderivative.StorageConfigIDIsNil(), mediaderivative.StorageDriverEQ(driver))
+	}
+	if exists, err := mediaQuery.Exist(ctx); err != nil || exists {
+		return exists, err
+	}
+	if exists, err := derivativeQuery.Exist(ctx); err != nil || exists {
 		return exists, err
 	}
 	exportQuery := client.GalleryExportJob.Query().Where(

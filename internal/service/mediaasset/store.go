@@ -11,31 +11,31 @@ import (
 )
 
 type UploadSession struct {
-	ID                 uuid.UUID
-	UserID             int64
-	ProjectID          uuid.UUID
-	GroupName          string
-	OriginalFilename   string
-	DeclaredMediaType  domainmedia.MediaType
-	DeclaredMIMEType   string
-	DeclaredSizeBytes  int64
-	DeclaredChecksum   string
-	StorageConfigID    string
-	StorageDriver      string
-	Bucket             string
-	ObjectKey          string
-	BackendUploadID    string
-	PartSize           int64
-	PartCount          int
-	Status             string
-	ReservedBytes      int64
-	ActualBytes        int64
-	IdempotencyKey     string
-	RequestFingerprint string
-	CompletedParts     []storage.CompletedPart
-	AssetID            *uuid.UUID
-	ExpiresAt          time.Time
-	CompletedAt        *time.Time
+	ID                 uuid.UUID               `json:"id"`
+	UserID             int64                   `json:"user_id"`
+	ProjectID          uuid.UUID               `json:"project_id"`
+	GroupName          string                  `json:"group_name"`
+	OriginalFilename   string                  `json:"original_filename"`
+	DeclaredMediaType  domainmedia.MediaType   `json:"declared_media_type"`
+	DeclaredMIMEType   string                  `json:"declared_mime_type"`
+	DeclaredSizeBytes  int64                   `json:"declared_size_bytes"`
+	DeclaredChecksum   string                  `json:"declared_checksum,omitempty"`
+	StorageConfigID    string                  `json:"-"`
+	StorageDriver      string                  `json:"storage_driver"`
+	Bucket             string                  `json:"-"`
+	ObjectKey          string                  `json:"-"`
+	BackendUploadID    string                  `json:"-"`
+	PartSize           int64                   `json:"part_size"`
+	PartCount          int                     `json:"part_count"`
+	Status             string                  `json:"status"`
+	ReservedBytes      int64                   `json:"reserved_bytes"`
+	ActualBytes        int64                   `json:"actual_bytes"`
+	IdempotencyKey     string                  `json:"-"`
+	RequestFingerprint string                  `json:"-"`
+	CompletedParts     []storage.CompletedPart `json:"completed_parts"`
+	AssetID            *uuid.UUID              `json:"asset_id,omitempty"`
+	ExpiresAt          time.Time               `json:"expires_at"`
+	CompletedAt        *time.Time              `json:"completed_at,omitempty"`
 }
 
 func (session UploadSession) MultipartUpload() storage.MultipartUpload {
@@ -46,22 +46,80 @@ func (session UploadSession) MultipartUpload() storage.MultipartUpload {
 }
 
 type Asset struct {
-	ID               uuid.UUID
-	UserID           int64
-	ProjectID        uuid.UUID
-	Name             string
-	GroupName        string
-	MediaType        domainmedia.MediaType
-	SourceType       string
-	Status           string
-	VisibilityStatus string
-	StorageConfigID  string
-	StorageDriver    string
-	Bucket           string
-	ObjectKey        string
-	MIMEType         string
-	FileSizeBytes    int64
-	SHA256           string
+	ID               uuid.UUID             `json:"id"`
+	UserID           int64                 `json:"user_id"`
+	ProjectID        uuid.UUID             `json:"project_id"`
+	LegacyImageID    *uuid.UUID            `json:"legacy_image_id,omitempty"`
+	Name             string                `json:"name"`
+	GroupName        string                `json:"group_name"`
+	MediaType        domainmedia.MediaType `json:"media_type"`
+	SourceType       string                `json:"source_type"`
+	Status           string                `json:"status"`
+	VisibilityStatus string                `json:"visibility_status"`
+	StorageConfigID  string                `json:"-"`
+	StorageDriver    string                `json:"storage_driver"`
+	Bucket           string                `json:"-"`
+	ObjectKey        string                `json:"-"`
+	MIMEType         string                `json:"mime_type"`
+	Container        string                `json:"container,omitempty"`
+	Codec            string                `json:"codec,omitempty"`
+	FileSizeBytes    int64                 `json:"file_size_bytes"`
+	SHA256           string                `json:"sha256,omitempty"`
+	Width            *int                  `json:"width,omitempty"`
+	Height           *int                  `json:"height,omitempty"`
+	DurationMS       *int64                `json:"duration_ms,omitempty"`
+	FrameRateMilli   *int                  `json:"frame_rate_milli,omitempty"`
+	AudioCodec       string                `json:"audio_codec,omitempty"`
+	Channels         *int                  `json:"channels,omitempty"`
+	SampleRate       *int                  `json:"sample_rate,omitempty"`
+	Version          int64                 `json:"version"`
+	CreatedAt        time.Time             `json:"created_at"`
+	UpdatedAt        time.Time             `json:"updated_at"`
+	DeletedAt        *time.Time            `json:"deleted_at,omitempty"`
+}
+
+type AssetListRequest struct {
+	UserID     int64
+	ProjectID  *uuid.UUID
+	MediaType  domainmedia.MediaType
+	SourceType string
+	GroupName  string
+	Status     string
+	Keyword    string
+	SortBy     string
+	SortOrder  string
+	Cursor     string
+	Limit      int
+}
+
+type AssetPage struct {
+	Items      []Asset `json:"items"`
+	NextCursor string  `json:"next_cursor,omitempty"`
+}
+
+type UpdateAssetRequest struct {
+	UserID          int64
+	AssetID         uuid.UUID
+	Name            *string
+	GroupName       *string
+	ProjectID       *uuid.UUID
+	ExpectedVersion int64
+}
+
+type DeleteAssetRequest struct {
+	UserID          int64
+	AssetID         uuid.UUID
+	ExpectedVersion int64
+}
+
+type AssetDerivative struct {
+	Kind            domainmedia.DerivativeKind
+	Status          string
+	StorageConfigID string
+	StorageDriver   string
+	Bucket          string
+	ObjectKey       string
+	MIMEType        string
 }
 
 type CreateUploadRecord struct {
@@ -85,4 +143,10 @@ type Store interface {
 	MarkUploadCompleting(context.Context, int64, uuid.UUID, []storage.CompletedPart) (UploadSession, error)
 	CompleteUpload(context.Context, CompleteUploadRecord) (Asset, error)
 	AbortUpload(context.Context, int64, uuid.UUID) (UploadSession, error)
+	ListAssets(context.Context, AssetListRequest) (AssetPage, error)
+	GetAsset(context.Context, int64, uuid.UUID) (Asset, error)
+	UpdateAsset(context.Context, UpdateAssetRequest) (Asset, error)
+	DeleteAsset(context.Context, DeleteAssetRequest) (Asset, error)
+	ListReadyDerivatives(context.Context, int64, uuid.UUID) ([]AssetDerivative, error)
+	RetryAssetProcessing(context.Context, int64, uuid.UUID) (Asset, error)
 }

@@ -78,6 +78,66 @@ func TestObjectCleanupStoreConcurrentEnqueueCoalescesLiveIdentity(t *testing.T) 
 	}
 }
 
+func TestObjectCleanupStoreProtectsMediaAssetsDerivativesAndActiveReferences(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:cleanup-media-references-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	project, err := client.Project.Create().SetUserID(92).SetName("Default").SetNameKey("default").SetIsDefault(true).SetStatus("active").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := client.MediaAsset.Create().SetUserID(92).SetProjectID(project.ID).SetName("clip.mp4").SetNameKey("clip.mp4").
+		SetMediaType("video").SetSourceType("generated").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("media/original/92/clip.mp4").SetMimeType("video/mp4").SetFileSizeBytes(100).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	derivative, err := client.MediaDerivative.Create().SetAssetID(asset.ID).SetKind("proxy").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("media/derivatives/92/clip-proxy.mp4").SetMimeType("video/mp4").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference, err := client.MediaAssetReference.Create().SetAssetID(asset.ID).SetRefType("canvas_node").SetRefID(uuid.New()).SetRefKey("video-1").SetUserID(92).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletedAt := time.Now().UTC()
+	if err := client.MediaAsset.UpdateOne(asset).SetStatus("deleted").SetDeletedAt(deletedAt).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := NewObjectCleanupStore(client)
+	for _, identity := range []domaincleanup.Identity{
+		{StorageDriver: "local", ObjectKey: asset.ObjectKey},
+		{StorageDriver: "local", ObjectKey: derivative.ObjectKey},
+	} {
+		live, err := store.HasLiveReferences(ctx, identity)
+		if err != nil || !live {
+			t.Fatalf("identity=%q live=%t err=%v", identity.ObjectKey, live, err)
+		}
+	}
+	if err := client.MediaAssetReference.UpdateOne(reference).SetDeletedAt(deletedAt).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.MediaDerivative.UpdateOne(derivative).SetDeletedAt(deletedAt).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, identity := range []domaincleanup.Identity{
+		{StorageDriver: "local", ObjectKey: asset.ObjectKey},
+		{StorageDriver: "local", ObjectKey: derivative.ObjectKey},
+	} {
+		live, err := store.HasLiveReferences(ctx, identity)
+		if err != nil || live {
+			t.Fatalf("released identity=%q live=%t err=%v", identity.ObjectKey, live, err)
+		}
+	}
+}
+
 func TestObjectCleanupStoreRejectsStaleClaimAfterIdentityBackfill(t *testing.T) {
 	client, err := repoent.Open(dialect.SQLite, "file:cleanup-stale-identity-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
 	if err != nil {

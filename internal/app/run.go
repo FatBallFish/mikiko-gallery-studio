@@ -16,6 +16,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/app/observability"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domaincluster "github.com/fatballfish/pic-gallery/internal/domain/cluster"
+	domainmedia "github.com/fatballfish/pic-gallery/internal/domain/media"
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	apphttp "github.com/fatballfish/pic-gallery/internal/http/router"
@@ -34,6 +35,7 @@ import (
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	objectcleanupservice "github.com/fatballfish/pic-gallery/internal/service/objectcleanup"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
@@ -354,6 +356,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	slog.Info("database-backed stores enabled")
 
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
+	api.SetMediaAssetService(mediaassetservice.NewService(entstore.NewMediaStore(client), storageRegistry, mediaassetservice.Options{Policy: domainmedia.DefaultPolicy()}))
 	api.SetGalleryExportService(galleryexportservice.NewService(entstore.NewGalleryExportStore(client), storageRegistry, galleryexportservice.Options{}))
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)

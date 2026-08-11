@@ -51,6 +51,19 @@ type Service struct {
 	opts   Options
 }
 
+type AccessResult struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Range     bool      `json:"range_supported"`
+}
+
+type ContentStream struct {
+	Reader      io.ReadCloser
+	SizeBytes   int64
+	ContentType string
+	Filename    string
+}
+
 func NewService(store Store, router storage.Router, opts Options) *Service {
 	if opts.Policy.SingleFileMaxBytes <= 0 {
 		opts.Policy = domainmedia.DefaultPolicy()
@@ -65,6 +78,128 @@ func NewService(store Store, router storage.Router, opts Options) *Service {
 		opts.Now = time.Now
 	}
 	return &Service{store: store, router: router, opts: opts}
+}
+
+func (s *Service) ListAssets(ctx context.Context, req AssetListRequest) (AssetPage, error) {
+	if s == nil || s.store == nil {
+		return AssetPage{}, errs.Internal("media asset service is unavailable")
+	}
+	return s.store.ListAssets(ctx, req)
+}
+
+func (s *Service) GetAsset(ctx context.Context, userID int64, assetID uuid.UUID) (Asset, error) {
+	if s == nil || s.store == nil {
+		return Asset{}, errs.Internal("media asset service is unavailable")
+	}
+	return s.store.GetAsset(ctx, userID, assetID)
+}
+
+func (s *Service) UpdateAsset(ctx context.Context, req UpdateAssetRequest) (Asset, error) {
+	return s.store.UpdateAsset(ctx, req)
+}
+
+func (s *Service) DeleteAsset(ctx context.Context, req DeleteAssetRequest) (Asset, error) {
+	return s.store.DeleteAsset(ctx, req)
+}
+
+func (s *Service) RetryProcessing(ctx context.Context, userID int64, assetID uuid.UUID) (Asset, error) {
+	return s.store.RetryAssetProcessing(ctx, userID, assetID)
+}
+
+func (s *Service) Access(ctx context.Context, userID int64, assetID uuid.UUID, purpose string) (AccessResult, error) {
+	asset, object, err := s.assetObject(ctx, userID, assetID, purpose)
+	if err != nil {
+		return AccessResult{}, err
+	}
+	ref, err := s.router.BackendFor(ctx, object.StorageConfigID, object.StorageDriver)
+	if err != nil {
+		return AccessResult{}, err
+	}
+	access, supported, err := storage.ProjectTemporaryMediaAccess(ctx, ref.Backend, object.ObjectKey, object.MIMEType, asset.Name, purpose)
+	if err != nil {
+		return AccessResult{}, err
+	}
+	if supported {
+		return AccessResult{URL: access.URL, ExpiresAt: access.ExpiresAt, Range: true}, nil
+	}
+	expiresAt := s.opts.Now().UTC().Add(storage.TemporaryMediaURLExpiry)
+	return AccessResult{
+		URL:       fmt.Sprintf("/api/agent/media/v1/assets/%s/content?purpose=%s", assetID.String(), purpose),
+		ExpiresAt: expiresAt, Range: true,
+	}, nil
+}
+
+func (s *Service) OpenContent(ctx context.Context, userID int64, assetID uuid.UUID, purpose string) (ContentStream, error) {
+	asset, object, err := s.assetObject(ctx, userID, assetID, purpose)
+	if err != nil {
+		return ContentStream{}, err
+	}
+	ref, err := s.router.BackendFor(ctx, object.StorageConfigID, object.StorageDriver)
+	if err != nil {
+		return ContentStream{}, err
+	}
+	streaming, ok := ref.Backend.(storage.StreamingBackend)
+	if !ok {
+		return ContentStream{}, errs.New(503, errs.CodeArtifactStorageUnavailable, "media storage does not support streaming access")
+	}
+	reader, size, err := streaming.OpenReader(ctx, object.ObjectKey, domainmedia.SingleFileHardMaxBytes)
+	if err != nil {
+		return ContentStream{}, err
+	}
+	return ContentStream{Reader: reader, SizeBytes: size, ContentType: object.MIMEType, Filename: asset.Name}, nil
+}
+
+type assetStorageObject struct {
+	StorageConfigID string
+	StorageDriver   string
+	Bucket          string
+	ObjectKey       string
+	MIMEType        string
+}
+
+func (s *Service) assetObject(ctx context.Context, userID int64, assetID uuid.UUID, purpose string) (Asset, assetStorageObject, error) {
+	purpose = strings.ToLower(strings.TrimSpace(purpose))
+	if purpose != storage.TemporaryMediaPurposePreview && purpose != storage.TemporaryMediaPurposeDownload {
+		return Asset{}, assetStorageObject{}, errs.BadRequest("media purpose must be preview or download")
+	}
+	asset, err := s.store.GetAsset(ctx, userID, assetID)
+	if err != nil {
+		return Asset{}, assetStorageObject{}, err
+	}
+	object := assetStorageObject{
+		StorageConfigID: asset.StorageConfigID, StorageDriver: asset.StorageDriver, Bucket: asset.Bucket,
+		ObjectKey: asset.ObjectKey, MIMEType: asset.MIMEType,
+	}
+	if purpose == storage.TemporaryMediaPurposeDownload {
+		return asset, object, nil
+	}
+	derivatives, err := s.store.ListReadyDerivatives(ctx, userID, assetID)
+	if err != nil {
+		return Asset{}, assetStorageObject{}, err
+	}
+	priorities := previewDerivativePriorities(asset.MediaType)
+	for _, kind := range priorities {
+		for _, derivative := range derivatives {
+			if derivative.Kind == kind {
+				return asset, assetStorageObject{
+					StorageConfigID: derivative.StorageConfigID, StorageDriver: derivative.StorageDriver,
+					Bucket: derivative.Bucket, ObjectKey: derivative.ObjectKey, MIMEType: derivative.MIMEType,
+				}, nil
+			}
+		}
+	}
+	return asset, object, nil
+}
+
+func previewDerivativePriorities(mediaType domainmedia.MediaType) []domainmedia.DerivativeKind {
+	switch mediaType {
+	case domainmedia.MediaTypeImage:
+		return []domainmedia.DerivativeKind{domainmedia.DerivativePreview1280, domainmedia.DerivativeThumbnail640, domainmedia.DerivativeThumbnail320}
+	case domainmedia.MediaTypeVideo, domainmedia.MediaTypeAudio:
+		return []domainmedia.DerivativeKind{domainmedia.DerivativeProxy}
+	default:
+		return nil
+	}
 }
 
 func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (UploadSession, error) {
