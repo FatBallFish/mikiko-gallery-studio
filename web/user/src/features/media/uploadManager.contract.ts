@@ -71,6 +71,9 @@ const traySource = await import('node:fs').then(({ readFileSync }) => readFileSy
 for (const required of ['mediaUploadSessionKey(userID)', 'fileContentFingerprint(candidate.file)', 'recoverableUploadSnapshot(item, candidate.file, candidate.contentFingerprint)']) {
   if (!traySource.includes(required)) throw new Error(`UploadTray must wire safe user-scoped recovery through ${required}`)
 }
+if (!traySource.includes('useState(false)')) {
+  throw new Error('an empty upload tray must start collapsed so it does not cover page actions or footer links')
+}
 if (traySource.includes('sessionStorage.getItem(MEDIA_UPLOAD_SESSION_KEY)')) {
   throw new Error('UploadTray must never restore another account through the legacy global session key')
 }

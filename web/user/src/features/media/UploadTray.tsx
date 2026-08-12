@@ -39,7 +39,7 @@ export function UploadTray() {
   const userID = String(app.profile?.id ?? app.session?.profile.id ?? '').trim()
   const storageKey = mediaUploadSessionKey(userID)
   const [items, setItems] = useState<UploadSnapshot[]>(() => restoreUploadSnapshots(sessionStorage.getItem(storageKey)))
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const files = useRef(new Map<string, File>())
   const controllers = useRef(new Map<string, AbortController>())
   const inputRef = useRef<HTMLInputElement | null>(null)
