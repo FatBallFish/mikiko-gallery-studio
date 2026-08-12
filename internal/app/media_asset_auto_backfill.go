@@ -69,7 +69,9 @@ func (processor *automaticMediaAssetBackfill) ProcessOnce(ctx context.Context) (
 		return false, err
 	}
 
-	processor.mu.Lock()
+	if !processor.mu.TryLock() {
+		return false, nil
+	}
 	defer processor.mu.Unlock()
 	now := processor.options.now()
 	if !processor.nextAttempt.IsZero() && now.Before(processor.nextAttempt) {

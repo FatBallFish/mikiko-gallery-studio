@@ -13,11 +13,19 @@ type automaticBackfillProbe struct {
 	results []db.MediaAssetBackfillResult
 	errors  []error
 	calls   int
+	started chan struct{}
+	release chan struct{}
 }
 
 func (probe *automaticBackfillProbe) ProcessBatch(context.Context) (db.MediaAssetBackfillResult, error) {
 	index := probe.calls
 	probe.calls++
+	if probe.started != nil {
+		probe.started <- struct{}{}
+	}
+	if probe.release != nil {
+		<-probe.release
+	}
 	var result db.MediaAssetBackfillResult
 	if index < len(probe.results) {
 		result = probe.results[index]
@@ -27,6 +35,43 @@ func (probe *automaticBackfillProbe) ProcessBatch(context.Context) (db.MediaAsse
 		err = probe.errors[index]
 	}
 	return result, err
+}
+
+func TestAutomaticMediaAssetBackfillDoesNotBlockConcurrentCleanupSlots(t *testing.T) {
+	probe := &automaticBackfillProbe{
+		results: []db.MediaAssetBackfillResult{{Processed: 1}},
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	processor := newAutomaticMediaAssetBackfill(probe, automaticMediaAssetBackfillOptions{})
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := processor.ProcessOnce(t.Context())
+		firstDone <- err
+	}()
+	select {
+	case <-probe.started:
+	case <-time.After(time.Second):
+		t.Fatal("first batch did not start")
+	}
+
+	secondDone := make(chan struct{})
+	go func() {
+		processed, err := processor.ProcessOnce(t.Context())
+		if err != nil || processed {
+			t.Errorf("concurrent ProcessOnce() = %t, %v", processed, err)
+		}
+		close(secondDone)
+	}()
+	select {
+	case <-secondDone:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("concurrent cleanup slot blocked behind active backfill batch")
+	}
+	close(probe.release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first ProcessOnce() = %v", err)
+	}
 }
 
 func TestAutomaticMediaAssetBackfillContinuesWhileBatchesAreProcessed(t *testing.T) {
