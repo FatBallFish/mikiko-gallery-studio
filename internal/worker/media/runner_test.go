@@ -9,12 +9,13 @@ import (
 )
 
 type fakeStore struct {
-	item      WorkItem
-	claimed   bool
-	claimErr  error
-	completed []CompleteRequest
-	failed    []FailRequest
-	released  []LeaseRef
+	item        WorkItem
+	claimed     bool
+	claimErr    error
+	completed   []CompleteRequest
+	failed      []FailRequest
+	released    []LeaseRef
+	completeErr error
 }
 
 func (store *fakeStore) ClaimDue(context.Context, ClaimRequest) (WorkItem, bool, error) {
@@ -22,7 +23,29 @@ func (store *fakeStore) ClaimDue(context.Context, ClaimRequest) (WorkItem, bool,
 }
 func (store *fakeStore) Complete(_ context.Context, request CompleteRequest) (bool, error) {
 	store.completed = append(store.completed, request)
-	return true, nil
+	return store.completeErr == nil, store.completeErr
+}
+
+type cleanupProcessor struct {
+	fakeProcessor
+	cleaned []ProcessResult
+}
+
+func (processor *cleanupProcessor) Cleanup(_ context.Context, result ProcessResult) error {
+	processor.cleaned = append(processor.cleaned, result)
+	return nil
+}
+
+func TestRunnerCleansUploadedDerivativesWhenCompleteFails(t *testing.T) {
+	result := ProcessResult{Derivatives: []Derivative{{ObjectKey: "media/derivatives/asset/proxy.mp4"}}}
+	store := &fakeStore{claimed: true, item: WorkItem{JobID: "job-complete-fail"}, completeErr: errors.New("database unavailable")}
+	processor := &cleanupProcessor{fakeProcessor: fakeProcessor{result: result}}
+	runner := NewRunner(store, processor, Options{Owner: "media-a"})
+
+	processed, err := runner.RunOnce(t.Context())
+	if !processed || err == nil || len(processor.cleaned) != 1 || processor.cleaned[0].Derivatives[0].ObjectKey != result.Derivatives[0].ObjectKey {
+		t.Fatalf("complete failure processed=%v err=%v cleaned=%#v", processed, err, processor.cleaned)
+	}
 }
 func (store *fakeStore) Fail(_ context.Context, request FailRequest) error {
 	store.failed = append(store.failed, request)
@@ -70,10 +93,21 @@ func (spy *mediaObserverSpy) RecordDerivative(kind, result string, bytes int64) 
 	spy.derivatives = append(spy.derivatives, kind+":"+result+":"+fmt.Sprint(bytes))
 }
 
+type mediaFailureReporterSpy struct {
+	item     WorkItem
+	terminal bool
+	err      error
+}
+
+func (spy *mediaFailureReporterSpy) ReportMediaProcessingFailure(_ context.Context, item WorkItem, terminal bool, err error) {
+	spy.item, spy.terminal, spy.err = item, terminal, err
+}
+
 func TestRunnerPersistsRetryWithoutKillingRoleLoop(t *testing.T) {
 	now := time.Date(2026, 8, 12, 16, 30, 0, 0, time.UTC)
 	store := &fakeStore{claimed: true, item: WorkItem{JobID: "job-retry", AssetID: "asset-retry", AttemptCount: 2, MaxAttempts: 5}}
-	runner := NewRunner(store, fakeProcessor{err: errors.New("ffmpeg failed with sensitive output")}, Options{Owner: "media-a", Now: func() time.Time { return now }})
+	reporter := &mediaFailureReporterSpy{}
+	runner := NewRunner(store, fakeProcessor{err: errors.New("ffmpeg failed with sensitive output")}, Options{Owner: "media-a", Now: func() time.Time { return now }, Reporter: reporter})
 
 	processed, err := runner.RunOnce(t.Context())
 	if err != nil || !processed {
@@ -84,6 +118,9 @@ func TestRunnerPersistsRetryWithoutKillingRoleLoop(t *testing.T) {
 	}
 	if store.failed[0].ErrorMessage != "media processing failed" {
 		t.Fatalf("failure message leaked implementation detail: %q", store.failed[0].ErrorMessage)
+	}
+	if reporter.item.JobID != "job-retry" || reporter.terminal || reporter.err == nil || reporter.err.Error() != "ffmpeg failed with sensitive output" {
+		t.Fatalf("failure report = %#v", reporter)
 	}
 }
 

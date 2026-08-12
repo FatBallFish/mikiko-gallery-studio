@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -179,13 +182,19 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	exportProcessor := galleryexportservice.NewProcessor(entstore.NewGalleryExportStore(client), storageRegistry, galleryexportservice.ProcessorOptions{Owner: owner + "-cleanup"})
 	uploadExpiryProcessor := mediaassetservice.NewUploadExpiryProcessor(entstore.NewMediaStore(client), storageRegistry, mediaassetservice.UploadExpiryProcessorOptions{})
 	mediaWorkerStore := entstore.NewMediaWorkerStore(client)
+	adminVideoStore := entstore.NewAdminVideoStore(client)
 	mediaReconcileProcessor := mediaassetservice.NewMediaReconcileProcessor(mediaWorkerStore)
 	cleanupRole := &cleanupRoleProcessor{cleanup: cleanupProcessor, processors: []processOnce{cleanupProcessor, exportProcessor, uploadExpiryProcessor, mediaReconcileProcessor}}
 
 	videoStore := entstore.NewVideoTaskStore(client, entstore.NewBillingStore(client, cfg.Billing.PointsScale))
+	videoArtifactHTTPClient, err := newVideoArtifactHTTPClient(cfg.Worker.VideoArtifactTestCAFile)
+	if err != nil {
+		return fmt.Errorf("configure video artifact HTTP client: %w", err)
+	}
 	videoRunner := videoworker.NewRunner(videoStore, videoworker.NewExecutionAccountResolver(videoStore), storageRegistry, videoworker.Options{
 		Owner: owner + "-video", LeaseTTL: 30 * time.Second,
 		AllowLoopbackArtifactHosts: cfg.Worker.AllowLoopbackVideoArtifacts,
+		HTTPClient:                 videoArtifactHTTPClient,
 		ClaimAllowed:               newRedisVideoClaimGate(redisClient).Allowed,
 		Observer:                   workerMetricsObserver{metrics: metrics},
 	})
@@ -194,16 +203,23 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 		storageRegistry,
 		mediaprocessservice.NewProbe(mediaCommandRunner, 30*time.Second),
 		mediaDerivativeAdapter{processor: mediaprocessservice.NewDerivativeProcessor(mediaCommandRunner, 2*time.Minute)},
-		mediaworker.PipelineOptions{TempDir: cfg.Worker.TempDir},
+		mediaworker.PipelineOptions{TempDir: cfg.Worker.TempDir, PolicyResolver: func(ctx context.Context) (domainmedia.Policy, error) {
+			policy, err := adminVideoStore.GetMediaPolicy(ctx)
+			if err != nil {
+				return domainmedia.Policy{}, err
+			}
+			return policy.RuntimePolicy().Policy, nil
+		}},
 	)
 	mediaRunner := mediaworker.NewRunner(mediaWorkerStore, mediaPipeline, mediaworker.Options{
 		Owner: owner + "-media", LeaseTTL: 2 * time.Minute,
 		ClaimAllowed: newDiskClaimGate(cfg.Worker.TempDir, cfg.Worker.TempDiskPausePercent, metrics).Allowed,
 		Observer:     workerMetricsObserver{metrics: metrics},
+		Reporter:     workerMediaFailureReporter{},
 	})
 
 	loops := make([]func(context.Context) error, 0, 5)
-	loops = append(loops, func(context.Context) error { return <-metricsDone })
+	loops = append(loops, func(loopCtx context.Context) error { return waitForWorkerMetricsLoop(loopCtx, metricsDone) })
 	roles := make([]string, 0, len(cfg.Worker.Roles))
 	if cfg.Worker.HasRole(config.WorkerRoleImage) {
 		roles = append(roles, string(config.WorkerRoleImage))
@@ -237,6 +253,20 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 }
 
 type workerMetricsObserver struct{ metrics *observability.Metrics }
+
+type workerMediaFailureReporter struct{}
+
+func (workerMediaFailureReporter) ReportMediaProcessingFailure(ctx context.Context, item mediaworker.WorkItem, terminal bool, err error) {
+	slog.WarnContext(ctx, "media processing attempt failed",
+		"error_code", "media_processing_failed",
+		"job_id", item.JobID,
+		"asset_id", item.AssetID,
+		"attempt", item.AttemptCount,
+		"max_attempts", item.MaxAttempts,
+		"terminal", terminal,
+		"error", err,
+	)
+}
 
 func (observer workerMetricsObserver) RecordVideoStage(stage, result string) {
 	observer.metrics.RecordVideoStage(stage, result)
@@ -329,6 +359,15 @@ type mediaDerivativeAdapter struct {
 
 func (adapter mediaDerivativeAdapter) Generate(ctx context.Context, mediaType domainmedia.MediaType, input, outputDir string) ([]mediaworker.DerivativeOutput, error) {
 	outputs, err := adapter.processor.Generate(ctx, mediaType, input, outputDir)
+	return mapMediaDerivativeOutputs(outputs, err)
+}
+
+func (adapter mediaDerivativeAdapter) GenerateWithPolicy(ctx context.Context, mediaType domainmedia.MediaType, input, outputDir string, policy domainmedia.Policy) ([]mediaworker.DerivativeOutput, error) {
+	outputs, err := adapter.processor.GenerateWithPolicy(ctx, mediaType, input, outputDir, policy)
+	return mapMediaDerivativeOutputs(outputs, err)
+}
+
+func mapMediaDerivativeOutputs(outputs []mediaprocessservice.DerivativeOutput, err error) ([]mediaworker.DerivativeOutput, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -363,9 +402,42 @@ func runIndependentWorkerLoops(ctx context.Context, loops ...func(context.Contex
 	return first
 }
 
+func waitForWorkerMetricsLoop(ctx context.Context, done <-chan error) error {
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 type workerRuntimeChecks struct {
 	lookPath func(string) (string, error)
 	mkdirAll func(string, os.FileMode) error
+}
+
+func newVideoArtifactHTTPClient(testCAFile string) (*http.Client, error) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.ExpectContinueTimeout = time.Second
+	transport.MaxResponseHeaderBytes = 1 << 20
+	if strings.TrimSpace(testCAFile) != "" {
+		roots, err := x509.SystemCertPool()
+		if err != nil {
+			return nil, fmt.Errorf("load system certificate pool: %w", err)
+		}
+		payload, err := os.ReadFile(testCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read test CA file: %w", err)
+		}
+		if !roots.AppendCertsFromPEM(payload) {
+			return nil, errors.New("test CA file does not contain a valid PEM certificate")
+		}
+		transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	}
+	return &http.Client{Transport: transport}, nil
 }
 
 func validateWorkerRuntime(cfg config.WorkerConfig, checks workerRuntimeChecks) error {
@@ -411,7 +483,16 @@ func runWorkerRoleSlots(ctx context.Context, role string, concurrency int, pollI
 				}
 				processed, err := runOnce(slotCtx)
 				if err != nil {
-					return fmt.Errorf("%s worker: %w", role, err)
+					if slotCtx.Err() != nil {
+						return slotCtx.Err()
+					}
+					slog.ErrorContext(slotCtx, "worker role iteration failed", "role", role, "error", err)
+					select {
+					case <-slotCtx.Done():
+						return slotCtx.Err()
+					case <-ticker.C:
+					}
+					continue
 				}
 				if processed {
 					continue
@@ -456,5 +537,21 @@ func workerOwner() string {
 	if err != nil || hostname == "" {
 		hostname = "worker"
 	}
-	return hostname + "-" + uuid.NewString()
+	return workerOwnerForHost(hostname, uuid.NewString())
+}
+
+func workerOwnerForHost(hostname, id string) string {
+	const maxBaseOwnerBytes = 64 - len("-video")
+	suffix := "-" + id
+	maxHostnameBytes := maxBaseOwnerBytes - len(suffix)
+	if maxHostnameBytes < 0 {
+		return id[:maxBaseOwnerBytes]
+	}
+	if len(hostname) > maxHostnameBytes {
+		hostname = hostname[:maxHostnameBytes]
+	}
+	if hostname == "" {
+		return id
+	}
+	return hostname + suffix
 }

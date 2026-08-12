@@ -5661,7 +5661,7 @@ components:
       additionalProperties: false
     AdminVideoPriceRuleWrite:
       type: object
-      required: [route_model_id, pricing_strategy_id, expected_version, task_type, resolution, audio_mode, duration_seconds, effective_at, minimum_task_points, enabled]
+      required: [route_model_id, pricing_strategy_id, expected_version, task_type, resolution, audio_mode, duration_seconds, effective_at, minimum_task_points, pricing_mode, enabled]
       properties:
         route_model_id: {type: integer, format: int64, minimum: 1}
         pricing_strategy_id: {type: integer, format: int64, minimum: 1}
@@ -5672,6 +5672,7 @@ components:
         duration_seconds: {type: integer, minimum: 1}
         effective_at: {type: string, format: date-time}
         minimum_task_points: {type: string, pattern: '^\d+(\.\d{1,5})?$'}
+        pricing_mode: {type: string, enum: [exact, metered]}
         safety_points: {type: string, description: Informational only; server recalculates and overwrites from worst enabled candidate cost.}
         enabled: {type: boolean}
       additionalProperties: true

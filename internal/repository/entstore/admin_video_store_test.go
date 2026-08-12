@@ -97,6 +97,41 @@ func TestAdminVideoConfigStoreCapabilityAndRouteUseCASAndDoNotMutateInput(t *tes
 	}
 }
 
+func TestAdminVideoSnapshotIncludesUnconfiguredVideoRouteCandidates(t *testing.T) {
+	client, store := openAdminVideoTestStore(t, "admin-video-unconfigured-route")
+	ctx := t.Context()
+	account, err := client.ModelAccount.Create().SetName("MiniMax").SetAdapterType("minimax").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("enabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("MiniMax-H3").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := client.RouteModel.Create().SetCode("unconfigured-video").SetName("Unconfigured Video").SetMediaType("video").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(model.ID)).SetEnabled(true).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := store.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Routes) != 1 {
+		t.Fatalf("snapshot routes = %#v", snapshot.Routes)
+	}
+	got := snapshot.Routes[0]
+	if got.RouteModelID != int64(route.ID) || got.CandidateCount != 1 || len(got.CandidateAccountModelIDs) != 1 || got.CandidateAccountModelIDs[0] != int64(model.ID) {
+		t.Fatalf("unconfigured route projection = %#v", got)
+	}
+	if got.ConfigVersion != "" || got.PricingStrategyID != 0 || got.Enabled {
+		t.Fatalf("unconfigured route must remain disabled until configured: %#v", got)
+	}
+}
+
 func TestAdminVideoStoreProjectsConfigurationTaskDiagnosticsAndRecovery(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:admin-video-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")

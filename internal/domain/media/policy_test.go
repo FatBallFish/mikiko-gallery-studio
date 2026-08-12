@@ -43,6 +43,33 @@ func TestPolicyUsesProbeAsFinalMediaAuthority(t *testing.T) {
 	}
 }
 
+func TestPolicyRejectsMediaBombMetadata(t *testing.T) {
+	policy := DefaultPolicy()
+	declaration := UploadDeclaration{Filename: "clip.mp4", MediaType: MediaTypeVideo, MIMEType: "video/mp4", SizeBytes: 4096}
+	base := ProbeResult{MediaType: MediaTypeVideo, Format: "mp4", Container: "mp4", VideoCodec: "h264", Width: 3840, Height: 2160, StreamCount: 2, FrameRateMilli: 60000, Channels: 2, SampleRate: 48000}
+	tests := []struct {
+		name  string
+		patch func(*ProbeResult)
+		field string
+	}{
+		{name: "dimension", patch: func(result *ProbeResult) { result.Width = 8193 }, field: "dimensions"},
+		{name: "pixels", patch: func(result *ProbeResult) { result.Width, result.Height = 8000, 6000 }, field: "pixels"},
+		{name: "streams", patch: func(result *ProbeResult) { result.StreamCount = 9 }, field: "stream_count"},
+		{name: "frame rate", patch: func(result *ProbeResult) { result.FrameRateMilli = 120001 }, field: "frame_rate"},
+		{name: "channels", patch: func(result *ProbeResult) { result.Channels = 9 }, field: "channels"},
+		{name: "sample rate", patch: func(result *ProbeResult) { result.SampleRate = 192001 }, field: "sample_rate"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := base
+			test.patch(&result)
+			if err := policy.ValidateProbe(declaration, result); err == nil || err.Field != test.field || err.Code != "resource_limit" {
+				t.Fatalf("ValidateProbe error = %#v, want %s resource_limit", err, test.field)
+			}
+		})
+	}
+}
+
 func TestDerivativePlanAvoidsOriginalsOnListSurfaces(t *testing.T) {
 	tests := []struct {
 		mediaType MediaType

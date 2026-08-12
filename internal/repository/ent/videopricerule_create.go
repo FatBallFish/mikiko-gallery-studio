@@ -94,6 +94,20 @@ func (_c *VideoPriceRuleCreate) SetNillableAudioMode(v *string) *VideoPriceRuleC
 	return _c
 }
 
+// SetPricingMode sets the "pricing_mode" field.
+func (_c *VideoPriceRuleCreate) SetPricingMode(v string) *VideoPriceRuleCreate {
+	_c.mutation.SetPricingMode(v)
+	return _c
+}
+
+// SetNillablePricingMode sets the "pricing_mode" field if the given value is not nil.
+func (_c *VideoPriceRuleCreate) SetNillablePricingMode(v *string) *VideoPriceRuleCreate {
+	if v != nil {
+		_c.SetPricingMode(*v)
+	}
+	return _c
+}
+
 // SetRuleVersion sets the "rule_version" field.
 func (_c *VideoPriceRuleCreate) SetRuleVersion(v int) *VideoPriceRuleCreate {
 	_c.mutation.SetRuleVersion(v)
@@ -377,6 +391,10 @@ func (_c *VideoPriceRuleCreate) defaults() {
 		v := videopricerule.DefaultAudioMode
 		_c.mutation.SetAudioMode(v)
 	}
+	if _, ok := _c.mutation.PricingMode(); !ok {
+		v := videopricerule.DefaultPricingMode
+		_c.mutation.SetPricingMode(v)
+	}
 	if _, ok := _c.mutation.RuleVersion(); !ok {
 		v := videopricerule.DefaultRuleVersion
 		_c.mutation.SetRuleVersion(v)
@@ -472,6 +490,14 @@ func (_c *VideoPriceRuleCreate) check() error {
 	if v, ok := _c.mutation.AudioMode(); ok {
 		if err := videopricerule.AudioModeValidator(v); err != nil {
 			return &ValidationError{Name: "audio_mode", err: fmt.Errorf(`ent: validator failed for field "VideoPriceRule.audio_mode": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.PricingMode(); !ok {
+		return &ValidationError{Name: "pricing_mode", err: errors.New(`ent: missing required field "VideoPriceRule.pricing_mode"`)}
+	}
+	if v, ok := _c.mutation.PricingMode(); ok {
+		if err := videopricerule.PricingModeValidator(v); err != nil {
+			return &ValidationError{Name: "pricing_mode", err: fmt.Errorf(`ent: validator failed for field "VideoPriceRule.pricing_mode": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.RuleVersion(); !ok {
@@ -593,6 +619,10 @@ func (_c *VideoPriceRuleCreate) createSpec() (*VideoPriceRule, *sqlgraph.CreateS
 	if value, ok := _c.mutation.AudioMode(); ok {
 		_spec.SetField(videopricerule.FieldAudioMode, field.TypeString, value)
 		_node.AudioMode = value
+	}
+	if value, ok := _c.mutation.PricingMode(); ok {
+		_spec.SetField(videopricerule.FieldPricingMode, field.TypeString, value)
+		_node.PricingMode = value
 	}
 	if value, ok := _c.mutation.RuleVersion(); ok {
 		_spec.SetField(videopricerule.FieldRuleVersion, field.TypeInt, value)

@@ -111,6 +111,9 @@ func TestObjectCleanupStoreProtectsMediaAssetsDerivativesAndActiveReferences(t *
 	if err := client.MediaAsset.UpdateOne(asset).SetStatus("deleted").SetDeletedAt(deletedAt).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if err := client.MediaDerivative.UpdateOne(derivative).SetDeletedAt(deletedAt).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
 	store := NewObjectCleanupStore(client)
 	for _, identity := range []domaincleanup.Identity{
 		{StorageDriver: "local", ObjectKey: asset.ObjectKey},
@@ -122,9 +125,6 @@ func TestObjectCleanupStoreProtectsMediaAssetsDerivativesAndActiveReferences(t *
 		}
 	}
 	if err := client.MediaAssetReference.UpdateOne(reference).SetDeletedAt(deletedAt).Exec(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := client.MediaDerivative.UpdateOne(derivative).SetDeletedAt(deletedAt).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
 	for _, identity := range []domaincleanup.Identity{

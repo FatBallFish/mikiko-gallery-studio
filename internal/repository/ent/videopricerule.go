@@ -32,6 +32,8 @@ type VideoPriceRule struct {
 	Resolution string `json:"resolution,omitempty"`
 	// AudioMode holds the value of the "audio_mode" field.
 	AudioMode string `json:"audio_mode,omitempty"`
+	// PricingMode holds the value of the "pricing_mode" field.
+	PricingMode string `json:"pricing_mode,omitempty"`
 	// RuleVersion holds the value of the "rule_version" field.
 	RuleVersion int `json:"rule_version,omitempty"`
 	// EffectiveAt holds the value of the "effective_at" field.
@@ -82,7 +84,7 @@ func (*VideoPriceRule) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case videopricerule.FieldID, videopricerule.FieldPricingStrategyID, videopricerule.FieldRuleVersion, videopricerule.FieldMinimumBillableSeconds:
 			values[i] = new(sql.NullInt64)
-		case videopricerule.FieldTaskType, videopricerule.FieldResolution, videopricerule.FieldAudioMode, videopricerule.FieldOutputSecondPoints, videopricerule.FieldFixedTaskPoints, videopricerule.FieldReferenceImagePoints, videopricerule.FieldInputVideoSecondPoints, videopricerule.FieldReferenceAudioSecondPoints, videopricerule.FieldGeneratedAudioFixedPoints, videopricerule.FieldGeneratedAudioSecondPoints, videopricerule.FieldMinimumTaskPoints, videopricerule.FieldReserveMarkup, videopricerule.FieldSafetyPoints, videopricerule.FieldCandidateCostUpperCny, videopricerule.FieldInternalNote:
+		case videopricerule.FieldTaskType, videopricerule.FieldResolution, videopricerule.FieldAudioMode, videopricerule.FieldPricingMode, videopricerule.FieldOutputSecondPoints, videopricerule.FieldFixedTaskPoints, videopricerule.FieldReferenceImagePoints, videopricerule.FieldInputVideoSecondPoints, videopricerule.FieldReferenceAudioSecondPoints, videopricerule.FieldGeneratedAudioFixedPoints, videopricerule.FieldGeneratedAudioSecondPoints, videopricerule.FieldMinimumTaskPoints, videopricerule.FieldReserveMarkup, videopricerule.FieldSafetyPoints, videopricerule.FieldCandidateCostUpperCny, videopricerule.FieldInternalNote:
 			values[i] = new(sql.NullString)
 		case videopricerule.FieldCreatedAt, videopricerule.FieldUpdatedAt, videopricerule.FieldDeletedAt, videopricerule.FieldEffectiveAt, videopricerule.FieldExpiresAt:
 			values[i] = new(sql.NullTime)
@@ -149,6 +151,12 @@ func (_m *VideoPriceRule) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field audio_mode", values[i])
 			} else if value.Valid {
 				_m.AudioMode = value.String
+			}
+		case videopricerule.FieldPricingMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field pricing_mode", values[i])
+			} else if value.Valid {
+				_m.PricingMode = value.String
 			}
 		case videopricerule.FieldRuleVersion:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -319,6 +327,9 @@ func (_m *VideoPriceRule) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("audio_mode=")
 	builder.WriteString(_m.AudioMode)
+	builder.WriteString(", ")
+	builder.WriteString("pricing_mode=")
+	builder.WriteString(_m.PricingMode)
 	builder.WriteString(", ")
 	builder.WriteString("rule_version=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RuleVersion))

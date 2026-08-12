@@ -108,7 +108,7 @@ func TestSimulateAndRecalculateUseWorstCandidateAndCreateNewRuleVersion(t *testi
 		Strategies: []PricingStrategySummary{{ID: 3, StrategyVersion: 2, MinimumNetPointIncomeCNY: "0.25260", TargetMarginRate: "0.25000", ProviderCostBufferRate: "0.10000", PlatformFixedCostCNY: "0.15000", PlatformOutputSecondCostCNY: "0.02000", PlatformReferenceCostCNY: "0.03000"}},
 		CostRules:  []CostRuleSummary{{AccountModelID: 7, RuleVersion: 1, Rates: map[string]any{"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "cost_cny": "1.00000"}}}, Enabled: true}, {AccountModelID: 8, RuleVersion: 2, Rates: map[string]any{"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "cost_cny": "2.00000"}}}, Enabled: true}},
 		Routes:     []RouteConfigSummary{{RouteModelID: 9, PricingStrategyID: 3, CandidateAccountModelIDs: []int64{7, 8}}},
-		PriceRules: []PriceRuleSummary{{ID: 11, StrategyID: 3, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", RuleVersion: 4}},
+		PriceRules: []PriceRuleSummary{{ID: 11, StrategyID: 3, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", PricingMode: "metered", RuleVersion: 4}},
 	}}}
 	service := NewService(store)
 	result, err := service.Simulate(t.Context(), SimulationRequest{RouteModelID: 9, StrategyID: 3, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", DurationSeconds: 5})
@@ -121,7 +121,7 @@ func TestSimulateAndRecalculateUseWorstCandidateAndCreateNewRuleVersion(t *testi
 	if _, err := service.Recalculate(t.Context(), RecalculateRequest{RouteModelID: 9, StrategyID: 3, Combinations: []SimulationRequest{{TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", DurationSeconds: 5}}, EffectiveAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if store.price.ExpectedVersion != 4 || store.price.SafetyPoints == "" || store.price.MinimumTaskPoints == "" {
+	if store.price.ExpectedVersion != 4 || store.price.PricingMode != "metered" || store.price.SafetyPoints == "" || store.price.MinimumTaskPoints == "" {
 		t.Fatalf("recalculated=%#v", store.price)
 	}
 }

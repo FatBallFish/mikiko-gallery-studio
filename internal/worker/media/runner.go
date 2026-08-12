@@ -42,6 +42,7 @@ type ProbeMetadata struct {
 	Width          int
 	Height         int
 	DurationMS     int64
+	StreamCount    int
 	FrameRateMilli int
 	Channels       int
 	SampleRate     int
@@ -92,8 +93,16 @@ type Processor interface {
 	Process(context.Context, WorkItem) (ProcessResult, error)
 }
 
+type ResultCleaner interface {
+	Cleanup(context.Context, ProcessResult) error
+}
+
 type Observer interface {
 	RecordDerivative(kind, result string, bytes int64)
+}
+
+type FailureReporter interface {
+	ReportMediaProcessingFailure(context.Context, WorkItem, bool, error)
 }
 
 type Options struct {
@@ -102,6 +111,7 @@ type Options struct {
 	Now          func() time.Time
 	ClaimAllowed func(context.Context) (bool, error)
 	Observer     Observer
+	Reporter     FailureReporter
 }
 
 type Runner struct {
@@ -146,6 +156,11 @@ func (runner *Runner) RunOnce(ctx context.Context) (bool, error) {
 		completed, completeErr := runner.store.Complete(ctx, CompleteRequest{JobID: item.JobID, Owner: runner.options.Owner, Now: runner.options.Now().UTC(), Result: result})
 		err = completeErr
 		if err != nil {
+			if cleaner, ok := runner.processor.(ResultCleaner); ok {
+				if cleanupErr := cleaner.Cleanup(context.WithoutCancel(ctx), result); cleanupErr != nil {
+					err = errors.Join(err, fmt.Errorf("clean media processing result: %w", cleanupErr))
+				}
+			}
 			return true, fmt.Errorf("complete media processing job: %w", err)
 		}
 		if completed && runner.options.Observer != nil {
@@ -163,6 +178,9 @@ func (runner *Runner) RunOnce(ctx context.Context) (bool, error) {
 		maxAttempts = 5
 	}
 	terminal := item.AttemptCount >= maxAttempts
+	if runner.options.Reporter != nil {
+		runner.options.Reporter.ReportMediaProcessingFailure(ctx, item, terminal, processErr)
+	}
 	retryAt := now
 	if !terminal {
 		shift := item.AttemptCount - 1

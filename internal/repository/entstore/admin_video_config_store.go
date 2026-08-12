@@ -116,7 +116,7 @@ func saveVideoPriceRule(ctx context.Context, client *repoent.Client, input admin
 			return adminvideo.PriceRuleSummary{}, err
 		}
 	}
-	builder := client.VideoPriceRule.Create().SetPricingStrategyID(input.StrategyID).SetTaskType(input.TaskType).SetResolution(input.Resolution).SetAudioMode(input.AudioMode).SetRuleVersion(input.ExpectedVersion + 1).SetEffectiveAt(input.EffectiveAt).SetOutputSecondPoints(input.OutputSecondPoints).SetFixedTaskPoints(input.FixedTaskPoints).SetReferenceImagePoints(input.ReferenceImagePoints).SetInputVideoSecondPoints(input.InputVideoSecondPoints).SetReferenceAudioSecondPoints(input.ReferenceAudioSecondPoints).SetGeneratedAudioFixedPoints(input.GeneratedAudioFixedPoints).SetGeneratedAudioSecondPoints(input.GeneratedAudioSecondPoints).SetMinimumBillableSeconds(input.MinimumBillableSeconds).SetMinimumTaskPoints(input.MinimumTaskPoints).SetReserveMarkup(input.ReserveMarkup).SetSafetyPoints(input.SafetyPoints).SetCandidateCostUpperCny(input.CandidateCostUpperCNY).SetSafetySnapshot(input.SafetySnapshot).SetEnabled(input.Enabled).SetInternalNote(input.InternalNote)
+	builder := client.VideoPriceRule.Create().SetPricingStrategyID(input.StrategyID).SetTaskType(input.TaskType).SetResolution(input.Resolution).SetAudioMode(input.AudioMode).SetPricingMode(input.PricingMode).SetRuleVersion(input.ExpectedVersion + 1).SetEffectiveAt(input.EffectiveAt).SetOutputSecondPoints(input.OutputSecondPoints).SetFixedTaskPoints(input.FixedTaskPoints).SetReferenceImagePoints(input.ReferenceImagePoints).SetInputVideoSecondPoints(input.InputVideoSecondPoints).SetReferenceAudioSecondPoints(input.ReferenceAudioSecondPoints).SetGeneratedAudioFixedPoints(input.GeneratedAudioFixedPoints).SetGeneratedAudioSecondPoints(input.GeneratedAudioSecondPoints).SetMinimumBillableSeconds(input.MinimumBillableSeconds).SetMinimumTaskPoints(input.MinimumTaskPoints).SetReserveMarkup(input.ReserveMarkup).SetSafetyPoints(input.SafetyPoints).SetCandidateCostUpperCny(input.CandidateCostUpperCNY).SetSafetySnapshot(input.SafetySnapshot).SetEnabled(input.Enabled).SetInternalNote(input.InternalNote)
 	if input.ExpiresAt != nil {
 		builder.SetExpiresAt(*input.ExpiresAt)
 	}
@@ -124,7 +124,7 @@ func saveVideoPriceRule(ctx context.Context, client *repoent.Client, input admin
 	if err != nil {
 		return adminvideo.PriceRuleSummary{}, err
 	}
-	return adminvideo.PriceRuleSummary{ID: int64(row.ID), StrategyID: row.PricingStrategyID, TaskType: row.TaskType, Resolution: row.Resolution, AudioMode: row.AudioMode, RuleVersion: row.RuleVersion, SafetyPoints: row.SafetyPoints, SalesPoints: row.MinimumTaskPoints, CandidateCostUpperCNY: row.CandidateCostUpperCny, Enabled: row.Enabled}, nil
+	return adminvideo.PriceRuleSummary{ID: int64(row.ID), StrategyID: row.PricingStrategyID, TaskType: row.TaskType, Resolution: row.Resolution, AudioMode: row.AudioMode, PricingMode: row.PricingMode, RuleVersion: row.RuleVersion, SafetyPoints: row.SafetyPoints, SalesPoints: row.MinimumTaskPoints, CandidateCostUpperCNY: row.CandidateCostUpperCny, Enabled: row.Enabled}, nil
 }
 
 func (s *AdminVideoStore) SaveRouteConfig(ctx context.Context, input adminvideo.RouteConfigWrite) (adminvideo.RouteConfigSummary, error) {

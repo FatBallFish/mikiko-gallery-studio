@@ -8,13 +8,28 @@ import (
 
 const SingleFileHardMaxBytes int64 = 1 << 30
 
+const (
+	MediaMaxDimension             = 8192
+	MediaMaxPixels          int64 = 40_000_000
+	MediaMaxStreams               = 8
+	MediaMaxFrameRateMilli        = 120_000
+	MediaMaxAudioChannels         = 8
+	MediaMaxAudioSampleRate       = 192_000
+)
+
 type Policy struct {
-	SingleFileMaxBytes      int64
-	VideoMaxDurationMS      int64
-	AllowedFormats          map[MediaType][]string
-	AllowedMIMETypes        map[MediaType][]string
-	AllowedVideoCodecs      []string
-	AllowedVideoAudioCodecs []string
+	SingleFileMaxBytes       int64
+	VideoMaxDurationMS       int64
+	AllowedFormats           map[MediaType][]string
+	AllowedMIMETypes         map[MediaType][]string
+	AllowedVideoCodecs       []string
+	AllowedVideoAudioCodecs  []string
+	ImageThumbnailWidths     []int
+	VideoPosterEnabled       bool
+	VideoHoverPreviewEnabled bool
+	VideoProxyEnabled        bool
+	AudioProxyEnabled        bool
+	AudioWaveformEnabled     bool
 }
 
 func DefaultPolicy() Policy {
@@ -30,8 +45,14 @@ func DefaultPolicy() Policy {
 			MediaTypeVideo: {"video/mp4", "video/quicktime"},
 			MediaTypeAudio: {"audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav"},
 		},
-		AllowedVideoCodecs:      []string{"h264", "avc", "avc1", "h265", "hevc"},
-		AllowedVideoAudioCodecs: []string{"aac", "mp3"},
+		AllowedVideoCodecs:       []string{"h264", "avc", "avc1", "h265", "hevc"},
+		AllowedVideoAudioCodecs:  []string{"aac", "mp3"},
+		ImageThumbnailWidths:     []int{320, 640, 1280},
+		VideoPosterEnabled:       true,
+		VideoHoverPreviewEnabled: true,
+		VideoProxyEnabled:        true,
+		AudioProxyEnabled:        true,
+		AudioWaveformEnabled:     true,
 	}
 }
 
@@ -76,6 +97,24 @@ func (policy Policy) ValidateProbe(declaration UploadDeclaration, probe ProbeRes
 			return validationError("size_bytes", "too_large", "detected file size exceeds the configured limit")
 		}
 	}
+	if probe.Width > MediaMaxDimension || probe.Height > MediaMaxDimension {
+		return validationError("dimensions", "resource_limit", "detected media dimensions exceed the processing limit")
+	}
+	if probe.Width > 0 && probe.Height > 0 && int64(probe.Width)*int64(probe.Height) > MediaMaxPixels {
+		return validationError("pixels", "resource_limit", "detected media pixel count exceeds the processing limit")
+	}
+	if probe.StreamCount > MediaMaxStreams {
+		return validationError("stream_count", "resource_limit", "detected media stream count exceeds the processing limit")
+	}
+	if probe.FrameRateMilli > MediaMaxFrameRateMilli {
+		return validationError("frame_rate", "resource_limit", "detected media frame rate exceeds the processing limit")
+	}
+	if probe.Channels > MediaMaxAudioChannels {
+		return validationError("channels", "resource_limit", "detected media channel count exceeds the processing limit")
+	}
+	if probe.SampleRate > MediaMaxAudioSampleRate {
+		return validationError("sample_rate", "resource_limit", "detected media sample rate exceeds the processing limit")
+	}
 	if probe.MediaType == MediaTypeVideo {
 		if !containsFold(policy.AllowedVideoCodecs, probe.VideoCodec) {
 			return validationError("video_codec", "unsupported", "video codec is not supported")
@@ -91,14 +130,40 @@ func (policy Policy) ValidateProbe(declaration UploadDeclaration, probe ProbeRes
 }
 
 func BuildDerivativePlan(mediaType MediaType) []DerivativeSpec {
+	return BuildDerivativePlanWithPolicy(mediaType, DefaultPolicy())
+}
+
+func BuildDerivativePlanWithPolicy(mediaType MediaType, policy Policy) []DerivativeSpec {
 	var kinds []DerivativeKind
 	switch mediaType {
 	case MediaTypeImage:
-		kinds = []DerivativeKind{DerivativeThumbnail320, DerivativeThumbnail640, DerivativePreview1280}
+		for _, width := range policy.ImageThumbnailWidths {
+			switch width {
+			case 320:
+				kinds = append(kinds, DerivativeThumbnail320)
+			case 640:
+				kinds = append(kinds, DerivativeThumbnail640)
+			case 1280:
+				kinds = append(kinds, DerivativePreview1280)
+			}
+		}
 	case MediaTypeVideo:
-		kinds = []DerivativeKind{DerivativePoster, DerivativeHoverPreview, DerivativeProxy}
+		if policy.VideoPosterEnabled {
+			kinds = append(kinds, DerivativePoster)
+		}
+		if policy.VideoHoverPreviewEnabled {
+			kinds = append(kinds, DerivativeHoverPreview)
+		}
+		if policy.VideoProxyEnabled {
+			kinds = append(kinds, DerivativeProxy)
+		}
 	case MediaTypeAudio:
-		kinds = []DerivativeKind{DerivativeWaveform, DerivativeProxy}
+		if policy.AudioWaveformEnabled {
+			kinds = append(kinds, DerivativeWaveform)
+		}
+		if policy.AudioProxyEnabled {
+			kinds = append(kinds, DerivativeProxy)
+		}
 	default:
 		return nil
 	}

@@ -2,6 +2,7 @@ package entstore
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"strconv"
@@ -119,6 +120,43 @@ func TestMediaUploadServiceIsIdempotentAndCompletesAssetTransaction(t *testing.T
 	jobs, err := client.MediaProcessingJob.Query().Where(mediaprocessingjob.AssetIDEQ(asset.ID)).All(ctx)
 	if err != nil || len(jobs) != 1 || jobs[0].JobType != "probe" {
 		t.Fatalf("processing jobs=%#v err=%v", jobs, err)
+	}
+}
+
+func TestMediaUploadServiceUsesRuntimePolicyResolver(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:media-runtime-policy-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	project, err := client.Project.Create().SetUserID(45).SetName("Default").SetNameKey("default").SetIsDefault(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := domainmedia.DefaultPolicy()
+	policy.SingleFileMaxBytes = 8
+	now := time.Date(2026, 8, 12, 18, 30, 0, 0, time.UTC)
+	service := mediaassetservice.NewService(NewMediaStore(client), storage.NewStaticRouter(storage.NewLocalBackend(t.TempDir())), mediaassetservice.Options{
+		Policy: domainmedia.DefaultPolicy(), UserQuotaBytes: 1 << 30, Now: func() time.Time { return now },
+		PolicyResolver: func(context.Context) (mediaassetservice.RuntimePolicy, error) {
+			return mediaassetservice.RuntimePolicy{Policy: policy, UserQuotaBytes: 16, UploadTTL: 2 * time.Hour}, nil
+		},
+	})
+	request := mediaassetservice.InitUploadRequest{UserID: 45, ProjectID: project.ID, Filename: "voice.wav", MediaType: domainmedia.MediaTypeAudio, MIMEType: "audio/wav", SizeBytes: 9, IdempotencyKey: "runtime-limit"}
+	if _, err := service.InitUpload(ctx, request); err == nil || !strings.Contains(err.Error(), "configured size limit") {
+		t.Fatalf("runtime file limit error = %v", err)
+	}
+	request.SizeBytes = 8
+	session, err := service.InitUpload(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := session.ExpiresAt.Sub(now); got != 2*time.Hour {
+		t.Fatalf("runtime upload TTL = %v", got)
 	}
 }
 

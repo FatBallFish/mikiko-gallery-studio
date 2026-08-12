@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
@@ -46,6 +47,7 @@ func (s *VideoTaskStore) ClaimDue(ctx context.Context, req worker.ClaimRequest) 
 				),
 				videotaskitem.And(
 					videotaskitem.StatusIn(terminalStates...),
+					videotaskitem.StageNEQ("usage_pending"),
 					videotaskitem.HasTaskWith(videotask.SettlementStatusNEQ("finalized")),
 				),
 			),
@@ -452,9 +454,27 @@ func (s *VideoTaskStore) CommitArtifact(ctx context.Context, req worker.Artifact
 		if _, err := asset.Save(ctx); err != nil {
 			return false, fmt.Errorf("create generated video asset: %w", err)
 		}
-		price := itemPricePoints(item, item.Edges.Task)
+		if _, err := tx.MediaAssetReference.Create().SetAssetID(assetID).SetRefType("video_task_result").SetRefID(item.TaskID).
+			SetRefKey(item.ID.String()).SetUserID(req.UserID).Save(ctx); err != nil {
+			return false, fmt.Errorf("create video result asset reference: %w", err)
+		}
+		if _, err := tx.MediaProcessingJob.Create().SetAssetID(assetID).SetJobType("probe").SetTransformVersion(1).
+			SetStatus("pending").SetRequestedByType("video_task").SetRequestedByID(item.TaskID.String()).Save(ctx); err != nil {
+			return false, fmt.Errorf("create generated video processing job: %w", err)
+		}
+		price, usagePending, priceErr := actualVideoItemPoints(item, item.Edges.Task)
+		if priceErr != nil {
+			return false, priceErr
+		}
+		if usagePending {
+			price = "0.00000"
+		}
+		stage := "succeeded"
+		if usagePending {
+			stage = "usage_pending"
+		}
 		count, err := tx.VideoTaskItem.Update().Where(videotaskitem.IDEQ(itemID), videotaskitem.VersionEQ(req.ExpectedVersion), videotaskitem.LeaseOwnerEQ(req.Owner)).
-			SetStatus(string(domainvideo.ItemStateSucceeded)).SetStage("succeeded").SetVersion(req.ExpectedVersion + 1).
+			SetStatus(string(domainvideo.ItemStateSucceeded)).SetStage(stage).SetVersion(req.ExpectedVersion + 1).
 			SetResultAssetID(assetID).SetActualPoints(price).ClearNextActionAt().ClearLeaseOwner().ClearLeaseExpiresAt().ClearErrorCode().ClearErrorMessage().Save(ctx)
 		if err != nil || count != 1 {
 			return false, err
@@ -476,7 +496,11 @@ func (s *VideoTaskStore) LoadSettlement(ctx context.Context, rawTaskID string) (
 	}
 	result := worker.SettlementSnapshot{TaskID: task.ID.String(), ReservedPoints: task.ReservedPoints}
 	for _, item := range task.Edges.Items {
-		result.Items = append(result.Items, worker.SettlementItem{State: domainvideo.ItemState(item.Status), PricePoints: itemPricePoints(item, task)})
+		_, usagePending, usageErr := actualVideoItemPoints(item, task)
+		if usageErr != nil {
+			return worker.SettlementSnapshot{}, usageErr
+		}
+		result.Items = append(result.Items, worker.SettlementItem{State: domainvideo.ItemState(item.Status), PricePoints: itemPricePoints(item, task), UsagePending: usagePending && domainvideo.ItemState(item.Status) == domainvideo.ItemStateSucceeded})
 	}
 	return result, nil
 }
@@ -767,6 +791,39 @@ func itemPricePoints(item *repoent.VideoTaskItem, task *repoent.VideoTask) strin
 		return value
 	}
 	return "0.00000"
+}
+
+func actualVideoItemPoints(item *repoent.VideoTaskItem, task *repoent.VideoTask) (string, bool, error) {
+	quoted := itemPricePoints(item, task)
+	var rule domainvideo.SalesRule
+	if err := mapStruct(task.PricingSnapshot["sales_rule"], &rule); err != nil || rule.PricingMode == "" || rule.PricingMode == "exact" {
+		return quoted, false, nil
+	}
+	usageSeconds, usageErr := decimal.NewFromString(strings.TrimSpace(item.ActualOutputSeconds))
+	if strings.TrimSpace(item.ActualOutputSeconds) == "" || usageErr != nil || !usageSeconds.IsPositive() {
+		return "0.00000", true, nil
+	}
+	actual, err := domainvideo.CalculateActualUnitPoints(rule, domainvideo.QuoteRequest{
+		DurationSeconds: task.DurationSeconds, ReferenceImageCount: int(int64Snapshot(task.PricingSnapshot, "reference_image_count")), GenerateAudio: task.GenerateAudio, OutputCount: 1,
+	}, domainvideo.ActualUsage{OutputSeconds: item.ActualOutputSeconds})
+	if err != nil {
+		return "", false, fmt.Errorf("calculate metered video item points: %w", err)
+	}
+	reserved, err := decimal.NewFromString(task.ReservedPoints)
+	if err != nil || reserved.IsNegative() {
+		return "", false, errors.New("video reserved points snapshot is invalid")
+	}
+	count := task.RequestedOutputCount
+	if count < 1 {
+		count = 1
+	}
+	itemCap := reserved.Div(decimal.NewFromInt(int64(count))).Round(5)
+	value, _ := decimal.NewFromString(actual)
+	if value.GreaterThan(itemCap) {
+		slog.Error("metered video price exceeded reserved item cap", "task_id", task.ID, "item_id", item.ID, "actual_points", actual, "reserved_item_cap", itemCap.StringFixed(5))
+		return itemCap.StringFixed(5), false, nil
+	}
+	return actual, false, nil
 }
 
 func stepStage(req worker.ApplyStepRequest) string {

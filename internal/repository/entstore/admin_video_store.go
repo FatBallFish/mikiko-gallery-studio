@@ -57,6 +57,10 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 	if err != nil {
 		return adminvideoservice.Snapshot{}, err
 	}
+	routes, err := s.client.RouteModel.Query().Where(routemodel.MediaTypeEQ("video"), routemodel.DeletedAtIsNil()).All(ctx)
+	if err != nil {
+		return adminvideoservice.Snapshot{}, err
+	}
 
 	snapshot := adminvideoservice.Snapshot{GeneratedAt: time.Now().UTC()}
 	for _, row := range capabilities {
@@ -73,17 +77,15 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 		if salesPoints == "0.00000" {
 			salesPoints = row.OutputSecondPoints
 		}
-		snapshot.PriceRules = append(snapshot.PriceRules, adminvideoservice.PriceRuleSummary{ID: int64(row.ID), StrategyID: row.PricingStrategyID, TaskType: row.TaskType, Resolution: row.Resolution, AudioMode: row.AudioMode, RuleVersion: row.RuleVersion, SafetyPoints: row.SafetyPoints, SalesPoints: salesPoints, CandidateCostUpperCNY: row.CandidateCostUpperCny, Enabled: row.Enabled})
+		snapshot.PriceRules = append(snapshot.PriceRules, adminvideoservice.PriceRuleSummary{ID: int64(row.ID), StrategyID: row.PricingStrategyID, TaskType: row.TaskType, Resolution: row.Resolution, AudioMode: row.AudioMode, PricingMode: row.PricingMode, RuleVersion: row.RuleVersion, SafetyPoints: row.SafetyPoints, SalesPoints: salesPoints, CandidateCostUpperCNY: row.CandidateCostUpperCny, Enabled: row.Enabled})
 	}
+	configsByRouteID := make(map[int64]*repoent.VideoRouteConfig, len(routeConfigs))
 	for _, row := range routeConfigs {
-		route, routeErr := s.client.RouteModel.Query().Where(routemodel.IDEQ(int(row.RouteModelID)), routemodel.DeletedAtIsNil()).Only(ctx)
-		if repoent.IsNotFound(routeErr) {
-			continue
-		}
-		if routeErr != nil {
-			return adminvideoservice.Snapshot{}, routeErr
-		}
-		candidateRows, countErr := s.client.RouteModelCandidate.Query().Where(routemodelcandidate.RouteModelIDEQ(row.RouteModelID), routemodelcandidate.EnabledEQ(true), routemodelcandidate.DeletedAtIsNil()).All(ctx)
+		configsByRouteID[row.RouteModelID] = row
+	}
+	for _, route := range routes {
+		routeID := int64(route.ID)
+		candidateRows, countErr := s.client.RouteModelCandidate.Query().Where(routemodelcandidate.RouteModelIDEQ(routeID), routemodelcandidate.EnabledEQ(true), routemodelcandidate.DeletedAtIsNil()).All(ctx)
 		if countErr != nil {
 			return adminvideoservice.Snapshot{}, countErr
 		}
@@ -91,7 +93,20 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 		for _, candidate := range candidateRows {
 			candidateIDs = append(candidateIDs, candidate.AccountModelID)
 		}
-		snapshot.Routes = append(snapshot.Routes, adminvideoservice.RouteConfigSummary{RouteModelID: row.RouteModelID, RouteCode: route.Code, RouteName: route.Name, ConfigVersion: row.ConfigVersion, PricingStrategyID: row.PricingStrategyID, CandidateCount: len(candidateRows), CandidateAccountModelIDs: candidateIDs, TaskTypes: row.TaskTypes, VisibleOptions: row.VisibleOptions, Defaults: row.Defaults, MaxOutputCount: row.MaxOutputCount, Enabled: row.Enabled && route.Enabled})
+		summary := adminvideoservice.RouteConfigSummary{
+			RouteModelID: routeID, RouteCode: route.Code, RouteName: route.Name,
+			CandidateCount: len(candidateRows), CandidateAccountModelIDs: candidateIDs,
+		}
+		if row := configsByRouteID[routeID]; row != nil {
+			summary.ConfigVersion = row.ConfigVersion
+			summary.PricingStrategyID = row.PricingStrategyID
+			summary.TaskTypes = row.TaskTypes
+			summary.VisibleOptions = row.VisibleOptions
+			summary.Defaults = row.Defaults
+			summary.MaxOutputCount = row.MaxOutputCount
+			summary.Enabled = row.Enabled && route.Enabled
+		}
+		snapshot.Routes = append(snapshot.Routes, summary)
 	}
 	plans, err := s.client.SubscriptionPlan.Query().Where(subscriptionplan.PlanTypeEQ("points_package"), subscriptionplan.PurchaseEnabledEQ(true), subscriptionplan.StatusEQ("active"), subscriptionplan.CurrencyEQ("CNY")).All(ctx)
 	if err != nil {

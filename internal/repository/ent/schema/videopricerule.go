@@ -17,6 +17,7 @@ func (VideoPriceRule) Fields() []ent.Field {
 		field.String("task_type").MaxLen(32).NotEmpty(),
 		field.String("resolution").MaxLen(16).NotEmpty(),
 		field.String("audio_mode").MaxLen(16).Default("silent"),
+		field.String("pricing_mode").MaxLen(16).Default("exact"),
 		field.Int("rule_version").Default(1).Positive(),
 		field.Time("effective_at"),
 		field.Time("expires_at").Optional().Nillable(),

@@ -87,7 +87,7 @@ func (c *Client) Submit(ctx context.Context, req videoprovider.Request) (videopr
 		payload["watermark"] = value
 	}
 	var response seedanceTask
-	requestID, err := c.doJSON(ctx, http.MethodPost, "/api/v3/contents/generations/tasks", payload, &response, true)
+	requestID, err := c.doJSON(ctx, http.MethodPost, "/api/v3/contents/generations/tasks", payload, &response, true, req.IdempotencyKey)
 	if err != nil {
 		return videoprovider.Job{}, err
 	}
@@ -102,6 +102,14 @@ func (c *Client) Submit(ctx context.Context, req videoprovider.Request) (videopr
 		}
 	}
 	return videoprovider.Job{ID: response.ID, State: state, RequestID: requestID}, nil
+}
+
+func (c *Client) Reconcile(ctx context.Context, req videoprovider.Request) (videoprovider.Job, bool, error) {
+	job, err := c.Submit(ctx, req)
+	if err != nil {
+		return videoprovider.Job{}, false, err
+	}
+	return job, true, nil
 }
 func (c *Client) Get(ctx context.Context, ref videoprovider.JobRef) (videoprovider.Status, error) {
 	if ref.ID == "" {
@@ -206,8 +214,8 @@ func mapState(value string) (videoprovider.State, error) {
 	}
 }
 func validateRequest(req videoprovider.Request) error {
-	if req.Prompt == "" || req.DurationSeconds <= 0 || req.Resolution == "" || req.AspectRatio == "" || req.OutputFormat == "" {
-		return invalidRequest("prompt, duration, resolution, aspect ratio and output format are required")
+	if strings.TrimSpace(req.IdempotencyKey) == "" || req.Prompt == "" || req.DurationSeconds <= 0 || req.Resolution == "" || req.AspectRatio == "" || req.OutputFormat == "" {
+		return invalidRequest("idempotency key, prompt, duration, resolution, aspect ratio and output format are required")
 	}
 	for key := range req.ProviderOptions {
 		if key != "watermark" {
@@ -216,7 +224,7 @@ func validateRequest(req videoprovider.Request) error {
 	}
 	return nil
 }
-func (c *Client) doJSON(parent context.Context, method, path string, payload, target any, submit bool) (string, error) {
+func (c *Client) doJSON(parent context.Context, method, path string, payload, target any, submit bool, idempotencyKey ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, c.timeout)
 	defer cancel()
 	var raw []byte
@@ -233,6 +241,9 @@ func (c *Client) doJSON(parent context.Context, method, path string, payload, ta
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Accept", "application/json")
+	if len(idempotencyKey) > 0 && strings.TrimSpace(idempotencyKey[0]) != "" {
+		req.Header.Set("Idempotency-Key", strings.TrimSpace(idempotencyKey[0]))
+	}
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

@@ -135,3 +135,28 @@ func TestMediaPolicyUsesOptimisticVersionAndHardLimits(t *testing.T) {
 		t.Fatalf("unexpected versioned policy: %#v", updated)
 	}
 }
+
+func TestMediaPolicyBuildsRuntimeUploadAndDerivativePolicy(t *testing.T) {
+	policy := DefaultMediaPolicy()
+	policy.AllowedFormats["image"] = []string{"png"}
+	policy.SingleFileMaxBytes = 512
+	policy.VideoMaxDurationSeconds = 12
+	policy.UserQuotaBytes = 4096
+	policy.ImageThumbnailWidths = []int{320}
+	policy.VideoPosterEnabled = false
+	policy.UploadSessionTTLHours = 6
+
+	runtime := policy.RuntimePolicy()
+	if runtime.Policy.SingleFileMaxBytes != 512 || runtime.Policy.VideoMaxDurationMS != 12_000 {
+		t.Fatalf("runtime limits = %#v", runtime.Policy)
+	}
+	if got := runtime.Policy.AllowedFormats["image"]; len(got) != 1 || got[0] != "png" {
+		t.Fatalf("runtime image formats = %#v", got)
+	}
+	if runtime.Policy.VideoPosterEnabled || len(runtime.Policy.ImageThumbnailWidths) != 1 {
+		t.Fatalf("runtime derivatives = %#v", runtime.Policy)
+	}
+	if runtime.UserQuotaBytes != 4096 || runtime.UploadTTL != 6*time.Hour {
+		t.Fatalf("runtime upload limits = %#v", runtime)
+	}
+}

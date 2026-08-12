@@ -19,6 +19,8 @@
 
 Docker Worker 固定安装 FFmpeg/ffprobe；Native Worker 必须由宿主机提供可执行文件。部署后检查 Worker readiness、`ffmpeg -version`、`ffprobe -version` 和黄金媒体探测结果。媒体进程必须保持 `-nostdin`、禁止网络协议、受控线程/时长/像素/帧数/输出大小和墙钟超时。
 
+`VIDEO_ARTIFACT_ALLOW_LOOPBACK` 与 `VIDEO_ARTIFACT_TEST_CA_FILE` 只用于 local/test 隔离验收自签 HTTPS 产物站。后者必须与前者同时开启，生产环境配置加载会拒绝任一测试能力；生产 Provider 产物仍必须使用公共可信证书、HTTPS 和账号级精确 host allowlist。
+
 监控 `pic_gallery_worker_temporary_disk_used_percent` 与 `pic_gallery_worker_temporary_disk_free_bytes`：
 
 - 使用率达到 75%：暂停领取新的媒体处理任务，告警并清理已结束 job 的临时文件。
@@ -38,6 +40,12 @@ Redis 故障时，任务状态继续由 PostgreSQL 驱动，SSE 退化为轮询�
 3. 画布：核对 generation run、task/result asset 与 attached node。恢复时复用已有 run/task/asset，按 revision 冲突规则附着，禁止重新生成。
 4. 上传：核对 completed session 是否已有 asset；到期 active multipart 领取为 `expiring`，先调用原存储后端 Abort，再释放 reserved quota。Abort 失败保留配额，等待 lease 超时重试；对象已不存在等同 Abort 成功。
 5. 对象删除：资产删除只进入 durable deletion job。确认引用计数和 storage identity 后再删对象；失败按现有退避重试，禁止凭 object key 猜测存储实例。
+
+后台视频任务页只提供三类幂等恢复：重新转存、重新处理派生资源、重新结算。重新结算仅适用于全部结果已进入 `succeeded/failed/cancelled` 终态且 `settlement_status != finalized` 的任务；它只释放过期租约并让 Video Worker 复用原 reservation 和账本幂等键继续收敛，不调用 Provider。运行中任务和已完成结算的任务会返回冲突，不能通过手工改状态绕过。
+
+## 媒体正文与 Local 兼容例外
+
+S3、R2 和 MinIO 模式的上传、预览与下载正文必须走短时签名 URL，应用 API 只返回授权元数据。Local filesystem 没有独立对象端点，因此 `/content` 是技术方案允许的兼容例外：应用使用 `io.Reader` 和 HTTP Range 流式输出，不把完整文件读入内存，也不经过 JSON/base64。反向代理必须关闭该路径的整包缓冲并保留 Range；生产环境若媒体流量明显增长，应迁移到支持直传直取的对象存储，不能通过提高 API 内存限制维持 Local 模式。
 
 ## 历史图片统一资产回填
 

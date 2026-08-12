@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -231,11 +232,11 @@ func TestRegistryProbeCleansExpiredReadAndMismatchWithIndependentContext(t *test
 func TestRegistryProbeCleanupFailureAndNotFoundSemantics(t *testing.T) {
 	t.Run("cleanup failure keeps probe failed", func(t *testing.T) {
 		backend := newLifecycleProbeBackend()
-		backend.deleteErr = errors.New("delete failed")
+		backend.deleteErr = errors.New("delete failed marker")
 		backend.deleteCommitsBeforeError = true
 		result := probeWithLifecycleBackend(context.Background(), backend)
 		state := backend.snapshot()
-		if result.Status != domainstorageconfig.ProbeStatusFailed || state.objectExists || state.deleteCalls == 0 {
+		if result.Status != domainstorageconfig.ProbeStatusFailed || state.objectExists || state.deleteCalls == 0 || !strings.Contains(result.Message, "delete failed marker") {
 			t.Fatalf("cleanup failure probe=%#v backend=%#v", result, state)
 		}
 	})

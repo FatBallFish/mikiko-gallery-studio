@@ -27,6 +27,8 @@ const (
 	FieldResolution = "resolution"
 	// FieldAudioMode holds the string denoting the audio_mode field in the database.
 	FieldAudioMode = "audio_mode"
+	// FieldPricingMode holds the string denoting the pricing_mode field in the database.
+	FieldPricingMode = "pricing_mode"
 	// FieldRuleVersion holds the string denoting the rule_version field in the database.
 	FieldRuleVersion = "rule_version"
 	// FieldEffectiveAt holds the string denoting the effective_at field in the database.
@@ -77,6 +79,7 @@ var Columns = []string{
 	FieldTaskType,
 	FieldResolution,
 	FieldAudioMode,
+	FieldPricingMode,
 	FieldRuleVersion,
 	FieldEffectiveAt,
 	FieldExpiresAt,
@@ -122,6 +125,10 @@ var (
 	DefaultAudioMode string
 	// AudioModeValidator is a validator for the "audio_mode" field. It is called by the builders before save.
 	AudioModeValidator func(string) error
+	// DefaultPricingMode holds the default value on creation for the "pricing_mode" field.
+	DefaultPricingMode string
+	// PricingModeValidator is a validator for the "pricing_mode" field. It is called by the builders before save.
+	PricingModeValidator func(string) error
 	// DefaultRuleVersion holds the default value on creation for the "rule_version" field.
 	DefaultRuleVersion int
 	// RuleVersionValidator is a validator for the "rule_version" field. It is called by the builders before save.
@@ -201,6 +208,11 @@ func ByResolution(opts ...sql.OrderTermOption) OrderOption {
 // ByAudioMode orders the results by the audio_mode field.
 func ByAudioMode(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAudioMode, opts...).ToFunc()
+}
+
+// ByPricingMode orders the results by the pricing_mode field.
+func ByPricingMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPricingMode, opts...).ToFunc()
 }
 
 // ByRuleVersion orders the results by the rule_version field.

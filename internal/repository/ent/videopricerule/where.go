@@ -89,6 +89,11 @@ func AudioMode(v string) predicate.VideoPriceRule {
 	return predicate.VideoPriceRule(sql.FieldEQ(FieldAudioMode, v))
 }
 
+// PricingMode applies equality check predicate on the "pricing_mode" field. It's identical to PricingModeEQ.
+func PricingMode(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldEQ(FieldPricingMode, v))
+}
+
 // RuleVersion applies equality check predicate on the "rule_version" field. It's identical to RuleVersionEQ.
 func RuleVersion(v int) predicate.VideoPriceRule {
 	return predicate.VideoPriceRule(sql.FieldEQ(FieldRuleVersion, v))
@@ -537,6 +542,71 @@ func AudioModeEqualFold(v string) predicate.VideoPriceRule {
 // AudioModeContainsFold applies the ContainsFold predicate on the "audio_mode" field.
 func AudioModeContainsFold(v string) predicate.VideoPriceRule {
 	return predicate.VideoPriceRule(sql.FieldContainsFold(FieldAudioMode, v))
+}
+
+// PricingModeEQ applies the EQ predicate on the "pricing_mode" field.
+func PricingModeEQ(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldEQ(FieldPricingMode, v))
+}
+
+// PricingModeNEQ applies the NEQ predicate on the "pricing_mode" field.
+func PricingModeNEQ(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldNEQ(FieldPricingMode, v))
+}
+
+// PricingModeIn applies the In predicate on the "pricing_mode" field.
+func PricingModeIn(vs ...string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldIn(FieldPricingMode, vs...))
+}
+
+// PricingModeNotIn applies the NotIn predicate on the "pricing_mode" field.
+func PricingModeNotIn(vs ...string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldNotIn(FieldPricingMode, vs...))
+}
+
+// PricingModeGT applies the GT predicate on the "pricing_mode" field.
+func PricingModeGT(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldGT(FieldPricingMode, v))
+}
+
+// PricingModeGTE applies the GTE predicate on the "pricing_mode" field.
+func PricingModeGTE(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldGTE(FieldPricingMode, v))
+}
+
+// PricingModeLT applies the LT predicate on the "pricing_mode" field.
+func PricingModeLT(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldLT(FieldPricingMode, v))
+}
+
+// PricingModeLTE applies the LTE predicate on the "pricing_mode" field.
+func PricingModeLTE(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldLTE(FieldPricingMode, v))
+}
+
+// PricingModeContains applies the Contains predicate on the "pricing_mode" field.
+func PricingModeContains(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldContains(FieldPricingMode, v))
+}
+
+// PricingModeHasPrefix applies the HasPrefix predicate on the "pricing_mode" field.
+func PricingModeHasPrefix(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldHasPrefix(FieldPricingMode, v))
+}
+
+// PricingModeHasSuffix applies the HasSuffix predicate on the "pricing_mode" field.
+func PricingModeHasSuffix(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldHasSuffix(FieldPricingMode, v))
+}
+
+// PricingModeEqualFold applies the EqualFold predicate on the "pricing_mode" field.
+func PricingModeEqualFold(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldEqualFold(FieldPricingMode, v))
+}
+
+// PricingModeContainsFold applies the ContainsFold predicate on the "pricing_mode" field.
+func PricingModeContainsFold(v string) predicate.VideoPriceRule {
+	return predicate.VideoPriceRule(sql.FieldContainsFold(FieldPricingMode, v))
 }
 
 // RuleVersionEQ applies the EQ predicate on the "rule_version" field.

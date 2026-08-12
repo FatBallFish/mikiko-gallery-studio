@@ -15,7 +15,10 @@ import (
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediauploadsession"
 	projectent "github.com/fatballfish/pic-gallery/internal/repository/ent/project"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/google/uuid"
 )
@@ -115,8 +118,8 @@ func TestProjectStoreListUsesBoundedAggregatesAndPreservesSnapshots(t *testing.T
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if got := counting.queries.Load(); got != 3 {
-		t.Fatalf("project list queries = %d, want 3 bounded aggregate queries", got)
+	if got := counting.queries.Load(); got != 6 {
+		t.Fatalf("project list queries = %d, want 6 bounded aggregate queries", got)
 	}
 	if len(items) != 3 || items[0].ID != defaultProject.ID || items[1].ID != alpha.ID || items[2].ID != beta.ID {
 		t.Fatalf("project list order = %#v", items)
@@ -225,6 +228,94 @@ func TestProjectStoreTransferIsAtomicAndAudited(t *testing.T) {
 	}
 	if metadata["request_id"] != "request-project-transfer-delete" || metadata["idempotency_key"] != "project-transfer-delete" {
 		t.Fatalf("transfer audit correlation metadata = %#v", metadata)
+	}
+}
+
+func TestProjectStoreTransferIncludesUnifiedMediaVideoTasksAndActiveUploads(t *testing.T) {
+	ctx, client := openProjectStoreTestClient(t, "multimedia-transfer")
+	svc := projectservice.NewService(NewProjectStore(client))
+	target, err := svc.EnsureDefault(ctx, 808)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := svc.Create(ctx, 808, domainproject.CreateRequest{Name: "Multimedia"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID := uuid.MustParse(source.ID)
+	targetID := uuid.MustParse(target.ID)
+
+	imageTaskID, imageResultID := uuid.New(), uuid.New()
+	if _, err := client.ImageTask.Create().SetID(imageTaskID).SetUserID(808).SetProjectID(sourceID).
+		SetTaskType("text_to_image").SetPrompt("still").SetAbstractModel("plus").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ImageResult.Create().SetID(imageResultID).SetTaskID(imageTaskID).SetUserID(808).SetProjectID(sourceID).
+		SetObjectKey("projects/multimedia/still.png").SetMimeType("image/png").SetSha256("still").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.MediaAsset.Create().SetID(imageResultID).SetUserID(808).SetProjectID(sourceID).
+		SetLegacyImageResultID(imageResultID).SetName("still.png").SetNameKey("still.png").SetMediaType("image").
+		SetSourceType("generated").SetStatus("ready").SetObjectKey("media/original/808/still.png").SetMimeType("image/png").SetFileSizeBytes(100).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	standaloneAssetID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(standaloneAssetID).SetUserID(808).SetProjectID(sourceID).
+		SetName("voice.wav").SetNameKey("voice.wav").SetMediaType("audio").SetSourceType("local_upload").
+		SetStatus("ready").SetObjectKey("media/original/808/voice.wav").SetMimeType("audio/wav").SetFileSizeBytes(200).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	videoTaskID := uuid.New()
+	if _, err := client.VideoTask.Create().SetID(videoTaskID).SetUserID(808).SetProjectID(sourceID).
+		SetTaskType("text_to_video").SetPromptTemplate("move").SetPromptBindingSnapshot(map[string]any{}).SetExecutionPrompt("move").
+		SetRouteModelID(1).SetRouteModelCode("cinema").SetDurationSeconds(5).SetResolution("720p").SetAspectRatio("16:9").
+		SetEstimatedPoints("1.00000").SetReservedPoints("1.00000").SetPricingSnapshot(map[string]any{}).SetRoutingSnapshot(map[string]any{}).
+		SetIdempotencyKey("multimedia-video").SetRequestFingerprint("multimedia-video").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	uploadID := uuid.New()
+	if _, err := client.MediaUploadSession.Create().SetID(uploadID).SetUserID(808).SetProjectID(sourceID).
+		SetOriginalFilename("clip.mp4").SetDeclaredMediaType("video").SetDeclaredMimeType("video/mp4").SetDeclaredSizeBytes(1024).
+		SetObjectKey("media/original/808/upload/clip.mp4").SetPartSize(1024).SetPartCount(1).SetStatus("uploading").
+		SetReservedBytes(1024).SetIdempotencyKey("multimedia-upload").SetRequestFingerprint("multimedia-upload").
+		SetExpiresAt(time.Now().UTC().Add(time.Hour)).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.Delete(ctx, 808, source.ID, domainproject.DeleteRequest{ExpectedVersion: source.Version}); err == nil {
+		t.Fatal("multimedia project without transfer target must not be deleted")
+	}
+	result, err := svc.Delete(ctx, 808, source.ID, domainproject.DeleteRequest{
+		TargetProjectID: target.ID, ExpectedVersion: source.Version, IdempotencyKey: "multimedia-transfer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Transferred.Tasks != 2 || result.Transferred.Assets != 3 {
+		t.Fatalf("multimedia transfer counts = %#v, want 2 tasks and 3 assets", result.Transferred)
+	}
+	checks := []struct {
+		name  string
+		count func() (int, error)
+	}{
+		{"image tasks", func() (int, error) { return client.ImageTask.Query().Where(imagetask.ProjectIDEQ(targetID)).Count(ctx) }},
+		{"image results", func() (int, error) {
+			return client.ImageResult.Query().Where(imageresult.ProjectIDEQ(targetID)).Count(ctx)
+		}},
+		{"media assets", func() (int, error) {
+			return client.MediaAsset.Query().Where(mediaasset.ProjectIDEQ(targetID)).Count(ctx)
+		}},
+		{"video tasks", func() (int, error) { return client.VideoTask.Query().Where(videotask.ProjectIDEQ(targetID)).Count(ctx) }},
+		{"upload sessions", func() (int, error) {
+			return client.MediaUploadSession.Query().Where(mediauploadsession.ProjectIDEQ(targetID)).Count(ctx)
+		}},
+	}
+	wants := []int{1, 1, 2, 1, 1}
+	for index, check := range checks {
+		count, err := check.count()
+		if err != nil || count != wants[index] {
+			t.Fatalf("transferred %s = %d, %v; want %d", check.name, count, err, wants[index])
+		}
 	}
 }
 

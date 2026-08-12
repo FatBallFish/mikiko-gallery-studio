@@ -75,7 +75,7 @@ func (r *Resolver) ListVisibleRouteModels(ctx context.Context, userGroupCodes []
 	}
 	models := make([]RouteModelConfig, 0, len(routing.RouteModels))
 	for _, routeModel := range routing.RouteModels {
-		if !routeModel.Enabled || routeModel.Visibility == "hidden" {
+		if !routeModel.Enabled || routeModel.Visibility == "hidden" || !isImageRouteModel(routeModel) {
 			continue
 		}
 		matched := visibility[routeModel.ID]
@@ -604,8 +604,13 @@ type RouteModelConfig struct {
 	Name        string
 	Description string
 	Visibility  string
+	MediaType   string
 	Enabled     bool
 	SortOrder   int
+}
+
+func isImageRouteModel(route RouteModelConfig) bool {
+	return route.MediaType == "" || strings.EqualFold(route.MediaType, "image")
 }
 
 type RouteCandidateConfig struct {
@@ -1139,7 +1144,7 @@ func (r *Resolver) resolveRouteContext(ctx context.Context, req ResolveRequest) 
 	}
 	var routeModel RouteModelConfig
 	for _, item := range routing.RouteModels {
-		if item.Enabled && strings.EqualFold(item.Code, routeCode) {
+		if item.Enabled && isImageRouteModel(item) && strings.EqualFold(item.Code, routeCode) {
 			routeModel = item
 			break
 		}

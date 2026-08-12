@@ -560,6 +560,7 @@ function toRouteModel(raw: any): RouteModel {
     name: raw.name ?? raw.display_name ?? raw.code ?? '',
     description: raw.description ?? '',
     visibility: raw.visibility ?? 'hidden',
+    media_type: raw.media_type === 'video' ? 'video' : 'image',
     enabled: Boolean(raw.enabled ?? true),
     sort_order: Number(raw.sort_order ?? 0),
     group_ids: raw.group_ids ?? (raw.groups ?? []).map((group: any) => group.id ?? group.group_id ?? group.code),

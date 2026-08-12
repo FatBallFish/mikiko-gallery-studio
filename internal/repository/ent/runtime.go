@@ -4784,68 +4784,74 @@ func init() {
 	videopricerule.DefaultAudioMode = videopriceruleDescAudioMode.Default.(string)
 	// videopricerule.AudioModeValidator is a validator for the "audio_mode" field. It is called by the builders before save.
 	videopricerule.AudioModeValidator = videopriceruleDescAudioMode.Validators[0].(func(string) error)
+	// videopriceruleDescPricingMode is the schema descriptor for pricing_mode field.
+	videopriceruleDescPricingMode := videopriceruleFields[4].Descriptor()
+	// videopricerule.DefaultPricingMode holds the default value on creation for the pricing_mode field.
+	videopricerule.DefaultPricingMode = videopriceruleDescPricingMode.Default.(string)
+	// videopricerule.PricingModeValidator is a validator for the "pricing_mode" field. It is called by the builders before save.
+	videopricerule.PricingModeValidator = videopriceruleDescPricingMode.Validators[0].(func(string) error)
 	// videopriceruleDescRuleVersion is the schema descriptor for rule_version field.
-	videopriceruleDescRuleVersion := videopriceruleFields[4].Descriptor()
+	videopriceruleDescRuleVersion := videopriceruleFields[5].Descriptor()
 	// videopricerule.DefaultRuleVersion holds the default value on creation for the rule_version field.
 	videopricerule.DefaultRuleVersion = videopriceruleDescRuleVersion.Default.(int)
 	// videopricerule.RuleVersionValidator is a validator for the "rule_version" field. It is called by the builders before save.
 	videopricerule.RuleVersionValidator = videopriceruleDescRuleVersion.Validators[0].(func(int) error)
 	// videopriceruleDescOutputSecondPoints is the schema descriptor for output_second_points field.
-	videopriceruleDescOutputSecondPoints := videopriceruleFields[7].Descriptor()
+	videopriceruleDescOutputSecondPoints := videopriceruleFields[8].Descriptor()
 	// videopricerule.DefaultOutputSecondPoints holds the default value on creation for the output_second_points field.
 	videopricerule.DefaultOutputSecondPoints = videopriceruleDescOutputSecondPoints.Default.(string)
 	// videopriceruleDescFixedTaskPoints is the schema descriptor for fixed_task_points field.
-	videopriceruleDescFixedTaskPoints := videopriceruleFields[8].Descriptor()
+	videopriceruleDescFixedTaskPoints := videopriceruleFields[9].Descriptor()
 	// videopricerule.DefaultFixedTaskPoints holds the default value on creation for the fixed_task_points field.
 	videopricerule.DefaultFixedTaskPoints = videopriceruleDescFixedTaskPoints.Default.(string)
 	// videopriceruleDescReferenceImagePoints is the schema descriptor for reference_image_points field.
-	videopriceruleDescReferenceImagePoints := videopriceruleFields[9].Descriptor()
+	videopriceruleDescReferenceImagePoints := videopriceruleFields[10].Descriptor()
 	// videopricerule.DefaultReferenceImagePoints holds the default value on creation for the reference_image_points field.
 	videopricerule.DefaultReferenceImagePoints = videopriceruleDescReferenceImagePoints.Default.(string)
 	// videopriceruleDescInputVideoSecondPoints is the schema descriptor for input_video_second_points field.
-	videopriceruleDescInputVideoSecondPoints := videopriceruleFields[10].Descriptor()
+	videopriceruleDescInputVideoSecondPoints := videopriceruleFields[11].Descriptor()
 	// videopricerule.DefaultInputVideoSecondPoints holds the default value on creation for the input_video_second_points field.
 	videopricerule.DefaultInputVideoSecondPoints = videopriceruleDescInputVideoSecondPoints.Default.(string)
 	// videopriceruleDescReferenceAudioSecondPoints is the schema descriptor for reference_audio_second_points field.
-	videopriceruleDescReferenceAudioSecondPoints := videopriceruleFields[11].Descriptor()
+	videopriceruleDescReferenceAudioSecondPoints := videopriceruleFields[12].Descriptor()
 	// videopricerule.DefaultReferenceAudioSecondPoints holds the default value on creation for the reference_audio_second_points field.
 	videopricerule.DefaultReferenceAudioSecondPoints = videopriceruleDescReferenceAudioSecondPoints.Default.(string)
 	// videopriceruleDescGeneratedAudioFixedPoints is the schema descriptor for generated_audio_fixed_points field.
-	videopriceruleDescGeneratedAudioFixedPoints := videopriceruleFields[12].Descriptor()
+	videopriceruleDescGeneratedAudioFixedPoints := videopriceruleFields[13].Descriptor()
 	// videopricerule.DefaultGeneratedAudioFixedPoints holds the default value on creation for the generated_audio_fixed_points field.
 	videopricerule.DefaultGeneratedAudioFixedPoints = videopriceruleDescGeneratedAudioFixedPoints.Default.(string)
 	// videopriceruleDescGeneratedAudioSecondPoints is the schema descriptor for generated_audio_second_points field.
-	videopriceruleDescGeneratedAudioSecondPoints := videopriceruleFields[13].Descriptor()
+	videopriceruleDescGeneratedAudioSecondPoints := videopriceruleFields[14].Descriptor()
 	// videopricerule.DefaultGeneratedAudioSecondPoints holds the default value on creation for the generated_audio_second_points field.
 	videopricerule.DefaultGeneratedAudioSecondPoints = videopriceruleDescGeneratedAudioSecondPoints.Default.(string)
 	// videopriceruleDescMinimumBillableSeconds is the schema descriptor for minimum_billable_seconds field.
-	videopriceruleDescMinimumBillableSeconds := videopriceruleFields[14].Descriptor()
+	videopriceruleDescMinimumBillableSeconds := videopriceruleFields[15].Descriptor()
 	// videopricerule.DefaultMinimumBillableSeconds holds the default value on creation for the minimum_billable_seconds field.
 	videopricerule.DefaultMinimumBillableSeconds = videopriceruleDescMinimumBillableSeconds.Default.(int)
 	// videopricerule.MinimumBillableSecondsValidator is a validator for the "minimum_billable_seconds" field. It is called by the builders before save.
 	videopricerule.MinimumBillableSecondsValidator = videopriceruleDescMinimumBillableSeconds.Validators[0].(func(int) error)
 	// videopriceruleDescMinimumTaskPoints is the schema descriptor for minimum_task_points field.
-	videopriceruleDescMinimumTaskPoints := videopriceruleFields[15].Descriptor()
+	videopriceruleDescMinimumTaskPoints := videopriceruleFields[16].Descriptor()
 	// videopricerule.DefaultMinimumTaskPoints holds the default value on creation for the minimum_task_points field.
 	videopricerule.DefaultMinimumTaskPoints = videopriceruleDescMinimumTaskPoints.Default.(string)
 	// videopriceruleDescReserveMarkup is the schema descriptor for reserve_markup field.
-	videopriceruleDescReserveMarkup := videopriceruleFields[16].Descriptor()
+	videopriceruleDescReserveMarkup := videopriceruleFields[17].Descriptor()
 	// videopricerule.DefaultReserveMarkup holds the default value on creation for the reserve_markup field.
 	videopricerule.DefaultReserveMarkup = videopriceruleDescReserveMarkup.Default.(string)
 	// videopriceruleDescSafetyPoints is the schema descriptor for safety_points field.
-	videopriceruleDescSafetyPoints := videopriceruleFields[17].Descriptor()
+	videopriceruleDescSafetyPoints := videopriceruleFields[18].Descriptor()
 	// videopricerule.DefaultSafetyPoints holds the default value on creation for the safety_points field.
 	videopricerule.DefaultSafetyPoints = videopriceruleDescSafetyPoints.Default.(string)
 	// videopriceruleDescCandidateCostUpperCny is the schema descriptor for candidate_cost_upper_cny field.
-	videopriceruleDescCandidateCostUpperCny := videopriceruleFields[18].Descriptor()
+	videopriceruleDescCandidateCostUpperCny := videopriceruleFields[19].Descriptor()
 	// videopricerule.DefaultCandidateCostUpperCny holds the default value on creation for the candidate_cost_upper_cny field.
 	videopricerule.DefaultCandidateCostUpperCny = videopriceruleDescCandidateCostUpperCny.Default.(string)
 	// videopriceruleDescEnabled is the schema descriptor for enabled field.
-	videopriceruleDescEnabled := videopriceruleFields[20].Descriptor()
+	videopriceruleDescEnabled := videopriceruleFields[21].Descriptor()
 	// videopricerule.DefaultEnabled holds the default value on creation for the enabled field.
 	videopricerule.DefaultEnabled = videopriceruleDescEnabled.Default.(bool)
 	// videopriceruleDescInternalNote is the schema descriptor for internal_note field.
-	videopriceruleDescInternalNote := videopriceruleFields[21].Descriptor()
+	videopriceruleDescInternalNote := videopriceruleFields[22].Descriptor()
 	// videopricerule.DefaultInternalNote holds the default value on creation for the internal_note field.
 	videopricerule.DefaultInternalNote = videopriceruleDescInternalNote.Default.(string)
 	// videopricerule.InternalNoteValidator is a validator for the "internal_note" field. It is called by the builders before save.

@@ -93,6 +93,7 @@ type PriceRuleWrite struct {
 	TaskType                   string         `json:"task_type"`
 	Resolution                 string         `json:"resolution"`
 	AudioMode                  string         `json:"audio_mode"`
+	PricingMode                string         `json:"pricing_mode"`
 	DurationSeconds            int            `json:"duration_seconds"`
 	EffectiveAt                time.Time      `json:"effective_at"`
 	ExpiresAt                  *time.Time     `json:"expires_at,omitempty"`
@@ -300,7 +301,15 @@ func (s *Service) SavePriceRule(ctx context.Context, input PriceRuleWrite) (Pric
 	if input.EffectiveAt.IsZero() {
 		return PriceRuleSummary{}, errs.BadRequest("effective_at is required")
 	}
+	input.PricingMode = strings.ToLower(strings.TrimSpace(input.PricingMode))
+	if input.PricingMode == "" {
+		input.PricingMode = "exact"
+	}
+	if input.PricingMode != "exact" && input.PricingMode != "metered" {
+		return PriceRuleSummary{}, errs.BadRequest("pricing_mode must be exact or metered")
+	}
 	if _, err := domainvideo.CalculateQuote(domainvideo.SalesRule{
+		PricingMode:     input.PricingMode,
 		FixedTaskPoints: input.FixedTaskPoints, OutputSecondPoints: input.OutputSecondPoints,
 		ReferenceImagePoints: input.ReferenceImagePoints, InputVideoSecondPoints: input.InputVideoSecondPoints,
 		ReferenceAudioSecondPoints: input.ReferenceAudioSecondPoints, GeneratedAudioFixedPoints: input.GeneratedAudioFixedPoints,
@@ -318,6 +327,7 @@ func (s *Service) SavePriceRule(ctx context.Context, input PriceRuleWrite) (Pric
 			return PriceRuleSummary{}, err
 		}
 		quote, err := domainvideo.CalculateQuote(domainvideo.SalesRule{
+			PricingMode:     input.PricingMode,
 			FixedTaskPoints: input.FixedTaskPoints, OutputSecondPoints: input.OutputSecondPoints,
 			ReferenceImagePoints: input.ReferenceImagePoints, InputVideoSecondPoints: input.InputVideoSecondPoints,
 			ReferenceAudioSecondPoints: input.ReferenceAudioSecondPoints, GeneratedAudioFixedPoints: input.GeneratedAudioFixedPoints,
@@ -575,13 +585,17 @@ func (s *Service) Recalculate(ctx context.Context, req RecalculateRequest) ([]Pr
 		}
 		version := 0
 		id := int64(0)
+		pricingMode := "exact"
 		for _, rule := range snapshot.PriceRules {
 			if rule.StrategyID == req.StrategyID && rule.TaskType == combo.TaskType && rule.Resolution == combo.Resolution && rule.AudioMode == combo.AudioMode && rule.RuleVersion > version {
 				version = rule.RuleVersion
 				id = rule.ID
+				if rule.PricingMode != "" {
+					pricingMode = rule.PricingMode
+				}
 			}
 		}
-		saved, err := s.SavePriceRule(ctx, PriceRuleWrite{ID: id, RouteModelID: req.RouteModelID, StrategyID: req.StrategyID, ExpectedVersion: version, TaskType: combo.TaskType, Resolution: combo.Resolution, AudioMode: combo.AudioMode, DurationSeconds: combo.DurationSeconds, EffectiveAt: req.EffectiveAt, MinimumTaskPoints: simulation.SafetyPoints, SafetyPoints: simulation.SafetyPoints, CandidateCostUpperCNY: simulation.WorstCandidateCostCNY, SafetySnapshot: map[string]any{"candidate_account_model_id": simulation.CandidateAccountModelID, "net_point_income_cny": simulation.NetPointIncomeCNY}, Enabled: true})
+		saved, err := s.SavePriceRule(ctx, PriceRuleWrite{ID: id, RouteModelID: req.RouteModelID, StrategyID: req.StrategyID, ExpectedVersion: version, TaskType: combo.TaskType, Resolution: combo.Resolution, AudioMode: combo.AudioMode, PricingMode: pricingMode, DurationSeconds: combo.DurationSeconds, EffectiveAt: req.EffectiveAt, MinimumTaskPoints: simulation.SafetyPoints, SafetyPoints: simulation.SafetyPoints, CandidateCostUpperCNY: simulation.WorstCandidateCostCNY, SafetySnapshot: map[string]any{"candidate_account_model_id": simulation.CandidateAccountModelID, "net_point_income_cny": simulation.NetPointIncomeCNY}, Enabled: true})
 		if err != nil {
 			return nil, err
 		}

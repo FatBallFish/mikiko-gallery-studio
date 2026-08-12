@@ -315,7 +315,7 @@ export type AdminVideoConfiguration = {
   capabilities: Array<{ account_model_id: number; capability_version: string; validation_status: string; capability: Record<string, unknown>; enabled: boolean }>
   cost_rules: Array<{ id: number; account_model_id: number; billing_mode: string; rule_version: number; currency: string; rates: Record<string, unknown>; validation_status: string; effective_at: string; expires_at?: string; enabled: boolean }>
   pricing_strategies: AdminVideoPricingStrategy[]
-  price_rules: Array<{ id: number; pricing_strategy_id: number; task_type: string; resolution: string; audio_mode: string; rule_version: number; safety_points: string; sales_points: string; candidate_cost_upper_cny: string; enabled: boolean }>
+  price_rules: Array<{ id: number; pricing_strategy_id: number; task_type: string; resolution: string; audio_mode: string; pricing_mode: 'exact' | 'metered'; rule_version: number; safety_points: string; sales_points: string; candidate_cost_upper_cny: string; enabled: boolean }>
   routes: AdminVideoRouteConfig[]
   point_products?: Array<{id: number; code: string; price_cny: string; points: string; bonus_points: string; enabled: boolean}>
   impacts: AdminVideoImpact[]
@@ -336,7 +336,7 @@ export type AdminVideoCostRuleWrite = { id?: number; expected_rule_version: numb
 export type AdminVideoStrategyWrite = Partial<AdminVideoPricingStrategy> & { expected_version: number; code: string; name: string; enabled: boolean }
 export type AdminVideoSimulationRequest = { route_model_id: number; task_type: string; resolution: string; audio_mode: string; duration_seconds: number; reference_image_count?: number }
 export type AdminVideoSimulationResult = { worst_candidate_cost_cny: string; safety_points: string; net_point_income_cny: string; candidate_account_model_id: number }
-export type AdminVideoPriceRuleWrite = { id?: number; route_model_id: number; pricing_strategy_id: number; expected_version: number; task_type: string; resolution: string; audio_mode: string; duration_seconds: number; effective_at: string; minimum_task_points: string; safety_points?: string; enabled: boolean; [key: string]: unknown }
+export type AdminVideoPriceRuleWrite = { id?: number; route_model_id: number; pricing_strategy_id: number; expected_version: number; task_type: string; resolution: string; audio_mode: string; duration_seconds: number; effective_at: string; minimum_task_points: string; pricing_mode: 'exact' | 'metered'; safety_points?: string; enabled: boolean; [key: string]: unknown }
 export type AdminVideoRouteConfigWrite = { expected_version: string; config_version: string; pricing_strategy_id: number; task_types: string[]; visible_options: Record<string, unknown>; defaults: Record<string, unknown>; visible_combinations: AdminVideoVisibleCombination[]; max_output_count: number; enabled: boolean }
 export type AdminVideoTaskSummary = { id: string; user_id: number; project_id: string; route_model_id: number; route_model_code: string; status: string; settlement_status: string; estimated_points: string; actual_points: string; created_at: string; updated_at: string }
 export type AdminVideoAttempt = { id: string; item_id: string; attempt_no: number; provider_code: string; model_code: string; provider_job_id?: string; status: string; usage_raw: Record<string, unknown>; usage_normalized: Record<string, unknown>; cost_snapshot: Record<string, unknown>; provider_cost: string; error_category?: string; error_code?: string; error_message?: string; started_at?: string; finished_at?: string }
@@ -1466,12 +1466,14 @@ export type PromptOptimizationModelSummary = { id: ID; model_code: string; displ
 export type PromptOptimizationEstimate = { quote: string; expires_at: string; estimated_points: string; model: PromptOptimizationModelSummary }
 export type PromptOptimizationResult = { run_id: string; optimized_prompt: string; input_tokens: number; output_tokens: number; estimated_points: string; actual_points: string }
 export type RouteModelVisibility = 'public' | 'groups' | 'hidden' | string
+export type RouteModelMediaType = 'image' | 'video'
 export type RouteModel = {
   id: ID
   code: string
   name: string
   description?: string
   visibility: RouteModelVisibility
+  media_type: RouteModelMediaType
   enabled: boolean
   sort_order: number
   group_ids?: ID[]
@@ -1481,7 +1483,7 @@ export type RouteModel = {
   created_at: string
   updated_at: string
 }
-export type RouteModelWriteRequest = { code: string; name: string; description?: string; visibility: RouteModelVisibility; enabled: boolean; sort_order: number; group_ids?: ID[] }
+export type RouteModelWriteRequest = { code: string; name: string; description?: string; visibility: RouteModelVisibility; media_type: RouteModelMediaType; enabled: boolean; sort_order: number; group_ids?: ID[] }
 export type RouteModelCandidate = {
   id: ID
   route_model_id: ID

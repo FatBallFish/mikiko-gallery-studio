@@ -9,11 +9,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	providervideo "github.com/fatballfish/pic-gallery/internal/provider/video"
@@ -113,8 +116,9 @@ type ArtifactCommitRequest struct {
 }
 
 type SettlementItem struct {
-	State       domainvideo.ItemState
-	PricePoints string
+	State        domainvideo.ItemState
+	PricePoints  string
+	UsagePending bool
 }
 
 type SettlementSnapshot struct {
@@ -180,8 +184,10 @@ type Options struct {
 	LeaseTTL                   time.Duration
 	PollIntervals              []time.Duration
 	ArtifactMaxBytes           int64
+	ArtifactTransferTimeout    time.Duration
 	ArtifactAllowedHosts       []string
 	AllowLoopbackArtifactHosts bool
+	HTTPClient                 *http.Client
 	Now                        func() time.Time
 	AttemptID                  func() string
 	AssetID                    func() string
@@ -211,14 +217,17 @@ func NewRunner(store Store, providers ProviderResolver, storageRouter storage.Ro
 	if options.ArtifactMaxBytes <= 0 {
 		options.ArtifactMaxBytes = 1 << 30
 	}
+	if options.ArtifactTransferTimeout <= 0 {
+		options.ArtifactTransferTimeout = 10 * time.Minute
+	}
 	if options.Now == nil {
 		options.Now = time.Now
 	}
 	if options.AttemptID == nil {
-		options.AttemptID = func() string { return fmt.Sprintf("attempt-%d", options.Now().UnixNano()) }
+		options.AttemptID = uuid.NewString
 	}
 	if options.AssetID == nil {
-		options.AssetID = func() string { return fmt.Sprintf("asset-%d", options.Now().UnixNano()) }
+		options.AssetID = uuid.NewString
 	}
 	if options.ResolveHostIPs == nil {
 		resolver := net.DefaultResolver
@@ -227,7 +236,11 @@ func NewRunner(store Store, providers ProviderResolver, storageRouter storage.Ro
 	if storageRouter == nil {
 		storageRouter = storage.NewStaticRouter(nil)
 	}
-	return &Runner{store: store, providers: providers, storage: storageRouter, httpClient: http.DefaultClient, options: options}
+	httpClient := options.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	return &Runner{store: store, providers: providers, storage: storageRouter, httpClient: httpClient, options: options}
 }
 
 func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
@@ -257,7 +270,7 @@ func (r *Runner) RunOnce(ctx context.Context) (bool, error) {
 	switch item.State {
 	case domainvideo.ItemStateQueued:
 		stepErr = r.submit(ctx, item)
-	case domainvideo.ItemStateReconciling:
+	case domainvideo.ItemStateSubmitting, domainvideo.ItemStateReconciling:
 		stepErr = r.reconcile(ctx, item)
 	case domainvideo.ItemStateProviderQueued, domainvideo.ItemStateProviderRunning:
 		stepErr = r.poll(ctx, item)
@@ -471,14 +484,21 @@ func (r *Runner) persistArtifact(ctx context.Context, item WorkItem) error {
 }
 
 func (r *Runner) downloadArtifact(ctx context.Context, artifact providervideo.Artifact, accountHosts []string) (*os.File, int64, string, string, error) {
+	transferCtx, cancel := context.WithTimeout(ctx, r.options.ArtifactTransferTimeout)
+	defer cancel()
 	parsed, err := url.Parse(strings.TrimSpace(artifact.URL))
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || !r.allowedArtifactHost(ctx, parsed.Host, accountHosts) {
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
 		return nil, 0, "", "", errors.New("artifact URL must use HTTPS and an allowlisted host")
 	}
 	client := *r.httpClient
+	transport, err := r.artifactTransport(accountHosts)
+	if err != nil {
+		return nil, 0, "", "", err
+	}
+	client.Transport = transport
 	priorRedirect := client.CheckRedirect
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if req.URL.Scheme != "https" || !r.allowedArtifactHost(req.Context(), req.URL.Host, accountHosts) {
+		if req.URL.Scheme != "https" {
 			return errors.New("artifact redirect host is not allowlisted")
 		}
 		if priorRedirect != nil {
@@ -489,7 +509,7 @@ func (r *Runner) downloadArtifact(ctx context.Context, artifact providervideo.Ar
 		}
 		return nil
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	req, err := http.NewRequestWithContext(transferCtx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		return nil, 0, "", "", err
 	}
@@ -576,6 +596,9 @@ func (r *Runner) settle(ctx context.Context, item WorkItem) (bool, error) {
 	for _, settlementItem := range snapshot.Items {
 		states = append(states, settlementItem.State)
 		if !isTerminal(settlementItem.State) {
+			return false, nil
+		}
+		if settlementItem.UsagePending {
 			return false, nil
 		}
 		if settlementItem.State == domainvideo.ItemStateSucceeded {
@@ -665,6 +688,11 @@ func (r *Runner) pollInterval(attempt int) time.Duration {
 }
 
 func (r *Runner) allowedArtifactHost(ctx context.Context, host string, accountHosts []string) bool {
+	_, err := r.resolveArtifactHost(ctx, host, accountHosts)
+	return err == nil
+}
+
+func (r *Runner) resolveArtifactHost(ctx context.Context, host string, accountHosts []string) (net.IP, error) {
 	hostname := strings.TrimSpace(host)
 	if parsedHost, _, err := net.SplitHostPort(hostname); err == nil {
 		hostname = parsedHost
@@ -678,17 +706,92 @@ func (r *Runner) allowedArtifactHost(ctx context.Context, host string, accountHo
 		}
 	}
 	if !matched {
-		return false
+		return nil, errors.New("artifact host is not allowlisted")
 	}
 	addresses, err := r.options.ResolveHostIPs(ctx, hostname)
 	if err != nil || len(addresses) == 0 {
-		return false
+		return nil, errors.New("artifact host did not resolve")
 	}
 	for _, address := range addresses {
-		if address == nil || address.IsPrivate() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsUnspecified() || address.IsMulticast() {
-			return false
+		if !isAllowedArtifactIP(address, r.options.AllowLoopbackArtifactHosts) {
+			return nil, errors.New("artifact host resolved to a non-public address")
 		}
-		if address.IsLoopback() && !r.options.AllowLoopbackArtifactHosts {
+	}
+	return append(net.IP(nil), addresses[0]...), nil
+}
+
+func (r *Runner) artifactTransport(accountHosts []string) (http.RoundTripper, error) {
+	base := r.httpClient.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	transport, ok := base.(*http.Transport)
+	if !ok {
+		return nil, errors.New("artifact HTTP transport cannot enforce address pinning")
+	}
+	return artifactRoundTripper{runner: r, base: transport, accountHosts: append([]string(nil), accountHosts...)}, nil
+}
+
+type artifactRoundTripper struct {
+	runner       *Runner
+	base         *http.Transport
+	accountHosts []string
+}
+
+func (transport artifactRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request == nil || request.URL == nil || request.URL.Scheme != "https" {
+		return nil, errors.New("artifact request must use HTTPS")
+	}
+	address, err := transport.runner.resolveArtifactHost(request.Context(), request.URL.Host, transport.accountHosts)
+	if err != nil {
+		return nil, err
+	}
+	port := request.URL.Port()
+	if port == "" {
+		port = "443"
+	}
+	pinnedAddress := net.JoinHostPort(address.String(), port)
+	clone := transport.base.Clone()
+	clone.Proxy = nil
+	clone.DialTLS = nil
+	clone.DialTLSContext = nil
+	clone.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, pinnedAddress)
+	}
+	return clone.RoundTrip(request)
+}
+
+var forbiddenArtifactPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"), netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"), netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.0.0.0/24"), netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.168.0.0/16"), netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"), netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("224.0.0.0/4"), netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/128"), netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("100::/64"), netip.MustParsePrefix("2001:2::/48"),
+	netip.MustParsePrefix("2001:db8::/32"), netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"), netip.MustParsePrefix("ff00::/8"),
+}
+
+func isAllowedArtifactIP(ip net.IP, allowLoopback bool) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return allowLoopback
+	}
+	address, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	address = address.Unmap()
+	if !address.IsValid() || !address.IsGlobalUnicast() {
+		return false
+	}
+	for _, prefix := range forbiddenArtifactPrefixes {
+		if prefix.Contains(address) {
 			return false
 		}
 	}

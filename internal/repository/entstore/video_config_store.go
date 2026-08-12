@@ -143,6 +143,7 @@ func (s *VideoConfigStore) GetVideoPriceRule(ctx context.Context, strategyID int
 	return videopricingservice.Rule{
 		StrategyID: strategyID, StrategyVersion: strategy.StrategyVersion, RuleVersion: rule.RuleVersion, SafetyPoints: rule.SafetyPoints,
 		SalesRule: domainvideo.SalesRule{
+			PricingMode:     rule.PricingMode,
 			FixedTaskPoints: rule.FixedTaskPoints, OutputSecondPoints: rule.OutputSecondPoints, ReferenceImagePoints: rule.ReferenceImagePoints,
 			InputVideoSecondPoints: rule.InputVideoSecondPoints, ReferenceAudioSecondPoints: rule.ReferenceAudioSecondPoints,
 			GeneratedAudioFixedPoints: rule.GeneratedAudioFixedPoints, GeneratedAudioSecondPoints: rule.GeneratedAudioSecondPoints,

@@ -24,21 +24,22 @@ type EstimateRequest struct {
 }
 
 type Estimate struct {
-	RouteModelID      int64     `json:"route_model_id,omitempty"`
-	RouteModelCode    string    `json:"route_model_code"`
-	CapabilityVersion string    `json:"capability_version"`
-	ConfigVersion     string    `json:"config_version"`
-	PriceVersion      string    `json:"price_version"`
-	UnitPoints        string    `json:"unit_points"`
-	EstimatedPoints   string    `json:"estimated_points"`
-	MaxReservedPoints string    `json:"max_reserved_points"`
-	QuoteToken        string    `json:"quote_token"`
-	ExpiresAt         time.Time `json:"expires_at"`
-	RouteCandidateID  int64     `json:"-"`
-	AccountModelID    int64     `json:"-"`
-	ModelAccountID    int64     `json:"-"`
-	ProviderCode      string    `json:"-"`
-	ModelCode         string    `json:"-"`
+	RouteModelID      int64                 `json:"route_model_id,omitempty"`
+	RouteModelCode    string                `json:"route_model_code"`
+	CapabilityVersion string                `json:"capability_version"`
+	ConfigVersion     string                `json:"config_version"`
+	PriceVersion      string                `json:"price_version"`
+	UnitPoints        string                `json:"unit_points"`
+	EstimatedPoints   string                `json:"estimated_points"`
+	MaxReservedPoints string                `json:"max_reserved_points"`
+	QuoteToken        string                `json:"quote_token"`
+	ExpiresAt         time.Time             `json:"expires_at"`
+	RouteCandidateID  int64                 `json:"-"`
+	AccountModelID    int64                 `json:"-"`
+	ModelAccountID    int64                 `json:"-"`
+	ProviderCode      string                `json:"-"`
+	ModelCode         string                `json:"-"`
+	SalesRule         domainvideo.SalesRule `json:"-"`
 }
 
 type QuoteService struct {
@@ -49,20 +50,21 @@ type QuoteService struct {
 }
 
 type quoteTokenPayload struct {
-	UserID            int64  `json:"uid"`
-	Fingerprint       string `json:"fp"`
-	CapabilityVersion string `json:"cv"`
-	ConfigVersion     string `json:"rv"`
-	PriceVersion      string `json:"pv"`
-	UnitPoints        string `json:"up"`
-	EstimatedPoints   string `json:"ep"`
-	MaxReservedPoints string `json:"mr"`
-	ExpiresAtUnix     int64  `json:"exp"`
-	RouteCandidateID  int64  `json:"rc"`
-	AccountModelID    int64  `json:"am"`
-	ModelAccountID    int64  `json:"ma"`
-	ProviderCode      string `json:"pc"`
-	ModelCode         string `json:"mc"`
+	UserID            int64                 `json:"uid"`
+	Fingerprint       string                `json:"fp"`
+	CapabilityVersion string                `json:"cv"`
+	ConfigVersion     string                `json:"rv"`
+	PriceVersion      string                `json:"pv"`
+	UnitPoints        string                `json:"up"`
+	EstimatedPoints   string                `json:"ep"`
+	MaxReservedPoints string                `json:"mr"`
+	ExpiresAtUnix     int64                 `json:"exp"`
+	RouteCandidateID  int64                 `json:"rc"`
+	AccountModelID    int64                 `json:"am"`
+	ModelAccountID    int64                 `json:"ma"`
+	ProviderCode      string                `json:"pc"`
+	ModelCode         string                `json:"mc"`
+	SalesRule         domainvideo.SalesRule `json:"sr"`
 }
 
 func NewQuoteService(routing *videoroutingservice.Service, pricing *videopricingservice.Service, key []byte, now func() time.Time) *QuoteService {
@@ -96,6 +98,7 @@ func (s *QuoteService) Estimate(ctx context.Context, userID int64, request Estim
 		MaxReservedPoints: quoted.MaxReservedPoints, ExpiresAtUnix: expiresAt.Unix(),
 		RouteCandidateID: selected.RouteCandidateID, AccountModelID: selected.AccountModelID, ModelAccountID: selected.ModelAccountID,
 		ProviderCode: selected.AdapterType, ModelCode: selected.ModelCode,
+		SalesRule: quoted.SalesRule,
 	}
 	token, err := s.sign(payload)
 	if err != nil {
@@ -106,7 +109,7 @@ func (s *QuoteService) Estimate(ctx context.Context, userID int64, request Estim
 		PriceVersion: payload.PriceVersion, UnitPoints: payload.UnitPoints, EstimatedPoints: payload.EstimatedPoints,
 		MaxReservedPoints: payload.MaxReservedPoints, QuoteToken: token, ExpiresAt: expiresAt,
 		RouteCandidateID: payload.RouteCandidateID, AccountModelID: payload.AccountModelID, ModelAccountID: payload.ModelAccountID,
-		ProviderCode: payload.ProviderCode, ModelCode: payload.ModelCode,
+		ProviderCode: payload.ProviderCode, ModelCode: payload.ModelCode, SalesRule: payload.SalesRule,
 	}, nil
 }
 

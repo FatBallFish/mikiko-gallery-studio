@@ -23,7 +23,7 @@ for (const method of ['saveVideoCapability', 'saveVideoCostRule', 'deleteVideoCo
   if (!adminAPI.includes(method)) throw new Error(`video admin API must expose ${method}`)
 }
 if (!tasks.includes("settlement_status !== 'finalized'") || !tasks.includes("['succeeded', 'failed', 'partial', 'cancelled']")) throw new Error('settlement recovery must only appear for terminal unfinalized tasks, including cancelled releases')
-for (const expected of ['Provider 原生最大 n', '能力 JSON', '成本组合 JSON', '积分商品净收入保护', '目标毛利', '试算安全线', '重新计算价格版本', '可见完整组合', '最大输出数', '缺少候选', '缺少价格', '低于安全线']) {
+for (const expected of ['Provider 原生最大 n', '能力 JSON', '成本组合 JSON', '积分商品净收入保护', '目标毛利', '计费方式', '按实际输出时长结算', 'pricing_mode: draft.pricingMode', 'pricingMode: currentPrice.pricing_mode', '试算安全线', '重新计算价格版本', '可见完整组合', '最大输出数', '缺少候选', '缺少价格', '低于安全线']) {
   if (!configuration.includes(expected)) throw new Error(`video configuration workspace must expose ${expected}`)
 }
 if (!configuration.includes('1-10') || !configuration.includes('1-4')) throw new Error('video configuration UI must show native n and platform output limits')

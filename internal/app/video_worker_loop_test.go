@@ -2,7 +2,11 @@ package app
 
 import (
 	"context"
+	"encoding/pem"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +16,32 @@ import (
 
 	"github.com/fatballfish/pic-gallery/internal/config"
 )
+
+func TestNewVideoArtifactHTTPClientTrustsConfiguredTestCA(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "trusted")
+	}))
+	defer server.Close()
+	certificate := server.Certificate()
+	caFile := filepath.Join(t.TempDir(), "artifact-ca.pem")
+	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	client, err := newVideoArtifactHTTPClient(caFile)
+	if err != nil {
+		t.Fatalf("newVideoArtifactHTTPClient() error = %v", err)
+	}
+	response, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatalf("configured client rejected test CA: %v", err)
+	}
+	_ = response.Body.Close()
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok || transport.ResponseHeaderTimeout <= 0 || transport.TLSHandshakeTimeout <= 0 || transport.IdleConnTimeout <= 0 {
+		t.Fatalf("artifact transport timeouts are not configured: %#v", client.Transport)
+	}
+}
 
 func TestRunIndependentWorkerLoopsRunsVideoWithoutImageSlots(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
@@ -50,6 +80,34 @@ func TestRunIndependentWorkerLoopsPropagatesFailureAndCancelsSibling(t *testing.
 	case <-siblingStopped:
 	case <-time.After(time.Second):
 		t.Fatal("sibling loop was not cancelled")
+	}
+}
+
+func TestWaitForWorkerMetricsLoopStopsWhenSupervisorCancels(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error)
+	result := make(chan error, 1)
+	go func() { result <- waitForWorkerMetricsLoop(ctx, done) }()
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("waitForWorkerMetricsLoop error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("metrics loop ignored supervisor cancellation")
+	}
+}
+
+func TestWorkerOwnerReservesLeaseSuffixWithinSchemaLimit(t *testing.T) {
+	owner := workerOwnerForHost("a-very-long-container-hostname-that-exceeds-the-media-processing-lease-owner-limit", "12345678-1234-1234-1234-123456789abc")
+	for _, roleOwner := range []string{owner, owner + "-video", owner + "-media"} {
+		if len(roleOwner) > 64 {
+			t.Fatalf("lease owner %q has %d bytes, want at most 64", roleOwner, len(roleOwner))
+		}
+	}
+	if !strings.HasSuffix(owner, "-12345678-1234-1234-1234-123456789abc") {
+		t.Fatalf("worker owner lost its full UUID: %q", owner)
 	}
 }
 
@@ -118,5 +176,41 @@ func TestRunWorkerRoleSlotsKeepsConcurrencyIndependent(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("role slots did not stop after cancellation")
+	}
+}
+
+func TestRunWorkerRoleSlotsContinuesAfterTransientProcessorFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	processed := make(chan struct{}, 1)
+	var calls atomic.Int32
+	runOnce := func(context.Context) (bool, error) {
+		if calls.Add(1) == 1 {
+			return false, errors.New("temporary database failure")
+		}
+		select {
+		case processed <- struct{}{}:
+		default:
+		}
+		return false, nil
+	}
+	done := make(chan error, 1)
+	go func() { done <- runWorkerRoleSlots(ctx, "video", 1, time.Millisecond, runOnce) }()
+
+	select {
+	case <-processed:
+	case err := <-done:
+		t.Fatalf("role loop stopped after a transient processor failure: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("role loop did not retry after a transient processor failure")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("runWorkerRoleSlots error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("role loop did not stop after cancellation")
 	}
 }

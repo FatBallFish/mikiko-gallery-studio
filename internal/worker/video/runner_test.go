@@ -11,14 +11,47 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	providervideo "github.com/fatballfish/pic-gallery/internal/provider/video"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
+
+func TestNewRunnerDefaultIdentifiersAreUniqueUUIDs(t *testing.T) {
+	now := time.Date(2026, 8, 12, 8, 0, 0, 0, time.UTC)
+	runner := NewRunner(nil, nil, nil, Options{Now: func() time.Time { return now }})
+
+	for name, generate := range map[string]func() string{
+		"attempt": runner.options.AttemptID,
+		"asset":   runner.options.AssetID,
+	} {
+		first := generate()
+		second := generate()
+		if _, err := uuid.Parse(first); err != nil {
+			t.Errorf("%s id %q is not a UUID: %v", name, first, err)
+		}
+		if _, err := uuid.Parse(second); err != nil {
+			t.Errorf("second %s id %q is not a UUID: %v", name, second, err)
+		}
+		if first == second {
+			t.Errorf("%s ids must be unique, both were %q", name, first)
+		}
+	}
+}
+
+func TestNewRunnerUsesConfiguredArtifactHTTPClient(t *testing.T) {
+	client := &http.Client{Timeout: time.Second}
+	runner := NewRunner(nil, nil, nil, Options{HTTPClient: client})
+	if runner.httpClient != client {
+		t.Fatal("runner ignored configured artifact HTTP client")
+	}
+}
 
 func TestRunnerCreatesOneAttemptAndReconcilesUnknownSubmission(t *testing.T) {
 	now := time.Date(2026, 8, 12, 8, 0, 0, 0, time.UTC)
@@ -51,6 +84,28 @@ func TestRunnerCreatesOneAttemptAndReconcilesUnknownSubmission(t *testing.T) {
 	}
 	if item.LeaseOwner != "" || item.NextActionAt == nil || !item.NextActionAt.After(now) {
 		t.Fatalf("step lease/backoff not released: %#v", item)
+	}
+}
+
+func TestRunnerReconcilesPersistedSubmittingAttemptWithoutResubmitting(t *testing.T) {
+	now := time.Date(2026, 8, 12, 8, 30, 0, 0, time.UTC)
+	store := newMemoryStore(WorkItem{
+		ID: "item-crash", TaskID: "task-crash", State: domainvideo.ItemStateSubmitting, Version: 2,
+		Attempt: Attempt{ID: "attempt-crash", No: 1, ProviderCode: "fake", IdempotencyKey: "task-crash:item-crash:attempt-crash", Status: "submitting"},
+	})
+	provider := &providerStub{reconcileJob: providervideo.Job{ID: "provider-job-crash", State: providervideo.StateQueued}, reconcileFound: true}
+	runner := newTestRunner(store, provider, now)
+
+	processed, err := runner.RunOnce(t.Context())
+	if err != nil || !processed {
+		t.Fatalf("RunOnce() processed=%v err=%v", processed, err)
+	}
+	item := store.itemSnapshot()
+	if store.prepareCalls != 0 || provider.submitCalls != 0 || provider.reconcileCalls != 1 {
+		t.Fatalf("crash recovery prepare=%d submit=%d reconcile=%d", store.prepareCalls, provider.submitCalls, provider.reconcileCalls)
+	}
+	if item.State != domainvideo.ItemStateProviderQueued || item.Attempt.ID != "attempt-crash" || item.Attempt.JobID != "provider-job-crash" {
+		t.Fatalf("recovered item = %#v", item)
 	}
 }
 
@@ -216,6 +271,10 @@ func TestRunnerStreamsValidatedArtifactAndCommitsReadyOriginal(t *testing.T) {
 	runner.storage = storage.NewStaticRouter(backend)
 	runner.httpClient = server.Client()
 	runner.options.ArtifactAllowedHosts = []string{server.Listener.Addr().String()}
+	runner.options.AllowLoopbackArtifactHosts = true
+	runner.options.ResolveHostIPs = func(context.Context, string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("127.0.0.1")}, nil
+	}
 
 	processed, err := runner.RunOnce(t.Context())
 	if err != nil || !processed {
@@ -230,6 +289,35 @@ func TestRunnerStreamsValidatedArtifactAndCommitsReadyOriginal(t *testing.T) {
 	}
 	if store.lastArtifact.Status != "ready_original" || store.lastArtifact.SHA256 != hex.EncodeToString(digest[:]) || store.lastArtifact.SizeBytes != int64(len(payload)) {
 		t.Fatalf("artifact commit=%#v", store.lastArtifact)
+	}
+}
+
+func TestRunnerArtifactDownloadTimesOutAfterResponseHeaders(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-release
+	}))
+	defer func() { close(release); server.Close() }()
+	runner := NewRunner(nil, nil, nil, Options{
+		HTTPClient: server.Client(), ArtifactTransferTimeout: 50 * time.Millisecond,
+		ArtifactMaxBytes: 1024, ArtifactAllowedHosts: []string{server.Listener.Addr().String()},
+		AllowLoopbackArtifactHosts: true,
+		ResolveHostIPs: func(context.Context, string) ([]net.IP, error) {
+			return []net.IP{net.ParseIP("127.0.0.1")}, nil
+		},
+	})
+	started := time.Now()
+	_, _, _, _, err := runner.downloadArtifact(t.Context(), providervideo.Artifact{URL: server.URL + "/result.mp4"}, nil)
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("download error = %v, want deadline exceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("artifact timeout took too long: %v", elapsed)
 	}
 }
 
@@ -256,6 +344,10 @@ func TestRunnerRejectsArtifactRedirectHostSizeAndChecksum(t *testing.T) {
 			runner.storage = storage.NewStaticRouter(backend)
 			runner.httpClient = test.server.Client()
 			runner.options.ArtifactAllowedHosts = []string{redirect.Listener.Addr().String()}
+			runner.options.AllowLoopbackArtifactHosts = true
+			runner.options.ResolveHostIPs = func(context.Context, string) ([]net.IP, error) {
+				return []net.IP{net.ParseIP("127.0.0.1")}, nil
+			}
 			if test.name != "redirect host" {
 				runner.options.ArtifactAllowedHosts = []string{other.Listener.Addr().String()}
 			}
@@ -285,10 +377,49 @@ func TestRunnerRejectsAllowlistedArtifactHostResolvingToPrivateAddress(t *testin
 		t.Fatal("metadata address must be rejected even when host is allowlisted")
 	}
 	runner.options.ResolveHostIPs = func(context.Context, string) ([]net.IP, error) {
-		return []net.IP{net.ParseIP("203.0.113.10")}, nil
+		return []net.IP{net.ParseIP("8.8.8.8")}, nil
 	}
 	if !runner.allowedArtifactHost(t.Context(), "cdn.provider.example", nil) {
 		t.Fatal("globally routable allowlisted address should be accepted")
+	}
+}
+
+func TestRunnerPinsArtifactConnectionToTheValidatedDNSAddress(t *testing.T) {
+	payload := []byte("video-content")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(payload) }))
+	defer server.Close()
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := serverURL.Port()
+	transport := server.Client().Transport.(*http.Transport).Clone()
+	transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	transport.TLSClientConfig.InsecureSkipVerify = true // The test isolates address pinning from certificate hostname validation.
+	transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}
+	runner := NewRunner(nil, nil, nil, Options{
+		HTTPClient: &http.Client{Transport: transport}, ArtifactTransferTimeout: 100 * time.Millisecond,
+		ArtifactAllowedHosts: []string{"artifact.example.test:" + port},
+		ResolveHostIPs: func(context.Context, string) ([]net.IP, error) {
+			return []net.IP{net.ParseIP("8.8.8.8")}, nil
+		},
+	})
+	_, _, _, _, err = runner.downloadArtifact(t.Context(), providervideo.Artifact{URL: "https://artifact.example.test:" + port + "/result.mp4"}, nil)
+	if err == nil {
+		t.Fatal("artifact download followed a second DNS/dial path instead of the validated address")
+	}
+}
+
+func TestRunnerRejectsNonPublicArtifactAddressRanges(t *testing.T) {
+	runner := newTestRunner(newMemoryStore(WorkItem{}), &providerStub{}, time.Now().UTC())
+	runner.options.ArtifactAllowedHosts = []string{"cdn.provider.example"}
+	for _, raw := range []string{"100.64.0.1", "198.18.0.1", "192.0.2.1", "198.51.100.1", "203.0.113.1", "2001:db8::1"} {
+		runner.options.ResolveHostIPs = func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP(raw)}, nil }
+		if runner.allowedArtifactHost(t.Context(), "cdn.provider.example", nil) {
+			t.Fatalf("non-public artifact address %s must be rejected", raw)
+		}
 	}
 }
 
@@ -359,6 +490,16 @@ func TestRunnerDoesNotFinalizeWhileArtifactIsPending(t *testing.T) {
 	processed, err := runner.RunOnce(t.Context())
 	if err != nil || !processed || store.finalizeCalls != 0 {
 		t.Fatalf("pending settlement processed=%v finalize_calls=%d err=%v", processed, store.finalizeCalls, err)
+	}
+}
+
+func TestRunnerDoesNotFinalizeMeteredItemWhileUsageIsPending(t *testing.T) {
+	store := newMemoryStore(WorkItem{ID: "settle-metered", TaskID: "task-metered", State: domainvideo.ItemStateSucceeded, Version: 2, NeedsSettlement: true})
+	store.settlement = SettlementSnapshot{TaskID: "task-metered", ReservedPoints: "10.00000", Items: []SettlementItem{{State: domainvideo.ItemStateSucceeded, UsagePending: true}}}
+	runner := newTestRunner(store, &providerStub{}, time.Now().UTC())
+	processed, err := runner.RunOnce(t.Context())
+	if err != nil || !processed || store.finalizeCalls != 0 {
+		t.Fatalf("pending usage processed=%v finalize_calls=%d err=%v", processed, store.finalizeCalls, err)
 	}
 }
 
@@ -462,7 +603,7 @@ func newTestRunner(store Store, provider providervideo.Provider, now time.Time) 
 	return NewRunner(store, staticProviderResolver{provider: provider}, storage.NewStaticRouter(&streamingBackend{objects: map[string][]byte{}}), Options{
 		Owner: "video-worker", LeaseTTL: 30 * time.Second, PollIntervals: []time.Duration{2 * time.Second, 5 * time.Second}, ArtifactMaxBytes: 1 << 20,
 		Now: func() time.Time { return now }, AttemptID: func() string { return "attempt-generated" }, AssetID: func() string { return "asset-generated" },
-		ResolveHostIPs: func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP("203.0.113.10")}, nil },
+		ResolveHostIPs: func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP("8.8.8.8")}, nil },
 	})
 }
 

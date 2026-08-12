@@ -268,7 +268,11 @@ func hasLiveObjectReferences(ctx context.Context, client *repoent.Client, identi
 		),
 	)
 	derivativeQuery := client.MediaDerivative.Query().Where(
-		mediaderivative.ObjectKeyEQ(identity.ObjectKey), mediaderivative.DeletedAtIsNil(),
+		mediaderivative.ObjectKeyEQ(identity.ObjectKey),
+		mediaderivative.Or(
+			mediaderivative.DeletedAtIsNil(),
+			mediaderivative.HasAssetWith(mediaasset.HasReferencesWith(mediaassetreference.DeletedAtIsNil())),
+		),
 	)
 	if parsed, err := uuid.Parse(identity.StorageConfigID); err == nil {
 		mediaQuery.Where(mediaasset.StorageConfigIDEQ(parsed))

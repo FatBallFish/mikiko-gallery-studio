@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	domainmedia "github.com/fatballfish/pic-gallery/internal/domain/media"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
@@ -77,6 +78,7 @@ type PriceRuleSummary struct {
 	TaskType              string `json:"task_type"`
 	Resolution            string `json:"resolution"`
 	AudioMode             string `json:"audio_mode"`
+	PricingMode           string `json:"pricing_mode"`
 	RuleVersion           int    `json:"rule_version"`
 	SafetyPoints          string `json:"safety_points"`
 	SalesPoints           string `json:"sales_points"`
@@ -353,6 +355,31 @@ type MediaPolicy struct {
 	FailedProcessingRetentionDays int                 `json:"failed_processing_retention_days"`
 	SoftDeleteRetentionDays       int                 `json:"soft_delete_retention_days"`
 	AppliesTo                     string              `json:"applies_to"`
+}
+
+type RuntimeMediaPolicy struct {
+	Policy         domainmedia.Policy
+	UserQuotaBytes int64
+	UploadTTL      time.Duration
+}
+
+func (policy MediaPolicy) RuntimePolicy() RuntimeMediaPolicy {
+	runtimePolicy := domainmedia.DefaultPolicy()
+	runtimePolicy.SingleFileMaxBytes = policy.SingleFileMaxBytes
+	runtimePolicy.VideoMaxDurationMS = int64(policy.VideoMaxDurationSeconds) * int64(time.Second/time.Millisecond)
+	runtimePolicy.ImageThumbnailWidths = append([]int(nil), policy.ImageThumbnailWidths...)
+	runtimePolicy.VideoPosterEnabled = policy.VideoPosterEnabled
+	runtimePolicy.VideoHoverPreviewEnabled = policy.VideoHoverPreviewEnabled
+	runtimePolicy.VideoProxyEnabled = policy.VideoProxyEnabled
+	runtimePolicy.AudioProxyEnabled = policy.AudioProxyEnabled
+	runtimePolicy.AudioWaveformEnabled = policy.AudioWaveformEnabled
+	for mediaType, formats := range policy.AllowedFormats {
+		runtimePolicy.AllowedFormats[domainmedia.MediaType(mediaType)] = append([]string(nil), formats...)
+	}
+	return RuntimeMediaPolicy{
+		Policy: runtimePolicy, UserQuotaBytes: policy.UserQuotaBytes,
+		UploadTTL: time.Duration(policy.UploadSessionTTLHours) * time.Hour,
+	}
 }
 
 func DefaultMediaPolicy() MediaPolicy {

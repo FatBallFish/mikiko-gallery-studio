@@ -25,6 +25,7 @@ type ProbeResult struct {
 	Width          int
 	Height         int
 	DurationMS     int64
+	StreamCount    int
 	FrameRateMilli int
 	Channels       int
 	SampleRate     int

@@ -23,11 +23,19 @@ case ",${worker_roles}," in
   *,media,*)
     ffmpeg_path="${MEDIA_FFMPEG_PATH:-ffmpeg}"
     ffprobe_path="${MEDIA_FFPROBE_PATH:-ffprobe}"
-    if ! command -v "$ffmpeg_path" >/dev/null 2>&1; then
+    if [ "$ffmpeg_path" = "ffmpeg" ] && ! command -v ffmpeg >/dev/null 2>&1; then
       echo "error: media Worker role requires FFmpeg ($ffmpeg_path)" >&2
       exit 1
     fi
-    if ! command -v "$ffprobe_path" >/dev/null 2>&1; then
+    if [ "$ffmpeg_path" != "ffmpeg" ] && ! command -v "$ffmpeg_path" >/dev/null 2>&1; then
+      echo "error: media Worker role requires FFmpeg ($ffmpeg_path)" >&2
+      exit 1
+    fi
+    if [ "$ffprobe_path" = "ffprobe" ] && ! command -v ffprobe >/dev/null 2>&1; then
+      echo "error: media Worker role requires ffprobe ($ffprobe_path)" >&2
+      exit 1
+    fi
+    if [ "$ffprobe_path" != "ffprobe" ] && ! command -v "$ffprobe_path" >/dev/null 2>&1; then
       echo "error: media Worker role requires ffprobe ($ffprobe_path)" >&2
       exit 1
     fi

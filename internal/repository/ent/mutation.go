@@ -71102,6 +71102,7 @@ type VideoPriceRuleMutation struct {
 	task_type                     *string
 	resolution                    *string
 	audio_mode                    *string
+	pricing_mode                  *string
 	rule_version                  *int
 	addrule_version               *int
 	effective_at                  *time.Time
@@ -71509,6 +71510,42 @@ func (m *VideoPriceRuleMutation) OldAudioMode(ctx context.Context) (v string, er
 // ResetAudioMode resets all changes to the "audio_mode" field.
 func (m *VideoPriceRuleMutation) ResetAudioMode() {
 	m.audio_mode = nil
+}
+
+// SetPricingMode sets the "pricing_mode" field.
+func (m *VideoPriceRuleMutation) SetPricingMode(s string) {
+	m.pricing_mode = &s
+}
+
+// PricingMode returns the value of the "pricing_mode" field in the mutation.
+func (m *VideoPriceRuleMutation) PricingMode() (r string, exists bool) {
+	v := m.pricing_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPricingMode returns the old "pricing_mode" field's value of the VideoPriceRule entity.
+// If the VideoPriceRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoPriceRuleMutation) OldPricingMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPricingMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPricingMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPricingMode: %w", err)
+	}
+	return oldValue.PricingMode, nil
+}
+
+// ResetPricingMode resets all changes to the "pricing_mode" field.
+func (m *VideoPriceRuleMutation) ResetPricingMode() {
+	m.pricing_mode = nil
 }
 
 // SetRuleVersion sets the "rule_version" field.
@@ -72246,7 +72283,7 @@ func (m *VideoPriceRuleMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *VideoPriceRuleMutation) Fields() []string {
-	fields := make([]string, 0, 25)
+	fields := make([]string, 0, 26)
 	if m.created_at != nil {
 		fields = append(fields, videopricerule.FieldCreatedAt)
 	}
@@ -72267,6 +72304,9 @@ func (m *VideoPriceRuleMutation) Fields() []string {
 	}
 	if m.audio_mode != nil {
 		fields = append(fields, videopricerule.FieldAudioMode)
+	}
+	if m.pricing_mode != nil {
+		fields = append(fields, videopricerule.FieldPricingMode)
 	}
 	if m.rule_version != nil {
 		fields = append(fields, videopricerule.FieldRuleVersion)
@@ -72344,6 +72384,8 @@ func (m *VideoPriceRuleMutation) Field(name string) (ent.Value, bool) {
 		return m.Resolution()
 	case videopricerule.FieldAudioMode:
 		return m.AudioMode()
+	case videopricerule.FieldPricingMode:
+		return m.PricingMode()
 	case videopricerule.FieldRuleVersion:
 		return m.RuleVersion()
 	case videopricerule.FieldEffectiveAt:
@@ -72403,6 +72445,8 @@ func (m *VideoPriceRuleMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldResolution(ctx)
 	case videopricerule.FieldAudioMode:
 		return m.OldAudioMode(ctx)
+	case videopricerule.FieldPricingMode:
+		return m.OldPricingMode(ctx)
 	case videopricerule.FieldRuleVersion:
 		return m.OldRuleVersion(ctx)
 	case videopricerule.FieldEffectiveAt:
@@ -72496,6 +72540,13 @@ func (m *VideoPriceRuleMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetAudioMode(v)
+		return nil
+	case videopricerule.FieldPricingMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPricingMode(v)
 		return nil
 	case videopricerule.FieldRuleVersion:
 		v, ok := value.(int)
@@ -72746,6 +72797,9 @@ func (m *VideoPriceRuleMutation) ResetField(name string) error {
 		return nil
 	case videopricerule.FieldAudioMode:
 		m.ResetAudioMode()
+		return nil
+	case videopricerule.FieldPricingMode:
+		m.ResetPricingMode()
 		return nil
 	case videopricerule.FieldRuleVersion:
 		m.ResetRuleVersion()

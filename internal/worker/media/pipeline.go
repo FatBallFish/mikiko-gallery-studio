@@ -30,9 +30,14 @@ type DerivativeGenerator interface {
 	Generate(context.Context, domainmedia.MediaType, string, string) ([]DerivativeOutput, error)
 }
 
+type PolicyAwareDerivativeGenerator interface {
+	GenerateWithPolicy(context.Context, domainmedia.MediaType, string, string, domainmedia.Policy) ([]DerivativeOutput, error)
+}
+
 type PipelineOptions struct {
-	TempDir string
-	Policy  domainmedia.Policy
+	TempDir        string
+	Policy         domainmedia.Policy
+	PolicyResolver func(context.Context) (domainmedia.Policy, error)
 }
 
 type Pipeline struct {
@@ -58,6 +63,17 @@ func (pipeline *Pipeline) Process(ctx context.Context, item WorkItem) (ProcessRe
 	}
 	if item.SizeBytes <= 0 || item.SizeBytes > domainmedia.SingleFileHardMaxBytes {
 		return ProcessResult{}, errors.New("media object exceeds the processing size limit")
+	}
+	policy := pipeline.options.Policy
+	if pipeline.options.PolicyResolver != nil {
+		resolved, err := pipeline.options.PolicyResolver(ctx)
+		if err != nil {
+			return ProcessResult{}, fmt.Errorf("resolve media processing policy: %w", err)
+		}
+		policy = resolved
+	}
+	if policy.SingleFileMaxBytes <= 0 {
+		policy = domainmedia.DefaultPolicy()
 	}
 	mediaType := domainmedia.MediaType(strings.ToLower(strings.TrimSpace(item.MediaType)))
 	workDir, err := os.MkdirTemp(pipeline.options.TempDir, "job-*")
@@ -91,14 +107,19 @@ func (pipeline *Pipeline) Process(ctx context.Context, item WorkItem) (ProcessRe
 		return ProcessResult{}, err
 	}
 	declaration := domainmedia.UploadDeclaration{Filename: filepath.Base(item.ObjectKey), MediaType: mediaType, MIMEType: item.MIMEType, SizeBytes: item.SizeBytes}
-	if validation := pipeline.options.Policy.ValidateProbe(declaration, probe); validation != nil {
+	if validation := policy.ValidateProbe(declaration, probe); validation != nil {
 		return ProcessResult{}, validation
 	}
 	outputDir := filepath.Join(workDir, "derivatives")
 	if err := os.MkdirAll(outputDir, 0o700); err != nil {
 		return ProcessResult{}, fmt.Errorf("create media derivative directory: %w", err)
 	}
-	outputs, err := pipeline.derivatives.Generate(ctx, mediaType, inputPath, outputDir)
+	var outputs []DerivativeOutput
+	if generator, ok := pipeline.derivatives.(PolicyAwareDerivativeGenerator); ok {
+		outputs, err = generator.GenerateWithPolicy(ctx, mediaType, inputPath, outputDir, policy)
+	} else {
+		outputs, err = pipeline.derivatives.Generate(ctx, mediaType, inputPath, outputDir)
+	}
 	if err != nil {
 		return ProcessResult{}, err
 	}
@@ -114,11 +135,31 @@ func (pipeline *Pipeline) Process(ctx context.Context, item WorkItem) (ProcessRe
 	for _, output := range outputs {
 		derivative, err := uploadDerivative(ctx, streamingWriter, writer, item, output)
 		if err != nil {
+			if cleanupErr := pipeline.Cleanup(context.WithoutCancel(ctx), result); cleanupErr != nil {
+				return ProcessResult{}, errors.Join(err, fmt.Errorf("roll back media derivatives: %w", cleanupErr))
+			}
 			return ProcessResult{}, err
 		}
 		result.Derivatives = append(result.Derivatives, derivative)
 	}
 	return result, nil
+}
+
+func (pipeline *Pipeline) Cleanup(ctx context.Context, result ProcessResult) error {
+	if pipeline == nil || pipeline.router == nil {
+		return errors.New("media pipeline storage router is unavailable")
+	}
+	var cleanupErr error
+	for _, derivative := range result.Derivatives {
+		ref, err := pipeline.router.BackendFor(ctx, derivative.StorageConfigID, derivative.StorageDriver)
+		if err == nil {
+			err = ref.Backend.Delete(ctx, derivative.ObjectKey)
+		}
+		if err != nil && !errors.Is(err, storage.ErrNotFound) {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete derivative %s: %w", derivative.ObjectKey, err))
+		}
+	}
+	return cleanupErr
 }
 
 func writeTemporaryFile(ctx context.Context, path string, reader io.ReadCloser, size int64) error {
@@ -194,7 +235,7 @@ func uploadDerivative(ctx context.Context, backend storage.StreamingBackend, ref
 }
 
 func probeMetadata(probe domainmedia.ProbeResult) ProbeMetadata {
-	return ProbeMetadata{Format: probe.Format, Container: probe.Container, VideoCodec: probe.VideoCodec, AudioCodec: probe.AudioCodec, Width: probe.Width, Height: probe.Height, DurationMS: probe.DurationMS, FrameRateMilli: probe.FrameRateMilli, Channels: probe.Channels, SampleRate: probe.SampleRate}
+	return ProbeMetadata{Format: probe.Format, Container: probe.Container, VideoCodec: probe.VideoCodec, AudioCodec: probe.AudioCodec, Width: probe.Width, Height: probe.Height, DurationMS: probe.DurationMS, StreamCount: probe.StreamCount, FrameRateMilli: probe.FrameRateMilli, Channels: probe.Channels, SampleRate: probe.SampleRate}
 }
 
 func extensionForMedia(mimeType, objectKey string) string {

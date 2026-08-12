@@ -35,6 +35,32 @@ func TestCalculateQuoteUsesDecimalAddonsAndReserveMarkup(t *testing.T) {
 	}
 }
 
+func TestCalculateActualUnitPointsUsesActualUsageForMeteredRules(t *testing.T) {
+	rule := SalesRule{
+		PricingMode: "metered", FixedTaskPoints: "1.00000", OutputSecondPoints: "2.00000",
+		ReferenceImagePoints: "0.50000", GeneratedAudioFixedPoints: "3.00000", GeneratedAudioSecondPoints: "0.25000",
+		MinimumBillableSeconds: 2, MinimumTaskPoints: "4.00000", ReserveMarkup: "1.15000",
+	}
+	actual, err := CalculateActualUnitPoints(rule, QuoteRequest{DurationSeconds: 5, ReferenceImageCount: 2, GenerateAudio: true, OutputCount: 1}, ActualUsage{OutputSeconds: "3.000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual != "11.75000" {
+		t.Fatalf("actual points = %s, want 11.75000", actual)
+	}
+}
+
+func TestCalculateActualUnitPointsKeepsQuotedDurationForExactRules(t *testing.T) {
+	rule := SalesRule{PricingMode: "exact", FixedTaskPoints: "1.00000", OutputSecondPoints: "2.00000", ReserveMarkup: "1.00000"}
+	actual, err := CalculateActualUnitPoints(rule, QuoteRequest{DurationSeconds: 5, OutputCount: 1}, ActualUsage{OutputSeconds: "3.000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual != "11.00000" {
+		t.Fatalf("actual points = %s, want 11.00000", actual)
+	}
+}
+
 func TestSafeMinimumPointsUsesWorstCandidateCostAndRoundsUp(t *testing.T) {
 	points, err := SafeMinimumPoints(SafetyInput{
 		CandidateCostsCNY:           []string{"0.80000", "1.00000", "0.95000"},

@@ -7,16 +7,23 @@ import (
 )
 
 type SalesRule struct {
-	FixedTaskPoints            string
-	OutputSecondPoints         string
-	ReferenceImagePoints       string
-	InputVideoSecondPoints     string
-	ReferenceAudioSecondPoints string
-	GeneratedAudioFixedPoints  string
-	GeneratedAudioSecondPoints string
-	MinimumBillableSeconds     int
-	MinimumTaskPoints          string
-	ReserveMarkup              string
+	PricingMode                string `json:"pricing_mode"`
+	FixedTaskPoints            string `json:"fixed_task_points"`
+	OutputSecondPoints         string `json:"output_second_points"`
+	ReferenceImagePoints       string `json:"reference_image_points"`
+	InputVideoSecondPoints     string `json:"input_video_second_points"`
+	ReferenceAudioSecondPoints string `json:"reference_audio_second_points"`
+	GeneratedAudioFixedPoints  string `json:"generated_audio_fixed_points"`
+	GeneratedAudioSecondPoints string `json:"generated_audio_second_points"`
+	MinimumBillableSeconds     int    `json:"minimum_billable_seconds"`
+	MinimumTaskPoints          string `json:"minimum_task_points"`
+	ReserveMarkup              string `json:"reserve_markup"`
+}
+
+type ActualUsage struct {
+	OutputSeconds         string
+	InputVideoSeconds     string
+	ReferenceAudioSeconds string
 }
 
 type QuoteRequest struct {
@@ -95,6 +102,57 @@ func CalculateQuote(rule SalesRule, request QuoteRequest) (Quote, error) {
 		EstimatedPoints:   estimated.StringFixed(5),
 		MaxReservedPoints: reserved.StringFixed(5),
 	}, nil
+}
+
+func CalculateActualUnitPoints(rule SalesRule, request QuoteRequest, usage ActualUsage) (string, error) {
+	if rule.PricingMode != "" && rule.PricingMode != "exact" && rule.PricingMode != "metered" {
+		return "", fmt.Errorf("pricing_mode must be exact or metered")
+	}
+	if rule.PricingMode != "metered" {
+		request.OutputCount = 1
+		quote, err := CalculateQuote(rule, request)
+		return quote.UnitPoints, err
+	}
+	outputSeconds, err := parseNonNegative(usage.OutputSeconds, "actual_output_seconds")
+	if err != nil || outputSeconds.IsZero() {
+		return "", fmt.Errorf("actual_output_seconds must be positive")
+	}
+	inputVideoSeconds, err := parseOptionalUsageSeconds(usage.InputVideoSeconds, "actual_input_video_seconds")
+	if err != nil {
+		return "", err
+	}
+	referenceAudioSeconds, err := parseOptionalUsageSeconds(usage.ReferenceAudioSeconds, "actual_reference_audio_seconds")
+	if err != nil {
+		return "", err
+	}
+	values, err := parseSalesRule(rule)
+	if err != nil {
+		return "", err
+	}
+	billableOutputSeconds := outputSeconds
+	minimumSeconds := decimal.NewFromInt(int64(rule.MinimumBillableSeconds))
+	if billableOutputSeconds.LessThan(minimumSeconds) {
+		billableOutputSeconds = minimumSeconds
+	}
+	unit := values.fixedTask.
+		Add(values.outputSecond.Mul(billableOutputSeconds)).
+		Add(values.referenceImage.Mul(decimal.NewFromInt(int64(request.ReferenceImageCount)))).
+		Add(values.inputVideoSecond.Mul(inputVideoSeconds)).
+		Add(values.referenceAudioSecond.Mul(referenceAudioSeconds))
+	if request.GenerateAudio {
+		unit = unit.Add(values.generatedAudioFixed).Add(values.generatedAudioSecond.Mul(outputSeconds))
+	}
+	if unit.LessThan(values.minimumTask) {
+		unit = values.minimumTask
+	}
+	return unit.Round(5).StringFixed(5), nil
+}
+
+func parseOptionalUsageSeconds(raw, field string) (decimal.Decimal, error) {
+	if raw == "" {
+		return decimal.Zero, nil
+	}
+	return parseNonNegative(raw, field)
 }
 
 func SafeMinimumPoints(input SafetyInput) (string, error) {

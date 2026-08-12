@@ -97,7 +97,7 @@ func (c *Client) Submit(ctx context.Context, req videoprovider.Request) (videopr
 	var response struct {
 		TaskID string `json:"task_id"`
 	}
-	requestID, err := c.doJSON(ctx, http.MethodPost, "/v2/video_generation", payload, &response, true)
+	requestID, err := c.doJSON(ctx, http.MethodPost, "/v2/video_generation", payload, &response, true, req.IdempotencyKey)
 	if err != nil {
 		return videoprovider.Job{}, err
 	}
@@ -105,6 +105,14 @@ func (c *Client) Submit(ctx context.Context, req videoprovider.Request) (videopr
 		return videoprovider.Job{}, invalidResponse("missing task_id", nil)
 	}
 	return videoprovider.Job{ID: response.TaskID, State: videoprovider.StateQueued, RequestID: requestID}, nil
+}
+
+func (c *Client) Reconcile(ctx context.Context, req videoprovider.Request) (videoprovider.Job, bool, error) {
+	job, err := c.Submit(ctx, req)
+	if err != nil {
+		return videoprovider.Job{}, false, err
+	}
+	return job, true, nil
 }
 
 func (c *Client) Get(ctx context.Context, ref videoprovider.JobRef) (videoprovider.Status, error) {
@@ -235,7 +243,7 @@ func mapResolution(value string) string {
 	return strings.ToUpper(value)
 }
 
-func (c *Client) doJSON(parent context.Context, method, path string, payload any, target any, submit bool) (string, error) {
+func (c *Client) doJSON(parent context.Context, method, path string, payload any, target any, submit bool, idempotencyKey ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, c.timeout)
 	defer cancel()
 	var body *bytes.Reader
@@ -254,6 +262,9 @@ func (c *Client) doJSON(parent context.Context, method, path string, payload any
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Accept", "application/json")
+	if len(idempotencyKey) > 0 && strings.TrimSpace(idempotencyKey[0]) != "" {
+		req.Header.Set("Idempotency-Key", strings.TrimSpace(idempotencyKey[0]))
+	}
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -272,8 +283,8 @@ func (c *Client) doJSON(parent context.Context, method, path string, payload any
 }
 
 func validateRequest(req videoprovider.Request, allowed map[string]bool) error {
-	if strings.TrimSpace(req.Prompt) == "" || req.DurationSeconds <= 0 || req.Resolution == "" || req.AspectRatio == "" {
-		return invalidRequest("prompt, duration, resolution and aspect ratio are required")
+	if strings.TrimSpace(req.IdempotencyKey) == "" || strings.TrimSpace(req.Prompt) == "" || req.DurationSeconds <= 0 || req.Resolution == "" || req.AspectRatio == "" {
+		return invalidRequest("idempotency key, prompt, duration, resolution and aspect ratio are required")
 	}
 	for key := range req.ProviderOptions {
 		if !allowed[key] {

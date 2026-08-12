@@ -2652,6 +2652,7 @@ var (
 		{Name: "task_type", Type: field.TypeString, Size: 32},
 		{Name: "resolution", Type: field.TypeString, Size: 16},
 		{Name: "audio_mode", Type: field.TypeString, Size: 16, Default: "silent"},
+		{Name: "pricing_mode", Type: field.TypeString, Size: 16, Default: "exact"},
 		{Name: "rule_version", Type: field.TypeInt, Default: 1},
 		{Name: "effective_at", Type: field.TypeTime},
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
@@ -2685,12 +2686,12 @@ var (
 			{
 				Name:    "videopricerule_pricing_strategy_id_task_type_resolution_audio_mode_rule_version",
 				Unique:  true,
-				Columns: []*schema.Column{VideoPriceRulesColumns[4], VideoPriceRulesColumns[5], VideoPriceRulesColumns[6], VideoPriceRulesColumns[7], VideoPriceRulesColumns[8]},
+				Columns: []*schema.Column{VideoPriceRulesColumns[4], VideoPriceRulesColumns[5], VideoPriceRulesColumns[6], VideoPriceRulesColumns[7], VideoPriceRulesColumns[9]},
 			},
 			{
 				Name:    "videopricerule_enabled_effective_at",
 				Unique:  false,
-				Columns: []*schema.Column{VideoPriceRulesColumns[24], VideoPriceRulesColumns[9]},
+				Columns: []*schema.Column{VideoPriceRulesColumns[25], VideoPriceRulesColumns[10]},
 			},
 		},
 	}

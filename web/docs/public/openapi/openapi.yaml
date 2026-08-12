@@ -798,6 +798,7 @@ components:
         - duration_seconds
         - effective_at
         - minimum_task_points
+        - pricing_mode
         - enabled
       properties:
         route_model_id:
@@ -826,6 +827,11 @@ components:
         minimum_task_points:
           type: string
           pattern: ^\d+(\.\d{1,5})?$
+        pricing_mode:
+          type: string
+          enum:
+            - exact
+            - metered
         safety_points:
           type: string
           description: Informational only; server recalculates and overwrites from worst enabled candidate cost.

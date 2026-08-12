@@ -8,12 +8,14 @@ import (
 
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	domainmedia "github.com/fatballfish/pic-gallery/internal/domain/media"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaderivative"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskitem"
 	mediaworker "github.com/fatballfish/pic-gallery/internal/worker/media"
 )
 
@@ -221,6 +223,25 @@ func (store *MediaWorkerStore) Complete(ctx context.Context, request mediaworker
 		}
 		if _, err := assetUpdate.Save(ctx); err != nil {
 			return false, fmt.Errorf("update processed media asset: %w", err)
+		}
+		if probe.DurationMS > 0 && asset.SourceTaskKind != nil && *asset.SourceTaskKind == "video" {
+			item, err := tx.VideoTaskItem.Query().Where(videotaskitem.ResultAssetIDEQ(asset.ID)).WithTask().Only(ctx)
+			if err != nil && !repoent.IsNotFound(err) {
+				return false, fmt.Errorf("load metered video item for probe usage: %w", err)
+			}
+			if err == nil {
+				seconds := decimal.NewFromInt(probe.DurationMS).Div(decimal.NewFromInt(1000)).StringFixed(3)
+				item.ActualOutputSeconds = seconds
+				points, pending, priceErr := actualVideoItemPoints(item, item.Edges.Task)
+				if priceErr != nil {
+					return false, priceErr
+				}
+				if !pending && item.ActualPoints == "0.00000" {
+					if _, err := tx.VideoTaskItem.UpdateOne(item).SetActualOutputSeconds(seconds).SetActualPoints(points).SetStage("succeeded").SetNextActionAt(request.Now.UTC()).Save(ctx); err != nil {
+						return false, fmt.Errorf("backfill metered video usage from probe: %w", err)
+					}
+				}
+			}
 		}
 		for _, derivative := range request.Result.Derivatives {
 			exists, err := tx.MediaDerivative.Query().Where(

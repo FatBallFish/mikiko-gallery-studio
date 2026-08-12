@@ -111,6 +111,28 @@ func TestServiceAcceptsVideoProviderAccountsAndVideoOnlyModels(t *testing.T) {
 	}
 }
 
+func TestRouteModelMediaTypeDefaultsToImageAndAcceptsVideo(t *testing.T) {
+	ctx := context.Background()
+	svc := modeladmin.NewServiceWithStore(nil)
+	imageRoute, err := svc.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{Code: "image-route", Name: "Image Route", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imageRoute.MediaType != "image" {
+		t.Fatalf("default route media type = %q", imageRoute.MediaType)
+	}
+	videoRoute, err := svc.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{Code: "video-route", Name: "Video Route", MediaType: "video", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if videoRoute.MediaType != "video" {
+		t.Fatalf("video route media type = %q", videoRoute.MediaType)
+	}
+	if _, err := svc.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{Code: "audio-route", Name: "Audio Route", MediaType: "audio"}); err == nil {
+		t.Fatal("unsupported route media type must fail")
+	}
+}
+
 func TestServiceRejectsRemovedReferenceGenerationConfiguration(t *testing.T) {
 	ctx := context.Background()
 	svc := modeladmin.NewServiceWithStore(nil)

@@ -18,7 +18,8 @@ type Service struct {
 
 type QuoteResult struct {
 	domainvideo.Quote
-	PriceVersion string `json:"price_version"`
+	PriceVersion string                `json:"price_version"`
+	SalesRule    domainvideo.SalesRule `json:"sales_rule"`
 }
 
 func NewService(store Store, now func() time.Time) *Service {
@@ -47,5 +48,5 @@ func (s *Service) Quote(ctx context.Context, strategyID int64, request domainvid
 	if unitErr != nil || safetyErr != nil || unit.LessThan(safety) {
 		return QuoteResult{}, errs.New(409, errs.CodeConflict, "video price is below the configured safety floor")
 	}
-	return QuoteResult{Quote: quote, PriceVersion: fmt.Sprintf("%d:%d", rule.StrategyVersion, rule.RuleVersion)}, nil
+	return QuoteResult{Quote: quote, PriceVersion: fmt.Sprintf("%d:%d", rule.StrategyVersion, rule.RuleVersion), SalesRule: rule.SalesRule}, nil
 }

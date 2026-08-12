@@ -164,6 +164,7 @@ type WorkerConfig struct {
 	TempDiskCriticalPercent     int          `yaml:"temp_disk_critical_percent"`
 	MetricsAddr                 string       `yaml:"metrics_addr"`
 	AllowLoopbackVideoArtifacts bool         `yaml:"allow_loopback_video_artifacts"`
+	VideoArtifactTestCAFile     string       `yaml:"video_artifact_test_ca_file"`
 }
 
 func (cfg WorkerConfig) HasRole(role WorkerRole) bool {

@@ -30,8 +30,15 @@ type Options struct {
 	UserQuotaBytes int64
 	PartSize       int64
 	UploadTTL      time.Duration
+	PolicyResolver func(context.Context) (RuntimePolicy, error)
 	Now            func() time.Time
 	Observer       Observer
+}
+
+type RuntimePolicy struct {
+	Policy         domainmedia.Policy
+	UserQuotaBytes int64
+	UploadTTL      time.Duration
 }
 
 type Observer interface {
@@ -266,8 +273,12 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 	if req.UserID <= 0 || req.ProjectID == uuid.Nil || req.IdempotencyKey == "" {
 		return UploadSession{}, errs.BadRequest("user, project and idempotency key are required")
 	}
+	runtimePolicy, err := s.runtimePolicy(ctx)
+	if err != nil {
+		return UploadSession{}, fmt.Errorf("resolve media upload policy: %w", err)
+	}
 	declaration := domainmedia.UploadDeclaration{Filename: req.Filename, MediaType: req.MediaType, MIMEType: req.MIMEType, SizeBytes: req.SizeBytes}
-	if validationErr := s.opts.Policy.ValidateDeclaration(declaration); validationErr != nil {
+	if validationErr := runtimePolicy.Policy.ValidateDeclaration(declaration); validationErr != nil {
 		return UploadSession{}, errs.BadRequest(validationErr.Error())
 	}
 	fingerprint, err := uploadRequestFingerprint(req)
@@ -307,9 +318,9 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 		DeclaredSizeBytes: req.SizeBytes, DeclaredChecksum: strings.TrimSpace(req.Checksum), StorageConfigID: strings.TrimSpace(ref.ConfigID),
 		StorageDriver: ref.Driver, Bucket: ref.Bucket, ObjectKey: objectKey, BackendUploadID: backendUpload.UploadID,
 		PartSize: backendUpload.PartSize, PartCount: backendUpload.PartCount, Status: "initialized", ReservedBytes: req.SizeBytes,
-		IdempotencyKey: req.IdempotencyKey, RequestFingerprint: fingerprint, ExpiresAt: s.opts.Now().UTC().Add(s.opts.UploadTTL),
+		IdempotencyKey: req.IdempotencyKey, RequestFingerprint: fingerprint, ExpiresAt: s.opts.Now().UTC().Add(runtimePolicy.UploadTTL),
 	}
-	created, err := s.store.CreateUpload(ctx, CreateUploadRecord{Session: session, QuotaBytes: s.opts.UserQuotaBytes})
+	created, err := s.store.CreateUpload(ctx, CreateUploadRecord{Session: session, QuotaBytes: runtimePolicy.UserQuotaBytes})
 	if err == nil {
 		s.recordUpload("initialize", "success", req.SizeBytes)
 		return created, nil
@@ -324,6 +335,24 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 	}
 	s.recordUpload("initialize", "failed", req.SizeBytes)
 	return UploadSession{}, err
+}
+
+func (s *Service) runtimePolicy(ctx context.Context) (RuntimePolicy, error) {
+	policy := RuntimePolicy{Policy: s.opts.Policy, UserQuotaBytes: s.opts.UserQuotaBytes, UploadTTL: s.opts.UploadTTL}
+	if s.opts.PolicyResolver != nil {
+		resolved, err := s.opts.PolicyResolver(ctx)
+		if err != nil {
+			return RuntimePolicy{}, err
+		}
+		policy = resolved
+	}
+	if policy.Policy.SingleFileMaxBytes <= 0 {
+		policy.Policy = domainmedia.DefaultPolicy()
+	}
+	if policy.UploadTTL <= 0 {
+		policy.UploadTTL = 24 * time.Hour
+	}
+	return policy, nil
 }
 
 func (s *Service) SignPart(ctx context.Context, userID int64, sessionID uuid.UUID, partNumber int, checksum string) (storage.MultipartPartTarget, error) {

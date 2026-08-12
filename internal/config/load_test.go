@@ -225,6 +225,7 @@ func TestRuntimeWorkerConfigurationDefaultsAndOverrides(t *testing.T) {
 	values["WORKER_METRICS_ADDR"] = ":19091"
 	values["PIC_GALLERY_ENV"] = "local"
 	values["VIDEO_ARTIFACT_ALLOW_LOOPBACK"] = "true"
+	values["VIDEO_ARTIFACT_TEST_CA_FILE"] = "/tmp/video-artifact-test-ca.pem"
 	writeRuntimeValuesForTest(t, path, values)
 
 	cfg, err = LoadRuntime(path)
@@ -245,6 +246,9 @@ func TestRuntimeWorkerConfigurationDefaultsAndOverrides(t *testing.T) {
 	}
 	if !cfg.Worker.AllowLoopbackVideoArtifacts {
 		t.Fatal("local runtime did not enable the explicit loopback video artifact test option")
+	}
+	if cfg.Worker.VideoArtifactTestCAFile != "/tmp/video-artifact-test-ca.pem" {
+		t.Fatalf("video artifact test CA file = %q", cfg.Worker.VideoArtifactTestCAFile)
 	}
 }
 
@@ -285,6 +289,30 @@ func TestRuntimeRejectsLoopbackVideoArtifactsOutsideLocalEnvironments(t *testing
 	writeRuntimeValuesForTest(t, path, values)
 	if _, err := LoadRuntime(path); err == nil || !strings.Contains(err.Error(), "VIDEO_ARTIFACT_ALLOW_LOOPBACK") {
 		t.Fatalf("LoadRuntime error = %v, want production loopback artifact rejection", err)
+	}
+}
+
+func TestRuntimeRejectsVideoArtifactTestCAWithoutLocalLoopbackMode(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		env   string
+		allow string
+		want  string
+	}{
+		{name: "loopback disabled", env: "local", allow: "false", want: "VIDEO_ARTIFACT_ALLOW_LOOPBACK"},
+		{name: "production", env: "production", allow: "true", want: "VIDEO_ARTIFACT_TEST_CA_FILE"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "runtime.env")
+			values := completeRuntimeValuesForTest()
+			values["PIC_GALLERY_ENV"] = test.env
+			values["VIDEO_ARTIFACT_ALLOW_LOOPBACK"] = test.allow
+			values["VIDEO_ARTIFACT_TEST_CA_FILE"] = "/tmp/video-artifact-test-ca.pem"
+			writeRuntimeValuesForTest(t, path, values)
+			if _, err := LoadRuntime(path); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("LoadRuntime error = %v, want diagnostic containing %q", err, test.want)
+			}
+		})
 	}
 }
 

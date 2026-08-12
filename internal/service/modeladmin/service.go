@@ -547,6 +547,7 @@ func normalizeRouteModelWrite(req domainmodeladmin.RouteModelWriteRequest, requi
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
 	req.Visibility = normalizeCode(req.Visibility)
+	req.MediaType = normalizeCode(req.MediaType)
 	if requireCode && req.Code == "" {
 		return domainmodeladmin.RouteModelWriteRequest{}, errs.BadRequest("code is required")
 	}
@@ -558,6 +559,12 @@ func normalizeRouteModelWrite(req domainmodeladmin.RouteModelWriteRequest, requi
 	}
 	if req.Visibility != domainmodeladmin.RouteModelVisibilityPublic && req.Visibility != domainmodeladmin.RouteModelVisibilityGroups && req.Visibility != domainmodeladmin.RouteModelVisibilityHidden {
 		return domainmodeladmin.RouteModelWriteRequest{}, errs.BadRequest("invalid visibility")
+	}
+	if req.MediaType == "" {
+		req.MediaType = "image"
+	}
+	if req.MediaType != "image" && req.MediaType != "video" {
+		return domainmodeladmin.RouteModelWriteRequest{}, errs.BadRequest("invalid media_type")
 	}
 	return req, nil
 }

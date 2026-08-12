@@ -9891,6 +9891,7 @@ func decodeRouteModelWriteRequest(w http.ResponseWriter, r *http.Request) (domai
 		Name        string  `json:"name"`
 		Description string  `json:"description"`
 		Visibility  string  `json:"visibility"`
+		MediaType   string  `json:"media_type"`
 		Enabled     bool    `json:"enabled"`
 		SortOrder   int     `json:"sort_order"`
 		GroupIDs    []int64 `json:"group_ids"`
@@ -9899,7 +9900,7 @@ func decodeRouteModelWriteRequest(w http.ResponseWriter, r *http.Request) (domai
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return domainmodeladmin.RouteModelWriteRequest{}, false
 	}
-	return domainmodeladmin.RouteModelWriteRequest{Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: req.GroupIDs}, true
+	return domainmodeladmin.RouteModelWriteRequest{Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, MediaType: req.MediaType, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: req.GroupIDs}, true
 }
 
 func decodeRouteModelCandidateWriteRequest(w http.ResponseWriter, r *http.Request, routeModelID int64) (domainmodeladmin.RouteModelCandidateWriteRequest, bool) {

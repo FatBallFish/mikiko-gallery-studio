@@ -3,6 +3,7 @@ package entstore
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	providervideo "github.com/fatballfish/pic-gallery/internal/provider/video"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaassetreference"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercallbackevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskattempt"
@@ -269,6 +272,78 @@ func TestVideoWorkerStorePreparesAndAppliesMonotonicSteps(t *testing.T) {
 	})
 	if err == nil || changed {
 		t.Fatalf("invalid exhausted transition changed=%v err=%v", changed, err)
+	}
+}
+
+func TestVideoWorkerStoreCommitArtifactCreatesResultReferenceAndProbeJob(t *testing.T) {
+	ctx, client := openVideoTaskStoreTestClient(t, "video-worker-artifact-lifecycle")
+	store := NewVideoTaskStore(client, NewBillingStore(client, 5))
+	now := time.Date(2026, 8, 12, 16, 20, 0, 0, time.UTC)
+	taskID, itemID := seedVideoWorkerTask(t, ctx, client, 9122, "artifact-lifecycle", now)
+	if _, err := client.VideoTask.UpdateOneID(taskID).SetPricingSnapshot(map[string]any{
+		"unit_points": "11.00000", "max_reserved_points": "12.65000",
+		"sales_rule": map[string]any{"pricing_mode": "metered", "fixed_task_points": "1.00000", "output_second_points": "2.00000", "reserve_markup": "1.15000"},
+	}).SetReservedPoints("12.65000").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	item, err := client.VideoTaskItem.UpdateOneID(itemID).SetStatus(string(domainvideo.ItemStateArtifactPending)).SetActualOutputSeconds("3.000").SetVersion(4).SetLeaseOwner("worker-artifact").SetLeaseExpiresAt(now.Add(time.Minute)).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetID := uuid.New()
+	committed, err := store.CommitArtifact(ctx, worker.ArtifactCommitRequest{
+		ItemID: itemID.String(), Owner: "worker-artifact", ExpectedVersion: item.Version, AssetID: assetID.String(), UserID: 9122,
+		ProjectID: mustVideoWorkerTask(t, ctx, client, taskID).ProjectID.String(), Status: "ready_original", StorageDriver: "local",
+		ObjectKey: "media/original/9122/result.mp4", MIMEType: "video/mp4", SizeBytes: 1024, SHA256: strings.Repeat("a", 64),
+	})
+	if err != nil || !committed {
+		t.Fatalf("CommitArtifact() committed=%v err=%v", committed, err)
+	}
+	if count, err := client.MediaAssetReference.Query().Where(mediaassetreference.AssetIDEQ(assetID), mediaassetreference.RefTypeEQ("video_task_result"), mediaassetreference.RefIDEQ(taskID), mediaassetreference.DeletedAtIsNil()).Count(ctx); err != nil || count != 1 {
+		t.Fatalf("result references=%d err=%v", count, err)
+	}
+	if count, err := client.MediaProcessingJob.Query().Where(mediaprocessingjob.AssetIDEQ(assetID), mediaprocessingjob.JobTypeEQ("probe"), mediaprocessingjob.StatusEQ("pending")).Count(ctx); err != nil || count != 1 {
+		t.Fatalf("probe jobs=%d err=%v", count, err)
+	}
+	storedItem, err := client.VideoTaskItem.Get(ctx, itemID)
+	if err != nil || storedItem.ActualPoints != "7.00000" {
+		t.Fatalf("metered actual points=%q err=%v", storedItem.ActualPoints, err)
+	}
+}
+
+func TestVideoWorkerStoreMeteredArtifactWaitsForProbeWithoutUsage(t *testing.T) {
+	ctx, client := openVideoTaskStoreTestClient(t, "video-worker-metered-missing-usage")
+	store := NewVideoTaskStore(client, NewBillingStore(client, 5))
+	now := time.Date(2026, 8, 12, 16, 25, 0, 0, time.UTC)
+	taskID, itemID := seedVideoWorkerTask(t, ctx, client, 9123, "metered-missing-usage", now)
+	if _, err := client.VideoTask.UpdateOneID(taskID).SetPricingSnapshot(map[string]any{
+		"unit_points": "11.00000", "max_reserved_points": "12.65000",
+		"sales_rule": map[string]any{"pricing_mode": "metered", "fixed_task_points": "1.00000", "output_second_points": "2.00000", "reserve_markup": "1.15000"},
+	}).SetReservedPoints("12.65000").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	item, err := client.VideoTaskItem.UpdateOneID(itemID).SetStatus(string(domainvideo.ItemStateArtifactPending)).SetVersion(4).SetLeaseOwner("worker-artifact").SetLeaseExpiresAt(now.Add(time.Minute)).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, err := store.CommitArtifact(ctx, worker.ArtifactCommitRequest{
+		ItemID: itemID.String(), Owner: "worker-artifact", ExpectedVersion: item.Version, AssetID: uuid.NewString(), UserID: 9123,
+		ProjectID: mustVideoWorkerTask(t, ctx, client, taskID).ProjectID.String(), Status: "ready_original", StorageDriver: "local",
+		ObjectKey: "media/original/9123/result.mp4", MIMEType: "video/mp4", SizeBytes: 1024, SHA256: strings.Repeat("b", 64),
+	})
+	if err != nil || !committed {
+		t.Fatalf("CommitArtifact() committed=%v err=%v", committed, err)
+	}
+	storedItem, err := client.VideoTaskItem.Get(ctx, itemID)
+	if err != nil || storedItem.ActualPoints != "0.00000" {
+		t.Fatalf("pending actual points=%q err=%v", storedItem.ActualPoints, err)
+	}
+	settlement, err := store.LoadSettlement(ctx, taskID.String())
+	if err != nil || len(settlement.Items) != 1 || !settlement.Items[0].UsagePending {
+		t.Fatalf("pending settlement=%#v err=%v", settlement, err)
+	}
+	if _, claimed, err := store.ClaimDue(ctx, worker.ClaimRequest{Owner: "worker-settlement", Now: now.Add(time.Minute), LeaseTTL: time.Minute}); err != nil || claimed {
+		t.Fatalf("usage-pending item must wait for probe: claimed=%v err=%v", claimed, err)
 	}
 }
 

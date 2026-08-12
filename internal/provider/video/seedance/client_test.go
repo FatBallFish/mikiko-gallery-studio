@@ -24,6 +24,9 @@ func TestClientSubmitGetCancelAndNormalizeUsage(t *testing.T) {
 		}
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v3/contents/generations/tasks":
+			if r.Header.Get("Idempotency-Key") != "idem-1" {
+				t.Fatalf("idempotency header = %q", r.Header.Get("Idempotency-Key"))
+			}
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Fatal(err)
@@ -74,6 +77,32 @@ func TestClientSubmitGetCancelAndNormalizeUsage(t *testing.T) {
 	cancelled, err := client.Cancel(t.Context(), videoprovider.JobRef{ID: job.ID})
 	if err != nil || !cancelled.Accepted || cancelled.State != videoprovider.StateCancelled {
 		t.Fatalf("Cancel() = %#v, %v", cancelled, err)
+	}
+}
+
+func TestClientReconcilesSubmissionByReplayingTheSameIdempotencyKey(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Header.Get("Idempotency-Key") != "idem-1" {
+			t.Fatalf("idempotency header = %q", r.Header.Get("Idempotency-Key"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"ark-job-stable","status":"queued"}`)
+	}))
+	defer server.Close()
+	client, err := seedance.NewClient(seedance.Config{BaseURL: server.URL, APIKey: "key", ModelCode: "doubao-seedance-2-5-260628", Verified: true, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoprovider.Request{TaskID: "task-1", ItemID: "item-1", AttemptID: "attempt-1", IdempotencyKey: "idem-1", TaskType: "text_to_video", Prompt: "move", DurationSeconds: 5, Resolution: "720p", AspectRatio: "16:9", OutputFormat: "mp4"}
+	first, err := client.Submit(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, found, err := client.Reconcile(t.Context(), req)
+	if err != nil || !found || recovered.ID != first.ID || requests != 2 {
+		t.Fatalf("reconcile = %#v found=%v requests=%d err=%v", recovered, found, requests, err)
 	}
 }
 

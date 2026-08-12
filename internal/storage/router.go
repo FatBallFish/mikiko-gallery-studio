@@ -289,7 +289,7 @@ func (r *Registry) runProbeIO(ctx context.Context, resolved domainstorageconfig.
 		cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), r.probeCleanupTimeout)
 		defer cancelCleanup()
 		if cleanupErr := backend.Delete(cleanupContext, key); cleanupErr != nil && !errors.Is(cleanupErr, ErrNotFound) {
-			result = probeFailure(r, start, errors.New("probe object cleanup failed"))
+			result = probeFailure(r, start, fmt.Errorf("probe object cleanup failed: %w", cleanupErr))
 		}
 	}()
 	if err := backend.Put(ctx, key, "text/plain", content); err != nil {

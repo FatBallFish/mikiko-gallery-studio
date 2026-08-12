@@ -37,6 +37,9 @@ func TestDerivativeCommandsCoverImageVideoAndAudioP0Outputs(t *testing.T) {
 				if !strings.Contains(joined, "-nostdin") || !strings.Contains(joined, "-protocol_whitelist file,pipe") || !strings.Contains(joined, "-y") {
 					t.Fatalf("unsafe ffmpeg args: %q", joined)
 				}
+				if !strings.Contains(joined, "-threads 2") || !strings.Contains(joined, "-fs 536870912") {
+					t.Fatalf("ffmpeg resource limits missing: %q", joined)
+				}
 				if filepath.Dir(command.OutputPath) != "/tmp/output" {
 					t.Fatalf("output escaped target directory: %q", command.OutputPath)
 				}
@@ -45,6 +48,19 @@ func TestDerivativeCommandsCoverImageVideoAndAudioP0Outputs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProcessorRejectsAndRemovesOversizedDerivative(t *testing.T) {
+	runner := &recordingDerivativeRunner{outputSize: derivativeOutputMaxBytes + 1}
+	outputDir := t.TempDir()
+	processor := NewDerivativeProcessor(runner, time.Second)
+	if _, err := processor.Generate(t.Context(), domainmedia.MediaTypeImage, "/tmp/input.png", outputDir); err == nil {
+		t.Fatal("expected oversized derivative rejection")
+	}
+	entries, err := os.ReadDir(outputDir)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("oversized derivative was not removed: entries=%v err=%v", entries, err)
 	}
 }
 
@@ -65,10 +81,21 @@ func TestProcessorUsesTimeoutAndAtomicOutputPaths(t *testing.T) {
 	}
 }
 
-type recordingDerivativeRunner struct{ calls [][]string }
+type recordingDerivativeRunner struct {
+	calls      [][]string
+	outputSize int64
+}
 
 func (runner *recordingDerivativeRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
 	runner.calls = append(runner.calls, append([]string{name}, args...))
 	output := args[len(args)-1]
+	if runner.outputSize > 0 {
+		file, err := os.Create(output)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		return nil, file.Truncate(runner.outputSize)
+	}
 	return nil, os.WriteFile(output, []byte("fixture"), 0o600)
 }

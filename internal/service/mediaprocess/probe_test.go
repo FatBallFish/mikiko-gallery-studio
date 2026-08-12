@@ -28,6 +28,9 @@ func TestProbeParsesVideoMetadataAndRestrictsProtocols(t *testing.T) {
 	if result.Width != 1920 || result.Height != 1080 || result.DurationMS != 5125 || result.FrameRateMilli != 29970 || result.Channels != 2 || result.SampleRate != 48000 {
 		t.Fatalf("unexpected numeric probe metadata: %#v", result)
 	}
+	if result.StreamCount != 2 {
+		t.Fatalf("unexpected stream count: %#v", result)
+	}
 	joined := strings.Join(runner.args, " ")
 	for _, required := range []string{"-v error", "-protocol_whitelist file,pipe", "-show_format", "-show_streams", "-of json", "/tmp/input.mp4"} {
 		if !strings.Contains(joined, required) {
@@ -54,6 +57,32 @@ func TestProbeRejectsMalformedOrMismatchedContent(t *testing.T) {
 	}
 	if result.MediaType != domainmedia.MediaTypeAudio {
 		t.Fatalf("probe must report detected content, got %#v", result)
+	}
+}
+
+func TestProbeNormalizesSupportedStillImagePipeFormats(t *testing.T) {
+	for _, testCase := range []struct {
+		formatName string
+		inputPath  string
+		wantFormat string
+	}{
+		{formatName: "png_pipe", inputPath: "/tmp/input.png", wantFormat: "png"},
+		{formatName: "jpeg_pipe", inputPath: "/tmp/input.jpg", wantFormat: "jpg"},
+		{formatName: "webp_pipe", inputPath: "/tmp/input.webp", wantFormat: "webp"},
+	} {
+		t.Run(testCase.formatName, func(t *testing.T) {
+			runner := &recordingRunner{output: []byte(`{
+  "format":{"format_name":"` + testCase.formatName + `","size":"10"},
+  "streams":[{"codec_type":"video","codec_name":"png","width":64,"height":64,"avg_frame_rate":"25/1"}]
+}`)}
+			result, err := NewProbe(runner, time.Second).Inspect(t.Context(), testCase.inputPath, 10, domainmedia.MediaTypeImage)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.MediaType != domainmedia.MediaTypeImage || result.Format != testCase.wantFormat || result.Container != testCase.wantFormat {
+				t.Fatalf("probe result = %#v", result)
+			}
+		})
 	}
 }
 

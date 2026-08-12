@@ -117,6 +117,20 @@ func (_u *VideoPriceRuleUpdate) SetNillableAudioMode(v *string) *VideoPriceRuleU
 	return _u
 }
 
+// SetPricingMode sets the "pricing_mode" field.
+func (_u *VideoPriceRuleUpdate) SetPricingMode(v string) *VideoPriceRuleUpdate {
+	_u.mutation.SetPricingMode(v)
+	return _u
+}
+
+// SetNillablePricingMode sets the "pricing_mode" field if the given value is not nil.
+func (_u *VideoPriceRuleUpdate) SetNillablePricingMode(v *string) *VideoPriceRuleUpdate {
+	if v != nil {
+		_u.SetPricingMode(*v)
+	}
+	return _u
+}
+
 // SetRuleVersion sets the "rule_version" field.
 func (_u *VideoPriceRuleUpdate) SetRuleVersion(v int) *VideoPriceRuleUpdate {
 	_u.mutation.ResetRuleVersion()
@@ -439,6 +453,11 @@ func (_u *VideoPriceRuleUpdate) check() error {
 			return &ValidationError{Name: "audio_mode", err: fmt.Errorf(`ent: validator failed for field "VideoPriceRule.audio_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PricingMode(); ok {
+		if err := videopricerule.PricingModeValidator(v); err != nil {
+			return &ValidationError{Name: "pricing_mode", err: fmt.Errorf(`ent: validator failed for field "VideoPriceRule.pricing_mode": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.RuleVersion(); ok {
 		if err := videopricerule.RuleVersionValidator(v); err != nil {
 			return &ValidationError{Name: "rule_version", err: fmt.Errorf(`ent: validator failed for field "VideoPriceRule.rule_version": %w`, err)}
@@ -492,6 +511,9 @@ func (_u *VideoPriceRuleUpdate) sqlSave(ctx context.Context) (_node int, err err
 	}
 	if value, ok := _u.mutation.AudioMode(); ok {
 		_spec.SetField(videopricerule.FieldAudioMode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PricingMode(); ok {
+		_spec.SetField(videopricerule.FieldPricingMode, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.RuleVersion(); ok {
 		_spec.SetField(videopricerule.FieldRuleVersion, field.TypeInt, value)
@@ -661,6 +683,20 @@ func (_u *VideoPriceRuleUpdateOne) SetAudioMode(v string) *VideoPriceRuleUpdateO
 func (_u *VideoPriceRuleUpdateOne) SetNillableAudioMode(v *string) *VideoPriceRuleUpdateOne {
 	if v != nil {
 		_u.SetAudioMode(*v)
+	}
+	return _u
+}
+
+// SetPricingMode sets the "pricing_mode" field.
+func (_u *VideoPriceRuleUpdateOne) SetPricingMode(v string) *VideoPriceRuleUpdateOne {
+	_u.mutation.SetPricingMode(v)
+	return _u
+}
+
+// SetNillablePricingMode sets the "pricing_mode" field if the given value is not nil.
+func (_u *VideoPriceRuleUpdateOne) SetNillablePricingMode(v *string) *VideoPriceRuleUpdateOne {
+	if v != nil {
+		_u.SetPricingMode(*v)
 	}
 	return _u
 }
@@ -1000,6 +1036,11 @@ func (_u *VideoPriceRuleUpdateOne) check() error {
 			return &ValidationError{Name: "audio_mode", err: fmt.Errorf(`ent: validator failed for field "VideoPriceRule.audio_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PricingMode(); ok {
+		if err := videopricerule.PricingModeValidator(v); err != nil {
+			return &ValidationError{Name: "pricing_mode", err: fmt.Errorf(`ent: validator failed for field "VideoPriceRule.pricing_mode": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.RuleVersion(); ok {
 		if err := videopricerule.RuleVersionValidator(v); err != nil {
 			return &ValidationError{Name: "rule_version", err: fmt.Errorf(`ent: validator failed for field "VideoPriceRule.rule_version": %w`, err)}
@@ -1070,6 +1111,9 @@ func (_u *VideoPriceRuleUpdateOne) sqlSave(ctx context.Context) (_node *VideoPri
 	}
 	if value, ok := _u.mutation.AudioMode(); ok {
 		_spec.SetField(videopricerule.FieldAudioMode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PricingMode(); ok {
+		_spec.SetField(videopricerule.FieldPricingMode, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.RuleVersion(); ok {
 		_spec.SetField(videopricerule.FieldRuleVersion, field.TypeInt, value)

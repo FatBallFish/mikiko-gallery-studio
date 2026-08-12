@@ -362,11 +362,21 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	promptOptimizerSvc := promptoptimizerservice.NewService(textModelSvc, textModelStore, cfg.Security.PromptOptimizationQuoteSigningKey, nil)
 	slog.Info("database-backed stores enabled")
 
+	adminVideoStore := entstore.NewAdminVideoStore(client)
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
-	mediaAssetSvc := mediaassetservice.NewService(entstore.NewMediaStore(client), storageRegistry, mediaassetservice.Options{Policy: domainmedia.DefaultPolicy(), Observer: observability.DefaultMetrics()})
+	mediaAssetSvc := mediaassetservice.NewService(entstore.NewMediaStore(client), storageRegistry, mediaassetservice.Options{
+		Policy: domainmedia.DefaultPolicy(), Observer: observability.DefaultMetrics(),
+		PolicyResolver: func(ctx context.Context) (mediaassetservice.RuntimePolicy, error) {
+			policy, err := adminVideoStore.GetMediaPolicy(ctx)
+			if err != nil {
+				return mediaassetservice.RuntimePolicy{}, err
+			}
+			runtimePolicy := policy.RuntimePolicy()
+			return mediaassetservice.RuntimePolicy{Policy: runtimePolicy.Policy, UserQuotaBytes: runtimePolicy.UserQuotaBytes, UploadTTL: runtimePolicy.UploadTTL}, nil
+		},
+	})
 	api.SetMediaAssetService(mediaAssetSvc)
 	videoConfigStore := entstore.NewVideoConfigStore(client)
-	adminVideoStore := entstore.NewAdminVideoStore(client)
 	videoRoutingSvc := videoroutingservice.NewService(videoConfigStore)
 	videoQuoteKey := sha256.Sum256([]byte("video-quote:" + cfg.Security.PromptOptimizationQuoteSigningKey))
 	videoQuoteSvc := videotaskservice.NewQuoteService(videoRoutingSvc, videopricingservice.NewService(videoConfigStore, nil), videoQuoteKey[:], nil)

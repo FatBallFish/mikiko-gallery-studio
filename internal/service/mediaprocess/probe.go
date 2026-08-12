@@ -108,7 +108,7 @@ func parseProbeOutput(output []byte, inputPath string, sizeBytes int64, declared
 	if len(payload.Streams) == 0 {
 		return domainmedia.ProbeResult{}, errors.New("ffprobe output contains no streams")
 	}
-	result := domainmedia.ProbeResult{SizeBytes: sizeBytes}
+	result := domainmedia.ProbeResult{SizeBytes: sizeBytes, StreamCount: len(payload.Streams)}
 	formatNames := strings.Split(strings.ToLower(payload.Format.FormatName), ",")
 	result.Container, result.Format = normalizeProbeFormat(formatNames, inputPath)
 	hasVideo, hasAudio := false, false
@@ -149,6 +149,11 @@ func normalizeProbeFormat(names []string, inputPath string) (container, format s
 	for _, name := range names {
 		name = strings.TrimSpace(name)
 		switch name {
+		case "png_pipe", "webp_pipe", "gif_pipe", "bmp_pipe", "tiff_pipe":
+			imageFormat := strings.TrimSuffix(name, "_pipe")
+			return imageFormat, imageFormat
+		case "jpeg_pipe":
+			return "jpg", "jpg"
 		case "mp3", "wav", "webp", "png", "gif", "jpeg", "jpg", "bmp", "tiff", "heic", "heif":
 			if name == "jpeg" {
 				name = "jpg"
