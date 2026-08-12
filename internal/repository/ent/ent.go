@@ -68,6 +68,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercallbackevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
@@ -192,6 +193,7 @@ func checkColumn(t, c string) error {
 			videomodelcapability.Table:        videomodelcapability.ValidColumn,
 			videopricerule.Table:              videopricerule.ValidColumn,
 			videopricingstrategy.Table:        videopricingstrategy.ValidColumn,
+			videoprovidercallbackevent.Table:  videoprovidercallbackevent.ValidColumn,
 			videoprovidercostrule.Table:       videoprovidercostrule.ValidColumn,
 			videorouteconfig.Table:            videorouteconfig.ValidColumn,
 			videotask.Table:                   videotask.ValidColumn,

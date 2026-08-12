@@ -174,6 +174,9 @@ type VideoPriceRule func(*sql.Selector)
 // VideoPricingStrategy is the predicate function for videopricingstrategy builders.
 type VideoPricingStrategy func(*sql.Selector)
 
+// VideoProviderCallbackEvent is the predicate function for videoprovidercallbackevent builders.
+type VideoProviderCallbackEvent func(*sql.Selector)
+
 // VideoProviderCostRule is the predicate function for videoprovidercostrule builders.
 type VideoProviderCostRule func(*sql.Selector)
 

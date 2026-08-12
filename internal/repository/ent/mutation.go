@@ -68,6 +68,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercallbackevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
@@ -144,6 +145,7 @@ const (
 	TypeVideoModelCapability        = "VideoModelCapability"
 	TypeVideoPriceRule              = "VideoPriceRule"
 	TypeVideoPricingStrategy        = "VideoPricingStrategy"
+	TypeVideoProviderCallbackEvent  = "VideoProviderCallbackEvent"
 	TypeVideoProviderCostRule       = "VideoProviderCostRule"
 	TypeVideoRouteConfig            = "VideoRouteConfig"
 	TypeVideoTask                   = "VideoTask"
@@ -31199,6 +31201,7 @@ type MigrationCheckpointMutation struct {
 	addafter_user_id  *int
 	after_task_id     *uuid.UUID
 	after_result_id   *uuid.UUID
+	after_created_at  *time.Time
 	processed_rows    *int
 	addprocessed_rows *int
 	completed         *bool
@@ -31604,6 +31607,55 @@ func (m *MigrationCheckpointMutation) ResetAfterResultID() {
 	delete(m.clearedFields, migrationcheckpoint.FieldAfterResultID)
 }
 
+// SetAfterCreatedAt sets the "after_created_at" field.
+func (m *MigrationCheckpointMutation) SetAfterCreatedAt(t time.Time) {
+	m.after_created_at = &t
+}
+
+// AfterCreatedAt returns the value of the "after_created_at" field in the mutation.
+func (m *MigrationCheckpointMutation) AfterCreatedAt() (r time.Time, exists bool) {
+	v := m.after_created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAfterCreatedAt returns the old "after_created_at" field's value of the MigrationCheckpoint entity.
+// If the MigrationCheckpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MigrationCheckpointMutation) OldAfterCreatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAfterCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAfterCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAfterCreatedAt: %w", err)
+	}
+	return oldValue.AfterCreatedAt, nil
+}
+
+// ClearAfterCreatedAt clears the value of the "after_created_at" field.
+func (m *MigrationCheckpointMutation) ClearAfterCreatedAt() {
+	m.after_created_at = nil
+	m.clearedFields[migrationcheckpoint.FieldAfterCreatedAt] = struct{}{}
+}
+
+// AfterCreatedAtCleared returns if the "after_created_at" field was cleared in this mutation.
+func (m *MigrationCheckpointMutation) AfterCreatedAtCleared() bool {
+	_, ok := m.clearedFields[migrationcheckpoint.FieldAfterCreatedAt]
+	return ok
+}
+
+// ResetAfterCreatedAt resets all changes to the "after_created_at" field.
+func (m *MigrationCheckpointMutation) ResetAfterCreatedAt() {
+	m.after_created_at = nil
+	delete(m.clearedFields, migrationcheckpoint.FieldAfterCreatedAt)
+}
+
 // SetProcessedRows sets the "processed_rows" field.
 func (m *MigrationCheckpointMutation) SetProcessedRows(i int) {
 	m.processed_rows = &i
@@ -31730,7 +31782,7 @@ func (m *MigrationCheckpointMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *MigrationCheckpointMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	if m.created_at != nil {
 		fields = append(fields, migrationcheckpoint.FieldCreatedAt)
 	}
@@ -31751,6 +31803,9 @@ func (m *MigrationCheckpointMutation) Fields() []string {
 	}
 	if m.after_result_id != nil {
 		fields = append(fields, migrationcheckpoint.FieldAfterResultID)
+	}
+	if m.after_created_at != nil {
+		fields = append(fields, migrationcheckpoint.FieldAfterCreatedAt)
 	}
 	if m.processed_rows != nil {
 		fields = append(fields, migrationcheckpoint.FieldProcessedRows)
@@ -31780,6 +31835,8 @@ func (m *MigrationCheckpointMutation) Field(name string) (ent.Value, bool) {
 		return m.AfterTaskID()
 	case migrationcheckpoint.FieldAfterResultID:
 		return m.AfterResultID()
+	case migrationcheckpoint.FieldAfterCreatedAt:
+		return m.AfterCreatedAt()
 	case migrationcheckpoint.FieldProcessedRows:
 		return m.ProcessedRows()
 	case migrationcheckpoint.FieldCompleted:
@@ -31807,6 +31864,8 @@ func (m *MigrationCheckpointMutation) OldField(ctx context.Context, name string)
 		return m.OldAfterTaskID(ctx)
 	case migrationcheckpoint.FieldAfterResultID:
 		return m.OldAfterResultID(ctx)
+	case migrationcheckpoint.FieldAfterCreatedAt:
+		return m.OldAfterCreatedAt(ctx)
 	case migrationcheckpoint.FieldProcessedRows:
 		return m.OldProcessedRows(ctx)
 	case migrationcheckpoint.FieldCompleted:
@@ -31868,6 +31927,13 @@ func (m *MigrationCheckpointMutation) SetField(name string, value ent.Value) err
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetAfterResultID(v)
+		return nil
+	case migrationcheckpoint.FieldAfterCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAfterCreatedAt(v)
 		return nil
 	case migrationcheckpoint.FieldProcessedRows:
 		v, ok := value.(int)
@@ -31946,6 +32012,9 @@ func (m *MigrationCheckpointMutation) ClearedFields() []string {
 	if m.FieldCleared(migrationcheckpoint.FieldAfterResultID) {
 		fields = append(fields, migrationcheckpoint.FieldAfterResultID)
 	}
+	if m.FieldCleared(migrationcheckpoint.FieldAfterCreatedAt) {
+		fields = append(fields, migrationcheckpoint.FieldAfterCreatedAt)
+	}
 	return fields
 }
 
@@ -31965,6 +32034,9 @@ func (m *MigrationCheckpointMutation) ClearField(name string) error {
 		return nil
 	case migrationcheckpoint.FieldAfterResultID:
 		m.ClearAfterResultID()
+		return nil
+	case migrationcheckpoint.FieldAfterCreatedAt:
+		m.ClearAfterCreatedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown MigrationCheckpoint nullable field %s", name)
@@ -31994,6 +32066,9 @@ func (m *MigrationCheckpointMutation) ResetField(name string) error {
 		return nil
 	case migrationcheckpoint.FieldAfterResultID:
 		m.ResetAfterResultID()
+		return nil
+	case migrationcheckpoint.FieldAfterCreatedAt:
+		m.ResetAfterCreatedAt()
 		return nil
 	case migrationcheckpoint.FieldProcessedRows:
 		m.ResetProcessedRows()
@@ -32062,6 +32137,7 @@ type ModelAccountMutation struct {
 	created_at              *time.Time
 	updated_at              *time.Time
 	deleted_at              *time.Time
+	public_id               *uuid.UUID
 	name                    *string
 	adapter_type            *string
 	auth_type               *string
@@ -32303,6 +32379,42 @@ func (m *ModelAccountMutation) DeletedAtCleared() bool {
 func (m *ModelAccountMutation) ResetDeletedAt() {
 	m.deleted_at = nil
 	delete(m.clearedFields, modelaccount.FieldDeletedAt)
+}
+
+// SetPublicID sets the "public_id" field.
+func (m *ModelAccountMutation) SetPublicID(u uuid.UUID) {
+	m.public_id = &u
+}
+
+// PublicID returns the value of the "public_id" field in the mutation.
+func (m *ModelAccountMutation) PublicID() (r uuid.UUID, exists bool) {
+	v := m.public_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicID returns the old "public_id" field's value of the ModelAccount entity.
+// If the ModelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelAccountMutation) OldPublicID(ctx context.Context) (v uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicID: %w", err)
+	}
+	return oldValue.PublicID, nil
+}
+
+// ResetPublicID resets all changes to the "public_id" field.
+func (m *ModelAccountMutation) ResetPublicID() {
+	m.public_id = nil
 }
 
 // SetName sets the "name" field.
@@ -32975,7 +33087,7 @@ func (m *ModelAccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ModelAccountMutation) Fields() []string {
-	fields := make([]string, 0, 17)
+	fields := make([]string, 0, 18)
 	if m.created_at != nil {
 		fields = append(fields, modelaccount.FieldCreatedAt)
 	}
@@ -32984,6 +33096,9 @@ func (m *ModelAccountMutation) Fields() []string {
 	}
 	if m.deleted_at != nil {
 		fields = append(fields, modelaccount.FieldDeletedAt)
+	}
+	if m.public_id != nil {
+		fields = append(fields, modelaccount.FieldPublicID)
 	}
 	if m.name != nil {
 		fields = append(fields, modelaccount.FieldName)
@@ -33041,6 +33156,8 @@ func (m *ModelAccountMutation) Field(name string) (ent.Value, bool) {
 		return m.UpdatedAt()
 	case modelaccount.FieldDeletedAt:
 		return m.DeletedAt()
+	case modelaccount.FieldPublicID:
+		return m.PublicID()
 	case modelaccount.FieldName:
 		return m.Name()
 	case modelaccount.FieldAdapterType:
@@ -33084,6 +33201,8 @@ func (m *ModelAccountMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldUpdatedAt(ctx)
 	case modelaccount.FieldDeletedAt:
 		return m.OldDeletedAt(ctx)
+	case modelaccount.FieldPublicID:
+		return m.OldPublicID(ctx)
 	case modelaccount.FieldName:
 		return m.OldName(ctx)
 	case modelaccount.FieldAdapterType:
@@ -33141,6 +33260,13 @@ func (m *ModelAccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDeletedAt(v)
+		return nil
+	case modelaccount.FieldPublicID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicID(v)
 		return nil
 	case modelaccount.FieldName:
 		v, ok := value.(string)
@@ -33381,6 +33507,9 @@ func (m *ModelAccountMutation) ResetField(name string) error {
 		return nil
 	case modelaccount.FieldDeletedAt:
 		m.ResetDeletedAt()
+		return nil
+	case modelaccount.FieldPublicID:
+		m.ResetPublicID()
 		return nil
 	case modelaccount.FieldName:
 		m.ResetName()
@@ -74134,6 +74263,1028 @@ func (m *VideoPricingStrategyMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown VideoPricingStrategy edge %s", name)
 }
 
+// VideoProviderCallbackEventMutation represents an operation that mutates the VideoProviderCallbackEvent nodes in the graph.
+type VideoProviderCallbackEventMutation struct {
+	config
+	op                  Op
+	typ                 string
+	id                  *uuid.UUID
+	created_at          *time.Time
+	updated_at          *time.Time
+	provider_code       *string
+	model_account_id    *int64
+	addmodel_account_id *int64
+	provider_event_id   *string
+	provider_job_id     *string
+	status              *string
+	payload_snapshot    *map[string]interface{}
+	received_at         *time.Time
+	processed_at        *time.Time
+	error_code          *string
+	error_message       *string
+	clearedFields       map[string]struct{}
+	done                bool
+	oldValue            func(context.Context) (*VideoProviderCallbackEvent, error)
+	predicates          []predicate.VideoProviderCallbackEvent
+}
+
+var _ ent.Mutation = (*VideoProviderCallbackEventMutation)(nil)
+
+// videoprovidercallbackeventOption allows management of the mutation configuration using functional options.
+type videoprovidercallbackeventOption func(*VideoProviderCallbackEventMutation)
+
+// newVideoProviderCallbackEventMutation creates new mutation for the VideoProviderCallbackEvent entity.
+func newVideoProviderCallbackEventMutation(c config, op Op, opts ...videoprovidercallbackeventOption) *VideoProviderCallbackEventMutation {
+	m := &VideoProviderCallbackEventMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeVideoProviderCallbackEvent,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withVideoProviderCallbackEventID sets the ID field of the mutation.
+func withVideoProviderCallbackEventID(id uuid.UUID) videoprovidercallbackeventOption {
+	return func(m *VideoProviderCallbackEventMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *VideoProviderCallbackEvent
+		)
+		m.oldValue = func(ctx context.Context) (*VideoProviderCallbackEvent, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().VideoProviderCallbackEvent.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withVideoProviderCallbackEvent sets the old VideoProviderCallbackEvent of the mutation.
+func withVideoProviderCallbackEvent(node *VideoProviderCallbackEvent) videoprovidercallbackeventOption {
+	return func(m *VideoProviderCallbackEventMutation) {
+		m.oldValue = func(context.Context) (*VideoProviderCallbackEvent, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m VideoProviderCallbackEventMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m VideoProviderCallbackEventMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of VideoProviderCallbackEvent entities.
+func (m *VideoProviderCallbackEventMutation) SetID(id uuid.UUID) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *VideoProviderCallbackEventMutation) ID() (id uuid.UUID, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *VideoProviderCallbackEventMutation) IDs(ctx context.Context) ([]uuid.UUID, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []uuid.UUID{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().VideoProviderCallbackEvent.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *VideoProviderCallbackEventMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *VideoProviderCallbackEventMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *VideoProviderCallbackEventMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *VideoProviderCallbackEventMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetProviderCode sets the "provider_code" field.
+func (m *VideoProviderCallbackEventMutation) SetProviderCode(s string) {
+	m.provider_code = &s
+}
+
+// ProviderCode returns the value of the "provider_code" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) ProviderCode() (r string, exists bool) {
+	v := m.provider_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderCode returns the old "provider_code" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldProviderCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderCode: %w", err)
+	}
+	return oldValue.ProviderCode, nil
+}
+
+// ResetProviderCode resets all changes to the "provider_code" field.
+func (m *VideoProviderCallbackEventMutation) ResetProviderCode() {
+	m.provider_code = nil
+}
+
+// SetModelAccountID sets the "model_account_id" field.
+func (m *VideoProviderCallbackEventMutation) SetModelAccountID(i int64) {
+	m.model_account_id = &i
+	m.addmodel_account_id = nil
+}
+
+// ModelAccountID returns the value of the "model_account_id" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) ModelAccountID() (r int64, exists bool) {
+	v := m.model_account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelAccountID returns the old "model_account_id" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldModelAccountID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelAccountID: %w", err)
+	}
+	return oldValue.ModelAccountID, nil
+}
+
+// AddModelAccountID adds i to the "model_account_id" field.
+func (m *VideoProviderCallbackEventMutation) AddModelAccountID(i int64) {
+	if m.addmodel_account_id != nil {
+		*m.addmodel_account_id += i
+	} else {
+		m.addmodel_account_id = &i
+	}
+}
+
+// AddedModelAccountID returns the value that was added to the "model_account_id" field in this mutation.
+func (m *VideoProviderCallbackEventMutation) AddedModelAccountID() (r int64, exists bool) {
+	v := m.addmodel_account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetModelAccountID resets all changes to the "model_account_id" field.
+func (m *VideoProviderCallbackEventMutation) ResetModelAccountID() {
+	m.model_account_id = nil
+	m.addmodel_account_id = nil
+}
+
+// SetProviderEventID sets the "provider_event_id" field.
+func (m *VideoProviderCallbackEventMutation) SetProviderEventID(s string) {
+	m.provider_event_id = &s
+}
+
+// ProviderEventID returns the value of the "provider_event_id" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) ProviderEventID() (r string, exists bool) {
+	v := m.provider_event_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderEventID returns the old "provider_event_id" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldProviderEventID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderEventID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderEventID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderEventID: %w", err)
+	}
+	return oldValue.ProviderEventID, nil
+}
+
+// ResetProviderEventID resets all changes to the "provider_event_id" field.
+func (m *VideoProviderCallbackEventMutation) ResetProviderEventID() {
+	m.provider_event_id = nil
+}
+
+// SetProviderJobID sets the "provider_job_id" field.
+func (m *VideoProviderCallbackEventMutation) SetProviderJobID(s string) {
+	m.provider_job_id = &s
+}
+
+// ProviderJobID returns the value of the "provider_job_id" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) ProviderJobID() (r string, exists bool) {
+	v := m.provider_job_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderJobID returns the old "provider_job_id" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldProviderJobID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderJobID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderJobID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderJobID: %w", err)
+	}
+	return oldValue.ProviderJobID, nil
+}
+
+// ResetProviderJobID resets all changes to the "provider_job_id" field.
+func (m *VideoProviderCallbackEventMutation) ResetProviderJobID() {
+	m.provider_job_id = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *VideoProviderCallbackEventMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *VideoProviderCallbackEventMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetPayloadSnapshot sets the "payload_snapshot" field.
+func (m *VideoProviderCallbackEventMutation) SetPayloadSnapshot(value map[string]interface{}) {
+	m.payload_snapshot = &value
+}
+
+// PayloadSnapshot returns the value of the "payload_snapshot" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) PayloadSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.payload_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPayloadSnapshot returns the old "payload_snapshot" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldPayloadSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPayloadSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPayloadSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPayloadSnapshot: %w", err)
+	}
+	return oldValue.PayloadSnapshot, nil
+}
+
+// ResetPayloadSnapshot resets all changes to the "payload_snapshot" field.
+func (m *VideoProviderCallbackEventMutation) ResetPayloadSnapshot() {
+	m.payload_snapshot = nil
+}
+
+// SetReceivedAt sets the "received_at" field.
+func (m *VideoProviderCallbackEventMutation) SetReceivedAt(t time.Time) {
+	m.received_at = &t
+}
+
+// ReceivedAt returns the value of the "received_at" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) ReceivedAt() (r time.Time, exists bool) {
+	v := m.received_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReceivedAt returns the old "received_at" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldReceivedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReceivedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReceivedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReceivedAt: %w", err)
+	}
+	return oldValue.ReceivedAt, nil
+}
+
+// ResetReceivedAt resets all changes to the "received_at" field.
+func (m *VideoProviderCallbackEventMutation) ResetReceivedAt() {
+	m.received_at = nil
+}
+
+// SetProcessedAt sets the "processed_at" field.
+func (m *VideoProviderCallbackEventMutation) SetProcessedAt(t time.Time) {
+	m.processed_at = &t
+}
+
+// ProcessedAt returns the value of the "processed_at" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) ProcessedAt() (r time.Time, exists bool) {
+	v := m.processed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProcessedAt returns the old "processed_at" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldProcessedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProcessedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProcessedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProcessedAt: %w", err)
+	}
+	return oldValue.ProcessedAt, nil
+}
+
+// ClearProcessedAt clears the value of the "processed_at" field.
+func (m *VideoProviderCallbackEventMutation) ClearProcessedAt() {
+	m.processed_at = nil
+	m.clearedFields[videoprovidercallbackevent.FieldProcessedAt] = struct{}{}
+}
+
+// ProcessedAtCleared returns if the "processed_at" field was cleared in this mutation.
+func (m *VideoProviderCallbackEventMutation) ProcessedAtCleared() bool {
+	_, ok := m.clearedFields[videoprovidercallbackevent.FieldProcessedAt]
+	return ok
+}
+
+// ResetProcessedAt resets all changes to the "processed_at" field.
+func (m *VideoProviderCallbackEventMutation) ResetProcessedAt() {
+	m.processed_at = nil
+	delete(m.clearedFields, videoprovidercallbackevent.FieldProcessedAt)
+}
+
+// SetErrorCode sets the "error_code" field.
+func (m *VideoProviderCallbackEventMutation) SetErrorCode(s string) {
+	m.error_code = &s
+}
+
+// ErrorCode returns the value of the "error_code" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) ErrorCode() (r string, exists bool) {
+	v := m.error_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorCode returns the old "error_code" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldErrorCode(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorCode: %w", err)
+	}
+	return oldValue.ErrorCode, nil
+}
+
+// ClearErrorCode clears the value of the "error_code" field.
+func (m *VideoProviderCallbackEventMutation) ClearErrorCode() {
+	m.error_code = nil
+	m.clearedFields[videoprovidercallbackevent.FieldErrorCode] = struct{}{}
+}
+
+// ErrorCodeCleared returns if the "error_code" field was cleared in this mutation.
+func (m *VideoProviderCallbackEventMutation) ErrorCodeCleared() bool {
+	_, ok := m.clearedFields[videoprovidercallbackevent.FieldErrorCode]
+	return ok
+}
+
+// ResetErrorCode resets all changes to the "error_code" field.
+func (m *VideoProviderCallbackEventMutation) ResetErrorCode() {
+	m.error_code = nil
+	delete(m.clearedFields, videoprovidercallbackevent.FieldErrorCode)
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *VideoProviderCallbackEventMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *VideoProviderCallbackEventMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the VideoProviderCallbackEvent entity.
+// If the VideoProviderCallbackEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoProviderCallbackEventMutation) OldErrorMessage(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (m *VideoProviderCallbackEventMutation) ClearErrorMessage() {
+	m.error_message = nil
+	m.clearedFields[videoprovidercallbackevent.FieldErrorMessage] = struct{}{}
+}
+
+// ErrorMessageCleared returns if the "error_message" field was cleared in this mutation.
+func (m *VideoProviderCallbackEventMutation) ErrorMessageCleared() bool {
+	_, ok := m.clearedFields[videoprovidercallbackevent.FieldErrorMessage]
+	return ok
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *VideoProviderCallbackEventMutation) ResetErrorMessage() {
+	m.error_message = nil
+	delete(m.clearedFields, videoprovidercallbackevent.FieldErrorMessage)
+}
+
+// Where appends a list predicates to the VideoProviderCallbackEventMutation builder.
+func (m *VideoProviderCallbackEventMutation) Where(ps ...predicate.VideoProviderCallbackEvent) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the VideoProviderCallbackEventMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *VideoProviderCallbackEventMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.VideoProviderCallbackEvent, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *VideoProviderCallbackEventMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *VideoProviderCallbackEventMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (VideoProviderCallbackEvent).
+func (m *VideoProviderCallbackEventMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *VideoProviderCallbackEventMutation) Fields() []string {
+	fields := make([]string, 0, 12)
+	if m.created_at != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldUpdatedAt)
+	}
+	if m.provider_code != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldProviderCode)
+	}
+	if m.model_account_id != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldModelAccountID)
+	}
+	if m.provider_event_id != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldProviderEventID)
+	}
+	if m.provider_job_id != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldProviderJobID)
+	}
+	if m.status != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldStatus)
+	}
+	if m.payload_snapshot != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldPayloadSnapshot)
+	}
+	if m.received_at != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldReceivedAt)
+	}
+	if m.processed_at != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldProcessedAt)
+	}
+	if m.error_code != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldErrorCode)
+	}
+	if m.error_message != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldErrorMessage)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *VideoProviderCallbackEventMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case videoprovidercallbackevent.FieldCreatedAt:
+		return m.CreatedAt()
+	case videoprovidercallbackevent.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case videoprovidercallbackevent.FieldProviderCode:
+		return m.ProviderCode()
+	case videoprovidercallbackevent.FieldModelAccountID:
+		return m.ModelAccountID()
+	case videoprovidercallbackevent.FieldProviderEventID:
+		return m.ProviderEventID()
+	case videoprovidercallbackevent.FieldProviderJobID:
+		return m.ProviderJobID()
+	case videoprovidercallbackevent.FieldStatus:
+		return m.Status()
+	case videoprovidercallbackevent.FieldPayloadSnapshot:
+		return m.PayloadSnapshot()
+	case videoprovidercallbackevent.FieldReceivedAt:
+		return m.ReceivedAt()
+	case videoprovidercallbackevent.FieldProcessedAt:
+		return m.ProcessedAt()
+	case videoprovidercallbackevent.FieldErrorCode:
+		return m.ErrorCode()
+	case videoprovidercallbackevent.FieldErrorMessage:
+		return m.ErrorMessage()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *VideoProviderCallbackEventMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case videoprovidercallbackevent.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case videoprovidercallbackevent.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case videoprovidercallbackevent.FieldProviderCode:
+		return m.OldProviderCode(ctx)
+	case videoprovidercallbackevent.FieldModelAccountID:
+		return m.OldModelAccountID(ctx)
+	case videoprovidercallbackevent.FieldProviderEventID:
+		return m.OldProviderEventID(ctx)
+	case videoprovidercallbackevent.FieldProviderJobID:
+		return m.OldProviderJobID(ctx)
+	case videoprovidercallbackevent.FieldStatus:
+		return m.OldStatus(ctx)
+	case videoprovidercallbackevent.FieldPayloadSnapshot:
+		return m.OldPayloadSnapshot(ctx)
+	case videoprovidercallbackevent.FieldReceivedAt:
+		return m.OldReceivedAt(ctx)
+	case videoprovidercallbackevent.FieldProcessedAt:
+		return m.OldProcessedAt(ctx)
+	case videoprovidercallbackevent.FieldErrorCode:
+		return m.OldErrorCode(ctx)
+	case videoprovidercallbackevent.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
+	}
+	return nil, fmt.Errorf("unknown VideoProviderCallbackEvent field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *VideoProviderCallbackEventMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case videoprovidercallbackevent.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case videoprovidercallbackevent.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case videoprovidercallbackevent.FieldProviderCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderCode(v)
+		return nil
+	case videoprovidercallbackevent.FieldModelAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelAccountID(v)
+		return nil
+	case videoprovidercallbackevent.FieldProviderEventID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderEventID(v)
+		return nil
+	case videoprovidercallbackevent.FieldProviderJobID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderJobID(v)
+		return nil
+	case videoprovidercallbackevent.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case videoprovidercallbackevent.FieldPayloadSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPayloadSnapshot(v)
+		return nil
+	case videoprovidercallbackevent.FieldReceivedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReceivedAt(v)
+		return nil
+	case videoprovidercallbackevent.FieldProcessedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProcessedAt(v)
+		return nil
+	case videoprovidercallbackevent.FieldErrorCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorCode(v)
+		return nil
+	case videoprovidercallbackevent.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
+	}
+	return fmt.Errorf("unknown VideoProviderCallbackEvent field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *VideoProviderCallbackEventMutation) AddedFields() []string {
+	var fields []string
+	if m.addmodel_account_id != nil {
+		fields = append(fields, videoprovidercallbackevent.FieldModelAccountID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *VideoProviderCallbackEventMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case videoprovidercallbackevent.FieldModelAccountID:
+		return m.AddedModelAccountID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *VideoProviderCallbackEventMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case videoprovidercallbackevent.FieldModelAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddModelAccountID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown VideoProviderCallbackEvent numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *VideoProviderCallbackEventMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(videoprovidercallbackevent.FieldProcessedAt) {
+		fields = append(fields, videoprovidercallbackevent.FieldProcessedAt)
+	}
+	if m.FieldCleared(videoprovidercallbackevent.FieldErrorCode) {
+		fields = append(fields, videoprovidercallbackevent.FieldErrorCode)
+	}
+	if m.FieldCleared(videoprovidercallbackevent.FieldErrorMessage) {
+		fields = append(fields, videoprovidercallbackevent.FieldErrorMessage)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *VideoProviderCallbackEventMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *VideoProviderCallbackEventMutation) ClearField(name string) error {
+	switch name {
+	case videoprovidercallbackevent.FieldProcessedAt:
+		m.ClearProcessedAt()
+		return nil
+	case videoprovidercallbackevent.FieldErrorCode:
+		m.ClearErrorCode()
+		return nil
+	case videoprovidercallbackevent.FieldErrorMessage:
+		m.ClearErrorMessage()
+		return nil
+	}
+	return fmt.Errorf("unknown VideoProviderCallbackEvent nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *VideoProviderCallbackEventMutation) ResetField(name string) error {
+	switch name {
+	case videoprovidercallbackevent.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case videoprovidercallbackevent.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case videoprovidercallbackevent.FieldProviderCode:
+		m.ResetProviderCode()
+		return nil
+	case videoprovidercallbackevent.FieldModelAccountID:
+		m.ResetModelAccountID()
+		return nil
+	case videoprovidercallbackevent.FieldProviderEventID:
+		m.ResetProviderEventID()
+		return nil
+	case videoprovidercallbackevent.FieldProviderJobID:
+		m.ResetProviderJobID()
+		return nil
+	case videoprovidercallbackevent.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case videoprovidercallbackevent.FieldPayloadSnapshot:
+		m.ResetPayloadSnapshot()
+		return nil
+	case videoprovidercallbackevent.FieldReceivedAt:
+		m.ResetReceivedAt()
+		return nil
+	case videoprovidercallbackevent.FieldProcessedAt:
+		m.ResetProcessedAt()
+		return nil
+	case videoprovidercallbackevent.FieldErrorCode:
+		m.ResetErrorCode()
+		return nil
+	case videoprovidercallbackevent.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
+	}
+	return fmt.Errorf("unknown VideoProviderCallbackEvent field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *VideoProviderCallbackEventMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *VideoProviderCallbackEventMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *VideoProviderCallbackEventMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *VideoProviderCallbackEventMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *VideoProviderCallbackEventMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *VideoProviderCallbackEventMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *VideoProviderCallbackEventMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown VideoProviderCallbackEvent unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *VideoProviderCallbackEventMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown VideoProviderCallbackEvent edge %s", name)
+}
+
 // VideoProviderCostRuleMutation represents an operation that mutates the VideoProviderCostRule nodes in the graph.
 type VideoProviderCostRuleMutation struct {
 	config
@@ -81971,35 +83122,40 @@ func (m *VideoTaskInputMutation) ResetEdge(name string) error {
 // VideoTaskItemMutation represents an operation that mutates the VideoTaskItem nodes in the graph.
 type VideoTaskItemMutation struct {
 	config
-	op                    Op
-	typ                   string
-	id                    *uuid.UUID
-	created_at            *time.Time
-	updated_at            *time.Time
-	ordinal               *int
-	addordinal            *int
-	status                *string
-	stage                 *string
-	result_asset_id       *uuid.UUID
-	actual_output_seconds *string
-	actual_points         *string
-	provider_cost         *string
-	error_code            *string
-	error_message         *string
-	next_action_at        *time.Time
-	lease_owner           *string
-	lease_expires_at      *time.Time
-	version               *int64
-	addversion            *int64
-	clearedFields         map[string]struct{}
-	task                  *uuid.UUID
-	clearedtask           bool
-	attempts              map[uuid.UUID]struct{}
-	removedattempts       map[uuid.UUID]struct{}
-	clearedattempts       bool
-	done                  bool
-	oldValue              func(context.Context) (*VideoTaskItem, error)
-	predicates            []predicate.VideoTaskItem
+	op                       Op
+	typ                      string
+	id                       *uuid.UUID
+	created_at               *time.Time
+	updated_at               *time.Time
+	ordinal                  *int
+	addordinal               *int
+	status                   *string
+	stage                    *string
+	result_asset_id          *uuid.UUID
+	actual_output_seconds    *string
+	actual_points            *string
+	provider_cost            *string
+	artifact_snapshot        *map[string]interface{}
+	artifact_attempts        *int
+	addartifact_attempts     *int
+	max_artifact_attempts    *int
+	addmax_artifact_attempts *int
+	error_code               *string
+	error_message            *string
+	next_action_at           *time.Time
+	lease_owner              *string
+	lease_expires_at         *time.Time
+	version                  *int64
+	addversion               *int64
+	clearedFields            map[string]struct{}
+	task                     *uuid.UUID
+	clearedtask              bool
+	attempts                 map[uuid.UUID]struct{}
+	removedattempts          map[uuid.UUID]struct{}
+	clearedattempts          bool
+	done                     bool
+	oldValue                 func(context.Context) (*VideoTaskItem, error)
+	predicates               []predicate.VideoTaskItem
 }
 
 var _ ent.Mutation = (*VideoTaskItemMutation)(nil)
@@ -82499,6 +83655,167 @@ func (m *VideoTaskItemMutation) ResetProviderCost() {
 	m.provider_cost = nil
 }
 
+// SetArtifactSnapshot sets the "artifact_snapshot" field.
+func (m *VideoTaskItemMutation) SetArtifactSnapshot(value map[string]interface{}) {
+	m.artifact_snapshot = &value
+}
+
+// ArtifactSnapshot returns the value of the "artifact_snapshot" field in the mutation.
+func (m *VideoTaskItemMutation) ArtifactSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.artifact_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactSnapshot returns the old "artifact_snapshot" field's value of the VideoTaskItem entity.
+// If the VideoTaskItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskItemMutation) OldArtifactSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactSnapshot: %w", err)
+	}
+	return oldValue.ArtifactSnapshot, nil
+}
+
+// ClearArtifactSnapshot clears the value of the "artifact_snapshot" field.
+func (m *VideoTaskItemMutation) ClearArtifactSnapshot() {
+	m.artifact_snapshot = nil
+	m.clearedFields[videotaskitem.FieldArtifactSnapshot] = struct{}{}
+}
+
+// ArtifactSnapshotCleared returns if the "artifact_snapshot" field was cleared in this mutation.
+func (m *VideoTaskItemMutation) ArtifactSnapshotCleared() bool {
+	_, ok := m.clearedFields[videotaskitem.FieldArtifactSnapshot]
+	return ok
+}
+
+// ResetArtifactSnapshot resets all changes to the "artifact_snapshot" field.
+func (m *VideoTaskItemMutation) ResetArtifactSnapshot() {
+	m.artifact_snapshot = nil
+	delete(m.clearedFields, videotaskitem.FieldArtifactSnapshot)
+}
+
+// SetArtifactAttempts sets the "artifact_attempts" field.
+func (m *VideoTaskItemMutation) SetArtifactAttempts(i int) {
+	m.artifact_attempts = &i
+	m.addartifact_attempts = nil
+}
+
+// ArtifactAttempts returns the value of the "artifact_attempts" field in the mutation.
+func (m *VideoTaskItemMutation) ArtifactAttempts() (r int, exists bool) {
+	v := m.artifact_attempts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactAttempts returns the old "artifact_attempts" field's value of the VideoTaskItem entity.
+// If the VideoTaskItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskItemMutation) OldArtifactAttempts(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactAttempts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactAttempts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactAttempts: %w", err)
+	}
+	return oldValue.ArtifactAttempts, nil
+}
+
+// AddArtifactAttempts adds i to the "artifact_attempts" field.
+func (m *VideoTaskItemMutation) AddArtifactAttempts(i int) {
+	if m.addartifact_attempts != nil {
+		*m.addartifact_attempts += i
+	} else {
+		m.addartifact_attempts = &i
+	}
+}
+
+// AddedArtifactAttempts returns the value that was added to the "artifact_attempts" field in this mutation.
+func (m *VideoTaskItemMutation) AddedArtifactAttempts() (r int, exists bool) {
+	v := m.addartifact_attempts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetArtifactAttempts resets all changes to the "artifact_attempts" field.
+func (m *VideoTaskItemMutation) ResetArtifactAttempts() {
+	m.artifact_attempts = nil
+	m.addartifact_attempts = nil
+}
+
+// SetMaxArtifactAttempts sets the "max_artifact_attempts" field.
+func (m *VideoTaskItemMutation) SetMaxArtifactAttempts(i int) {
+	m.max_artifact_attempts = &i
+	m.addmax_artifact_attempts = nil
+}
+
+// MaxArtifactAttempts returns the value of the "max_artifact_attempts" field in the mutation.
+func (m *VideoTaskItemMutation) MaxArtifactAttempts() (r int, exists bool) {
+	v := m.max_artifact_attempts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMaxArtifactAttempts returns the old "max_artifact_attempts" field's value of the VideoTaskItem entity.
+// If the VideoTaskItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskItemMutation) OldMaxArtifactAttempts(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMaxArtifactAttempts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMaxArtifactAttempts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMaxArtifactAttempts: %w", err)
+	}
+	return oldValue.MaxArtifactAttempts, nil
+}
+
+// AddMaxArtifactAttempts adds i to the "max_artifact_attempts" field.
+func (m *VideoTaskItemMutation) AddMaxArtifactAttempts(i int) {
+	if m.addmax_artifact_attempts != nil {
+		*m.addmax_artifact_attempts += i
+	} else {
+		m.addmax_artifact_attempts = &i
+	}
+}
+
+// AddedMaxArtifactAttempts returns the value that was added to the "max_artifact_attempts" field in this mutation.
+func (m *VideoTaskItemMutation) AddedMaxArtifactAttempts() (r int, exists bool) {
+	v := m.addmax_artifact_attempts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetMaxArtifactAttempts resets all changes to the "max_artifact_attempts" field.
+func (m *VideoTaskItemMutation) ResetMaxArtifactAttempts() {
+	m.max_artifact_attempts = nil
+	m.addmax_artifact_attempts = nil
+}
+
 // SetErrorCode sets the "error_code" field.
 func (m *VideoTaskItemMutation) SetErrorCode(s string) {
 	m.error_code = &s
@@ -82915,7 +84232,7 @@ func (m *VideoTaskItemMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *VideoTaskItemMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 19)
 	if m.created_at != nil {
 		fields = append(fields, videotaskitem.FieldCreatedAt)
 	}
@@ -82945,6 +84262,15 @@ func (m *VideoTaskItemMutation) Fields() []string {
 	}
 	if m.provider_cost != nil {
 		fields = append(fields, videotaskitem.FieldProviderCost)
+	}
+	if m.artifact_snapshot != nil {
+		fields = append(fields, videotaskitem.FieldArtifactSnapshot)
+	}
+	if m.artifact_attempts != nil {
+		fields = append(fields, videotaskitem.FieldArtifactAttempts)
+	}
+	if m.max_artifact_attempts != nil {
+		fields = append(fields, videotaskitem.FieldMaxArtifactAttempts)
 	}
 	if m.error_code != nil {
 		fields = append(fields, videotaskitem.FieldErrorCode)
@@ -82992,6 +84318,12 @@ func (m *VideoTaskItemMutation) Field(name string) (ent.Value, bool) {
 		return m.ActualPoints()
 	case videotaskitem.FieldProviderCost:
 		return m.ProviderCost()
+	case videotaskitem.FieldArtifactSnapshot:
+		return m.ArtifactSnapshot()
+	case videotaskitem.FieldArtifactAttempts:
+		return m.ArtifactAttempts()
+	case videotaskitem.FieldMaxArtifactAttempts:
+		return m.MaxArtifactAttempts()
 	case videotaskitem.FieldErrorCode:
 		return m.ErrorCode()
 	case videotaskitem.FieldErrorMessage:
@@ -83033,6 +84365,12 @@ func (m *VideoTaskItemMutation) OldField(ctx context.Context, name string) (ent.
 		return m.OldActualPoints(ctx)
 	case videotaskitem.FieldProviderCost:
 		return m.OldProviderCost(ctx)
+	case videotaskitem.FieldArtifactSnapshot:
+		return m.OldArtifactSnapshot(ctx)
+	case videotaskitem.FieldArtifactAttempts:
+		return m.OldArtifactAttempts(ctx)
+	case videotaskitem.FieldMaxArtifactAttempts:
+		return m.OldMaxArtifactAttempts(ctx)
 	case videotaskitem.FieldErrorCode:
 		return m.OldErrorCode(ctx)
 	case videotaskitem.FieldErrorMessage:
@@ -83124,6 +84462,27 @@ func (m *VideoTaskItemMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetProviderCost(v)
 		return nil
+	case videotaskitem.FieldArtifactSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactSnapshot(v)
+		return nil
+	case videotaskitem.FieldArtifactAttempts:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactAttempts(v)
+		return nil
+	case videotaskitem.FieldMaxArtifactAttempts:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMaxArtifactAttempts(v)
+		return nil
 	case videotaskitem.FieldErrorCode:
 		v, ok := value.(string)
 		if !ok {
@@ -83177,6 +84536,12 @@ func (m *VideoTaskItemMutation) AddedFields() []string {
 	if m.addordinal != nil {
 		fields = append(fields, videotaskitem.FieldOrdinal)
 	}
+	if m.addartifact_attempts != nil {
+		fields = append(fields, videotaskitem.FieldArtifactAttempts)
+	}
+	if m.addmax_artifact_attempts != nil {
+		fields = append(fields, videotaskitem.FieldMaxArtifactAttempts)
+	}
 	if m.addversion != nil {
 		fields = append(fields, videotaskitem.FieldVersion)
 	}
@@ -83190,6 +84555,10 @@ func (m *VideoTaskItemMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case videotaskitem.FieldOrdinal:
 		return m.AddedOrdinal()
+	case videotaskitem.FieldArtifactAttempts:
+		return m.AddedArtifactAttempts()
+	case videotaskitem.FieldMaxArtifactAttempts:
+		return m.AddedMaxArtifactAttempts()
 	case videotaskitem.FieldVersion:
 		return m.AddedVersion()
 	}
@@ -83208,6 +84577,20 @@ func (m *VideoTaskItemMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddOrdinal(v)
 		return nil
+	case videotaskitem.FieldArtifactAttempts:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddArtifactAttempts(v)
+		return nil
+	case videotaskitem.FieldMaxArtifactAttempts:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMaxArtifactAttempts(v)
+		return nil
 	case videotaskitem.FieldVersion:
 		v, ok := value.(int64)
 		if !ok {
@@ -83225,6 +84608,9 @@ func (m *VideoTaskItemMutation) ClearedFields() []string {
 	var fields []string
 	if m.FieldCleared(videotaskitem.FieldResultAssetID) {
 		fields = append(fields, videotaskitem.FieldResultAssetID)
+	}
+	if m.FieldCleared(videotaskitem.FieldArtifactSnapshot) {
+		fields = append(fields, videotaskitem.FieldArtifactSnapshot)
 	}
 	if m.FieldCleared(videotaskitem.FieldErrorCode) {
 		fields = append(fields, videotaskitem.FieldErrorCode)
@@ -83257,6 +84643,9 @@ func (m *VideoTaskItemMutation) ClearField(name string) error {
 	switch name {
 	case videotaskitem.FieldResultAssetID:
 		m.ClearResultAssetID()
+		return nil
+	case videotaskitem.FieldArtifactSnapshot:
+		m.ClearArtifactSnapshot()
 		return nil
 	case videotaskitem.FieldErrorCode:
 		m.ClearErrorCode()
@@ -83310,6 +84699,15 @@ func (m *VideoTaskItemMutation) ResetField(name string) error {
 		return nil
 	case videotaskitem.FieldProviderCost:
 		m.ResetProviderCost()
+		return nil
+	case videotaskitem.FieldArtifactSnapshot:
+		m.ResetArtifactSnapshot()
+		return nil
+	case videotaskitem.FieldArtifactAttempts:
+		m.ResetArtifactAttempts()
+		return nil
+	case videotaskitem.FieldMaxArtifactAttempts:
+		m.ResetMaxArtifactAttempts()
 		return nil
 	case videotaskitem.FieldErrorCode:
 		m.ResetErrorCode()

@@ -2,7 +2,10 @@ package entstore
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	"github.com/google/uuid"
@@ -10,7 +13,10 @@ import (
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/pointledger"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	videocallbackservice "github.com/fatballfish/pic-gallery/internal/service/videocallback"
+	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
 )
 
 func TestVideoTaskStoreCreateWithReservationRollsBackTaskAndWallet(t *testing.T) {
@@ -56,6 +62,117 @@ func TestVideoTaskStoreCreateWithReservationRollsBackTaskAndWallet(t *testing.T)
 	}
 	if balance.AvailablePoints != "100.00000" || balance.FrozenPoints != "0.00000" {
 		t.Fatalf("wallet changed after rolled-back task transaction: %#v", balance)
+	}
+}
+
+func TestVideoTaskStoreServicePortSupportsReplayListGetAndCancel(t *testing.T) {
+	ctx, client := openVideoTaskStoreTestClient(t, "video-task-service-port")
+	billing := NewBillingStore(client, 5)
+	store := NewVideoTaskStore(client, billing)
+	const userID int64 = 8810
+	if _, err := billing.Adjust(ctx, billingservice.AdjustStoreRequest{UserID: userID, ChangePoints: "100.00000", Reason: "seed"}); err != nil {
+		t.Fatal(err)
+	}
+	project := mustCreateVideoTaskProject(t, ctx, client, userID)
+	asset := mustCreateVideoTaskAsset(t, ctx, client, userID, project.ID, "input")
+	taskID, itemID := uuid.New(), uuid.New()
+	record := videotaskservice.CreateRecord{
+		Task: videotaskservice.Task{
+			ID: taskID, UserID: userID, ProjectID: project.ID, SourceChannel: "web", TaskType: "image_to_video",
+			Status: "queued", ProgressStage: "queued", PromptTemplate: "move", ExecutionPrompt: "move",
+			RouteModelID: 7, RouteModelCode: "cinema", DurationSeconds: 5, Resolution: "720p", AspectRatio: "adaptive",
+			RequestedOutputCount: 1, EstimatedPoints: "10.00000", ReservedPoints: "10.00000", ActualPoints: "0.00000",
+			SettlementStatus: "reserved", IdempotencyKey: "task-port", RequestFingerprint: "fingerprint",
+			Items: []videotaskservice.Item{{ID: itemID, Ordinal: 0, Status: "queued", Stage: "queued", Version: 1}},
+		},
+		Inputs:        []videotaskservice.CreateInputRecord{{ID: uuid.New(), AssetID: asset.ID, Role: "first_frame", Ordinal: 0, AssetSnapshot: map[string]any{"name": "input.png"}}},
+		ReservePoints: "10.00000", ReserveReason: "video generation reserve",
+	}
+	created, replayed, err := store.Create(ctx, record)
+	if err != nil || replayed || created.ID != taskID || len(created.Items) != 1 || len(created.Inputs) != 1 {
+		t.Fatalf("Create() = %#v replayed=%v, %v", created, replayed, err)
+	}
+	if count, err := client.MediaAssetReference.Query().Count(ctx); err != nil || count != 1 {
+		t.Fatalf("media references count=%d err=%v", count, err)
+	}
+	replay, found, err := store.FindByIdempotency(ctx, userID, "task-port")
+	if err != nil || !found || replay.ID != taskID {
+		t.Fatalf("FindByIdempotency() = %#v found=%v err=%v", replay, found, err)
+	}
+	page, err := store.List(ctx, videotaskservice.ListRequest{UserID: userID, ProjectID: &project.ID, Limit: 20})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("List() = %#v, %v", page, err)
+	}
+	if _, err := store.Get(ctx, userID+1, taskID); err == nil {
+		t.Fatal("expected owner isolation")
+	}
+	cancelled, err := store.RequestCancel(ctx, userID, taskID, "cancel-one")
+	if err != nil || cancelled.Items[0].Status != "cancel_requested" {
+		t.Fatalf("RequestCancel() = %#v, %v", cancelled, err)
+	}
+	repeated, err := store.RequestCancel(ctx, userID, taskID, "cancel-one")
+	if err != nil || repeated.Items[0].Version != cancelled.Items[0].Version {
+		t.Fatalf("repeat cancel = %#v, %v", repeated, err)
+	}
+	if _, err := store.RequestCancel(ctx, userID+1, taskID, "cancel-one"); !errors.Is(err, repoerr.ErrNotFound) {
+		t.Fatalf("foreign cancel error = %v", err)
+	}
+}
+
+func TestVideoTaskStoreListCursorDoesNotRepeatTheFirstPage(t *testing.T) {
+	ctx, client := openVideoTaskStoreTestClient(t, "video-task-list-cursor")
+	billing := NewBillingStore(client, 5)
+	store := NewVideoTaskStore(client, billing)
+	const userID int64 = 8811
+	if _, err := billing.Adjust(ctx, billingservice.AdjustStoreRequest{UserID: userID, ChangePoints: "100.00000", Reason: "seed"}); err != nil {
+		t.Fatal(err)
+	}
+	project := mustCreateVideoTaskProject(t, ctx, client, userID)
+	for index := 0; index < 3; index++ {
+		id := uuid.New()
+		_, _, err := store.Create(ctx, videotaskservice.CreateRecord{
+			Task: videotaskservice.Task{
+				ID: id, UserID: userID, ProjectID: project.ID, SourceChannel: "web", TaskType: "text_to_video", Status: "queued", ProgressStage: "queued",
+				PromptTemplate: "move", ExecutionPrompt: "move", RouteModelID: 7, RouteModelCode: "cinema", DurationSeconds: 5,
+				Resolution: "720p", AspectRatio: "16:9", RequestedOutputCount: 1, EstimatedPoints: "1.00000", ReservedPoints: "1.00000",
+				SettlementStatus: "reserved", IdempotencyKey: fmt.Sprintf("cursor-%d", index), RequestFingerprint: fmt.Sprintf("fingerprint-%d", index),
+				Items: []videotaskservice.Item{{ID: uuid.New(), Ordinal: 0, Status: "queued", Stage: "queued", Version: 1}},
+			},
+			ReservePoints: "1.00000", ReserveReason: "reserve",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	first, err := store.List(ctx, videotaskservice.ListRequest{UserID: userID, Limit: 1})
+	if err != nil || len(first.Items) != 1 || first.NextCursor == "" {
+		t.Fatalf("first page=%#v err=%v", first, err)
+	}
+	second, err := store.List(ctx, videotaskservice.ListRequest{UserID: userID, Limit: 1, Cursor: first.NextCursor})
+	if err != nil || len(second.Items) != 1 || second.Items[0].ID == first.Items[0].ID {
+		t.Fatalf("second page=%#v err=%v", second, err)
+	}
+}
+
+func TestVideoCallbackStoreDeduplicatesEventsPerAccount(t *testing.T) {
+	ctx, client := openVideoTaskStoreTestClient(t, "video-callback-inbox")
+	store := NewVideoCallbackStore(client)
+	receivedAt := time.Date(2026, 8, 12, 13, 0, 0, 0, time.UTC)
+	record := videocallbackservice.EventRecord{
+		ProviderCode: "minimax", ModelAccountID: 9, ProviderEventID: "event-1", ProviderJobID: "job-1",
+		PayloadSnapshot: map[string]any{"state": "running"}, ReceivedAt: receivedAt,
+	}
+	duplicate, err := store.RecordEvent(ctx, record)
+	if err != nil || duplicate {
+		t.Fatalf("first RecordEvent duplicate=%v err=%v", duplicate, err)
+	}
+	duplicate, err = store.RecordEvent(ctx, record)
+	if err != nil || !duplicate {
+		t.Fatalf("second RecordEvent duplicate=%v err=%v", duplicate, err)
+	}
+	if count, err := client.VideoProviderCallbackEvent.Query().Count(ctx); err != nil || count != 1 {
+		t.Fatalf("callback inbox count=%d err=%v", count, err)
 	}
 }
 

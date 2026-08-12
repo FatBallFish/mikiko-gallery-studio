@@ -106,6 +106,16 @@ func ProviderCost(v string) predicate.VideoTaskItem {
 	return predicate.VideoTaskItem(sql.FieldEQ(FieldProviderCost, v))
 }
 
+// ArtifactAttempts applies equality check predicate on the "artifact_attempts" field. It's identical to ArtifactAttemptsEQ.
+func ArtifactAttempts(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldEQ(FieldArtifactAttempts, v))
+}
+
+// MaxArtifactAttempts applies equality check predicate on the "max_artifact_attempts" field. It's identical to MaxArtifactAttemptsEQ.
+func MaxArtifactAttempts(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldEQ(FieldMaxArtifactAttempts, v))
+}
+
 // ErrorCode applies equality check predicate on the "error_code" field. It's identical to ErrorCodeEQ.
 func ErrorCode(v string) predicate.VideoTaskItem {
 	return predicate.VideoTaskItem(sql.FieldEQ(FieldErrorCode, v))
@@ -649,6 +659,96 @@ func ProviderCostEqualFold(v string) predicate.VideoTaskItem {
 // ProviderCostContainsFold applies the ContainsFold predicate on the "provider_cost" field.
 func ProviderCostContainsFold(v string) predicate.VideoTaskItem {
 	return predicate.VideoTaskItem(sql.FieldContainsFold(FieldProviderCost, v))
+}
+
+// ArtifactSnapshotIsNil applies the IsNil predicate on the "artifact_snapshot" field.
+func ArtifactSnapshotIsNil() predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldIsNull(FieldArtifactSnapshot))
+}
+
+// ArtifactSnapshotNotNil applies the NotNil predicate on the "artifact_snapshot" field.
+func ArtifactSnapshotNotNil() predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldNotNull(FieldArtifactSnapshot))
+}
+
+// ArtifactAttemptsEQ applies the EQ predicate on the "artifact_attempts" field.
+func ArtifactAttemptsEQ(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldEQ(FieldArtifactAttempts, v))
+}
+
+// ArtifactAttemptsNEQ applies the NEQ predicate on the "artifact_attempts" field.
+func ArtifactAttemptsNEQ(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldNEQ(FieldArtifactAttempts, v))
+}
+
+// ArtifactAttemptsIn applies the In predicate on the "artifact_attempts" field.
+func ArtifactAttemptsIn(vs ...int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldIn(FieldArtifactAttempts, vs...))
+}
+
+// ArtifactAttemptsNotIn applies the NotIn predicate on the "artifact_attempts" field.
+func ArtifactAttemptsNotIn(vs ...int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldNotIn(FieldArtifactAttempts, vs...))
+}
+
+// ArtifactAttemptsGT applies the GT predicate on the "artifact_attempts" field.
+func ArtifactAttemptsGT(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldGT(FieldArtifactAttempts, v))
+}
+
+// ArtifactAttemptsGTE applies the GTE predicate on the "artifact_attempts" field.
+func ArtifactAttemptsGTE(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldGTE(FieldArtifactAttempts, v))
+}
+
+// ArtifactAttemptsLT applies the LT predicate on the "artifact_attempts" field.
+func ArtifactAttemptsLT(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldLT(FieldArtifactAttempts, v))
+}
+
+// ArtifactAttemptsLTE applies the LTE predicate on the "artifact_attempts" field.
+func ArtifactAttemptsLTE(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldLTE(FieldArtifactAttempts, v))
+}
+
+// MaxArtifactAttemptsEQ applies the EQ predicate on the "max_artifact_attempts" field.
+func MaxArtifactAttemptsEQ(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldEQ(FieldMaxArtifactAttempts, v))
+}
+
+// MaxArtifactAttemptsNEQ applies the NEQ predicate on the "max_artifact_attempts" field.
+func MaxArtifactAttemptsNEQ(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldNEQ(FieldMaxArtifactAttempts, v))
+}
+
+// MaxArtifactAttemptsIn applies the In predicate on the "max_artifact_attempts" field.
+func MaxArtifactAttemptsIn(vs ...int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldIn(FieldMaxArtifactAttempts, vs...))
+}
+
+// MaxArtifactAttemptsNotIn applies the NotIn predicate on the "max_artifact_attempts" field.
+func MaxArtifactAttemptsNotIn(vs ...int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldNotIn(FieldMaxArtifactAttempts, vs...))
+}
+
+// MaxArtifactAttemptsGT applies the GT predicate on the "max_artifact_attempts" field.
+func MaxArtifactAttemptsGT(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldGT(FieldMaxArtifactAttempts, v))
+}
+
+// MaxArtifactAttemptsGTE applies the GTE predicate on the "max_artifact_attempts" field.
+func MaxArtifactAttemptsGTE(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldGTE(FieldMaxArtifactAttempts, v))
+}
+
+// MaxArtifactAttemptsLT applies the LT predicate on the "max_artifact_attempts" field.
+func MaxArtifactAttemptsLT(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldLT(FieldMaxArtifactAttempts, v))
+}
+
+// MaxArtifactAttemptsLTE applies the LTE predicate on the "max_artifact_attempts" field.
+func MaxArtifactAttemptsLTE(v int) predicate.VideoTaskItem {
+	return predicate.VideoTaskItem(sql.FieldLTE(FieldMaxArtifactAttempts, v))
 }
 
 // ErrorCodeEQ applies the EQ predicate on the "error_code" field.

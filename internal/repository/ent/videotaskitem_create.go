@@ -147,6 +147,40 @@ func (_c *VideoTaskItemCreate) SetNillableProviderCost(v *string) *VideoTaskItem
 	return _c
 }
 
+// SetArtifactSnapshot sets the "artifact_snapshot" field.
+func (_c *VideoTaskItemCreate) SetArtifactSnapshot(v map[string]interface{}) *VideoTaskItemCreate {
+	_c.mutation.SetArtifactSnapshot(v)
+	return _c
+}
+
+// SetArtifactAttempts sets the "artifact_attempts" field.
+func (_c *VideoTaskItemCreate) SetArtifactAttempts(v int) *VideoTaskItemCreate {
+	_c.mutation.SetArtifactAttempts(v)
+	return _c
+}
+
+// SetNillableArtifactAttempts sets the "artifact_attempts" field if the given value is not nil.
+func (_c *VideoTaskItemCreate) SetNillableArtifactAttempts(v *int) *VideoTaskItemCreate {
+	if v != nil {
+		_c.SetArtifactAttempts(*v)
+	}
+	return _c
+}
+
+// SetMaxArtifactAttempts sets the "max_artifact_attempts" field.
+func (_c *VideoTaskItemCreate) SetMaxArtifactAttempts(v int) *VideoTaskItemCreate {
+	_c.mutation.SetMaxArtifactAttempts(v)
+	return _c
+}
+
+// SetNillableMaxArtifactAttempts sets the "max_artifact_attempts" field if the given value is not nil.
+func (_c *VideoTaskItemCreate) SetNillableMaxArtifactAttempts(v *int) *VideoTaskItemCreate {
+	if v != nil {
+		_c.SetMaxArtifactAttempts(*v)
+	}
+	return _c
+}
+
 // SetErrorCode sets the "error_code" field.
 func (_c *VideoTaskItemCreate) SetErrorCode(v string) *VideoTaskItemCreate {
 	_c.mutation.SetErrorCode(v)
@@ -328,6 +362,14 @@ func (_c *VideoTaskItemCreate) defaults() {
 		v := videotaskitem.DefaultProviderCost
 		_c.mutation.SetProviderCost(v)
 	}
+	if _, ok := _c.mutation.ArtifactAttempts(); !ok {
+		v := videotaskitem.DefaultArtifactAttempts
+		_c.mutation.SetArtifactAttempts(v)
+	}
+	if _, ok := _c.mutation.MaxArtifactAttempts(); !ok {
+		v := videotaskitem.DefaultMaxArtifactAttempts
+		_c.mutation.SetMaxArtifactAttempts(v)
+	}
 	if _, ok := _c.mutation.Version(); !ok {
 		v := videotaskitem.DefaultVersion
 		_c.mutation.SetVersion(v)
@@ -381,6 +423,22 @@ func (_c *VideoTaskItemCreate) check() error {
 	}
 	if _, ok := _c.mutation.ProviderCost(); !ok {
 		return &ValidationError{Name: "provider_cost", err: errors.New(`ent: missing required field "VideoTaskItem.provider_cost"`)}
+	}
+	if _, ok := _c.mutation.ArtifactAttempts(); !ok {
+		return &ValidationError{Name: "artifact_attempts", err: errors.New(`ent: missing required field "VideoTaskItem.artifact_attempts"`)}
+	}
+	if v, ok := _c.mutation.ArtifactAttempts(); ok {
+		if err := videotaskitem.ArtifactAttemptsValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_attempts", err: fmt.Errorf(`ent: validator failed for field "VideoTaskItem.artifact_attempts": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.MaxArtifactAttempts(); !ok {
+		return &ValidationError{Name: "max_artifact_attempts", err: errors.New(`ent: missing required field "VideoTaskItem.max_artifact_attempts"`)}
+	}
+	if v, ok := _c.mutation.MaxArtifactAttempts(); ok {
+		if err := videotaskitem.MaxArtifactAttemptsValidator(v); err != nil {
+			return &ValidationError{Name: "max_artifact_attempts", err: fmt.Errorf(`ent: validator failed for field "VideoTaskItem.max_artifact_attempts": %w`, err)}
+		}
 	}
 	if v, ok := _c.mutation.ErrorCode(); ok {
 		if err := videotaskitem.ErrorCodeValidator(v); err != nil {
@@ -468,6 +526,18 @@ func (_c *VideoTaskItemCreate) createSpec() (*VideoTaskItem, *sqlgraph.CreateSpe
 	if value, ok := _c.mutation.ProviderCost(); ok {
 		_spec.SetField(videotaskitem.FieldProviderCost, field.TypeString, value)
 		_node.ProviderCost = value
+	}
+	if value, ok := _c.mutation.ArtifactSnapshot(); ok {
+		_spec.SetField(videotaskitem.FieldArtifactSnapshot, field.TypeJSON, value)
+		_node.ArtifactSnapshot = value
+	}
+	if value, ok := _c.mutation.ArtifactAttempts(); ok {
+		_spec.SetField(videotaskitem.FieldArtifactAttempts, field.TypeInt, value)
+		_node.ArtifactAttempts = value
+	}
+	if value, ok := _c.mutation.MaxArtifactAttempts(); ok {
+		_spec.SetField(videotaskitem.FieldMaxArtifactAttempts, field.TypeInt, value)
+		_node.MaxArtifactAttempts = value
 	}
 	if value, ok := _c.mutation.ErrorCode(); ok {
 		_spec.SetField(videotaskitem.FieldErrorCode, field.TypeString, value)

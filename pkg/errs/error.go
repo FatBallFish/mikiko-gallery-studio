@@ -47,7 +47,7 @@ func defaultSuggestion(code string) string {
 		return "redeem or add points before creating a task"
 	case CodeUnauthorized, CodeAuthAccessExpired, CodeAuthRefreshExpired:
 		return "sign in again and retry"
-	case CodeImageReferenceRequired, CodeImageReferenceExceeded, CodeImageReferenceTooLarge, CodeValidationFailed, CodeBadRequest, CodePaymentProviderConfigInvalid, CodeExportTooLarge:
+	case CodeImageReferenceRequired, CodeImageReferenceExceeded, CodeImageReferenceTooLarge, CodeValidationFailed, CodeBadRequest, CodeVideoFieldInvalid, CodeVideoInputInvalid, CodeVideoCapabilityMismatch, CodePaymentProviderConfigInvalid, CodeExportTooLarge:
 		return "adjust request parameters and retry"
 	case CodeTextModelDefaultRequired:
 		return "select a default text model and retry"

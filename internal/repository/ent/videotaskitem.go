@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -39,6 +40,12 @@ type VideoTaskItem struct {
 	ActualPoints string `json:"actual_points,omitempty"`
 	// ProviderCost holds the value of the "provider_cost" field.
 	ProviderCost string `json:"provider_cost,omitempty"`
+	// ArtifactSnapshot holds the value of the "artifact_snapshot" field.
+	ArtifactSnapshot map[string]interface{} `json:"artifact_snapshot,omitempty"`
+	// ArtifactAttempts holds the value of the "artifact_attempts" field.
+	ArtifactAttempts int `json:"artifact_attempts,omitempty"`
+	// MaxArtifactAttempts holds the value of the "max_artifact_attempts" field.
+	MaxArtifactAttempts int `json:"max_artifact_attempts,omitempty"`
 	// ErrorCode holds the value of the "error_code" field.
 	ErrorCode *string `json:"error_code,omitempty"`
 	// ErrorMessage holds the value of the "error_message" field.
@@ -95,7 +102,9 @@ func (*VideoTaskItem) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case videotaskitem.FieldResultAssetID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
-		case videotaskitem.FieldOrdinal, videotaskitem.FieldVersion:
+		case videotaskitem.FieldArtifactSnapshot:
+			values[i] = new([]byte)
+		case videotaskitem.FieldOrdinal, videotaskitem.FieldArtifactAttempts, videotaskitem.FieldMaxArtifactAttempts, videotaskitem.FieldVersion:
 			values[i] = new(sql.NullInt64)
 		case videotaskitem.FieldStatus, videotaskitem.FieldStage, videotaskitem.FieldActualOutputSeconds, videotaskitem.FieldActualPoints, videotaskitem.FieldProviderCost, videotaskitem.FieldErrorCode, videotaskitem.FieldErrorMessage, videotaskitem.FieldLeaseOwner:
 			values[i] = new(sql.NullString)
@@ -184,6 +193,26 @@ func (_m *VideoTaskItem) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field provider_cost", values[i])
 			} else if value.Valid {
 				_m.ProviderCost = value.String
+			}
+		case videotaskitem.FieldArtifactSnapshot:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_snapshot", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ArtifactSnapshot); err != nil {
+					return fmt.Errorf("unmarshal field artifact_snapshot: %w", err)
+				}
+			}
+		case videotaskitem.FieldArtifactAttempts:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field artifact_attempts", values[i])
+			} else if value.Valid {
+				_m.ArtifactAttempts = int(value.Int64)
+			}
+		case videotaskitem.FieldMaxArtifactAttempts:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field max_artifact_attempts", values[i])
+			} else if value.Valid {
+				_m.MaxArtifactAttempts = int(value.Int64)
 			}
 		case videotaskitem.FieldErrorCode:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -303,6 +332,15 @@ func (_m *VideoTaskItem) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("provider_cost=")
 	builder.WriteString(_m.ProviderCost)
+	builder.WriteString(", ")
+	builder.WriteString("artifact_snapshot=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ArtifactSnapshot))
+	builder.WriteString(", ")
+	builder.WriteString("artifact_attempts=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ArtifactAttempts))
+	builder.WriteString(", ")
+	builder.WriteString("max_artifact_attempts=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MaxArtifactAttempts))
 	builder.WriteString(", ")
 	if v := _m.ErrorCode; v != nil {
 		builder.WriteString("error_code=")

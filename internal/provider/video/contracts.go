@@ -1,12 +1,108 @@
 package video
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 )
+
+type State string
+
+const (
+	StateQueued    State = "queued"
+	StateRunning   State = "running"
+	StateSucceeded State = "succeeded"
+	StateFailed    State = "failed"
+	StateCancelled State = "cancelled"
+)
+
+type Input struct {
+	AssetID         string `json:"asset_id"`
+	Role            string `json:"role"`
+	URL             string `json:"url"`
+	Ordinal         int    `json:"ordinal"`
+	StorageConfigID string `json:"-"`
+	StorageDriver   string `json:"-"`
+	ObjectKey       string `json:"-"`
+	MIMEType        string `json:"-"`
+}
+
+type Request struct {
+	TaskID          string         `json:"task_id"`
+	ItemID          string         `json:"item_id"`
+	AttemptID       string         `json:"attempt_id"`
+	IdempotencyKey  string         `json:"idempotency_key"`
+	TaskType        string         `json:"task_type"`
+	Prompt          string         `json:"prompt"`
+	DurationSeconds int            `json:"duration_seconds"`
+	Resolution      string         `json:"resolution"`
+	AspectRatio     string         `json:"aspect_ratio"`
+	GenerateAudio   bool           `json:"generate_audio"`
+	OutputFormat    string         `json:"output_format"`
+	Inputs          []Input        `json:"inputs,omitempty"`
+	ProviderOptions map[string]any `json:"provider_options,omitempty"`
+}
+
+type Job struct {
+	ID        string `json:"id"`
+	State     State  `json:"state"`
+	RequestID string `json:"request_id,omitempty"`
+}
+
+type JobRef struct {
+	ID string `json:"id"`
+}
+
+type Artifact struct {
+	URL       string     `json:"url"`
+	MIMEType  string     `json:"mime_type,omitempty"`
+	SizeBytes int64      `json:"size_bytes,omitempty"`
+	SHA256    string     `json:"sha256,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+type Status struct {
+	JobID        string         `json:"job_id"`
+	State        State          `json:"state"`
+	Artifacts    []Artifact     `json:"artifacts,omitempty"`
+	Usage        map[string]any `json:"usage,omitempty"`
+	ErrorCode    string         `json:"error_code,omitempty"`
+	ErrorMessage string         `json:"error_message,omitempty"`
+	Raw          map[string]any `json:"raw,omitempty"`
+}
+
+type CancelResult struct {
+	Accepted bool  `json:"accepted"`
+	State    State `json:"state"`
+}
+
+type CallbackEvent struct {
+	Challenge string `json:"challenge,omitempty"`
+	EventID   string `json:"event_id,omitempty"`
+	JobID     string `json:"job_id,omitempty"`
+	Status    Status `json:"status"`
+}
+
+type Usage struct {
+	OutputSeconds       string         `json:"output_seconds"`
+	InputVideoSeconds   string         `json:"input_video_seconds"`
+	ReferenceImageCount int            `json:"reference_image_count"`
+	ProviderTokens      string         `json:"provider_tokens"`
+	Raw                 map[string]any `json:"raw,omitempty"`
+}
+
+type Provider interface {
+	Submit(context.Context, Request) (Job, error)
+	Get(context.Context, JobRef) (Status, error)
+	Cancel(context.Context, JobRef) (CancelResult, error)
+	VerifyCallback(context.Context, http.Header, []byte) (CallbackEvent, error)
+	NormalizeUsage(Status) (Usage, error)
+}
 
 type ValidationStatus string
 

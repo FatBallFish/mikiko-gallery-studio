@@ -124,6 +124,8 @@ type Tx struct {
 	VideoPriceRule *VideoPriceRuleClient
 	// VideoPricingStrategy is the client for interacting with the VideoPricingStrategy builders.
 	VideoPricingStrategy *VideoPricingStrategyClient
+	// VideoProviderCallbackEvent is the client for interacting with the VideoProviderCallbackEvent builders.
+	VideoProviderCallbackEvent *VideoProviderCallbackEventClient
 	// VideoProviderCostRule is the client for interacting with the VideoProviderCostRule builders.
 	VideoProviderCostRule *VideoProviderCostRuleClient
 	// VideoRouteConfig is the client for interacting with the VideoRouteConfig builders.
@@ -327,6 +329,7 @@ func (tx *Tx) init() {
 	tx.VideoModelCapability = NewVideoModelCapabilityClient(tx.config)
 	tx.VideoPriceRule = NewVideoPriceRuleClient(tx.config)
 	tx.VideoPricingStrategy = NewVideoPricingStrategyClient(tx.config)
+	tx.VideoProviderCallbackEvent = NewVideoProviderCallbackEventClient(tx.config)
 	tx.VideoProviderCostRule = NewVideoProviderCostRuleClient(tx.config)
 	tx.VideoRouteConfig = NewVideoRouteConfigClient(tx.config)
 	tx.VideoTask = NewVideoTaskClient(tx.config)

@@ -162,6 +162,60 @@ func (_u *VideoTaskItemUpdate) SetNillableProviderCost(v *string) *VideoTaskItem
 	return _u
 }
 
+// SetArtifactSnapshot sets the "artifact_snapshot" field.
+func (_u *VideoTaskItemUpdate) SetArtifactSnapshot(v map[string]interface{}) *VideoTaskItemUpdate {
+	_u.mutation.SetArtifactSnapshot(v)
+	return _u
+}
+
+// ClearArtifactSnapshot clears the value of the "artifact_snapshot" field.
+func (_u *VideoTaskItemUpdate) ClearArtifactSnapshot() *VideoTaskItemUpdate {
+	_u.mutation.ClearArtifactSnapshot()
+	return _u
+}
+
+// SetArtifactAttempts sets the "artifact_attempts" field.
+func (_u *VideoTaskItemUpdate) SetArtifactAttempts(v int) *VideoTaskItemUpdate {
+	_u.mutation.ResetArtifactAttempts()
+	_u.mutation.SetArtifactAttempts(v)
+	return _u
+}
+
+// SetNillableArtifactAttempts sets the "artifact_attempts" field if the given value is not nil.
+func (_u *VideoTaskItemUpdate) SetNillableArtifactAttempts(v *int) *VideoTaskItemUpdate {
+	if v != nil {
+		_u.SetArtifactAttempts(*v)
+	}
+	return _u
+}
+
+// AddArtifactAttempts adds value to the "artifact_attempts" field.
+func (_u *VideoTaskItemUpdate) AddArtifactAttempts(v int) *VideoTaskItemUpdate {
+	_u.mutation.AddArtifactAttempts(v)
+	return _u
+}
+
+// SetMaxArtifactAttempts sets the "max_artifact_attempts" field.
+func (_u *VideoTaskItemUpdate) SetMaxArtifactAttempts(v int) *VideoTaskItemUpdate {
+	_u.mutation.ResetMaxArtifactAttempts()
+	_u.mutation.SetMaxArtifactAttempts(v)
+	return _u
+}
+
+// SetNillableMaxArtifactAttempts sets the "max_artifact_attempts" field if the given value is not nil.
+func (_u *VideoTaskItemUpdate) SetNillableMaxArtifactAttempts(v *int) *VideoTaskItemUpdate {
+	if v != nil {
+		_u.SetMaxArtifactAttempts(*v)
+	}
+	return _u
+}
+
+// AddMaxArtifactAttempts adds value to the "max_artifact_attempts" field.
+func (_u *VideoTaskItemUpdate) AddMaxArtifactAttempts(v int) *VideoTaskItemUpdate {
+	_u.mutation.AddMaxArtifactAttempts(v)
+	return _u
+}
+
 // SetErrorCode sets the "error_code" field.
 func (_u *VideoTaskItemUpdate) SetErrorCode(v string) *VideoTaskItemUpdate {
 	_u.mutation.SetErrorCode(v)
@@ -388,6 +442,16 @@ func (_u *VideoTaskItemUpdate) check() error {
 			return &ValidationError{Name: "stage", err: fmt.Errorf(`ent: validator failed for field "VideoTaskItem.stage": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ArtifactAttempts(); ok {
+		if err := videotaskitem.ArtifactAttemptsValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_attempts", err: fmt.Errorf(`ent: validator failed for field "VideoTaskItem.artifact_attempts": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.MaxArtifactAttempts(); ok {
+		if err := videotaskitem.MaxArtifactAttemptsValidator(v); err != nil {
+			return &ValidationError{Name: "max_artifact_attempts", err: fmt.Errorf(`ent: validator failed for field "VideoTaskItem.max_artifact_attempts": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ErrorCode(); ok {
 		if err := videotaskitem.ErrorCodeValidator(v); err != nil {
 			return &ValidationError{Name: "error_code", err: fmt.Errorf(`ent: validator failed for field "VideoTaskItem.error_code": %w`, err)}
@@ -445,6 +509,24 @@ func (_u *VideoTaskItemUpdate) sqlSave(ctx context.Context) (_node int, err erro
 	}
 	if value, ok := _u.mutation.ProviderCost(); ok {
 		_spec.SetField(videotaskitem.FieldProviderCost, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactSnapshot(); ok {
+		_spec.SetField(videotaskitem.FieldArtifactSnapshot, field.TypeJSON, value)
+	}
+	if _u.mutation.ArtifactSnapshotCleared() {
+		_spec.ClearField(videotaskitem.FieldArtifactSnapshot, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.ArtifactAttempts(); ok {
+		_spec.SetField(videotaskitem.FieldArtifactAttempts, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedArtifactAttempts(); ok {
+		_spec.AddField(videotaskitem.FieldArtifactAttempts, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MaxArtifactAttempts(); ok {
+		_spec.SetField(videotaskitem.FieldMaxArtifactAttempts, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxArtifactAttempts(); ok {
+		_spec.AddField(videotaskitem.FieldMaxArtifactAttempts, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.ErrorCode(); ok {
 		_spec.SetField(videotaskitem.FieldErrorCode, field.TypeString, value)
@@ -707,6 +789,60 @@ func (_u *VideoTaskItemUpdateOne) SetNillableProviderCost(v *string) *VideoTaskI
 	return _u
 }
 
+// SetArtifactSnapshot sets the "artifact_snapshot" field.
+func (_u *VideoTaskItemUpdateOne) SetArtifactSnapshot(v map[string]interface{}) *VideoTaskItemUpdateOne {
+	_u.mutation.SetArtifactSnapshot(v)
+	return _u
+}
+
+// ClearArtifactSnapshot clears the value of the "artifact_snapshot" field.
+func (_u *VideoTaskItemUpdateOne) ClearArtifactSnapshot() *VideoTaskItemUpdateOne {
+	_u.mutation.ClearArtifactSnapshot()
+	return _u
+}
+
+// SetArtifactAttempts sets the "artifact_attempts" field.
+func (_u *VideoTaskItemUpdateOne) SetArtifactAttempts(v int) *VideoTaskItemUpdateOne {
+	_u.mutation.ResetArtifactAttempts()
+	_u.mutation.SetArtifactAttempts(v)
+	return _u
+}
+
+// SetNillableArtifactAttempts sets the "artifact_attempts" field if the given value is not nil.
+func (_u *VideoTaskItemUpdateOne) SetNillableArtifactAttempts(v *int) *VideoTaskItemUpdateOne {
+	if v != nil {
+		_u.SetArtifactAttempts(*v)
+	}
+	return _u
+}
+
+// AddArtifactAttempts adds value to the "artifact_attempts" field.
+func (_u *VideoTaskItemUpdateOne) AddArtifactAttempts(v int) *VideoTaskItemUpdateOne {
+	_u.mutation.AddArtifactAttempts(v)
+	return _u
+}
+
+// SetMaxArtifactAttempts sets the "max_artifact_attempts" field.
+func (_u *VideoTaskItemUpdateOne) SetMaxArtifactAttempts(v int) *VideoTaskItemUpdateOne {
+	_u.mutation.ResetMaxArtifactAttempts()
+	_u.mutation.SetMaxArtifactAttempts(v)
+	return _u
+}
+
+// SetNillableMaxArtifactAttempts sets the "max_artifact_attempts" field if the given value is not nil.
+func (_u *VideoTaskItemUpdateOne) SetNillableMaxArtifactAttempts(v *int) *VideoTaskItemUpdateOne {
+	if v != nil {
+		_u.SetMaxArtifactAttempts(*v)
+	}
+	return _u
+}
+
+// AddMaxArtifactAttempts adds value to the "max_artifact_attempts" field.
+func (_u *VideoTaskItemUpdateOne) AddMaxArtifactAttempts(v int) *VideoTaskItemUpdateOne {
+	_u.mutation.AddMaxArtifactAttempts(v)
+	return _u
+}
+
 // SetErrorCode sets the "error_code" field.
 func (_u *VideoTaskItemUpdateOne) SetErrorCode(v string) *VideoTaskItemUpdateOne {
 	_u.mutation.SetErrorCode(v)
@@ -946,6 +1082,16 @@ func (_u *VideoTaskItemUpdateOne) check() error {
 			return &ValidationError{Name: "stage", err: fmt.Errorf(`ent: validator failed for field "VideoTaskItem.stage": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ArtifactAttempts(); ok {
+		if err := videotaskitem.ArtifactAttemptsValidator(v); err != nil {
+			return &ValidationError{Name: "artifact_attempts", err: fmt.Errorf(`ent: validator failed for field "VideoTaskItem.artifact_attempts": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.MaxArtifactAttempts(); ok {
+		if err := videotaskitem.MaxArtifactAttemptsValidator(v); err != nil {
+			return &ValidationError{Name: "max_artifact_attempts", err: fmt.Errorf(`ent: validator failed for field "VideoTaskItem.max_artifact_attempts": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ErrorCode(); ok {
 		if err := videotaskitem.ErrorCodeValidator(v); err != nil {
 			return &ValidationError{Name: "error_code", err: fmt.Errorf(`ent: validator failed for field "VideoTaskItem.error_code": %w`, err)}
@@ -1020,6 +1166,24 @@ func (_u *VideoTaskItemUpdateOne) sqlSave(ctx context.Context) (_node *VideoTask
 	}
 	if value, ok := _u.mutation.ProviderCost(); ok {
 		_spec.SetField(videotaskitem.FieldProviderCost, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ArtifactSnapshot(); ok {
+		_spec.SetField(videotaskitem.FieldArtifactSnapshot, field.TypeJSON, value)
+	}
+	if _u.mutation.ArtifactSnapshotCleared() {
+		_spec.ClearField(videotaskitem.FieldArtifactSnapshot, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.ArtifactAttempts(); ok {
+		_spec.SetField(videotaskitem.FieldArtifactAttempts, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedArtifactAttempts(); ok {
+		_spec.AddField(videotaskitem.FieldArtifactAttempts, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.MaxArtifactAttempts(); ok {
+		_spec.SetField(videotaskitem.FieldMaxArtifactAttempts, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMaxArtifactAttempts(); ok {
+		_spec.AddField(videotaskitem.FieldMaxArtifactAttempts, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.ErrorCode(); ok {
 		_spec.SetField(videotaskitem.FieldErrorCode, field.TypeString, value)

@@ -61,6 +61,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercallbackevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
@@ -2326,11 +2327,11 @@ func init() {
 	// migrationcheckpoint.DefaultAfterUserID holds the default value on creation for the after_user_id field.
 	migrationcheckpoint.DefaultAfterUserID = migrationcheckpointDescAfterUserID.Default.(int)
 	// migrationcheckpointDescProcessedRows is the schema descriptor for processed_rows field.
-	migrationcheckpointDescProcessedRows := migrationcheckpointFields[5].Descriptor()
+	migrationcheckpointDescProcessedRows := migrationcheckpointFields[6].Descriptor()
 	// migrationcheckpoint.DefaultProcessedRows holds the default value on creation for the processed_rows field.
 	migrationcheckpoint.DefaultProcessedRows = migrationcheckpointDescProcessedRows.Default.(int)
 	// migrationcheckpointDescCompleted is the schema descriptor for completed field.
-	migrationcheckpointDescCompleted := migrationcheckpointFields[6].Descriptor()
+	migrationcheckpointDescCompleted := migrationcheckpointFields[7].Descriptor()
 	// migrationcheckpoint.DefaultCompleted holds the default value on creation for the completed field.
 	migrationcheckpoint.DefaultCompleted = migrationcheckpointDescCompleted.Default.(bool)
 	modelaccountMixin := schema.ModelAccount{}.Mixin()
@@ -2348,8 +2349,12 @@ func init() {
 	modelaccount.DefaultUpdatedAt = modelaccountDescUpdatedAt.Default.(func() time.Time)
 	// modelaccount.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	modelaccount.UpdateDefaultUpdatedAt = modelaccountDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// modelaccountDescPublicID is the schema descriptor for public_id field.
+	modelaccountDescPublicID := modelaccountFields[0].Descriptor()
+	// modelaccount.DefaultPublicID holds the default value on creation for the public_id field.
+	modelaccount.DefaultPublicID = modelaccountDescPublicID.Default.(func() uuid.UUID)
 	// modelaccountDescName is the schema descriptor for name field.
-	modelaccountDescName := modelaccountFields[0].Descriptor()
+	modelaccountDescName := modelaccountFields[1].Descriptor()
 	// modelaccount.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	modelaccount.NameValidator = func() func(string) error {
 		validators := modelaccountDescName.Validators
@@ -2367,7 +2372,7 @@ func init() {
 		}
 	}()
 	// modelaccountDescAdapterType is the schema descriptor for adapter_type field.
-	modelaccountDescAdapterType := modelaccountFields[1].Descriptor()
+	modelaccountDescAdapterType := modelaccountFields[2].Descriptor()
 	// modelaccount.AdapterTypeValidator is a validator for the "adapter_type" field. It is called by the builders before save.
 	modelaccount.AdapterTypeValidator = func() func(string) error {
 		validators := modelaccountDescAdapterType.Validators
@@ -2385,7 +2390,7 @@ func init() {
 		}
 	}()
 	// modelaccountDescAuthType is the schema descriptor for auth_type field.
-	modelaccountDescAuthType := modelaccountFields[2].Descriptor()
+	modelaccountDescAuthType := modelaccountFields[3].Descriptor()
 	// modelaccount.AuthTypeValidator is a validator for the "auth_type" field. It is called by the builders before save.
 	modelaccount.AuthTypeValidator = func() func(string) error {
 		validators := modelaccountDescAuthType.Validators
@@ -2403,7 +2408,7 @@ func init() {
 		}
 	}()
 	// modelaccountDescBaseURL is the schema descriptor for base_url field.
-	modelaccountDescBaseURL := modelaccountFields[3].Descriptor()
+	modelaccountDescBaseURL := modelaccountFields[4].Descriptor()
 	// modelaccount.BaseURLValidator is a validator for the "base_url" field. It is called by the builders before save.
 	modelaccount.BaseURLValidator = func() func(string) error {
 		validators := modelaccountDescBaseURL.Validators
@@ -2421,31 +2426,31 @@ func init() {
 		}
 	}()
 	// modelaccountDescCredentialsFingerprint is the schema descriptor for credentials_fingerprint field.
-	modelaccountDescCredentialsFingerprint := modelaccountFields[5].Descriptor()
+	modelaccountDescCredentialsFingerprint := modelaccountFields[6].Descriptor()
 	// modelaccount.DefaultCredentialsFingerprint holds the default value on creation for the credentials_fingerprint field.
 	modelaccount.DefaultCredentialsFingerprint = modelaccountDescCredentialsFingerprint.Default.(string)
 	// modelaccount.CredentialsFingerprintValidator is a validator for the "credentials_fingerprint" field. It is called by the builders before save.
 	modelaccount.CredentialsFingerprintValidator = modelaccountDescCredentialsFingerprint.Validators[0].(func(string) error)
 	// modelaccountDescStatus is the schema descriptor for status field.
-	modelaccountDescStatus := modelaccountFields[6].Descriptor()
+	modelaccountDescStatus := modelaccountFields[7].Descriptor()
 	// modelaccount.DefaultStatus holds the default value on creation for the status field.
 	modelaccount.DefaultStatus = modelaccountDescStatus.Default.(string)
 	// modelaccount.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	modelaccount.StatusValidator = modelaccountDescStatus.Validators[0].(func(string) error)
 	// modelaccountDescPriority is the schema descriptor for priority field.
-	modelaccountDescPriority := modelaccountFields[7].Descriptor()
+	modelaccountDescPriority := modelaccountFields[8].Descriptor()
 	// modelaccount.DefaultPriority holds the default value on creation for the priority field.
 	modelaccount.DefaultPriority = modelaccountDescPriority.Default.(int)
 	// modelaccountDescWeight is the schema descriptor for weight field.
-	modelaccountDescWeight := modelaccountFields[8].Descriptor()
+	modelaccountDescWeight := modelaccountFields[9].Descriptor()
 	// modelaccount.DefaultWeight holds the default value on creation for the weight field.
 	modelaccount.DefaultWeight = modelaccountDescWeight.Default.(int)
 	// modelaccountDescConcurrencyLimit is the schema descriptor for concurrency_limit field.
-	modelaccountDescConcurrencyLimit := modelaccountFields[9].Descriptor()
+	modelaccountDescConcurrencyLimit := modelaccountFields[10].Descriptor()
 	// modelaccount.DefaultConcurrencyLimit holds the default value on creation for the concurrency_limit field.
 	modelaccount.DefaultConcurrencyLimit = modelaccountDescConcurrencyLimit.Default.(int)
 	// modelaccountDescTimeoutMs is the schema descriptor for timeout_ms field.
-	modelaccountDescTimeoutMs := modelaccountFields[10].Descriptor()
+	modelaccountDescTimeoutMs := modelaccountFields[11].Descriptor()
 	// modelaccount.DefaultTimeoutMs holds the default value on creation for the timeout_ms field.
 	modelaccount.DefaultTimeoutMs = modelaccountDescTimeoutMs.Default.(int)
 	modelaccountmodelMixin := schema.ModelAccountModel{}.Mixin()
@@ -4958,6 +4963,93 @@ func init() {
 	videopricingstrategyDescEnabled := videopricingstrategyFields[16].Descriptor()
 	// videopricingstrategy.DefaultEnabled holds the default value on creation for the enabled field.
 	videopricingstrategy.DefaultEnabled = videopricingstrategyDescEnabled.Default.(bool)
+	videoprovidercallbackeventMixin := schema.VideoProviderCallbackEvent{}.Mixin()
+	videoprovidercallbackeventMixinFields0 := videoprovidercallbackeventMixin[0].Fields()
+	_ = videoprovidercallbackeventMixinFields0
+	videoprovidercallbackeventFields := schema.VideoProviderCallbackEvent{}.Fields()
+	_ = videoprovidercallbackeventFields
+	// videoprovidercallbackeventDescCreatedAt is the schema descriptor for created_at field.
+	videoprovidercallbackeventDescCreatedAt := videoprovidercallbackeventMixinFields0[0].Descriptor()
+	// videoprovidercallbackevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videoprovidercallbackevent.DefaultCreatedAt = videoprovidercallbackeventDescCreatedAt.Default.(func() time.Time)
+	// videoprovidercallbackeventDescUpdatedAt is the schema descriptor for updated_at field.
+	videoprovidercallbackeventDescUpdatedAt := videoprovidercallbackeventMixinFields0[1].Descriptor()
+	// videoprovidercallbackevent.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videoprovidercallbackevent.DefaultUpdatedAt = videoprovidercallbackeventDescUpdatedAt.Default.(func() time.Time)
+	// videoprovidercallbackevent.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videoprovidercallbackevent.UpdateDefaultUpdatedAt = videoprovidercallbackeventDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videoprovidercallbackeventDescProviderCode is the schema descriptor for provider_code field.
+	videoprovidercallbackeventDescProviderCode := videoprovidercallbackeventFields[1].Descriptor()
+	// videoprovidercallbackevent.ProviderCodeValidator is a validator for the "provider_code" field. It is called by the builders before save.
+	videoprovidercallbackevent.ProviderCodeValidator = func() func(string) error {
+		validators := videoprovidercallbackeventDescProviderCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_code string) error {
+			for _, fn := range fns {
+				if err := fn(provider_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videoprovidercallbackeventDescModelAccountID is the schema descriptor for model_account_id field.
+	videoprovidercallbackeventDescModelAccountID := videoprovidercallbackeventFields[2].Descriptor()
+	// videoprovidercallbackevent.ModelAccountIDValidator is a validator for the "model_account_id" field. It is called by the builders before save.
+	videoprovidercallbackevent.ModelAccountIDValidator = videoprovidercallbackeventDescModelAccountID.Validators[0].(func(int64) error)
+	// videoprovidercallbackeventDescProviderEventID is the schema descriptor for provider_event_id field.
+	videoprovidercallbackeventDescProviderEventID := videoprovidercallbackeventFields[3].Descriptor()
+	// videoprovidercallbackevent.ProviderEventIDValidator is a validator for the "provider_event_id" field. It is called by the builders before save.
+	videoprovidercallbackevent.ProviderEventIDValidator = func() func(string) error {
+		validators := videoprovidercallbackeventDescProviderEventID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_event_id string) error {
+			for _, fn := range fns {
+				if err := fn(provider_event_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videoprovidercallbackeventDescProviderJobID is the schema descriptor for provider_job_id field.
+	videoprovidercallbackeventDescProviderJobID := videoprovidercallbackeventFields[4].Descriptor()
+	// videoprovidercallbackevent.ProviderJobIDValidator is a validator for the "provider_job_id" field. It is called by the builders before save.
+	videoprovidercallbackevent.ProviderJobIDValidator = func() func(string) error {
+		validators := videoprovidercallbackeventDescProviderJobID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_job_id string) error {
+			for _, fn := range fns {
+				if err := fn(provider_job_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videoprovidercallbackeventDescStatus is the schema descriptor for status field.
+	videoprovidercallbackeventDescStatus := videoprovidercallbackeventFields[5].Descriptor()
+	// videoprovidercallbackevent.DefaultStatus holds the default value on creation for the status field.
+	videoprovidercallbackevent.DefaultStatus = videoprovidercallbackeventDescStatus.Default.(string)
+	// videoprovidercallbackevent.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	videoprovidercallbackevent.StatusValidator = videoprovidercallbackeventDescStatus.Validators[0].(func(string) error)
+	// videoprovidercallbackeventDescErrorCode is the schema descriptor for error_code field.
+	videoprovidercallbackeventDescErrorCode := videoprovidercallbackeventFields[9].Descriptor()
+	// videoprovidercallbackevent.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
+	videoprovidercallbackevent.ErrorCodeValidator = videoprovidercallbackeventDescErrorCode.Validators[0].(func(string) error)
+	// videoprovidercallbackeventDescID is the schema descriptor for id field.
+	videoprovidercallbackeventDescID := videoprovidercallbackeventFields[0].Descriptor()
+	// videoprovidercallbackevent.DefaultID holds the default value on creation for the id field.
+	videoprovidercallbackevent.DefaultID = videoprovidercallbackeventDescID.Default.(func() uuid.UUID)
 	videoprovidercostruleMixin := schema.VideoProviderCostRule{}.Mixin()
 	videoprovidercostruleMixinFields0 := videoprovidercostruleMixin[0].Fields()
 	_ = videoprovidercostruleMixinFields0
@@ -5456,16 +5548,28 @@ func init() {
 	videotaskitemDescProviderCost := videotaskitemFields[8].Descriptor()
 	// videotaskitem.DefaultProviderCost holds the default value on creation for the provider_cost field.
 	videotaskitem.DefaultProviderCost = videotaskitemDescProviderCost.Default.(string)
+	// videotaskitemDescArtifactAttempts is the schema descriptor for artifact_attempts field.
+	videotaskitemDescArtifactAttempts := videotaskitemFields[10].Descriptor()
+	// videotaskitem.DefaultArtifactAttempts holds the default value on creation for the artifact_attempts field.
+	videotaskitem.DefaultArtifactAttempts = videotaskitemDescArtifactAttempts.Default.(int)
+	// videotaskitem.ArtifactAttemptsValidator is a validator for the "artifact_attempts" field. It is called by the builders before save.
+	videotaskitem.ArtifactAttemptsValidator = videotaskitemDescArtifactAttempts.Validators[0].(func(int) error)
+	// videotaskitemDescMaxArtifactAttempts is the schema descriptor for max_artifact_attempts field.
+	videotaskitemDescMaxArtifactAttempts := videotaskitemFields[11].Descriptor()
+	// videotaskitem.DefaultMaxArtifactAttempts holds the default value on creation for the max_artifact_attempts field.
+	videotaskitem.DefaultMaxArtifactAttempts = videotaskitemDescMaxArtifactAttempts.Default.(int)
+	// videotaskitem.MaxArtifactAttemptsValidator is a validator for the "max_artifact_attempts" field. It is called by the builders before save.
+	videotaskitem.MaxArtifactAttemptsValidator = videotaskitemDescMaxArtifactAttempts.Validators[0].(func(int) error)
 	// videotaskitemDescErrorCode is the schema descriptor for error_code field.
-	videotaskitemDescErrorCode := videotaskitemFields[9].Descriptor()
+	videotaskitemDescErrorCode := videotaskitemFields[12].Descriptor()
 	// videotaskitem.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
 	videotaskitem.ErrorCodeValidator = videotaskitemDescErrorCode.Validators[0].(func(string) error)
 	// videotaskitemDescLeaseOwner is the schema descriptor for lease_owner field.
-	videotaskitemDescLeaseOwner := videotaskitemFields[12].Descriptor()
+	videotaskitemDescLeaseOwner := videotaskitemFields[15].Descriptor()
 	// videotaskitem.LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
 	videotaskitem.LeaseOwnerValidator = videotaskitemDescLeaseOwner.Validators[0].(func(string) error)
 	// videotaskitemDescVersion is the schema descriptor for version field.
-	videotaskitemDescVersion := videotaskitemFields[14].Descriptor()
+	videotaskitemDescVersion := videotaskitemFields[17].Descriptor()
 	// videotaskitem.DefaultVersion holds the default value on creation for the version field.
 	videotaskitem.DefaultVersion = videotaskitemDescVersion.Default.(int64)
 	// videotaskitemDescID is the schema descriptor for id field.

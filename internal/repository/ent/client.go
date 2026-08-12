@@ -72,6 +72,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercallbackevent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
@@ -199,6 +200,8 @@ type Client struct {
 	VideoPriceRule *VideoPriceRuleClient
 	// VideoPricingStrategy is the client for interacting with the VideoPricingStrategy builders.
 	VideoPricingStrategy *VideoPricingStrategyClient
+	// VideoProviderCallbackEvent is the client for interacting with the VideoProviderCallbackEvent builders.
+	VideoProviderCallbackEvent *VideoProviderCallbackEventClient
 	// VideoProviderCostRule is the client for interacting with the VideoProviderCostRule builders.
 	VideoProviderCostRule *VideoProviderCostRuleClient
 	// VideoRouteConfig is the client for interacting with the VideoRouteConfig builders.
@@ -282,6 +285,7 @@ func (c *Client) init() {
 	c.VideoModelCapability = NewVideoModelCapabilityClient(c.config)
 	c.VideoPriceRule = NewVideoPriceRuleClient(c.config)
 	c.VideoPricingStrategy = NewVideoPricingStrategyClient(c.config)
+	c.VideoProviderCallbackEvent = NewVideoProviderCallbackEventClient(c.config)
 	c.VideoProviderCostRule = NewVideoProviderCostRuleClient(c.config)
 	c.VideoRouteConfig = NewVideoRouteConfigClient(c.config)
 	c.VideoTask = NewVideoTaskClient(c.config)
@@ -438,6 +442,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		VideoModelCapability:        NewVideoModelCapabilityClient(cfg),
 		VideoPriceRule:              NewVideoPriceRuleClient(cfg),
 		VideoPricingStrategy:        NewVideoPricingStrategyClient(cfg),
+		VideoProviderCallbackEvent:  NewVideoProviderCallbackEventClient(cfg),
 		VideoProviderCostRule:       NewVideoProviderCostRuleClient(cfg),
 		VideoRouteConfig:            NewVideoRouteConfigClient(cfg),
 		VideoTask:                   NewVideoTaskClient(cfg),
@@ -521,6 +526,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		VideoModelCapability:        NewVideoModelCapabilityClient(cfg),
 		VideoPriceRule:              NewVideoPriceRuleClient(cfg),
 		VideoPricingStrategy:        NewVideoPricingStrategyClient(cfg),
+		VideoProviderCallbackEvent:  NewVideoProviderCallbackEventClient(cfg),
 		VideoProviderCostRule:       NewVideoProviderCostRuleClient(cfg),
 		VideoRouteConfig:            NewVideoRouteConfigClient(cfg),
 		VideoTask:                   NewVideoTaskClient(cfg),
@@ -573,9 +579,9 @@ func (c *Client) Use(hooks ...Hook) {
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
 		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
 		c.VideoModelCapability, c.VideoPriceRule, c.VideoPricingStrategy,
-		c.VideoProviderCostRule, c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt,
-		c.VideoTaskInput, c.VideoTaskItem, c.WalletGrant,
-		c.WalletReservationAllocation,
+		c.VideoProviderCallbackEvent, c.VideoProviderCostRule, c.VideoRouteConfig,
+		c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput, c.VideoTaskItem,
+		c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
 	}
@@ -600,9 +606,9 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
 		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
 		c.VideoModelCapability, c.VideoPriceRule, c.VideoPricingStrategy,
-		c.VideoProviderCostRule, c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt,
-		c.VideoTaskInput, c.VideoTaskItem, c.WalletGrant,
-		c.WalletReservationAllocation,
+		c.VideoProviderCallbackEvent, c.VideoProviderCostRule, c.VideoRouteConfig,
+		c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput, c.VideoTaskItem,
+		c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -723,6 +729,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.VideoPriceRule.mutate(ctx, m)
 	case *VideoPricingStrategyMutation:
 		return c.VideoPricingStrategy.mutate(ctx, m)
+	case *VideoProviderCallbackEventMutation:
+		return c.VideoProviderCallbackEvent.mutate(ctx, m)
 	case *VideoProviderCostRuleMutation:
 		return c.VideoProviderCostRule.mutate(ctx, m)
 	case *VideoRouteConfigMutation:
@@ -8512,6 +8520,139 @@ func (c *VideoPricingStrategyClient) mutate(ctx context.Context, m *VideoPricing
 	}
 }
 
+// VideoProviderCallbackEventClient is a client for the VideoProviderCallbackEvent schema.
+type VideoProviderCallbackEventClient struct {
+	config
+}
+
+// NewVideoProviderCallbackEventClient returns a client for the VideoProviderCallbackEvent from the given config.
+func NewVideoProviderCallbackEventClient(c config) *VideoProviderCallbackEventClient {
+	return &VideoProviderCallbackEventClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `videoprovidercallbackevent.Hooks(f(g(h())))`.
+func (c *VideoProviderCallbackEventClient) Use(hooks ...Hook) {
+	c.hooks.VideoProviderCallbackEvent = append(c.hooks.VideoProviderCallbackEvent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `videoprovidercallbackevent.Intercept(f(g(h())))`.
+func (c *VideoProviderCallbackEventClient) Intercept(interceptors ...Interceptor) {
+	c.inters.VideoProviderCallbackEvent = append(c.inters.VideoProviderCallbackEvent, interceptors...)
+}
+
+// Create returns a builder for creating a VideoProviderCallbackEvent entity.
+func (c *VideoProviderCallbackEventClient) Create() *VideoProviderCallbackEventCreate {
+	mutation := newVideoProviderCallbackEventMutation(c.config, OpCreate)
+	return &VideoProviderCallbackEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of VideoProviderCallbackEvent entities.
+func (c *VideoProviderCallbackEventClient) CreateBulk(builders ...*VideoProviderCallbackEventCreate) *VideoProviderCallbackEventCreateBulk {
+	return &VideoProviderCallbackEventCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *VideoProviderCallbackEventClient) MapCreateBulk(slice any, setFunc func(*VideoProviderCallbackEventCreate, int)) *VideoProviderCallbackEventCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &VideoProviderCallbackEventCreateBulk{err: fmt.Errorf("calling to VideoProviderCallbackEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*VideoProviderCallbackEventCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &VideoProviderCallbackEventCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for VideoProviderCallbackEvent.
+func (c *VideoProviderCallbackEventClient) Update() *VideoProviderCallbackEventUpdate {
+	mutation := newVideoProviderCallbackEventMutation(c.config, OpUpdate)
+	return &VideoProviderCallbackEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *VideoProviderCallbackEventClient) UpdateOne(_m *VideoProviderCallbackEvent) *VideoProviderCallbackEventUpdateOne {
+	mutation := newVideoProviderCallbackEventMutation(c.config, OpUpdateOne, withVideoProviderCallbackEvent(_m))
+	return &VideoProviderCallbackEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *VideoProviderCallbackEventClient) UpdateOneID(id uuid.UUID) *VideoProviderCallbackEventUpdateOne {
+	mutation := newVideoProviderCallbackEventMutation(c.config, OpUpdateOne, withVideoProviderCallbackEventID(id))
+	return &VideoProviderCallbackEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for VideoProviderCallbackEvent.
+func (c *VideoProviderCallbackEventClient) Delete() *VideoProviderCallbackEventDelete {
+	mutation := newVideoProviderCallbackEventMutation(c.config, OpDelete)
+	return &VideoProviderCallbackEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *VideoProviderCallbackEventClient) DeleteOne(_m *VideoProviderCallbackEvent) *VideoProviderCallbackEventDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *VideoProviderCallbackEventClient) DeleteOneID(id uuid.UUID) *VideoProviderCallbackEventDeleteOne {
+	builder := c.Delete().Where(videoprovidercallbackevent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &VideoProviderCallbackEventDeleteOne{builder}
+}
+
+// Query returns a query builder for VideoProviderCallbackEvent.
+func (c *VideoProviderCallbackEventClient) Query() *VideoProviderCallbackEventQuery {
+	return &VideoProviderCallbackEventQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeVideoProviderCallbackEvent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a VideoProviderCallbackEvent entity by its id.
+func (c *VideoProviderCallbackEventClient) Get(ctx context.Context, id uuid.UUID) (*VideoProviderCallbackEvent, error) {
+	return c.Query().Where(videoprovidercallbackevent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *VideoProviderCallbackEventClient) GetX(ctx context.Context, id uuid.UUID) *VideoProviderCallbackEvent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *VideoProviderCallbackEventClient) Hooks() []Hook {
+	return c.hooks.VideoProviderCallbackEvent
+}
+
+// Interceptors returns the client interceptors.
+func (c *VideoProviderCallbackEventClient) Interceptors() []Interceptor {
+	return c.inters.VideoProviderCallbackEvent
+}
+
+func (c *VideoProviderCallbackEventClient) mutate(ctx context.Context, m *VideoProviderCallbackEventMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&VideoProviderCallbackEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&VideoProviderCallbackEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&VideoProviderCallbackEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&VideoProviderCallbackEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown VideoProviderCallbackEvent mutation op: %q", m.Op())
+	}
+}
+
 // VideoProviderCostRuleClient is a client for the VideoProviderCostRule schema.
 type VideoProviderCostRuleClient struct {
 	config
@@ -9720,8 +9861,8 @@ type (
 		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
 		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
 		UserSubscription, VideoModelCapability, VideoPriceRule, VideoPricingStrategy,
-		VideoProviderCostRule, VideoRouteConfig, VideoTask, VideoTaskAttempt,
-		VideoTaskInput, VideoTaskItem, WalletGrant,
+		VideoProviderCallbackEvent, VideoProviderCostRule, VideoRouteConfig, VideoTask,
+		VideoTaskAttempt, VideoTaskInput, VideoTaskItem, WalletGrant,
 		WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
@@ -9738,8 +9879,8 @@ type (
 		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
 		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
 		UserSubscription, VideoModelCapability, VideoPriceRule, VideoPricingStrategy,
-		VideoProviderCostRule, VideoRouteConfig, VideoTask, VideoTaskAttempt,
-		VideoTaskInput, VideoTaskItem, WalletGrant,
+		VideoProviderCallbackEvent, VideoProviderCostRule, VideoRouteConfig, VideoTask,
+		VideoTaskAttempt, VideoTaskInput, VideoTaskItem, WalletGrant,
 		WalletReservationAllocation []ent.Interceptor
 	}
 )

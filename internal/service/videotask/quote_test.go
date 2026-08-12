@@ -38,7 +38,7 @@ func TestQuoteTokenRejectsTamperingExpiryUserAndVersionChanges(t *testing.T) {
 	routingStore := &quoteRoutingStore{group: videoroutingservice.Group{
 		Code: "cinema", ConfigVersion: "route-v1", PricingStrategyID: 1, MaxOutputCount: 4,
 		TaskTypes:  []domainvideo.TaskType{domainvideo.TaskTypeTextToVideo},
-		Candidates: []videoroutingservice.Candidate{{AccountModelID: 1, CapabilityVersion: "cap-v1", Capability: capability}},
+		Candidates: []videoroutingservice.Candidate{{RouteCandidateID: 10, AccountModelID: 11, ModelAccountID: 12, ModelCode: "seedance-2-5", AdapterType: "seedance", CapabilityVersion: "cap-v1", Capability: capability}},
 	}}
 	pricingStore := &quotePricingStore{rule: videopricingservice.Rule{
 		StrategyVersion: 1, RuleVersion: 1, SafetyPoints: "1.00000",
@@ -52,6 +52,9 @@ func TestQuoteTokenRejectsTamperingExpiryUserAndVersionChanges(t *testing.T) {
 	estimate, err := service.Estimate(t.Context(), 7, request)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if estimate.RouteCandidateID != 10 || estimate.AccountModelID != 11 || estimate.ModelAccountID != 12 || estimate.ProviderCode != "seedance" || estimate.ModelCode != "seedance-2-5" {
+		t.Fatalf("estimate candidate snapshot = %#v", estimate)
 	}
 	if _, err := service.Verify(t.Context(), 7, request, estimate.QuoteToken); err != nil {
 		t.Fatalf("valid quote rejected: %v", err)

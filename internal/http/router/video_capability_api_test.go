@@ -81,13 +81,17 @@ func TestVideoCapabilityAndEstimateUseCompleteVerifiedCandidate(t *testing.T) {
 	pricing := videopricingservice.NewService(configStore, func() time.Time { return now })
 	quotes := videotaskservice.NewQuoteService(routing, pricing, []byte("test-video-quote-signing-key-32bytes"), func() time.Time { return now })
 	authSvc, session := loginTestUser(t, "video-capability@example.com")
-	api := handlers.NewAPIWithRuntimeServices(taskAPIConfig("http://provider.invalid"), authSvc, nil, nil, nil, nil)
+	api := handlers.NewAPIWithRuntimeServices(taskAPIConfig("http://provider.invalid"), authSvc, nil, nil, enabledFeatureAdmin(t, "video_creation"), nil)
 	api.SetVideoServices(routing, quotes)
 	handler := NewWithAPI(api)
 
 	capabilities := authenticatedMediaRequest(t, handler, session.AccessToken, http.MethodGet, "/api/agent/video/v1/capabilities?route_model_code=cinema", "", nil)
 	if capabilities.Code != http.StatusOK || !bytes.Contains(capabilities.Body.Bytes(), []byte(`"capability_version":"cap-v1"`)) || !bytes.Contains(capabilities.Body.Bytes(), []byte(`"duration_seconds":5`)) {
 		t.Fatalf("capabilities=%d %s", capabilities.Code, capabilities.Body.String())
+	}
+	groups := authenticatedMediaRequest(t, handler, session.AccessToken, http.MethodGet, "/api/agent/video/v1/capabilities", "", nil)
+	if groups.Code != http.StatusOK || !bytes.Contains(groups.Body.Bytes(), []byte(`"groups"`)) || !bytes.Contains(groups.Body.Bytes(), []byte(`"route_model_code":"cinema"`)) {
+		t.Fatalf("capability groups=%d %s", groups.Code, groups.Body.String())
 	}
 	estimateBody := `{"route_model_code":"cinema","task_type":"text_to_video","prompt":"a quiet lake","duration_seconds":5,"resolution":"720p","aspect_ratio":"16:9","audio_mode":"silent","output_count":2}`
 	estimate := authenticatedMediaRequest(t, handler, session.AccessToken, http.MethodPost, "/api/agent/video/v1/estimates", estimateBody, nil)

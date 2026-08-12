@@ -24,6 +24,7 @@ type EstimateRequest struct {
 }
 
 type Estimate struct {
+	RouteModelID      int64     `json:"route_model_id,omitempty"`
 	RouteModelCode    string    `json:"route_model_code"`
 	CapabilityVersion string    `json:"capability_version"`
 	ConfigVersion     string    `json:"config_version"`
@@ -33,6 +34,11 @@ type Estimate struct {
 	MaxReservedPoints string    `json:"max_reserved_points"`
 	QuoteToken        string    `json:"quote_token"`
 	ExpiresAt         time.Time `json:"expires_at"`
+	RouteCandidateID  int64     `json:"-"`
+	AccountModelID    int64     `json:"-"`
+	ModelAccountID    int64     `json:"-"`
+	ProviderCode      string    `json:"-"`
+	ModelCode         string    `json:"-"`
 }
 
 type QuoteService struct {
@@ -52,6 +58,11 @@ type quoteTokenPayload struct {
 	EstimatedPoints   string `json:"ep"`
 	MaxReservedPoints string `json:"mr"`
 	ExpiresAtUnix     int64  `json:"exp"`
+	RouteCandidateID  int64  `json:"rc"`
+	AccountModelID    int64  `json:"am"`
+	ModelAccountID    int64  `json:"ma"`
+	ProviderCode      string `json:"pc"`
+	ModelCode         string `json:"mc"`
 }
 
 func NewQuoteService(routing *videoroutingservice.Service, pricing *videopricingservice.Service, key []byte, now func() time.Time) *QuoteService {
@@ -73,6 +84,7 @@ func (s *QuoteService) Estimate(ctx context.Context, userID int64, request Estim
 	if err != nil {
 		return Estimate{}, err
 	}
+	selected := resolved.Candidates[0]
 	fingerprint, err := estimateFingerprint(request)
 	if err != nil {
 		return Estimate{}, err
@@ -82,15 +94,19 @@ func (s *QuoteService) Estimate(ctx context.Context, userID int64, request Estim
 		UserID: userID, Fingerprint: fingerprint, CapabilityVersion: resolved.CapabilityVersion, ConfigVersion: resolved.Group.ConfigVersion,
 		PriceVersion: quoted.PriceVersion, UnitPoints: quoted.UnitPoints, EstimatedPoints: quoted.EstimatedPoints,
 		MaxReservedPoints: quoted.MaxReservedPoints, ExpiresAtUnix: expiresAt.Unix(),
+		RouteCandidateID: selected.RouteCandidateID, AccountModelID: selected.AccountModelID, ModelAccountID: selected.ModelAccountID,
+		ProviderCode: selected.AdapterType, ModelCode: selected.ModelCode,
 	}
 	token, err := s.sign(payload)
 	if err != nil {
 		return Estimate{}, err
 	}
 	return Estimate{
-		RouteModelCode: request.RouteModelCode, CapabilityVersion: payload.CapabilityVersion, ConfigVersion: payload.ConfigVersion,
+		RouteModelID: resolved.Group.RouteModelID, RouteModelCode: request.RouteModelCode, CapabilityVersion: payload.CapabilityVersion, ConfigVersion: payload.ConfigVersion,
 		PriceVersion: payload.PriceVersion, UnitPoints: payload.UnitPoints, EstimatedPoints: payload.EstimatedPoints,
 		MaxReservedPoints: payload.MaxReservedPoints, QuoteToken: token, ExpiresAt: expiresAt,
+		RouteCandidateID: payload.RouteCandidateID, AccountModelID: payload.AccountModelID, ModelAccountID: payload.ModelAccountID,
+		ProviderCode: payload.ProviderCode, ModelCode: payload.ModelCode,
 	}, nil
 }
 
@@ -100,18 +116,21 @@ func (s *QuoteService) Verify(ctx context.Context, userID int64, request Estimat
 		return Estimate{}, err
 	}
 	if payload.UserID != userID || s.now().UTC().Unix() >= payload.ExpiresAtUnix {
-		return Estimate{}, errs.New(409, errs.CodeConflict, "video quote expired or belongs to another user")
+		return Estimate{}, errs.New(409, errs.CodeVideoQuoteStale, "video quote expired or belongs to another user")
 	}
 	fingerprint, err := estimateFingerprint(request)
 	if err != nil || !hmac.Equal([]byte(payload.Fingerprint), []byte(fingerprint)) {
-		return Estimate{}, errs.New(409, errs.CodeConflict, "video quote does not match the request")
+		return Estimate{}, errs.New(409, errs.CodeVideoQuoteStale, "video quote does not match the request")
 	}
 	current, err := s.Estimate(ctx, userID, request)
 	if err != nil {
 		return Estimate{}, err
 	}
 	if current.CapabilityVersion != payload.CapabilityVersion || current.ConfigVersion != payload.ConfigVersion || current.PriceVersion != payload.PriceVersion {
-		return Estimate{}, errs.New(409, errs.CodeConflict, "video capability or price changed; request a new quote")
+		return Estimate{}, errs.New(409, errs.CodeVideoQuoteStale, "video capability or price changed; request a new quote")
+	}
+	if current.RouteCandidateID != payload.RouteCandidateID || current.AccountModelID != payload.AccountModelID || current.ModelAccountID != payload.ModelAccountID || current.ProviderCode != payload.ProviderCode || current.ModelCode != payload.ModelCode {
+		return Estimate{}, errs.New(409, errs.CodeVideoQuoteStale, "video routing candidate changed; request a new quote")
 	}
 	current.QuoteToken = token
 	current.ExpiresAt = time.Unix(payload.ExpiresAtUnix, 0).UTC()
@@ -131,21 +150,21 @@ func (s *QuoteService) sign(payload quoteTokenPayload) (string, error) {
 func (s *QuoteService) verifySignature(token string) (quoteTokenPayload, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
-		return quoteTokenPayload{}, errs.New(409, errs.CodeConflict, "invalid video quote token")
+		return quoteTokenPayload{}, errs.New(409, errs.CodeVideoQuoteStale, "invalid video quote token")
 	}
 	payload, payloadErr := base64.RawURLEncoding.DecodeString(parts[0])
 	signature, signatureErr := base64.RawURLEncoding.DecodeString(parts[1])
 	if payloadErr != nil || signatureErr != nil {
-		return quoteTokenPayload{}, errs.New(409, errs.CodeConflict, "invalid video quote token")
+		return quoteTokenPayload{}, errs.New(409, errs.CodeVideoQuoteStale, "invalid video quote token")
 	}
 	mac := hmac.New(sha256.New, s.key)
 	_, _ = mac.Write(payload)
 	if !hmac.Equal(signature, mac.Sum(nil)) {
-		return quoteTokenPayload{}, errs.New(409, errs.CodeConflict, "invalid video quote signature")
+		return quoteTokenPayload{}, errs.New(409, errs.CodeVideoQuoteStale, "invalid video quote signature")
 	}
 	var decoded quoteTokenPayload
 	if err := json.Unmarshal(payload, &decoded); err != nil {
-		return quoteTokenPayload{}, errs.New(409, errs.CodeConflict, "invalid video quote payload")
+		return quoteTokenPayload{}, errs.New(409, errs.CodeVideoQuoteStale, "invalid video quote payload")
 	}
 	return decoded, nil
 }

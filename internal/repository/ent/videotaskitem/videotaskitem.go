@@ -35,6 +35,12 @@ const (
 	FieldActualPoints = "actual_points"
 	// FieldProviderCost holds the string denoting the provider_cost field in the database.
 	FieldProviderCost = "provider_cost"
+	// FieldArtifactSnapshot holds the string denoting the artifact_snapshot field in the database.
+	FieldArtifactSnapshot = "artifact_snapshot"
+	// FieldArtifactAttempts holds the string denoting the artifact_attempts field in the database.
+	FieldArtifactAttempts = "artifact_attempts"
+	// FieldMaxArtifactAttempts holds the string denoting the max_artifact_attempts field in the database.
+	FieldMaxArtifactAttempts = "max_artifact_attempts"
 	// FieldErrorCode holds the string denoting the error_code field in the database.
 	FieldErrorCode = "error_code"
 	// FieldErrorMessage holds the string denoting the error_message field in the database.
@@ -82,6 +88,9 @@ var Columns = []string{
 	FieldActualOutputSeconds,
 	FieldActualPoints,
 	FieldProviderCost,
+	FieldArtifactSnapshot,
+	FieldArtifactAttempts,
+	FieldMaxArtifactAttempts,
 	FieldErrorCode,
 	FieldErrorMessage,
 	FieldNextActionAt,
@@ -123,6 +132,14 @@ var (
 	DefaultActualPoints string
 	// DefaultProviderCost holds the default value on creation for the "provider_cost" field.
 	DefaultProviderCost string
+	// DefaultArtifactAttempts holds the default value on creation for the "artifact_attempts" field.
+	DefaultArtifactAttempts int
+	// ArtifactAttemptsValidator is a validator for the "artifact_attempts" field. It is called by the builders before save.
+	ArtifactAttemptsValidator func(int) error
+	// DefaultMaxArtifactAttempts holds the default value on creation for the "max_artifact_attempts" field.
+	DefaultMaxArtifactAttempts int
+	// MaxArtifactAttemptsValidator is a validator for the "max_artifact_attempts" field. It is called by the builders before save.
+	MaxArtifactAttemptsValidator func(int) error
 	// ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
 	ErrorCodeValidator func(string) error
 	// LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
@@ -189,6 +206,16 @@ func ByActualPoints(opts ...sql.OrderTermOption) OrderOption {
 // ByProviderCost orders the results by the provider_cost field.
 func ByProviderCost(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldProviderCost, opts...).ToFunc()
+}
+
+// ByArtifactAttempts orders the results by the artifact_attempts field.
+func ByArtifactAttempts(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldArtifactAttempts, opts...).ToFunc()
+}
+
+// ByMaxArtifactAttempts orders the results by the max_artifact_attempts field.
+func ByMaxArtifactAttempts(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMaxArtifactAttempts, opts...).ToFunc()
 }
 
 // ByErrorCode orders the results by the error_code field.

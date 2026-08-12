@@ -1178,6 +1178,7 @@ var (
 		{Name: "after_user_id", Type: field.TypeInt, Default: 0},
 		{Name: "after_task_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "after_result_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "after_created_at", Type: field.TypeTime, Nullable: true},
 		{Name: "processed_rows", Type: field.TypeInt, Default: 0},
 		{Name: "completed", Type: field.TypeBool, Default: false},
 	}
@@ -1200,6 +1201,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "public_id", Type: field.TypeUUID, Unique: true},
 		{Name: "name", Type: field.TypeString, Size: 128},
 		{Name: "adapter_type", Type: field.TypeString, Size: 64},
 		{Name: "auth_type", Type: field.TypeString, Size: 64},
@@ -1224,7 +1226,7 @@ var (
 			{
 				Name:    "modelaccount_adapter_type_status",
 				Unique:  false,
-				Columns: []*schema.Column{ModelAccountsColumns[5], ModelAccountsColumns[10]},
+				Columns: []*schema.Column{ModelAccountsColumns[6], ModelAccountsColumns[11]},
 			},
 			{
 				Name:    "modelaccount_deleted_at",
@@ -2734,6 +2736,45 @@ var (
 			},
 		},
 	}
+	// VideoProviderCallbackEventsColumns holds the columns for the "video_provider_callback_events" table.
+	VideoProviderCallbackEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "provider_code", Type: field.TypeString, Size: 64},
+		{Name: "model_account_id", Type: field.TypeInt64},
+		{Name: "provider_event_id", Type: field.TypeString, Size: 192},
+		{Name: "provider_job_id", Type: field.TypeString, Size: 192},
+		{Name: "status", Type: field.TypeString, Size: 24, Default: "received"},
+		{Name: "payload_snapshot", Type: field.TypeJSON},
+		{Name: "received_at", Type: field.TypeTime},
+		{Name: "processed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+	}
+	// VideoProviderCallbackEventsTable holds the schema information for the "video_provider_callback_events" table.
+	VideoProviderCallbackEventsTable = &schema.Table{
+		Name:       "video_provider_callback_events",
+		Columns:    VideoProviderCallbackEventsColumns,
+		PrimaryKey: []*schema.Column{VideoProviderCallbackEventsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videoprovidercallbackevent_model_account_id_provider_event_id",
+				Unique:  true,
+				Columns: []*schema.Column{VideoProviderCallbackEventsColumns[4], VideoProviderCallbackEventsColumns[5]},
+			},
+			{
+				Name:    "videoprovidercallbackevent_model_account_id_provider_job_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoProviderCallbackEventsColumns[4], VideoProviderCallbackEventsColumns[6]},
+			},
+			{
+				Name:    "videoprovidercallbackevent_status_received_at",
+				Unique:  false,
+				Columns: []*schema.Column{VideoProviderCallbackEventsColumns[7], VideoProviderCallbackEventsColumns[9]},
+			},
+		},
+	}
 	// VideoProviderCostRulesColumns holds the columns for the "video_provider_cost_rules" table.
 	VideoProviderCostRulesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -3025,6 +3066,9 @@ var (
 		{Name: "actual_output_seconds", Type: field.TypeString, Default: "0.000", SchemaType: map[string]string{"postgres": "numeric(12,3)"}},
 		{Name: "actual_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
 		{Name: "provider_cost", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "artifact_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "artifact_attempts", Type: field.TypeInt, Default: 0},
+		{Name: "max_artifact_attempts", Type: field.TypeInt, Default: 3},
 		{Name: "error_code", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "next_action_at", Type: field.TypeTime, Nullable: true},
@@ -3041,7 +3085,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "video_task_items_video_tasks_items",
-				Columns:    []*schema.Column{VideoTaskItemsColumns[16]},
+				Columns:    []*schema.Column{VideoTaskItemsColumns[19]},
 				RefColumns: []*schema.Column{VideoTasksColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -3050,17 +3094,17 @@ var (
 			{
 				Name:    "videotaskitem_task_id_ordinal",
 				Unique:  true,
-				Columns: []*schema.Column{VideoTaskItemsColumns[16], VideoTaskItemsColumns[3]},
+				Columns: []*schema.Column{VideoTaskItemsColumns[19], VideoTaskItemsColumns[3]},
 			},
 			{
 				Name:    "videotaskitem_status_next_action_at",
 				Unique:  false,
-				Columns: []*schema.Column{VideoTaskItemsColumns[4], VideoTaskItemsColumns[12]},
+				Columns: []*schema.Column{VideoTaskItemsColumns[4], VideoTaskItemsColumns[15]},
 			},
 			{
 				Name:    "videotaskitem_lease_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{VideoTaskItemsColumns[14]},
+				Columns: []*schema.Column{VideoTaskItemsColumns[17]},
 			},
 			{
 				Name:    "videotaskitem_result_asset_id",
@@ -3234,6 +3278,7 @@ var (
 		VideoModelCapabilitiesTable,
 		VideoPriceRulesTable,
 		VideoPricingStrategiesTable,
+		VideoProviderCallbackEventsTable,
 		VideoProviderCostRulesTable,
 		VideoRouteConfigsTable,
 		VideoTasksTable,

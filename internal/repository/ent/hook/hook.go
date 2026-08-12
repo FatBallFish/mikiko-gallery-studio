@@ -681,6 +681,18 @@ func (f VideoPricingStrategyFunc) Mutate(ctx context.Context, m ent.Mutation) (e
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoPricingStrategyMutation", m)
 }
 
+// The VideoProviderCallbackEventFunc type is an adapter to allow the use of ordinary
+// function as VideoProviderCallbackEvent mutator.
+type VideoProviderCallbackEventFunc func(context.Context, *ent.VideoProviderCallbackEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoProviderCallbackEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoProviderCallbackEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoProviderCallbackEventMutation", m)
+}
+
 // The VideoProviderCostRuleFunc type is an adapter to allow the use of ordinary
 // function as VideoProviderCostRule mutator.
 type VideoProviderCostRuleFunc func(context.Context, *ent.VideoProviderCostRuleMutation) (ent.Value, error)

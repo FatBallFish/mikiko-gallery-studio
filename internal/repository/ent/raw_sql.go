@@ -18,4 +18,15 @@ func (tx *Tx) ExecRaw(ctx context.Context, query string, args ...any) error {
 	return tx.config.driver.Exec(ctx, query, args, &result)
 }
 
+// ExecRawAffected executes repository-owned parameterized SQL and reports the
+// number of changed rows. It is intended for migration-safe upserts where the
+// generated builders do not expose ON CONFLICT.
+func (tx *Tx) ExecRawAffected(ctx context.Context, query string, args ...any) (int64, error) {
+	var result entsql.Result
+	if err := tx.config.driver.Exec(ctx, query, args, &result); err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func (c *Client) DialectName() string { return c.config.driver.Dialect() }
