@@ -176,17 +176,18 @@ type Observer interface {
 }
 
 type Options struct {
-	Owner                string
-	LeaseTTL             time.Duration
-	PollIntervals        []time.Duration
-	ArtifactMaxBytes     int64
-	ArtifactAllowedHosts []string
-	Now                  func() time.Time
-	AttemptID            func() string
-	AssetID              func() string
-	ResolveHostIPs       func(context.Context, string) ([]net.IP, error)
-	ClaimAllowed         func(context.Context) (bool, error)
-	Observer             Observer
+	Owner                      string
+	LeaseTTL                   time.Duration
+	PollIntervals              []time.Duration
+	ArtifactMaxBytes           int64
+	ArtifactAllowedHosts       []string
+	AllowLoopbackArtifactHosts bool
+	Now                        func() time.Time
+	AttemptID                  func() string
+	AssetID                    func() string
+	ResolveHostIPs             func(context.Context, string) ([]net.IP, error)
+	ClaimAllowed               func(context.Context) (bool, error)
+	Observer                   Observer
 }
 
 type Runner struct {
@@ -684,7 +685,10 @@ func (r *Runner) allowedArtifactHost(ctx context.Context, host string, accountHo
 		return false
 	}
 	for _, address := range addresses {
-		if address == nil || address.IsLoopback() || address.IsPrivate() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsUnspecified() || address.IsMulticast() {
+		if address == nil || address.IsPrivate() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsUnspecified() || address.IsMulticast() {
+			return false
+		}
+		if address.IsLoopback() && !r.options.AllowLoopbackArtifactHosts {
 			return false
 		}
 	}

@@ -429,7 +429,7 @@ func normalizeModelAccountWrite(req domainmodeladmin.ModelAccountWriteRequest, c
 	if req.Name == "" || req.AdapterType == "" || req.AuthType == "" || req.BaseURL == "" {
 		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("name, adapter_type, auth_type and base_url are required")
 	}
-	if req.AdapterType != domainmodeladmin.AdapterTypeOpenAICompatible && req.AdapterType != domainmodeladmin.AdapterTypeOpenRouter {
+	if req.AdapterType != domainmodeladmin.AdapterTypeOpenAICompatible && req.AdapterType != domainmodeladmin.AdapterTypeOpenRouter && req.AdapterType != domainmodeladmin.AdapterTypeSeedance && req.AdapterType != domainmodeladmin.AdapterTypeMiniMax {
 		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("unsupported adapter_type")
 	}
 	if req.AuthType != domainmodeladmin.AuthTypeAPIKey {
@@ -476,10 +476,26 @@ func normalizeModelAccountModelWrite(req domainmodeladmin.ModelAccountModelWrite
 		req.Currency = "USD"
 	}
 	req.TaskTypes = cloneNormalizedStrings(req.TaskTypes)
+	hasImageTask := false
 	for _, taskType := range req.TaskTypes {
 		if !provider.IsSupportedTaskType(taskType) {
 			return domainmodeladmin.ModelAccountModelWriteRequest{}, errs.BadRequest("unsupported task_type")
 		}
+		if taskType == string(provider.TaskTypeTextToImage) || taskType == string(provider.TaskTypeImageEdit) {
+			hasImageTask = true
+		}
+	}
+	if !hasImageTask {
+		if req.MaxImageCount <= 0 {
+			req.MaxImageCount = 1
+		}
+		if req.MaxImageCount > 10 {
+			return domainmodeladmin.ModelAccountModelWriteRequest{}, errs.BadRequest("max_image_count must be between 1 and 10")
+		}
+		if req.Extra == nil {
+			req.Extra = map[string]any{}
+		}
+		return req, nil
 	}
 	capability, err := modelhub.NormalizeCapability(modelhub.ImageModelCapability{
 		MaxReferenceImageCount:    req.MaxReferenceImageCount,

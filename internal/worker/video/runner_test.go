@@ -436,6 +436,28 @@ func TestRunnerUsesAttemptAccountArtifactHostAllowlist(t *testing.T) {
 	}
 }
 
+func TestRunnerLoopbackArtifactHostRequiresExplicitLocalOption(t *testing.T) {
+	resolveLoopback := func(context.Context, string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("127.0.0.1")}, nil
+	}
+	allowedHost := "127.0.0.1:18443"
+	strict := NewRunner(newMemoryStore(WorkItem{}), nil, nil, Options{ResolveHostIPs: resolveLoopback})
+	if strict.allowedArtifactHost(t.Context(), allowedHost, []string{allowedHost}) {
+		t.Fatal("loopback artifact host must be rejected by default")
+	}
+	local := NewRunner(newMemoryStore(WorkItem{}), nil, nil, Options{ResolveHostIPs: resolveLoopback, AllowLoopbackArtifactHosts: true})
+	if !local.allowedArtifactHost(t.Context(), allowedHost, []string{allowedHost}) {
+		t.Fatal("explicit local-only option must allow an exactly allowlisted loopback host")
+	}
+	private := NewRunner(newMemoryStore(WorkItem{}), nil, nil, Options{
+		ResolveHostIPs:             func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP("10.0.0.7")}, nil },
+		AllowLoopbackArtifactHosts: true,
+	})
+	if private.allowedArtifactHost(t.Context(), "10.0.0.7:18443", []string{"10.0.0.7:18443"}) {
+		t.Fatal("local-only option must not allow private non-loopback artifact hosts")
+	}
+}
+
 func newTestRunner(store Store, provider providervideo.Provider, now time.Time) *Runner {
 	return NewRunner(store, staticProviderResolver{provider: provider}, storage.NewStaticRouter(&streamingBackend{objects: map[string][]byte{}}), Options{
 		Owner: "video-worker", LeaseTTL: 30 * time.Second, PollIntervals: []time.Duration{2 * time.Second, 5 * time.Second}, ArtifactMaxBytes: 1 << 20,

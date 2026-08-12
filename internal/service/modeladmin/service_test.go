@@ -85,6 +85,32 @@ func TestModelWriteBoundariesRejectInvalidUpstreamMaxImageCount(t *testing.T) {
 	}
 }
 
+func TestServiceAcceptsVideoProviderAccountsAndVideoOnlyModels(t *testing.T) {
+	ctx := context.Background()
+	svc := modeladmin.NewServiceWithStore(nil)
+	for _, adapterType := range []string{"seedance", "minimax"} {
+		account, err := svc.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+			Name: adapterType + " account", AdapterType: adapterType, AuthType: "api_key",
+			BaseURL: "https://video.example.com", Credentials: map[string]string{"api_key": "test-key"},
+			Status: "enabled",
+		})
+		if err != nil {
+			t.Fatalf("CreateModelAccount(%s): %v", adapterType, err)
+		}
+		model, err := svc.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+			AccountID: account.ID, ModelCode: adapterType + "-video", DisplayName: adapterType + " video",
+			TaskTypes:     []string{"text_to_video", "image_to_video", "first_last_frame_to_video"},
+			MaxImageCount: 1, Enabled: true,
+		})
+		if err != nil {
+			t.Fatalf("CreateModelAccountModel(%s): %v", adapterType, err)
+		}
+		if len(model.TaskTypes) != 3 || len(model.BaseResolution) != 0 || len(model.SizeModes) != 0 || len(model.SupportedRatios) != 0 {
+			t.Fatalf("video-only model inherited image capability defaults: %#v", model)
+		}
+	}
+}
+
 func TestServiceRejectsRemovedReferenceGenerationConfiguration(t *testing.T) {
 	ctx := context.Background()
 	svc := modeladmin.NewServiceWithStore(nil)

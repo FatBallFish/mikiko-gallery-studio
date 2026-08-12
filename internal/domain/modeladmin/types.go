@@ -16,6 +16,8 @@ type LifecycleAudit struct {
 const (
 	AdapterTypeOpenAICompatible = "openai_compatible"
 	AdapterTypeOpenRouter       = "openrouter"
+	AdapterTypeSeedance         = "seedance"
+	AdapterTypeMiniMax          = "minimax"
 	AuthTypeAPIKey              = "api_key"
 
 	ModelAccountStatusEnabled  = "enabled"

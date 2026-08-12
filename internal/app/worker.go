@@ -185,8 +185,9 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	videoStore := entstore.NewVideoTaskStore(client, entstore.NewBillingStore(client, cfg.Billing.PointsScale))
 	videoRunner := videoworker.NewRunner(videoStore, videoworker.NewExecutionAccountResolver(videoStore), storageRegistry, videoworker.Options{
 		Owner: owner + "-video", LeaseTTL: 30 * time.Second,
-		ClaimAllowed: newRedisVideoClaimGate(redisClient).Allowed,
-		Observer:     workerMetricsObserver{metrics: metrics},
+		AllowLoopbackArtifactHosts: cfg.Worker.AllowLoopbackVideoArtifacts,
+		ClaimAllowed:               newRedisVideoClaimGate(redisClient).Allowed,
+		Observer:                   workerMetricsObserver{metrics: metrics},
 	})
 	mediaCommandRunner := mappedMediaCommandRunner{ffmpeg: cfg.Worker.FFmpegPath, ffprobe: cfg.Worker.FFprobePath}
 	mediaPipeline := mediaworker.NewPipeline(

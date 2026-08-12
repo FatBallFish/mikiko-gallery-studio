@@ -173,6 +173,7 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			field("MEDIA_TEMP_DISK_PAUSE_PERCENT", "worker", "临时磁盘达到该使用率时暂停领取新媒体任务。", "Pause new media claims when temporary disk usage reaches this percentage.", "75", "75", FieldOwnerMGSCTL, requiredNever, validatePercent),
 			field("MEDIA_TEMP_DISK_CRITICAL_PERCENT", "worker", "临时磁盘达到该使用率时进入严重告警状态。", "Mark temporary disk health critical when usage reaches this percentage.", "90", "90", FieldOwnerMGSCTL, requiredNever, validatePercent),
 			field("WORKER_METRICS_ADDR", "worker", "Worker Prometheus 指标监听地址；Docker 内建议 :9091，原生部署默认仅监听回环地址。", "Worker Prometheus metrics listen address; use :9091 inside Docker and loopback by default for native deployments.", "127.0.0.1:9091", "127.0.0.1:9091", FieldOwnerMGSCTL, requiredNever, validateListenAddress),
+			field("VIDEO_ARTIFACT_ALLOW_LOOPBACK", "worker", "仅供 local/test 隔离验收使用：允许精确白名单中的 HTTPS 回环视频产物地址。", "Local/test isolated acceptance only: allow HTTPS loopback video artifact URLs present in the exact host allowlist.", "false", "false", FieldOwnerMGSCTL, requiredNever, validateBool),
 
 			field("IMAGE_REGISTRY", "release", "Docker 镜像仓库地址；原生部署可留空。", "Docker image registry; leave empty for native deployments.", "registry.example.com/project", "", FieldOwnerMGSCTL, requiredNever, validateOptionalNonEmpty),
 			field("IMAGE_TAG", "release", "Docker 各模块使用的不可变镜像标签。", "Immutable Docker image tag used by application modules.", "v1.0.0", "", FieldOwnerMGSCTL, requiredDocker, validateNonEmpty),

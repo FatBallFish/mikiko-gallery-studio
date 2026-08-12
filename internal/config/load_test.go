@@ -223,6 +223,8 @@ func TestRuntimeWorkerConfigurationDefaultsAndOverrides(t *testing.T) {
 	values["MEDIA_TEMP_DISK_PAUSE_PERCENT"] = "70"
 	values["MEDIA_TEMP_DISK_CRITICAL_PERCENT"] = "85"
 	values["WORKER_METRICS_ADDR"] = ":19091"
+	values["PIC_GALLERY_ENV"] = "local"
+	values["VIDEO_ARTIFACT_ALLOW_LOOPBACK"] = "true"
 	writeRuntimeValuesForTest(t, path, values)
 
 	cfg, err = LoadRuntime(path)
@@ -240,6 +242,9 @@ func TestRuntimeWorkerConfigurationDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.Worker.MetricsAddr != ":19091" {
 		t.Fatalf("configured Worker metrics address = %q", cfg.Worker.MetricsAddr)
+	}
+	if !cfg.Worker.AllowLoopbackVideoArtifacts {
+		t.Fatal("local runtime did not enable the explicit loopback video artifact test option")
 	}
 }
 
@@ -269,6 +274,17 @@ func TestRuntimeWorkerConfigurationRejectsUnsafeValues(t *testing.T) {
 				t.Fatalf("LoadRuntime error = %v, want diagnostic containing %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestRuntimeRejectsLoopbackVideoArtifactsOutsideLocalEnvironments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	values := completeRuntimeValuesForTest()
+	values["PIC_GALLERY_ENV"] = "production"
+	values["VIDEO_ARTIFACT_ALLOW_LOOPBACK"] = "true"
+	writeRuntimeValuesForTest(t, path, values)
+	if _, err := LoadRuntime(path); err == nil || !strings.Contains(err.Error(), "VIDEO_ARTIFACT_ALLOW_LOOPBACK") {
+		t.Fatalf("LoadRuntime error = %v, want production loopback artifact rejection", err)
 	}
 }
 

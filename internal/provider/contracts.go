@@ -17,13 +17,16 @@ const (
 type TaskType string
 
 const (
-	TaskTypeTextToImage TaskType = "text_to_image"
-	TaskTypeImageEdit   TaskType = "image_edit"
+	TaskTypeTextToImage           TaskType = "text_to_image"
+	TaskTypeImageEdit             TaskType = "image_edit"
+	TaskTypeTextToVideo           TaskType = "text_to_video"
+	TaskTypeImageToVideo          TaskType = "image_to_video"
+	TaskTypeFirstLastFrameToVideo TaskType = "first_last_frame_to_video"
 )
 
 func IsSupportedTaskType(value string) bool {
 	switch TaskType(value) {
-	case TaskTypeTextToImage, TaskTypeImageEdit:
+	case TaskTypeTextToImage, TaskTypeImageEdit, TaskTypeTextToVideo, TaskTypeImageToVideo, TaskTypeFirstLastFrameToVideo:
 		return true
 	default:
 		return false

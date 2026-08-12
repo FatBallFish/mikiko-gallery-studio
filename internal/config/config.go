@@ -151,18 +151,19 @@ const (
 )
 
 type WorkerConfig struct {
-	MaxConcurrentTasks      int          `yaml:"max_concurrent_tasks"`
-	Roles                   []WorkerRole `yaml:"roles"`
-	ImageConcurrency        int          `yaml:"image_concurrency"`
-	VideoConcurrency        int          `yaml:"video_concurrency"`
-	MediaConcurrency        int          `yaml:"media_concurrency"`
-	CleanupConcurrency      int          `yaml:"cleanup_concurrency"`
-	FFmpegPath              string       `yaml:"ffmpeg_path"`
-	FFprobePath             string       `yaml:"ffprobe_path"`
-	TempDir                 string       `yaml:"temp_dir"`
-	TempDiskPausePercent    int          `yaml:"temp_disk_pause_percent"`
-	TempDiskCriticalPercent int          `yaml:"temp_disk_critical_percent"`
-	MetricsAddr             string       `yaml:"metrics_addr"`
+	MaxConcurrentTasks          int          `yaml:"max_concurrent_tasks"`
+	Roles                       []WorkerRole `yaml:"roles"`
+	ImageConcurrency            int          `yaml:"image_concurrency"`
+	VideoConcurrency            int          `yaml:"video_concurrency"`
+	MediaConcurrency            int          `yaml:"media_concurrency"`
+	CleanupConcurrency          int          `yaml:"cleanup_concurrency"`
+	FFmpegPath                  string       `yaml:"ffmpeg_path"`
+	FFprobePath                 string       `yaml:"ffprobe_path"`
+	TempDir                     string       `yaml:"temp_dir"`
+	TempDiskPausePercent        int          `yaml:"temp_disk_pause_percent"`
+	TempDiskCriticalPercent     int          `yaml:"temp_disk_critical_percent"`
+	MetricsAddr                 string       `yaml:"metrics_addr"`
+	AllowLoopbackVideoArtifacts bool         `yaml:"allow_loopback_video_artifacts"`
 }
 
 func (cfg WorkerConfig) HasRole(role WorkerRole) bool {

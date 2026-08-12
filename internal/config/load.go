@@ -253,6 +253,7 @@ func configFromRuntimeValues(fileEnv map[string]string) Config {
 	cfg.Worker.TempDiskPausePercent = envInt(fileEnv, "MEDIA_TEMP_DISK_PAUSE_PERCENT", 0)
 	cfg.Worker.TempDiskCriticalPercent = envInt(fileEnv, "MEDIA_TEMP_DISK_CRITICAL_PERCENT", 0)
 	cfg.Worker.MetricsAddr = envString(fileEnv, "WORKER_METRICS_ADDR", "")
+	cfg.Worker.AllowLoopbackVideoArtifacts = envBool(fileEnv, "VIDEO_ARTIFACT_ALLOW_LOOPBACK", false)
 	cfg.HTTP.CORSAllowedOrigins = envCSV(fileEnv, "CORS_ALLOWED_ORIGINS")
 
 	cfg.Providers.OpenAI.Enabled = envBool(fileEnv, "OPENAI_ENABLED", false)
@@ -613,6 +614,9 @@ func envCSV(fileEnv map[string]string, key string) []string {
 func validateEnvConfig(cfg Config) error {
 	if strings.TrimSpace(cfg.Database.URL) == "" && !isLocalLikeEnv(cfg.App.Env) {
 		return fmt.Errorf("DATABASE_URL must be configured in %s env", cfg.App.Env)
+	}
+	if cfg.Worker.AllowLoopbackVideoArtifacts && !isLocalLikeEnv(cfg.App.Env) {
+		return fmt.Errorf("VIDEO_ARTIFACT_ALLOW_LOOPBACK is only allowed in local or test environments")
 	}
 	if cfg.Worker.TempDiskCriticalPercent <= cfg.Worker.TempDiskPausePercent {
 		return fmt.Errorf("media temporary disk critical watermark must be greater than pause watermark")
