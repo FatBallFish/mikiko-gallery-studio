@@ -53,8 +53,9 @@ type DeleteRequest struct {
 }
 
 type OwnershipCounts struct {
-	Tasks  int `json:"tasks"`
-	Assets int `json:"assets"`
+	Tasks    int `json:"tasks"`
+	Assets   int `json:"assets"`
+	Canvases int `json:"canvases,omitempty"`
 }
 
 type DeleteResult struct {

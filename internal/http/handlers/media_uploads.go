@@ -30,6 +30,10 @@ func (a *API) HandleMediaUploads(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
+	if appErr := a.requireFeature(r.Context(), "media_upload"); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
 	var body struct {
 		ProjectID string `json:"project_id"`
 		GroupName string `json:"group_name"`

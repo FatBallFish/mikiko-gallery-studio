@@ -219,6 +219,15 @@ func defaultDefinitions(cfg config.Config) []tabDefinition {
 
 	return []tabDefinition{
 		{
+			Key:  "site",
+			Name: "Site",
+			Items: []domainadminconfig.Item{
+				valueItem("features", "video_creation", false),
+				valueItem("features", "creative_canvas", false),
+				valueItem("features", "media_upload", false),
+			},
+		},
+		{
 			Key:  "auth_security",
 			Name: "Auth & Security",
 			Items: []domainadminconfig.Item{

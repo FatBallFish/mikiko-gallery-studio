@@ -16,6 +16,7 @@ var (
 	ErrProjectChanged      = errors.New("project changed")
 	ErrIdempotencyConflict = errors.New("idempotency key already used for another project")
 	ErrInvalid             = errors.New("invalid project request")
+	ErrCanvasBusy          = errors.New("project contains canvas with active generation runs")
 )
 
 type NonEmptyError struct {

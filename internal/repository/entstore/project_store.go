@@ -11,6 +11,8 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/canvasgenerationrun"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvas"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
@@ -245,7 +247,18 @@ func (s *ProjectStore) Delete(ctx context.Context, userID int64, projectID strin
 	if err != nil {
 		return domainproject.DeleteResult{}, err
 	}
-	if counts.Tasks+counts.Assets > 0 && req.TargetProjectID == "" {
+	activeCanvas, err := tx.CreativeCanvas.Query().Where(creativecanvas.UserIDEQ(userID), creativecanvas.ProjectIDEQ(sourceID), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil(), creativecanvas.RunningTaskCountGT(0)).Exist(ctx)
+	if err != nil {
+		return domainproject.DeleteResult{}, fmt.Errorf("check project canvas counters: %w", err)
+	}
+	activeRun, err := tx.CanvasGenerationRun.Query().Where(canvasgenerationrun.UserIDEQ(userID), canvasgenerationrun.StatusIn("submitting", "queued", "running", "saving"), canvasgenerationrun.HasCanvasWith(creativecanvas.ProjectIDEQ(sourceID), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil())).Exist(ctx)
+	if err != nil {
+		return domainproject.DeleteResult{}, fmt.Errorf("check project canvas runs: %w", err)
+	}
+	if activeCanvas || activeRun {
+		return domainproject.DeleteResult{}, projectservice.ErrCanvasBusy
+	}
+	if counts.Tasks+counts.Assets+counts.Canvases > 0 && req.TargetProjectID == "" {
 		return domainproject.DeleteResult{}, &projectservice.NonEmptyError{Counts: counts}
 	}
 	sourceBefore := mapProjectEntity(source)
@@ -256,6 +269,9 @@ func (s *ProjectStore) Delete(ctx context.Context, userID int64, projectID strin
 		}
 		if _, err := tx.ImageResult.Update().Where(imageresult.UserIDEQ(userID), imageresult.ProjectIDEQ(sourceID)).SetProjectID(targetID).Save(ctx); err != nil {
 			return domainproject.DeleteResult{}, fmt.Errorf("transfer project assets: %w", err)
+		}
+		if _, err := tx.CreativeCanvas.Update().Where(creativecanvas.UserIDEQ(userID), creativecanvas.ProjectIDEQ(sourceID), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil()).SetProjectID(targetID).AddMetadataVersion(1).SetLastTransferredAt(time.Now().UTC()).Save(ctx); err != nil {
+			return domainproject.DeleteResult{}, fmt.Errorf("transfer project canvases: %w", err)
 		}
 	}
 	now := time.Now().UTC()
@@ -277,7 +293,7 @@ func (s *ProjectStore) Delete(ctx context.Context, userID int64, projectID strin
 	}
 	sourceAfter := mapProjectEntity(deleted)
 	metadata := map[string]any{
-		"tasks": counts.Tasks, "assets": counts.Assets,
+		"tasks": counts.Tasks, "assets": counts.Assets, "canvases": counts.Canvases,
 		"source_before": sourceBefore, "source_after": sourceAfter,
 		"request_id": req.RequestID, "idempotency_key": req.IdempotencyKey,
 	}
@@ -353,7 +369,11 @@ func countProjectOwnership(ctx context.Context, tx *repoent.Tx, userID int64, pr
 	if err != nil {
 		return domainproject.OwnershipCounts{}, fmt.Errorf("count project assets: %w", err)
 	}
-	return domainproject.OwnershipCounts{Tasks: tasks, Assets: assets}, nil
+	canvases, err := tx.CreativeCanvas.Query().Where(creativecanvas.UserIDEQ(userID), creativecanvas.ProjectIDEQ(projectID), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil()).Count(ctx)
+	if err != nil {
+		return domainproject.OwnershipCounts{}, fmt.Errorf("count project canvases: %w", err)
+	}
+	return domainproject.OwnershipCounts{Tasks: tasks, Assets: assets, Canvases: canvases}, nil
 }
 
 func countProjectOwnershipClient(ctx context.Context, client *repoent.Client, userID int64, projectID uuid.UUID) (domainproject.OwnershipCounts, error) {
@@ -365,7 +385,11 @@ func countProjectOwnershipClient(ctx context.Context, client *repoent.Client, us
 	if err != nil {
 		return domainproject.OwnershipCounts{}, fmt.Errorf("count project assets: %w", err)
 	}
-	return domainproject.OwnershipCounts{Tasks: tasks, Assets: assets}, nil
+	canvases, err := client.CreativeCanvas.Query().Where(creativecanvas.UserIDEQ(userID), creativecanvas.ProjectIDEQ(projectID), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil()).Count(ctx)
+	if err != nil {
+		return domainproject.OwnershipCounts{}, fmt.Errorf("count project canvases: %w", err)
+	}
+	return domainproject.OwnershipCounts{Tasks: tasks, Assets: assets, Canvases: canvases}, nil
 }
 
 type projectOwnershipCountRow struct {
