@@ -26,6 +26,23 @@ DO $$
 BEGIN
     PERFORM pg_advisory_xact_lock(hashtext('pic-gallery:prepare-legacy-data'));
 
+    IF to_regclass(current_schema() || '.model_accounts') IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'model_accounts'
+              AND column_name = 'public_id'
+        ) THEN
+            ALTER TABLE model_accounts ADD COLUMN public_id uuid;
+        END IF;
+
+        UPDATE model_accounts
+        SET public_id = md5(
+            random()::text || clock_timestamp()::text || id::text
+        )::uuid
+        WHERE public_id IS NULL;
+    END IF;
+
     IF to_regclass(current_schema() || '.image_tasks') IS NOT NULL THEN
         IF to_regclass(current_schema() || '.public_image_interactions') IS NOT NULL
            AND to_regclass(current_schema() || '.task_images') IS NOT NULL THEN
