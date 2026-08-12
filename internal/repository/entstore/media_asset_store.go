@@ -416,9 +416,9 @@ func sortMediaAssets(items []mediaassetservice.Asset, sortBy, sortOrder string) 
 		switch strings.ToLower(strings.TrimSpace(sortBy)) {
 		case "name":
 			comparison = strings.Compare(strings.ToLower(left.Name), strings.ToLower(right.Name))
-		case "size":
+		case "size", "file_size_bytes":
 			comparison = compareInt64(left.FileSizeBytes, right.FileSizeBytes)
-		case "duration":
+		case "duration", "duration_ms":
 			comparison = compareInt64(pointerInt64Value(left.DurationMS), pointerInt64Value(right.DurationMS))
 		default:
 			if left.CreatedAt.Before(right.CreatedAt) {

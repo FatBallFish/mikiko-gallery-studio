@@ -5,7 +5,13 @@ import {
   mediaCreationActions,
   reconcileBatchSelection,
   withSingleAccessRefresh,
+  buildMediaAssetQuery,
 } from './mediaExperience'
+
+const publicSortQuery = buildMediaAssetQuery('project-a', { mediaType: '', sourceType: '', groupName: '', status: '', keyword: '', sort: 'duration_ms:desc' })
+if (publicSortQuery.sort_by !== 'duration_ms') throw new Error('public duration sort field must reach the API query')
+const fallbackSortQuery = buildMediaAssetQuery('project-a', { mediaType: '', sourceType: '', groupName: '', status: '', keyword: '', sort: 'unsupported:asc' })
+if (fallbackSortQuery.sort_by !== 'created_at' || fallbackSortQuery.sort_order !== 'asc') throw new Error('unknown sort fields must fall back to created_at without changing direction')
 
 const projectScope = createMediaProjectScope('project-a')
 const firstRequest = projectScope.begin('project-a')

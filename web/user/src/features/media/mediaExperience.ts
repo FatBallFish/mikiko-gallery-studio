@@ -45,7 +45,11 @@ export function createMediaProjectScope(initialProjectID: string) {
 }
 
 export function buildMediaAssetQuery(projectID: string, filters: MediaFilterValues, cursor?: string): MediaAssetFilters {
-  const [sortBy = 'created_at', sortOrder = 'desc'] = filters.sort.split(':')
+  const [requestedSortBy = 'created_at', sortOrder = 'desc'] = filters.sort.split(':')
+  const supportedSortFields = new Set<NonNullable<MediaAssetFilters['sort_by']>>(['created_at', 'updated_at', 'name', 'file_size_bytes', 'duration_ms'])
+  const sortBy: NonNullable<MediaAssetFilters['sort_by']> = supportedSortFields.has(requestedSortBy as NonNullable<MediaAssetFilters['sort_by']>)
+    ? requestedSortBy as NonNullable<MediaAssetFilters['sort_by']>
+    : 'created_at'
   return {
     project_id: projectID,
     media_type: filters.mediaType,

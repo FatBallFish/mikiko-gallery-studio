@@ -701,7 +701,7 @@ export type MediaAssetFilters = {
   group_name?: string
   status?: string
   keyword?: string
-  sort_by?: 'created_at' | 'updated_at' | 'name' | 'file_size_bytes' | string
+  sort_by?: 'created_at' | 'updated_at' | 'name' | 'file_size_bytes' | 'duration_ms'
   sort_order?: 'asc' | 'desc'
   cursor?: string
   limit?: number
