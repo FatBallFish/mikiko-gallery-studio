@@ -204,6 +204,8 @@ func TestWorkerBootstrapErrorsDoNotExposeLoaderSecrets(t *testing.T) {
 }
 
 func TestWorkerNormalStartupVerifiesCompletedBindingBeforeRuntimeServices(t *testing.T) {
+	t.Setenv("PATH", "")
+
 	client, err := repoent.Open(dialect.SQLite, "file:worker-binding-order?mode=memory&cache=shared&_fk=1")
 	if err != nil {
 		t.Fatalf("open test client: %v", err)

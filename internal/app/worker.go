@@ -71,9 +71,6 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	if err := validateStorageTopology(cfg); err != nil {
 		return err
 	}
-	if err := validateWorkerRuntime(cfg.Worker, workerRuntimeChecks{}); err != nil {
-		return err
-	}
 	if options.dependencyTimeout <= 0 {
 		options.dependencyTimeout = 15 * time.Second
 	}
@@ -103,6 +100,9 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 		if err := options.verifyCompletedBinding(startupContext, startup); err != nil {
 			return fmt.Errorf("verify completed setup binding: %w", err)
 		}
+	}
+	if err := validateWorkerRuntime(cfg.Worker, workerRuntimeChecks{}); err != nil {
+		return err
 	}
 	redisClient, err := newRedisClient(startupContext, cfg)
 	if err != nil {
