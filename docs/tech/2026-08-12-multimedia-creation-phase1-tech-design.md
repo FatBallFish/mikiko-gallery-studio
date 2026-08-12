@@ -1497,10 +1497,10 @@ Redis 故障时：任务照常通过 DB 调度；SSE 退化为轮询；并发控
 
 1. **Schema 阶段**：先新增所有表/默认字段，旧代码可继续运行；功能开关关闭。
 2. **兼容投影阶段**：Media Service 查询 `media_assets`，同时把尚未迁移的 `task_images` 投影为只读 image asset。返回稳定 asset ID 等于原 image result UUID。
-3. **后台回填阶段**：按 `(created_at, id)` 游标批量把 `task_images` 元数据插入 `media_assets`，`legacy_image_result_id=id`，复用原 storage config/driver/object key，不读取和复制对象正文。使用 migration checkpoint，可暂停、重试和限速。
+3. **启动后自动回填阶段**：启用 `cleanup` 角色的 Worker 在完成 schema 与 setup binding 校验、进入正常运行阶段后，按 `(created_at, id)` 游标分批把 `task_images` 元数据插入 `media_assets`，`legacy_image_result_id=id`，复用原 storage config/driver/object key，不读取和复制对象正文。回填不阻塞 API/Worker readiness；使用 migration checkpoint，可暂停、重试和限速。单批异常由 Worker 记录并退避重试，不终止其他角色。
 4. **新图片同步阶段**：新版图片结果持久化必须在同一个 Ent/PostgreSQL 事务内同时写入 `task_images` 和对应 `media_assets`，两者使用同一 UUID；任一写入失败则整笔回滚。滚动升级期间旧 Worker 只写 `task_images` 的窗口由兼容投影即时读取，并由同一幂等回填器补齐，不引入“写表成功但内存事件丢失”的非持久化双写。`task_images` 本期保留为图片任务结果记录，`media_assets` 成为资产管理与项目归属的真相源。
 
-回填必须使用 `INSERT ... ON CONFLICT DO NOTHING` 幂等；校验数量、按存储配置聚合字节、随机抽样 object key 和 project/user 一致性。迁移期间禁止仅按 task.project_id 推导资产项目，必须以 `task_images.project_id` 为准，避免重现历史图片迁移后的归属错误。
+回填必须使用 `INSERT ... ON CONFLICT DO NOTHING` 幂等；checkpoint 行在事务中加锁，使多个 `cleanup` Worker 的单批处理串行化。处理到完成态后进入低频复查，发现滚动升级期间新增的未映射历史记录时自动重开 checkpoint。校验数量、按存储配置聚合字节、随机抽样 object key 和 project/user 一致性。迁移期间禁止仅按 task.project_id 推导资产项目，必须以 `task_images.project_id` 为准，避免重现历史图片迁移后的归属错误。独立 `media-backfill` 命令仅保留 dry-run、verify 和故障诊断用途，正常发布与升级流程不得要求人工执行。
 
 现有引用图片别名兼容：
 

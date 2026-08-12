@@ -16,6 +16,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 )
 
@@ -286,15 +287,25 @@ func mediaAssetCheckpointCursor(ctx context.Context, client *repoent.Client, che
 }
 
 func mediaAssetBackfillHasPendingSources(ctx context.Context, client *repoent.Client) (bool, error) {
-	sources, err := client.ImageResult.Query().Where(imageresult.DeletedAtIsNil()).Count(ctx)
+	pending, err := client.ImageResult.Query().Where(
+		imageresult.DeletedAtIsNil(),
+		missingMediaAssetBackfillTarget(),
+	).Exist(ctx)
 	if err != nil {
-		return false, fmt.Errorf("count media asset backfill sources: %w", err)
+		return false, fmt.Errorf("query pending media asset backfill sources: %w", err)
 	}
-	targets, err := client.MediaAsset.Query().Where(mediaasset.LegacyImageResultIDNotNil(), mediaasset.DeletedAtIsNil()).Count(ctx)
-	if err != nil {
-		return false, fmt.Errorf("count media asset backfill targets: %w", err)
+	return pending, nil
+}
+
+func missingMediaAssetBackfillTarget() predicate.ImageResult {
+	return func(source *entsql.Selector) {
+		assets := entsql.Table(mediaasset.Table)
+		mapped := entsql.Select(assets.C(mediaasset.FieldID)).From(assets).Where(entsql.And(
+			entsql.IsNull(assets.C(mediaasset.FieldDeletedAt)),
+			entsql.ColumnsEQ(assets.C(mediaasset.FieldLegacyImageResultID), source.C(imageresult.FieldID)),
+		))
+		source.Where(entsql.NotExists(mapped))
 	}
-	return sources > targets, nil
 }
 
 func lockMediaAssetBackfillCheckpoint() func(*entsql.Selector) {

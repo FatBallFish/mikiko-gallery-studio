@@ -14,6 +14,8 @@ func TestMetricsExposeBoundedMultimediaOperations(t *testing.T) {
 	metrics.RecordUpload("complete", "success", 8192)
 	metrics.RecordDerivative("proxy", "success", 2048)
 	metrics.RecordCanvasSave("success")
+	metrics.RecordMediaAssetBackfill("processed")
+	metrics.RecordMediaAssetBackfill("completed")
 	metrics.SetTemporaryDisk(76, 10<<30)
 	metrics.AddObjectBytes("written", 6144)
 
@@ -27,6 +29,8 @@ func TestMetricsExposeBoundedMultimediaOperations(t *testing.T) {
 		`pic_gallery_upload_bytes_total{stage="complete",result="success"} 8192`,
 		`pic_gallery_media_derivative_bytes_total{kind="proxy",result="success"} 2048`,
 		`pic_gallery_canvas_save_total{result="success"} 1`,
+		`pic_gallery_media_asset_backfill_total{result="completed"} 1`,
+		`pic_gallery_media_asset_backfill_total{result="processed"} 1`,
 		`pic_gallery_worker_temporary_disk_used_percent 76`,
 		`pic_gallery_worker_temporary_disk_free_bytes 10737418240`,
 		`pic_gallery_object_bytes_total{operation="written"} 6144`,
@@ -40,10 +44,11 @@ func TestMetricsExposeBoundedMultimediaOperations(t *testing.T) {
 func TestMetricsNormalizeUnknownLabels(t *testing.T) {
 	metrics := NewMetrics()
 	metrics.RecordVideoStage("task-secret-123", "credential-secret")
+	metrics.RecordMediaAssetBackfill("asset-secret-123")
 	recorder := httptest.NewRecorder()
 	metrics.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", "/metrics", nil))
 	body := recorder.Body.String()
-	if strings.Contains(body, "secret") || !strings.Contains(body, `stage="unknown",result="unknown"`) {
+	if strings.Contains(body, "secret") || !strings.Contains(body, `stage="unknown",result="unknown"`) || !strings.Contains(body, `pic_gallery_media_asset_backfill_total{result="unknown"} 1`) {
 		t.Fatalf("unbounded label exposed: %s", body)
 	}
 }
