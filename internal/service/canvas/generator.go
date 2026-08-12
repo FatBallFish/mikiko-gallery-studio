@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	domaincanvas "github.com/fatballfish/pic-gallery/internal/domain/canvas"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
@@ -216,9 +219,20 @@ func imageRequest(submission GenerationSubmission) (domainimagetask.CreateReques
 		return domainimagetask.CreateRequest{}, fmt.Errorf("decode image generation node: %w", err)
 	}
 	request := domainimagetask.CreateRequest{AbstractModel: draft.AbstractModel, RouteModelCode: draft.RouteModelCode, TaskType: draft.TaskType, Prompt: draft.Prompt, PromptTemplate: draft.PromptTemplate, NegativePrompt: draft.NegativePrompt, SizeMode: draft.SizeMode, RequestedSize: draft.RequestedSize, BaseResolution: draft.BaseResolution, Quality: draft.Quality, OutputFormat: draft.OutputFormat, Background: draft.Background, OutputCompression: draft.OutputCompression, Moderation: draft.Moderation, AspectRatio: draft.AspectRatio, OutputImageCount: draft.OutputImageCount, ReferenceStrength: draft.ReferenceStrength, Seed: draft.Seed, ResponseMode: draft.ResponseMode, SavePolicy: draft.SavePolicy, CapabilityVersion: draft.CapabilityVersion}
-	if prompt := promptFromInputs(submission.Inputs); prompt != "" {
-		request.Prompt = prompt
-		request.PromptTemplate = prompt
+	prompt, err := promptFromInputs(submission)
+	if err != nil {
+		return request, err
+	}
+	if prompt.Template != "" {
+		request.Prompt = prompt.Template
+		request.PromptTemplate = prompt.Template
+		request.PromptVariables = make([]domainimagetask.PromptVariableInput, 0, len(prompt.VariableNames))
+		for _, name := range prompt.VariableNames {
+			if strings.TrimSpace(prompt.Variables[name]) == "" {
+				return request, fmt.Errorf("prompt variable %q is not filled", name)
+			}
+			request.PromptVariables = append(request.PromptVariables, domainimagetask.PromptVariableInput{Name: name, Value: prompt.Variables[name]})
+		}
 	}
 	if request.TaskType == "" {
 		request.TaskType = "text_to_image"
@@ -246,6 +260,14 @@ func imageRequest(submission GenerationSubmission) (domainimagetask.CreateReques
 		}
 	}
 	request.ReferenceImageCount = len(request.ReferenceAssetIDs)
+	bindings, err := promptReferenceBindings(prompt.ReferenceNames, submission.Inputs)
+	if err != nil {
+		return request, err
+	}
+	request.ReferenceBindings = make([]domainimagetask.PromptReferenceInput, 0, len(bindings))
+	for _, binding := range bindings {
+		request.ReferenceBindings = append(request.ReferenceBindings, domainimagetask.PromptReferenceInput{Name: binding.Name, AssetID: binding.AssetID})
+	}
 	return request, nil
 }
 
@@ -260,8 +282,19 @@ func videoRequest(submission GenerationSubmission) (videotaskservice.CreateReque
 	request.SourceChannel = "canvas"
 	request.SourceCanvasID = &submission.CanvasID
 	request.SourceCanvasNodeID = submission.NodeID
-	if prompt := promptFromInputs(submission.Inputs); prompt != "" {
-		request.PromptTemplate = prompt
+	prompt, err := promptFromInputs(submission)
+	if err != nil {
+		return request, err
+	}
+	if prompt.Template != "" {
+		request.PromptTemplate = prompt.Template
+		request.PromptVariables = make([]videotaskservice.VariableBinding, 0, len(prompt.VariableNames))
+		for _, name := range prompt.VariableNames {
+			if strings.TrimSpace(prompt.Variables[name]) == "" {
+				return request, fmt.Errorf("prompt variable %q is not filled", name)
+			}
+			request.PromptVariables = append(request.PromptVariables, videotaskservice.VariableBinding{Name: name, Value: prompt.Variables[name]})
+		}
 	}
 	request.Inputs = request.Inputs[:0]
 	for _, input := range submission.Inputs {
@@ -278,6 +311,18 @@ func videoRequest(submission GenerationSubmission) (videotaskservice.CreateReque
 		}
 		request.Inputs = append(request.Inputs, videotaskservice.InputRequest{AssetID: assetID, Role: role, Ordinal: input.Ordinal})
 	}
+	bindings, err := promptReferenceBindings(prompt.ReferenceNames, submission.Inputs)
+	if err != nil {
+		return request, err
+	}
+	request.ReferenceBindings = make([]videotaskservice.ReferenceBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		assetID, parseErr := uuid.Parse(binding.AssetID)
+		if parseErr != nil {
+			return request, fmt.Errorf("invalid prompt reference asset id: %w", parseErr)
+		}
+		request.ReferenceBindings = append(request.ReferenceBindings, videotaskservice.ReferenceBinding{Name: binding.Name, AssetID: assetID})
+	}
 	return request, nil
 }
 
@@ -291,26 +336,107 @@ func generationDraft(payload json.RawMessage) json.RawMessage {
 	return payload
 }
 
-func promptFromInputs(inputs []GenerationInput) string {
+type selectedPrompt struct {
+	Template       string
+	Variables      map[string]string
+	VariableNames  []string
+	ReferenceNames []string
+}
+
+func promptFromInputs(submission GenerationSubmission) (selectedPrompt, error) {
+	var envelope struct {
+		ActivePromptNodeID string `json:"active_prompt_node_id"`
+	}
+	if err := json.Unmarshal(submission.Node.Payload, &envelope); err != nil {
+		return selectedPrompt{}, fmt.Errorf("decode generation node prompt selection: %w", err)
+	}
+	prompts := make([]GenerationInput, 0, 1)
+	for _, input := range submission.Inputs {
+		if input.Role == domaincanvas.InputRolePrompt {
+			prompts = append(prompts, input)
+		}
+	}
+	if len(prompts) == 0 {
+		return selectedPrompt{}, nil
+	}
+	if len(prompts) > 1 && envelope.ActivePromptNodeID == "" {
+		return selectedPrompt{}, errors.New("image generation node must select one connected prompt")
+	}
+	selected := prompts[0]
+	if envelope.ActivePromptNodeID != "" {
+		found := false
+		for _, input := range prompts {
+			if input.Node.ID == envelope.ActivePromptNodeID {
+				selected, found = input, true
+				break
+			}
+		}
+		if !found {
+			return selectedPrompt{}, errors.New("selected prompt is not connected to the generation node")
+		}
+	}
+	var payload struct {
+		Text      string            `json:"text"`
+		Prompt    string            `json:"prompt"`
+		Template  string            `json:"template"`
+		Variables map[string]string `json:"variables"`
+	}
+	if err := json.Unmarshal(selected.Node.Payload, &payload); err != nil {
+		return selectedPrompt{}, fmt.Errorf("decode selected prompt node: %w", err)
+	}
+	result := selectedPrompt{Variables: payload.Variables}
+	for _, value := range []string{payload.Template, payload.Prompt, payload.Text} {
+		if value != "" {
+			result.Template = value
+			break
+		}
+	}
+	if result.Template == "" {
+		return result, nil
+	}
+	document, err := prompttemplate.Parse(result.Template, prompttemplate.DefaultLimits())
+	if err != nil {
+		return selectedPrompt{}, fmt.Errorf("parse selected prompt template: %w", err)
+	}
+	result.Template = document.Canonical
+	result.VariableNames = document.VariableNames
+	result.ReferenceNames = document.ReferenceNames
+	return result, nil
+}
+
+func promptReferenceBindings(names []string, inputs []GenerationInput) ([]prompttemplate.ReferenceBinding, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	assetsByName := make(map[string]string)
 	for _, input := range inputs {
-		if input.Role != "prompt" {
+		if input.Role != domaincanvas.InputRoleReference && input.Role != domaincanvas.InputRoleFirstFrame && input.Role != domaincanvas.InputRoleLastFrame {
 			continue
 		}
 		var payload struct {
-			Text     string `json:"text"`
-			Prompt   string `json:"prompt"`
-			Template string `json:"template"`
+			Name string `json:"name"`
 		}
-		if json.Unmarshal(input.Node.Payload, &payload) != nil {
+		if json.Unmarshal(input.Node.Payload, &payload) != nil || payload.Name == "" || input.Node.AssetID == "" {
 			continue
 		}
-		for _, value := range []string{payload.Template, payload.Prompt, payload.Text} {
-			if value != "" {
-				return value
-			}
+		name, err := prompttemplate.NormalizeName(payload.Name, prompttemplate.DefaultLimits().MaxNameRunes)
+		if err != nil {
+			continue
 		}
+		if existing, exists := assetsByName[name]; exists && existing != input.Node.AssetID {
+			return nil, fmt.Errorf("multiple connected assets are named %q", name)
+		}
+		assetsByName[name] = input.Node.AssetID
 	}
-	return ""
+	bindings := make([]prompttemplate.ReferenceBinding, 0, len(names))
+	for _, name := range names {
+		assetID := assetsByName[name]
+		if assetID == "" {
+			return nil, fmt.Errorf("prompt reference %q has no connected asset with the same name", name)
+		}
+		bindings = append(bindings, prompttemplate.ReferenceBinding{Name: name, AssetID: assetID})
+	}
+	return bindings, nil
 }
 
 func imageRunStatus(status string) RunStatus {

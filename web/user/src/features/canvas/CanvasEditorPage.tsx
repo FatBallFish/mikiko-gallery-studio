@@ -14,6 +14,7 @@ import { userHashForRoute } from '../../routeState'
 import { MediaPreviewDialog } from '../media/MediaPreviewDialog'
 import { mediaCreationActions } from '../media/mediaExperience'
 import { promptVariableNames } from '../../pages/promptTemplateEditorModel'
+import { parsePromptTemplate } from '../../pages/promptTemplateParser'
 import { computeCanvasBounds, fitCanvasViewport, minimapGeometry, visibleCanvasNodeIDs } from './core/canvasLayout'
 import { compatibleCanvasTargets, inspectCanvasConnection, selectCanvasNodesInRect } from './core/canvasState'
 import type { CanvasDocument, CanvasEdge, CanvasNode, CanvasNodeType, CanvasViewport } from './core/types'
@@ -32,6 +33,14 @@ type PinchState = { distance: number; center: { x: number; y: number }; viewport
 type ConnectionDraft = { pointerID: number; sourceID: string; point: { x: number; y: number }; targetID: string; error: string | null }
 type NodeMenuState = { point: { x: number; y: number }; sourceID?: string; options: Array<{ type: CanvasNodeType; role?: CanvasEdge['input_role'] }> }
 type NodeEstimate = { points: string; detail?: Record<string, unknown>; documentSignature: string }
+type GenerationInputSummary = {
+  prompts: number
+  images: number
+  promptNodes: CanvasNode[]
+  selectedPromptID: string
+  referenceBindings: Array<{ name: string; assetName?: string; assetID?: string }>
+  errors: string[]
+}
 
 const nodeLabels: Record<CanvasNodeType, string> = {
   prompt: '提示词', image: '图片资产', video: '视频资产', audio: '音频资产', image_generation: '图片生成', video_generation: '视频生成', note: '便签',
@@ -569,7 +578,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
 
 function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, run, estimate, busy, imageCapability, videoCapability, balance, inputSummary, onSelect, onDrag, onDragEnd, onStartConnection, onFinishConnection, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onMediaDetail, onContinueImage, onContinueVideo, onReuseVideo }: {
   node: CanvasNode; selected: boolean; readOnly: boolean; connecting: boolean; connectValid: boolean; connectInvalid: boolean; run?: CanvasRun; estimate?: NodeEstimate; busy: boolean
-  imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: { prompts: number; images: number; errors: string[] }
+  imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary
   onSelect: (event: React.PointerEvent<HTMLElement>) => void; onDrag: (event: React.PointerEvent<HTMLElement>) => void; onDragEnd: () => void
   onStartConnection: (event: React.PointerEvent<HTMLButtonElement>) => void; onFinishConnection: (event: React.PointerEvent<HTMLButtonElement>) => void
   onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void
@@ -590,7 +599,7 @@ function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, co
   </article>
 }
 
-function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapability, videoCapability, balance, inputSummary, onUpdate, onEstimate, onGenerate, onAttach, onCancel }: { node: CanvasNode; run?: CanvasRun; estimate?: NodeEstimate; busy: boolean; readOnly: boolean; imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: { prompts: number; images: number; errors: string[] }; onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void }) {
+function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapability, videoCapability, balance, inputSummary, onUpdate, onEstimate, onGenerate, onAttach, onCancel }: { node: CanvasNode; run?: CanvasRun; estimate?: NodeEstimate; busy: boolean; readOnly: boolean; imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void }) {
   const draft = asObject(node.payload?.draft)
   const active = run && activeRunStatuses.has(run.status)
   const recoverable = run?.status === 'succeeded' || run?.status === 'unplaced'
@@ -627,6 +636,11 @@ function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapabili
       <label>比例<select disabled={readOnly} value={String(draft.aspect_ratio ?? videoModel?.defaults.aspect_ratio ?? '')} onChange={(event) => patchDraft({ aspect_ratio: event.target.value })}>{(videoOptions?.aspect_ratios ?? []).map((value) => <option key={value}>{value}</option>)}</select></label>
     </>}
     <label>生成数量<select disabled={readOnly} value={String(draft.output_count ?? draft.output_image_count ?? 1)} onChange={(event) => patchDraft({ output_count: Number(event.target.value), output_image_count: Number(event.target.value) })}>{Array.from({ length: countMax }, (_, index) => index + 1).map((value) => <option key={value}>{value}</option>)}</select></label>
+    {inputSummary.promptNodes.length ? <label>提示词来源<select disabled={readOnly || inputSummary.promptNodes.length === 1} value={inputSummary.selectedPromptID} onChange={(event) => onUpdate({ active_prompt_node_id: event.target.value })}>
+      {inputSummary.promptNodes.length > 1 && !inputSummary.selectedPromptID ? <option value="">请选择提示词</option> : null}
+      {inputSummary.promptNodes.map((prompt) => <option key={prompt.id} value={prompt.id}>{String(prompt.payload?.title ?? prompt.payload?.text ?? prompt.id).slice(0, 36)}</option>)}
+    </select></label> : null}
+    {inputSummary.referenceBindings.length ? <div className="canvas-generation-bindings"><strong>资源绑定</strong>{inputSummary.referenceBindings.map((binding) => <span key={binding.name} data-valid={Boolean(binding.assetID)}><b>@{binding.name}</b><i>{binding.assetName ?? '未关联同名资产'}</i></span>)}</div> : null}
     <div className="canvas-generation-inputs">提示词 {inputSummary.prompts} · 图片 {inputSummary.images}</div>
     {inputSummary.errors.length ? <div className="canvas-generation-errors" role="alert">{inputSummary.errors.join('；')}</div> : null}
     <div className="canvas-generation-estimate"><span>{estimate ? '预计积分' : '当前余额'}</span><strong>{estimate?.points ?? balance}</strong></div>
@@ -725,17 +739,44 @@ function addAssetNode(store: ReturnType<typeof createCanvasStore>, asset: MediaA
   const size = asset.media_type === 'audio' ? { width: 280, height: 140 } : asset.media_type === 'video' ? { width: 320, height: 200 } : { width: 280, height: 220 }
   store.getState().addNode({ id: `${asset.media_type}-${crypto.randomUUID().slice(0, 8)}`, type: asset.media_type, asset_id: asset.id, position: { x: position.x - size.width / 2, y: position.y - size.height / 2 }, size, payload: { name: asset.name, mime_type: asset.mime_type, width: asset.width, height: asset.height, duration_ms: asset.duration_ms, source_type: asset.source_type, source_task_kind: asset.source_task_kind, source_task_id: asset.source_task_id } })
 }
-function generationInputSummary(node: CanvasNode, document: CanvasDocument) {
-  if (node.type !== 'image_generation' && node.type !== 'video_generation') return { prompts: 0, images: 0, errors: [] }
+function generationInputSummary(node: CanvasNode, document: CanvasDocument): GenerationInputSummary {
+  if (node.type !== 'image_generation' && node.type !== 'video_generation') return { prompts: 0, images: 0, promptNodes: [], selectedPromptID: '', referenceBindings: [], errors: [] }
   const incoming = document.edges.filter((edge) => edge.target === node.id)
-  const prompts = incoming.filter((edge) => edge.input_role === 'prompt').length
-  const images = incoming.filter((edge) => ['reference', 'first_frame', 'last_frame'].includes(edge.input_role)).length
+  const nodeByID = new Map(document.nodes.map((item) => [item.id, item]))
+  const promptNodes = incoming.filter((edge) => edge.input_role === 'prompt').map((edge) => nodeByID.get(edge.source)).filter((item): item is CanvasNode => Boolean(item))
+  const imageNodes = incoming.filter((edge) => ['reference', 'first_frame', 'last_frame'].includes(edge.input_role)).map((edge) => nodeByID.get(edge.source)).filter((item): item is CanvasNode => Boolean(item))
+  const prompts = promptNodes.length
+  const images = imageNodes.length
   const errors: string[] = []
   const draft = asObject(node.payload?.draft)
+  const configuredPromptID = String(node.payload?.active_prompt_node_id ?? '')
+  const selectedPromptID = promptNodes.some((item) => item.id === configuredPromptID) ? configuredPromptID : promptNodes.length === 1 ? promptNodes[0].id : ''
+  const selectedPrompt = promptNodes.find((item) => item.id === selectedPromptID)
+  const referenceBindings = buildCanvasPromptBindings(String(selectedPrompt?.payload?.text ?? selectedPrompt?.payload?.template ?? selectedPrompt?.payload?.prompt ?? ''), imageNodes)
   if (!prompts && !String(draft.prompt ?? draft.prompt_template ?? '').trim()) errors.push('缺少提示词')
+  if (prompts > 1 && !selectedPromptID) errors.push('请选择一条提示词来源')
+  const variables = asObject(selectedPrompt?.payload?.variables)
+  const missingVariables = selectedPrompt ? promptVariableNames(String(selectedPrompt.payload?.text ?? '')).filter((name) => !String(variables[name] ?? '').trim()) : []
+  if (missingVariables.length) errors.push(`请填写变量：${missingVariables.join('、')}`)
+  const missingReferences = referenceBindings.filter((binding) => !binding.assetID).map((binding) => binding.name)
+  if (missingReferences.length) errors.push(`未关联同名资产：${missingReferences.join('、')}`)
   if (!String(draft.route_model_code ?? draft.abstract_model ?? '').trim()) errors.push('请选择模型分组')
   if (node.type === 'video_generation' && String(draft.task_type ?? '').includes('image') && !images) errors.push('缺少首帧图片')
-  return { prompts, images, errors }
+  return { prompts, images, promptNodes, selectedPromptID, referenceBindings, errors }
+}
+function buildCanvasPromptBindings(template: string, imageNodes: CanvasNode[]) {
+  const parsed = parsePromptTemplate(template)
+  const names = parsed.error ? [] : parsed.referenceNames
+  const assets = new Map<string, CanvasNode[]>()
+  imageNodes.forEach((item) => {
+    const name = String(item.payload?.name ?? '').trim()
+    if (name) assets.set(name, [...(assets.get(name) ?? []), item])
+  })
+  return names.map((name) => {
+    const matches = assets.get(name) ?? []
+    const asset = matches.length === 1 ? matches[0] : undefined
+    return { name, assetName: asset ? String(asset.payload?.name ?? '') : matches.length > 1 ? '存在多个同名资产' : undefined, assetID: asset?.asset_id }
+  })
 }
 function suggestedRole(source: CanvasNodeType, target: CanvasNodeType, edges: CanvasEdge[], targetID: string): CanvasEdge['input_role'] | null {
   if (source === 'prompt' && (target === 'image_generation' || target === 'video_generation')) return 'prompt'

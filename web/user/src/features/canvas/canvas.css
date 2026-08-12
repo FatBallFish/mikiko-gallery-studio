@@ -305,6 +305,14 @@
 }
 .canvas-generation-body small { color: #d96c69; }
 .canvas-generation-inputs { color: var(--muted); font-size: 9px; }
+.canvas-generation-bindings { display: grid; gap: 4px; color: var(--muted); font-size: 9px; }
+.canvas-generation-bindings > strong { color: var(--muted); font-weight: 500; }
+.canvas-generation-bindings > span { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: center; gap: 6px; min-width: 0; padding: 4px 6px; border: 1px solid color-mix(in srgb, #d96c69 45%, var(--border)); border-radius: 4px; }
+.canvas-generation-bindings > span[data-valid="true"] { border-color: color-mix(in srgb, #57a78d 45%, var(--border)); }
+.canvas-generation-bindings b, .canvas-generation-bindings i { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-generation-bindings b { color: var(--fg); font-weight: 500; }
+.canvas-generation-bindings i { color: #d96c69; font-style: normal; }
+.canvas-generation-bindings > span[data-valid="true"] i { color: #57a78d; }
 .canvas-generation-errors { color: #d96c69; font-size: 9px; line-height: 1.4; }
 .canvas-generation-estimate { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); }
 .canvas-generation-estimate strong { color: var(--fg); font-size: 13px; }
