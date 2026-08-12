@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -291,11 +290,10 @@ func (b *LocalBackend) ensureMultipartDiskBudget(size int64) error {
 	if err := os.MkdirAll(b.root, 0o755); err != nil {
 		return err
 	}
-	var stats syscall.Statfs_t
-	if err := syscall.Statfs(b.root, &stats); err != nil {
+	available, err := localAvailableDiskBytes(b.root)
+	if err != nil {
 		return fmt.Errorf("inspect local multipart disk space: %w", err)
 	}
-	available := int64(stats.Bavail) * int64(stats.Bsize)
 	required := size*2 + localMultipartDiskSafetyBytes
 	if size > (1<<62) || available < required {
 		return fmt.Errorf("insufficient local multipart disk space: available=%d required=%d", available, required)

@@ -43,9 +43,9 @@ func BuildDerivativeCommands(mediaType domainmedia.MediaType, inputPath, outputD
 	switch mediaType {
 	case domainmedia.MediaTypeImage:
 		return []DerivativeCommand{
-			command(domainmedia.DerivativeThumbnail320, "thumbnail-320.webp", "-vf", "scale='min(320,iw)':-2", "-frames:v", "1", "-c:v", "libwebp", "-quality", "78"),
-			command(domainmedia.DerivativeThumbnail640, "thumbnail-640.webp", "-vf", "scale='min(640,iw)':-2", "-frames:v", "1", "-c:v", "libwebp", "-quality", "80"),
-			command(domainmedia.DerivativePreview1280, "preview-1280.webp", "-vf", "scale='min(1280,iw)':-2", "-frames:v", "1", "-c:v", "libwebp", "-quality", "82"),
+			command(domainmedia.DerivativeThumbnail320, "thumbnail-320.jpg", "-vf", "scale='min(320,iw)':-2", "-frames:v", "1", "-c:v", "mjpeg", "-q:v", "5"),
+			command(domainmedia.DerivativeThumbnail640, "thumbnail-640.jpg", "-vf", "scale='min(640,iw)':-2", "-frames:v", "1", "-c:v", "mjpeg", "-q:v", "4"),
+			command(domainmedia.DerivativePreview1280, "preview-1280.jpg", "-vf", "scale='min(1280,iw)':-2", "-frames:v", "1", "-c:v", "mjpeg", "-q:v", "3"),
 		}, nil
 	case domainmedia.MediaTypeVideo:
 		return []DerivativeCommand{

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/fatballfish/pic-gallery/pkg/httpx"
@@ -96,8 +97,8 @@ func mediaAccessPurpose(r *http.Request) string {
 
 func validatedMediaAccessPurpose(r *http.Request) (string, *errs.Error) {
 	purpose := mediaAccessPurpose(r)
-	if purpose != storage.TemporaryMediaPurposePreview && purpose != storage.TemporaryMediaPurposeDownload {
-		return "", errs.BadRequest("purpose must be preview or download")
+	if !mediaassetservice.ValidAccessPurpose(purpose) {
+		return "", errs.BadRequest("purpose must be thumbnail, poster, hover, preview, waveform or download")
 	}
 	return purpose, nil
 }

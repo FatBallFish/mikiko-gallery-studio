@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 
 	domainmedia "github.com/fatballfish/pic-gallery/internal/domain/media"
+	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
@@ -191,6 +193,7 @@ func (a *API) HandleMediaAssetBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Items           []mediaAssetBatchItemRequest `json:"items"`
+		ProjectID       string                       `json:"project_id"`
 		GroupName       string                       `json:"group_name"`
 		TargetProjectID string                       `json:"target_project_id"`
 	}
@@ -201,6 +204,19 @@ func (a *API) HandleMediaAssetBatch(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(r.URL.Path, "/api/agent/media/v1/assets:batch-")
 	if action != "group" && action != "transfer-project" && action != "delete" && action != "download" {
 		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "media batch route not found"))
+		return
+	}
+	if action == "download" {
+		projectID, err := uuid.Parse(strings.TrimSpace(body.ProjectID))
+		if err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid project_id"))
+			return
+		}
+		ids := make([]string, 0, len(body.Items))
+		for _, item := range body.Items {
+			ids = append(ids, item.ID)
+		}
+		a.handleAgentMediaBatchDownload(w, r, user.ID, projectID.String(), ids)
 		return
 	}
 	var targetProjectID *uuid.UUID
@@ -252,6 +268,36 @@ func (a *API) HandleMediaAssetBatch(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": results})
 }
 
+func (a *API) handleAgentMediaBatchDownload(w http.ResponseWriter, r *http.Request, userID int64, projectID string, assetIDs []string) {
+	if a.galleryExport == nil {
+		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeInternal, "media export is unavailable"))
+		return
+	}
+	result, err := a.galleryExport.CreateDownload(r.Context(), galleryexportservice.CreateDownloadRequest{
+		UserID: userID, ProjectID: projectID, ImageIDs: assetIDs, ForceAsync: true,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, galleryexportservice.ErrBatchEmpty):
+			httpx.WriteError(w, r, errs.BadRequest("items is required"))
+		case errors.Is(err, galleryexportservice.ErrBatchTooLarge), errors.Is(err, galleryexportservice.ErrSourceLimitExceeded), errors.Is(err, galleryexportservice.ErrArchiveLimitExceeded):
+			httpx.WriteError(w, r, errs.New(http.StatusRequestEntityTooLarge, errs.CodeExportTooLarge, "media export exceeds the configured size limit"))
+		case errors.Is(err, repoerr.ErrNotFound):
+			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "one or more media assets were not found"))
+		default:
+			httpx.WriteError(w, r, normalizeAppError(err))
+		}
+		return
+	}
+	if result.Job == nil {
+		httpx.WriteError(w, r, errs.Internal("media export did not create an asynchronous job"))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusAccepted, map[string]any{
+		"job": result.Job, "status_url": "/api/agent/media/v1/export-jobs/" + result.Job.ID,
+	})
+}
+
 func (a *API) handleMediaAssetAccess(w http.ResponseWriter, r *http.Request, userID int64, assetID uuid.UUID) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w, r)
@@ -290,7 +336,7 @@ func (a *API) handleMediaAssetContent(w http.ResponseWriter, r *http.Request, us
 	w.Header().Set("Content-Type", stream.ContentType)
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Cache-Control", "private, no-store")
-	if purpose == storage.TemporaryMediaPurposeDownload {
+	if purpose == mediaassetservice.AccessPurposeDownload {
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": stream.Filename}))
 	}
 	start, end, partial, rangeErr := parseSingleByteRange(r.Header.Get("Range"), stream.SizeBytes)

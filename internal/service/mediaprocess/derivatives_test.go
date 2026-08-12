@@ -40,6 +40,9 @@ func TestDerivativeCommandsCoverImageVideoAndAudioP0Outputs(t *testing.T) {
 				if filepath.Dir(command.OutputPath) != "/tmp/output" {
 					t.Fatalf("output escaped target directory: %q", command.OutputPath)
 				}
+				if test.mediaType == domainmedia.MediaTypeImage && (filepath.Ext(command.OutputPath) != ".jpg" || !strings.Contains(joined, "-c:v mjpeg")) {
+					t.Fatalf("image derivatives must use the broadly available JPEG encoder: %#v", command)
+				}
 			}
 		})
 	}

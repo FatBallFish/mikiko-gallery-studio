@@ -20,6 +20,7 @@ import (
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
@@ -50,8 +51,10 @@ func TestUnifiedMediaAssetsAPIProjectsNewAndLegacyAssetsWithOwnerIsolation(t *te
 		t.Fatal(err)
 	}
 	assetID := uuid.New()
+	videoTaskID := uuid.New()
 	if _, err := client.MediaAsset.Create().SetID(assetID).SetUserID(ownerID).SetProjectID(project.ID).
 		SetName("clip.mp4").SetNameKey("clip.mp4").SetMediaType("video").SetSourceType("generated").SetStatus("ready").
+		SetSourceTaskKind("video").SetSourceTaskID(videoTaskID).
 		SetStorageDriver("local").SetObjectKey("media/original/owner/clip.mp4").SetMimeType("video/mp4").SetFileSizeBytes(100).Save(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -71,11 +74,13 @@ func TestUnifiedMediaAssetsAPIProjectsNewAndLegacyAssetsWithOwnerIsolation(t *te
 	handler := NewWithAPI(api)
 
 	videoList := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodGet, "/api/agent/media/v1/assets?project_id="+project.ID.String()+"&media_type=video", "", nil)
-	if videoList.Code != http.StatusOK || !bytes.Contains(videoList.Body.Bytes(), []byte(assetID.String())) || bytes.Contains(videoList.Body.Bytes(), []byte(legacyID.String())) {
+	if videoList.Code != http.StatusOK || !bytes.Contains(videoList.Body.Bytes(), []byte(assetID.String())) || bytes.Contains(videoList.Body.Bytes(), []byte(legacyID.String())) ||
+		!bytes.Contains(videoList.Body.Bytes(), []byte(`"source_task_kind":"video"`)) || !bytes.Contains(videoList.Body.Bytes(), []byte(videoTaskID.String())) {
 		t.Fatalf("video list=%d %s", videoList.Code, videoList.Body.String())
 	}
 	imageList := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodGet, "/api/agent/media/v1/assets?project_id="+project.ID.String()+"&media_type=image", "", nil)
-	if imageList.Code != http.StatusOK || !bytes.Contains(imageList.Body.Bytes(), []byte(legacyID.String())) {
+	if imageList.Code != http.StatusOK || !bytes.Contains(imageList.Body.Bytes(), []byte(legacyID.String())) ||
+		!bytes.Contains(imageList.Body.Bytes(), []byte(`"source_task_kind":"image"`)) || !bytes.Contains(imageList.Body.Bytes(), []byte(taskID.String())) {
 		t.Fatalf("legacy projection list=%d %s", imageList.Code, imageList.Body.String())
 	}
 	foreign := authenticatedMediaRequest(t, handler, other.AccessToken, http.MethodGet, "/api/agent/media/v1/assets/"+assetID.String(), "", nil)
@@ -127,7 +132,7 @@ func TestUnifiedMediaUploadAPICompletesLocalUpload(t *testing.T) {
 	mediaService := mediaassetservice.NewService(entstore.NewMediaStore(client), storage.NewStaticRouter(storage.NewLocalBackend(t.TempDir())), mediaassetservice.Options{
 		Policy: domainmedia.DefaultPolicy(), PartSize: 8 << 20, UploadTTL: time.Hour,
 	})
-	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, nil, nil)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, enabledFeatureAdmin(t, "media_upload"), nil)
 	api.SetMediaAssetService(mediaService)
 	handler := NewWithAPI(api)
 	content := []byte("0123456789")
@@ -199,6 +204,100 @@ func TestUnifiedMediaAssetBatchReturnsPerItemResults(t *testing.T) {
 	result := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodPost, "/api/agent/media/v1/assets:batch-group", body, nil)
 	if result.Code != http.StatusOK || !bytes.Contains(result.Body.Bytes(), []byte(`"status":"succeeded"`)) || !bytes.Contains(result.Body.Bytes(), []byte(`"status":"failed"`)) || !bytes.Contains(result.Body.Bytes(), []byte(`"code":"CONFLICT"`)) {
 		t.Fatalf("batch=%d %s", result.Code, result.Body.String())
+	}
+}
+
+func TestUnifiedMediaAssetAccessSelectsDedicatedDerivativeAndNeverFallsBackToOriginal(t *testing.T) {
+	cfg := taskAPIConfig("http://provider.invalid")
+	authSvc, owner := loginTestUser(t, "media-purpose-api@example.com")
+	claims, err := authSvc.ParseAccessToken(owner.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := repoent.Open(dialect.SQLite, "file:media-purpose-api?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	project, err := client.Project.Create().SetUserID(claims.UserID).SetName("Default").SetNameKey("default").SetIsDefault(true).Save(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(assetID).SetUserID(claims.UserID).SetProjectID(project.ID).SetName("clip.mp4").SetNameKey("clip.mp4").
+		SetMediaType("video").SetSourceType("generated").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("media/original/clip.mp4").SetMimeType("video/mp4").SetFileSizeBytes(100).Save(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.MediaDerivative.Create().SetID(uuid.New()).SetAssetID(assetID).SetKind("poster").SetTransformVersion(1).SetStatus("ready").
+		SetStorageDriver("local").SetObjectKey("media/derivatives/poster.jpg").SetMimeType("image/jpeg").SetFileSizeBytes(10).Save(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	mediaService := mediaassetservice.NewService(entstore.NewMediaStore(client), storage.NewStaticRouter(storage.NewLocalBackend(t.TempDir())), mediaassetservice.Options{Policy: domainmedia.DefaultPolicy()})
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, nil, nil)
+	api.SetMediaAssetService(mediaService)
+	handler := NewWithAPI(api)
+
+	poster := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodGet, "/api/agent/media/v1/assets/"+assetID.String()+"/access?purpose=poster", "", nil)
+	if poster.Code != http.StatusOK || !bytes.Contains(poster.Body.Bytes(), []byte("purpose=poster")) {
+		t.Fatalf("poster access=%d %s", poster.Code, poster.Body.String())
+	}
+	hover := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodGet, "/api/agent/media/v1/assets/"+assetID.String()+"/access?purpose=hover", "", nil)
+	if hover.Code != http.StatusConflict || !bytes.Contains(hover.Body.Bytes(), []byte("DERIVATIVE_NOT_READY")) {
+		t.Fatalf("missing hover derivative must not fall back to original: %d %s", hover.Code, hover.Body.String())
+	}
+}
+
+func TestUnifiedMediaBatchDownloadCreatesAsynchronousArchiveJob(t *testing.T) {
+	cfg := taskAPIConfig("http://provider.invalid")
+	authSvc, owner := loginTestUser(t, "media-export-api@example.com")
+	claims, err := authSvc.ParseAccessToken(owner.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := repoent.Open(dialect.SQLite, "file:media-export-api?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	project, err := client.Project.Create().SetUserID(claims.UserID).SetName("Default").SetNameKey("default").SetIsDefault(true).Save(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(assetID).SetUserID(claims.UserID).SetProjectID(project.ID).SetName("voice.wav").SetNameKey("voice.wav").
+		SetMediaType("audio").SetSourceType("local_upload").SetStatus("ready").SetStorageDriver("local").SetObjectKey("media/original/voice.wav").SetMimeType("audio/wav").SetFileSizeBytes(1024).Save(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	router := storage.NewStaticRouter(storage.NewLocalBackend(t.TempDir()))
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, nil, nil)
+	api.SetMediaAssetService(mediaassetservice.NewService(entstore.NewMediaStore(client), router, mediaassetservice.Options{Policy: domainmedia.DefaultPolicy()}))
+	api.SetGalleryExportService(galleryexportservice.NewService(entstore.NewGalleryExportStore(client), router, galleryexportservice.Options{}))
+	handler := NewWithAPI(api)
+
+	created := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodPost, "/api/agent/media/v1/assets:batch-download", `{"project_id":"`+project.ID.String()+`","items":[{"id":"`+assetID.String()+`","expected_version":1}]}`, nil)
+	if created.Code != http.StatusAccepted || !bytes.Contains(created.Body.Bytes(), []byte(`"status_url":"/api/agent/media/v1/export-jobs/`)) {
+		t.Fatalf("media export create=%d %s", created.Code, created.Body.String())
+	}
+	var payload struct {
+		Data struct {
+			Job struct {
+				ID string `json:"id"`
+			} `json:"job"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &payload); err != nil || payload.Data.Job.ID == "" {
+		t.Fatalf("decode media export: %v %s", err, created.Body.String())
+	}
+	status := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodGet, "/api/agent/media/v1/export-jobs/"+payload.Data.Job.ID, "", nil)
+	if status.Code != http.StatusOK || !bytes.Contains(status.Body.Bytes(), []byte(`"state":"queued"`)) {
+		t.Fatalf("media export status=%d %s", status.Code, status.Body.String())
 	}
 }
 

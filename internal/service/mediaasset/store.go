@@ -54,6 +54,9 @@ type Asset struct {
 	GroupName        string                `json:"group_name"`
 	MediaType        domainmedia.MediaType `json:"media_type"`
 	SourceType       string                `json:"source_type"`
+	SourceTaskKind   *string               `json:"source_task_kind,omitempty"`
+	SourceTaskID     *uuid.UUID            `json:"source_task_id,omitempty"`
+	SourceCanvasID   *uuid.UUID            `json:"source_canvas_id,omitempty"`
 	Status           string                `json:"status"`
 	VisibilityStatus string                `json:"visibility_status"`
 	StorageConfigID  string                `json:"-"`

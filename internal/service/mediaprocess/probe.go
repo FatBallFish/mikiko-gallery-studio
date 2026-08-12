@@ -73,7 +73,7 @@ func (probe *Probe) Inspect(ctx context.Context, inputPath string, sizeBytes int
 	probeCtx, cancel := context.WithTimeout(ctx, probe.timeout)
 	defer cancel()
 	output, err := probe.runner.Run(probeCtx, "ffprobe",
-		"-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe",
+		"-v", "error", "-protocol_whitelist", "file,pipe",
 		"-show_format", "-show_streams", "-of", "json", inputPath,
 	)
 	if err != nil {

@@ -308,7 +308,8 @@ func ensureMediaAsset(ctx context.Context, tx *repoent.Tx, userID int64, id uuid
 	builder := tx.MediaAsset.Create().
 		SetID(legacy.ID).SetUserID(legacy.UserID).SetProjectID(*projectID).SetLegacyImageResultID(legacy.ID).
 		SetName(name).SetNameKey(strings.ToLower(name)).SetGroupName(legacy.ImageGroup).
-		SetMediaType("image").SetSourceType("generated").SetStatus("ready").SetVisibilityStatus(legacy.VisibilityStatus).
+		SetMediaType("image").SetSourceType("generated").SetSourceTaskKind("image").SetSourceTaskID(legacy.TaskID).
+		SetStatus("ready").SetVisibilityStatus(legacy.VisibilityStatus).
 		SetStorageDriver(legacy.StorageDriver).SetObjectKey(legacy.ObjectKey).SetMimeType(legacy.MimeType).
 		SetFileSizeBytes(legacy.FileSizeBytes).SetSha256(legacy.Sha256)
 	if legacy.StorageConfigID != nil {
@@ -351,11 +352,16 @@ func mapLegacyImageAsset(entity *repoent.ImageResult, defaultProjectID uuid.UUID
 	return mediaassetservice.Asset{
 		ID: entity.ID, UserID: entity.UserID, ProjectID: projectID, LegacyImageID: &entity.ID,
 		Name: legacyAssetName(entity.ObjectKey, entity.ID, entity.MimeType), GroupName: entity.ImageGroup,
-		MediaType: domainmedia.MediaTypeImage, SourceType: "generated", Status: "ready", VisibilityStatus: entity.VisibilityStatus,
+		MediaType: domainmedia.MediaTypeImage, SourceType: "generated", SourceTaskKind: stringPointer("image"), SourceTaskID: &entity.TaskID,
+		Status: "ready", VisibilityStatus: entity.VisibilityStatus,
 		StorageConfigID: configID, StorageDriver: entity.StorageDriver, ObjectKey: entity.ObjectKey, MIMEType: entity.MimeType,
 		FileSizeBytes: entity.FileSizeBytes, SHA256: entity.Sha256, Width: positiveIntPointer(width), Height: positiveIntPointer(height),
 		Version: 1, CreatedAt: entity.CreatedAt, UpdatedAt: entity.UpdatedAt,
 	}, true
+}
+
+func stringPointer(value string) *string {
+	return &value
 }
 
 func legacyAssetName(objectKey string, id uuid.UUID, mimeType string) string {

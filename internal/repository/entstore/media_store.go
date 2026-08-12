@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -101,6 +102,68 @@ func (s *MediaStore) GetUpload(ctx context.Context, userID int64, id uuid.UUID) 
 		return mediaassetservice.UploadSession{}, err
 	}
 	return mapMediaUploadSession(entity), nil
+}
+
+func (s *MediaStore) ClaimExpiredUpload(ctx context.Context, now time.Time, leaseTTL time.Duration) (mediaassetservice.UploadSession, bool, error) {
+	if s == nil || s.client == nil || leaseTTL <= 0 {
+		return mediaassetservice.UploadSession{}, false, fmt.Errorf("invalid upload expiry claim")
+	}
+	now = now.UTC()
+	result, err := withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (mediaUploadClaimResult, error) {
+		queries := []*repoent.MediaUploadSessionQuery{
+			tx.MediaUploadSession.Query().Where(
+				mediauploadsession.StatusIn("initialized", "uploading", "completing"),
+				mediauploadsession.ExpiresAtLTE(now),
+			).Order(repoent.Asc(mediauploadsession.FieldExpiresAt), repoent.Asc(mediauploadsession.FieldCreatedAt)),
+			tx.MediaUploadSession.Query().Where(
+				mediauploadsession.StatusEQ("expiring"),
+				mediauploadsession.UpdatedAtLTE(now.Add(-leaseTTL)),
+			).Order(repoent.Asc(mediauploadsession.FieldUpdatedAt), repoent.Asc(mediauploadsession.FieldCreatedAt)),
+		}
+		for _, query := range queries {
+			candidates, err := query.Limit(8).All(ctx)
+			if err != nil {
+				return mediaUploadClaimResult{}, fmt.Errorf("query expired upload session: %w", err)
+			}
+			for _, candidate := range candidates {
+				update := tx.MediaUploadSession.Update().Where(mediauploadsession.IDEQ(candidate.ID))
+				if candidate.Status == "expiring" {
+					update.Where(mediauploadsession.StatusEQ("expiring"), mediauploadsession.UpdatedAtLTE(now.Add(-leaseTTL)))
+				} else {
+					update.Where(mediauploadsession.StatusEQ(candidate.Status), mediauploadsession.ExpiresAtLTE(now))
+				}
+				count, err := update.SetStatus("expiring").SetUpdatedAt(now).Save(ctx)
+				if err != nil {
+					return mediaUploadClaimResult{}, fmt.Errorf("claim expired upload session: %w", err)
+				}
+				if count != 1 {
+					continue
+				}
+				claimed, err := tx.MediaUploadSession.Get(ctx, candidate.ID)
+				if err != nil {
+					return mediaUploadClaimResult{}, fmt.Errorf("load claimed upload session: %w", err)
+				}
+				return mediaUploadClaimResult{session: mapMediaUploadSession(claimed), claimed: true}, nil
+			}
+		}
+		return mediaUploadClaimResult{}, nil
+	})
+	return result.session, result.claimed, err
+}
+
+type mediaUploadClaimResult struct {
+	session mediaassetservice.UploadSession
+	claimed bool
+}
+
+func (s *MediaStore) CompleteExpiredUpload(ctx context.Context, id uuid.UUID) (bool, error) {
+	count, err := s.client.MediaUploadSession.Update().Where(
+		mediauploadsession.IDEQ(id), mediauploadsession.StatusEQ("expiring"),
+	).SetStatus("expired").SetReservedBytes(0).Save(ctx)
+	if err != nil {
+		return false, fmt.Errorf("complete expired upload session: %w", err)
+	}
+	return count == 1, nil
 }
 
 func (s *MediaStore) RecordCompletedParts(ctx context.Context, userID int64, id uuid.UUID, parts []storage.CompletedPart) (mediaassetservice.UploadSession, error) {
@@ -286,7 +349,8 @@ func mapMediaAsset(entity *repoent.MediaAsset) mediaassetservice.Asset {
 	}
 	return mediaassetservice.Asset{
 		ID: entity.ID, UserID: entity.UserID, ProjectID: entity.ProjectID, LegacyImageID: entity.LegacyImageResultID, Name: entity.Name, GroupName: entity.GroupName,
-		MediaType: domainmedia.MediaType(entity.MediaType), SourceType: entity.SourceType, Status: entity.Status,
+		MediaType: domainmedia.MediaType(entity.MediaType), SourceType: entity.SourceType, SourceTaskKind: entity.SourceTaskKind,
+		SourceTaskID: entity.SourceTaskID, SourceCanvasID: entity.SourceCanvasID, Status: entity.Status,
 		VisibilityStatus: entity.VisibilityStatus, StorageConfigID: storageConfigID, StorageDriver: entity.StorageDriver,
 		Bucket: entity.Bucket, ObjectKey: entity.ObjectKey, MIMEType: entity.MimeType, Container: entity.Container, Codec: entity.Codec,
 		FileSizeBytes: entity.FileSizeBytes, SHA256: entity.Sha256, Width: entity.Width, Height: entity.Height, DurationMS: entity.DurationMs,

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,9 +72,11 @@ func TestMediaUploadServiceIsIdempotentAndCompletesAssetTransaction(t *testing.T
 		t.Fatal(err)
 	}
 	backend := storage.NewLocalBackend(t.TempDir())
+	observer := &mediaUploadObserverSpy{}
 	service := mediaassetservice.NewService(NewMediaStore(client), storage.NewStaticRouter(backend), mediaassetservice.Options{
 		Policy: domainmedia.DefaultPolicy(), UserQuotaBytes: 1 << 30, PartSize: 8 << 20,
 		UploadTTL: time.Hour, Now: func() time.Time { return time.Date(2026, 8, 12, 6, 0, 0, 0, time.UTC) },
+		Observer: observer,
 	})
 	request := mediaassetservice.InitUploadRequest{
 		UserID: 41, ProjectID: project.ID, Filename: "voice.wav", MediaType: domainmedia.MediaTypeAudio,
@@ -109,10 +113,19 @@ func TestMediaUploadServiceIsIdempotentAndCompletesAssetTransaction(t *testing.T
 	if err != nil || completedAgain.ID != asset.ID {
 		t.Fatalf("replayed complete asset=%#v err=%v", completedAgain, err)
 	}
+	if got := strings.Join(observer.events, ","); got != "initialize:success:10,initialize:failed:10,complete:success:10" {
+		t.Fatalf("upload observations = %q", got)
+	}
 	jobs, err := client.MediaProcessingJob.Query().Where(mediaprocessingjob.AssetIDEQ(asset.ID)).All(ctx)
 	if err != nil || len(jobs) != 1 || jobs[0].JobType != "probe" {
 		t.Fatalf("processing jobs=%#v err=%v", jobs, err)
 	}
+}
+
+type mediaUploadObserverSpy struct{ events []string }
+
+func (spy *mediaUploadObserverSpy) RecordUpload(stage, result string, bytes int64) {
+	spy.events = append(spy.events, stage+":"+result+":"+strconv.FormatInt(bytes, 10))
 }
 
 func TestMediaUploadStoreEnforcesProjectOwnerAndReservedQuota(t *testing.T) {

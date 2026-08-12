@@ -197,9 +197,10 @@ type Service struct {
 }
 
 type CreateDownloadRequest struct {
-	UserID    int64
-	ProjectID string
-	ImageIDs  []string
+	UserID     int64
+	ProjectID  string
+	ImageIDs   []string
+	ForceAsync bool
 }
 
 type CreateDownloadResult struct {
@@ -259,7 +260,7 @@ func (s *Service) CreateDownload(ctx context.Context, req CreateDownloadRequest)
 			hasUnknownSize = true
 		}
 	}
-	if hasUnknownSize || len(assets) > s.opts.DirectMaxCount || estimatedBytes > s.opts.DirectMaxEstimatedBytes {
+	if req.ForceAsync || hasUnknownSize || len(assets) > s.opts.DirectMaxCount || estimatedBytes > s.opts.DirectMaxEstimatedBytes {
 		job, err := s.store.CreateJob(ctx, CreateJobRequest{
 			UserID: req.UserID, ProjectID: strings.TrimSpace(req.ProjectID), ImageIDs: ids, EstimatedBytes: estimatedBytes,
 			LifecycleDeadlineAt: s.now().Add(s.opts.LifecycleTimeout),

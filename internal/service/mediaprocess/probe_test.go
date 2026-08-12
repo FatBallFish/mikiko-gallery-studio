@@ -34,6 +34,9 @@ func TestProbeParsesVideoMetadataAndRestrictsProtocols(t *testing.T) {
 			t.Fatalf("ffprobe args %q missing %q", joined, required)
 		}
 	}
+	if strings.Contains(joined, "-nostdin") {
+		t.Fatal("ffprobe does not support ffmpeg's -nostdin option")
+	}
 }
 
 func TestProbeRejectsMalformedOrMismatchedContent(t *testing.T) {

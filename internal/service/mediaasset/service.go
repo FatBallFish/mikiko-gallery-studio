@@ -31,6 +31,11 @@ type Options struct {
 	PartSize       int64
 	UploadTTL      time.Duration
 	Now            func() time.Time
+	Observer       Observer
+}
+
+type Observer interface {
+	RecordUpload(stage, result string, bytes int64)
 }
 
 type InitUploadRequest struct {
@@ -51,6 +56,12 @@ type Service struct {
 	opts   Options
 }
 
+func (s *Service) recordUpload(stage, result string, bytes int64) {
+	if s != nil && s.opts.Observer != nil {
+		s.opts.Observer.RecordUpload(stage, result, bytes)
+	}
+}
+
 type AccessResult struct {
 	URL       string    `json:"url"`
 	ExpiresAt time.Time `json:"expires_at"`
@@ -62,6 +73,24 @@ type ContentStream struct {
 	SizeBytes   int64
 	ContentType string
 	Filename    string
+}
+
+const (
+	AccessPurposeThumbnail = "thumbnail"
+	AccessPurposePoster    = "poster"
+	AccessPurposeHover     = "hover"
+	AccessPurposePreview   = "preview"
+	AccessPurposeWaveform  = "waveform"
+	AccessPurposeDownload  = "download"
+)
+
+func ValidAccessPurpose(purpose string) bool {
+	switch strings.ToLower(strings.TrimSpace(purpose)) {
+	case AccessPurposeThumbnail, AccessPurposePoster, AccessPurposeHover, AccessPurposePreview, AccessPurposeWaveform, AccessPurposeDownload:
+		return true
+	default:
+		return false
+	}
 }
 
 func NewService(store Store, router storage.Router, opts Options) *Service {
@@ -115,7 +144,11 @@ func (s *Service) Access(ctx context.Context, userID int64, assetID uuid.UUID, p
 	if err != nil {
 		return AccessResult{}, err
 	}
-	access, supported, err := storage.ProjectTemporaryMediaAccess(ctx, ref.Backend, object.ObjectKey, object.MIMEType, asset.Name, purpose)
+	storagePurpose := storage.TemporaryMediaPurposePreview
+	if purpose == AccessPurposeDownload {
+		storagePurpose = storage.TemporaryMediaPurposeDownload
+	}
+	access, supported, err := storage.ProjectTemporaryMediaAccess(ctx, ref.Backend, object.ObjectKey, object.MIMEType, asset.Name, storagePurpose)
 	if err != nil {
 		return AccessResult{}, err
 	}
@@ -159,8 +192,8 @@ type assetStorageObject struct {
 
 func (s *Service) assetObject(ctx context.Context, userID int64, assetID uuid.UUID, purpose string) (Asset, assetStorageObject, error) {
 	purpose = strings.ToLower(strings.TrimSpace(purpose))
-	if purpose != storage.TemporaryMediaPurposePreview && purpose != storage.TemporaryMediaPurposeDownload {
-		return Asset{}, assetStorageObject{}, errs.BadRequest("media purpose must be preview or download")
+	if !ValidAccessPurpose(purpose) {
+		return Asset{}, assetStorageObject{}, errs.BadRequest("invalid media access purpose")
 	}
 	asset, err := s.store.GetAsset(ctx, userID, assetID)
 	if err != nil {
@@ -170,14 +203,14 @@ func (s *Service) assetObject(ctx context.Context, userID int64, assetID uuid.UU
 		StorageConfigID: asset.StorageConfigID, StorageDriver: asset.StorageDriver, Bucket: asset.Bucket,
 		ObjectKey: asset.ObjectKey, MIMEType: asset.MIMEType,
 	}
-	if purpose == storage.TemporaryMediaPurposeDownload {
+	if purpose == AccessPurposeDownload {
 		return asset, object, nil
 	}
 	derivatives, err := s.store.ListReadyDerivatives(ctx, userID, assetID)
 	if err != nil {
 		return Asset{}, assetStorageObject{}, err
 	}
-	priorities := previewDerivativePriorities(asset.MediaType)
+	priorities := accessDerivativePriorities(asset.MediaType, purpose)
 	for _, kind := range priorities {
 		for _, derivative := range derivatives {
 			if derivative.Kind == kind {
@@ -188,10 +221,31 @@ func (s *Service) assetObject(ctx context.Context, userID int64, assetID uuid.UU
 			}
 		}
 	}
-	return asset, object, nil
+	if purpose == AccessPurposePreview {
+		return asset, object, nil
+	}
+	return Asset{}, assetStorageObject{}, errs.New(409, "DERIVATIVE_NOT_READY", "requested media derivative is not ready")
 }
 
-func previewDerivativePriorities(mediaType domainmedia.MediaType) []domainmedia.DerivativeKind {
+func accessDerivativePriorities(mediaType domainmedia.MediaType, purpose string) []domainmedia.DerivativeKind {
+	switch purpose {
+	case AccessPurposeThumbnail:
+		if mediaType == domainmedia.MediaTypeImage {
+			return []domainmedia.DerivativeKind{domainmedia.DerivativeThumbnail640, domainmedia.DerivativeThumbnail320}
+		}
+	case AccessPurposePoster:
+		if mediaType == domainmedia.MediaTypeVideo {
+			return []domainmedia.DerivativeKind{domainmedia.DerivativePoster}
+		}
+	case AccessPurposeHover:
+		if mediaType == domainmedia.MediaTypeVideo {
+			return []domainmedia.DerivativeKind{domainmedia.DerivativeHoverPreview}
+		}
+	case AccessPurposeWaveform:
+		if mediaType == domainmedia.MediaTypeAudio {
+			return []domainmedia.DerivativeKind{domainmedia.DerivativeWaveform}
+		}
+	}
 	switch mediaType {
 	case domainmedia.MediaTypeImage:
 		return []domainmedia.DerivativeKind{domainmedia.DerivativePreview1280, domainmedia.DerivativeThumbnail640, domainmedia.DerivativeThumbnail320}
@@ -224,6 +278,7 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 		return UploadSession{}, err
 	} else if found {
 		if existing.RequestFingerprint != fingerprint {
+			s.recordUpload("initialize", "failed", req.SizeBytes)
 			return UploadSession{}, errs.New(409, errs.CodeConflict, "idempotency key was already used with a different upload")
 		}
 		return existing, nil
@@ -256,6 +311,7 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 	}
 	created, err := s.store.CreateUpload(ctx, CreateUploadRecord{Session: session, QuotaBytes: s.opts.UserQuotaBytes})
 	if err == nil {
+		s.recordUpload("initialize", "success", req.SizeBytes)
 		return created, nil
 	}
 	_ = multipart.AbortMultipart(context.WithoutCancel(ctx), backendUpload)
@@ -263,8 +319,10 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 		if existing.RequestFingerprint == fingerprint {
 			return existing, nil
 		}
+		s.recordUpload("initialize", "failed", req.SizeBytes)
 		return UploadSession{}, errs.New(409, errs.CodeConflict, "idempotency key was already used with a different upload")
 	}
+	s.recordUpload("initialize", "failed", req.SizeBytes)
 	return UploadSession{}, err
 }
 
@@ -319,20 +377,24 @@ func (s *Service) Status(ctx context.Context, userID int64, sessionID uuid.UUID)
 func (s *Service) CompleteUpload(ctx context.Context, userID int64, sessionID uuid.UUID, parts []storage.CompletedPart) (Asset, error) {
 	session, multipart, err := s.uploadBackend(ctx, userID, sessionID)
 	if err != nil {
+		s.recordUpload("complete", "failed", 0)
 		return Asset{}, err
 	}
 	if session.Status == "completed" && session.AssetID != nil {
 		return s.store.CompleteUpload(ctx, CompleteUploadRecord{UserID: userID, SessionID: sessionID, AssetID: *session.AssetID, CompletedAt: s.opts.Now().UTC()})
 	}
 	if session.Status == "aborted" || session.ExpiresAt.Before(s.opts.Now().UTC()) {
+		s.recordUpload("complete", "failed", session.DeclaredSizeBytes)
 		return Asset{}, errs.New(409, errs.CodeConflict, "upload session is not completable")
 	}
 	session, err = s.store.MarkUploadCompleting(ctx, userID, sessionID, parts)
 	if err != nil {
+		s.recordUpload("complete", "failed", session.DeclaredSizeBytes)
 		return Asset{}, err
 	}
 	completed, err := multipart.CompleteMultipart(ctx, session.MultipartUpload(), parts)
 	if err != nil {
+		s.recordUpload("complete", "failed", session.DeclaredSizeBytes)
 		return Asset{}, err
 	}
 	assetID := uuid.New()
@@ -341,26 +403,36 @@ func (s *Service) CompleteUpload(ctx context.Context, userID int64, sessionID uu
 	})
 	if err != nil {
 		_ = sessionStorageDelete(context.WithoutCancel(ctx), s.router, session)
+		s.recordUpload("complete", "failed", session.DeclaredSizeBytes)
 		return Asset{}, err
 	}
+	s.recordUpload("complete", "success", asset.FileSizeBytes)
 	return asset, nil
 }
 
 func (s *Service) AbortUpload(ctx context.Context, userID int64, sessionID uuid.UUID) error {
 	session, multipart, err := s.uploadBackend(ctx, userID, sessionID)
 	if err != nil {
+		s.recordUpload("abort", "failed", 0)
 		return err
 	}
 	if session.Status == "aborted" {
 		return nil
 	}
 	if session.Status == "completed" {
+		s.recordUpload("abort", "failed", session.DeclaredSizeBytes)
 		return errs.New(409, errs.CodeConflict, "completed upload cannot be aborted")
 	}
 	if err := multipart.AbortMultipart(ctx, session.MultipartUpload()); err != nil && !errors.Is(err, storage.ErrMultipartNotFound) {
+		s.recordUpload("abort", "failed", session.DeclaredSizeBytes)
 		return err
 	}
 	_, err = s.store.AbortUpload(ctx, userID, sessionID)
+	if err == nil {
+		s.recordUpload("abort", "success", session.DeclaredSizeBytes)
+	} else {
+		s.recordUpload("abort", "failed", session.DeclaredSizeBytes)
+	}
 	return err
 }
 
