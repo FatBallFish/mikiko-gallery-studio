@@ -294,6 +294,43 @@ func TestRunSelfUpdateRequiresExplicitConfirmationAndReportsResult(t *testing.T)
 	})
 }
 
+func TestRunSelfUpdateRendersProgressOnlyForTerminalOutput(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		terminal   bool
+		wantOutput bool
+	}{
+		{name: "terminal", terminal: true, wantOutput: true},
+		{name: "non-terminal", terminal: false, wantOutput: false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			stderr := new(bytes.Buffer)
+			code := Run(context.Background(), []string{"self-update", "--version", "v2", "--yes"}, CLIDependencies{
+				Terminal: &fakeTerminal{interactive: false}, Stdout: new(bytes.Buffer), Stderr: stderr, BuildInfo: BuildInfo{Version: "v1"},
+				StdoutIsTerminal: func(writer io.Writer) bool { return testCase.terminal && writer == stderr },
+				ExecuteSelfUpdate: func(_ context.Context, _ SelfUpdateOptions, dependencies SelfUpdateDependencies) (SelfUpdateResult, error) {
+					if dependencies.Progress != nil {
+						dependencies.Progress(SelfUpdateProgress{
+							Stage: "binary", Attempt: 1, Downloaded: 512, Total: 1024, Elapsed: time.Second,
+						})
+						dependencies.Progress(SelfUpdateProgress{
+							Stage: "binary", Attempt: 1, Downloaded: 1024, Total: 1024, Elapsed: 2 * time.Second, Done: true,
+						})
+					}
+					return SelfUpdateResult{PreviousVersion: "v1", CurrentVersion: "v2", Executable: "/tools/mgsctl"}, nil
+				},
+			})
+			if code != 0 {
+				t.Fatalf("Run(self-update) = %d, stderr=%q", code, stderr.String())
+			}
+			hasProgress := strings.Contains(stderr.String(), "binary") && strings.Contains(stderr.String(), "100%") && strings.Contains(stderr.String(), "B/s")
+			if hasProgress != testCase.wantOutput {
+				t.Fatalf("progress rendered=%t, want %t, stderr=%q", hasProgress, testCase.wantOutput, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunDispatchesClusterJoinWithoutRenderingTheCredential(t *testing.T) {
 	const credential = "pgjoin.v1.019d0000-0000-7000-8000-000000000999.secret"
 	stdout := new(bytes.Buffer)
