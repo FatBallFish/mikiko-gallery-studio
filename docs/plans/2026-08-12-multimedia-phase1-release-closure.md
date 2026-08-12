@@ -22,15 +22,17 @@
 
 历史开发分支只是已合并 PR 的保留指针，不再作为交付来源。可访问的历史 worktree 均无未提交修改；主工作区只有用户已有的未跟踪 `runtime/`，不得修改或纳入提交。
 
-## 3. 待收口问题
+## 3. 收口问题与复核结论
 
-1. Worker 启动在 schema 和 completed binding 校验前解析 FFmpeg，导致无 FFmpeg 的干净 CI 环境返回错误顺序不符，并使 `v0.0.13` Release Action 失败。
-2. Provider 提交成功但 Worker 在保存任务 ID 前崩溃时，真实 Seedance/MiniMax adapter 缺少可恢复的幂等或 reconcile 语义。
-3. 项目资产统计、转移和删除未完整覆盖统一媒体资产、视频任务和活动上传。
-4. Provider artifact 下载的 DNS 校验与实际连接分离，存在 DNS 重绑定窗口。
-5. metered 视频缺少实际 usage 时按冻结报价直接结算，违反按实际 usage 结算和待对账要求。
+| 问题 | 当前结论 | 证据 |
+| --- | --- | --- |
+| Worker 在 schema/binding 前解析 FFmpeg | 本分支修复 | `TestWorkerNormalStartupVerifiesCompletedBindingBeforeRuntimeServices` 在空 PATH 下完成 red-green |
+| Provider 提交崩溃恢复 | 已由 `54153f6` 关闭 | Seedance/MiniMax 均传递同一 idempotency key 并实现 reconcile；真实 adapter 和 Worker 恢复测试通过 |
+| 项目删除/转移遗漏多媒体 | 已由 `54153f6` 关闭 | 统计和转移覆盖 MediaAsset、VideoTask、MediaUploadSession；专用数据库测试通过 |
+| artifact DNS 重绑定 | 已由 `54153f6` 关闭 | 校验后的 IP 固定到请求专属 `DialContext`；非公网网段和地址固定测试通过 |
+| metered usage 缺失仍结算 | 已由 `54153f6` 关闭 | 缺失 usage 时 `UsagePending` 等待 probe，settlement claim 被阻止；数据库测试通过 |
 
-每项必须先添加能稳定复现的回归测试，再实施最小修复。若进一步评审发现阻塞问题，继续在同一分支修复。
+若进一步评审发现阻塞问题，继续在同一分支按 TDD 修复，不再创建新的交付分支。
 
 ## 4. 准出标准
 
