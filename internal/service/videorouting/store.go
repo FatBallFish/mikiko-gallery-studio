@@ -7,7 +7,9 @@ import (
 )
 
 type Candidate struct {
+	RouteCandidateID  int64
 	AccountModelID    int64
+	ModelAccountID    int64
 	ModelCode         string
 	AdapterType       string
 	CapabilityVersion string

@@ -5,7 +5,7 @@ export type ConfigFieldType = 'number' | 'boolean' | 'text' | 'map' | 'list'
 export type ConfigFieldMeta = { label: string; hint: string; type?: ConfigFieldType }
 export type ConfigTabMeta = { label: string; detail: string }
 
-export const generalConfigCategories = ['site', 'public_gallery'] as const
+export const generalConfigCategories = ['site', 'features', 'public_gallery'] as const
 export const forbiddenGeneralConfigCategories = ['auth_security', 'generation_limits', 'moderation', 'payments'] as const
 
 const tabMeta: Record<string, ConfigTabMeta> = {
@@ -43,6 +43,9 @@ const itemMeta: Record<string, ConfigFieldMeta> = {
   provider_instances: { label: '支付渠道实例', hint: '收银台底层渠道账号配置，包含商户配置、状态、限额和调度参数；密钥不会明文回显。', type: 'list' },
   scheduler_state: { label: '支付调度状态', hint: '多渠道账号轮询调度的运行状态，通常由系统维护。', type: 'map' },
   signup_trial: { label: '注册送体验额度', hint: '控制新用户注册后获得的体验额度金额、有效期、过期提醒和是否每人仅发放一次。', type: 'map' },
+  video_creation: { label: '视频快捷创作', hint: '控制用户端视频创作入口和新视频任务提交；关闭后历史任务仍可查看。', type: 'boolean' },
+  creative_canvas: { label: '创意画布', hint: '控制用户端画布入口和画布编辑；关闭后历史画布结果仍可查看。', type: 'boolean' },
+  media_upload: { label: '本地媒体上传', hint: '控制用户端本地上传入口和新上传会话创建；关闭后已有资产仍可查看和下载。', type: 'boolean' },
 }
 
 export function configTabMeta(tabKey: string): ConfigTabMeta {

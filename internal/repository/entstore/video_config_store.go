@@ -92,7 +92,8 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 			return videoroutingservice.Group{}, err
 		}
 		group.Candidates = append(group.Candidates, videoroutingservice.Candidate{
-			AccountModelID: int64(accountModel.ID), ModelCode: accountModel.ModelCode, AdapterType: account.AdapterType,
+			RouteCandidateID: int64(candidate.ID), AccountModelID: int64(accountModel.ID), ModelAccountID: int64(account.ID),
+			ModelCode: accountModel.ModelCode, AdapterType: account.AdapterType,
 			CapabilityVersion: capabilityEntity.CapabilityVersion, Capability: capability,
 		})
 	}

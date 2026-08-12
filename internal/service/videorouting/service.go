@@ -31,6 +31,10 @@ type Resolution struct {
 	CapabilityVersion string
 }
 
+type CapabilityListResponse struct {
+	Groups []CapabilityResponse `json:"groups"`
+}
+
 func NewService(store Store) *Service { return &Service{store: store} }
 
 func (s *Service) Capabilities(ctx context.Context, code string) (CapabilityResponse, error) {
@@ -62,6 +66,25 @@ func (s *Service) Capabilities(ctx context.Context, code string) (CapabilityResp
 	return response, nil
 }
 
+func (s *Service) ListCapabilities(ctx context.Context) (CapabilityListResponse, error) {
+	if s == nil || s.store == nil {
+		return CapabilityListResponse{}, errs.Internal("video routing service is unavailable")
+	}
+	groups, err := s.store.ListVideoGroups(ctx)
+	if err != nil {
+		return CapabilityListResponse{}, err
+	}
+	response := CapabilityListResponse{Groups: make([]CapabilityResponse, 0, len(groups))}
+	for _, group := range groups {
+		capability, err := s.Capabilities(ctx, group.Code)
+		if err != nil {
+			continue
+		}
+		response.Groups = append(response.Groups, capability)
+	}
+	return response, nil
+}
+
 func (s *Service) Resolve(ctx context.Context, code string, request domainvideo.Request) (Resolution, error) {
 	group, err := s.group(ctx, code)
 	if err != nil {
@@ -81,7 +104,7 @@ func (s *Service) Resolve(ctx context.Context, code string, request domainvideo.
 		}
 	}
 	if len(matched) == 0 {
-		return Resolution{}, errs.WithDetails(errs.BadRequest("no video candidate supports the complete parameter combination"), map[string]any{"field_errors": fieldErrors})
+		return Resolution{}, errs.WithDetails(errs.New(422, errs.CodeVideoCapabilityMismatch, "no video candidate supports the complete parameter combination"), map[string]any{"field_errors": fieldErrors})
 	}
 	return Resolution{Group: group, Request: request, Candidates: matched, CapabilityVersion: capabilityVersion(matched)}, nil
 }

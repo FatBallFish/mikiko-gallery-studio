@@ -10,6 +10,8 @@ import { FilterToolbar } from '../ui/dataTable'
 import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import { modelLifecycleErrorMessage } from './adminModelLifecycle'
 import { createLatestListRequestGuard } from './listRefresh'
+import { VideoConfigurationImpact } from './VideoConfigurationImpact'
+import { VideoConfigurationWorkspace } from './VideoConfigurationWorkspace'
 import {
   routeCandidateLabel,
   routeCandidateSummary,
@@ -249,6 +251,8 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openRouteDialog(newRouteDialog(groups))}>新增路由模型</button>}
         secondaryActions={<RefreshIconButton label="刷新路由模型" refreshing={loading} onClick={() => void load()} />}
       />
+      <VideoConfigurationImpact context="routing" />
+      <VideoConfigurationWorkspace context="routing" />
       {error ? <InlineFeedback tone="danger" message={`路由模型刷新失败：${error}`} /> : null}
       <MetricStrip metrics={summaryMetrics} />
       <FilterToolbar

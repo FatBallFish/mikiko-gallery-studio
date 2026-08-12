@@ -1209,6 +1209,8 @@ function routeIcon(route: ProtectedAdminRouteId) {
     routing: <RoutingIcon className={navIconClass} />,
     'access-accounts': <AccessAccountsIcon className={navIconClass} />,
     pricing: <PricingIcon className={navIconClass} />,
+    'video-tasks': <CallRecordsIcon className={navIconClass} />,
+    'media-policy': <SystemSettingsIcon className={navIconClass} />,
     audit: <AuditIcon className={navIconClass} />,
     'system-users': <SystemUsersIcon className={navIconClass} />,
     'system-settings': <SystemSettingsIcon className={navIconClass} />,

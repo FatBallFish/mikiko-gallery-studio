@@ -8,6 +8,7 @@ function assert(condition: unknown, message: string): asserts condition {
 assert(generalConfigCategories.includes('site'), '通用配置必须预留站点基础类目')
 assert(!generalConfigCategories.includes('docs' as never), '已废弃的开发文档标题和路径不能继续出现在通用配置')
 assert(generalConfigCategories.includes('public_gallery'), '通用配置必须包含公开内容类目')
+assert(generalConfigCategories.includes('features' as never), '通用配置必须包含多媒体功能开关类目')
 assert(!generalConfigCategories.includes('auth_security' as never), '认证安全不能出现在通用配置')
 assert(!generalConfigCategories.includes('generation_limits' as never), '生成限制不能出现在通用配置')
 assert(!generalConfigCategories.includes('moderation' as never), '内容审核不能出现在通用配置')
@@ -16,6 +17,9 @@ assert(forbiddenGeneralConfigCategories.includes('auth_security'), '高风险类
 
 assert(configFieldMeta('title').label === 'title', '通用配置不能保留已废弃的文档标题字段元数据')
 assert(configFieldMeta('base_path').label === 'base_path', '通用配置不能保留已废弃的文档路径字段元数据')
+assert(configFieldMeta('video_creation').type === 'boolean', '视频快捷创作必须使用布尔开关')
+assert(configFieldMeta('creative_canvas').type === 'boolean', '创意画布必须使用布尔开关')
+assert(configFieldMeta('media_upload').type === 'boolean', '本地媒体上传必须使用布尔开关')
 
 const imageBatchLimit = configFieldMeta('max_image_count')
 assert(imageBatchLimit.hint.includes('上游请求'), '最大出图数必须说明它限制的是单次上游请求容量')
