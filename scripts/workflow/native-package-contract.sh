@@ -31,6 +31,7 @@ for target_os in linux windows; do
     "bin/mikiko-gallery-studio-worker${extension}" \
     "bin/mikiko-gallery-studio-gateway${extension}" \
 	"bin/mikiko-gallery-studio-db-migrate${extension}" \
+    "bin/mikiko-gallery-studio-media-backfill${extension}" \
     "web/user/index.html" \
     "web/admin/index.html" \
     "web/docs/index.html" \

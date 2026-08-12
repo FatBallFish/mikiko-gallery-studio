@@ -11,6 +11,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/mikiko-gallery-studio-api ./cmd/api
 RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/mikiko-gallery-studio-db-migrate ./cmd/db-migrate
+RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/mikiko-gallery-studio-media-backfill ./cmd/media-backfill
 RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/mikiko-gallery-studio-local-bootstrap ./cmd/local-bootstrap
 
 FROM alpine:3.22
@@ -21,6 +22,7 @@ RUN apk add --no-cache ca-certificates su-exec tzdata && \
     chown -R picgallery:picgallery /app /var/lib/pic-gallery
 COPY --from=build /out/mikiko-gallery-studio-api /usr/local/bin/mikiko-gallery-studio-api
 COPY --from=build /out/mikiko-gallery-studio-db-migrate /usr/local/bin/mikiko-gallery-studio-db-migrate
+COPY --from=build /out/mikiko-gallery-studio-media-backfill /usr/local/bin/mikiko-gallery-studio-media-backfill
 COPY --from=build /out/mikiko-gallery-studio-local-bootstrap /usr/local/bin/mikiko-gallery-studio-local-bootstrap
 COPY --chmod=755 scripts/docker/local-runtime-entrypoint.sh /usr/local/bin/mikiko-gallery-studio-local-entrypoint
 COPY api/openapi ./api/openapi

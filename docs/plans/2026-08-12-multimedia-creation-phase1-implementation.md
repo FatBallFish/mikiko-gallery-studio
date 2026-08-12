@@ -398,10 +398,11 @@
 **Steps:**
 
 1. 增加 fake Seedance/MiniMax、MinIO Multipart、媒体处理、画布生成与计费对账 smoke；覆盖重复 callback/poll、部分成功、转存恢复和同 key 幂等。
-2. 执行 1 GiB S3/MinIO 与 Local 上传测试，记录 API RSS、临时盘、断点/取消/清理；不把 1 GiB fixture 提交仓库。
-3. 执行 100/500 estimate、1000 due poll、50 callback 竞态、FFmpeg 资源水位和 Canvas 200/300 性能测试。
-4. 启动本地服务，使用 Playwright 验收桌面、手机、平板横屏、暗亮主题；截图并做画布 nonblank/canvas-pixel 检查，修复重叠、溢出、不可操作和媒体误加载。
-5. 完整执行：
+2. 回归固定积分包有效期：后台开关开启时要求正整数天数，关闭时隐藏并忽略天数；订单快照不可变；购买/赠送 grant 同为永久或同一到期时间；自定义充值永久；用户订单与余额展示快照结果；视频预留/结算不改变 grant 到期时间。
+3. 执行 1 GiB S3/MinIO 与 Local 上传测试，记录 API RSS、临时盘、断点/取消/清理；不把 1 GiB fixture 提交仓库。
+4. 执行 100/500 estimate、1000 due poll、50 callback 竞态、FFmpeg 资源水位和 Canvas 200/300 性能测试。
+5. 启动本地服务，使用 Playwright 验收桌面、手机、平板横屏、暗亮主题；截图并做画布 nonblank/canvas-pixel 检查，修复重叠、溢出、不可操作和媒体误加载。
+6. 完整执行：
 
    ```bash
    ./scripts/workflow/verify.sh
@@ -410,8 +411,8 @@
    ./scripts/workflow/api-smoke.sh
    ```
 
-6. 对照 PRD 25.1-25.4 与技术方案 5.6 逐项记录证据；不得以部分实现宣称完成。
-7. 提交最终测试/文档批次，重新运行 committed-scope review marker，确保 tree SHA 与 HEAD 一致。
-8. 推送 `codex/multimedia-creation-phase1`，创建面向 `main` 的 ready PR，等待 CI 全绿并完成 review。
-9. 合并 PR 到 `main`，拉取远端 merge commit，再创建下一个语义版本 tag（基于 `v0.0.12` 应为 `v0.0.13`，若合并前已有新 tag 则递增最新 patch）。
-10. 推送 tag，等待并验证 release Action、镜像和 release manifest 均指向该 tag；只有发布成功才将目标标记完成。
+7. 对照 PRD 25.1-25.4、2.6 与技术方案 5.6、1.6 逐项记录证据；不得以部分实现宣称完成。
+8. 提交最终测试/文档批次，重新运行 committed-scope review marker，确保 tree SHA 与 HEAD 一致。
+9. 推送 `codex/multimedia-creation-phase1`，创建面向 `main` 的 ready PR，等待 CI 全绿并完成 review。
+10. 合并 PR 到 `main`，拉取远端 merge commit，再创建下一个语义版本 tag（基于 `v0.0.12` 应为 `v0.0.13`，若合并前已有新 tag 则递增最新 patch）。
+11. 推送 tag，等待并验证 release Action、镜像和 release manifest 均指向该 tag；只有发布成功才将目标标记完成。

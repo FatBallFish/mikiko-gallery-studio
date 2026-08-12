@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -159,6 +160,19 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			field("ADMIN_WEB_PORT", "ports", "管理后台模块的内部监听端口。", "Internal listening port for the admin frontend module.", "5174", "", FieldOwnerMGSCTL, requiredNever, validateOptionalPort),
 			field("DOCS_WEB_PORT", "ports", "文档前端模块的内部监听端口。", "Internal listening port for the documentation frontend module.", "5175", "", FieldOwnerMGSCTL, requiredNever, validateOptionalPort),
 			field("MONITORING_PORT", "ports", "可选监控模块映射到宿主机的 Prometheus 监听端口；未部署监控模块时可留空。", "Host port mapped to Prometheus by the optional monitoring module; leave empty when monitoring is not deployed.", "9090", "", FieldOwnerMGSCTL, requiredNever, validateOptionalPort),
+
+			field("WORKER_ROLES", "worker", "当前 Worker 启用的角色，逗号分隔，可选 image、video、media、cleanup。", "Comma-separated Worker roles enabled on this process: image, video, media, and cleanup.", "image,video,media,cleanup", "image,video,media,cleanup", FieldOwnerMGSCTL, requiredNever, validateWorkerRoles),
+			field("WORKER_MAX_CONCURRENT_TASKS", "worker", "兼容的图片任务最大并发；未设置图片角色并发时作为回退值。", "Legacy image task concurrency used when the image role concurrency is not set.", "4", "4", FieldOwnerMGSCTL, requiredNever, validateWorkerConcurrency),
+			field("WORKER_IMAGE_CONCURRENCY", "worker", "图片角色独立并发数。", "Independent concurrency limit for the image role.", "4", "4", FieldOwnerMGSCTL, requiredNever, validateWorkerConcurrency),
+			field("WORKER_VIDEO_CONCURRENCY", "worker", "视频角色独立并发数。", "Independent concurrency limit for the video role.", "2", "2", FieldOwnerMGSCTL, requiredNever, validateWorkerConcurrency),
+			field("WORKER_MEDIA_CONCURRENCY", "worker", "媒体探测与派生角色独立并发数。", "Independent concurrency limit for media probing and derivatives.", "2", "2", FieldOwnerMGSCTL, requiredNever, validateWorkerConcurrency),
+			field("WORKER_CLEANUP_CONCURRENCY", "worker", "对象清理角色独立并发数。", "Independent concurrency limit for object cleanup.", "1", "1", FieldOwnerMGSCTL, requiredNever, validateWorkerConcurrency),
+			field("MEDIA_FFMPEG_PATH", "worker", "Worker 使用的 FFmpeg 可执行文件路径或命令名。", "FFmpeg executable path or command name used by the Worker.", "ffmpeg", "ffmpeg", FieldOwnerMGSCTL, requiredNever, validateNonEmpty),
+			field("MEDIA_FFPROBE_PATH", "worker", "Worker 使用的 ffprobe 可执行文件路径或命令名。", "ffprobe executable path or command name used by the Worker.", "ffprobe", "ffprobe", FieldOwnerMGSCTL, requiredNever, validateNonEmpty),
+			field("MEDIA_TEMP_DIR", "worker", "媒体下载、探测和派生处理的隔离临时目录。", "Isolated temporary directory for media download, probing, and derivatives.", "./data/tmp", "./data/tmp", FieldOwnerMGSCTL, requiredNever, validateNonEmpty),
+			field("MEDIA_TEMP_DISK_PAUSE_PERCENT", "worker", "临时磁盘达到该使用率时暂停领取新媒体任务。", "Pause new media claims when temporary disk usage reaches this percentage.", "75", "75", FieldOwnerMGSCTL, requiredNever, validatePercent),
+			field("MEDIA_TEMP_DISK_CRITICAL_PERCENT", "worker", "临时磁盘达到该使用率时进入严重告警状态。", "Mark temporary disk health critical when usage reaches this percentage.", "90", "90", FieldOwnerMGSCTL, requiredNever, validatePercent),
+			field("WORKER_METRICS_ADDR", "worker", "Worker Prometheus 指标监听地址；Docker 内建议 :9091，原生部署默认仅监听回环地址。", "Worker Prometheus metrics listen address; use :9091 inside Docker and loopback by default for native deployments.", "127.0.0.1:9091", "127.0.0.1:9091", FieldOwnerMGSCTL, requiredNever, validateListenAddress),
 
 			field("IMAGE_REGISTRY", "release", "Docker 镜像仓库地址；原生部署可留空。", "Docker image registry; leave empty for native deployments.", "registry.example.com/project", "", FieldOwnerMGSCTL, requiredNever, validateOptionalNonEmpty),
 			field("IMAGE_TAG", "release", "Docker 各模块使用的不可变镜像标签。", "Immutable Docker image tag used by application modules.", "v1.0.0", "", FieldOwnerMGSCTL, requiredDocker, validateNonEmpty),
@@ -400,6 +414,42 @@ func validateOptionalNonNegativeInteger(value string) error {
 	return nil
 }
 
+func validateWorkerRoles(value string) error {
+	seen := make(map[string]struct{}, 4)
+	for _, role := range strings.Split(value, ",") {
+		role = strings.TrimSpace(role)
+		switch WorkerRole(role) {
+		case WorkerRoleImage, WorkerRoleVideo, WorkerRoleMedia, WorkerRoleCleanup:
+		default:
+			return fmt.Errorf("worker role %q is invalid", role)
+		}
+		if _, exists := seen[role]; exists {
+			return fmt.Errorf("worker role %q is duplicated", role)
+		}
+		seen[role] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return fmt.Errorf("at least one worker role is required")
+	}
+	return nil
+}
+
+func validateWorkerConcurrency(value string) error {
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 1 || parsed > 64 {
+		return fmt.Errorf("value %q must be between 1 and 64", value)
+	}
+	return nil
+}
+
+func validatePercent(value string) error {
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 1 || parsed > 100 {
+		return fmt.Errorf("value %q must be between 1 and 100", value)
+	}
+	return nil
+}
+
 func validatePort(value string) error {
 	if value == "" {
 		return nil
@@ -412,6 +462,18 @@ func validatePort(value string) error {
 }
 
 func validateOptionalPort(value string) error { return validatePort(value) }
+
+func validateListenAddress(value string) error {
+	if strings.TrimSpace(value) == "" || strings.ContainsAny(value, "\r\n\x00") {
+		return errors.New("listen address is invalid")
+	}
+	host, port, err := net.SplitHostPort(value)
+	if err != nil {
+		return errors.New("listen address must include host and port")
+	}
+	_ = host
+	return validatePort(port)
+}
 
 func validateNonEmpty(value string) error {
 	if strings.TrimSpace(value) == "" {

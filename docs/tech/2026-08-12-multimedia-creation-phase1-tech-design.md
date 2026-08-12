@@ -1,7 +1,7 @@
 # 多媒体创作平台一期技术方案
 
 > 日期：2026-08-12
-> 状态：产品输入已确认，待技术评审与实施
+> 状态：需求与技术方案已确认，实施中
 > 目标基线：v0.0.12，当前工作树 `codex/v012-workspace-prompt-followups`，基线提交 `d988552`
 > 需求来源：`docs/prd/2026-08-12-multimedia-creation-phase1-prd.md`
 > 技术预研：`docs/tech/2026-08-11-multimedia-creation-platform-research.md`
@@ -95,6 +95,19 @@
 6. Demo 仅用于验证信息结构、交互路径和状态，不是视觉设计稿。
 7. 前端正式实现必须继承当前 `styles.css`、共享主题变量、现有 Shell、表单、弹层和 Lucide 图标体系。
 8. 画布是项目实体：允许主动转移到其他自有项目，但运行中禁止转移；引用资产不随画布迁移或复制。
+
+### 1.6 固定积分包有效期兼容契约
+
+本期不新增第二套积分有效期模型，复用 v0.0.12 已有字段与事务语义：
+
+- `subscription_plans.credit_expiry_enabled` 控制固定积分包是否到期；开启时 `duration_days > 0`，关闭时 API 的有效策略将 `duration_days` 归一为 null。
+- `payment_orders.credit_expiry_enabled` 与 `credit_valid_days` 在创建订单时从套餐快照；支付完成只读取订单快照。
+- 开启有效期时，购买与赠送 grant 的 `expires_at = credited_at + credit_valid_days`；关闭时两个 grant 的 `expires_at` 均为 null。
+- 管理后台用二元开关控制有效期，仅在开启时展示天数输入；服务端仍执行同样的条件校验，不能依赖前端隐藏字段保证合法性。
+- 历史套餐迁移默认开启有效期；历史订单和既有 grant 不在本期迁移中重算。
+- 多媒体任务继续通过既有钱包分配与结算端口消费不同 grant，不能因视频预留、部分成功或退款改变 grant 原始到期时间。
+
+对应发布回归必须覆盖永久积分包、到期积分包、订单快照不可变、购买/赠送 grant 分离、用户端永久/到期展示，以及视频任务在两类 grant 上的预留和结算。
 
 ---
 

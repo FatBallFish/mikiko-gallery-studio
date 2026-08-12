@@ -240,6 +240,19 @@ func configFromRuntimeValues(fileEnv map[string]string) Config {
 	cfg.Cashier.StripeAPIBaseURL = envString(fileEnv, "CASHIER_STRIPE_API_BASE_URL", "")
 
 	cfg.Worker.MaxConcurrentTasks = envInt(fileEnv, "WORKER_MAX_CONCURRENT_TASKS", 0)
+	for _, role := range envCSV(fileEnv, "WORKER_ROLES") {
+		cfg.Worker.Roles = append(cfg.Worker.Roles, WorkerRole(role))
+	}
+	cfg.Worker.ImageConcurrency = envInt(fileEnv, "WORKER_IMAGE_CONCURRENCY", 0)
+	cfg.Worker.VideoConcurrency = envInt(fileEnv, "WORKER_VIDEO_CONCURRENCY", 0)
+	cfg.Worker.MediaConcurrency = envInt(fileEnv, "WORKER_MEDIA_CONCURRENCY", 0)
+	cfg.Worker.CleanupConcurrency = envInt(fileEnv, "WORKER_CLEANUP_CONCURRENCY", 0)
+	cfg.Worker.FFmpegPath = envString(fileEnv, "MEDIA_FFMPEG_PATH", "")
+	cfg.Worker.FFprobePath = envString(fileEnv, "MEDIA_FFPROBE_PATH", "")
+	cfg.Worker.TempDir = envString(fileEnv, "MEDIA_TEMP_DIR", "")
+	cfg.Worker.TempDiskPausePercent = envInt(fileEnv, "MEDIA_TEMP_DISK_PAUSE_PERCENT", 0)
+	cfg.Worker.TempDiskCriticalPercent = envInt(fileEnv, "MEDIA_TEMP_DISK_CRITICAL_PERCENT", 0)
+	cfg.Worker.MetricsAddr = envString(fileEnv, "WORKER_METRICS_ADDR", "")
 	cfg.HTTP.CORSAllowedOrigins = envCSV(fileEnv, "CORS_ALLOWED_ORIGINS")
 
 	cfg.Providers.OpenAI.Enabled = envBool(fileEnv, "OPENAI_ENABLED", false)
@@ -374,6 +387,39 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Worker.MaxConcurrentTasks > 64 {
 		cfg.Worker.MaxConcurrentTasks = 64
+	}
+	if len(cfg.Worker.Roles) == 0 {
+		cfg.Worker.Roles = []WorkerRole{WorkerRoleImage, WorkerRoleVideo, WorkerRoleMedia, WorkerRoleCleanup}
+	}
+	if cfg.Worker.ImageConcurrency <= 0 {
+		cfg.Worker.ImageConcurrency = cfg.Worker.MaxConcurrentTasks
+	}
+	if cfg.Worker.VideoConcurrency <= 0 {
+		cfg.Worker.VideoConcurrency = 2
+	}
+	if cfg.Worker.MediaConcurrency <= 0 {
+		cfg.Worker.MediaConcurrency = 2
+	}
+	if cfg.Worker.CleanupConcurrency <= 0 {
+		cfg.Worker.CleanupConcurrency = 1
+	}
+	if cfg.Worker.FFmpegPath == "" {
+		cfg.Worker.FFmpegPath = "ffmpeg"
+	}
+	if cfg.Worker.FFprobePath == "" {
+		cfg.Worker.FFprobePath = "ffprobe"
+	}
+	if cfg.Worker.TempDir == "" {
+		cfg.Worker.TempDir = "./data/tmp"
+	}
+	if cfg.Worker.TempDiskPausePercent == 0 {
+		cfg.Worker.TempDiskPausePercent = 75
+	}
+	if cfg.Worker.TempDiskCriticalPercent == 0 {
+		cfg.Worker.TempDiskCriticalPercent = 90
+	}
+	if cfg.Worker.MetricsAddr == "" {
+		cfg.Worker.MetricsAddr = "127.0.0.1:9091"
 	}
 	if len(cfg.Billing.AutoBaseResolutionDefaultByGroup) == 0 {
 		cfg.Billing.AutoBaseResolutionDefaultByGroup = map[string]string{"basic": "1k", "plus": "2k", "pro": "4k"}
@@ -567,6 +613,9 @@ func envCSV(fileEnv map[string]string, key string) []string {
 func validateEnvConfig(cfg Config) error {
 	if strings.TrimSpace(cfg.Database.URL) == "" && !isLocalLikeEnv(cfg.App.Env) {
 		return fmt.Errorf("DATABASE_URL must be configured in %s env", cfg.App.Env)
+	}
+	if cfg.Worker.TempDiskCriticalPercent <= cfg.Worker.TempDiskPausePercent {
+		return fmt.Errorf("media temporary disk critical watermark must be greater than pause watermark")
 	}
 	return nil
 }

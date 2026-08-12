@@ -27,11 +27,13 @@ import (
 	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	adminuserservice "github.com/fatballfish/pic-gallery/internal/service/adminuser"
+	adminvideoservice "github.com/fatballfish/pic-gallery/internal/service/adminvideo"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	canvasservice "github.com/fatballfish/pic-gallery/internal/service/canvas"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
@@ -45,6 +47,7 @@ import (
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
+	videocallbackservice "github.com/fatballfish/pic-gallery/internal/service/videocallback"
 	videopricingservice "github.com/fatballfish/pic-gallery/internal/service/videopricing"
 	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
 	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
@@ -360,11 +363,22 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	slog.Info("database-backed stores enabled")
 
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
-	api.SetMediaAssetService(mediaassetservice.NewService(entstore.NewMediaStore(client), storageRegistry, mediaassetservice.Options{Policy: domainmedia.DefaultPolicy()}))
+	mediaAssetSvc := mediaassetservice.NewService(entstore.NewMediaStore(client), storageRegistry, mediaassetservice.Options{Policy: domainmedia.DefaultPolicy(), Observer: observability.DefaultMetrics()})
+	api.SetMediaAssetService(mediaAssetSvc)
 	videoConfigStore := entstore.NewVideoConfigStore(client)
+	adminVideoStore := entstore.NewAdminVideoStore(client)
 	videoRoutingSvc := videoroutingservice.NewService(videoConfigStore)
 	videoQuoteKey := sha256.Sum256([]byte("video-quote:" + cfg.Security.PromptOptimizationQuoteSigningKey))
-	api.SetVideoServices(videoRoutingSvc, videotaskservice.NewQuoteService(videoRoutingSvc, videopricingservice.NewService(videoConfigStore, nil), videoQuoteKey[:], nil))
+	videoQuoteSvc := videotaskservice.NewQuoteService(videoRoutingSvc, videopricingservice.NewService(videoConfigStore, nil), videoQuoteKey[:], nil)
+	videoTaskSvc := videotaskservice.NewService(entstore.NewVideoTaskStore(client, billingStore), videoQuoteSvc, projectSvc, mediaAssetSvc, nil)
+	api.SetVideoServices(videoRoutingSvc, videoQuoteSvc, videoTaskSvc)
+	api.SetAdminVideoService(adminvideoservice.NewService(adminVideoStore))
+	canvasGenerator := canvasservice.NewTaskGenerator(taskSvc, canvasservice.NewImageBillingEstimator(billingSvc), videoTaskSvc)
+	canvasSvc := canvasservice.NewService(entstore.NewCanvasStore(client), canvasGenerator, nil)
+	canvasSvc.SetObserver(observability.DefaultMetrics())
+	api.SetCanvasService(canvasSvc)
+	videoCallbackStore := entstore.NewVideoCallbackStore(client)
+	api.SetVideoCallbackService(videocallbackservice.NewService(videocallbackservice.NewAccountResolver(videoCallbackStore), videoCallbackStore))
 	api.SetGalleryExportService(galleryexportservice.NewService(entstore.NewGalleryExportStore(client), storageRegistry, galleryexportservice.Options{}))
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)

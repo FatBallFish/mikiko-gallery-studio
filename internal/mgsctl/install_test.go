@@ -47,6 +47,9 @@ func TestBuildRuntimeArtifactsGeneratesPortableSecretSafeSetupFiles(t *testing.T
 	if artifacts.SetupToken == "" || artifacts.SetupToken != document.Values["SETUP_TOKEN"] {
 		t.Fatal("setup token must be returned once and match the protected runtime env")
 	}
+	if document.Values["WORKER_METRICS_ADDR"] != ":9091" {
+		t.Fatalf("Docker Worker metrics address = %q, want :9091", document.Values["WORKER_METRICS_ADDR"])
+	}
 	if artifacts.InstallState.Phase != setup.InstallPhasePending || artifacts.InstallState.InstallationID != document.Values["INSTALLATION_ID"] {
 		t.Fatalf("pending install state does not bind runtime env: %#v", artifacts.InstallState)
 	}
@@ -117,6 +120,9 @@ func TestBuildRuntimeArtifactsPersistsNativeGatewayProbe(t *testing.T) {
 	}
 	if document.Values["PIC_GALLERY_DOCS_PROBE_URL"] != "http://127.0.0.1:18000/developer-docs/" {
 		t.Fatalf("native probe URL = %q", document.Values["PIC_GALLERY_DOCS_PROBE_URL"])
+	}
+	if document.Values["WORKER_METRICS_ADDR"] != "127.0.0.1:9091" {
+		t.Fatalf("native Worker metrics address = %q, want loopback", document.Values["WORKER_METRICS_ADDR"])
 	}
 }
 
@@ -189,6 +195,12 @@ func TestBuildRuntimeArtifactsIncludesSelfContainedDockerAssets(t *testing.T) {
 	}
 	if !bytes.Contains(artifacts.DeploymentFiles[4].Content, []byte("api:18080")) {
 		t.Fatal("materialized Prometheus config did not use the configured API port")
+	}
+	if !bytes.Contains(artifacts.DeploymentFiles[4].Content, []byte("worker:9091")) {
+		t.Fatal("materialized Prometheus config does not scrape Worker metrics")
+	}
+	if !bytes.Contains(artifacts.DeploymentFiles[0].Content, []byte("expose:\n      - \"9091\"")) {
+		t.Fatal("materialized Compose file does not expose Worker metrics internally")
 	}
 }
 

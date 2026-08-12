@@ -18,12 +18,21 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 2
 fi
 
-if ! command -v ffmpeg >/dev/null 2>&1; then
-  echo "warning: ffmpeg is unavailable; media processing readiness will fail until it is installed" >&2
-fi
-if ! command -v ffprobe >/dev/null 2>&1; then
-  echo "warning: ffprobe is unavailable; media processing readiness will fail until it is installed" >&2
-fi
+worker_roles="${WORKER_ROLES:-image,video,media,cleanup}"
+case ",${worker_roles}," in
+  *,media,*)
+    ffmpeg_path="${MEDIA_FFMPEG_PATH:-ffmpeg}"
+    ffprobe_path="${MEDIA_FFPROBE_PATH:-ffprobe}"
+    if ! command -v "$ffmpeg_path" >/dev/null 2>&1; then
+      echo "error: media Worker role requires FFmpeg ($ffmpeg_path)" >&2
+      exit 1
+    fi
+    if ! command -v "$ffprobe_path" >/dev/null 2>&1; then
+      echo "error: media Worker role requires ffprobe ($ffprobe_path)" >&2
+      exit 1
+    fi
+    ;;
+esac
 
 run_as_root() {
   if [ "$(id -u)" -eq 0 ]; then

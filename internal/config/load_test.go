@@ -186,6 +186,111 @@ func TestLoadRuntimeRequiresCompletedSetupAndRequiredFields(t *testing.T) {
 	}
 }
 
+func TestRuntimeWorkerConfigurationDefaultsAndOverrides(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.env")
+	values := completeRuntimeValuesForTest()
+	writeRuntimeValuesForTest(t, path, values)
+
+	cfg, err := LoadRuntime(path)
+	if err != nil {
+		t.Fatalf("LoadRuntime defaults: %v", err)
+	}
+	wantRoles := []WorkerRole{WorkerRoleImage, WorkerRoleVideo, WorkerRoleMedia, WorkerRoleCleanup}
+	if !reflect.DeepEqual(cfg.Worker.Roles, wantRoles) {
+		t.Fatalf("default worker roles = %v, want %v", cfg.Worker.Roles, wantRoles)
+	}
+	if cfg.Worker.ImageConcurrency != 4 || cfg.Worker.VideoConcurrency != 2 || cfg.Worker.MediaConcurrency != 2 || cfg.Worker.CleanupConcurrency != 1 {
+		t.Fatalf("default worker concurrency = %#v", cfg.Worker)
+	}
+	if cfg.Worker.FFmpegPath != "ffmpeg" || cfg.Worker.FFprobePath != "ffprobe" || cfg.Worker.TempDir != "./data/tmp" {
+		t.Fatalf("default media tools/temp = %#v", cfg.Worker)
+	}
+	if cfg.Worker.MetricsAddr != "127.0.0.1:9091" {
+		t.Fatalf("default Worker metrics address = %q", cfg.Worker.MetricsAddr)
+	}
+	if cfg.Worker.TempDiskPausePercent != 75 || cfg.Worker.TempDiskCriticalPercent != 90 {
+		t.Fatalf("default disk watermarks = %#v", cfg.Worker)
+	}
+
+	values["WORKER_ROLES"] = "video,media"
+	values["WORKER_IMAGE_CONCURRENCY"] = "7"
+	values["WORKER_VIDEO_CONCURRENCY"] = "3"
+	values["WORKER_MEDIA_CONCURRENCY"] = "4"
+	values["WORKER_CLEANUP_CONCURRENCY"] = "2"
+	values["MEDIA_FFMPEG_PATH"] = "/opt/media/ffmpeg"
+	values["MEDIA_FFPROBE_PATH"] = "/opt/media/ffprobe"
+	values["MEDIA_TEMP_DIR"] = "/var/lib/pic-gallery/tmp"
+	values["MEDIA_TEMP_DISK_PAUSE_PERCENT"] = "70"
+	values["MEDIA_TEMP_DISK_CRITICAL_PERCENT"] = "85"
+	values["WORKER_METRICS_ADDR"] = ":19091"
+	writeRuntimeValuesForTest(t, path, values)
+
+	cfg, err = LoadRuntime(path)
+	if err != nil {
+		t.Fatalf("LoadRuntime overrides: %v", err)
+	}
+	if !reflect.DeepEqual(cfg.Worker.Roles, []WorkerRole{WorkerRoleVideo, WorkerRoleMedia}) {
+		t.Fatalf("configured worker roles = %v", cfg.Worker.Roles)
+	}
+	if cfg.Worker.ImageConcurrency != 7 || cfg.Worker.VideoConcurrency != 3 || cfg.Worker.MediaConcurrency != 4 || cfg.Worker.CleanupConcurrency != 2 {
+		t.Fatalf("configured worker concurrency = %#v", cfg.Worker)
+	}
+	if cfg.Worker.FFmpegPath != "/opt/media/ffmpeg" || cfg.Worker.FFprobePath != "/opt/media/ffprobe" || cfg.Worker.TempDir != "/var/lib/pic-gallery/tmp" {
+		t.Fatalf("configured media tools/temp = %#v", cfg.Worker)
+	}
+	if cfg.Worker.MetricsAddr != ":19091" {
+		t.Fatalf("configured Worker metrics address = %q", cfg.Worker.MetricsAddr)
+	}
+}
+
+func TestRuntimeWorkerConfigurationRejectsUnsafeValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]string
+		want   string
+	}{
+		{name: "unknown role", values: map[string]string{"WORKER_ROLES": "image,unknown"}, want: "WORKER_ROLES"},
+		{name: "duplicate role", values: map[string]string{"WORKER_ROLES": "video,video"}, want: "WORKER_ROLES"},
+		{name: "zero concurrency", values: map[string]string{"WORKER_VIDEO_CONCURRENCY": "0"}, want: "WORKER_VIDEO_CONCURRENCY"},
+		{name: "excessive concurrency", values: map[string]string{"WORKER_MEDIA_CONCURRENCY": "65"}, want: "WORKER_MEDIA_CONCURRENCY"},
+		{name: "invalid pause watermark", values: map[string]string{"MEDIA_TEMP_DISK_PAUSE_PERCENT": "101"}, want: "MEDIA_TEMP_DISK_PAUSE_PERCENT"},
+		{name: "critical below pause", values: map[string]string{"MEDIA_TEMP_DISK_PAUSE_PERCENT": "90", "MEDIA_TEMP_DISK_CRITICAL_PERCENT": "80"}, want: "critical"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "runtime.env")
+			values := completeRuntimeValuesForTest()
+			writeRuntimeValuesForTest(t, path, values)
+			for key, value := range tt.values {
+				replaceRuntimeFieldForTest(t, path, key, value)
+			}
+			_, err := LoadRuntime(path)
+			if err == nil || !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(tt.want)) {
+				t.Fatalf("LoadRuntime error = %v, want diagnostic containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func replaceRuntimeFieldForTest(t *testing.T, path, key, value string) {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read runtime env: %v", err)
+	}
+	lines := strings.Split(string(content), "\n")
+	for index, line := range lines {
+		if strings.HasPrefix(line, key+"=") {
+			lines[index] = key + "=" + value
+			if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+				t.Fatalf("write runtime field %s: %v", key, err)
+			}
+			return
+		}
+	}
+	t.Fatalf("runtime env field %s not found", key)
+}
+
 func TestLoadRuntimeRequiresRetainedSetupTokenVersionOnlyOnAuthorities(t *testing.T) {
 	authorityPath := filepath.Join(t.TempDir(), "authority.env")
 	authorityValues := completeRuntimeValuesForTest()

@@ -32,6 +32,8 @@ type MigrationCheckpoint struct {
 	AfterTaskID *uuid.UUID `json:"after_task_id,omitempty"`
 	// AfterResultID holds the value of the "after_result_id" field.
 	AfterResultID *uuid.UUID `json:"after_result_id,omitempty"`
+	// AfterCreatedAt holds the value of the "after_created_at" field.
+	AfterCreatedAt *time.Time `json:"after_created_at,omitempty"`
 	// ProcessedRows holds the value of the "processed_rows" field.
 	ProcessedRows int `json:"processed_rows,omitempty"`
 	// Completed holds the value of the "completed" field.
@@ -52,7 +54,7 @@ func (*MigrationCheckpoint) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case migrationcheckpoint.FieldName, migrationcheckpoint.FieldPhase:
 			values[i] = new(sql.NullString)
-		case migrationcheckpoint.FieldCreatedAt, migrationcheckpoint.FieldUpdatedAt:
+		case migrationcheckpoint.FieldCreatedAt, migrationcheckpoint.FieldUpdatedAt, migrationcheckpoint.FieldAfterCreatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -118,6 +120,13 @@ func (_m *MigrationCheckpoint) assignValues(columns []string, values []any) erro
 			} else if value.Valid {
 				_m.AfterResultID = new(uuid.UUID)
 				*_m.AfterResultID = *value.S.(*uuid.UUID)
+			}
+		case migrationcheckpoint.FieldAfterCreatedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field after_created_at", values[i])
+			} else if value.Valid {
+				_m.AfterCreatedAt = new(time.Time)
+				*_m.AfterCreatedAt = value.Time
 			}
 		case migrationcheckpoint.FieldProcessedRows:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -190,6 +199,11 @@ func (_m *MigrationCheckpoint) String() string {
 	if v := _m.AfterResultID; v != nil {
 		builder.WriteString("after_result_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AfterCreatedAt; v != nil {
+		builder.WriteString("after_created_at=")
+		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("processed_rows=")

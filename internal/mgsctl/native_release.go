@@ -812,7 +812,11 @@ func validateNativeReleaseFiles(directory string, plan InstallPlan, platform Nat
 	}
 	required := make([]string, 0, 8)
 	if slices.Contains(plan.Components, ComponentAPI) {
-		required = append(required, filepath.Join("bin", "mikiko-gallery-studio-api"+extension), filepath.Join("api", "openapi", "openapi.yaml"))
+		required = append(required,
+			filepath.Join("bin", "mikiko-gallery-studio-api"+extension),
+			filepath.Join("bin", "mikiko-gallery-studio-media-backfill"+extension),
+			filepath.Join("api", "openapi", "openapi.yaml"),
+		)
 	}
 	if slices.Contains(plan.Components, ComponentWorker) {
 		required = append(required, filepath.Join("bin", "mikiko-gallery-studio-worker"+extension))

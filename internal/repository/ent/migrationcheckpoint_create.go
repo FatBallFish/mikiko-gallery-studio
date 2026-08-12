@@ -111,6 +111,20 @@ func (_c *MigrationCheckpointCreate) SetNillableAfterResultID(v *uuid.UUID) *Mig
 	return _c
 }
 
+// SetAfterCreatedAt sets the "after_created_at" field.
+func (_c *MigrationCheckpointCreate) SetAfterCreatedAt(v time.Time) *MigrationCheckpointCreate {
+	_c.mutation.SetAfterCreatedAt(v)
+	return _c
+}
+
+// SetNillableAfterCreatedAt sets the "after_created_at" field if the given value is not nil.
+func (_c *MigrationCheckpointCreate) SetNillableAfterCreatedAt(v *time.Time) *MigrationCheckpointCreate {
+	if v != nil {
+		_c.SetAfterCreatedAt(*v)
+	}
+	return _c
+}
+
 // SetProcessedRows sets the "processed_rows" field.
 func (_c *MigrationCheckpointCreate) SetProcessedRows(v int) *MigrationCheckpointCreate {
 	_c.mutation.SetProcessedRows(v)
@@ -286,6 +300,10 @@ func (_c *MigrationCheckpointCreate) createSpec() (*MigrationCheckpoint, *sqlgra
 	if value, ok := _c.mutation.AfterResultID(); ok {
 		_spec.SetField(migrationcheckpoint.FieldAfterResultID, field.TypeUUID, value)
 		_node.AfterResultID = &value
+	}
+	if value, ok := _c.mutation.AfterCreatedAt(); ok {
+		_spec.SetField(migrationcheckpoint.FieldAfterCreatedAt, field.TypeTime, value)
+		_node.AfterCreatedAt = &value
 	}
 	if value, ok := _c.mutation.ProcessedRows(); ok {
 		_spec.SetField(migrationcheckpoint.FieldProcessedRows, field.TypeInt, value)

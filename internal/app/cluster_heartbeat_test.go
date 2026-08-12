@@ -71,7 +71,7 @@ func TestAPIAndWorkerStartHeartbeatBeforeServingOrClaimingTasks(t *testing.T) {
 		before string
 	}{
 		{path: "run.go", before: "srv.ListenAndServe()"},
-		{path: "worker.go", before: "runner.Run(ctx)"},
+		{path: "worker.go", before: "runIndependentWorkerLoops(ctx, loops...)"},
 	} {
 		content, err := os.ReadFile(testCase.path)
 		if err != nil {

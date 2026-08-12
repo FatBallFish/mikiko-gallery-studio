@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -209,6 +210,7 @@ func TestWorkerNormalStartupVerifiesCompletedBindingBeforeRuntimeServices(t *tes
 	}
 	bindingErr := errors.New("completed binding rejected")
 	checks := make([]string, 0, 2)
+	metricsListens := 0
 	startup := workerBootstrap{
 		Bootstrap: completedAPIBootstrapForTest(),
 		State:     completedWorkerInstallStateForTest(completedAPIBootstrapForTest()),
@@ -225,9 +227,13 @@ func TestWorkerNormalStartupVerifiesCompletedBindingBeforeRuntimeServices(t *tes
 			checks = append(checks, "binding")
 			return bindingErr
 		},
+		metricsListen: func(string, string) (net.Listener, error) {
+			metricsListens++
+			return nil, errors.New("metrics must not start before binding validation")
+		},
 	})
-	if !errors.Is(err, bindingErr) || strings.Join(checks, ",") != "schema,binding" {
-		t.Fatalf("runNormalWorkerWithOptions = err %v, checks %v; want schema then binding rejection before runtime services", err, checks)
+	if !errors.Is(err, bindingErr) || strings.Join(checks, ",") != "schema,binding" || metricsListens != 0 {
+		t.Fatalf("runNormalWorkerWithOptions = err %v, checks %v, metrics listens %d; want schema then binding rejection before runtime services", err, checks, metricsListens)
 	}
 }
 
@@ -237,7 +243,7 @@ func TestWorkerStartupKeepsCompatibilityCheckAndContainsNoMigration(t *testing.T
 		t.Fatalf("read worker.go: %v", err)
 	}
 	source := string(workerSource)
-	for _, required := range []string{"options.openDatabase = db.OpenContext", "options.checkSchemaCompatibility = checkRuntimeSchemaCompatibility", "verifyCompletedStartupBinding(ctx", "runner.Run(ctx)"} {
+	for _, required := range []string{"options.openDatabase = db.OpenContext", "options.checkSchemaCompatibility = checkRuntimeSchemaCompatibility", "verifyCompletedStartupBinding(ctx", "runIndependentWorkerLoops(ctx, loops...)"} {
 		if !strings.Contains(source, required) {
 			t.Errorf("worker startup missing %q", required)
 		}

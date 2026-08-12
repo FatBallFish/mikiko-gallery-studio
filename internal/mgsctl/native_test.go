@@ -532,6 +532,36 @@ func TestNativeAssetOnlyWebPlanInstallsReleaseWithoutCreatingServices(t *testing
 	}
 }
 
+func TestValidateNativeAPIReleaseRequiresMediaBackfillBinary(t *testing.T) {
+	plan := nativeCorePlanForTest(t)
+	for _, relative := range []string{
+		"bin/mikiko-gallery-studio-api",
+		"bin/mikiko-gallery-studio-worker",
+		"bin/mikiko-gallery-studio-gateway",
+		"bin/mikiko-gallery-studio-db-migrate",
+		"api/openapi/openapi.yaml",
+		"web/user/index.html",
+		"web/admin/index.html",
+		"web/docs/index.html",
+	} {
+		path := filepath.Join(plan.RuntimeDir, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mode := os.FileMode(0o644)
+		if strings.HasPrefix(relative, "bin/") {
+			mode = 0o755
+		}
+		if err := os.WriteFile(path, []byte(relative), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := validateNativeReleaseFiles(plan.RuntimeDir, plan, NativePlatformLinux)
+	if err == nil || !strings.Contains(err.Error(), "bin/mikiko-gallery-studio-media-backfill") {
+		t.Fatalf("missing media backfill error = %v", err)
+	}
+}
+
 func TestNativeSystemdUnitsSetWorkingDirectoryDependenciesAndRestartContract(t *testing.T) {
 	plan, err := BuildInstallPlan(InstallInput{
 		Mode: "native", Profile: "core", Topology: "single", Role: "single", RuntimeDir: filepath.Join(t.TempDir(), "runtime with spaces"),
@@ -959,6 +989,9 @@ func nativeReleaseArchiveForTest(t *testing.T, entries map[string]nativeArchiveE
 	t.Helper()
 	if _, exists := entries["bin/mikiko-gallery-studio-db-migrate"]; !exists {
 		entries["bin/mikiko-gallery-studio-db-migrate"] = nativeArchiveEntry{content: "migrate", mode: 0o755}
+	}
+	if _, exists := entries["bin/mikiko-gallery-studio-media-backfill"]; !exists {
+		entries["bin/mikiko-gallery-studio-media-backfill"] = nativeArchiveEntry{content: "backfill", mode: 0o755}
 	}
 	var buffer bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buffer)

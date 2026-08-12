@@ -16,10 +16,10 @@ ARG FFMPEG_VERSION=6.1.2-r2
 WORKDIR /app
 RUN apk add --no-cache ca-certificates "ffmpeg=${FFMPEG_VERSION}" su-exec tzdata && \
     addgroup -S picgallery && adduser -S -G picgallery picgallery && \
-    mkdir -p /var/lib/pic-gallery/storage && \
+    mkdir -p /var/lib/pic-gallery/storage /var/lib/pic-gallery/tmp && \
     chown -R picgallery:picgallery /app /var/lib/pic-gallery
 COPY --from=build /out/mikiko-gallery-studio-worker /usr/local/bin/mikiko-gallery-studio-worker
 COPY --chmod=755 scripts/docker/local-runtime-entrypoint.sh /usr/local/bin/mikiko-gallery-studio-local-entrypoint
 USER picgallery
-VOLUME ["/var/lib/pic-gallery/storage"]
+VOLUME ["/var/lib/pic-gallery/storage", "/var/lib/pic-gallery/tmp"]
 ENTRYPOINT ["mikiko-gallery-studio-worker"]

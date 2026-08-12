@@ -19,6 +19,7 @@ func (MigrationCheckpoint) Fields() []ent.Field {
 		field.Int("after_user_id").Default(0),
 		field.UUID("after_task_id", uuid.UUID{}).Optional().Nillable(),
 		field.UUID("after_result_id", uuid.UUID{}).Optional().Nillable(),
+		field.Time("after_created_at").Optional().Nillable(),
 		field.Int("processed_rows").Default(0),
 		field.Bool("completed").Default(false),
 	}
