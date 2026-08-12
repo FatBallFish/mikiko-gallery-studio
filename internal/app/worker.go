@@ -184,7 +184,6 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	mediaWorkerStore := entstore.NewMediaWorkerStore(client)
 	adminVideoStore := entstore.NewAdminVideoStore(client)
 	mediaReconcileProcessor := mediaassetservice.NewMediaReconcileProcessor(mediaWorkerStore)
-	cleanupRole := &cleanupRoleProcessor{cleanup: cleanupProcessor, processors: []processOnce{cleanupProcessor, exportProcessor, uploadExpiryProcessor, mediaReconcileProcessor}}
 
 	videoStore := entstore.NewVideoTaskStore(client, entstore.NewBillingStore(client, cfg.Billing.PointsScale))
 	videoArtifactHTTPClient, err := newVideoArtifactHTTPClient(cfg.Worker.VideoArtifactTestCAFile)
@@ -239,6 +238,18 @@ func runNormalWorkerWithOptions(ctx context.Context, startup workerBootstrap, op
 	}
 	if cfg.Worker.HasRole(config.WorkerRoleCleanup) {
 		roles = append(roles, string(config.WorkerRoleCleanup))
+		mediaAssetBackfill := newAutomaticMediaAssetBackfill(
+			db.NewMediaAssetBackfillProcessor(client, db.MediaAssetBackfillProcessorOptions{}),
+			automaticMediaAssetBackfillOptions{observer: metrics},
+		)
+		cleanupRole := newCleanupRoleProcessor(
+			cleanupProcessor,
+			exportProcessor,
+			uploadExpiryProcessor,
+			mediaReconcileProcessor,
+			mediaAssetBackfill,
+		)
+		slog.Info("automatic media asset backfill enabled", "role", config.WorkerRoleCleanup)
 		loops = append(loops, func(loopCtx context.Context) error {
 			return runWorkerRoleSlots(loopCtx, "cleanup", cfg.Worker.CleanupConcurrency, time.Second, cleanupRole.ProcessOnce)
 		})
@@ -307,6 +318,16 @@ type cleanupRoleProcessor struct {
 	mu            sync.Mutex
 	nextProcessor int
 	lastReconcile time.Time
+}
+
+func newCleanupRoleProcessor(cleanup interface {
+	processOnce
+	reconcileOnce
+}, processors ...processOnce) *cleanupRoleProcessor {
+	return &cleanupRoleProcessor{
+		cleanup:    cleanup,
+		processors: append([]processOnce{cleanup}, processors...),
+	}
 }
 
 func (processor *cleanupRoleProcessor) ProcessOnce(ctx context.Context) (bool, error) {

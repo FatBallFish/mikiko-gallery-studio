@@ -194,6 +194,37 @@ func TestMediaAssetBackfillProcessorPersistsCheckpointAndResumes(t *testing.T) {
 	}
 }
 
+func TestMediaAssetBackfillProcessorsShareCheckpointWithoutDuplicateAssets(t *testing.T) {
+	ctx, client, _, _, images := seedMediaAssetBackfill(t, "shared-checkpoint", 4)
+	first := NewMediaAssetBackfillProcessor(client, MediaAssetBackfillProcessorOptions{BatchSize: 1})
+	second := NewMediaAssetBackfillProcessor(client, MediaAssetBackfillProcessorOptions{BatchSize: 1})
+
+	processors := []*MediaAssetBackfillProcessor{first, second}
+	for attempt := 0; attempt < 8; attempt++ {
+		processor := processors[attempt%len(processors)]
+		if _, err := processor.ProcessOnce(ctx); err != nil {
+			t.Fatalf("processor %d attempt %d: %v", attempt%len(processors), attempt, err)
+		}
+	}
+
+	checkpoint, err := client.MigrationCheckpoint.Query().Where(migrationcheckpoint.NameEQ(mediaAssetBackfillMigrationName)).Only(ctx)
+	if err != nil || !checkpoint.Completed || checkpoint.ProcessedRows != len(images) {
+		t.Fatalf("checkpoint = %#v, %v", checkpoint, err)
+	}
+	if count, err := client.MediaAsset.Query().Count(ctx); err != nil || count != len(images) {
+		t.Fatalf("asset count = %d, %v", count, err)
+	}
+	for _, image := range images {
+		count, err := client.MediaAsset.Query().Where(
+			mediaasset.IDEQ(image.ID),
+			mediaasset.LegacyImageResultIDEQ(image.ID),
+		).Count(ctx)
+		if err != nil || count != 1 {
+			t.Fatalf("asset %s count = %d, %v", image.ID, count, err)
+		}
+	}
+}
+
 func TestMediaAssetBackfillProcessorResumesWhenCheckpointSourceWasDeleted(t *testing.T) {
 	ctx, client, _, _, images := seedMediaAssetBackfill(t, "deleted-checkpoint-source", 3)
 	processor := NewMediaAssetBackfillProcessor(client, MediaAssetBackfillProcessorOptions{BatchSize: 1})
@@ -228,6 +259,31 @@ func TestMediaAssetBackfillProcessorReopensCompletedCheckpointForLateSource(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	for attempts := 0; attempts < 3; attempts++ {
+		if _, err := processor.ProcessBatch(ctx); err != nil {
+			t.Fatalf("late batch %d: %v", attempts, err)
+		}
+	}
+	if exists, err := client.MediaAsset.Query().Where(mediaasset.IDEQ(late.ID), mediaasset.DeletedAtIsNil()).Exist(ctx); err != nil || !exists {
+		t.Fatalf("late asset exists = %t, %v", exists, err)
+	}
+}
+
+func TestMediaAssetBackfillProcessorFindsLateSourceWhenCountsAreEqual(t *testing.T) {
+	ctx, client, project, task, images := seedMediaAssetBackfill(t, "late-source-equal-counts", 1)
+	processor := NewMediaAssetBackfillProcessor(client, MediaAssetBackfillProcessorOptions{BatchSize: 10})
+	if result, err := processor.ProcessBatch(ctx); err != nil || !result.Done {
+		t.Fatalf("complete first pass = %+v, %v", result, err)
+	}
+	if _, err := client.ImageResult.UpdateOneID(images[0].ID).SetDeletedAt(time.Now().UTC()).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	late, err := client.ImageResult.Create().SetTaskID(task.ID).SetUserID(task.UserID).SetProjectID(project.ID).
+		SetObjectKey("generated-images/late-equal-count.png").SetMimeType("image/png").SetSha256(strings.Repeat("f", 64)).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for attempts := 0; attempts < 3; attempts++ {
 		if _, err := processor.ProcessBatch(ctx); err != nil {
 			t.Fatalf("late batch %d: %v", attempts, err)

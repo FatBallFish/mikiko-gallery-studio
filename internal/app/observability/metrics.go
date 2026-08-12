@@ -27,6 +27,7 @@ type multimediaMetrics struct {
 	uploadBytes       map[string]uint64
 	derivativeBytes   map[string]uint64
 	canvasSaves       map[string]uint64
+	mediaBackfills    map[string]uint64
 	objectBytes       map[string]uint64
 	tempDiskPercent   uint64
 	tempDiskFreeBytes uint64
@@ -40,7 +41,7 @@ func NewMetrics() *Metrics {
 		runtime:          NewRuntimeMetrics(RuntimeMetricsOptions{}),
 		multimedia: multimediaMetrics{
 			videoStages: map[string]uint64{}, artifactBytes: map[string]uint64{}, settlements: map[string]uint64{},
-			uploadBytes: map[string]uint64{}, derivativeBytes: map[string]uint64{}, canvasSaves: map[string]uint64{}, objectBytes: map[string]uint64{},
+			uploadBytes: map[string]uint64{}, derivativeBytes: map[string]uint64{}, canvasSaves: map[string]uint64{}, mediaBackfills: map[string]uint64{}, objectBytes: map[string]uint64{},
 		},
 	}
 }
@@ -103,6 +104,12 @@ func (m *Metrics) RecordCanvasSave(result string) {
 	m.multimedia.mu.Unlock()
 }
 
+func (m *Metrics) RecordMediaAssetBackfill(result string) {
+	m.multimedia.mu.Lock()
+	m.multimedia.mediaBackfills[boundedLabel(result, mediaAssetBackfillResults)]++
+	m.multimedia.mu.Unlock()
+}
+
 func (m *Metrics) SetTemporaryDisk(usedPercent int, freeBytes int64) {
 	if usedPercent < 0 {
 		usedPercent = 0
@@ -136,13 +143,14 @@ func positiveBytes(value int64) uint64 {
 }
 
 var (
-	videoStages      = labelSet("queued", "submitting", "reconciling", "provider_queued", "provider_running", "artifact_pending", "recovery_required", "settling", "succeeded", "failed", "cancelled")
-	operationResults = labelSet("success", "retry", "failed", "paused", "cancelled")
-	mediaTypes       = labelSet("image", "video", "audio")
-	settlementKinds  = labelSet("image", "video", "payment")
-	uploadStages     = labelSet("initialize", "part", "complete", "abort", "expire")
-	derivativeKinds  = labelSet("thumbnail_320", "thumbnail_640", "preview_1280", "poster", "hover_preview", "proxy", "waveform")
-	objectOperations = labelSet("read", "written", "deleted")
+	videoStages               = labelSet("queued", "submitting", "reconciling", "provider_queued", "provider_running", "artifact_pending", "recovery_required", "settling", "succeeded", "failed", "cancelled")
+	operationResults          = labelSet("success", "retry", "failed", "paused", "cancelled")
+	mediaTypes                = labelSet("image", "video", "audio")
+	settlementKinds           = labelSet("image", "video", "payment")
+	uploadStages              = labelSet("initialize", "part", "complete", "abort", "expire")
+	derivativeKinds           = labelSet("thumbnail_320", "thumbnail_640", "preview_1280", "poster", "hover_preview", "proxy", "waveform")
+	mediaAssetBackfillResults = labelSet("processed", "completed", "failed")
+	objectOperations          = labelSet("read", "written", "deleted")
 )
 
 func labelSet(values ...string) map[string]struct{} {
@@ -189,6 +197,7 @@ func (m *Metrics) writeMultimedia(w http.ResponseWriter) {
 	writeTwoLabelMetric(w, "pic_gallery_upload_bytes_total", "stage", "result", m.multimedia.uploadBytes)
 	writeTwoLabelMetric(w, "pic_gallery_media_derivative_bytes_total", "kind", "result", m.multimedia.derivativeBytes)
 	writeOneLabelMetric(w, "pic_gallery_canvas_save_total", "result", m.multimedia.canvasSaves)
+	writeOneLabelMetric(w, "pic_gallery_media_asset_backfill_total", "result", m.multimedia.mediaBackfills)
 	writeOneLabelMetric(w, "pic_gallery_object_bytes_total", "operation", m.multimedia.objectBytes)
 	_, _ = fmt.Fprintf(w, "pic_gallery_worker_temporary_disk_used_percent %d\n", m.multimedia.tempDiskPercent)
 	_, _ = fmt.Fprintf(w, "pic_gallery_worker_temporary_disk_free_bytes %d\n", m.multimedia.tempDiskFreeBytes)

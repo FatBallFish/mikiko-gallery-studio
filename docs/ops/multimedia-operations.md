@@ -55,6 +55,8 @@ S3、R2 和 MinIO 模式的上传、预览与下载正文必须走短时签名 U
 
 重复启动和多 Worker 并发是安全的：`migration_checkpoints` 持久化 `(created_at,id)` 稳定游标，事务行锁串行化单批推进，单行使用 `ON CONFLICT (id) DO NOTHING` 保证同 ID 重放幂等。完成后 Worker 低频复查是否出现遗漏记录；若滚动升级期间旧节点仍写入 `task_images`，checkpoint 会自动重开并继续补齐。其他唯一键冲突仍会失败并持续告警，需要人工核对数据冲突。
 
+自动回填依赖 `cleanup` 角色；默认 `WORKER_ROLES=image,video,media,cleanup` 已包含该角色。显式移除 `cleanup` 会同时停用对象清理、导出、过期上传、媒体对账和自动回填。监控 `pic_gallery_media_asset_backfill_total{result="processed|completed|failed"}`，持续增长的 `failed` 或长期没有 `completed` 均需结合 `media_asset_backfill_failed` 日志排查。
+
 独立 `media-backfill` 命令仅用于 dry-run、完成度校验和故障诊断。Docker 可使用目标 API 镜像的一次性容器，Native 使用发布包中的 `bin/mikiko-gallery-studio-media-backfill`。命令读取与服务相同的 `APP_ENV_FILE`，也可显式传 `--env-file`。
 
 先执行只读计划：
