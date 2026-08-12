@@ -2,18 +2,22 @@ import React, { type ReactNode } from 'react'
 import { cn } from '../../../shared/classnames'
 import { useApp } from '../components'
 import type { RouteId } from '../types'
-import { KeyRound, Palette, User } from './icons'
+import { CreditCard, FolderKanban, KeyRound, Palette, User } from './icons'
 
-export type SettingsSectionId = 'profile' | 'api-keys' | 'appearance'
+export type SettingsSectionId = 'profile' | 'projects' | 'billing' | 'api-keys' | 'appearance'
 
 export const settingsWorkspaceSections: Array<{ id: SettingsSectionId; route: RouteId; label: string; detail: string }> = [
   { id: 'profile', route: 'profile', label: '个人资料', detail: '账户、积分与资料' },
+  { id: 'projects', route: 'projects', label: '项目管理', detail: '资产与创作归属' },
+  { id: 'billing', route: 'checkout', label: '积分与充值', detail: '套餐、充值与订单' },
   { id: 'api-keys', route: 'api-keys', label: 'API 密钥', detail: '凭据、额度与调用限制' },
   { id: 'appearance', route: 'settings', label: '外观偏好', detail: '主题模式与强调色' },
 ]
 
 const icons: Record<SettingsSectionId, ReactNode> = {
   profile: <User size={18} strokeWidth={1.6} aria-hidden="true" />,
+  projects: <FolderKanban size={18} strokeWidth={1.6} aria-hidden="true" />,
+  billing: <CreditCard size={18} strokeWidth={1.6} aria-hidden="true" />,
   'api-keys': <KeyRound size={18} strokeWidth={1.6} aria-hidden="true" />,
   appearance: <Palette size={18} strokeWidth={1.6} aria-hidden="true" />,
 }

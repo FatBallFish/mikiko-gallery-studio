@@ -1,4 +1,5 @@
 export type ApiMeta = { request_id?: string }
+export type FeatureFlags = { video_creation: boolean; creative_canvas: boolean; media_upload: boolean }
 export type ApiEnvelope<T> = { data: T; meta?: ApiMeta; code?: string; message?: string; request_id?: string }
 export type LegacyApiEnvelope<T> = { code: string; message: string; data: T; request_id: string }
 export type ApiErrorPayload = { error: { code?: string; message?: string; status_code?: number }; meta?: ApiMeta }
@@ -19,6 +20,7 @@ export const API_PATHS = {
     bootstrapStatus: '/api/system/v1/bootstrap-status',
   },
   agent: {
+    features: '/api/agent/features/v1',
     sendEmailCode: '/api/agent/auth/v1/email/send-code',
     loginEmailCode: '/api/agent/auth/v1/login/email-code',
     loginPassword: '/api/agent/auth/v1/login/password',
@@ -54,6 +56,24 @@ export const API_PATHS = {
     promptOptimizations: '/api/agent/text/v1/prompt-optimizations',
     redeemCode: '/api/agent/billing/v1/redeem-codes/redeem',
     capabilities: '/api/agent/image/v1/capabilities',
+    videoCapabilities: '/api/agent/video/v1/capabilities',
+    videoEstimates: '/api/agent/video/v1/estimates',
+    videoTasks: '/api/agent/video/v1/tasks',
+    videoTaskDetail: '/api/agent/video/v1/tasks/{task_id}',
+    videoTaskCancel: '/api/agent/video/v1/tasks/{task_id}:cancel',
+    videoTaskEvents: '/api/agent/video/v1/tasks/events',
+    mediaAssets: '/api/agent/media/v1/assets',
+    mediaAssetDetail: '/api/agent/media/v1/assets/{asset_id}',
+    mediaAssetAccess: '/api/agent/media/v1/assets/{asset_id}/access',
+    mediaAssetRetry: '/api/agent/media/v1/assets/{asset_id}:retry-processing',
+    mediaAssetBatch: '/api/agent/media/v1/assets:batch-{action}',
+    mediaExportJob: '/api/agent/media/v1/export-jobs/{job_id}',
+    mediaExportDownload: '/api/agent/media/v1/export-jobs/{job_id}/download',
+    mediaUploads: '/api/agent/media/v1/uploads',
+    mediaUploadDetail: '/api/agent/media/v1/uploads/{upload_id}',
+    mediaUploadPart: '/api/agent/media/v1/uploads/{upload_id}/parts/{part_number}',
+    mediaUploadPartSign: '/api/agent/media/v1/uploads/{upload_id}/parts/{part_number}:sign',
+    mediaUploadComplete: '/api/agent/media/v1/uploads/{upload_id}:complete',
     referenceAssets: '/api/agent/image/v1/reference-assets',
     importReferenceAssetsFromGallery: '/api/agent/image/v1/reference-assets:import-from-gallery',
     referenceAssetDetail: '/api/agent/image/v1/reference-assets/{asset_id}',
@@ -173,6 +193,23 @@ export const API_PATHS = {
     dashboard: '/api/ops/admin/v1/metrics/dashboard',
     monitoringSnapshot: '/api/ops/admin/v1/monitoring/snapshot',
     readiness: '/api/ops/admin/v1/readiness',
+    videoConfiguration: '/api/ops/admin/v1/video/configuration',
+    videoModelCapability: '/api/ops/admin/v1/model-account-models/{id}/video-capability',
+    videoModelCostRules: '/api/ops/admin/v1/model-account-models/{id}/video-cost-rules',
+    videoModelCostRuleDetail: '/api/ops/admin/v1/model-account-models/{id}/video-cost-rules/{rule_id}',
+    videoPricingStrategies: '/api/ops/admin/v1/video-pricing-strategies',
+    videoPricingStrategyDetail: '/api/ops/admin/v1/video-pricing-strategies/{id}',
+    videoPricingStrategySimulate: '/api/ops/admin/v1/video-pricing-strategies/{id}:simulate',
+    videoPricingStrategyRecalculate: '/api/ops/admin/v1/video-pricing-strategies/{id}:recalculate',
+    videoPriceRules: '/api/ops/admin/v1/video-price-rules',
+    videoPriceRuleDetail: '/api/ops/admin/v1/video-price-rules/{id}',
+    routeVideoConfig: '/api/ops/admin/v1/route-models/{id}/video-config',
+    routeVideoImpact: '/api/ops/admin/v1/route-models/{id}/video-impact',
+    adminVideoTasks: '/api/ops/admin/v1/video-tasks',
+    adminVideoTaskDetail: '/api/ops/admin/v1/video-tasks/{task_id}',
+    adminVideoTaskRetryArtifact: '/api/ops/admin/v1/video-tasks/{task_id}:retry-artifact',
+    mediaProcessingJobRetry: '/api/ops/admin/v1/media-processing-jobs/{job_id}:retry',
+    mediaPolicy: '/api/ops/admin/v1/media-policy',
     cashierOverview: '/api/ops/admin/v1/cashier/overview',
     cashierPlans: '/api/ops/admin/v1/cashier/plans',
     cashierPlanDetail: '/api/ops/admin/v1/cashier/plans/{plan_id}',
@@ -213,6 +250,103 @@ export type PagedResponse<T> = { items: T[]; pagination: Pagination }
 export type PageResult<T> = { items: T[]; total: number; next_cursor?: string; pagination?: Pagination }
 
 export type ImageTaskType = 'text_to_image' | 'image_edit'
+export type VideoTaskType = 'text_to_video' | 'image_to_video' | 'first_last_frame_to_video'
+export type VideoTaskStatus = 'queued' | 'running' | 'saving' | 'succeeded' | 'partial' | 'failed' | 'cancelled' | string
+export type VideoTaskCombination = { duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode: 'silent' | 'generated' }
+export type VideoTaskOptions = { durations: number[]; resolutions: string[]; aspect_ratios: string[]; audio_generation: boolean; combinations: VideoTaskCombination[] }
+export type VideoCapabilityModelGroup = {
+  code: string
+  name: string
+  description?: string
+  minimum_points: string
+  max_output_count: number
+  task_types: VideoTaskType[]
+  defaults: { task_type: VideoTaskType; duration_seconds: number; resolution: string; aspect_ratio: string; generate_audio: boolean }
+  options_by_task_type: Partial<Record<VideoTaskType, VideoTaskOptions>>
+}
+export type VideoCapability = { capability_version: string; model_groups: VideoCapabilityModelGroup[] }
+export type VideoCapabilityCombinationWire = { task_type: VideoTaskType; duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode: 'silent' | 'generated' }
+export type VideoCapabilityGroupWire = {
+  route_model_code: string; name: string; description?: string; config_version: string; capability_version: string
+  max_output_count: number; task_types: VideoTaskType[]; combinations: VideoCapabilityCombinationWire[]
+}
+export type VideoCapabilityListWire = { groups: VideoCapabilityGroupWire[] }
+export type VideoInput = { id?: string; asset_id: string; role: 'first_frame' | 'last_frame'; ordinal: number; asset_snapshot?: Record<string, unknown>; asset?: { id: string; name?: string; preview_url?: string } }
+export type VideoEstimateRequest = {
+  project_id: string; route_model_code: string; task_type: VideoTaskType; prompt_template: string
+  prompt_variables: Array<{ name: string; value: string }>; inputs: Array<Omit<VideoInput, 'id' | 'asset'>>
+  reference_bindings: Array<{ name: string; asset_id: string }>
+  duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode: 'silent' | 'generated'; output_count: number
+}
+export type VideoEstimate = {
+	quote_token: string; expires_at: string; capability_version: string; config_version: string; price_version: string
+  unit_points: string; estimated_points: string; max_reserved_points: string; display_points?: string; pricing_mode?: string
+  summary?: Record<string, unknown>; balance?: { available_points: string; sufficient: boolean }
+}
+export type VideoTaskItem = { id: string; ordinal: number; status: string; stage: string; result_asset_id?: string; actual_output_seconds?: string; actual_points?: string; error_code?: string; error_message?: string }
+export type VideoTask = {
+  id: string; project_id: string; route_model_code: string; task_type: VideoTaskType; status: VideoTaskStatus; progress_stage?: string; progress_message?: string
+  prompt_template: string; prompt_binding_snapshot?: Record<string, unknown>; duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode?: 'silent' | 'generated'; generate_audio?: boolean
+  requested_output_count: number; success_output_count?: number; estimated_points?: string; reserved_points?: string; actual_points?: string
+  settlement_status?: string; pricing_snapshot?: Record<string, unknown>; routing_snapshot?: Record<string, unknown>; inputs: VideoInput[]; items: VideoTaskItem[]
+  version?: number; created_at?: string; updated_at?: string; started_at?: string; finished_at?: string
+}
+export type VideoCreateTaskRequest = VideoEstimateRequest & { quote_token: string }
+export type CanvasNodeType = 'prompt' | 'image' | 'video' | 'audio' | 'image_generation' | 'video_generation' | 'note'
+export type CanvasInputRole = 'prompt' | 'reference' | 'first_frame' | 'last_frame' | 'result'
+export type CanvasDocument = {
+  schema_version: 1
+  viewport: { x: number; y: number; zoom: number }
+  nodes: Array<{ id: string; type: CanvasNodeType; asset_id?: string; position: { x: number; y: number }; size: { width: number; height: number }; payload?: Record<string, unknown> }>
+  edges: Array<{ id: string; source: string; target: string; source_handle?: string; target_handle?: string; input_role: CanvasInputRole; ordinal?: number }>
+}
+export type CreativeCanvas = {
+  id: string; project_id: string; name: string; revision: number; metadata_version: number; document: CanvasDocument
+  node_count: number; edge_count: number; running_task_count: number; failed_task_count: number; status: 'active' | 'deleted'; created_at?: string; updated_at?: string
+}
+export type CanvasRun = {
+  id: string; canvas_id: string; node_id: string; submitted_revision: number; task_kind: 'image' | 'video'; task_id: string
+  status: 'submitting' | 'queued' | 'running' | 'saving' | 'succeeded' | 'failed' | 'canceled' | 'attached' | 'unplaced'
+  result_asset_ids?: string[]; attached_revision?: number; error_code?: string; error_message?: string
+}
+export type AdminVideoImpact = { route_model_id?: number; pricing_strategy_id?: number; code: string; summary: string; blocking: boolean; fix_route: 'pricing' | 'routing' | string }
+export type AdminVideoConfiguration = {
+  capabilities: Array<{ account_model_id: number; capability_version: string; validation_status: string; capability: Record<string, unknown>; enabled: boolean }>
+  cost_rules: Array<{ id: number; account_model_id: number; billing_mode: string; rule_version: number; currency: string; rates: Record<string, unknown>; validation_status: string; effective_at: string; expires_at?: string; enabled: boolean }>
+  pricing_strategies: AdminVideoPricingStrategy[]
+  price_rules: Array<{ id: number; pricing_strategy_id: number; task_type: string; resolution: string; audio_mode: string; rule_version: number; safety_points: string; sales_points: string; candidate_cost_upper_cny: string; enabled: boolean }>
+  routes: AdminVideoRouteConfig[]
+  point_products?: Array<{id: number; code: string; price_cny: string; points: string; bonus_points: string; enabled: boolean}>
+  impacts: AdminVideoImpact[]
+  generated_at: string
+}
+export type AdminVideoPricingStrategy = {
+  id: number; code: string; name: string; strategy_version: number; minimum_net_point_income_cny: string; target_margin_rate: string
+  provider_cost_buffer_rate: string; payment_fee_rate: string; platform_fixed_cost_cny: string; platform_output_second_cost_cny: string
+  platform_reference_cost_cny: string; enabled: boolean
+}
+export type AdminVideoVisibleCombination = { task_type: string; resolution: string; aspect_ratio?: string; audio_mode: string; duration_seconds: number }
+export type AdminVideoRouteConfig = {
+  route_model_id: number; route_code: string; route_name: string; config_version: string; pricing_strategy_id: number; candidate_count: number
+  candidate_account_model_ids?: number[]; task_types: string[]; visible_options: Record<string, unknown>; defaults: Record<string, unknown>; max_output_count: number; enabled: boolean
+}
+export type AdminVideoCapabilityWrite = { expected_version: string; capability_version: string; capability: Record<string, unknown>; validation_status: string; enabled: boolean }
+export type AdminVideoCostRuleWrite = { id?: number; expected_rule_version: number; billing_mode: string; currency: string; rates: Record<string, unknown>; validation_status: string; effective_at: string; expires_at?: string; enabled: boolean }
+export type AdminVideoStrategyWrite = Partial<AdminVideoPricingStrategy> & { expected_version: number; code: string; name: string; enabled: boolean }
+export type AdminVideoSimulationRequest = { route_model_id: number; task_type: string; resolution: string; audio_mode: string; duration_seconds: number; reference_image_count?: number }
+export type AdminVideoSimulationResult = { worst_candidate_cost_cny: string; safety_points: string; net_point_income_cny: string; candidate_account_model_id: number }
+export type AdminVideoPriceRuleWrite = { id?: number; route_model_id: number; pricing_strategy_id: number; expected_version: number; task_type: string; resolution: string; audio_mode: string; duration_seconds: number; effective_at: string; minimum_task_points: string; safety_points?: string; enabled: boolean; [key: string]: unknown }
+export type AdminVideoRouteConfigWrite = { expected_version: string; config_version: string; pricing_strategy_id: number; task_types: string[]; visible_options: Record<string, unknown>; defaults: Record<string, unknown>; visible_combinations: AdminVideoVisibleCombination[]; max_output_count: number; enabled: boolean }
+export type AdminVideoTaskSummary = { id: string; user_id: number; project_id: string; route_model_id: number; route_model_code: string; status: string; settlement_status: string; estimated_points: string; actual_points: string; created_at: string; updated_at: string }
+export type AdminVideoAttempt = { id: string; item_id: string; attempt_no: number; provider_code: string; model_code: string; provider_job_id?: string; status: string; usage_raw: Record<string, unknown>; usage_normalized: Record<string, unknown>; cost_snapshot: Record<string, unknown>; provider_cost: string; error_category?: string; error_code?: string; error_message?: string; started_at?: string; finished_at?: string }
+export type AdminVideoTaskDetail = AdminVideoTaskSummary & { pricing_snapshot: Record<string, unknown>; routing_snapshot: Record<string, unknown>; reserved_points: string; items: Array<{ id: string; ordinal: number; status: string; stage: string; result_asset_id?: string; actual_points: string; provider_cost: string; artifact_snapshot: Record<string, unknown>; error_code?: string; error_message?: string; attempts: AdminVideoAttempt[] }> }
+export type AdminVideoTaskPage = { items: AdminVideoTaskSummary[]; next_cursor?: string }
+export type AdminVideoRecovery = { task_id?: string; job_id?: string; recovery: 'artifact' | 'derivative'; provider_generation_requested: false }
+export type MediaPolicy = {
+  version: number; allowed_formats: Record<'image' | 'video' | 'audio', string[]>; single_file_max_bytes: number; video_max_duration_seconds: number; user_quota_bytes: number
+  image_thumbnail_widths: number[]; video_poster_enabled: boolean; video_hover_preview_enabled: boolean; video_proxy_enabled: boolean; audio_proxy_enabled: boolean; audio_waveform_enabled: boolean
+  upload_session_ttl_hours: number; failed_processing_retention_days: number; soft_delete_retention_days: number; applies_to: 'new_objects_and_derivative_versions'
+}
 export type ImageTaskStatus = 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'cancelled' | 'rejected' | 'deleted'
 export type PublishStatus = 'private' | 'reviewing' | 'pending_review' | 'public' | 'approved' | 'rejected' | 'unpublished'
 export type ThemeMode = 'dark' | 'light'
@@ -521,11 +655,98 @@ export type CashierOrderSyncResponse = {
   order: CashierOrder
   sync: CashierOrderSyncResult
 }
-export type MediaAccessPurpose = 'preview' | 'download'
+export type MediaAccessPurpose = 'thumbnail' | 'poster' | 'hover' | 'preview' | 'waveform' | 'download'
 export type MediaAccessProjection = {
   url: string
   expires_at?: string
+  range_supported?: boolean
 }
+
+export type MediaType = 'image' | 'video' | 'audio'
+export type MediaAsset = {
+  id: string
+  user_id?: number
+  project_id: string
+  legacy_image_id?: string
+  name: string
+  group_name: string
+  media_type: MediaType
+  source_type: string
+  source_task_kind?: 'image' | 'video'
+  source_task_id?: string
+  source_canvas_id?: string
+  status: string
+  visibility_status: string
+  storage_driver: string
+  mime_type: string
+  container?: string
+  codec?: string
+  file_size_bytes: number
+  sha256?: string
+  width?: number
+  height?: number
+  duration_ms?: number
+  frame_rate_milli?: number
+  audio_codec?: string
+  channels?: number
+  sample_rate?: number
+  version: number
+  created_at: string
+  updated_at: string
+}
+export type MediaAssetFilters = {
+  project_id?: string
+  media_type?: MediaType | ''
+  source_type?: string
+  group_name?: string
+  status?: string
+  keyword?: string
+  sort_by?: 'created_at' | 'updated_at' | 'name' | 'file_size_bytes' | string
+  sort_order?: 'asc' | 'desc'
+  cursor?: string
+  limit?: number
+}
+export type MediaAssetPage = { items: MediaAsset[]; next_cursor?: string }
+export type MediaCompletedPart = { part_number: number; etag: string; checksum?: string; size_bytes?: number }
+export type MediaUploadSession = {
+  id: string
+  project_id: string
+  group_name?: string
+  original_filename: string
+  declared_media_type: MediaType
+  declared_mime_type: string
+  declared_size_bytes: number
+  declared_checksum?: string
+  storage_driver: string
+  part_size: number
+  part_count: number
+  status: string
+  completed_parts?: MediaCompletedPart[]
+  asset_id?: string
+  expires_at: string
+  completed_at?: string
+}
+export type MediaUploadInit = {
+  project_id: string
+  group_name?: string
+  filename: string
+  media_type: MediaType
+  mime_type: string
+  size_bytes: number
+  checksum?: string
+}
+export type MediaPartTarget = { url: string; headers?: Record<string, string>; expires_at: string }
+export type MediaBatchAction = 'download' | 'group' | 'transfer-project' | 'delete'
+export type MediaBatchItemResult = {
+  id: string
+  status: 'succeeded' | 'failed' | string
+  asset?: MediaAsset
+  access?: MediaAccessProjection
+  error?: { code?: string; message?: string }
+}
+export type MediaBatchResult = { items: MediaBatchItemResult[] }
+export type MediaExportJob = Omit<GalleryExportJob, 'image_ids'> & { image_ids?: string[] }
+export type MediaExportStatus = { job: MediaExportJob; status_url?: string; download_url?: string }
 export type LedgerEntry = {
   id: ID
   user_id?: number

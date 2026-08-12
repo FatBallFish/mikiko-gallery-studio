@@ -443,12 +443,13 @@ function DetailImageMedia({ src, mediaExpiresAt, alt, onOpen, onMediaRefresh }: 
   )
 }
 
-export const protectedRoutes: RouteId[] = ['home', 'genpic', 'gallery', 'projects', 'checkout', 'api-keys', 'profile', 'settings']
+export const protectedRoutes: RouteId[] = ['home', 'genpic', 'creative-canvas', 'gallery', 'projects', 'checkout', 'api-keys', 'profile', 'settings']
 
 function HomeIcon() { return <Home size={22} strokeWidth={1.5} /> }
 function SparklesIcon() { return <Sparkles size={22} strokeWidth={1.5} /> }
 function GridIcon() { return <LayoutGrid size={22} strokeWidth={1.5} /> }
 function ProjectsIcon() { return <FolderKanban size={22} strokeWidth={1.5} /> }
+function CanvasIcon() { return <FolderPlus size={22} strokeWidth={1.5} /> }
 function UserIcon() { return <User size={22} strokeWidth={1.5} /> }
 function KeyIcon() { return <KeyRound size={18} strokeWidth={1.5} /> }
 function CreditCardIcon() { return <CreditCard size={22} strokeWidth={1.5} /> }
@@ -470,12 +471,25 @@ function avatarMenuIcon(icon: AvatarMenuIcon) {
 export const navItems: Array<{ route: RouteId; label: string; icon: React.ReactNode }> = [
   { route: 'home', label: '首页', icon: <HomeIcon /> },
   { route: 'genpic', label: '创作', icon: <SparklesIcon /> },
+  { route: 'creative-canvas', label: '画布', icon: <CanvasIcon /> },
   { route: 'gallery', label: '资产', icon: <GridIcon /> },
   { route: 'projects', label: '项目', icon: <ProjectsIcon /> },
   { route: 'checkout', label: '积分', icon: <CreditCardIcon /> },
   { route: 'api-keys', label: '密钥', icon: <KeyIcon /> },
   { route: 'settings', label: '设置', icon: <SettingsIcon /> },
 ]
+
+export const mobileNavItems: Array<{ route: RouteId; label: string; icon: React.ReactNode }> = [
+  { route: 'home', label: '首页', icon: <HomeIcon /> },
+  { route: 'genpic', label: '创作', icon: <SparklesIcon /> },
+  { route: 'creative-canvas', label: '画布', icon: <CanvasIcon /> },
+  { route: 'gallery', label: '资产', icon: <GridIcon /> },
+  { route: 'profile', label: '我的', icon: <UserIcon /> },
+]
+
+export function mobileNavActiveRoute(route: RouteId): RouteId {
+  return route === 'projects' || route === 'checkout' || route === 'api-keys' || route === 'settings' ? 'profile' : route
+}
 
 export function Shell({ children, scrollMode = 'app' }: { children: React.ReactNode; scrollMode?: ShellScrollMode }) {
   const app = useApp()
@@ -485,7 +499,10 @@ export function Shell({ children, scrollMode = 'app' }: { children: React.ReactN
   const accountMenuItems = avatarMenuItems()
   const isDark = app.themePreference.mode === 'dark'
   const layout = shellLayoutClasses(scrollMode)
-  const activeNavIndex = shellActiveNavIndex(app.route, navItems)
+  const visibleNavItems = app.featureFlags.creative_canvas ? navItems : navItems.filter((item) => item.route !== 'creative-canvas')
+  const visibleMobileNavItems = app.featureFlags.creative_canvas ? mobileNavItems : mobileNavItems.filter((item) => item.route !== 'creative-canvas')
+  const activeNavIndex = shellActiveNavIndex(app.route, visibleNavItems)
+  const mobileActiveRoute = mobileNavActiveRoute(app.route)
 
   useLayoutEffect(() => {
     resetShellScroll(scrollMode, mainScrollRef.current, window)
@@ -516,7 +533,7 @@ export function Shell({ children, scrollMode = 'app' }: { children: React.ReactN
         </button>
         <nav className={shellChromeClasses.nav}>
           {activeNavIndex >= 0 ? <span className={shellChromeClasses.navIndicator} style={{ transform: `translateY(${activeNavIndex * 64}px)` }} aria-hidden="true" /> : null}
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <a
               key={item.route}
               href={`#/${item.route}`}
@@ -606,8 +623,8 @@ export function Shell({ children, scrollMode = 'app' }: { children: React.ReactN
           </footer>
         </div>
         <nav className={shellChromeClasses.mobileNav} aria-label={`${siteBrand.name} 移动导航`}>
-          {navItems.map((item) => (
-            <button key={item.route} type="button" aria-current={app.route === item.route ? 'page' : undefined} className={cn(shellChromeClasses.mobileNavLink, app.route === item.route && shellChromeClasses.mobileNavLinkActive)} onClick={() => app.navigate(item.route)}>
+          {visibleMobileNavItems.map((item) => (
+            <button key={item.route} type="button" aria-current={mobileActiveRoute === item.route ? 'page' : undefined} className={cn(shellChromeClasses.mobileNavLink, mobileActiveRoute === item.route && shellChromeClasses.mobileNavLinkActive)} onClick={() => app.navigate(item.route)}>
               {item.icon}
               <span className="text-[10px] font-bold">{item.label}</span>
             </button>

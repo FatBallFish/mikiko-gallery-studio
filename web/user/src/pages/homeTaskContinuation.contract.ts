@@ -35,9 +35,19 @@ for (const required of [
 const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8')
 for (const required of [
   'routeTaskId',
-  '<WorkspacePage initialTaskId={routeTaskId} />',
+  '<CreationPage initialTaskId={routeTaskId}',
 ]) {
   if (!appSource.includes(required)) throw new Error(`App must pass workspace task context: ${required}`)
+}
+
+const creationSource = readFileSync(new URL('../features/creation/CreationPage.tsx', import.meta.url), 'utf8')
+if (!creationSource.includes('<ImageCreationPanel initialTaskId={initialMedia === \'video\' ? undefined : initialTaskId} />')) {
+  throw new Error('CreationPage must preserve image task context through the multimedia shell')
+}
+
+const imagePanelSource = readFileSync(new URL('../features/creation/ImageCreationPanel.tsx', import.meta.url), 'utf8')
+if (!imagePanelSource.includes('<WorkspacePage initialTaskId={initialTaskId} />')) {
+  throw new Error('ImageCreationPanel must pass image task context to WorkspacePage')
 }
 
 const workspaceSource = readFileSync(new URL('./WorkspacePage.tsx', import.meta.url), 'utf8')

@@ -92,9 +92,13 @@ if (!historySource.includes('reference_asset_ids: []')) {
 }
 
 const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8')
-if (!appSource.includes("const WorkspacePage = lazy(async () => ({ default: (await import('./pages/WorkspacePage')).WorkspacePage }))")) {
+if (!appSource.includes("const CreationPage = lazy(async () => ({ default: (await import('./features/creation/CreationPage')).CreationPage }))")) {
   throw new Error('the Lexical workspace must be route-lazy-loaded out of the initial application bundle')
 }
-if (!appSource.includes('<Suspense fallback={<WorkspaceRouteFallback />}><WorkspacePage initialTaskId={routeTaskId} /></Suspense>')) {
+if (!appSource.includes('<Suspense fallback={<WorkspaceRouteFallback />}><CreationPage initialTaskId={routeTaskId}')) {
   throw new Error('the lazy workspace route must render inside a stable Suspense boundary')
+}
+const imagePanelSource = readFileSync(new URL('../features/creation/ImageCreationPanel.tsx', import.meta.url), 'utf8')
+if (!imagePanelSource.includes("import { WorkspacePage } from '../../pages/WorkspacePage'")) {
+  throw new Error('the multimedia creation route chunk must own the Lexical image workspace')
 }

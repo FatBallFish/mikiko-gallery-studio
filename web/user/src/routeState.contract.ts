@@ -64,3 +64,11 @@ const retiredDemoRoute = parseUserHashState('#/redesign-demo')
 if (retiredDemoRoute.route !== 'landing') {
   throw new Error(`redesign demo route should not be part of the production user router, got ${JSON.stringify(retiredDemoRoute)}`)
 }
+
+const canvasDetail = parseUserHashState('#/creative-canvas?canvas_id=canvas_123')
+if (canvasDetail.route !== 'creative-canvas' || canvasDetail.canvasId !== 'canvas_123') {
+  throw new Error(`creative canvas detail route must preserve canvas_id: ${JSON.stringify(canvasDetail)}`)
+}
+if (userHashForRoute('login', { returnTo: 'creative-canvas', canvasId: ' canvas_456 ' }) !== '/login?returnTo=creative-canvas&canvas_id=canvas_456') {
+  throw new Error('canvas return route must survive login redirects')
+}
