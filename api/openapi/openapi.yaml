@@ -5552,6 +5552,17 @@ paths:
       summary: Preview route video safety and dependency impacts
       security: [{bearerAuth: []}]
       responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}}
+  /api/ops/admin/v1/video-tasks/{task_id}:retry-settlement:
+    post:
+      parameters:
+        - {name: task_id, in: path, required: true, schema: {type: string, format: uuid}}
+      tags: [Admin Model Routing]
+      summary: Requeue idempotent billing settlement for a terminal video task
+      description: Releases stale item leases and lets the video worker retry settlement without calling the provider or charging twice.
+      security: [{bearerAuth: []}]
+      responses:
+        '202': {$ref: '#/components/responses/AdminVideoResponse'}
+        '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}
 components:
   parameters:
     AdminVideoResourceID: {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}

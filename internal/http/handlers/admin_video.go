@@ -506,7 +506,9 @@ func (a *API) HandleAdminVideoTaskDetail(w http.ResponseWriter, r *http.Request)
 	}
 	rawID := parts[0]
 	retryArtifact := strings.HasSuffix(rawID, ":retry-artifact")
+	retrySettlement := strings.HasSuffix(rawID, ":retry-settlement")
 	rawID = strings.TrimSuffix(rawID, ":retry-artifact")
+	rawID = strings.TrimSuffix(rawID, ":retry-settlement")
 	taskID, err := uuid.Parse(rawID)
 	if err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid video task id"))
@@ -536,6 +538,22 @@ func (a *API) HandleAdminVideoTaskDetail(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		httpx.WriteSuccess(w, r, http.StatusAccepted, map[string]any{"task_id": taskID, "recovery": "artifact", "provider_generation_requested": false})
+		return
+	}
+	if retrySettlement {
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowed(w, r)
+			return
+		}
+		if err := a.adminVideo.Retry(r.Context(), adminvideoservice.RetryRequest{Kind: adminvideoservice.RetrySettlement, TaskID: taskID}); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		if err := a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_task.retry_settlement", "video_task", taskID.String(), map[string]any{"provider_generation_requested": false}); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusAccepted, map[string]any{"task_id": taskID, "recovery": "settlement", "provider_generation_requested": false})
 		return
 	}
 	if r.Method != http.MethodGet {

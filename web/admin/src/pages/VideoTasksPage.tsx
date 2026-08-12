@@ -60,6 +60,16 @@ export function VideoTasksPage() {
     finally { setRecovering(null) }
   }
 
+  async function retrySettlement(taskId: string) {
+    setRecovering(`settlement:${taskId}`); setNotice(null)
+    try {
+      const result = await adminApi.retryAdminVideoSettlement(taskId)
+      if (result.provider_generation_requested === false) setNotice('已重新排队结算或退回预留积分，未请求模型重新生成，也不会重复扣费。')
+      await selectTask(taskId)
+    } catch (caught) { setError(caught instanceof Error ? caught.message : '重新结算失败') }
+    finally { setRecovering(null) }
+  }
+
   useEffect(() => { void load() }, [applied])
   const submit = (event: FormEvent) => { event.preventDefault(); setApplied(filters) }
 
@@ -90,17 +100,17 @@ export function VideoTasksPage() {
           <div className="min-w-0 overflow-x-auto border-t border-[var(--border)]">
             <table className="admin-table min-w-[720px]"><thead><tr><th>任务 / 用户</th><th>路由</th><th>状态</th><th>结算状态</th><th>实际积分</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={selected?.id === row.id ? 'bg-[var(--accent-soft)]' : ''} onClick={() => void selectTask(row.id)}><td><button className="text-left font-mono text-xs font-semibold text-[var(--text)]" type="button">{row.id}</button><div className="mt-1 text-xs text-[var(--soft)]">用户 {row.user_id}</div></td><td>{row.route_model_code}</td><td><Badge tone={row.status === 'failed' ? 'danger' : row.status === 'succeeded' ? 'success' : 'neutral'}>{row.status}</Badge></td><td>{row.settlement_status}</td><td>{row.actual_points}</td></tr>)}</tbody></table>
           </div>
-          <TaskDiagnostics detail={selected} recovering={recovering} onRetryArtifact={retryArtifact} onRetryDerivative={retryDerivative} />
+          <TaskDiagnostics detail={selected} recovering={recovering} onRetryArtifact={retryArtifact} onRetryDerivative={retryDerivative} onRetrySettlement={retrySettlement} />
         </div>
       )}
     </section>
   )
 }
 
-function TaskDiagnostics({ detail, recovering, onRetryArtifact, onRetryDerivative }: { detail: AdminVideoTaskDetail | null; recovering: string | null; onRetryArtifact: (taskId: string, itemId: string) => void; onRetryDerivative: (jobId: string) => void }) {
+function TaskDiagnostics({ detail, recovering, onRetryArtifact, onRetryDerivative, onRetrySettlement }: { detail: AdminVideoTaskDetail | null; recovering: string | null; onRetryArtifact: (taskId: string, itemId: string) => void; onRetryDerivative: (jobId: string) => void; onRetrySettlement: (taskId: string) => void }) {
   if (!detail) return <EmptyBlock title="选择一个视频任务" detail="查看 attempt、usage、成本、错误、价格与路由快照。" />
   return <section className="grid min-w-0 gap-4 border-t border-[var(--border)] pt-4">
-    <div className="grid gap-2 text-sm sm:grid-cols-3"><span>预估积分 <strong>{detail.estimated_points}</strong></span><span>预留积分 <strong>{detail.reserved_points}</strong></span><span>结算状态 <strong>{detail.settlement_status}</strong></span></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div className="grid flex-1 gap-2 text-sm sm:grid-cols-3"><span>预估积分 <strong>{detail.estimated_points}</strong></span><span>预留积分 <strong>{detail.reserved_points}</strong></span><span>结算状态 <strong>{detail.settlement_status}</strong></span></div>{detail.settlement_status !== 'finalized' && ['succeeded', 'failed', 'partial', 'cancelled'].includes(detail.status) ? <button className={cn(adminButton.base, adminButton.secondary, adminButton.small)} type="button" disabled={recovering === `settlement:${detail.id}`} onClick={() => onRetrySettlement(detail.id)}>重新结算</button> : null}</div>
     {detail.items.map((item) => <article key={item.id} className="grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
       <header className="flex flex-wrap items-center justify-between gap-3"><strong>结果 {item.ordinal + 1} · {item.stage}</strong><button className={cn(adminButton.base, adminButton.secondary, adminButton.small)} type="button" disabled={recovering === item.id} onClick={() => onRetryArtifact(detail.id, item.id)}>重新转存</button></header>
       <p className="m-0 text-xs text-[var(--soft)]">结果成本 {item.provider_cost} · 结算积分 {item.actual_points} · {item.error_code || '无错误'}</p>

@@ -352,6 +352,7 @@ export const adminApi = {
   listAdminVideoTasks: (query: Record<string, string | number | undefined> = {}) => sharedApiClient.request<AdminVideoTaskPage>(API_PATHS.ops.adminVideoTasks, { query }),
   getAdminVideoTask: (task_id: string) => sharedApiClient.request<AdminVideoTaskDetail>(API_PATHS.ops.adminVideoTaskDetail, { pathParams: { task_id } }),
   retryAdminVideoArtifact: (task_id: string, item_id?: string) => sharedApiClient.request<AdminVideoRecovery>(API_PATHS.ops.adminVideoTaskRetryArtifact, { method: 'POST', pathParams: { task_id }, body: item_id ? { item_id } : {} }),
+  retryAdminVideoSettlement: (task_id: string) => sharedApiClient.request<AdminVideoRecovery>(API_PATHS.ops.adminVideoTaskRetrySettlement, { method: 'POST', pathParams: { task_id } }),
   retryMediaProcessingJob: (job_id: string) => sharedApiClient.request<AdminVideoRecovery>(API_PATHS.ops.mediaProcessingJobRetry, { method: 'POST', pathParams: { job_id } }),
   getMediaPolicy: () => sharedApiClient.request<MediaPolicy>(API_PATHS.ops.mediaPolicy),
   updateMediaPolicy: (policy: MediaPolicy) => sharedApiClient.request<MediaPolicy>(API_PATHS.ops.mediaPolicy, { method: 'PUT', body: { version: policy.version, policy } }),

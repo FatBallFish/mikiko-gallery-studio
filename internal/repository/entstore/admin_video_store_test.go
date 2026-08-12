@@ -201,6 +201,33 @@ func TestAdminVideoStoreProjectsConfigurationTaskDiagnosticsAndRecovery(t *testi
 	if err := store.Retry(ctx, adminvideoservice.RetryRequest{Kind: adminvideoservice.RetryDerivative, JobID: jobID}); err == nil {
 		t.Fatal("successful derivative must not be retried")
 	}
+	if _, err := client.VideoTask.UpdateOneID(taskID).SetSettlementStatus("refund_pending").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.VideoTaskItem.UpdateOneID(itemID).SetLeaseOwner("stale-worker").SetLeaseExpiresAt(time.Now().Add(time.Hour)).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Retry(ctx, adminvideoservice.RetryRequest{Kind: adminvideoservice.RetrySettlement, TaskID: taskID}); err != nil {
+		t.Fatal(err)
+	}
+	if refreshed, _ := client.VideoTaskItem.Get(ctx, itemID); refreshed.LeaseOwner != nil || refreshed.NextActionAt == nil {
+		t.Fatalf("settlement recovery must release stale lease and make terminal item due: %#v", refreshed)
+	}
+	if _, err := client.VideoTask.UpdateOneID(taskID).SetSettlementStatus("finalized").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Retry(ctx, adminvideoservice.RetryRequest{Kind: adminvideoservice.RetrySettlement, TaskID: taskID}); err == nil {
+		t.Fatal("finalized settlement must not be retried")
+	}
+	if _, err := client.VideoTask.UpdateOneID(taskID).SetSettlementStatus("reserved").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.VideoTaskItem.UpdateOneID(itemID).SetStatus("provider_running").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Retry(ctx, adminvideoservice.RetryRequest{Kind: adminvideoservice.RetrySettlement, TaskID: taskID}); err == nil {
+		t.Fatal("running task must not enter manual settlement recovery")
+	}
 }
 
 func TestAdminVideoStorePersistsMediaPolicyWithVersionConflict(t *testing.T) {

@@ -360,6 +360,7 @@ var supplementalNormalTemplateRoutes = map[string]map[string]bool{
 	"/api/ops/admin/v1/route-model-prices/{price_id}":                        {http.MethodGet: true, http.MethodPut: true, http.MethodDelete: true},
 	"/api/ops/admin/v1/video-tasks/{task_id}":                                {http.MethodGet: true},
 	"/api/ops/admin/v1/video-tasks/{task_id}:retry-artifact":                 {http.MethodPost: true},
+	"/api/ops/admin/v1/video-tasks/{task_id}:retry-settlement":               {http.MethodPost: true},
 	"/api/ops/admin/v1/media-processing-jobs/{job_id}:retry":                 {http.MethodPost: true},
 	"/api/ops/admin/v1/model-account-models/{id}/video-capability":           {http.MethodGet: true, http.MethodPut: true, http.MethodDelete: true},
 	"/api/ops/admin/v1/model-account-models/{id}/video-cost-rules":           {http.MethodGet: true, http.MethodPost: true},

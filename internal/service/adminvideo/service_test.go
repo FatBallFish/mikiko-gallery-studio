@@ -51,7 +51,7 @@ func TestSnapshotIncludesIndependentVersionsAndBlockingImpact(t *testing.T) {
 		Capabilities: []CapabilitySummary{{AccountModelID: 11, Version: "cap-v2", Enabled: true}},
 		CostRules:    []CostRuleSummary{{AccountModelID: 11, RuleVersion: 3, Enabled: true}},
 		Strategies:   []PricingStrategySummary{{ID: 21, StrategyVersion: 4, Enabled: true}},
-		PriceRules:   []PriceRuleSummary{{StrategyID: 21, RuleVersion: 5, SafetyPoints: "8", SalesPoints: "7", Enabled: true}},
+		PriceRules:   []PriceRuleSummary{{StrategyID: 21, TaskType: "text_to_video", Resolution: "1080p", AudioMode: "generated", RuleVersion: 5, SafetyPoints: "8", SalesPoints: "7", Enabled: true}},
 		Routes:       []RouteConfigSummary{{RouteModelID: 31, ConfigVersion: "route-v6", PricingStrategyID: 21, CandidateCount: 1, Enabled: true}},
 	}}
 
@@ -65,9 +65,34 @@ func TestSnapshotIncludesIndependentVersionsAndBlockingImpact(t *testing.T) {
 	if len(got.Impacts) != 1 || !got.Impacts[0].Blocking || got.Impacts[0].Code != "price_below_safety_floor" {
 		t.Fatalf("expected price safety impact, got %#v", got.Impacts)
 	}
+	if got.Impacts[0].Summary != "价格策略 21 的 text_to_video / 1080p / generated 组合售价 7 积分，低于安全线 8 积分" {
+		t.Fatalf("impact must identify the affected strategy, combination, and values: %#v", got.Impacts[0])
+	}
 }
 
-func TestRetryOnlyAllowsArtifactAndDerivativeRecovery(t *testing.T) {
+func TestSnapshotReportsEachVisibleCombinationMissingPrice(t *testing.T) {
+	store := &fakeStore{snapshot: Snapshot{
+		Strategies: []PricingStrategySummary{{ID: 21, Enabled: true}},
+		PriceRules: []PriceRuleSummary{{StrategyID: 21, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", SafetyPoints: "8", SalesPoints: "8", Enabled: true}},
+		Routes: []RouteConfigSummary{{
+			RouteModelID: 31, RouteName: "视频创作", PricingStrategyID: 21, CandidateCount: 1, Enabled: true,
+			VisibleOptions: map[string]any{"combinations": []any{
+				map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": float64(5)},
+				map[string]any{"task_type": "image_to_video", "resolution": "1080p", "audio_mode": "generated", "duration_seconds": float64(10)},
+			}},
+		}},
+	}}
+
+	got, err := NewService(store).Snapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Impacts) != 1 || got.Impacts[0].Code != "missing_price" || got.Impacts[0].Summary != "路由 视频创作 缺少 image_to_video / 1080p / generated / 10 秒的销售价格" {
+		t.Fatalf("expected one precise missing combination impact, got %#v", got.Impacts)
+	}
+}
+
+func TestRetryOnlyAllowsArtifactDerivativeAndSettlementRecovery(t *testing.T) {
 	store := &fakeStore{}
 	service := NewService(store)
 	taskID := uuid.New()
@@ -77,10 +102,13 @@ func TestRetryOnlyAllowsArtifactAndDerivativeRecovery(t *testing.T) {
 	if err := service.Retry(t.Context(), RetryRequest{Kind: RetryDerivative, JobID: uuid.New()}); err != nil {
 		t.Fatal(err)
 	}
+	if err := service.Retry(t.Context(), RetryRequest{Kind: RetrySettlement, TaskID: taskID}); err != nil {
+		t.Fatal(err)
+	}
 	if err := service.Retry(t.Context(), RetryRequest{Kind: "provider", TaskID: taskID}); err == nil {
 		t.Fatal("provider generation retry must be rejected")
 	}
-	if len(store.retried) != 2 {
+	if len(store.retried) != 3 {
 		t.Fatalf("unexpected retries: %#v", store.retried)
 	}
 }

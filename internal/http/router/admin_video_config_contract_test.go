@@ -36,6 +36,7 @@ func TestAdminVideoConfigurationRoutesAndOpenAPIStayAligned(t *testing.T) {
 		"/api/ops/admin/v1/video-price-rules/{id}:",
 		"/api/ops/admin/v1/route-models/{id}/video-config:",
 		"/api/ops/admin/v1/route-models/{id}/video-impact:",
+		"/api/ops/admin/v1/video-tasks/{task_id}:retry-settlement:",
 	} {
 		if !strings.Contains(string(openAPI), "  "+path) {
 			t.Errorf("OpenAPI must document %s", strings.TrimSuffix(path, ":"))

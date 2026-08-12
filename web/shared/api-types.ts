@@ -208,6 +208,7 @@ export const API_PATHS = {
     adminVideoTasks: '/api/ops/admin/v1/video-tasks',
     adminVideoTaskDetail: '/api/ops/admin/v1/video-tasks/{task_id}',
     adminVideoTaskRetryArtifact: '/api/ops/admin/v1/video-tasks/{task_id}:retry-artifact',
+    adminVideoTaskRetrySettlement: '/api/ops/admin/v1/video-tasks/{task_id}:retry-settlement',
     mediaProcessingJobRetry: '/api/ops/admin/v1/media-processing-jobs/{job_id}:retry',
     mediaPolicy: '/api/ops/admin/v1/media-policy',
     cashierOverview: '/api/ops/admin/v1/cashier/overview',
@@ -341,7 +342,7 @@ export type AdminVideoTaskSummary = { id: string; user_id: number; project_id: s
 export type AdminVideoAttempt = { id: string; item_id: string; attempt_no: number; provider_code: string; model_code: string; provider_job_id?: string; status: string; usage_raw: Record<string, unknown>; usage_normalized: Record<string, unknown>; cost_snapshot: Record<string, unknown>; provider_cost: string; error_category?: string; error_code?: string; error_message?: string; started_at?: string; finished_at?: string }
 export type AdminVideoTaskDetail = AdminVideoTaskSummary & { pricing_snapshot: Record<string, unknown>; routing_snapshot: Record<string, unknown>; reserved_points: string; items: Array<{ id: string; ordinal: number; status: string; stage: string; result_asset_id?: string; actual_points: string; provider_cost: string; artifact_snapshot: Record<string, unknown>; error_code?: string; error_message?: string; attempts: AdminVideoAttempt[] }> }
 export type AdminVideoTaskPage = { items: AdminVideoTaskSummary[]; next_cursor?: string }
-export type AdminVideoRecovery = { task_id?: string; job_id?: string; recovery: 'artifact' | 'derivative'; provider_generation_requested: false }
+export type AdminVideoRecovery = { task_id?: string; job_id?: string; recovery: 'artifact' | 'derivative' | 'settlement'; provider_generation_requested: false }
 export type MediaPolicy = {
   version: number; allowed_formats: Record<'image' | 'video' | 'audio', string[]>; single_file_max_bytes: number; video_max_duration_seconds: number; user_quota_bytes: number
   image_thumbnail_widths: number[]; video_poster_enabled: boolean; video_hover_preview_enabled: boolean; video_proxy_enabled: boolean; audio_proxy_enabled: boolean; audio_waveform_enabled: boolean

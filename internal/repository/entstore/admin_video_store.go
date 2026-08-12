@@ -253,9 +253,39 @@ func (s *AdminVideoStore) Retry(ctx context.Context, request adminvideoservice.R
 		}
 		_, err = job.Update().SetStatus("pending").SetNextRetryAt(time.Now().UTC()).ClearErrorCode().ClearErrorMessage().ClearLeaseOwner().ClearLeaseExpiresAt().Save(ctx)
 		return err
+	case adminvideoservice.RetrySettlement:
+		return s.retrySettlement(ctx, request.TaskID)
 	default:
 		return errs.BadRequest("unsupported video recovery kind")
 	}
+}
+
+func (s *AdminVideoStore) retrySettlement(ctx context.Context, taskID uuid.UUID) error {
+	_, err := withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (struct{}, error) {
+		task, err := tx.VideoTask.Query().Where(videotask.IDEQ(taskID), videotask.DeletedAtIsNil()).WithItems().Only(ctx)
+		if repoent.IsNotFound(err) {
+			return struct{}{}, errs.New(404, errs.CodeNotFound, "video task not found")
+		}
+		if err != nil {
+			return struct{}{}, err
+		}
+		if task.SettlementStatus == "finalized" {
+			return struct{}{}, errs.New(409, errs.CodeConflict, "video task settlement is already finalized")
+		}
+		if len(task.Edges.Items) == 0 {
+			return struct{}{}, errs.New(409, errs.CodeConflict, "video task has no result items to settle")
+		}
+		terminal := map[string]bool{"succeeded": true, "failed": true, "cancelled": true}
+		for _, item := range task.Edges.Items {
+			if !terminal[item.Status] {
+				return struct{}{}, errs.New(409, errs.CodeConflict, "video task is still running and cannot be settled manually")
+			}
+		}
+		now := time.Now().UTC()
+		_, err = tx.VideoTaskItem.Update().Where(videotaskitem.TaskIDEQ(taskID)).SetNextActionAt(now).ClearLeaseOwner().ClearLeaseExpiresAt().Save(ctx)
+		return struct{}{}, err
+	})
+	return err
 }
 
 func (s *AdminVideoStore) GetMediaPolicy(ctx context.Context) (adminvideoservice.MediaPolicy, error) {

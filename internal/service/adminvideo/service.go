@@ -2,6 +2,8 @@ package adminvideo
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -145,7 +147,11 @@ func deriveImpacts(snapshot Snapshot) []Impact {
 		sales, salesErr := decimal.NewFromString(rule.SalesPoints)
 		safety, safetyErr := decimal.NewFromString(rule.SafetyPoints)
 		if salesErr != nil || safetyErr != nil || sales.LessThan(safety) {
-			impacts = append(impacts, Impact{StrategyID: rule.StrategyID, Code: "price_below_safety_floor", Summary: "人工销售积分低于候选最坏成本安全线", Blocking: true, FixRoute: "pricing"})
+			summary := "价格规则无法证明满足候选最坏成本安全线"
+			if salesErr == nil && safetyErr == nil {
+				summary = "价格策略 " + decimal.NewFromInt(rule.StrategyID).String() + " 的 " + rule.TaskType + " / " + rule.Resolution + " / " + rule.AudioMode + " 组合售价 " + sales.String() + " 积分，低于安全线 " + safety.String() + " 积分"
+			}
+			impacts = append(impacts, Impact{StrategyID: rule.StrategyID, Code: "price_below_safety_floor", Summary: summary, Blocking: true, FixRoute: "pricing"})
 		}
 	}
 	for _, route := range snapshot.Routes {
@@ -155,11 +161,57 @@ func deriveImpacts(snapshot Snapshot) []Impact {
 		if route.CandidateCount == 0 {
 			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, StrategyID: route.PricingStrategyID, Code: "missing_candidate", Summary: "启用的视频路由没有可用候选", Blocking: true, FixRoute: "routing"})
 		}
-		if len(strategyRules[route.PricingStrategyID]) == 0 {
-			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, StrategyID: route.PricingStrategyID, Code: "missing_price", Summary: "启用的视频路由没有可用价格规则", Blocking: true, FixRoute: "pricing"})
+		combinations := visibleCombinations(route.VisibleOptions)
+		if len(combinations) == 0 && len(strategyRules[route.PricingStrategyID]) == 0 {
+			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, StrategyID: route.PricingStrategyID, Code: "missing_price", Summary: "路由 " + routeImpactName(route) + " 没有可用销售价格", Blocking: true, FixRoute: "pricing"})
+		}
+		for _, combo := range combinations {
+			if hasPriceForCombination(strategyRules[route.PricingStrategyID], combo) {
+				continue
+			}
+			impacts = append(impacts, Impact{
+				RouteModelID: route.RouteModelID, StrategyID: route.PricingStrategyID, Code: "missing_price",
+				Summary:  "路由 " + routeImpactName(route) + " 缺少 " + combo.TaskType + " / " + combo.Resolution + " / " + combo.AudioMode + " / " + fmt.Sprintf("%d", combo.DurationSeconds) + " 秒的销售价格",
+				Blocking: true, FixRoute: "pricing",
+			})
 		}
 	}
 	return impacts
+}
+
+func visibleCombinations(options map[string]any) []VisibleCombination {
+	raw, ok := options["combinations"]
+	if !ok || raw == nil {
+		return nil
+	}
+	payload, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var combinations []VisibleCombination
+	if err := json.Unmarshal(payload, &combinations); err != nil {
+		return nil
+	}
+	return combinations
+}
+
+func hasPriceForCombination(rules []PriceRuleSummary, combo VisibleCombination) bool {
+	for _, rule := range rules {
+		if rule.TaskType == combo.TaskType && rule.Resolution == combo.Resolution && rule.AudioMode == combo.AudioMode {
+			return true
+		}
+	}
+	return false
+}
+
+func routeImpactName(route RouteConfigSummary) string {
+	if strings.TrimSpace(route.RouteName) != "" {
+		return strings.TrimSpace(route.RouteName)
+	}
+	if strings.TrimSpace(route.RouteCode) != "" {
+		return strings.TrimSpace(route.RouteCode)
+	}
+	return fmt.Sprintf("#%d", route.RouteModelID)
 }
 
 type TaskFilter struct {
@@ -255,6 +307,7 @@ type RetryKind string
 const (
 	RetryArtifact   RetryKind = "artifact"
 	RetryDerivative RetryKind = "derivative"
+	RetrySettlement RetryKind = "settlement"
 )
 
 type RetryRequest struct {
@@ -274,8 +327,12 @@ func (s *Service) Retry(ctx context.Context, request RetryRequest) error {
 		if request.JobID == uuid.Nil {
 			return errs.BadRequest("media processing job id is required")
 		}
+	case RetrySettlement:
+		if request.TaskID == uuid.Nil {
+			return errs.BadRequest("video task id is required")
+		}
 	default:
-		return errs.BadRequest("only artifact and derivative recovery are allowed")
+		return errs.BadRequest("only artifact, derivative, and settlement recovery are allowed")
 	}
 	return s.store.Retry(ctx, request)
 }

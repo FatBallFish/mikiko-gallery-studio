@@ -7,7 +7,7 @@ const navigation = readFileSync(new URL('../layout/admin-navigation.ts', import.
 const configuration = readFileSync(new URL('./VideoConfigurationWorkspace.tsx', import.meta.url), 'utf8')
 const adminAPI = readFileSync(new URL('../../../shared/admin-api.ts', import.meta.url), 'utf8')
 
-for (const expected of ['用户 ID', '平台任务 ID', '厂商任务 ID', '项目 ID', '路由模型', '真实模型', '结算状态', 'usage_normalized', 'provider_cost', '重新转存', '重新处理']) {
+for (const expected of ['用户 ID', '平台任务 ID', '厂商任务 ID', '项目 ID', '路由模型', '真实模型', '结算状态', 'usage_normalized', 'provider_cost', '重新转存', '重新处理', '重新结算', 'retryAdminVideoSettlement']) {
   if (!tasks.includes(expected)) throw new Error(`video operations must expose ${expected}`)
 }
 if (tasks.includes('>重新生成<') || tasks.includes('retryProviderGeneration')) throw new Error('video operations must never expose provider generation retry')
@@ -22,6 +22,7 @@ for (const route of ['video-tasks', 'media-policy']) {
 for (const method of ['saveVideoCapability', 'saveVideoCostRule', 'deleteVideoCostRule', 'createVideoPricingStrategy', 'updateVideoPricingStrategy', 'deleteVideoPricingStrategy', 'simulateVideoPricing', 'recalculateVideoPricing', 'createVideoPriceRule', 'updateVideoPriceRule', 'deleteVideoPriceRule', 'saveRouteVideoConfig', 'deleteRouteVideoConfig', 'getRouteVideoImpact']) {
   if (!adminAPI.includes(method)) throw new Error(`video admin API must expose ${method}`)
 }
+if (!tasks.includes("settlement_status !== 'finalized'") || !tasks.includes("['succeeded', 'failed', 'partial', 'cancelled']")) throw new Error('settlement recovery must only appear for terminal unfinalized tasks, including cancelled releases')
 for (const expected of ['Provider 原生最大 n', '能力 JSON', '成本组合 JSON', '积分商品净收入保护', '目标毛利', '试算安全线', '重新计算价格版本', '可见完整组合', '最大输出数', '缺少候选', '缺少价格', '低于安全线']) {
   if (!configuration.includes(expected)) throw new Error(`video configuration workspace must expose ${expected}`)
 }
