@@ -86,6 +86,58 @@ func TestProbeDockerAPIReadinessRequiresReadyResponseOnLoopback(t *testing.T) {
 	}
 }
 
+func TestDoctorChecksMediaWorkerToolsAndTemporaryDirectory(t *testing.T) {
+	runtimeDir := writeDoctorRuntime(t, "native", "worker")
+	envPath := filepath.Join(runtimeDir, "config", "runtime.env")
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content, []byte("WORKER_ROLES=image,video,media,cleanup\nMEDIA_FFMPEG_PATH=ffmpeg-custom\nMEDIA_FFPROBE_PATH=ffprobe-custom\nMEDIA_TEMP_DIR=./data/tmp\n")...)
+	if err := os.WriteFile(envPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report := Doctor(t.Context(), runtimeDir, DoctorDependencies{
+		ProbeMiddleware: func(context.Context, map[string]string) error { return nil },
+		CheckSchema:     func(context.Context, map[string]string) error { return nil },
+		LookPath: func(name string) (string, error) {
+			if name == "ffprobe-custom" {
+				return "", errors.New("missing")
+			}
+			return "/usr/bin/" + name, nil
+		},
+	})
+	if !doctorCheckOK(report, "WORKER_TEMP_DIR") || doctorCheckOK(report, "WORKER_MEDIA_TOOLS") {
+		t.Fatalf("worker dependency checks = %#v", report.Checks)
+	}
+	if rendered := report.String(); !strings.Contains(rendered, "ffprobe") || strings.Contains(rendered, runtimeDir) {
+		t.Fatalf("worker dependency diagnostic = %s", rendered)
+	}
+}
+
+func TestDoctorSkipsMediaToolsForVideoOnlyWorker(t *testing.T) {
+	runtimeDir := writeDoctorRuntime(t, "native", "worker")
+	envPath := filepath.Join(runtimeDir, "config", "runtime.env")
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content, []byte("WORKER_ROLES=video\n")...)
+	if err := os.WriteFile(envPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lookups := 0
+	report := Doctor(t.Context(), runtimeDir, DoctorDependencies{
+		ProbeMiddleware: func(context.Context, map[string]string) error { return nil },
+		CheckSchema:     func(context.Context, map[string]string) error { return nil },
+		LookPath:        func(string) (string, error) { lookups++; return "", errors.New("missing") },
+	})
+	if lookups != 0 || !doctorCheckOK(report, "WORKER_MEDIA_TOOLS") {
+		t.Fatalf("video-only worker checks = %#v lookups=%d", report.Checks, lookups)
+	}
+}
+
 func writeDoctorRuntime(t *testing.T, mode, modules string) string {
 	t.Helper()
 	runtimeDir := t.TempDir()

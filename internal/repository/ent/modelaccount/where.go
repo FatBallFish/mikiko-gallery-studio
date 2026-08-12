@@ -7,6 +7,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
+	"github.com/google/uuid"
 )
 
 // ID filters vertices based on their ID field.
@@ -67,6 +68,11 @@ func UpdatedAt(v time.Time) predicate.ModelAccount {
 // DeletedAt applies equality check predicate on the "deleted_at" field. It's identical to DeletedAtEQ.
 func DeletedAt(v time.Time) predicate.ModelAccount {
 	return predicate.ModelAccount(sql.FieldEQ(FieldDeletedAt, v))
+}
+
+// PublicID applies equality check predicate on the "public_id" field. It's identical to PublicIDEQ.
+func PublicID(v uuid.UUID) predicate.ModelAccount {
+	return predicate.ModelAccount(sql.FieldEQ(FieldPublicID, v))
 }
 
 // Name applies equality check predicate on the "name" field. It's identical to NameEQ.
@@ -257,6 +263,46 @@ func DeletedAtIsNil() predicate.ModelAccount {
 // DeletedAtNotNil applies the NotNil predicate on the "deleted_at" field.
 func DeletedAtNotNil() predicate.ModelAccount {
 	return predicate.ModelAccount(sql.FieldNotNull(FieldDeletedAt))
+}
+
+// PublicIDEQ applies the EQ predicate on the "public_id" field.
+func PublicIDEQ(v uuid.UUID) predicate.ModelAccount {
+	return predicate.ModelAccount(sql.FieldEQ(FieldPublicID, v))
+}
+
+// PublicIDNEQ applies the NEQ predicate on the "public_id" field.
+func PublicIDNEQ(v uuid.UUID) predicate.ModelAccount {
+	return predicate.ModelAccount(sql.FieldNEQ(FieldPublicID, v))
+}
+
+// PublicIDIn applies the In predicate on the "public_id" field.
+func PublicIDIn(vs ...uuid.UUID) predicate.ModelAccount {
+	return predicate.ModelAccount(sql.FieldIn(FieldPublicID, vs...))
+}
+
+// PublicIDNotIn applies the NotIn predicate on the "public_id" field.
+func PublicIDNotIn(vs ...uuid.UUID) predicate.ModelAccount {
+	return predicate.ModelAccount(sql.FieldNotIn(FieldPublicID, vs...))
+}
+
+// PublicIDGT applies the GT predicate on the "public_id" field.
+func PublicIDGT(v uuid.UUID) predicate.ModelAccount {
+	return predicate.ModelAccount(sql.FieldGT(FieldPublicID, v))
+}
+
+// PublicIDGTE applies the GTE predicate on the "public_id" field.
+func PublicIDGTE(v uuid.UUID) predicate.ModelAccount {
+	return predicate.ModelAccount(sql.FieldGTE(FieldPublicID, v))
+}
+
+// PublicIDLT applies the LT predicate on the "public_id" field.
+func PublicIDLT(v uuid.UUID) predicate.ModelAccount {
+	return predicate.ModelAccount(sql.FieldLT(FieldPublicID, v))
+}
+
+// PublicIDLTE applies the LTE predicate on the "public_id" field.
+func PublicIDLTE(v uuid.UUID) predicate.ModelAccount {
+	return predicate.ModelAccount(sql.FieldLTE(FieldPublicID, v))
 }
 
 // NameEQ applies the EQ predicate on the "name" field.

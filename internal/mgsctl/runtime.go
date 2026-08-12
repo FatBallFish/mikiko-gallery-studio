@@ -114,6 +114,9 @@ func BuildRuntimeArtifacts(plan InstallPlan, random io.Reader, now time.Time) (R
 		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": derivedSecret(root, "secure-config-encryption"),
 		"PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY":    derivedSecret(root, "prompt-quote-signing"),
 		"CLUSTER_ENROLLMENT_SEAL_KEY":              derivedSecret(root, "cluster-enrollment-seal"),
+		"WORKER_ROLES":                             "image,video,media,cleanup",
+		"MEDIA_TEMP_DIR":                           workerTempDir(plan.Mode),
+		"WORKER_METRICS_ADDR":                      workerMetricsAddr(plan.Mode),
 	}
 	if plan.Topology == config.DeploymentTopologyCluster {
 		values["CLUSTER_NODE_ID"] = derivedUUID(root, "cluster-node-id")
@@ -186,6 +189,9 @@ func BuildPendingRuntimeArtifacts(plan InstallPlan, snapshot pendingInstallSnaps
 	values["DOCS_WEB_PORT"] = plan.DocsWebPort
 	values["MONITORING_PORT"] = plan.MonitoringPort
 	values["PUBLIC_API_URL"] = plan.PublicAPIURL
+	values["WORKER_ROLES"] = defaultString(values["WORKER_ROLES"], "image,video,media,cleanup")
+	values["MEDIA_TEMP_DIR"] = workerTempDir(plan.Mode)
+	values["WORKER_METRICS_ADDR"] = workerMetricsAddr(plan.Mode)
 	if strings.TrimSpace(plan.DocsURL) != "" {
 		values["PIC_GALLERY_DOCS_URL"] = plan.DocsURL
 	}
@@ -226,6 +232,20 @@ func BuildPendingRuntimeArtifacts(plan InstallPlan, snapshot pendingInstallSnaps
 	state.DeploymentRole = plan.Role
 	state.UpdatedAt = now
 	return renderRuntimeArtifacts(plan, values, snapshot.Runtime.Extensions, state, snapshot.Manifest.CreatedAt, snapshot.Result.SetupToken)
+}
+
+func workerTempDir(mode config.DeploymentMode) string {
+	if mode == config.DeploymentModeDocker {
+		return "/var/lib/pic-gallery/tmp"
+	}
+	return "./data/tmp"
+}
+
+func workerMetricsAddr(mode config.DeploymentMode) string {
+	if mode == config.DeploymentModeDocker {
+		return ":9091"
+	}
+	return "127.0.0.1:9091"
 }
 
 func renderRuntimeArtifacts(plan InstallPlan, values map[string]string, extensions []config.EnvEntry, state setup.InstallState, createdAt time.Time, setupToken string) (RuntimeArtifacts, error) {

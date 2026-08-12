@@ -141,8 +141,39 @@ type SecurityConfig struct {
 	PromptOptimizationQuoteSigningKey string `yaml:"prompt_optimization_quote_signing_key"`
 }
 
+type WorkerRole string
+
+const (
+	WorkerRoleImage   WorkerRole = "image"
+	WorkerRoleVideo   WorkerRole = "video"
+	WorkerRoleMedia   WorkerRole = "media"
+	WorkerRoleCleanup WorkerRole = "cleanup"
+)
+
 type WorkerConfig struct {
-	MaxConcurrentTasks int `yaml:"max_concurrent_tasks"`
+	MaxConcurrentTasks          int          `yaml:"max_concurrent_tasks"`
+	Roles                       []WorkerRole `yaml:"roles"`
+	ImageConcurrency            int          `yaml:"image_concurrency"`
+	VideoConcurrency            int          `yaml:"video_concurrency"`
+	MediaConcurrency            int          `yaml:"media_concurrency"`
+	CleanupConcurrency          int          `yaml:"cleanup_concurrency"`
+	FFmpegPath                  string       `yaml:"ffmpeg_path"`
+	FFprobePath                 string       `yaml:"ffprobe_path"`
+	TempDir                     string       `yaml:"temp_dir"`
+	TempDiskPausePercent        int          `yaml:"temp_disk_pause_percent"`
+	TempDiskCriticalPercent     int          `yaml:"temp_disk_critical_percent"`
+	MetricsAddr                 string       `yaml:"metrics_addr"`
+	AllowLoopbackVideoArtifacts bool         `yaml:"allow_loopback_video_artifacts"`
+	VideoArtifactTestCAFile     string       `yaml:"video_artifact_test_ca_file"`
+}
+
+func (cfg WorkerConfig) HasRole(role WorkerRole) bool {
+	for _, configured := range cfg.Roles {
+		if configured == role {
+			return true
+		}
+	}
+	return false
 }
 
 type ReferenceExtra struct {

@@ -27,6 +27,8 @@ const (
 	FieldDescription = "description"
 	// FieldVisibility holds the string denoting the visibility field in the database.
 	FieldVisibility = "visibility"
+	// FieldMediaType holds the string denoting the media_type field in the database.
+	FieldMediaType = "media_type"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
 	// FieldSortOrder holds the string denoting the sort_order field in the database.
@@ -45,6 +47,7 @@ var Columns = []string{
 	FieldName,
 	FieldDescription,
 	FieldVisibility,
+	FieldMediaType,
 	FieldEnabled,
 	FieldSortOrder,
 }
@@ -76,6 +79,10 @@ var (
 	DefaultVisibility string
 	// VisibilityValidator is a validator for the "visibility" field. It is called by the builders before save.
 	VisibilityValidator func(string) error
+	// DefaultMediaType holds the default value on creation for the "media_type" field.
+	DefaultMediaType string
+	// MediaTypeValidator is a validator for the "media_type" field. It is called by the builders before save.
+	MediaTypeValidator func(string) error
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
 	// DefaultSortOrder holds the default value on creation for the "sort_order" field.
@@ -123,6 +130,11 @@ func ByDescription(opts ...sql.OrderTermOption) OrderOption {
 // ByVisibility orders the results by the visibility field.
 func ByVisibility(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVisibility, opts...).ToFunc()
+}
+
+// ByMediaType orders the results by the media_type field.
+func ByMediaType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMediaType, opts...).ToFunc()
 }
 
 // ByEnabled orders the results by the enabled field.

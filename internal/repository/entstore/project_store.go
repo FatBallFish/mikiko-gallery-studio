@@ -11,10 +11,15 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/canvasgenerationrun"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvas"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediauploadsession"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	projectent "github.com/fatballfish/pic-gallery/internal/repository/ent/project"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/google/uuid"
@@ -245,7 +250,18 @@ func (s *ProjectStore) Delete(ctx context.Context, userID int64, projectID strin
 	if err != nil {
 		return domainproject.DeleteResult{}, err
 	}
-	if counts.Tasks+counts.Assets > 0 && req.TargetProjectID == "" {
+	activeCanvas, err := tx.CreativeCanvas.Query().Where(creativecanvas.UserIDEQ(userID), creativecanvas.ProjectIDEQ(sourceID), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil(), creativecanvas.RunningTaskCountGT(0)).Exist(ctx)
+	if err != nil {
+		return domainproject.DeleteResult{}, fmt.Errorf("check project canvas counters: %w", err)
+	}
+	activeRun, err := tx.CanvasGenerationRun.Query().Where(canvasgenerationrun.UserIDEQ(userID), canvasgenerationrun.StatusIn("submitting", "queued", "running", "saving"), canvasgenerationrun.HasCanvasWith(creativecanvas.ProjectIDEQ(sourceID), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil())).Exist(ctx)
+	if err != nil {
+		return domainproject.DeleteResult{}, fmt.Errorf("check project canvas runs: %w", err)
+	}
+	if activeCanvas || activeRun {
+		return domainproject.DeleteResult{}, projectservice.ErrCanvasBusy
+	}
+	if counts.Tasks+counts.Assets+counts.Canvases > 0 && req.TargetProjectID == "" {
 		return domainproject.DeleteResult{}, &projectservice.NonEmptyError{Counts: counts}
 	}
 	sourceBefore := mapProjectEntity(source)
@@ -254,8 +270,20 @@ func (s *ProjectStore) Delete(ctx context.Context, userID int64, projectID strin
 		if _, err := tx.ImageTask.Update().Where(imagetask.UserIDEQ(userID), imagetask.ProjectIDEQ(sourceID)).SetProjectID(targetID).Save(ctx); err != nil {
 			return domainproject.DeleteResult{}, fmt.Errorf("transfer project tasks: %w", err)
 		}
+		if _, err := tx.VideoTask.Update().Where(videotask.UserIDEQ(userID), videotask.ProjectIDEQ(sourceID)).SetProjectID(targetID).Save(ctx); err != nil {
+			return domainproject.DeleteResult{}, fmt.Errorf("transfer project video tasks: %w", err)
+		}
 		if _, err := tx.ImageResult.Update().Where(imageresult.UserIDEQ(userID), imageresult.ProjectIDEQ(sourceID)).SetProjectID(targetID).Save(ctx); err != nil {
 			return domainproject.DeleteResult{}, fmt.Errorf("transfer project assets: %w", err)
+		}
+		if _, err := tx.MediaAsset.Update().Where(mediaasset.UserIDEQ(userID), mediaasset.ProjectIDEQ(sourceID)).SetProjectID(targetID).Save(ctx); err != nil {
+			return domainproject.DeleteResult{}, fmt.Errorf("transfer project media assets: %w", err)
+		}
+		if _, err := tx.MediaUploadSession.Update().Where(mediauploadsession.UserIDEQ(userID), mediauploadsession.ProjectIDEQ(sourceID)).SetProjectID(targetID).Save(ctx); err != nil {
+			return domainproject.DeleteResult{}, fmt.Errorf("transfer project media uploads: %w", err)
+		}
+		if _, err := tx.CreativeCanvas.Update().Where(creativecanvas.UserIDEQ(userID), creativecanvas.ProjectIDEQ(sourceID), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil()).SetProjectID(targetID).AddMetadataVersion(1).SetLastTransferredAt(time.Now().UTC()).Save(ctx); err != nil {
+			return domainproject.DeleteResult{}, fmt.Errorf("transfer project canvases: %w", err)
 		}
 	}
 	now := time.Now().UTC()
@@ -277,7 +305,7 @@ func (s *ProjectStore) Delete(ctx context.Context, userID int64, projectID strin
 	}
 	sourceAfter := mapProjectEntity(deleted)
 	metadata := map[string]any{
-		"tasks": counts.Tasks, "assets": counts.Assets,
+		"tasks": counts.Tasks, "assets": counts.Assets, "canvases": counts.Canvases,
 		"source_before": sourceBefore, "source_after": sourceAfter,
 		"request_id": req.RequestID, "idempotency_key": req.IdempotencyKey,
 	}
@@ -345,27 +373,59 @@ func lockProjectRows() predicate.Project {
 }
 
 func countProjectOwnership(ctx context.Context, tx *repoent.Tx, userID int64, projectID uuid.UUID) (domainproject.OwnershipCounts, error) {
-	tasks, err := tx.ImageTask.Query().Where(imagetask.UserIDEQ(userID), imagetask.ProjectIDEQ(projectID), imagetask.DeletedAtIsNil()).Count(ctx)
+	imageTasks, err := tx.ImageTask.Query().Where(imagetask.UserIDEQ(userID), imagetask.ProjectIDEQ(projectID), imagetask.DeletedAtIsNil()).Count(ctx)
 	if err != nil {
 		return domainproject.OwnershipCounts{}, fmt.Errorf("count project tasks: %w", err)
 	}
-	assets, err := tx.ImageResult.Query().Where(imageresult.UserIDEQ(userID), imageresult.ProjectIDEQ(projectID), imageresult.DeletedAtIsNil()).Count(ctx)
+	videoTasks, err := tx.VideoTask.Query().Where(videotask.UserIDEQ(userID), videotask.ProjectIDEQ(projectID), videotask.DeletedAtIsNil()).Count(ctx)
+	if err != nil {
+		return domainproject.OwnershipCounts{}, fmt.Errorf("count project video tasks: %w", err)
+	}
+	imageAssets, err := tx.ImageResult.Query().Where(imageresult.UserIDEQ(userID), imageresult.ProjectIDEQ(projectID), imageresult.DeletedAtIsNil()).Count(ctx)
 	if err != nil {
 		return domainproject.OwnershipCounts{}, fmt.Errorf("count project assets: %w", err)
 	}
-	return domainproject.OwnershipCounts{Tasks: tasks, Assets: assets}, nil
+	mediaAssets, err := tx.MediaAsset.Query().Where(mediaasset.UserIDEQ(userID), mediaasset.ProjectIDEQ(projectID), mediaasset.DeletedAtIsNil(), mediaasset.LegacyImageResultIDIsNil()).Count(ctx)
+	if err != nil {
+		return domainproject.OwnershipCounts{}, fmt.Errorf("count project media assets: %w", err)
+	}
+	activeUploads, err := tx.MediaUploadSession.Query().Where(mediauploadsession.UserIDEQ(userID), mediauploadsession.ProjectIDEQ(projectID), mediauploadsession.StatusNotIn("completed", "aborted", "expired")).Count(ctx)
+	if err != nil {
+		return domainproject.OwnershipCounts{}, fmt.Errorf("count project media uploads: %w", err)
+	}
+	canvases, err := tx.CreativeCanvas.Query().Where(creativecanvas.UserIDEQ(userID), creativecanvas.ProjectIDEQ(projectID), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil()).Count(ctx)
+	if err != nil {
+		return domainproject.OwnershipCounts{}, fmt.Errorf("count project canvases: %w", err)
+	}
+	return domainproject.OwnershipCounts{Tasks: imageTasks + videoTasks, Assets: imageAssets + mediaAssets + activeUploads, Canvases: canvases}, nil
 }
 
 func countProjectOwnershipClient(ctx context.Context, client *repoent.Client, userID int64, projectID uuid.UUID) (domainproject.OwnershipCounts, error) {
-	tasks, err := client.ImageTask.Query().Where(imagetask.UserIDEQ(userID), imagetask.ProjectIDEQ(projectID), imagetask.DeletedAtIsNil()).Count(ctx)
+	imageTasks, err := client.ImageTask.Query().Where(imagetask.UserIDEQ(userID), imagetask.ProjectIDEQ(projectID), imagetask.DeletedAtIsNil()).Count(ctx)
 	if err != nil {
 		return domainproject.OwnershipCounts{}, fmt.Errorf("count project tasks: %w", err)
 	}
-	assets, err := client.ImageResult.Query().Where(imageresult.UserIDEQ(userID), imageresult.ProjectIDEQ(projectID), imageresult.DeletedAtIsNil()).Count(ctx)
+	videoTasks, err := client.VideoTask.Query().Where(videotask.UserIDEQ(userID), videotask.ProjectIDEQ(projectID), videotask.DeletedAtIsNil()).Count(ctx)
+	if err != nil {
+		return domainproject.OwnershipCounts{}, fmt.Errorf("count project video tasks: %w", err)
+	}
+	imageAssets, err := client.ImageResult.Query().Where(imageresult.UserIDEQ(userID), imageresult.ProjectIDEQ(projectID), imageresult.DeletedAtIsNil()).Count(ctx)
 	if err != nil {
 		return domainproject.OwnershipCounts{}, fmt.Errorf("count project assets: %w", err)
 	}
-	return domainproject.OwnershipCounts{Tasks: tasks, Assets: assets}, nil
+	mediaAssets, err := client.MediaAsset.Query().Where(mediaasset.UserIDEQ(userID), mediaasset.ProjectIDEQ(projectID), mediaasset.DeletedAtIsNil(), mediaasset.LegacyImageResultIDIsNil()).Count(ctx)
+	if err != nil {
+		return domainproject.OwnershipCounts{}, fmt.Errorf("count project media assets: %w", err)
+	}
+	activeUploads, err := client.MediaUploadSession.Query().Where(mediauploadsession.UserIDEQ(userID), mediauploadsession.ProjectIDEQ(projectID), mediauploadsession.StatusNotIn("completed", "aborted", "expired")).Count(ctx)
+	if err != nil {
+		return domainproject.OwnershipCounts{}, fmt.Errorf("count project media uploads: %w", err)
+	}
+	canvases, err := client.CreativeCanvas.Query().Where(creativecanvas.UserIDEQ(userID), creativecanvas.ProjectIDEQ(projectID), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil()).Count(ctx)
+	if err != nil {
+		return domainproject.OwnershipCounts{}, fmt.Errorf("count project canvases: %w", err)
+	}
+	return domainproject.OwnershipCounts{Tasks: imageTasks + videoTasks, Assets: imageAssets + mediaAssets + activeUploads, Canvases: canvases}, nil
 }
 
 type projectOwnershipCountRow struct {
@@ -389,6 +449,17 @@ func listProjectOwnershipCounts(ctx context.Context, client *repoent.Client, use
 		value.Tasks = row.Count
 		counts[row.ProjectID] = value
 	}
+	var videoTaskRows []projectOwnershipCountRow
+	if err := client.VideoTask.Query().Where(
+		videotask.UserIDEQ(userID), videotask.ProjectIDIn(projectIDs...), videotask.DeletedAtIsNil(),
+	).GroupBy(videotask.FieldProjectID).Aggregate(repoent.Count()).Scan(ctx, &videoTaskRows); err != nil {
+		return nil, fmt.Errorf("aggregate project video task counts: %w", err)
+	}
+	for _, row := range videoTaskRows {
+		value := counts[row.ProjectID]
+		value.Tasks += row.Count
+		counts[row.ProjectID] = value
+	}
 	var assetRows []projectOwnershipCountRow
 	if err := client.ImageResult.Query().Where(
 		imageresult.UserIDEQ(userID), imageresult.ProjectIDIn(projectIDs...), imageresult.DeletedAtIsNil(),
@@ -398,6 +469,28 @@ func listProjectOwnershipCounts(ctx context.Context, client *repoent.Client, use
 	for _, row := range assetRows {
 		value := counts[row.ProjectID]
 		value.Assets = row.Count
+		counts[row.ProjectID] = value
+	}
+	var mediaAssetRows []projectOwnershipCountRow
+	if err := client.MediaAsset.Query().Where(
+		mediaasset.UserIDEQ(userID), mediaasset.ProjectIDIn(projectIDs...), mediaasset.DeletedAtIsNil(), mediaasset.LegacyImageResultIDIsNil(),
+	).GroupBy(mediaasset.FieldProjectID).Aggregate(repoent.Count()).Scan(ctx, &mediaAssetRows); err != nil {
+		return nil, fmt.Errorf("aggregate project media asset counts: %w", err)
+	}
+	for _, row := range mediaAssetRows {
+		value := counts[row.ProjectID]
+		value.Assets += row.Count
+		counts[row.ProjectID] = value
+	}
+	var uploadRows []projectOwnershipCountRow
+	if err := client.MediaUploadSession.Query().Where(
+		mediauploadsession.UserIDEQ(userID), mediauploadsession.ProjectIDIn(projectIDs...), mediauploadsession.StatusNotIn("completed", "aborted", "expired"),
+	).GroupBy(mediauploadsession.FieldProjectID).Aggregate(repoent.Count()).Scan(ctx, &uploadRows); err != nil {
+		return nil, fmt.Errorf("aggregate project media upload counts: %w", err)
+	}
+	for _, row := range uploadRows {
+		value := counts[row.ProjectID]
+		value.Assets += row.Count
 		counts[row.ProjectID] = value
 	}
 	return counts, nil

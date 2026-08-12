@@ -9,14 +9,22 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/auditlog"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/canvasgenerationrun"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusterchallenge"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clusternode"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/clustertoken"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvas"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/creativecanvasrevision"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/installation"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaassetreference"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaderivative"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediauploadsession"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/migrationcheckpoint"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
@@ -50,6 +58,16 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercallbackevent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskattempt"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskinput"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletgrant"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/walletreservationallocation"
 	"github.com/google/uuid"
@@ -407,6 +425,93 @@ func init() {
 	auditlog.DefaultUserAgent = auditlogDescUserAgent.Default.(string)
 	// auditlog.UserAgentValidator is a validator for the "user_agent" field. It is called by the builders before save.
 	auditlog.UserAgentValidator = auditlogDescUserAgent.Validators[0].(func(string) error)
+	canvasgenerationrunMixin := schema.CanvasGenerationRun{}.Mixin()
+	canvasgenerationrunMixinFields0 := canvasgenerationrunMixin[0].Fields()
+	_ = canvasgenerationrunMixinFields0
+	canvasgenerationrunFields := schema.CanvasGenerationRun{}.Fields()
+	_ = canvasgenerationrunFields
+	// canvasgenerationrunDescCreatedAt is the schema descriptor for created_at field.
+	canvasgenerationrunDescCreatedAt := canvasgenerationrunMixinFields0[0].Descriptor()
+	// canvasgenerationrun.DefaultCreatedAt holds the default value on creation for the created_at field.
+	canvasgenerationrun.DefaultCreatedAt = canvasgenerationrunDescCreatedAt.Default.(func() time.Time)
+	// canvasgenerationrunDescUpdatedAt is the schema descriptor for updated_at field.
+	canvasgenerationrunDescUpdatedAt := canvasgenerationrunMixinFields0[1].Descriptor()
+	// canvasgenerationrun.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	canvasgenerationrun.DefaultUpdatedAt = canvasgenerationrunDescUpdatedAt.Default.(func() time.Time)
+	// canvasgenerationrun.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	canvasgenerationrun.UpdateDefaultUpdatedAt = canvasgenerationrunDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// canvasgenerationrunDescNodeID is the schema descriptor for node_id field.
+	canvasgenerationrunDescNodeID := canvasgenerationrunFields[3].Descriptor()
+	// canvasgenerationrun.NodeIDValidator is a validator for the "node_id" field. It is called by the builders before save.
+	canvasgenerationrun.NodeIDValidator = func() func(string) error {
+		validators := canvasgenerationrunDescNodeID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(node_id string) error {
+			for _, fn := range fns {
+				if err := fn(node_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// canvasgenerationrunDescSubmittedRevision is the schema descriptor for submitted_revision field.
+	canvasgenerationrunDescSubmittedRevision := canvasgenerationrunFields[4].Descriptor()
+	// canvasgenerationrun.SubmittedRevisionValidator is a validator for the "submitted_revision" field. It is called by the builders before save.
+	canvasgenerationrun.SubmittedRevisionValidator = canvasgenerationrunDescSubmittedRevision.Validators[0].(func(int64) error)
+	// canvasgenerationrunDescTaskKind is the schema descriptor for task_kind field.
+	canvasgenerationrunDescTaskKind := canvasgenerationrunFields[5].Descriptor()
+	// canvasgenerationrun.TaskKindValidator is a validator for the "task_kind" field. It is called by the builders before save.
+	canvasgenerationrun.TaskKindValidator = func() func(string) error {
+		validators := canvasgenerationrunDescTaskKind.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(task_kind string) error {
+			for _, fn := range fns {
+				if err := fn(task_kind); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// canvasgenerationrunDescStatus is the schema descriptor for status field.
+	canvasgenerationrunDescStatus := canvasgenerationrunFields[8].Descriptor()
+	// canvasgenerationrun.DefaultStatus holds the default value on creation for the status field.
+	canvasgenerationrun.DefaultStatus = canvasgenerationrunDescStatus.Default.(string)
+	// canvasgenerationrun.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	canvasgenerationrun.StatusValidator = canvasgenerationrunDescStatus.Validators[0].(func(string) error)
+	// canvasgenerationrunDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	canvasgenerationrunDescIdempotencyKey := canvasgenerationrunFields[11].Descriptor()
+	// canvasgenerationrun.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	canvasgenerationrun.IdempotencyKeyValidator = func() func(string) error {
+		validators := canvasgenerationrunDescIdempotencyKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(idempotency_key string) error {
+			for _, fn := range fns {
+				if err := fn(idempotency_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// canvasgenerationrunDescErrorCode is the schema descriptor for error_code field.
+	canvasgenerationrunDescErrorCode := canvasgenerationrunFields[12].Descriptor()
+	// canvasgenerationrun.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
+	canvasgenerationrun.ErrorCodeValidator = canvasgenerationrunDescErrorCode.Validators[0].(func(string) error)
+	// canvasgenerationrunDescID is the schema descriptor for id field.
+	canvasgenerationrunDescID := canvasgenerationrunFields[0].Descriptor()
+	// canvasgenerationrun.DefaultID holds the default value on creation for the id field.
+	canvasgenerationrun.DefaultID = canvasgenerationrunDescID.Default.(func() uuid.UUID)
 	clusterchallengeMixin := schema.ClusterChallenge{}.Mixin()
 	clusterchallengeMixinFields0 := clusterchallengeMixin[0].Fields()
 	_ = clusterchallengeMixinFields0
@@ -863,6 +968,158 @@ func init() {
 	configitemDescUpdatedBy := configitemFields[5].Descriptor()
 	// configitem.DefaultUpdatedBy holds the default value on creation for the updated_by field.
 	configitem.DefaultUpdatedBy = configitemDescUpdatedBy.Default.(int64)
+	creativecanvasMixin := schema.CreativeCanvas{}.Mixin()
+	creativecanvasMixinFields0 := creativecanvasMixin[0].Fields()
+	_ = creativecanvasMixinFields0
+	creativecanvasFields := schema.CreativeCanvas{}.Fields()
+	_ = creativecanvasFields
+	// creativecanvasDescCreatedAt is the schema descriptor for created_at field.
+	creativecanvasDescCreatedAt := creativecanvasMixinFields0[0].Descriptor()
+	// creativecanvas.DefaultCreatedAt holds the default value on creation for the created_at field.
+	creativecanvas.DefaultCreatedAt = creativecanvasDescCreatedAt.Default.(func() time.Time)
+	// creativecanvasDescUpdatedAt is the schema descriptor for updated_at field.
+	creativecanvasDescUpdatedAt := creativecanvasMixinFields0[1].Descriptor()
+	// creativecanvas.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	creativecanvas.DefaultUpdatedAt = creativecanvasDescUpdatedAt.Default.(func() time.Time)
+	// creativecanvas.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	creativecanvas.UpdateDefaultUpdatedAt = creativecanvasDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// creativecanvasDescName is the schema descriptor for name field.
+	creativecanvasDescName := creativecanvasFields[3].Descriptor()
+	// creativecanvas.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	creativecanvas.NameValidator = func() func(string) error {
+		validators := creativecanvasDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// creativecanvasDescNameKey is the schema descriptor for name_key field.
+	creativecanvasDescNameKey := creativecanvasFields[4].Descriptor()
+	// creativecanvas.NameKeyValidator is a validator for the "name_key" field. It is called by the builders before save.
+	creativecanvas.NameKeyValidator = func() func(string) error {
+		validators := creativecanvasDescNameKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name_key string) error {
+			for _, fn := range fns {
+				if err := fn(name_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// creativecanvasDescSchemaVersion is the schema descriptor for schema_version field.
+	creativecanvasDescSchemaVersion := creativecanvasFields[5].Descriptor()
+	// creativecanvas.DefaultSchemaVersion holds the default value on creation for the schema_version field.
+	creativecanvas.DefaultSchemaVersion = creativecanvasDescSchemaVersion.Default.(int)
+	// creativecanvasDescRevision is the schema descriptor for revision field.
+	creativecanvasDescRevision := creativecanvasFields[6].Descriptor()
+	// creativecanvas.DefaultRevision holds the default value on creation for the revision field.
+	creativecanvas.DefaultRevision = creativecanvasDescRevision.Default.(int64)
+	// creativecanvasDescMetadataVersion is the schema descriptor for metadata_version field.
+	creativecanvasDescMetadataVersion := creativecanvasFields[7].Descriptor()
+	// creativecanvas.DefaultMetadataVersion holds the default value on creation for the metadata_version field.
+	creativecanvas.DefaultMetadataVersion = creativecanvasDescMetadataVersion.Default.(int64)
+	// creativecanvasDescDocumentBytes is the schema descriptor for document_bytes field.
+	creativecanvasDescDocumentBytes := creativecanvasFields[9].Descriptor()
+	// creativecanvas.DefaultDocumentBytes holds the default value on creation for the document_bytes field.
+	creativecanvas.DefaultDocumentBytes = creativecanvasDescDocumentBytes.Default.(int)
+	// creativecanvas.DocumentBytesValidator is a validator for the "document_bytes" field. It is called by the builders before save.
+	creativecanvas.DocumentBytesValidator = creativecanvasDescDocumentBytes.Validators[0].(func(int) error)
+	// creativecanvasDescNodeCount is the schema descriptor for node_count field.
+	creativecanvasDescNodeCount := creativecanvasFields[10].Descriptor()
+	// creativecanvas.DefaultNodeCount holds the default value on creation for the node_count field.
+	creativecanvas.DefaultNodeCount = creativecanvasDescNodeCount.Default.(int)
+	// creativecanvas.NodeCountValidator is a validator for the "node_count" field. It is called by the builders before save.
+	creativecanvas.NodeCountValidator = creativecanvasDescNodeCount.Validators[0].(func(int) error)
+	// creativecanvasDescEdgeCount is the schema descriptor for edge_count field.
+	creativecanvasDescEdgeCount := creativecanvasFields[11].Descriptor()
+	// creativecanvas.DefaultEdgeCount holds the default value on creation for the edge_count field.
+	creativecanvas.DefaultEdgeCount = creativecanvasDescEdgeCount.Default.(int)
+	// creativecanvas.EdgeCountValidator is a validator for the "edge_count" field. It is called by the builders before save.
+	creativecanvas.EdgeCountValidator = creativecanvasDescEdgeCount.Validators[0].(func(int) error)
+	// creativecanvasDescRunningTaskCount is the schema descriptor for running_task_count field.
+	creativecanvasDescRunningTaskCount := creativecanvasFields[13].Descriptor()
+	// creativecanvas.DefaultRunningTaskCount holds the default value on creation for the running_task_count field.
+	creativecanvas.DefaultRunningTaskCount = creativecanvasDescRunningTaskCount.Default.(int)
+	// creativecanvas.RunningTaskCountValidator is a validator for the "running_task_count" field. It is called by the builders before save.
+	creativecanvas.RunningTaskCountValidator = creativecanvasDescRunningTaskCount.Validators[0].(func(int) error)
+	// creativecanvasDescFailedTaskCount is the schema descriptor for failed_task_count field.
+	creativecanvasDescFailedTaskCount := creativecanvasFields[14].Descriptor()
+	// creativecanvas.DefaultFailedTaskCount holds the default value on creation for the failed_task_count field.
+	creativecanvas.DefaultFailedTaskCount = creativecanvasDescFailedTaskCount.Default.(int)
+	// creativecanvas.FailedTaskCountValidator is a validator for the "failed_task_count" field. It is called by the builders before save.
+	creativecanvas.FailedTaskCountValidator = creativecanvasDescFailedTaskCount.Validators[0].(func(int) error)
+	// creativecanvasDescStatus is the schema descriptor for status field.
+	creativecanvasDescStatus := creativecanvasFields[15].Descriptor()
+	// creativecanvas.DefaultStatus holds the default value on creation for the status field.
+	creativecanvas.DefaultStatus = creativecanvasDescStatus.Default.(string)
+	// creativecanvas.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	creativecanvas.StatusValidator = creativecanvasDescStatus.Validators[0].(func(string) error)
+	// creativecanvasDescLastSavedAt is the schema descriptor for last_saved_at field.
+	creativecanvasDescLastSavedAt := creativecanvasFields[17].Descriptor()
+	// creativecanvas.DefaultLastSavedAt holds the default value on creation for the last_saved_at field.
+	creativecanvas.DefaultLastSavedAt = creativecanvasDescLastSavedAt.Default.(func() time.Time)
+	// creativecanvasDescID is the schema descriptor for id field.
+	creativecanvasDescID := creativecanvasFields[0].Descriptor()
+	// creativecanvas.DefaultID holds the default value on creation for the id field.
+	creativecanvas.DefaultID = creativecanvasDescID.Default.(func() uuid.UUID)
+	creativecanvasrevisionMixin := schema.CreativeCanvasRevision{}.Mixin()
+	creativecanvasrevisionMixinFields0 := creativecanvasrevisionMixin[0].Fields()
+	_ = creativecanvasrevisionMixinFields0
+	creativecanvasrevisionFields := schema.CreativeCanvasRevision{}.Fields()
+	_ = creativecanvasrevisionFields
+	// creativecanvasrevisionDescCreatedAt is the schema descriptor for created_at field.
+	creativecanvasrevisionDescCreatedAt := creativecanvasrevisionMixinFields0[0].Descriptor()
+	// creativecanvasrevision.DefaultCreatedAt holds the default value on creation for the created_at field.
+	creativecanvasrevision.DefaultCreatedAt = creativecanvasrevisionDescCreatedAt.Default.(func() time.Time)
+	// creativecanvasrevisionDescUpdatedAt is the schema descriptor for updated_at field.
+	creativecanvasrevisionDescUpdatedAt := creativecanvasrevisionMixinFields0[1].Descriptor()
+	// creativecanvasrevision.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	creativecanvasrevision.DefaultUpdatedAt = creativecanvasrevisionDescUpdatedAt.Default.(func() time.Time)
+	// creativecanvasrevision.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	creativecanvasrevision.UpdateDefaultUpdatedAt = creativecanvasrevisionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// creativecanvasrevisionDescRevision is the schema descriptor for revision field.
+	creativecanvasrevisionDescRevision := creativecanvasrevisionFields[2].Descriptor()
+	// creativecanvasrevision.RevisionValidator is a validator for the "revision" field. It is called by the builders before save.
+	creativecanvasrevision.RevisionValidator = creativecanvasrevisionDescRevision.Validators[0].(func(int64) error)
+	// creativecanvasrevisionDescSchemaVersion is the schema descriptor for schema_version field.
+	creativecanvasrevisionDescSchemaVersion := creativecanvasrevisionFields[3].Descriptor()
+	// creativecanvasrevision.DefaultSchemaVersion holds the default value on creation for the schema_version field.
+	creativecanvasrevision.DefaultSchemaVersion = creativecanvasrevisionDescSchemaVersion.Default.(int)
+	// creativecanvasrevisionDescReason is the schema descriptor for reason field.
+	creativecanvasrevisionDescReason := creativecanvasrevisionFields[5].Descriptor()
+	// creativecanvasrevision.DefaultReason holds the default value on creation for the reason field.
+	creativecanvasrevision.DefaultReason = creativecanvasrevisionDescReason.Default.(string)
+	// creativecanvasrevision.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
+	creativecanvasrevision.ReasonValidator = creativecanvasrevisionDescReason.Validators[0].(func(string) error)
+	// creativecanvasrevisionDescCreatedBy is the schema descriptor for created_by field.
+	creativecanvasrevisionDescCreatedBy := creativecanvasrevisionFields[6].Descriptor()
+	// creativecanvasrevision.DefaultCreatedBy holds the default value on creation for the created_by field.
+	creativecanvasrevision.DefaultCreatedBy = creativecanvasrevisionDescCreatedBy.Default.(string)
+	// creativecanvasrevision.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
+	creativecanvasrevision.CreatedByValidator = creativecanvasrevisionDescCreatedBy.Validators[0].(func(string) error)
+	// creativecanvasrevisionDescDocumentBytes is the schema descriptor for document_bytes field.
+	creativecanvasrevisionDescDocumentBytes := creativecanvasrevisionFields[7].Descriptor()
+	// creativecanvasrevision.DefaultDocumentBytes holds the default value on creation for the document_bytes field.
+	creativecanvasrevision.DefaultDocumentBytes = creativecanvasrevisionDescDocumentBytes.Default.(int)
+	// creativecanvasrevision.DocumentBytesValidator is a validator for the "document_bytes" field. It is called by the builders before save.
+	creativecanvasrevision.DocumentBytesValidator = creativecanvasrevisionDescDocumentBytes.Validators[0].(func(int) error)
+	// creativecanvasrevisionDescID is the schema descriptor for id field.
+	creativecanvasrevisionDescID := creativecanvasrevisionFields[0].Descriptor()
+	// creativecanvasrevision.DefaultID holds the default value on creation for the id field.
+	creativecanvasrevision.DefaultID = creativecanvasrevisionDescID.Default.(func() uuid.UUID)
 	galleryexportjobMixin := schema.GalleryExportJob{}.Mixin()
 	galleryexportjobMixinFields0 := galleryexportjobMixin[0].Fields()
 	_ = galleryexportjobMixinFields0
@@ -1415,6 +1672,617 @@ func init() {
 	installationDescMigratedAt := installationFields[10].Descriptor()
 	// installation.DefaultMigratedAt holds the default value on creation for the migrated_at field.
 	installation.DefaultMigratedAt = installationDescMigratedAt.Default.(func() time.Time)
+	mediaassetMixin := schema.MediaAsset{}.Mixin()
+	mediaassetMixinFields0 := mediaassetMixin[0].Fields()
+	_ = mediaassetMixinFields0
+	mediaassetFields := schema.MediaAsset{}.Fields()
+	_ = mediaassetFields
+	// mediaassetDescCreatedAt is the schema descriptor for created_at field.
+	mediaassetDescCreatedAt := mediaassetMixinFields0[0].Descriptor()
+	// mediaasset.DefaultCreatedAt holds the default value on creation for the created_at field.
+	mediaasset.DefaultCreatedAt = mediaassetDescCreatedAt.Default.(func() time.Time)
+	// mediaassetDescUpdatedAt is the schema descriptor for updated_at field.
+	mediaassetDescUpdatedAt := mediaassetMixinFields0[1].Descriptor()
+	// mediaasset.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	mediaasset.DefaultUpdatedAt = mediaassetDescUpdatedAt.Default.(func() time.Time)
+	// mediaasset.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	mediaasset.UpdateDefaultUpdatedAt = mediaassetDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// mediaassetDescName is the schema descriptor for name field.
+	mediaassetDescName := mediaassetFields[4].Descriptor()
+	// mediaasset.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	mediaasset.NameValidator = func() func(string) error {
+		validators := mediaassetDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetDescNameKey is the schema descriptor for name_key field.
+	mediaassetDescNameKey := mediaassetFields[5].Descriptor()
+	// mediaasset.NameKeyValidator is a validator for the "name_key" field. It is called by the builders before save.
+	mediaasset.NameKeyValidator = func() func(string) error {
+		validators := mediaassetDescNameKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name_key string) error {
+			for _, fn := range fns {
+				if err := fn(name_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetDescGroupName is the schema descriptor for group_name field.
+	mediaassetDescGroupName := mediaassetFields[6].Descriptor()
+	// mediaasset.DefaultGroupName holds the default value on creation for the group_name field.
+	mediaasset.DefaultGroupName = mediaassetDescGroupName.Default.(string)
+	// mediaasset.GroupNameValidator is a validator for the "group_name" field. It is called by the builders before save.
+	mediaasset.GroupNameValidator = mediaassetDescGroupName.Validators[0].(func(string) error)
+	// mediaassetDescMediaType is the schema descriptor for media_type field.
+	mediaassetDescMediaType := mediaassetFields[7].Descriptor()
+	// mediaasset.MediaTypeValidator is a validator for the "media_type" field. It is called by the builders before save.
+	mediaasset.MediaTypeValidator = func() func(string) error {
+		validators := mediaassetDescMediaType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(media_type string) error {
+			for _, fn := range fns {
+				if err := fn(media_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetDescSourceType is the schema descriptor for source_type field.
+	mediaassetDescSourceType := mediaassetFields[8].Descriptor()
+	// mediaasset.SourceTypeValidator is a validator for the "source_type" field. It is called by the builders before save.
+	mediaasset.SourceTypeValidator = func() func(string) error {
+		validators := mediaassetDescSourceType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(source_type string) error {
+			for _, fn := range fns {
+				if err := fn(source_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetDescStatus is the schema descriptor for status field.
+	mediaassetDescStatus := mediaassetFields[9].Descriptor()
+	// mediaasset.DefaultStatus holds the default value on creation for the status field.
+	mediaasset.DefaultStatus = mediaassetDescStatus.Default.(string)
+	// mediaasset.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	mediaasset.StatusValidator = mediaassetDescStatus.Validators[0].(func(string) error)
+	// mediaassetDescVisibilityStatus is the schema descriptor for visibility_status field.
+	mediaassetDescVisibilityStatus := mediaassetFields[10].Descriptor()
+	// mediaasset.DefaultVisibilityStatus holds the default value on creation for the visibility_status field.
+	mediaasset.DefaultVisibilityStatus = mediaassetDescVisibilityStatus.Default.(string)
+	// mediaasset.VisibilityStatusValidator is a validator for the "visibility_status" field. It is called by the builders before save.
+	mediaasset.VisibilityStatusValidator = mediaassetDescVisibilityStatus.Validators[0].(func(string) error)
+	// mediaassetDescStorageDriver is the schema descriptor for storage_driver field.
+	mediaassetDescStorageDriver := mediaassetFields[12].Descriptor()
+	// mediaasset.DefaultStorageDriver holds the default value on creation for the storage_driver field.
+	mediaasset.DefaultStorageDriver = mediaassetDescStorageDriver.Default.(string)
+	// mediaasset.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
+	mediaasset.StorageDriverValidator = mediaassetDescStorageDriver.Validators[0].(func(string) error)
+	// mediaassetDescBucket is the schema descriptor for bucket field.
+	mediaassetDescBucket := mediaassetFields[13].Descriptor()
+	// mediaasset.DefaultBucket holds the default value on creation for the bucket field.
+	mediaasset.DefaultBucket = mediaassetDescBucket.Default.(string)
+	// mediaasset.BucketValidator is a validator for the "bucket" field. It is called by the builders before save.
+	mediaasset.BucketValidator = mediaassetDescBucket.Validators[0].(func(string) error)
+	// mediaassetDescObjectKey is the schema descriptor for object_key field.
+	mediaassetDescObjectKey := mediaassetFields[14].Descriptor()
+	// mediaasset.ObjectKeyValidator is a validator for the "object_key" field. It is called by the builders before save.
+	mediaasset.ObjectKeyValidator = func() func(string) error {
+		validators := mediaassetDescObjectKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(object_key string) error {
+			for _, fn := range fns {
+				if err := fn(object_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetDescMimeType is the schema descriptor for mime_type field.
+	mediaassetDescMimeType := mediaassetFields[15].Descriptor()
+	// mediaasset.MimeTypeValidator is a validator for the "mime_type" field. It is called by the builders before save.
+	mediaasset.MimeTypeValidator = func() func(string) error {
+		validators := mediaassetDescMimeType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(mime_type string) error {
+			for _, fn := range fns {
+				if err := fn(mime_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetDescContainer is the schema descriptor for container field.
+	mediaassetDescContainer := mediaassetFields[16].Descriptor()
+	// mediaasset.DefaultContainer holds the default value on creation for the container field.
+	mediaasset.DefaultContainer = mediaassetDescContainer.Default.(string)
+	// mediaasset.ContainerValidator is a validator for the "container" field. It is called by the builders before save.
+	mediaasset.ContainerValidator = mediaassetDescContainer.Validators[0].(func(string) error)
+	// mediaassetDescCodec is the schema descriptor for codec field.
+	mediaassetDescCodec := mediaassetFields[17].Descriptor()
+	// mediaasset.DefaultCodec holds the default value on creation for the codec field.
+	mediaasset.DefaultCodec = mediaassetDescCodec.Default.(string)
+	// mediaasset.CodecValidator is a validator for the "codec" field. It is called by the builders before save.
+	mediaasset.CodecValidator = mediaassetDescCodec.Validators[0].(func(string) error)
+	// mediaassetDescFileSizeBytes is the schema descriptor for file_size_bytes field.
+	mediaassetDescFileSizeBytes := mediaassetFields[18].Descriptor()
+	// mediaasset.FileSizeBytesValidator is a validator for the "file_size_bytes" field. It is called by the builders before save.
+	mediaasset.FileSizeBytesValidator = mediaassetDescFileSizeBytes.Validators[0].(func(int64) error)
+	// mediaassetDescSha256 is the schema descriptor for sha256 field.
+	mediaassetDescSha256 := mediaassetFields[19].Descriptor()
+	// mediaasset.DefaultSha256 holds the default value on creation for the sha256 field.
+	mediaasset.DefaultSha256 = mediaassetDescSha256.Default.(string)
+	// mediaasset.Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
+	mediaasset.Sha256Validator = mediaassetDescSha256.Validators[0].(func(string) error)
+	// mediaassetDescAudioCodec is the schema descriptor for audio_codec field.
+	mediaassetDescAudioCodec := mediaassetFields[24].Descriptor()
+	// mediaasset.DefaultAudioCodec holds the default value on creation for the audio_codec field.
+	mediaasset.DefaultAudioCodec = mediaassetDescAudioCodec.Default.(string)
+	// mediaasset.AudioCodecValidator is a validator for the "audio_codec" field. It is called by the builders before save.
+	mediaasset.AudioCodecValidator = mediaassetDescAudioCodec.Validators[0].(func(string) error)
+	// mediaassetDescSourceTaskKind is the schema descriptor for source_task_kind field.
+	mediaassetDescSourceTaskKind := mediaassetFields[28].Descriptor()
+	// mediaasset.SourceTaskKindValidator is a validator for the "source_task_kind" field. It is called by the builders before save.
+	mediaasset.SourceTaskKindValidator = mediaassetDescSourceTaskKind.Validators[0].(func(string) error)
+	// mediaassetDescProcessingErrorCode is the schema descriptor for processing_error_code field.
+	mediaassetDescProcessingErrorCode := mediaassetFields[31].Descriptor()
+	// mediaasset.ProcessingErrorCodeValidator is a validator for the "processing_error_code" field. It is called by the builders before save.
+	mediaasset.ProcessingErrorCodeValidator = mediaassetDescProcessingErrorCode.Validators[0].(func(string) error)
+	// mediaassetDescVersion is the schema descriptor for version field.
+	mediaassetDescVersion := mediaassetFields[33].Descriptor()
+	// mediaasset.DefaultVersion holds the default value on creation for the version field.
+	mediaasset.DefaultVersion = mediaassetDescVersion.Default.(int64)
+	// mediaassetDescID is the schema descriptor for id field.
+	mediaassetDescID := mediaassetFields[0].Descriptor()
+	// mediaasset.DefaultID holds the default value on creation for the id field.
+	mediaasset.DefaultID = mediaassetDescID.Default.(func() uuid.UUID)
+	mediaassetreferenceMixin := schema.MediaAssetReference{}.Mixin()
+	mediaassetreferenceMixinFields0 := mediaassetreferenceMixin[0].Fields()
+	_ = mediaassetreferenceMixinFields0
+	mediaassetreferenceFields := schema.MediaAssetReference{}.Fields()
+	_ = mediaassetreferenceFields
+	// mediaassetreferenceDescCreatedAt is the schema descriptor for created_at field.
+	mediaassetreferenceDescCreatedAt := mediaassetreferenceMixinFields0[0].Descriptor()
+	// mediaassetreference.DefaultCreatedAt holds the default value on creation for the created_at field.
+	mediaassetreference.DefaultCreatedAt = mediaassetreferenceDescCreatedAt.Default.(func() time.Time)
+	// mediaassetreferenceDescUpdatedAt is the schema descriptor for updated_at field.
+	mediaassetreferenceDescUpdatedAt := mediaassetreferenceMixinFields0[1].Descriptor()
+	// mediaassetreference.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	mediaassetreference.DefaultUpdatedAt = mediaassetreferenceDescUpdatedAt.Default.(func() time.Time)
+	// mediaassetreference.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	mediaassetreference.UpdateDefaultUpdatedAt = mediaassetreferenceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// mediaassetreferenceDescRefType is the schema descriptor for ref_type field.
+	mediaassetreferenceDescRefType := mediaassetreferenceFields[2].Descriptor()
+	// mediaassetreference.RefTypeValidator is a validator for the "ref_type" field. It is called by the builders before save.
+	mediaassetreference.RefTypeValidator = func() func(string) error {
+		validators := mediaassetreferenceDescRefType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(ref_type string) error {
+			for _, fn := range fns {
+				if err := fn(ref_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetreferenceDescRefKey is the schema descriptor for ref_key field.
+	mediaassetreferenceDescRefKey := mediaassetreferenceFields[4].Descriptor()
+	// mediaassetreference.RefKeyValidator is a validator for the "ref_key" field. It is called by the builders before save.
+	mediaassetreference.RefKeyValidator = func() func(string) error {
+		validators := mediaassetreferenceDescRefKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(ref_key string) error {
+			for _, fn := range fns {
+				if err := fn(ref_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetreferenceDescID is the schema descriptor for id field.
+	mediaassetreferenceDescID := mediaassetreferenceFields[0].Descriptor()
+	// mediaassetreference.DefaultID holds the default value on creation for the id field.
+	mediaassetreference.DefaultID = mediaassetreferenceDescID.Default.(func() uuid.UUID)
+	mediaderivativeMixin := schema.MediaDerivative{}.Mixin()
+	mediaderivativeMixinFields0 := mediaderivativeMixin[0].Fields()
+	_ = mediaderivativeMixinFields0
+	mediaderivativeFields := schema.MediaDerivative{}.Fields()
+	_ = mediaderivativeFields
+	// mediaderivativeDescCreatedAt is the schema descriptor for created_at field.
+	mediaderivativeDescCreatedAt := mediaderivativeMixinFields0[0].Descriptor()
+	// mediaderivative.DefaultCreatedAt holds the default value on creation for the created_at field.
+	mediaderivative.DefaultCreatedAt = mediaderivativeDescCreatedAt.Default.(func() time.Time)
+	// mediaderivativeDescUpdatedAt is the schema descriptor for updated_at field.
+	mediaderivativeDescUpdatedAt := mediaderivativeMixinFields0[1].Descriptor()
+	// mediaderivative.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	mediaderivative.DefaultUpdatedAt = mediaderivativeDescUpdatedAt.Default.(func() time.Time)
+	// mediaderivative.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	mediaderivative.UpdateDefaultUpdatedAt = mediaderivativeDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// mediaderivativeDescKind is the schema descriptor for kind field.
+	mediaderivativeDescKind := mediaderivativeFields[2].Descriptor()
+	// mediaderivative.KindValidator is a validator for the "kind" field. It is called by the builders before save.
+	mediaderivative.KindValidator = func() func(string) error {
+		validators := mediaderivativeDescKind.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(kind string) error {
+			for _, fn := range fns {
+				if err := fn(kind); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaderivativeDescTransformVersion is the schema descriptor for transform_version field.
+	mediaderivativeDescTransformVersion := mediaderivativeFields[3].Descriptor()
+	// mediaderivative.DefaultTransformVersion holds the default value on creation for the transform_version field.
+	mediaderivative.DefaultTransformVersion = mediaderivativeDescTransformVersion.Default.(int)
+	// mediaderivative.TransformVersionValidator is a validator for the "transform_version" field. It is called by the builders before save.
+	mediaderivative.TransformVersionValidator = mediaderivativeDescTransformVersion.Validators[0].(func(int) error)
+	// mediaderivativeDescStatus is the schema descriptor for status field.
+	mediaderivativeDescStatus := mediaderivativeFields[4].Descriptor()
+	// mediaderivative.DefaultStatus holds the default value on creation for the status field.
+	mediaderivative.DefaultStatus = mediaderivativeDescStatus.Default.(string)
+	// mediaderivative.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	mediaderivative.StatusValidator = mediaderivativeDescStatus.Validators[0].(func(string) error)
+	// mediaderivativeDescStorageDriver is the schema descriptor for storage_driver field.
+	mediaderivativeDescStorageDriver := mediaderivativeFields[6].Descriptor()
+	// mediaderivative.DefaultStorageDriver holds the default value on creation for the storage_driver field.
+	mediaderivative.DefaultStorageDriver = mediaderivativeDescStorageDriver.Default.(string)
+	// mediaderivative.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
+	mediaderivative.StorageDriverValidator = mediaderivativeDescStorageDriver.Validators[0].(func(string) error)
+	// mediaderivativeDescBucket is the schema descriptor for bucket field.
+	mediaderivativeDescBucket := mediaderivativeFields[7].Descriptor()
+	// mediaderivative.DefaultBucket holds the default value on creation for the bucket field.
+	mediaderivative.DefaultBucket = mediaderivativeDescBucket.Default.(string)
+	// mediaderivative.BucketValidator is a validator for the "bucket" field. It is called by the builders before save.
+	mediaderivative.BucketValidator = mediaderivativeDescBucket.Validators[0].(func(string) error)
+	// mediaderivativeDescObjectKey is the schema descriptor for object_key field.
+	mediaderivativeDescObjectKey := mediaderivativeFields[8].Descriptor()
+	// mediaderivative.ObjectKeyValidator is a validator for the "object_key" field. It is called by the builders before save.
+	mediaderivative.ObjectKeyValidator = func() func(string) error {
+		validators := mediaderivativeDescObjectKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(object_key string) error {
+			for _, fn := range fns {
+				if err := fn(object_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaderivativeDescMimeType is the schema descriptor for mime_type field.
+	mediaderivativeDescMimeType := mediaderivativeFields[9].Descriptor()
+	// mediaderivative.DefaultMimeType holds the default value on creation for the mime_type field.
+	mediaderivative.DefaultMimeType = mediaderivativeDescMimeType.Default.(string)
+	// mediaderivative.MimeTypeValidator is a validator for the "mime_type" field. It is called by the builders before save.
+	mediaderivative.MimeTypeValidator = mediaderivativeDescMimeType.Validators[0].(func(string) error)
+	// mediaderivativeDescFileSizeBytes is the schema descriptor for file_size_bytes field.
+	mediaderivativeDescFileSizeBytes := mediaderivativeFields[10].Descriptor()
+	// mediaderivative.DefaultFileSizeBytes holds the default value on creation for the file_size_bytes field.
+	mediaderivative.DefaultFileSizeBytes = mediaderivativeDescFileSizeBytes.Default.(int64)
+	// mediaderivative.FileSizeBytesValidator is a validator for the "file_size_bytes" field. It is called by the builders before save.
+	mediaderivative.FileSizeBytesValidator = mediaderivativeDescFileSizeBytes.Validators[0].(func(int64) error)
+	// mediaderivativeDescSha256 is the schema descriptor for sha256 field.
+	mediaderivativeDescSha256 := mediaderivativeFields[15].Descriptor()
+	// mediaderivative.DefaultSha256 holds the default value on creation for the sha256 field.
+	mediaderivative.DefaultSha256 = mediaderivativeDescSha256.Default.(string)
+	// mediaderivative.Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
+	mediaderivative.Sha256Validator = mediaderivativeDescSha256.Validators[0].(func(string) error)
+	// mediaderivativeDescErrorCode is the schema descriptor for error_code field.
+	mediaderivativeDescErrorCode := mediaderivativeFields[16].Descriptor()
+	// mediaderivative.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
+	mediaderivative.ErrorCodeValidator = mediaderivativeDescErrorCode.Validators[0].(func(string) error)
+	// mediaderivativeDescID is the schema descriptor for id field.
+	mediaderivativeDescID := mediaderivativeFields[0].Descriptor()
+	// mediaderivative.DefaultID holds the default value on creation for the id field.
+	mediaderivative.DefaultID = mediaderivativeDescID.Default.(func() uuid.UUID)
+	mediaprocessingjobMixin := schema.MediaProcessingJob{}.Mixin()
+	mediaprocessingjobMixinFields0 := mediaprocessingjobMixin[0].Fields()
+	_ = mediaprocessingjobMixinFields0
+	mediaprocessingjobFields := schema.MediaProcessingJob{}.Fields()
+	_ = mediaprocessingjobFields
+	// mediaprocessingjobDescCreatedAt is the schema descriptor for created_at field.
+	mediaprocessingjobDescCreatedAt := mediaprocessingjobMixinFields0[0].Descriptor()
+	// mediaprocessingjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	mediaprocessingjob.DefaultCreatedAt = mediaprocessingjobDescCreatedAt.Default.(func() time.Time)
+	// mediaprocessingjobDescUpdatedAt is the schema descriptor for updated_at field.
+	mediaprocessingjobDescUpdatedAt := mediaprocessingjobMixinFields0[1].Descriptor()
+	// mediaprocessingjob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	mediaprocessingjob.DefaultUpdatedAt = mediaprocessingjobDescUpdatedAt.Default.(func() time.Time)
+	// mediaprocessingjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	mediaprocessingjob.UpdateDefaultUpdatedAt = mediaprocessingjobDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// mediaprocessingjobDescJobType is the schema descriptor for job_type field.
+	mediaprocessingjobDescJobType := mediaprocessingjobFields[2].Descriptor()
+	// mediaprocessingjob.JobTypeValidator is a validator for the "job_type" field. It is called by the builders before save.
+	mediaprocessingjob.JobTypeValidator = func() func(string) error {
+		validators := mediaprocessingjobDescJobType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(job_type string) error {
+			for _, fn := range fns {
+				if err := fn(job_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaprocessingjobDescTransformVersion is the schema descriptor for transform_version field.
+	mediaprocessingjobDescTransformVersion := mediaprocessingjobFields[3].Descriptor()
+	// mediaprocessingjob.DefaultTransformVersion holds the default value on creation for the transform_version field.
+	mediaprocessingjob.DefaultTransformVersion = mediaprocessingjobDescTransformVersion.Default.(int)
+	// mediaprocessingjob.TransformVersionValidator is a validator for the "transform_version" field. It is called by the builders before save.
+	mediaprocessingjob.TransformVersionValidator = mediaprocessingjobDescTransformVersion.Validators[0].(func(int) error)
+	// mediaprocessingjobDescStatus is the schema descriptor for status field.
+	mediaprocessingjobDescStatus := mediaprocessingjobFields[4].Descriptor()
+	// mediaprocessingjob.DefaultStatus holds the default value on creation for the status field.
+	mediaprocessingjob.DefaultStatus = mediaprocessingjobDescStatus.Default.(string)
+	// mediaprocessingjob.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	mediaprocessingjob.StatusValidator = mediaprocessingjobDescStatus.Validators[0].(func(string) error)
+	// mediaprocessingjobDescAttemptCount is the schema descriptor for attempt_count field.
+	mediaprocessingjobDescAttemptCount := mediaprocessingjobFields[5].Descriptor()
+	// mediaprocessingjob.DefaultAttemptCount holds the default value on creation for the attempt_count field.
+	mediaprocessingjob.DefaultAttemptCount = mediaprocessingjobDescAttemptCount.Default.(int)
+	// mediaprocessingjob.AttemptCountValidator is a validator for the "attempt_count" field. It is called by the builders before save.
+	mediaprocessingjob.AttemptCountValidator = mediaprocessingjobDescAttemptCount.Validators[0].(func(int) error)
+	// mediaprocessingjobDescMaxAttempts is the schema descriptor for max_attempts field.
+	mediaprocessingjobDescMaxAttempts := mediaprocessingjobFields[6].Descriptor()
+	// mediaprocessingjob.DefaultMaxAttempts holds the default value on creation for the max_attempts field.
+	mediaprocessingjob.DefaultMaxAttempts = mediaprocessingjobDescMaxAttempts.Default.(int)
+	// mediaprocessingjob.MaxAttemptsValidator is a validator for the "max_attempts" field. It is called by the builders before save.
+	mediaprocessingjob.MaxAttemptsValidator = mediaprocessingjobDescMaxAttempts.Validators[0].(func(int) error)
+	// mediaprocessingjobDescLeaseOwner is the schema descriptor for lease_owner field.
+	mediaprocessingjobDescLeaseOwner := mediaprocessingjobFields[8].Descriptor()
+	// mediaprocessingjob.LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
+	mediaprocessingjob.LeaseOwnerValidator = mediaprocessingjobDescLeaseOwner.Validators[0].(func(string) error)
+	// mediaprocessingjobDescErrorCode is the schema descriptor for error_code field.
+	mediaprocessingjobDescErrorCode := mediaprocessingjobFields[10].Descriptor()
+	// mediaprocessingjob.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
+	mediaprocessingjob.ErrorCodeValidator = mediaprocessingjobDescErrorCode.Validators[0].(func(string) error)
+	// mediaprocessingjobDescRequestedByType is the schema descriptor for requested_by_type field.
+	mediaprocessingjobDescRequestedByType := mediaprocessingjobFields[12].Descriptor()
+	// mediaprocessingjob.DefaultRequestedByType holds the default value on creation for the requested_by_type field.
+	mediaprocessingjob.DefaultRequestedByType = mediaprocessingjobDescRequestedByType.Default.(string)
+	// mediaprocessingjob.RequestedByTypeValidator is a validator for the "requested_by_type" field. It is called by the builders before save.
+	mediaprocessingjob.RequestedByTypeValidator = mediaprocessingjobDescRequestedByType.Validators[0].(func(string) error)
+	// mediaprocessingjobDescRequestedByID is the schema descriptor for requested_by_id field.
+	mediaprocessingjobDescRequestedByID := mediaprocessingjobFields[13].Descriptor()
+	// mediaprocessingjob.DefaultRequestedByID holds the default value on creation for the requested_by_id field.
+	mediaprocessingjob.DefaultRequestedByID = mediaprocessingjobDescRequestedByID.Default.(string)
+	// mediaprocessingjob.RequestedByIDValidator is a validator for the "requested_by_id" field. It is called by the builders before save.
+	mediaprocessingjob.RequestedByIDValidator = mediaprocessingjobDescRequestedByID.Validators[0].(func(string) error)
+	// mediaprocessingjobDescID is the schema descriptor for id field.
+	mediaprocessingjobDescID := mediaprocessingjobFields[0].Descriptor()
+	// mediaprocessingjob.DefaultID holds the default value on creation for the id field.
+	mediaprocessingjob.DefaultID = mediaprocessingjobDescID.Default.(func() uuid.UUID)
+	mediauploadsessionMixin := schema.MediaUploadSession{}.Mixin()
+	mediauploadsessionMixinFields0 := mediauploadsessionMixin[0].Fields()
+	_ = mediauploadsessionMixinFields0
+	mediauploadsessionFields := schema.MediaUploadSession{}.Fields()
+	_ = mediauploadsessionFields
+	// mediauploadsessionDescCreatedAt is the schema descriptor for created_at field.
+	mediauploadsessionDescCreatedAt := mediauploadsessionMixinFields0[0].Descriptor()
+	// mediauploadsession.DefaultCreatedAt holds the default value on creation for the created_at field.
+	mediauploadsession.DefaultCreatedAt = mediauploadsessionDescCreatedAt.Default.(func() time.Time)
+	// mediauploadsessionDescUpdatedAt is the schema descriptor for updated_at field.
+	mediauploadsessionDescUpdatedAt := mediauploadsessionMixinFields0[1].Descriptor()
+	// mediauploadsession.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	mediauploadsession.DefaultUpdatedAt = mediauploadsessionDescUpdatedAt.Default.(func() time.Time)
+	// mediauploadsession.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	mediauploadsession.UpdateDefaultUpdatedAt = mediauploadsessionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// mediauploadsessionDescGroupName is the schema descriptor for group_name field.
+	mediauploadsessionDescGroupName := mediauploadsessionFields[3].Descriptor()
+	// mediauploadsession.DefaultGroupName holds the default value on creation for the group_name field.
+	mediauploadsession.DefaultGroupName = mediauploadsessionDescGroupName.Default.(string)
+	// mediauploadsession.GroupNameValidator is a validator for the "group_name" field. It is called by the builders before save.
+	mediauploadsession.GroupNameValidator = mediauploadsessionDescGroupName.Validators[0].(func(string) error)
+	// mediauploadsessionDescOriginalFilename is the schema descriptor for original_filename field.
+	mediauploadsessionDescOriginalFilename := mediauploadsessionFields[4].Descriptor()
+	// mediauploadsession.OriginalFilenameValidator is a validator for the "original_filename" field. It is called by the builders before save.
+	mediauploadsession.OriginalFilenameValidator = func() func(string) error {
+		validators := mediauploadsessionDescOriginalFilename.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(original_filename string) error {
+			for _, fn := range fns {
+				if err := fn(original_filename); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediauploadsessionDescDeclaredMediaType is the schema descriptor for declared_media_type field.
+	mediauploadsessionDescDeclaredMediaType := mediauploadsessionFields[5].Descriptor()
+	// mediauploadsession.DeclaredMediaTypeValidator is a validator for the "declared_media_type" field. It is called by the builders before save.
+	mediauploadsession.DeclaredMediaTypeValidator = func() func(string) error {
+		validators := mediauploadsessionDescDeclaredMediaType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(declared_media_type string) error {
+			for _, fn := range fns {
+				if err := fn(declared_media_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediauploadsessionDescDeclaredMimeType is the schema descriptor for declared_mime_type field.
+	mediauploadsessionDescDeclaredMimeType := mediauploadsessionFields[6].Descriptor()
+	// mediauploadsession.DeclaredMimeTypeValidator is a validator for the "declared_mime_type" field. It is called by the builders before save.
+	mediauploadsession.DeclaredMimeTypeValidator = func() func(string) error {
+		validators := mediauploadsessionDescDeclaredMimeType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(declared_mime_type string) error {
+			for _, fn := range fns {
+				if err := fn(declared_mime_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediauploadsessionDescDeclaredSizeBytes is the schema descriptor for declared_size_bytes field.
+	mediauploadsessionDescDeclaredSizeBytes := mediauploadsessionFields[7].Descriptor()
+	// mediauploadsession.DeclaredSizeBytesValidator is a validator for the "declared_size_bytes" field. It is called by the builders before save.
+	mediauploadsession.DeclaredSizeBytesValidator = mediauploadsessionDescDeclaredSizeBytes.Validators[0].(func(int64) error)
+	// mediauploadsessionDescDeclaredChecksum is the schema descriptor for declared_checksum field.
+	mediauploadsessionDescDeclaredChecksum := mediauploadsessionFields[8].Descriptor()
+	// mediauploadsession.DeclaredChecksumValidator is a validator for the "declared_checksum" field. It is called by the builders before save.
+	mediauploadsession.DeclaredChecksumValidator = mediauploadsessionDescDeclaredChecksum.Validators[0].(func(string) error)
+	// mediauploadsessionDescStorageDriver is the schema descriptor for storage_driver field.
+	mediauploadsessionDescStorageDriver := mediauploadsessionFields[10].Descriptor()
+	// mediauploadsession.DefaultStorageDriver holds the default value on creation for the storage_driver field.
+	mediauploadsession.DefaultStorageDriver = mediauploadsessionDescStorageDriver.Default.(string)
+	// mediauploadsession.StorageDriverValidator is a validator for the "storage_driver" field. It is called by the builders before save.
+	mediauploadsession.StorageDriverValidator = mediauploadsessionDescStorageDriver.Validators[0].(func(string) error)
+	// mediauploadsessionDescBucket is the schema descriptor for bucket field.
+	mediauploadsessionDescBucket := mediauploadsessionFields[11].Descriptor()
+	// mediauploadsession.DefaultBucket holds the default value on creation for the bucket field.
+	mediauploadsession.DefaultBucket = mediauploadsessionDescBucket.Default.(string)
+	// mediauploadsession.BucketValidator is a validator for the "bucket" field. It is called by the builders before save.
+	mediauploadsession.BucketValidator = mediauploadsessionDescBucket.Validators[0].(func(string) error)
+	// mediauploadsessionDescObjectKey is the schema descriptor for object_key field.
+	mediauploadsessionDescObjectKey := mediauploadsessionFields[12].Descriptor()
+	// mediauploadsession.ObjectKeyValidator is a validator for the "object_key" field. It is called by the builders before save.
+	mediauploadsession.ObjectKeyValidator = func() func(string) error {
+		validators := mediauploadsessionDescObjectKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(object_key string) error {
+			for _, fn := range fns {
+				if err := fn(object_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediauploadsessionDescPartSize is the schema descriptor for part_size field.
+	mediauploadsessionDescPartSize := mediauploadsessionFields[14].Descriptor()
+	// mediauploadsession.PartSizeValidator is a validator for the "part_size" field. It is called by the builders before save.
+	mediauploadsession.PartSizeValidator = mediauploadsessionDescPartSize.Validators[0].(func(int64) error)
+	// mediauploadsessionDescPartCount is the schema descriptor for part_count field.
+	mediauploadsessionDescPartCount := mediauploadsessionFields[15].Descriptor()
+	// mediauploadsession.PartCountValidator is a validator for the "part_count" field. It is called by the builders before save.
+	mediauploadsession.PartCountValidator = mediauploadsessionDescPartCount.Validators[0].(func(int) error)
+	// mediauploadsessionDescStatus is the schema descriptor for status field.
+	mediauploadsessionDescStatus := mediauploadsessionFields[16].Descriptor()
+	// mediauploadsession.DefaultStatus holds the default value on creation for the status field.
+	mediauploadsession.DefaultStatus = mediauploadsessionDescStatus.Default.(string)
+	// mediauploadsession.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	mediauploadsession.StatusValidator = mediauploadsessionDescStatus.Validators[0].(func(string) error)
+	// mediauploadsessionDescReservedBytes is the schema descriptor for reserved_bytes field.
+	mediauploadsessionDescReservedBytes := mediauploadsessionFields[17].Descriptor()
+	// mediauploadsession.ReservedBytesValidator is a validator for the "reserved_bytes" field. It is called by the builders before save.
+	mediauploadsession.ReservedBytesValidator = mediauploadsessionDescReservedBytes.Validators[0].(func(int64) error)
+	// mediauploadsessionDescActualBytes is the schema descriptor for actual_bytes field.
+	mediauploadsessionDescActualBytes := mediauploadsessionFields[18].Descriptor()
+	// mediauploadsession.DefaultActualBytes holds the default value on creation for the actual_bytes field.
+	mediauploadsession.DefaultActualBytes = mediauploadsessionDescActualBytes.Default.(int64)
+	// mediauploadsession.ActualBytesValidator is a validator for the "actual_bytes" field. It is called by the builders before save.
+	mediauploadsession.ActualBytesValidator = mediauploadsessionDescActualBytes.Validators[0].(func(int64) error)
+	// mediauploadsessionDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	mediauploadsessionDescIdempotencyKey := mediauploadsessionFields[19].Descriptor()
+	// mediauploadsession.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	mediauploadsession.IdempotencyKeyValidator = func() func(string) error {
+		validators := mediauploadsessionDescIdempotencyKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(idempotency_key string) error {
+			for _, fn := range fns {
+				if err := fn(idempotency_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediauploadsessionDescRequestFingerprint is the schema descriptor for request_fingerprint field.
+	mediauploadsessionDescRequestFingerprint := mediauploadsessionFields[20].Descriptor()
+	// mediauploadsession.RequestFingerprintValidator is a validator for the "request_fingerprint" field. It is called by the builders before save.
+	mediauploadsession.RequestFingerprintValidator = func() func(string) error {
+		validators := mediauploadsessionDescRequestFingerprint.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(request_fingerprint string) error {
+			for _, fn := range fns {
+				if err := fn(request_fingerprint); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediauploadsessionDescID is the schema descriptor for id field.
+	mediauploadsessionDescID := mediauploadsessionFields[0].Descriptor()
+	// mediauploadsession.DefaultID holds the default value on creation for the id field.
+	mediauploadsession.DefaultID = mediauploadsessionDescID.Default.(func() uuid.UUID)
 	migrationcheckpointMixin := schema.MigrationCheckpoint{}.Mixin()
 	migrationcheckpointMixinFields0 := migrationcheckpointMixin[0].Fields()
 	_ = migrationcheckpointMixinFields0
@@ -1459,11 +2327,11 @@ func init() {
 	// migrationcheckpoint.DefaultAfterUserID holds the default value on creation for the after_user_id field.
 	migrationcheckpoint.DefaultAfterUserID = migrationcheckpointDescAfterUserID.Default.(int)
 	// migrationcheckpointDescProcessedRows is the schema descriptor for processed_rows field.
-	migrationcheckpointDescProcessedRows := migrationcheckpointFields[5].Descriptor()
+	migrationcheckpointDescProcessedRows := migrationcheckpointFields[6].Descriptor()
 	// migrationcheckpoint.DefaultProcessedRows holds the default value on creation for the processed_rows field.
 	migrationcheckpoint.DefaultProcessedRows = migrationcheckpointDescProcessedRows.Default.(int)
 	// migrationcheckpointDescCompleted is the schema descriptor for completed field.
-	migrationcheckpointDescCompleted := migrationcheckpointFields[6].Descriptor()
+	migrationcheckpointDescCompleted := migrationcheckpointFields[7].Descriptor()
 	// migrationcheckpoint.DefaultCompleted holds the default value on creation for the completed field.
 	migrationcheckpoint.DefaultCompleted = migrationcheckpointDescCompleted.Default.(bool)
 	modelaccountMixin := schema.ModelAccount{}.Mixin()
@@ -1481,8 +2349,12 @@ func init() {
 	modelaccount.DefaultUpdatedAt = modelaccountDescUpdatedAt.Default.(func() time.Time)
 	// modelaccount.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	modelaccount.UpdateDefaultUpdatedAt = modelaccountDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// modelaccountDescPublicID is the schema descriptor for public_id field.
+	modelaccountDescPublicID := modelaccountFields[0].Descriptor()
+	// modelaccount.DefaultPublicID holds the default value on creation for the public_id field.
+	modelaccount.DefaultPublicID = modelaccountDescPublicID.Default.(func() uuid.UUID)
 	// modelaccountDescName is the schema descriptor for name field.
-	modelaccountDescName := modelaccountFields[0].Descriptor()
+	modelaccountDescName := modelaccountFields[1].Descriptor()
 	// modelaccount.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	modelaccount.NameValidator = func() func(string) error {
 		validators := modelaccountDescName.Validators
@@ -1500,7 +2372,7 @@ func init() {
 		}
 	}()
 	// modelaccountDescAdapterType is the schema descriptor for adapter_type field.
-	modelaccountDescAdapterType := modelaccountFields[1].Descriptor()
+	modelaccountDescAdapterType := modelaccountFields[2].Descriptor()
 	// modelaccount.AdapterTypeValidator is a validator for the "adapter_type" field. It is called by the builders before save.
 	modelaccount.AdapterTypeValidator = func() func(string) error {
 		validators := modelaccountDescAdapterType.Validators
@@ -1518,7 +2390,7 @@ func init() {
 		}
 	}()
 	// modelaccountDescAuthType is the schema descriptor for auth_type field.
-	modelaccountDescAuthType := modelaccountFields[2].Descriptor()
+	modelaccountDescAuthType := modelaccountFields[3].Descriptor()
 	// modelaccount.AuthTypeValidator is a validator for the "auth_type" field. It is called by the builders before save.
 	modelaccount.AuthTypeValidator = func() func(string) error {
 		validators := modelaccountDescAuthType.Validators
@@ -1536,7 +2408,7 @@ func init() {
 		}
 	}()
 	// modelaccountDescBaseURL is the schema descriptor for base_url field.
-	modelaccountDescBaseURL := modelaccountFields[3].Descriptor()
+	modelaccountDescBaseURL := modelaccountFields[4].Descriptor()
 	// modelaccount.BaseURLValidator is a validator for the "base_url" field. It is called by the builders before save.
 	modelaccount.BaseURLValidator = func() func(string) error {
 		validators := modelaccountDescBaseURL.Validators
@@ -1554,31 +2426,31 @@ func init() {
 		}
 	}()
 	// modelaccountDescCredentialsFingerprint is the schema descriptor for credentials_fingerprint field.
-	modelaccountDescCredentialsFingerprint := modelaccountFields[5].Descriptor()
+	modelaccountDescCredentialsFingerprint := modelaccountFields[6].Descriptor()
 	// modelaccount.DefaultCredentialsFingerprint holds the default value on creation for the credentials_fingerprint field.
 	modelaccount.DefaultCredentialsFingerprint = modelaccountDescCredentialsFingerprint.Default.(string)
 	// modelaccount.CredentialsFingerprintValidator is a validator for the "credentials_fingerprint" field. It is called by the builders before save.
 	modelaccount.CredentialsFingerprintValidator = modelaccountDescCredentialsFingerprint.Validators[0].(func(string) error)
 	// modelaccountDescStatus is the schema descriptor for status field.
-	modelaccountDescStatus := modelaccountFields[6].Descriptor()
+	modelaccountDescStatus := modelaccountFields[7].Descriptor()
 	// modelaccount.DefaultStatus holds the default value on creation for the status field.
 	modelaccount.DefaultStatus = modelaccountDescStatus.Default.(string)
 	// modelaccount.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	modelaccount.StatusValidator = modelaccountDescStatus.Validators[0].(func(string) error)
 	// modelaccountDescPriority is the schema descriptor for priority field.
-	modelaccountDescPriority := modelaccountFields[7].Descriptor()
+	modelaccountDescPriority := modelaccountFields[8].Descriptor()
 	// modelaccount.DefaultPriority holds the default value on creation for the priority field.
 	modelaccount.DefaultPriority = modelaccountDescPriority.Default.(int)
 	// modelaccountDescWeight is the schema descriptor for weight field.
-	modelaccountDescWeight := modelaccountFields[8].Descriptor()
+	modelaccountDescWeight := modelaccountFields[9].Descriptor()
 	// modelaccount.DefaultWeight holds the default value on creation for the weight field.
 	modelaccount.DefaultWeight = modelaccountDescWeight.Default.(int)
 	// modelaccountDescConcurrencyLimit is the schema descriptor for concurrency_limit field.
-	modelaccountDescConcurrencyLimit := modelaccountFields[9].Descriptor()
+	modelaccountDescConcurrencyLimit := modelaccountFields[10].Descriptor()
 	// modelaccount.DefaultConcurrencyLimit holds the default value on creation for the concurrency_limit field.
 	modelaccount.DefaultConcurrencyLimit = modelaccountDescConcurrencyLimit.Default.(int)
 	// modelaccountDescTimeoutMs is the schema descriptor for timeout_ms field.
-	modelaccountDescTimeoutMs := modelaccountFields[10].Descriptor()
+	modelaccountDescTimeoutMs := modelaccountFields[11].Descriptor()
 	// modelaccount.DefaultTimeoutMs holds the default value on creation for the timeout_ms field.
 	modelaccount.DefaultTimeoutMs = modelaccountDescTimeoutMs.Default.(int)
 	modelaccountmodelMixin := schema.ModelAccountModel{}.Mixin()
@@ -2373,8 +3245,14 @@ func init() {
 	pointledger.DefaultUpdatedAt = pointledgerDescUpdatedAt.Default.(func() time.Time)
 	// pointledger.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	pointledger.UpdateDefaultUpdatedAt = pointledgerDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// pointledgerDescTaskMediaType is the schema descriptor for task_media_type field.
+	pointledgerDescTaskMediaType := pointledgerFields[3].Descriptor()
+	// pointledger.DefaultTaskMediaType holds the default value on creation for the task_media_type field.
+	pointledger.DefaultTaskMediaType = pointledgerDescTaskMediaType.Default.(string)
+	// pointledger.TaskMediaTypeValidator is a validator for the "task_media_type" field. It is called by the builders before save.
+	pointledger.TaskMediaTypeValidator = pointledgerDescTaskMediaType.Validators[0].(func(string) error)
 	// pointledgerDescLedgerType is the schema descriptor for ledger_type field.
-	pointledgerDescLedgerType := pointledgerFields[5].Descriptor()
+	pointledgerDescLedgerType := pointledgerFields[7].Descriptor()
 	// pointledger.LedgerTypeValidator is a validator for the "ledger_type" field. It is called by the builders before save.
 	pointledger.LedgerTypeValidator = func() func(string) error {
 		validators := pointledgerDescLedgerType.Validators
@@ -2392,41 +3270,41 @@ func init() {
 		}
 	}()
 	// pointledgerDescChangePoints is the schema descriptor for change_points field.
-	pointledgerDescChangePoints := pointledgerFields[6].Descriptor()
+	pointledgerDescChangePoints := pointledgerFields[8].Descriptor()
 	// pointledger.DefaultChangePoints holds the default value on creation for the change_points field.
 	pointledger.DefaultChangePoints = pointledgerDescChangePoints.Default.(string)
 	// pointledgerDescBalanceAfter is the schema descriptor for balance_after field.
-	pointledgerDescBalanceAfter := pointledgerFields[7].Descriptor()
+	pointledgerDescBalanceAfter := pointledgerFields[9].Descriptor()
 	// pointledger.DefaultBalanceAfter holds the default value on creation for the balance_after field.
 	pointledger.DefaultBalanceAfter = pointledgerDescBalanceAfter.Default.(string)
 	// pointledgerDescFrozenAfter is the schema descriptor for frozen_after field.
-	pointledgerDescFrozenAfter := pointledgerFields[8].Descriptor()
+	pointledgerDescFrozenAfter := pointledgerFields[10].Descriptor()
 	// pointledger.DefaultFrozenAfter holds the default value on creation for the frozen_after field.
 	pointledger.DefaultFrozenAfter = pointledgerDescFrozenAfter.Default.(string)
 	// pointledgerDescBalanceBucket is the schema descriptor for balance_bucket field.
-	pointledgerDescBalanceBucket := pointledgerFields[9].Descriptor()
+	pointledgerDescBalanceBucket := pointledgerFields[11].Descriptor()
 	// pointledger.DefaultBalanceBucket holds the default value on creation for the balance_bucket field.
 	pointledger.DefaultBalanceBucket = pointledgerDescBalanceBucket.Default.(string)
 	// pointledger.BalanceBucketValidator is a validator for the "balance_bucket" field. It is called by the builders before save.
 	pointledger.BalanceBucketValidator = pointledgerDescBalanceBucket.Validators[0].(func(string) error)
 	// pointledgerDescSourceType is the schema descriptor for source_type field.
-	pointledgerDescSourceType := pointledgerFields[10].Descriptor()
+	pointledgerDescSourceType := pointledgerFields[12].Descriptor()
 	// pointledger.DefaultSourceType holds the default value on creation for the source_type field.
 	pointledger.DefaultSourceType = pointledgerDescSourceType.Default.(string)
 	// pointledger.SourceTypeValidator is a validator for the "source_type" field. It is called by the builders before save.
 	pointledger.SourceTypeValidator = pointledgerDescSourceType.Validators[0].(func(string) error)
 	// pointledgerDescBucketBalanceAfter is the schema descriptor for bucket_balance_after field.
-	pointledgerDescBucketBalanceAfter := pointledgerFields[12].Descriptor()
+	pointledgerDescBucketBalanceAfter := pointledgerFields[14].Descriptor()
 	// pointledger.DefaultBucketBalanceAfter holds the default value on creation for the bucket_balance_after field.
 	pointledger.DefaultBucketBalanceAfter = pointledgerDescBucketBalanceAfter.Default.(string)
 	// pointledgerDescReason is the schema descriptor for reason field.
-	pointledgerDescReason := pointledgerFields[14].Descriptor()
+	pointledgerDescReason := pointledgerFields[16].Descriptor()
 	// pointledger.DefaultReason holds the default value on creation for the reason field.
 	pointledger.DefaultReason = pointledgerDescReason.Default.(string)
 	// pointledger.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
 	pointledger.ReasonValidator = pointledgerDescReason.Validators[0].(func(string) error)
 	// pointledgerDescIdempotencyKey is the schema descriptor for idempotency_key field.
-	pointledgerDescIdempotencyKey := pointledgerFields[16].Descriptor()
+	pointledgerDescIdempotencyKey := pointledgerFields[18].Descriptor()
 	// pointledger.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
 	pointledger.IdempotencyKeyValidator = pointledgerDescIdempotencyKey.Validators[0].(func(string) error)
 	projectMixin := schema.Project{}.Mixin()
@@ -3161,12 +4039,18 @@ func init() {
 	routemodel.DefaultVisibility = routemodelDescVisibility.Default.(string)
 	// routemodel.VisibilityValidator is a validator for the "visibility" field. It is called by the builders before save.
 	routemodel.VisibilityValidator = routemodelDescVisibility.Validators[0].(func(string) error)
+	// routemodelDescMediaType is the schema descriptor for media_type field.
+	routemodelDescMediaType := routemodelFields[4].Descriptor()
+	// routemodel.DefaultMediaType holds the default value on creation for the media_type field.
+	routemodel.DefaultMediaType = routemodelDescMediaType.Default.(string)
+	// routemodel.MediaTypeValidator is a validator for the "media_type" field. It is called by the builders before save.
+	routemodel.MediaTypeValidator = routemodelDescMediaType.Validators[0].(func(string) error)
 	// routemodelDescEnabled is the schema descriptor for enabled field.
-	routemodelDescEnabled := routemodelFields[4].Descriptor()
+	routemodelDescEnabled := routemodelFields[5].Descriptor()
 	// routemodel.DefaultEnabled holds the default value on creation for the enabled field.
 	routemodel.DefaultEnabled = routemodelDescEnabled.Default.(bool)
 	// routemodelDescSortOrder is the schema descriptor for sort_order field.
-	routemodelDescSortOrder := routemodelFields[5].Descriptor()
+	routemodelDescSortOrder := routemodelFields[6].Descriptor()
 	// routemodel.DefaultSortOrder holds the default value on creation for the sort_order field.
 	routemodel.DefaultSortOrder = routemodelDescSortOrder.Default.(int)
 	routemodelcandidateMixin := schema.RouteModelCandidate{}.Mixin()
@@ -3796,6 +4680,908 @@ func init() {
 	usersubscription.DefaultStatus = usersubscriptionDescStatus.Default.(string)
 	// usersubscription.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	usersubscription.StatusValidator = usersubscriptionDescStatus.Validators[0].(func(string) error)
+	videomodelcapabilityMixin := schema.VideoModelCapability{}.Mixin()
+	videomodelcapabilityMixinFields0 := videomodelcapabilityMixin[0].Fields()
+	_ = videomodelcapabilityMixinFields0
+	videomodelcapabilityFields := schema.VideoModelCapability{}.Fields()
+	_ = videomodelcapabilityFields
+	// videomodelcapabilityDescCreatedAt is the schema descriptor for created_at field.
+	videomodelcapabilityDescCreatedAt := videomodelcapabilityMixinFields0[0].Descriptor()
+	// videomodelcapability.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videomodelcapability.DefaultCreatedAt = videomodelcapabilityDescCreatedAt.Default.(func() time.Time)
+	// videomodelcapabilityDescUpdatedAt is the schema descriptor for updated_at field.
+	videomodelcapabilityDescUpdatedAt := videomodelcapabilityMixinFields0[1].Descriptor()
+	// videomodelcapability.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videomodelcapability.DefaultUpdatedAt = videomodelcapabilityDescUpdatedAt.Default.(func() time.Time)
+	// videomodelcapability.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videomodelcapability.UpdateDefaultUpdatedAt = videomodelcapabilityDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videomodelcapabilityDescSchemaVersion is the schema descriptor for schema_version field.
+	videomodelcapabilityDescSchemaVersion := videomodelcapabilityFields[1].Descriptor()
+	// videomodelcapability.DefaultSchemaVersion holds the default value on creation for the schema_version field.
+	videomodelcapability.DefaultSchemaVersion = videomodelcapabilityDescSchemaVersion.Default.(int)
+	// videomodelcapabilityDescCapabilityVersion is the schema descriptor for capability_version field.
+	videomodelcapabilityDescCapabilityVersion := videomodelcapabilityFields[2].Descriptor()
+	// videomodelcapability.CapabilityVersionValidator is a validator for the "capability_version" field. It is called by the builders before save.
+	videomodelcapability.CapabilityVersionValidator = func() func(string) error {
+		validators := videomodelcapabilityDescCapabilityVersion.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(capability_version string) error {
+			for _, fn := range fns {
+				if err := fn(capability_version); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videomodelcapabilityDescValidationStatus is the schema descriptor for validation_status field.
+	videomodelcapabilityDescValidationStatus := videomodelcapabilityFields[4].Descriptor()
+	// videomodelcapability.DefaultValidationStatus holds the default value on creation for the validation_status field.
+	videomodelcapability.DefaultValidationStatus = videomodelcapabilityDescValidationStatus.Default.(string)
+	// videomodelcapability.ValidationStatusValidator is a validator for the "validation_status" field. It is called by the builders before save.
+	videomodelcapability.ValidationStatusValidator = videomodelcapabilityDescValidationStatus.Validators[0].(func(string) error)
+	// videomodelcapabilityDescEnabled is the schema descriptor for enabled field.
+	videomodelcapabilityDescEnabled := videomodelcapabilityFields[6].Descriptor()
+	// videomodelcapability.DefaultEnabled holds the default value on creation for the enabled field.
+	videomodelcapability.DefaultEnabled = videomodelcapabilityDescEnabled.Default.(bool)
+	videopriceruleMixin := schema.VideoPriceRule{}.Mixin()
+	videopriceruleMixinFields0 := videopriceruleMixin[0].Fields()
+	_ = videopriceruleMixinFields0
+	videopriceruleFields := schema.VideoPriceRule{}.Fields()
+	_ = videopriceruleFields
+	// videopriceruleDescCreatedAt is the schema descriptor for created_at field.
+	videopriceruleDescCreatedAt := videopriceruleMixinFields0[0].Descriptor()
+	// videopricerule.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videopricerule.DefaultCreatedAt = videopriceruleDescCreatedAt.Default.(func() time.Time)
+	// videopriceruleDescUpdatedAt is the schema descriptor for updated_at field.
+	videopriceruleDescUpdatedAt := videopriceruleMixinFields0[1].Descriptor()
+	// videopricerule.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videopricerule.DefaultUpdatedAt = videopriceruleDescUpdatedAt.Default.(func() time.Time)
+	// videopricerule.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videopricerule.UpdateDefaultUpdatedAt = videopriceruleDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videopriceruleDescTaskType is the schema descriptor for task_type field.
+	videopriceruleDescTaskType := videopriceruleFields[1].Descriptor()
+	// videopricerule.TaskTypeValidator is a validator for the "task_type" field. It is called by the builders before save.
+	videopricerule.TaskTypeValidator = func() func(string) error {
+		validators := videopriceruleDescTaskType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(task_type string) error {
+			for _, fn := range fns {
+				if err := fn(task_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videopriceruleDescResolution is the schema descriptor for resolution field.
+	videopriceruleDescResolution := videopriceruleFields[2].Descriptor()
+	// videopricerule.ResolutionValidator is a validator for the "resolution" field. It is called by the builders before save.
+	videopricerule.ResolutionValidator = func() func(string) error {
+		validators := videopriceruleDescResolution.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(resolution string) error {
+			for _, fn := range fns {
+				if err := fn(resolution); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videopriceruleDescAudioMode is the schema descriptor for audio_mode field.
+	videopriceruleDescAudioMode := videopriceruleFields[3].Descriptor()
+	// videopricerule.DefaultAudioMode holds the default value on creation for the audio_mode field.
+	videopricerule.DefaultAudioMode = videopriceruleDescAudioMode.Default.(string)
+	// videopricerule.AudioModeValidator is a validator for the "audio_mode" field. It is called by the builders before save.
+	videopricerule.AudioModeValidator = videopriceruleDescAudioMode.Validators[0].(func(string) error)
+	// videopriceruleDescPricingMode is the schema descriptor for pricing_mode field.
+	videopriceruleDescPricingMode := videopriceruleFields[4].Descriptor()
+	// videopricerule.DefaultPricingMode holds the default value on creation for the pricing_mode field.
+	videopricerule.DefaultPricingMode = videopriceruleDescPricingMode.Default.(string)
+	// videopricerule.PricingModeValidator is a validator for the "pricing_mode" field. It is called by the builders before save.
+	videopricerule.PricingModeValidator = videopriceruleDescPricingMode.Validators[0].(func(string) error)
+	// videopriceruleDescRuleVersion is the schema descriptor for rule_version field.
+	videopriceruleDescRuleVersion := videopriceruleFields[5].Descriptor()
+	// videopricerule.DefaultRuleVersion holds the default value on creation for the rule_version field.
+	videopricerule.DefaultRuleVersion = videopriceruleDescRuleVersion.Default.(int)
+	// videopricerule.RuleVersionValidator is a validator for the "rule_version" field. It is called by the builders before save.
+	videopricerule.RuleVersionValidator = videopriceruleDescRuleVersion.Validators[0].(func(int) error)
+	// videopriceruleDescOutputSecondPoints is the schema descriptor for output_second_points field.
+	videopriceruleDescOutputSecondPoints := videopriceruleFields[8].Descriptor()
+	// videopricerule.DefaultOutputSecondPoints holds the default value on creation for the output_second_points field.
+	videopricerule.DefaultOutputSecondPoints = videopriceruleDescOutputSecondPoints.Default.(string)
+	// videopriceruleDescFixedTaskPoints is the schema descriptor for fixed_task_points field.
+	videopriceruleDescFixedTaskPoints := videopriceruleFields[9].Descriptor()
+	// videopricerule.DefaultFixedTaskPoints holds the default value on creation for the fixed_task_points field.
+	videopricerule.DefaultFixedTaskPoints = videopriceruleDescFixedTaskPoints.Default.(string)
+	// videopriceruleDescReferenceImagePoints is the schema descriptor for reference_image_points field.
+	videopriceruleDescReferenceImagePoints := videopriceruleFields[10].Descriptor()
+	// videopricerule.DefaultReferenceImagePoints holds the default value on creation for the reference_image_points field.
+	videopricerule.DefaultReferenceImagePoints = videopriceruleDescReferenceImagePoints.Default.(string)
+	// videopriceruleDescInputVideoSecondPoints is the schema descriptor for input_video_second_points field.
+	videopriceruleDescInputVideoSecondPoints := videopriceruleFields[11].Descriptor()
+	// videopricerule.DefaultInputVideoSecondPoints holds the default value on creation for the input_video_second_points field.
+	videopricerule.DefaultInputVideoSecondPoints = videopriceruleDescInputVideoSecondPoints.Default.(string)
+	// videopriceruleDescReferenceAudioSecondPoints is the schema descriptor for reference_audio_second_points field.
+	videopriceruleDescReferenceAudioSecondPoints := videopriceruleFields[12].Descriptor()
+	// videopricerule.DefaultReferenceAudioSecondPoints holds the default value on creation for the reference_audio_second_points field.
+	videopricerule.DefaultReferenceAudioSecondPoints = videopriceruleDescReferenceAudioSecondPoints.Default.(string)
+	// videopriceruleDescGeneratedAudioFixedPoints is the schema descriptor for generated_audio_fixed_points field.
+	videopriceruleDescGeneratedAudioFixedPoints := videopriceruleFields[13].Descriptor()
+	// videopricerule.DefaultGeneratedAudioFixedPoints holds the default value on creation for the generated_audio_fixed_points field.
+	videopricerule.DefaultGeneratedAudioFixedPoints = videopriceruleDescGeneratedAudioFixedPoints.Default.(string)
+	// videopriceruleDescGeneratedAudioSecondPoints is the schema descriptor for generated_audio_second_points field.
+	videopriceruleDescGeneratedAudioSecondPoints := videopriceruleFields[14].Descriptor()
+	// videopricerule.DefaultGeneratedAudioSecondPoints holds the default value on creation for the generated_audio_second_points field.
+	videopricerule.DefaultGeneratedAudioSecondPoints = videopriceruleDescGeneratedAudioSecondPoints.Default.(string)
+	// videopriceruleDescMinimumBillableSeconds is the schema descriptor for minimum_billable_seconds field.
+	videopriceruleDescMinimumBillableSeconds := videopriceruleFields[15].Descriptor()
+	// videopricerule.DefaultMinimumBillableSeconds holds the default value on creation for the minimum_billable_seconds field.
+	videopricerule.DefaultMinimumBillableSeconds = videopriceruleDescMinimumBillableSeconds.Default.(int)
+	// videopricerule.MinimumBillableSecondsValidator is a validator for the "minimum_billable_seconds" field. It is called by the builders before save.
+	videopricerule.MinimumBillableSecondsValidator = videopriceruleDescMinimumBillableSeconds.Validators[0].(func(int) error)
+	// videopriceruleDescMinimumTaskPoints is the schema descriptor for minimum_task_points field.
+	videopriceruleDescMinimumTaskPoints := videopriceruleFields[16].Descriptor()
+	// videopricerule.DefaultMinimumTaskPoints holds the default value on creation for the minimum_task_points field.
+	videopricerule.DefaultMinimumTaskPoints = videopriceruleDescMinimumTaskPoints.Default.(string)
+	// videopriceruleDescReserveMarkup is the schema descriptor for reserve_markup field.
+	videopriceruleDescReserveMarkup := videopriceruleFields[17].Descriptor()
+	// videopricerule.DefaultReserveMarkup holds the default value on creation for the reserve_markup field.
+	videopricerule.DefaultReserveMarkup = videopriceruleDescReserveMarkup.Default.(string)
+	// videopriceruleDescSafetyPoints is the schema descriptor for safety_points field.
+	videopriceruleDescSafetyPoints := videopriceruleFields[18].Descriptor()
+	// videopricerule.DefaultSafetyPoints holds the default value on creation for the safety_points field.
+	videopricerule.DefaultSafetyPoints = videopriceruleDescSafetyPoints.Default.(string)
+	// videopriceruleDescCandidateCostUpperCny is the schema descriptor for candidate_cost_upper_cny field.
+	videopriceruleDescCandidateCostUpperCny := videopriceruleFields[19].Descriptor()
+	// videopricerule.DefaultCandidateCostUpperCny holds the default value on creation for the candidate_cost_upper_cny field.
+	videopricerule.DefaultCandidateCostUpperCny = videopriceruleDescCandidateCostUpperCny.Default.(string)
+	// videopriceruleDescEnabled is the schema descriptor for enabled field.
+	videopriceruleDescEnabled := videopriceruleFields[21].Descriptor()
+	// videopricerule.DefaultEnabled holds the default value on creation for the enabled field.
+	videopricerule.DefaultEnabled = videopriceruleDescEnabled.Default.(bool)
+	// videopriceruleDescInternalNote is the schema descriptor for internal_note field.
+	videopriceruleDescInternalNote := videopriceruleFields[22].Descriptor()
+	// videopricerule.DefaultInternalNote holds the default value on creation for the internal_note field.
+	videopricerule.DefaultInternalNote = videopriceruleDescInternalNote.Default.(string)
+	// videopricerule.InternalNoteValidator is a validator for the "internal_note" field. It is called by the builders before save.
+	videopricerule.InternalNoteValidator = videopriceruleDescInternalNote.Validators[0].(func(string) error)
+	videopricingstrategyMixin := schema.VideoPricingStrategy{}.Mixin()
+	videopricingstrategyMixinFields0 := videopricingstrategyMixin[0].Fields()
+	_ = videopricingstrategyMixinFields0
+	videopricingstrategyFields := schema.VideoPricingStrategy{}.Fields()
+	_ = videopricingstrategyFields
+	// videopricingstrategyDescCreatedAt is the schema descriptor for created_at field.
+	videopricingstrategyDescCreatedAt := videopricingstrategyMixinFields0[0].Descriptor()
+	// videopricingstrategy.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videopricingstrategy.DefaultCreatedAt = videopricingstrategyDescCreatedAt.Default.(func() time.Time)
+	// videopricingstrategyDescUpdatedAt is the schema descriptor for updated_at field.
+	videopricingstrategyDescUpdatedAt := videopricingstrategyMixinFields0[1].Descriptor()
+	// videopricingstrategy.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videopricingstrategy.DefaultUpdatedAt = videopricingstrategyDescUpdatedAt.Default.(func() time.Time)
+	// videopricingstrategy.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videopricingstrategy.UpdateDefaultUpdatedAt = videopricingstrategyDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videopricingstrategyDescCode is the schema descriptor for code field.
+	videopricingstrategyDescCode := videopricingstrategyFields[0].Descriptor()
+	// videopricingstrategy.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	videopricingstrategy.CodeValidator = func() func(string) error {
+		validators := videopricingstrategyDescCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code string) error {
+			for _, fn := range fns {
+				if err := fn(code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videopricingstrategyDescName is the schema descriptor for name field.
+	videopricingstrategyDescName := videopricingstrategyFields[1].Descriptor()
+	// videopricingstrategy.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	videopricingstrategy.NameValidator = func() func(string) error {
+		validators := videopricingstrategyDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videopricingstrategyDescGrossPointValueCny is the schema descriptor for gross_point_value_cny field.
+	videopricingstrategyDescGrossPointValueCny := videopricingstrategyFields[2].Descriptor()
+	// videopricingstrategy.DefaultGrossPointValueCny holds the default value on creation for the gross_point_value_cny field.
+	videopricingstrategy.DefaultGrossPointValueCny = videopricingstrategyDescGrossPointValueCny.Default.(string)
+	// videopricingstrategyDescMinimumNetPointIncomeCny is the schema descriptor for minimum_net_point_income_cny field.
+	videopricingstrategyDescMinimumNetPointIncomeCny := videopricingstrategyFields[3].Descriptor()
+	// videopricingstrategy.DefaultMinimumNetPointIncomeCny holds the default value on creation for the minimum_net_point_income_cny field.
+	videopricingstrategy.DefaultMinimumNetPointIncomeCny = videopricingstrategyDescMinimumNetPointIncomeCny.Default.(string)
+	// videopricingstrategyDescMaxBonusRatio is the schema descriptor for max_bonus_ratio field.
+	videopricingstrategyDescMaxBonusRatio := videopricingstrategyFields[4].Descriptor()
+	// videopricingstrategy.DefaultMaxBonusRatio holds the default value on creation for the max_bonus_ratio field.
+	videopricingstrategy.DefaultMaxBonusRatio = videopricingstrategyDescMaxBonusRatio.Default.(string)
+	// videopricingstrategyDescPaymentFeeRate is the schema descriptor for payment_fee_rate field.
+	videopricingstrategyDescPaymentFeeRate := videopricingstrategyFields[5].Descriptor()
+	// videopricingstrategy.DefaultPaymentFeeRate holds the default value on creation for the payment_fee_rate field.
+	videopricingstrategy.DefaultPaymentFeeRate = videopricingstrategyDescPaymentFeeRate.Default.(string)
+	// videopricingstrategyDescTargetMarginRate is the schema descriptor for target_margin_rate field.
+	videopricingstrategyDescTargetMarginRate := videopricingstrategyFields[6].Descriptor()
+	// videopricingstrategy.DefaultTargetMarginRate holds the default value on creation for the target_margin_rate field.
+	videopricingstrategy.DefaultTargetMarginRate = videopricingstrategyDescTargetMarginRate.Default.(string)
+	// videopricingstrategyDescProviderCostBufferRate is the schema descriptor for provider_cost_buffer_rate field.
+	videopricingstrategyDescProviderCostBufferRate := videopricingstrategyFields[7].Descriptor()
+	// videopricingstrategy.DefaultProviderCostBufferRate holds the default value on creation for the provider_cost_buffer_rate field.
+	videopricingstrategy.DefaultProviderCostBufferRate = videopricingstrategyDescProviderCostBufferRate.Default.(string)
+	// videopricingstrategyDescPlatformFixedCostCny is the schema descriptor for platform_fixed_cost_cny field.
+	videopricingstrategyDescPlatformFixedCostCny := videopricingstrategyFields[8].Descriptor()
+	// videopricingstrategy.DefaultPlatformFixedCostCny holds the default value on creation for the platform_fixed_cost_cny field.
+	videopricingstrategy.DefaultPlatformFixedCostCny = videopricingstrategyDescPlatformFixedCostCny.Default.(string)
+	// videopricingstrategyDescPlatformOutputSecondCostCny is the schema descriptor for platform_output_second_cost_cny field.
+	videopricingstrategyDescPlatformOutputSecondCostCny := videopricingstrategyFields[9].Descriptor()
+	// videopricingstrategy.DefaultPlatformOutputSecondCostCny holds the default value on creation for the platform_output_second_cost_cny field.
+	videopricingstrategy.DefaultPlatformOutputSecondCostCny = videopricingstrategyDescPlatformOutputSecondCostCny.Default.(string)
+	// videopricingstrategyDescPlatformReferenceCostCny is the schema descriptor for platform_reference_cost_cny field.
+	videopricingstrategyDescPlatformReferenceCostCny := videopricingstrategyFields[10].Descriptor()
+	// videopricingstrategy.DefaultPlatformReferenceCostCny holds the default value on creation for the platform_reference_cost_cny field.
+	videopricingstrategy.DefaultPlatformReferenceCostCny = videopricingstrategyDescPlatformReferenceCostCny.Default.(string)
+	// videopricingstrategyDescPlatformAudioFixedCostCny is the schema descriptor for platform_audio_fixed_cost_cny field.
+	videopricingstrategyDescPlatformAudioFixedCostCny := videopricingstrategyFields[11].Descriptor()
+	// videopricingstrategy.DefaultPlatformAudioFixedCostCny holds the default value on creation for the platform_audio_fixed_cost_cny field.
+	videopricingstrategy.DefaultPlatformAudioFixedCostCny = videopricingstrategyDescPlatformAudioFixedCostCny.Default.(string)
+	// videopricingstrategyDescPlatformAudioSecondCostCny is the schema descriptor for platform_audio_second_cost_cny field.
+	videopricingstrategyDescPlatformAudioSecondCostCny := videopricingstrategyFields[12].Descriptor()
+	// videopricingstrategy.DefaultPlatformAudioSecondCostCny holds the default value on creation for the platform_audio_second_cost_cny field.
+	videopricingstrategy.DefaultPlatformAudioSecondCostCny = videopricingstrategyDescPlatformAudioSecondCostCny.Default.(string)
+	// videopricingstrategyDescExactReserveMarkup is the schema descriptor for exact_reserve_markup field.
+	videopricingstrategyDescExactReserveMarkup := videopricingstrategyFields[13].Descriptor()
+	// videopricingstrategy.DefaultExactReserveMarkup holds the default value on creation for the exact_reserve_markup field.
+	videopricingstrategy.DefaultExactReserveMarkup = videopricingstrategyDescExactReserveMarkup.Default.(string)
+	// videopricingstrategyDescMeteredReserveMarkup is the schema descriptor for metered_reserve_markup field.
+	videopricingstrategyDescMeteredReserveMarkup := videopricingstrategyFields[14].Descriptor()
+	// videopricingstrategy.DefaultMeteredReserveMarkup holds the default value on creation for the metered_reserve_markup field.
+	videopricingstrategy.DefaultMeteredReserveMarkup = videopricingstrategyDescMeteredReserveMarkup.Default.(string)
+	// videopricingstrategyDescStrategyVersion is the schema descriptor for strategy_version field.
+	videopricingstrategyDescStrategyVersion := videopricingstrategyFields[15].Descriptor()
+	// videopricingstrategy.DefaultStrategyVersion holds the default value on creation for the strategy_version field.
+	videopricingstrategy.DefaultStrategyVersion = videopricingstrategyDescStrategyVersion.Default.(int)
+	// videopricingstrategy.StrategyVersionValidator is a validator for the "strategy_version" field. It is called by the builders before save.
+	videopricingstrategy.StrategyVersionValidator = videopricingstrategyDescStrategyVersion.Validators[0].(func(int) error)
+	// videopricingstrategyDescEnabled is the schema descriptor for enabled field.
+	videopricingstrategyDescEnabled := videopricingstrategyFields[16].Descriptor()
+	// videopricingstrategy.DefaultEnabled holds the default value on creation for the enabled field.
+	videopricingstrategy.DefaultEnabled = videopricingstrategyDescEnabled.Default.(bool)
+	videoprovidercallbackeventMixin := schema.VideoProviderCallbackEvent{}.Mixin()
+	videoprovidercallbackeventMixinFields0 := videoprovidercallbackeventMixin[0].Fields()
+	_ = videoprovidercallbackeventMixinFields0
+	videoprovidercallbackeventFields := schema.VideoProviderCallbackEvent{}.Fields()
+	_ = videoprovidercallbackeventFields
+	// videoprovidercallbackeventDescCreatedAt is the schema descriptor for created_at field.
+	videoprovidercallbackeventDescCreatedAt := videoprovidercallbackeventMixinFields0[0].Descriptor()
+	// videoprovidercallbackevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videoprovidercallbackevent.DefaultCreatedAt = videoprovidercallbackeventDescCreatedAt.Default.(func() time.Time)
+	// videoprovidercallbackeventDescUpdatedAt is the schema descriptor for updated_at field.
+	videoprovidercallbackeventDescUpdatedAt := videoprovidercallbackeventMixinFields0[1].Descriptor()
+	// videoprovidercallbackevent.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videoprovidercallbackevent.DefaultUpdatedAt = videoprovidercallbackeventDescUpdatedAt.Default.(func() time.Time)
+	// videoprovidercallbackevent.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videoprovidercallbackevent.UpdateDefaultUpdatedAt = videoprovidercallbackeventDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videoprovidercallbackeventDescProviderCode is the schema descriptor for provider_code field.
+	videoprovidercallbackeventDescProviderCode := videoprovidercallbackeventFields[1].Descriptor()
+	// videoprovidercallbackevent.ProviderCodeValidator is a validator for the "provider_code" field. It is called by the builders before save.
+	videoprovidercallbackevent.ProviderCodeValidator = func() func(string) error {
+		validators := videoprovidercallbackeventDescProviderCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_code string) error {
+			for _, fn := range fns {
+				if err := fn(provider_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videoprovidercallbackeventDescModelAccountID is the schema descriptor for model_account_id field.
+	videoprovidercallbackeventDescModelAccountID := videoprovidercallbackeventFields[2].Descriptor()
+	// videoprovidercallbackevent.ModelAccountIDValidator is a validator for the "model_account_id" field. It is called by the builders before save.
+	videoprovidercallbackevent.ModelAccountIDValidator = videoprovidercallbackeventDescModelAccountID.Validators[0].(func(int64) error)
+	// videoprovidercallbackeventDescProviderEventID is the schema descriptor for provider_event_id field.
+	videoprovidercallbackeventDescProviderEventID := videoprovidercallbackeventFields[3].Descriptor()
+	// videoprovidercallbackevent.ProviderEventIDValidator is a validator for the "provider_event_id" field. It is called by the builders before save.
+	videoprovidercallbackevent.ProviderEventIDValidator = func() func(string) error {
+		validators := videoprovidercallbackeventDescProviderEventID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_event_id string) error {
+			for _, fn := range fns {
+				if err := fn(provider_event_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videoprovidercallbackeventDescProviderJobID is the schema descriptor for provider_job_id field.
+	videoprovidercallbackeventDescProviderJobID := videoprovidercallbackeventFields[4].Descriptor()
+	// videoprovidercallbackevent.ProviderJobIDValidator is a validator for the "provider_job_id" field. It is called by the builders before save.
+	videoprovidercallbackevent.ProviderJobIDValidator = func() func(string) error {
+		validators := videoprovidercallbackeventDescProviderJobID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_job_id string) error {
+			for _, fn := range fns {
+				if err := fn(provider_job_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videoprovidercallbackeventDescStatus is the schema descriptor for status field.
+	videoprovidercallbackeventDescStatus := videoprovidercallbackeventFields[5].Descriptor()
+	// videoprovidercallbackevent.DefaultStatus holds the default value on creation for the status field.
+	videoprovidercallbackevent.DefaultStatus = videoprovidercallbackeventDescStatus.Default.(string)
+	// videoprovidercallbackevent.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	videoprovidercallbackevent.StatusValidator = videoprovidercallbackeventDescStatus.Validators[0].(func(string) error)
+	// videoprovidercallbackeventDescErrorCode is the schema descriptor for error_code field.
+	videoprovidercallbackeventDescErrorCode := videoprovidercallbackeventFields[9].Descriptor()
+	// videoprovidercallbackevent.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
+	videoprovidercallbackevent.ErrorCodeValidator = videoprovidercallbackeventDescErrorCode.Validators[0].(func(string) error)
+	// videoprovidercallbackeventDescID is the schema descriptor for id field.
+	videoprovidercallbackeventDescID := videoprovidercallbackeventFields[0].Descriptor()
+	// videoprovidercallbackevent.DefaultID holds the default value on creation for the id field.
+	videoprovidercallbackevent.DefaultID = videoprovidercallbackeventDescID.Default.(func() uuid.UUID)
+	videoprovidercostruleMixin := schema.VideoProviderCostRule{}.Mixin()
+	videoprovidercostruleMixinFields0 := videoprovidercostruleMixin[0].Fields()
+	_ = videoprovidercostruleMixinFields0
+	videoprovidercostruleFields := schema.VideoProviderCostRule{}.Fields()
+	_ = videoprovidercostruleFields
+	// videoprovidercostruleDescCreatedAt is the schema descriptor for created_at field.
+	videoprovidercostruleDescCreatedAt := videoprovidercostruleMixinFields0[0].Descriptor()
+	// videoprovidercostrule.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videoprovidercostrule.DefaultCreatedAt = videoprovidercostruleDescCreatedAt.Default.(func() time.Time)
+	// videoprovidercostruleDescUpdatedAt is the schema descriptor for updated_at field.
+	videoprovidercostruleDescUpdatedAt := videoprovidercostruleMixinFields0[1].Descriptor()
+	// videoprovidercostrule.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videoprovidercostrule.DefaultUpdatedAt = videoprovidercostruleDescUpdatedAt.Default.(func() time.Time)
+	// videoprovidercostrule.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videoprovidercostrule.UpdateDefaultUpdatedAt = videoprovidercostruleDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videoprovidercostruleDescBillingMode is the schema descriptor for billing_mode field.
+	videoprovidercostruleDescBillingMode := videoprovidercostruleFields[1].Descriptor()
+	// videoprovidercostrule.BillingModeValidator is a validator for the "billing_mode" field. It is called by the builders before save.
+	videoprovidercostrule.BillingModeValidator = func() func(string) error {
+		validators := videoprovidercostruleDescBillingMode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(billing_mode string) error {
+			for _, fn := range fns {
+				if err := fn(billing_mode); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videoprovidercostruleDescRuleVersion is the schema descriptor for rule_version field.
+	videoprovidercostruleDescRuleVersion := videoprovidercostruleFields[2].Descriptor()
+	// videoprovidercostrule.DefaultRuleVersion holds the default value on creation for the rule_version field.
+	videoprovidercostrule.DefaultRuleVersion = videoprovidercostruleDescRuleVersion.Default.(int)
+	// videoprovidercostrule.RuleVersionValidator is a validator for the "rule_version" field. It is called by the builders before save.
+	videoprovidercostrule.RuleVersionValidator = videoprovidercostruleDescRuleVersion.Validators[0].(func(int) error)
+	// videoprovidercostruleDescCurrency is the schema descriptor for currency field.
+	videoprovidercostruleDescCurrency := videoprovidercostruleFields[3].Descriptor()
+	// videoprovidercostrule.DefaultCurrency holds the default value on creation for the currency field.
+	videoprovidercostrule.DefaultCurrency = videoprovidercostruleDescCurrency.Default.(string)
+	// videoprovidercostrule.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	videoprovidercostrule.CurrencyValidator = videoprovidercostruleDescCurrency.Validators[0].(func(string) error)
+	// videoprovidercostruleDescSupportedCurrencyScale is the schema descriptor for supported_currency_scale field.
+	videoprovidercostruleDescSupportedCurrencyScale := videoprovidercostruleFields[5].Descriptor()
+	// videoprovidercostrule.DefaultSupportedCurrencyScale holds the default value on creation for the supported_currency_scale field.
+	videoprovidercostrule.DefaultSupportedCurrencyScale = videoprovidercostruleDescSupportedCurrencyScale.Default.(int)
+	// videoprovidercostrule.SupportedCurrencyScaleValidator is a validator for the "supported_currency_scale" field. It is called by the builders before save.
+	videoprovidercostrule.SupportedCurrencyScaleValidator = videoprovidercostruleDescSupportedCurrencyScale.Validators[0].(func(int) error)
+	// videoprovidercostruleDescCostReserveMarkup is the schema descriptor for cost_reserve_markup field.
+	videoprovidercostruleDescCostReserveMarkup := videoprovidercostruleFields[6].Descriptor()
+	// videoprovidercostrule.DefaultCostReserveMarkup holds the default value on creation for the cost_reserve_markup field.
+	videoprovidercostrule.DefaultCostReserveMarkup = videoprovidercostruleDescCostReserveMarkup.Default.(string)
+	// videoprovidercostruleDescSourceType is the schema descriptor for source_type field.
+	videoprovidercostruleDescSourceType := videoprovidercostruleFields[7].Descriptor()
+	// videoprovidercostrule.DefaultSourceType holds the default value on creation for the source_type field.
+	videoprovidercostrule.DefaultSourceType = videoprovidercostruleDescSourceType.Default.(string)
+	// videoprovidercostrule.SourceTypeValidator is a validator for the "source_type" field. It is called by the builders before save.
+	videoprovidercostrule.SourceTypeValidator = videoprovidercostruleDescSourceType.Validators[0].(func(string) error)
+	// videoprovidercostruleDescSourceReference is the schema descriptor for source_reference field.
+	videoprovidercostruleDescSourceReference := videoprovidercostruleFields[8].Descriptor()
+	// videoprovidercostrule.DefaultSourceReference holds the default value on creation for the source_reference field.
+	videoprovidercostrule.DefaultSourceReference = videoprovidercostruleDescSourceReference.Default.(string)
+	// videoprovidercostrule.SourceReferenceValidator is a validator for the "source_reference" field. It is called by the builders before save.
+	videoprovidercostrule.SourceReferenceValidator = videoprovidercostruleDescSourceReference.Validators[0].(func(string) error)
+	// videoprovidercostruleDescValidationStatus is the schema descriptor for validation_status field.
+	videoprovidercostruleDescValidationStatus := videoprovidercostruleFields[9].Descriptor()
+	// videoprovidercostrule.DefaultValidationStatus holds the default value on creation for the validation_status field.
+	videoprovidercostrule.DefaultValidationStatus = videoprovidercostruleDescValidationStatus.Default.(string)
+	// videoprovidercostrule.ValidationStatusValidator is a validator for the "validation_status" field. It is called by the builders before save.
+	videoprovidercostrule.ValidationStatusValidator = videoprovidercostruleDescValidationStatus.Validators[0].(func(string) error)
+	// videoprovidercostruleDescEnabled is the schema descriptor for enabled field.
+	videoprovidercostruleDescEnabled := videoprovidercostruleFields[13].Descriptor()
+	// videoprovidercostrule.DefaultEnabled holds the default value on creation for the enabled field.
+	videoprovidercostrule.DefaultEnabled = videoprovidercostruleDescEnabled.Default.(bool)
+	videorouteconfigMixin := schema.VideoRouteConfig{}.Mixin()
+	videorouteconfigMixinFields0 := videorouteconfigMixin[0].Fields()
+	_ = videorouteconfigMixinFields0
+	videorouteconfigFields := schema.VideoRouteConfig{}.Fields()
+	_ = videorouteconfigFields
+	// videorouteconfigDescCreatedAt is the schema descriptor for created_at field.
+	videorouteconfigDescCreatedAt := videorouteconfigMixinFields0[0].Descriptor()
+	// videorouteconfig.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videorouteconfig.DefaultCreatedAt = videorouteconfigDescCreatedAt.Default.(func() time.Time)
+	// videorouteconfigDescUpdatedAt is the schema descriptor for updated_at field.
+	videorouteconfigDescUpdatedAt := videorouteconfigMixinFields0[1].Descriptor()
+	// videorouteconfig.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videorouteconfig.DefaultUpdatedAt = videorouteconfigDescUpdatedAt.Default.(func() time.Time)
+	// videorouteconfig.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videorouteconfig.UpdateDefaultUpdatedAt = videorouteconfigDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videorouteconfigDescMaxOutputCount is the schema descriptor for max_output_count field.
+	videorouteconfigDescMaxOutputCount := videorouteconfigFields[4].Descriptor()
+	// videorouteconfig.DefaultMaxOutputCount holds the default value on creation for the max_output_count field.
+	videorouteconfig.DefaultMaxOutputCount = videorouteconfigDescMaxOutputCount.Default.(int)
+	// videorouteconfig.MaxOutputCountValidator is a validator for the "max_output_count" field. It is called by the builders before save.
+	videorouteconfig.MaxOutputCountValidator = videorouteconfigDescMaxOutputCount.Validators[0].(func(int) error)
+	// videorouteconfigDescConfigVersion is the schema descriptor for config_version field.
+	videorouteconfigDescConfigVersion := videorouteconfigFields[6].Descriptor()
+	// videorouteconfig.ConfigVersionValidator is a validator for the "config_version" field. It is called by the builders before save.
+	videorouteconfig.ConfigVersionValidator = func() func(string) error {
+		validators := videorouteconfigDescConfigVersion.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(config_version string) error {
+			for _, fn := range fns {
+				if err := fn(config_version); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videorouteconfigDescEnabled is the schema descriptor for enabled field.
+	videorouteconfigDescEnabled := videorouteconfigFields[7].Descriptor()
+	// videorouteconfig.DefaultEnabled holds the default value on creation for the enabled field.
+	videorouteconfig.DefaultEnabled = videorouteconfigDescEnabled.Default.(bool)
+	videotaskMixin := schema.VideoTask{}.Mixin()
+	videotaskMixinFields0 := videotaskMixin[0].Fields()
+	_ = videotaskMixinFields0
+	videotaskFields := schema.VideoTask{}.Fields()
+	_ = videotaskFields
+	// videotaskDescCreatedAt is the schema descriptor for created_at field.
+	videotaskDescCreatedAt := videotaskMixinFields0[0].Descriptor()
+	// videotask.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videotask.DefaultCreatedAt = videotaskDescCreatedAt.Default.(func() time.Time)
+	// videotaskDescUpdatedAt is the schema descriptor for updated_at field.
+	videotaskDescUpdatedAt := videotaskMixinFields0[1].Descriptor()
+	// videotask.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videotask.DefaultUpdatedAt = videotaskDescUpdatedAt.Default.(func() time.Time)
+	// videotask.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videotask.UpdateDefaultUpdatedAt = videotaskDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videotaskDescSourceChannel is the schema descriptor for source_channel field.
+	videotaskDescSourceChannel := videotaskFields[4].Descriptor()
+	// videotask.DefaultSourceChannel holds the default value on creation for the source_channel field.
+	videotask.DefaultSourceChannel = videotaskDescSourceChannel.Default.(string)
+	// videotask.SourceChannelValidator is a validator for the "source_channel" field. It is called by the builders before save.
+	videotask.SourceChannelValidator = videotaskDescSourceChannel.Validators[0].(func(string) error)
+	// videotaskDescSourceCanvasNodeID is the schema descriptor for source_canvas_node_id field.
+	videotaskDescSourceCanvasNodeID := videotaskFields[6].Descriptor()
+	// videotask.SourceCanvasNodeIDValidator is a validator for the "source_canvas_node_id" field. It is called by the builders before save.
+	videotask.SourceCanvasNodeIDValidator = videotaskDescSourceCanvasNodeID.Validators[0].(func(string) error)
+	// videotaskDescTaskType is the schema descriptor for task_type field.
+	videotaskDescTaskType := videotaskFields[7].Descriptor()
+	// videotask.TaskTypeValidator is a validator for the "task_type" field. It is called by the builders before save.
+	videotask.TaskTypeValidator = func() func(string) error {
+		validators := videotaskDescTaskType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(task_type string) error {
+			for _, fn := range fns {
+				if err := fn(task_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videotaskDescStatus is the schema descriptor for status field.
+	videotaskDescStatus := videotaskFields[8].Descriptor()
+	// videotask.DefaultStatus holds the default value on creation for the status field.
+	videotask.DefaultStatus = videotaskDescStatus.Default.(string)
+	// videotask.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	videotask.StatusValidator = videotaskDescStatus.Validators[0].(func(string) error)
+	// videotaskDescProgressStage is the schema descriptor for progress_stage field.
+	videotaskDescProgressStage := videotaskFields[9].Descriptor()
+	// videotask.DefaultProgressStage holds the default value on creation for the progress_stage field.
+	videotask.DefaultProgressStage = videotaskDescProgressStage.Default.(string)
+	// videotask.ProgressStageValidator is a validator for the "progress_stage" field. It is called by the builders before save.
+	videotask.ProgressStageValidator = videotaskDescProgressStage.Validators[0].(func(string) error)
+	// videotaskDescProgressMessage is the schema descriptor for progress_message field.
+	videotaskDescProgressMessage := videotaskFields[10].Descriptor()
+	// videotask.DefaultProgressMessage holds the default value on creation for the progress_message field.
+	videotask.DefaultProgressMessage = videotaskDescProgressMessage.Default.(string)
+	// videotaskDescRouteModelCode is the schema descriptor for route_model_code field.
+	videotaskDescRouteModelCode := videotaskFields[15].Descriptor()
+	// videotask.RouteModelCodeValidator is a validator for the "route_model_code" field. It is called by the builders before save.
+	videotask.RouteModelCodeValidator = func() func(string) error {
+		validators := videotaskDescRouteModelCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(route_model_code string) error {
+			for _, fn := range fns {
+				if err := fn(route_model_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videotaskDescDurationSeconds is the schema descriptor for duration_seconds field.
+	videotaskDescDurationSeconds := videotaskFields[16].Descriptor()
+	// videotask.DurationSecondsValidator is a validator for the "duration_seconds" field. It is called by the builders before save.
+	videotask.DurationSecondsValidator = videotaskDescDurationSeconds.Validators[0].(func(int) error)
+	// videotaskDescResolution is the schema descriptor for resolution field.
+	videotaskDescResolution := videotaskFields[17].Descriptor()
+	// videotask.ResolutionValidator is a validator for the "resolution" field. It is called by the builders before save.
+	videotask.ResolutionValidator = func() func(string) error {
+		validators := videotaskDescResolution.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(resolution string) error {
+			for _, fn := range fns {
+				if err := fn(resolution); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videotaskDescAspectRatio is the schema descriptor for aspect_ratio field.
+	videotaskDescAspectRatio := videotaskFields[18].Descriptor()
+	// videotask.AspectRatioValidator is a validator for the "aspect_ratio" field. It is called by the builders before save.
+	videotask.AspectRatioValidator = func() func(string) error {
+		validators := videotaskDescAspectRatio.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(aspect_ratio string) error {
+			for _, fn := range fns {
+				if err := fn(aspect_ratio); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videotaskDescGenerateAudio is the schema descriptor for generate_audio field.
+	videotaskDescGenerateAudio := videotaskFields[19].Descriptor()
+	// videotask.DefaultGenerateAudio holds the default value on creation for the generate_audio field.
+	videotask.DefaultGenerateAudio = videotaskDescGenerateAudio.Default.(bool)
+	// videotaskDescRequestedOutputCount is the schema descriptor for requested_output_count field.
+	videotaskDescRequestedOutputCount := videotaskFields[20].Descriptor()
+	// videotask.DefaultRequestedOutputCount holds the default value on creation for the requested_output_count field.
+	videotask.DefaultRequestedOutputCount = videotaskDescRequestedOutputCount.Default.(int)
+	// videotask.RequestedOutputCountValidator is a validator for the "requested_output_count" field. It is called by the builders before save.
+	videotask.RequestedOutputCountValidator = videotaskDescRequestedOutputCount.Validators[0].(func(int) error)
+	// videotaskDescSuccessOutputCount is the schema descriptor for success_output_count field.
+	videotaskDescSuccessOutputCount := videotaskFields[21].Descriptor()
+	// videotask.DefaultSuccessOutputCount holds the default value on creation for the success_output_count field.
+	videotask.DefaultSuccessOutputCount = videotaskDescSuccessOutputCount.Default.(int)
+	// videotask.SuccessOutputCountValidator is a validator for the "success_output_count" field. It is called by the builders before save.
+	videotask.SuccessOutputCountValidator = videotaskDescSuccessOutputCount.Validators[0].(func(int) error)
+	// videotaskDescEstimatedPoints is the schema descriptor for estimated_points field.
+	videotaskDescEstimatedPoints := videotaskFields[22].Descriptor()
+	// videotask.DefaultEstimatedPoints holds the default value on creation for the estimated_points field.
+	videotask.DefaultEstimatedPoints = videotaskDescEstimatedPoints.Default.(string)
+	// videotaskDescReservedPoints is the schema descriptor for reserved_points field.
+	videotaskDescReservedPoints := videotaskFields[23].Descriptor()
+	// videotask.DefaultReservedPoints holds the default value on creation for the reserved_points field.
+	videotask.DefaultReservedPoints = videotaskDescReservedPoints.Default.(string)
+	// videotaskDescActualPoints is the schema descriptor for actual_points field.
+	videotaskDescActualPoints := videotaskFields[24].Descriptor()
+	// videotask.DefaultActualPoints holds the default value on creation for the actual_points field.
+	videotask.DefaultActualPoints = videotaskDescActualPoints.Default.(string)
+	// videotaskDescSettlementStatus is the schema descriptor for settlement_status field.
+	videotaskDescSettlementStatus := videotaskFields[27].Descriptor()
+	// videotask.DefaultSettlementStatus holds the default value on creation for the settlement_status field.
+	videotask.DefaultSettlementStatus = videotaskDescSettlementStatus.Default.(string)
+	// videotask.SettlementStatusValidator is a validator for the "settlement_status" field. It is called by the builders before save.
+	videotask.SettlementStatusValidator = videotaskDescSettlementStatus.Validators[0].(func(string) error)
+	// videotaskDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	videotaskDescIdempotencyKey := videotaskFields[28].Descriptor()
+	// videotask.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	videotask.IdempotencyKeyValidator = func() func(string) error {
+		validators := videotaskDescIdempotencyKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(idempotency_key string) error {
+			for _, fn := range fns {
+				if err := fn(idempotency_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videotaskDescRequestFingerprint is the schema descriptor for request_fingerprint field.
+	videotaskDescRequestFingerprint := videotaskFields[29].Descriptor()
+	// videotask.RequestFingerprintValidator is a validator for the "request_fingerprint" field. It is called by the builders before save.
+	videotask.RequestFingerprintValidator = func() func(string) error {
+		validators := videotaskDescRequestFingerprint.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(request_fingerprint string) error {
+			for _, fn := range fns {
+				if err := fn(request_fingerprint); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videotaskDescID is the schema descriptor for id field.
+	videotaskDescID := videotaskFields[0].Descriptor()
+	// videotask.DefaultID holds the default value on creation for the id field.
+	videotask.DefaultID = videotaskDescID.Default.(func() uuid.UUID)
+	videotaskattemptMixin := schema.VideoTaskAttempt{}.Mixin()
+	videotaskattemptMixinFields0 := videotaskattemptMixin[0].Fields()
+	_ = videotaskattemptMixinFields0
+	videotaskattemptFields := schema.VideoTaskAttempt{}.Fields()
+	_ = videotaskattemptFields
+	// videotaskattemptDescCreatedAt is the schema descriptor for created_at field.
+	videotaskattemptDescCreatedAt := videotaskattemptMixinFields0[0].Descriptor()
+	// videotaskattempt.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videotaskattempt.DefaultCreatedAt = videotaskattemptDescCreatedAt.Default.(func() time.Time)
+	// videotaskattemptDescUpdatedAt is the schema descriptor for updated_at field.
+	videotaskattemptDescUpdatedAt := videotaskattemptMixinFields0[1].Descriptor()
+	// videotaskattempt.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videotaskattempt.DefaultUpdatedAt = videotaskattemptDescUpdatedAt.Default.(func() time.Time)
+	// videotaskattempt.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videotaskattempt.UpdateDefaultUpdatedAt = videotaskattemptDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videotaskattemptDescAttemptNo is the schema descriptor for attempt_no field.
+	videotaskattemptDescAttemptNo := videotaskattemptFields[2].Descriptor()
+	// videotaskattempt.AttemptNoValidator is a validator for the "attempt_no" field. It is called by the builders before save.
+	videotaskattempt.AttemptNoValidator = videotaskattemptDescAttemptNo.Validators[0].(func(int) error)
+	// videotaskattemptDescProviderCode is the schema descriptor for provider_code field.
+	videotaskattemptDescProviderCode := videotaskattemptFields[6].Descriptor()
+	// videotaskattempt.ProviderCodeValidator is a validator for the "provider_code" field. It is called by the builders before save.
+	videotaskattempt.ProviderCodeValidator = func() func(string) error {
+		validators := videotaskattemptDescProviderCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_code string) error {
+			for _, fn := range fns {
+				if err := fn(provider_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videotaskattemptDescModelCode is the schema descriptor for model_code field.
+	videotaskattemptDescModelCode := videotaskattemptFields[7].Descriptor()
+	// videotaskattempt.ModelCodeValidator is a validator for the "model_code" field. It is called by the builders before save.
+	videotaskattempt.ModelCodeValidator = func() func(string) error {
+		validators := videotaskattemptDescModelCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(model_code string) error {
+			for _, fn := range fns {
+				if err := fn(model_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videotaskattemptDescProviderJobID is the schema descriptor for provider_job_id field.
+	videotaskattemptDescProviderJobID := videotaskattemptFields[8].Descriptor()
+	// videotaskattempt.ProviderJobIDValidator is a validator for the "provider_job_id" field. It is called by the builders before save.
+	videotaskattempt.ProviderJobIDValidator = videotaskattemptDescProviderJobID.Validators[0].(func(string) error)
+	// videotaskattemptDescProviderIdempotencyKey is the schema descriptor for provider_idempotency_key field.
+	videotaskattemptDescProviderIdempotencyKey := videotaskattemptFields[9].Descriptor()
+	// videotaskattempt.ProviderIdempotencyKeyValidator is a validator for the "provider_idempotency_key" field. It is called by the builders before save.
+	videotaskattempt.ProviderIdempotencyKeyValidator = func() func(string) error {
+		validators := videotaskattemptDescProviderIdempotencyKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_idempotency_key string) error {
+			for _, fn := range fns {
+				if err := fn(provider_idempotency_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videotaskattemptDescStatus is the schema descriptor for status field.
+	videotaskattemptDescStatus := videotaskattemptFields[10].Descriptor()
+	// videotaskattempt.DefaultStatus holds the default value on creation for the status field.
+	videotaskattempt.DefaultStatus = videotaskattemptDescStatus.Default.(string)
+	// videotaskattempt.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	videotaskattempt.StatusValidator = videotaskattemptDescStatus.Validators[0].(func(string) error)
+	// videotaskattemptDescProviderCost is the schema descriptor for provider_cost field.
+	videotaskattemptDescProviderCost := videotaskattemptFields[16].Descriptor()
+	// videotaskattempt.DefaultProviderCost holds the default value on creation for the provider_cost field.
+	videotaskattempt.DefaultProviderCost = videotaskattemptDescProviderCost.Default.(string)
+	// videotaskattemptDescPlatformAbsorbed is the schema descriptor for platform_absorbed field.
+	videotaskattemptDescPlatformAbsorbed := videotaskattemptFields[17].Descriptor()
+	// videotaskattempt.DefaultPlatformAbsorbed holds the default value on creation for the platform_absorbed field.
+	videotaskattempt.DefaultPlatformAbsorbed = videotaskattemptDescPlatformAbsorbed.Default.(bool)
+	// videotaskattemptDescErrorCategory is the schema descriptor for error_category field.
+	videotaskattemptDescErrorCategory := videotaskattemptFields[19].Descriptor()
+	// videotaskattempt.ErrorCategoryValidator is a validator for the "error_category" field. It is called by the builders before save.
+	videotaskattempt.ErrorCategoryValidator = videotaskattemptDescErrorCategory.Validators[0].(func(string) error)
+	// videotaskattemptDescErrorCode is the schema descriptor for error_code field.
+	videotaskattemptDescErrorCode := videotaskattemptFields[20].Descriptor()
+	// videotaskattempt.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
+	videotaskattempt.ErrorCodeValidator = videotaskattemptDescErrorCode.Validators[0].(func(string) error)
+	// videotaskattemptDescID is the schema descriptor for id field.
+	videotaskattemptDescID := videotaskattemptFields[0].Descriptor()
+	// videotaskattempt.DefaultID holds the default value on creation for the id field.
+	videotaskattempt.DefaultID = videotaskattemptDescID.Default.(func() uuid.UUID)
+	videotaskinputMixin := schema.VideoTaskInput{}.Mixin()
+	videotaskinputMixinFields0 := videotaskinputMixin[0].Fields()
+	_ = videotaskinputMixinFields0
+	videotaskinputFields := schema.VideoTaskInput{}.Fields()
+	_ = videotaskinputFields
+	// videotaskinputDescCreatedAt is the schema descriptor for created_at field.
+	videotaskinputDescCreatedAt := videotaskinputMixinFields0[0].Descriptor()
+	// videotaskinput.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videotaskinput.DefaultCreatedAt = videotaskinputDescCreatedAt.Default.(func() time.Time)
+	// videotaskinputDescUpdatedAt is the schema descriptor for updated_at field.
+	videotaskinputDescUpdatedAt := videotaskinputMixinFields0[1].Descriptor()
+	// videotaskinput.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videotaskinput.DefaultUpdatedAt = videotaskinputDescUpdatedAt.Default.(func() time.Time)
+	// videotaskinput.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videotaskinput.UpdateDefaultUpdatedAt = videotaskinputDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videotaskinputDescRole is the schema descriptor for role field.
+	videotaskinputDescRole := videotaskinputFields[3].Descriptor()
+	// videotaskinput.RoleValidator is a validator for the "role" field. It is called by the builders before save.
+	videotaskinput.RoleValidator = func() func(string) error {
+		validators := videotaskinputDescRole.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(role string) error {
+			for _, fn := range fns {
+				if err := fn(role); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videotaskinputDescOrdinal is the schema descriptor for ordinal field.
+	videotaskinputDescOrdinal := videotaskinputFields[4].Descriptor()
+	// videotaskinput.OrdinalValidator is a validator for the "ordinal" field. It is called by the builders before save.
+	videotaskinput.OrdinalValidator = videotaskinputDescOrdinal.Validators[0].(func(int) error)
+	// videotaskinputDescID is the schema descriptor for id field.
+	videotaskinputDescID := videotaskinputFields[0].Descriptor()
+	// videotaskinput.DefaultID holds the default value on creation for the id field.
+	videotaskinput.DefaultID = videotaskinputDescID.Default.(func() uuid.UUID)
+	videotaskitemMixin := schema.VideoTaskItem{}.Mixin()
+	videotaskitemMixinFields0 := videotaskitemMixin[0].Fields()
+	_ = videotaskitemMixinFields0
+	videotaskitemFields := schema.VideoTaskItem{}.Fields()
+	_ = videotaskitemFields
+	// videotaskitemDescCreatedAt is the schema descriptor for created_at field.
+	videotaskitemDescCreatedAt := videotaskitemMixinFields0[0].Descriptor()
+	// videotaskitem.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videotaskitem.DefaultCreatedAt = videotaskitemDescCreatedAt.Default.(func() time.Time)
+	// videotaskitemDescUpdatedAt is the schema descriptor for updated_at field.
+	videotaskitemDescUpdatedAt := videotaskitemMixinFields0[1].Descriptor()
+	// videotaskitem.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videotaskitem.DefaultUpdatedAt = videotaskitemDescUpdatedAt.Default.(func() time.Time)
+	// videotaskitem.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videotaskitem.UpdateDefaultUpdatedAt = videotaskitemDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videotaskitemDescOrdinal is the schema descriptor for ordinal field.
+	videotaskitemDescOrdinal := videotaskitemFields[2].Descriptor()
+	// videotaskitem.OrdinalValidator is a validator for the "ordinal" field. It is called by the builders before save.
+	videotaskitem.OrdinalValidator = videotaskitemDescOrdinal.Validators[0].(func(int) error)
+	// videotaskitemDescStatus is the schema descriptor for status field.
+	videotaskitemDescStatus := videotaskitemFields[3].Descriptor()
+	// videotaskitem.DefaultStatus holds the default value on creation for the status field.
+	videotaskitem.DefaultStatus = videotaskitemDescStatus.Default.(string)
+	// videotaskitem.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	videotaskitem.StatusValidator = videotaskitemDescStatus.Validators[0].(func(string) error)
+	// videotaskitemDescStage is the schema descriptor for stage field.
+	videotaskitemDescStage := videotaskitemFields[4].Descriptor()
+	// videotaskitem.DefaultStage holds the default value on creation for the stage field.
+	videotaskitem.DefaultStage = videotaskitemDescStage.Default.(string)
+	// videotaskitem.StageValidator is a validator for the "stage" field. It is called by the builders before save.
+	videotaskitem.StageValidator = videotaskitemDescStage.Validators[0].(func(string) error)
+	// videotaskitemDescActualOutputSeconds is the schema descriptor for actual_output_seconds field.
+	videotaskitemDescActualOutputSeconds := videotaskitemFields[6].Descriptor()
+	// videotaskitem.DefaultActualOutputSeconds holds the default value on creation for the actual_output_seconds field.
+	videotaskitem.DefaultActualOutputSeconds = videotaskitemDescActualOutputSeconds.Default.(string)
+	// videotaskitemDescActualPoints is the schema descriptor for actual_points field.
+	videotaskitemDescActualPoints := videotaskitemFields[7].Descriptor()
+	// videotaskitem.DefaultActualPoints holds the default value on creation for the actual_points field.
+	videotaskitem.DefaultActualPoints = videotaskitemDescActualPoints.Default.(string)
+	// videotaskitemDescProviderCost is the schema descriptor for provider_cost field.
+	videotaskitemDescProviderCost := videotaskitemFields[8].Descriptor()
+	// videotaskitem.DefaultProviderCost holds the default value on creation for the provider_cost field.
+	videotaskitem.DefaultProviderCost = videotaskitemDescProviderCost.Default.(string)
+	// videotaskitemDescArtifactAttempts is the schema descriptor for artifact_attempts field.
+	videotaskitemDescArtifactAttempts := videotaskitemFields[10].Descriptor()
+	// videotaskitem.DefaultArtifactAttempts holds the default value on creation for the artifact_attempts field.
+	videotaskitem.DefaultArtifactAttempts = videotaskitemDescArtifactAttempts.Default.(int)
+	// videotaskitem.ArtifactAttemptsValidator is a validator for the "artifact_attempts" field. It is called by the builders before save.
+	videotaskitem.ArtifactAttemptsValidator = videotaskitemDescArtifactAttempts.Validators[0].(func(int) error)
+	// videotaskitemDescMaxArtifactAttempts is the schema descriptor for max_artifact_attempts field.
+	videotaskitemDescMaxArtifactAttempts := videotaskitemFields[11].Descriptor()
+	// videotaskitem.DefaultMaxArtifactAttempts holds the default value on creation for the max_artifact_attempts field.
+	videotaskitem.DefaultMaxArtifactAttempts = videotaskitemDescMaxArtifactAttempts.Default.(int)
+	// videotaskitem.MaxArtifactAttemptsValidator is a validator for the "max_artifact_attempts" field. It is called by the builders before save.
+	videotaskitem.MaxArtifactAttemptsValidator = videotaskitemDescMaxArtifactAttempts.Validators[0].(func(int) error)
+	// videotaskitemDescErrorCode is the schema descriptor for error_code field.
+	videotaskitemDescErrorCode := videotaskitemFields[12].Descriptor()
+	// videotaskitem.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
+	videotaskitem.ErrorCodeValidator = videotaskitemDescErrorCode.Validators[0].(func(string) error)
+	// videotaskitemDescLeaseOwner is the schema descriptor for lease_owner field.
+	videotaskitemDescLeaseOwner := videotaskitemFields[15].Descriptor()
+	// videotaskitem.LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
+	videotaskitem.LeaseOwnerValidator = videotaskitemDescLeaseOwner.Validators[0].(func(string) error)
+	// videotaskitemDescVersion is the schema descriptor for version field.
+	videotaskitemDescVersion := videotaskitemFields[17].Descriptor()
+	// videotaskitem.DefaultVersion holds the default value on creation for the version field.
+	videotaskitem.DefaultVersion = videotaskitemDescVersion.Default.(int64)
+	// videotaskitemDescID is the schema descriptor for id field.
+	videotaskitemDescID := videotaskitemFields[0].Descriptor()
+	// videotaskitem.DefaultID holds the default value on creation for the id field.
+	videotaskitem.DefaultID = videotaskitemDescID.Default.(func() uuid.UUID)
 	walletgrantMixin := schema.WalletGrant{}.Mixin()
 	walletgrantMixinFields0 := walletgrantMixin[0].Fields()
 	_ = walletgrantMixinFields0

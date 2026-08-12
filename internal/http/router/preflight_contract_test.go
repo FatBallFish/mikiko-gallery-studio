@@ -126,6 +126,9 @@ func TestProjectOpenAPIContractDocumentsLifecycleAndScoping(t *testing.T) {
 		"/api/agent/gallery/v1/images:batch-download":              {"post"},
 		"/api/agent/gallery/v1/export-jobs/{job_id}":               {"get"},
 		"/api/agent/gallery/v1/export-jobs/{job_id}/download":      {"get"},
+		"/api/agent/media/v1/assets:batch-download":                {"post"},
+		"/api/agent/media/v1/export-jobs/{job_id}":                 {"get"},
+		"/api/agent/media/v1/export-jobs/{job_id}/download":        {"get"},
 	} {
 		for _, method := range methods {
 			item := spec.Paths[path]

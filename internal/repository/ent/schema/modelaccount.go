@@ -6,6 +6,7 @@ import (
 	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+	"github.com/google/uuid"
 )
 
 type ModelAccount struct{ ent.Schema }
@@ -14,6 +15,7 @@ func (ModelAccount) Mixin() []ent.Mixin { return []ent.Mixin{TimeMixin{}, SoftDe
 
 func (ModelAccount) Fields() []ent.Field {
 	return []ent.Field{
+		field.UUID("public_id", uuid.UUID{}).Default(uuid.New).Unique().Immutable(),
 		field.String("name").MaxLen(128).NotEmpty(),
 		field.String("adapter_type").MaxLen(64).NotEmpty(),
 		field.String("auth_type").MaxLen(64).NotEmpty(),

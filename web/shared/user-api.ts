@@ -7,13 +7,17 @@ import type {
   CashierOptions,
   CashierOrder,
   CashierOrderSyncResponse,
+  CanvasDocument,
+  CanvasRun,
   Capability,
   CapabilityTaskOptions,
   CreateApiKeyRequest,
   CreateCashierOrderRequest,
   CreateTaskRequest,
+  CreativeCanvas,
   EstimateRequest,
   EstimateResult,
+  FeatureFlags,
   GalleryImage,
 	GalleryBatchMutationResult,
 	GalleryExportStatus,
@@ -24,6 +28,16 @@ import type {
   LoginResult,
   MediaAccessProjection,
   MediaAccessPurpose,
+  MediaAsset,
+  MediaAssetFilters,
+  MediaAssetPage,
+  MediaBatchAction,
+  MediaBatchResult,
+  MediaCompletedPart,
+  MediaExportStatus,
+  MediaPartTarget,
+  MediaUploadInit,
+  MediaUploadSession,
   NormalLoginResponse,
   PageResult,
 	Project,
@@ -33,9 +47,15 @@ import type {
   Subscription,
   UpdatePreferencesRequest,
   UserProfile,
+  VideoCapability,
+  VideoCapabilityListWire,
+  VideoCreateTaskRequest,
+  VideoEstimate,
+  VideoEstimateRequest,
+  VideoTask,
 } from './api-types'
 import { API_PATHS } from './api-types'
-import { fillPath, normalizePage, sharedApiClient, withQuery } from './http-client'
+import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
 import { mediaAssetURL } from './media-url'
 
 export { resolveGenerationResolution } from './generation-resolution'
@@ -440,6 +460,66 @@ function positiveNumber(value: unknown) {
 	return parsed > 0 ? parsed : undefined
 }
 
+function uniqueValues<T>(values: T[]) {
+	return Array.from(new Set(values))
+}
+
+export function normalizeVideoCapabilities(raw: VideoCapabilityListWire): VideoCapability {
+	const groups = Array.isArray(raw?.groups) ? raw.groups : []
+	return {
+		capability_version: groups[0]?.capability_version ?? '',
+		model_groups: groups.flatMap((group) => {
+			const taskTypes = uniqueValues(group.task_types ?? group.combinations.map((item) => item.task_type))
+			const first = group.combinations[0]
+			if (!first || taskTypes.length === 0) return []
+			const optionsByTaskType = Object.fromEntries(taskTypes.flatMap((taskType) => {
+				const combinations = group.combinations.filter((item) => item.task_type === taskType)
+				if (combinations.length === 0) return []
+				return [[taskType, {
+					durations: uniqueValues(combinations.map((item) => item.duration_seconds)),
+					resolutions: uniqueValues(combinations.map((item) => item.resolution)),
+					aspect_ratios: uniqueValues(combinations.map((item) => item.aspect_ratio)),
+					audio_generation: combinations.some((item) => item.audio_mode === 'generated'),
+					combinations: combinations.map(({ duration_seconds, resolution, aspect_ratio, audio_mode }) => ({ duration_seconds, resolution, aspect_ratio, audio_mode })),
+				}]]
+			})) as VideoCapability['model_groups'][number]['options_by_task_type']
+			return [{
+				code: group.route_model_code,
+				name: group.name,
+				description: group.description,
+				minimum_points: '',
+				max_output_count: group.max_output_count,
+				task_types: taskTypes,
+				defaults: {
+					task_type: first.task_type,
+					duration_seconds: first.duration_seconds,
+					resolution: first.resolution,
+					aspect_ratio: first.aspect_ratio,
+					generate_audio: first.audio_mode === 'generated',
+				},
+				options_by_task_type: optionsByTaskType,
+			}]
+		}),
+	}
+}
+
+export function buildVideoEstimateWireRequest(req: VideoEstimateRequest): VideoEstimateRequest {
+	return {
+		project_id: req.project_id,
+		route_model_code: req.route_model_code,
+		task_type: req.task_type,
+		prompt_template: req.prompt_template,
+		prompt_variables: req.prompt_variables,
+		reference_bindings: req.reference_bindings,
+		inputs: req.inputs,
+		duration_seconds: req.duration_seconds,
+		resolution: req.resolution,
+		aspect_ratio: req.aspect_ratio,
+		audio_mode: req.audio_mode,
+		output_count: req.output_count,
+	}
+}
+
 export function normalizeTaskList(raw: any): ImageTask[] {
   const items = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : []
   return items.map(toTask)
@@ -447,6 +527,7 @@ export function normalizeTaskList(raw: any): ImageTask[] {
 
 export const userApi = {
   configureAuth: sharedApiClient.setAuth.bind(sharedApiClient),
+  getFeatureFlags: () => sharedApiClient.request<FeatureFlags>(API_PATHS.agent.features, { auth: false, retryUnauthorized: false }),
   sendEmailCode: (email: string, scene: 'login' | 'register' | 'password_reset' | 'password_change' = 'login') =>
     sharedApiClient.request<{ email: string; scene: string; status: string }>(API_PATHS.agent.sendEmailCode, { method: 'POST', body: { email, scene }, auth: false }),
   loginWithEmailCode: (email: string, code: string) =>
@@ -512,6 +593,71 @@ export const userApi = {
   mockPayCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderMockPay, { method: 'POST', pathParams: { order_id } }),
   redeemCode: (code: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request(API_PATHS.agent.redeemCode, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { code } }),
   getCapabilities: async (): Promise<Capability> => normalizeCapabilities(await sharedApiClient.request(API_PATHS.agent.capabilities)),
+	getVideoCapabilities: async (): Promise<VideoCapability> => normalizeVideoCapabilities(await sharedApiClient.request<VideoCapabilityListWire>(API_PATHS.agent.videoCapabilities)),
+	estimateVideo: (req: VideoEstimateRequest, signal?: AbortSignal) => sharedApiClient.request<VideoEstimate>(API_PATHS.agent.videoEstimates, { method: 'POST', body: buildVideoEstimateWireRequest(req), signal }),
+	createVideoTask: (req: VideoCreateTaskRequest, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTasks, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { ...buildVideoEstimateWireRequest(req), quote_token: req.quote_token } }),
+  listVideoTasks: async (filters: { project_id: string; status?: string; cursor?: string; limit?: number }) => {
+    const response = await sharedApiClient.request<{ items?: VideoTask[]; next_cursor?: string } | VideoTask[]>(API_PATHS.agent.videoTasks, { query: filters })
+    return Array.isArray(response) ? { items: response } : { items: response.items ?? [], next_cursor: response.next_cursor }
+  },
+  getVideoTask: (task_id: string) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTaskDetail, { pathParams: { task_id } }),
+	cancelVideoTask: (task_id: string, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTaskCancel, { method: 'POST', pathParams: { task_id }, headers: { 'Idempotency-Key': idempotencyKey } }),
+	videoTaskStreamUrl: (accessToken?: string | null, projectID?: string) => apiEventUrl(withQuery(API_PATHS.agent.videoTaskEvents, { project_id: projectID }), accessToken),
+	listCanvases: async (filters?: { project_id?: string; search?: string }) => (await sharedApiClient.request<{ items: CreativeCanvas[] }>('/api/agent/canvas/v1/canvases', { query: filters })).items ?? [],
+	createCanvas: (input: { project_id: string; name: string; template?: 'blank' | 'image_exploration' | 'image_to_video'; document?: CanvasDocument }) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases', { method: 'POST', body: input }),
+	getCanvas: (canvas_id: string) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}', { pathParams: { canvas_id } }),
+	renameCanvas: (canvas_id: string, name: string, expected_metadata_version: number) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}', { method: 'PATCH', pathParams: { canvas_id }, body: { name, expected_metadata_version } }),
+	deleteCanvas: (canvas_id: string, expected_metadata_version: number) => sharedApiClient.request<{ id: string; status: 'deleted' }>('/api/agent/canvas/v1/canvases/{canvas_id}', { method: 'DELETE', pathParams: { canvas_id }, body: { expected_metadata_version } }),
+	duplicateCanvas: (canvas_id: string, input: { name?: string; project_id?: string } = {}) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}:duplicate', { method: 'POST', pathParams: { canvas_id }, body: input }),
+	transferCanvas: (canvas_id: string, target_project_id: string, expected_metadata_version: number) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}:transfer-project', { method: 'POST', pathParams: { canvas_id }, body: { target_project_id, expected_metadata_version } }),
+	saveCanvasDocument: (canvas_id: string, expected_revision: number, document: CanvasDocument) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}/document', { method: 'PUT', pathParams: { canvas_id }, body: { expected_revision, document } }),
+	estimateCanvasNode: (canvas_id: string, node_id: string) => sharedApiClient.request<{ points: string; detail?: Record<string, unknown> }>('/api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:estimate', { method: 'POST', pathParams: { canvas_id, node_id } }),
+	generateCanvasNode: (canvas_id: string, node_id: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request<CanvasRun>('/api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:generate', { method: 'POST', pathParams: { canvas_id, node_id }, headers: { 'Idempotency-Key': idempotencyKey } }),
+	listCanvasRuns: async (canvas_id: string, refresh = false) => (await sharedApiClient.request<{ items: CanvasRun[] }>('/api/agent/canvas/v1/canvases/{canvas_id}/runs', { pathParams: { canvas_id }, query: { refresh } })).items ?? [],
+	attachCanvasRun: (canvas_id: string, run_id: string, recovery_position?: { x: number; y: number }) => sharedApiClient.request<CanvasRun>('/api/agent/canvas/v1/canvases/{canvas_id}/runs/{run_id}:attach-results', { method: 'POST', pathParams: { canvas_id, run_id }, body: recovery_position ? { recovery_position } : undefined }),
+	cancelCanvasRun: (canvas_id: string, run_id: string) => sharedApiClient.request<CanvasRun>('/api/agent/canvas/v1/canvases/{canvas_id}/runs/{run_id}:cancel', { method: 'POST', pathParams: { canvas_id, run_id } }),
+  listMediaAssets: async (filters: MediaAssetFilters) => {
+    const response = await sharedApiClient.request<MediaAssetPage | MediaAsset[]>(API_PATHS.agent.mediaAssets, { query: filters })
+    return Array.isArray(response) ? { items: response } : { items: response.items ?? [], next_cursor: response.next_cursor }
+  },
+  getMediaAsset: (asset_id: string) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaAssetDetail, { pathParams: { asset_id } }),
+  updateMediaAsset: (asset: Pick<MediaAsset, 'id' | 'version'>, patch: { name?: string; group_name?: string; project_id?: string }) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaAssetDetail, {
+    method: 'PATCH', pathParams: { asset_id: asset.id }, body: { ...patch, expected_version: asset.version },
+  }),
+  deleteMediaAsset: (asset: Pick<MediaAsset, 'id' | 'version'>) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaAssetDetail, {
+    method: 'DELETE', pathParams: { asset_id: asset.id }, body: { expected_version: asset.version },
+  }),
+  retryMediaAssetProcessing: (asset_id: string) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaAssetRetry, { method: 'POST', pathParams: { asset_id } }),
+  getMediaAssetAccess: (asset_id: string, purpose: MediaAccessPurpose = 'preview', signal?: AbortSignal) => sharedApiClient.request<MediaAccessProjection>(API_PATHS.agent.mediaAssetAccess, { pathParams: { asset_id }, query: { purpose }, signal }),
+  batchMediaAssets: (action: MediaBatchAction, items: Array<Pick<MediaAsset, 'id' | 'version'>>, options?: { group_name?: string; target_project_id?: string }) => sharedApiClient.request<MediaBatchResult>(API_PATHS.agent.mediaAssetBatch, {
+    method: 'POST', pathParams: { action }, body: { items: items.map((item) => ({ id: item.id, expected_version: item.version })), ...options },
+  }),
+  createMediaExport: (project_id: string, items: Array<Pick<MediaAsset, 'id' | 'version'>>) => sharedApiClient.request<MediaExportStatus>(API_PATHS.agent.mediaAssetBatch, {
+    method: 'POST', pathParams: { action: 'download' }, body: { project_id, items: items.map((item) => ({ id: item.id, expected_version: item.version })) },
+  }),
+  getMediaExportJob: (job_id: string, signal?: AbortSignal) => sharedApiClient.request<MediaExportStatus>(API_PATHS.agent.mediaExportJob, { pathParams: { job_id }, signal }),
+  downloadMediaExport: (job_id: string, signal?: AbortSignal) => sharedApiClient.blob(API_PATHS.agent.mediaExportDownload, { pathParams: { job_id }, signal }),
+  initMediaUpload: (input: MediaUploadInit, idempotencyKey: string) => sharedApiClient.request<MediaUploadSession>(API_PATHS.agent.mediaUploads, {
+    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: input,
+  }),
+  getMediaUpload: (upload_id: string) => sharedApiClient.request<MediaUploadSession>(API_PATHS.agent.mediaUploadDetail, { pathParams: { upload_id } }),
+  signMediaUploadPart: (upload_id: string, part_number: number, checksum: string) => sharedApiClient.request<MediaPartTarget>(API_PATHS.agent.mediaUploadPartSign, {
+    method: 'POST', pathParams: { upload_id, part_number }, body: { checksum },
+  }),
+  uploadMediaLocalPart: async (upload_id: string, part_number: number, chunk: Blob, checksum: string, accessToken?: string | null, signal?: AbortSignal) => {
+    const path = fillPath(API_PATHS.agent.mediaUploadPart, { upload_id, part_number })
+    const response = await fetch(`${getDefaultBaseUrl()}${path}`, {
+      method: 'PUT', credentials: 'include', body: chunk, signal,
+      headers: { 'Content-Type': 'application/octet-stream', 'X-Content-SHA256': checksum, ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+    })
+    const payload = await response.json()
+    if (!response.ok) throw Object.assign(new Error(payload?.error?.message ?? '分片上传失败'), { status: response.status })
+    return (payload?.data ?? payload) as MediaCompletedPart
+  },
+  completeMediaUpload: (upload_id: string, parts: MediaCompletedPart[]) => sharedApiClient.request<MediaAsset>(API_PATHS.agent.mediaUploadComplete, {
+    method: 'POST', pathParams: { upload_id }, body: { parts },
+  }),
+  abortMediaUpload: (upload_id: string) => sharedApiClient.request<{ status: string }>(API_PATHS.agent.mediaUploadDetail, { method: 'DELETE', pathParams: { upload_id } }),
   estimatePromptOptimization: (prompt: string) => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt } }),
   optimizePrompt: (prompt: string, quote: string) => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote } }),
   estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: buildEstimateWireRequest(req) }), req),

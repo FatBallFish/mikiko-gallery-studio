@@ -11,6 +11,7 @@ import (
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/galleryexportjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 )
@@ -36,8 +37,27 @@ func (s *GalleryExportStore) AuthorizeAssets(ctx context.Context, userID int64, 
 		}
 		parsed = append(parsed, value)
 	}
+	mediaEntities, err := s.client.MediaAsset.Query().Where(
+		mediaasset.IDIn(parsed...),
+		mediaasset.UserIDEQ(userID),
+		mediaasset.ProjectIDEQ(projectUUID),
+		mediaasset.DeletedAtIsNil(),
+	).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query media export assets: %w", err)
+	}
+	mediaByID := make(map[uuid.UUID]*repoent.MediaAsset, len(mediaEntities))
+	missing := make([]uuid.UUID, 0, len(parsed))
+	for _, entity := range mediaEntities {
+		mediaByID[entity.ID] = entity
+	}
+	for _, id := range parsed {
+		if mediaByID[id] == nil {
+			missing = append(missing, id)
+		}
+	}
 	entities, err := s.client.ImageResult.Query().Where(
-		imageresult.IDIn(parsed...),
+		imageresult.IDIn(missing...),
 		imageresult.UserIDEQ(userID),
 		imageresult.ProjectIDEQ(projectUUID),
 		imageresult.DeletedAtIsNil(),
@@ -45,7 +65,7 @@ func (s *GalleryExportStore) AuthorizeAssets(ctx context.Context, userID int64, 
 	if err != nil {
 		return nil, fmt.Errorf("query gallery export assets: %w", err)
 	}
-	if len(entities) != len(parsed) {
+	if len(mediaEntities)+len(entities) != len(parsed) {
 		return nil, repoerr.ErrNotFound
 	}
 	byID := make(map[uuid.UUID]*repoent.ImageResult, len(entities))
@@ -54,6 +74,14 @@ func (s *GalleryExportStore) AuthorizeAssets(ctx context.Context, userID int64, 
 	}
 	assets := make([]galleryexportservice.Asset, 0, len(parsed))
 	for _, imageID := range parsed {
+		if mediaEntity := mediaByID[imageID]; mediaEntity != nil {
+			assets = append(assets, galleryexportservice.Asset{
+				ID: imageID.String(), ProjectID: projectID, StorageConfigID: optionalUUIDString(mediaEntity.StorageConfigID),
+				StorageDriver: mediaEntity.StorageDriver, ObjectKey: mediaEntity.ObjectKey, MIMEType: mediaEntity.MimeType,
+				FileSizeBytes: mediaEntity.FileSizeBytes, DisplayName: mediaEntity.Name,
+			})
+			continue
+		}
 		entity := byID[imageID]
 		if entity == nil {
 			return nil, repoerr.ErrNotFound

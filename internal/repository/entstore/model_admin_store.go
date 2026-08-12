@@ -504,6 +504,7 @@ func (s *ModelAdminStore) CreateRouteModel(ctx context.Context, req domainmodela
 		SetName(req.Name).
 		SetDescription(req.Description).
 		SetVisibility(req.Visibility).
+		SetMediaType(req.MediaType).
 		SetEnabled(req.Enabled).
 		SetSortOrder(req.SortOrder).
 		Save(ctx)
@@ -533,6 +534,7 @@ func (s *ModelAdminStore) UpdateRouteModel(ctx context.Context, routeModelID int
 			SetName(req.Name).
 			SetDescription(req.Description).
 			SetVisibility(req.Visibility).
+			SetMediaType(req.MediaType).
 			SetEnabled(req.Enabled).
 			SetSortOrder(req.SortOrder).
 			Save(ctx)
@@ -1469,7 +1471,7 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 		if model.UpdatedAt.After(latestVersionAt) {
 			latestVersionAt = model.UpdatedAt
 		}
-		snapshot.RouteModels = append(snapshot.RouteModels, modelhub.RouteModelConfig{ID: int64(model.ID), Code: model.Code, Name: model.Name, Description: model.Description, Visibility: model.Visibility, Enabled: model.Enabled, SortOrder: model.SortOrder})
+		snapshot.RouteModels = append(snapshot.RouteModels, modelhub.RouteModelConfig{ID: int64(model.ID), Code: model.Code, Name: model.Name, Description: model.Description, Visibility: model.Visibility, MediaType: model.MediaType, Enabled: model.Enabled, SortOrder: model.SortOrder})
 	}
 	for _, candidate := range candidates {
 		snapshot.Candidates = append(snapshot.Candidates, modelhub.RouteCandidateConfig{ID: int64(candidate.ID), RouteModelID: candidate.RouteModelID, AccountModelID: candidate.AccountModelID, Priority: candidate.Priority, Weight: candidate.Weight, FallbackOrder: candidate.FallbackOrder, Enabled: candidate.Enabled})
@@ -1693,6 +1695,7 @@ func mapRouteModel(entity *repoent.RouteModel, groupIDs []int64) domainmodeladmi
 		Name:        entity.Name,
 		Description: entity.Description,
 		Visibility:  entity.Visibility,
+		MediaType:   entity.MediaType,
 		Enabled:     entity.Enabled,
 		SortOrder:   entity.SortOrder,
 		GroupIDs:    append([]int64(nil), groupIDs...),

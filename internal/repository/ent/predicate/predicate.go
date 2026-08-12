@@ -18,6 +18,9 @@ type AdminUser func(*sql.Selector)
 // AuditLog is the predicate function for auditlog builders.
 type AuditLog func(*sql.Selector)
 
+// CanvasGenerationRun is the predicate function for canvasgenerationrun builders.
+type CanvasGenerationRun func(*sql.Selector)
+
 // ClusterChallenge is the predicate function for clusterchallenge builders.
 type ClusterChallenge func(*sql.Selector)
 
@@ -30,6 +33,12 @@ type ClusterToken func(*sql.Selector)
 // ConfigItem is the predicate function for configitem builders.
 type ConfigItem func(*sql.Selector)
 
+// CreativeCanvas is the predicate function for creativecanvas builders.
+type CreativeCanvas func(*sql.Selector)
+
+// CreativeCanvasRevision is the predicate function for creativecanvasrevision builders.
+type CreativeCanvasRevision func(*sql.Selector)
+
 // GalleryExportJob is the predicate function for galleryexportjob builders.
 type GalleryExportJob func(*sql.Selector)
 
@@ -41,6 +50,21 @@ type ImageTask func(*sql.Selector)
 
 // Installation is the predicate function for installation builders.
 type Installation func(*sql.Selector)
+
+// MediaAsset is the predicate function for mediaasset builders.
+type MediaAsset func(*sql.Selector)
+
+// MediaAssetReference is the predicate function for mediaassetreference builders.
+type MediaAssetReference func(*sql.Selector)
+
+// MediaDerivative is the predicate function for mediaderivative builders.
+type MediaDerivative func(*sql.Selector)
+
+// MediaProcessingJob is the predicate function for mediaprocessingjob builders.
+type MediaProcessingJob func(*sql.Selector)
+
+// MediaUploadSession is the predicate function for mediauploadsession builders.
+type MediaUploadSession func(*sql.Selector)
 
 // MigrationCheckpoint is the predicate function for migrationcheckpoint builders.
 type MigrationCheckpoint func(*sql.Selector)
@@ -140,6 +164,36 @@ type UserGroupMember func(*sql.Selector)
 
 // UserSubscription is the predicate function for usersubscription builders.
 type UserSubscription func(*sql.Selector)
+
+// VideoModelCapability is the predicate function for videomodelcapability builders.
+type VideoModelCapability func(*sql.Selector)
+
+// VideoPriceRule is the predicate function for videopricerule builders.
+type VideoPriceRule func(*sql.Selector)
+
+// VideoPricingStrategy is the predicate function for videopricingstrategy builders.
+type VideoPricingStrategy func(*sql.Selector)
+
+// VideoProviderCallbackEvent is the predicate function for videoprovidercallbackevent builders.
+type VideoProviderCallbackEvent func(*sql.Selector)
+
+// VideoProviderCostRule is the predicate function for videoprovidercostrule builders.
+type VideoProviderCostRule func(*sql.Selector)
+
+// VideoRouteConfig is the predicate function for videorouteconfig builders.
+type VideoRouteConfig func(*sql.Selector)
+
+// VideoTask is the predicate function for videotask builders.
+type VideoTask func(*sql.Selector)
+
+// VideoTaskAttempt is the predicate function for videotaskattempt builders.
+type VideoTaskAttempt func(*sql.Selector)
+
+// VideoTaskInput is the predicate function for videotaskinput builders.
+type VideoTaskInput func(*sql.Selector)
+
+// VideoTaskItem is the predicate function for videotaskitem builders.
+type VideoTaskItem func(*sql.Selector)
 
 // WalletGrant is the predicate function for walletgrant builders.
 type WalletGrant func(*sql.Selector)

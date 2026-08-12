@@ -13,6 +13,8 @@ LANDING_BUILD_TESTS=(
   "scripts/workflow/contracts/landing-build.test.mjs"
   "scripts/workflow/contracts/landing-build-wiring.test.mjs"
   "scripts/e2e/gallery-zip.contract.test.mjs"
+  "scripts/workflow/contracts/multimedia-visual-acceptance.test.mjs"
+  "scripts/workflow/contracts/multimedia-load-acceptance.test.mjs"
 )
 printf '\n==> contract tests %s\n' "${LANDING_BUILD_TESTS[*]}"
 node --test "${LANDING_BUILD_TESTS[@]}"

@@ -27,6 +27,8 @@ const (
 	FieldAfterTaskID = "after_task_id"
 	// FieldAfterResultID holds the string denoting the after_result_id field in the database.
 	FieldAfterResultID = "after_result_id"
+	// FieldAfterCreatedAt holds the string denoting the after_created_at field in the database.
+	FieldAfterCreatedAt = "after_created_at"
 	// FieldProcessedRows holds the string denoting the processed_rows field in the database.
 	FieldProcessedRows = "processed_rows"
 	// FieldCompleted holds the string denoting the completed field in the database.
@@ -45,6 +47,7 @@ var Columns = []string{
 	FieldAfterUserID,
 	FieldAfterTaskID,
 	FieldAfterResultID,
+	FieldAfterCreatedAt,
 	FieldProcessedRows,
 	FieldCompleted,
 }
@@ -121,6 +124,11 @@ func ByAfterTaskID(opts ...sql.OrderTermOption) OrderOption {
 // ByAfterResultID orders the results by the after_result_id field.
 func ByAfterResultID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAfterResultID, opts...).ToFunc()
+}
+
+// ByAfterCreatedAt orders the results by the after_created_at field.
+func ByAfterCreatedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAfterCreatedAt, opts...).ToFunc()
 }
 
 // ByProcessedRows orders the results by the processed_rows field.

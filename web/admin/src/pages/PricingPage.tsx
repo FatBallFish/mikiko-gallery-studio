@@ -14,6 +14,8 @@ import { adminTaskTypeLabel, adminTaskTypeOptions } from './adminTaskTypes'
 import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import { modelLifecycleErrorMessage } from './adminModelLifecycle'
 import { createLatestListRequestGuard } from './listRefresh'
+import { VideoConfigurationImpact } from './VideoConfigurationImpact'
+import { VideoConfigurationWorkspace } from './VideoConfigurationWorkspace'
 import {
   pricingEnabledBadge,
   pricingFieldHints,
@@ -161,6 +163,8 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
         primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={!routes.length} onClick={() => openDialog(newPriceDialog(routes))}>新增配置</button>}
         secondaryActions={<RefreshIconButton label="刷新价格策略" refreshing={loading} onClick={() => void load()} />}
       />
+      <VideoConfigurationImpact context="pricing" />
+      <VideoConfigurationWorkspace context="pricing" />
       {error ? <InlineFeedback tone="danger" message={`价格策略刷新失败：${error}`} /> : null}
       <MetricStrip metrics={metrics} />
 

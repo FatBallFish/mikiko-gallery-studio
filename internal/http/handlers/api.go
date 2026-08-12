@@ -62,17 +62,20 @@ import (
 	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	adminuserservice "github.com/fatballfish/pic-gallery/internal/service/adminuser"
+	adminvideoservice "github.com/fatballfish/pic-gallery/internal/service/adminvideo"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	canvasservice "github.com/fatballfish/pic-gallery/internal/service/canvas"
 	capserv "github.com/fatballfish/pic-gallery/internal/service/capabilities"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	compatservice "github.com/fatballfish/pic-gallery/internal/service/compat"
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
@@ -81,6 +84,9 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/service/smtpdelivery"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
+	videocallbackservice "github.com/fatballfish/pic-gallery/internal/service/videocallback"
+	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
+	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/fatballfish/pic-gallery/pkg/httpx"
@@ -88,40 +94,70 @@ import (
 )
 
 type API struct {
-	auth          *authservice.Service
-	adminAuth     *adminauthservice.Service
-	apiKeys       *apikeyservice.Service
-	billing       *billingservice.Service
-	assets        *assetservice.Service
-	caps          *capserv.Service
-	compat        *compatservice.Service
-	tasks         *imagetaskservice.Service
-	admin         *adminconfigservice.Service
-	cashierCfg    *cashierservice.ConfigFacade
-	adminUser     *adminuserservice.Service
-	callRecord    *admincallrecordservice.Service
-	modelAdmin    *modeladminservice.Service
-	textModels    *textmodelservice.Service
-	promptOpt     *promptoptimizerservice.Service
-	secureCfg     *secureconfigservice.Service
-	storageCfg    *storageconfigservice.Service
-	storageReg    *storage.Registry
-	storagePub    storage.InvalidationPublisher
-	redeem        *redeemservice.Service
-	audit         *auditservice.Service
-	cluster       *clusterservice.Service
-	projects      *projectservice.Service
-	galleryExport *galleryexportservice.Service
-	adminPerms    domainadminauth.PermissionResolver
-	docsReady     DocsReadinessChecker
-	cashierSync   cashierOrderSyncCoordinator
-	readinessMu   sync.Mutex
-	readinessData []adminReadinessCheck
-	readinessTill time.Time
-	readinessGen  uint64
-	readinessRun  *adminReadinessFlight
-	readinessWait time.Duration
-	cfg           config.Config
+	auth           *authservice.Service
+	adminAuth      *adminauthservice.Service
+	apiKeys        *apikeyservice.Service
+	billing        *billingservice.Service
+	assets         *assetservice.Service
+	caps           *capserv.Service
+	compat         *compatservice.Service
+	tasks          *imagetaskservice.Service
+	admin          *adminconfigservice.Service
+	cashierCfg     *cashierservice.ConfigFacade
+	adminUser      *adminuserservice.Service
+	callRecord     *admincallrecordservice.Service
+	modelAdmin     *modeladminservice.Service
+	textModels     *textmodelservice.Service
+	promptOpt      *promptoptimizerservice.Service
+	secureCfg      *secureconfigservice.Service
+	storageCfg     *storageconfigservice.Service
+	storageReg     *storage.Registry
+	storagePub     storage.InvalidationPublisher
+	redeem         *redeemservice.Service
+	audit          *auditservice.Service
+	cluster        *clusterservice.Service
+	canvases       *canvasservice.Service
+	projects       *projectservice.Service
+	galleryExport  *galleryexportservice.Service
+	mediaAssets    *mediaassetservice.Service
+	videoRouting   *videoroutingservice.Service
+	videoQuotes    *videotaskservice.QuoteService
+	videoTasks     *videotaskservice.Service
+	videoCallbacks *videocallbackservice.Service
+	adminVideo     *adminvideoservice.Service
+	adminPerms     domainadminauth.PermissionResolver
+	docsReady      DocsReadinessChecker
+	cashierSync    cashierOrderSyncCoordinator
+	readinessMu    sync.Mutex
+	readinessData  []adminReadinessCheck
+	readinessTill  time.Time
+	readinessGen   uint64
+	readinessRun   *adminReadinessFlight
+	readinessWait  time.Duration
+	cfg            config.Config
+}
+
+func (a *API) SetVideoCallbackService(service *videocallbackservice.Service) {
+	a.videoCallbacks = service
+}
+
+func (a *API) SetAdminVideoService(service *adminvideoservice.Service) {
+	a.readinessMu.Lock()
+	defer a.readinessMu.Unlock()
+	a.adminVideo = service
+	a.invalidateReadinessLocked()
+}
+
+func (a *API) SetMediaAssetService(service *mediaassetservice.Service) {
+	a.mediaAssets = service
+}
+
+func (a *API) SetVideoServices(routing *videoroutingservice.Service, quotes *videotaskservice.QuoteService, tasks ...*videotaskservice.Service) {
+	a.videoRouting = routing
+	a.videoQuotes = quotes
+	if len(tasks) > 0 {
+		a.videoTasks = tasks[0]
+	}
 }
 
 type cashierCustomAmountConfig = domaincashier.CustomAmountConfig
@@ -403,6 +439,10 @@ func (a *API) SetProjectService(service *projectservice.Service) {
 		a.projects = service
 		a.tasks.SetProjectResolver(service)
 	}
+}
+
+func (a *API) SetCanvasService(service *canvasservice.Service) {
+	a.canvases = service
 }
 
 func (a *API) SetGalleryExportService(service *galleryexportservice.Service) {
@@ -3350,7 +3390,12 @@ func (a *API) HandleAgentGalleryExportJob(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeInternal, "gallery export is unavailable"))
 		return
 	}
-	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/agent/gallery/v1/export-jobs/"), "/")
+	prefix := "/api/agent/gallery/v1/export-jobs/"
+	mediaRoute := strings.HasPrefix(r.URL.Path, "/api/agent/media/v1/export-jobs/")
+	if mediaRoute {
+		prefix = "/api/agent/media/v1/export-jobs/"
+	}
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, prefix), "/")
 	parts := strings.Split(path, "/")
 	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" || len(parts) > 2 || (len(parts) == 2 && parts[1] != "download") {
 		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "gallery export route not found"))
@@ -3386,7 +3431,7 @@ func (a *API) HandleAgentGalleryExportJob(w http.ResponseWriter, r *http.Request
 	}
 	payload := map[string]any{"job": job}
 	if job.State == galleryexportservice.StateSucceeded && job.ExpiresAt != nil && job.ExpiresAt.After(time.Now().UTC()) {
-		payload["download_url"] = "/api/agent/gallery/v1/export-jobs/" + job.ID + "/download"
+		payload["download_url"] = prefix + job.ID + "/download"
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, payload)
 }
@@ -7048,6 +7093,9 @@ func (a *API) HandleAdminRouteModelDetail(w http.ResponseWriter, r *http.Request
 		a.handleAdminRouteModelCandidates(w, r, admin.AdminID, routeModelID, parts)
 		return
 	}
+	if len(parts) == 2 && a.HandleAdminRouteVideoConfiguration(w, r, admin.AdminID, routeModelID, parts[1]) {
+		return
+	}
 	switch r.Method {
 	case http.MethodPut:
 		req, ok := decodeRouteModelWriteRequest(w, r)
@@ -9178,6 +9226,13 @@ func (a *API) adminReadinessProbes(docsReady DocsReadinessChecker) []adminReadin
 		{key: "route_models", label: "路由模型", fixRoute: "routing", actionLabel: "去配置", run: a.routeModelsReadinessCheck},
 		{key: "route_candidates", label: "候选模型", fixRoute: "routing", actionLabel: "去配置", run: a.routeCandidatesReadinessCheck},
 		{key: "route_prices", label: "价格策略", fixRoute: "pricing", actionLabel: "去配置", run: a.routePricesReadinessCheck},
+		{key: "video_routes", label: "视频路由与候选", fixRoute: "routing", actionLabel: "去配置", run: a.videoRoutesReadinessProbe},
+		{key: "video_prices", label: "视频可见组合价格", fixRoute: "pricing", actionLabel: "去配置", run: a.videoPricesReadinessProbe},
+		{key: "media_storage", label: "媒体存储读写", fixRoute: "system-settings", actionLabel: "去检查", run: a.mediaStorageReadinessProbe},
+		{key: "media_worker", label: "媒体 Worker 与 FFmpeg", fixRoute: "cluster", actionLabel: "去检查", run: a.mediaWorkerReadinessProbe},
+		{key: "video_artifact_backlog", label: "视频转存积压", fixRoute: "video-tasks", actionLabel: "去处理", run: a.videoArtifactBacklogReadinessProbe},
+		{key: "media_derivative_backlog", label: "媒体派生积压", fixRoute: "video-tasks", actionLabel: "去处理", run: a.mediaDerivativeBacklogReadinessProbe},
+		{key: "video_settlement_backlog", label: "视频结算异常", fixRoute: "video-tasks", actionLabel: "去处理", run: a.videoSettlementBacklogReadinessProbe},
 		{key: "payments", label: "支付配置", fixRoute: "cashier", actionLabel: "去配置", run: a.paymentReadinessProbe},
 		{key: "refund_compensation", label: "退款补偿", fixRoute: "cashier", actionLabel: "去处理", run: func(ctx context.Context, checkedAt time.Time) (adminReadinessCheck, error) {
 			check, appErr := a.refundCompensationReadinessCheck(ctx, checkedAt)
@@ -9405,7 +9460,11 @@ func summarizeReadinessChecks(checks []adminReadinessCheck) (string, map[string]
 		switch check.Status {
 		case "fail":
 			summary["fail"]++
-			status = "fail"
+			if check.Blocking {
+				status = "fail"
+			} else if status != "fail" {
+				status = "warn"
+			}
 		case "warn":
 			summary["warn"]++
 			if status != "fail" {
@@ -9832,6 +9891,7 @@ func decodeRouteModelWriteRequest(w http.ResponseWriter, r *http.Request) (domai
 		Name        string  `json:"name"`
 		Description string  `json:"description"`
 		Visibility  string  `json:"visibility"`
+		MediaType   string  `json:"media_type"`
 		Enabled     bool    `json:"enabled"`
 		SortOrder   int     `json:"sort_order"`
 		GroupIDs    []int64 `json:"group_ids"`
@@ -9840,7 +9900,7 @@ func decodeRouteModelWriteRequest(w http.ResponseWriter, r *http.Request) (domai
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return domainmodeladmin.RouteModelWriteRequest{}, false
 	}
-	return domainmodeladmin.RouteModelWriteRequest{Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: req.GroupIDs}, true
+	return domainmodeladmin.RouteModelWriteRequest{Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, MediaType: req.MediaType, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: req.GroupIDs}, true
 }
 
 func decodeRouteModelCandidateWriteRequest(w http.ResponseWriter, r *http.Request, routeModelID int64) (domainmodeladmin.RouteModelCandidateWriteRequest, bool) {

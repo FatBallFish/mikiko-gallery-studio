@@ -125,6 +125,8 @@ func projectAppError(err error) *errs.Error {
 		return errs.New(http.StatusForbidden, errs.CodeDefaultProjectImmutable, "default project cannot be changed")
 	case errors.Is(err, projectservice.ErrProjectChanged):
 		return errs.New(http.StatusConflict, errs.CodeProjectChanged, "project changed; refresh and retry")
+	case errors.Is(err, projectservice.ErrCanvasBusy):
+		return errs.New(http.StatusConflict, "CANVAS_BUSY", "project contains canvas with active generation runs")
 	case errors.Is(err, projectservice.ErrNameConflict):
 		return errs.New(http.StatusConflict, errs.CodeConflict, "project name already exists")
 	case errors.Is(err, projectservice.ErrIdempotencyConflict):

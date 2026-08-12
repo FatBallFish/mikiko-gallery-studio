@@ -103,6 +103,32 @@ func (_u *PointLedgerUpdate) ClearTaskID() *PointLedgerUpdate {
 	return _u
 }
 
+// SetTaskMediaType sets the "task_media_type" field.
+func (_u *PointLedgerUpdate) SetTaskMediaType(v string) *PointLedgerUpdate {
+	_u.mutation.SetTaskMediaType(v)
+	return _u
+}
+
+// SetNillableTaskMediaType sets the "task_media_type" field if the given value is not nil.
+func (_u *PointLedgerUpdate) SetNillableTaskMediaType(v *string) *PointLedgerUpdate {
+	if v != nil {
+		_u.SetTaskMediaType(*v)
+	}
+	return _u
+}
+
+// SetUsageSummary sets the "usage_summary" field.
+func (_u *PointLedgerUpdate) SetUsageSummary(v map[string]interface{}) *PointLedgerUpdate {
+	_u.mutation.SetUsageSummary(v)
+	return _u
+}
+
+// ClearUsageSummary clears the value of the "usage_summary" field.
+func (_u *PointLedgerUpdate) ClearUsageSummary() *PointLedgerUpdate {
+	_u.mutation.ClearUsageSummary()
+	return _u
+}
+
 // SetOrderID sets the "order_id" field.
 func (_u *PointLedgerUpdate) SetOrderID(v int64) *PointLedgerUpdate {
 	_u.mutation.ResetOrderID()
@@ -406,6 +432,11 @@ func (_u *PointLedgerUpdate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *PointLedgerUpdate) check() error {
+	if v, ok := _u.mutation.TaskMediaType(); ok {
+		if err := pointledger.TaskMediaTypeValidator(v); err != nil {
+			return &ValidationError{Name: "task_media_type", err: fmt.Errorf(`ent: validator failed for field "PointLedger.task_media_type": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.LedgerType(); ok {
 		if err := pointledger.LedgerTypeValidator(v); err != nil {
 			return &ValidationError{Name: "ledger_type", err: fmt.Errorf(`ent: validator failed for field "PointLedger.ledger_type": %w`, err)}
@@ -469,6 +500,15 @@ func (_u *PointLedgerUpdate) sqlSave(ctx context.Context) (_node int, err error)
 	}
 	if _u.mutation.TaskIDCleared() {
 		_spec.ClearField(pointledger.FieldTaskID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.TaskMediaType(); ok {
+		_spec.SetField(pointledger.FieldTaskMediaType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.UsageSummary(); ok {
+		_spec.SetField(pointledger.FieldUsageSummary, field.TypeJSON, value)
+	}
+	if _u.mutation.UsageSummaryCleared() {
+		_spec.ClearField(pointledger.FieldUsageSummary, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.OrderID(); ok {
 		_spec.SetField(pointledger.FieldOrderID, field.TypeInt64, value)
@@ -633,6 +673,32 @@ func (_u *PointLedgerUpdateOne) SetNillableTaskID(v *uuid.UUID) *PointLedgerUpda
 // ClearTaskID clears the value of the "task_id" field.
 func (_u *PointLedgerUpdateOne) ClearTaskID() *PointLedgerUpdateOne {
 	_u.mutation.ClearTaskID()
+	return _u
+}
+
+// SetTaskMediaType sets the "task_media_type" field.
+func (_u *PointLedgerUpdateOne) SetTaskMediaType(v string) *PointLedgerUpdateOne {
+	_u.mutation.SetTaskMediaType(v)
+	return _u
+}
+
+// SetNillableTaskMediaType sets the "task_media_type" field if the given value is not nil.
+func (_u *PointLedgerUpdateOne) SetNillableTaskMediaType(v *string) *PointLedgerUpdateOne {
+	if v != nil {
+		_u.SetTaskMediaType(*v)
+	}
+	return _u
+}
+
+// SetUsageSummary sets the "usage_summary" field.
+func (_u *PointLedgerUpdateOne) SetUsageSummary(v map[string]interface{}) *PointLedgerUpdateOne {
+	_u.mutation.SetUsageSummary(v)
+	return _u
+}
+
+// ClearUsageSummary clears the value of the "usage_summary" field.
+func (_u *PointLedgerUpdateOne) ClearUsageSummary() *PointLedgerUpdateOne {
+	_u.mutation.ClearUsageSummary()
 	return _u
 }
 
@@ -952,6 +1018,11 @@ func (_u *PointLedgerUpdateOne) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *PointLedgerUpdateOne) check() error {
+	if v, ok := _u.mutation.TaskMediaType(); ok {
+		if err := pointledger.TaskMediaTypeValidator(v); err != nil {
+			return &ValidationError{Name: "task_media_type", err: fmt.Errorf(`ent: validator failed for field "PointLedger.task_media_type": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.LedgerType(); ok {
 		if err := pointledger.LedgerTypeValidator(v); err != nil {
 			return &ValidationError{Name: "ledger_type", err: fmt.Errorf(`ent: validator failed for field "PointLedger.ledger_type": %w`, err)}
@@ -1032,6 +1103,15 @@ func (_u *PointLedgerUpdateOne) sqlSave(ctx context.Context) (_node *PointLedger
 	}
 	if _u.mutation.TaskIDCleared() {
 		_spec.ClearField(pointledger.FieldTaskID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.TaskMediaType(); ok {
+		_spec.SetField(pointledger.FieldTaskMediaType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.UsageSummary(); ok {
+		_spec.SetField(pointledger.FieldUsageSummary, field.TypeJSON, value)
+	}
+	if _u.mutation.UsageSummaryCleared() {
+		_spec.ClearField(pointledger.FieldUsageSummary, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.OrderID(); ok {
 		_spec.SetField(pointledger.FieldOrderID, field.TypeInt64, value)

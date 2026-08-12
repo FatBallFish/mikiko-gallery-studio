@@ -35,6 +35,9 @@ for (const workspaceContract of [
   "account.status === 'enabled'",
   'visibleRoutes.find',
   'message={mutationError}',
+  'media_type: routeDialog.mediaType',
+  'label="创作类型"',
+  '<option value="video">视频</option>',
 ]) {
   if (!routingPageSource.includes(workspaceContract)) {
     throw new Error(`routing workspace must implement ${workspaceContract}`)

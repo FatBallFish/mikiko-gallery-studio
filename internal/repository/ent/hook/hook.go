@@ -57,6 +57,18 @@ func (f AuditLogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AuditLogMutation", m)
 }
 
+// The CanvasGenerationRunFunc type is an adapter to allow the use of ordinary
+// function as CanvasGenerationRun mutator.
+type CanvasGenerationRunFunc func(context.Context, *ent.CanvasGenerationRunMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CanvasGenerationRunFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CanvasGenerationRunMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CanvasGenerationRunMutation", m)
+}
+
 // The ClusterChallengeFunc type is an adapter to allow the use of ordinary
 // function as ClusterChallenge mutator.
 type ClusterChallengeFunc func(context.Context, *ent.ClusterChallengeMutation) (ent.Value, error)
@@ -105,6 +117,30 @@ func (f ConfigItemFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ConfigItemMutation", m)
 }
 
+// The CreativeCanvasFunc type is an adapter to allow the use of ordinary
+// function as CreativeCanvas mutator.
+type CreativeCanvasFunc func(context.Context, *ent.CreativeCanvasMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CreativeCanvasFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CreativeCanvasMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CreativeCanvasMutation", m)
+}
+
+// The CreativeCanvasRevisionFunc type is an adapter to allow the use of ordinary
+// function as CreativeCanvasRevision mutator.
+type CreativeCanvasRevisionFunc func(context.Context, *ent.CreativeCanvasRevisionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CreativeCanvasRevisionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CreativeCanvasRevisionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CreativeCanvasRevisionMutation", m)
+}
+
 // The GalleryExportJobFunc type is an adapter to allow the use of ordinary
 // function as GalleryExportJob mutator.
 type GalleryExportJobFunc func(context.Context, *ent.GalleryExportJobMutation) (ent.Value, error)
@@ -151,6 +187,66 @@ func (f InstallationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.InstallationMutation", m)
+}
+
+// The MediaAssetFunc type is an adapter to allow the use of ordinary
+// function as MediaAsset mutator.
+type MediaAssetFunc func(context.Context, *ent.MediaAssetMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MediaAssetFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MediaAssetMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaAssetMutation", m)
+}
+
+// The MediaAssetReferenceFunc type is an adapter to allow the use of ordinary
+// function as MediaAssetReference mutator.
+type MediaAssetReferenceFunc func(context.Context, *ent.MediaAssetReferenceMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MediaAssetReferenceFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MediaAssetReferenceMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaAssetReferenceMutation", m)
+}
+
+// The MediaDerivativeFunc type is an adapter to allow the use of ordinary
+// function as MediaDerivative mutator.
+type MediaDerivativeFunc func(context.Context, *ent.MediaDerivativeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MediaDerivativeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MediaDerivativeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaDerivativeMutation", m)
+}
+
+// The MediaProcessingJobFunc type is an adapter to allow the use of ordinary
+// function as MediaProcessingJob mutator.
+type MediaProcessingJobFunc func(context.Context, *ent.MediaProcessingJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MediaProcessingJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MediaProcessingJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaProcessingJobMutation", m)
+}
+
+// The MediaUploadSessionFunc type is an adapter to allow the use of ordinary
+// function as MediaUploadSession mutator.
+type MediaUploadSessionFunc func(context.Context, *ent.MediaUploadSessionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MediaUploadSessionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MediaUploadSessionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MediaUploadSessionMutation", m)
 }
 
 // The MigrationCheckpointFunc type is an adapter to allow the use of ordinary
@@ -547,6 +643,126 @@ func (f UserSubscriptionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.V
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserSubscriptionMutation", m)
+}
+
+// The VideoModelCapabilityFunc type is an adapter to allow the use of ordinary
+// function as VideoModelCapability mutator.
+type VideoModelCapabilityFunc func(context.Context, *ent.VideoModelCapabilityMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoModelCapabilityFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoModelCapabilityMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoModelCapabilityMutation", m)
+}
+
+// The VideoPriceRuleFunc type is an adapter to allow the use of ordinary
+// function as VideoPriceRule mutator.
+type VideoPriceRuleFunc func(context.Context, *ent.VideoPriceRuleMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoPriceRuleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoPriceRuleMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoPriceRuleMutation", m)
+}
+
+// The VideoPricingStrategyFunc type is an adapter to allow the use of ordinary
+// function as VideoPricingStrategy mutator.
+type VideoPricingStrategyFunc func(context.Context, *ent.VideoPricingStrategyMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoPricingStrategyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoPricingStrategyMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoPricingStrategyMutation", m)
+}
+
+// The VideoProviderCallbackEventFunc type is an adapter to allow the use of ordinary
+// function as VideoProviderCallbackEvent mutator.
+type VideoProviderCallbackEventFunc func(context.Context, *ent.VideoProviderCallbackEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoProviderCallbackEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoProviderCallbackEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoProviderCallbackEventMutation", m)
+}
+
+// The VideoProviderCostRuleFunc type is an adapter to allow the use of ordinary
+// function as VideoProviderCostRule mutator.
+type VideoProviderCostRuleFunc func(context.Context, *ent.VideoProviderCostRuleMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoProviderCostRuleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoProviderCostRuleMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoProviderCostRuleMutation", m)
+}
+
+// The VideoRouteConfigFunc type is an adapter to allow the use of ordinary
+// function as VideoRouteConfig mutator.
+type VideoRouteConfigFunc func(context.Context, *ent.VideoRouteConfigMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoRouteConfigFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoRouteConfigMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoRouteConfigMutation", m)
+}
+
+// The VideoTaskFunc type is an adapter to allow the use of ordinary
+// function as VideoTask mutator.
+type VideoTaskFunc func(context.Context, *ent.VideoTaskMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoTaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoTaskMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoTaskMutation", m)
+}
+
+// The VideoTaskAttemptFunc type is an adapter to allow the use of ordinary
+// function as VideoTaskAttempt mutator.
+type VideoTaskAttemptFunc func(context.Context, *ent.VideoTaskAttemptMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoTaskAttemptFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoTaskAttemptMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoTaskAttemptMutation", m)
+}
+
+// The VideoTaskInputFunc type is an adapter to allow the use of ordinary
+// function as VideoTaskInput mutator.
+type VideoTaskInputFunc func(context.Context, *ent.VideoTaskInputMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoTaskInputFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoTaskInputMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoTaskInputMutation", m)
+}
+
+// The VideoTaskItemFunc type is an adapter to allow the use of ordinary
+// function as VideoTaskItem mutator.
+type VideoTaskItemFunc func(context.Context, *ent.VideoTaskItemMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoTaskItemFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoTaskItemMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoTaskItemMutation", m)
 }
 
 // The WalletGrantFunc type is an adapter to allow the use of ordinary

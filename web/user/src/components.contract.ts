@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { componentPrimitiveNames, formatDate, imageFrameActionsClass, imagePixelsLabel, imageRatioLabel, navItems, protectedRoutes } from './components'
+import { componentPrimitiveNames, formatDate, imageFrameActionsClass, imagePixelsLabel, imageRatioLabel, mobileNavActiveRoute, mobileNavItems, navItems, protectedRoutes } from './components'
 import { siteBrand } from './brand'
 
 const formatted = formatDate('2026-06-05T13:45:30Z')
@@ -28,6 +28,7 @@ if (siteBrand.name !== 'Mikiko Studio') {
 const expectedNavigation = [
   ['home', '首页'],
   ['genpic', '创作'],
+  ['creative-canvas', '画布'],
   ['gallery', '资产'],
   ['projects', '项目'],
   ['checkout', '积分'],
@@ -38,6 +39,22 @@ const actualNavigation = navItems.map((item) => [item.route, item.label])
 if (JSON.stringify(actualNavigation) !== JSON.stringify(expectedNavigation)) {
   throw new Error(`user shell navigation drifted, got ${JSON.stringify(actualNavigation)}`)
 }
+
+const expectedMobileNavigation = [
+  ['home', '首页'],
+  ['genpic', '创作'],
+  ['creative-canvas', '画布'],
+  ['gallery', '资产'],
+  ['profile', '我的'],
+]
+const actualMobileNavigation = mobileNavItems.map((item) => [item.route, item.label])
+if (JSON.stringify(actualMobileNavigation) !== JSON.stringify(expectedMobileNavigation)) {
+  throw new Error(`mobile navigation must expose exactly five primary destinations, got ${JSON.stringify(actualMobileNavigation)}`)
+}
+for (const route of ['profile', 'projects', 'checkout', 'api-keys', 'settings'] as const) {
+  if (mobileNavActiveRoute(route) !== 'profile') throw new Error(`${route} must remain grouped under the mobile My destination`)
+}
+if (mobileNavActiveRoute('creative-canvas') !== 'creative-canvas') throw new Error('primary mobile destinations must preserve their own active route')
 
 const expectedPrimitives = [
   'Button',

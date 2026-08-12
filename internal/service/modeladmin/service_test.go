@@ -85,6 +85,54 @@ func TestModelWriteBoundariesRejectInvalidUpstreamMaxImageCount(t *testing.T) {
 	}
 }
 
+func TestServiceAcceptsVideoProviderAccountsAndVideoOnlyModels(t *testing.T) {
+	ctx := context.Background()
+	svc := modeladmin.NewServiceWithStore(nil)
+	for _, adapterType := range []string{"seedance", "minimax"} {
+		account, err := svc.CreateModelAccount(ctx, domainmodeladmin.ModelAccountWriteRequest{
+			Name: adapterType + " account", AdapterType: adapterType, AuthType: "api_key",
+			BaseURL: "https://video.example.com", Credentials: map[string]string{"api_key": "test-key"},
+			Status: "enabled",
+		})
+		if err != nil {
+			t.Fatalf("CreateModelAccount(%s): %v", adapterType, err)
+		}
+		model, err := svc.CreateModelAccountModel(ctx, domainmodeladmin.ModelAccountModelWriteRequest{
+			AccountID: account.ID, ModelCode: adapterType + "-video", DisplayName: adapterType + " video",
+			TaskTypes:     []string{"text_to_video", "image_to_video", "first_last_frame_to_video"},
+			MaxImageCount: 1, Enabled: true,
+		})
+		if err != nil {
+			t.Fatalf("CreateModelAccountModel(%s): %v", adapterType, err)
+		}
+		if len(model.TaskTypes) != 3 || len(model.BaseResolution) != 0 || len(model.SizeModes) != 0 || len(model.SupportedRatios) != 0 {
+			t.Fatalf("video-only model inherited image capability defaults: %#v", model)
+		}
+	}
+}
+
+func TestRouteModelMediaTypeDefaultsToImageAndAcceptsVideo(t *testing.T) {
+	ctx := context.Background()
+	svc := modeladmin.NewServiceWithStore(nil)
+	imageRoute, err := svc.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{Code: "image-route", Name: "Image Route", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imageRoute.MediaType != "image" {
+		t.Fatalf("default route media type = %q", imageRoute.MediaType)
+	}
+	videoRoute, err := svc.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{Code: "video-route", Name: "Video Route", MediaType: "video", Visibility: "public", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if videoRoute.MediaType != "video" {
+		t.Fatalf("video route media type = %q", videoRoute.MediaType)
+	}
+	if _, err := svc.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{Code: "audio-route", Name: "Audio Route", MediaType: "audio"}); err == nil {
+		t.Fatal("unsupported route media type must fail")
+	}
+}
+
 func TestServiceRejectsRemovedReferenceGenerationConfiguration(t *testing.T) {
 	ctx := context.Background()
 	svc := modeladmin.NewServiceWithStore(nil)

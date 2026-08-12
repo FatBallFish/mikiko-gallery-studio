@@ -89,6 +89,11 @@ func Visibility(v string) predicate.RouteModel {
 	return predicate.RouteModel(sql.FieldEQ(FieldVisibility, v))
 }
 
+// MediaType applies equality check predicate on the "media_type" field. It's identical to MediaTypeEQ.
+func MediaType(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldEQ(FieldMediaType, v))
+}
+
 // Enabled applies equality check predicate on the "enabled" field. It's identical to EnabledEQ.
 func Enabled(v bool) predicate.RouteModel {
 	return predicate.RouteModel(sql.FieldEQ(FieldEnabled, v))
@@ -487,6 +492,71 @@ func VisibilityEqualFold(v string) predicate.RouteModel {
 // VisibilityContainsFold applies the ContainsFold predicate on the "visibility" field.
 func VisibilityContainsFold(v string) predicate.RouteModel {
 	return predicate.RouteModel(sql.FieldContainsFold(FieldVisibility, v))
+}
+
+// MediaTypeEQ applies the EQ predicate on the "media_type" field.
+func MediaTypeEQ(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldEQ(FieldMediaType, v))
+}
+
+// MediaTypeNEQ applies the NEQ predicate on the "media_type" field.
+func MediaTypeNEQ(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldNEQ(FieldMediaType, v))
+}
+
+// MediaTypeIn applies the In predicate on the "media_type" field.
+func MediaTypeIn(vs ...string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldIn(FieldMediaType, vs...))
+}
+
+// MediaTypeNotIn applies the NotIn predicate on the "media_type" field.
+func MediaTypeNotIn(vs ...string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldNotIn(FieldMediaType, vs...))
+}
+
+// MediaTypeGT applies the GT predicate on the "media_type" field.
+func MediaTypeGT(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldGT(FieldMediaType, v))
+}
+
+// MediaTypeGTE applies the GTE predicate on the "media_type" field.
+func MediaTypeGTE(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldGTE(FieldMediaType, v))
+}
+
+// MediaTypeLT applies the LT predicate on the "media_type" field.
+func MediaTypeLT(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldLT(FieldMediaType, v))
+}
+
+// MediaTypeLTE applies the LTE predicate on the "media_type" field.
+func MediaTypeLTE(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldLTE(FieldMediaType, v))
+}
+
+// MediaTypeContains applies the Contains predicate on the "media_type" field.
+func MediaTypeContains(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldContains(FieldMediaType, v))
+}
+
+// MediaTypeHasPrefix applies the HasPrefix predicate on the "media_type" field.
+func MediaTypeHasPrefix(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldHasPrefix(FieldMediaType, v))
+}
+
+// MediaTypeHasSuffix applies the HasSuffix predicate on the "media_type" field.
+func MediaTypeHasSuffix(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldHasSuffix(FieldMediaType, v))
+}
+
+// MediaTypeEqualFold applies the EqualFold predicate on the "media_type" field.
+func MediaTypeEqualFold(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldEqualFold(FieldMediaType, v))
+}
+
+// MediaTypeContainsFold applies the ContainsFold predicate on the "media_type" field.
+func MediaTypeContainsFold(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldContainsFold(FieldMediaType, v))
 }
 
 // EnabledEQ applies the EQ predicate on the "enabled" field.

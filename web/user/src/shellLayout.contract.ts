@@ -22,6 +22,9 @@ if (!shellChromeClasses.topbar.includes('h-[76px]')) {
 if (!shellChromeClasses.mobileNav.includes('fixed') || !shellChromeClasses.mobileNav.includes('bottom-0')) {
   throw new Error(`mobile navigation must remain reachable at the bottom, got ${shellChromeClasses.mobileNav}`)
 }
+if (!shellChromeClasses.mobileNav.includes('grid-cols-5')) {
+  throw new Error(`mobile navigation must reserve exactly five stable columns, got ${shellChromeClasses.mobileNav}`)
+}
 
 if (appLayout.content !== 'pg-route-enter') {
   throw new Error(`only route content should receive the canonical transition, got ${appLayout.content}`)

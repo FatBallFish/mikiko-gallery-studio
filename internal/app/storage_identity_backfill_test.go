@@ -371,7 +371,7 @@ func TestAPIAndWorkerGateCleanupOnLegacyStorageIdentityBackfill(t *testing.T) {
 		cleanupUse string
 	}{
 		{path: "run.go", cleanupUse: "startObjectCleanupLoop("},
-		{path: "worker.go", cleanupUse: "runner.SetCleanupService("},
+		{path: "worker.go", cleanupUse: "cleanupProcessor := objectcleanupservice.NewProcessor("},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {

@@ -16,6 +16,8 @@ export type AdminRouteId =
   | 'routing'
   | 'access-accounts'
   | 'pricing'
+  | 'video-tasks'
+  | 'media-policy'
   | 'audit'
   | 'system-users'
   | 'system-settings'
@@ -46,6 +48,8 @@ export const ADMIN_ROUTE_PERMISSION_MAP: Record<ProtectedAdminRouteId, AdminPerm
   routing: 'manage:models',
   'access-accounts': 'manage:models',
   pricing: 'manage:models',
+  'video-tasks': 'manage:models',
+  'media-policy': 'manage:config',
   audit: 'view:audit',
   'system-users': 'manage:admins',
   'system-settings': 'manage:config',
@@ -66,6 +70,8 @@ export const ADMIN_ROUTE_ORDER: ProtectedAdminRouteId[] = [
   'routing',
   'access-accounts',
   'pricing',
+  'video-tasks',
+  'media-policy',
   'audit',
   'system-users',
   'system-settings',

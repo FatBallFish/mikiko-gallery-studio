@@ -4,7 +4,7 @@ import { useBootstrapGuard } from './bootstrapGuard'
 import { adminApi } from '../../shared/admin-api'
 import { EmptyBlock, ToastRail, useHashRoute, useToasts } from './components'
 import { AdminLayout, normalizeRoute, protectedRoutes, routeHref } from './layout/AdminLayout'
-import { AuditPage, CallRecordsPage, CashierPage, ClusterPage, LoginPage, MonitoringPage, OrdersPage, OverviewPage, PackagesPage, PricingPage, ProviderModelsPage, RedeemPage, ReviewPage, RoutingPage, SystemSettingsPage, SystemUsersPage, UserGroupsPage, UsersPage } from './pages/index'
+import { AuditPage, CallRecordsPage, CashierPage, ClusterPage, LoginPage, MediaPolicyPage, MonitoringPage, OrdersPage, OverviewPage, PackagesPage, PricingPage, ProviderModelsPage, RedeemPage, ReviewPage, RoutingPage, SystemSettingsPage, SystemUsersPage, UserGroupsPage, UsersPage, VideoTasksPage } from './pages/index'
 import { canAccessAdminRoute, firstAccessibleAdminRoute } from './types'
 import type { AdminRouteId, ProtectedAdminRouteId } from './types'
 import { useAdminPageMotion } from './ui/adminMotion'
@@ -223,6 +223,10 @@ function AdminApplication() {
         return <RoutingPage onFeedback={feedback} />
       case 'pricing':
         return <PricingPage onFeedback={feedback} />
+      case 'video-tasks':
+        return <VideoTasksPage />
+      case 'media-policy':
+        return <MediaPolicyPage />
       case 'reviews':
         return <ReviewPage accessToken={session?.token} onFeedback={feedback} />
       case 'users':

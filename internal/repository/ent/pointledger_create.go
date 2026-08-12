@@ -83,6 +83,26 @@ func (_c *PointLedgerCreate) SetNillableTaskID(v *uuid.UUID) *PointLedgerCreate 
 	return _c
 }
 
+// SetTaskMediaType sets the "task_media_type" field.
+func (_c *PointLedgerCreate) SetTaskMediaType(v string) *PointLedgerCreate {
+	_c.mutation.SetTaskMediaType(v)
+	return _c
+}
+
+// SetNillableTaskMediaType sets the "task_media_type" field if the given value is not nil.
+func (_c *PointLedgerCreate) SetNillableTaskMediaType(v *string) *PointLedgerCreate {
+	if v != nil {
+		_c.SetTaskMediaType(*v)
+	}
+	return _c
+}
+
+// SetUsageSummary sets the "usage_summary" field.
+func (_c *PointLedgerCreate) SetUsageSummary(v map[string]interface{}) *PointLedgerCreate {
+	_c.mutation.SetUsageSummary(v)
+	return _c
+}
+
 // SetOrderID sets the "order_id" field.
 func (_c *PointLedgerCreate) SetOrderID(v int64) *PointLedgerCreate {
 	_c.mutation.SetOrderID(v)
@@ -314,6 +334,10 @@ func (_c *PointLedgerCreate) defaults() {
 		v := pointledger.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.TaskMediaType(); !ok {
+		v := pointledger.DefaultTaskMediaType
+		_c.mutation.SetTaskMediaType(v)
+	}
 	if _, ok := _c.mutation.ChangePoints(); !ok {
 		v := pointledger.DefaultChangePoints
 		_c.mutation.SetChangePoints(v)
@@ -354,6 +378,14 @@ func (_c *PointLedgerCreate) check() error {
 	}
 	if _, ok := _c.mutation.UserID(); !ok {
 		return &ValidationError{Name: "user_id", err: errors.New(`ent: missing required field "PointLedger.user_id"`)}
+	}
+	if _, ok := _c.mutation.TaskMediaType(); !ok {
+		return &ValidationError{Name: "task_media_type", err: errors.New(`ent: missing required field "PointLedger.task_media_type"`)}
+	}
+	if v, ok := _c.mutation.TaskMediaType(); ok {
+		if err := pointledger.TaskMediaTypeValidator(v); err != nil {
+			return &ValidationError{Name: "task_media_type", err: fmt.Errorf(`ent: validator failed for field "PointLedger.task_media_type": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.LedgerType(); !ok {
 		return &ValidationError{Name: "ledger_type", err: errors.New(`ent: missing required field "PointLedger.ledger_type"`)}
@@ -449,6 +481,14 @@ func (_c *PointLedgerCreate) createSpec() (*PointLedger, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TaskID(); ok {
 		_spec.SetField(pointledger.FieldTaskID, field.TypeUUID, value)
 		_node.TaskID = &value
+	}
+	if value, ok := _c.mutation.TaskMediaType(); ok {
+		_spec.SetField(pointledger.FieldTaskMediaType, field.TypeString, value)
+		_node.TaskMediaType = value
+	}
+	if value, ok := _c.mutation.UsageSummary(); ok {
+		_spec.SetField(pointledger.FieldUsageSummary, field.TypeJSON, value)
+		_node.UsageSummary = value
 	}
 	if value, ok := _c.mutation.OrderID(); ok {
 		_spec.SetField(pointledger.FieldOrderID, field.TypeInt64, value)

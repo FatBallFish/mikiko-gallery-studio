@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AdminMetric, ModelAccount, ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelPrice, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
+import type { AdminMetric, ModelAccount, ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelMediaType, RouteModelPrice, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
 import { Trash2 } from 'lucide-react'
@@ -10,6 +10,8 @@ import { FilterToolbar } from '../ui/dataTable'
 import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import { modelLifecycleErrorMessage } from './adminModelLifecycle'
 import { createLatestListRequestGuard } from './listRefresh'
+import { VideoConfigurationImpact } from './VideoConfigurationImpact'
+import { VideoConfigurationWorkspace } from './VideoConfigurationWorkspace'
 import {
   routeCandidateLabel,
   routeCandidateSummary,
@@ -22,7 +24,7 @@ import {
   routeVisibilityOptions,
 } from './routingRows'
 
-type RouteDialog = { row?: RouteModel; code: string; name: string; description: string; visibility: RouteModelVisibility; enabled: boolean; sortOrder: string; groupIds: string[] }
+type RouteDialog = { row?: RouteModel; code: string; name: string; description: string; visibility: RouteModelVisibility; mediaType: RouteModelMediaType; enabled: boolean; sortOrder: string; groupIds: string[] }
 type CandidateDialog = { route: RouteModel; row?: RouteModelCandidate; accountModelId: string; priority: string; weight: string; fallbackOrder: string; enabled: boolean }
 type DeleteTarget = { kind: 'route'; route: RouteModel } | { kind: 'candidate'; route: RouteModel; candidate: RouteModelCandidate }
 
@@ -154,6 +156,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         name: routeDialog.name,
         description: routeDialog.description,
         visibility: routeDialog.visibility,
+        media_type: routeDialog.mediaType,
         enabled: routeDialog.enabled,
         sort_order: Number(routeDialog.sortOrder),
         group_ids: groupIds,
@@ -249,6 +252,8 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openRouteDialog(newRouteDialog(groups))}>新增路由模型</button>}
         secondaryActions={<RefreshIconButton label="刷新路由模型" refreshing={loading} onClick={() => void load()} />}
       />
+      <VideoConfigurationImpact context="routing" />
+      <VideoConfigurationWorkspace context="routing" />
       {error ? <InlineFeedback tone="danger" message={`路由模型刷新失败：${error}`} /> : null}
       <MetricStrip metrics={summaryMetrics} />
       <FilterToolbar
@@ -320,6 +325,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
             <Field label={routingFieldLabels.code}><input value={routeDialog.code} onChange={(event) => setRouteDialog({ ...routeDialog, code: event.target.value })} placeholder="basic" /></Field>
             <Field label="名称"><input value={routeDialog.name} onChange={(event) => setRouteDialog({ ...routeDialog, name: event.target.value })} /></Field>
             <Field label="描述"><input value={routeDialog.description} onChange={(event) => setRouteDialog({ ...routeDialog, description: event.target.value })} /></Field>
+            <Field label="创作类型"><select value={routeDialog.mediaType} onChange={(event) => setRouteDialog({ ...routeDialog, mediaType: event.target.value as RouteModelMediaType })}><option value="image">图片</option><option value="video">视频</option></select></Field>
             <Field label="可见性"><select value={routeDialog.visibility} onChange={(event) => setRouteDialog({ ...routeDialog, visibility: event.target.value, groupIds: event.target.value === 'groups' ? routeDialog.groupIds : [] })}>{routeVisibilityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
             {routeDialog.visibility === 'groups' ? (
               <Field label="可见分组"><GroupOptionGrid selected={routeDialog.groupIds} groups={groups} onChange={(groupIds) => setRouteDialog({ ...routeDialog, groupIds })} /></Field>
@@ -357,11 +363,11 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
 }
 
 function newRouteDialog(groups: UserGroup[]): RouteDialog {
-  return { code: '', name: '', description: '', visibility: 'public', enabled: true, sortOrder: '10', groupIds: [] }
+  return { code: '', name: '', description: '', visibility: 'public', mediaType: 'image', enabled: true, sortOrder: '10', groupIds: [] }
 }
 
 function editRouteDialog(row: RouteModel): RouteDialog {
-  return { row, code: row.code, name: row.name, description: row.description ?? '', visibility: row.visibility, enabled: row.enabled, sortOrder: String(row.sort_order), groupIds: (row.group_ids ?? []).map(String) }
+  return { row, code: row.code, name: row.name, description: row.description ?? '', visibility: row.visibility, mediaType: row.media_type, enabled: row.enabled, sortOrder: String(row.sort_order), groupIds: (row.group_ids ?? []).map(String) }
 }
 
 function newCandidateDialog(route: RouteModel, accountModels: ModelAccountModel[]): CandidateDialog {
@@ -428,6 +434,7 @@ function RouteDetailWorkspace({
       </header>
 
       <section className={routingClasses.statusGrid} aria-label="路由完整性">
+        <StatusFact label="创作类型" value={route.media_type === 'video' ? '视频' : '图片'} detail="决定使用图片或视频的能力与计费配置" />
         <StatusFact label="可见范围" value={<RouteBadge badge={routeVisibilityBadge(route.visibility)} />} detail={routeGroupNames(route.group_ids, groups)} />
         <StatusFact label="候选模型" value={routeCandidateSummary(routeCandidates)} detail={`${routeCandidates.filter((candidate) => candidate.enabled).length} 个可参与路由`} />
         <StatusFact label="价格配置" value={`${enabledPrices.length} 个启用价格`} detail={routePrices.length ? `共 ${routePrices.length} 条价格策略` : '尚未配置价格'} />

@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 
 const expected = [
   ['profile', 'profile', '个人资料'],
+  ['projects', 'projects', '项目管理'],
+  ['billing', 'checkout', '积分与充值'],
   ['api-keys', 'api-keys', 'API 密钥'],
   ['appearance', 'settings', '外观偏好'],
 ]

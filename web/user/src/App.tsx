@@ -1,12 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Balance, UserProfile, UserThemePreference } from '../../shared/api-types'
+import type { Balance, FeatureFlags, UserProfile, UserThemePreference } from '../../shared/api-types'
 import { useBootstrapGuard } from './bootstrapGuard'
 import { userApi } from '../../shared/user-api'
 import { AppContext, protectedRoutes, Shell, ToastViewport } from './components'
 import type { RouteId, SessionState, Toast, ToastTone } from './types'
 import { LoginPage } from './pages/LoginPage'
 import { HomePage } from './pages/HomePage'
-import { GalleryPage } from './pages/GalleryPage'
+import { UploadTray } from './features/media/UploadTray'
 import { PublicGalleryPage } from './pages/PublicGalleryPage'
 import { CheckoutPage } from './pages/CheckoutPage'
 import { ApiKeysPage } from './pages/ApiKeysPage'
@@ -16,10 +16,14 @@ import { ProjectsPage } from './pages/ProjectsPage'
 import { ProjectProvider } from './ProjectContext'
 import { parseUserHashState, userHashForRoute, type UserRouteOptions } from './routeState'
 import { applyThemePreference, readLocalThemePreference, serializeThemePreference, themePreferenceFromProfile, writeLocalThemePreference } from './themePreferences'
+import { DEFAULT_FEATURE_FLAGS, featureAvailability } from './featureAvailability'
 
 const sessionKey = 'pic-gallery-user-session'
 const LandingPage = lazy(() => import('./pages/LandingPage'))
-const WorkspacePage = lazy(async () => ({ default: (await import('./pages/WorkspacePage')).WorkspacePage }))
+const CreationPage = lazy(async () => ({ default: (await import('./features/creation/CreationPage')).CreationPage }))
+const MediaAssetsPage = lazy(async () => ({ default: (await import('./features/media/MediaAssetsPage')).MediaAssetsPage }))
+const CanvasListPage = lazy(async () => ({ default: (await import('./features/canvas/CanvasListPage')).CanvasListPage }))
+const CanvasEditorPage = lazy(async () => ({ default: (await import('./features/canvas/CanvasEditorPage')).CanvasEditorPage }))
 
 function WorkspaceRouteFallback() {
   return <div className="grid min-h-full place-items-center text-sm text-[var(--muted)]" role="status">正在载入创作工作台...</div>
@@ -73,6 +77,9 @@ function UserApplication() {
   const [returnTo, setReturnTo] = useState<RouteId | undefined>(initial.returnTo)
   const [routeImageId, setRouteImageId] = useState<string | undefined>(initial.imageId)
   const [routeTaskId, setRouteTaskId] = useState<string | undefined>(initial.taskId)
+  const [routeMedia, setRouteMedia] = useState<'image' | 'video' | undefined>(initial.media)
+  const [routeAssetId, setRouteAssetId] = useState<string | undefined>(initial.assetId)
+  const [routeCanvasId, setRouteCanvasId] = useState<string | undefined>(initial.canvasId)
   const [session, setSession] = useState<SessionState | null>(() => readStoredSession())
   const sessionRef = useRef<SessionState | null>(session)
   const sessionVersionRef = useRef(0)
@@ -80,6 +87,7 @@ function UserApplication() {
   const expiredNoticeRef = useRef(false)
   const [profile, setProfile] = useState<UserProfile | null>(() => readStoredSession()?.profile ?? null)
   const [balance, setBalance] = useState<Balance | null>(null)
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [themePreference, setThemePreferenceState] = useState<UserThemePreference>(() => (
     themePreferenceFromProfile(readStoredSession()?.profile) ?? readLocalThemePreference()
@@ -92,6 +100,12 @@ function UserApplication() {
   useEffect(() => {
     sessionRef.current = session
   }, [session])
+
+  useEffect(() => {
+    let cancelled = false
+    void userApi.getFeatureFlags().then((flags) => { if (!cancelled) setFeatureFlags(flags) }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     routeRef.current = route
@@ -119,9 +133,10 @@ function UserApplication() {
         returnTo: currentRoute,
         imageId: currentRoute === 'public-gallery' ? routeImageId : undefined,
         taskId: currentRoute === 'genpic' ? routeTaskId : undefined,
+        canvasId: currentRoute === 'creative-canvas' ? routeCanvasId : undefined,
       })
     }
-  }, [notify, routeImageId, routeTaskId])
+  }, [notify, routeCanvasId, routeImageId, routeTaskId])
 
   useLayoutEffect(() => {
     userApi.configureAuth({
@@ -200,6 +215,9 @@ function UserApplication() {
       setReturnTo(parsed.returnTo)
       setRouteImageId(parsed.imageId)
       setRouteTaskId(parsed.taskId)
+      setRouteMedia(parsed.media)
+      setRouteAssetId(parsed.assetId)
+      setRouteCanvasId(parsed.canvasId)
     }
     window.addEventListener('hashchange', updateRoute)
     if (!window.location.hash) writeHash(session ? 'home' : 'landing')
@@ -246,6 +264,7 @@ function UserApplication() {
         returnTo: route,
         imageId: route === 'public-gallery' ? routeImageId : undefined,
         taskId: route === 'genpic' ? routeTaskId : undefined,
+        canvasId: route === 'creative-canvas' ? routeCanvasId : undefined,
       })
     }
     if (session && route === 'login') {
@@ -254,7 +273,7 @@ function UserApplication() {
         taskId: returnTo === 'genpic' ? routeTaskId : undefined,
       })
     }
-  }, [route, returnTo, routeImageId, routeTaskId, session])
+  }, [route, returnTo, routeImageId, routeTaskId, routeMedia, routeAssetId, routeCanvasId, session])
 
   const navigate = useCallback((next: RouteId, options?: UserRouteOptions) => {
     writeHash(next, options)
@@ -290,8 +309,9 @@ function UserApplication() {
     writeHash(destination, {
       imageId: destination === 'public-gallery' ? options?.imageId ?? routeImageId : undefined,
       taskId: destination === 'genpic' ? options?.taskId ?? routeTaskId : undefined,
+      canvasId: destination === 'creative-canvas' ? routeCanvasId : undefined,
     })
-  }, [installSession, notify, returnTo, routeImageId, routeTaskId])
+  }, [installSession, notify, returnTo, routeCanvasId, routeImageId, routeTaskId])
 
   const logout = useCallback(async () => {
     const logoutRequest = userApi.logout().catch(() => undefined)
@@ -312,6 +332,7 @@ function UserApplication() {
     session,
     profile,
     balance,
+    featureFlags,
     themePreference,
     setThemePreference,
     refreshAccount,
@@ -319,7 +340,7 @@ function UserApplication() {
     login,
     logout,
     notify,
-  }), [route, session, profile, balance, themePreference, setThemePreference, refreshAccount, navigate, login, logout, notify])
+  }), [route, session, profile, balance, featureFlags, themePreference, setThemePreference, refreshAccount, navigate, login, logout, notify])
 
   const page = useMemo(() => {
     if (!session && protectedRoutes.includes(route)) {
@@ -331,9 +352,12 @@ function UserApplication() {
       case 'home':
         return <Shell><HomePage /></Shell>
       case 'genpic':
-        return <Shell><Suspense fallback={<WorkspaceRouteFallback />}><WorkspacePage initialTaskId={routeTaskId} /></Suspense></Shell>
+        return <Shell><Suspense fallback={<WorkspaceRouteFallback />}><CreationPage initialTaskId={routeTaskId} initialMedia={routeMedia} initialAssetId={routeAssetId} videoCreationEnabled={featureFlags.video_creation} /></Suspense></Shell>
+      case 'creative-canvas':
+        if (!featureAvailability(featureFlags).canOpenCanvasHistory(routeCanvasId)) return <Shell><HomePage /></Shell>
+        return <Suspense fallback={<WorkspaceRouteFallback />}>{routeCanvasId ? <CanvasEditorPage canvasID={routeCanvasId} onBack={() => writeHash('home')} /> : <Shell scrollMode="document"><CanvasListPage onOpen={(canvasID) => writeHash('creative-canvas', { canvasId: canvasID })} /></Shell>}</Suspense>
       case 'gallery':
-        return <Shell><GalleryPage /></Shell>
+        return <Shell><Suspense fallback={<WorkspaceRouteFallback />}><MediaAssetsPage /></Suspense></Shell>
       case 'projects':
         return <Shell scrollMode="document"><ProjectsPage /></Shell>
       case 'public-gallery':
@@ -354,14 +378,14 @@ function UserApplication() {
           </Suspense>
         )
     }
-  }, [route, returnTo, routeImageId, routeTaskId, session])
+  }, [route, returnTo, routeCanvasId, routeImageId, routeTaskId, routeMedia, routeAssetId, session, featureFlags])
 
   const projectUserID = String(profile?.id || session?.profile.id || '')
 
   return (
     <AppContext.Provider value={appValue}>
       {session && projectUserID ? (
-        <ProjectProvider key={projectUserID} userID={projectUserID}>{page}</ProjectProvider>
+        <ProjectProvider key={projectUserID} userID={projectUserID}>{page}{featureFlags.media_upload ? <UploadTray /> : null}</ProjectProvider>
       ) : page}
       <ToastViewport toasts={toasts} onExpire={(id) => setToasts((items) => items.filter((toast) => toast.id !== id))} />
     </AppContext.Provider>

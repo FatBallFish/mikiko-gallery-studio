@@ -166,6 +166,7 @@ function route(patch: Partial<RouteModel>): RouteModel {
     code: patch.code ?? 'route',
     name: patch.name ?? '路由模型',
     visibility: patch.visibility ?? 'public',
+    media_type: patch.media_type ?? 'image',
     enabled: patch.enabled ?? true,
     sort_order: patch.sort_order ?? 1,
     created_at: patch.created_at ?? '2026-06-05T00:00:00Z',

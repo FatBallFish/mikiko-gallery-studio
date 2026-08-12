@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -58,10 +59,28 @@ type DoctorDependencies struct {
 	CheckRuntimeReadiness func(context.Context, map[string]string) error
 	ProbeMiddleware       func(context.Context, map[string]string) error
 	CheckSchema           func(context.Context, map[string]string) error
+	LookPath              func(string) (string, error)
+	CheckWorkerTempDir    func(string) error
 }
 
 func ProductionDoctorDependencies() DoctorDependencies {
 	return DoctorDependencies{
+		LookPath: exec.LookPath,
+		CheckWorkerTempDir: func(path string) error {
+			if err := os.MkdirAll(path, 0o700); err != nil {
+				return err
+			}
+			file, err := os.CreateTemp(path, ".doctor-*")
+			if err != nil {
+				return err
+			}
+			name := file.Name()
+			if err := file.Close(); err != nil {
+				_ = os.Remove(name)
+				return err
+			}
+			return os.Remove(name)
+		},
 		CheckRuntimeReadiness: probeDockerAPIReadiness,
 		ProbeMiddleware: func(ctx context.Context, values map[string]string) error {
 			prober := setup.NewProbeService()
@@ -151,6 +170,12 @@ func Doctor(ctx context.Context, runtimeDir string, dependencies DoctorDependenc
 	if dependencies.Stat == nil {
 		dependencies.Stat = os.Stat
 	}
+	if dependencies.LookPath == nil {
+		dependencies.LookPath = exec.LookPath
+	}
+	if dependencies.CheckWorkerTempDir == nil {
+		dependencies.CheckWorkerTempDir = ProductionDoctorDependencies().CheckWorkerTempDir
+	}
 	runtimeDir = filepath.Clean(defaultString(runtimeDir, "."))
 	envPath := filepath.Join(runtimeDir, "config", "runtime.env")
 	manifestPath := filepath.Join(runtimeDir, "deployment.json")
@@ -230,7 +255,59 @@ func Doctor(ctx context.Context, runtimeDir string, dependencies DoctorDependenc
 		}
 	}
 	report.add("SCHEMA_DRIFT", schemaOK, schemaMessage)
+
+	workerEnabled := runtimeHasModule(values, "worker")
+	mediaEnabled := workerEnabled && workerRoleEnabled(values["WORKER_ROLES"], "media")
+	toolsOK := true
+	toolsMessage := "media role is not enabled on this node"
+	if mediaEnabled {
+		missing := make([]string, 0, 2)
+		ffmpeg := defaultString(strings.TrimSpace(values["MEDIA_FFMPEG_PATH"]), "ffmpeg")
+		ffprobe := defaultString(strings.TrimSpace(values["MEDIA_FFPROBE_PATH"]), "ffprobe")
+		if _, err := dependencies.LookPath(ffmpeg); err != nil {
+			missing = append(missing, "FFmpeg")
+		}
+		if _, err := dependencies.LookPath(ffprobe); err != nil {
+			missing = append(missing, "ffprobe")
+		}
+		toolsOK = len(missing) == 0
+		if toolsOK {
+			toolsMessage = "FFmpeg and ffprobe are available"
+		} else {
+			toolsMessage = "missing required media tools: " + strings.Join(missing, ", ")
+		}
+	}
+	report.add("WORKER_MEDIA_TOOLS", toolsOK, toolsMessage)
+
+	tempOK := true
+	tempMessage := "media role is not enabled on this node"
+	if mediaEnabled {
+		tempDir := defaultString(strings.TrimSpace(values["MEDIA_TEMP_DIR"]), "./data/tmp")
+		if !filepath.IsAbs(tempDir) {
+			tempDir = filepath.Join(runtimeDir, tempDir)
+		}
+		if err := dependencies.CheckWorkerTempDir(tempDir); err != nil {
+			tempOK = false
+			tempMessage = "media temporary directory is unavailable or not writable"
+		} else {
+			tempMessage = "media temporary directory is writable"
+		}
+	}
+	report.add("WORKER_TEMP_DIR", tempOK, tempMessage)
 	return report
+}
+
+func workerRoleEnabled(raw, role string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return true
+	}
+	for _, configured := range strings.Split(raw, ",") {
+		if strings.EqualFold(strings.TrimSpace(configured), role) {
+			return true
+		}
+	}
+	return false
 }
 
 func runtimeHasModule(values map[string]string, module string) bool {

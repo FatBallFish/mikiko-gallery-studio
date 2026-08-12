@@ -102,6 +102,20 @@ func (_c *RouteModelCreate) SetNillableVisibility(v *string) *RouteModelCreate {
 	return _c
 }
 
+// SetMediaType sets the "media_type" field.
+func (_c *RouteModelCreate) SetMediaType(v string) *RouteModelCreate {
+	_c.mutation.SetMediaType(v)
+	return _c
+}
+
+// SetNillableMediaType sets the "media_type" field if the given value is not nil.
+func (_c *RouteModelCreate) SetNillableMediaType(v *string) *RouteModelCreate {
+	if v != nil {
+		_c.SetMediaType(*v)
+	}
+	return _c
+}
+
 // SetEnabled sets the "enabled" field.
 func (_c *RouteModelCreate) SetEnabled(v bool) *RouteModelCreate {
 	_c.mutation.SetEnabled(v)
@@ -181,6 +195,10 @@ func (_c *RouteModelCreate) defaults() {
 		v := routemodel.DefaultVisibility
 		_c.mutation.SetVisibility(v)
 	}
+	if _, ok := _c.mutation.MediaType(); !ok {
+		v := routemodel.DefaultMediaType
+		_c.mutation.SetMediaType(v)
+	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		v := routemodel.DefaultEnabled
 		_c.mutation.SetEnabled(v)
@@ -224,6 +242,14 @@ func (_c *RouteModelCreate) check() error {
 	if v, ok := _c.mutation.Visibility(); ok {
 		if err := routemodel.VisibilityValidator(v); err != nil {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "RouteModel.visibility": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.MediaType(); !ok {
+		return &ValidationError{Name: "media_type", err: errors.New(`ent: missing required field "RouteModel.media_type"`)}
+	}
+	if v, ok := _c.mutation.MediaType(); ok {
+		if err := routemodel.MediaTypeValidator(v); err != nil {
+			return &ValidationError{Name: "media_type", err: fmt.Errorf(`ent: validator failed for field "RouteModel.media_type": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
@@ -285,6 +311,10 @@ func (_c *RouteModelCreate) createSpec() (*RouteModel, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Visibility(); ok {
 		_spec.SetField(routemodel.FieldVisibility, field.TypeString, value)
 		_node.Visibility = value
+	}
+	if value, ok := _c.mutation.MediaType(); ok {
+		_spec.SetField(routemodel.FieldMediaType, field.TypeString, value)
+		_node.MediaType = value
 	}
 	if value, ok := _c.mutation.Enabled(); ok {
 		_spec.SetField(routemodel.FieldEnabled, field.TypeBool, value)

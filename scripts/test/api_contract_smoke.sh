@@ -48,6 +48,15 @@ if [[ -z "$BASE_URL" || -z "$SMOKE_PORT" ]]; then
   exit 2
 fi
 API_ADDR="127.0.0.1:${SMOKE_PORT}"
+WORKER_METRICS_PORT="$(python3 - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as selector:
+    selector.bind(("127.0.0.1", 0))
+    print(selector.getsockname()[1])
+PY
+)"
+WORKER_METRICS_URL="http://127.0.0.1:${WORKER_METRICS_PORT}"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mikiko-gallery-studio-api-smoke.XXXXXX")"
 SMOKE_ID="$(basename "$TMP_DIR" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
 SMOKE_ENV_PATH="$TMP_DIR/backend.env"
@@ -55,6 +64,12 @@ SMOKE_INSTALL_STATE_PATH="$TMP_DIR/install-state.json"
 SERVER_LOG="$TMP_DIR/api.log"
 WORKER_LOG="$TMP_DIR/worker.log"
 FAKE_PROVIDER_LOG="$TMP_DIR/fake-provider.log"
+FAKE_PROVIDER_CERT="$TMP_DIR/fake-provider-cert.pem"
+FAKE_PROVIDER_KEY="$TMP_DIR/fake-provider-key.pem"
+SMOKE_VIDEO_PATH="$TMP_DIR/smoke-video.mp4"
+SMOKE_IMAGE_PATH="$TMP_DIR/smoke-image.png"
+MEDIA_TEMP_DIR="$TMP_DIR/media-temp"
+MEDIA_TEMP_RAM_DEVICE=""
 STORAGE_ROOT="$TMP_DIR/storage"
 RUNTIME_STORAGE_ROOT="$TMP_DIR/runtime-storage"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
@@ -142,6 +157,9 @@ cleanup() {
     wait "$SERVER_PID" >/dev/null 2>&1 || true
   fi
   docker rm -f "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" >/dev/null 2>&1 || true
+  if [[ -n "$MEDIA_TEMP_RAM_DEVICE" ]]; then
+    hdiutil detach "$MEDIA_TEMP_RAM_DEVICE" >/dev/null 2>&1 || true
+  fi
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -227,7 +245,29 @@ psql_query() {
 }
 
 request() {
-  curl --silent --show-error --fail-with-body "$@"
+  local response_file method url status arg prior
+  response_file="$(mktemp "$TMP_DIR/request-response.XXXXXX")"
+  method="GET"
+  url=""
+  prior=""
+  for arg in "$@"; do
+    if [[ "$prior" == "-X" || "$prior" == "--request" ]]; then
+      method="$arg"
+    fi
+    if [[ "$arg" == http://* || "$arg" == https://* ]]; then
+      url="$arg"
+    fi
+    prior="$arg"
+  done
+  if curl --silent --show-error --fail-with-body --output "$response_file" "$@"; then
+    cat "$response_file"
+    return 0
+  fi
+  status=$?
+  echo "HTTP request failed: ${method} ${url:-<unknown-url>}" >&2
+  cat "$response_file" >&2
+  echo >&2
+  return "$status"
 }
 
 assert_json_field() {
@@ -1177,11 +1217,59 @@ signed_request() {
   fi
 }
 
+require_multimedia_tooling() {
+  local tool
+  for tool in ffmpeg ffprobe openssl; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      echo "API contract multimedia smoke requires $tool." >&2
+      exit 1
+    fi
+  done
+}
+
+generate_smoke_media_fixtures() {
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "color=c=blue:s=64x64" -frames:v 1 "$SMOKE_IMAGE_PATH"
+  ffprobe -v error -select_streams v:0 -show_entries stream=codec_type \
+    -of default=noprint_wrappers=1:nokey=1 "$SMOKE_IMAGE_PATH" | grep -qx video
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "color=c=red:s=64x64:d=1:r=10" \
+    -an -c:v libx264 -pix_fmt yuv420p "$SMOKE_VIDEO_PATH"
+  ffprobe -v error -select_streams v:0 -show_entries stream=codec_type \
+    -of default=noprint_wrappers=1:nokey=1 "$SMOKE_VIDEO_PATH" | grep -qx video
+}
+
+prepare_media_temp_dir() {
+  mkdir -p "$MEDIA_TEMP_DIR"
+  local used_percent
+  used_percent="$(df -Pk "$MEDIA_TEMP_DIR" | awk 'NR == 2 { gsub(/%/, "", $5); print $5 }')"
+  if [[ "${used_percent:-0}" -lt 75 ]]; then
+    return
+  fi
+  if [[ "$(uname -s)" != "Darwin" ]] || ! command -v hdiutil >/dev/null 2>&1 || ! command -v diskutil >/dev/null 2>&1; then
+    echo "API contract multimedia smoke requires temporary disk usage below 75% (current: ${used_percent}%)." >&2
+    exit 1
+  fi
+  local volume_name="mgs-smoke-${SMOKE_ID:0:12}"
+  MEDIA_TEMP_RAM_DEVICE="$(hdiutil attach -nomount ram://262144 | awk 'NR == 1 { print $1 }')"
+  if [[ -z "$MEDIA_TEMP_RAM_DEVICE" ]]; then
+    echo "failed to allocate isolated media smoke RAM disk" >&2
+    exit 1
+  fi
+  diskutil erasevolume HFS+ "$volume_name" "$MEDIA_TEMP_RAM_DEVICE" >/dev/null
+  MEDIA_TEMP_DIR="/Volumes/$volume_name"
+  used_percent="$(df -Pk "$MEDIA_TEMP_DIR" | awk 'NR == 2 { gsub(/%/, "", $5); print $5 }')"
+  if [[ "${used_percent:-100}" -ge 75 ]]; then
+    echo "isolated media smoke volume exceeds the 75% worker pause watermark" >&2
+    exit 1
+  fi
+}
+
 start_fake_provider() {
   if [[ -n "$FAKE_PROVIDER_PID" ]] && kill -0 "$FAKE_PROVIDER_PID" >/dev/null 2>&1; then
     return
   fi
-  local port
+  local port tls_port
   port="$(python3 - <<'PY'
 import socket
 
@@ -1190,20 +1278,43 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
     print(sock.getsockname()[1])
 PY
 )"
+  tls_port="$(python3 - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)"
+  require_multimedia_tooling
+  prepare_media_temp_dir
+  generate_smoke_media_fixtures
+  openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+    -keyout "$FAKE_PROVIDER_KEY" -out "$FAKE_PROVIDER_CERT" \
+    -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1" >/dev/null 2>&1
   FAKE_PROVIDER_URL="http://127.0.0.1:${port}"
-  FAKE_PROVIDER_PORT="$port" python3 - <<'PY' >"$FAKE_PROVIDER_LOG" 2>&1 &
-import base64
+  FAKE_ARTIFACT_URL="https://127.0.0.1:${tls_port}"
+  FAKE_PROVIDER_PORT="$port" FAKE_ARTIFACT_PORT="$tls_port" \
+    FAKE_PROVIDER_CERT="$FAKE_PROVIDER_CERT" FAKE_PROVIDER_KEY="$FAKE_PROVIDER_KEY" \
+    SMOKE_IMAGE_PATH="$SMOKE_IMAGE_PATH" SMOKE_VIDEO_PATH="$SMOKE_VIDEO_PATH" \
+    python3 - <<'PY' >"$FAKE_PROVIDER_LOG" 2>&1 &
 import json
 import os
+import ssl
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNkaGAAAAHAAZcAzSrgAAAAAElFTkSuQmCC"
-)
 PORT = int(os.environ["FAKE_PROVIDER_PORT"])
+ARTIFACT_PORT = int(os.environ["FAKE_ARTIFACT_PORT"])
+with open(os.environ["SMOKE_IMAGE_PATH"], "rb") as image_file:
+    PNG = image_file.read()
+with open(os.environ["SMOKE_VIDEO_PATH"], "rb") as video_file:
+    VIDEO = video_file.read()
 PAYMENT_INTENTS = {}
 REFUNDS = {}
+VIDEO_JOBS = set()
+VIDEO_JOBS_LOCK = threading.Lock()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1245,6 +1356,36 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(PNG)
             return
+        if parsed.path == "/videos/smoke.mp4":
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(len(VIDEO)))
+            self.end_headers()
+            self.wfile.write(VIDEO)
+            return
+        if parsed.path.startswith("/v2/query/video_generation/"):
+            job_id = parsed.path.rsplit("/", 1)[-1]
+            with VIDEO_JOBS_LOCK:
+                exists = job_id in VIDEO_JOBS
+            if not exists:
+                self.send_json({"error": {"message": "video job not found"}}, 404)
+                return
+            print("minimax-video-poll", flush=True)
+            self.send_json({
+                "task": {
+                    "id": job_id,
+                    "status": "succeeded",
+                    "duration": 5,
+                    "content": {"url": f"https://127.0.0.1:{ARTIFACT_PORT}/videos/smoke.mp4"},
+                    "usage": {
+                        "output_seconds": 5,
+                        "input_seconds": 0,
+                        "input_image_count": 0,
+                        "total_tokens": 0,
+                    },
+                }
+            })
+            return
         if parsed.path.startswith("/v1/payment_intents/"):
             intent_id = parsed.path.rsplit("/", 1)[-1]
             intent = PAYMENT_INTENTS.get(intent_id)
@@ -1266,6 +1407,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         raw_body = self.read_body()
+        if parsed.path == "/v2/video_generation":
+            if self.headers.get("Authorization") != "Bearer mm-smoke-key":
+                self.send_json({"error": {"message": "unauthorized"}}, 401)
+                return
+            with VIDEO_JOBS_LOCK:
+                job_id = f"mm-smoke-job-{len(VIDEO_JOBS) + 1}"
+                VIDEO_JOBS.add(job_id)
+            print("minimax-video-submit", flush=True)
+            self.send_json({"task_id": job_id})
+            return
         if parsed.path in ("/v1/responses", "/responses"):
             print("text-provider-call", flush=True)
             self.send_json({
@@ -1329,12 +1480,32 @@ class Handler(BaseHTTPRequestHandler):
         }
         self.send_json(body)
 
+    def do_DELETE(self):
+        if self.path.startswith("/v2/video_generation/"):
+            job_id = self.path.rsplit("/", 1)[-1]
+            with VIDEO_JOBS_LOCK:
+                exists = job_id in VIDEO_JOBS
+            if not exists:
+                self.send_json({"error": {"message": "video job not found"}}, 404)
+                return
+            self.send_json({"task_id": job_id, "action": "cancelled", "status": "cancelled"})
+            return
+        self.send_error(404)
 
-ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+
+http_server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+threading.Thread(target=http_server.serve_forever, daemon=True).start()
+artifact_server = ThreadingHTTPServer(("127.0.0.1", ARTIFACT_PORT), Handler)
+tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+tls.load_cert_chain(os.environ["FAKE_PROVIDER_CERT"], os.environ["FAKE_PROVIDER_KEY"])
+artifact_server.socket = tls.wrap_socket(artifact_server.socket, server_side=True)
+artifact_server.serve_forever()
 PY
   FAKE_PROVIDER_PID="$!"
   for _ in {1..40}; do
-    if request --max-time 2 "$FAKE_PROVIDER_URL/images/smoke.png" >/dev/null 2>&1; then
+    if request --max-time 2 "$FAKE_PROVIDER_URL/images/smoke.png" >/dev/null 2>&1 && \
+      curl --silent --show-error --fail --cacert "$FAKE_PROVIDER_CERT" --max-time 2 \
+        "$FAKE_ARTIFACT_URL/videos/smoke.mp4" >/dev/null 2>&1; then
       return
     fi
     if ! kill -0 "$FAKE_PROVIDER_PID" >/dev/null 2>&1; then
@@ -1401,6 +1572,19 @@ CASHIER_MAX_PENDING_ORDERS_PER_USER=3
 CASHIER_SITE_BASE_URL=$BASE_URL
 CASHIER_STRIPE_API_BASE_URL=${FAKE_PROVIDER_URL:-}
 WORKER_MAX_CONCURRENT_TASKS=4
+WORKER_ROLES=image,video,media,cleanup
+WORKER_IMAGE_CONCURRENCY=4
+WORKER_VIDEO_CONCURRENCY=1
+WORKER_MEDIA_CONCURRENCY=1
+WORKER_CLEANUP_CONCURRENCY=1
+MEDIA_FFMPEG_PATH=$(command -v ffmpeg)
+MEDIA_FFPROBE_PATH=$(command -v ffprobe)
+MEDIA_TEMP_DIR=$MEDIA_TEMP_DIR
+MEDIA_TEMP_DISK_PAUSE_PERCENT=75
+MEDIA_TEMP_DISK_CRITICAL_PERCENT=90
+WORKER_METRICS_ADDR=127.0.0.1:$WORKER_METRICS_PORT
+VIDEO_ARTIFACT_ALLOW_LOOPBACK=true
+VIDEO_ARTIFACT_TEST_CA_FILE=$FAKE_PROVIDER_CERT
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 PUBLIC_API_URL=$BASE_URL
 OPENAI_ENABLED=true
@@ -1582,9 +1766,58 @@ assert_ordinary_startup_does_not_migrate() {
 }
 
 start_worker() {
+  local configured_temp_dir used_percent
+  configured_temp_dir="$(SMOKE_ENV_PATH="$SMOKE_ENV_PATH" python3 - <<'PY'
+import os
+
+path = os.environ["SMOKE_ENV_PATH"]
+with open(path, encoding="utf-8") as source:
+    for line in source:
+        if line.startswith("MEDIA_TEMP_DIR="):
+            value = line.split("=", 1)[1].strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            print(value)
+            break
+PY
+)"
+  if [[ "$configured_temp_dir" != "$MEDIA_TEMP_DIR" ]]; then
+    echo "setup runtime changed MEDIA_TEMP_DIR: configured=${configured_temp_dir:-<missing>} expected=$MEDIA_TEMP_DIR" >&2
+    exit 1
+  fi
+  if [[ ! -d "$configured_temp_dir" ]]; then
+    echo "configured media temporary directory does not exist: $configured_temp_dir" >&2
+    exit 1
+  fi
+  used_percent="$(df -Pk "$configured_temp_dir" | awk 'NR == 2 { gsub(/%/, "", $5); print $5 }')"
+  if [[ "${used_percent:-100}" -ge 75 ]]; then
+    echo "configured media temporary directory is above the worker pause watermark: path=$configured_temp_dir used=${used_percent}%" >&2
+    exit 1
+  fi
   APP_ENV_FILE="$SMOKE_ENV_PATH" \
   "$WORKER_BINARY" >"$WORKER_LOG" 2>&1 &
   WORKER_PID="$!"
+  local metrics_body temp_free_bytes temp_used_percent
+  metrics_body=""
+  for _ in {1..40}; do
+    metrics_body="$(curl --silent --show-error --fail --max-time 2 "$WORKER_METRICS_URL" 2>/dev/null || true)"
+    temp_free_bytes="$(printf '%s\n' "$metrics_body" | awk '$1 == "pic_gallery_worker_temporary_disk_free_bytes" { print $2 }')"
+    if [[ "${temp_free_bytes:-0}" -gt 0 ]]; then
+      break
+    fi
+    if ! kill -0 "$WORKER_PID" >/dev/null 2>&1; then
+      echo "Worker exited before its media disk probe became observable. Log follows:" >&2
+      cat "$WORKER_LOG" >&2
+      exit 1
+    fi
+    sleep 0.25
+  done
+  temp_used_percent="$(printf '%s\n' "$metrics_body" | awk '$1 == "pic_gallery_worker_temporary_disk_used_percent" { print $2 }')"
+  if [[ "${temp_free_bytes:-0}" -le 0 || "${temp_used_percent:-100}" -ge 75 ]]; then
+    echo "Worker media disk probe is not ready or exceeds the pause watermark: path=$configured_temp_dir used=${temp_used_percent:-missing}% free=${temp_free_bytes:-missing}" >&2
+    cat "$WORKER_LOG" >&2
+    exit 1
+  fi
 }
 
 seed_smoke_runtime_config() {
@@ -1633,6 +1866,300 @@ wait_for_task_status() {
   exit 1
 }
 
+wait_for_media_asset_status() {
+  local asset_id="$1"
+  local expected_status="$2"
+  local body=""
+  for _ in {1..120}; do
+    body="$(request "$BASE_URL/api/agent/media/v1/assets/${asset_id}" -H "Authorization: Bearer $ACCESS_TOKEN")"
+    if [[ "$(assert_json_field "$body" "data.status")" == "$expected_status" ]]; then
+      printf '%s' "$body"
+      return
+    fi
+    if ! kill -0 "$WORKER_PID" >/dev/null 2>&1; then
+      echo "Worker exited before media asset reached $expected_status. Worker log follows:" >&2
+      cat "$WORKER_LOG" >&2
+      exit 1
+    fi
+    sleep 0.5
+  done
+  echo "Media asset ${asset_id} did not reach ${expected_status}. Last response: $body" >&2
+  psql_exec -c "SELECT id, asset_id, status, attempt_count, max_attempts, next_retry_at, lease_owner, lease_expires_at, error_code, error_message FROM media_processing_jobs WHERE asset_id = '${asset_id}'::uuid" >&2 || true
+  psql_exec -c "SELECT id, asset_id, status, attempt_count, next_retry_at, lease_owner, lease_expires_at, updated_at FROM media_processing_jobs ORDER BY created_at" >&2 || true
+  psql_exec -c "SELECT asset_id, kind, status, object_key, file_size_bytes FROM media_derivatives WHERE asset_id = '${asset_id}'::uuid ORDER BY kind" >&2 || true
+  psql_exec -c "SELECT pid, state, wait_event_type, wait_event, xact_start, query_start, left(query, 500) AS query FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() ORDER BY pid" >&2 || true
+  cat "$WORKER_LOG" >&2
+  exit 1
+}
+
+wait_for_video_task_status() {
+  local task_id="$1"
+  local expected_status="$2"
+  local body=""
+  for _ in {1..160}; do
+    body="$(request "$BASE_URL/api/agent/video/v1/tasks/${task_id}" -H "Authorization: Bearer $ACCESS_TOKEN")"
+    if [[ "$(assert_json_field "$body" "data.status")" == "$expected_status" ]]; then
+      printf '%s' "$body"
+      return
+    fi
+    if ! kill -0 "$WORKER_PID" >/dev/null 2>&1; then
+      echo "Worker exited before video task reached $expected_status. Worker log follows:" >&2
+      cat "$WORKER_LOG" >&2
+      exit 1
+    fi
+    sleep 0.5
+  done
+  echo "Video task ${task_id} did not reach ${expected_status}. Last response: $body" >&2
+  cat "$WORKER_LOG" >&2
+  cat "$FAKE_PROVIDER_LOG" >&2
+  exit 1
+}
+
+wait_for_canvas_run_status() {
+  local canvas_id="$1"
+  local run_id="$2"
+  local expected_status="$3"
+  local body=""
+  for _ in {1..160}; do
+    body="$(request "$BASE_URL/api/agent/canvas/v1/canvases/${canvas_id}/runs?refresh=true" -H "Authorization: Bearer $ACCESS_TOKEN")"
+    if RUNS_JSON="$body" RUN_ID="$run_id" EXPECTED_STATUS="$expected_status" python3 - <<'PY'
+import json
+import os
+
+items = json.loads(os.environ["RUNS_JSON"]).get("data", {}).get("items", [])
+raise SystemExit(0 if any(str(item.get("id")) == os.environ["RUN_ID"] and item.get("status") == os.environ["EXPECTED_STATUS"] for item in items) else 1)
+PY
+    then
+      printf '%s' "$body"
+      return
+    fi
+    if ! kill -0 "$WORKER_PID" >/dev/null 2>&1; then
+      echo "Worker exited before canvas run reached $expected_status. Worker log follows:" >&2
+      cat "$WORKER_LOG" >&2
+      exit 1
+    fi
+    sleep 0.5
+  done
+  echo "Canvas run ${run_id} did not reach ${expected_status}. Last response: $body" >&2
+  cat "$WORKER_LOG" >&2
+  exit 1
+}
+
+run_multimedia_contract_smoke() {
+  local projects_body site_tabs_body site_version feature_body
+  projects_body="$(request "$BASE_URL/api/agent/project/v1/projects" -H "Authorization: Bearer $ACCESS_TOKEN")"
+  DEFAULT_PROJECT_ID="$(assert_json_field "$projects_body" "data.default_project_id")"
+
+  site_tabs_body="$(request "$BASE_URL/api/ops/admin/v1/config-tabs" -H "Authorization: Bearer $SUPER_ADMIN_TOKEN")"
+  site_version="$(config_tab_version "$site_tabs_body" "site")"
+  request -X PUT "$BASE_URL/api/ops/admin/v1/config-tabs/site" \
+    -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
+    -H "Content-Type: application/json" \
+    --data "{\"version\":${site_version},\"items\":[{\"config_category\":\"features\",\"config_key\":\"video_creation\",\"config_value\":{\"value\":true},\"scope\":\"global\"},{\"config_category\":\"features\",\"config_key\":\"creative_canvas\",\"config_value\":{\"value\":true},\"scope\":\"global\"},{\"config_category\":\"features\",\"config_key\":\"media_upload\",\"config_value\":{\"value\":true},\"scope\":\"global\"}]}" >/dev/null
+  feature_body="$(request "$BASE_URL/api/agent/features/v1" -H "Authorization: Bearer $ACCESS_TOKEN")"
+  FEATURES_JSON="$feature_body" python3 - <<'PY'
+import json
+import os
+
+features = json.loads(os.environ["FEATURES_JSON"]).get("data", {})
+for key in ("video_creation", "creative_canvas", "media_upload"):
+    if features.get(key) is not True:
+        raise SystemExit(f"multimedia feature {key} is not enabled: {features!r}")
+PY
+
+  local image_size image_checksum upload_body upload_id upload_part_body upload_etag upload_status_body
+  local uploaded_asset_body uploaded_asset_id uploaded_asset_ready_body upload_access_body upload_access_url downloaded_image
+  local upload_preview_body upload_preview_url upload_preview_path
+  image_size="$(wc -c <"$SMOKE_IMAGE_PATH" | tr -d '[:space:]')"
+  image_checksum="$(openssl dgst -sha256 "$SMOKE_IMAGE_PATH" | awk '{print $NF}')"
+  upload_body="$(request -X POST "$BASE_URL/api/agent/media/v1/uploads" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" \
+    -H "Idempotency-Key: media-upload-${SMOKE_ID}" \
+    -H "Content-Type: application/json" \
+    --data "{\"project_id\":\"${DEFAULT_PROJECT_ID}\",\"group_name\":\"Smoke\",\"filename\":\"smoke.png\",\"media_type\":\"image\",\"mime_type\":\"image/png\",\"size_bytes\":${image_size},\"checksum\":\"${image_checksum}\"}")"
+  upload_id="$(assert_json_field "$upload_body" "data.id")"
+  upload_part_body="$(request -X PUT "$BASE_URL/api/agent/media/v1/uploads/${upload_id}/parts/1" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" \
+    -H "Content-Type: application/octet-stream" \
+    -H "X-Content-SHA256: $image_checksum" \
+    --data-binary "@$SMOKE_IMAGE_PATH")"
+  upload_etag="$(assert_json_field "$upload_part_body" "data.etag")"
+  [[ "$(assert_json_field "$upload_part_body" "data.checksum")" == "$image_checksum" ]]
+  upload_status_body="$(request "$BASE_URL/api/agent/media/v1/uploads/${upload_id}" -H "Authorization: Bearer $ACCESS_TOKEN")"
+  [[ "$(assert_json_field "$upload_status_body" "data.completed_parts.0.part_number")" == "1" ]]
+  uploaded_asset_body="$(request -X POST "$BASE_URL/api/agent/media/v1/uploads/${upload_id}:complete" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" \
+    -H "Content-Type: application/json" \
+    --data "{\"parts\":[{\"part_number\":1,\"etag\":\"${upload_etag}\"}]}")"
+  uploaded_asset_id="$(assert_json_field "$uploaded_asset_body" "data.id")"
+  uploaded_asset_ready_body="$(wait_for_media_asset_status "$uploaded_asset_id" "ready")"
+  [[ "$(assert_json_field "$uploaded_asset_ready_body" "data.sha256")" == "$image_checksum" ]]
+  [[ "$(assert_json_field "$uploaded_asset_ready_body" "data.media_type")" == "image" ]]
+  local image_list_body
+  image_list_body="$(request "$BASE_URL/api/agent/media/v1/assets?project_id=${DEFAULT_PROJECT_ID}&media_type=image" -H "Authorization: Bearer $ACCESS_TOKEN")"
+  ASSET_LIST_JSON="$image_list_body" ASSET_ID="$uploaded_asset_id" python3 - <<'PY'
+import json
+import os
+
+items = json.loads(os.environ["ASSET_LIST_JSON"]).get("data", {}).get("items", [])
+if not any(str(item.get("id")) == os.environ["ASSET_ID"] for item in items):
+    raise SystemExit(f"uploaded media asset missing from project list: {items!r}")
+PY
+  upload_access_body="$(request "$BASE_URL/api/agent/media/v1/assets/${uploaded_asset_id}/access?purpose=download" -H "Authorization: Bearer $ACCESS_TOKEN")"
+  upload_access_url="$(assert_json_field "$upload_access_body" "data.url")"
+  downloaded_image="$TMP_DIR/downloaded-smoke.png"
+  if [[ "$upload_access_url" == /* ]]; then
+    request "$BASE_URL$upload_access_url" -H "Authorization: Bearer $ACCESS_TOKEN" >"$downloaded_image"
+  else
+    request "$upload_access_url" -H "Authorization: Bearer $ACCESS_TOKEN" >"$downloaded_image"
+  fi
+  [[ "$(openssl dgst -sha256 "$downloaded_image" | awk '{print $NF}')" == "$image_checksum" ]]
+  upload_preview_body="$(request "$BASE_URL/api/agent/media/v1/assets/${uploaded_asset_id}/access?purpose=preview" -H "Authorization: Bearer $ACCESS_TOKEN")"
+  upload_preview_url="$(assert_json_field "$upload_preview_body" "data.url")"
+  upload_preview_path="$TMP_DIR/upload-preview"
+  if [[ "$upload_preview_url" == /* ]]; then
+    request "$BASE_URL$upload_preview_url" -H "Authorization: Bearer $ACCESS_TOKEN" >"$upload_preview_path"
+  else
+    request "$upload_preview_url" -H "Authorization: Bearer $ACCESS_TOKEN" >"$upload_preview_path"
+  fi
+  [[ -s "$upload_preview_path" ]]
+
+  local minimax_account_body minimax_account_id minimax_model_body minimax_model_id capability_body
+  minimax_account_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-accounts" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data "{\"name\":\"Smoke MiniMax\",\"adapter_type\":\"minimax\",\"auth_type\":\"api_key\",\"base_url\":\"${FAKE_PROVIDER_URL}\",\"credentials\":{\"api_key\":\"mm-smoke-key\"},\"status\":\"enabled\",\"priority\":1,\"weight\":100,\"concurrency_limit\":2,\"timeout_ms\":30000,\"extra\":{\"video_artifact_hosts\":[\"127.0.0.1:${FAKE_ARTIFACT_URL##*:}\"]}}")"
+  minimax_account_id="$(assert_json_field "$minimax_account_body" "data.id")"
+  minimax_model_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-accounts/${minimax_account_id}/models" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data '{"model_code":"MiniMax-H3","display_name":"Smoke MiniMax H3","task_types":["text_to_video"],"max_image_count":1,"enabled":true}')"
+  minimax_model_id="$(assert_json_field "$minimax_model_body" "data.id")"
+  capability_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/model-account-models/${minimax_model_id}/video-capability" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data '{"expected_version":"","capability_version":"smoke-cap-v1","validation_status":"verified","enabled":true,"capability":{"schema_version":1,"provider_native_max_n":1,"prompt_max_runes":2000,"task_types":{"text_to_video":{"durations":{"values":[5]},"resolutions":["720p"],"aspect_ratios":["16:9"],"audio_modes":["silent"]}}}}')"
+  [[ "$(assert_json_field "$capability_body" "data.validation_status")" == "verified" ]]
+
+  local effective_at cost_body route_body route_id candidate_body strategy_body strategy_id simulation_body price_body route_config_body
+  effective_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  cost_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-account-models/${minimax_model_id}/video-cost-rules" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data "{\"expected_rule_version\":0,\"billing_mode\":\"output_second\",\"currency\":\"CNY\",\"rates\":{\"combinations\":[{\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"audio_mode\":\"silent\",\"duration_seconds\":5,\"cost_cny\":\"0.01000\"}]},\"cost_reserve_markup\":\"1.00000\",\"validation_status\":\"verified\",\"source_type\":\"smoke\",\"source_reference\":\"isolated-fake-minimax\",\"effective_at\":\"${effective_at}\",\"enabled\":true}")"
+  assert_json_field "$cost_body" "data.id" >/dev/null
+  route_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/route-models" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data '{"code":"smoke-video","name":"Smoke Video","description":"Isolated API smoke route","visibility":"public","media_type":"video","enabled":true,"sort_order":999}')"
+  route_id="$(assert_json_field "$route_body" "data.id")"
+  candidate_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/route-models/${route_id}/candidates" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data "{\"account_model_id\":${minimax_model_id},\"priority\":1,\"weight\":100,\"fallback_order\":0,\"enabled\":true}")"
+  assert_json_field "$candidate_body" "data.id" >/dev/null
+  strategy_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/video-pricing-strategies" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data '{"code":"smoke-video-pricing","name":"Smoke Video Pricing","gross_point_value_cny":"1.00000","minimum_net_point_income_cny":"0.10000","max_bonus_ratio":"0.50000","payment_fee_rate":"0.00000","target_margin_rate":"0.25000","provider_cost_buffer_rate":"0.00000","platform_fixed_cost_cny":"0.00000","platform_output_second_cost_cny":"0.00000","platform_reference_cost_cny":"0.00000","platform_audio_fixed_cost_cny":"0.00000","platform_audio_second_cost_cny":"0.00000","exact_reserve_markup":"1.00000","metered_reserve_markup":"1.00000","enabled":true}')"
+  strategy_id="$(assert_json_field "$strategy_body" "data.id")"
+  simulation_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/video-pricing-strategies/${strategy_id}:simulate" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data "{\"route_model_id\":${route_id},\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"audio_mode\":\"silent\",\"duration_seconds\":5,\"reference_image_count\":0}")"
+  [[ "$(assert_json_field "$simulation_body" "data.worst_candidate_cost_cny")" == "0.01000" ]]
+  [[ "$(assert_json_field "$simulation_body" "data.safety_points")" == "0.20000" ]]
+  price_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/video-price-rules" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data "{\"route_model_id\":${route_id},\"pricing_strategy_id\":${strategy_id},\"expected_version\":0,\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"audio_mode\":\"silent\",\"duration_seconds\":5,\"effective_at\":\"${effective_at}\",\"fixed_task_points\":\"1.00000\",\"output_second_points\":\"0.00000\",\"reference_image_points\":\"0.00000\",\"input_video_second_points\":\"0.00000\",\"reference_audio_second_points\":\"0.00000\",\"generated_audio_fixed_points\":\"0.00000\",\"generated_audio_second_points\":\"0.00000\",\"minimum_billable_seconds\":1,\"minimum_task_points\":\"1.00000\",\"reserve_markup\":\"1.00000\",\"enabled\":true,\"internal_note\":\"isolated API smoke\"}")"
+  assert_json_field "$price_body" "data.id" >/dev/null
+  route_config_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/route-models/${route_id}/video-config" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data "{\"expected_version\":\"\",\"config_version\":\"smoke-route-v1\",\"pricing_strategy_id\":${strategy_id},\"task_types\":[\"text_to_video\"],\"visible_options\":{},\"defaults\":{\"task_type\":\"text_to_video\",\"duration_seconds\":5,\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"output_count\":1},\"visible_combinations\":[{\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"duration_seconds\":5}],\"max_output_count\":4,\"enabled\":true}")"
+  [[ "$(assert_json_field "$route_config_body" "data.enabled")" == "True" || "$(assert_json_field "$route_config_body" "data.enabled")" == "true" ]]
+
+  local capabilities_body video_request estimate_video_body quote_token create_video_body video_task_id replay_status
+  local video_task_body generated_video_asset_id generated_video_asset_body video_access_body video_access_url downloaded_video
+  local video_poster_body video_poster_url video_poster_path
+  capabilities_body="$(request "$BASE_URL/api/agent/video/v1/capabilities?route_model_code=smoke-video" -H "Authorization: Bearer $ACCESS_TOKEN")"
+  assert_json_field "$capabilities_body" "data.route_model_code" >/dev/null
+  video_request="{\"project_id\":\"${DEFAULT_PROJECT_ID}\",\"route_model_code\":\"smoke-video\",\"task_type\":\"text_to_video\",\"prompt_template\":\"A small red cube rotates slowly\",\"duration_seconds\":5,\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"output_count\":1}"
+  estimate_video_body="$(request -X POST "$BASE_URL/api/agent/video/v1/estimates" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" --data "$video_request")"
+  quote_token="$(assert_json_field "$estimate_video_body" "data.quote_token")"
+  video_request="${video_request%?},\"quote_token\":\"${quote_token}\"}"
+  create_video_body="$(request -X POST "$BASE_URL/api/agent/video/v1/tasks" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" -H "Idempotency-Key: video-smoke-${SMOKE_ID}" \
+    -H "Content-Type: application/json" --data "$video_request")"
+  video_task_id="$(assert_json_field "$create_video_body" "data.id")"
+  replay_status="$(curl --silent --show-error --output "$TMP_DIR/video-replay.json" --write-out "%{http_code}" \
+    -X POST "$BASE_URL/api/agent/video/v1/tasks" -H "Authorization: Bearer $ACCESS_TOKEN" \
+    -H "Idempotency-Key: video-smoke-${SMOKE_ID}" -H "Content-Type: application/json" --data "$video_request")"
+  [[ "$replay_status" == "200" ]]
+  [[ "$(assert_json_field "$(cat "$TMP_DIR/video-replay.json")" "data.id")" == "$video_task_id" ]]
+  video_task_body="$(wait_for_video_task_status "$video_task_id" "succeeded")"
+  [[ "$(assert_json_field "$video_task_body" "data.success_output_count")" == "1" ]]
+  [[ "$(assert_json_field "$video_task_body" "data.settlement_status")" == "finalized" ]]
+  [[ "$(assert_json_field "$video_task_body" "data.actual_points")" == "1.00000" ]]
+  generated_video_asset_id="$(assert_json_field "$video_task_body" "data.items.0.result_asset_id")"
+  generated_video_asset_body="$(wait_for_media_asset_status "$generated_video_asset_id" "ready")"
+  [[ "$(assert_json_field "$generated_video_asset_body" "data.media_type")" == "video" ]]
+  assert_json_field "$generated_video_asset_body" "data.duration_ms" >/dev/null
+  video_access_body="$(request "$BASE_URL/api/agent/media/v1/assets/${generated_video_asset_id}/access?purpose=download" -H "Authorization: Bearer $ACCESS_TOKEN")"
+  video_access_url="$(assert_json_field "$video_access_body" "data.url")"
+  downloaded_video="$TMP_DIR/downloaded-video.mp4"
+  if [[ "$video_access_url" == /* ]]; then
+    request "$BASE_URL$video_access_url" -H "Authorization: Bearer $ACCESS_TOKEN" >"$downloaded_video"
+  else
+    request "$video_access_url" -H "Authorization: Bearer $ACCESS_TOKEN" >"$downloaded_video"
+  fi
+  ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 "$downloaded_video" | grep -qx video
+  video_poster_body="$(request "$BASE_URL/api/agent/media/v1/assets/${generated_video_asset_id}/access?purpose=poster" -H "Authorization: Bearer $ACCESS_TOKEN")"
+  video_poster_url="$(assert_json_field "$video_poster_body" "data.url")"
+  video_poster_path="$TMP_DIR/generated-video-poster"
+  if [[ "$video_poster_url" == /* ]]; then
+    request "$BASE_URL$video_poster_url" -H "Authorization: Bearer $ACCESS_TOKEN" >"$video_poster_path"
+  else
+    request "$video_poster_url" -H "Authorization: Bearer $ACCESS_TOKEN" >"$video_poster_path"
+  fi
+  [[ -s "$video_poster_path" ]]
+  grep -q '^minimax-video-submit$' "$FAKE_PROVIDER_LOG"
+  grep -q '^minimax-video-poll$' "$FAKE_PROVIDER_LOG"
+
+  local canvas_body canvas_id canvas_revision canvas_document estimate_canvas_body canvas_quote saved_canvas_body
+  local generate_canvas_body canvas_run_id canvas_runs_body canvas_detail_body
+  canvas_body="$(request -X POST "$BASE_URL/api/agent/canvas/v1/canvases" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+    --data "{\"project_id\":\"${DEFAULT_PROJECT_ID}\",\"name\":\"Smoke video canvas\",\"template\":\"blank\"}")"
+  canvas_id="$(assert_json_field "$canvas_body" "data.id")"
+  canvas_revision="$(assert_json_field "$canvas_body" "data.revision")"
+  canvas_document="{\"schema_version\":1,\"viewport\":{\"x\":0,\"y\":0,\"zoom\":1},\"nodes\":[{\"id\":\"video-generation\",\"type\":\"video_generation\",\"position\":{\"x\":400,\"y\":80},\"size\":{\"width\":320,\"height\":240},\"payload\":{\"draft\":{\"route_model_code\":\"smoke-video\",\"task_type\":\"text_to_video\",\"prompt_template\":\"A smoke-test video\",\"duration_seconds\":5,\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"output_count\":1}}}],\"edges\":[]}"
+  saved_canvas_body="$(request -X PUT "$BASE_URL/api/agent/canvas/v1/canvases/${canvas_id}/document" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+    --data "{\"expected_revision\":${canvas_revision},\"document\":${canvas_document}}")"
+  canvas_revision="$(assert_json_field "$saved_canvas_body" "data.revision")"
+  estimate_canvas_body="$(request -X POST "$BASE_URL/api/agent/canvas/v1/canvases/${canvas_id}/nodes/video-generation:estimate" \
+    -H "Authorization: Bearer $ACCESS_TOKEN")"
+  canvas_quote="$(assert_json_field "$estimate_canvas_body" "data.detail.quote_token")"
+  canvas_document="${canvas_document/\"output_count\":1/\"output_count\":1,\"quote_token\":\"${canvas_quote}\"}"
+  saved_canvas_body="$(request -X PUT "$BASE_URL/api/agent/canvas/v1/canvases/${canvas_id}/document" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+    --data "{\"expected_revision\":${canvas_revision},\"document\":${canvas_document}}")"
+  generate_canvas_body="$(request -X POST "$BASE_URL/api/agent/canvas/v1/canvases/${canvas_id}/nodes/video-generation:generate" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" -H "Idempotency-Key: canvas-video-${SMOKE_ID}")"
+  canvas_run_id="$(assert_json_field "$generate_canvas_body" "data.id")"
+  canvas_runs_body="$(wait_for_canvas_run_status "$canvas_id" "$canvas_run_id" "attached")"
+  assert_json_field "$canvas_runs_body" "data.items.0.attached_revision" >/dev/null
+  canvas_detail_body="$(request "$BASE_URL/api/agent/canvas/v1/canvases/${canvas_id}" -H "Authorization: Bearer $ACCESS_TOKEN")"
+  CANVAS_JSON="$canvas_detail_body" GENERATED_ASSET_ID="$generated_video_asset_id" python3 - <<'PY'
+import json
+import os
+
+canvas = json.loads(os.environ["CANVAS_JSON"]).get("data", {})
+document = canvas.get("document", {})
+video_nodes = [node for node in document.get("nodes", []) if node.get("type") == "video" and node.get("asset_id")]
+if not video_nodes:
+    raise SystemExit(f"canvas did not auto-attach a video result node: {document!r}")
+result_ids = {node["id"] for node in video_nodes}
+if not any(edge.get("input_role") == "result" and edge.get("target") in result_ids for edge in document.get("edges", [])):
+    raise SystemExit(f"canvas did not create a stable result edge: {document!r}")
+if int(canvas.get("revision", 0)) < 4:
+    raise SystemExit(f"canvas revision did not advance after auto-attach: {canvas!r}")
+PY
+}
+
 cd "$ROOT_DIR"
 go build -o "$API_BINARY" ./cmd/api
 go build -o "$WORKER_BINARY" ./cmd/worker
@@ -1643,6 +2170,8 @@ PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/entstore -run '^TestObjectCleanupReconcileIgnoresPostgresJSONNullArtifactKeys$' -count=1
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/entstore -run '^TestCallDistributionProviderTraceBoundariesPostgres$' -count=1
+PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
+  go test ./internal/repository/entstore -run '^TestMediaWorkerStoreClaimsPendingJobPostgres$' -count=1
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
   go test ./internal/repository/entstore -run '^TestBillingStore(Postgres(CancelAndPaidReconciliationEndsCompleted|ConcurrentDuplicatePaidCallbacksAreIdempotent)|UpdatePlanSerializesWithLifecycleTransitionsPostgres)$' -count=2
 PIC_GALLERY_TEST_POSTGRES_URL="$POSTGRES_TEST_URL" \
@@ -2078,6 +2607,8 @@ start_worker
 open_task_detail_body="$(wait_for_task_status "$OPEN_TASK_ID" "succeeded")"
 assert_task_detail_status "$open_task_detail_body" "$OPEN_TASK_ID" "succeeded" >/dev/null
 
+run_multimedia_contract_smoke
+
 private_gallery_body="$(request "$BASE_URL/api/agent/gallery/v1/images?page=1&page_size=10" -H "Authorization: Bearer $ACCESS_TOKEN")"
 assert_private_gallery_task "$private_gallery_body" "$OPEN_TASK_ID" >/dev/null
 
@@ -2149,7 +2680,7 @@ WX_PROVIDER_INSTANCE_ID="$(assert_json_field "$wx_provider_body" "data.id")"
 assert_provider_instance_secrets_redacted "$wx_provider_body" "Smoke WxPay Redaction" "$wx_api_v3_secret" "$wx_private_key" >/dev/null
 
 admin_user_detail_body="$(request "$BASE_URL/api/ops/admin/v1/users/${USER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
-assert_admin_user_detail_core "$admin_user_detail_body" "$USER_ID" "$SMOKE_USER_EMAIL" "118.00000" "100.00000" "0.00000" "18.00000" >/dev/null
+assert_admin_user_detail_core "$admin_user_detail_body" "$USER_ID" "$SMOKE_USER_EMAIL" "116.00000" "100.00000" "0.00000" "16.00000" >/dev/null
 assert_admin_user_detail_ledger "$admin_user_detail_body" "trial_grant" "trial" "signup" >/dev/null
 assert_admin_user_detail_ledger "$admin_user_detail_body" "order_paid" "subscription" "payment_order" >/dev/null
 assert_admin_user_detail_order "$admin_user_detail_body" "$ORDER_ID" "completed" >/dev/null
@@ -2163,14 +2694,14 @@ admin_point_adjustment_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/users
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: ${admin_adjust_key}" \
   --data "$admin_adjust_body")"
-[[ "$(assert_json_field "$admin_point_adjustment_body" "data.available_points")" == "125.00000" ]]
+[[ "$(assert_json_field "$admin_point_adjustment_body" "data.available_points")" == "123.00000" ]]
 
 admin_point_adjustment_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/users/${USER_ID}/points-adjustments" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: ${admin_adjust_key}" \
   --data "$admin_adjust_body")"
-[[ "$(assert_json_field "$admin_point_adjustment_replay_body" "data.available_points")" == "125.00000" ]]
+[[ "$(assert_json_field "$admin_point_adjustment_replay_body" "data.available_points")" == "123.00000" ]]
 
 admin_point_adjustment_conflict_status="$(curl --silent --output "$TMP_DIR/admin-adjust-conflict.json" --write-out "%{http_code}" \
   -X POST "$BASE_URL/api/ops/admin/v1/users/${USER_ID}/points-adjustments" \
@@ -2182,7 +2713,7 @@ admin_point_adjustment_conflict_status="$(curl --silent --output "$TMP_DIR/admin
 [[ "$(assert_json_field "$(cat "$TMP_DIR/admin-adjust-conflict.json")" "error.code")" == "CONFLICT" ]]
 
 admin_user_detail_after_adjust_body="$(request "$BASE_URL/api/ops/admin/v1/users/${USER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
-assert_admin_user_detail_core "$admin_user_detail_after_adjust_body" "$USER_ID" "$SMOKE_USER_EMAIL" "125.00000" "100.00000" "0.00000" "18.00000" >/dev/null
+assert_admin_user_detail_core "$admin_user_detail_after_adjust_body" "$USER_ID" "$SMOKE_USER_EMAIL" "123.00000" "100.00000" "0.00000" "16.00000" >/dev/null
 assert_admin_user_detail_ledger "$admin_user_detail_after_adjust_body" "admin_adjust" "recharge" "admin" >/dev/null
 
 custom_amount_config_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/cashier/custom-amount-config" \
@@ -2224,7 +2755,7 @@ assert_cashier_refund_state "$partial_refund_body" "partially_refunded" "$partia
 partial_refunded_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$partial_refunded_balance_body" "data.subscription_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$partial_refunded_balance_body" "data.recharge_points")" == "30.00000" ]]
-[[ "$(assert_json_field "$partial_refunded_balance_body" "data.trial_points")" == "18.00000" ]]
+[[ "$(assert_json_field "$partial_refunded_balance_body" "data.trial_points")" == "16.00000" ]]
 [[ "$(assert_json_field "$partial_refunded_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 partial_refund_finish_trade_no="REFUND-PARTIAL-FINISH-SMOKE-${SMOKE_ID}"
@@ -2277,7 +2808,7 @@ assert_cashier_manual_complete_state "$manual_complete_body" "$MANUAL_COMPLETE_O
 manual_completed_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$manual_completed_balance_body" "data.subscription_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$manual_completed_balance_body" "data.recharge_points")" == "40.00000" ]]
-[[ "$(assert_json_field "$manual_completed_balance_body" "data.trial_points")" == "18.00000" ]]
+[[ "$(assert_json_field "$manual_completed_balance_body" "data.trial_points")" == "16.00000" ]]
 [[ "$(assert_json_field "$manual_completed_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 manual_complete_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=20" -H "Authorization: Bearer $ACCESS_TOKEN")"
@@ -2292,7 +2823,7 @@ assert_cashier_manual_complete_state "$manual_complete_replay_body" "$MANUAL_COM
 manual_complete_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.subscription_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.recharge_points")" == "40.00000" ]]
-[[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.trial_points")" == "18.00000" ]]
+[[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.trial_points")" == "16.00000" ]]
 [[ "$(assert_json_field "$manual_complete_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 manual_refund_trade_no="REFUND-MANUAL-SMOKE-${SMOKE_ID}"
@@ -2345,7 +2876,7 @@ assert_cashier_sync_state "$sync_body" "$SYNC_ORDER_ID" "$sync_trade_no" "10.000
 sync_completed_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$sync_completed_balance_body" "data.subscription_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$sync_completed_balance_body" "data.recharge_points")" == "40.00000" ]]
-[[ "$(assert_json_field "$sync_completed_balance_body" "data.trial_points")" == "18.00000" ]]
+[[ "$(assert_json_field "$sync_completed_balance_body" "data.trial_points")" == "16.00000" ]]
 [[ "$(assert_json_field "$sync_completed_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 sync_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=20" -H "Authorization: Bearer $ACCESS_TOKEN")"
@@ -2358,7 +2889,7 @@ assert_cashier_sync_state "$sync_replay_body" "$SYNC_ORDER_ID" "$sync_trade_no" 
 sync_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$sync_replay_balance_body" "data.subscription_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$sync_replay_balance_body" "data.recharge_points")" == "40.00000" ]]
-[[ "$(assert_json_field "$sync_replay_balance_body" "data.trial_points")" == "18.00000" ]]
+[[ "$(assert_json_field "$sync_replay_balance_body" "data.trial_points")" == "16.00000" ]]
 [[ "$(assert_json_field "$sync_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 sync_refund_trade_no="REFUND-SYNC-SMOKE-${SMOKE_ID}"
@@ -2661,7 +3192,7 @@ pending_limit_status="$(curl --silent --output "$TMP_DIR/pending-limit.json" --w
 custom_recharged_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$custom_recharged_balance_body" "data.subscription_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$custom_recharged_balance_body" "data.recharge_points")" == "20.00000" ]]
-[[ "$(assert_json_field "$custom_recharged_balance_body" "data.trial_points")" == "18.00000" ]]
+[[ "$(assert_json_field "$custom_recharged_balance_body" "data.trial_points")" == "16.00000" ]]
 [[ "$(assert_json_field "$custom_recharged_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 refund_trade_no="REFUND-SMOKE-${SMOKE_ID}"
@@ -2674,7 +3205,7 @@ assert_cashier_refund_state "$custom_refund_body" "refunded" "$refund_trade_no" 
 refunded_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$refunded_balance_body" "data.subscription_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$refunded_balance_body" "data.recharge_points")" == "0.00000" ]]
-[[ "$(assert_json_field "$refunded_balance_body" "data.trial_points")" == "18.00000" ]]
+[[ "$(assert_json_field "$refunded_balance_body" "data.trial_points")" == "16.00000" ]]
 [[ "$(assert_json_field "$refunded_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 refund_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${CUSTOM_ORDER_ID}/refund" \
@@ -2686,7 +3217,7 @@ assert_cashier_refund_state "$refund_replay_body" "refunded" "$refund_trade_no" 
 refund_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
 [[ "$(assert_json_field "$refund_replay_balance_body" "data.subscription_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$refund_replay_balance_body" "data.recharge_points")" == "0.00000" ]]
-[[ "$(assert_json_field "$refund_replay_balance_body" "data.trial_points")" == "18.00000" ]]
+[[ "$(assert_json_field "$refund_replay_balance_body" "data.trial_points")" == "16.00000" ]]
 [[ "$(assert_json_field "$refund_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 refund_ledger_body="$(request "$BASE_URL/api/agent/billing/v1/ledger?page=1&page_size=20" -H "Authorization: Bearer $ACCESS_TOKEN")"
@@ -2698,7 +3229,7 @@ chargeback_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: ${chargeback_key}" \
   --data '{"charge_points":"5.00000","reason":"api smoke provider chargeback"}')"
-assert_cashier_chargeback_state "$chargeback_body" "$ORDER_ID" "120.00000" "100.00000" "0.00000" "2.00000" "5.00000" "api smoke provider chargeback" "$chargeback_key" >/dev/null
+assert_cashier_chargeback_state "$chargeback_body" "$ORDER_ID" "118.00000" "100.00000" "0.00000" "2.00000" "5.00000" "api smoke provider chargeback" "$chargeback_key" >/dev/null
 
 chargeback_order_detail_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orders/${ORDER_ID}" -H "Authorization: Bearer $ADMIN_TOKEN")"
 [[ "$(assert_json_field "$chargeback_order_detail_body" "data.chargeback_points")" == "5.00000" ]]
@@ -2707,11 +3238,11 @@ chargeback_order_detail_body="$(request "$BASE_URL/api/ops/admin/v1/cashier/orde
 assert_json_path_exists "$chargeback_order_detail_body" "data.chargeback_at" >/dev/null
 
 chargeback_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$chargeback_balance_body" "data.available_points")" == "120.00000" ]]
+[[ "$(assert_json_field "$chargeback_balance_body" "data.available_points")" == "118.00000" ]]
 [[ "$(assert_json_field "$chargeback_balance_body" "data.subscription_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$chargeback_balance_body" "data.recharge_points")" == "0.00000" ]]
 [[ "$(assert_json_field "$chargeback_balance_body" "data.gift_points")" == "2.00000" ]]
-[[ "$(assert_json_field "$chargeback_balance_body" "data.trial_points")" == "18.00000" ]]
+[[ "$(assert_json_field "$chargeback_balance_body" "data.trial_points")" == "16.00000" ]]
 [[ "$(assert_json_field "$chargeback_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 chargeback_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/orders/${ORDER_ID}/chargeback" \
@@ -2719,14 +3250,14 @@ chargeback_replay_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/cashier/or
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: ${chargeback_key}" \
   --data '{"charge_points":"5.00000","reason":"api smoke provider chargeback"}')"
-assert_cashier_chargeback_state "$chargeback_replay_body" "$ORDER_ID" "120.00000" "100.00000" "0.00000" "2.00000" "5.00000" "api smoke provider chargeback" "$chargeback_key" >/dev/null
+assert_cashier_chargeback_state "$chargeback_replay_body" "$ORDER_ID" "118.00000" "100.00000" "0.00000" "2.00000" "5.00000" "api smoke provider chargeback" "$chargeback_key" >/dev/null
 
 chargeback_replay_balance_body="$(request "$BASE_URL/api/agent/billing/v1/balance" -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$chargeback_replay_balance_body" "data.available_points")" == "120.00000" ]]
+[[ "$(assert_json_field "$chargeback_replay_balance_body" "data.available_points")" == "118.00000" ]]
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.subscription_points")" == "100.00000" ]]
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.recharge_points")" == "0.00000" ]]
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.gift_points")" == "2.00000" ]]
-[[ "$(assert_json_field "$chargeback_replay_balance_body" "data.trial_points")" == "18.00000" ]]
+[[ "$(assert_json_field "$chargeback_replay_balance_body" "data.trial_points")" == "16.00000" ]]
 [[ "$(assert_json_field "$chargeback_replay_balance_body" "data.frozen_points")" == "0.00000" ]]
 
 chargeback_conflict_status="$(curl --silent --output "$TMP_DIR/chargeback-conflict.json" --write-out "%{http_code}" \
@@ -2934,9 +3465,13 @@ assert_json_field "$readiness_body" "data.summary.fail" >/dev/null
 assert_json_field "$readiness_body" "data.checks.0.key" >/dev/null
 assert_readiness_check "$readiness_body" "model_accounts" "pass" >/dev/null
 assert_readiness_check "$readiness_body" "provider_models" "pass" >/dev/null
-assert_readiness_check "$readiness_body" "route_models" "fail" >/dev/null
-assert_readiness_check "$readiness_body" "route_candidates" "fail" >/dev/null
+assert_readiness_check "$readiness_body" "route_models" "pass" >/dev/null
+assert_readiness_check "$readiness_body" "route_candidates" "pass" >/dev/null
 assert_readiness_check "$readiness_body" "route_prices" "fail" >/dev/null
+assert_readiness_check "$readiness_body" "video_routes" "pass" >/dev/null
+assert_readiness_check "$readiness_body" "video_prices" "pass" >/dev/null
+assert_readiness_check "$readiness_body" "media_storage" "fail" >/dev/null
+assert_readiness_check "$readiness_body" "media_worker" "pass" >/dev/null
 
 dashboard_body="$(request "$BASE_URL/api/ops/admin/v1/metrics/dashboard" -H "Authorization: Bearer $ADMIN_TOKEN")"
 [[ "$(assert_json_field "$dashboard_body" "data.operations.platform_loss_count")" -ge "1" ]]

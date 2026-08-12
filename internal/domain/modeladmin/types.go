@@ -16,6 +16,8 @@ type LifecycleAudit struct {
 const (
 	AdapterTypeOpenAICompatible = "openai_compatible"
 	AdapterTypeOpenRouter       = "openrouter"
+	AdapterTypeSeedance         = "seedance"
+	AdapterTypeMiniMax          = "minimax"
 	AuthTypeAPIKey              = "api_key"
 
 	ModelAccountStatusEnabled  = "enabled"
@@ -165,6 +167,7 @@ type RouteModel struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Visibility  string    `json:"visibility"`
+	MediaType   string    `json:"media_type"`
 	Enabled     bool      `json:"enabled"`
 	SortOrder   int       `json:"sort_order"`
 	GroupIDs    []int64   `json:"group_ids,omitempty"`
@@ -178,6 +181,7 @@ type RouteModelWriteRequest struct {
 	Name        string
 	Description string
 	Visibility  string
+	MediaType   string
 	Enabled     bool
 	SortOrder   int
 	GroupIDs    []int64

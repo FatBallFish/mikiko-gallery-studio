@@ -812,6 +812,75 @@ func HasImageResultsWith(preds ...predicate.ImageResult) predicate.Project {
 	})
 }
 
+// HasVideoTasks applies the HasEdge predicate on the "video_tasks" edge.
+func HasVideoTasks() predicate.Project {
+	return predicate.Project(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, VideoTasksTable, VideoTasksColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasVideoTasksWith applies the HasEdge predicate on the "video_tasks" edge with a given conditions (other predicates).
+func HasVideoTasksWith(preds ...predicate.VideoTask) predicate.Project {
+	return predicate.Project(func(s *sql.Selector) {
+		step := newVideoTasksStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasMediaAssets applies the HasEdge predicate on the "media_assets" edge.
+func HasMediaAssets() predicate.Project {
+	return predicate.Project(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, MediaAssetsTable, MediaAssetsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasMediaAssetsWith applies the HasEdge predicate on the "media_assets" edge with a given conditions (other predicates).
+func HasMediaAssetsWith(preds ...predicate.MediaAsset) predicate.Project {
+	return predicate.Project(func(s *sql.Selector) {
+		step := newMediaAssetsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasCreativeCanvases applies the HasEdge predicate on the "creative_canvases" edge.
+func HasCreativeCanvases() predicate.Project {
+	return predicate.Project(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, CreativeCanvasesTable, CreativeCanvasesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasCreativeCanvasesWith applies the HasEdge predicate on the "creative_canvases" edge with a given conditions (other predicates).
+func HasCreativeCanvasesWith(preds ...predicate.CreativeCanvas) predicate.Project {
+	return predicate.Project(func(s *sql.Selector) {
+		step := newCreativeCanvasesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Project) predicate.Project {
 	return predicate.Project(sql.AndPredicates(predicates...))

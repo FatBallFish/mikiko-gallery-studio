@@ -19,6 +19,8 @@ import {
   providerAuthLabel,
 } from './providerModelRows'
 import { createLatestListRequestGuard } from './listRefresh'
+import { VideoConfigurationImpact } from './VideoConfigurationImpact'
+import { VideoConfigurationWorkspace } from './VideoConfigurationWorkspace'
 
 type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string }
 type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportsCustomRatio: boolean; supportedPixelSizes: string[]; pixelInput: string; supportsCustomSize: boolean; minWidth: string; maxWidth: string; minHeight: string; maxHeight: string; supportedBackgrounds: string[]; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
@@ -282,6 +284,8 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
         primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openAccountDialog(blankAccount)}>添加账号</button>}
         secondaryActions={<RefreshIconButton label="刷新接入账号" refreshing={loading} onClick={() => void load()} />}
       />
+      <VideoConfigurationImpact context="models" />
+      <VideoConfigurationWorkspace context="models" />
       {error ? <InlineFeedback tone="danger" message={`接入账号刷新失败：${error}`} /> : null}
       {!accounts.length ? <EmptyBlock title="暂无模型接入账号" detail="创建账号后再添加真实上游模型。" /> : null}
       {accounts.length ? (

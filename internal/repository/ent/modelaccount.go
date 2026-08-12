@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
+	"github.com/google/uuid"
 )
 
 // ModelAccount is the model entity for the ModelAccount schema.
@@ -24,6 +25,8 @@ type ModelAccount struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// DeletedAt holds the value of the "deleted_at" field.
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	// PublicID holds the value of the "public_id" field.
+	PublicID uuid.UUID `json:"public_id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// AdapterType holds the value of the "adapter_type" field.
@@ -68,6 +71,8 @@ func (*ModelAccount) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullString)
 		case modelaccount.FieldCreatedAt, modelaccount.FieldUpdatedAt, modelaccount.FieldDeletedAt, modelaccount.FieldLastUsedAt:
 			values[i] = new(sql.NullTime)
+		case modelaccount.FieldPublicID:
+			values[i] = new(uuid.UUID)
 		default:
 			values[i] = new(sql.UnknownType)
 		}
@@ -107,6 +112,12 @@ func (_m *ModelAccount) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.DeletedAt = new(time.Time)
 				*_m.DeletedAt = value.Time
+			}
+		case modelaccount.FieldPublicID:
+			if value, ok := values[i].(*uuid.UUID); !ok {
+				return fmt.Errorf("unexpected type %T for field public_id", values[i])
+			} else if value != nil {
+				_m.PublicID = *value
 			}
 		case modelaccount.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -244,6 +255,9 @@ func (_m *ModelAccount) String() string {
 		builder.WriteString("deleted_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("public_id=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PublicID))
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)

@@ -110,6 +110,26 @@ func (_u *MigrationCheckpointUpdate) ClearAfterResultID() *MigrationCheckpointUp
 	return _u
 }
 
+// SetAfterCreatedAt sets the "after_created_at" field.
+func (_u *MigrationCheckpointUpdate) SetAfterCreatedAt(v time.Time) *MigrationCheckpointUpdate {
+	_u.mutation.SetAfterCreatedAt(v)
+	return _u
+}
+
+// SetNillableAfterCreatedAt sets the "after_created_at" field if the given value is not nil.
+func (_u *MigrationCheckpointUpdate) SetNillableAfterCreatedAt(v *time.Time) *MigrationCheckpointUpdate {
+	if v != nil {
+		_u.SetAfterCreatedAt(*v)
+	}
+	return _u
+}
+
+// ClearAfterCreatedAt clears the value of the "after_created_at" field.
+func (_u *MigrationCheckpointUpdate) ClearAfterCreatedAt() *MigrationCheckpointUpdate {
+	_u.mutation.ClearAfterCreatedAt()
+	return _u
+}
+
 // SetProcessedRows sets the "processed_rows" field.
 func (_u *MigrationCheckpointUpdate) SetProcessedRows(v int) *MigrationCheckpointUpdate {
 	_u.mutation.ResetProcessedRows()
@@ -232,6 +252,12 @@ func (_u *MigrationCheckpointUpdate) sqlSave(ctx context.Context) (_node int, er
 	if _u.mutation.AfterResultIDCleared() {
 		_spec.ClearField(migrationcheckpoint.FieldAfterResultID, field.TypeUUID)
 	}
+	if value, ok := _u.mutation.AfterCreatedAt(); ok {
+		_spec.SetField(migrationcheckpoint.FieldAfterCreatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.AfterCreatedAtCleared() {
+		_spec.ClearField(migrationcheckpoint.FieldAfterCreatedAt, field.TypeTime)
+	}
 	if value, ok := _u.mutation.ProcessedRows(); ok {
 		_spec.SetField(migrationcheckpoint.FieldProcessedRows, field.TypeInt, value)
 	}
@@ -339,6 +365,26 @@ func (_u *MigrationCheckpointUpdateOne) SetNillableAfterResultID(v *uuid.UUID) *
 // ClearAfterResultID clears the value of the "after_result_id" field.
 func (_u *MigrationCheckpointUpdateOne) ClearAfterResultID() *MigrationCheckpointUpdateOne {
 	_u.mutation.ClearAfterResultID()
+	return _u
+}
+
+// SetAfterCreatedAt sets the "after_created_at" field.
+func (_u *MigrationCheckpointUpdateOne) SetAfterCreatedAt(v time.Time) *MigrationCheckpointUpdateOne {
+	_u.mutation.SetAfterCreatedAt(v)
+	return _u
+}
+
+// SetNillableAfterCreatedAt sets the "after_created_at" field if the given value is not nil.
+func (_u *MigrationCheckpointUpdateOne) SetNillableAfterCreatedAt(v *time.Time) *MigrationCheckpointUpdateOne {
+	if v != nil {
+		_u.SetAfterCreatedAt(*v)
+	}
+	return _u
+}
+
+// ClearAfterCreatedAt clears the value of the "after_created_at" field.
+func (_u *MigrationCheckpointUpdateOne) ClearAfterCreatedAt() *MigrationCheckpointUpdateOne {
+	_u.mutation.ClearAfterCreatedAt()
 	return _u
 }
 
@@ -493,6 +539,12 @@ func (_u *MigrationCheckpointUpdateOne) sqlSave(ctx context.Context) (_node *Mig
 	}
 	if _u.mutation.AfterResultIDCleared() {
 		_spec.ClearField(migrationcheckpoint.FieldAfterResultID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.AfterCreatedAt(); ok {
+		_spec.SetField(migrationcheckpoint.FieldAfterCreatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.AfterCreatedAtCleared() {
+		_spec.ClearField(migrationcheckpoint.FieldAfterCreatedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.ProcessedRows(); ok {
 		_spec.SetField(migrationcheckpoint.FieldProcessedRows, field.TypeInt, value)

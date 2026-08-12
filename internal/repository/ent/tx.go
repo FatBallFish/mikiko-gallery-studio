@@ -20,6 +20,8 @@ type Tx struct {
 	AdminUser *AdminUserClient
 	// AuditLog is the client for interacting with the AuditLog builders.
 	AuditLog *AuditLogClient
+	// CanvasGenerationRun is the client for interacting with the CanvasGenerationRun builders.
+	CanvasGenerationRun *CanvasGenerationRunClient
 	// ClusterChallenge is the client for interacting with the ClusterChallenge builders.
 	ClusterChallenge *ClusterChallengeClient
 	// ClusterNode is the client for interacting with the ClusterNode builders.
@@ -28,6 +30,10 @@ type Tx struct {
 	ClusterToken *ClusterTokenClient
 	// ConfigItem is the client for interacting with the ConfigItem builders.
 	ConfigItem *ConfigItemClient
+	// CreativeCanvas is the client for interacting with the CreativeCanvas builders.
+	CreativeCanvas *CreativeCanvasClient
+	// CreativeCanvasRevision is the client for interacting with the CreativeCanvasRevision builders.
+	CreativeCanvasRevision *CreativeCanvasRevisionClient
 	// GalleryExportJob is the client for interacting with the GalleryExportJob builders.
 	GalleryExportJob *GalleryExportJobClient
 	// ImageResult is the client for interacting with the ImageResult builders.
@@ -36,6 +42,16 @@ type Tx struct {
 	ImageTask *ImageTaskClient
 	// Installation is the client for interacting with the Installation builders.
 	Installation *InstallationClient
+	// MediaAsset is the client for interacting with the MediaAsset builders.
+	MediaAsset *MediaAssetClient
+	// MediaAssetReference is the client for interacting with the MediaAssetReference builders.
+	MediaAssetReference *MediaAssetReferenceClient
+	// MediaDerivative is the client for interacting with the MediaDerivative builders.
+	MediaDerivative *MediaDerivativeClient
+	// MediaProcessingJob is the client for interacting with the MediaProcessingJob builders.
+	MediaProcessingJob *MediaProcessingJobClient
+	// MediaUploadSession is the client for interacting with the MediaUploadSession builders.
+	MediaUploadSession *MediaUploadSessionClient
 	// MigrationCheckpoint is the client for interacting with the MigrationCheckpoint builders.
 	MigrationCheckpoint *MigrationCheckpointClient
 	// ModelAccount is the client for interacting with the ModelAccount builders.
@@ -102,6 +118,26 @@ type Tx struct {
 	UserGroupMember *UserGroupMemberClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
+	// VideoModelCapability is the client for interacting with the VideoModelCapability builders.
+	VideoModelCapability *VideoModelCapabilityClient
+	// VideoPriceRule is the client for interacting with the VideoPriceRule builders.
+	VideoPriceRule *VideoPriceRuleClient
+	// VideoPricingStrategy is the client for interacting with the VideoPricingStrategy builders.
+	VideoPricingStrategy *VideoPricingStrategyClient
+	// VideoProviderCallbackEvent is the client for interacting with the VideoProviderCallbackEvent builders.
+	VideoProviderCallbackEvent *VideoProviderCallbackEventClient
+	// VideoProviderCostRule is the client for interacting with the VideoProviderCostRule builders.
+	VideoProviderCostRule *VideoProviderCostRuleClient
+	// VideoRouteConfig is the client for interacting with the VideoRouteConfig builders.
+	VideoRouteConfig *VideoRouteConfigClient
+	// VideoTask is the client for interacting with the VideoTask builders.
+	VideoTask *VideoTaskClient
+	// VideoTaskAttempt is the client for interacting with the VideoTaskAttempt builders.
+	VideoTaskAttempt *VideoTaskAttemptClient
+	// VideoTaskInput is the client for interacting with the VideoTaskInput builders.
+	VideoTaskInput *VideoTaskInputClient
+	// VideoTaskItem is the client for interacting with the VideoTaskItem builders.
+	VideoTaskItem *VideoTaskItemClient
 	// WalletGrant is the client for interacting with the WalletGrant builders.
 	WalletGrant *WalletGrantClient
 	// WalletReservationAllocation is the client for interacting with the WalletReservationAllocation builders.
@@ -241,14 +277,22 @@ func (tx *Tx) init() {
 	tx.APIKeyQuotaReservation = NewAPIKeyQuotaReservationClient(tx.config)
 	tx.AdminUser = NewAdminUserClient(tx.config)
 	tx.AuditLog = NewAuditLogClient(tx.config)
+	tx.CanvasGenerationRun = NewCanvasGenerationRunClient(tx.config)
 	tx.ClusterChallenge = NewClusterChallengeClient(tx.config)
 	tx.ClusterNode = NewClusterNodeClient(tx.config)
 	tx.ClusterToken = NewClusterTokenClient(tx.config)
 	tx.ConfigItem = NewConfigItemClient(tx.config)
+	tx.CreativeCanvas = NewCreativeCanvasClient(tx.config)
+	tx.CreativeCanvasRevision = NewCreativeCanvasRevisionClient(tx.config)
 	tx.GalleryExportJob = NewGalleryExportJobClient(tx.config)
 	tx.ImageResult = NewImageResultClient(tx.config)
 	tx.ImageTask = NewImageTaskClient(tx.config)
 	tx.Installation = NewInstallationClient(tx.config)
+	tx.MediaAsset = NewMediaAssetClient(tx.config)
+	tx.MediaAssetReference = NewMediaAssetReferenceClient(tx.config)
+	tx.MediaDerivative = NewMediaDerivativeClient(tx.config)
+	tx.MediaProcessingJob = NewMediaProcessingJobClient(tx.config)
+	tx.MediaUploadSession = NewMediaUploadSessionClient(tx.config)
 	tx.MigrationCheckpoint = NewMigrationCheckpointClient(tx.config)
 	tx.ModelAccount = NewModelAccountClient(tx.config)
 	tx.ModelAccountModel = NewModelAccountModelClient(tx.config)
@@ -282,6 +326,16 @@ func (tx *Tx) init() {
 	tx.UserGroup = NewUserGroupClient(tx.config)
 	tx.UserGroupMember = NewUserGroupMemberClient(tx.config)
 	tx.UserSubscription = NewUserSubscriptionClient(tx.config)
+	tx.VideoModelCapability = NewVideoModelCapabilityClient(tx.config)
+	tx.VideoPriceRule = NewVideoPriceRuleClient(tx.config)
+	tx.VideoPricingStrategy = NewVideoPricingStrategyClient(tx.config)
+	tx.VideoProviderCallbackEvent = NewVideoProviderCallbackEventClient(tx.config)
+	tx.VideoProviderCostRule = NewVideoProviderCostRuleClient(tx.config)
+	tx.VideoRouteConfig = NewVideoRouteConfigClient(tx.config)
+	tx.VideoTask = NewVideoTaskClient(tx.config)
+	tx.VideoTaskAttempt = NewVideoTaskAttemptClient(tx.config)
+	tx.VideoTaskInput = NewVideoTaskInputClient(tx.config)
+	tx.VideoTaskItem = NewVideoTaskItemClient(tx.config)
 	tx.WalletGrant = NewWalletGrantClient(tx.config)
 	tx.WalletReservationAllocation = NewWalletReservationAllocationClient(tx.config)
 }

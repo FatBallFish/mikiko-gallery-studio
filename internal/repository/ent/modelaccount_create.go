@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
+	"github.com/google/uuid"
 )
 
 // ModelAccountCreate is the builder for creating a ModelAccount entity.
@@ -58,6 +59,20 @@ func (_c *ModelAccountCreate) SetDeletedAt(v time.Time) *ModelAccountCreate {
 func (_c *ModelAccountCreate) SetNillableDeletedAt(v *time.Time) *ModelAccountCreate {
 	if v != nil {
 		_c.SetDeletedAt(*v)
+	}
+	return _c
+}
+
+// SetPublicID sets the "public_id" field.
+func (_c *ModelAccountCreate) SetPublicID(v uuid.UUID) *ModelAccountCreate {
+	_c.mutation.SetPublicID(v)
+	return _c
+}
+
+// SetNillablePublicID sets the "public_id" field if the given value is not nil.
+func (_c *ModelAccountCreate) SetNillablePublicID(v *uuid.UUID) *ModelAccountCreate {
+	if v != nil {
+		_c.SetPublicID(*v)
 	}
 	return _c
 }
@@ -253,6 +268,10 @@ func (_c *ModelAccountCreate) defaults() {
 		v := modelaccount.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.PublicID(); !ok {
+		v := modelaccount.DefaultPublicID()
+		_c.mutation.SetPublicID(v)
+	}
 	if _, ok := _c.mutation.CredentialsFingerprint(); !ok {
 		v := modelaccount.DefaultCredentialsFingerprint
 		_c.mutation.SetCredentialsFingerprint(v)
@@ -286,6 +305,9 @@ func (_c *ModelAccountCreate) check() error {
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "ModelAccount.updated_at"`)}
+	}
+	if _, ok := _c.mutation.PublicID(); !ok {
+		return &ValidationError{Name: "public_id", err: errors.New(`ent: missing required field "ModelAccount.public_id"`)}
 	}
 	if _, ok := _c.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "ModelAccount.name"`)}
@@ -384,6 +406,10 @@ func (_c *ModelAccountCreate) createSpec() (*ModelAccount, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.DeletedAt(); ok {
 		_spec.SetField(modelaccount.FieldDeletedAt, field.TypeTime, value)
 		_node.DeletedAt = &value
+	}
+	if value, ok := _c.mutation.PublicID(); ok {
+		_spec.SetField(modelaccount.FieldPublicID, field.TypeUUID, value)
+		_node.PublicID = value
 	}
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(modelaccount.FieldName, field.TypeString, value)

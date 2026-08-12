@@ -56,9 +56,15 @@ type ProjectEdges struct {
 	ImageTasks []*ImageTask `json:"image_tasks,omitempty"`
 	// ImageResults holds the value of the image_results edge.
 	ImageResults []*ImageResult `json:"image_results,omitempty"`
+	// VideoTasks holds the value of the video_tasks edge.
+	VideoTasks []*VideoTask `json:"video_tasks,omitempty"`
+	// MediaAssets holds the value of the media_assets edge.
+	MediaAssets []*MediaAsset `json:"media_assets,omitempty"`
+	// CreativeCanvases holds the value of the creative_canvases edge.
+	CreativeCanvases []*CreativeCanvas `json:"creative_canvases,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [5]bool
 }
 
 // ImageTasksOrErr returns the ImageTasks value or an error if the edge
@@ -77,6 +83,33 @@ func (e ProjectEdges) ImageResultsOrErr() ([]*ImageResult, error) {
 		return e.ImageResults, nil
 	}
 	return nil, &NotLoadedError{edge: "image_results"}
+}
+
+// VideoTasksOrErr returns the VideoTasks value or an error if the edge
+// was not loaded in eager-loading.
+func (e ProjectEdges) VideoTasksOrErr() ([]*VideoTask, error) {
+	if e.loadedTypes[2] {
+		return e.VideoTasks, nil
+	}
+	return nil, &NotLoadedError{edge: "video_tasks"}
+}
+
+// MediaAssetsOrErr returns the MediaAssets value or an error if the edge
+// was not loaded in eager-loading.
+func (e ProjectEdges) MediaAssetsOrErr() ([]*MediaAsset, error) {
+	if e.loadedTypes[3] {
+		return e.MediaAssets, nil
+	}
+	return nil, &NotLoadedError{edge: "media_assets"}
+}
+
+// CreativeCanvasesOrErr returns the CreativeCanvases value or an error if the edge
+// was not loaded in eager-loading.
+func (e ProjectEdges) CreativeCanvasesOrErr() ([]*CreativeCanvas, error) {
+	if e.loadedTypes[4] {
+		return e.CreativeCanvases, nil
+	}
+	return nil, &NotLoadedError{edge: "creative_canvases"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -217,6 +250,21 @@ func (_m *Project) QueryImageTasks() *ImageTaskQuery {
 // QueryImageResults queries the "image_results" edge of the Project entity.
 func (_m *Project) QueryImageResults() *ImageResultQuery {
 	return NewProjectClient(_m.config).QueryImageResults(_m)
+}
+
+// QueryVideoTasks queries the "video_tasks" edge of the Project entity.
+func (_m *Project) QueryVideoTasks() *VideoTaskQuery {
+	return NewProjectClient(_m.config).QueryVideoTasks(_m)
+}
+
+// QueryMediaAssets queries the "media_assets" edge of the Project entity.
+func (_m *Project) QueryMediaAssets() *MediaAssetQuery {
+	return NewProjectClient(_m.config).QueryMediaAssets(_m)
+}
+
+// QueryCreativeCanvases queries the "creative_canvases" edge of the Project entity.
+func (_m *Project) QueryCreativeCanvases() *CreativeCanvasQuery {
+	return NewProjectClient(_m.config).QueryCreativeCanvases(_m)
 }
 
 // Update returns a builder for updating this Project.

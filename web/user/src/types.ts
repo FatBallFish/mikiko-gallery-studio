@@ -1,6 +1,6 @@
-import type { Balance, UserProfile, UserThemePreference } from '../../shared/api-types'
+import type { Balance, FeatureFlags, UserProfile, UserThemePreference } from '../../shared/api-types'
 
-export type RouteId = 'landing' | 'login' | 'home' | 'genpic' | 'gallery' | 'projects' | 'public-gallery' | 'checkout' | 'api-keys' | 'profile' | 'settings'
+export type RouteId = 'landing' | 'login' | 'home' | 'genpic' | 'creative-canvas' | 'gallery' | 'projects' | 'public-gallery' | 'checkout' | 'api-keys' | 'profile' | 'settings'
 
 export type ToastTone = 'success' | 'error' | 'info'
 
@@ -22,10 +22,11 @@ export type AppContextValue = {
   session: SessionState | null
   profile: UserProfile | null
   balance: Balance | null
+  featureFlags: FeatureFlags
   themePreference: UserThemePreference
   setThemePreference: (patch: Partial<UserThemePreference>) => Promise<void>
   refreshAccount: () => Promise<void>
-  navigate: (route: RouteId, options?: { returnTo?: RouteId; imageId?: string | null; taskId?: string | null }) => void
+  navigate: (route: RouteId, options?: { returnTo?: RouteId; imageId?: string | null; taskId?: string | null; canvasId?: string | null }) => void
   login: (session: SessionState, returnTo?: RouteId, options?: { imageId?: string | null; taskId?: string | null }) => Promise<void>
   logout: () => Promise<void>
   notify: (tone: ToastTone, message: string) => void

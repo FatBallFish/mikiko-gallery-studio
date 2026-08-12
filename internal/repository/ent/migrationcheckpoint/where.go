@@ -90,6 +90,11 @@ func AfterResultID(v uuid.UUID) predicate.MigrationCheckpoint {
 	return predicate.MigrationCheckpoint(sql.FieldEQ(FieldAfterResultID, v))
 }
 
+// AfterCreatedAt applies equality check predicate on the "after_created_at" field. It's identical to AfterCreatedAtEQ.
+func AfterCreatedAt(v time.Time) predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldEQ(FieldAfterCreatedAt, v))
+}
+
 // ProcessedRows applies equality check predicate on the "processed_rows" field. It's identical to ProcessedRowsEQ.
 func ProcessedRows(v int) predicate.MigrationCheckpoint {
 	return predicate.MigrationCheckpoint(sql.FieldEQ(FieldProcessedRows, v))
@@ -448,6 +453,56 @@ func AfterResultIDIsNil() predicate.MigrationCheckpoint {
 // AfterResultIDNotNil applies the NotNil predicate on the "after_result_id" field.
 func AfterResultIDNotNil() predicate.MigrationCheckpoint {
 	return predicate.MigrationCheckpoint(sql.FieldNotNull(FieldAfterResultID))
+}
+
+// AfterCreatedAtEQ applies the EQ predicate on the "after_created_at" field.
+func AfterCreatedAtEQ(v time.Time) predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldEQ(FieldAfterCreatedAt, v))
+}
+
+// AfterCreatedAtNEQ applies the NEQ predicate on the "after_created_at" field.
+func AfterCreatedAtNEQ(v time.Time) predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldNEQ(FieldAfterCreatedAt, v))
+}
+
+// AfterCreatedAtIn applies the In predicate on the "after_created_at" field.
+func AfterCreatedAtIn(vs ...time.Time) predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldIn(FieldAfterCreatedAt, vs...))
+}
+
+// AfterCreatedAtNotIn applies the NotIn predicate on the "after_created_at" field.
+func AfterCreatedAtNotIn(vs ...time.Time) predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldNotIn(FieldAfterCreatedAt, vs...))
+}
+
+// AfterCreatedAtGT applies the GT predicate on the "after_created_at" field.
+func AfterCreatedAtGT(v time.Time) predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldGT(FieldAfterCreatedAt, v))
+}
+
+// AfterCreatedAtGTE applies the GTE predicate on the "after_created_at" field.
+func AfterCreatedAtGTE(v time.Time) predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldGTE(FieldAfterCreatedAt, v))
+}
+
+// AfterCreatedAtLT applies the LT predicate on the "after_created_at" field.
+func AfterCreatedAtLT(v time.Time) predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldLT(FieldAfterCreatedAt, v))
+}
+
+// AfterCreatedAtLTE applies the LTE predicate on the "after_created_at" field.
+func AfterCreatedAtLTE(v time.Time) predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldLTE(FieldAfterCreatedAt, v))
+}
+
+// AfterCreatedAtIsNil applies the IsNil predicate on the "after_created_at" field.
+func AfterCreatedAtIsNil() predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldIsNull(FieldAfterCreatedAt))
+}
+
+// AfterCreatedAtNotNil applies the NotNil predicate on the "after_created_at" field.
+func AfterCreatedAtNotNil() predicate.MigrationCheckpoint {
+	return predicate.MigrationCheckpoint(sql.FieldNotNull(FieldAfterCreatedAt))
 }
 
 // ProcessedRowsEQ applies the EQ predicate on the "processed_rows" field.

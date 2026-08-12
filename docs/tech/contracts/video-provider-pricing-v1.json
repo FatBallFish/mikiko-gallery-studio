@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "contract_id": "video-provider-pricing-v1",
+  "gross_point_value_cny": "0.31250",
+  "maximum_bonus_ratio": "0.20000",
+  "payment_fee_rate": "0.03000",
+  "minimum_net_point_income_cny": "0.25260",
+  "target_gross_margin_rate": "0.25000",
+  "provider_cost_buffer_rate": "0.10000",
+  "platform_fixed_cost_cny": "0.15000",
+  "platform_output_second_cost_cny": "0.02000",
+  "platform_reference_cost_cny": "0.03000",
+  "initial_sales_rates": [
+    {
+      "provider_code": "minimax",
+      "model_code": "MiniMax-H3",
+      "resolution": "768p",
+      "pricing_mode": "exact",
+      "output_second_points": "3.10000",
+      "fixed_task_points": "1.00000",
+      "reserve_markup": "1.00000",
+      "validation_status": "untested",
+      "enabled": false,
+      "source_reference": "docs/tech/2026-08-12-multimedia-creation-phase1-tech-design.md#271-销售报价"
+    },
+    {
+      "provider_code": "minimax",
+      "model_code": "MiniMax-H3",
+      "resolution": "2k",
+      "pricing_mode": "exact",
+      "output_second_points": "4.80000",
+      "fixed_task_points": "1.00000",
+      "reserve_markup": "1.00000",
+      "validation_status": "untested",
+      "enabled": false,
+      "source_reference": "docs/tech/2026-08-12-multimedia-creation-phase1-tech-design.md#271-销售报价"
+    },
+    {
+      "provider_code": "seedance",
+      "model_code": "doubao-seedance-2-5-260628",
+      "resolution": "480p",
+      "pricing_mode": "metered",
+      "output_second_points": "4.00000",
+      "fixed_task_points": "1.00000",
+      "reserve_markup": "1.15000",
+      "validation_status": "untested",
+      "enabled": false,
+      "source_reference": "docs/tech/2026-08-12-multimedia-creation-phase1-tech-design.md#271-销售报价"
+    },
+    {
+      "provider_code": "seedance",
+      "model_code": "doubao-seedance-2-5-260628",
+      "resolution": "720p",
+      "pricing_mode": "metered",
+      "output_second_points": "8.90000",
+      "fixed_task_points": "1.00000",
+      "reserve_markup": "1.15000",
+      "validation_status": "untested",
+      "enabled": false,
+      "source_reference": "docs/tech/2026-08-12-multimedia-creation-phase1-tech-design.md#271-销售报价"
+    },
+    {
+      "provider_code": "seedance",
+      "model_code": "doubao-seedance-2-0-260128",
+      "resolution": "480p",
+      "pricing_mode": "metered",
+      "output_second_points": "2.80000",
+      "fixed_task_points": "1.00000",
+      "reserve_markup": "1.15000",
+      "validation_status": "untested",
+      "enabled": false,
+      "source_reference": "docs/tech/2026-08-12-multimedia-creation-phase1-tech-design.md#271-销售报价"
+    },
+    {
+      "provider_code": "seedance",
+      "model_code": "doubao-seedance-2-0-260128",
+      "resolution": "720p",
+      "pricing_mode": "metered",
+      "output_second_points": "5.90000",
+      "fixed_task_points": "1.00000",
+      "reserve_markup": "1.15000",
+      "validation_status": "untested",
+      "enabled": false,
+      "source_reference": "docs/tech/2026-08-12-multimedia-creation-phase1-tech-design.md#271-销售报价"
+    },
+    {
+      "provider_code": "seedance",
+      "model_code": "doubao-seedance-2-0-260128",
+      "resolution": "1080p",
+      "pricing_mode": "metered",
+      "output_second_points": "14.60000",
+      "fixed_task_points": "1.00000",
+      "reserve_markup": "1.15000",
+      "validation_status": "untested",
+      "enabled": false,
+      "source_reference": "docs/tech/2026-08-12-multimedia-creation-phase1-tech-design.md#271-销售报价"
+    },
+    {
+      "provider_code": "seedance",
+      "model_code": "doubao-seedance-2-0-260128",
+      "resolution": "4k",
+      "pricing_mode": "metered",
+      "output_second_points": "29.50000",
+      "fixed_task_points": "1.00000",
+      "reserve_markup": "1.15000",
+      "validation_status": "untested",
+      "enabled": false,
+      "source_reference": "docs/tech/2026-08-12-multimedia-creation-phase1-tech-design.md#271-销售报价"
+    }
+  ]
+}

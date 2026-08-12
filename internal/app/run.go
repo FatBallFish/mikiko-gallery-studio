@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/app/observability"
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domaincluster "github.com/fatballfish/pic-gallery/internal/domain/cluster"
+	domainmedia "github.com/fatballfish/pic-gallery/internal/domain/media"
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	apphttp "github.com/fatballfish/pic-gallery/internal/http/router"
@@ -25,15 +27,18 @@ import (
 	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
 	adminconfigservice "github.com/fatballfish/pic-gallery/internal/service/adminconfig"
 	adminuserservice "github.com/fatballfish/pic-gallery/internal/service/adminuser"
+	adminvideoservice "github.com/fatballfish/pic-gallery/internal/service/adminvideo"
 	apikeyservice "github.com/fatballfish/pic-gallery/internal/service/apikey"
 	assetservice "github.com/fatballfish/pic-gallery/internal/service/assets"
 	auditservice "github.com/fatballfish/pic-gallery/internal/service/audit"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	canvasservice "github.com/fatballfish/pic-gallery/internal/service/canvas"
 	cashierservice "github.com/fatballfish/pic-gallery/internal/service/cashier"
 	clusterservice "github.com/fatballfish/pic-gallery/internal/service/cluster"
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
+	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	objectcleanupservice "github.com/fatballfish/pic-gallery/internal/service/objectcleanup"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
@@ -42,6 +47,10 @@ import (
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
+	videocallbackservice "github.com/fatballfish/pic-gallery/internal/service/videocallback"
+	videopricingservice "github.com/fatballfish/pic-gallery/internal/service/videopricing"
+	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
+	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/fatballfish/pic-gallery/internal/setup"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 )
@@ -353,7 +362,33 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	promptOptimizerSvc := promptoptimizerservice.NewService(textModelSvc, textModelStore, cfg.Security.PromptOptimizationQuoteSigningKey, nil)
 	slog.Info("database-backed stores enabled")
 
+	adminVideoStore := entstore.NewAdminVideoStore(client)
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
+	mediaAssetSvc := mediaassetservice.NewService(entstore.NewMediaStore(client), storageRegistry, mediaassetservice.Options{
+		Policy: domainmedia.DefaultPolicy(), Observer: observability.DefaultMetrics(),
+		PolicyResolver: func(ctx context.Context) (mediaassetservice.RuntimePolicy, error) {
+			policy, err := adminVideoStore.GetMediaPolicy(ctx)
+			if err != nil {
+				return mediaassetservice.RuntimePolicy{}, err
+			}
+			runtimePolicy := policy.RuntimePolicy()
+			return mediaassetservice.RuntimePolicy{Policy: runtimePolicy.Policy, UserQuotaBytes: runtimePolicy.UserQuotaBytes, UploadTTL: runtimePolicy.UploadTTL}, nil
+		},
+	})
+	api.SetMediaAssetService(mediaAssetSvc)
+	videoConfigStore := entstore.NewVideoConfigStore(client)
+	videoRoutingSvc := videoroutingservice.NewService(videoConfigStore)
+	videoQuoteKey := sha256.Sum256([]byte("video-quote:" + cfg.Security.PromptOptimizationQuoteSigningKey))
+	videoQuoteSvc := videotaskservice.NewQuoteService(videoRoutingSvc, videopricingservice.NewService(videoConfigStore, nil), videoQuoteKey[:], nil)
+	videoTaskSvc := videotaskservice.NewService(entstore.NewVideoTaskStore(client, billingStore), videoQuoteSvc, projectSvc, mediaAssetSvc, nil)
+	api.SetVideoServices(videoRoutingSvc, videoQuoteSvc, videoTaskSvc)
+	api.SetAdminVideoService(adminvideoservice.NewService(adminVideoStore))
+	canvasGenerator := canvasservice.NewTaskGenerator(taskSvc, canvasservice.NewImageBillingEstimator(billingSvc), videoTaskSvc)
+	canvasSvc := canvasservice.NewService(entstore.NewCanvasStore(client), canvasGenerator, nil)
+	canvasSvc.SetObserver(observability.DefaultMetrics())
+	api.SetCanvasService(canvasSvc)
+	videoCallbackStore := entstore.NewVideoCallbackStore(client)
+	api.SetVideoCallbackService(videocallbackservice.NewService(videocallbackservice.NewAccountResolver(videoCallbackStore), videoCallbackStore))
 	api.SetGalleryExportService(galleryexportservice.NewService(entstore.NewGalleryExportStore(client), storageRegistry, galleryexportservice.Options{}))
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)

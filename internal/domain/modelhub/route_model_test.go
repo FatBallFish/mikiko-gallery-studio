@@ -78,6 +78,25 @@ func TestListVisibleRouteModelsMergesGroupsAndUsesLowestMultiplier(t *testing.T)
 	}
 }
 
+func TestImageRoutingExcludesVideoRouteModels(t *testing.T) {
+	routing := ModelRoutingSnapshot{RouteModels: []RouteModelConfig{
+		{ID: 1, Code: "image", Name: "Image", MediaType: "image", Visibility: "public", Enabled: true},
+		{ID: 2, Code: "video", Name: "Video", MediaType: "video", Visibility: "public", Enabled: true},
+	}}
+	resolver := NewResolver(config.Config{})
+	resolver.SetModelRoutingSource(staticRoutingSource{snapshot: routing})
+	visible, err := resolver.ListVisibleRouteModels(t.Context(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(visible) != 1 || visible[0].Code != "image" {
+		t.Fatalf("visible image routes = %#v", visible)
+	}
+	if _, err := resolver.ResolveContext(t.Context(), ResolveRequest{RouteModelCode: "video", TaskType: "text_to_image", RequestedOutputImageCount: 1}); err == nil {
+		t.Fatal("image resolver accepted a video route model")
+	}
+}
+
 func TestListVisibleRouteModelsExposesAutoBaseResolutionByTaskType(t *testing.T) {
 	resolver := NewResolver(config.Config{Billing: config.BillingConfig{
 		AutoBaseResolutionDefaultByGroup: map[string]string{"plus": "2k"},

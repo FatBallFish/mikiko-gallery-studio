@@ -59,8 +59,11 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/user/v1/preferences", api.HandlePreferences)
 		mux.HandleFunc("/api/agent/user/v1/avatar", api.HandleAvatar)
 		mux.HandleFunc("/api/agent/user/v1/account/close", api.HandleCloseAccount)
+		mux.HandleFunc("/api/agent/features/v1", api.HandleAgentFeatures)
 		mux.HandleFunc("/api/agent/project/v1/projects", api.HandleProjects)
 		mux.HandleFunc("/api/agent/project/v1/projects/", api.HandleProjectDetail)
+		mux.HandleFunc("/api/agent/canvas/v1/canvases", api.HandleCanvases)
+		mux.HandleFunc("/api/agent/canvas/v1/canvases/", api.HandleCanvasDetail)
 		mux.HandleFunc("/api/agent/gallery/v1/images", api.HandleAgentGalleryImages)
 		mux.HandleFunc("/api/agent/gallery/v1/images:batch-publish", api.HandleAgentGalleryBatch)
 		mux.HandleFunc("/api/agent/gallery/v1/images:batch-group", api.HandleAgentGalleryBatch)
@@ -69,6 +72,20 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/gallery/v1/images:batch-download", api.HandleAgentGalleryBatch)
 		mux.HandleFunc("/api/agent/gallery/v1/export-jobs/", api.HandleAgentGalleryExportJob)
 		mux.HandleFunc("/api/agent/gallery/v1/images/", api.HandleAgentGalleryImageDetail)
+		mux.HandleFunc("/api/agent/media/v1/assets", api.HandleMediaAssets)
+		mux.HandleFunc("/api/agent/media/v1/assets:batch-group", api.HandleMediaAssetBatch)
+		mux.HandleFunc("/api/agent/media/v1/assets:batch-transfer-project", api.HandleMediaAssetBatch)
+		mux.HandleFunc("/api/agent/media/v1/assets:batch-delete", api.HandleMediaAssetBatch)
+		mux.HandleFunc("/api/agent/media/v1/assets:batch-download", api.HandleMediaAssetBatch)
+		mux.HandleFunc("/api/agent/media/v1/export-jobs/", api.HandleAgentGalleryExportJob)
+		mux.HandleFunc("/api/agent/media/v1/assets/", api.HandleMediaAssetDetail)
+		mux.HandleFunc("/api/agent/media/v1/uploads", api.HandleMediaUploads)
+		mux.HandleFunc("/api/agent/media/v1/uploads/", api.HandleMediaUploadDetail)
+		mux.HandleFunc("/api/agent/video/v1/capabilities", api.HandleVideoCapabilities)
+		mux.HandleFunc("/api/agent/video/v1/estimates", api.HandleVideoEstimates)
+		mux.HandleFunc("/api/agent/video/v1/tasks", api.HandleVideoTasks)
+		mux.HandleFunc("/api/agent/video/v1/tasks/events", api.HandleVideoTaskEvents)
+		mux.HandleFunc("/api/agent/video/v1/tasks/", api.HandleVideoTaskDetail)
 		mux.HandleFunc("/api/agent/billing/v1/balance", api.HandleBalance)
 		mux.HandleFunc("/api/agent/billing/v1/ledger", api.HandleLedger)
 		mux.HandleFunc("/api/agent/billing/v1/plans", api.HandleBillingPlans)
@@ -124,6 +141,7 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 			}
 			api.HandleOpenGalleryImageDetail(w, r)
 		})
+		mux.HandleFunc("/api/open/video/v1/provider-callbacks/", api.HandleVideoProviderCallback)
 		mux.HandleFunc("/api/open/image/v1/payments/webhooks/", api.HandlePaymentWebhook)
 		mux.HandleFunc("/api/open/cluster/v1/challenges", api.HandleClusterChallenge)
 		mux.HandleFunc("/api/open/cluster/v1/join", api.HandleClusterJoin)
@@ -149,6 +167,7 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/ops/admin/v1/call-records", api.HandleAdminCallRecords)
 		mux.HandleFunc("/api/ops/admin/v1/model-accounts", api.HandleAdminModelAccounts)
 		mux.HandleFunc("/api/ops/admin/v1/model-accounts/", api.HandleAdminModelAccountDetail)
+		mux.HandleFunc("/api/ops/admin/v1/model-account-models/", api.HandleAdminVideoModelConfiguration)
 		mux.HandleFunc("/api/ops/admin/v1/text-model-accounts", api.HandleAdminTextModelAccounts)
 		mux.HandleFunc("/api/ops/admin/v1/text-model-accounts/", api.HandleAdminTextModelAccountDetail)
 		mux.HandleFunc("/api/ops/admin/v1/text-models/", api.HandleAdminTextModelDetail)
@@ -165,6 +184,15 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/ops/admin/v1/metrics/dashboard", api.HandleAdminDashboard)
 		mux.HandleFunc("/api/ops/admin/v1/monitoring/snapshot", api.HandleAdminMonitoringSnapshot)
 		mux.HandleFunc("/api/ops/admin/v1/readiness", api.HandleAdminReadiness)
+		mux.HandleFunc("/api/ops/admin/v1/video/configuration", api.HandleAdminVideoConfiguration)
+		mux.HandleFunc("/api/ops/admin/v1/video-pricing-strategies", api.HandleAdminVideoPricingStrategies)
+		mux.HandleFunc("/api/ops/admin/v1/video-pricing-strategies/", api.HandleAdminVideoPricingStrategyDetail)
+		mux.HandleFunc("/api/ops/admin/v1/video-price-rules", api.HandleAdminVideoPriceRules)
+		mux.HandleFunc("/api/ops/admin/v1/video-price-rules/", api.HandleAdminVideoPriceRuleDetail)
+		mux.HandleFunc("/api/ops/admin/v1/video-tasks", api.HandleAdminVideoTasks)
+		mux.HandleFunc("/api/ops/admin/v1/video-tasks/", api.HandleAdminVideoTaskDetail)
+		mux.HandleFunc("/api/ops/admin/v1/media-processing-jobs/", api.HandleAdminMediaProcessingJobDetail)
+		mux.HandleFunc("/api/ops/admin/v1/media-policy", api.HandleAdminMediaPolicy)
 		mux.HandleFunc("/api/ops/admin/v1/cashier/overview", api.HandleAdminCashierOverview)
 		mux.HandleFunc("/api/ops/admin/v1/cashier/plans", api.HandleAdminCashierPlans)
 		mux.HandleFunc("/api/ops/admin/v1/cashier/plans/", api.HandleAdminCashierPlanDetail)
@@ -286,41 +314,61 @@ func splitSupplementalAbsolutePath(path string) ([]string, bool) {
 }
 
 var supplementalNormalExactRoutes = map[string]map[string]bool{
-	"/api/agent/auth/v1/password/reset":           {http.MethodPost: true},
-	"/api/agent/user/v1/preferences":              {http.MethodPut: true},
-	"/api/agent/user/v1/avatar":                   {http.MethodPost: true},
-	"/api/agent/developer/v1/api-keys":            {http.MethodGet: true, http.MethodPost: true},
-	"/api/agent/billing/v1/redeem-codes/redeem":   {http.MethodPost: true},
-	"/api/agent/image/v1/tasks/events":            {http.MethodGet: true},
-	"/api/ops/admin/v1/auth/logout":               {http.MethodPost: true},
-	"/api/ops/admin/v1/redeem-codes:batch-create": {http.MethodPost: true},
-	"/api/ops/admin/v1/redeem-codes:export":       {http.MethodPost: true},
-	"/api/ops/admin/v1/monitoring/snapshot":       {http.MethodGet: true},
-	"/api/ops/admin/v1/storage-configs:probe":     {http.MethodPost: true},
-	"/api/ops/admin/v1/cashier/visible-methods/":  {http.MethodGet: true, http.MethodPut: true},
-	"/docs/openapi.yaml":                          {http.MethodGet: true},
-	"/docs/openapi.json":                          {http.MethodGet: true},
-	"/docs/examples":                              {http.MethodGet: true},
-	"/docs/errors":                                {http.MethodGet: true},
+	"/api/agent/auth/v1/password/reset":                 {http.MethodPost: true},
+	"/api/agent/user/v1/preferences":                    {http.MethodPut: true},
+	"/api/agent/user/v1/avatar":                         {http.MethodPost: true},
+	"/api/agent/developer/v1/api-keys":                  {http.MethodGet: true, http.MethodPost: true},
+	"/api/agent/billing/v1/redeem-codes/redeem":         {http.MethodPost: true},
+	"/api/agent/image/v1/tasks/events":                  {http.MethodGet: true},
+	"/api/ops/admin/v1/auth/logout":                     {http.MethodPost: true},
+	"/api/ops/admin/v1/redeem-codes:batch-create":       {http.MethodPost: true},
+	"/api/ops/admin/v1/redeem-codes:export":             {http.MethodPost: true},
+	"/api/ops/admin/v1/monitoring/snapshot":             {http.MethodGet: true},
+	"/api/ops/admin/v1/storage-configs:probe":           {http.MethodPost: true},
+	"/api/ops/admin/v1/video/configuration":             {http.MethodGet: true},
+	"/api/ops/admin/v1/video-pricing-strategies":        {http.MethodGet: true, http.MethodPost: true},
+	"/api/ops/admin/v1/video-price-rules":               {http.MethodPost: true},
+	"/api/ops/admin/v1/video-tasks":                     {http.MethodGet: true},
+	"/api/ops/admin/v1/media-policy":                    {http.MethodGet: true, http.MethodPut: true},
+	"/api/agent/media/v1/export-jobs/{job_id}":          {http.MethodGet: true},
+	"/api/agent/media/v1/export-jobs/{job_id}/download": {http.MethodGet: true},
+	"/api/ops/admin/v1/cashier/visible-methods/":        {http.MethodGet: true, http.MethodPut: true},
+	"/docs/openapi.yaml":                                {http.MethodGet: true},
+	"/docs/openapi.json":                                {http.MethodGet: true},
+	"/docs/examples":                                    {http.MethodGet: true},
+	"/docs/errors":                                      {http.MethodGet: true},
 }
 
 var supplementalNormalTemplateRoutes = map[string]map[string]bool{
-	"/api/agent/developer/v1/api-keys/{key_id}":              {http.MethodPut: true, http.MethodPatch: true, http.MethodDelete: true},
-	"/api/agent/developer/v1/api-keys/{key_id}/reset-secret": {http.MethodPost: true},
-	"/api/agent/gallery/v1/images/{image_id}":                {http.MethodDelete: true},
-	"/api/agent/gallery/v1/images/{image_id}/group":          {http.MethodPut: true, http.MethodPatch: true},
-	"/api/agent/gallery/v1/images/{image_id}/like":           {http.MethodPost: true},
-	"/api/agent/gallery/v1/images/{image_id}/favorite":       {http.MethodPost: true},
-	"/api/agent/gallery/v1/images/{image_id}/publish":        {http.MethodPost: true, http.MethodDelete: true},
-	"/api/agent/gallery/v1/images:batch-publish":             {http.MethodPost: true},
-	"/api/agent/gallery/v1/images:batch-group":               {http.MethodPost: true},
-	"/api/agent/gallery/v1/images:batch-delete":              {http.MethodPost: true},
-	"/api/agent/gallery/v1/images:batch-transfer-project":    {http.MethodPost: true},
-	"/api/agent/gallery/v1/images:batch-download":            {http.MethodPost: true},
-	"/api/agent/gallery/v1/export-jobs/{job_id}":             {http.MethodGet: true},
-	"/api/agent/gallery/v1/export-jobs/{job_id}/download":    {http.MethodGet: true},
-	"/api/ops/admin/v1/image-reviews/{image_id}:approve":     {http.MethodPost: true},
-	"/api/ops/admin/v1/image-reviews/{image_id}:reject":      {http.MethodPost: true},
-	"/api/ops/admin/v1/image-reviews/{image_id}:unpublish":   {http.MethodPost: true},
-	"/api/ops/admin/v1/route-model-prices/{price_id}":        {http.MethodGet: true, http.MethodPut: true, http.MethodDelete: true},
+	"/api/agent/developer/v1/api-keys/{key_id}":                              {http.MethodPut: true, http.MethodPatch: true, http.MethodDelete: true},
+	"/api/agent/developer/v1/api-keys/{key_id}/reset-secret":                 {http.MethodPost: true},
+	"/api/agent/gallery/v1/images/{image_id}":                                {http.MethodDelete: true},
+	"/api/agent/gallery/v1/images/{image_id}/group":                          {http.MethodPut: true, http.MethodPatch: true},
+	"/api/agent/gallery/v1/images/{image_id}/like":                           {http.MethodPost: true},
+	"/api/agent/gallery/v1/images/{image_id}/favorite":                       {http.MethodPost: true},
+	"/api/agent/gallery/v1/images/{image_id}/publish":                        {http.MethodPost: true, http.MethodDelete: true},
+	"/api/agent/gallery/v1/images:batch-publish":                             {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-group":                               {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-delete":                              {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-transfer-project":                    {http.MethodPost: true},
+	"/api/agent/gallery/v1/images:batch-download":                            {http.MethodPost: true},
+	"/api/agent/gallery/v1/export-jobs/{job_id}":                             {http.MethodGet: true},
+	"/api/agent/gallery/v1/export-jobs/{job_id}/download":                    {http.MethodGet: true},
+	"/api/ops/admin/v1/image-reviews/{image_id}:approve":                     {http.MethodPost: true},
+	"/api/ops/admin/v1/image-reviews/{image_id}:reject":                      {http.MethodPost: true},
+	"/api/ops/admin/v1/image-reviews/{image_id}:unpublish":                   {http.MethodPost: true},
+	"/api/ops/admin/v1/route-model-prices/{price_id}":                        {http.MethodGet: true, http.MethodPut: true, http.MethodDelete: true},
+	"/api/ops/admin/v1/video-tasks/{task_id}":                                {http.MethodGet: true},
+	"/api/ops/admin/v1/video-tasks/{task_id}:retry-artifact":                 {http.MethodPost: true},
+	"/api/ops/admin/v1/video-tasks/{task_id}:retry-settlement":               {http.MethodPost: true},
+	"/api/ops/admin/v1/media-processing-jobs/{job_id}:retry":                 {http.MethodPost: true},
+	"/api/ops/admin/v1/model-account-models/{id}/video-capability":           {http.MethodGet: true, http.MethodPut: true, http.MethodDelete: true},
+	"/api/ops/admin/v1/model-account-models/{id}/video-cost-rules":           {http.MethodGet: true, http.MethodPost: true},
+	"/api/ops/admin/v1/model-account-models/{id}/video-cost-rules/{rule_id}": {http.MethodDelete: true},
+	"/api/ops/admin/v1/video-pricing-strategies/{id}":                        {http.MethodGet: true, http.MethodPut: true, http.MethodDelete: true},
+	"/api/ops/admin/v1/video-pricing-strategies/{id}:simulate":               {http.MethodPost: true},
+	"/api/ops/admin/v1/video-pricing-strategies/{id}:recalculate":            {http.MethodPost: true},
+	"/api/ops/admin/v1/video-price-rules/{id}":                               {http.MethodPut: true, http.MethodDelete: true},
+	"/api/ops/admin/v1/route-models/{id}/video-config":                       {http.MethodGet: true, http.MethodPut: true, http.MethodDelete: true},
+	"/api/ops/admin/v1/route-models/{id}/video-impact":                       {http.MethodGet: true},
 }

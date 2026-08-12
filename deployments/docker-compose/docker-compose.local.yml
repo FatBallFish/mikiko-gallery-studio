@@ -101,6 +101,8 @@ services:
       dockerfile: Dockerfile.worker
     image: mikiko-gallery-studio-worker:${IMAGE_TAG:-dev}
     restart: unless-stopped
+    expose:
+      - "9091"
     user: "0:0"
     entrypoint: ["/usr/local/bin/mikiko-gallery-studio-local-entrypoint"]
     command: ["mikiko-gallery-studio-worker"]
@@ -116,6 +118,7 @@ services:
     volumes:
       - ${PIC_GALLERY_LOCAL_CONFIG_DIR:-../../config}:/run/pic-gallery-config:ro
       - shared-storage:/var/lib/pic-gallery/storage
+      - worker-temp:/var/lib/pic-gallery/tmp
 
   user-web:
     build:
@@ -207,3 +210,4 @@ volumes:
   redis-data:
   minio-data:
   shared-storage:
+  worker-temp:

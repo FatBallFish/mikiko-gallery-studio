@@ -14,10 +14,12 @@ tags:
   - name: Setup
   - name: Agent Auth
   - name: Agent User
+  - name: Agent Features
   - name: Agent Billing
   - name: Agent Cashier
   - name: Agent Projects
   - name: Agent Image
+  - name: Agent Media
   - name: Agent Text
   - name: Open Image API
   - name: Admin Config
@@ -953,6 +955,18 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/EstimateResponse
+  /api/agent/features/v1:
+    get:
+      tags: [Agent Features]
+      summary: Get the user-visible multimedia feature availability
+      operationId: getAgentFeatures
+      responses:
+        '200':
+          description: Current feature availability; all new multimedia features default to disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentFeatureFlagsResponse'
   /api/agent/project/v1/projects:
     get:
       tags: [Agent Projects]
@@ -994,6 +1008,131 @@ paths:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/canvas/v1/canvases:
+    get:
+      tags: [Agent Canvas]
+      summary: List owned canvases
+      operationId: listAgentCanvases
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: project_id, in: query, schema: {type: string, format: uuid}}
+        - {name: search, in: query, schema: {type: string, maxLength: 128}}
+      responses:
+        '200': {description: Canvas list, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasListResponse'}}}}
+    post:
+      tags: [Agent Canvas]
+      summary: Create an owned project canvas
+      operationId: createAgentCanvas
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasCreateRequest'}}}}
+      responses:
+        '201': {description: Canvas created, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasResponse'}}}}
+  /api/agent/canvas/v1/canvases/{canvas_id}:
+    get:
+      tags: [Agent Canvas]
+      summary: Get an owned canvas
+      operationId: getAgentCanvas
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}]
+      responses: {'200': {description: Canvas, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasResponse'}}}}, '404': {description: Missing or foreign canvas}}
+    patch:
+      tags: [Agent Canvas]
+      summary: Rename a canvas using metadata CAS
+      operationId: renameAgentCanvas
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasRenameRequest'}}}}
+      responses: {'200': {description: Canvas renamed, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasResponse'}}}}, '409': {description: Metadata changed}}
+    delete:
+      tags: [Agent Canvas]
+      summary: Soft-delete an idle canvas
+      operationId: deleteAgentCanvas
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expected_metadata_version], properties: {expected_metadata_version: {type: integer, format: int64, minimum: 1}}}}}}
+      responses: {'200': {description: Canvas deleted}, '409': {description: Metadata changed or generation run active}}
+  /api/agent/canvas/v1/canvases/{canvas_id}:duplicate:
+    post:
+      tags: [Agent Canvas]
+      summary: Duplicate document and asset references without run state
+      operationId: duplicateAgentCanvas
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {name: {type: string, maxLength: 128}, project_id: {type: string, format: uuid}}}}}}
+      responses: {'201': {description: Canvas duplicated, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasResponse'}}}}}
+  /api/agent/canvas/v1/canvases/{canvas_id}:transfer-project:
+    post:
+      tags: [Agent Canvas]
+      summary: Transfer an idle canvas without moving referenced assets
+      operationId: transferAgentCanvasProject
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [target_project_id, expected_metadata_version], properties: {target_project_id: {type: string, format: uuid}, expected_metadata_version: {type: integer, format: int64, minimum: 1}}}}}}
+      responses: {'200': {description: Canvas transferred, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasResponse'}}}}, '409': {description: Metadata changed or generation run active}}
+  /api/agent/canvas/v1/canvases/{canvas_id}/document:
+    put:
+      tags: [Agent Canvas]
+      summary: Save a normalized full canvas document using revision CAS
+      operationId: saveAgentCanvasDocument
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expected_revision, document], properties: {expected_revision: {type: integer, format: int64, minimum: 1}, document: {$ref: '#/components/schemas/CanvasDocument'}}}}}}
+      responses: {'200': {description: Document saved, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasResponse'}}}}, '409': {description: Revision changed with remote summary}, '422': {description: Invalid graph or document limit}}
+  /api/agent/canvas/v1/canvases/{canvas_id}/runs:
+    get:
+      tags: [Agent Canvas]
+      summary: List current and unattached generation runs
+      operationId: listAgentCanvasRuns
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}, {name: refresh, in: query, schema: {type: boolean, default: false}}]
+      responses: {'200': {description: Generation runs, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasRunListResponse'}}}}}
+  /api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:estimate:
+    post:
+      tags: [Agent Canvas]
+      summary: Estimate the selected server-side generation node
+      operationId: estimateAgentCanvasNode
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}, {$ref: '#/components/parameters/CanvasNodeID'}]
+      responses: {'200': {description: Generation estimate}}
+  /api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:generate:
+    post:
+      tags: [Agent Canvas]
+      summary: Generate only the selected server-side node
+      operationId: generateAgentCanvasNode
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}, {$ref: '#/components/parameters/CanvasNodeID'}, {$ref: './components/parameters/common.yaml#/components/parameters/IdempotencyKey'}]
+      responses: {'202': {description: Generation run accepted, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasRunResponse'}}}}}
+  /api/agent/canvas/v1/canvases/{canvas_id}/runs/{run_id}:attach-results:
+    post:
+      tags: [Agent Canvas]
+      summary: Idempotently attach existing results without regenerating or charging
+      operationId: attachAgentCanvasRunResults
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}, {$ref: '#/components/parameters/CanvasRunID'}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                recovery_position:
+                  type: object
+                  required: [x, y]
+                  additionalProperties: false
+                  properties:
+                    x: {type: number, minimum: -1000000, maximum: 1000000}
+                    y: {type: number, minimum: -1000000, maximum: 1000000}
+      responses: {'200': {description: Results attached, marked unplaced, or recovered at the requested canvas position, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasRunResponse'}}}}}
+  /api/agent/canvas/v1/canvases/{canvas_id}/runs/{run_id}:cancel:
+    post:
+      tags: [Agent Canvas]
+      summary: Cancel an active generation run
+      operationId: cancelAgentCanvasRun
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CanvasID'}, {$ref: '#/components/parameters/CanvasRunID'}]
+      responses: {'200': {description: Run cancellation projection, content: {application/json: {schema: {$ref: '#/components/schemas/CanvasRunResponse'}}}}}
   /api/agent/project/v1/projects/{project_id}:
     patch:
       tags: [Agent Projects]
@@ -1345,6 +1484,464 @@ paths:
       responses:
         '204':
           description: History task hidden
+  /api/agent/media/v1/assets:
+    get:
+      tags: [Agent Media]
+      summary: List unified image, video, and audio assets
+      operationId: listAgentMediaAssets
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: project_id, in: query, schema: {type: string, format: uuid}}
+        - {name: media_type, in: query, schema: {type: string, enum: [image, video, audio]}}
+        - {name: source_type, in: query, schema: {type: string}}
+        - {name: group_name, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {type: string}}
+        - {name: keyword, in: query, schema: {type: string}}
+        - {name: sort_by, in: query, schema: {type: string}}
+        - {name: sort_order, in: query, schema: {type: string, enum: [asc, desc]}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200':
+          description: Unified media page, including compatible projections of unbackfilled images
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope
+  /api/agent/video/v1/capabilities:
+    get:
+      tags: [Agent Media]
+      summary: Get verified video combinations for one route model
+      operationId: getAgentVideoCapabilities
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: route_model_code, in: query, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Candidate-backed capability union}
+        '404': {description: Route model not found}
+        '409': {description: No verified enabled candidate}
+  /api/agent/video/v1/estimates:
+    post:
+      tags: [Agent Media]
+      summary: Validate a complete video combination and create a 120-second signed quote
+      operationId: postAgentVideoEstimate
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VideoTaskEstimateRequest'}
+      responses:
+        '200':
+          description: Signed version-bound video quote
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoEstimateResponse'}}}
+        '400':
+          description: Invalid field or input asset
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+        '404':
+          description: Project, route model, or input asset not found for the current user
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+        '409':
+          description: Pricing or verified capability is unavailable
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+        '422':
+          description: No candidate supports the complete parameter combination
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+  /api/agent/video/v1/tasks:
+    get:
+      tags: [Agent Media]
+      summary: List the current user's video tasks
+      operationId: listAgentVideoTasks
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: project_id, in: query, schema: {type: string, format: uuid}}
+        - {name: status, in: query, schema: {type: string, enum: [queued, running, saving, succeeded, partial, failed, cancelled]}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200':
+          description: Video task page
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoTaskPageResponse'}}}
+        '400':
+          description: Invalid project, cursor, status, or limit
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+    post:
+      tags: [Agent Media]
+      summary: Create an asynchronous video task from a signed quote
+      operationId: createAgentVideoTask
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, maxLength: 128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VideoTaskCreateRequest'}
+      responses:
+        '202':
+          description: Video task accepted
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoTaskResponse'}}}
+        '200':
+          description: Idempotent replay of an existing task
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoTaskResponse'}}}
+        '400':
+          description: Invalid field or input asset
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+        '402':
+          description: Insufficient available points for the reservation
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+        '404':
+          description: Project, route model, or input asset not found for the current user
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+        '409':
+          description: IDEMPOTENCY_KEY_REUSED or VIDEO_QUOTE_STALE
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+        '422':
+          description: VIDEO_CAPABILITY_MISMATCH
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+  /api/agent/video/v1/tasks/events:
+    get:
+      tags: [Agent Media]
+      summary: Stream video task projections
+      operationId: streamAgentVideoTasks
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: project_id, in: query, schema: {type: string, format: uuid}, description: Limit events to one owned project.}
+        - {name: after, in: query, schema: {type: string}, description: Resume after this event ID; takes precedence over Last-Event-ID.}
+        - {name: Last-Event-ID, in: header, schema: {type: string}, description: Resume after this event ID when the after query parameter is absent.}
+      responses:
+        '200':
+          description: Server-sent task events. Each event has an id line and a compact projection without prompts, pricing, inputs, or signed URLs.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/VideoTaskEventProjection'
+  /api/agent/video/v1/tasks/{task_id}:
+    get:
+      tags: [Agent Media]
+      summary: Get a video task
+      operationId: getAgentVideoTask
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: task_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Video task
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoTaskResponse'}}}
+        '404':
+          description: Video task does not exist or is not owned by the current user
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+  /api/agent/video/v1/tasks/{task_id}:cancel:
+    post:
+      tags: [Agent Media]
+      summary: Request cancellation of a video task
+      operationId: cancelAgentVideoTask
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: task_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, maxLength: 128}}
+      responses:
+        '202':
+          description: Cancellation accepted. Replays for a task are monotonic and return its current projection without advancing an already requested or terminal item again.
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoTaskResponse'}}}
+        '400':
+          description: Missing or invalid Idempotency-Key
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+        '404':
+          description: Video task does not exist or is not owned by the current user
+          content: {application/json: {schema: {$ref: '#/components/schemas/VideoErrorResponse'}}}
+  /api/open/video/v1/provider-callbacks/{provider_code}/{account_public_id}:
+    post:
+      tags: [Open Media]
+      summary: Receive a signed callback from a configured video provider account
+      operationId: receiveVideoProviderCallback
+      parameters:
+        - {name: provider_code, in: path, required: true, schema: {type: string, enum: [seedance, minimax]}}
+        - {name: account_public_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200': {description: Provider challenge response}
+        '202': {description: Verified callback accepted idempotently}
+        '400': {description: Invalid signature or callback payload}
+        '404': {description: Callback endpoint not found}
+  /api/agent/media/v1/assets:batch-group:
+    post:
+      tags: [Agent Media]
+      summary: Set a group on up to 100 media assets with per-item results
+      operationId: batchGroupAgentMediaAssets
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: '#/components/requestBodies/MediaAssetBatchRequest'}
+      responses:
+        '200': {description: Per-item batch results}
+  /api/agent/media/v1/assets:batch-transfer-project:
+    post:
+      tags: [Agent Media]
+      summary: Transfer up to 100 media assets with per-item results
+      operationId: batchTransferAgentMediaAssets
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: '#/components/requestBodies/MediaAssetBatchRequest'}
+      responses:
+        '200': {description: Per-item batch results}
+  /api/agent/media/v1/assets:batch-delete:
+    post:
+      tags: [Agent Media]
+      summary: Soft-delete up to 100 media assets with per-item results
+      operationId: batchDeleteAgentMediaAssets
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: '#/components/requestBodies/MediaAssetBatchRequest'}
+      responses:
+        '200': {description: Per-item batch results}
+  /api/agent/media/v1/assets:batch-download:
+    post:
+      tags: [Agent Media]
+      summary: Create an asynchronous ZIP export for up to 100 assets
+      operationId: batchDownloadAgentMediaAssets
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: '#/components/requestBodies/MediaAssetBatchRequest'}
+      responses:
+        '202': {description: Asynchronous export job accepted}
+  /api/agent/media/v1/export-jobs/{job_id}:
+    get:
+      tags: [Agent Media]
+      summary: Get a unified media export job
+      operationId: getAgentMediaExportJob
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: job_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Export job status}
+        '404': {description: Export job is missing or belongs to another user}
+  /api/agent/media/v1/export-jobs/{job_id}/download:
+    get:
+      tags: [Agent Media]
+      summary: Download a completed unified media export
+      operationId: downloadAgentMediaExport
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: job_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: ZIP archive}
+        '409': {description: Export is not ready or has expired}
+  /api/agent/media/v1/assets/{asset_id}:
+    get:
+      tags: [Agent Media]
+      summary: Get an owned media asset
+      operationId: getAgentMediaAsset
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Media asset detail}
+        '404': {description: Asset is missing or belongs to another user}
+    patch:
+      tags: [Agent Media]
+      summary: Rename, group, or transfer an owned media asset
+      operationId: patchAgentMediaAsset
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                name: {type: string, maxLength: 255}
+                group_name: {type: string, maxLength: 64}
+                project_id: {type: string, format: uuid}
+                expected_version: {type: integer, minimum: 1}
+              additionalProperties: false
+      responses:
+        '200': {description: Updated media asset}
+        '409': {description: Asset version changed}
+    delete:
+      tags: [Agent Media]
+      summary: Soft-delete an owned media asset and enqueue object cleanup
+      operationId: deleteAgentMediaAsset
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                expected_version: {type: integer, minimum: 1}
+              additionalProperties: false
+      responses:
+        '200': {description: Soft-deleted media asset}
+        '409': {description: Asset version changed}
+  /api/agent/media/v1/assets/{asset_id}/access:
+    get:
+      tags: [Agent Media]
+      summary: Create short-lived preview or download access
+      operationId: getAgentMediaAssetAccess
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: purpose, in: query, required: true, schema: {type: string, enum: [preview, download]}}
+      responses:
+        '200': {description: Short-lived storage access}
+  /api/agent/media/v1/assets/{asset_id}/content:
+    get:
+      tags: [Agent Media]
+      summary: Stream media from the local compatibility backend with single-range support
+      operationId: getAgentMediaAssetContent
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: purpose, in: query, required: true, schema: {type: string, enum: [preview, download]}}
+      responses:
+        '200': {description: Full media content}
+        '206': {description: Requested byte range}
+        '416': {description: Unsatisfiable or unsupported range}
+  /api/agent/media/v1/assets/{asset_id}:retry-processing:
+    post:
+      tags: [Agent Media]
+      summary: Retry probe and derivative processing for an owned asset
+      operationId: retryAgentMediaAssetProcessing
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Processing was requeued}
+  /api/agent/media/v1/uploads:
+    post:
+      tags: [Agent Media]
+      summary: Initialize a resumable local or object-storage upload
+      operationId: postAgentMediaUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_id, filename, media_type, mime_type, size_bytes]
+              properties:
+                project_id: {type: string, format: uuid}
+                group_name: {type: string, maxLength: 64}
+                filename: {type: string, maxLength: 255}
+                media_type: {type: string, enum: [image, video, audio]}
+                mime_type: {type: string}
+                size_bytes: {type: integer, minimum: 1, maximum: 1073741824}
+                checksum: {type: string}
+              additionalProperties: false
+      responses:
+        '201': {description: Upload session created or idempotently replayed}
+        '409': {description: Idempotency conflict or quota exceeded}
+  /api/agent/media/v1/uploads/{upload_id}:
+    get:
+      tags: [Agent Media]
+      summary: Get upload status and completed parts
+      operationId: getAgentMediaUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: upload_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Upload session status}
+    delete:
+      tags: [Agent Media]
+      summary: Abort an upload and release its reserved quota
+      operationId: deleteAgentMediaUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: upload_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Upload aborted}
+  /api/agent/media/v1/uploads/{upload_id}/parts/{part_number}:
+    put:
+      tags: [Agent Media]
+      summary: Stream one local-storage upload part
+      operationId: putAgentMediaUploadPart
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: upload_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: part_number, in: path, required: true, schema: {type: integer, minimum: 1, maximum: 10000}}
+        - {name: X-Content-SHA256, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        '200': {description: Completed local part}
+  /api/agent/media/v1/uploads/{upload_id}/parts/{part_number}:sign:
+    post:
+      tags: [Agent Media]
+      summary: Sign one direct object-storage upload part
+      operationId: signAgentMediaUploadPart
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: upload_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: part_number, in: path, required: true, schema: {type: integer, minimum: 1, maximum: 10000}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checksum]
+              properties:
+                checksum: {type: string}
+              additionalProperties: false
+      responses:
+        '200': {description: Short-lived signed part URL and required headers}
+  /api/agent/media/v1/uploads/{upload_id}:complete:
+    post:
+      tags: [Agent Media]
+      summary: Complete a multipart upload and create a processing media asset
+      operationId: completeAgentMediaUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: upload_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parts]
+              properties:
+                parts:
+                  type: array
+                  minItems: 1
+                  maxItems: 10000
+                  items:
+                    type: object
+                    required: [part_number, etag]
+                    properties:
+                      part_number: {type: integer}
+                      etag: {type: string}
+                      checksum: {type: string}
+                      size_bytes: {type: integer}
+              additionalProperties: false
+      responses:
+        '201': {description: Media asset created and probe queued}
   /api/open/image/v1/reference-assets/uploads:
     post:
       tags: [Open Image API]
@@ -4814,7 +5411,615 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminLoginResponse
+  /api/ops/admin/v1/model-account-models/{id}/video-capability:
+    get:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Get independently versioned video capability
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}}
+    put:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: CAS-save video capability; provider_native_max_n is limited to 1-10
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoCapabilityWrite'}}}}
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
+    delete:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Soft-delete video capability
+      security: [{bearerAuth: []}]
+      responses: {'204': {description: Deleted}}
+  /api/ops/admin/v1/model-account-models/{id}/video-cost-rules:
+    get:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: List immutable provider video cost versions
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}}
+    post:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Create next provider video cost version
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoCostRuleWrite'}}}}
+      responses: {'201': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
+  /api/ops/admin/v1/model-account-models/{id}/video-cost-rules/{rule_id}:
+    delete:
+      parameters:
+        - {$ref: '#/components/parameters/AdminVideoResourceID'}
+        - {name: rule_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {$ref: '#/components/parameters/AdminVideoExpectedVersion'}
+      tags: [Admin Model Routing]
+      summary: Soft-delete a provider cost version
+      security: [{bearerAuth: []}]
+      responses: {'204': {description: Deleted}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
+  /api/ops/admin/v1/video-pricing-strategies:
+    get:
+      tags: [Admin Model Routing]
+      summary: List video pricing strategies and sales rules
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}}
+    post:
+      tags: [Admin Model Routing]
+      summary: Create video pricing strategy
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoStrategyWrite'}}}}
+      responses: {'201': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
+  /api/ops/admin/v1/video-pricing-strategies/{id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Get video pricing strategy
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}}
+    put:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Create next immutable strategy version using CAS
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoStrategyWrite'}}}}
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
+    delete:
+      tags: [Admin Model Routing]
+      summary: Soft-delete pricing strategy
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}, {$ref: '#/components/parameters/AdminVideoExpectedVersion'}]
+      responses: {'204': {description: Deleted}}
+  /api/ops/admin/v1/video-pricing-strategies/{id}:simulate:
+    post:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Simulate worst-candidate cost, safety points, and target margin
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoSimulationRequest'}}}}
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
+  /api/ops/admin/v1/video-pricing-strategies/{id}:recalculate:
+    post:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Generate new sales rule versions without overwriting history
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoRecalculateRequest'}}}}
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
+  /api/ops/admin/v1/video-price-rules:
+    post:
+      tags: [Admin Model Routing]
+      summary: Create server-validated video sales price rule
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoPriceRuleWrite'}}}}
+      responses: {'201': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
+  /api/ops/admin/v1/video-price-rules/{id}:
+    put:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Create next immutable server-validated sales price version
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoPriceRuleWrite'}}}}
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
+    delete:
+      tags: [Admin Model Routing]
+      summary: Soft-delete sales price rule
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}, {$ref: '#/components/parameters/AdminVideoExpectedVersion'}]
+      responses: {'204': {description: Deleted}}
+  /api/ops/admin/v1/route-models/{id}/video-config:
+    get:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Get route video configuration
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}}
+    put:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: CAS-save visible combinations and strategy binding
+      description: Enabling is blocked for missing candidates, capabilities, costs, prices, target margin, or point-product net income floor.
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoRouteConfigWrite'}}}}
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
+    delete:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Soft-delete route video configuration
+      security: [{bearerAuth: []}]
+      responses: {'204': {description: Deleted}}
+  /api/ops/admin/v1/route-models/{id}/video-impact:
+    get:
+      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      tags: [Admin Model Routing]
+      summary: Preview route video safety and dependency impacts
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}}
+  /api/ops/admin/v1/video-tasks/{task_id}:retry-settlement:
+    post:
+      parameters:
+        - {name: task_id, in: path, required: true, schema: {type: string, format: uuid}}
+      tags: [Admin Model Routing]
+      summary: Requeue idempotent billing settlement for a terminal video task
+      description: Releases stale item leases and lets the video worker retry settlement without calling the provider or charging twice.
+      security: [{bearerAuth: []}]
+      responses:
+        '202': {$ref: '#/components/responses/AdminVideoResponse'}
+        '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}
 components:
+  parameters:
+    AdminVideoResourceID: {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+    AdminVideoExpectedVersion: {name: expected_version, in: query, required: true, schema: {type: integer, format: int64, minimum: 0}}
+    CanvasID: {name: canvas_id, in: path, required: true, schema: {type: string, format: uuid}}
+    CanvasNodeID: {name: node_id, in: path, required: true, schema: {type: string, maxLength: 64}}
+    CanvasRunID: {name: run_id, in: path, required: true, schema: {type: string, format: uuid}}
+  responses:
+    AdminVideoResponse:
+      description: Video administration payload in the standard success envelope
+      content: {application/json: {schema: {$ref: ./components/schemas/common.yaml#/components/schemas/SuccessEnvelope}}}
+    AdminVideoSafetyConflict:
+      description: Blocked by stale CAS, missing candidate/capability/cost/price, sales below server-calculated safety points, target margin, or point-product net income floor.
+      content: {application/json: {schema: {$ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope}}}
+  schemas:
+    AgentFeatureFlags:
+      type: object
+      required: [video_creation, creative_canvas, media_upload]
+      properties:
+        video_creation: {type: boolean}
+        creative_canvas: {type: boolean}
+        media_upload: {type: boolean}
+      additionalProperties: false
+    AgentFeatureFlagsResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AgentFeatureFlags'
+        meta:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    AdminVideoCapabilityWrite:
+      type: object
+      required: [expected_version, capability_version, capability, validation_status, enabled]
+      properties:
+        expected_version: {type: string}
+        capability_version: {type: string, minLength: 1, maxLength: 128}
+        capability:
+          type: object
+          required: [schema_version, provider_native_max_n, task_types]
+          properties:
+            schema_version: {type: integer, const: 1}
+            provider_native_max_n: {type: integer, minimum: 1, maximum: 10, description: Provider-native n; platform output_count remains 1-4 and keeps existing split-task behavior.}
+            task_types: {type: object, minProperties: 1, additionalProperties: {type: object}}
+          additionalProperties: true
+        validation_status: {type: string, enum: [draft, verified, failed]}
+        enabled: {type: boolean}
+      additionalProperties: false
+    AdminVideoCostRuleWrite:
+      type: object
+      required: [expected_rule_version, billing_mode, currency, rates, validation_status, effective_at, enabled]
+      properties:
+        id: {type: integer, format: int64}
+        expected_rule_version: {type: integer, minimum: 0}
+        billing_mode: {type: string}
+        currency: {type: string, minLength: 3, maxLength: 3}
+        rates: {type: object, required: [combinations], additionalProperties: true}
+        validation_status: {type: string, enum: [draft, verified, failed]}
+        effective_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        enabled: {type: boolean, description: Only verified cost rules may be enabled.}
+      additionalProperties: true
+    AdminVideoStrategyWrite:
+      type: object
+      required: [expected_version, code, name, minimum_net_point_income_cny, payment_fee_rate, target_margin_rate, provider_cost_buffer_rate, enabled]
+      properties:
+        expected_version: {type: integer, minimum: 0}
+        code: {type: string}
+        name: {type: string}
+        minimum_net_point_income_cny: {type: string, pattern: '^\d+(\.\d{1,5})?$'}
+        payment_fee_rate: {type: string, pattern: '^0(\.\d{1,5})?$'}
+        target_margin_rate: {type: string, pattern: '^0(\.\d{1,5})?$'}
+        provider_cost_buffer_rate: {type: string, pattern: '^0(\.\d{1,5})?$'}
+        enabled: {type: boolean, description: Bonus points dilute effective net CNY income per point and are included in the safety gate.}
+      additionalProperties: true
+    AdminVideoSimulationRequest:
+      type: object
+      required: [route_model_id, task_type, resolution, audio_mode, duration_seconds]
+      properties:
+        route_model_id: {type: integer, format: int64, minimum: 1}
+        task_type: {type: string, enum: [text_to_video, image_to_video, first_last_frame_to_video]}
+        resolution: {type: string}
+        audio_mode: {type: string, enum: [silent, generated]}
+        duration_seconds: {type: integer, minimum: 1}
+        reference_image_count: {type: integer, minimum: 0}
+      additionalProperties: false
+    AdminVideoRecalculateRequest:
+      type: object
+      required: [route_model_id, combinations, effective_at]
+      properties:
+        route_model_id: {type: integer, format: int64, minimum: 1}
+        combinations: {type: array, minItems: 1, items: {$ref: '#/components/schemas/AdminVideoSimulationRequest'}}
+        effective_at: {type: string, format: date-time}
+      additionalProperties: false
+    AdminVideoPriceRuleWrite:
+      type: object
+      required: [route_model_id, pricing_strategy_id, expected_version, task_type, resolution, audio_mode, duration_seconds, effective_at, minimum_task_points, pricing_mode, enabled]
+      properties:
+        route_model_id: {type: integer, format: int64, minimum: 1}
+        pricing_strategy_id: {type: integer, format: int64, minimum: 1}
+        expected_version: {type: integer, minimum: 0}
+        task_type: {type: string}
+        resolution: {type: string}
+        audio_mode: {type: string}
+        duration_seconds: {type: integer, minimum: 1}
+        effective_at: {type: string, format: date-time}
+        minimum_task_points: {type: string, pattern: '^\d+(\.\d{1,5})?$'}
+        pricing_mode: {type: string, enum: [exact, metered]}
+        safety_points: {type: string, description: Informational only; server recalculates and overwrites from worst enabled candidate cost.}
+        enabled: {type: boolean}
+      additionalProperties: true
+    AdminVideoRouteConfigWrite:
+      type: object
+      required: [expected_version, config_version, pricing_strategy_id, task_types, visible_combinations, max_output_count, enabled]
+      properties:
+        expected_version: {type: string}
+        config_version: {type: string}
+        pricing_strategy_id: {type: integer, format: int64, minimum: 1}
+        task_types: {type: array, minItems: 1, items: {type: string}}
+        visible_options: {type: object, additionalProperties: true}
+        defaults: {type: object, additionalProperties: true}
+        visible_combinations:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [task_type, resolution, audio_mode, duration_seconds]
+            properties:
+              task_type: {type: string}
+              resolution: {type: string}
+              aspect_ratio: {type: string}
+              audio_mode: {type: string}
+              duration_seconds: {type: integer, minimum: 1}
+        max_output_count: {type: integer, minimum: 1, maximum: 4}
+        enabled: {type: boolean}
+      additionalProperties: false
+    CanvasNode:
+      type: object
+      required: [id, type, position, size]
+      properties:
+        id: {type: string, maxLength: 64}
+        type: {type: string, enum: [prompt, image, video, audio, image_generation, video_generation, note]}
+        asset_id: {type: string, format: uuid}
+        position: {type: object, required: [x, y], properties: {x: {type: number}, y: {type: number}}}
+        size: {type: object, required: [width, height], properties: {width: {type: number}, height: {type: number}}}
+        payload: {type: object, additionalProperties: true}
+      additionalProperties: false
+    CanvasEdge:
+      type: object
+      required: [id, source, target, input_role]
+      properties:
+        id: {type: string, maxLength: 64}
+        source: {type: string, maxLength: 64}
+        target: {type: string, maxLength: 64}
+        source_handle: {type: string}
+        target_handle: {type: string}
+        input_role: {type: string, enum: [prompt, reference, first_frame, last_frame, result]}
+        ordinal: {type: integer, minimum: 0}
+      additionalProperties: false
+    CanvasDocument:
+      type: object
+      required: [schema_version, viewport, nodes, edges]
+      properties:
+        schema_version: {type: integer, enum: [1]}
+        viewport: {type: object, required: [x, y, zoom], properties: {x: {type: number}, y: {type: number}, zoom: {type: number}}}
+        nodes: {type: array, maxItems: 500, items: {$ref: '#/components/schemas/CanvasNode'}}
+        edges: {type: array, maxItems: 1000, items: {$ref: '#/components/schemas/CanvasEdge'}}
+      additionalProperties: false
+    Canvas:
+      type: object
+      required: [id, project_id, name, revision, metadata_version, document, node_count, edge_count, status]
+      properties:
+        id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        name: {type: string, maxLength: 128}
+        revision: {type: integer, format: int64}
+        metadata_version: {type: integer, format: int64}
+        document: {$ref: '#/components/schemas/CanvasDocument'}
+        node_count: {type: integer}
+        edge_count: {type: integer}
+        running_task_count: {type: integer}
+        failed_task_count: {type: integer}
+        status: {type: string, enum: [active, deleted]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+      additionalProperties: true
+    CanvasRun:
+      type: object
+      required: [id, canvas_id, node_id, submitted_revision, task_kind, task_id, status]
+      properties:
+        id: {type: string, format: uuid}
+        canvas_id: {type: string, format: uuid}
+        node_id: {type: string}
+        submitted_revision: {type: integer, format: int64}
+        task_kind: {type: string, enum: [image, video]}
+        task_id: {type: string, format: uuid}
+        status: {type: string, enum: [submitting, queued, running, saving, succeeded, failed, canceled, attached, unplaced]}
+        result_asset_ids: {type: array, items: {type: string, format: uuid}}
+        attached_revision: {type: integer, format: int64}
+      additionalProperties: true
+    CanvasCreateRequest:
+      type: object
+      required: [project_id, name]
+      properties: {project_id: {type: string, format: uuid}, name: {type: string, maxLength: 128}, template: {type: string, enum: [blank, image_exploration, image_to_video]}, document: {$ref: '#/components/schemas/CanvasDocument'}}
+      additionalProperties: false
+    CanvasRenameRequest:
+      type: object
+      required: [name, expected_metadata_version]
+      properties: {name: {type: string, maxLength: 128}, expected_metadata_version: {type: integer, format: int64, minimum: 1}}
+      additionalProperties: false
+    CanvasResponse: {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Canvas'}, meta: {type: object}}, additionalProperties: false}
+    CanvasListResponse: {type: object, required: [data], properties: {data: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/Canvas'}}}}, meta: {type: object}}, additionalProperties: false}
+    CanvasRunResponse: {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/CanvasRun'}, meta: {type: object}}, additionalProperties: false}
+    CanvasRunListResponse: {type: object, required: [data], properties: {data: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/CanvasRun'}}}}, meta: {type: object}}, additionalProperties: false}
+    VideoPromptVariableBinding:
+      type: object
+      required: [name, value]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 64}
+        value: {type: string}
+      additionalProperties: false
+    VideoReferenceBinding:
+      type: object
+      required: [name, asset_id]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 64}
+        asset_id: {type: string, format: uuid}
+      additionalProperties: false
+    VideoInputRequest:
+      type: object
+      required: [asset_id, role, ordinal]
+      properties:
+        asset_id: {type: string, format: uuid}
+        role: {type: string, enum: [first_frame, last_frame]}
+        ordinal: {type: integer, minimum: 0}
+      additionalProperties: false
+    VideoTaskEstimateRequest:
+      type: object
+      required: [project_id, route_model_code, task_type, prompt_template, duration_seconds, resolution, aspect_ratio, audio_mode, output_count]
+      properties:
+        project_id: {type: string, format: uuid}
+        route_model_code: {type: string, minLength: 1, maxLength: 64}
+        task_type: {type: string, enum: [text_to_video, image_to_video, first_last_frame_to_video]}
+        prompt_template: {type: string}
+        prompt_variables:
+          type: array
+          items: {$ref: '#/components/schemas/VideoPromptVariableBinding'}
+        reference_bindings:
+          type: array
+          items: {$ref: '#/components/schemas/VideoReferenceBinding'}
+        inputs:
+          type: array
+          items: {$ref: '#/components/schemas/VideoInputRequest'}
+        duration_seconds: {type: integer, minimum: 1}
+        resolution: {type: string}
+        aspect_ratio: {type: string}
+        audio_mode: {type: string, enum: [silent, generated]}
+        output_count: {type: integer, minimum: 1, maximum: 4}
+      additionalProperties: false
+    VideoTaskCreateRequest:
+      type: object
+      required: [project_id, route_model_code, task_type, prompt_template, duration_seconds, resolution, aspect_ratio, audio_mode, output_count, quote_token]
+      properties:
+        project_id: {type: string, format: uuid}
+        route_model_code: {type: string, minLength: 1, maxLength: 64}
+        task_type: {type: string, enum: [text_to_video, image_to_video, first_last_frame_to_video]}
+        prompt_template: {type: string}
+        prompt_variables:
+          type: array
+          items: {$ref: '#/components/schemas/VideoPromptVariableBinding'}
+        reference_bindings:
+          type: array
+          items: {$ref: '#/components/schemas/VideoReferenceBinding'}
+        inputs:
+          type: array
+          items: {$ref: '#/components/schemas/VideoInputRequest'}
+        duration_seconds: {type: integer, minimum: 1}
+        resolution: {type: string}
+        aspect_ratio: {type: string}
+        audio_mode: {type: string, enum: [silent, generated]}
+        output_count: {type: integer, minimum: 1, maximum: 4}
+        quote_token: {type: string, minLength: 1}
+      additionalProperties: false
+    VideoEstimate:
+      type: object
+      required: [route_model_id, route_model_code, capability_version, config_version, price_version, unit_points, estimated_points, max_reserved_points, quote_token, expires_at]
+      properties:
+        route_model_id: {type: integer, format: int64}
+        route_model_code: {type: string}
+        capability_version: {type: string}
+        config_version: {type: string}
+        price_version: {type: string}
+        unit_points: {type: string, pattern: '^-?[0-9]+\.[0-9]{5}$'}
+        estimated_points: {type: string, pattern: '^-?[0-9]+\.[0-9]{5}$'}
+        max_reserved_points: {type: string, pattern: '^-?[0-9]+\.[0-9]{5}$'}
+        quote_token: {type: string}
+        expires_at: {type: string, format: date-time}
+      additionalProperties: false
+    VideoTaskItem:
+      type: object
+      required: [id, ordinal, status, stage, actual_output_seconds, actual_points, version]
+      properties:
+        id: {type: string, format: uuid}
+        ordinal: {type: integer, minimum: 0}
+        status: {type: string}
+        stage: {type: string}
+        result_asset_id: {type: string, format: uuid}
+        actual_output_seconds: {type: string}
+        actual_points: {type: string}
+        error_code: {type: string}
+        error_message: {type: string}
+        next_action_at: {type: string, format: date-time}
+        version: {type: integer, format: int64}
+      additionalProperties: false
+    VideoTaskInput:
+      type: object
+      required: [id, asset_id, role, ordinal, asset_snapshot]
+      properties:
+        id: {type: string, format: uuid}
+        asset_id: {type: string, format: uuid}
+        role: {type: string, enum: [first_frame, last_frame]}
+        ordinal: {type: integer, minimum: 0}
+        asset_snapshot: {type: object, additionalProperties: true}
+      additionalProperties: false
+    VideoTask:
+      type: object
+      required: [id, project_id, source_channel, task_type, status, progress_stage, prompt_template, prompt_binding_snapshot, execution_prompt, route_model_id, route_model_code, duration_seconds, resolution, aspect_ratio, generate_audio, requested_output_count, success_output_count, estimated_points, reserved_points, actual_points, pricing_snapshot, routing_snapshot, settlement_status, items, inputs, version, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        source_channel: {type: string}
+        source_canvas_id: {type: string, format: uuid}
+        source_canvas_node_id: {type: string}
+        task_type: {type: string, enum: [text_to_video, image_to_video, first_last_frame_to_video]}
+        status: {type: string}
+        progress_stage: {type: string}
+        progress_message: {type: string}
+        prompt_template: {type: string}
+        prompt_binding_snapshot: {type: object, additionalProperties: true}
+        execution_prompt: {type: string}
+        route_model_id: {type: integer, format: int64}
+        route_model_code: {type: string}
+        duration_seconds: {type: integer, minimum: 1}
+        resolution: {type: string}
+        aspect_ratio: {type: string}
+        generate_audio: {type: boolean}
+        requested_output_count: {type: integer, minimum: 1, maximum: 4}
+        success_output_count: {type: integer, minimum: 0, maximum: 4}
+        estimated_points: {type: string}
+        reserved_points: {type: string}
+        actual_points: {type: string}
+        pricing_snapshot: {type: object, additionalProperties: true}
+        routing_snapshot: {type: object, additionalProperties: true}
+        settlement_status: {type: string}
+        items: {type: array, items: {$ref: '#/components/schemas/VideoTaskItem'}}
+        inputs: {type: array, items: {$ref: '#/components/schemas/VideoTaskInput'}}
+        version: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+      additionalProperties: false
+    VideoFieldError:
+      type: object
+      properties:
+        field: {type: string}
+        code: {type: string}
+        message: {type: string}
+      additionalProperties: true
+    VideoErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, chargeable]
+          properties:
+            code:
+              type: string
+              enum: [VIDEO_FIELD_INVALID, VIDEO_INPUT_INVALID, VIDEO_QUOTE_STALE, IDEMPOTENCY_KEY_REUSED, VIDEO_CAPABILITY_MISMATCH, BILLING_INSUFFICIENT_POINTS, NOT_FOUND, CONFLICT, INTERNAL_ERROR]
+            message: {type: string}
+            chargeable: {type: boolean}
+            next_suggestion: {type: string}
+            details:
+              type: object
+              properties:
+                field_errors: {type: array, items: {$ref: '#/components/schemas/VideoFieldError'}}
+              additionalProperties: true
+        meta:
+          type: object
+          properties:
+            request_id: {type: string}
+      additionalProperties: false
+    VideoEstimateResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/VideoEstimate'}
+        meta: {type: object, properties: {request_id: {type: string}}}
+      additionalProperties: false
+    VideoTaskResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/VideoTask'}
+        meta: {type: object, properties: {request_id: {type: string}}}
+      additionalProperties: false
+    VideoTaskPageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/VideoTask'}}
+            next_cursor: {type: string, format: uuid}
+          additionalProperties: false
+        meta: {type: object, properties: {request_id: {type: string}}}
+      additionalProperties: false
+    VideoTaskEventProjection:
+      type: object
+      required: [id, version, status, stage, updated_at, result_ready]
+      properties:
+        id: {type: string, format: uuid}
+        version: {type: integer, format: int64}
+        status: {type: string, enum: [queued, running, saving, succeeded, partial, failed, cancelled]}
+        stage: {type: string}
+        updated_at: {type: string, format: date-time}
+        result_ready: {type: boolean}
+      additionalProperties: false
+  requestBodies:
+    MediaAssetBatchRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items:
+                type: array
+                minItems: 1
+                maxItems: 100
+                items:
+                  type: object
+                  required: [id]
+                  properties:
+                    id: {type: string, format: uuid}
+                    expected_version: {type: integer, minimum: 1}
+                  additionalProperties: false
+              group_name: {type: string, maxLength: 64}
+              target_project_id: {type: string, format: uuid}
+              project_id: {type: string, format: uuid}
+            additionalProperties: false
   securitySchemes:
     bearerAuth:
       type: http

@@ -2155,18 +2155,20 @@ components:
         name: { type: string }
         description: { type: string }
         visibility: { type: string, enum: [public, groups, hidden] }
+        media_type: { type: string, enum: [image, video] }
         enabled: { type: boolean }
         group_ids:
           type: array
           items: { type: integer, format: int64 }
     AdminRouteModelWriteRequest:
       type: object
-      required: [code, name, visibility]
+      required: [code, name, visibility, media_type]
       properties:
         code: { type: string }
         name: { type: string }
         description: { type: string }
         visibility: { type: string, enum: [public, groups, hidden] }
+        media_type: { type: string, enum: [image, video] }
         enabled: { type: boolean }
         sort_order: { type: integer }
         group_ids:

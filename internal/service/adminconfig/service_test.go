@@ -92,6 +92,22 @@ func TestListTabsReturnsDefaultRuntimeConfig(t *testing.T) {
 	})
 }
 
+func TestFeatureFlagsDefaultFalseAndPersistInSiteTab(t *testing.T) {
+	svc := adminconfig.NewServiceWithStore(testConfig(), adminconfig.NewMemoryStore())
+	tab, err := svc.GetTab(t.Context(), "site")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"video_creation", "creative_canvas", "media_upload"} {
+		assertConfigItemValue(t, tab, key, false)
+	}
+	updated, err := svc.UpdateTab(t.Context(), domainadminconfig.UpdateTabRequest{TabKey: "site", Version: tab.Version, Items: []domainadminconfig.Item{{ConfigCategory: "features", ConfigKey: "video_creation", ConfigValue: map[string]any{"value": true}, Scope: "global"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertConfigItemValue(t, updated, "video_creation", true)
+}
+
 func TestPaymentsTabValidatesOrderTimeoutRange(t *testing.T) {
 	for _, value := range []int{59, 86401} {
 		t.Run(fmt.Sprintf("reject_%d", value), func(t *testing.T) {

@@ -181,6 +181,61 @@ var (
 			},
 		},
 	}
+	// CanvasGenerationRunsColumns holds the columns for the "canvas_generation_runs" table.
+	CanvasGenerationRunsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "node_id", Type: field.TypeString, Size: 64},
+		{Name: "submitted_revision", Type: field.TypeInt64},
+		{Name: "task_kind", Type: field.TypeString, Size: 16},
+		{Name: "task_id", Type: field.TypeUUID},
+		{Name: "node_snapshot", Type: field.TypeJSON},
+		{Name: "status", Type: field.TypeString, Size: 24, Default: "running"},
+		{Name: "result_asset_ids", Type: field.TypeJSON, Nullable: true},
+		{Name: "attached_revision", Type: field.TypeInt64, Nullable: true},
+		{Name: "idempotency_key", Type: field.TypeString, Size: 128},
+		{Name: "error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "canvas_id", Type: field.TypeUUID},
+	}
+	// CanvasGenerationRunsTable holds the schema information for the "canvas_generation_runs" table.
+	CanvasGenerationRunsTable = &schema.Table{
+		Name:       "canvas_generation_runs",
+		Columns:    CanvasGenerationRunsColumns,
+		PrimaryKey: []*schema.Column{CanvasGenerationRunsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "canvas_generation_runs_creative_canvas_generation_runs",
+				Columns:    []*schema.Column{CanvasGenerationRunsColumns[15]},
+				RefColumns: []*schema.Column{CreativeCanvasColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "canvasgenerationrun_canvas_id_node_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{CanvasGenerationRunsColumns[15], CanvasGenerationRunsColumns[4], CanvasGenerationRunsColumns[1]},
+			},
+			{
+				Name:    "canvasgenerationrun_canvas_id_node_id_idempotency_key",
+				Unique:  true,
+				Columns: []*schema.Column{CanvasGenerationRunsColumns[15], CanvasGenerationRunsColumns[4], CanvasGenerationRunsColumns[12]},
+			},
+			{
+				Name:    "canvasgenerationrun_task_kind_task_id",
+				Unique:  false,
+				Columns: []*schema.Column{CanvasGenerationRunsColumns[6], CanvasGenerationRunsColumns[7]},
+			},
+			{
+				Name:    "canvasgenerationrun_status",
+				Unique:  false,
+				Columns: []*schema.Column{CanvasGenerationRunsColumns[9]},
+			},
+		},
+	}
 	// ClusterChallengesColumns holds the columns for the "cluster_challenges" table.
 	ClusterChallengesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -322,6 +377,105 @@ var (
 				Name:    "configitem_config_category_config_key_scope",
 				Unique:  true,
 				Columns: []*schema.Column{SystemConfigsColumns[1], SystemConfigsColumns[2], SystemConfigsColumns[4]},
+			},
+		},
+	}
+	// CreativeCanvasColumns holds the columns for the "creative_canvas" table.
+	CreativeCanvasColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "name_key", Type: field.TypeString, Size: 128},
+		{Name: "schema_version", Type: field.TypeInt, Default: 1},
+		{Name: "revision", Type: field.TypeInt64, Default: 1},
+		{Name: "metadata_version", Type: field.TypeInt64, Default: 1},
+		{Name: "document_json", Type: field.TypeJSON},
+		{Name: "document_bytes", Type: field.TypeInt, Default: 0},
+		{Name: "node_count", Type: field.TypeInt, Default: 0},
+		{Name: "edge_count", Type: field.TypeInt, Default: 0},
+		{Name: "preview_derivative_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "running_task_count", Type: field.TypeInt, Default: 0},
+		{Name: "failed_task_count", Type: field.TypeInt, Default: 0},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "active"},
+		{Name: "last_transferred_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_saved_at", Type: field.TypeTime},
+		{Name: "project_id", Type: field.TypeUUID},
+	}
+	// CreativeCanvasTable holds the schema information for the "creative_canvas" table.
+	CreativeCanvasTable = &schema.Table{
+		Name:       "creative_canvas",
+		Columns:    CreativeCanvasColumns,
+		PrimaryKey: []*schema.Column{CreativeCanvasColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "creative_canvas_projects_creative_canvases",
+				Columns:    []*schema.Column{CreativeCanvasColumns[20]},
+				RefColumns: []*schema.Column{ProjectsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "creativecanvas_user_id_project_id_updated_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreativeCanvasColumns[4], CreativeCanvasColumns[20], CreativeCanvasColumns[2], CreativeCanvasColumns[0]},
+			},
+			{
+				Name:    "creativecanvas_user_id_project_id_name_key",
+				Unique:  false,
+				Columns: []*schema.Column{CreativeCanvasColumns[4], CreativeCanvasColumns[20], CreativeCanvasColumns[6]},
+			},
+			{
+				Name:    "creativecanvas_status",
+				Unique:  false,
+				Columns: []*schema.Column{CreativeCanvasColumns[17]},
+			},
+			{
+				Name:    "creativecanvas_running_task_count",
+				Unique:  false,
+				Columns: []*schema.Column{CreativeCanvasColumns[15]},
+			},
+		},
+	}
+	// CreativeCanvasRevisionsColumns holds the columns for the "creative_canvas_revisions" table.
+	CreativeCanvasRevisionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "revision", Type: field.TypeInt64},
+		{Name: "schema_version", Type: field.TypeInt, Default: 1},
+		{Name: "document_json", Type: field.TypeJSON},
+		{Name: "reason", Type: field.TypeString, Size: 24, Default: "periodic"},
+		{Name: "created_by", Type: field.TypeString, Size: 16, Default: "system"},
+		{Name: "document_bytes", Type: field.TypeInt, Default: 0},
+		{Name: "canvas_id", Type: field.TypeUUID},
+	}
+	// CreativeCanvasRevisionsTable holds the schema information for the "creative_canvas_revisions" table.
+	CreativeCanvasRevisionsTable = &schema.Table{
+		Name:       "creative_canvas_revisions",
+		Columns:    CreativeCanvasRevisionsColumns,
+		PrimaryKey: []*schema.Column{CreativeCanvasRevisionsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "creative_canvas_revisions_creative_canvas_revisions",
+				Columns:    []*schema.Column{CreativeCanvasRevisionsColumns[9]},
+				RefColumns: []*schema.Column{CreativeCanvasColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "creativecanvasrevision_canvas_id_revision",
+				Unique:  true,
+				Columns: []*schema.Column{CreativeCanvasRevisionsColumns[9], CreativeCanvasRevisionsColumns[3]},
+			},
+			{
+				Name:    "creativecanvasrevision_canvas_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{CreativeCanvasRevisionsColumns[9], CreativeCanvasRevisionsColumns[1]},
 			},
 		},
 	}
@@ -703,6 +857,317 @@ var (
 			},
 		},
 	}
+	// MediaAssetsColumns holds the columns for the "media_assets" table.
+	MediaAssetsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "legacy_image_result_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "name", Type: field.TypeString, Size: 255},
+		{Name: "name_key", Type: field.TypeString, Size: 255},
+		{Name: "group_name", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "media_type", Type: field.TypeString, Size: 16},
+		{Name: "source_type", Type: field.TypeString, Size: 24},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "processing"},
+		{Name: "visibility_status", Type: field.TypeString, Size: 32, Default: "private"},
+		{Name: "storage_config_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: "local"},
+		{Name: "bucket", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "object_key", Type: field.TypeString, Size: 512},
+		{Name: "mime_type", Type: field.TypeString, Size: 128},
+		{Name: "container", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "codec", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "file_size_bytes", Type: field.TypeInt64},
+		{Name: "sha256", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "width", Type: field.TypeInt, Nullable: true},
+		{Name: "height", Type: field.TypeInt, Nullable: true},
+		{Name: "duration_ms", Type: field.TypeInt64, Nullable: true},
+		{Name: "frame_rate_milli", Type: field.TypeInt, Nullable: true},
+		{Name: "audio_codec", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "channels", Type: field.TypeInt, Nullable: true},
+		{Name: "sample_rate", Type: field.TypeInt, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "source_task_kind", Type: field.TypeString, Nullable: true, Size: 16},
+		{Name: "source_task_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "source_canvas_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "processing_error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "processing_error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "version", Type: field.TypeInt64, Default: 1},
+		{Name: "processed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "project_id", Type: field.TypeUUID},
+	}
+	// MediaAssetsTable holds the schema information for the "media_assets" table.
+	MediaAssetsTable = &schema.Table{
+		Name:       "media_assets",
+		Columns:    MediaAssetsColumns,
+		PrimaryKey: []*schema.Column{MediaAssetsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "media_assets_projects_media_assets",
+				Columns:    []*schema.Column{MediaAssetsColumns[37]},
+				RefColumns: []*schema.Column{ProjectsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mediaasset_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{MediaAssetsColumns[4]},
+			},
+			{
+				Name:    "mediaasset_project_id",
+				Unique:  false,
+				Columns: []*schema.Column{MediaAssetsColumns[37]},
+			},
+			{
+				Name:    "mediaasset_user_id_project_id_created_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{MediaAssetsColumns[4], MediaAssetsColumns[37], MediaAssetsColumns[1], MediaAssetsColumns[0]},
+			},
+			{
+				Name:    "mediaasset_user_id_project_id_media_type_source_type_status",
+				Unique:  false,
+				Columns: []*schema.Column{MediaAssetsColumns[4], MediaAssetsColumns[37], MediaAssetsColumns[9], MediaAssetsColumns[10], MediaAssetsColumns[11]},
+			},
+			{
+				Name:    "mediaasset_user_id_project_id_name_key",
+				Unique:  false,
+				Columns: []*schema.Column{MediaAssetsColumns[4], MediaAssetsColumns[37], MediaAssetsColumns[7]},
+			},
+			{
+				Name:    "mediaasset_storage_config_id_object_key",
+				Unique:  true,
+				Columns: []*schema.Column{MediaAssetsColumns[13], MediaAssetsColumns[16]},
+			},
+			{
+				Name:    "mediaasset_legacy_image_result_id",
+				Unique:  true,
+				Columns: []*schema.Column{MediaAssetsColumns[5]},
+			},
+			{
+				Name:    "mediaasset_source_task_kind_source_task_id",
+				Unique:  false,
+				Columns: []*schema.Column{MediaAssetsColumns[30], MediaAssetsColumns[31]},
+			},
+		},
+	}
+	// MediaAssetReferencesColumns holds the columns for the "media_asset_references" table.
+	MediaAssetReferencesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "ref_type", Type: field.TypeString, Size: 32},
+		{Name: "ref_id", Type: field.TypeUUID},
+		{Name: "ref_key", Type: field.TypeString, Size: 128},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "asset_id", Type: field.TypeUUID},
+	}
+	// MediaAssetReferencesTable holds the schema information for the "media_asset_references" table.
+	MediaAssetReferencesTable = &schema.Table{
+		Name:       "media_asset_references",
+		Columns:    MediaAssetReferencesColumns,
+		PrimaryKey: []*schema.Column{MediaAssetReferencesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "media_asset_references_media_assets_references",
+				Columns:    []*schema.Column{MediaAssetReferencesColumns[8]},
+				RefColumns: []*schema.Column{MediaAssetsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mediaassetreference_asset_id",
+				Unique:  false,
+				Columns: []*schema.Column{MediaAssetReferencesColumns[8]},
+			},
+			{
+				Name:    "mediaassetreference_user_id_ref_type_ref_id",
+				Unique:  false,
+				Columns: []*schema.Column{MediaAssetReferencesColumns[7], MediaAssetReferencesColumns[4], MediaAssetReferencesColumns[5]},
+			},
+			{
+				Name:    "media_asset_reference_active",
+				Unique:  true,
+				Columns: []*schema.Column{MediaAssetReferencesColumns[8], MediaAssetReferencesColumns[4], MediaAssetReferencesColumns[5], MediaAssetReferencesColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
+			},
+		},
+	}
+	// MediaDerivativesColumns holds the columns for the "media_derivatives" table.
+	MediaDerivativesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "kind", Type: field.TypeString, Size: 32},
+		{Name: "transform_version", Type: field.TypeInt, Default: 1},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "pending"},
+		{Name: "storage_config_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: "local"},
+		{Name: "bucket", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "object_key", Type: field.TypeString, Size: 512},
+		{Name: "mime_type", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "file_size_bytes", Type: field.TypeInt64, Default: 0},
+		{Name: "width", Type: field.TypeInt, Nullable: true},
+		{Name: "height", Type: field.TypeInt, Nullable: true},
+		{Name: "duration_ms", Type: field.TypeInt64, Nullable: true},
+		{Name: "bitrate", Type: field.TypeInt64, Nullable: true},
+		{Name: "sha256", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "asset_id", Type: field.TypeUUID},
+	}
+	// MediaDerivativesTable holds the schema information for the "media_derivatives" table.
+	MediaDerivativesTable = &schema.Table{
+		Name:       "media_derivatives",
+		Columns:    MediaDerivativesColumns,
+		PrimaryKey: []*schema.Column{MediaDerivativesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "media_derivatives_media_assets_derivatives",
+				Columns:    []*schema.Column{MediaDerivativesColumns[20]},
+				RefColumns: []*schema.Column{MediaAssetsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mediaderivative_asset_id_kind_transform_version",
+				Unique:  true,
+				Columns: []*schema.Column{MediaDerivativesColumns[20], MediaDerivativesColumns[4], MediaDerivativesColumns[5]},
+			},
+			{
+				Name:    "mediaderivative_status",
+				Unique:  false,
+				Columns: []*schema.Column{MediaDerivativesColumns[6]},
+			},
+			{
+				Name:    "mediaderivative_storage_config_id_object_key",
+				Unique:  true,
+				Columns: []*schema.Column{MediaDerivativesColumns[7], MediaDerivativesColumns[10]},
+			},
+		},
+	}
+	// MediaProcessingJobsColumns holds the columns for the "media_processing_jobs" table.
+	MediaProcessingJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "job_type", Type: field.TypeString, Size: 32},
+		{Name: "transform_version", Type: field.TypeInt, Default: 1},
+		{Name: "status", Type: field.TypeString, Size: 24, Default: "pending"},
+		{Name: "attempt_count", Type: field.TypeInt, Default: 0},
+		{Name: "max_attempts", Type: field.TypeInt, Default: 5},
+		{Name: "next_retry_at", Type: field.TypeTime, Nullable: true},
+		{Name: "lease_owner", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "lease_expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "requested_by_type", Type: field.TypeString, Size: 16, Default: "system"},
+		{Name: "requested_by_id", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "asset_id", Type: field.TypeUUID},
+	}
+	// MediaProcessingJobsTable holds the schema information for the "media_processing_jobs" table.
+	MediaProcessingJobsTable = &schema.Table{
+		Name:       "media_processing_jobs",
+		Columns:    MediaProcessingJobsColumns,
+		PrimaryKey: []*schema.Column{MediaProcessingJobsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "media_processing_jobs_media_assets_processing_jobs",
+				Columns:    []*schema.Column{MediaProcessingJobsColumns[15]},
+				RefColumns: []*schema.Column{MediaAssetsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mediaprocessingjob_asset_id_job_type_transform_version",
+				Unique:  true,
+				Columns: []*schema.Column{MediaProcessingJobsColumns[15], MediaProcessingJobsColumns[3], MediaProcessingJobsColumns[4]},
+			},
+			{
+				Name:    "mediaprocessingjob_status_next_retry_at",
+				Unique:  false,
+				Columns: []*schema.Column{MediaProcessingJobsColumns[5], MediaProcessingJobsColumns[8]},
+			},
+			{
+				Name:    "mediaprocessingjob_lease_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{MediaProcessingJobsColumns[10]},
+			},
+		},
+	}
+	// MediaUploadSessionsColumns holds the columns for the "media_upload_sessions" table.
+	MediaUploadSessionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "project_id", Type: field.TypeUUID},
+		{Name: "group_name", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "original_filename", Type: field.TypeString, Size: 255},
+		{Name: "declared_media_type", Type: field.TypeString, Size: 16},
+		{Name: "declared_mime_type", Type: field.TypeString, Size: 128},
+		{Name: "declared_size_bytes", Type: field.TypeInt64},
+		{Name: "declared_checksum", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "storage_config_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "storage_driver", Type: field.TypeString, Size: 16, Default: "local"},
+		{Name: "bucket", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "object_key", Type: field.TypeString, Size: 512},
+		{Name: "backend_upload_id", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "part_size", Type: field.TypeInt64},
+		{Name: "part_count", Type: field.TypeInt},
+		{Name: "status", Type: field.TypeString, Size: 24, Default: "initialized"},
+		{Name: "reserved_bytes", Type: field.TypeInt64},
+		{Name: "actual_bytes", Type: field.TypeInt64, Default: 0},
+		{Name: "idempotency_key", Type: field.TypeString, Size: 128},
+		{Name: "request_fingerprint", Type: field.TypeString, Size: 64},
+		{Name: "completed_parts", Type: field.TypeJSON, Nullable: true},
+		{Name: "asset_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "expires_at", Type: field.TypeTime},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// MediaUploadSessionsTable holds the schema information for the "media_upload_sessions" table.
+	MediaUploadSessionsTable = &schema.Table{
+		Name:       "media_upload_sessions",
+		Columns:    MediaUploadSessionsColumns,
+		PrimaryKey: []*schema.Column{MediaUploadSessionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mediauploadsession_user_id_idempotency_key",
+				Unique:  true,
+				Columns: []*schema.Column{MediaUploadSessionsColumns[3], MediaUploadSessionsColumns[21]},
+			},
+			{
+				Name:    "mediauploadsession_user_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{MediaUploadSessionsColumns[3], MediaUploadSessionsColumns[18]},
+			},
+			{
+				Name:    "mediauploadsession_project_id",
+				Unique:  false,
+				Columns: []*schema.Column{MediaUploadSessionsColumns[4]},
+			},
+			{
+				Name:    "mediauploadsession_status_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{MediaUploadSessionsColumns[18], MediaUploadSessionsColumns[25]},
+			},
+			{
+				Name:    "mediauploadsession_asset_id",
+				Unique:  false,
+				Columns: []*schema.Column{MediaUploadSessionsColumns[24]},
+			},
+		},
+	}
 	// MigrationCheckpointsColumns holds the columns for the "migration_checkpoints" table.
 	MigrationCheckpointsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -713,6 +1178,7 @@ var (
 		{Name: "after_user_id", Type: field.TypeInt, Default: 0},
 		{Name: "after_task_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "after_result_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "after_created_at", Type: field.TypeTime, Nullable: true},
 		{Name: "processed_rows", Type: field.TypeInt, Default: 0},
 		{Name: "completed", Type: field.TypeBool, Default: false},
 	}
@@ -735,6 +1201,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "public_id", Type: field.TypeUUID, Unique: true},
 		{Name: "name", Type: field.TypeString, Size: 128},
 		{Name: "adapter_type", Type: field.TypeString, Size: 64},
 		{Name: "auth_type", Type: field.TypeString, Size: 64},
@@ -759,7 +1226,7 @@ var (
 			{
 				Name:    "modelaccount_adapter_type_status",
 				Unique:  false,
-				Columns: []*schema.Column{ModelAccountsColumns[5], ModelAccountsColumns[10]},
+				Columns: []*schema.Column{ModelAccountsColumns[6], ModelAccountsColumns[11]},
 			},
 			{
 				Name:    "modelaccount_deleted_at",
@@ -1225,6 +1692,8 @@ var (
 		{Name: "user_id", Type: field.TypeInt64},
 		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "task_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "task_media_type", Type: field.TypeString, Size: 16, Default: "image"},
+		{Name: "usage_summary", Type: field.TypeJSON, Nullable: true},
 		{Name: "order_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "redeem_code_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "ledger_type", Type: field.TypeString, Size: 32},
@@ -1264,27 +1733,27 @@ var (
 			{
 				Name:    "pointledger_order_id",
 				Unique:  false,
-				Columns: []*schema.Column{PointLedgersColumns[6]},
+				Columns: []*schema.Column{PointLedgersColumns[8]},
 			},
 			{
 				Name:    "pointledger_redeem_code_id",
 				Unique:  false,
-				Columns: []*schema.Column{PointLedgersColumns[7]},
+				Columns: []*schema.Column{PointLedgersColumns[9]},
 			},
 			{
 				Name:    "pointledger_ledger_type",
 				Unique:  false,
-				Columns: []*schema.Column{PointLedgersColumns[8]},
+				Columns: []*schema.Column{PointLedgersColumns[10]},
 			},
 			{
 				Name:    "pointledger_balance_bucket",
 				Unique:  false,
-				Columns: []*schema.Column{PointLedgersColumns[12]},
+				Columns: []*schema.Column{PointLedgersColumns[14]},
 			},
 			{
 				Name:    "pointledger_source_type_source_id",
 				Unique:  false,
-				Columns: []*schema.Column{PointLedgersColumns[13], PointLedgersColumns[14]},
+				Columns: []*schema.Column{PointLedgersColumns[15], PointLedgersColumns[16]},
 			},
 			{
 				Name:    "pointledger_created_at",
@@ -1294,7 +1763,7 @@ var (
 			{
 				Name:    "pointledger_idempotency_key",
 				Unique:  true,
-				Columns: []*schema.Column{PointLedgersColumns[19]},
+				Columns: []*schema.Column{PointLedgersColumns[21]},
 			},
 		},
 	}
@@ -1736,6 +2205,7 @@ var (
 		{Name: "name", Type: field.TypeString, Size: 128},
 		{Name: "description", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "visibility", Type: field.TypeString, Size: 32, Default: "hidden"},
+		{Name: "media_type", Type: field.TypeString, Size: 16, Default: "image"},
 		{Name: "enabled", Type: field.TypeBool, Default: false},
 		{Name: "sort_order", Type: field.TypeInt, Default: 0},
 	}
@@ -1753,7 +2223,12 @@ var (
 			{
 				Name:    "routemodel_visibility_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{RouteModelsColumns[7], RouteModelsColumns[8]},
+				Columns: []*schema.Column{RouteModelsColumns[7], RouteModelsColumns[9]},
+			},
+			{
+				Name:    "routemodel_media_type_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{RouteModelsColumns[8], RouteModelsColumns[9]},
 			},
 		},
 	}
@@ -2130,6 +2605,515 @@ var (
 			},
 		},
 	}
+	// VideoModelCapabilitiesColumns holds the columns for the "video_model_capabilities" table.
+	VideoModelCapabilitiesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "account_model_id", Type: field.TypeInt64},
+		{Name: "schema_version", Type: field.TypeInt, Default: 1},
+		{Name: "capability_version", Type: field.TypeString, Size: 64},
+		{Name: "capability_json", Type: field.TypeJSON},
+		{Name: "validation_status", Type: field.TypeString, Size: 16, Default: "untested"},
+		{Name: "last_tested_at", Type: field.TypeTime, Nullable: true},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+	}
+	// VideoModelCapabilitiesTable holds the schema information for the "video_model_capabilities" table.
+	VideoModelCapabilitiesTable = &schema.Table{
+		Name:       "video_model_capabilities",
+		Columns:    VideoModelCapabilitiesColumns,
+		PrimaryKey: []*schema.Column{VideoModelCapabilitiesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videomodelcapability_account_model_id",
+				Unique:  true,
+				Columns: []*schema.Column{VideoModelCapabilitiesColumns[4]},
+			},
+			{
+				Name:    "videomodelcapability_capability_version",
+				Unique:  false,
+				Columns: []*schema.Column{VideoModelCapabilitiesColumns[6]},
+			},
+			{
+				Name:    "videomodelcapability_enabled_validation_status",
+				Unique:  false,
+				Columns: []*schema.Column{VideoModelCapabilitiesColumns[10], VideoModelCapabilitiesColumns[8]},
+			},
+		},
+	}
+	// VideoPriceRulesColumns holds the columns for the "video_price_rules" table.
+	VideoPriceRulesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "pricing_strategy_id", Type: field.TypeInt64},
+		{Name: "task_type", Type: field.TypeString, Size: 32},
+		{Name: "resolution", Type: field.TypeString, Size: 16},
+		{Name: "audio_mode", Type: field.TypeString, Size: 16, Default: "silent"},
+		{Name: "pricing_mode", Type: field.TypeString, Size: 16, Default: "exact"},
+		{Name: "rule_version", Type: field.TypeInt, Default: 1},
+		{Name: "effective_at", Type: field.TypeTime},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "output_second_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "fixed_task_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "reference_image_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "input_video_second_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "reference_audio_second_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "generated_audio_fixed_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "generated_audio_second_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "minimum_billable_seconds", Type: field.TypeInt, Default: 0},
+		{Name: "minimum_task_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "reserve_markup", Type: field.TypeString, Default: "1.00000", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
+		{Name: "safety_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "candidate_cost_upper_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "safety_snapshot", Type: field.TypeJSON},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+		{Name: "internal_note", Type: field.TypeString, Size: 255, Default: ""},
+	}
+	// VideoPriceRulesTable holds the schema information for the "video_price_rules" table.
+	VideoPriceRulesTable = &schema.Table{
+		Name:       "video_price_rules",
+		Columns:    VideoPriceRulesColumns,
+		PrimaryKey: []*schema.Column{VideoPriceRulesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videopricerule_pricing_strategy_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoPriceRulesColumns[4]},
+			},
+			{
+				Name:    "videopricerule_pricing_strategy_id_task_type_resolution_audio_mode_rule_version",
+				Unique:  true,
+				Columns: []*schema.Column{VideoPriceRulesColumns[4], VideoPriceRulesColumns[5], VideoPriceRulesColumns[6], VideoPriceRulesColumns[7], VideoPriceRulesColumns[9]},
+			},
+			{
+				Name:    "videopricerule_enabled_effective_at",
+				Unique:  false,
+				Columns: []*schema.Column{VideoPriceRulesColumns[25], VideoPriceRulesColumns[10]},
+			},
+		},
+	}
+	// VideoPricingStrategiesColumns holds the columns for the "video_pricing_strategies" table.
+	VideoPricingStrategiesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "code", Type: field.TypeString, Size: 64},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "gross_point_value_cny", Type: field.TypeString, Default: "0.31250", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "minimum_net_point_income_cny", Type: field.TypeString, Default: "0.25260", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "max_bonus_ratio", Type: field.TypeString, Default: "0.20000", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
+		{Name: "payment_fee_rate", Type: field.TypeString, Default: "0.03000", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
+		{Name: "target_margin_rate", Type: field.TypeString, Default: "0.25000", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
+		{Name: "provider_cost_buffer_rate", Type: field.TypeString, Default: "0.10000", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
+		{Name: "platform_fixed_cost_cny", Type: field.TypeString, Default: "0.15000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "platform_output_second_cost_cny", Type: field.TypeString, Default: "0.02000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "platform_reference_cost_cny", Type: field.TypeString, Default: "0.03000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "platform_audio_fixed_cost_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "platform_audio_second_cost_cny", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "exact_reserve_markup", Type: field.TypeString, Default: "1.00000", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
+		{Name: "metered_reserve_markup", Type: field.TypeString, Default: "1.15000", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
+		{Name: "strategy_version", Type: field.TypeInt, Default: 1},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+	}
+	// VideoPricingStrategiesTable holds the schema information for the "video_pricing_strategies" table.
+	VideoPricingStrategiesTable = &schema.Table{
+		Name:       "video_pricing_strategies",
+		Columns:    VideoPricingStrategiesColumns,
+		PrimaryKey: []*schema.Column{VideoPricingStrategiesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videopricingstrategy_code_strategy_version",
+				Unique:  true,
+				Columns: []*schema.Column{VideoPricingStrategiesColumns[4], VideoPricingStrategiesColumns[19]},
+			},
+			{
+				Name:    "videopricingstrategy_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{VideoPricingStrategiesColumns[20]},
+			},
+		},
+	}
+	// VideoProviderCallbackEventsColumns holds the columns for the "video_provider_callback_events" table.
+	VideoProviderCallbackEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "provider_code", Type: field.TypeString, Size: 64},
+		{Name: "model_account_id", Type: field.TypeInt64},
+		{Name: "provider_event_id", Type: field.TypeString, Size: 192},
+		{Name: "provider_job_id", Type: field.TypeString, Size: 192},
+		{Name: "status", Type: field.TypeString, Size: 24, Default: "received"},
+		{Name: "payload_snapshot", Type: field.TypeJSON},
+		{Name: "received_at", Type: field.TypeTime},
+		{Name: "processed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+	}
+	// VideoProviderCallbackEventsTable holds the schema information for the "video_provider_callback_events" table.
+	VideoProviderCallbackEventsTable = &schema.Table{
+		Name:       "video_provider_callback_events",
+		Columns:    VideoProviderCallbackEventsColumns,
+		PrimaryKey: []*schema.Column{VideoProviderCallbackEventsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videoprovidercallbackevent_model_account_id_provider_event_id",
+				Unique:  true,
+				Columns: []*schema.Column{VideoProviderCallbackEventsColumns[4], VideoProviderCallbackEventsColumns[5]},
+			},
+			{
+				Name:    "videoprovidercallbackevent_model_account_id_provider_job_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoProviderCallbackEventsColumns[4], VideoProviderCallbackEventsColumns[6]},
+			},
+			{
+				Name:    "videoprovidercallbackevent_status_received_at",
+				Unique:  false,
+				Columns: []*schema.Column{VideoProviderCallbackEventsColumns[7], VideoProviderCallbackEventsColumns[9]},
+			},
+		},
+	}
+	// VideoProviderCostRulesColumns holds the columns for the "video_provider_cost_rules" table.
+	VideoProviderCostRulesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "account_model_id", Type: field.TypeInt64},
+		{Name: "billing_mode", Type: field.TypeString, Size: 32},
+		{Name: "rule_version", Type: field.TypeInt, Default: 1},
+		{Name: "currency", Type: field.TypeString, Size: 16, Default: "CNY"},
+		{Name: "rates_json", Type: field.TypeJSON},
+		{Name: "supported_currency_scale", Type: field.TypeInt, Default: 5},
+		{Name: "cost_reserve_markup", Type: field.TypeString, Default: "1.00000", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
+		{Name: "source_type", Type: field.TypeString, Size: 16, Default: "manual"},
+		{Name: "source_reference", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "validation_status", Type: field.TypeString, Size: 16, Default: "untested"},
+		{Name: "last_tested_at", Type: field.TypeTime, Nullable: true},
+		{Name: "effective_at", Type: field.TypeTime},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+	}
+	// VideoProviderCostRulesTable holds the schema information for the "video_provider_cost_rules" table.
+	VideoProviderCostRulesTable = &schema.Table{
+		Name:       "video_provider_cost_rules",
+		Columns:    VideoProviderCostRulesColumns,
+		PrimaryKey: []*schema.Column{VideoProviderCostRulesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videoprovidercostrule_account_model_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoProviderCostRulesColumns[4]},
+			},
+			{
+				Name:    "videoprovidercostrule_account_model_id_rule_version",
+				Unique:  true,
+				Columns: []*schema.Column{VideoProviderCostRulesColumns[4], VideoProviderCostRulesColumns[6]},
+			},
+			{
+				Name:    "videoprovidercostrule_enabled_effective_at",
+				Unique:  false,
+				Columns: []*schema.Column{VideoProviderCostRulesColumns[17], VideoProviderCostRulesColumns[15]},
+			},
+		},
+	}
+	// VideoRouteConfigsColumns holds the columns for the "video_route_configs" table.
+	VideoRouteConfigsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "route_model_id", Type: field.TypeInt64},
+		{Name: "task_types", Type: field.TypeJSON},
+		{Name: "visible_options", Type: field.TypeJSON},
+		{Name: "defaults", Type: field.TypeJSON},
+		{Name: "max_output_count", Type: field.TypeInt, Default: 1},
+		{Name: "pricing_strategy_id", Type: field.TypeInt64},
+		{Name: "config_version", Type: field.TypeString, Size: 64},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+	}
+	// VideoRouteConfigsTable holds the schema information for the "video_route_configs" table.
+	VideoRouteConfigsTable = &schema.Table{
+		Name:       "video_route_configs",
+		Columns:    VideoRouteConfigsColumns,
+		PrimaryKey: []*schema.Column{VideoRouteConfigsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videorouteconfig_route_model_id",
+				Unique:  true,
+				Columns: []*schema.Column{VideoRouteConfigsColumns[4]},
+			},
+			{
+				Name:    "videorouteconfig_pricing_strategy_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoRouteConfigsColumns[9]},
+			},
+			{
+				Name:    "videorouteconfig_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{VideoRouteConfigsColumns[11]},
+			},
+		},
+	}
+	// VideoTasksColumns holds the columns for the "video_tasks" table.
+	VideoTasksColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "source_channel", Type: field.TypeString, Size: 16, Default: "web"},
+		{Name: "source_canvas_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "source_canvas_node_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "task_type", Type: field.TypeString, Size: 32},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "queued"},
+		{Name: "progress_stage", Type: field.TypeString, Size: 32, Default: "queued"},
+		{Name: "progress_message", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "prompt_template", Type: field.TypeString, Size: 2147483647},
+		{Name: "prompt_binding_snapshot", Type: field.TypeJSON},
+		{Name: "execution_prompt", Type: field.TypeString, Size: 2147483647},
+		{Name: "route_model_id", Type: field.TypeInt64},
+		{Name: "route_model_code", Type: field.TypeString, Size: 64},
+		{Name: "duration_seconds", Type: field.TypeInt},
+		{Name: "resolution", Type: field.TypeString, Size: 16},
+		{Name: "aspect_ratio", Type: field.TypeString, Size: 16},
+		{Name: "generate_audio", Type: field.TypeBool, Default: false},
+		{Name: "requested_output_count", Type: field.TypeInt, Default: 1},
+		{Name: "success_output_count", Type: field.TypeInt, Default: 0},
+		{Name: "estimated_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "reserved_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "actual_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "pricing_snapshot", Type: field.TypeJSON},
+		{Name: "routing_snapshot", Type: field.TypeJSON},
+		{Name: "settlement_status", Type: field.TypeString, Size: 32, Default: "reserved"},
+		{Name: "idempotency_key", Type: field.TypeString, Size: 128},
+		{Name: "request_fingerprint", Type: field.TypeString, Size: 64},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "finished_at", Type: field.TypeTime, Nullable: true},
+		{Name: "project_id", Type: field.TypeUUID},
+	}
+	// VideoTasksTable holds the schema information for the "video_tasks" table.
+	VideoTasksTable = &schema.Table{
+		Name:       "video_tasks",
+		Columns:    VideoTasksColumns,
+		PrimaryKey: []*schema.Column{VideoTasksColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "video_tasks_projects_video_tasks",
+				Columns:    []*schema.Column{VideoTasksColumns[34]},
+				RefColumns: []*schema.Column{ProjectsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videotask_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTasksColumns[4]},
+			},
+			{
+				Name:    "videotask_project_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTasksColumns[34]},
+			},
+			{
+				Name:    "videotask_user_id_project_id_created_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTasksColumns[4], VideoTasksColumns[34], VideoTasksColumns[1], VideoTasksColumns[0]},
+			},
+			{
+				Name:    "videotask_user_id_idempotency_key",
+				Unique:  true,
+				Columns: []*schema.Column{VideoTasksColumns[4], VideoTasksColumns[30]},
+			},
+			{
+				Name:    "videotask_status_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTasksColumns[10], VideoTasksColumns[2]},
+			},
+			{
+				Name:    "videotask_source_canvas_id_source_canvas_node_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTasksColumns[7], VideoTasksColumns[8]},
+			},
+		},
+	}
+	// VideoTaskAttemptsColumns holds the columns for the "video_task_attempts" table.
+	VideoTaskAttemptsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "attempt_no", Type: field.TypeInt},
+		{Name: "route_candidate_id", Type: field.TypeInt64},
+		{Name: "account_model_id", Type: field.TypeInt64},
+		{Name: "model_account_id", Type: field.TypeInt64},
+		{Name: "provider_code", Type: field.TypeString, Size: 64},
+		{Name: "model_code", Type: field.TypeString, Size: 128},
+		{Name: "provider_job_id", Type: field.TypeString, Nullable: true, Size: 192},
+		{Name: "provider_idempotency_key", Type: field.TypeString, Size: 128},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "submitting"},
+		{Name: "request_snapshot", Type: field.TypeJSON},
+		{Name: "provider_status_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "usage_raw", Type: field.TypeJSON, Nullable: true},
+		{Name: "usage_normalized", Type: field.TypeJSON, Nullable: true},
+		{Name: "cost_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "provider_cost", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "platform_absorbed", Type: field.TypeBool, Default: false},
+		{Name: "artifact_url_expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "error_category", Type: field.TypeString, Nullable: true, Size: 32},
+		{Name: "error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "finished_at", Type: field.TypeTime, Nullable: true},
+		{Name: "item_id", Type: field.TypeUUID},
+	}
+	// VideoTaskAttemptsTable holds the schema information for the "video_task_attempts" table.
+	VideoTaskAttemptsTable = &schema.Table{
+		Name:       "video_task_attempts",
+		Columns:    VideoTaskAttemptsColumns,
+		PrimaryKey: []*schema.Column{VideoTaskAttemptsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "video_task_attempts_video_task_items_attempts",
+				Columns:    []*schema.Column{VideoTaskAttemptsColumns[25]},
+				RefColumns: []*schema.Column{VideoTaskItemsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videotaskattempt_item_id_attempt_no",
+				Unique:  true,
+				Columns: []*schema.Column{VideoTaskAttemptsColumns[25], VideoTaskAttemptsColumns[3]},
+			},
+			{
+				Name:    "videotaskattempt_model_account_id_provider_job_id",
+				Unique:  true,
+				Columns: []*schema.Column{VideoTaskAttemptsColumns[6], VideoTaskAttemptsColumns[9]},
+			},
+			{
+				Name:    "videotaskattempt_status",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTaskAttemptsColumns[11]},
+			},
+			{
+				Name:    "videotaskattempt_artifact_url_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTaskAttemptsColumns[19]},
+			},
+		},
+	}
+	// VideoTaskInputsColumns holds the columns for the "video_task_inputs" table.
+	VideoTaskInputsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "role", Type: field.TypeString, Size: 32},
+		{Name: "ordinal", Type: field.TypeInt},
+		{Name: "asset_snapshot", Type: field.TypeJSON},
+		{Name: "asset_id", Type: field.TypeUUID},
+		{Name: "task_id", Type: field.TypeUUID},
+	}
+	// VideoTaskInputsTable holds the schema information for the "video_task_inputs" table.
+	VideoTaskInputsTable = &schema.Table{
+		Name:       "video_task_inputs",
+		Columns:    VideoTaskInputsColumns,
+		PrimaryKey: []*schema.Column{VideoTaskInputsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "video_task_inputs_media_assets_video_task_inputs",
+				Columns:    []*schema.Column{VideoTaskInputsColumns[6]},
+				RefColumns: []*schema.Column{MediaAssetsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "video_task_inputs_video_tasks_inputs",
+				Columns:    []*schema.Column{VideoTaskInputsColumns[7]},
+				RefColumns: []*schema.Column{VideoTasksColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videotaskinput_task_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTaskInputsColumns[7]},
+			},
+			{
+				Name:    "videotaskinput_asset_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTaskInputsColumns[6]},
+			},
+			{
+				Name:    "videotaskinput_task_id_role_ordinal",
+				Unique:  true,
+				Columns: []*schema.Column{VideoTaskInputsColumns[7], VideoTaskInputsColumns[3], VideoTaskInputsColumns[4]},
+			},
+		},
+	}
+	// VideoTaskItemsColumns holds the columns for the "video_task_items" table.
+	VideoTaskItemsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "ordinal", Type: field.TypeInt},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "queued"},
+		{Name: "stage", Type: field.TypeString, Size: 32, Default: "queued"},
+		{Name: "result_asset_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "actual_output_seconds", Type: field.TypeString, Default: "0.000", SchemaType: map[string]string{"postgres": "numeric(12,3)"}},
+		{Name: "actual_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "provider_cost", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "artifact_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "artifact_attempts", Type: field.TypeInt, Default: 0},
+		{Name: "max_artifact_attempts", Type: field.TypeInt, Default: 3},
+		{Name: "error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "next_action_at", Type: field.TypeTime, Nullable: true},
+		{Name: "lease_owner", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "lease_expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "version", Type: field.TypeInt64, Default: 1},
+		{Name: "task_id", Type: field.TypeUUID},
+	}
+	// VideoTaskItemsTable holds the schema information for the "video_task_items" table.
+	VideoTaskItemsTable = &schema.Table{
+		Name:       "video_task_items",
+		Columns:    VideoTaskItemsColumns,
+		PrimaryKey: []*schema.Column{VideoTaskItemsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "video_task_items_video_tasks_items",
+				Columns:    []*schema.Column{VideoTaskItemsColumns[19]},
+				RefColumns: []*schema.Column{VideoTasksColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videotaskitem_task_id_ordinal",
+				Unique:  true,
+				Columns: []*schema.Column{VideoTaskItemsColumns[19], VideoTaskItemsColumns[3]},
+			},
+			{
+				Name:    "videotaskitem_status_next_action_at",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTaskItemsColumns[4], VideoTaskItemsColumns[15]},
+			},
+			{
+				Name:    "videotaskitem_lease_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTaskItemsColumns[17]},
+			},
+			{
+				Name:    "videotaskitem_result_asset_id",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTaskItemsColumns[6]},
+			},
+		},
+	}
 	// WalletGrantsColumns holds the columns for the "wallet_grants" table.
 	WalletGrantsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -2243,14 +3227,22 @@ var (
 		APIKeyQuotaReservationsTable,
 		AdminUsersTable,
 		AuditLogsTable,
+		CanvasGenerationRunsTable,
 		ClusterChallengesTable,
 		ClusterNodesTable,
 		ClusterTokensTable,
 		SystemConfigsTable,
+		CreativeCanvasTable,
+		CreativeCanvasRevisionsTable,
 		GalleryExportJobsTable,
 		TaskImagesTable,
 		ImageTasksTable,
 		InstallationsTable,
+		MediaAssetsTable,
+		MediaAssetReferencesTable,
+		MediaDerivativesTable,
+		MediaProcessingJobsTable,
+		MediaUploadSessionsTable,
 		MigrationCheckpointsTable,
 		ModelAccountsTable,
 		ModelAccountModelsTable,
@@ -2284,12 +3276,23 @@ var (
 		UserGroupsTable,
 		UserGroupMembersTable,
 		UserSubscriptionsTable,
+		VideoModelCapabilitiesTable,
+		VideoPriceRulesTable,
+		VideoPricingStrategiesTable,
+		VideoProviderCallbackEventsTable,
+		VideoProviderCostRulesTable,
+		VideoRouteConfigsTable,
+		VideoTasksTable,
+		VideoTaskAttemptsTable,
+		VideoTaskInputsTable,
+		VideoTaskItemsTable,
 		WalletGrantsTable,
 		WalletReservationAllocationsTable,
 	}
 )
 
 func init() {
+	CanvasGenerationRunsTable.ForeignKeys[0].RefTable = CreativeCanvasTable
 	ClusterChallengesTable.Annotation = &entsql.Annotation{
 		Table: "cluster_challenges",
 	}
@@ -2302,6 +3305,8 @@ func init() {
 	SystemConfigsTable.Annotation = &entsql.Annotation{
 		Table: "system_configs",
 	}
+	CreativeCanvasTable.ForeignKeys[0].RefTable = ProjectsTable
+	CreativeCanvasRevisionsTable.ForeignKeys[0].RefTable = CreativeCanvasTable
 	GalleryExportJobsTable.Annotation = &entsql.Annotation{
 		Table: "gallery_export_jobs",
 	}
@@ -2314,6 +3319,10 @@ func init() {
 		Table: "installations",
 		Check: "singleton_key = 'installation'",
 	}
+	MediaAssetsTable.ForeignKeys[0].RefTable = ProjectsTable
+	MediaAssetReferencesTable.ForeignKeys[0].RefTable = MediaAssetsTable
+	MediaDerivativesTable.ForeignKeys[0].RefTable = MediaAssetsTable
+	MediaProcessingJobsTable.ForeignKeys[0].RefTable = MediaAssetsTable
 	ModelAccountsTable.Annotation = &entsql.Annotation{
 		Table: "model_accounts",
 	}
@@ -2368,4 +3377,9 @@ func init() {
 	UserGroupMembersTable.Annotation = &entsql.Annotation{
 		Table: "user_group_members",
 	}
+	VideoTasksTable.ForeignKeys[0].RefTable = ProjectsTable
+	VideoTaskAttemptsTable.ForeignKeys[0].RefTable = VideoTaskItemsTable
+	VideoTaskInputsTable.ForeignKeys[0].RefTable = MediaAssetsTable
+	VideoTaskInputsTable.ForeignKeys[1].RefTable = VideoTasksTable
+	VideoTaskItemsTable.ForeignKeys[0].RefTable = VideoTasksTable
 }
