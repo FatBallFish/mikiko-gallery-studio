@@ -8,6 +8,7 @@ const document: CanvasDocument = {
 }
 const store = createCanvasStore(document, 7)
 store.getState().select(['note'])
+if (store.getState().selectedEdgeIDs.length) throw new Error('node selection must clear selected edges')
 store.getState().moveSelected({ x: 30, y: 20 })
 if (store.getState().command.present.nodes[0].position.x !== 30 || !store.getState().command.dirty) throw new Error('store move must update the selected node and dirty state')
 store.getState().undo()
@@ -19,6 +20,22 @@ store.getState().pasteClipboard()
 if (store.getState().command.present.nodes.length !== 2 || store.getState().selectedIDs[0] === 'note') throw new Error('store clipboard paste must select a fresh duplicate')
 store.getState().deleteSelected()
 if (store.getState().command.present.nodes.length !== 1) throw new Error('store delete must remove pasted selection')
+
+const edgeDocument: CanvasDocument = {
+  schema_version: 1, viewport: { x: 0, y: 0, zoom: 1 },
+  nodes: [
+    { id: 'prompt', type: 'prompt', position: { x: 0, y: 0 }, size: { width: 200, height: 140 } },
+    { id: 'generate', type: 'image_generation', position: { x: 300, y: 0 }, size: { width: 280, height: 220 } },
+  ],
+  edges: [{ id: 'prompt-edge', source: 'prompt', target: 'generate', input_role: 'prompt' }],
+}
+const edgeStore = createCanvasStore(edgeDocument, 3)
+edgeStore.getState().selectEdges(['prompt-edge'])
+if (edgeStore.getState().selectedIDs.length || edgeStore.getState().selectedEdgeIDs[0] !== 'prompt-edge') throw new Error('edge selection must be independent and clear node selection')
+edgeStore.getState().deleteSelected()
+if (edgeStore.getState().command.present.edges.length || edgeStore.getState().command.present.nodes.length !== 2) throw new Error('store delete must remove selected edges without deleting endpoint nodes')
+edgeStore.getState().undo()
+if (edgeStore.getState().command.present.edges.length !== 1) throw new Error('edge deletion must participate in command history')
 store.getState().markSaved(document, 8)
 if (store.getState().command.revision !== 8 || store.getState().command.dirty) throw new Error('successful remote save must advance revision and clear dirty state')
 const recoveredStore = createCanvasStore(document, 7, { recoveredDraft: true })

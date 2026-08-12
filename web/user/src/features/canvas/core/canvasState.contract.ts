@@ -2,9 +2,12 @@ import {
   addCanvasNode,
   attachCanvasResults,
   connectCanvasNodes,
+  compatibleCanvasTargets,
   copyCanvasSelection,
   createCanvasState,
+  inspectCanvasConnection,
   pasteCanvasSelection,
+  removeCanvasEdges,
   removeCanvasNodes,
   moveCanvasNodes,
   redoCanvasCommand,
@@ -50,6 +53,30 @@ const removed = removeCanvasNodes(state, ['image-gen'])
 if (removed.present.nodes.some((node) => node.id === 'image-gen')) throw new Error('delete must remove selected nodes')
 if (removed.present.edges.some((edge) => edge.source === 'image-gen' || edge.target === 'image-gen')) throw new Error('delete must remove every connected edge')
 if (undoCanvasCommand(removed).present.nodes.every((node) => node.id !== 'image-gen')) throw new Error('delete must be undoable')
+
+const edgeRemoved = removeCanvasEdges(state, ['prompt-image'])
+if (edgeRemoved.present.edges.some((edge) => edge.id === 'prompt-image')) throw new Error('edge delete must only remove the selected connection')
+if (!edgeRemoved.present.nodes.some((node) => node.id === 'prompt') || !edgeRemoved.present.nodes.some((node) => node.id === 'image-gen')) throw new Error('edge delete must preserve both endpoint nodes')
+if (!edgeRemoved.present.edges.some((edge) => edge.id === 'image-ref')) throw new Error('edge delete must preserve unrelated connections')
+if (!undoCanvasCommand(edgeRemoved).present.edges.some((edge) => edge.id === 'prompt-image')) throw new Error('edge delete must be undoable')
+
+const promptTargets = compatibleCanvasTargets(state.present, 'prompt')
+if (promptTargets.length !== 2 || !promptTargets.some((target) => target.type === 'image_generation' && target.role === 'prompt') || !promptTargets.some((target) => target.type === 'video_generation' && target.role === 'prompt')) {
+  throw new Error(`prompt output must offer only compatible generation nodes: ${JSON.stringify(promptTargets)}`)
+}
+const imageTargets = compatibleCanvasTargets(state.present, 'image')
+if (!imageTargets.some((target) => target.type === 'image_generation' && target.role === 'reference') || !imageTargets.some((target) => target.type === 'video_generation' && target.role === 'first_frame')) {
+  throw new Error(`image output must expose reference and first-frame targets: ${JSON.stringify(imageTargets)}`)
+}
+if (compatibleCanvasTargets(state.present, 'video').length || compatibleCanvasTargets(state.present, 'audio').length || compatibleCanvasTargets(state.present, 'note').length) {
+  throw new Error('media and note nodes without P0 outputs must not offer connection-created targets')
+}
+if (inspectCanvasConnection(state.present, { id: 'candidate', source: 'audio', target: 'video-gen', input_role: 'reference' }) !== 'illegal_connection') {
+  throw new Error('connection inspection must report an illegal target before mutation')
+}
+if (inspectCanvasConnection(state.present, { id: 'candidate', source: 'prompt', target: 'image-gen', input_role: 'prompt' }) !== null) {
+  throw new Error('connection inspection must accept legal prompt inputs')
+}
 let illegal = false
 try {
   connectCanvasNodes(state, { id: 'bad-audio', source: 'audio', target: 'video-gen', input_role: 'reference' })

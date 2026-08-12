@@ -35,3 +35,25 @@ if (!visible.has('prompt') || !visible.has('generator') || !visible.has('result'
 if (!visible.has('outside')) throw new Error('viewport culling must retain explicitly pinned nodes such as active or selected nodes')
 const culled = visibleCanvasNodeIDs(document.nodes, { x: -100, y: -100, zoom: 1 }, { width: 640, height: 480 }, 40)
 if (culled.has('outside')) throw new Error('viewport culling must omit distant nodes outside the overscan area')
+
+const largeNodes = Array.from({ length: 200 }, (_, index) => ({
+  id: `large-${index}`,
+  type: index % 4 === 0 ? 'image' as const : 'note' as const,
+  position: { x: (index % 20) * 360, y: Math.floor(index / 20) * 260 },
+  size: { width: 280, height: 200 },
+}))
+const largeEdges = Array.from({ length: 300 }, (_, index) => ({
+  id: `large-edge-${index}`,
+  source: largeNodes[index % largeNodes.length].id,
+  target: largeNodes[(index + 1) % largeNodes.length].id,
+  input_role: 'result' as const,
+}))
+const startedAt = performance.now()
+const largeVisible = visibleCanvasNodeIDs(largeNodes, { x: 0, y: 0, zoom: 1 }, { width: 1280, height: 800 }, 180)
+const largeMap = new Map(largeNodes.map((node) => [node.id, node]))
+for (const edge of largeEdges) {
+  if (!largeMap.has(edge.source) || !largeMap.has(edge.target)) throw new Error('300-edge benchmark must retain resolvable endpoints')
+}
+const elapsed = performance.now() - startedAt
+if (!largeVisible.size || largeVisible.size >= 50) throw new Error(`200-node benchmark must cull distant media nodes: ${largeVisible.size}`)
+if (elapsed >= 100) throw new Error(`200-node/300-edge interaction index must remain below the 100ms long-task budget: ${elapsed.toFixed(2)}ms`)

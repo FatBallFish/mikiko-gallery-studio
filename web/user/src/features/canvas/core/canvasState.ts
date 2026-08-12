@@ -41,6 +41,12 @@ export function removeCanvasNodes(state: CanvasCommandState, nodeIDs: string[]) 
   })
 }
 
+export function removeCanvasEdges(state: CanvasCommandState, edgeIDs: string[]) {
+  const removed = new Set(edgeIDs)
+  if (!removed.size || !state.present.edges.some((edge) => removed.has(edge.id))) return state
+  return commit(state, { ...state.present, edges: state.present.edges.filter((edge) => !removed.has(edge.id)) })
+}
+
 export function copyCanvasSelection(document: CanvasDocument, nodeIDs: string[]): CanvasClipboard {
   const selected = new Set(nodeIDs)
   return {
@@ -65,16 +71,37 @@ export function pasteCanvasSelection(state: CanvasCommandState, clipboard: Canva
 
 export function connectCanvasNodes(state: CanvasCommandState, edge: CanvasEdge) {
   if (state.present.edges.some((item) => item.id === edge.id)) return state
-  const source = state.present.nodes.find((node) => node.id === edge.source)
-  const target = state.present.nodes.find((node) => node.id === edge.target)
-  if (!source || !target) throw new Error('node_not_found')
-  if (!isLegalConnection(source.type, target.type, edge.input_role)) throw new Error('illegal_connection')
-  if ((edge.input_role === 'first_frame' || edge.input_role === 'last_frame') && state.present.edges.some((item) => item.target === edge.target && item.input_role === edge.input_role)) {
-    throw new Error('input_role_conflict')
-  }
+  const error = inspectCanvasConnection(state.present, edge)
+  if (error) throw new Error(error)
   const next = { ...state.present, edges: [...state.present.edges, { ...edge }] }
-  if (hasDirectedCycle(next)) throw new Error('cycle')
   return commit(state, next)
+}
+
+export type CanvasConnectionError = 'node_not_found' | 'illegal_connection' | 'input_role_conflict' | 'cycle'
+
+export function inspectCanvasConnection(document: CanvasDocument, edge: CanvasEdge): CanvasConnectionError | null {
+  const source = document.nodes.find((node) => node.id === edge.source)
+  const target = document.nodes.find((node) => node.id === edge.target)
+  if (!source || !target) return 'node_not_found'
+  if (!isLegalConnection(source.type, target.type, edge.input_role)) return 'illegal_connection'
+  if ((edge.input_role === 'first_frame' || edge.input_role === 'last_frame') && document.edges.some((item) => item.target === edge.target && item.input_role === edge.input_role)) {
+    return 'input_role_conflict'
+  }
+  return hasDirectedCycle({ ...document, edges: [...document.edges, { ...edge }] }) ? 'cycle' : null
+}
+
+export function compatibleCanvasTargets(_document: CanvasDocument, sourceID: string): Array<{ type: CanvasNodeType; role: CanvasEdge['input_role'] }> {
+  const source = _document.nodes.find((node) => node.id === sourceID)
+  if (!source) return []
+  if (source.type === 'prompt') return [
+    { type: 'image_generation', role: 'prompt' },
+    { type: 'video_generation', role: 'prompt' },
+  ]
+  if (source.type === 'image') return [
+    { type: 'image_generation', role: 'reference' },
+    { type: 'video_generation', role: 'first_frame' },
+  ]
+  return []
 }
 
 export function selectCanvasNodesInRect(nodes: CanvasNode[], rect: { x: number; y: number; width: number; height: number }) {
