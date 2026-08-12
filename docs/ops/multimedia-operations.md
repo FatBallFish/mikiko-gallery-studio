@@ -11,7 +11,7 @@
 | `image` | 现有图片生成 | 图片排队时长、租约积压 | 保留现有并发和模型限流 |
 | `video` | Provider 提交、轮询、回调收敛、结果转存 | 视频排队时长、running 数、Provider 配额 | Redis 不可用且无法安全取并发令牌时停止领取新任务 |
 | `media` | ffprobe、poster、preview、proxy 等派生处理 | processing job 积压、处理耗时、CPU | 与 Provider 轮询并发分离 |
-| `cleanup` | 对象清理、导出、过期 multipart、媒体对账 | deletion/export/reconcile 积压 | processor 公平轮转，不能让空闲队列阻塞其他队列 |
+| `cleanup` | 对象清理、导出、过期 multipart、媒体对账、历史图片回填 | deletion/export/reconcile/backfill 积压 | processor 公平轮转，不能让空闲队列阻塞其他队列 |
 
 按角色水平扩容，不要用提高单进程总并发替代容量评估。`media` 初始并发取 `min(2, CPU/2)`；每个 720P proxy job 预留约 1-2 vCPU、512 MiB-1 GiB 内存和原件 2-3 倍临时盘。扩容前确认对象存储、数据库连接池和 Provider 账号配额仍有余量。
 
@@ -49,9 +49,13 @@ S3、R2 和 MinIO 模式的上传、预览与下载正文必须走短时签名 U
 
 ## 历史图片统一资产回填
 
-回填只复制 `task_images` 元数据到 `media_assets`，两表使用同一 UUID，并复用原 storage config/driver/object key。该过程不读取、下载、上传或复制对象正文。只能在 `DEPLOYMENT_ROLE=single` 或 `control` 的节点显式运行；不要放入普通服务启动或 schema migration。
+回填只复制 `task_images` 元数据到 `media_assets`，两表使用同一 UUID，并复用原 storage config/driver/object key。该过程不读取、下载、上传或复制对象正文。
 
-Docker 使用目标 API 镜像的一次性容器，Native 使用发布包中的 `bin/mikiko-gallery-studio-media-backfill`。命令读取与服务相同的 `APP_ENV_FILE`，也可显式传 `--env-file`。
+正常部署无需执行额外迁移动作。启用 `cleanup` 角色的 Worker 会在完成数据库 schema 与 setup binding 校验后自动开始后台回填。服务 readiness 不等待回填完成；每次只处理一个小批次，并与对象清理、导出、过期上传和媒体对账公平轮转。单批失败只记录错误并由 Worker 循环退避重试，不影响 API 和其他 Worker 角色继续运行。
+
+重复启动和多 Worker 并发是安全的：`migration_checkpoints` 持久化 `(created_at,id)` 稳定游标，事务行锁串行化单批推进，单行使用 `ON CONFLICT (id) DO NOTHING` 保证同 ID 重放幂等。完成后 Worker 低频复查是否出现遗漏记录；若滚动升级期间旧节点仍写入 `task_images`，checkpoint 会自动重开并继续补齐。其他唯一键冲突仍会失败并持续告警，需要人工核对数据冲突。
+
+独立 `media-backfill` 命令仅用于 dry-run、完成度校验和故障诊断。Docker 可使用目标 API 镜像的一次性容器，Native 使用发布包中的 `bin/mikiko-gallery-studio-media-backfill`。命令读取与服务相同的 `APP_ENV_FILE`，也可显式传 `--env-file`。
 
 先执行只读计划：
 
@@ -59,13 +63,13 @@ Docker 使用目标 API 镜像的一次性容器，Native 使用发布包中的 
 mikiko-gallery-studio-media-backfill --env-file ./config/runtime.env --dry-run --batch-size 100 --max-batches 10
 ```
 
-确认 JSON 中 `would_create`、存储身份和批次规模合理后，再限批写入：
+需要人工诊断或修复时，才限批写入：
 
 ```bash
 mikiko-gallery-studio-media-backfill --env-file ./config/runtime.env --batch-size 100 --max-batches 20
 ```
 
-重复执行会从 `migration_checkpoints` 的 `(created_at,id)` 稳定游标恢复；单行使用 `ON CONFLICT (id) DO NOTHING` 保证同 ID 重放幂等，其他唯一键冲突会失败并要求人工核对。`max-batches=0` 表示运行到完成。中断进程不会推进未提交批次的 checkpoint。
+`max-batches=0` 表示运行到完成。中断进程不会推进未提交批次的 checkpoint；命令与自动 Worker 共享同一 checkpoint 和锁，不应把命令作为常规发布步骤并发长期运行。
 
 完成后执行聚合和确定性抽样校验：
 
@@ -77,7 +81,7 @@ mikiko-gallery-studio-media-backfill --env-file ./config/runtime.env --verify --
 
 ## 发布、回滚与故障恢复
 
-采用 expand-first：先部署新增表、字段、索引和兼容双读，再启用新 Worker/API，最后执行历史回填。旧图片表、旧读取路由和对象不得在本期收缩。代码回滚时停用视频/画布/上传创建入口和新 Worker 角色，保留新增 schema、checkpoint、已生成资产和所有存储配置；让已提交 Provider 的任务继续由兼容版本收敛，必要时只查询原 provider task。
+采用 expand-first：先部署新增表、字段、索引和兼容双读，再启用新 Worker/API；启用 `cleanup` 的 Worker 启动后自动渐进回填历史图片，不再安排发布后人工迁移动作。旧图片表、旧读取路由和对象不得在本期收缩。代码回滚时停用视频/画布/上传创建入口和新 Worker 角色，保留新增 schema、checkpoint、已生成资产和所有存储配置；让已提交 Provider 的任务继续由兼容版本收敛，必要时只查询原 provider task。
 
 故障处理顺序：
 
