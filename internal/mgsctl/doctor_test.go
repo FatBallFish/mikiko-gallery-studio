@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -113,6 +114,112 @@ func TestDoctorChecksMediaWorkerToolsAndTemporaryDirectory(t *testing.T) {
 	}
 	if rendered := report.String(); !strings.Contains(rendered, "ffprobe") || strings.Contains(rendered, runtimeDir) {
 		t.Fatalf("worker dependency diagnostic = %s", rendered)
+	}
+}
+
+func TestDoctorChecksDockerMediaWorkerToolsInsideWorkerContainer(t *testing.T) {
+	runtimeDir := writeDoctorRuntime(t, "docker", "api,worker")
+	envPath := filepath.Join(runtimeDir, "config", "runtime.env")
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content, []byte("WORKER_ROLES=image,video,media,cleanup\nMEDIA_FFMPEG_PATH=ffmpeg-custom\nMEDIA_FFPROBE_PATH=ffprobe-custom\nMEDIA_TEMP_DIR=./data/tmp\n")...)
+	if err := os.WriteFile(envPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	containerChecks := 0
+	report := Doctor(t.Context(), runtimeDir, DoctorDependencies{
+		CheckRuntimeReadiness: func(context.Context, map[string]string) error { return nil },
+		LookPath: func(string) (string, error) {
+			t.Fatal("Docker doctor attempted a host-side media tool lookup")
+			return "", errors.New("unreachable")
+		},
+		CheckDockerWorkerMediaTools: func(_ context.Context, gotRuntimeDir string, values map[string]string, ffmpeg, ffprobe string) error {
+			containerChecks++
+			if gotRuntimeDir != runtimeDir || values["INSTALLATION_ID"] != "runtime-id" {
+				t.Fatalf("Docker media check context = %q, %#v", gotRuntimeDir, values)
+			}
+			if ffmpeg != "ffmpeg-custom" || ffprobe != "ffprobe-custom" {
+				t.Fatalf("Docker media tools = %q, %q", ffmpeg, ffprobe)
+			}
+			return nil
+		},
+	})
+	if containerChecks != 1 || !doctorCheckOK(report, "WORKER_MEDIA_TOOLS") {
+		t.Fatalf("Docker worker dependency checks = %#v calls=%d", report.Checks, containerChecks)
+	}
+}
+
+func TestBuildDockerWorkerMediaToolsCheckSpecUsesRuntimeIdentityAndSafeArguments(t *testing.T) {
+	runtimeDir := t.TempDir()
+	const installationID = "019d0000-0000-7000-8000-000000000123"
+	const nodeID = "019d0000-0000-7000-8000-000000000456"
+	const ffmpeg = "ffmpeg; echo unsafe"
+	const ffprobe = "/opt/media/ffprobe custom"
+
+	spec, err := BuildDockerWorkerMediaToolsCheckSpec(runtimeDir, installationID, nodeID, ffmpeg, ffprobe, []string{"PATH=/usr/bin", "DATABASE_URL=host-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectName, err := dockerProjectName(installationID, nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPrefix := []string{
+		"compose", "--project-directory", runtimeDir,
+		"--env-file", filepath.Join(runtimeDir, "config", "runtime.env"),
+		"--file", filepath.Join(runtimeDir, "compose.yml"),
+		"--project-name", projectName,
+		"exec", "--no-TTY", "worker", "sh", "-c",
+	}
+	if len(spec.Arguments) != len(wantPrefix)+4 || !slices.Equal(spec.Arguments[:len(wantPrefix)], wantPrefix) {
+		t.Fatalf("Docker media check arguments = %q", spec.Arguments)
+	}
+	if spec.Arguments[len(spec.Arguments)-3] != "mgsctl-media-tools" {
+		t.Fatalf("Docker media check shell name = %q", spec.Arguments)
+	}
+	if spec.Arguments[len(spec.Arguments)-2] != ffmpeg || spec.Arguments[len(spec.Arguments)-1] != ffprobe {
+		t.Fatalf("media tool paths were not passed as separate arguments: %q", spec.Arguments)
+	}
+	if strings.Contains(strings.Join(spec.Arguments[:len(spec.Arguments)-2], " "), ffmpeg) || strings.Contains(strings.Join(spec.Arguments[:len(spec.Arguments)-2], " "), ffprobe) {
+		t.Fatalf("media tool paths were interpolated into the command: %q", spec.Arguments)
+	}
+	if strings.Contains(strings.Join(spec.Environment, "\n"), "host-secret") {
+		t.Fatalf("Docker media check inherited a runtime secret: %q", spec.Environment)
+	}
+}
+
+func TestDoctorReportsGenericDockerMediaToolFailureWithoutLeakingDetails(t *testing.T) {
+	runtimeDir := writeDoctorRuntime(t, "docker", "api,worker")
+	envPath := filepath.Join(runtimeDir, "config", "runtime.env")
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content, []byte("WORKER_ROLES=media\nMEDIA_FFMPEG_PATH=/secret/custom-ffmpeg\n")...)
+	if err := os.WriteFile(envPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report := Doctor(t.Context(), runtimeDir, DoctorDependencies{
+		CheckRuntimeReadiness: func(context.Context, map[string]string) error { return nil },
+		CheckDockerWorkerMediaTools: func(context.Context, string, map[string]string, string, string) error {
+			return errors.New("docker exec failed with DATABASE_URL=postgres://user:password@example/database")
+		},
+	})
+	rendered := report.String()
+	if doctorCheckOK(report, "WORKER_MEDIA_TOOLS") {
+		t.Fatalf("Docker worker media tools unexpectedly passed: %#v", report.Checks)
+	}
+	if !strings.Contains(rendered, "missing required media tools: FFmpeg, ffprobe") {
+		t.Fatalf("Docker media failure was not generic: %s", rendered)
+	}
+	for _, secret := range []string{"password", "DATABASE_URL", "/secret/custom-ffmpeg"} {
+		if strings.Contains(rendered, secret) {
+			t.Fatalf("Docker media failure leaked %q: %s", secret, rendered)
+		}
 	}
 }
 
