@@ -5,12 +5,15 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestReleaseDefaultsUseCurrentRepository(t *testing.T) {
@@ -162,6 +165,236 @@ func TestSelfUpdatePreservesCancellationWithoutLeakingDownloadQuery(t *testing.T
 	if strings.Contains(err.Error(), secret) {
 		t.Fatalf("cancelled self-update leaked signed URL query: %v", err)
 	}
+}
+
+func TestProductionSelfUpdateClientDoesNotImposeWholeDownloadTimeout(t *testing.T) {
+	client := ProductionSelfUpdateDependencies().HTTPClient
+	if client.Timeout != 0 {
+		t.Fatalf("production self-update client timeout = %s, want no whole-request timeout", client.Timeout)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("production self-update transport = %T, want *http.Transport", client.Transport)
+	}
+	if transport.ResponseHeaderTimeout <= 0 || transport.TLSHandshakeTimeout <= 0 {
+		t.Fatalf("production transport lacks bounded header/TLS timeouts: %#v", transport)
+	}
+}
+
+func TestSelfUpdateRetriesTransientChecksumResponse(t *testing.T) {
+	newBinary := []byte("retry checksum binary")
+	digest := fmt.Sprintf("%x", sha256.Sum256(newBinary))
+	var checksumAttempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if strings.HasSuffix(request.URL.Path, ".sha256") {
+			if checksumAttempts.Add(1) == 1 {
+				http.Error(writer, "temporary", http.StatusServiceUnavailable)
+				return
+			}
+			fmt.Fprintln(writer, digest)
+			return
+		}
+		_, _ = writer.Write(newBinary)
+	}))
+	t.Cleanup(server.Close)
+
+	executable := writeSelfUpdateExecutable(t)
+	_, err := SelfUpdate(context.Background(), SelfUpdateOptions{Version: "v1", ReleaseBaseURL: server.URL}, SelfUpdateDependencies{
+		HTTPClient: server.Client(), ExecutablePath: func() (string, error) { return executable, nil }, GOOS: "linux", GOARCH: "amd64",
+		Replace: func(current, staged string) (bool, error) { return false, os.Rename(staged, current) },
+	})
+	if err != nil || checksumAttempts.Load() != 2 {
+		t.Fatalf("transient checksum update err=%v attempts=%d", err, checksumAttempts.Load())
+	}
+}
+
+func TestSelfUpdateRetriesInterruptedBinaryAfterClearingStagedFile(t *testing.T) {
+	newBinary := []byte("complete replacement binary")
+	digest := fmt.Sprintf("%x", sha256.Sum256(newBinary))
+	var binaryAttempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if strings.HasSuffix(request.URL.Path, ".sha256") {
+			fmt.Fprintln(writer, digest)
+			return
+		}
+		if binaryAttempts.Add(1) == 1 {
+			writer.Header().Set("Content-Length", fmt.Sprint(len(newBinary)))
+			_, _ = writer.Write(newBinary[:5])
+			return
+		}
+		_, _ = writer.Write(newBinary)
+	}))
+	t.Cleanup(server.Close)
+
+	executable := writeSelfUpdateExecutable(t)
+	_, err := SelfUpdate(context.Background(), SelfUpdateOptions{Version: "v1", ReleaseBaseURL: server.URL}, SelfUpdateDependencies{
+		HTTPClient: server.Client(), ExecutablePath: func() (string, error) { return executable, nil }, GOOS: "linux", GOARCH: "amd64",
+		Replace: func(current, staged string) (bool, error) { return false, os.Rename(staged, current) },
+	})
+	content, readErr := os.ReadFile(executable)
+	if err != nil || readErr != nil || string(content) != string(newBinary) || binaryAttempts.Load() != 2 {
+		t.Fatalf("interrupted binary update err=%v readErr=%v content=%q attempts=%d", err, readErr, content, binaryAttempts.Load())
+	}
+}
+
+func TestSelfUpdateDoesNotRetryPermanentHTTPErrorAndReportsStage(t *testing.T) {
+	const secret = "signed-release-secret"
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		attempts.Add(1)
+		http.NotFound(writer, request)
+	}))
+	t.Cleanup(server.Close)
+
+	executable := writeSelfUpdateExecutable(t)
+	_, err := SelfUpdate(context.Background(), SelfUpdateOptions{
+		Version: "v404", ReleaseBaseURL: server.URL,
+		DownloadURL: server.URL + "/mgsctl?token=" + secret,
+	}, SelfUpdateDependencies{
+		HTTPClient: server.Client(), ExecutablePath: func() (string, error) { return executable, nil }, GOOS: "linux", GOARCH: "amd64",
+	})
+	if err == nil || attempts.Load() != 1 || !strings.Contains(err.Error(), "checksum") || !strings.Contains(err.Error(), "attempt 1/3") {
+		t.Fatalf("permanent HTTP error=%v attempts=%d", err, attempts.Load())
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("permanent HTTP error leaked signed query: %v", err)
+	}
+}
+
+func TestSelfUpdateStopsAfterThreeTransientAttempts(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		http.Error(writer, "temporary", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+
+	executable := writeSelfUpdateExecutable(t)
+	_, err := SelfUpdate(context.Background(), SelfUpdateOptions{Version: "v1", ReleaseBaseURL: server.URL}, SelfUpdateDependencies{
+		HTTPClient: server.Client(), ExecutablePath: func() (string, error) { return executable, nil }, GOOS: "linux", GOARCH: "amd64",
+	})
+	if err == nil || attempts.Load() != selfUpdateMaxAttempts || !strings.Contains(err.Error(), "attempt 3/3") {
+		t.Fatalf("exhausted transient update err=%v attempts=%d", err, attempts.Load())
+	}
+}
+
+func TestSelfUpdateCancellationDoesNotRetry(t *testing.T) {
+	var attempts atomic.Int32
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		attempts.Add(1)
+		close(started)
+		<-request.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-started
+		cancel()
+	}()
+	executable := writeSelfUpdateExecutable(t)
+	_, err := SelfUpdate(ctx, SelfUpdateOptions{Version: "v1", ReleaseBaseURL: server.URL}, SelfUpdateDependencies{
+		HTTPClient: server.Client(), ExecutablePath: func() (string, error) { return executable, nil }, GOOS: "linux", GOARCH: "amd64",
+	})
+	if !errors.Is(err, context.Canceled) || attempts.Load() != 1 {
+		t.Fatalf("cancelled update err=%v attempts=%d", err, attempts.Load())
+	}
+}
+
+func TestSelfUpdateReportsKnownAndUnknownLengthProgress(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		unknown   bool
+		wantTotal int64
+	}{
+		{name: "known", wantTotal: int64(len("progress binary"))},
+		{name: "unknown", unknown: true, wantTotal: -1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			newBinary := []byte("progress binary")
+			digest := fmt.Sprintf("%x", sha256.Sum256(newBinary))
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if testCase.unknown {
+					if flusher, ok := writer.(http.Flusher); ok {
+						flusher.Flush()
+					}
+				}
+				_, _ = writer.Write(newBinary)
+			}))
+			t.Cleanup(server.Close)
+			executable := writeSelfUpdateExecutable(t)
+			progress := make([]SelfUpdateProgress, 0, 2)
+			_, err := SelfUpdate(context.Background(), SelfUpdateOptions{
+				Version: "v1", ReleaseBaseURL: server.URL, DownloadURL: server.URL, ExpectedSHA256: digest,
+			}, SelfUpdateDependencies{
+				HTTPClient: server.Client(), ExecutablePath: func() (string, error) { return executable, nil }, GOOS: "linux", GOARCH: "amd64",
+				Replace:  func(current, staged string) (bool, error) { return false, os.Rename(staged, current) },
+				Progress: func(event SelfUpdateProgress) { progress = append(progress, event) },
+			})
+			if err != nil || len(progress) == 0 {
+				t.Fatalf("progress update err=%v events=%v", err, progress)
+			}
+			last := progress[len(progress)-1]
+			if last.Stage != "binary" || !last.Done || last.Downloaded != int64(len(newBinary)) || last.Total != testCase.wantTotal || last.Attempt != 1 {
+				t.Fatalf("last progress = %#v", last)
+			}
+		})
+	}
+}
+
+func TestDownloadFileAllowsSlowProgressingTransfer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		flusher := writer.(http.Flusher)
+		for _, chunk := range []string{"slow", "-but", "-moving"} {
+			_, _ = io.WriteString(writer, chunk)
+			flusher.Flush()
+			time.Sleep(35 * time.Millisecond)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client := &http.Client{Transport: server.Client().Transport}
+	var destination strings.Builder
+	started := time.Now()
+	_, _, err := downloadFile(context.Background(), client, server.URL, &destination, 1024)
+	if err != nil || time.Since(started) < 100*time.Millisecond || destination.String() != "slow-but-moving" {
+		t.Fatalf("slow download err=%v elapsed=%s content=%q", err, time.Since(started), destination.String())
+	}
+}
+
+func TestReadWithIdleTimeoutStopsAStalledBody(t *testing.T) {
+	body := &blockingReadCloser{closed: make(chan struct{})}
+	started := time.Now()
+	_, err := readAllWithIdleTimeout(body, 20*time.Millisecond, 1024, -1, nil)
+	if err == nil || !strings.Contains(err.Error(), "made no progress") || time.Since(started) > time.Second {
+		t.Fatalf("stalled body err=%v elapsed=%s", err, time.Since(started))
+	}
+}
+
+type blockingReadCloser struct {
+	closed chan struct{}
+	once   atomic.Bool
+}
+
+func (r *blockingReadCloser) Read([]byte) (int, error) {
+	<-r.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (r *blockingReadCloser) Close() error {
+	if r.once.CompareAndSwap(false, true) {
+		close(r.closed)
+	}
+	return nil
+}
+
+func writeSelfUpdateExecutable(t *testing.T) string {
+	t.Helper()
+	executable := filepath.Join(t.TempDir(), "mgsctl")
+	if err := os.WriteFile(executable, []byte("known-good"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return executable
 }
 
 func TestWindowsSelfUpdateScriptQuotesPathsAndPreservesRecoveryLog(t *testing.T) {

@@ -143,7 +143,7 @@ Keep the source until `doctor`, readiness, administrator login, and a business s
 
 Runtime discovery is shared by status, doctor, restart, upgrade, uninstall, Setup, and cluster control commands. Resolution order is explicit `--runtime-dir`, the current directory, `./runtime` under the current directory, then the saved runtime from `mgsctl/config.json`. Ambiguous or invalid candidates fail closed.
 
-`mgsctl self-update` replaces only the control-tool executable. `mgsctl upgrade` resolves and deploys an application Release, performs the target database migration when authorized, and rolls the selected services. Updating the tool does not implicitly change a running application.
+`mgsctl self-update` replaces only the control-tool executable. Checksum and binary stages independently retry transient failures up to three attempts. Connection, TLS, response-header, and idle-body waits remain bounded, but an actively progressing body has no two-minute whole-request deadline. TTY output reports byte progress, percentage when content length is known, and average rate; redirected output emits no progress churn. `mgsctl upgrade` resolves and deploys an application Release, performs the target database migration when authorized, and rolls the selected services. Updating the tool does not implicitly change a running application.
 
 ```bash
 mgsctl status
@@ -174,6 +174,8 @@ mgsctl upgrade --image-tag v1.2.3 --migrate=false
 ```
 
 Database migrations are forward-compatible and are not automatically reversed. If service rollout fails after a successful migration, the target runtime and manifest remain published; rerun the same `mgsctl upgrade` command to resume the idempotent rollout. If rollout fails without a migration, `mgsctl` restores the previous runtime and manifest and actively reapplies the previous deployment plan.
+
+For v0.0.16 and later, the pre-Ent compatibility phase adds and backfills `model_accounts.public_id` for legacy databases before the final unique, non-null constraint is applied. It fills only NULL values and preserves existing UUIDs, so the normal migration command is safe to rerun. If migration stops before rollout, confirm the previous containers remain healthy and retain the logs and backup. Do not apply ad hoc `public_id` DDL or UUID updates.
 
 After an upgrade, run `mgsctl doctor`, verify `/readyz`, and open the admin text-model configuration. Exactly one enabled model on an enabled account should be the default optimization model. A single eligible legacy model is repaired automatically; if several eligible models exist without a default, select one before accepting user prompt-optimization traffic.
 

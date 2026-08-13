@@ -136,7 +136,15 @@ func Run(ctx context.Context, args []string, dependencies CLIDependencies) int {
 		if execute == nil {
 			execute = SelfUpdate
 		}
+		finishProgress := func() {}
+		if dependencies.StdoutIsTerminal(dependencies.Stderr) {
+			progress, retry, finish := newSelfUpdateTerminalProgress(dependencies.Stderr)
+			finishProgress = finish
+			dependencies.SelfUpdate.Progress = combineSelfUpdateProgress(dependencies.SelfUpdate.Progress, progress)
+			dependencies.SelfUpdate.Retry = combineSelfUpdateRetry(dependencies.SelfUpdate.Retry, retry)
+		}
 		result, executeErr := execute(ctx, options, dependencies.SelfUpdate)
+		finishProgress()
 		if executeErr != nil {
 			return writeRunError(dependencies.Stderr, executeErr)
 		}
@@ -352,6 +360,95 @@ func writerIsTerminal(writer io.Writer) bool {
 	}
 	info, err := file.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func newSelfUpdateTerminalProgress(writer io.Writer) (func(SelfUpdateProgress), func(SelfUpdateRetry), func()) {
+	lineActive := false
+	lastStage := ""
+	lastAttempt := 0
+	lastRenderedAt := time.Duration(0)
+	progress := func(event SelfUpdateProgress) {
+		newAttempt := event.Stage != lastStage || event.Attempt != lastAttempt
+		if !newAttempt && !event.Done && event.Elapsed-lastRenderedAt < 100*time.Millisecond {
+			return
+		}
+		lastStage = event.Stage
+		lastAttempt = event.Attempt
+		lastRenderedAt = event.Elapsed
+		elapsed := event.Elapsed.Seconds()
+		if elapsed <= 0 {
+			elapsed = 0.001
+		}
+		rate := float64(event.Downloaded) / elapsed
+		total := ""
+		percentage := ""
+		if event.Total >= 0 {
+			total = "/" + formatByteCount(event.Total)
+			if event.Total > 0 {
+				percentage = fmt.Sprintf(" %.0f%%", min(100, float64(event.Downloaded)*100/float64(event.Total)))
+			}
+		}
+		fmt.Fprintf(writer, "\rmgsctl: downloading %s (attempt %d/%d)%s %s%s %s/s",
+			event.Stage, event.Attempt, selfUpdateMaxAttempts, percentage,
+			formatByteCount(event.Downloaded), total, formatByteRate(rate),
+		)
+		lineActive = true
+		if event.Done {
+			fmt.Fprintln(writer)
+			lineActive = false
+		}
+	}
+	retry := func(event SelfUpdateRetry) {
+		if lineActive {
+			fmt.Fprintln(writer)
+			lineActive = false
+		}
+		fmt.Fprintf(writer, "mgsctl: retrying %s download after attempt %d/%d: %v\n", event.Stage, event.Attempt, event.MaxAttempts, event.Err)
+	}
+	finish := func() {
+		if lineActive {
+			fmt.Fprintln(writer)
+			lineActive = false
+		}
+	}
+	return progress, retry, finish
+}
+
+func combineSelfUpdateProgress(first, second func(SelfUpdateProgress)) func(SelfUpdateProgress) {
+	if first == nil {
+		return second
+	}
+	return func(event SelfUpdateProgress) {
+		first(event)
+		second(event)
+	}
+}
+
+func combineSelfUpdateRetry(first, second func(SelfUpdateRetry)) func(SelfUpdateRetry) {
+	if first == nil {
+		return second
+	}
+	return func(event SelfUpdateRetry) {
+		first(event)
+		second(event)
+	}
+}
+
+func formatByteCount(bytes int64) string {
+	return formatByteRate(float64(bytes))
+}
+
+func formatByteRate(bytes float64) string {
+	units := []string{"B", "KiB", "MiB", "GiB"}
+	unit := 0
+	for bytes >= 1024 && unit < len(units)-1 {
+		bytes /= 1024
+		unit++
+	}
+	if unit == 0 {
+		return fmt.Sprintf("%.0f %s", bytes, units[unit])
+	}
+	return fmt.Sprintf("%.1f %s", bytes, units[unit])
 }
 
 func resolveInteractiveInstall(ctx context.Context, input InstallInput, terminal Terminal) (InstallInput, error) {

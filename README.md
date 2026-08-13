@@ -571,7 +571,7 @@ mgsctl self-update --version v1.3.0
 mgsctl self-update --version v1.3.0 --yes
 ```
 
-Without `--yes`, self-update requires an interactive confirmation. It downloads the current platform artifact and checksum, stages the verified file beside the current executable, and replaces only the deployment tool. It does not restart or upgrade an installed Pic Gallery runtime. If the selected Release does not exist, self-update stops; from a complete source checkout, rerun the installer so its documented local Make fallback can be used.
+Without `--yes`, self-update requires an interactive confirmation. It downloads the current platform artifact and checksum, stages the verified file beside the current executable, and replaces only the deployment tool. Checksum and binary downloads retry transient network or service failures up to three times. An actively progressing binary download may run longer than two minutes; interactive terminals show bytes, percentage when the server reports a size, and transfer rate, while redirected output remains stable for scripts. It does not restart or upgrade an installed Pic Gallery runtime. If the selected Release does not exist, self-update stops; from a complete source checkout, rerun the installer so its documented local Make fallback can be used.
 
 | Command | Updated object | Network behavior |
 | --- | --- | --- |
@@ -611,6 +611,8 @@ mgsctl upgrade \
 For a native joined node, replace `--image-tag` with `--release-version v1.3.0` and keep `--migrate=false`.
 
 Upgrade migrations are forward-only. If migration succeeds but service rollout fails, rerun the exact same upgrade command to resume the idempotent rollout. If rollout fails before migration, mgsctl restores and reapplies the previous runtime plan. Do not try to downgrade the database by changing image tags; restore from a tested backup only when a release-specific recovery procedure requires it.
+
+Releases v0.0.16 and later prepare legacy `model_accounts.public_id` values automatically before Ent enforces the final unique, non-null column. If this migration fails, keep the previous services running and preserve the migration log; do not hand-edit or prepopulate `public_id`, because rerunning the corrected migration is idempotent and preserves any existing non-null UUIDs.
 
 ### Stop, Uninstall, and Permanent Deletion
 

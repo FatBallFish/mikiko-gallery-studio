@@ -1,12 +1,14 @@
 package mgsctl
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +23,8 @@ const (
 	DefaultMGSCTLReleaseBaseURL = "https://github.com/fatballfish/mikiko-gallery-studio/releases"
 	maxMGSCTLBinarySize         = 128 << 20
 	maxMGSCTLChecksumSize       = 4 << 10
+	selfUpdateMaxAttempts       = 3
+	selfUpdateBodyIdleTimeout   = 60 * time.Second
 )
 
 var errMGSCTLReleaseUnavailable = errors.New("mgsctl release artifact is unavailable")
@@ -40,6 +44,24 @@ type SelfUpdateDependencies struct {
 	GOOS           string
 	GOARCH         string
 	Replace        func(current, staged string) (deferred bool, err error)
+	Progress       func(SelfUpdateProgress)
+	Retry          func(SelfUpdateRetry)
+}
+
+type SelfUpdateProgress struct {
+	Stage      string
+	Attempt    int
+	Downloaded int64
+	Total      int64
+	Elapsed    time.Duration
+	Done       bool
+}
+
+type SelfUpdateRetry struct {
+	Stage       string
+	Attempt     int
+	MaxAttempts int
+	Err         error
 }
 
 type SelfUpdateResult struct {
@@ -51,8 +73,13 @@ type SelfUpdateResult struct {
 }
 
 func ProductionSelfUpdateDependencies() SelfUpdateDependencies {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	transport.TLSHandshakeTimeout = 15 * time.Second
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	transport.ExpectContinueTimeout = time.Second
 	return SelfUpdateDependencies{
-		HTTPClient: &http.Client{Timeout: 2 * time.Minute}, ExecutablePath: os.Executable,
+		HTTPClient: &http.Client{Transport: transport}, ExecutablePath: os.Executable,
 		GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Replace: replaceMGSCTLExecutable,
 	}
 }
@@ -102,7 +129,10 @@ func SelfUpdate(ctx context.Context, options SelfUpdateOptions, dependencies Sel
 
 	expected := strings.ToLower(strings.TrimSpace(options.ExpectedSHA256))
 	if expected == "" {
-		checksum, _, downloadErr := downloadBytes(ctx, dependencies.HTTPClient, downloadURL+".sha256", maxMGSCTLChecksumSize)
+		checksum, _, downloadErr := downloadBytesWithRetry(
+			ctx, dependencies.HTTPClient, downloadURL+".sha256", maxMGSCTLChecksumSize,
+			"checksum", dependencies.Progress, dependencies.Retry,
+		)
 		if downloadErr != nil {
 			return SelfUpdateResult{}, releaseUnavailableError(downloadErr)
 		}
@@ -125,7 +155,10 @@ func SelfUpdate(ctx context.Context, options SelfUpdateOptions, dependencies Sel
 		}
 	}()
 
-	actual, finalURL, err := downloadFile(ctx, dependencies.HTTPClient, downloadURL, staged, maxMGSCTLBinarySize)
+	actual, finalURL, err := downloadFileWithRetry(
+		ctx, dependencies.HTTPClient, downloadURL, staged, maxMGSCTLBinarySize,
+		"binary", dependencies.Progress, dependencies.Retry,
+	)
 	if err != nil {
 		return SelfUpdateResult{}, releaseUnavailableError(err)
 	}
@@ -240,6 +273,46 @@ func parseMGSCTLChecksum(content []byte) (string, error) {
 }
 
 func downloadBytes(ctx context.Context, client *http.Client, downloadURL string, limit int64) ([]byte, string, error) {
+	return downloadBytesAttempt(ctx, client, downloadURL, limit, nil)
+}
+
+func downloadBytesWithRetry(
+	ctx context.Context,
+	client *http.Client,
+	downloadURL string,
+	limit int64,
+	stage string,
+	progress func(SelfUpdateProgress),
+	retry func(SelfUpdateRetry),
+) ([]byte, string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= selfUpdateMaxAttempts; attempt++ {
+		started := time.Now()
+		content, finalURL, err := downloadBytesAttempt(ctx, client, downloadURL, limit, func(downloaded, total int64, done bool) {
+			reportSelfUpdateProgress(progress, stage, attempt, downloaded, total, time.Since(started), done)
+		})
+		if err == nil {
+			return content, finalURL, nil
+		}
+		lastErr = err
+		if !shouldRetryDownload(ctx, err) || attempt == selfUpdateMaxAttempts {
+			return nil, "", newDownloadStageError(stage, attempt, err)
+		}
+		reportSelfUpdateRetry(retry, stage, attempt, err)
+		if err := waitForSelfUpdateRetry(ctx, attempt); err != nil {
+			return nil, "", newDownloadStageError(stage, attempt, err)
+		}
+	}
+	return nil, "", newDownloadStageError(stage, selfUpdateMaxAttempts, lastErr)
+}
+
+func downloadBytesAttempt(
+	ctx context.Context,
+	client *http.Client,
+	downloadURL string,
+	limit int64,
+	progress func(downloaded, total int64, done bool),
+) ([]byte, string, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return nil, "", err
@@ -250,10 +323,9 @@ func downloadBytes(ctx context.Context, client *http.Client, downloadURL string,
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, "", fmt.Errorf("HTTP %d", response.StatusCode)
+		return nil, "", &downloadHTTPError{StatusCode: response.StatusCode}
 	}
-	limited := &io.LimitedReader{R: response.Body, N: limit + 1}
-	content, err := io.ReadAll(limited)
+	content, err := readAllWithIdleTimeout(response.Body, selfUpdateBodyIdleTimeout, limit, response.ContentLength, progress)
 	if err != nil {
 		return nil, "", err
 	}
@@ -264,6 +336,51 @@ func downloadBytes(ctx context.Context, client *http.Client, downloadURL string,
 }
 
 func downloadFile(ctx context.Context, client *http.Client, downloadURL string, destination io.Writer, limit int64) (string, string, error) {
+	return downloadFileAttempt(ctx, client, downloadURL, destination, limit, nil)
+}
+
+func downloadFileWithRetry(
+	ctx context.Context,
+	client *http.Client,
+	downloadURL string,
+	destination *os.File,
+	limit int64,
+	stage string,
+	progress func(SelfUpdateProgress),
+	retry func(SelfUpdateRetry),
+) (string, string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= selfUpdateMaxAttempts; attempt++ {
+		if err := resetStagedDownload(destination); err != nil {
+			return "", "", fmt.Errorf("reset staged download: %w", err)
+		}
+		started := time.Now()
+		digest, finalURL, err := downloadFileAttempt(ctx, client, downloadURL, destination, limit, func(downloaded, total int64, done bool) {
+			reportSelfUpdateProgress(progress, stage, attempt, downloaded, total, time.Since(started), done)
+		})
+		if err == nil {
+			return digest, finalURL, nil
+		}
+		lastErr = err
+		if !shouldRetryDownload(ctx, err) || attempt == selfUpdateMaxAttempts {
+			return "", "", newDownloadStageError(stage, attempt, err)
+		}
+		reportSelfUpdateRetry(retry, stage, attempt, err)
+		if err := waitForSelfUpdateRetry(ctx, attempt); err != nil {
+			return "", "", newDownloadStageError(stage, attempt, err)
+		}
+	}
+	return "", "", newDownloadStageError(stage, selfUpdateMaxAttempts, lastErr)
+}
+
+func downloadFileAttempt(
+	ctx context.Context,
+	client *http.Client,
+	downloadURL string,
+	destination io.Writer,
+	limit int64,
+	progress func(downloaded, total int64, done bool),
+) (string, string, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return "", "", err
@@ -274,11 +391,13 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL string, 
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return "", "", fmt.Errorf("HTTP %d", response.StatusCode)
+		return "", "", &downloadHTTPError{StatusCode: response.StatusCode}
 	}
 	hash := sha256.New()
-	limited := &io.LimitedReader{R: response.Body, N: limit + 1}
-	written, err := io.Copy(io.MultiWriter(destination, hash), limited)
+	written, err := copyWithIdleTimeout(
+		response.Body, io.MultiWriter(destination, hash), selfUpdateBodyIdleTimeout,
+		limit, response.ContentLength, progress,
+	)
 	if err != nil {
 		return "", "", err
 	}
@@ -291,12 +410,207 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL string, 
 func releaseUnavailableError(err error) error {
 	guidance := "rerun scripts/install.sh or scripts/install.ps1 from a complete source checkout to use the local build fallback"
 	if errors.Is(err, context.Canceled) {
-		return fmt.Errorf("%w: %w; %s", errMGSCTLReleaseUnavailable, context.Canceled, guidance)
+		return fmt.Errorf("%w: %w: %v; %s", errMGSCTLReleaseUnavailable, context.Canceled, err, guidance)
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("%w: %w; %s", errMGSCTLReleaseUnavailable, context.DeadlineExceeded, guidance)
+		return fmt.Errorf("%w: %w: %v; %s", errMGSCTLReleaseUnavailable, context.DeadlineExceeded, err, guidance)
 	}
-	return fmt.Errorf("%w: download failed; %s", errMGSCTLReleaseUnavailable, guidance)
+	return fmt.Errorf("%w: %v; %s", errMGSCTLReleaseUnavailable, err, guidance)
+}
+
+type downloadHTTPError struct{ StatusCode int }
+
+func (e *downloadHTTPError) Error() string { return fmt.Sprintf("HTTP %d", e.StatusCode) }
+
+type downloadStageError struct {
+	stage   string
+	attempt int
+	cause   error
+}
+
+func (e *downloadStageError) Error() string {
+	return fmt.Sprintf("%s download failed on attempt %d/%d: %s", e.stage, e.attempt, selfUpdateMaxAttempts, sanitizeDownloadError(e.cause))
+}
+
+func (e *downloadStageError) Unwrap() error { return e.cause }
+
+func newDownloadStageError(stage string, attempt int, cause error) error {
+	return &downloadStageError{stage: stage, attempt: attempt, cause: cause}
+}
+
+func shouldRetryDownload(ctx context.Context, err error) bool {
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	var httpErr *downloadHTTPError
+	if errors.As(err, &httpErr) {
+		switch httpErr.StatusCode {
+		case http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests,
+			http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return true
+		default:
+			return false
+		}
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var networkErr net.Error
+	return errors.As(err, &networkErr)
+}
+
+func waitForSelfUpdateRetry(ctx context.Context, attempt int) error {
+	timer := time.NewTimer(time.Duration(attempt) * 100 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func resetStagedDownload(file *os.File) error {
+	if err := file.Truncate(0); err != nil {
+		return err
+	}
+	_, err := file.Seek(0, io.SeekStart)
+	return err
+}
+
+func reportSelfUpdateProgress(callback func(SelfUpdateProgress), stage string, attempt int, downloaded, total int64, elapsed time.Duration, done bool) {
+	if callback != nil {
+		callback(SelfUpdateProgress{Stage: stage, Attempt: attempt, Downloaded: downloaded, Total: total, Elapsed: elapsed, Done: done})
+	}
+}
+
+func reportSelfUpdateRetry(callback func(SelfUpdateRetry), stage string, attempt int, err error) {
+	if callback != nil {
+		callback(SelfUpdateRetry{Stage: stage, Attempt: attempt, MaxAttempts: selfUpdateMaxAttempts, Err: errors.New(sanitizeDownloadError(err))})
+	}
+}
+
+func readAllWithIdleTimeout(
+	body io.ReadCloser,
+	idleTimeout time.Duration,
+	limit int64,
+	total int64,
+	progress func(downloaded, total int64, done bool),
+) ([]byte, error) {
+	var destination bytes.Buffer
+	if _, err := copyWithIdleTimeout(body, &destination, idleTimeout, limit, total, progress); err != nil {
+		return nil, err
+	}
+	return destination.Bytes(), nil
+}
+
+func copyWithIdleTimeout(
+	body io.ReadCloser,
+	destination io.Writer,
+	idleTimeout time.Duration,
+	limit int64,
+	total int64,
+	progress func(downloaded, total int64, done bool),
+) (int64, error) {
+	if total < 0 {
+		total = -1
+	}
+	type copyResult struct {
+		written int64
+		err     error
+	}
+	activity := make(chan struct{}, 1)
+	resultChannel := make(chan copyResult, 1)
+	limited := &io.LimitedReader{R: body, N: limit + 1}
+	reader := &downloadProgressReader{
+		reader: limited,
+		total:  total,
+		callback: func(downloaded, total int64, done bool) {
+			select {
+			case activity <- struct{}{}:
+			default:
+			}
+			if progress != nil {
+				progress(downloaded, total, done)
+			}
+		},
+	}
+	go func() {
+		written, err := io.Copy(destination, reader)
+		resultChannel <- copyResult{written: written, err: err}
+	}()
+
+	timer := time.NewTimer(idleTimeout)
+	defer timer.Stop()
+	for {
+		select {
+		case result := <-resultChannel:
+			if result.err == nil {
+				reader.finish()
+			}
+			return result.written, result.err
+		case <-activity:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(idleTimeout)
+		case <-timer.C:
+			_ = body.Close()
+			result := <-resultChannel
+			return result.written, &downloadIdleTimeoutError{timeout: idleTimeout}
+		}
+	}
+}
+
+type downloadProgressReader struct {
+	reader     io.Reader
+	total      int64
+	downloaded int64
+	callback   func(downloaded, total int64, done bool)
+}
+
+func (r *downloadProgressReader) Read(buffer []byte) (int, error) {
+	count, err := r.reader.Read(buffer)
+	if count > 0 {
+		r.downloaded += int64(count)
+		if r.callback != nil {
+			r.callback(r.downloaded, r.total, false)
+		}
+	}
+	return count, err
+}
+
+func (r *downloadProgressReader) finish() {
+	if r.callback != nil {
+		r.callback(r.downloaded, r.total, true)
+	}
+}
+
+type downloadIdleTimeoutError struct{ timeout time.Duration }
+
+func (e *downloadIdleTimeoutError) Error() string {
+	return fmt.Sprintf("download body made no progress for %s", e.timeout)
+}
+
+func (e *downloadIdleTimeoutError) Timeout() bool   { return true }
+func (e *downloadIdleTimeoutError) Temporary() bool { return true }
+
+func sanitizeDownloadError(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		operation := strings.TrimSpace(urlErr.Op)
+		if operation == "" {
+			operation = "request"
+		}
+		return operation + ": " + sanitizeDownloadError(urlErr.Err)
+	}
+	return err.Error()
 }
 
 func releaseVersionFromURL(value string) string {
