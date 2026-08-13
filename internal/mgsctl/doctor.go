@@ -54,18 +54,20 @@ func (report DoctorReport) String() string {
 }
 
 type DoctorDependencies struct {
-	ReadFile              func(string) ([]byte, error)
-	Stat                  func(string) (os.FileInfo, error)
-	CheckRuntimeReadiness func(context.Context, map[string]string) error
-	ProbeMiddleware       func(context.Context, map[string]string) error
-	CheckSchema           func(context.Context, map[string]string) error
-	LookPath              func(string) (string, error)
-	CheckWorkerTempDir    func(string) error
+	ReadFile                    func(string) ([]byte, error)
+	Stat                        func(string) (os.FileInfo, error)
+	CheckRuntimeReadiness       func(context.Context, map[string]string) error
+	ProbeMiddleware             func(context.Context, map[string]string) error
+	CheckSchema                 func(context.Context, map[string]string) error
+	LookPath                    func(string) (string, error)
+	CheckDockerWorkerMediaTools func(context.Context, string, map[string]string, string, string) error
+	CheckWorkerTempDir          func(string) error
 }
 
 func ProductionDoctorDependencies() DoctorDependencies {
 	return DoctorDependencies{
-		LookPath: exec.LookPath,
+		LookPath:                    exec.LookPath,
+		CheckDockerWorkerMediaTools: checkDockerWorkerMediaTools,
 		CheckWorkerTempDir: func(path string) error {
 			if err := os.MkdirAll(path, 0o700); err != nil {
 				return err
@@ -142,6 +144,45 @@ func probeDockerAPIReadiness(ctx context.Context, values map[string]string) erro
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("Docker API readiness returned HTTP %d", response.StatusCode)
+	}
+	return nil
+}
+
+const dockerWorkerMediaToolsCheckScript = `command -v -- "$1" >/dev/null && command -v -- "$2" >/dev/null`
+
+func BuildDockerWorkerMediaToolsCheckSpec(runtimeDir, installationID, nodeID, ffmpeg, ffprobe string, baseEnvironment []string) (ProcessSpec, error) {
+	absoluteRuntime, err := filepath.Abs(runtimeDir)
+	if err != nil {
+		return ProcessSpec{}, fmt.Errorf("resolve Docker runtime directory: %w", err)
+	}
+	projectName, err := dockerProjectName(installationID, nodeID)
+	if err != nil {
+		return ProcessSpec{}, err
+	}
+	return ProcessSpec{
+		Executable: "docker",
+		Arguments: []string{
+			"compose", "--project-directory", absoluteRuntime,
+			"--env-file", filepath.Join(absoluteRuntime, "config", "runtime.env"),
+			"--file", filepath.Join(absoluteRuntime, "compose.yml"),
+			"--project-name", projectName,
+			"exec", "--no-TTY", "worker", "sh", "-c",
+			dockerWorkerMediaToolsCheckScript, "mgsctl-media-tools", ffmpeg, ffprobe,
+		},
+		Directory:   absoluteRuntime,
+		Environment: sanitizeDockerEnvironment(baseEnvironment, absoluteRuntime, dockerRuntimeUser()),
+	}, nil
+}
+
+func checkDockerWorkerMediaTools(ctx context.Context, runtimeDir string, values map[string]string, ffmpeg, ffprobe string) error {
+	spec, err := BuildDockerWorkerMediaToolsCheckSpec(
+		runtimeDir, values["INSTALLATION_ID"], values["CLUSTER_NODE_ID"], ffmpeg, ffprobe, os.Environ(),
+	)
+	if err != nil {
+		return fmt.Errorf("build Docker Worker media tools check: %w", err)
+	}
+	if err := (OSProcessRunner{Stdout: io.Discard, Stderr: io.Discard}).Run(ctx, spec); err != nil {
+		return fmt.Errorf("check Docker Worker media tools: %w", err)
 	}
 	return nil
 }
@@ -264,11 +305,17 @@ func Doctor(ctx context.Context, runtimeDir string, dependencies DoctorDependenc
 		missing := make([]string, 0, 2)
 		ffmpeg := defaultString(strings.TrimSpace(values["MEDIA_FFMPEG_PATH"]), "ffmpeg")
 		ffprobe := defaultString(strings.TrimSpace(values["MEDIA_FFPROBE_PATH"]), "ffprobe")
-		if _, err := dependencies.LookPath(ffmpeg); err != nil {
-			missing = append(missing, "FFmpeg")
-		}
-		if _, err := dependencies.LookPath(ffprobe); err != nil {
-			missing = append(missing, "ffprobe")
+		if values["DEPLOYMENT_MODE"] == string(config.DeploymentModeDocker) {
+			if dependencies.CheckDockerWorkerMediaTools == nil || dependencies.CheckDockerWorkerMediaTools(ctx, runtimeDir, cloneRuntimeValues(values), ffmpeg, ffprobe) != nil {
+				missing = append(missing, "FFmpeg", "ffprobe")
+			}
+		} else {
+			if _, err := dependencies.LookPath(ffmpeg); err != nil {
+				missing = append(missing, "FFmpeg")
+			}
+			if _, err := dependencies.LookPath(ffprobe); err != nil {
+				missing = append(missing, "ffprobe")
+			}
 		}
 		toolsOK = len(missing) == 0
 		if toolsOK {
