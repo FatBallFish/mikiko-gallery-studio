@@ -2083,6 +2083,7 @@ var (
 		{Name: "height", Type: field.TypeInt, Nullable: true},
 		{Name: "sha256", Type: field.TypeString, Size: 64},
 		{Name: "source_image_result_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "media_asset_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "owns_object", Type: field.TypeBool, Default: true},
 		{Name: "bound_task_id", Type: field.TypeUUID, Nullable: true},
 		{Name: "expires_at", Type: field.TypeTime},
@@ -2102,6 +2103,11 @@ var (
 				Name:    "referenceasset_source_image_result_id",
 				Unique:  false,
 				Columns: []*schema.Column{ReferenceAssetsColumns[18]},
+			},
+			{
+				Name:    "referenceasset_media_asset_id",
+				Unique:  false,
+				Columns: []*schema.Column{ReferenceAssetsColumns[19]},
 			},
 			{
 				Name:    "referenceasset_storage_config_id",
@@ -2126,7 +2132,7 @@ var (
 			{
 				Name:    "referenceasset_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{ReferenceAssetsColumns[21]},
+				Columns: []*schema.Column{ReferenceAssetsColumns[22]},
 			},
 			{
 				Name:    "reference_asset_active_source",
@@ -2142,6 +2148,14 @@ var (
 				Columns: []*schema.Column{ReferenceAssetsColumns[4], ReferenceAssetsColumns[6]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "name_normalized IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'",
+				},
+			},
+			{
+				Name:    "reference_asset_active_media_asset",
+				Unique:  true,
+				Columns: []*schema.Column{ReferenceAssetsColumns[4], ReferenceAssetsColumns[19]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "media_asset_id IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'",
 				},
 			},
 		},

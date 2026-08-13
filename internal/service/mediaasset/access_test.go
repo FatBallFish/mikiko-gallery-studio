@@ -97,3 +97,42 @@ func TestAssetObjectPrefersLegacyImageThumbnailDerivativeWhenReady(t *testing.T)
 		t.Fatalf("ready thumbnail must remain preferred, got %#v", object)
 	}
 }
+
+func TestAssetObjectNeverFallsBackToOriginalVideoForPreview(t *testing.T) {
+	assetID := uuid.New()
+	store := &accessStoreProbe{asset: Asset{
+		ID: assetID, UserID: 7, MediaType: domainmedia.MediaTypeVideo,
+		ObjectKey: "media/original/clip.mp4", MIMEType: "video/mp4",
+	}}
+
+	if _, _, err := NewService(store, nil, Options{}).assetObject(t.Context(), 7, assetID, AccessPurposePreview); err == nil {
+		t.Fatal("video preview must require an MP4 proxy")
+	}
+}
+
+func TestAssetObjectUsesVideoProxyForPreviewWhenReady(t *testing.T) {
+	assetID := uuid.New()
+	store := &accessStoreProbe{
+		asset:       Asset{ID: assetID, UserID: 7, MediaType: domainmedia.MediaTypeVideo, ObjectKey: "media/original/clip.mp4", MIMEType: "video/mp4"},
+		derivatives: []AssetDerivative{{Kind: domainmedia.DerivativeProxy, Status: "ready", ObjectKey: "media/derivatives/proxy.mp4", MIMEType: "video/mp4"}},
+	}
+
+	_, object, err := NewService(store, nil, Options{}).assetObject(t.Context(), 7, assetID, AccessPurposePreview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if object.ObjectKey != "media/derivatives/proxy.mp4" {
+		t.Fatalf("video preview must use proxy, got %#v", object)
+	}
+}
+
+func TestAssetObjectDoesNotUseVideoProxyAsPosterFallback(t *testing.T) {
+	assetID := uuid.New()
+	store := &accessStoreProbe{
+		asset:       Asset{ID: assetID, UserID: 7, MediaType: domainmedia.MediaTypeVideo, ObjectKey: "media/original/clip.mp4", MIMEType: "video/mp4"},
+		derivatives: []AssetDerivative{{Kind: domainmedia.DerivativeProxy, Status: "ready", ObjectKey: "media/derivatives/proxy.mp4", MIMEType: "video/mp4"}},
+	}
+	if _, _, err := NewService(store, nil, Options{}).assetObject(t.Context(), 7, assetID, AccessPurposePoster); err == nil {
+		t.Fatal("poster access must not fall back to a video proxy")
+	}
+}

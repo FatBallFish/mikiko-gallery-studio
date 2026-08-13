@@ -145,6 +145,11 @@ func SourceImageResultID(v uuid.UUID) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldEQ(FieldSourceImageResultID, v))
 }
 
+// MediaAssetID applies equality check predicate on the "media_asset_id" field. It's identical to MediaAssetIDEQ.
+func MediaAssetID(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldMediaAssetID, v))
+}
+
 // OwnsObject applies equality check predicate on the "owns_object" field. It's identical to OwnsObjectEQ.
 func OwnsObject(v bool) predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldEQ(FieldOwnsObject, v))
@@ -1158,6 +1163,56 @@ func SourceImageResultIDIsNil() predicate.ReferenceAsset {
 // SourceImageResultIDNotNil applies the NotNil predicate on the "source_image_result_id" field.
 func SourceImageResultIDNotNil() predicate.ReferenceAsset {
 	return predicate.ReferenceAsset(sql.FieldNotNull(FieldSourceImageResultID))
+}
+
+// MediaAssetIDEQ applies the EQ predicate on the "media_asset_id" field.
+func MediaAssetIDEQ(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldEQ(FieldMediaAssetID, v))
+}
+
+// MediaAssetIDNEQ applies the NEQ predicate on the "media_asset_id" field.
+func MediaAssetIDNEQ(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNEQ(FieldMediaAssetID, v))
+}
+
+// MediaAssetIDIn applies the In predicate on the "media_asset_id" field.
+func MediaAssetIDIn(vs ...uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldIn(FieldMediaAssetID, vs...))
+}
+
+// MediaAssetIDNotIn applies the NotIn predicate on the "media_asset_id" field.
+func MediaAssetIDNotIn(vs ...uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNotIn(FieldMediaAssetID, vs...))
+}
+
+// MediaAssetIDGT applies the GT predicate on the "media_asset_id" field.
+func MediaAssetIDGT(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldGT(FieldMediaAssetID, v))
+}
+
+// MediaAssetIDGTE applies the GTE predicate on the "media_asset_id" field.
+func MediaAssetIDGTE(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldGTE(FieldMediaAssetID, v))
+}
+
+// MediaAssetIDLT applies the LT predicate on the "media_asset_id" field.
+func MediaAssetIDLT(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldLT(FieldMediaAssetID, v))
+}
+
+// MediaAssetIDLTE applies the LTE predicate on the "media_asset_id" field.
+func MediaAssetIDLTE(v uuid.UUID) predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldLTE(FieldMediaAssetID, v))
+}
+
+// MediaAssetIDIsNil applies the IsNil predicate on the "media_asset_id" field.
+func MediaAssetIDIsNil() predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldIsNull(FieldMediaAssetID))
+}
+
+// MediaAssetIDNotNil applies the NotNil predicate on the "media_asset_id" field.
+func MediaAssetIDNotNil() predicate.ReferenceAsset {
+	return predicate.ReferenceAsset(sql.FieldNotNull(FieldMediaAssetID))
 }
 
 // OwnsObjectEQ applies the EQ predicate on the "owns_object" field.

@@ -56229,6 +56229,7 @@ type ReferenceAssetMutation struct {
 	addheight              *int
 	sha256                 *string
 	source_image_result_id *uuid.UUID
+	media_asset_id         *uuid.UUID
 	owns_object            *bool
 	bound_task_id          *uuid.UUID
 	expires_at             *time.Time
@@ -57197,6 +57198,55 @@ func (m *ReferenceAssetMutation) ResetSourceImageResultID() {
 	delete(m.clearedFields, referenceasset.FieldSourceImageResultID)
 }
 
+// SetMediaAssetID sets the "media_asset_id" field.
+func (m *ReferenceAssetMutation) SetMediaAssetID(u uuid.UUID) {
+	m.media_asset_id = &u
+}
+
+// MediaAssetID returns the value of the "media_asset_id" field in the mutation.
+func (m *ReferenceAssetMutation) MediaAssetID() (r uuid.UUID, exists bool) {
+	v := m.media_asset_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMediaAssetID returns the old "media_asset_id" field's value of the ReferenceAsset entity.
+// If the ReferenceAsset object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ReferenceAssetMutation) OldMediaAssetID(ctx context.Context) (v *uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMediaAssetID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMediaAssetID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMediaAssetID: %w", err)
+	}
+	return oldValue.MediaAssetID, nil
+}
+
+// ClearMediaAssetID clears the value of the "media_asset_id" field.
+func (m *ReferenceAssetMutation) ClearMediaAssetID() {
+	m.media_asset_id = nil
+	m.clearedFields[referenceasset.FieldMediaAssetID] = struct{}{}
+}
+
+// MediaAssetIDCleared returns if the "media_asset_id" field was cleared in this mutation.
+func (m *ReferenceAssetMutation) MediaAssetIDCleared() bool {
+	_, ok := m.clearedFields[referenceasset.FieldMediaAssetID]
+	return ok
+}
+
+// ResetMediaAssetID resets all changes to the "media_asset_id" field.
+func (m *ReferenceAssetMutation) ResetMediaAssetID() {
+	m.media_asset_id = nil
+	delete(m.clearedFields, referenceasset.FieldMediaAssetID)
+}
+
 // SetOwnsObject sets the "owns_object" field.
 func (m *ReferenceAssetMutation) SetOwnsObject(b bool) {
 	m.owns_object = &b
@@ -57352,7 +57402,7 @@ func (m *ReferenceAssetMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ReferenceAssetMutation) Fields() []string {
-	fields := make([]string, 0, 21)
+	fields := make([]string, 0, 22)
 	if m.created_at != nil {
 		fields = append(fields, referenceasset.FieldCreatedAt)
 	}
@@ -57407,6 +57457,9 @@ func (m *ReferenceAssetMutation) Fields() []string {
 	if m.source_image_result_id != nil {
 		fields = append(fields, referenceasset.FieldSourceImageResultID)
 	}
+	if m.media_asset_id != nil {
+		fields = append(fields, referenceasset.FieldMediaAssetID)
+	}
 	if m.owns_object != nil {
 		fields = append(fields, referenceasset.FieldOwnsObject)
 	}
@@ -57460,6 +57513,8 @@ func (m *ReferenceAssetMutation) Field(name string) (ent.Value, bool) {
 		return m.Sha256()
 	case referenceasset.FieldSourceImageResultID:
 		return m.SourceImageResultID()
+	case referenceasset.FieldMediaAssetID:
+		return m.MediaAssetID()
 	case referenceasset.FieldOwnsObject:
 		return m.OwnsObject()
 	case referenceasset.FieldBoundTaskID:
@@ -57511,6 +57566,8 @@ func (m *ReferenceAssetMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldSha256(ctx)
 	case referenceasset.FieldSourceImageResultID:
 		return m.OldSourceImageResultID(ctx)
+	case referenceasset.FieldMediaAssetID:
+		return m.OldMediaAssetID(ctx)
 	case referenceasset.FieldOwnsObject:
 		return m.OldOwnsObject(ctx)
 	case referenceasset.FieldBoundTaskID:
@@ -57652,6 +57709,13 @@ func (m *ReferenceAssetMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetSourceImageResultID(v)
 		return nil
+	case referenceasset.FieldMediaAssetID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMediaAssetID(v)
+		return nil
 	case referenceasset.FieldOwnsObject:
 		v, ok := value.(bool)
 		if !ok {
@@ -57790,6 +57854,9 @@ func (m *ReferenceAssetMutation) ClearedFields() []string {
 	if m.FieldCleared(referenceasset.FieldSourceImageResultID) {
 		fields = append(fields, referenceasset.FieldSourceImageResultID)
 	}
+	if m.FieldCleared(referenceasset.FieldMediaAssetID) {
+		fields = append(fields, referenceasset.FieldMediaAssetID)
+	}
 	if m.FieldCleared(referenceasset.FieldBoundTaskID) {
 		fields = append(fields, referenceasset.FieldBoundTaskID)
 	}
@@ -57830,6 +57897,9 @@ func (m *ReferenceAssetMutation) ClearField(name string) error {
 		return nil
 	case referenceasset.FieldSourceImageResultID:
 		m.ClearSourceImageResultID()
+		return nil
+	case referenceasset.FieldMediaAssetID:
+		m.ClearMediaAssetID()
 		return nil
 	case referenceasset.FieldBoundTaskID:
 		m.ClearBoundTaskID()
@@ -57895,6 +57965,9 @@ func (m *ReferenceAssetMutation) ResetField(name string) error {
 		return nil
 	case referenceasset.FieldSourceImageResultID:
 		m.ResetSourceImageResultID()
+		return nil
+	case referenceasset.FieldMediaAssetID:
+		m.ResetMediaAssetID()
 		return nil
 	case referenceasset.FieldOwnsObject:
 		m.ResetOwnsObject()

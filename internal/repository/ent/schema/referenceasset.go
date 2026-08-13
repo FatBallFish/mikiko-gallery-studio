@@ -31,6 +31,7 @@ func (ReferenceAsset) Fields() []ent.Field {
 		field.Int("height").Optional().Nillable(),
 		field.String("sha256").MaxLen(64).NotEmpty(),
 		field.UUID("source_image_result_id", uuid.UUID{}).Optional().Nillable(),
+		field.UUID("media_asset_id", uuid.UUID{}).Optional().Nillable(),
 		field.Bool("owns_object").Default(true),
 		field.UUID("bound_task_id", uuid.UUID{}).Optional().Nillable(),
 		field.Time("expires_at").Default(func() time.Time { return time.Now().Add(24 * time.Hour) }),
@@ -40,6 +41,7 @@ func (ReferenceAsset) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("object_key"),
 		index.Fields("source_image_result_id"),
+		index.Fields("media_asset_id"),
 		index.Fields("storage_config_id"),
 		index.Fields("user_id"),
 		index.Fields("status"),
@@ -53,5 +55,9 @@ func (ReferenceAsset) Indexes() []ent.Index {
 			StorageKey("reference_asset_active_name").
 			Unique().
 			Annotations(entsql.IndexWhere("name_normalized IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'")),
+		index.Fields("user_id", "media_asset_id").
+			StorageKey("reference_asset_active_media_asset").
+			Unique().
+			Annotations(entsql.IndexWhere("media_asset_id IS NOT NULL AND deleted_at IS NULL AND status <> 'deleted'")),
 	}
 }

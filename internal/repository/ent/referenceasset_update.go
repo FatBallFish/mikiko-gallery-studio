@@ -342,6 +342,26 @@ func (_u *ReferenceAssetUpdate) ClearSourceImageResultID() *ReferenceAssetUpdate
 	return _u
 }
 
+// SetMediaAssetID sets the "media_asset_id" field.
+func (_u *ReferenceAssetUpdate) SetMediaAssetID(v uuid.UUID) *ReferenceAssetUpdate {
+	_u.mutation.SetMediaAssetID(v)
+	return _u
+}
+
+// SetNillableMediaAssetID sets the "media_asset_id" field if the given value is not nil.
+func (_u *ReferenceAssetUpdate) SetNillableMediaAssetID(v *uuid.UUID) *ReferenceAssetUpdate {
+	if v != nil {
+		_u.SetMediaAssetID(*v)
+	}
+	return _u
+}
+
+// ClearMediaAssetID clears the value of the "media_asset_id" field.
+func (_u *ReferenceAssetUpdate) ClearMediaAssetID() *ReferenceAssetUpdate {
+	_u.mutation.ClearMediaAssetID()
+	return _u
+}
+
 // SetOwnsObject sets the "owns_object" field.
 func (_u *ReferenceAssetUpdate) SetOwnsObject(v bool) *ReferenceAssetUpdate {
 	_u.mutation.SetOwnsObject(v)
@@ -577,6 +597,12 @@ func (_u *ReferenceAssetUpdate) sqlSave(ctx context.Context) (_node int, err err
 	}
 	if _u.mutation.SourceImageResultIDCleared() {
 		_spec.ClearField(referenceasset.FieldSourceImageResultID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.MediaAssetID(); ok {
+		_spec.SetField(referenceasset.FieldMediaAssetID, field.TypeUUID, value)
+	}
+	if _u.mutation.MediaAssetIDCleared() {
+		_spec.ClearField(referenceasset.FieldMediaAssetID, field.TypeUUID)
 	}
 	if value, ok := _u.mutation.OwnsObject(); ok {
 		_spec.SetField(referenceasset.FieldOwnsObject, field.TypeBool, value)
@@ -923,6 +949,26 @@ func (_u *ReferenceAssetUpdateOne) ClearSourceImageResultID() *ReferenceAssetUpd
 	return _u
 }
 
+// SetMediaAssetID sets the "media_asset_id" field.
+func (_u *ReferenceAssetUpdateOne) SetMediaAssetID(v uuid.UUID) *ReferenceAssetUpdateOne {
+	_u.mutation.SetMediaAssetID(v)
+	return _u
+}
+
+// SetNillableMediaAssetID sets the "media_asset_id" field if the given value is not nil.
+func (_u *ReferenceAssetUpdateOne) SetNillableMediaAssetID(v *uuid.UUID) *ReferenceAssetUpdateOne {
+	if v != nil {
+		_u.SetMediaAssetID(*v)
+	}
+	return _u
+}
+
+// ClearMediaAssetID clears the value of the "media_asset_id" field.
+func (_u *ReferenceAssetUpdateOne) ClearMediaAssetID() *ReferenceAssetUpdateOne {
+	_u.mutation.ClearMediaAssetID()
+	return _u
+}
+
 // SetOwnsObject sets the "owns_object" field.
 func (_u *ReferenceAssetUpdateOne) SetOwnsObject(v bool) *ReferenceAssetUpdateOne {
 	_u.mutation.SetOwnsObject(v)
@@ -1188,6 +1234,12 @@ func (_u *ReferenceAssetUpdateOne) sqlSave(ctx context.Context) (_node *Referenc
 	}
 	if _u.mutation.SourceImageResultIDCleared() {
 		_spec.ClearField(referenceasset.FieldSourceImageResultID, field.TypeUUID)
+	}
+	if value, ok := _u.mutation.MediaAssetID(); ok {
+		_spec.SetField(referenceasset.FieldMediaAssetID, field.TypeUUID, value)
+	}
+	if _u.mutation.MediaAssetIDCleared() {
+		_spec.ClearField(referenceasset.FieldMediaAssetID, field.TypeUUID)
 	}
 	if value, ok := _u.mutation.OwnsObject(); ok {
 		_spec.SetField(referenceasset.FieldOwnsObject, field.TypeBool, value)

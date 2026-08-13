@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	defaultUploadPartSize = int64(16 << 20)
-	minimumUploadPartSize = int64(8 << 20)
-	maximumUploadPartSize = int64(32 << 20)
+	defaultUploadPartSize       = int64(16 << 20)
+	minimumUploadPartSize       = int64(8 << 20)
+	maximumUploadPartSize       = int64(32 << 20)
+	maximumIdempotencyKeyLength = 128
 )
 
 type Options struct {
@@ -89,11 +90,12 @@ const (
 	AccessPurposePreview   = "preview"
 	AccessPurposeWaveform  = "waveform"
 	AccessPurposeDownload  = "download"
+	AccessPurposeContent   = "content"
 )
 
 func ValidAccessPurpose(purpose string) bool {
 	switch strings.ToLower(strings.TrimSpace(purpose)) {
-	case AccessPurposeThumbnail, AccessPurposePoster, AccessPurposeHover, AccessPurposePreview, AccessPurposeWaveform, AccessPurposeDownload:
+	case AccessPurposeThumbnail, AccessPurposePoster, AccessPurposeHover, AccessPurposePreview, AccessPurposeWaveform, AccessPurposeDownload, AccessPurposeContent:
 		return true
 	default:
 		return false
@@ -231,7 +233,19 @@ func (s *Service) assetObject(ctx context.Context, userID int64, assetID uuid.UU
 	if purpose == AccessPurposeThumbnail && asset.MediaType == domainmedia.MediaTypeImage && asset.LegacyImageID != nil {
 		return asset, object, nil
 	}
-	if purpose == AccessPurposePreview {
+	// P0 video playback must always use the generated MP4 proxy. Returning the
+	// original here would make a missing/failed proxy silently download the
+	// potentially large source video and bypass the preview cost boundary.
+	if purpose == AccessPurposePreview && asset.MediaType == domainmedia.MediaTypeVideo {
+		return Asset{}, assetStorageObject{}, errs.New(409, "DERIVATIVE_NOT_READY", "video MP4 proxy is not ready")
+	}
+	if purpose == AccessPurposePreview && asset.MediaType == domainmedia.MediaTypeImage {
+		return asset, object, nil
+	}
+	if purpose == AccessPurposeContent {
+		// Document assets are stored as opaque media types for compatibility with
+		// the existing attachment records; content access is intentionally only
+		// exposed through the authenticated media endpoint.
 		return asset, object, nil
 	}
 	return Asset{}, assetStorageObject{}, errs.New(409, "DERIVATIVE_NOT_READY", "requested media derivative is not ready")
@@ -243,18 +257,22 @@ func accessDerivativePriorities(mediaType domainmedia.MediaType, purpose string)
 		if mediaType == domainmedia.MediaTypeImage {
 			return []domainmedia.DerivativeKind{domainmedia.DerivativeThumbnail640, domainmedia.DerivativeThumbnail320}
 		}
+		return nil
 	case AccessPurposePoster:
 		if mediaType == domainmedia.MediaTypeVideo {
 			return []domainmedia.DerivativeKind{domainmedia.DerivativePoster}
 		}
+		return nil
 	case AccessPurposeHover:
 		if mediaType == domainmedia.MediaTypeVideo {
 			return []domainmedia.DerivativeKind{domainmedia.DerivativeHoverPreview}
 		}
+		return nil
 	case AccessPurposeWaveform:
 		if mediaType == domainmedia.MediaTypeAudio {
 			return []domainmedia.DerivativeKind{domainmedia.DerivativeWaveform}
 		}
+		return nil
 	}
 	switch mediaType {
 	case domainmedia.MediaTypeImage:
@@ -275,6 +293,9 @@ func (s *Service) InitUpload(ctx context.Context, req InitUploadRequest) (Upload
 	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
 	if req.UserID <= 0 || req.ProjectID == uuid.Nil || req.IdempotencyKey == "" {
 		return UploadSession{}, errs.BadRequest("user, project and idempotency key are required")
+	}
+	if len(req.IdempotencyKey) > maximumIdempotencyKeyLength {
+		return UploadSession{}, errs.BadRequest("Idempotency-Key must be at most 128 characters")
 	}
 	runtimePolicy, err := s.runtimePolicy(ctx)
 	if err != nil {

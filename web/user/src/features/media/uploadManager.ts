@@ -7,8 +7,8 @@ export const MEDIA_UPLOAD_RETRIES = 3
 export const MEDIA_UPLOAD_FINGERPRINT_SAMPLE_BYTES = 64 * 1024
 
 const acceptedMIMETypes: Record<MediaType, readonly string[]> = {
-  image: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/bmp', 'image/tiff', 'image/gif'],
-  video: ['video/mp4', 'video/quicktime'],
+  image: ['image/jpeg', 'image/png', 'image/webp'],
+  video: ['video/mp4'],
   audio: ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav'],
 }
 

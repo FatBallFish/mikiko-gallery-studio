@@ -226,7 +226,8 @@ function AdminApplication() {
       case 'video-tasks':
         return <VideoTasksPage />
       case 'media-policy':
-        return <MediaPolicyPage />
+        // Compatibility route: the editor now lives under System Settings.
+        return session ? <SystemSettingsPage session={session} onFeedback={feedback} /> : null
       case 'reviews':
         return <ReviewPage accessToken={session?.token} onFeedback={feedback} />
       case 'users':

@@ -33,13 +33,42 @@ func TestPolicyUsesProbeAsFinalMediaAuthority(t *testing.T) {
 		t.Fatalf("disguised video error = %#v", err)
 	}
 
-	video := UploadDeclaration{Filename: "clip.mov", MediaType: MediaTypeVideo, MIMEType: "video/quicktime", SizeBytes: 4096}
-	if err := policy.ValidateProbe(video, ProbeResult{MediaType: MediaTypeVideo, Format: "mov", Container: "mov", VideoCodec: "vp9"}); err == nil || err.Field != "video_codec" {
-		t.Fatalf("unsupported codec error = %#v", err)
+	unsupportedContainer := UploadDeclaration{Filename: "clip.mov", MediaType: MediaTypeVideo, MIMEType: "video/quicktime", SizeBytes: 4096}
+	if err := policy.ValidateDeclaration(unsupportedContainer); err == nil || err.Field != "filename" || err.Code != "unsupported_format" {
+		t.Fatalf("unsupported video container error = %#v", err)
 	}
 
-	if err := policy.ValidateProbe(video, ProbeResult{MediaType: MediaTypeVideo, Format: "mov", Container: "mov", VideoCodec: "hevc", AudioCodec: "aac", DurationMS: 5000}); err != nil {
-		t.Fatalf("supported MOV/HEVC probe rejected: %v", err)
+	video := UploadDeclaration{Filename: "clip.mp4", MediaType: MediaTypeVideo, MIMEType: "video/mp4", SizeBytes: 4096}
+	if err := policy.ValidateProbe(video, ProbeResult{MediaType: MediaTypeVideo, Format: "mp4", Container: "mp4", VideoCodec: "hevc", AudioCodec: "aac", DurationMS: 5000}); err != nil {
+		t.Fatalf("supported MP4/HEVC probe rejected: %v", err)
+	}
+}
+
+func TestDefaultPolicyAllowsOnlyP0UploadFormats(t *testing.T) {
+	policy := DefaultPolicy()
+	valid := []UploadDeclaration{
+		{Filename: "photo.jpg", MediaType: MediaTypeImage, MIMEType: "image/jpeg", SizeBytes: 1},
+		{Filename: "photo.jpeg", MediaType: MediaTypeImage, MIMEType: "image/jpeg", SizeBytes: 1},
+		{Filename: "photo.png", MediaType: MediaTypeImage, MIMEType: "image/png", SizeBytes: 1},
+		{Filename: "photo.webp", MediaType: MediaTypeImage, MIMEType: "image/webp", SizeBytes: 1},
+		{Filename: "clip.mp4", MediaType: MediaTypeVideo, MIMEType: "video/mp4", SizeBytes: 1},
+		{Filename: "track.mp3", MediaType: MediaTypeAudio, MIMEType: "audio/mpeg", SizeBytes: 1},
+		{Filename: "track.m4a", MediaType: MediaTypeAudio, MIMEType: "audio/mp4", SizeBytes: 1},
+		{Filename: "track.wav", MediaType: MediaTypeAudio, MIMEType: "audio/wav", SizeBytes: 1},
+	}
+	for _, declaration := range valid {
+		if err := policy.ValidateDeclaration(declaration); err != nil {
+			t.Errorf("valid P0 declaration %s rejected: %v", declaration.Filename, err)
+		}
+	}
+	for _, declaration := range []UploadDeclaration{
+		{Filename: "photo.gif", MediaType: MediaTypeImage, MIMEType: "image/gif", SizeBytes: 1},
+		{Filename: "photo.heic", MediaType: MediaTypeImage, MIMEType: "image/heic", SizeBytes: 1},
+		{Filename: "clip.mov", MediaType: MediaTypeVideo, MIMEType: "video/quicktime", SizeBytes: 1},
+	} {
+		if err := policy.ValidateDeclaration(declaration); err == nil {
+			t.Errorf("non-P0 declaration %s unexpectedly accepted", declaration.Filename)
+		}
 	}
 }
 

@@ -50,6 +50,8 @@ const (
 	FieldSha256 = "sha256"
 	// FieldSourceImageResultID holds the string denoting the source_image_result_id field in the database.
 	FieldSourceImageResultID = "source_image_result_id"
+	// FieldMediaAssetID holds the string denoting the media_asset_id field in the database.
+	FieldMediaAssetID = "media_asset_id"
 	// FieldOwnsObject holds the string denoting the owns_object field in the database.
 	FieldOwnsObject = "owns_object"
 	// FieldBoundTaskID holds the string denoting the bound_task_id field in the database.
@@ -81,6 +83,7 @@ var Columns = []string{
 	FieldHeight,
 	FieldSha256,
 	FieldSourceImageResultID,
+	FieldMediaAssetID,
 	FieldOwnsObject,
 	FieldBoundTaskID,
 	FieldExpiresAt,
@@ -231,6 +234,11 @@ func BySha256(opts ...sql.OrderTermOption) OrderOption {
 // BySourceImageResultID orders the results by the source_image_result_id field.
 func BySourceImageResultID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSourceImageResultID, opts...).ToFunc()
+}
+
+// ByMediaAssetID orders the results by the media_asset_id field.
+func ByMediaAssetID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMediaAssetID, opts...).ToFunc()
 }
 
 // ByOwnsObject orders the results by the owns_object field.

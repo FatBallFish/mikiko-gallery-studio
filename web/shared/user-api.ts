@@ -678,6 +678,12 @@ export const userApi = {
     const items = Array.isArray(response) ? response : response.items ?? response.assets ?? response.references ?? []
     return items.map(toReferenceAsset)
   },
+  importReferenceAssetsFromMedia: async (mediaAssetIds: string[]) => {
+    const response = await sharedApiClient.request<{ items?: any[] }>(API_PATHS.agent.importReferenceAssetsFromMedia, {
+      method: 'POST', body: { media_asset_ids: mediaAssetIds },
+    })
+    return (response.items ?? []).map(toReferenceAsset)
+  },
   getReferenceAsset: async (asset_id: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { pathParams: { asset_id } })),
   renameReferenceAsset: async (asset_id: string, name: string) => toReferenceAsset(await sharedApiClient.request(API_PATHS.agent.referenceAssetDetail, { method: 'PATCH', pathParams: { asset_id }, body: { name } })),
   refreshReferenceAssetAccess: (asset_id: string, purpose: MediaAccessPurpose = 'preview') =>

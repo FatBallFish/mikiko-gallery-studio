@@ -118,6 +118,7 @@ func TestProjectOpenAPIContractDocumentsLifecycleAndScoping(t *testing.T) {
 		"/api/agent/project/v1/projects":                           {"get", "post"},
 		"/api/agent/project/v1/projects/{project_id}":              {"patch", "delete"},
 		"/api/agent/image/v1/reference-assets:import-from-gallery": {"post"},
+		"/api/agent/image/v1/reference-assets:import-from-media":   {"post"},
 		"/api/agent/gallery/v1/images":                             {"get"},
 		"/api/agent/gallery/v1/images:batch-publish":               {"post"},
 		"/api/agent/gallery/v1/images:batch-group":                 {"post"},

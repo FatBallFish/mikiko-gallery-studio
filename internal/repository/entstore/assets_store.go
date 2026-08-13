@@ -18,6 +18,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/referenceasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 )
 
 type AssetsStore struct {
@@ -55,7 +56,9 @@ func (s *AssetsStore) saveWithMetadata(ctx context.Context, userID int64, asset 
 	if err != nil {
 		return domainassets.ReferenceAsset{}, err
 	}
-	ownsObject := asset.OwnsObject || strings.TrimSpace(asset.SourceImageResultID) == ""
+	// Media-asset aliases and generated-result aliases borrow an object owned by
+	// another aggregate; only direct uploads own their storage object.
+	ownsObject := asset.OwnsObject || (strings.TrimSpace(asset.SourceImageResultID) == "" && strings.TrimSpace(asset.MediaAssetID) == "")
 	create := s.client.ReferenceAsset.Create().
 		SetID(id).
 		SetUserID(userID).
@@ -84,6 +87,13 @@ func (s *AssetsStore) saveWithMetadata(ctx context.Context, userID int64, asset 
 		}
 		create.SetSourceImageResultID(sourceID)
 	}
+	if strings.TrimSpace(asset.MediaAssetID) != "" {
+		mediaID, parseErr := uuid.Parse(asset.MediaAssetID)
+		if parseErr != nil {
+			return domainassets.ReferenceAsset{}, parseErr
+		}
+		create.SetMediaAssetID(mediaID)
+	}
 	if asset.StorageConfigID != "" {
 		storageConfigID, parseErr := uuid.Parse(asset.StorageConfigID)
 		if parseErr != nil {
@@ -106,6 +116,34 @@ func (s *AssetsStore) saveWithMetadata(ctx context.Context, userID int64, asset 
 		return domainassets.ReferenceAsset{}, err
 	}
 	return mapReferenceAssetEntity(entity), nil
+}
+
+func (s *AssetsStore) ImportMediaAssetAlias(ctx context.Context, userID int64, asset mediaassetservice.Asset) (domainassets.ReferenceAsset, error) {
+	if existing, err := s.client.ReferenceAsset.Query().Where(
+		referenceasset.UserIDEQ(userID), referenceasset.MediaAssetIDEQ(asset.ID),
+		referenceasset.DeletedAtIsNil(), referenceasset.StatusNEQ("deleted"),
+	).Only(ctx); err == nil {
+		return s.ensureReferenceAssetName(ctx, userID, existing)
+	} else if !repoent.IsNotFound(err) {
+		return domainassets.ReferenceAsset{}, err
+	}
+	alias := domainassets.ReferenceAsset{
+		ID: uuid.NewString(), Name: asset.Name, UploadSource: "media_asset", Status: "ready",
+		MimeType: asset.MIMEType, FileSizeBytes: asset.FileSizeBytes, SHA256: asset.SHA256,
+		StorageDriver: asset.StorageDriver, StorageConfigID: asset.StorageConfigID, ObjectKey: asset.ObjectKey,
+		OwnsObject: false, MediaAssetID: asset.ID.String(), CreatedAt: asset.CreatedAt,
+	}
+	if asset.Width != nil {
+		alias.Width = *asset.Width
+	}
+	if asset.Height != nil {
+		alias.Height = *asset.Height
+	}
+	preferred := alias.Name
+	if preferred == "" {
+		preferred = "图片"
+	}
+	return s.SaveWithGeneratedName(ctx, userID, alias, domainassets.UploadMetadata{UploadSource: "media_asset"}, preferred)
 }
 
 func (s *AssetsStore) SaveWithGeneratedName(ctx context.Context, userID int64, asset domainassets.ReferenceAsset, metadata domainassets.UploadMetadata, preferredName string) (domainassets.ReferenceAsset, error) {
@@ -434,8 +472,10 @@ func (s *AssetsStore) DeleteByUserAndID(ctx context.Context, userID int64, asset
 	if entity.StorageConfigID != nil {
 		configID = entity.StorageConfigID.String()
 	}
-	if _, err := enqueueObjectDeletionJob(ctx, tx.Client(), cleanupIdentity(configID, entity.StorageDriver, entity.ObjectKey)); err != nil {
-		return err
+	if entity.OwnsObject || entity.MediaAssetID == nil {
+		if _, err := enqueueObjectDeletionJob(ctx, tx.Client(), cleanupIdentity(configID, entity.StorageDriver, entity.ObjectKey)); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return err
@@ -461,6 +501,9 @@ func mapReferenceAssetEntity(entity *repoent.ReferenceAsset) domainassets.Refere
 	}
 	if entity.SourceImageResultID != nil {
 		asset.SourceImageResultID = entity.SourceImageResultID.String()
+	}
+	if entity.MediaAssetID != nil {
+		asset.MediaAssetID = entity.MediaAssetID.String()
 	}
 	if entity.StorageConfigID != nil {
 		asset.StorageConfigID = entity.StorageConfigID.String()
