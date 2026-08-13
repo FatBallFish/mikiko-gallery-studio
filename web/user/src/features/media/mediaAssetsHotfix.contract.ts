@@ -44,6 +44,7 @@ for (const required of ['OverlayPortal', 'onPointerDown', 'onPointerMove', 'onPo
 for (const purpose of ["getMediaAssetAccess(asset.id, 'thumbnail')", "purpose = asset.media_type === 'video' ? 'poster'", "asset.media_type === 'audio' ? 'waveform'"]) {
   if (!cardSource.includes(purpose)) throw new Error(`asset previews must retain ${purpose}`)
 }
+if (!cardSource.includes("asset.status === 'ready_original'")) throw new Error('generated image originals must remain previewable while thumbnails are processing')
 if ((cardSource.match(/draggable=\{false\}/g) ?? []).length < 4) throw new Error('card preview media must not steal marquee drags')
 if (!cssSource.includes('.media-selection-marquee') || !/\.media-selection-marquee\s*\{[^}]*position:\s*fixed/s.test(cssSource)) {
   throw new Error('marquee must be fixed to viewport coordinates')

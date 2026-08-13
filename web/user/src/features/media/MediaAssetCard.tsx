@@ -19,7 +19,7 @@ function useImagePreview(asset: MediaAsset) {
   useEffect(() => {
     let alive = true
     refreshed.current = false
-    if (asset.media_type !== 'image' || asset.status !== 'ready') return undefined
+    if (asset.media_type !== 'image' || (asset.status !== 'ready' && asset.status !== 'ready_original')) return undefined
     void userApi.getMediaAssetAccess(asset.id, 'thumbnail').then((next) => {
       if (alive) setAccess(next)
     }).catch(() => undefined)
@@ -134,7 +134,7 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
         {asset.media_type === 'audio' && waveformURL ? <img src={waveformURL} alt="" loading="lazy" draggable={false} /> : null}
         {!imagePreview.access?.url && !posterURL && !hoverURL && !waveformURL ? (
           <span className={`media-asset-placeholder${asset.media_type === 'audio' ? ' is-audio' : ''}`} aria-hidden="true">
-            {asset.status === 'processing' ? <LoaderCircle className="animate-spin" /> : asset.media_type === 'video' ? <Film /> : asset.media_type === 'audio' ? <AudioLines /> : <FileImage />}
+            {asset.status === 'processing' || asset.status === 'ready_original' ? <LoaderCircle className="animate-spin" /> : asset.media_type === 'video' ? <Film /> : asset.media_type === 'audio' ? <AudioLines /> : <FileImage />}
             {asset.media_type === 'audio' ? <span className="media-audio-waveform">{Array.from({ length: 24 }, (_, index) => <i key={index} />)}</span> : null}
           </span>
         ) : null}

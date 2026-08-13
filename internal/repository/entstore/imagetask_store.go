@@ -23,6 +23,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaderivative"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	projectent "github.com/fatballfish/pic-gallery/internal/repository/ent/project"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/publicimageinteraction"
@@ -1596,6 +1598,10 @@ func upsertImageMediaAsset(
 		return err
 	}
 	if repoent.IsNotFound(err) {
+		status := "ready"
+		if imageObjectSupportsMediaProcessing(storageDriver, objectKey) {
+			status = "ready_original"
+		}
 		builder := tx.MediaAsset.Create().
 			SetID(resultID).
 			SetUserID(userID).
@@ -1606,7 +1612,7 @@ func upsertImageMediaAsset(
 			SetGroupName(strings.TrimSpace(result.ImageGroup)).
 			SetMediaType("image").
 			SetSourceType("generated").
-			SetStatus("ready").
+			SetStatus(status).
 			SetVisibilityStatus(defaultString(result.VisibilityStatus, "private")).
 			SetStorageDriver(storageDriver).
 			SetObjectKey(objectKey).
@@ -1624,7 +1630,13 @@ func upsertImageMediaAsset(
 		if result.Height > 0 {
 			builder.SetHeight(result.Height)
 		}
-		return builder.Exec(ctx)
+		if err := builder.Exec(ctx); err != nil {
+			return err
+		}
+		if status == "ready_original" {
+			return ensureImageMediaProcessingJob(ctx, tx, resultID)
+		}
+		return nil
 	}
 	update := tx.MediaAsset.UpdateOne(entity).
 		SetProjectID(parsedProjectID).
@@ -1649,7 +1661,59 @@ func upsertImageMediaAsset(
 	} else {
 		update.ClearHeight()
 	}
-	return update.Exec(ctx)
+	queueProcessing := false
+	if imageObjectSupportsMediaProcessing(storageDriver, objectKey) && entity.ProcessedAt == nil {
+		hasJob, err := tx.MediaProcessingJob.Query().Where(
+			mediaprocessingjob.AssetIDEQ(resultID),
+			mediaprocessingjob.JobTypeEQ("probe"),
+			mediaprocessingjob.TransformVersionEQ(1),
+		).Exist(ctx)
+		if err != nil {
+			return err
+		}
+		hasDerivative, err := tx.MediaDerivative.Query().Where(
+			mediaderivative.AssetIDEQ(resultID),
+			mediaderivative.StatusEQ("ready"),
+			mediaderivative.DeletedAtIsNil(),
+		).Exist(ctx)
+		if err != nil {
+			return err
+		}
+		queueProcessing = !hasJob && !hasDerivative
+	}
+	if queueProcessing {
+		update.SetStatus("ready_original").ClearProcessingErrorCode().ClearProcessingErrorMessage()
+	}
+	if err := update.Exec(ctx); err != nil {
+		return err
+	}
+	if queueProcessing {
+		return ensureImageMediaProcessingJob(ctx, tx, resultID)
+	}
+	return nil
+}
+
+func imageObjectSupportsMediaProcessing(storageDriver, objectKey string) bool {
+	storageDriver = strings.ToLower(strings.TrimSpace(storageDriver))
+	objectKey = strings.TrimSpace(objectKey)
+	return storageDriver != "remote" && objectKey != "" && !strings.HasPrefix(objectKey, "task:")
+}
+
+func ensureImageMediaProcessingJob(ctx context.Context, tx *repoent.Tx, assetID uuid.UUID) error {
+	exists, err := tx.MediaProcessingJob.Query().Where(
+		mediaprocessingjob.AssetIDEQ(assetID),
+		mediaprocessingjob.JobTypeEQ("probe"),
+		mediaprocessingjob.TransformVersionEQ(1),
+	).Exist(ctx)
+	if err != nil || exists {
+		return err
+	}
+	return tx.MediaProcessingJob.Create().
+		SetAssetID(assetID).
+		SetJobType("probe").
+		SetTransformVersion(1).
+		SetStatus("pending").
+		Exec(ctx)
 }
 
 func updateLeaseOwnedImageTask(ctx context.Context, tx *repoent.Tx, entity *repoent.ImageTask, task domainimagetask.Task, owner string, now time.Time, trace map[string]any, routingSnapshot map[string]any) (int, error) {

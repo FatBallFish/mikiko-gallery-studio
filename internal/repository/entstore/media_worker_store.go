@@ -15,24 +15,43 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaderivative"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskitem"
 	mediaworker "github.com/fatballfish/pic-gallery/internal/worker/media"
 )
 
 type MediaWorkerStore struct {
 	client            *repoent.Client
+	policyResolver    func(context.Context) (domainmedia.Policy, error)
 	beforeFinalUpdate func(*repoent.Tx) error
 }
 
 var errMediaCompletionConflict = errors.New("media processing completion lease changed")
 
 func NewMediaWorkerStore(client *repoent.Client) *MediaWorkerStore {
-	return &MediaWorkerStore{client: client}
+	return &MediaWorkerStore{
+		client: client,
+		policyResolver: func(ctx context.Context) (domainmedia.Policy, error) {
+			policy, err := NewAdminVideoStore(client).GetMediaPolicy(ctx)
+			if err != nil {
+				return domainmedia.Policy{}, err
+			}
+			return policy.RuntimePolicy().Policy, nil
+		},
+	}
 }
 
 func (store *MediaWorkerStore) ReconcileMediaOnce(ctx context.Context) (bool, error) {
 	if store == nil || store.client == nil {
 		return false, errors.New("media reconciliation store is unavailable")
+	}
+	policy := domainmedia.DefaultPolicy()
+	if store.policyResolver != nil {
+		resolved, err := store.policyResolver(ctx)
+		if err != nil {
+			return false, fmt.Errorf("resolve media reconciliation policy: %w", err)
+		}
+		policy = resolved
 	}
 	return withSerializableTx(ctx, store.client, func(tx *repoent.Tx) (bool, error) {
 		asset, err := tx.MediaAsset.Query().Where(
@@ -41,7 +60,15 @@ func (store *MediaWorkerStore) ReconcileMediaOnce(ctx context.Context) (bool, er
 			lockMediaAssetForReconcile(),
 		).Order(repoent.Asc(mediaasset.FieldUpdatedAt), repoent.Asc(mediaasset.FieldCreatedAt)).First(ctx)
 		if repoent.IsNotFound(err) {
-			return false, nil
+			plan := domainmedia.BuildDerivativePlanWithPolicy(domainmedia.MediaTypeImage, policy)
+			if len(plan) == 0 {
+				return false, nil
+			}
+			asset, err = generatedImageMissingDerivativesQuery(tx, plan).Where(lockMediaAssetForReconcile()).
+				Order(repoent.Asc(mediaasset.FieldUpdatedAt), repoent.Asc(mediaasset.FieldCreatedAt)).First(ctx)
+			if repoent.IsNotFound(err) {
+				return false, nil
+			}
 		}
 		if err != nil {
 			return false, fmt.Errorf("query media asset for reconciliation: %w", err)
@@ -65,7 +92,8 @@ func (store *MediaWorkerStore) ReconcileMediaOnce(ctx context.Context) (bool, er
 			return false, nil
 		}
 
-		ready, err := requiredMediaDerivativesReady(ctx, tx, asset.ID, domainmedia.MediaType(asset.MediaType))
+		plan := domainmedia.BuildDerivativePlanWithPolicy(domainmedia.MediaType(asset.MediaType), policy)
+		ready, err := requiredMediaDerivativesReady(ctx, tx, asset.ID, plan)
 		if err != nil {
 			return false, err
 		}
@@ -91,6 +119,32 @@ func (store *MediaWorkerStore) ReconcileMediaOnce(ctx context.Context) (bool, er
 	})
 }
 
+func generatedImageMissingDerivativesQuery(tx *repoent.Tx, plan []domainmedia.DerivativeSpec) *repoent.MediaAssetQuery {
+	missing := make([]predicate.MediaAsset, 0, len(plan))
+	for _, spec := range plan {
+		missing = append(missing, mediaasset.Not(mediaasset.HasDerivativesWith(
+			mediaderivative.KindEQ(string(spec.Kind)),
+			mediaderivative.TransformVersionEQ(spec.TransformVersion),
+			mediaderivative.StatusEQ("ready"),
+			mediaderivative.DeletedAtIsNil(),
+		)))
+	}
+	return tx.MediaAsset.Query().Where(
+		mediaasset.MediaTypeEQ(string(domainmedia.MediaTypeImage)),
+		mediaasset.SourceTypeEQ("generated"),
+		mediaasset.StatusEQ("ready"),
+		mediaasset.StorageDriverNEQ("remote"),
+		mediaasset.Not(mediaasset.ObjectKeyHasPrefix("task:")),
+		mediaasset.Not(mediaasset.HasProcessingJobsWith(
+			mediaprocessingjob.JobTypeEQ("probe"),
+			mediaprocessingjob.TransformVersionEQ(1),
+			mediaprocessingjob.StatusIn("pending", "retry", "running"),
+		)),
+		mediaasset.DeletedAtIsNil(),
+		mediaasset.Or(missing...),
+	)
+}
+
 func lockMediaAssetForReconcile() func(*entsql.Selector) {
 	return func(selector *entsql.Selector) {
 		if selector.Dialect() == "postgres" {
@@ -99,10 +153,9 @@ func lockMediaAssetForReconcile() func(*entsql.Selector) {
 	}
 }
 
-func requiredMediaDerivativesReady(ctx context.Context, tx *repoent.Tx, assetID uuid.UUID, mediaType domainmedia.MediaType) (bool, error) {
-	plan := domainmedia.BuildDerivativePlan(mediaType)
+func requiredMediaDerivativesReady(ctx context.Context, tx *repoent.Tx, assetID uuid.UUID, plan []domainmedia.DerivativeSpec) (bool, error) {
 	if len(plan) == 0 {
-		return false, nil
+		return true, nil
 	}
 	for _, spec := range plan {
 		exists, err := tx.MediaDerivative.Query().Where(
