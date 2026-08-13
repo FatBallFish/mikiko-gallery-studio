@@ -19,6 +19,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaasset"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/google/uuid"
@@ -57,10 +58,21 @@ func TestImageTaskSaveWritesUnifiedMediaAssetWithSameResultID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if asset.LegacyImageResultID == nil || *asset.LegacyImageResultID != resultID || asset.ObjectKey != task.Results[0].ObjectKey || asset.ProjectID != project.ID || asset.SourceTaskID == nil || asset.SourceTaskID.String() != task.ID {
+	if asset.LegacyImageResultID == nil || *asset.LegacyImageResultID != resultID || asset.ObjectKey != task.Results[0].ObjectKey || asset.ProjectID != project.ID || asset.SourceTaskID == nil || asset.SourceTaskID.String() != task.ID || asset.Status != "ready_original" {
 		t.Fatalf("dual-written asset=%+v", asset)
 	}
+	jobs, err := client.MediaProcessingJob.Query().Where(
+		mediaprocessingjob.AssetIDEQ(resultID),
+		mediaprocessingjob.JobTypeEQ("probe"),
+		mediaprocessingjob.TransformVersionEQ(1),
+	).All(ctx)
+	if err != nil || len(jobs) != 1 || jobs[0].Status != "pending" {
+		t.Fatalf("dual-written media jobs=%+v, err=%v", jobs, err)
+	}
 
+	if err := client.MediaAsset.UpdateOneID(resultID).SetStatus("ready").Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
 	task.Results[0].ImageGroup = "Finals"
 	if err := store.Save(ctx, task); err != nil {
 		t.Fatal(err)
@@ -69,8 +81,70 @@ func TestImageTaskSaveWritesUnifiedMediaAssetWithSameResultID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(assets) != 1 || assets[0].GroupName != "Finals" {
+	if len(assets) != 1 || assets[0].GroupName != "Finals" || assets[0].Status != "ready" {
 		t.Fatalf("replayed media assets=%+v", assets)
+	}
+	jobCount, err := client.MediaProcessingJob.Query().Where(
+		mediaprocessingjob.AssetIDEQ(resultID),
+		mediaprocessingjob.JobTypeEQ("probe"),
+		mediaprocessingjob.TransformVersionEQ(1),
+	).Count(ctx)
+	if err != nil || jobCount != 1 {
+		t.Fatalf("replayed media job count=%d, err=%v", jobCount, err)
+	}
+}
+
+func TestImageTaskSaveQueuesMediaProcessingOnlyAfterRemoteImageIsPersisted(t *testing.T) {
+	ctx := t.Context()
+	client, err := repoent.Open(dialect.SQLite, "file:image-media-remote-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(ctx); err != nil {
+		t.Fatal(err)
+	}
+	const userID int64 = 89
+	project, err := client.Project.Create().SetUserID(userID).SetName("Default").SetNameKey("default").SetIsDefault(true).SetStatus("active").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultID := uuid.New()
+	task := domainimagetask.Task{
+		ID: uuid.NewString(), UserID: userID, ProjectID: project.ID.String(), Status: domainimagetask.StatusSucceeded,
+		TaskType: string(provider.TaskTypeTextToImage), AbstractModel: "basic", Prompt: "remote result",
+		Results: []provider.ImageResult{{ID: resultID.String(), ProjectID: project.ID.String(), URL: "https://provider.example/image.png", MimeType: "image/png"}},
+	}
+	if err := NewImageTaskStore(client).Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	asset, err := client.MediaAsset.Get(ctx, resultID)
+	if err != nil || asset.Status != "ready" || asset.StorageDriver != "remote" {
+		t.Fatalf("remote media asset = %#v, %v", asset, err)
+	}
+	count, err := client.MediaProcessingJob.Query().Where(mediaprocessingjob.AssetIDEQ(resultID)).Count(ctx)
+	if err != nil || count != 0 {
+		t.Fatalf("remote media jobs = %d, %v", count, err)
+	}
+
+	task.Results[0].URL = ""
+	task.Results[0].StorageDriver = "local"
+	task.Results[0].ObjectKey = "generated-images/recovered.png"
+	task.Results[0].FileSizeBytes = 456
+	if err := NewImageTaskStore(client).Save(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	asset, err = client.MediaAsset.Get(ctx, resultID)
+	if err != nil || asset.Status != "ready_original" || asset.StorageDriver != "local" || asset.ObjectKey != task.Results[0].ObjectKey {
+		t.Fatalf("recovered media asset = %#v, %v", asset, err)
+	}
+	jobs, err := client.MediaProcessingJob.Query().Where(
+		mediaprocessingjob.AssetIDEQ(resultID),
+		mediaprocessingjob.JobTypeEQ("probe"),
+		mediaprocessingjob.TransformVersionEQ(1),
+	).All(ctx)
+	if err != nil || len(jobs) != 1 || jobs[0].Status != "pending" {
+		t.Fatalf("recovered media jobs = %#v, %v", jobs, err)
 	}
 }
 

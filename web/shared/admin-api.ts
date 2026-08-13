@@ -117,6 +117,19 @@ function normalizeGroupIds(ids: Array<string | number>) {
   return ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
 }
 
+export function normalizeAdminVideoConfiguration(configuration: AdminVideoConfiguration): AdminVideoConfiguration {
+  return {
+    ...configuration,
+    capabilities: Array.isArray(configuration?.capabilities) ? configuration.capabilities : [],
+    cost_rules: Array.isArray(configuration?.cost_rules) ? configuration.cost_rules : [],
+    pricing_strategies: Array.isArray(configuration?.pricing_strategies) ? configuration.pricing_strategies : [],
+    price_rules: Array.isArray(configuration?.price_rules) ? configuration.price_rules : [],
+    routes: Array.isArray(configuration?.routes) ? configuration.routes : [],
+    point_products: Array.isArray(configuration?.point_products) ? configuration.point_products : [],
+    impacts: Array.isArray(configuration?.impacts) ? configuration.impacts : [],
+  }
+}
+
 function toAdminSession(result: AdminLoginResult): AdminSession {
   const accessToken = typeof result?.access_token === 'string' ? result.access_token.trim() : ''
   const adminId = Number(result?.admin_id)
@@ -329,7 +342,7 @@ export const adminApi = {
   createRouteModelPrice: async (input: RouteModelPriceWriteRequest) => toRouteModelPrice(await sharedApiClient.request(API_PATHS.ops.routeModelPrices, { method: 'POST', body: input })),
   updateRouteModelPrice: async (price_id: string | number, input: Partial<RouteModelPriceWriteRequest>) => toRouteModelPrice(await sharedApiClient.request(API_PATHS.ops.routeModelPriceDetail, { method: 'PUT', pathParams: { price_id }, body: input })),
   deleteRouteModelPrice: (price_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.routeModelPriceDetail, { method: 'DELETE', pathParams: { price_id } }),
-  getVideoConfiguration: () => sharedApiClient.request<AdminVideoConfiguration>(API_PATHS.ops.videoConfiguration),
+  getVideoConfiguration: async () => normalizeAdminVideoConfiguration(await sharedApiClient.request<AdminVideoConfiguration>(API_PATHS.ops.videoConfiguration)),
   getVideoCapability: (id: string | number) => sharedApiClient.request<AdminVideoConfiguration['capabilities'][number]>(API_PATHS.ops.videoModelCapability, { pathParams: { id } }),
   saveVideoCapability: (id: string | number, input: AdminVideoCapabilityWrite) => sharedApiClient.request<AdminVideoConfiguration['capabilities'][number]>(API_PATHS.ops.videoModelCapability, { method: 'PUT', pathParams: { id }, body: input }),
   deleteVideoCapability: (id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.videoModelCapability, { method: 'DELETE', pathParams: { id } }),

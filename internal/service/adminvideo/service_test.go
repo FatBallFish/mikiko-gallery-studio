@@ -2,11 +2,33 @@ package adminvideo
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+func TestSnapshotNormalizesEmptyCollectionsForJSONClients(t *testing.T) {
+	got, err := NewService(&fakeStore{}).Snapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"capabilities", "cost_rules", "pricing_strategies", "price_rules", "routes", "point_products", "impacts"} {
+		items, ok := decoded[field].([]any)
+		if !ok || len(items) != 0 {
+			t.Fatalf("%s must serialize as an empty array, payload=%s", field, payload)
+		}
+	}
+}
 
 type fakeStore struct {
 	snapshot Snapshot

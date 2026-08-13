@@ -228,6 +228,9 @@ func (s *Service) assetObject(ctx context.Context, userID int64, assetID uuid.UU
 			}
 		}
 	}
+	if purpose == AccessPurposeThumbnail && asset.MediaType == domainmedia.MediaTypeImage && asset.LegacyImageID != nil {
+		return asset, object, nil
+	}
 	if purpose == AccessPurposePreview {
 		return asset, object, nil
 	}

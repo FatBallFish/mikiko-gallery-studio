@@ -311,7 +311,37 @@ with sync_playwright() as playwright:
               assert page.locator('[data-canvas-editor][data-readonly=false]').count() == 1, 'tablet landscape must expose full canvas editing'
           if route_info['route'] == 'gallery':
             assert page.get_by_role('button', name='预览 森林产品概念图.jpg').count() == 1, f'{label} image asset is missing'
+            assert counters['purposes'].get('thumbnail', 0) >= 1, f'{label} did not request an image thumbnail'
+            image_loaded = page.locator('[data-media-asset-id="asset-image"] .media-asset-stage img').evaluate('(image) => image.complete && image.naturalWidth > 0')
+            assert image_loaded, f'{label} image thumbnail did not render pixels'
             assert counters['originalMediaRequests'] == 0, f'{label} loaded an original before explicit download'
+            if viewport['name'] == 'desktop':
+              first_box = page.locator('[data-media-asset-id="asset-image"]').bounding_box()
+              second_box = page.locator('[data-media-asset-id="asset-video"]').bounding_box()
+              assert first_box and second_box, f'{label} media cards have no selectable bounds'
+              page.mouse.move(first_box['x'] + 12, first_box['y'] + 12)
+              page.mouse.down()
+              page.mouse.move(second_box['x'] + second_box['width'] - 12, second_box['y'] + second_box['height'] - 12, steps=8)
+              page.mouse.up()
+              toolbar = page.locator('.media-batch-toolbar')
+              assert toolbar.count() == 1, f'{label} drag selection did not show the batch toolbar'
+              toolbar_state = toolbar.evaluate("""(element) => ({
+                parentIsBody: element.parentElement === document.body,
+                position: getComputedStyle(element).position,
+                bottom: Math.round(innerHeight - element.getBoundingClientRect().bottom),
+                selected: document.querySelectorAll('[data-media-asset-id].is-selected').length,
+              })""")
+              assert toolbar_state['parentIsBody'], f'{label} batch toolbar is still trapped in page content'
+              assert toolbar_state['position'] == 'fixed', f'{label} batch toolbar is not fixed: {toolbar_state}'
+              assert toolbar_state['selected'] >= 2, f'{label} drag selection selected fewer than two assets: {toolbar_state}'
+              page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+              page.wait_for_timeout(50)
+              bottom_after_scroll = toolbar.evaluate('(element) => Math.round(innerHeight - element.getBoundingClientRect().bottom)')
+              assert abs(bottom_after_scroll - toolbar_state['bottom']) <= 1, f'{label} batch toolbar moved with page scroll'
+              page.locator('.media-batch-toolbar').get_by_role('button', name='全选').click()
+              page.get_by_role('button', name='取消全选').click()
+              assert page.locator('.media-batch-toolbar').count() == 0, f'{label} did not exit selection mode'
+              page.wait_for_timeout(300)
             page.get_by_role('button', name='预览 森林产品概念图.jpg').click()
             with page.expect_download(timeout=3000) as download_info:
               page.get_by_role('button', name='下载原件').click()

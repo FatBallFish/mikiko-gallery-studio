@@ -3,6 +3,7 @@ package entstore
 import (
 	"context"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	"github.com/google/uuid"
@@ -100,6 +101,169 @@ func TestMediaWorkerStoreReconcileAdvancesAssetOnlyWhenRequiredDerivativesAreRea
 	processed, err = store.ReconcileMediaOnce(ctx)
 	if err != nil || processed {
 		t.Fatalf("idempotent ReconcileMediaOnce() = %v, %v", processed, err)
+	}
+}
+
+func TestMediaWorkerStoreReconcileQueuesGeneratedImageMissingDerivatives(t *testing.T) {
+	ctx, client, projectID := mediaReconcileClient(t, "generated-image-missing-derivatives")
+	assetID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(assetID).SetUserID(801).SetProjectID(projectID).SetName("generated.png").SetNameKey("generated.png").
+		SetMediaType("image").SetSourceType("generated").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("generated-images/801/generated.png").SetMimeType("image/png").SetFileSizeBytes(10).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewMediaWorkerStore(client)
+	processed, err := store.ReconcileMediaOnce(ctx)
+	if err != nil || !processed {
+		t.Fatalf("ReconcileMediaOnce() = %v, %v", processed, err)
+	}
+	jobs, err := client.MediaProcessingJob.Query().Where(
+		mediaprocessingjob.AssetIDEQ(assetID),
+		mediaprocessingjob.JobTypeEQ("probe"),
+		mediaprocessingjob.TransformVersionEQ(1),
+	).All(ctx)
+	if err != nil || len(jobs) != 1 || jobs[0].Status != "pending" {
+		t.Fatalf("generated image jobs = %#v, %v", jobs, err)
+	}
+	processed, err = store.ReconcileMediaOnce(ctx)
+	if err != nil || processed {
+		t.Fatalf("idempotent ReconcileMediaOnce() = %v, %v", processed, err)
+	}
+}
+
+func TestMediaWorkerStoreReconcileReusesGeneratedImageTerminalJob(t *testing.T) {
+	ctx, client, projectID := mediaReconcileClient(t, "generated-image-terminal-job")
+	assetID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(assetID).SetUserID(801).SetProjectID(projectID).SetName("generated.png").SetNameKey("generated.png").
+		SetMediaType("image").SetSourceType("generated").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("generated-images/801/generated.png").SetMimeType("image/png").SetFileSizeBytes(10).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	job, err := client.MediaProcessingJob.Create().SetAssetID(assetID).SetJobType("probe").SetTransformVersion(1).
+		SetStatus("succeeded").SetAttemptCount(3).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	processed, err := NewMediaWorkerStore(client).ReconcileMediaOnce(ctx)
+	if err != nil || !processed {
+		t.Fatalf("ReconcileMediaOnce() = %v, %v", processed, err)
+	}
+	updated, err := client.MediaProcessingJob.Get(ctx, job.ID)
+	if err != nil || updated.Status != "pending" || updated.AttemptCount != 0 {
+		t.Fatalf("reused generated image job = %#v, %v", updated, err)
+	}
+	count, err := client.MediaProcessingJob.Query().Where(mediaprocessingjob.AssetIDEQ(assetID)).Count(ctx)
+	if err != nil || count != 1 {
+		t.Fatalf("generated image job count = %d, %v", count, err)
+	}
+}
+
+func TestMediaWorkerStoreReconcileUsesConfiguredDerivativePolicy(t *testing.T) {
+	ctx, client, projectID := mediaReconcileClient(t, "configured-image-policy")
+	policyStore := NewAdminVideoStore(client)
+	policy, err := policyStore.GetMediaPolicy(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy.ImageThumbnailWidths = []int{320}
+	if _, err := policyStore.SaveMediaPolicy(ctx, policy, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	assetID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(assetID).SetUserID(801).SetProjectID(projectID).SetName("configured.png").SetNameKey("configured.png").
+		SetMediaType("image").SetSourceType("generated").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("generated-images/801/configured.png").SetMimeType("image/png").SetFileSizeBytes(10).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	job, err := client.MediaProcessingJob.Create().SetAssetID(assetID).SetJobType("probe").SetTransformVersion(1).SetStatus("succeeded").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.MediaDerivative.Create().SetAssetID(assetID).SetKind(string(domainmedia.DerivativeThumbnail320)).SetTransformVersion(1).
+		SetStatus("ready").SetStorageDriver("local").SetObjectKey("media/derivatives/801/" + assetID.String() + "/thumbnail_320").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	processed, err := NewMediaWorkerStore(client).ReconcileMediaOnce(ctx)
+	if err != nil || processed {
+		t.Fatalf("ReconcileMediaOnce() = %v, %v", processed, err)
+	}
+	updated, err := client.MediaProcessingJob.Get(ctx, job.ID)
+	if err != nil || updated.Status != "succeeded" {
+		t.Fatalf("configured-policy job = %#v, %v", updated, err)
+	}
+}
+
+func TestMediaWorkerStoreReconcileSkipsGeneratedImageWithActiveJob(t *testing.T) {
+	ctx, client, projectID := mediaReconcileClient(t, "generated-image-active-job")
+	blockedID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(blockedID).SetUserID(801).SetProjectID(projectID).SetName("blocked.png").SetNameKey("blocked.png").
+		SetMediaType("image").SetSourceType("generated").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("generated-images/801/blocked.png").SetMimeType("image/png").SetFileSizeBytes(10).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.MediaProcessingJob.Create().SetAssetID(blockedID).SetJobType("probe").SetTransformVersion(1).SetStatus("running").
+		SetLeaseOwner("media-worker").SetLeaseExpiresAt(time.Now().UTC().Add(time.Minute)).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	nextID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(nextID).SetUserID(801).SetProjectID(projectID).SetName("next.png").SetNameKey("next.png").
+		SetMediaType("image").SetSourceType("generated").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("generated-images/801/next.png").SetMimeType("image/png").SetFileSizeBytes(10).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	processed, err := NewMediaWorkerStore(client).ReconcileMediaOnce(ctx)
+	if err != nil || !processed {
+		t.Fatalf("ReconcileMediaOnce() = %v, %v", processed, err)
+	}
+	count, err := client.MediaProcessingJob.Query().Where(
+		mediaprocessingjob.AssetIDEQ(nextID),
+		mediaprocessingjob.JobTypeEQ("probe"),
+		mediaprocessingjob.TransformVersionEQ(1),
+	).Count(ctx)
+	if err != nil || count != 1 {
+		t.Fatalf("next generated image jobs = %d, %v", count, err)
+	}
+}
+
+func TestMediaWorkerStoreReconcileSkipsCompleteAndNonGeneratedImages(t *testing.T) {
+	ctx, client, projectID := mediaReconcileClient(t, "generated-image-skip")
+	completeID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(completeID).SetUserID(801).SetProjectID(projectID).SetName("complete.png").SetNameKey("complete.png").
+		SetMediaType("image").SetSourceType("generated").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("generated-images/801/complete.png").SetMimeType("image/png").SetFileSizeBytes(10).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, spec := range domainmedia.BuildDerivativePlan(domainmedia.MediaTypeImage) {
+		if _, err := client.MediaDerivative.Create().SetAssetID(completeID).SetKind(string(spec.Kind)).SetTransformVersion(spec.TransformVersion).
+			SetStatus("ready").SetStorageDriver("local").SetObjectKey("media/derivatives/801/" + completeID.String() + "/" + string(spec.Kind)).Save(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	uploadID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(uploadID).SetUserID(801).SetProjectID(projectID).SetName("upload.png").SetNameKey("upload.png").
+		SetMediaType("image").SetSourceType("local_upload").SetStatus("ready").SetStorageDriver("local").
+		SetObjectKey("media/original/801/upload.png").SetMimeType("image/png").SetFileSizeBytes(10).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	remoteID := uuid.New()
+	if _, err := client.MediaAsset.Create().SetID(remoteID).SetUserID(801).SetProjectID(projectID).SetName("remote.png").SetNameKey("remote.png").
+		SetMediaType("image").SetSourceType("generated").SetStatus("ready").SetStorageDriver("remote").
+		SetObjectKey("https://provider.example/remote.png").SetMimeType("image/png").SetFileSizeBytes(10).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	processed, err := NewMediaWorkerStore(client).ReconcileMediaOnce(ctx)
+	if err != nil || processed {
+		t.Fatalf("ReconcileMediaOnce() = %v, %v", processed, err)
+	}
+	count, err := client.MediaProcessingJob.Query().Count(ctx)
+	if err != nil || count != 0 {
+		t.Fatalf("unexpected repair jobs = %d, %v", count, err)
 	}
 }
 
