@@ -54,6 +54,8 @@ type ReferenceAsset struct {
 	Sha256 string `json:"sha256,omitempty"`
 	// SourceImageResultID holds the value of the "source_image_result_id" field.
 	SourceImageResultID *uuid.UUID `json:"source_image_result_id,omitempty"`
+	// MediaAssetID holds the value of the "media_asset_id" field.
+	MediaAssetID *uuid.UUID `json:"media_asset_id,omitempty"`
 	// OwnsObject holds the value of the "owns_object" field.
 	OwnsObject bool `json:"owns_object,omitempty"`
 	// BoundTaskID holds the value of the "bound_task_id" field.
@@ -68,7 +70,7 @@ func (*ReferenceAsset) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case referenceasset.FieldStorageConfigID, referenceasset.FieldSourceImageResultID, referenceasset.FieldBoundTaskID:
+		case referenceasset.FieldStorageConfigID, referenceasset.FieldSourceImageResultID, referenceasset.FieldMediaAssetID, referenceasset.FieldBoundTaskID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
 		case referenceasset.FieldOwnsObject:
 			values[i] = new(sql.NullBool)
@@ -217,6 +219,13 @@ func (_m *ReferenceAsset) assignValues(columns []string, values []any) error {
 				_m.SourceImageResultID = new(uuid.UUID)
 				*_m.SourceImageResultID = *value.S.(*uuid.UUID)
 			}
+		case referenceasset.FieldMediaAssetID:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field media_asset_id", values[i])
+			} else if value.Valid {
+				_m.MediaAssetID = new(uuid.UUID)
+				*_m.MediaAssetID = *value.S.(*uuid.UUID)
+			}
 		case referenceasset.FieldOwnsObject:
 			if value, ok := values[i].(*sql.NullBool); !ok {
 				return fmt.Errorf("unexpected type %T for field owns_object", values[i])
@@ -339,6 +348,11 @@ func (_m *ReferenceAsset) String() string {
 	builder.WriteString(", ")
 	if v := _m.SourceImageResultID; v != nil {
 		builder.WriteString("source_image_result_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.MediaAssetID; v != nil {
+		builder.WriteString("media_asset_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

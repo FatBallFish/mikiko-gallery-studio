@@ -18,7 +18,7 @@ export function PromptEditorActions({ optimizing, canUndo, onExpand, onOptimize,
   return <div className="flex items-center gap-1">{canUndo ? <IconAction label="撤销提示词优化" onClick={onUndo}><Undo2 size={15} /></IconAction> : null}{onExpand ? <IconAction label="展开提示词编辑器" onClick={onExpand}><Maximize2 size={15} /></IconAction> : null}<IconAction label="优化提示词" disabled={optimizing} onClick={onOptimize}><Sparkles size={15} /></IconAction></div>
 }
 
-export function PromptEditorDialog({ promptEditorRef, prompt, assets, variables, accessToken, optimization, onPromptChange, onVariableChange, onAddAsset, onClose, onOptimize, onConfirm, onApply, onCancel, onUndo, onMediaRefresh }: {
+export function PromptEditorDialog({ promptEditorRef, prompt, assets, variables, accessToken, optimization, onPromptChange, onVariableChange, onAddAsset, onPasteFiles, onClose, onOptimize, onConfirm, onApply, onCancel, onUndo, onMediaRefresh }: {
   promptEditorRef?: React.Ref<PromptTemplateEditorHandle>
   prompt: string
   assets: ReferenceAsset[]
@@ -28,6 +28,7 @@ export function PromptEditorDialog({ promptEditorRef, prompt, assets, variables,
   onPromptChange: (prompt: string) => void
   onVariableChange: (name: string, value: string) => void
   onAddAsset: () => void
+  onPasteFiles?: (files: File[]) => void | Promise<void>
   onClose: () => void
   onOptimize: () => void
   onConfirm: () => void
@@ -41,7 +42,7 @@ export function PromptEditorDialog({ promptEditorRef, prompt, assets, variables,
     <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_240px]">
       <div className="min-w-0">
         <div className="mb-2 flex items-center justify-between gap-3"><span className="text-sm font-bold">提示词</span><PromptEditorActions optimizing={busy} canUndo={optimization.stage === 'applied'} onOptimize={onOptimize} onUndo={onUndo} /></div>
-        <PromptTemplateEditor ref={promptEditorRef} value={prompt} assets={assets} variables={variables} accessToken={accessToken} disabled={busy} autoFocus expanded onChange={onPromptChange} onAddAsset={onAddAsset} />
+        <PromptTemplateEditor ref={promptEditorRef} value={prompt} assets={assets} variables={variables} accessToken={accessToken} disabled={busy} autoFocus expanded onChange={onPromptChange} onAddAsset={onAddAsset} onPasteFiles={onPasteFiles} />
         <PromptVariableForm template={prompt} values={variables} disabled={busy} onChange={onVariableChange} />
         {optimization.stage !== 'idle' && optimization.stage !== 'applied' ? <PromptOptimizationPanel state={optimization} onConfirm={onConfirm} onApply={onApply} onCancel={onCancel} /> : null}
       </div>

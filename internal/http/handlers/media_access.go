@@ -98,7 +98,7 @@ func mediaAccessPurpose(r *http.Request) string {
 func validatedMediaAccessPurpose(r *http.Request) (string, *errs.Error) {
 	purpose := mediaAccessPurpose(r)
 	if !mediaassetservice.ValidAccessPurpose(purpose) {
-		return "", errs.BadRequest("purpose must be thumbnail, poster, hover, preview, waveform or download")
+		return "", errs.BadRequest("purpose must be thumbnail, poster, hover, preview, waveform, content or download")
 	}
 	return purpose, nil
 }

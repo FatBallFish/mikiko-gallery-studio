@@ -197,6 +197,17 @@ function ImageZoomViewer({ image, onClose }: { image: ImagePreviewPayload; onClo
   )
 }
 
+/** Shared full-screen image viewer for media-library and legacy image details. */
+export function ImageZoomPreview({ url, alt, onClose, onMediaRefresh, mediaExpiresAt }: {
+  url: string
+  alt: string
+  onClose: () => void
+  onMediaRefresh?: MediaRefreshHandler
+  mediaExpiresAt?: string
+}) {
+  return <ImageZoomViewer image={{ url, alt, onMediaRefresh, mediaExpiresAt }} onClose={onClose} />
+}
+
 export function PublicDetailIcon({ name, active }: { name: 'eye' | 'heart' | 'star' | 'download' | 'copy' | 'edit' | 'public' | 'group' | 'delete'; active?: boolean }) {
   const props = { size: 18, strokeWidth: 1.5, fill: active && (name === 'heart' || name === 'star') ? 'currentColor' : 'none' }
   if (name === 'eye') return <Eye {...props} />

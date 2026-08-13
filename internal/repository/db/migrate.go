@@ -20,7 +20,7 @@ import (
 const (
 	// CurrentDatabaseSchemaVersion is advanced whenever an application release
 	// requires a database migration before ordinary nodes may start.
-	CurrentDatabaseSchemaVersion = 5
+	CurrentDatabaseSchemaVersion = 6
 
 	// A fixed signed 64-bit key coordinates every explicit migrator for one
 	// PostgreSQL database. Session locks are scoped by database, so installations

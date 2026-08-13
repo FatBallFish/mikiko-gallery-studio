@@ -207,6 +207,7 @@ export const PromptTemplateEditor = forwardRef<PromptTemplateEditorHandle, {
   placeholder?: string
   onChange: (value: string) => void
   onAddAsset?: () => void
+  onPasteFiles?: (files: File[]) => void | Promise<void>
 }>(({
   value,
   assets,
@@ -218,6 +219,7 @@ export const PromptTemplateEditor = forwardRef<PromptTemplateEditorHandle, {
   placeholder = '描述想要生成的内容...，输入 @ 引用资产，输入 $ 添加变量',
   onChange,
   onAddAsset,
+  onPasteFiles,
 }, ref) => {
   const editorRef = useRef<LexicalEditor | null>(null)
   const composingRef = useRef(false)
@@ -414,7 +416,12 @@ export const PromptTemplateEditor = forwardRef<PromptTemplateEditorHandle, {
           }}
         >
           <PlainTextPlugin
-            contentEditable={<ContentEditable className="prompt-template-editor" aria-label="提示词" aria-invalid={Boolean(parsed.error)} />}
+            contentEditable={<ContentEditable className="prompt-template-editor" aria-label="提示词" aria-invalid={Boolean(parsed.error)} onPaste={(event) => {
+              const images = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'))
+              if (!images.length || !onPasteFiles) return
+              event.preventDefault()
+              void onPasteFiles(images)
+            }} />}
             placeholder={<div className="prompt-template-placeholder">{placeholder}</div>}
             ErrorBoundary={LexicalErrorBoundary}
           />

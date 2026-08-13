@@ -1,4 +1,4 @@
-export type SystemSettingsTab = 'general' | 'point-conversion' | 'attachment-policy' | 'security' | 'storage' | 'text-models'
+export type SystemSettingsTab = 'general' | 'point-conversion' | 'attachment-policy' | 'media-policy' | 'security' | 'storage' | 'text-models'
 
 const systemSettingsPaths = new Set([
   'system-settings',
@@ -7,6 +7,7 @@ const systemSettingsPaths = new Set([
   'security-config',
   'storage-settings',
   'storage-config',
+  'media-policy',
   'text-model-settings',
 ])
 
@@ -19,10 +20,11 @@ export function systemSettingsTabFromHash(hash: string): SystemSettingsTab {
   const path = hash.replace(/^#\/?/, '').split('?')[0].replace(/^\/+|\/+$/g, '')
   if (path === 'security-settings' || path === 'security-config') return 'security'
   if (path === 'storage-settings' || path === 'storage-config') return 'storage'
+  if (path === 'media-policy') return 'media-policy'
   if (path === 'text-model-settings') return 'text-models'
 
   const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
   const tab = new URLSearchParams(query).get('tab')
-  if (tab === 'point-conversion' || tab === 'attachment-policy' || tab === 'security' || tab === 'storage' || tab === 'text-models') return tab
+  if (tab === 'point-conversion' || tab === 'attachment-policy' || tab === 'media-policy' || tab === 'security' || tab === 'storage' || tab === 'text-models') return tab
   return 'general'
 }

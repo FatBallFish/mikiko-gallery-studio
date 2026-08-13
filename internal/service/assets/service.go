@@ -24,6 +24,7 @@ import (
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
+	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -390,6 +391,24 @@ func (s *Service) ProjectURLs(ctx context.Context, asset domainassets.ReferenceA
 		asset.DownloadExpiresAt = mediaExpiryPointer(urls.DownloadExpiresAt)
 	}
 	return asset, nil
+}
+
+func (s *Service) ImportMediaAssetAlias(ctx context.Context, userID int64, asset mediaassetservice.Asset) (domainassets.ReferenceAsset, error) {
+	if asset.UserID != userID || asset.DeletedAt != nil || asset.Status == "deleted" {
+		return domainassets.ReferenceAsset{}, errs.New(404, errs.CodeNotFound, "media asset not found")
+	}
+	if asset.MediaType != "image" {
+		return domainassets.ReferenceAsset{}, errs.BadRequest("only image media assets can be used as image references")
+	}
+	store, ok := s.store.(MediaAssetAliasStore)
+	if !ok {
+		return domainassets.ReferenceAsset{}, errs.Internal("media asset reference store is unavailable")
+	}
+	alias, err := store.ImportMediaAssetAlias(ctx, userID, asset)
+	if err != nil {
+		return domainassets.ReferenceAsset{}, err
+	}
+	return s.ProjectURLs(ctx, alias)
 }
 
 func mediaExpiryPointer(value time.Time) *time.Time {

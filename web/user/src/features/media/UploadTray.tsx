@@ -21,6 +21,7 @@ import {
 } from './uploadManager'
 
 export const MEDIA_ASSETS_CHANGED_EVENT = 'mgs:media-assets-changed'
+export const QUEUE_MEDIA_UPLOAD_EVENT = 'mgs:queue-media-upload'
 
 async function sha256Hex(blob: Blob) {
   const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
@@ -60,6 +61,16 @@ export function UploadTray() {
     window.addEventListener('mgs:open-media-upload', open)
     return () => window.removeEventListener('mgs:open-media-upload', open)
   }, [])
+
+  useEffect(() => {
+    const queueUpload = (event: Event) => {
+      const detail = (event as CustomEvent<{ files?: File[]; projectID?: string }>).detail
+      if (!detail?.files?.length || (detail.projectID && detail.projectID !== projects.selectedProjectID)) return
+      void addFiles(detail.files)
+    }
+    window.addEventListener(QUEUE_MEDIA_UPLOAD_EVENT, queueUpload)
+    return () => window.removeEventListener(QUEUE_MEDIA_UPLOAD_EVENT, queueUpload)
+  })
 
   useEffect(() => () => {
     controllers.current.forEach((controller) => controller.abort())
@@ -111,7 +122,7 @@ export function UploadTray() {
       const asset = await userApi.completeMediaUpload(session.id, Array.from(uploaded.values()).sort((a, b) => a.part_number - b.part_number))
       update(snapshot.localID, (item) => ({ ...item, status: 'completed', assetID: asset.id, progress: 1, error: undefined }))
       files.current.delete(snapshot.localID)
-      window.dispatchEvent(new CustomEvent(MEDIA_ASSETS_CHANGED_EVENT, { detail: { projectID: asset.project_id, assetID: asset.id } }))
+      window.dispatchEvent(new CustomEvent(MEDIA_ASSETS_CHANGED_EVENT, { detail: { projectID: asset.project_id, assetID: asset.id, mediaType: asset.media_type } }))
       app.notify('success', `${snapshot.fileName} 上传完成`)
     } catch (caught) {
       const aborted = caught instanceof DOMException && caught.name === 'AbortError'
@@ -121,7 +132,7 @@ export function UploadTray() {
     }
   }, [app, update])
 
-  const addFiles = async (incoming: FileList | null) => {
+  const addFiles = async (incoming: Iterable<File> | FileList | null) => {
     if (!incoming || !projects.selectedProjectID) return
     const result = acceptUploadFiles(incoming)
     const accepted = await Promise.all(result.accepted.map(async (candidate) => ({
@@ -168,7 +179,7 @@ export function UploadTray() {
         <button type="button" className="media-upload-title" onClick={() => setExpanded((value) => !value)}>
           <Upload size={17} /><strong>上传</strong>{items.length ? <span>{items.length}</span> : null}{expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
         </button>
-        <input ref={inputRef} hidden type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/bmp,image/tiff,image/gif,video/mp4,video/quicktime,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" onChange={(event) => void addFiles(event.target.files)} />
+        <input ref={inputRef} hidden type="file" multiple accept=".jpg,.jpeg,.png,.webp,.mp4,.mp3,.m4a,.wav,image/jpeg,image/png,image/webp,video/mp4,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" onChange={(event) => void addFiles(event.target.files)} />
         <button type="button" className="media-upload-icon" title="选择文件" aria-label="选择文件" onClick={() => inputRef.current?.click()}><Upload size={16} /></button>
         {items.some((item) => item.status === 'completed') ? <button type="button" className="media-upload-icon" title="清除已完成" aria-label="清除已完成" onClick={clearFinished}><Trash2 size={16} /></button> : null}
       </header>

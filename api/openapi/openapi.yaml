@@ -1279,6 +1279,32 @@ paths:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/agent/image/v1/reference-assets:import-from-media:
+    post:
+      tags: [Agent Image]
+      summary: Create reference aliases for unified image media assets
+      operationId: importAgentReferenceAssetsFromMedia
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetsImportFromMediaRequest
+      responses:
+        '201':
+          description: Reference aliases created without copying objects
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/ReferenceAssetsImportFromGalleryResponse
+        '404':
+          description: Media asset is missing or belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
   /api/agent/image/v1/tasks:
     get:
       tags: [Agent Image]

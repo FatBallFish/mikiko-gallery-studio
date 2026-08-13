@@ -3900,11 +3900,11 @@ func init() {
 		}
 	}()
 	// referenceassetDescOwnsObject is the schema descriptor for owns_object field.
-	referenceassetDescOwnsObject := referenceassetFields[16].Descriptor()
+	referenceassetDescOwnsObject := referenceassetFields[17].Descriptor()
 	// referenceasset.DefaultOwnsObject holds the default value on creation for the owns_object field.
 	referenceasset.DefaultOwnsObject = referenceassetDescOwnsObject.Default.(bool)
 	// referenceassetDescExpiresAt is the schema descriptor for expires_at field.
-	referenceassetDescExpiresAt := referenceassetFields[18].Descriptor()
+	referenceassetDescExpiresAt := referenceassetFields[19].Descriptor()
 	// referenceasset.DefaultExpiresAt holds the default value on creation for the expires_at field.
 	referenceasset.DefaultExpiresAt = referenceassetDescExpiresAt.Default.(func() time.Time)
 	// referenceassetDescID is the schema descriptor for id field.

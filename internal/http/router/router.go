@@ -106,6 +106,7 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/billing/v1/redeem-codes/redeem", api.HandleRedeemCode)
 		mux.HandleFunc("/api/agent/image/v1/reference-assets", api.HandleReferenceAssetUpload)
 		mux.HandleFunc("/api/agent/image/v1/reference-assets:import-from-gallery", api.HandleReferenceAssetsImportFromGallery)
+		mux.HandleFunc("/api/agent/image/v1/reference-assets:import-from-media", api.HandleReferenceAssetsImportFromMedia)
 		mux.HandleFunc("/api/agent/image/v1/reference-assets/", func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasSuffix(r.URL.Path, "/access") {
 				api.HandleReferenceAssetAccess(w, r)

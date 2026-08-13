@@ -2653,6 +2653,54 @@ func (a *API) HandleReferenceAssetsImportFromGallery(w http.ResponseWriter, r *h
 	httpx.WriteSuccess(w, r, http.StatusCreated, map[string]any{"items": items})
 }
 
+func (a *API) HandleReferenceAssetsImportFromMedia(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if a.mediaAssets == nil || a.assets == nil {
+		httpx.WriteError(w, r, errs.New(http.StatusServiceUnavailable, errs.CodeArtifactStorageUnavailable, "media asset reference service is unavailable"))
+		return
+	}
+	var req struct {
+		MediaAssetIDs []string `json:"media_asset_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.MediaAssetIDs) == 0 || len(req.MediaAssetIDs) > 20 {
+		httpx.WriteError(w, r, errs.BadRequest("media_asset_ids must contain between 1 and 20 assets"))
+		return
+	}
+	items := make([]domainassets.ReferenceAsset, 0, len(req.MediaAssetIDs))
+	seen := make(map[string]struct{}, len(req.MediaAssetIDs))
+	for _, raw := range req.MediaAssetIDs {
+		id, err := uuid.Parse(strings.TrimSpace(raw))
+		if err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid media asset id"))
+			return
+		}
+		if _, ok := seen[id.String()]; ok {
+			continue
+		}
+		seen[id.String()] = struct{}{}
+		mediaAsset, err := a.mediaAssets.GetAsset(r.Context(), user.ID, id)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		alias, err := a.assets.ImportMediaAssetAlias(r.Context(), user.ID, mediaAsset)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		items = append(items, alias)
+	}
+	httpx.WriteSuccess(w, r, http.StatusCreated, map[string]any{"items": items})
+}
+
 func (a *API) HandleReferenceAssetGet(w http.ResponseWriter, r *http.Request) {
 	assetID := strings.TrimPrefix(r.URL.Path, "/api/agent/image/v1/reference-assets/")
 	if strings.HasSuffix(assetID, "/download") {

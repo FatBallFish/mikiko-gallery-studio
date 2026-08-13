@@ -15,6 +15,7 @@ type Props = {
 
 function useImagePreview(asset: MediaAsset) {
   const [access, setAccess] = useState<MediaAccessProjection | null>(null)
+  const [purpose, setPurpose] = useState<'thumbnail' | 'preview'>('thumbnail')
   const refreshed = useRef(false)
   useEffect(() => {
     let alive = true
@@ -22,16 +23,26 @@ function useImagePreview(asset: MediaAsset) {
     if (asset.media_type !== 'image' || (asset.status !== 'ready' && asset.status !== 'ready_original')) return undefined
     void userApi.getMediaAssetAccess(asset.id, 'thumbnail').then((next) => {
       if (alive) setAccess(next)
-    }).catch(() => undefined)
+    }).catch(async () => {
+      if (refreshed.current) return
+      refreshed.current = true
+      const next = await userApi.getMediaAssetAccess(asset.id, 'preview').catch(() => null)
+      if (alive && next) {
+        setPurpose('preview')
+        setAccess(next)
+      }
+    })
     return () => { alive = false }
   }, [asset.id, asset.media_type, asset.status, asset.version])
   return {
     access,
+    purpose,
     refreshOnce: async () => {
       if (refreshed.current) return false
       refreshed.current = true
       try {
-        const next = await userApi.getMediaAssetAccess(asset.id, 'thumbnail')
+        setPurpose('preview')
+        const next = await userApi.getMediaAssetAccess(asset.id, 'preview')
         setAccess(next)
         return true
       } catch {
@@ -128,7 +139,7 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
     <article data-media-asset-id={asset.id} className={`media-asset-card${selected ? ' is-selected' : ''}`} onMouseEnter={beginHover} onMouseLeave={endHover}>
       {onSelect && !selectionMode ? <button data-media-selection-control className="media-asset-select" type="button" aria-label={`${selected ? '取消选择' : '选择'} ${asset.name}`} title={selected ? '取消选择' : '选择'} onClick={() => onSelect(asset)}><Check size={15} /></button> : null}
       <button className="media-asset-stage" type="button" onClick={open} aria-label={`${selectionMode ? '选择' : '预览'} ${asset.name}`}>
-        {asset.media_type === 'image' && imagePreview.access?.url ? <img src={imagePreview.access.url} alt="" loading="lazy" draggable={false} onError={() => void imagePreview.refreshOnce()} /> : null}
+        {asset.media_type === 'image' && imagePreview.access?.url ? <img key={`${imagePreview.purpose}:${imagePreview.access.url}`} src={imagePreview.access.url} alt="" loading="lazy" draggable={false} onError={() => void imagePreview.refreshOnce()} /> : null}
         {asset.media_type === 'video' && !hoverURL && posterURL ? <img src={posterURL} alt="" loading="lazy" draggable={false} /> : null}
         {asset.media_type === 'video' && hoverURL ? <video ref={videoRef} src={hoverURL} muted loop autoPlay playsInline preload="metadata" draggable={false} onError={() => void refreshHoverOnce()} /> : null}
         {asset.media_type === 'audio' && waveformURL ? <img src={waveformURL} alt="" loading="lazy" draggable={false} /> : null}

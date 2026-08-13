@@ -23,6 +23,7 @@ type ReferenceAsset struct {
 	StorageConfigID     string              `json:"storage_config_id,omitempty"`
 	ObjectKey           string              `json:"object_key"`
 	SourceImageResultID string              `json:"source_image_result_id,omitempty"`
+	MediaAssetID        string              `json:"media_asset_id,omitempty"`
 	OwnsObject          bool                `json:"owns_object"`
 	GenerationSnapshot  *GenerationSnapshot `json:"generation_snapshot,omitempty"`
 	PreviewURL          string              `json:"preview_url,omitempty"`

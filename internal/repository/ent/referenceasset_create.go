@@ -241,6 +241,20 @@ func (_c *ReferenceAssetCreate) SetNillableSourceImageResultID(v *uuid.UUID) *Re
 	return _c
 }
 
+// SetMediaAssetID sets the "media_asset_id" field.
+func (_c *ReferenceAssetCreate) SetMediaAssetID(v uuid.UUID) *ReferenceAssetCreate {
+	_c.mutation.SetMediaAssetID(v)
+	return _c
+}
+
+// SetNillableMediaAssetID sets the "media_asset_id" field if the given value is not nil.
+func (_c *ReferenceAssetCreate) SetNillableMediaAssetID(v *uuid.UUID) *ReferenceAssetCreate {
+	if v != nil {
+		_c.SetMediaAssetID(*v)
+	}
+	return _c
+}
+
 // SetOwnsObject sets the "owns_object" field.
 func (_c *ReferenceAssetCreate) SetOwnsObject(v bool) *ReferenceAssetCreate {
 	_c.mutation.SetOwnsObject(v)
@@ -554,6 +568,10 @@ func (_c *ReferenceAssetCreate) createSpec() (*ReferenceAsset, *sqlgraph.CreateS
 	if value, ok := _c.mutation.SourceImageResultID(); ok {
 		_spec.SetField(referenceasset.FieldSourceImageResultID, field.TypeUUID, value)
 		_node.SourceImageResultID = &value
+	}
+	if value, ok := _c.mutation.MediaAssetID(); ok {
+		_spec.SetField(referenceasset.FieldMediaAssetID, field.TypeUUID, value)
+		_node.MediaAssetID = &value
 	}
 	if value, ok := _c.mutation.OwnsObject(); ok {
 		_spec.SetField(referenceasset.FieldOwnsObject, field.TypeBool, value)

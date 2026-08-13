@@ -76,6 +76,7 @@ export const API_PATHS = {
     mediaUploadComplete: '/api/agent/media/v1/uploads/{upload_id}:complete',
     referenceAssets: '/api/agent/image/v1/reference-assets',
     importReferenceAssetsFromGallery: '/api/agent/image/v1/reference-assets:import-from-gallery',
+    importReferenceAssetsFromMedia: '/api/agent/image/v1/reference-assets:import-from-media',
     referenceAssetDetail: '/api/agent/image/v1/reference-assets/{asset_id}',
     referenceAssetDownload: '/api/agent/image/v1/reference-assets/{asset_id}/download',
     referenceAssetAccess: '/api/agent/image/v1/reference-assets/{asset_id}/access',
@@ -656,7 +657,7 @@ export type CashierOrderSyncResponse = {
   order: CashierOrder
   sync: CashierOrderSyncResult
 }
-export type MediaAccessPurpose = 'thumbnail' | 'poster' | 'hover' | 'preview' | 'waveform' | 'download'
+export type MediaAccessPurpose = 'thumbnail' | 'poster' | 'hover' | 'preview' | 'waveform' | 'content' | 'download'
 export type MediaAccessProjection = {
   url: string
   expires_at?: string
@@ -947,6 +948,7 @@ export type ReferenceAsset = {
   storage_driver?: string
   object_key?: string
   source_image_result_id?: string | null
+  media_asset_id?: string | null
   owns_object?: boolean
   generation_snapshot?: ReferenceGenerationSnapshot
   created_at: string

@@ -36,6 +36,7 @@ import { buildPromptReferenceBindings, buildPromptVariableInputs, expandedPrompt
 import { parsePromptTemplate } from './promptTemplateParser'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 import { ProjectSelector, useProjects } from '../ProjectContext'
+import { MEDIA_ASSETS_CHANGED_EVENT, QUEUE_MEDIA_UPLOAD_EVENT } from '../features/media/UploadTray'
 import { workspaceProjectReadiness, workspaceSubmissionIsCurrent, type WorkspaceProjectSelection } from './workspaceProjectLifecycle'
 
 type OutputTab = 'current' | 'history'
@@ -841,6 +842,19 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const referenceFormatLabel = referencePolicy.allowedFormats.map((format) => format.toUpperCase()).join('、')
   const maxReferenceImages = workspaceReferenceMaximum(selectedModel?.max_reference_image_count)
   const editRemainingLimit = remainingReferenceCapacity(maxReferenceImages, editRefs.length)
+
+  useEffect(() => {
+    const onMediaAssetChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ assetID?: string; mediaType?: string }>).detail
+      if (!detail?.assetID || detail.mediaType !== 'image') return
+      void userApi.importReferenceAssetsFromMedia([detail.assetID]).then((aliases) => {
+        if (!aliases.length) return
+        setEditRefs((items) => mergeReferenceAssets(items, aliases, maxReferenceImages))
+      }).catch(() => undefined)
+    }
+    window.addEventListener(MEDIA_ASSETS_CHANGED_EVENT, onMediaAssetChanged)
+    return () => window.removeEventListener(MEDIA_ASSETS_CHANGED_EVENT, onMediaAssetChanged)
+  }, [maxReferenceImages])
   const remainingGalleryImportLimit = editRemainingLimit
   const promptTemplateParse = useMemo(() => parsePromptTemplate(prompt), [prompt])
   const promptReferenceBindings = useMemo(() => buildPromptReferenceBindings(prompt, editRefs), [editRefs, prompt])
@@ -1467,6 +1481,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
               disabled={busy || promptExpanded}
               onChange={setPrompt}
               onAddAsset={() => { setEditSourceOpen(true); void openGalleryImport('edit', 'compact') }}
+              onPasteFiles={(files) => { window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail: { files, projectID: projects.selectedProjectID } })) }}
             />
             <PromptVariableForm template={prompt} values={promptVariables} disabled={busy} onChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))} />
           </div>
@@ -1787,6 +1802,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           onPromptChange={setPrompt}
           onVariableChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))}
           onAddAsset={() => { setEditSourceOpen(true); void openGalleryImport('edit', 'expanded') }}
+          onPasteFiles={(files) => { window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail: { files, projectID: projects.selectedProjectID } })) }}
           onClose={() => { setPromptExpanded(false); window.setTimeout(() => compactPromptEditorRef.current?.focus(), 0) }}
           onOptimize={() => void startPromptOptimization()}
           onConfirm={() => void confirmOptimization()}

@@ -55,7 +55,7 @@ export const navGroups: AdminNavGroup[] = [
       { id: 'routing', label: '路由模型' },
       { id: 'pricing', label: '价格策略' },
       { id: 'video-tasks', label: '视频任务' },
-      { id: 'call-records', label: '调用记录' },
+      { id: 'call-records', label: '图片任务' },
     ],
   },
   {
@@ -64,7 +64,6 @@ export const navGroups: AdminNavGroup[] = [
       { id: 'system-users', label: '管理员' },
       { id: 'audit', label: '审计日志' },
       { id: 'system-settings', label: '系统设置', badgeKey: 'config_drafts' },
-      { id: 'media-policy', label: '媒体策略' },
     ],
   },
 ]
@@ -90,7 +89,7 @@ export const routeTitles: Record<ProtectedAdminRouteId, string> = {
   cluster: '集群节点',
   users: '用户管理',
   'user-groups': '用户分组',
-  'call-records': '调用记录',
+  'call-records': '图片任务',
   redeem: '兑换码',
   reviews: '审核队列',
   orders: '订单管理',

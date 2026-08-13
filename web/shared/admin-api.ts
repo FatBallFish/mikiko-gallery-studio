@@ -362,8 +362,14 @@ export const adminApi = {
   saveRouteVideoConfig: (id: string | number, input: AdminVideoRouteConfigWrite) => sharedApiClient.request<AdminVideoConfiguration['routes'][number]>(API_PATHS.ops.routeVideoConfig, { method: 'PUT', pathParams: { id }, body: input }),
   deleteRouteVideoConfig: (id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.routeVideoConfig, { method: 'DELETE', pathParams: { id } }),
   getRouteVideoImpact: (id: string | number) => sharedApiClient.request<{items: AdminVideoConfiguration['impacts']}>(API_PATHS.ops.routeVideoImpact, { pathParams: { id } }),
-  listAdminVideoTasks: (query: Record<string, string | number | undefined> = {}) => sharedApiClient.request<AdminVideoTaskPage>(API_PATHS.ops.adminVideoTasks, { query }),
-  getAdminVideoTask: (task_id: string) => sharedApiClient.request<AdminVideoTaskDetail>(API_PATHS.ops.adminVideoTaskDetail, { pathParams: { task_id } }),
+  listAdminVideoTasks: async (query: Record<string, string | number | undefined> = {}) => {
+    const page = await sharedApiClient.request<Partial<AdminVideoTaskPage> | null>(API_PATHS.ops.adminVideoTasks, { query })
+    return { ...(page ?? {}), items: Array.isArray(page?.items) ? page.items : [] } as AdminVideoTaskPage
+  },
+  getAdminVideoTask: async (task_id: string) => {
+    const detail = await sharedApiClient.request<AdminVideoTaskDetail>(API_PATHS.ops.adminVideoTaskDetail, { pathParams: { task_id } })
+    return { ...detail, items: Array.isArray(detail?.items) ? detail.items : [] }
+  },
   retryAdminVideoArtifact: (task_id: string, item_id?: string) => sharedApiClient.request<AdminVideoRecovery>(API_PATHS.ops.adminVideoTaskRetryArtifact, { method: 'POST', pathParams: { task_id }, body: item_id ? { item_id } : {} }),
   retryAdminVideoSettlement: (task_id: string) => sharedApiClient.request<AdminVideoRecovery>(API_PATHS.ops.adminVideoTaskRetrySettlement, { method: 'POST', pathParams: { task_id } }),
   retryMediaProcessingJob: (job_id: string) => sharedApiClient.request<AdminVideoRecovery>(API_PATHS.ops.mediaProcessingJobRetry, { method: 'POST', pathParams: { job_id } }),
@@ -441,14 +447,16 @@ function toConfigItems(tab: any): ConfigItem[] {
   return (tab.items ?? []).map((item: any) => {
     const value = JSON.stringify(item.config_value ?? item.value ?? {})
     return {
-      tab: tab.tab_name ?? tab.tab_key ?? item.config_category ?? 'config',
+      ...item,
+      // `tab_key` is the persistence target; `config_category` is only an
+      // inner grouping such as `features`.
+      tab: tab.tab_key ?? tab.tab_name ?? item.config_category ?? 'config',
       key: item.config_key ?? item.key,
       value,
       draft_value: value,
       state: 'active',
       version: Number(tab.version ?? item.version ?? 1),
       description: item.description ?? item.scope ?? '',
-      ...item,
     }
   })
 }

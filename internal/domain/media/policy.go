@@ -36,13 +36,13 @@ func DefaultPolicy() Policy {
 	return Policy{
 		SingleFileMaxBytes: SingleFileHardMaxBytes,
 		AllowedFormats: map[MediaType][]string{
-			MediaTypeImage: {"jpg", "jpeg", "png", "webp", "heic", "heif", "bmp", "tiff", "gif"},
-			MediaTypeVideo: {"mp4", "mov"},
+			MediaTypeImage: {"jpg", "jpeg", "png", "webp"},
+			MediaTypeVideo: {"mp4"},
 			MediaTypeAudio: {"mp3", "m4a", "wav"},
 		},
 		AllowedMIMETypes: map[MediaType][]string{
-			MediaTypeImage: {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/bmp", "image/tiff", "image/gif"},
-			MediaTypeVideo: {"video/mp4", "video/quicktime"},
+			MediaTypeImage: {"image/jpeg", "image/png", "image/webp"},
+			MediaTypeVideo: {"video/mp4"},
 			MediaTypeAudio: {"audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav"},
 		},
 		AllowedVideoCodecs:       []string{"h264", "avc", "avc1", "h265", "hevc"},

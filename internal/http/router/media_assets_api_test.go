@@ -95,6 +95,10 @@ func TestUnifiedMediaAssetsAPIProjectsNewAndLegacyAssetsWithOwnerIsolation(t *te
 	if _, err := client.MediaAssetReference.Create().SetAssetID(assetID).SetRefType("canvas_node").SetRefID(uuid.New()).SetRefKey("video-1").SetUserID(ownerID).Save(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := client.MediaDerivative.Create().SetID(uuid.New()).SetAssetID(assetID).SetKind("proxy").SetTransformVersion(1).SetStatus("ready").
+		SetStorageDriver("local").SetObjectKey("media/derivatives/owner/clip-proxy.mp4").SetMimeType("video/mp4").SetFileSizeBytes(10).Save(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	deleted := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodDelete, "/api/agent/media/v1/assets/"+assetID.String(), `{"expected_version":2}`, nil)
 	if deleted.Code != http.StatusOK {
 		t.Fatalf("delete=%d %s", deleted.Code, deleted.Body.String())
@@ -104,8 +108,8 @@ func TestUnifiedMediaAssetsAPIProjectsNewAndLegacyAssetsWithOwnerIsolation(t *te
 		t.Fatalf("deleted asset still visible=%t err=%v", visible, err)
 	}
 	referencedAccess := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodGet, "/api/agent/media/v1/assets/"+assetID.String()+"/access?purpose=preview", "", nil)
-	if referencedAccess.Code != http.StatusOK {
-		t.Fatalf("referenced deleted access=%d %s", referencedAccess.Code, referencedAccess.Body.String())
+	if referencedAccess.Code != http.StatusConflict || !bytes.Contains(referencedAccess.Body.Bytes(), []byte("DERIVATIVE_NOT_READY")) {
+		t.Fatalf("referenced deleted video access=%d %s", referencedAccess.Code, referencedAccess.Body.String())
 	}
 }
 

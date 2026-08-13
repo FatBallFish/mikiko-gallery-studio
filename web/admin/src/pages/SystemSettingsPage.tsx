@@ -8,6 +8,7 @@ import { AttachmentPolicyPage } from './AttachmentPolicyPage'
 import { SecurityConfigPage } from './SecurityConfigPage'
 import { StorageConfigPage } from './StorageConfigPage'
 import { TextModelsPage } from './TextModelsPage'
+import { MediaPolicyPage } from './MediaPolicyPage'
 import { isSystemSettingsHash, systemSettingsTabFromHash, type SystemSettingsTab } from './systemSettingsTabs'
 
 export { isSystemSettingsHash, systemSettingsTabFromHash } from './systemSettingsTabs'
@@ -16,6 +17,7 @@ const tabItems = [
   { id: 'general', label: '通用配置', description: '公开内容和低风险运行参数', dangerous: false },
   { id: 'point-conversion', label: '积分换算', description: '每积分对应的人民币金额', dangerous: false },
   { id: 'attachment-policy', label: '附件策略', description: '文件体积与格式限制', dangerous: false },
+  { id: 'media-policy', label: '媒体策略', description: '媒体派生、预览与保留策略', dangerous: false },
   { id: 'security', label: '安全配置', description: 'SMTP 与敏感安全项', dangerous: true },
   { id: 'storage', label: '存储配置', description: 'Local / S3 / R2 多实例存储', dangerous: true },
   { id: 'text-models', label: '文本模型', description: '提示词优化账号、模型与价格', dangerous: true },
@@ -30,8 +32,8 @@ export function SystemSettingsPage({
 }) {
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>(() => systemSettingsTabFromHash(window.location.hash))
   const [refreshGeneration, setRefreshGeneration] = useState(0)
-  const [dirtyTabs, setDirtyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, 'attachment-policy': false, security: false, storage: false, 'text-models': false })
-  const [busyTabs, setBusyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, 'attachment-policy': false, security: false, storage: false, 'text-models': false })
+  const [dirtyTabs, setDirtyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, 'attachment-policy': false, 'media-policy': false, security: false, storage: false, 'text-models': false })
+  const [busyTabs, setBusyTabs] = useState<Record<SystemSettingsTab, boolean>>({ general: false, 'point-conversion': false, 'attachment-policy': false, 'media-policy': false, security: false, storage: false, 'text-models': false })
   const activeTabRef = useRef(activeTab)
   const dirtyTabsRef = useRef(dirtyTabs)
   const busyTabsRef = useRef(busyTabs)
@@ -123,6 +125,7 @@ export function SystemSettingsPage({
         />
       ) : null}
       {activeTab === 'attachment-policy' ? <AttachmentPolicyPage key={`attachment-policy:${refreshGeneration}`} session={session} onFeedback={onFeedback} onDirtyChange={onAttachmentPolicyDirtyChange} onBusyChange={onAttachmentPolicyBusyChange} compact /> : null}
+      {activeTab === 'media-policy' ? <MediaPolicyPage key={`media-policy:${refreshGeneration}`} /> : null}
       {activeTab === 'security' && canManageDangerous ? <SecurityConfigPage key={`security:${refreshGeneration}`} onFeedback={onFeedback} onDirtyChange={onSecurityDirtyChange} onBusyChange={onSecurityBusyChange} compact /> : null}
       {activeTab === 'storage' && canManageDangerous ? <StorageConfigPage key={`storage:${refreshGeneration}`} onFeedback={onFeedback} onDirtyChange={onStorageDirtyChange} onBusyChange={onStorageBusyChange} compact /> : null}
       {activeTab === 'text-models' && canManageDangerous ? <TextModelsPage key={`text-models:${refreshGeneration}`} onFeedback={onFeedback} onDirtyChange={onTextModelsDirtyChange} onBusyChange={onTextModelsBusyChange} /> : null}

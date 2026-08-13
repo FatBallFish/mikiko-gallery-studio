@@ -108,6 +108,9 @@ export function ConfigPage({
     return keys.map((key) => ({ key, label: configTabMeta(key).label }))
   }, [rows])
   const activeRows = rows.filter((row) => (row.config_category || row.tab) === activeTab)
+  // Config categories (for example `features`) are displayed as editor tabs,
+  // while writes must target the owning persistence tab (for example `site`).
+  const activePersistenceTab = activeRows[0]?.tab || activeTab
   const dirtyKeys = rows.filter((row) => !isSameConfigValue(drafts[draftId(row)], extractConfigValue(row))).map(draftId)
   const activeDirty = activeRows.some((row) => dirtyKeys.includes(draftId(row)))
   const dirty = dirtyKeys.length > 0
@@ -155,7 +158,7 @@ export function ConfigPage({
     setSaveError(null)
     try {
       const version = Math.max(...activeRows.map((row) => row.version || 1))
-      await adminApi.updateConfigTab(activeTab, {
+      await adminApi.updateConfigTab(activePersistenceTab, {
         version,
         items: activeRows.map((row) => ({
           config_category: row.config_category ?? activeTab,
