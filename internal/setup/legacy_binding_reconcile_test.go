@@ -112,6 +112,128 @@ func TestReconcileLegacyCompletedBindingAcceptsPreDocumentationSchema(t *testing
 	}
 }
 
+func TestReconcileLegacyCompletedBindingAcceptsV012RuntimeDefaults(t *testing.T) {
+	values := legacyBindingRuntimeValues()
+	for name, value := range v012RuntimeCompatibilityFixtureDefaults() {
+		values[name] = value
+	}
+	previousValues := cloneRuntimeValues(values)
+	for name := range v012RuntimeCompatibilityFixtureDefaults() {
+		delete(previousValues, name)
+	}
+	previousRelease := LegacySetupReleaseIdentity{
+		ApplicationVersion: "v0.0.12", ImageRegistry: "docker.io/fatballfish", ImageTag: "v0.0.12",
+	}
+	previousCanonicalDigest, err := setupRequestDigest(previousValues, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousLegacyDigest, err := legacySetupRequestDigest(previousRelease.apply(previousValues), "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalDigest, err := setupRequestDigest(values, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if previousCanonicalDigest == canonicalDigest || previousLegacyDigest == canonicalDigest {
+		t.Fatal("v0.0.12 and current canonical fixtures unexpectedly produced the same digest")
+	}
+
+	for _, test := range []struct {
+		name   string
+		digest string
+	}{
+		{name: "canonical digest", digest: previousCanonicalDigest},
+		{name: "release-field digest", digest: previousLegacyDigest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			proof := CommitProof{
+				OperationID: "019d0000-0000-7000-8000-000000000456", InstallationID: values["INSTALLATION_ID"],
+				RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion, ConfigRevision: 7, RequestDigest: test.digest,
+			}
+			stateStore := &legacyBindingStateStore{state: completedLegacyBindingState(proof)}
+			bindingStore := &legacyBindingSetupStore{binding: SetupBinding{
+				OperationID: proof.OperationID, InstallationID: proof.InstallationID,
+				ConfigRevision: proof.ConfigRevision, RequestDigest: test.digest,
+				AdminID: 1, AdminEmail: "admin@example.com",
+			}}
+
+			changed, err := ReconcileLegacyCompletedBinding(t.Context(), completedLegacyBindingBootstrap(values), previousRelease, stateStore, func(context.Context, string) (SetupStoreSession, error) {
+				return bindingStore, nil
+			})
+			if err != nil {
+				t.Fatalf("ReconcileLegacyCompletedBinding: %v", err)
+			}
+			if !changed || bindingStore.binding.RequestDigest != canonicalDigest || stateStore.state.Commit.RequestDigest != canonicalDigest {
+				t.Fatalf("v0.0.12 binding was not canonicalized: changed=%t binding=%q state=%q want=%q", changed, bindingStore.binding.RequestDigest, stateStore.state.Commit.RequestDigest, canonicalDigest)
+			}
+			if len(bindingStore.updates) != 1 || stateStore.reconcileCalls != 1 {
+				t.Fatalf("v0.0.12 reconciliation writes: database=%d state=%d", len(bindingStore.updates), stateStore.reconcileCalls)
+			}
+		})
+	}
+}
+
+func TestReconcileLegacyCompletedBindingRejectsV012RuntimeDefaultsWhenProfileDoesNotMatch(t *testing.T) {
+	defaults := v012RuntimeCompatibilityFixtureDefaults()
+	for name, defaultValue := range defaults {
+		t.Run(name, func(t *testing.T) {
+			values := legacyBindingRuntimeValues()
+			for field, value := range defaults {
+				values[field] = value
+			}
+			previousValues := cloneRuntimeValues(values)
+			for field := range defaults {
+				delete(previousValues, field)
+			}
+			previousDigest, err := setupRequestDigest(previousValues, "admin@example.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			values[name] = defaultValue + "-changed"
+
+			assertLegacyBindingRejectedWithoutWrites(t, values, previousDigest)
+		})
+	}
+
+	t.Run("missing compatibility field", func(t *testing.T) {
+		values := legacyBindingRuntimeValues()
+		for name, value := range defaults {
+			values[name] = value
+		}
+		previousValues := cloneRuntimeValues(values)
+		for name := range defaults {
+			delete(previousValues, name)
+		}
+		previousDigest, err := setupRequestDigest(previousValues, "admin@example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		delete(values, "WORKER_ROLES")
+
+		assertLegacyBindingRejectedWithoutWrites(t, values, previousDigest)
+	})
+
+	t.Run("additional omitted field", func(t *testing.T) {
+		values := legacyBindingRuntimeValues()
+		for name, value := range defaults {
+			values[name] = value
+		}
+		previousValues := cloneRuntimeValues(values)
+		for name := range defaults {
+			delete(previousValues, name)
+		}
+		delete(previousValues, "DATABASE_URL")
+		previousDigest, err := setupRequestDigest(previousValues, "admin@example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assertLegacyBindingRejectedWithoutWrites(t, values, previousDigest)
+	})
+}
+
 func TestReconcileLegacyCompletedBindingRejectsPreDocumentationSchemaWithNonDefaultDocumentationValues(t *testing.T) {
 	values := legacyBindingRuntimeValues()
 	values["PIC_GALLERY_DOCS_URL"] = "https://docs.example.com/"
@@ -331,6 +453,49 @@ func completedLegacyBindingState(proof CommitProof) InstallState {
 		SchemaVersion: CurrentInstallStateSchemaVersion, InstallationID: proof.InstallationID,
 		DeploymentRole: config.DeploymentRoleSingle, Phase: InstallPhaseCompleted, EverCompleted: true,
 		UpdatedAt: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC), Commit: &commit,
+	}
+}
+
+func v012RuntimeCompatibilityFixtureDefaults() map[string]string {
+	return map[string]string{
+		"WORKER_ROLES":                     "image,video,media,cleanup",
+		"WORKER_MAX_CONCURRENT_TASKS":      "4",
+		"WORKER_IMAGE_CONCURRENCY":         "4",
+		"WORKER_VIDEO_CONCURRENCY":         "2",
+		"WORKER_MEDIA_CONCURRENCY":         "2",
+		"WORKER_CLEANUP_CONCURRENCY":       "1",
+		"MEDIA_FFMPEG_PATH":                "ffmpeg",
+		"MEDIA_FFPROBE_PATH":               "ffprobe",
+		"MEDIA_TEMP_DIR":                   "./data/tmp",
+		"MEDIA_TEMP_DISK_PAUSE_PERCENT":    "75",
+		"MEDIA_TEMP_DISK_CRITICAL_PERCENT": "90",
+		"WORKER_METRICS_ADDR":              "127.0.0.1:9091",
+		"VIDEO_ARTIFACT_ALLOW_LOOPBACK":    "false",
+		"VIDEO_ARTIFACT_TEST_CA_FILE":      "",
+	}
+}
+
+func assertLegacyBindingRejectedWithoutWrites(t *testing.T, values map[string]string, digest string) {
+	t.Helper()
+	proof := CommitProof{
+		OperationID: "019d0000-0000-7000-8000-000000000456", InstallationID: values["INSTALLATION_ID"],
+		RuntimeSchemaVersion: config.CurrentRuntimeSchemaVersion, ConfigRevision: 7, RequestDigest: digest,
+	}
+	stateStore := &legacyBindingStateStore{state: completedLegacyBindingState(proof)}
+	bindingStore := &legacyBindingSetupStore{binding: SetupBinding{
+		OperationID: proof.OperationID, InstallationID: proof.InstallationID,
+		ConfigRevision: proof.ConfigRevision, RequestDigest: digest,
+		AdminID: 1, AdminEmail: "admin@example.com",
+	}}
+
+	changed, err := ReconcileLegacyCompletedBinding(t.Context(), completedLegacyBindingBootstrap(values), LegacySetupReleaseIdentity{}, stateStore, func(context.Context, string) (SetupStoreSession, error) {
+		return bindingStore, nil
+	})
+	if !errors.Is(err, ErrSetupBindingMismatch) || changed {
+		t.Fatalf("ineligible compatibility profile = changed %t, err %v", changed, err)
+	}
+	if len(bindingStore.updates) != 0 || stateStore.reconcileCalls != 0 {
+		t.Fatalf("ineligible compatibility profile mutated binding: database=%#v state_calls=%d", bindingStore.updates, stateStore.reconcileCalls)
 	}
 }
 

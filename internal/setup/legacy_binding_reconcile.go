@@ -21,6 +21,23 @@ var preDocumentationSetupFields = map[string]struct{}{
 	"PIC_GALLERY_DOCS_PROBE_URL": {},
 }
 
+var v012RuntimeCompatibilityDefaults = map[string]string{
+	"WORKER_ROLES":                     "image,video,media,cleanup",
+	"WORKER_MAX_CONCURRENT_TASKS":      "4",
+	"WORKER_IMAGE_CONCURRENCY":         "4",
+	"WORKER_VIDEO_CONCURRENCY":         "2",
+	"WORKER_MEDIA_CONCURRENCY":         "2",
+	"WORKER_CLEANUP_CONCURRENCY":       "1",
+	"MEDIA_FFMPEG_PATH":                "ffmpeg",
+	"MEDIA_FFPROBE_PATH":               "ffprobe",
+	"MEDIA_TEMP_DIR":                   "./data/tmp",
+	"MEDIA_TEMP_DISK_PAUSE_PERCENT":    "75",
+	"MEDIA_TEMP_DISK_CRITICAL_PERCENT": "90",
+	"WORKER_METRICS_ADDR":              "127.0.0.1:9091",
+	"VIDEO_ARTIFACT_ALLOW_LOOPBACK":    "false",
+	"VIDEO_ARTIFACT_TEST_CA_FILE":      "",
+}
+
 func (identity LegacySetupReleaseIdentity) apply(values map[string]string) map[string]string {
 	legacyValues := make(map[string]string, len(values))
 	for key, value := range values {
@@ -106,6 +123,21 @@ func ReconcileLegacyCompletedBinding(
 		}
 		trustedDigests = append(trustedDigests, preDocumentationCanonical, preDocumentationLegacy)
 	}
+	if runtimeValuesMatchDefaults(bootstrap.Values, v012RuntimeCompatibilityDefaults) {
+		v012Fields := make(map[string]struct{}, len(v012RuntimeCompatibilityDefaults))
+		for name := range v012RuntimeCompatibilityDefaults {
+			v012Fields[name] = struct{}{}
+		}
+		v012Canonical, digestErr := setupRequestDigestWithOmittedFields(bootstrap.Values, binding.AdminEmail, false, v012Fields)
+		if digestErr != nil {
+			return false, fmt.Errorf("derive v0.0.12 canonical setup binding digest: %w", digestErr)
+		}
+		v012Legacy, digestErr := setupRequestDigestWithOmittedFields(legacyValues, binding.AdminEmail, true, v012Fields)
+		if digestErr != nil {
+			return false, fmt.Errorf("derive v0.0.12 legacy setup binding digest: %w", digestErr)
+		}
+		trustedDigests = append(trustedDigests, v012Canonical, v012Legacy)
+	}
 	stateCanonical := constantTimeDigestEqual(proof.RequestDigest, canonicalDigest)
 	bindingCanonical := constantTimeDigestEqual(binding.RequestDigest, canonicalDigest)
 	if !matchesSetupDigest(proof.RequestDigest, trustedDigests) || !matchesSetupDigest(binding.RequestDigest, trustedDigests) {
@@ -150,6 +182,16 @@ func ReconcileLegacyCompletedBinding(
 		}
 	}
 	return true, nil
+}
+
+func runtimeValuesMatchDefaults(values map[string]string, defaults map[string]string) bool {
+	for name, expected := range defaults {
+		actual, exists := values[name]
+		if !exists || actual != expected {
+			return false
+		}
+	}
+	return true
 }
 
 func matchesSetupDigest(digest string, candidates []string) bool {
