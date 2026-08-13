@@ -93,4 +93,3 @@ SHA256 59d958f08e94174f62ac3db59450e26aa4fd84b3d111691141e27df146ceaba7
 `mgsctl self-update --version v0.0.17 --yes` 后显式执行 v0.0.17 应用升级。不得手工改
 binding 或回退 schema 5。成功后核对镜像、HTTP 健康、mgsctl doctor、安装版本以及
 三条历史账号的 `public_id` 约束。
-

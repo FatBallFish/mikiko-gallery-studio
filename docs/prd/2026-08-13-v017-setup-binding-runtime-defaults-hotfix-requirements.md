@@ -52,4 +52,3 @@ v0.0.12 到 v0.0.16 新增了 14 个 Worker/媒体运行时字段，但运行时
 - 不修改运行时 schema 版本或重写已有 runtime 格式。
 - 不手工修改生产 `setup_request_digest`、`install-state.json` 或数据库 schema。
 - 不覆盖、移动或重新发布 v0.0.16 tag。
-

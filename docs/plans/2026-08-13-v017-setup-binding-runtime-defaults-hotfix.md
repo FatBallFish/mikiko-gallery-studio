@@ -71,4 +71,3 @@
 4. Verify every application image and health status, `mgsctl status`, `mgsctl doctor`, `/healthz` and `/readyz`.
 5. Verify `installations.app_version=v0.0.17`, database schema 5, and all three `model_accounts.public_id` values are non-null and distinct with final constraints.
 6. Mark the persistent goal complete only after all production checks pass.
-
