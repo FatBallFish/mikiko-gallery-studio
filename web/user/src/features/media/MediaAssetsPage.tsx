@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { CheckSquare, Download, FolderInput, Globe2, ListRestart, RefreshCw, Search, Trash2, Upload } from 'lucide-react'
 import type { MediaAsset, MediaBatchAction, MediaType } from '../../../../shared/api-types'
 import { userApi } from '../../../../shared/user-api'
@@ -7,9 +7,20 @@ import { Button, EmptyState, useApp } from '../../components'
 import { userHashForRoute } from '../../routeState'
 import { MediaAssetCard } from './MediaAssetCard'
 import { MediaPreviewDialog } from './MediaPreviewDialog'
-import { buildMediaAssetQuery, mediaCreationActions, reconcileBatchSelection } from './mediaExperience'
+import {
+  buildMediaAssetQuery,
+  mediaCreationActions,
+  mediaMarqueeSelection,
+  mediaSelectionDragDistance,
+  mediaSelectionRectangle,
+  reconcileBatchSelection,
+  shouldSuppressMediaCardAction,
+  type MediaSelectionPoint,
+  type MediaSelectionRect,
+} from './mediaExperience'
 import { MEDIA_ASSETS_CHANGED_EVENT } from './UploadTray'
 import { pollGalleryExportJob } from '../../pages/galleryBatchActions'
+import { OverlayPortal } from '../../ui/overlayPortal'
 
 type FilterState = {
   mediaType: '' | MediaType
@@ -36,6 +47,15 @@ export function MediaAssetsPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [targetProjectID, setTargetProjectID] = useState('')
   const requestVersion = useRef(0)
+  const selectionSurfaceRef = useRef<HTMLDivElement | null>(null)
+  const suppressCardActionUntilRef = useRef(0)
+  const marqueeFrameRef = useRef<number | null>(null)
+  const marqueeDragRef = useRef<{ pointerID: number; start: MediaSelectionPoint; current: MediaSelectionPoint; additive: boolean; dragged: boolean; captureTarget: HTMLElement } | null>(null)
+  const [marquee, setMarquee] = useState<MediaSelectionRect | null>(null)
+
+  useEffect(() => () => {
+    if (marqueeFrameRef.current !== null) window.cancelAnimationFrame(marqueeFrameRef.current)
+  }, [])
 
   useEffect(() => {
     requestVersion.current += 1
@@ -88,6 +108,83 @@ export function MediaAssetsPage() {
   })
   const selectAll = () => setSelected(new Set(items.map((item) => item.id)))
   const invert = () => setSelected(new Set(items.filter((item) => !selected.has(item.id)).map((item) => item.id)))
+
+  const consumeSuppressedCardAction = () => {
+    return shouldSuppressMediaCardAction(suppressCardActionUntilRef.current, performance.now())
+  }
+  const selectCard = (asset: MediaAsset) => {
+    if (!consumeSuppressedCardAction()) toggle(asset)
+  }
+  const openCard = (asset: MediaAsset) => {
+    if (!consumeSuppressedCardAction()) setPreview(asset)
+  }
+
+  const beginMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return
+    const target = event.target as HTMLElement
+    if (target.closest('[data-media-selection-control]')) return
+    const point = { x: event.clientX, y: event.clientY }
+    marqueeDragRef.current = {
+      pointerID: event.pointerId,
+      start: point,
+      current: point,
+      additive: event.metaKey || event.ctrlKey || event.shiftKey,
+      dragged: false,
+      captureTarget: target,
+    }
+    target.setPointerCapture(event.pointerId)
+  }
+
+  const moveMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = marqueeDragRef.current
+    if (!drag || drag.pointerID !== event.pointerId) return
+    drag.current = { x: event.clientX, y: event.clientY }
+    if (!drag.dragged) {
+      if (mediaSelectionDragDistance(drag.start, drag.current) < 6) return
+      drag.dragged = true
+    }
+    event.preventDefault()
+    if (marqueeFrameRef.current !== null) return
+    marqueeFrameRef.current = window.requestAnimationFrame(() => {
+      marqueeFrameRef.current = null
+      const current = marqueeDragRef.current
+      if (!current?.dragged) return
+      setMarquee(mediaSelectionRectangle(current.start, current.current))
+      if (current.current.y < 56) window.scrollBy({ top: -12 })
+      else if (current.current.y > window.innerHeight - 56) window.scrollBy({ top: 12 })
+    })
+  }
+
+  const finishMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = marqueeDragRef.current
+    if (!drag || drag.pointerID !== event.pointerId) return
+    if (drag.dragged) {
+      const rectangle = mediaSelectionRectangle(drag.start, drag.current)
+      const candidates = Array.from(selectionSurfaceRef.current?.querySelectorAll<HTMLElement>('[data-media-asset-id]') ?? []).map((element) => {
+        const bounds = element.getBoundingClientRect()
+        return { id: element.dataset.mediaAssetId ?? '', rect: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } }
+      }).filter((item) => item.id)
+      setSelected((current) => mediaMarqueeSelection(current, candidates, rectangle, drag.additive))
+      suppressCardActionUntilRef.current = performance.now() + 250
+    }
+    if (drag.captureTarget.hasPointerCapture(event.pointerId)) drag.captureTarget.releasePointerCapture(event.pointerId)
+    marqueeDragRef.current = null
+    setMarquee(null)
+  }
+
+  const cancelMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = marqueeDragRef.current
+    if (!drag || drag.pointerID !== event.pointerId) return
+    if (drag.captureTarget.hasPointerCapture(event.pointerId)) drag.captureTarget.releasePointerCapture(event.pointerId)
+    marqueeDragRef.current = null
+    setMarquee(null)
+  }
+
+  const loseMarqueeCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (marqueeDragRef.current?.pointerID !== event.pointerId) return
+    marqueeDragRef.current = null
+    setMarquee(null)
+  }
 
   const batch = async (action: MediaBatchAction, options?: { group_name?: string; target_project_id?: string }) => {
     if (!selectedItems.length) return
@@ -178,11 +275,21 @@ export function MediaAssetsPage() {
       </section>
       {error ? <section className="media-assets-error" role="alert"><span>{error}</span><Button tone="ghost" onClick={() => void load(false)}>重试</Button></section> : null}
       {!loading && !error && !items.length ? <EmptyState title="当前项目暂无资产" detail="" action={app.featureFlags.media_upload ? <Button onClick={() => window.dispatchEvent(new Event('mgs:open-media-upload'))}>上传文件</Button> : undefined} /> : null}
-      <section className="media-assets-grid" aria-busy={loading}>{items.map((asset) => <MediaAssetCard key={asset.id} asset={asset} selected={selected.has(asset.id)} selectionMode={selected.size > 0} onSelect={toggle} onOpen={setPreview} onRetry={(item) => void userApi.retryMediaAssetProcessing(item.id).then(patchAsset)} />)}</section>
+      <div
+        ref={selectionSurfaceRef}
+        className="media-assets-selection-surface"
+        onPointerDown={beginMarqueeSelection}
+        onPointerMove={moveMarqueeSelection}
+        onPointerUp={finishMarqueeSelection}
+        onPointerCancel={cancelMarqueeSelection}
+        onLostPointerCapture={loseMarqueeCapture}
+      >
+        <section className="media-assets-grid" aria-busy={loading}>{items.map((asset) => <MediaAssetCard key={asset.id} asset={asset} selected={selected.has(asset.id)} selectionMode={selected.size > 0} onSelect={selectCard} onOpen={openCard} onRetry={(item) => void userApi.retryMediaAssetProcessing(item.id).then(patchAsset)} />)}</section>
+      </div>
       {loading ? <p className="media-assets-loading" role="status">正在加载资产</p> : null}
       {nextCursor && !loading ? <div className="media-load-more"><Button tone="ghost" onClick={() => void load(true)}>加载更多</Button></div> : null}
       {items.length ? <button type="button" className="media-select-mode" onClick={allSelected ? () => setSelected(new Set()) : selectAll}><CheckSquare size={16} />{allSelected ? '取消全选' : '全选'}</button> : null}
-      {selected.size ? <aside className="media-batch-toolbar" aria-label="批量工具">
+      {selected.size ? <OverlayPortal><aside className="media-batch-toolbar" aria-label="批量工具">
         <strong>已选 {selected.size} 项</strong><button type="button" onClick={selectAll}>全选</button><button type="button" onClick={invert}>反选</button>
         <button type="button" disabled={busy} onClick={() => void batch('download')}><Download size={15} />下载</button>
         <button type="button" disabled={busy} onClick={groupSelected}><FolderInput size={15} />分组</button>
@@ -190,7 +297,8 @@ export function MediaAssetsPage() {
         <button type="button" disabled={busy || !targetProjectID} onClick={() => void batch('transfer-project', { target_project_id: targetProjectID })}>转移</button>
         <button type="button" disabled={busy || !selectedItems.some((item) => item.media_type === 'image')} onClick={() => void publishSelected()}><Globe2 size={15} />公开图片</button>
         <button type="button" disabled={busy} className="is-danger" onClick={() => void batch('delete')}><Trash2 size={15} />删除</button>
-      </aside> : null}
+      </aside></OverlayPortal> : null}
+      {marquee ? <OverlayPortal><div className="media-selection-marquee" style={{ left: marquee.left, top: marquee.top, width: marquee.right - marquee.left, height: marquee.bottom - marquee.top }} aria-hidden="true" /></OverlayPortal> : null}
       {preview ? <MediaPreviewDialog asset={preview} projects={projects.projects} creationActions={mediaCreationActions(preview)} onClose={() => setPreview(null)} onChanged={patchAsset} onDeleted={(asset) => { setItems((current) => current.filter((item) => item.id !== asset.id)); setPreview(null) }} onContinue={continueCreation} /> : null}
     </main>
   )

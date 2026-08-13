@@ -130,10 +130,35 @@ func (s *Service) Snapshot(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	snapshot.Impacts = append(snapshot.Impacts, deriveImpacts(snapshot)...)
+	normalizeSnapshotCollections(&snapshot)
 	if snapshot.GeneratedAt.IsZero() {
 		snapshot.GeneratedAt = time.Now().UTC()
 	}
 	return snapshot, nil
+}
+
+func normalizeSnapshotCollections(snapshot *Snapshot) {
+	if snapshot.Capabilities == nil {
+		snapshot.Capabilities = []CapabilitySummary{}
+	}
+	if snapshot.CostRules == nil {
+		snapshot.CostRules = []CostRuleSummary{}
+	}
+	if snapshot.Strategies == nil {
+		snapshot.Strategies = []PricingStrategySummary{}
+	}
+	if snapshot.PriceRules == nil {
+		snapshot.PriceRules = []PriceRuleSummary{}
+	}
+	if snapshot.Routes == nil {
+		snapshot.Routes = []RouteConfigSummary{}
+	}
+	if snapshot.Plans == nil {
+		snapshot.Plans = []PointProduct{}
+	}
+	if snapshot.Impacts == nil {
+		snapshot.Impacts = []Impact{}
+	}
 }
 
 func deriveImpacts(snapshot Snapshot) []Impact {

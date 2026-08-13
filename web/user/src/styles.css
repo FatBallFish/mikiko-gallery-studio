@@ -97,6 +97,16 @@
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 14px;
 }
+.media-assets-selection-surface { min-height: 1px; }
+.media-selection-marquee {
+  position: fixed;
+  z-index: 45;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--bg) 72%, transparent) inset;
+  pointer-events: none;
+}
 
 .media-asset-card {
   position: relative;
@@ -135,7 +145,7 @@
 .media-asset-group { position: absolute; left: 9px; top: 9px; max-width: calc(100% - 52px); overflow: hidden; border: 1px solid rgb(255 255 255 / 0.12); border-radius: 999px; background: rgb(0 0 0 / 0.52); padding: 4px 8px; color: white; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 
 .media-select-mode { position: fixed; right: 24px; bottom: 26px; z-index: 43; display: inline-flex; min-height: 40px; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-solid); padding: 0 14px; color: var(--fg); box-shadow: var(--shadow-md); cursor: pointer; }
-.media-batch-toolbar { position: fixed; z-index: 44; left: calc(var(--sidebar-w) + 50%); bottom: 22px; display: flex; max-width: calc(100vw - var(--sidebar-w) - 210px); min-height: 48px; align-items: center; gap: 5px; transform: translateX(-50%); border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-solid); padding: 6px; box-shadow: var(--shadow-lg); }
+.media-batch-toolbar { position: fixed; z-index: 44; left: calc(var(--sidebar-w) + 50%); bottom: max(22px, env(safe-area-inset-bottom)); display: flex; max-width: calc(100vw - var(--sidebar-w) - 72px); min-height: 48px; align-items: center; gap: 5px; overflow-x: auto; transform: translateX(-50%); border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-solid); padding: 6px; box-shadow: var(--shadow-lg); }
 .media-batch-toolbar strong { padding: 0 9px; font-size: 12px; white-space: nowrap; }
 .media-batch-toolbar button { display: inline-flex; min-height: 34px; align-items: center; gap: 5px; border: 0; border-radius: var(--radius-sm); background: transparent; padding: 0 9px; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .media-batch-toolbar button:hover { background: var(--elevated); color: var(--fg); }

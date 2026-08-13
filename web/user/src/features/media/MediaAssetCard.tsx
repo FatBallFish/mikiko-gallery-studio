@@ -125,13 +125,13 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
   }
 
   return (
-    <article className={`media-asset-card${selected ? ' is-selected' : ''}`} onMouseEnter={beginHover} onMouseLeave={endHover}>
-      {onSelect && !selectionMode ? <button className="media-asset-select" type="button" aria-label={`${selected ? '取消选择' : '选择'} ${asset.name}`} title={selected ? '取消选择' : '选择'} onClick={() => onSelect(asset)}><Check size={15} /></button> : null}
+    <article data-media-asset-id={asset.id} className={`media-asset-card${selected ? ' is-selected' : ''}`} onMouseEnter={beginHover} onMouseLeave={endHover}>
+      {onSelect && !selectionMode ? <button data-media-selection-control className="media-asset-select" type="button" aria-label={`${selected ? '取消选择' : '选择'} ${asset.name}`} title={selected ? '取消选择' : '选择'} onClick={() => onSelect(asset)}><Check size={15} /></button> : null}
       <button className="media-asset-stage" type="button" onClick={open} aria-label={`${selectionMode ? '选择' : '预览'} ${asset.name}`}>
-        {asset.media_type === 'image' && imagePreview.access?.url ? <img src={imagePreview.access.url} alt="" loading="lazy" onError={() => void imagePreview.refreshOnce()} /> : null}
-        {asset.media_type === 'video' && !hoverURL && posterURL ? <img src={posterURL} alt="" loading="lazy" /> : null}
-        {asset.media_type === 'video' && hoverURL ? <video ref={videoRef} src={hoverURL} muted loop autoPlay playsInline preload="metadata" onError={() => void refreshHoverOnce()} /> : null}
-        {asset.media_type === 'audio' && waveformURL ? <img src={waveformURL} alt="" loading="lazy" /> : null}
+        {asset.media_type === 'image' && imagePreview.access?.url ? <img src={imagePreview.access.url} alt="" loading="lazy" draggable={false} onError={() => void imagePreview.refreshOnce()} /> : null}
+        {asset.media_type === 'video' && !hoverURL && posterURL ? <img src={posterURL} alt="" loading="lazy" draggable={false} /> : null}
+        {asset.media_type === 'video' && hoverURL ? <video ref={videoRef} src={hoverURL} muted loop autoPlay playsInline preload="metadata" draggable={false} onError={() => void refreshHoverOnce()} /> : null}
+        {asset.media_type === 'audio' && waveformURL ? <img src={waveformURL} alt="" loading="lazy" draggable={false} /> : null}
         {!imagePreview.access?.url && !posterURL && !hoverURL && !waveformURL ? (
           <span className={`media-asset-placeholder${asset.media_type === 'audio' ? ' is-audio' : ''}`} aria-hidden="true">
             {asset.status === 'processing' ? <LoaderCircle className="animate-spin" /> : asset.media_type === 'video' ? <Film /> : asset.media_type === 'audio' ? <AudioLines /> : <FileImage />}
@@ -147,11 +147,11 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
           <span>{asset.media_type.toUpperCase()} · {formatBytes(asset.file_size_bytes)}</span>
         </div>
         {asset.media_type === 'audio' && asset.status === 'ready' ? (
-          <button className="media-asset-audio" type="button" onClick={() => void toggleAudio()} aria-label={`播放 ${asset.name}`} title="播放">
+          <button data-media-selection-control className="media-asset-audio" type="button" onClick={() => void toggleAudio()} aria-label={`播放 ${asset.name}`} title="播放">
             <Play size={15} fill="currentColor" />
           </button>
         ) : null}
-        {asset.status === 'failed' && onRetry ? <button className="media-asset-audio" type="button" onClick={() => onRetry(asset)} aria-label="重试处理" title="重试处理"><RotateCcw size={15} /></button> : null}
+        {asset.status === 'failed' && onRetry ? <button data-media-selection-control className="media-asset-audio" type="button" onClick={() => onRetry(asset)} aria-label="重试处理" title="重试处理"><RotateCcw size={15} /></button> : null}
       </div>
       {asset.group_name ? <span className="media-asset-group">{asset.group_name}</span> : null}
       {audioURL ? <audio ref={audioRef} src={audioURL} preload="metadata" onError={() => void refreshAudioOnce()} onPlay={() => mediaAudioCoordinator.activate(asset.id, () => audioRef.current?.pause())} onEnded={() => mediaAudioCoordinator.release(asset.id)} /> : null}

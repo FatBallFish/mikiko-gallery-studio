@@ -2,6 +2,37 @@ export type BatchResult = { id: string; status: string }
 import type { MediaAssetFilters, MediaType } from '../../../../shared/api-types'
 import type { UserRouteOptions } from '../../routeState'
 
+export type MediaSelectionPoint = { x: number; y: number }
+export type MediaSelectionRect = { left: number; top: number; right: number; bottom: number }
+
+export function mediaSelectionDragDistance(start: MediaSelectionPoint, current: MediaSelectionPoint) {
+  return Math.hypot(current.x - start.x, current.y - start.y)
+}
+
+export function mediaSelectionRectangle(start: MediaSelectionPoint, current: MediaSelectionPoint): MediaSelectionRect {
+  return {
+    left: Math.min(start.x, current.x), top: Math.min(start.y, current.y),
+    right: Math.max(start.x, current.x), bottom: Math.max(start.y, current.y),
+  }
+}
+
+export function mediaMarqueeSelection(
+  current: ReadonlySet<string>,
+  items: ReadonlyArray<{ id: string; rect: MediaSelectionRect }>,
+  marquee: MediaSelectionRect,
+  additive: boolean,
+) {
+  const next = additive ? new Set(current) : new Set<string>()
+  items.forEach(({ id, rect }) => {
+    if (rect.right >= marquee.left && rect.left <= marquee.right && rect.bottom >= marquee.top && rect.top <= marquee.bottom) next.add(id)
+  })
+  return next
+}
+
+export function shouldSuppressMediaCardAction(suppressUntil: number, now: number) {
+  return now <= suppressUntil
+}
+
 export type MediaFilterValues = {
   mediaType: '' | MediaType
   sourceType: string
