@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 ARG NODE_VERSION=22-alpine
 
-FROM node:${NODE_VERSION} AS build
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION} AS build
 WORKDIR /src
 COPY web/user/package.json web/user/package-lock.json ./web/user/
 COPY web/shared ./web/shared
