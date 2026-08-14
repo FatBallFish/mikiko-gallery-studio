@@ -1,20 +1,32 @@
 # syntax=docker/dockerfile:1.7
 ARG GO_VERSION=1.26.0
+ARG XX_VERSION=1.6.1
+ARG ALPINE_MIRROR=https://dl-cdn.alpinelinux.org/alpine
 
-FROM golang:${GO_VERSION}-alpine AS build
+FROM --platform=$BUILDPLATFORM tonistiigi/xx:${XX_VERSION} AS xx
+
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
+COPY --from=xx / /
 WORKDIR /src
-RUN apk add --no-cache build-base ca-certificates
+ARG ALPINE_MIRROR
+RUN sed -i "s#https://dl-cdn.alpinelinux.org/alpine#${ALPINE_MIRROR}#g" /etc/apk/repositories && \
+    apk add --no-cache ca-certificates clang lld
+ARG TARGETPLATFORM
+RUN xx-apk add --no-cache gcc musl-dev
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -trimpath -ldflags="-s -w" -o /out/mikiko-gallery-studio-worker ./cmd/worker
+RUN CGO_ENABLED=1 CGO_CFLAGS="-D_LARGEFILE64_SOURCE" xx-go build -trimpath -ldflags="-s -w" -o /out/mikiko-gallery-studio-worker ./cmd/worker
+RUN xx-verify /out/mikiko-gallery-studio-worker
 
 FROM alpine:3.22
 ARG FFMPEG_VERSION=6.1.2-r2
+ARG ALPINE_MIRROR
 WORKDIR /app
-RUN apk add --no-cache ca-certificates "ffmpeg=${FFMPEG_VERSION}" su-exec tzdata && \
+RUN sed -i "s#https://dl-cdn.alpinelinux.org/alpine#${ALPINE_MIRROR}#g" /etc/apk/repositories && \
+    apk add --no-cache ca-certificates "ffmpeg=${FFMPEG_VERSION}" su-exec tzdata && \
     addgroup -S picgallery && adduser -S -G picgallery picgallery && \
     mkdir -p /var/lib/pic-gallery/storage /var/lib/pic-gallery/tmp && \
     chown -R picgallery:picgallery /app /var/lib/pic-gallery
