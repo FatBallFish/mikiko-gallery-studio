@@ -14,6 +14,7 @@ APP_PACKAGER="$ROOT/scripts/devops/package.sh"
 ADMIN_DOCKERFILE="$ROOT/Dockerfile.admin-web"
 DOCS_DOCKERFILE="$ROOT/Dockerfile.docs-web"
 USER_DOCKERFILE="$ROOT/Dockerfile.user-web"
+API_DOCKERFILE="$ROOT/Dockerfile.api"
 WORKER_DOCKERFILE="$ROOT/Dockerfile.worker"
 WORKER_RUNNER="$ROOT/deployments/devops/run-worker.sh"
 RELEASE_NOTES_TEMPLATE="$ROOT/.github/release-notes-template.md"
@@ -45,6 +46,31 @@ forbid_text() {
   fi
 }
 
+require_before() {
+  local file=$1
+  local first=$2
+  local second=$3
+  local first_line second_line
+  first_line=$(rg -n -m1 -F -- "$first" "$file" | cut -d: -f1)
+  second_line=$(rg -n -m1 -F -- "$second" "$file" | cut -d: -f1)
+  if [[ -z "$first_line" || -z "$second_line" || "$first_line" -ge "$second_line" ]]; then
+    echo "${file#"$ROOT/"} must declare '$first' before '$second'" >&2
+    exit 1
+  fi
+}
+
+require_occurrences() {
+  local file=$1
+  local text=$2
+  local minimum=$3
+  local actual
+  actual=$(rg -F -- "$text" "$file" | wc -l | tr -d ' ')
+  if [[ "$actual" -lt "$minimum" ]]; then
+    echo "${file#"$ROOT/"} must contain '$text' at least $minimum times, found $actual" >&2
+    exit 1
+  fi
+}
+
 require_file "$WORKFLOW"
 require_file "$PACKAGER"
 require_file "$MANIFEST_RENDERER"
@@ -56,6 +82,7 @@ require_file "$PROD_COMPOSE"
 require_file "$ADMIN_DOCKERFILE"
 require_file "$DOCS_DOCKERFILE"
 require_file "$USER_DOCKERFILE"
+require_file "$API_DOCKERFILE"
 require_file "$WORKER_DOCKERFILE"
 require_file "$WORKER_RUNNER"
 require_file "$RELEASE_NOTES_TEMPLATE"
@@ -65,6 +92,20 @@ require_file "$RELEASE_NOTES_CONTRACT"
 require_text "$ADMIN_DOCKERFILE" 'FROM --platform=$BUILDPLATFORM node:${NODE_VERSION} AS build'
 require_text "$DOCS_DOCKERFILE" 'FROM --platform=$BUILDPLATFORM node:${NODE_VERSION} AS build'
 require_text "$USER_DOCKERFILE" 'FROM --platform=$BUILDPLATFORM node:${NODE_VERSION} AS build'
+for backend_dockerfile in "$API_DOCKERFILE" "$WORKER_DOCKERFILE"; do
+  require_text "$backend_dockerfile" 'FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build'
+  require_text "$backend_dockerfile" 'ARG TARGETPLATFORM'
+  require_text "$backend_dockerfile" 'ARG ALPINE_MIRROR=https://dl-cdn.alpinelinux.org/alpine'
+  require_text "$backend_dockerfile" '${ALPINE_MIRROR}'
+  require_occurrences "$backend_dockerfile" '${ALPINE_MIRROR}' 2
+  require_text "$backend_dockerfile" 'apk add --no-cache ca-certificates clang lld'
+  require_text "$backend_dockerfile" 'xx-apk add --no-cache gcc musl-dev'
+  require_text "$backend_dockerfile" 'CGO_ENABLED=1'
+  require_text "$backend_dockerfile" 'xx-go build'
+  require_before "$backend_dockerfile" \
+    'apk add --no-cache ca-certificates clang lld' \
+    'ARG TARGETPLATFORM'
+done
 require_text "$WORKER_DOCKERFILE" 'ffmpeg'
 require_text "$WORKER_RUNNER" 'command -v ffmpeg'
 require_text "$WORKER_RUNNER" 'command -v ffprobe'
