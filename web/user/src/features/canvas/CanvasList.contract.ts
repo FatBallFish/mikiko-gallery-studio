@@ -9,3 +9,4 @@ for (const required of [
   if (!source.includes(required)) throw new Error(`canvas list must include ${required}`)
 }
 if (!source.includes('running_task_count')) throw new Error('canvas list must surface active runs before destructive actions')
+if (!source.includes('Array.isArray(item.document.nodes)')) throw new Error('canvas list preview must defend against legacy null nodes')

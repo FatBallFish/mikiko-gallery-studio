@@ -491,7 +491,7 @@ func decodeDocument(value map[string]any) (domaincanvas.DocumentV1, error) {
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return result, err
 	}
-	return result, nil
+	return domaincanvas.NormalizeCollections(result), nil
 }
 func canvasDefaultString(value, fallback string) string {
 	if strings.TrimSpace(value) == "" {

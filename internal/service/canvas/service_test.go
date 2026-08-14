@@ -2,6 +2,7 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -95,6 +96,58 @@ func TestImageToVideoTemplateDoesNotCreateDanglingAssetReference(t *testing.T) {
 	if len(created.AssetReferences) != 0 || len(created.Document.Nodes) != 2 || created.Document.Nodes[1].Type != domaincanvas.NodeTypeVideoGeneration {
 		t.Fatalf("image-to-video template = %#v", created.Document)
 	}
+}
+
+func TestBlankCanvasAlwaysUsesEmptyDocumentArrays(t *testing.T) {
+	service := NewService(NewMemoryStore(), nil, nil)
+	created, err := service.Create(t.Context(), CreateRequest{
+		UserID:    3,
+		ProjectID: uuid.New(),
+		Name:      "空白画布",
+		Template:  TemplateBlank,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Document.Nodes == nil || created.Document.Edges == nil {
+		t.Fatalf("blank document arrays = nodes:%#v edges:%#v, want non-nil empty slices", created.Document.Nodes, created.Document.Edges)
+	}
+	if !strings.Contains(string(mustJSON(t, created.Document)), `"nodes":[]`) || !strings.Contains(string(mustJSON(t, created.Document)), `"edges":[]`) {
+		t.Fatalf("blank document JSON = %s, want empty arrays", mustJSON(t, created.Document))
+	}
+}
+
+func TestCanvasReadNormalizesLegacyNullDocumentArrays(t *testing.T) {
+	store := NewMemoryStore()
+	legacy := Canvas{
+		ID: uuid.New(), UserID: 3, ProjectID: uuid.New(), Name: "历史画布",
+		SchemaVersion: 1, Revision: 1, MetadataVersion: 1,
+		Document: domaincanvas.DocumentV1{SchemaVersion: 1, Viewport: domaincanvas.Viewport{Zoom: 1}},
+		Status:   CanvasStatusActive,
+	}
+	store.canvases[legacy.ID] = legacy
+	service := NewService(store, nil, nil)
+
+	loaded, err := service.Get(t.Context(), legacy.UserID, legacy.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if loaded.Document.Nodes == nil || loaded.Document.Edges == nil {
+		t.Fatalf("legacy document arrays = nodes:%#v edges:%#v, want non-nil empty slices", loaded.Document.Nodes, loaded.Document.Edges)
+	}
+	items, err := service.List(t.Context(), ListRequest{UserID: legacy.UserID})
+	if err != nil || len(items) != 1 || items[0].Document.Nodes == nil || items[0].Document.Edges == nil {
+		t.Fatalf("List() = (%#v, %v), want normalized legacy document", items, err)
+	}
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }
 
 func TestCanvasDocumentAllowsURLInPromptButRejectsPersistedURLField(t *testing.T) {
