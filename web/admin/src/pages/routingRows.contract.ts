@@ -32,6 +32,9 @@ for (const workspaceContract of [
   'model.output_format',
   'model.supports_output_compression',
   'effectiveRouteCandidates',
+  'routeReadinessForMedia',
+  'mediaRoutes.map',
+  '#/pricing?media=video',
   "account.status === 'enabled'",
   'visibleRoutes.find',
   'message={mutationError}',
@@ -51,7 +54,7 @@ if (!routingPageSource.includes('prices: routePrices')) {
 for (const continuationContract of [
   'setSelectedRouteId(String(saved.id))',
   "if (created) setQuery('')",
-  'setCandidateDialog(newCandidateDialog(saved, accountModels))',
+  'setCandidateDialog(newCandidateDialog(saved, eligibleAccountModels))',
 ]) {
   if (!routingPageSource.includes(continuationContract)) {
     throw new Error(`route creation should preserve context with ${continuationContract}`)

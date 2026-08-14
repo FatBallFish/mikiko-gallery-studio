@@ -114,6 +114,28 @@ func TestSnapshotReportsEachVisibleCombinationMissingPrice(t *testing.T) {
 	}
 }
 
+func TestSnapshotUsesParameterPricingBindingForMissingPriceDiagnostics(t *testing.T) {
+	store := &fakeStore{snapshot: Snapshot{
+		Strategies: []PricingStrategySummary{{ID: 21, Enabled: true}, {ID: 22, Enabled: true}},
+		PriceRules: []PriceRuleSummary{{StrategyID: 22, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", SafetyPoints: "8", SalesPoints: "8", Enabled: true}},
+		Routes: []RouteConfigSummary{{
+			RouteModelID: 31, RouteName: "视频创作", PricingStrategyID: 21, CandidateCount: 1, Enabled: true,
+			VisibleOptions: map[string]any{
+				"combinations":     []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "aspect_ratio": "16:9", "audio_mode": "silent", "duration_seconds": float64(5)}},
+				"pricing_bindings": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "aspect_ratio": "16:9", "audio_mode": "silent", "duration_seconds": float64(5), "pricing_strategy_id": float64(22)}},
+			},
+		}},
+	}}
+
+	got, err := NewService(store).Snapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Impacts) != 0 {
+		t.Fatalf("bound pricing strategy must satisfy missing-price diagnostics, got %#v", got.Impacts)
+	}
+}
+
 func TestRetryOnlyAllowsArtifactDerivativeAndSettlementRecovery(t *testing.T) {
 	store := &fakeStore{}
 	service := NewService(store)

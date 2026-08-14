@@ -45,16 +45,19 @@ type CapabilitySummary struct {
 }
 
 type CostRuleSummary struct {
-	ID             int64          `json:"id"`
-	AccountModelID int64          `json:"account_model_id"`
-	BillingMode    string         `json:"billing_mode"`
-	RuleVersion    int            `json:"rule_version"`
-	Currency       string         `json:"currency"`
-	Rates          map[string]any `json:"rates"`
-	Validation     string         `json:"validation_status"`
-	EffectiveAt    time.Time      `json:"effective_at"`
-	ExpiresAt      *time.Time     `json:"expires_at,omitempty"`
-	Enabled        bool           `json:"enabled"`
+	ID                int64          `json:"id"`
+	AccountModelID    int64          `json:"account_model_id"`
+	BillingMode       string         `json:"billing_mode"`
+	RuleVersion       int            `json:"rule_version"`
+	Currency          string         `json:"currency"`
+	Rates             map[string]any `json:"rates"`
+	CostReserveMarkup string         `json:"cost_reserve_markup"`
+	SourceType        string         `json:"source_type"`
+	SourceReference   string         `json:"source_reference"`
+	Validation        string         `json:"validation_status"`
+	EffectiveAt       time.Time      `json:"effective_at"`
+	ExpiresAt         *time.Time     `json:"expires_at,omitempty"`
+	Enabled           bool           `json:"enabled"`
 }
 
 type PricingStrategySummary struct {
@@ -69,21 +72,39 @@ type PricingStrategySummary struct {
 	PlatformFixedCostCNY        string `json:"platform_fixed_cost_cny"`
 	PlatformOutputSecondCostCNY string `json:"platform_output_second_cost_cny"`
 	PlatformReferenceCostCNY    string `json:"platform_reference_cost_cny"`
+	GrossPointValueCNY          string `json:"gross_point_value_cny"`
+	MaxBonusRatio               string `json:"max_bonus_ratio"`
+	PlatformAudioFixedCostCNY   string `json:"platform_audio_fixed_cost_cny"`
+	PlatformAudioSecondCostCNY  string `json:"platform_audio_second_cost_cny"`
+	ExactReserveMarkup          string `json:"exact_reserve_markup"`
+	MeteredReserveMarkup        string `json:"metered_reserve_markup"`
 	Enabled                     bool   `json:"enabled"`
 }
 
 type PriceRuleSummary struct {
-	ID                    int64  `json:"id"`
-	StrategyID            int64  `json:"pricing_strategy_id"`
-	TaskType              string `json:"task_type"`
-	Resolution            string `json:"resolution"`
-	AudioMode             string `json:"audio_mode"`
-	PricingMode           string `json:"pricing_mode"`
-	RuleVersion           int    `json:"rule_version"`
-	SafetyPoints          string `json:"safety_points"`
-	SalesPoints           string `json:"sales_points"`
-	CandidateCostUpperCNY string `json:"candidate_cost_upper_cny"`
-	Enabled               bool   `json:"enabled"`
+	ID                         int64      `json:"id"`
+	StrategyID                 int64      `json:"pricing_strategy_id"`
+	TaskType                   string     `json:"task_type"`
+	Resolution                 string     `json:"resolution"`
+	AudioMode                  string     `json:"audio_mode"`
+	PricingMode                string     `json:"pricing_mode"`
+	RuleVersion                int        `json:"rule_version"`
+	EffectiveAt                time.Time  `json:"effective_at"`
+	ExpiresAt                  *time.Time `json:"expires_at,omitempty"`
+	OutputSecondPoints         string     `json:"output_second_points"`
+	FixedTaskPoints            string     `json:"fixed_task_points"`
+	ReferenceImagePoints       string     `json:"reference_image_points"`
+	InputVideoSecondPoints     string     `json:"input_video_second_points"`
+	ReferenceAudioSecondPoints string     `json:"reference_audio_second_points"`
+	GeneratedAudioFixedPoints  string     `json:"generated_audio_fixed_points"`
+	GeneratedAudioSecondPoints string     `json:"generated_audio_second_points"`
+	MinimumBillableSeconds     int        `json:"minimum_billable_seconds"`
+	MinimumTaskPoints          string     `json:"minimum_task_points"`
+	ReserveMarkup              string     `json:"reserve_markup"`
+	SafetyPoints               string     `json:"safety_points"`
+	SalesPoints                string     `json:"sales_points"`
+	CandidateCostUpperCNY      string     `json:"candidate_cost_upper_cny"`
+	Enabled                    bool       `json:"enabled"`
 }
 
 type RouteConfigSummary struct {
@@ -189,15 +210,17 @@ func deriveImpacts(snapshot Snapshot) []Impact {
 			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, StrategyID: route.PricingStrategyID, Code: "missing_candidate", Summary: "启用的视频路由没有可用候选", Blocking: true, FixRoute: "routing"})
 		}
 		combinations := visibleCombinations(route.VisibleOptions)
+		bindings, _ := decodePricingBindings(route.VisibleOptions)
 		if len(combinations) == 0 && len(strategyRules[route.PricingStrategyID]) == 0 {
 			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, StrategyID: route.PricingStrategyID, Code: "missing_price", Summary: "路由 " + routeImpactName(route) + " 没有可用销售价格", Blocking: true, FixRoute: "pricing"})
 		}
 		for _, combo := range combinations {
-			if hasPriceForCombination(strategyRules[route.PricingStrategyID], combo) {
+			strategyID := pricingStrategyForCombination(route.PricingStrategyID, bindings, combo)
+			if hasPriceForCombination(strategyRules[strategyID], combo) {
 				continue
 			}
 			impacts = append(impacts, Impact{
-				RouteModelID: route.RouteModelID, StrategyID: route.PricingStrategyID, Code: "missing_price",
+				RouteModelID: route.RouteModelID, StrategyID: strategyID, Code: "missing_price",
 				Summary:  "路由 " + routeImpactName(route) + " 缺少 " + combo.TaskType + " / " + combo.Resolution + " / " + combo.AudioMode + " / " + fmt.Sprintf("%d", combo.DurationSeconds) + " 秒的销售价格",
 				Blocking: true, FixRoute: "pricing",
 			})

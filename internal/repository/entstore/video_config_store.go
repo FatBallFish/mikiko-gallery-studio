@@ -49,6 +49,7 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 		RouteModelID: int64(entity.ID), Code: entity.Code, Name: entity.Name, Description: entity.Description,
 		ConfigVersion: config.ConfigVersion, PricingStrategyID: config.PricingStrategyID, MaxOutputCount: config.MaxOutputCount,
 	}
+	group.PricingBindings = decodeVideoPricingBindings(config.VisibleOptions)
 	for _, value := range config.TaskTypes {
 		group.TaskTypes = append(group.TaskTypes, domainvideo.TaskType(value))
 	}
@@ -98,6 +99,32 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 		})
 	}
 	return group, nil
+}
+
+func decodeVideoPricingBindings(options map[string]any) []videoroutingservice.PricingBinding {
+	raw, err := json.Marshal(options["pricing_bindings"])
+	if err != nil {
+		return nil
+	}
+	var values []struct {
+		TaskType          string `json:"task_type"`
+		Resolution        string `json:"resolution"`
+		AspectRatio       string `json:"aspect_ratio"`
+		AudioMode         string `json:"audio_mode"`
+		DurationSeconds   int    `json:"duration_seconds"`
+		PricingStrategyID int64  `json:"pricing_strategy_id"`
+	}
+	if json.Unmarshal(raw, &values) != nil {
+		return nil
+	}
+	result := make([]videoroutingservice.PricingBinding, 0, len(values))
+	for _, value := range values {
+		if value.PricingStrategyID <= 0 || value.TaskType == "" || value.Resolution == "" || value.AudioMode == "" {
+			continue
+		}
+		result = append(result, videoroutingservice.PricingBinding{TaskType: domainvideo.TaskType(value.TaskType), Resolution: domainvideo.Resolution(value.Resolution), AspectRatio: domainvideo.AspectRatio(value.AspectRatio), AudioMode: domainvideo.AudioMode(value.AudioMode), DurationSeconds: value.DurationSeconds, PricingStrategyID: value.PricingStrategyID})
+	}
+	return result
 }
 
 func (s *VideoConfigStore) ListVideoGroups(ctx context.Context) ([]videoroutingservice.Group, error) {

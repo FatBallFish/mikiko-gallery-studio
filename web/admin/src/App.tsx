@@ -245,7 +245,7 @@ function AdminApplication() {
       case 'call-records':
         return <CallRecordsPage />
       case 'access-accounts':
-        return <ProviderModelsPage accessToken={session?.token} />
+        return <ProviderModelsPage accessToken={session?.token} onFeedback={feedback} />
       case 'audit':
         return <AuditPage onFeedback={feedback} />
       case 'system-users':

@@ -82,7 +82,7 @@ func (s *QuoteService) Estimate(ctx context.Context, userID int64, request Estim
 	if err != nil {
 		return Estimate{}, err
 	}
-	quoted, err := s.pricing.Quote(ctx, resolved.Group.PricingStrategyID, request.Video)
+	quoted, err := s.pricing.Quote(ctx, resolved.Group.PricingStrategyFor(request.Video), request.Video)
 	if err != nil {
 		return Estimate{}, err
 	}

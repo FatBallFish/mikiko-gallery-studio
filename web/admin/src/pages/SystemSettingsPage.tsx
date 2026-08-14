@@ -7,7 +7,6 @@ import { ConfigPage } from './ConfigPage'
 import { AttachmentPolicyPage } from './AttachmentPolicyPage'
 import { SecurityConfigPage } from './SecurityConfigPage'
 import { StorageConfigPage } from './StorageConfigPage'
-import { TextModelsPage } from './TextModelsPage'
 import { MediaPolicyPage } from './MediaPolicyPage'
 import { isSystemSettingsHash, systemSettingsTabFromHash, type SystemSettingsTab } from './systemSettingsTabs'
 
@@ -20,7 +19,6 @@ const tabItems = [
   { id: 'media-policy', label: '媒体策略', description: '媒体派生、预览与保留策略', dangerous: false },
   { id: 'security', label: '安全配置', description: 'SMTP 与敏感安全项', dangerous: true },
   { id: 'storage', label: '存储配置', description: 'Local / S3 / R2 多实例存储', dangerous: true },
-  { id: 'text-models', label: '文本模型', description: '提示词优化账号、模型与价格', dangerous: true },
 ] satisfies Array<{ id: SystemSettingsTab; label: string; description: string; dangerous: boolean }>
 
 export function SystemSettingsPage({
@@ -46,6 +44,9 @@ export function SystemSettingsPage({
   useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
   useEffect(() => { dirtyTabsRef.current = dirtyTabs }, [dirtyTabs])
   useEffect(() => { busyTabsRef.current = busyTabs }, [busyTabs])
+  useEffect(() => {
+    if (activeTab === 'text-models') window.location.hash = '/access-accounts?media=text'
+  }, [activeTab])
 
   useEffect(() => {
     const onHashChange = () => {
@@ -94,14 +95,12 @@ export function SystemSettingsPage({
   const onAttachmentPolicyBusyChange = useCallback((busy: boolean) => updateBusyTab('attachment-policy', busy), [updateBusyTab])
   const onSecurityBusyChange = useCallback((busy: boolean) => updateBusyTab('security', busy), [updateBusyTab])
   const onStorageBusyChange = useCallback((busy: boolean) => updateBusyTab('storage', busy), [updateBusyTab])
-  const onTextModelsDirtyChange = useCallback((dirty: boolean) => updateDirtyTab('text-models', dirty), [updateDirtyTab])
-  const onTextModelsBusyChange = useCallback((busy: boolean) => updateBusyTab('text-models', busy), [updateBusyTab])
 
   return (
     <section className={adminPage.stack}>
       <PageHeader
         title="系统设置"
-        description="通用、安全、存储和文本模型配置聚合在一个页面内，通过横向子 Tab 切换。"
+        description="集中维护通用、积分、附件、媒体、安全和存储配置，通过横向子 Tab 切换。"
         secondaryActions={<RefreshIconButton label="刷新当前设置分区" disabled={dirtyTabs[activeTab] || busyTabs[activeTab]} onClick={() => setRefreshGeneration((value) => value + 1)} />}
       />
       <AdminTabs
@@ -128,9 +127,8 @@ export function SystemSettingsPage({
       {activeTab === 'media-policy' ? <MediaPolicyPage key={`media-policy:${refreshGeneration}`} /> : null}
       {activeTab === 'security' && canManageDangerous ? <SecurityConfigPage key={`security:${refreshGeneration}`} onFeedback={onFeedback} onDirtyChange={onSecurityDirtyChange} onBusyChange={onSecurityBusyChange} compact /> : null}
       {activeTab === 'storage' && canManageDangerous ? <StorageConfigPage key={`storage:${refreshGeneration}`} onFeedback={onFeedback} onDirtyChange={onStorageDirtyChange} onBusyChange={onStorageBusyChange} compact /> : null}
-      {activeTab === 'text-models' && canManageDangerous ? <TextModelsPage key={`text-models:${refreshGeneration}`} onFeedback={onFeedback} onDirtyChange={onTextModelsDirtyChange} onBusyChange={onTextModelsBusyChange} /> : null}
       {tabItems.find((item) => item.id === activeTab)?.dangerous && !canManageDangerous ? (
-        <EmptyBlock title="暂无敏感配置权限" detail="安全、存储和文本模型配置需要 manage:dangerous_config 权限，请联系超级管理员处理。" />
+        <EmptyBlock title="暂无敏感配置权限" detail="安全和存储配置需要 manage:dangerous_config 权限，请联系超级管理员处理。" />
       ) : null}
     </section>
   )
