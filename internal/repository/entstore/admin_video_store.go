@@ -67,17 +67,17 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 		snapshot.Capabilities = append(snapshot.Capabilities, adminvideoservice.CapabilitySummary{AccountModelID: row.AccountModelID, Version: row.CapabilityVersion, ValidationState: row.ValidationStatus, Capability: row.CapabilityJSON, Enabled: row.Enabled})
 	}
 	for _, row := range costRules {
-		snapshot.CostRules = append(snapshot.CostRules, adminvideoservice.CostRuleSummary{ID: int64(row.ID), AccountModelID: row.AccountModelID, BillingMode: row.BillingMode, RuleVersion: row.RuleVersion, Currency: row.Currency, Rates: row.RatesJSON, Validation: row.ValidationStatus, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, Enabled: row.Enabled})
+		snapshot.CostRules = append(snapshot.CostRules, adminvideoservice.CostRuleSummary{ID: int64(row.ID), AccountModelID: row.AccountModelID, BillingMode: row.BillingMode, RuleVersion: row.RuleVersion, Currency: row.Currency, Rates: row.RatesJSON, CostReserveMarkup: row.CostReserveMarkup, SourceType: row.SourceType, SourceReference: row.SourceReference, Validation: row.ValidationStatus, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, Enabled: row.Enabled})
 	}
 	for _, row := range strategies {
-		snapshot.Strategies = append(snapshot.Strategies, adminvideoservice.PricingStrategySummary{ID: int64(row.ID), Code: row.Code, Name: row.Name, StrategyVersion: row.StrategyVersion, MinimumNetPointIncomeCNY: row.MinimumNetPointIncomeCny, TargetMarginRate: row.TargetMarginRate, ProviderCostBufferRate: row.ProviderCostBufferRate, PaymentFeeRate: row.PaymentFeeRate, PlatformFixedCostCNY: row.PlatformFixedCostCny, PlatformOutputSecondCostCNY: row.PlatformOutputSecondCostCny, PlatformReferenceCostCNY: row.PlatformReferenceCostCny, Enabled: row.Enabled})
+		snapshot.Strategies = append(snapshot.Strategies, adminvideoservice.PricingStrategySummary{ID: int64(row.ID), Code: row.Code, Name: row.Name, StrategyVersion: row.StrategyVersion, GrossPointValueCNY: row.GrossPointValueCny, MinimumNetPointIncomeCNY: row.MinimumNetPointIncomeCny, MaxBonusRatio: row.MaxBonusRatio, TargetMarginRate: row.TargetMarginRate, ProviderCostBufferRate: row.ProviderCostBufferRate, PaymentFeeRate: row.PaymentFeeRate, PlatformFixedCostCNY: row.PlatformFixedCostCny, PlatformOutputSecondCostCNY: row.PlatformOutputSecondCostCny, PlatformReferenceCostCNY: row.PlatformReferenceCostCny, PlatformAudioFixedCostCNY: row.PlatformAudioFixedCostCny, PlatformAudioSecondCostCNY: row.PlatformAudioSecondCostCny, ExactReserveMarkup: row.ExactReserveMarkup, MeteredReserveMarkup: row.MeteredReserveMarkup, Enabled: row.Enabled})
 	}
 	for _, row := range priceRules {
 		salesPoints := row.MinimumTaskPoints
 		if salesPoints == "0.00000" {
 			salesPoints = row.OutputSecondPoints
 		}
-		snapshot.PriceRules = append(snapshot.PriceRules, adminvideoservice.PriceRuleSummary{ID: int64(row.ID), StrategyID: row.PricingStrategyID, TaskType: row.TaskType, Resolution: row.Resolution, AudioMode: row.AudioMode, PricingMode: row.PricingMode, RuleVersion: row.RuleVersion, SafetyPoints: row.SafetyPoints, SalesPoints: salesPoints, CandidateCostUpperCNY: row.CandidateCostUpperCny, Enabled: row.Enabled})
+		snapshot.PriceRules = append(snapshot.PriceRules, adminvideoservice.PriceRuleSummary{ID: int64(row.ID), StrategyID: row.PricingStrategyID, TaskType: row.TaskType, Resolution: row.Resolution, AudioMode: row.AudioMode, PricingMode: row.PricingMode, RuleVersion: row.RuleVersion, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, OutputSecondPoints: row.OutputSecondPoints, FixedTaskPoints: row.FixedTaskPoints, ReferenceImagePoints: row.ReferenceImagePoints, InputVideoSecondPoints: row.InputVideoSecondPoints, ReferenceAudioSecondPoints: row.ReferenceAudioSecondPoints, GeneratedAudioFixedPoints: row.GeneratedAudioFixedPoints, GeneratedAudioSecondPoints: row.GeneratedAudioSecondPoints, MinimumBillableSeconds: row.MinimumBillableSeconds, MinimumTaskPoints: row.MinimumTaskPoints, ReserveMarkup: row.ReserveMarkup, SafetyPoints: row.SafetyPoints, SalesPoints: salesPoints, CandidateCostUpperCNY: row.CandidateCostUpperCny, Enabled: row.Enabled})
 	}
 	configsByRouteID := make(map[int64]*repoent.VideoRouteConfig, len(routeConfigs))
 	for _, row := range routeConfigs {
@@ -363,14 +363,7 @@ func (s *AdminVideoStore) Readiness(ctx context.Context, now time.Time) (adminvi
 		if route.CandidateCount == 0 {
 			result.RoutesMissingCandidate++
 		}
-		hasPrice := false
-		for _, rule := range snapshot.PriceRules {
-			if rule.Enabled && rule.StrategyID == route.PricingStrategyID {
-				hasPrice = true
-				break
-			}
-		}
-		if !hasPrice {
+		if videoRouteHasMissingPrice(route, snapshot.PriceRules) {
 			result.VisibleCombosMissingPrice++
 		}
 	}
@@ -388,4 +381,47 @@ func (s *AdminVideoStore) Readiness(ctx context.Context, now time.Time) (adminvi
 	}
 	result.ArtifactBacklog, result.DerivativeBacklog, result.SettlementBacklog = artifact, derivative, settlement
 	return result, nil
+}
+
+func videoRouteHasMissingPrice(route adminvideoservice.RouteConfigSummary, rules []adminvideoservice.PriceRuleSummary) bool {
+	var combinations []adminvideoservice.VisibleCombination
+	if raw, err := json.Marshal(route.VisibleOptions["combinations"]); err == nil {
+		_ = json.Unmarshal(raw, &combinations)
+	}
+	bindings := decodeVideoPricingBindings(route.VisibleOptions)
+	if len(combinations) == 0 {
+		for _, rule := range rules {
+			if rule.Enabled && rule.StrategyID == route.PricingStrategyID {
+				return false
+			}
+		}
+		return true
+	}
+	for _, combination := range combinations {
+		strategyID := route.PricingStrategyID
+		for _, binding := range bindings {
+			if string(binding.TaskType) != combination.TaskType || string(binding.Resolution) != combination.Resolution || string(binding.AudioMode) != combination.AudioMode {
+				continue
+			}
+			if binding.AspectRatio != "" && string(binding.AspectRatio) != combination.AspectRatio {
+				continue
+			}
+			if binding.DurationSeconds > 0 && binding.DurationSeconds != combination.DurationSeconds {
+				continue
+			}
+			strategyID = binding.PricingStrategyID
+			break
+		}
+		priced := false
+		for _, rule := range rules {
+			if rule.Enabled && rule.StrategyID == strategyID && rule.TaskType == combination.TaskType && rule.Resolution == combination.Resolution && rule.AudioMode == combination.AudioMode {
+				priced = true
+				break
+			}
+		}
+		if !priced {
+			return true
+		}
+	}
+	return false
 }

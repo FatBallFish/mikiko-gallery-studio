@@ -355,7 +355,7 @@ function UserApplication() {
         return <Shell><Suspense fallback={<WorkspaceRouteFallback />}><CreationPage initialTaskId={routeTaskId} initialMedia={routeMedia} initialAssetId={routeAssetId} videoCreationEnabled={featureFlags.video_creation} /></Suspense></Shell>
       case 'creative-canvas':
         if (!featureAvailability(featureFlags).canOpenCanvasHistory(routeCanvasId)) return <Shell><HomePage /></Shell>
-        return <Suspense fallback={<WorkspaceRouteFallback />}>{routeCanvasId ? <CanvasEditorPage canvasID={routeCanvasId} onBack={() => writeHash('home')} /> : <Shell scrollMode="document"><CanvasListPage onOpen={(canvasID) => writeHash('creative-canvas', { canvasId: canvasID })} /></Shell>}</Suspense>
+        return <Suspense fallback={<WorkspaceRouteFallback />}>{routeCanvasId ? <CanvasEditorPage canvasID={routeCanvasId} onBack={() => writeHash('creative-canvas')} /> : <Shell scrollMode="document"><CanvasListPage onOpen={(canvasID) => writeHash('creative-canvas', { canvasId: canvasID })} /></Shell>}</Suspense>
       case 'gallery':
         return <Shell><Suspense fallback={<WorkspaceRouteFallback />}><MediaAssetsPage /></Suspense></Shell>
       case 'projects':

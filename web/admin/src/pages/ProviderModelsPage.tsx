@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import type { ImageTaskType, ModelAccount, ModelAccountModel, ModelAccountTestImageResult } from '../../../shared/api-types'
+import type { ModelAccount, ModelAccountModel, ModelAccountTestImageResult } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Trash2 } from 'lucide-react'
@@ -20,10 +20,13 @@ import {
 } from './providerModelRows'
 import { createLatestListRequestGuard } from './listRefresh'
 import { VideoConfigurationImpact } from './VideoConfigurationImpact'
-import { VideoConfigurationWorkspace } from './VideoConfigurationWorkspace'
+import { AdminMediaTabs, useAdminModelMediaTab } from './AdminMediaTabs'
+import { modelAccountMediaType } from './adminModelMedia'
+import { TextModelsPage } from './TextModelsPage'
+import { VideoProviderAccountsPanel } from './VideoProviderAccountsPanel'
 
 type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string }
-type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: ImageTaskType[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportsCustomRatio: boolean; supportedPixelSizes: string[]; pixelInput: string; supportsCustomSize: boolean; minWidth: string; maxWidth: string; minHeight: string; maxHeight: string; supportedBackgrounds: string[]; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
+type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: string[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportsCustomRatio: boolean; supportedPixelSizes: string[]; pixelInput: string; supportsCustomSize: boolean; minWidth: string; maxWidth: string; minHeight: string; maxHeight: string; supportedBackgrounds: string[]; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
 type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string; sourceMode: string; sizeMode: string; requestedSize: string; baseResolution: string; quality: string; outputFormat: string; background: string; outputCompression: string; moderation: string; aspectRatio: string; result?: ModelAccountTestImageResult; error?: string }
 type DeleteTarget = { kind: 'account'; account: ModelAccount } | { kind: 'model'; account: ModelAccount; model: ModelAccountModel }
 
@@ -64,7 +67,18 @@ const tagInputClasses = {
 const providerModelTaskTypeGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-lg border border-[var(--line)] bg-white/[0.02] p-2'
 const providerModelTaskTypeOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-md border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10'
 
-export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
+export function ProviderModelsPage({ accessToken, onFeedback = () => undefined }: { accessToken?: string; onFeedback?: (title: string, detail?: string) => void }) {
+  const media = useAdminModelMediaTab()
+  return <section className={adminPage.stack}>
+    <AdminMediaTabs route="access-accounts" value={media} />
+    {media === 'image' ? <ImageProviderModelsPanel accessToken={accessToken} /> : null}
+    {media === 'video' ? <VideoProviderAccountsPanel /> : null}
+    {media === 'audio' ? <EmptyBlock title="音频接入能力暂未开放" detail="该分类用于后续管理语音生成、语音识别和音乐模型账号；当前版本不会创建无运行时支持的配置。" /> : null}
+    {media === 'text' ? <TextModelsPage onFeedback={onFeedback} /> : null}
+  </section>
+}
+
+function ImageProviderModelsPanel({ accessToken }: { accessToken?: string }) {
   const [accounts, setAccounts] = useState<ModelAccount[]>([])
   const [modelsByAccount, setModelsByAccount] = useState<Record<string, ModelAccountModel[]>>({})
   const [expandedAccountId, setExpandedAccountId] = useState<string>('')
@@ -87,14 +101,15 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
     setError(null)
     try {
       const nextAccounts = await adminApi.listModelAccounts({ page_size: 100 })
-      const modelPairs = await Promise.all(nextAccounts.map(async (account) => [String(account.id), await adminApi.listModelAccountModels(account.id)] as const))
+      const imageAccounts = nextAccounts.filter((account) => modelAccountMediaType(account) === 'image')
+      const modelPairs = await Promise.all(imageAccounts.map(async (account) => [String(account.id), await adminApi.listModelAccountModels(account.id)] as const))
       if (!requestGuard.isCurrent(request)) return
       const nextModels = Object.fromEntries(modelPairs)
-      setAccounts(nextAccounts)
+      setAccounts(imageAccounts)
       setModelsByAccount(nextModels)
       setExpandedAccountId((current) => {
         const preferred = preferredAccountId || current
-        return nextAccounts.some((account) => String(account.id) === preferred) ? preferred : String(nextAccounts[0]?.id ?? '')
+        return imageAccounts.some((account) => String(account.id) === preferred) ? preferred : String(imageAccounts[0]?.id ?? '')
       })
     } catch (caught) {
       if (!requestGuard.isCurrent(request)) return
@@ -284,8 +299,6 @@ export function ProviderModelsPage({ accessToken }: { accessToken?: string }) {
         primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openAccountDialog(blankAccount)}>添加账号</button>}
         secondaryActions={<RefreshIconButton label="刷新接入账号" refreshing={loading} onClick={() => void load()} />}
       />
-      <VideoConfigurationImpact context="models" />
-      <VideoConfigurationWorkspace context="models" />
       {error ? <InlineFeedback tone="danger" message={`接入账号刷新失败：${error}`} /> : null}
       {!accounts.length ? <EmptyBlock title="暂无模型接入账号" detail="创建账号后再添加真实上游模型。" /> : null}
       {accounts.length ? (

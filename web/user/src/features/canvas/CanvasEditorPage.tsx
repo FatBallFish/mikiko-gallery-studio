@@ -7,6 +7,7 @@ import {
 import type { Capability, CanvasRun, CreativeCanvas, MediaAsset, VideoCapability } from '../../../../shared/api-types'
 import { ApiError } from '../../../../shared/http-client'
 import { userApi } from '../../../../shared/user-api'
+import { normalizeCanvasDocument } from '../../../../shared/canvas-document'
 import { Button, EmptyState, ErrorState, LoadingState, useApp } from '../../components'
 import { useProjects } from '../../ProjectContext'
 import { errorMessage } from '../../useApiResource'
@@ -717,7 +718,7 @@ function CanvasMediaNode({ node, onDetail, onContinueImage, onContinueVideo, onR
 }
 
 const emptyCanvasStore = createCanvasStore({ schema_version: 1, viewport: { x: 0, y: 0, zoom: 1 }, nodes: [], edges: [] }, 0)
-function toLocalDocument(document: CreativeCanvas['document']): CanvasDocument { return document as CanvasDocument }
+function toLocalDocument(document: CreativeCanvas['document']): CanvasDocument { return normalizeCanvasDocument(document) as CanvasDocument }
 function toWireDocument(document: CanvasDocument): CreativeCanvas['document'] { return document as CreativeCanvas['document'] }
 function asObject(value: unknown) { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {} }
 function defaultNodePayload(type: CanvasNodeType, imageCapability?: Capability | null, videoCapability?: VideoCapability | null) {

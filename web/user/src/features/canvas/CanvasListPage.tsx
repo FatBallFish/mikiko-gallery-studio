@@ -87,7 +87,7 @@ export function CanvasListPage({ onOpen }: { onOpen: (canvasID: string) => void 
 }
 
 function CanvasPreview({ item }: { item: CreativeCanvas }) {
-  const nodes = item.document.nodes.slice(0, 40)
+  const nodes = (Array.isArray(item.document.nodes) ? item.document.nodes : []).slice(0, 40)
   if (!nodes.length) return <span className="canvas-empty-preview"><FilePlus2 size={26} />空白画布</span>
   const minX = Math.min(...nodes.map((node) => node.position.x)); const minY = Math.min(...nodes.map((node) => node.position.y))
   const maxX = Math.max(...nodes.map((node) => node.position.x + node.size.width)); const maxY = Math.max(...nodes.map((node) => node.position.y + node.size.height))

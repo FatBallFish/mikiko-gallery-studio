@@ -66,6 +66,16 @@ type DocumentV1 struct {
 	Edges         []Edge   `json:"edges"`
 }
 
+func NormalizeCollections(document DocumentV1) DocumentV1 {
+	if document.Nodes == nil {
+		document.Nodes = make([]Node, 0)
+	}
+	if document.Edges == nil {
+		document.Edges = make([]Edge, 0)
+	}
+	return document
+}
+
 type Limits struct {
 	MaxNodes         int
 	MaxEdges         int

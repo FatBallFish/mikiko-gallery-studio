@@ -42,7 +42,7 @@ func (s *fakeConfigStore) DeleteVideoConfig(context.Context, ConfigKind, int64, 
 func TestCapabilityWriteValidatesProviderNativeNAndCAS(t *testing.T) {
 	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{Capabilities: []CapabilitySummary{{AccountModelID: 7, Version: "cap-v1"}}}}}
 	service := NewService(store)
-	input := CapabilityWrite{AccountModelID: 7, ExpectedVersion: "wrong", CapabilityVersion: "cap-v2", Capability: map[string]any{"schema_version": 1, "provider_native_max_n": 1, "task_types": map[string]any{"text_to_video": map[string]any{"durations": map[string]any{"values": []any{5}}, "resolutions": []any{"720p"}, "aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"}}}}, Enabled: true}
+	input := CapabilityWrite{AccountModelID: 7, ExpectedVersion: "wrong", CapabilityVersion: "cap-v2", Capability: map[string]any{"schema_version": 1, "provider_native_max_n": 1, "task_types": map[string]any{"text_to_video": map[string]any{"durations": map[string]any{"values": []any{5}}, "resolutions": []any{"720p"}, "aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"}}}}, ValidationStatus: "verified", Enabled: true}
 	if _, err := service.SaveCapability(t.Context(), input); err == nil {
 		t.Fatal("stale capability version must fail")
 	}
@@ -184,6 +184,70 @@ func TestEnabledRouteRequiresVisibleCompatibleCombinationAndTargetMargin(t *test
 	store.snapshot.PriceRules[0].SalesPoints = "8"
 	if _, err := service.SaveRouteConfig(t.Context(), route); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEnabledRouteValidatesParameterPricingBindings(t *testing.T) {
+	capability := map[string]any{
+		"schema_version": 1, "provider_native_max_n": 1,
+		"task_types": map[string]any{"text_to_video": map[string]any{
+			"durations": map[string]any{"values": []any{5}}, "resolutions": []any{"720p"},
+			"aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"},
+		}},
+	}
+	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
+		Plans:        []PointProduct{{Code: "standard", PriceCNY: "100", Points: "100", Enabled: true}},
+		Capabilities: []CapabilitySummary{{AccountModelID: 7, Capability: capability, ValidationState: "verified", Enabled: true}},
+		Strategies: []PricingStrategySummary{
+			{ID: 3, MinimumNetPointIncomeCNY: "0.5", PaymentFeeRate: "0.03", TargetMarginRate: "0.25", ProviderCostBufferRate: "0", PlatformFixedCostCNY: "0", PlatformOutputSecondCostCNY: "0", PlatformReferenceCostCNY: "0", Enabled: true},
+			{ID: 4, MinimumNetPointIncomeCNY: "0.5", PaymentFeeRate: "0.03", TargetMarginRate: "0.25", ProviderCostBufferRate: "0", PlatformFixedCostCNY: "0", PlatformOutputSecondCostCNY: "0", PlatformReferenceCostCNY: "0", Enabled: true},
+		},
+		CostRules:  []CostRuleSummary{{AccountModelID: 7, Rates: map[string]any{"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "cost_cny": "3"}}}, Enabled: true}},
+		Routes:     []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
+		PriceRules: []PriceRuleSummary{{StrategyID: 4, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", SalesPoints: "8", SafetyPoints: "8", Enabled: true}},
+	}}}
+	service := NewService(store)
+	combo := VisibleCombination{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}
+	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "v2", PricingStrategyID: 3, MaxOutputCount: 1, Enabled: true, VisibleCombinations: []VisibleCombination{combo}, VisibleOptions: map[string]any{"pricing_bindings": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "aspect_ratio": "16:9", "audio_mode": "silent", "duration_seconds": 5, "pricing_strategy_id": 4}}}}
+	if _, err := service.SaveRouteConfig(t.Context(), route); err != nil {
+		t.Fatalf("bound strategy price rejected: %v", err)
+	}
+	route.VisibleOptions["pricing_bindings"] = []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "pricing_strategy_id": 99}}
+	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
+		t.Fatal("unknown pricing binding strategy must be rejected")
+	}
+}
+
+func TestSaveCapabilityAcceptsRequiredFrameInputs(t *testing.T) {
+	store := &fakeConfigStore{}
+	service := NewService(store)
+	capability := map[string]any{
+		"schema_version": 1, "provider_native_max_n": 1,
+		"task_types": map[string]any{"image_to_video": map[string]any{
+			"durations": map[string]any{"values": []any{5}}, "resolutions": []any{"720p"},
+			"aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"},
+			"inputs": map[string]any{"first_frame": map[string]any{
+				"required": true, "max_count": 1, "max_bytes": 30 << 20,
+				"media_types": []any{"image"}, "formats": []any{"png", "webp"},
+			}},
+		}},
+	}
+	if _, err := service.SaveCapability(t.Context(), CapabilityWrite{AccountModelID: 7, CapabilityVersion: "cap-v1", Capability: capability, ValidationStatus: "verified", Enabled: true}); err != nil {
+		t.Fatalf("valid required frame capability rejected: %v", err)
+	}
+}
+
+func TestSaveCapabilityRejectsEnabledUntestedConfiguration(t *testing.T) {
+	service := NewService(&fakeConfigStore{})
+	capability := map[string]any{
+		"schema_version": 1, "provider_native_max_n": 1,
+		"task_types": map[string]any{"text_to_video": map[string]any{
+			"durations": map[string]any{"values": []any{5}}, "resolutions": []any{"720p"},
+			"aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"},
+		}},
+	}
+	if _, err := service.SaveCapability(t.Context(), CapabilityWrite{AccountModelID: 7, CapabilityVersion: "cap-v1", Capability: capability, ValidationStatus: "untested", Enabled: true}); err == nil {
+		t.Fatal("enabled capability must require verified validation status")
 	}
 }
 

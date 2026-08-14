@@ -314,9 +314,9 @@ export type CanvasRun = {
 export type AdminVideoImpact = { route_model_id?: number; pricing_strategy_id?: number; code: string; summary: string; blocking: boolean; fix_route: 'pricing' | 'routing' | string }
 export type AdminVideoConfiguration = {
   capabilities: Array<{ account_model_id: number; capability_version: string; validation_status: string; capability: Record<string, unknown>; enabled: boolean }>
-  cost_rules: Array<{ id: number; account_model_id: number; billing_mode: string; rule_version: number; currency: string; rates: Record<string, unknown>; validation_status: string; effective_at: string; expires_at?: string; enabled: boolean }>
+  cost_rules: Array<{ id: number; account_model_id: number; billing_mode: string; rule_version: number; currency: string; rates: Record<string, unknown>; cost_reserve_markup: string; source_type: string; source_reference: string; validation_status: string; effective_at: string; expires_at?: string; enabled: boolean }>
   pricing_strategies: AdminVideoPricingStrategy[]
-  price_rules: Array<{ id: number; pricing_strategy_id: number; task_type: string; resolution: string; audio_mode: string; pricing_mode: 'exact' | 'metered'; rule_version: number; safety_points: string; sales_points: string; candidate_cost_upper_cny: string; enabled: boolean }>
+  price_rules: Array<{ id: number; pricing_strategy_id: number; task_type: string; resolution: string; audio_mode: string; pricing_mode: 'exact' | 'metered'; rule_version: number; effective_at?: string; expires_at?: string; output_second_points: string; fixed_task_points: string; reference_image_points: string; input_video_second_points: string; reference_audio_second_points: string; generated_audio_fixed_points: string; generated_audio_second_points: string; minimum_billable_seconds: number; minimum_task_points: string; reserve_markup: string; safety_points: string; sales_points: string; candidate_cost_upper_cny: string; enabled: boolean }>
   routes: AdminVideoRouteConfig[]
   point_products?: Array<{id: number; code: string; price_cny: string; points: string; bonus_points: string; enabled: boolean}>
   impacts: AdminVideoImpact[]
@@ -325,7 +325,7 @@ export type AdminVideoConfiguration = {
 export type AdminVideoPricingStrategy = {
   id: number; code: string; name: string; strategy_version: number; minimum_net_point_income_cny: string; target_margin_rate: string
   provider_cost_buffer_rate: string; payment_fee_rate: string; platform_fixed_cost_cny: string; platform_output_second_cost_cny: string
-  platform_reference_cost_cny: string; enabled: boolean
+  platform_reference_cost_cny: string; gross_point_value_cny?: string; max_bonus_ratio?: string; platform_audio_fixed_cost_cny?: string; platform_audio_second_cost_cny?: string; exact_reserve_markup?: string; metered_reserve_markup?: string; enabled: boolean
 }
 export type AdminVideoVisibleCombination = { task_type: string; resolution: string; aspect_ratio?: string; audio_mode: string; duration_seconds: number }
 export type AdminVideoRouteConfig = {
@@ -333,7 +333,7 @@ export type AdminVideoRouteConfig = {
   candidate_account_model_ids?: number[]; task_types: string[]; visible_options: Record<string, unknown>; defaults: Record<string, unknown>; max_output_count: number; enabled: boolean
 }
 export type AdminVideoCapabilityWrite = { expected_version: string; capability_version: string; capability: Record<string, unknown>; validation_status: string; enabled: boolean }
-export type AdminVideoCostRuleWrite = { id?: number; expected_rule_version: number; billing_mode: string; currency: string; rates: Record<string, unknown>; validation_status: string; effective_at: string; expires_at?: string; enabled: boolean }
+export type AdminVideoCostRuleWrite = { id?: number; expected_rule_version: number; billing_mode: string; currency: string; rates: Record<string, unknown>; cost_reserve_markup?: string; source_type?: string; source_reference?: string; validation_status: string; effective_at: string; expires_at?: string; enabled: boolean }
 export type AdminVideoStrategyWrite = Partial<AdminVideoPricingStrategy> & { expected_version: number; code: string; name: string; enabled: boolean }
 export type AdminVideoSimulationRequest = { route_model_id: number; task_type: string; resolution: string; audio_mode: string; duration_seconds: number; reference_image_count?: number }
 export type AdminVideoSimulationResult = { worst_candidate_cost_cny: string; safety_points: string; net_point_income_cny: string; candidate_account_model_id: number }
@@ -780,7 +780,7 @@ export type LedgerEntry = {
 
 export type CapabilityItem = {
   route_model_code: string
-  task_types: ImageTaskType[]
+  task_types: string[]
   qualities?: string[]
   base_resolution?: string[]
   auto_base_resolution_by_task_type?: Partial<Record<ImageTaskType, string>>
@@ -1355,7 +1355,7 @@ export type ModelAccountModel = {
   account_name?: string
   model_code: string
   display_name: string
-  task_types: ImageTaskType[]
+  task_types: string[]
   base_resolution: string[]
   quality: string[]
   max_reference_image_count: number
@@ -1381,7 +1381,7 @@ export type ModelAccountModel = {
   created_at: string
   updated_at: string
 }
-export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: ImageTaskType[]; base_resolution: string[]; quality: string[]; max_reference_image_count: number; max_image_count: number; size_modes: string[]; supported_ratios: string[]; supported_pixel_sizes: string[]; supports_custom_ratio: boolean; supported_backgrounds: string[]; min_width: number; max_width: number; min_height: number; max_height: number; output_format: string[]; supports_output_compression: boolean; supports_custom_size?: boolean; moderation: string[]; cost_per_image: string; currency: string; enabled: boolean }
+export type ModelAccountModelWriteRequest = Omit<Partial<ModelAccountModel>, 'id' | 'account_id' | 'account_name' | 'created_at' | 'updated_at'> & { model_code: string; display_name: string; task_types: string[]; base_resolution: string[]; quality: string[]; max_reference_image_count: number; max_image_count: number; size_modes: string[]; supported_ratios: string[]; supported_pixel_sizes: string[]; supports_custom_ratio: boolean; supported_backgrounds: string[]; min_width: number; max_width: number; min_height: number; max_height: number; output_format: string[]; supports_output_compression: boolean; supports_custom_size?: boolean; moderation: string[]; cost_per_image: string; currency: string; enabled: boolean }
 
 export type ObjectDeletionJobState = 'pending' | 'running' | 'retry' | 'done' | 'blocked'
 export type ObjectDeletionJob = {

@@ -135,6 +135,9 @@ type RouteConfigWrite struct {
 }
 
 func (s *Service) SaveCapability(ctx context.Context, input CapabilityWrite) (CapabilitySummary, error) {
+	if input.Enabled && input.ValidationStatus != "verified" {
+		return CapabilitySummary{}, errs.New(409, errs.CodeConflict, "only verified video capabilities can be enabled")
+	}
 	snapshot, err := s.Snapshot(ctx)
 	if err != nil {
 		return CapabilitySummary{}, err
@@ -180,7 +183,7 @@ func (s *Service) SaveCapability(ctx context.Context, input CapabilityWrite) (Ca
 			for _, resolution := range task.Resolutions {
 				for _, ratio := range task.AspectRatios {
 					for _, audio := range task.AudioModes {
-						request := domainvideo.Request{TaskType: taskType, OutputCount: 1, DurationSeconds: duration, Resolution: resolution, AspectRatio: ratio, AudioMode: audio}
+						request := domainvideo.Request{TaskType: taskType, OutputCount: 1, DurationSeconds: duration, Resolution: resolution, AspectRatio: ratio, AudioMode: audio, Inputs: capabilityValidationInputs(task)}
 						if !capability.Match(request).Matches {
 							return CapabilitySummary{}, errs.BadRequest("video capability contains an invalid parameter combination")
 						}
@@ -190,6 +193,24 @@ func (s *Service) SaveCapability(ctx context.Context, input CapabilityWrite) (Ca
 		}
 	}
 	return s.store.SaveCapability(ctx, input)
+}
+
+func capabilityValidationInputs(task domainvideo.TaskCapability) []domainvideo.Input {
+	inputs := make([]domainvideo.Input, 0, len(task.Inputs))
+	for role, config := range task.Inputs {
+		if !config.Required {
+			continue
+		}
+		input := domainvideo.Input{Role: role, SizeBytes: 1}
+		if len(config.MediaTypes) > 0 {
+			input.MediaType = config.MediaTypes[0]
+		}
+		if len(config.Formats) > 0 {
+			input.Format = config.Formats[0]
+		}
+		inputs = append(inputs, input)
+	}
+	return inputs
 }
 
 func (s *Service) SaveCostRule(ctx context.Context, input CostRuleWrite) (CostRuleSummary, error) {
@@ -374,12 +395,13 @@ func (s *Service) SaveRouteConfig(ctx context.Context, input RouteConfigWrite) (
 		if len(input.VisibleCombinations) == 0 {
 			return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "enabled video route must expose at least one complete combination")
 		}
-		var strategy PricingStrategySummary
+		strategies := make(map[int64]PricingStrategySummary)
 		for _, item := range snapshot.Strategies {
-			if item.ID == input.PricingStrategyID && item.Enabled {
-				strategy = item
+			if item.Enabled {
+				strategies[item.ID] = item
 			}
 		}
+		strategy := strategies[input.PricingStrategyID]
 		if strategy.ID == 0 {
 			return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "video route pricing strategy is not enabled")
 		}
@@ -391,10 +413,19 @@ func (s *Service) SaveRouteConfig(ctx context.Context, input RouteConfigWrite) (
 		if floorErr != nil || actualIncome.LessThan(floor) {
 			return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, fmt.Sprintf("point product net income is below protection floor: %s (%s)", actualIncome.StringFixed(5), strings.Join(products, ",")))
 		}
+		bindings, bindingErr := decodePricingBindings(input.VisibleOptions)
+		if bindingErr != nil {
+			return RouteConfigSummary{}, bindingErr
+		}
+		for _, binding := range bindings {
+			if _, ok := strategies[binding.PricingStrategyID]; !ok {
+				return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "video route pricing binding strategy is not enabled")
+			}
+		}
 		rules := map[string]PriceRuleSummary{}
 		for _, rule := range snapshot.PriceRules {
-			if rule.StrategyID == input.PricingStrategyID && rule.Enabled {
-				rules[rule.TaskType+"/"+rule.Resolution+"/"+rule.AudioMode] = rule
+			if rule.Enabled {
+				rules[fmt.Sprintf("%d/%s/%s/%s", rule.StrategyID, rule.TaskType, rule.Resolution, rule.AudioMode)] = rule
 			}
 		}
 		for _, combo := range input.VisibleCombinations {
@@ -404,11 +435,12 @@ func (s *Service) SaveRouteConfig(ctx context.Context, input RouteConfigWrite) (
 			if !snapshotSupportsCombination(snapshot, route.CandidateAccountModelIDs, combo) {
 				return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "visible video combination is unsupported by every enabled candidate")
 			}
-			rule, ok := rules[combo.TaskType+"/"+combo.Resolution+"/"+combo.AudioMode]
+			strategyID := pricingStrategyForCombination(input.PricingStrategyID, bindings, combo)
+			rule, ok := rules[fmt.Sprintf("%d/%s/%s/%s", strategyID, combo.TaskType, combo.Resolution, combo.AudioMode)]
 			if !ok {
 				return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "visible video combination has no price")
 			}
-			simulation, simulationErr := s.Simulate(ctx, SimulationRequest{RouteModelID: input.RouteModelID, StrategyID: input.PricingStrategyID, TaskType: combo.TaskType, Resolution: combo.Resolution, AudioMode: combo.AudioMode, DurationSeconds: combo.DurationSeconds})
+			simulation, simulationErr := s.Simulate(ctx, SimulationRequest{RouteModelID: input.RouteModelID, StrategyID: strategyID, TaskType: combo.TaskType, Resolution: combo.Resolution, AudioMode: combo.AudioMode, DurationSeconds: combo.DurationSeconds})
 			if simulationErr != nil {
 				return RouteConfigSummary{}, simulationErr
 			}
@@ -420,6 +452,51 @@ func (s *Service) SaveRouteConfig(ctx context.Context, input RouteConfigWrite) (
 		}
 	}
 	return s.store.SaveRouteConfig(ctx, input)
+}
+
+type pricingBinding struct {
+	TaskType          string `json:"task_type"`
+	Resolution        string `json:"resolution"`
+	AspectRatio       string `json:"aspect_ratio"`
+	AudioMode         string `json:"audio_mode"`
+	DurationSeconds   int    `json:"duration_seconds"`
+	PricingStrategyID int64  `json:"pricing_strategy_id"`
+}
+
+func decodePricingBindings(options map[string]any) ([]pricingBinding, error) {
+	if options == nil || options["pricing_bindings"] == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(options["pricing_bindings"])
+	if err != nil {
+		return nil, errs.BadRequest("invalid video pricing bindings")
+	}
+	var bindings []pricingBinding
+	if json.Unmarshal(raw, &bindings) != nil {
+		return nil, errs.BadRequest("invalid video pricing bindings")
+	}
+	for _, binding := range bindings {
+		if binding.TaskType == "" || binding.Resolution == "" || binding.AudioMode == "" || binding.PricingStrategyID <= 0 {
+			return nil, errs.BadRequest("video pricing binding is incomplete")
+		}
+	}
+	return bindings, nil
+}
+
+func pricingStrategyForCombination(fallback int64, bindings []pricingBinding, combo VisibleCombination) int64 {
+	for _, binding := range bindings {
+		if binding.TaskType != combo.TaskType || binding.Resolution != combo.Resolution || binding.AudioMode != combo.AudioMode {
+			continue
+		}
+		if binding.AspectRatio != "" && binding.AspectRatio != combo.AspectRatio {
+			continue
+		}
+		if binding.DurationSeconds > 0 && binding.DurationSeconds != combo.DurationSeconds {
+			continue
+		}
+		return binding.PricingStrategyID
+	}
+	return fallback
 }
 
 func snapshotSupportsCombination(snapshot Snapshot, candidateIDs []int64, combo VisibleCombination) bool {

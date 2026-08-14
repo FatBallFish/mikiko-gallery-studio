@@ -233,10 +233,15 @@ func (s *Service) List(ctx context.Context, req ListRequest) ([]Canvas, error) {
 		return nil, ErrNotFound
 	}
 	req.Search = strings.TrimSpace(req.Search)
-	return s.store.List(ctx, req)
+	items, err := s.store.List(ctx, req)
+	for index := range items {
+		items[index] = normalizeCanvasProjection(items[index])
+	}
+	return items, err
 }
 func (s *Service) Get(ctx context.Context, userID int64, id uuid.UUID) (Canvas, error) {
-	return s.store.Get(ctx, userID, id)
+	item, err := s.store.Get(ctx, userID, id)
+	return normalizeCanvasProjection(item), err
 }
 
 func (s *Service) Create(ctx context.Context, req CreateRequest) (Canvas, error) {
@@ -489,6 +494,7 @@ func (s *Service) submission(ctx context.Context, req GenerateRequest) (Generati
 }
 
 func normalizeDocument(doc domaincanvas.DocumentV1, limits domaincanvas.Limits) (domaincanvas.DocumentV1, []byte, []uuid.UUID, error) {
+	doc = domaincanvas.NormalizeCollections(doc)
 	raw, err := json.Marshal(doc)
 	if err != nil {
 		return doc, nil, nil, err
@@ -498,6 +504,7 @@ func normalizeDocument(doc domaincanvas.DocumentV1, limits domaincanvas.Limits) 
 	if err := decoder.Decode(&normalized); err != nil {
 		return doc, nil, nil, err
 	}
+	normalized = domaincanvas.NormalizeCollections(normalized)
 	if validation := domaincanvas.ValidateDocument(normalized, limits); validation != nil {
 		return doc, nil, nil, validation
 	}
@@ -514,6 +521,14 @@ func normalizeDocument(doc domaincanvas.DocumentV1, limits domaincanvas.Limits) 
 		}
 	}
 	return normalized, raw, refs, nil
+}
+
+func normalizeCanvasProjection(item Canvas) Canvas {
+	item.Document = domaincanvas.NormalizeCollections(item.Document)
+	if item.AssetReferences == nil {
+		item.AssetReferences = make([]uuid.UUID, 0)
+	}
+	return item
 }
 func parseAssetReferences(doc domaincanvas.DocumentV1) []uuid.UUID {
 	values := domaincanvas.ExtractAssetReferences(doc)
@@ -622,7 +637,7 @@ func recoveredResultPlacement(run Run, center domaincanvas.Point) []domaincanvas
 	return nodes
 }
 func templateDocument(template Template) domaincanvas.DocumentV1 {
-	doc := domaincanvas.DocumentV1{SchemaVersion: 1, Viewport: domaincanvas.Viewport{Zoom: 1}}
+	doc := domaincanvas.DocumentV1{SchemaVersion: 1, Viewport: domaincanvas.Viewport{Zoom: 1}, Nodes: make([]domaincanvas.Node, 0), Edges: make([]domaincanvas.Edge, 0)}
 	switch template {
 	case TemplateImageExploration:
 		doc.Nodes = []domaincanvas.Node{{ID: "prompt", Type: domaincanvas.NodeTypePrompt, Position: domaincanvas.Point{X: 40, Y: 80}, Size: domaincanvas.Size{Width: 280, Height: 180}}, {ID: "image-generation", Type: domaincanvas.NodeTypeImageGeneration, Position: domaincanvas.Point{X: 400, Y: 80}, Size: domaincanvas.Size{Width: 320, Height: 240}}}

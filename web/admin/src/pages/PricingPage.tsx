@@ -15,7 +15,9 @@ import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import { modelLifecycleErrorMessage } from './adminModelLifecycle'
 import { createLatestListRequestGuard } from './listRefresh'
 import { VideoConfigurationImpact } from './VideoConfigurationImpact'
-import { VideoConfigurationWorkspace } from './VideoConfigurationWorkspace'
+import { AdminMediaTabs, useAdminModelMediaTab } from './AdminMediaTabs'
+import { TextModelsPage } from './TextModelsPage'
+import { VideoPricingPanel } from './VideoPricingPanel'
 import {
   pricingEnabledBadge,
   pricingFieldHints,
@@ -46,6 +48,17 @@ const pricingClasses = {
 }
 
 export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
+  const media = useAdminModelMediaTab()
+  return <section className={adminPage.stack}>
+    <AdminMediaTabs route="pricing" value={media} />
+    {media === 'image' ? <ImagePricingPanel onFeedback={onFeedback} /> : null}
+    {media === 'video' ? <VideoPricingPanel /> : null}
+    {media === 'audio' ? <EmptyBlock title="音频价格策略暂未开放" detail="音频模型运行时接入后，可在此维护销售积分与成本安全线。" /> : null}
+    {media === 'text' ? <><InlineFeedback tone="neutral" message="文本分类维护模型输入/输出百万 Token 成本，不作为当前图片或视频销售积分策略。" /><TextModelsPage onFeedback={onFeedback} /></> : null}
+  </section>
+}
+
+function ImagePricingPanel({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
   const [routes, setRoutes] = useState<RouteModel[]>([])
   const [prices, setPrices] = useState<RouteModelPrice[]>([])
   const [loading, setLoading] = useState(true)
@@ -69,8 +82,10 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
         loadAllRouteModelPrices((priceQuery) => adminApi.listRouteModelPrices(priceQuery)),
       ])
       if (!requestGuard.isCurrent(request)) return
-      setRoutes(nextRoutes)
-      setPrices(nextPrices)
+      const imageRoutes = nextRoutes.filter((route) => route.media_type === 'image')
+      const imageRouteIDs = new Set(imageRoutes.map((route) => String(route.id)))
+      setRoutes(imageRoutes)
+      setPrices(nextPrices.filter((price) => imageRouteIDs.has(String(price.route_model_id))))
     } catch (caught) {
       if (!requestGuard.isCurrent(request)) return
       setError(caught instanceof Error ? caught.message : '价格策略载入失败')
@@ -163,8 +178,6 @@ export function PricingPage({ onFeedback }: { onFeedback: (title: string, detail
         primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={!routes.length} onClick={() => openDialog(newPriceDialog(routes))}>新增配置</button>}
         secondaryActions={<RefreshIconButton label="刷新价格策略" refreshing={loading} onClick={() => void load()} />}
       />
-      <VideoConfigurationImpact context="pricing" />
-      <VideoConfigurationWorkspace context="pricing" />
       {error ? <InlineFeedback tone="danger" message={`价格策略刷新失败：${error}`} /> : null}
       <MetricStrip metrics={metrics} />
 

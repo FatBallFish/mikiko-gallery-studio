@@ -16,6 +16,15 @@ type Candidate struct {
 	Capability        domainvideo.Capability
 }
 
+type PricingBinding struct {
+	TaskType          domainvideo.TaskType
+	Resolution        domainvideo.Resolution
+	AspectRatio       domainvideo.AspectRatio
+	AudioMode         domainvideo.AudioMode
+	DurationSeconds   int
+	PricingStrategyID int64
+}
+
 type Group struct {
 	RouteModelID      int64
 	Code              string
@@ -23,9 +32,26 @@ type Group struct {
 	Description       string
 	ConfigVersion     string
 	PricingStrategyID int64
+	PricingBindings   []PricingBinding
 	MaxOutputCount    int
 	TaskTypes         []domainvideo.TaskType
 	Candidates        []Candidate
+}
+
+func (group Group) PricingStrategyFor(request domainvideo.Request) int64 {
+	for _, binding := range group.PricingBindings {
+		if binding.PricingStrategyID <= 0 || binding.TaskType != request.TaskType || binding.Resolution != request.Resolution || binding.AudioMode != request.AudioMode {
+			continue
+		}
+		if binding.AspectRatio != "" && binding.AspectRatio != request.AspectRatio {
+			continue
+		}
+		if binding.DurationSeconds > 0 && binding.DurationSeconds != request.DurationSeconds {
+			continue
+		}
+		return binding.PricingStrategyID
+	}
+	return group.PricingStrategyID
 }
 
 type Store interface {

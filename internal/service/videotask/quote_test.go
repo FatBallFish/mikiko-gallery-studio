@@ -20,10 +20,42 @@ func (s *quoteRoutingStore) ListVideoGroups(context.Context) ([]videoroutingserv
 	return []videoroutingservice.Group{s.group}, nil
 }
 
-type quotePricingStore struct{ rule videopricingservice.Rule }
+type quotePricingStore struct {
+	rule        videopricingservice.Rule
+	strategyIDs []int64
+}
 
-func (s *quotePricingStore) GetVideoPriceRule(context.Context, int64, domainvideo.TaskType, domainvideo.Resolution, domainvideo.AudioMode, time.Time) (videopricingservice.Rule, error) {
+func (s *quotePricingStore) GetVideoPriceRule(_ context.Context, strategyID int64, _ domainvideo.TaskType, _ domainvideo.Resolution, _ domainvideo.AudioMode, _ time.Time) (videopricingservice.Rule, error) {
+	s.strategyIDs = append(s.strategyIDs, strategyID)
 	return s.rule, nil
+}
+
+func TestQuoteSelectsParameterPricingBindingAndFallsBackToDefault(t *testing.T) {
+	now := time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC)
+	capability := domainvideo.Capability{SchemaVersion: 1, ProviderNativeMaxN: 1, TaskTypes: map[domainvideo.TaskType]domainvideo.TaskCapability{
+		domainvideo.TaskTypeTextToVideo: {
+			Durations: domainvideo.DiscreteIntValues(5, 10), Resolutions: []domainvideo.Resolution{domainvideo.Resolution720P},
+			AspectRatios: []domainvideo.AspectRatio{domainvideo.AspectRatio16x9}, AudioModes: []domainvideo.AudioMode{domainvideo.AudioModeSilent},
+		},
+	}}
+	routingStore := &quoteRoutingStore{group: videoroutingservice.Group{
+		Code: "cinema", ConfigVersion: "route-v2", PricingStrategyID: 1, MaxOutputCount: 1,
+		PricingBindings: []videoroutingservice.PricingBinding{{TaskType: domainvideo.TaskTypeTextToVideo, Resolution: domainvideo.Resolution720P, AspectRatio: domainvideo.AspectRatio16x9, AudioMode: domainvideo.AudioModeSilent, DurationSeconds: 10, PricingStrategyID: 2}},
+		TaskTypes:       []domainvideo.TaskType{domainvideo.TaskTypeTextToVideo}, Candidates: []videoroutingservice.Candidate{{RouteCandidateID: 1, AccountModelID: 2, ModelAccountID: 3, ModelCode: "seedance-2.5", AdapterType: "seedance", CapabilityVersion: "cap-v1", Capability: capability}},
+	}}
+	pricingStore := &quotePricingStore{rule: videopricingservice.Rule{StrategyVersion: 1, RuleVersion: 1, SafetyPoints: "1", SalesRule: domainvideo.SalesRule{FixedTaskPoints: "2", ReserveMarkup: "1"}}}
+	service := NewQuoteService(videoroutingservice.NewService(routingStore), videopricingservice.NewService(pricingStore, func() time.Time { return now }), []byte("quote-test-signing-key-at-least-32-bytes"), func() time.Time { return now })
+	request := EstimateRequest{RouteModelCode: "cinema", Video: domainvideo.Request{TaskType: domainvideo.TaskTypeTextToVideo, Prompt: "test", DurationSeconds: 10, Resolution: domainvideo.Resolution720P, AspectRatio: domainvideo.AspectRatio16x9, AudioMode: domainvideo.AudioModeSilent, OutputCount: 1}}
+	if _, err := service.Estimate(t.Context(), 7, request); err != nil {
+		t.Fatal(err)
+	}
+	request.Video.DurationSeconds = 5
+	if _, err := service.Estimate(t.Context(), 7, request); err != nil {
+		t.Fatal(err)
+	}
+	if got := pricingStore.strategyIDs; len(got) != 2 || got[0] != 2 || got[1] != 1 {
+		t.Fatalf("pricing strategy selection = %v, want [2 1]", got)
+	}
 }
 
 func TestQuoteTokenRejectsTamperingExpiryUserAndVersionChanges(t *testing.T) {

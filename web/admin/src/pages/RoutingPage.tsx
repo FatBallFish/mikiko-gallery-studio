@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AdminMetric, ModelAccount, ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelMediaType, RouteModelPrice, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
+import type { AdminMetric, AdminVideoConfiguration, ModelAccount, ModelAccountModel, RouteModel, RouteModelCandidate, RouteModelMediaType, RouteModelPrice, RouteModelVisibility, UserGroup } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
 import { Trash2 } from 'lucide-react'
@@ -11,7 +11,9 @@ import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import { modelLifecycleErrorMessage } from './adminModelLifecycle'
 import { createLatestListRequestGuard } from './listRefresh'
 import { VideoConfigurationImpact } from './VideoConfigurationImpact'
-import { VideoConfigurationWorkspace } from './VideoConfigurationWorkspace'
+import { AdminMediaTabs, useAdminModelMediaTab } from './AdminMediaTabs'
+import { modelMediaType } from './adminModelMedia'
+import { VideoRouteConfigPanel } from './VideoRouteConfigPanel'
 import {
   routeCandidateLabel,
   routeCandidateSummary,
@@ -53,10 +55,22 @@ const routingClasses = {
 }
 
 export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail?: string) => void }) {
+  const media = useAdminModelMediaTab()
+  return <section className={adminPage.stack}>
+    <AdminMediaTabs route="routing" value={media} />
+    {media === 'image' ? <MediaRoutingPanel media="image" onFeedback={onFeedback} /> : null}
+    {media === 'video' ? <MediaRoutingPanel media="video" onFeedback={onFeedback} /> : null}
+    {media === 'audio' ? <EmptyBlock title="音频路由暂未开放" detail="音频模型运行时接入后，可在此维护多候选路由。" /> : null}
+    {media === 'text' ? <EmptyBlock title="文本暂使用默认模型" detail="提示词优化当前通过默认文本模型工作，不提供尚未实现的多候选路由。" action={<a className={cn(adminButton.base, adminButton.primary)} href="#/access-accounts?media=text">管理文本模型</a>} /> : null}
+  </section>
+}
+
+function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; onFeedback: (title: string, detail?: string) => void }) {
   const [routes, setRoutes] = useState<RouteModel[]>([])
   const [groups, setGroups] = useState<UserGroup[]>([])
   const [modelAccounts, setModelAccounts] = useState<ModelAccount[]>([])
   const [accountModels, setAccountModels] = useState<ModelAccountModel[]>([])
+  const [videoSnapshot, setVideoSnapshot] = useState<AdminVideoConfiguration | null>(null)
   const [candidates, setCandidates] = useState<Record<string, RouteModelCandidate[]>>({})
   const [prices, setPrices] = useState<RouteModelPrice[]>([])
   const [loading, setLoading] = useState(true)
@@ -77,24 +91,28 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
     setLoading(true)
     setError(null)
     try {
-      const [nextRoutes, nextGroups, nextAccounts, nextPrices] = await Promise.all([
+      const [nextRoutes, nextGroups, nextAccounts, nextPrices, nextVideoSnapshot] = await Promise.all([
         adminApi.listRouteModels({ page_size: 100 }),
         adminApi.listUserGroups(),
         adminApi.listModelAccounts({ page_size: 100 }),
         loadAllRouteModelPrices((priceQuery) => adminApi.listRouteModelPrices(priceQuery)),
+        media === 'video' ? adminApi.getVideoConfiguration() : Promise.resolve(null),
       ])
+      const mediaRoutes = nextRoutes.filter((route) => route.media_type === media)
       const modelLists = await Promise.all(nextAccounts.map((account) => adminApi.listModelAccountModels(account.id)))
-      const candidatePairs = await Promise.all(nextRoutes.map(async (route) => [String(route.id), await adminApi.listRouteModelCandidates(route.id)] as const))
+      const candidatePairs = await Promise.all(mediaRoutes.map(async (route) => [String(route.id), await adminApi.listRouteModelCandidates(route.id)] as const))
       if (!requestGuard.isCurrent(request)) return
-      setRoutes(nextRoutes)
+      const mediaRouteIDs = new Set(mediaRoutes.map((route) => String(route.id)))
+      setRoutes(mediaRoutes)
       setGroups(nextGroups)
       setModelAccounts(nextAccounts)
       setAccountModels(modelLists.flat())
       setCandidates(Object.fromEntries(candidatePairs))
-      setPrices(nextPrices)
+      setPrices(nextPrices.filter((price) => mediaRouteIDs.has(String(price.route_model_id))))
+      setVideoSnapshot(nextVideoSnapshot)
       setSelectedRouteId((current) => {
         const preferred = preferredRouteId || current
-        return nextRoutes.some((route) => String(route.id) === preferred) ? preferred : String(nextRoutes[0]?.id ?? '')
+        return mediaRoutes.some((route) => String(route.id) === preferred) ? preferred : String(mediaRoutes[0]?.id ?? '')
       })
     } catch (caught) {
       if (!requestGuard.isCurrent(request)) return
@@ -108,20 +126,20 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
   useEffect(() => {
     void load()
     return () => requestGuard.invalidate()
-  }, [])
+  }, [media])
 
   const totals = useMemo(() => ({
     enabled: routes.filter((row) => row.enabled).length,
     groupVisible: routes.filter((row) => row.visibility === 'groups').length,
     candidateCount: Object.values(candidates).flat().length,
-    blocked: routes.filter((route) => routeReadinessBadge({
-      enabled: route.enabled,
-      visibility: route.visibility,
-      groupCount: route.group_ids?.length ?? 0,
+    blocked: routes.filter((route) => routeReadinessForMedia({
+      route,
       candidates: effectiveRouteCandidates(candidates[String(route.id)] ?? route.candidates ?? [], accountModels, modelAccounts),
       prices: prices.filter((price) => String(price.route_model_id) === String(route.id)),
+      videoConfig: videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(route.id)),
+      videoImpacts: videoSnapshot?.impacts ?? [],
     }).state !== 'ready').length,
-  }), [routes, candidates, prices, accountModels, modelAccounts])
+  }), [routes, candidates, prices, accountModels, modelAccounts, videoSnapshot])
   const summaryMetrics = useMemo<AdminMetric[]>(() => [
     { label: '路由模型', value: String(routes.length), trend: `${totals.enabled} 个启用`, tone: 'neutral' },
     { label: '候选模型', value: String(totals.candidateCount), trend: '已绑定真实模型', tone: 'neutral' },
@@ -144,6 +162,16 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
     }
   }, [selectedRouteId, visibleRoutes])
   const selectedRoute = useMemo(() => visibleRoutes.find((route) => String(route.id) === selectedRouteId), [visibleRoutes, selectedRouteId])
+  const eligibleAccountModels = useMemo(() => {
+    const mediaModels = accountModels.filter((model) => {
+      const account = modelAccounts.find((item) => String(item.id) === String(model.account_id))
+      return account ? modelMediaType(model, account) === media : false
+    })
+    if (media !== 'video') return mediaModels
+    const verified = new Set((videoSnapshot?.capabilities ?? []).filter((item) => item.enabled && item.validation_status === 'verified').map((item) => String(item.account_model_id)))
+    const enabledAccounts = new Set(modelAccounts.filter((account) => account.status === 'enabled').map((account) => String(account.id)))
+    return mediaModels.filter((model) => model.enabled && enabledAccounts.has(String(model.account_id)) && verified.has(String(model.id)))
+  }, [accountModels, media, modelAccounts, videoSnapshot])
 
   async function saveRoute() {
     if (!routeDialog) return
@@ -170,7 +198,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
       setSelectedRouteId(String(saved.id))
       if (created) setQuery('')
       await load(String(saved.id))
-      if (created) setCandidateDialog(newCandidateDialog(saved, accountModels))
+      if (created) setCandidateDialog(newCandidateDialog(saved, eligibleAccountModels))
     } catch (caught) {
       setMutationError(caught instanceof Error ? caught.message : '路由模型保存失败')
     } finally {
@@ -249,11 +277,10 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
       <PageHeader
         title="路由模型"
         description="创建用户可见的路由模型，并完成候选模型、可见范围和价格状态配置。"
-        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openRouteDialog(newRouteDialog(groups))}>新增路由模型</button>}
+        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openRouteDialog({ ...newRouteDialog(groups), mediaType: media })}>新增路由模型</button>}
         secondaryActions={<RefreshIconButton label="刷新路由模型" refreshing={loading} onClick={() => void load()} />}
       />
-      <VideoConfigurationImpact context="routing" />
-      <VideoConfigurationWorkspace context="routing" />
+      {media === 'video' ? <VideoConfigurationImpact context="routing" /> : null}
       {error ? <InlineFeedback tone="danger" message={`路由模型刷新失败：${error}`} /> : null}
       <MetricStrip metrics={summaryMetrics} />
       <FilterToolbar
@@ -268,7 +295,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         resultSummary={`共 ${routes.length} 个路由 · 当前显示 ${visibleRoutes.length} 个`}
       />
       <InlineFeedback tone={totals.blocked ? 'warning' : 'success'} message={notice} />
-      {!routes.length ? <EmptyBlock title="暂无路由模型" detail="创建路由模型后继续配置候选真实模型、可见范围和价格。" action={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openRouteDialog(newRouteDialog(groups))}>新增路由模型</button>} /> : null}
+      {!routes.length ? <EmptyBlock title="暂无路由模型" detail="创建路由模型后继续配置候选真实模型、可见范围和价格。" action={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openRouteDialog({ ...newRouteDialog(groups), mediaType: media })}>新增路由模型</button>} /> : null}
       {routes.length && !visibleRoutes.length ? <EmptyBlock title="未找到路由模型" detail="换一个名称、代码或分组关键词再试。" /> : null}
       {visibleRoutes.length ? (
         <section className={routingClasses.workspace} data-admin-routing-workspace>
@@ -281,7 +308,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
               {visibleRoutes.map((route) => {
                 const routeCandidates = candidates[String(route.id)] ?? route.candidates ?? []
                 const routePrices = prices.filter((price) => String(price.route_model_id) === String(route.id))
-                const readiness = routeReadinessBadge({ enabled: route.enabled, visibility: route.visibility, groupCount: route.group_ids?.length ?? 0, candidates: effectiveRouteCandidates(routeCandidates, accountModels, modelAccounts), prices: routePrices })
+                const readiness = routeReadinessForMedia({ route, candidates: effectiveRouteCandidates(routeCandidates, accountModels, modelAccounts), prices: routePrices, videoConfig: videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(route.id)), videoImpacts: videoSnapshot?.impacts ?? [] })
                 const active = String(route.id) === selectedRouteId
                 return (
                   <button
@@ -307,10 +334,12 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
               groups={groups}
               candidates={candidates[String(selectedRoute.id)] ?? selectedRoute.candidates ?? []}
               prices={prices.filter((price) => String(price.route_model_id) === String(selectedRoute.id))}
-              accountModels={accountModels}
+              accountModels={eligibleAccountModels}
               modelAccounts={modelAccounts}
+              videoConfig={media === 'video' ? videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(selectedRoute.id)) : undefined}
+              videoImpacts={media === 'video' ? videoSnapshot?.impacts ?? [] : []}
               onEditRoute={() => openRouteDialog(editRouteDialog(selectedRoute))}
-              onAddCandidate={() => openCandidateDialog(newCandidateDialog(selectedRoute, accountModels))}
+              onAddCandidate={() => openCandidateDialog(newCandidateDialog(selectedRoute, eligibleAccountModels))}
               onEditCandidate={(candidate) => openCandidateDialog(editCandidateDialog(selectedRoute, candidate))}
               onDeleteRoute={() => { setMutationError(null); setDeleteTarget({ kind: 'route', route: selectedRoute }) }}
               onDeleteCandidate={(candidate) => { setMutationError(null); setDeleteTarget({ kind: 'candidate', route: selectedRoute, candidate }) }}
@@ -318,6 +347,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
           ) : <EmptyBlock title="选择路由模型" detail="从左侧选择一个路由，查看候选、能力与价格状态。" />}
         </section>
       ) : null}
+      {media === 'video' && selectedRoute ? <VideoRouteConfigPanel route={selectedRoute} config={videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(selectedRoute.id))} strategies={videoSnapshot?.pricing_strategies ?? []} onSaved={() => void load(String(selectedRoute.id))} /> : null}
       {routeDialog ? (
         <Modal title={routeDialog.row ? '编辑路由模型' : '新增路由模型'} detail="保存后需要继续配置候选真实模型和价格，完成后才会对用户可用。" onClose={closeRouteDialog} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={closeRouteDialog}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !routeDialog.code || !routeDialog.name} onClick={() => void saveRoute()}>{saving ? '保存中...' : '保存并继续配置候选'}</button></>}>
           {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
@@ -325,7 +355,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
             <Field label={routingFieldLabels.code}><input value={routeDialog.code} onChange={(event) => setRouteDialog({ ...routeDialog, code: event.target.value })} placeholder="basic" /></Field>
             <Field label="名称"><input value={routeDialog.name} onChange={(event) => setRouteDialog({ ...routeDialog, name: event.target.value })} /></Field>
             <Field label="描述"><input value={routeDialog.description} onChange={(event) => setRouteDialog({ ...routeDialog, description: event.target.value })} /></Field>
-            <Field label="创作类型"><select value={routeDialog.mediaType} onChange={(event) => setRouteDialog({ ...routeDialog, mediaType: event.target.value as RouteModelMediaType })}><option value="image">图片</option><option value="video">视频</option></select></Field>
+            <Field label="创作类型"><select value={routeDialog.mediaType} disabled><option value="image">图片</option><option value="video">视频</option></select></Field>
             <Field label="可见性"><select value={routeDialog.visibility} onChange={(event) => setRouteDialog({ ...routeDialog, visibility: event.target.value, groupIds: event.target.value === 'groups' ? routeDialog.groupIds : [] })}>{routeVisibilityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
             {routeDialog.visibility === 'groups' ? (
               <Field label="可见分组"><GroupOptionGrid selected={routeDialog.groupIds} groups={groups} onChange={(groupIds) => setRouteDialog({ ...routeDialog, groupIds })} /></Field>
@@ -339,7 +369,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
         <Modal title={candidateDialog.row ? '编辑候选真实模型' : '新增候选真实模型'} detail={candidateDialog.route.name} onClose={closeCandidateDialog} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={closeCandidateDialog}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !candidateDialog.accountModelId} onClick={() => void saveCandidate()}>{saving ? '保存中...' : '保存'}</button></>}>
           {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
           <div className={adminPage.formGrid}>
-            <Field label="真实模型"><select value={candidateDialog.accountModelId} onChange={(event) => setCandidateDialog({ ...candidateDialog, accountModelId: event.target.value })}>{accountModels.map((model) => <option key={String(model.id)} value={String(model.id)}>{model.account_name ? `${model.account_name} / ` : ''}{model.model_code}</option>)}</select></Field>
+            <Field label="真实模型"><select value={candidateDialog.accountModelId} onChange={(event) => setCandidateDialog({ ...candidateDialog, accountModelId: event.target.value })}>{eligibleAccountModels.map((model) => <option key={String(model.id)} value={String(model.id)}>{model.account_name ? `${model.account_name} / ` : ''}{model.model_code}</option>)}</select></Field>
             <Field label={routingFieldLabels.priority} hint={routingFieldHints.priority}><input type="number" min="1" value={candidateDialog.priority} onChange={(event) => setCandidateDialog({ ...candidateDialog, priority: event.target.value })} /></Field>
             <Field label={routingFieldLabels.weight} hint={routingFieldHints.weight}><input type="number" min="0" value={candidateDialog.weight} onChange={(event) => setCandidateDialog({ ...candidateDialog, weight: event.target.value })} /></Field>
             <Field label={routingFieldLabels.fallbackOrder} hint={routingFieldHints.fallbackOrder}><input type="number" min="1" value={candidateDialog.fallbackOrder} onChange={(event) => setCandidateDialog({ ...candidateDialog, fallbackOrder: event.target.value })} /></Field>
@@ -366,6 +396,42 @@ function newRouteDialog(groups: UserGroup[]): RouteDialog {
   return { code: '', name: '', description: '', visibility: 'public', mediaType: 'image', enabled: true, sortOrder: '10', groupIds: [] }
 }
 
+function routeReadinessForMedia({
+  route,
+  candidates,
+  prices,
+  videoConfig,
+  videoImpacts,
+}: {
+  route: RouteModel
+  candidates: Pick<RouteModelCandidate, 'enabled'>[]
+  prices: Pick<RouteModelPrice, 'enabled'>[]
+  videoConfig?: AdminVideoConfiguration['routes'][number]
+  videoImpacts: AdminVideoConfiguration['impacts']
+}) {
+  const base = routeReadinessBadge({
+    enabled: route.enabled,
+    visibility: route.visibility,
+    groupCount: route.group_ids?.length ?? 0,
+    candidates,
+    prices: route.media_type === 'image' ? prices : undefined,
+  })
+  if (base.state !== 'ready' || route.media_type !== 'video') return base
+  if (!videoConfig?.enabled) return { state: 'missing_price' as const, label: '不可用 · 未配置视频参数', tone: 'warning' as const }
+  const strategyIDs = new Set<number>([videoConfig.pricing_strategy_id])
+  const bindings = Array.isArray(videoConfig.visible_options?.pricing_bindings) ? videoConfig.visible_options.pricing_bindings : []
+  for (const binding of bindings) {
+    if (binding && typeof binding === 'object') {
+      const strategyID = Number((binding as { pricing_strategy_id?: unknown }).pricing_strategy_id)
+      if (strategyID > 0) strategyIDs.add(strategyID)
+    }
+  }
+  const impact = videoImpacts.find((item) => item.blocking && (String(item.route_model_id ?? '') === String(route.id) || (item.pricing_strategy_id != null && strategyIDs.has(item.pricing_strategy_id))))
+  if (!impact) return base
+  if (impact.code === 'missing_candidate') return { state: 'missing_candidate' as const, label: '不可用 · 缺候选', tone: 'danger' as const }
+  return { state: 'missing_price' as const, label: '不可用 · 视频配置阻断', tone: 'warning' as const }
+}
+
 function editRouteDialog(row: RouteModel): RouteDialog {
   return { row, code: row.code, name: row.name, description: row.description ?? '', visibility: row.visibility, mediaType: row.media_type, enabled: row.enabled, sortOrder: String(row.sort_order), groupIds: (row.group_ids ?? []).map(String) }
 }
@@ -389,6 +455,8 @@ function RouteDetailWorkspace({
   prices: routePrices,
   accountModels,
   modelAccounts,
+  videoConfig,
+  videoImpacts,
   onEditRoute,
   onAddCandidate,
   onEditCandidate,
@@ -401,20 +469,23 @@ function RouteDetailWorkspace({
   prices: RouteModelPrice[]
   accountModels: ModelAccountModel[]
   modelAccounts: ModelAccount[]
+  videoConfig?: AdminVideoConfiguration['routes'][number]
+  videoImpacts: AdminVideoConfiguration['impacts']
   onEditRoute: () => void
   onAddCandidate: () => void
   onEditCandidate: (candidate: RouteModelCandidate) => void
   onDeleteRoute: () => void
   onDeleteCandidate: (candidate: RouteModelCandidate) => void
 }) {
-  const readiness = routeReadinessBadge({
-    enabled: route.enabled,
-    visibility: route.visibility,
-    groupCount: route.group_ids?.length ?? 0,
+  const readiness = routeReadinessForMedia({
+    route,
     candidates: effectiveRouteCandidates(routeCandidates, accountModels, modelAccounts),
     prices: routePrices,
+    videoConfig,
+    videoImpacts,
   })
   const enabledPrices = routePrices.filter((price) => price.enabled)
+  const pricingHref = route.media_type === 'video' ? '#/pricing?media=video' : '#/pricing?media=image'
   return (
     <article className={routingClasses.detail} aria-label={`${route.name} 路由详情`}>
       <header className={routingClasses.detailHead}>
@@ -437,7 +508,7 @@ function RouteDetailWorkspace({
         <StatusFact label="创作类型" value={route.media_type === 'video' ? '视频' : '图片'} detail="决定使用图片或视频的能力与计费配置" />
         <StatusFact label="可见范围" value={<RouteBadge badge={routeVisibilityBadge(route.visibility)} />} detail={routeGroupNames(route.group_ids, groups)} />
         <StatusFact label="候选模型" value={routeCandidateSummary(routeCandidates)} detail={`${routeCandidates.filter((candidate) => candidate.enabled).length} 个可参与路由`} />
-        <StatusFact label="价格配置" value={`${enabledPrices.length} 个启用价格`} detail={routePrices.length ? `共 ${routePrices.length} 条价格策略` : '尚未配置价格'} />
+        <StatusFact label="价格配置" value={route.media_type === 'video' ? (videoConfig?.pricing_strategy_id ? '已绑定默认策略' : '尚未绑定') : `${enabledPrices.length} 个启用价格`} detail={route.media_type === 'video' ? '参数组合可覆盖绑定其他视频价格策略' : (routePrices.length ? `共 ${routePrices.length} 条价格策略` : '尚未配置价格')} />
         <StatusFact label="排序顺序" value={<code className={adminDataGrid.code}>{String(route.sort_order)}</code>} detail="数值越小展示越靠前" />
       </section>
 
@@ -450,9 +521,9 @@ function RouteDetailWorkspace({
 
       <div className="my-4 flex flex-wrap gap-2">
         {readiness.state === 'missing_candidate' ? <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={onAddCandidate}>配置候选</button> : null}
-        {readiness.state === 'missing_price' ? <a className={cn(adminButton.base, adminButton.primary, adminButton.small)} href="#/pricing">配置价格</a> : null}
+        {readiness.state === 'missing_price' ? <a className={cn(adminButton.base, adminButton.primary, adminButton.small)} href={pricingHref}>配置价格</a> : null}
         {readiness.state === 'disabled' ? <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={onEditRoute}>{route.enabled ? '调整可见性' : '启用路由'}</button> : null}
-        <a className={cn(adminButton.base, adminButton.ghost, adminButton.small)} href="#/pricing">查看价格</a>
+        <a className={cn(adminButton.base, adminButton.ghost, adminButton.small)} href={pricingHref}>查看价格</a>
       </div>
 
       <section className="grid gap-3 border-t border-[var(--border)] pt-4">

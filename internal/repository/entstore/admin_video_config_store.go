@@ -68,7 +68,7 @@ func saveVideoCostRule(ctx context.Context, client *repoent.Client, input adminv
 	if err != nil {
 		return adminvideo.CostRuleSummary{}, err
 	}
-	return adminvideo.CostRuleSummary{ID: int64(row.ID), AccountModelID: row.AccountModelID, BillingMode: row.BillingMode, RuleVersion: row.RuleVersion, Currency: row.Currency, Rates: row.RatesJSON, Validation: row.ValidationStatus, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, Enabled: row.Enabled}, nil
+	return adminvideo.CostRuleSummary{ID: int64(row.ID), AccountModelID: row.AccountModelID, BillingMode: row.BillingMode, RuleVersion: row.RuleVersion, Currency: row.Currency, Rates: row.RatesJSON, CostReserveMarkup: row.CostReserveMarkup, SourceType: row.SourceType, SourceReference: row.SourceReference, Validation: row.ValidationStatus, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, Enabled: row.Enabled}, nil
 }
 
 func (s *AdminVideoStore) SaveStrategy(ctx context.Context, input adminvideo.StrategyWrite) (adminvideo.PricingStrategySummary, error) {
@@ -94,7 +94,7 @@ func saveVideoStrategy(ctx context.Context, client *repoent.Client, input adminv
 	if err != nil {
 		return adminvideo.PricingStrategySummary{}, err
 	}
-	return adminvideo.PricingStrategySummary{ID: int64(row.ID), Code: row.Code, Name: row.Name, StrategyVersion: row.StrategyVersion, MinimumNetPointIncomeCNY: row.MinimumNetPointIncomeCny, TargetMarginRate: row.TargetMarginRate, ProviderCostBufferRate: row.ProviderCostBufferRate, PaymentFeeRate: row.PaymentFeeRate, PlatformFixedCostCNY: row.PlatformFixedCostCny, PlatformOutputSecondCostCNY: row.PlatformOutputSecondCostCny, PlatformReferenceCostCNY: row.PlatformReferenceCostCny, Enabled: row.Enabled}, nil
+	return adminvideo.PricingStrategySummary{ID: int64(row.ID), Code: row.Code, Name: row.Name, StrategyVersion: row.StrategyVersion, GrossPointValueCNY: row.GrossPointValueCny, MinimumNetPointIncomeCNY: row.MinimumNetPointIncomeCny, MaxBonusRatio: row.MaxBonusRatio, TargetMarginRate: row.TargetMarginRate, ProviderCostBufferRate: row.ProviderCostBufferRate, PaymentFeeRate: row.PaymentFeeRate, PlatformFixedCostCNY: row.PlatformFixedCostCny, PlatformOutputSecondCostCNY: row.PlatformOutputSecondCostCny, PlatformReferenceCostCNY: row.PlatformReferenceCostCny, PlatformAudioFixedCostCNY: row.PlatformAudioFixedCostCny, PlatformAudioSecondCostCNY: row.PlatformAudioSecondCostCny, ExactReserveMarkup: row.ExactReserveMarkup, MeteredReserveMarkup: row.MeteredReserveMarkup, Enabled: row.Enabled}, nil
 }
 
 func (s *AdminVideoStore) SavePriceRule(ctx context.Context, input adminvideo.PriceRuleWrite) (adminvideo.PriceRuleSummary, error) {
@@ -124,7 +124,7 @@ func saveVideoPriceRule(ctx context.Context, client *repoent.Client, input admin
 	if err != nil {
 		return adminvideo.PriceRuleSummary{}, err
 	}
-	return adminvideo.PriceRuleSummary{ID: int64(row.ID), StrategyID: row.PricingStrategyID, TaskType: row.TaskType, Resolution: row.Resolution, AudioMode: row.AudioMode, PricingMode: row.PricingMode, RuleVersion: row.RuleVersion, SafetyPoints: row.SafetyPoints, SalesPoints: row.MinimumTaskPoints, CandidateCostUpperCNY: row.CandidateCostUpperCny, Enabled: row.Enabled}, nil
+	return adminvideo.PriceRuleSummary{ID: int64(row.ID), StrategyID: row.PricingStrategyID, TaskType: row.TaskType, Resolution: row.Resolution, AudioMode: row.AudioMode, PricingMode: row.PricingMode, RuleVersion: row.RuleVersion, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, OutputSecondPoints: row.OutputSecondPoints, FixedTaskPoints: row.FixedTaskPoints, ReferenceImagePoints: row.ReferenceImagePoints, InputVideoSecondPoints: row.InputVideoSecondPoints, ReferenceAudioSecondPoints: row.ReferenceAudioSecondPoints, GeneratedAudioFixedPoints: row.GeneratedAudioFixedPoints, GeneratedAudioSecondPoints: row.GeneratedAudioSecondPoints, MinimumBillableSeconds: row.MinimumBillableSeconds, MinimumTaskPoints: row.MinimumTaskPoints, ReserveMarkup: row.ReserveMarkup, SafetyPoints: row.SafetyPoints, SalesPoints: row.MinimumTaskPoints, CandidateCostUpperCNY: row.CandidateCostUpperCny, Enabled: row.Enabled}, nil
 }
 
 func (s *AdminVideoStore) SaveRouteConfig(ctx context.Context, input adminvideo.RouteConfigWrite) (adminvideo.RouteConfigSummary, error) {

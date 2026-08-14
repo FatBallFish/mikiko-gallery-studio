@@ -56,6 +56,23 @@ func TestCanvasAPICRUDRevisionConflictAndOwnerIsolation(t *testing.T) {
 	}
 }
 
+func TestCanvasAPIBlankDocumentUsesJSONArrays(t *testing.T) {
+	cfg := taskAPIConfig("http://provider.invalid")
+	authSvc, owner := loginTestUser(t, "blank-canvas@example.com")
+	service := canvasservice.NewService(canvasservice.NewMemoryStore(), nil, nil)
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, enabledFeatureAdmin(t, "creative_canvas"), nil)
+	api.SetCanvasService(service)
+	handler := NewWithAPI(api)
+
+	response := authenticatedProjectRequest(t, handler, owner.AccessToken, http.MethodPost, "/api/agent/canvas/v1/canvases", `{"project_id":"`+uuid.NewString()+`","name":"Blank","template":"blank"}`, nil)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create=%d %s", response.Code, response.Body.String())
+	}
+	if !bytes.Contains(response.Body.Bytes(), []byte(`"nodes":[]`)) || !bytes.Contains(response.Body.Bytes(), []byte(`"edges":[]`)) {
+		t.Fatalf("blank canvas response must use arrays: %s", response.Body.String())
+	}
+}
+
 func TestCanvasAPIRunStatusCancelAndAttachRoutes(t *testing.T) {
 	cfg := taskAPIConfig("http://provider.invalid")
 	authSvc, owner := loginTestUser(t, "canvas-run@example.com")

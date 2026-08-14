@@ -57,6 +57,7 @@ import type {
 import { API_PATHS } from './api-types'
 import { fillPath, getDefaultBaseUrl, normalizePage, sharedApiClient, withQuery } from './http-client'
 import { mediaAssetURL } from './media-url'
+import { normalizeCreativeCanvas } from './canvas-document'
 
 export { resolveGenerationResolution } from './generation-resolution'
 
@@ -603,14 +604,14 @@ export const userApi = {
   getVideoTask: (task_id: string) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTaskDetail, { pathParams: { task_id } }),
 	cancelVideoTask: (task_id: string, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTaskCancel, { method: 'POST', pathParams: { task_id }, headers: { 'Idempotency-Key': idempotencyKey } }),
 	videoTaskStreamUrl: (accessToken?: string | null, projectID?: string) => apiEventUrl(withQuery(API_PATHS.agent.videoTaskEvents, { project_id: projectID }), accessToken),
-	listCanvases: async (filters?: { project_id?: string; search?: string }) => (await sharedApiClient.request<{ items: CreativeCanvas[] }>('/api/agent/canvas/v1/canvases', { query: filters })).items ?? [],
-	createCanvas: (input: { project_id: string; name: string; template?: 'blank' | 'image_exploration' | 'image_to_video'; document?: CanvasDocument }) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases', { method: 'POST', body: input }),
-	getCanvas: (canvas_id: string) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}', { pathParams: { canvas_id } }),
-	renameCanvas: (canvas_id: string, name: string, expected_metadata_version: number) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}', { method: 'PATCH', pathParams: { canvas_id }, body: { name, expected_metadata_version } }),
+	listCanvases: async (filters?: { project_id?: string; search?: string }) => ((await sharedApiClient.request<{ items: CreativeCanvas[] }>('/api/agent/canvas/v1/canvases', { query: filters })).items ?? []).map(normalizeCreativeCanvas),
+	createCanvas: async (input: { project_id: string; name: string; template?: 'blank' | 'image_exploration' | 'image_to_video'; document?: CanvasDocument }) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases', { method: 'POST', body: input })),
+	getCanvas: async (canvas_id: string) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}', { pathParams: { canvas_id } })),
+	renameCanvas: async (canvas_id: string, name: string, expected_metadata_version: number) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}', { method: 'PATCH', pathParams: { canvas_id }, body: { name, expected_metadata_version } })),
 	deleteCanvas: (canvas_id: string, expected_metadata_version: number) => sharedApiClient.request<{ id: string; status: 'deleted' }>('/api/agent/canvas/v1/canvases/{canvas_id}', { method: 'DELETE', pathParams: { canvas_id }, body: { expected_metadata_version } }),
-	duplicateCanvas: (canvas_id: string, input: { name?: string; project_id?: string } = {}) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}:duplicate', { method: 'POST', pathParams: { canvas_id }, body: input }),
-	transferCanvas: (canvas_id: string, target_project_id: string, expected_metadata_version: number) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}:transfer-project', { method: 'POST', pathParams: { canvas_id }, body: { target_project_id, expected_metadata_version } }),
-	saveCanvasDocument: (canvas_id: string, expected_revision: number, document: CanvasDocument) => sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}/document', { method: 'PUT', pathParams: { canvas_id }, body: { expected_revision, document } }),
+	duplicateCanvas: async (canvas_id: string, input: { name?: string; project_id?: string } = {}) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}:duplicate', { method: 'POST', pathParams: { canvas_id }, body: input })),
+	transferCanvas: async (canvas_id: string, target_project_id: string, expected_metadata_version: number) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}:transfer-project', { method: 'POST', pathParams: { canvas_id }, body: { target_project_id, expected_metadata_version } })),
+	saveCanvasDocument: async (canvas_id: string, expected_revision: number, document: CanvasDocument) => normalizeCreativeCanvas(await sharedApiClient.request<CreativeCanvas>('/api/agent/canvas/v1/canvases/{canvas_id}/document', { method: 'PUT', pathParams: { canvas_id }, body: { expected_revision, document } })),
 	estimateCanvasNode: (canvas_id: string, node_id: string) => sharedApiClient.request<{ points: string; detail?: Record<string, unknown> }>('/api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:estimate', { method: 'POST', pathParams: { canvas_id, node_id } }),
 	generateCanvasNode: (canvas_id: string, node_id: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request<CanvasRun>('/api/agent/canvas/v1/canvases/{canvas_id}/nodes/{node_id}:generate', { method: 'POST', pathParams: { canvas_id, node_id }, headers: { 'Idempotency-Key': idempotencyKey } }),
 	listCanvasRuns: async (canvas_id: string, refresh = false) => (await sharedApiClient.request<{ items: CanvasRun[] }>('/api/agent/canvas/v1/canvases/{canvas_id}/runs', { pathParams: { canvas_id }, query: { refresh } })).items ?? [],
