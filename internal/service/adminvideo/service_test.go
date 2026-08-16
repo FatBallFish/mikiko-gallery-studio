@@ -31,9 +31,11 @@ func TestSnapshotNormalizesEmptyCollectionsForJSONClients(t *testing.T) {
 }
 
 type fakeStore struct {
-	snapshot Snapshot
-	policy   MediaPolicy
-	retried  []RetryRequest
+	snapshot           Snapshot
+	policy             MediaPolicy
+	retried            []RetryRequest
+	readiness          ReadinessSnapshot
+	routeQuoteContexts map[int64]RouteQuoteContext
 }
 
 func (s *fakeStore) Snapshot(context.Context) (Snapshot, error)              { return s.snapshot, nil }
@@ -49,7 +51,7 @@ func (s *fakeStore) SaveMediaPolicy(_ context.Context, policy MediaPolicy, _ int
 	return policy, nil
 }
 func (s *fakeStore) Readiness(context.Context, time.Time) (ReadinessSnapshot, error) {
-	return ReadinessSnapshot{}, nil
+	return s.readiness, nil
 }
 func (s *fakeStore) SaveCapability(context.Context, CapabilityWrite) (CapabilitySummary, error) {
 	return CapabilitySummary{}, nil
@@ -67,8 +69,8 @@ func (s *fakeStore) GetEffectiveVideoModelRateCard(context.Context, int64, time.
 func (s *fakeStore) GetVideoModelPricingContext(context.Context, int64) (ModelPricingContext, error) {
 	return ModelPricingContext{}, nil
 }
-func (s *fakeStore) GetVideoRouteQuoteContext(context.Context, int64, time.Time) (RouteQuoteContext, error) {
-	return RouteQuoteContext{}, nil
+func (s *fakeStore) GetVideoRouteQuoteContext(_ context.Context, routeModelID int64, _ time.Time) (RouteQuoteContext, error) {
+	return s.routeQuoteContexts[routeModelID], nil
 }
 func (s *fakeStore) SaveRouteConfig(context.Context, RouteConfigWrite) (RouteConfigSummary, error) {
 	return RouteConfigSummary{}, nil
@@ -145,6 +147,103 @@ func TestSnapshotDoesNotBlockMixedRouteWhenOneCandidateIsPriceable(t *testing.T)
 	}
 	if len(got.Impacts) != 0 {
 		t.Fatalf("an excluded unpriced candidate must not block a priceable mixed route: %#v", got.Impacts)
+	}
+}
+
+func TestReadinessRequiresAFormallyPriceableCandidateForEveryVisibleCombination(t *testing.T) {
+	const routeModelID = int64(31)
+	combo := VisibleCombination{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}
+	route := RouteConfigSummary{
+		RouteModelID: routeModelID, CandidateCount: 2, CandidateAccountModelIDs: []int64{11, 12}, Enabled: true,
+		VisibleOptions: map[string]any{"combinations": []VisibleCombination{combo}},
+	}
+	validCandidate := RouteQuoteCandidate{
+		RouteCandidateID: 11, AccountModelID: 11, ProviderCode: "seedance", ModelCode: "doubao-seedance-2-0-260128",
+		CapabilityVersion: "cap-v1", Capability: domainVideoCapabilityMap("720p"),
+		RateCard: RateCardSummary{AccountModelID: 11, PricingSchema: "seedance_token_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
+			"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
+		}},
+	}
+	tests := []struct {
+		name       string
+		candidates []RouteQuoteCandidate
+		missing    int
+	}{
+		{
+			name: "disabled account or model is excluded",
+			candidates: []RouteQuoteCandidate{{
+				RouteCandidateID: 11, AccountModelID: 11, PreflightExclusionCode: "VIDEO_CANDIDATE_NOT_PRICEABLE",
+				ProviderCode: validCandidate.ProviderCode, ModelCode: validCandidate.ModelCode,
+				Capability: validCandidate.Capability, RateCard: validCandidate.RateCard,
+			}},
+			missing: 1,
+		},
+		{
+			name: "invalid capability is excluded",
+			candidates: []RouteQuoteCandidate{{
+				RouteCandidateID: 11, AccountModelID: 11, ProviderCode: validCandidate.ProviderCode, ModelCode: validCandidate.ModelCode,
+				Capability: map[string]any{"schema_version": 99}, RateCard: validCandidate.RateCard,
+			}},
+			missing: 1,
+		},
+		{
+			name: "mapped resolution without a native rate is excluded",
+			candidates: []RouteQuoteCandidate{{
+				RouteCandidateID: 11, AccountModelID: 11, ProviderCode: "minimax", ModelCode: "MiniMax-H3",
+				Capability: domainVideoCapabilityMap("768p"), ResolutionMappings: map[string]string{"720p": "768p"},
+				RateCard: RateCardSummary{AccountModelID: 11, PricingSchema: "minimax_h3_second_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
+					"resolutions": map[string]any{"2k": map[string]any{"output_second_cny": "1.2", "input_video_second_cny": "1.2"}},
+				}},
+			}},
+			missing: 1,
+		},
+		{
+			name: "unsupported pricing schema is excluded",
+			candidates: []RouteQuoteCandidate{{
+				RouteCandidateID: 11, AccountModelID: 11, ProviderCode: validCandidate.ProviderCode, ModelCode: validCandidate.ModelCode,
+				Capability: validCandidate.Capability,
+				RateCard:   RateCardSummary{AccountModelID: 11, PricingSchema: "legacy", RateVersion: 1, Enabled: true, RateConfig: map[string]any{}},
+			}},
+			missing: 1,
+		},
+		{
+			name: "invalid rate config is excluded",
+			candidates: []RouteQuoteCandidate{{
+				RouteCandidateID: 11, AccountModelID: 11, ProviderCode: validCandidate.ProviderCode, ModelCode: validCandidate.ModelCode,
+				Capability: validCandidate.Capability,
+				RateCard: RateCardSummary{AccountModelID: 11, PricingSchema: "seedance_token_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
+					"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "0"}},
+				}},
+			}},
+			missing: 1,
+		},
+		{
+			name: "one valid candidate keeps a mixed route ready",
+			candidates: []RouteQuoteCandidate{
+				{RouteCandidateID: 12, AccountModelID: 12, PreflightExclusionCode: "VIDEO_CANDIDATE_NOT_PRICEABLE"},
+				validCandidate,
+			},
+			missing: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeStore{
+				snapshot:  Snapshot{Routes: []RouteConfigSummary{route}},
+				readiness: ReadinessSnapshot{EnabledVideoRoutes: 1, VisibleCombosMissingPrice: 99},
+				routeQuoteContexts: map[int64]RouteQuoteContext{routeModelID: {
+					Route: route, Candidates: test.candidates, CNYPerPoint: "0.01", ConversionVersion: "billing-v1",
+				}},
+			}
+			got, err := NewService(store).Readiness(t.Context(), time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.VisibleCombosMissingPrice != test.missing {
+				t.Fatalf("visible combinations missing price = %d, want %d", got.VisibleCombosMissingPrice, test.missing)
+			}
+		})
 	}
 }
 

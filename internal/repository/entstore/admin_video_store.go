@@ -337,9 +337,6 @@ func (s *AdminVideoStore) Readiness(ctx context.Context, now time.Time) (adminvi
 		if route.CandidateCount == 0 {
 			result.RoutesMissingCandidate++
 		}
-		if videoRouteHasMissingPrice(route, snapshot.RateCards) {
-			result.VisibleCombosMissingPrice++
-		}
 	}
 	artifact, err := s.client.VideoTaskItem.Query().Where(videotaskitem.StatusIn("artifact_pending", "artifact_failed", "artifact_retry")).Count(ctx)
 	if err != nil {
@@ -355,18 +352,4 @@ func (s *AdminVideoStore) Readiness(ctx context.Context, now time.Time) (adminvi
 	}
 	result.ArtifactBacklog, result.DerivativeBacklog, result.SettlementBacklog = artifact, derivative, settlement
 	return result, nil
-}
-
-func videoRouteHasMissingPrice(route adminvideoservice.RouteConfigSummary, cards []adminvideoservice.RateCardSummary) bool {
-	if len(route.CandidateAccountModelIDs) == 0 {
-		return true
-	}
-	for _, accountModelID := range route.CandidateAccountModelIDs {
-		for _, card := range cards {
-			if card.AccountModelID == accountModelID && card.Enabled {
-				return false
-			}
-		}
-	}
-	return true
 }

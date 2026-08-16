@@ -422,5 +422,37 @@ type ReadinessSnapshot struct {
 }
 
 func (s *Service) Readiness(ctx context.Context, now time.Time) (ReadinessSnapshot, error) {
-	return s.store.Readiness(ctx, now)
+	if s == nil || s.store == nil {
+		return ReadinessSnapshot{}, errs.Internal("video administration is unavailable")
+	}
+	result, err := s.store.Readiness(ctx, now)
+	if err != nil {
+		return ReadinessSnapshot{}, err
+	}
+	snapshot, err := s.store.Snapshot(ctx)
+	if err != nil {
+		return ReadinessSnapshot{}, err
+	}
+	result.VisibleCombosMissingPrice = 0
+	for _, route := range snapshot.Routes {
+		if !route.Enabled {
+			continue
+		}
+		combinations := visibleCombinations(route.VisibleOptions)
+		if len(combinations) == 0 {
+			result.VisibleCombosMissingPrice++
+			continue
+		}
+		quoteContext, err := s.store.GetVideoRouteQuoteContext(ctx, route.RouteModelID, now)
+		if err != nil {
+			return ReadinessSnapshot{}, err
+		}
+		for _, combo := range combinations {
+			if !routeQuoteContextHasPriceableCombination(quoteContext, combo) {
+				result.VisibleCombosMissingPrice++
+				break
+			}
+		}
+	}
+	return result, nil
 }

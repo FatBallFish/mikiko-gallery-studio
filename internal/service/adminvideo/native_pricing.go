@@ -143,12 +143,6 @@ func (s *Service) SimulateRouteQuote(ctx context.Context, input QuoteSimulationR
 	if input.OutputCount == 0 {
 		input.OutputCount = 1
 	}
-	request := domainvideo.Request{
-		TaskType: domainvideo.TaskType(input.TaskType), DurationSeconds: input.DurationSeconds,
-		Resolution: domainvideo.Resolution(input.Resolution), AspectRatio: domainvideo.AspectRatio(input.AspectRatio),
-		AudioMode: domainvideo.AudioMode(input.AudioMode), OutputCount: input.OutputCount,
-		Inputs: append([]domainvideo.Input(nil), input.Inputs...),
-	}
 	contextValue, err := s.store.GetVideoRouteQuoteContext(ctx, input.RouteModelID, time.Now().UTC())
 	if err != nil {
 		return QuoteSimulationResult{}, err
@@ -166,68 +160,14 @@ func (s *Service) SimulateRouteQuote(ctx context.Context, input QuoteSimulationR
 	highest := decimal.Zero
 	eligibleCount := 0
 	for _, candidate := range contextValue.Candidates {
-		row := QuoteSimulationCandidate{
-			RouteCandidateID: candidate.RouteCandidateID, AccountModelID: candidate.AccountModelID,
-			ProviderCode: candidate.ProviderCode, ModelCode: candidate.ModelCode,
-			CapabilityVersion: candidate.CapabilityVersion, PricingSchema: candidate.RateCard.PricingSchema,
-			RateVersion: candidate.RateCard.RateVersion, EstimatedCNY: "0.00000",
-			Calculation: map[string]any{},
+		row, value, candidateErr := evaluateRouteQuoteCandidate(input, candidate)
+		if candidateErr != nil {
+			return QuoteSimulationResult{}, candidateErr
 		}
-		mappedRequest := request
-		mappedResolution := input.Resolution
-		if mapped := candidate.ResolutionMappings[input.Resolution]; mapped != "" {
-			mappedResolution = mapped
-			mappedRequest.Resolution = domainvideo.Resolution(mapped)
+		if row.Eligible {
+			eligibleCount++
 		}
-		row.MappedResolution = mappedResolution
-		if candidate.PreflightExclusionCode != "" {
-			row.ExclusionCode = candidate.PreflightExclusionCode
-			result.Candidates = append(result.Candidates, row)
-			continue
-		}
-		capability, decodeErr := decodePricingCapability(candidate.Capability)
-		if decodeErr != nil {
-			row.ExclusionCode = "VIDEO_CAPABILITY_INVALID"
-			result.Candidates = append(result.Candidates, row)
-			continue
-		}
-		if match := capability.Match(mappedRequest); !match.Matches {
-			row.ExclusionCode = errs.CodeVideoCapabilityMismatch
-			row.Calculation["field_errors"] = match.FieldErrors
-			result.Candidates = append(result.Candidates, row)
-			continue
-		}
-		if candidate.RateCard.RateVersion <= 0 {
-			row.ExclusionCode = errs.CodeVideoRateCardMissing
-			result.Candidates = append(result.Candidates, row)
-			continue
-		}
-		card, decodeErr := decodeNativeRateCard(candidate.ProviderCode, candidate.ModelCode, candidate.RateCard.PricingSchema, candidate.RateCard.RateConfig)
-		if decodeErr != nil {
-			row.ExclusionCode = nativeRateCardExclusionCode(decodeErr)
-			row.Calculation["error"] = decodeErr.Error()
-			result.Candidates = append(result.Candidates, row)
-			continue
-		}
-		quote, quoteErr := domainvideo.QuoteNativePricing(domainvideo.NativePricingRequest{
-			Video: mappedRequest, InputVideoSeconds: input.InputVideoSeconds,
-			ReferenceImageCount: input.ReferenceImageCount, HasInputAudio: input.HasInputAudio,
-		}, card)
-		if quoteErr != nil {
-			row.ExclusionCode = errs.CodeVideoRateCardInvalid
-			row.Calculation["error"] = quoteErr.Error()
-			result.Candidates = append(result.Candidates, row)
-			continue
-		}
-		value, parseErr := decimal.NewFromString(quote.CNY)
-		if parseErr != nil {
-			return QuoteSimulationResult{}, errs.Internal("invalid native video quote")
-		}
-		row.Eligible = true
-		row.EstimatedCNY = value.StringFixed(5)
-		row.Calculation = quote.Calculation
-		eligibleCount++
-		if value.GreaterThan(highest) {
+		if row.Eligible && value.GreaterThan(highest) {
 			highest = value
 			result.HighestAccountModelID = candidate.AccountModelID
 		}
@@ -256,6 +196,94 @@ func (s *Service) SimulateRouteQuote(ctx context.Context, input QuoteSimulationR
 	result.UnitPoints = unit.StringFixed(5)
 	result.TotalPoints = unit.Mul(decimal.NewFromInt(int64(input.OutputCount))).StringFixed(5)
 	return result, nil
+}
+
+func evaluateRouteQuoteCandidate(input QuoteSimulationRequest, candidate RouteQuoteCandidate) (QuoteSimulationCandidate, decimal.Decimal, error) {
+	row := QuoteSimulationCandidate{
+		RouteCandidateID: candidate.RouteCandidateID, AccountModelID: candidate.AccountModelID,
+		ProviderCode: candidate.ProviderCode, ModelCode: candidate.ModelCode,
+		CapabilityVersion: candidate.CapabilityVersion, PricingSchema: candidate.RateCard.PricingSchema,
+		RateVersion: candidate.RateCard.RateVersion, EstimatedCNY: "0.00000",
+		Calculation: map[string]any{},
+	}
+	mappedRequest := domainvideo.Request{
+		TaskType: domainvideo.TaskType(input.TaskType), DurationSeconds: input.DurationSeconds,
+		Resolution: domainvideo.Resolution(input.Resolution), AspectRatio: domainvideo.AspectRatio(input.AspectRatio),
+		AudioMode: domainvideo.AudioMode(input.AudioMode), OutputCount: input.OutputCount,
+		Inputs: append([]domainvideo.Input(nil), input.Inputs...),
+	}
+	row.MappedResolution = input.Resolution
+	if mapped := candidate.ResolutionMappings[input.Resolution]; mapped != "" {
+		row.MappedResolution = mapped
+		mappedRequest.Resolution = domainvideo.Resolution(mapped)
+	}
+	if candidate.PreflightExclusionCode != "" {
+		row.ExclusionCode = candidate.PreflightExclusionCode
+		return row, decimal.Zero, nil
+	}
+	capability, decodeErr := decodePricingCapability(candidate.Capability)
+	if decodeErr != nil {
+		row.ExclusionCode = "VIDEO_CAPABILITY_INVALID"
+		return row, decimal.Zero, nil
+	}
+	if match := capability.Match(mappedRequest); !match.Matches {
+		row.ExclusionCode = errs.CodeVideoCapabilityMismatch
+		row.Calculation["field_errors"] = match.FieldErrors
+		return row, decimal.Zero, nil
+	}
+	if candidate.RateCard.RateVersion <= 0 {
+		row.ExclusionCode = errs.CodeVideoRateCardMissing
+		return row, decimal.Zero, nil
+	}
+	card, decodeErr := decodeNativeRateCard(candidate.ProviderCode, candidate.ModelCode, candidate.RateCard.PricingSchema, candidate.RateCard.RateConfig)
+	if decodeErr != nil {
+		row.ExclusionCode = nativeRateCardExclusionCode(decodeErr)
+		row.Calculation["error"] = decodeErr.Error()
+		return row, decimal.Zero, nil
+	}
+	quote, quoteErr := domainvideo.QuoteNativePricing(domainvideo.NativePricingRequest{
+		Video: mappedRequest, InputVideoSeconds: input.InputVideoSeconds,
+		ReferenceImageCount: input.ReferenceImageCount, HasInputAudio: input.HasInputAudio,
+	}, card)
+	if quoteErr != nil {
+		row.ExclusionCode = errs.CodeVideoRateCardInvalid
+		row.Calculation["error"] = quoteErr.Error()
+		return row, decimal.Zero, nil
+	}
+	value, parseErr := decimal.NewFromString(quote.CNY)
+	if parseErr != nil {
+		return QuoteSimulationCandidate{}, decimal.Zero, errs.Internal("invalid native video quote")
+	}
+	row.Eligible = true
+	row.EstimatedCNY = value.StringFixed(5)
+	row.Calculation = quote.Calculation
+	return row, value, nil
+}
+
+func routeQuoteContextHasPriceableCombination(contextValue RouteQuoteContext, combo VisibleCombination) bool {
+	for _, candidate := range contextValue.Candidates {
+		input := QuoteSimulationRequest{
+			RouteModelID: contextValue.Route.RouteModelID, TaskType: combo.TaskType,
+			Resolution: combo.Resolution, AspectRatio: combo.AspectRatio, AudioMode: combo.AudioMode,
+			DurationSeconds: combo.DurationSeconds, OutputCount: 1,
+		}
+		capability, err := decodePricingCapability(candidate.Capability)
+		if err == nil {
+			if task, ok := capability.TaskTypes[domainvideo.TaskType(combo.TaskType)]; ok {
+				input.Inputs = capabilityValidationInputs(task)
+				for _, mediaInput := range input.Inputs {
+					if strings.EqualFold(mediaInput.MediaType, "image") {
+						input.ReferenceImageCount++
+					}
+				}
+			}
+		}
+		row, _, err := evaluateRouteQuoteCandidate(input, candidate)
+		if err == nil && row.Eligible {
+			return true
+		}
+	}
+	return false
 }
 
 func nativeRateCardExclusionCode(err error) string {
