@@ -5457,99 +5457,39 @@ paths:
       summary: Soft-delete video capability
       security: [{bearerAuth: []}]
       responses: {'204': {description: Deleted}}
-  /api/ops/admin/v1/model-account-models/{id}/video-cost-rules:
+  /api/ops/admin/v1/video-models/{account_model_id}/rate-cards:
     get:
-      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      parameters:
+        - {name: account_model_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
       tags: [Admin Model Routing]
-      summary: List immutable provider video cost versions
+      summary: List immutable provider-native video sales rate cards
       security: [{bearerAuth: []}]
       responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}}
     post:
-      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
+      parameters:
+        - {name: account_model_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
       tags: [Admin Model Routing]
-      summary: Create next provider video cost version
+      summary: Validate and create the next provider-native video sales rate card
       security: [{bearerAuth: []}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoCostRuleWrite'}}}}
       responses: {'201': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
-  /api/ops/admin/v1/model-account-models/{id}/video-cost-rules/{rule_id}:
+  /api/ops/admin/v1/video-models/{account_model_id}/rate-cards/{id}:
     delete:
       parameters:
-        - {$ref: '#/components/parameters/AdminVideoResourceID'}
-        - {name: rule_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: account_model_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
         - {$ref: '#/components/parameters/AdminVideoExpectedVersion'}
       tags: [Admin Model Routing]
-      summary: Soft-delete a provider cost version
+      summary: Soft-delete a provider-native video sales rate card
       security: [{bearerAuth: []}]
       responses: {'204': {description: Deleted}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
-  /api/ops/admin/v1/video-pricing-strategies:
-    get:
-      tags: [Admin Model Routing]
-      summary: List video pricing strategies and sales rules
-      security: [{bearerAuth: []}]
-      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}}
+  /api/ops/admin/v1/video-routes/{route_model_id}/quote-simulation:
     post:
+      parameters:
+        - {name: route_model_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
       tags: [Admin Model Routing]
-      summary: Create video pricing strategy
+      summary: Simulate every eligible route candidate and the fixed highest-price quote
       security: [{bearerAuth: []}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoStrategyWrite'}}}}
-      responses: {'201': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
-  /api/ops/admin/v1/video-pricing-strategies/{id}:
-    get:
-      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
-      tags: [Admin Model Routing]
-      summary: Get video pricing strategy
-      security: [{bearerAuth: []}]
-      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}}
-    put:
-      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
-      tags: [Admin Model Routing]
-      summary: Create next immutable strategy version using CAS
-      security: [{bearerAuth: []}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoStrategyWrite'}}}}
       responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
-    delete:
-      tags: [Admin Model Routing]
-      summary: Soft-delete pricing strategy
-      security: [{bearerAuth: []}]
-      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}, {$ref: '#/components/parameters/AdminVideoExpectedVersion'}]
-      responses: {'204': {description: Deleted}}
-  /api/ops/admin/v1/video-pricing-strategies/{id}:simulate:
-    post:
-      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
-      tags: [Admin Model Routing]
-      summary: Simulate worst-candidate cost, safety points, and target margin
-      security: [{bearerAuth: []}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoSimulationRequest'}}}}
-      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
-  /api/ops/admin/v1/video-pricing-strategies/{id}:recalculate:
-    post:
-      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
-      tags: [Admin Model Routing]
-      summary: Generate new sales rule versions without overwriting history
-      security: [{bearerAuth: []}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoRecalculateRequest'}}}}
-      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
-  /api/ops/admin/v1/video-price-rules:
-    post:
-      tags: [Admin Model Routing]
-      summary: Create server-validated video sales price rule
-      security: [{bearerAuth: []}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoPriceRuleWrite'}}}}
-      responses: {'201': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
-  /api/ops/admin/v1/video-price-rules/{id}:
-    put:
-      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
-      tags: [Admin Model Routing]
-      summary: Create next immutable server-validated sales price version
-      security: [{bearerAuth: []}]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoPriceRuleWrite'}}}}
-      responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}
-    delete:
-      tags: [Admin Model Routing]
-      summary: Soft-delete sales price rule
-      security: [{bearerAuth: []}]
-      parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}, {$ref: '#/components/parameters/AdminVideoExpectedVersion'}]
-      responses: {'204': {description: Deleted}}
   /api/ops/admin/v1/route-models/{id}/video-config:
     get:
       parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
@@ -5560,8 +5500,8 @@ paths:
     put:
       parameters: [{$ref: '#/components/parameters/AdminVideoResourceID'}]
       tags: [Admin Model Routing]
-      summary: CAS-save visible combinations and strategy binding
-      description: Enabling is blocked for missing candidates, capabilities, costs, prices, target margin, or point-product net income floor.
+      summary: CAS-save visible combinations, candidate mappings, minimum points, and rounding step
+      description: Enabling is blocked when any visible request lacks an eligible candidate with a valid provider-native rate card.
       security: [{bearerAuth: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AdminVideoRouteConfigWrite'}}}}
       responses: {'200': {$ref: '#/components/responses/AdminVideoResponse'}, '409': {$ref: '#/components/responses/AdminVideoSafetyConflict'}}

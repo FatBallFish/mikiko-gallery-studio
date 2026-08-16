@@ -196,6 +196,9 @@ export const API_PATHS = {
     readiness: '/api/ops/admin/v1/readiness',
     videoConfiguration: '/api/ops/admin/v1/video/configuration',
     videoModelCapability: '/api/ops/admin/v1/model-account-models/{id}/video-capability',
+    videoModelRateCards: '/api/ops/admin/v1/video-models/{id}/rate-cards',
+    videoModelRateCardDetail: '/api/ops/admin/v1/video-models/{id}/rate-cards/{rate_card_id}',
+    videoRouteQuoteSimulation: '/api/ops/admin/v1/video-routes/{id}/quote-simulation',
     videoModelCostRules: '/api/ops/admin/v1/model-account-models/{id}/video-cost-rules',
     videoModelCostRuleDetail: '/api/ops/admin/v1/model-account-models/{id}/video-cost-rules/{rule_id}',
     videoPricingStrategies: '/api/ops/admin/v1/video-pricing-strategies',
@@ -333,6 +336,41 @@ export type AdminVideoRouteConfig = {
   candidate_account_model_ids?: number[]; task_types: string[]; visible_options: Record<string, unknown>; defaults: Record<string, unknown>; max_output_count: number; enabled: boolean
 }
 export type AdminVideoCapabilityWrite = { expected_version: string; capability_version: string; capability: Record<string, unknown>; validation_status: string; enabled: boolean }
+export type SeedanceVideoRateConfig = {
+  resolutions: Record<string, { without_input_video_million_tokens_cny: string; with_input_video_million_tokens_cny?: string }>
+}
+export type MiniMaxH3VideoRateConfig = {
+  resolutions: Record<string, { output_second_cny: string; input_video_second_cny: string }>
+  free_image_count: number
+  extra_image_cny: string
+  input_audio_free: true
+}
+export type AdminVideoRateCard = {
+  id: number; account_model_id: number; currency: 'CNY'; rate_version: number
+  source_reference: string; effective_at: string; enabled: boolean
+} & (
+  | { provider_code: 'seedance'; pricing_schema: 'seedance_token_v1'; rate_config: SeedanceVideoRateConfig }
+  | { provider_code: 'minimax'; pricing_schema: 'minimax_h3_second_v1'; rate_config: MiniMaxH3VideoRateConfig }
+)
+export type AdminVideoRateCardWrite = {
+  expected_rate_version: number; currency?: 'CNY'; source_reference?: string; effective_at?: string; enabled: boolean
+} & (
+  | { provider_code: 'seedance'; pricing_schema: 'seedance_token_v1'; rate_config: SeedanceVideoRateConfig }
+  | { provider_code: 'minimax'; pricing_schema: 'minimax_h3_second_v1'; rate_config: MiniMaxH3VideoRateConfig }
+)
+export type AdminVideoQuoteSimulationRequest = {
+  task_type: string; resolution: string; aspect_ratio: string; audio_mode: string; duration_seconds: number
+  output_count: number; reference_image_count: number; input_video_seconds: string; has_input_audio: boolean
+}
+export type AdminVideoQuoteCandidate = {
+  route_candidate_id: number; account_model_id: number; provider_code: string; model_code: string; eligible: boolean
+  mapped_resolution: string; estimated_cny: string; exclusion_code: string; calculation: Record<string, unknown>
+}
+export type AdminVideoQuoteSimulationResult = {
+  route_model_id: number; config_version: string; candidates: AdminVideoQuoteCandidate[]; highest_account_model_id: number
+  highest_cny: string; cny_per_point: string; conversion_version: string; minimum_task_points: string
+  rounding_step_points: number; unit_points: string; total_points: string
+}
 export type AdminVideoCostRuleWrite = { id?: number; expected_rule_version: number; billing_mode: string; currency: string; rates: Record<string, unknown>; cost_reserve_markup?: string; source_type?: string; source_reference?: string; validation_status: string; effective_at: string; expires_at?: string; enabled: boolean }
 export type AdminVideoStrategyWrite = Partial<AdminVideoPricingStrategy> & { expected_version: number; code: string; name: string; enabled: boolean }
 export type AdminVideoSimulationRequest = { route_model_id: number; task_type: string; resolution: string; audio_mode: string; duration_seconds: number; reference_image_count?: number }

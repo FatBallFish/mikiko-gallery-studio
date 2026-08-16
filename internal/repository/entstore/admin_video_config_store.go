@@ -2,9 +2,16 @@ package entstore
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strconv"
 	"time"
 
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/configitem"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccount"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelratecard"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
@@ -141,6 +148,139 @@ func projectVideoModelRateCard(row *repoent.VideoModelRateCard) adminvideo.RateC
 		PricingSchema: row.PricingSchema, RateVersion: row.RateVersion, Currency: row.Currency,
 		RateConfig: deepCloneAnyMap(row.RateConfig), SourceReference: row.SourceReference,
 		EffectiveAt: row.EffectiveAt, Enabled: row.Enabled,
+	}
+}
+
+func (s *AdminVideoStore) GetVideoModelPricingContext(ctx context.Context, accountModelID int64) (adminvideo.ModelPricingContext, error) {
+	model, err := s.client.ModelAccountModel.Query().Where(
+		modelaccountmodel.IDEQ(int(accountModelID)), modelaccountmodel.DeletedAtIsNil(),
+	).Only(ctx)
+	if err != nil {
+		return adminvideo.ModelPricingContext{}, err
+	}
+	account, err := s.client.ModelAccount.Query().Where(
+		modelaccount.IDEQ(int(model.AccountID)), modelaccount.DeletedAtIsNil(),
+	).Only(ctx)
+	if err != nil {
+		return adminvideo.ModelPricingContext{}, err
+	}
+	capability, err := s.client.VideoModelCapability.Query().Where(
+		videomodelcapability.AccountModelIDEQ(accountModelID), videomodelcapability.DeletedAtIsNil(),
+	).Only(ctx)
+	if err != nil {
+		return adminvideo.ModelPricingContext{}, err
+	}
+	return adminvideo.ModelPricingContext{
+		AccountModelID: accountModelID, ProviderCode: account.AdapterType,
+		ModelCode: model.ModelCode, Capability: deepCloneAnyMap(capability.CapabilityJSON),
+	}, nil
+}
+
+func (s *AdminVideoStore) GetVideoRouteQuoteContext(ctx context.Context, routeModelID int64, at time.Time) (adminvideo.RouteQuoteContext, error) {
+	config, err := s.client.VideoRouteConfig.Query().Where(
+		videorouteconfig.RouteModelIDEQ(routeModelID), videorouteconfig.DeletedAtIsNil(),
+	).Only(ctx)
+	if err != nil {
+		return adminvideo.RouteQuoteContext{}, err
+	}
+	result := adminvideo.RouteQuoteContext{Route: adminvideo.RouteConfigSummary{
+		RouteModelID: routeModelID, ConfigVersion: config.ConfigVersion,
+		CandidateParameterMappings: deepCloneAnyMap(config.CandidateParameterMappings),
+		MinimumTaskPoints:          config.MinimumTaskPoints, RoundingStepPoints: config.RoundingStepPoints,
+		TaskTypes: append([]string(nil), config.TaskTypes...), VisibleOptions: deepCloneAnyMap(config.VisibleOptions),
+		Defaults: deepCloneAnyMap(config.Defaults), MaxOutputCount: config.MaxOutputCount, Enabled: config.Enabled,
+	}}
+	rows, err := s.client.RouteModelCandidate.Query().Where(
+		routemodelcandidate.RouteModelIDEQ(routeModelID), routemodelcandidate.EnabledEQ(true), routemodelcandidate.DeletedAtIsNil(),
+	).Order(repoent.Asc(routemodelcandidate.FieldPriority), repoent.Asc(routemodelcandidate.FieldFallbackOrder)).All(ctx)
+	if err != nil {
+		return adminvideo.RouteQuoteContext{}, err
+	}
+	for _, candidate := range rows {
+		modelContext, contextErr := s.GetVideoModelPricingContext(ctx, candidate.AccountModelID)
+		if contextErr != nil {
+			continue
+		}
+		capabilityRow, capabilityErr := s.client.VideoModelCapability.Query().Where(
+			videomodelcapability.AccountModelIDEQ(candidate.AccountModelID), videomodelcapability.EnabledEQ(true),
+			videomodelcapability.ValidationStatusEQ("verified"), videomodelcapability.DeletedAtIsNil(),
+		).Only(ctx)
+		if capabilityErr != nil {
+			continue
+		}
+		rateCard, rateErr := s.GetEffectiveVideoModelRateCard(ctx, candidate.AccountModelID, at)
+		if rateErr != nil && !repoent.IsNotFound(rateErr) {
+			return adminvideo.RouteQuoteContext{}, rateErr
+		}
+		result.Candidates = append(result.Candidates, adminvideo.RouteQuoteCandidate{
+			RouteCandidateID: int64(candidate.ID), AccountModelID: candidate.AccountModelID,
+			ProviderCode: modelContext.ProviderCode, ModelCode: modelContext.ModelCode,
+			CapabilityVersion: capabilityRow.CapabilityVersion, Capability: deepCloneAnyMap(capabilityRow.CapabilityJSON),
+			ResolutionMappings: decodeCandidateResolutionMappings(config.CandidateParameterMappings, candidate.AccountModelID),
+			RateCard:           rateCard,
+		})
+	}
+	result.CNYPerPoint, result.ConversionVersion, err = s.videoCNYPerPoint(ctx)
+	if err != nil {
+		return adminvideo.RouteQuoteContext{}, err
+	}
+	return result, nil
+}
+
+func decodeCandidateResolutionMappings(value map[string]any, accountModelID int64) map[string]string {
+	result := map[string]string{}
+	key := strconv.FormatInt(accountModelID, 10)
+	candidateValue, ok := value[key]
+	if !ok {
+		return result
+	}
+	payload, err := json.Marshal(candidateValue)
+	if err != nil {
+		return result
+	}
+	var decoded struct {
+		Resolutions map[string]string `json:"resolutions"`
+	}
+	if json.Unmarshal(payload, &decoded) != nil {
+		return result
+	}
+	for source, target := range decoded.Resolutions {
+		result[source] = target
+	}
+	return result
+}
+
+func (s *AdminVideoStore) videoCNYPerPoint(ctx context.Context) (string, string, error) {
+	row, err := s.client.ConfigItem.Query().Where(
+		configitem.ConfigCategoryEQ("billing_pricing"), configitem.ConfigKeyEQ("cny_per_point"), configitem.ScopeEQ("global"),
+	).Only(ctx)
+	if repoent.IsNotFound(err) {
+		return "0.01000", "billing-default", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	value, ok := configScalarString(row.ConfigValue["value"])
+	if !ok {
+		return "", "", fmt.Errorf("billing_pricing.cny_per_point is invalid")
+	}
+	return value, fmt.Sprintf("billing-config-v%d", row.Version), nil
+}
+
+func configScalarString(value any) (string, bool) {
+	switch typed := value.(type) {
+	case string:
+		return typed, typed != ""
+	case json.Number:
+		return typed.String(), true
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64), true
+	case int:
+		return strconv.Itoa(typed), true
+	case int64:
+		return strconv.FormatInt(typed, 10), true
+	default:
+		return "", false
 	}
 }
 

@@ -64,6 +64,12 @@ func (s *fakeStore) DeleteVideoModelRateCard(context.Context, int64, int) error 
 func (s *fakeStore) GetEffectiveVideoModelRateCard(context.Context, int64, time.Time) (RateCardSummary, error) {
 	return RateCardSummary{}, nil
 }
+func (s *fakeStore) GetVideoModelPricingContext(context.Context, int64) (ModelPricingContext, error) {
+	return ModelPricingContext{}, nil
+}
+func (s *fakeStore) GetVideoRouteQuoteContext(context.Context, int64, time.Time) (RouteQuoteContext, error) {
+	return RouteQuoteContext{}, nil
+}
 func (s *fakeStore) SaveCostRule(context.Context, CostRuleWrite) (CostRuleSummary, error) {
 	return CostRuleSummary{}, nil
 }

@@ -8,16 +8,29 @@ import (
 
 type fakeConfigStore struct {
 	fakeStore
-	capability CapabilityWrite
-	cost       CostRuleWrite
-	strategy   StrategyWrite
-	price      PriceRuleWrite
-	route      RouteConfigWrite
+	capability   CapabilityWrite
+	cost         CostRuleWrite
+	strategy     StrategyWrite
+	price        PriceRuleWrite
+	route        RouteConfigWrite
+	modelContext ModelPricingContext
+	routeContext RouteQuoteContext
+	rateCard     RateCardWrite
 }
 
 func (s *fakeConfigStore) SaveCapability(_ context.Context, input CapabilityWrite) (CapabilitySummary, error) {
 	s.capability = input
 	return CapabilitySummary{AccountModelID: input.AccountModelID, Version: input.CapabilityVersion, Enabled: input.Enabled}, nil
+}
+func (s *fakeConfigStore) GetVideoModelPricingContext(context.Context, int64) (ModelPricingContext, error) {
+	return s.modelContext, nil
+}
+func (s *fakeConfigStore) GetVideoRouteQuoteContext(context.Context, int64, time.Time) (RouteQuoteContext, error) {
+	return s.routeContext, nil
+}
+func (s *fakeConfigStore) SaveVideoModelRateCard(_ context.Context, input RateCardWrite) (RateCardSummary, error) {
+	s.rateCard = input
+	return RateCardSummary{AccountModelID: input.AccountModelID, ProviderCode: input.ProviderCode, PricingSchema: input.PricingSchema, RateVersion: input.ExpectedRateVersion + 1, RateConfig: input.RateConfig, Enabled: input.Enabled}, nil
 }
 func (s *fakeConfigStore) SaveCostRule(_ context.Context, input CostRuleWrite) (CostRuleSummary, error) {
 	s.cost = input
@@ -37,6 +50,83 @@ func (s *fakeConfigStore) SaveRouteConfig(_ context.Context, input RouteConfigWr
 }
 func (s *fakeConfigStore) DeleteVideoConfig(context.Context, ConfigKind, int64, int64) error {
 	return nil
+}
+
+func TestSaveVideoModelRateCardValidatesProviderSchemaAndCapability(t *testing.T) {
+	capability := map[string]any{
+		"schema_version": 1, "provider_native_max_n": 1,
+		"task_types": map[string]any{"text_to_video": map[string]any{
+			"durations": map[string]any{"values": []any{5}}, "resolutions": []any{"720p"},
+			"aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"},
+		}},
+	}
+	store := &fakeConfigStore{modelContext: ModelPricingContext{AccountModelID: 7, ProviderCode: "seedance", ModelCode: "doubao-seedance-2-0-260128", Capability: capability}}
+	service := NewService(store)
+	input := RateCardWrite{
+		AccountModelID: 7, ProviderCode: "minimax", PricingSchema: "seedance_token_v1", ExpectedRateVersion: 0,
+		RateConfig: map[string]any{
+			"resolutions": map[string]any{
+				"720p": map[string]any{"without_input_video_million_tokens_cny": "46"},
+			},
+		},
+		Enabled: true,
+	}
+	if _, err := service.SaveVideoModelRateCard(t.Context(), input); err == nil {
+		t.Fatal("provider mismatch must fail")
+	}
+	input.ProviderCode = "seedance"
+	if _, err := service.SaveVideoModelRateCard(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	if store.rateCard.Currency != "CNY" || store.rateCard.PricingSchema != "seedance_token_v1" {
+		t.Fatalf("normalized rate card = %#v", store.rateCard)
+	}
+}
+
+func TestRouteQuoteSimulationUsesMappedCandidatesAndHighestCNY(t *testing.T) {
+	seedanceCapability := domainVideoCapabilityMap("720p")
+	minimaxCapability := domainVideoCapabilityMap("768p")
+	store := &fakeConfigStore{routeContext: RouteQuoteContext{
+		Route:       RouteConfigSummary{RouteModelID: 9, ConfigVersion: "route-v2", MinimumTaskPoints: "0", RoundingStepPoints: 1},
+		CNYPerPoint: "0.01", ConversionVersion: "billing-v3",
+		Candidates: []RouteQuoteCandidate{
+			{
+				RouteCandidateID: 11, AccountModelID: 101, ProviderCode: "seedance", ModelCode: "doubao-seedance-2-0-260128", Capability: seedanceCapability,
+				RateCard: RateCardSummary{ProviderCode: "seedance", PricingSchema: "seedance_token_v1", RateVersion: 1, RateConfig: map[string]any{
+					"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
+				}},
+			},
+			{
+				RouteCandidateID: 12, AccountModelID: 102, ProviderCode: "minimax", ModelCode: "MiniMax-H3", Capability: minimaxCapability, ResolutionMappings: map[string]string{"720p": "768p"},
+				RateCard: RateCardSummary{ProviderCode: "minimax", PricingSchema: "minimax_h3_second_v1", RateVersion: 1, RateConfig: map[string]any{
+					"resolutions":      map[string]any{"768p": map[string]any{"output_second_cny": "0.50", "input_video_second_cny": "0.50"}},
+					"free_image_count": 5, "extra_image_cny": "0.20", "input_audio_free": true,
+				}},
+			},
+		},
+	}}
+	result, err := NewService(store).SimulateRouteQuote(t.Context(), QuoteSimulationRequest{
+		RouteModelID: 9, TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5, OutputCount: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Candidates) != 2 || result.HighestAccountModelID != 101 || result.HighestCNY != "4.96800" || result.UnitPoints != "497.00000" {
+		t.Fatalf("simulation = %#v", result)
+	}
+	if result.Candidates[1].MappedResolution != "768p" || !result.Candidates[1].Eligible {
+		t.Fatalf("mapped minimax candidate = %#v", result.Candidates[1])
+	}
+}
+
+func domainVideoCapabilityMap(resolution string) map[string]any {
+	return map[string]any{
+		"schema_version": 1, "provider_native_max_n": 1,
+		"task_types": map[string]any{"text_to_video": map[string]any{
+			"durations": map[string]any{"values": []any{5}}, "resolutions": []any{resolution},
+			"aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"},
+		}},
+	}
 }
 
 func TestCapabilityWriteValidatesProviderNativeNAndCAS(t *testing.T) {

@@ -57,11 +57,111 @@ func (a *API) HandleAdminVideoModelConfiguration(w http.ResponseWriter, r *http.
 		a.handleAdminVideoCapability(w, r, modelID)
 		return
 	}
-	if parts[1] == "video-cost-rules" {
-		a.handleAdminVideoCostRules(w, r, modelID, parts[2:])
+	httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "video model configuration route not found"))
+}
+
+func (a *API) HandleAdminVideoRateCards(w http.ResponseWriter, r *http.Request) {
+	if a.adminVideo == nil {
+		httpx.WriteError(w, r, errs.Internal("video administration is unavailable"))
 		return
 	}
-	httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "video model configuration route not found"))
+	parts := splitAdminSuffix(r.URL.Path, "/api/ops/admin/v1/video-models/")
+	accountModelID, appErr := parseInt64Part(parts, 0, "account_model_id")
+	if appErr != nil || len(parts) < 2 || parts[1] != "rate-cards" || len(parts) > 3 {
+		if appErr == nil {
+			appErr = errs.New(http.StatusNotFound, errs.CodeNotFound, "video rate card route not found")
+		}
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if r.Method == http.MethodGet && len(parts) == 2 {
+		if _, permissionErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly); permissionErr != nil {
+			httpx.WriteError(w, r, permissionErr)
+			return
+		}
+		items, err := a.adminVideo.ListVideoModelRateCards(r.Context(), accountModelID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": items})
+		return
+	}
+	admin, permissionErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels)
+	if permissionErr != nil {
+		httpx.WriteError(w, r, permissionErr)
+		return
+	}
+	if r.Method == http.MethodPost && len(parts) == 2 {
+		var input adminvideoservice.RateCardWrite
+		if !decodeJSONBody(w, r, &input) {
+			return
+		}
+		input.AccountModelID = accountModelID
+		result, err := a.adminVideo.SaveVideoModelRateCard(r.Context(), input)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_rate_card.save", "video_model_rate_card", fmt.Sprintf("%d", result.ID), map[string]any{"rate_version": result.RateVersion})
+		httpx.WriteSuccess(w, r, http.StatusCreated, result)
+		return
+	}
+	if r.Method == http.MethodDelete && len(parts) == 3 {
+		id, parseErr := strconv.ParseInt(parts[2], 10, 64)
+		if parseErr != nil || id <= 0 {
+			httpx.WriteError(w, r, errs.BadRequest("invalid rate card id"))
+			return
+		}
+		expected, parseErr := strconv.Atoi(r.URL.Query().Get("expected_version"))
+		if parseErr != nil || expected <= 0 {
+			httpx.WriteError(w, r, errs.BadRequest("expected_version is required"))
+			return
+		}
+		if err := a.adminVideo.DeleteVideoModelRateCard(r.Context(), id, expected); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_rate_card.delete", "video_model_rate_card", fmt.Sprintf("%d", id), nil)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeMethodNotAllowed(w, r)
+}
+
+func (a *API) HandleAdminVideoRouteQuoteSimulation(w http.ResponseWriter, r *http.Request) {
+	if a.adminVideo == nil {
+		httpx.WriteError(w, r, errs.Internal("video administration is unavailable"))
+		return
+	}
+	if _, permissionErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels); permissionErr != nil {
+		httpx.WriteError(w, r, permissionErr)
+		return
+	}
+	parts := splitAdminSuffix(r.URL.Path, "/api/ops/admin/v1/video-routes/")
+	routeModelID, appErr := parseInt64Part(parts, 0, "route_model_id")
+	if appErr != nil || len(parts) != 2 || parts[1] != "quote-simulation" {
+		if appErr == nil {
+			appErr = errs.New(http.StatusNotFound, errs.CodeNotFound, "video route quote simulation route not found")
+		}
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	var input adminvideoservice.QuoteSimulationRequest
+	if !decodeJSONBody(w, r, &input) {
+		return
+	}
+	input.RouteModelID = routeModelID
+	result, err := a.adminVideo.SimulateRouteQuote(r.Context(), input)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, result)
 }
 
 func (a *API) handleAdminVideoCapability(w http.ResponseWriter, r *http.Request, modelID int64) {

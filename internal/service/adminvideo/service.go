@@ -29,6 +29,8 @@ type Store interface {
 	SaveVideoModelRateCard(context.Context, RateCardWrite) (RateCardSummary, error)
 	DeleteVideoModelRateCard(context.Context, int64, int) error
 	GetEffectiveVideoModelRateCard(context.Context, int64, time.Time) (RateCardSummary, error)
+	GetVideoModelPricingContext(context.Context, int64) (ModelPricingContext, error)
+	GetVideoRouteQuoteContext(context.Context, int64, time.Time) (RouteQuoteContext, error)
 	SaveCostRule(context.Context, CostRuleWrite) (CostRuleSummary, error)
 	SaveStrategy(context.Context, StrategyWrite) (PricingStrategySummary, error)
 	SavePriceRule(context.Context, PriceRuleWrite) (PriceRuleSummary, error)
