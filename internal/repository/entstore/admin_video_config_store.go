@@ -14,9 +14,6 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelratecard"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
 	adminvideo "github.com/fatballfish/pic-gallery/internal/service/adminvideo"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
@@ -197,28 +194,57 @@ func (s *AdminVideoStore) GetVideoRouteQuoteContext(ctx context.Context, routeMo
 		return adminvideo.RouteQuoteContext{}, err
 	}
 	for _, candidate := range rows {
-		modelContext, contextErr := s.GetVideoModelPricingContext(ctx, candidate.AccountModelID)
-		if contextErr != nil {
+		quoteCandidate := adminvideo.RouteQuoteCandidate{
+			RouteCandidateID:   int64(candidate.ID),
+			AccountModelID:     candidate.AccountModelID,
+			ResolutionMappings: decodeCandidateResolutionMappings(config.CandidateParameterMappings, candidate.AccountModelID),
+		}
+		model, modelErr := s.client.ModelAccountModel.Query().Where(
+			modelaccountmodel.IDEQ(int(candidate.AccountModelID)), modelaccountmodel.DeletedAtIsNil(),
+		).Only(ctx)
+		if repoent.IsNotFound(modelErr) {
+			quoteCandidate.PreflightExclusionCode = errs.CodeVideoCandidateNotPriceable
+			result.Candidates = append(result.Candidates, quoteCandidate)
 			continue
+		}
+		if modelErr != nil {
+			return adminvideo.RouteQuoteContext{}, modelErr
+		}
+		quoteCandidate.ModelCode = model.ModelCode
+		if !model.Enabled {
+			quoteCandidate.PreflightExclusionCode = errs.CodeVideoCandidateNotPriceable
+		}
+		account, accountErr := s.client.ModelAccount.Query().Where(
+			modelaccount.IDEQ(int(model.AccountID)), modelaccount.DeletedAtIsNil(),
+		).Only(ctx)
+		if repoent.IsNotFound(accountErr) {
+			quoteCandidate.PreflightExclusionCode = errs.CodeVideoCandidateNotPriceable
+			result.Candidates = append(result.Candidates, quoteCandidate)
+			continue
+		}
+		if accountErr != nil {
+			return adminvideo.RouteQuoteContext{}, accountErr
+		}
+		quoteCandidate.ProviderCode = account.AdapterType
+		if account.Status != "enabled" {
+			quoteCandidate.PreflightExclusionCode = errs.CodeVideoCandidateNotPriceable
 		}
 		capabilityRow, capabilityErr := s.client.VideoModelCapability.Query().Where(
 			videomodelcapability.AccountModelIDEQ(candidate.AccountModelID), videomodelcapability.EnabledEQ(true),
 			videomodelcapability.ValidationStatusEQ("verified"), videomodelcapability.DeletedAtIsNil(),
 		).Only(ctx)
-		if capabilityErr != nil {
-			continue
+		if capabilityErr == nil {
+			quoteCandidate.CapabilityVersion = capabilityRow.CapabilityVersion
+			quoteCandidate.Capability = deepCloneAnyMap(capabilityRow.CapabilityJSON)
+		} else if !repoent.IsNotFound(capabilityErr) {
+			return adminvideo.RouteQuoteContext{}, capabilityErr
 		}
 		rateCard, rateErr := s.GetEffectiveVideoModelRateCard(ctx, candidate.AccountModelID, at)
 		if rateErr != nil && !repoent.IsNotFound(rateErr) {
 			return adminvideo.RouteQuoteContext{}, rateErr
 		}
-		result.Candidates = append(result.Candidates, adminvideo.RouteQuoteCandidate{
-			RouteCandidateID: int64(candidate.ID), AccountModelID: candidate.AccountModelID,
-			ProviderCode: modelContext.ProviderCode, ModelCode: modelContext.ModelCode,
-			CapabilityVersion: capabilityRow.CapabilityVersion, Capability: deepCloneAnyMap(capabilityRow.CapabilityJSON),
-			ResolutionMappings: decodeCandidateResolutionMappings(config.CandidateParameterMappings, candidate.AccountModelID),
-			RateCard:           rateCard,
-		})
+		quoteCandidate.RateCard = rateCard
+		result.Candidates = append(result.Candidates, quoteCandidate)
 	}
 	result.CNYPerPoint, result.ConversionVersion, err = s.videoCNYPerPoint(ctx)
 	if err != nil {
@@ -282,94 +308,6 @@ func configScalarString(value any) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-func (s *AdminVideoStore) SaveCostRule(ctx context.Context, input adminvideo.CostRuleWrite) (adminvideo.CostRuleSummary, error) {
-	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (adminvideo.CostRuleSummary, error) {
-		return saveVideoCostRule(ctx, tx.Client(), input)
-	})
-}
-
-func saveVideoCostRule(ctx context.Context, client *repoent.Client, input adminvideo.CostRuleWrite) (adminvideo.CostRuleSummary, error) {
-	if input.ID > 0 {
-		current, err := client.VideoProviderCostRule.Query().Where(videoprovidercostrule.IDEQ(int(input.ID)), videoprovidercostrule.DeletedAtIsNil()).Only(ctx)
-		if err != nil {
-			return adminvideo.CostRuleSummary{}, err
-		}
-		if current.RuleVersion != input.ExpectedRuleVersion {
-			return adminvideo.CostRuleSummary{}, errs.New(409, errs.CodeConflict, "video cost rule version conflict")
-		}
-		_, err = current.Update().SetEnabled(false).Save(ctx)
-		if err != nil {
-			return adminvideo.CostRuleSummary{}, err
-		}
-	}
-	next := input.ExpectedRuleVersion + 1
-	builder := client.VideoProviderCostRule.Create().SetAccountModelID(input.AccountModelID).SetBillingMode(input.BillingMode).SetRuleVersion(next).SetCurrency(input.Currency).SetRatesJSON(input.Rates).SetCostReserveMarkup(input.CostReserveMarkup).SetSourceType(input.SourceType).SetSourceReference(input.SourceReference).SetValidationStatus(input.ValidationStatus).SetEffectiveAt(input.EffectiveAt).SetEnabled(input.Enabled)
-	if input.ExpiresAt != nil {
-		builder.SetExpiresAt(*input.ExpiresAt)
-	}
-	row, err := builder.Save(ctx)
-	if err != nil {
-		return adminvideo.CostRuleSummary{}, err
-	}
-	return adminvideo.CostRuleSummary{ID: int64(row.ID), AccountModelID: row.AccountModelID, BillingMode: row.BillingMode, RuleVersion: row.RuleVersion, Currency: row.Currency, Rates: row.RatesJSON, CostReserveMarkup: row.CostReserveMarkup, SourceType: row.SourceType, SourceReference: row.SourceReference, Validation: row.ValidationStatus, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, Enabled: row.Enabled}, nil
-}
-
-func (s *AdminVideoStore) SaveStrategy(ctx context.Context, input adminvideo.StrategyWrite) (adminvideo.PricingStrategySummary, error) {
-	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (adminvideo.PricingStrategySummary, error) {
-		return saveVideoStrategy(ctx, tx.Client(), input)
-	})
-}
-
-func saveVideoStrategy(ctx context.Context, client *repoent.Client, input adminvideo.StrategyWrite) (adminvideo.PricingStrategySummary, error) {
-	if input.ID > 0 {
-		current, err := client.VideoPricingStrategy.Query().Where(videopricingstrategy.IDEQ(int(input.ID)), videopricingstrategy.DeletedAtIsNil()).Only(ctx)
-		if err != nil {
-			return adminvideo.PricingStrategySummary{}, err
-		}
-		if current.StrategyVersion != input.ExpectedVersion {
-			return adminvideo.PricingStrategySummary{}, errs.New(409, errs.CodeConflict, "video pricing strategy version conflict")
-		}
-		if _, err = current.Update().SetEnabled(false).Save(ctx); err != nil {
-			return adminvideo.PricingStrategySummary{}, err
-		}
-	}
-	row, err := client.VideoPricingStrategy.Create().SetCode(input.Code).SetName(input.Name).SetGrossPointValueCny(input.GrossPointValueCNY).SetMinimumNetPointIncomeCny(input.MinimumNetPointIncomeCNY).SetMaxBonusRatio(input.MaxBonusRatio).SetPaymentFeeRate(input.PaymentFeeRate).SetTargetMarginRate(input.TargetMarginRate).SetProviderCostBufferRate(input.ProviderCostBufferRate).SetPlatformFixedCostCny(input.PlatformFixedCostCNY).SetPlatformOutputSecondCostCny(input.PlatformOutputSecondCostCNY).SetPlatformReferenceCostCny(input.PlatformReferenceCostCNY).SetPlatformAudioFixedCostCny(input.PlatformAudioFixedCostCNY).SetPlatformAudioSecondCostCny(input.PlatformAudioSecondCostCNY).SetExactReserveMarkup(input.ExactReserveMarkup).SetMeteredReserveMarkup(input.MeteredReserveMarkup).SetStrategyVersion(input.ExpectedVersion + 1).SetEnabled(input.Enabled).Save(ctx)
-	if err != nil {
-		return adminvideo.PricingStrategySummary{}, err
-	}
-	return adminvideo.PricingStrategySummary{ID: int64(row.ID), Code: row.Code, Name: row.Name, StrategyVersion: row.StrategyVersion, GrossPointValueCNY: row.GrossPointValueCny, MinimumNetPointIncomeCNY: row.MinimumNetPointIncomeCny, MaxBonusRatio: row.MaxBonusRatio, TargetMarginRate: row.TargetMarginRate, ProviderCostBufferRate: row.ProviderCostBufferRate, PaymentFeeRate: row.PaymentFeeRate, PlatformFixedCostCNY: row.PlatformFixedCostCny, PlatformOutputSecondCostCNY: row.PlatformOutputSecondCostCny, PlatformReferenceCostCNY: row.PlatformReferenceCostCny, PlatformAudioFixedCostCNY: row.PlatformAudioFixedCostCny, PlatformAudioSecondCostCNY: row.PlatformAudioSecondCostCny, ExactReserveMarkup: row.ExactReserveMarkup, MeteredReserveMarkup: row.MeteredReserveMarkup, Enabled: row.Enabled}, nil
-}
-
-func (s *AdminVideoStore) SavePriceRule(ctx context.Context, input adminvideo.PriceRuleWrite) (adminvideo.PriceRuleSummary, error) {
-	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (adminvideo.PriceRuleSummary, error) {
-		return saveVideoPriceRule(ctx, tx.Client(), input)
-	})
-}
-
-func saveVideoPriceRule(ctx context.Context, client *repoent.Client, input adminvideo.PriceRuleWrite) (adminvideo.PriceRuleSummary, error) {
-	if input.ID > 0 {
-		current, err := client.VideoPriceRule.Query().Where(videopricerule.IDEQ(int(input.ID)), videopricerule.DeletedAtIsNil()).Only(ctx)
-		if err != nil {
-			return adminvideo.PriceRuleSummary{}, err
-		}
-		if current.RuleVersion != input.ExpectedVersion {
-			return adminvideo.PriceRuleSummary{}, errs.New(409, errs.CodeConflict, "video price rule version conflict")
-		}
-		if _, err = current.Update().SetEnabled(false).Save(ctx); err != nil {
-			return adminvideo.PriceRuleSummary{}, err
-		}
-	}
-	builder := client.VideoPriceRule.Create().SetPricingStrategyID(input.StrategyID).SetTaskType(input.TaskType).SetResolution(input.Resolution).SetAudioMode(input.AudioMode).SetPricingMode(input.PricingMode).SetRuleVersion(input.ExpectedVersion + 1).SetEffectiveAt(input.EffectiveAt).SetOutputSecondPoints(input.OutputSecondPoints).SetFixedTaskPoints(input.FixedTaskPoints).SetReferenceImagePoints(input.ReferenceImagePoints).SetInputVideoSecondPoints(input.InputVideoSecondPoints).SetReferenceAudioSecondPoints(input.ReferenceAudioSecondPoints).SetGeneratedAudioFixedPoints(input.GeneratedAudioFixedPoints).SetGeneratedAudioSecondPoints(input.GeneratedAudioSecondPoints).SetMinimumBillableSeconds(input.MinimumBillableSeconds).SetMinimumTaskPoints(input.MinimumTaskPoints).SetReserveMarkup(input.ReserveMarkup).SetSafetyPoints(input.SafetyPoints).SetCandidateCostUpperCny(input.CandidateCostUpperCNY).SetSafetySnapshot(input.SafetySnapshot).SetEnabled(input.Enabled).SetInternalNote(input.InternalNote)
-	if input.ExpiresAt != nil {
-		builder.SetExpiresAt(*input.ExpiresAt)
-	}
-	row, err := builder.Save(ctx)
-	if err != nil {
-		return adminvideo.PriceRuleSummary{}, err
-	}
-	return adminvideo.PriceRuleSummary{ID: int64(row.ID), StrategyID: row.PricingStrategyID, TaskType: row.TaskType, Resolution: row.Resolution, AudioMode: row.AudioMode, PricingMode: row.PricingMode, RuleVersion: row.RuleVersion, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, OutputSecondPoints: row.OutputSecondPoints, FixedTaskPoints: row.FixedTaskPoints, ReferenceImagePoints: row.ReferenceImagePoints, InputVideoSecondPoints: row.InputVideoSecondPoints, ReferenceAudioSecondPoints: row.ReferenceAudioSecondPoints, GeneratedAudioFixedPoints: row.GeneratedAudioFixedPoints, GeneratedAudioSecondPoints: row.GeneratedAudioSecondPoints, MinimumBillableSeconds: row.MinimumBillableSeconds, MinimumTaskPoints: row.MinimumTaskPoints, ReserveMarkup: row.ReserveMarkup, SafetyPoints: row.SafetyPoints, SalesPoints: row.MinimumTaskPoints, CandidateCostUpperCNY: row.CandidateCostUpperCny, Enabled: row.Enabled}, nil
 }
 
 func (s *AdminVideoStore) SaveRouteConfig(ctx context.Context, input adminvideo.RouteConfigWrite) (adminvideo.RouteConfigSummary, error) {
@@ -454,36 +392,6 @@ func (s *AdminVideoStore) DeleteVideoConfig(ctx context.Context, kind adminvideo
 		row, err := s.client.VideoModelCapability.Query().Where(videomodelcapability.AccountModelIDEQ(id), videomodelcapability.DeletedAtIsNil()).Only(ctx)
 		if err != nil {
 			return err
-		}
-		_, err = row.Update().SetEnabled(false).SetDeletedAt(now).Save(ctx)
-		return err
-	case adminvideo.ConfigCostRule:
-		row, err := s.client.VideoProviderCostRule.Query().Where(videoprovidercostrule.IDEQ(int(id)), videoprovidercostrule.DeletedAtIsNil()).Only(ctx)
-		if err != nil {
-			return err
-		}
-		if int64(row.RuleVersion) != expected {
-			return errs.New(409, errs.CodeConflict, "video cost rule version conflict")
-		}
-		_, err = row.Update().SetEnabled(false).SetDeletedAt(now).Save(ctx)
-		return err
-	case adminvideo.ConfigStrategy:
-		row, err := s.client.VideoPricingStrategy.Query().Where(videopricingstrategy.IDEQ(int(id)), videopricingstrategy.DeletedAtIsNil()).Only(ctx)
-		if err != nil {
-			return err
-		}
-		if int64(row.StrategyVersion) != expected {
-			return errs.New(409, errs.CodeConflict, "video strategy version conflict")
-		}
-		_, err = row.Update().SetEnabled(false).SetDeletedAt(now).Save(ctx)
-		return err
-	case adminvideo.ConfigPriceRule:
-		row, err := s.client.VideoPriceRule.Query().Where(videopricerule.IDEQ(int(id)), videopricerule.DeletedAtIsNil()).Only(ctx)
-		if err != nil {
-			return err
-		}
-		if int64(row.RuleVersion) != expected {
-			return errs.New(409, errs.CodeConflict, "video price rule version conflict")
 		}
 		_, err = row.Update().SetEnabled(false).SetDeletedAt(now).Save(ctx)
 		return err

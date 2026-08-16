@@ -311,6 +311,21 @@ func TestVideoWorkerStoreCommitArtifactCreatesResultReferenceAndProbeJob(t *test
 	}
 }
 
+func TestNativePricingSnapshotAlwaysUsesLockedUnitPoints(t *testing.T) {
+	item := &repoent.VideoTaskItem{ActualOutputSeconds: "30.000", ActualPoints: "0.00000"}
+	task := &repoent.VideoTask{
+		DurationSeconds: 5, RequestedOutputCount: 1, ReservedPoints: "100.00000",
+		PricingSnapshot: map[string]any{
+			"schema_version": 2, "unit_points": "12.00000",
+			"sales_rule": map[string]any{"pricing_mode": "metered", "output_second_points": "99.00000", "reserve_markup": "1.00000"},
+		},
+	}
+	points, pending, err := actualVideoItemPoints(item, task)
+	if err != nil || pending || points != "12.00000" {
+		t.Fatalf("native fixed settlement points=%q pending=%v err=%v", points, pending, err)
+	}
+}
+
 func TestVideoWorkerStoreMeteredArtifactWaitsForProbeWithoutUsage(t *testing.T) {
 	ctx, client := openVideoTaskStoreTestClient(t, "video-worker-metered-missing-usage")
 	store := NewVideoTaskStore(client, NewBillingStore(client, 5))
@@ -383,6 +398,43 @@ func TestVideoWorkerStoreFreezesAndAppliesProviderCostRule(t *testing.T) {
 	item, itemErr := client.VideoTaskItem.Get(ctx, itemID)
 	if err != nil || itemErr != nil || attempt.ProviderCost != "1.25000" || item.ProviderCost != "1.25000" {
 		t.Fatalf("provider cost attempt=%#v item=%#v errors=%v/%v", attempt, item, err, itemErr)
+	}
+}
+
+func TestVideoWorkerStoreKeepsNativeProviderCostUnknownWhileAuditingUsage(t *testing.T) {
+	ctx, client := openVideoTaskStoreTestClient(t, "video-worker-native-cost-unknown")
+	store := NewVideoTaskStore(client, NewBillingStore(client, 5))
+	now := time.Date(2026, 8, 12, 16, 40, 0, 0, time.UTC)
+	taskID, itemID := seedVideoWorkerTask(t, ctx, client, 9124, "native-cost-unknown", now)
+	if _, err := client.VideoTask.UpdateOneID(taskID).SetPricingSnapshot(map[string]any{
+		"schema_version": 2, "quote_mode": "route_candidate_max_fixed", "unit_points": "7.50000",
+	}).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	claimed, ok, err := store.ClaimDue(ctx, worker.ClaimRequest{Owner: "worker-native-cost", Now: now, LeaseTTL: time.Minute})
+	if err != nil || !ok {
+		t.Fatalf("ClaimDue() ok=%v err=%v", ok, err)
+	}
+	attemptID := uuid.New()
+	prepared, err := store.PrepareAttempt(ctx, worker.PrepareAttemptRequest{ItemID: itemID.String(), Owner: "worker-native-cost", ExpectedVersion: claimed.Version, AttemptID: attemptID.String(), ProviderIdempotencyKey: "native-cost-attempt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := store.ApplyStep(ctx, worker.ApplyStepRequest{
+		ItemID: itemID.String(), Owner: "worker-native-cost", ExpectedVersion: prepared.Version, Target: domainvideo.ItemStateProviderQueued,
+		ProviderJobID: "job-native-cost", AttemptStatus: "provider_queued", UsageRaw: map[string]any{"output_seconds": 5},
+		UsageNormalized: providervideo.Usage{OutputSeconds: "5.000"},
+	})
+	if err != nil || !changed {
+		t.Fatalf("ApplyStep() changed=%v err=%v", changed, err)
+	}
+	attempt, err := client.VideoTaskAttempt.Get(ctx, attemptID)
+	item, itemErr := client.VideoTaskItem.Get(ctx, itemID)
+	if err != nil || itemErr != nil || attempt.ProviderCost != "0.00000" || item.ProviderCost != "0.00000" {
+		t.Fatalf("legacy numeric columns must remain at their default while cost status is unknown: attempt=%#v item=%#v errors=%v/%v", attempt, item, err, itemErr)
+	}
+	if attempt.UsageNormalized["output_seconds"] != "5.000" || attempt.CostSnapshot["provider_cost_status"] != "unknown" {
+		t.Fatalf("usage audit or unknown-cost snapshot missing: %#v", attempt)
 	}
 }
 
@@ -495,6 +547,40 @@ func TestVideoWorkerStoreLoadsAndFinalizesPartialAndZeroSuccessIdempotently(t *t
 	}
 }
 
+func TestVideoWorkerStoreNativePartialSuccessUsesLockedUnitPoints(t *testing.T) {
+	ctx, client := openVideoTaskStoreTestClient(t, "video-worker-native-partial")
+	billing := NewBillingStore(client, 5)
+	store := NewVideoTaskStore(client, billing)
+	const userID int64 = 9141
+	if _, err := billing.Adjust(ctx, billingservice.AdjustStoreRequest{UserID: userID, ChangePoints: "100.00000", Reason: "seed"}); err != nil {
+		t.Fatal(err)
+	}
+	taskID, itemIDs := createReservedVideoWorkerTask(t, ctx, client, store, userID, "native-partial", 2)
+	if _, err := client.VideoTask.UpdateOneID(taskID).SetPricingSnapshot(map[string]any{
+		"schema_version": 2, "quote_mode": "route_candidate_max_fixed", "unit_points": "7.50000",
+	}).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.VideoTaskItem.UpdateOneID(itemIDs[0]).SetStatus(string(domainvideo.ItemStateSucceeded)).SetStage("completed").SetActualOutputSeconds("30.000").SetActualPoints("0.00000").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.VideoTaskItem.UpdateOneID(itemIDs[1]).SetStatus(string(domainvideo.ItemStateFailed)).SetStage("failed").Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := store.LoadSettlement(ctx, taskID.String())
+	if err != nil || len(snapshot.Items) != 2 || snapshot.Items[0].PricePoints != "7.50000" {
+		t.Fatalf("native settlement snapshot=%#v err=%v", snapshot, err)
+	}
+	finalized, err := store.FinalizeTask(ctx, worker.FinalizeRequest{TaskID: taskID.String(), Status: domainvideo.TaskStatusPartial, SuccessOutputCount: 1, ActualPoints: "7.50000", ReservedPoints: "15.00000"})
+	if err != nil || !finalized {
+		t.Fatalf("FinalizeTask() finalized=%v err=%v", finalized, err)
+	}
+	balance, err := billing.GetBalance(ctx, userID)
+	if err != nil || balance.AvailablePoints != "92.50000" || balance.FrozenPoints != "0.00000" {
+		t.Fatalf("native partial balance=%#v err=%v", balance, err)
+	}
+}
+
 func seedVideoWorkerTask(t *testing.T, ctx context.Context, client *repoent.Client, userID int64, suffix string, next time.Time) (uuid.UUID, uuid.UUID) {
 	t.Helper()
 	exists, err := client.VideoProviderCostRule.Query().Where(videoprovidercostrule.AccountModelIDEQ(22), videoprovidercostrule.RuleVersionEQ(1)).Exist(ctx)
@@ -552,7 +638,7 @@ func createReservedVideoWorkerTask(t *testing.T, ctx context.Context, client *re
 		items[index] = VideoTaskItemCreate{ID: itemIDs[index], Ordinal: index}
 	}
 	_, err := store.CreateWithReservation(ctx, CreateVideoTaskWithReservationRequest{
-		Task:  VideoTaskCreate{ID: taskID, UserID: userID, ProjectID: project.ID, TaskType: "text_to_video", PromptTemplate: "move", ExecutionPrompt: "move", RouteModelID: 1, RouteModelCode: "cinema", DurationSeconds: 5, Resolution: "720p", AspectRatio: "16:9", RequestedOutputCount: outputs, EstimatedPoints: "15.00000", ReservedPoints: "15.00000", PricingSnapshot: map[string]any{"unit_points": "7.50000"}, IdempotencyKey: "finalize-" + suffix, RequestFingerprint: "fingerprint-" + suffix},
+		Task:  VideoTaskCreate{ID: taskID, UserID: userID, ProjectID: project.ID, TaskType: "text_to_video", PromptTemplate: "move", ExecutionPrompt: "move", RouteModelID: 1, RouteModelCode: "cinema", DurationSeconds: 5, Resolution: "720p", AspectRatio: "16:9", RequestedOutputCount: outputs, EstimatedPoints: "15.00000", ReservedPoints: "15.00000", PricingSnapshot: map[string]any{"schema_version": 2, "quote_mode": "route_candidate_max_fixed", "unit_points": "7.50000"}, IdempotencyKey: "finalize-" + suffix, RequestFingerprint: "fingerprint-" + suffix},
 		Items: items, Reserve: billingservice.ReserveStoreRequest{UserID: userID, TaskID: taskID.String(), EstimatedPoints: "15.00000", Reason: "reserve"},
 	})
 	if err != nil {

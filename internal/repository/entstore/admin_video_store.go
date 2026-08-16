@@ -13,12 +13,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/mediaprocessingjob"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelratecard"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskitem"
@@ -42,19 +38,7 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 	if err != nil {
 		return adminvideoservice.Snapshot{}, err
 	}
-	costRules, err := s.client.VideoProviderCostRule.Query().Where(videoprovidercostrule.DeletedAtIsNil()).All(ctx)
-	if err != nil {
-		return adminvideoservice.Snapshot{}, err
-	}
 	rateCards, err := s.client.VideoModelRateCard.Query().Where(videomodelratecard.DeletedAtIsNil()).All(ctx)
-	if err != nil {
-		return adminvideoservice.Snapshot{}, err
-	}
-	strategies, err := s.client.VideoPricingStrategy.Query().Where(videopricingstrategy.DeletedAtIsNil()).All(ctx)
-	if err != nil {
-		return adminvideoservice.Snapshot{}, err
-	}
-	priceRules, err := s.client.VideoPriceRule.Query().Where(videopricerule.DeletedAtIsNil()).All(ctx)
 	if err != nil {
 		return adminvideoservice.Snapshot{}, err
 	}
@@ -73,19 +57,6 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 	}
 	for _, row := range rateCards {
 		snapshot.RateCards = append(snapshot.RateCards, projectVideoModelRateCard(row))
-	}
-	for _, row := range costRules {
-		snapshot.CostRules = append(snapshot.CostRules, adminvideoservice.CostRuleSummary{ID: int64(row.ID), AccountModelID: row.AccountModelID, BillingMode: row.BillingMode, RuleVersion: row.RuleVersion, Currency: row.Currency, Rates: row.RatesJSON, CostReserveMarkup: row.CostReserveMarkup, SourceType: row.SourceType, SourceReference: row.SourceReference, Validation: row.ValidationStatus, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, Enabled: row.Enabled})
-	}
-	for _, row := range strategies {
-		snapshot.Strategies = append(snapshot.Strategies, adminvideoservice.PricingStrategySummary{ID: int64(row.ID), Code: row.Code, Name: row.Name, StrategyVersion: row.StrategyVersion, GrossPointValueCNY: row.GrossPointValueCny, MinimumNetPointIncomeCNY: row.MinimumNetPointIncomeCny, MaxBonusRatio: row.MaxBonusRatio, TargetMarginRate: row.TargetMarginRate, ProviderCostBufferRate: row.ProviderCostBufferRate, PaymentFeeRate: row.PaymentFeeRate, PlatformFixedCostCNY: row.PlatformFixedCostCny, PlatformOutputSecondCostCNY: row.PlatformOutputSecondCostCny, PlatformReferenceCostCNY: row.PlatformReferenceCostCny, PlatformAudioFixedCostCNY: row.PlatformAudioFixedCostCny, PlatformAudioSecondCostCNY: row.PlatformAudioSecondCostCny, ExactReserveMarkup: row.ExactReserveMarkup, MeteredReserveMarkup: row.MeteredReserveMarkup, Enabled: row.Enabled})
-	}
-	for _, row := range priceRules {
-		salesPoints := row.MinimumTaskPoints
-		if salesPoints == "0.00000" {
-			salesPoints = row.OutputSecondPoints
-		}
-		snapshot.PriceRules = append(snapshot.PriceRules, adminvideoservice.PriceRuleSummary{ID: int64(row.ID), StrategyID: row.PricingStrategyID, TaskType: row.TaskType, Resolution: row.Resolution, AudioMode: row.AudioMode, PricingMode: row.PricingMode, RuleVersion: row.RuleVersion, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, OutputSecondPoints: row.OutputSecondPoints, FixedTaskPoints: row.FixedTaskPoints, ReferenceImagePoints: row.ReferenceImagePoints, InputVideoSecondPoints: row.InputVideoSecondPoints, ReferenceAudioSecondPoints: row.ReferenceAudioSecondPoints, GeneratedAudioFixedPoints: row.GeneratedAudioFixedPoints, GeneratedAudioSecondPoints: row.GeneratedAudioSecondPoints, MinimumBillableSeconds: row.MinimumBillableSeconds, MinimumTaskPoints: row.MinimumTaskPoints, ReserveMarkup: row.ReserveMarkup, SafetyPoints: row.SafetyPoints, SalesPoints: salesPoints, CandidateCostUpperCNY: row.CandidateCostUpperCny, Enabled: row.Enabled})
 	}
 	configsByRouteID := make(map[int64]*repoent.VideoRouteConfig, len(routeConfigs))
 	for _, row := range routeConfigs {
@@ -117,13 +88,6 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 			summary.Enabled = row.Enabled && route.Enabled
 		}
 		snapshot.Routes = append(snapshot.Routes, summary)
-	}
-	plans, err := s.client.SubscriptionPlan.Query().Where(subscriptionplan.PlanTypeEQ("points_package"), subscriptionplan.PurchaseEnabledEQ(true), subscriptionplan.StatusEQ("active"), subscriptionplan.CurrencyEQ("CNY")).All(ctx)
-	if err != nil {
-		return adminvideoservice.Snapshot{}, err
-	}
-	for _, plan := range plans {
-		snapshot.Plans = append(snapshot.Plans, adminvideoservice.PointProduct{ID: int64(plan.ID), Code: plan.PlanCode, PriceCNY: plan.PriceCny, Points: plan.Points, BonusPoints: plan.BonusPoints, Enabled: true})
 	}
 	return snapshot, nil
 }
@@ -373,7 +337,7 @@ func (s *AdminVideoStore) Readiness(ctx context.Context, now time.Time) (adminvi
 		if route.CandidateCount == 0 {
 			result.RoutesMissingCandidate++
 		}
-		if videoRouteHasMissingPrice(route, snapshot.PriceRules) {
+		if videoRouteHasMissingPrice(route, snapshot.RateCards) {
 			result.VisibleCombosMissingPrice++
 		}
 	}
@@ -393,38 +357,14 @@ func (s *AdminVideoStore) Readiness(ctx context.Context, now time.Time) (adminvi
 	return result, nil
 }
 
-func videoRouteHasMissingPrice(route adminvideoservice.RouteConfigSummary, rules []adminvideoservice.PriceRuleSummary) bool {
-	var combinations []adminvideoservice.VisibleCombination
-	if raw, err := json.Marshal(route.VisibleOptions["combinations"]); err == nil {
-		_ = json.Unmarshal(raw, &combinations)
-	}
-	bindings := decodeVideoPricingBindings(route.VisibleOptions)
-	if len(combinations) == 0 {
-		for _, rule := range rules {
-			if rule.Enabled && rule.StrategyID == route.PricingStrategyID {
-				return false
-			}
-		}
+func videoRouteHasMissingPrice(route adminvideoservice.RouteConfigSummary, cards []adminvideoservice.RateCardSummary) bool {
+	if len(route.CandidateAccountModelIDs) == 0 {
 		return true
 	}
-	for _, combination := range combinations {
-		strategyID := route.PricingStrategyID
-		for _, binding := range bindings {
-			if string(binding.TaskType) != combination.TaskType || string(binding.Resolution) != combination.Resolution || string(binding.AudioMode) != combination.AudioMode {
-				continue
-			}
-			if binding.AspectRatio != "" && string(binding.AspectRatio) != combination.AspectRatio {
-				continue
-			}
-			if binding.DurationSeconds > 0 && binding.DurationSeconds != combination.DurationSeconds {
-				continue
-			}
-			strategyID = binding.PricingStrategyID
-			break
-		}
+	for _, accountModelID := range route.CandidateAccountModelIDs {
 		priced := false
-		for _, rule := range rules {
-			if rule.Enabled && rule.StrategyID == strategyID && rule.TaskType == combination.TaskType && rule.Resolution == combination.Resolution && rule.AudioMode == combination.AudioMode {
+		for _, card := range cards {
+			if card.AccountModelID == accountModelID && card.Enabled {
 				priced = true
 				break
 			}
