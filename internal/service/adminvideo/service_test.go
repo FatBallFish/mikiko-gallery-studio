@@ -99,8 +99,10 @@ func TestSnapshotIncludesNativePricingVersionsAndBlockingImpacts(t *testing.T) {
 
 func TestSnapshotAcceptsTypedVisibleCombinationsWithCompleteCandidate(t *testing.T) {
 	store := &fakeStore{snapshot: Snapshot{
-		Capabilities: []CapabilitySummary{{AccountModelID: 11, ValidationState: "verified", Enabled: true}},
-		RateCards:    []RateCardSummary{{AccountModelID: 11, RateVersion: 2, Enabled: true}},
+		Capabilities: []CapabilitySummary{{AccountModelID: 11, ValidationState: "verified", Enabled: true, Capability: domainVideoCapabilityMap("720p")}},
+		RateCards: []RateCardSummary{{AccountModelID: 11, ProviderCode: "seedance", PricingSchema: "seedance_token_v1", RateVersion: 2, Enabled: true, RateConfig: map[string]any{
+			"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
+		}}},
 		Routes: []RouteConfigSummary{{
 			RouteModelID: 31, RouteName: "视频创作", CandidateCount: 1, CandidateAccountModelIDs: []int64{11}, Enabled: true,
 			VisibleOptions: map[string]any{"combinations": []VisibleCombination{{
@@ -115,6 +117,34 @@ func TestSnapshotAcceptsTypedVisibleCombinationsWithCompleteCandidate(t *testing
 	}
 	if len(got.Impacts) != 0 {
 		t.Fatalf("complete native pricing configuration must not report impacts, got %#v", got.Impacts)
+	}
+}
+
+func TestSnapshotDoesNotBlockMixedRouteWhenOneCandidateIsPriceable(t *testing.T) {
+	store := &fakeStore{snapshot: Snapshot{
+		Capabilities: []CapabilitySummary{
+			{AccountModelID: 11, ValidationState: "verified", Enabled: true, Capability: domainVideoCapabilityMap("720p")},
+			{AccountModelID: 12, ValidationState: "verified", Enabled: true, Capability: domainVideoCapabilityMap("720p")},
+		},
+		RateCards: []RateCardSummary{
+			{AccountModelID: 11, ProviderCode: "seedance", PricingSchema: "seedance_token_v1", RateVersion: 2, Enabled: true, RateConfig: map[string]any{
+				"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
+			}},
+		},
+		Routes: []RouteConfigSummary{{
+			RouteModelID: 31, RouteName: "混合路由", CandidateCount: 2, CandidateAccountModelIDs: []int64{11, 12}, Enabled: true,
+			VisibleOptions: map[string]any{"combinations": []VisibleCombination{{
+				TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5,
+			}}},
+		}},
+	}}
+
+	got, err := NewService(store).Snapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Impacts) != 0 {
+		t.Fatalf("an excluded unpriced candidate must not block a priceable mixed route: %#v", got.Impacts)
 	}
 }
 

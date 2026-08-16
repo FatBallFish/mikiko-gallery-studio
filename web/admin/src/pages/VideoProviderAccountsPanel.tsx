@@ -154,6 +154,7 @@ export function VideoProviderAccountsPanel() {
     setBusy(true);
     setError("");
     try {
+      const shouldEnable = modelDraft.enabled;
       const baseInput = {
         model_code: modelDraft.modelCode,
         display_name: modelDraft.displayName,
@@ -183,7 +184,7 @@ export function VideoProviderAccountsPanel() {
         moderation: [],
         cost_per_image: "0.00000",
         currency: "CNY",
-        enabled: modelDraft.enabled,
+        enabled: false,
         extra: { media_type: "video" },
       };
       const saved = modelDraft.row
@@ -211,7 +212,7 @@ export function VideoProviderAccountsPanel() {
       const existingCapability = snapshot?.capabilities.find(
         (item) => String(item.account_model_id) === String(saved.id),
       );
-      await adminApi.saveVideoCapability(saved.id, {
+      const capabilityInput = {
         expected_version: existingCapability?.capability_version ?? "",
         capability_version: nextVersion(
           "video-cap",
@@ -224,8 +225,12 @@ export function VideoProviderAccountsPanel() {
           task_types: taskTypes,
         },
         validation_status: modelDraft.validationStatus,
-        enabled: modelDraft.enabled,
-      });
+        enabled: false,
+      };
+      const savedCapability = await adminApi.saveVideoCapability(
+        saved.id,
+        capabilityInput,
+      );
       const existingRate = snapshot?.rate_cards
         .filter((item) => String(item.account_model_id) === String(saved.id))
         .sort((a, b) => b.rate_version - a.rate_version)[0];
@@ -233,7 +238,7 @@ export function VideoProviderAccountsPanel() {
       if (modelDraft.account.adapter_type === "minimax") {
         await adminApi.saveVideoRateCard(saved.id, {
           pricing_schema: "minimax_h3_second_v1",
-          expected_rate_version: existingRate?.rate_version ?? 0, enabled: modelDraft.enabled,
+          expected_rate_version: existingRate?.rate_version ?? 0, enabled: shouldEnable,
           rate_config: {
             resolutions: Object.fromEntries(resolutions.map((resolution) => [resolution, {
               output_second_cny: modelDraft.rateRows[resolution]?.primary || "0",
@@ -245,12 +250,28 @@ export function VideoProviderAccountsPanel() {
       } else {
         await adminApi.saveVideoRateCard(saved.id, {
           pricing_schema: "seedance_token_v1",
-          expected_rate_version: existingRate?.rate_version ?? 0, enabled: modelDraft.enabled,
+          expected_rate_version: existingRate?.rate_version ?? 0, enabled: shouldEnable,
           rate_config: { resolutions: Object.fromEntries(resolutions.map((resolution) => [resolution, {
             without_input_video_million_tokens_cny: modelDraft.rateRows[resolution]?.primary || "0",
             with_input_video_million_tokens_cny: modelDraft.rateRows[resolution]?.secondary || undefined,
           }])) },
         });
+      }
+      if (shouldEnable) {
+        await adminApi.saveVideoCapability(saved.id, {
+          ...capabilityInput,
+          expected_version: savedCapability.capability_version,
+          capability_version: nextVersion(
+            "video-cap",
+            savedCapability.capability_version,
+          ),
+          enabled: true,
+        });
+        await adminApi.updateModelAccountModel(
+          modelDraft.account.id,
+          saved.id,
+          { ...baseInput, enabled: true },
+        );
       }
       setModelDraft(null);
       await load(String(modelDraft.account.id));

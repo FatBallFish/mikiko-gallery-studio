@@ -136,6 +136,31 @@ func TestRouteQuoteSimulationReturnsRoutePriceUnavailableWhenEveryCandidateIsExc
 	}
 }
 
+func TestRouteQuoteSimulationClassifiesMissingMappedRateAsInvalidRateCard(t *testing.T) {
+	store := &fakeConfigStore{routeContext: RouteQuoteContext{
+		Route:       RouteConfigSummary{RouteModelID: 9, ConfigVersion: "route-v2", RoundingStepPoints: 1},
+		CNYPerPoint: "0.01", ConversionVersion: "billing-v3",
+		Candidates: []RouteQuoteCandidate{{
+			RouteCandidateID: 11, AccountModelID: 101, ProviderCode: "seedance", ModelCode: "doubao-seedance-2-0-260128",
+			Capability: domainVideoCapabilityMap("720p"),
+			RateCard: RateCardSummary{ProviderCode: "seedance", PricingSchema: "seedance_token_v1", RateVersion: 1, RateConfig: map[string]any{
+				"resolutions": map[string]any{"1080p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
+			}},
+		}},
+	}}
+	_, err := NewService(store).SimulateRouteQuote(t.Context(), QuoteSimulationRequest{
+		RouteModelID: 9, TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5, OutputCount: 1,
+	})
+	typed, ok := err.(*errs.Error)
+	if !ok {
+		t.Fatalf("route unavailable error = %#v", err)
+	}
+	candidates, ok := typed.Details["candidates"].([]QuoteSimulationCandidate)
+	if !ok || len(candidates) != 1 || candidates[0].ExclusionCode != errs.CodeVideoRateCardInvalid {
+		t.Fatalf("invalid mapped rate candidate = %#v", typed.Details["candidates"])
+	}
+}
+
 func domainVideoCapabilityMap(resolution string) map[string]any {
 	return map[string]any{
 		"schema_version": 1, "provider_native_max_n": 1,
@@ -178,7 +203,7 @@ func TestCapabilityWriteValidatesEveryDeclaredCombination(t *testing.T) {
 	}
 }
 
-func TestEnabledRouteRequiresEveryCandidateToHaveEnabledRateCard(t *testing.T) {
+func TestEnabledRouteAllowsUnpricedCandidateWhenCombinationHasPriceableCandidate(t *testing.T) {
 	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
 		Routes: []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 2, CandidateAccountModelIDs: []int64{7, 8}}},
 		Capabilities: []CapabilitySummary{
@@ -186,18 +211,38 @@ func TestEnabledRouteRequiresEveryCandidateToHaveEnabledRateCard(t *testing.T) {
 			{AccountModelID: 8, Capability: domainVideoCapabilityMap("720p"), ValidationState: "verified", Enabled: true},
 		},
 		RateCards: []RateCardSummary{
-			{AccountModelID: 7, PricingSchema: "seedance_token_v1", Enabled: true},
+			{AccountModelID: 7, PricingSchema: "seedance_token_v1", Enabled: true, RateConfig: map[string]any{
+				"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
+			}},
 			{AccountModelID: 8, PricingSchema: "minimax_h3_second_v1", Enabled: false},
 		},
 	}}}
 	service := NewService(store)
 	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "route-v2", MinimumTaskPoints: "0", RoundingStepPoints: 5, TaskTypes: []string{"text_to_video"}, VisibleCombinations: []VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}}, MaxOutputCount: 4, Enabled: true}
-	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
-		t.Fatal("candidate without an enabled rate card must block route enable")
-	}
-	store.snapshot.RateCards[1].Enabled = true
 	if _, err := service.SaveRouteConfig(t.Context(), route); err != nil {
-		t.Fatal(err)
+		t.Fatalf("one priceable candidate must allow route enable: %v", err)
+	}
+	store.snapshot.RateCards[0].Enabled = false
+	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
+		t.Fatal("a combination without any priceable candidate must block route enable")
+	}
+}
+
+func TestEnabledRouteRejectsCapabilityMatchWithoutMappedResolutionRate(t *testing.T) {
+	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
+		Routes:       []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
+		Capabilities: []CapabilitySummary{{AccountModelID: 7, Capability: domainVideoCapabilityMap("768p"), ValidationState: "verified", Enabled: true}},
+		RateCards: []RateCardSummary{{AccountModelID: 7, PricingSchema: "minimax_h3_second_v1", Enabled: true, RateConfig: map[string]any{
+			"resolutions": map[string]any{"2k": map[string]any{"output_second_cny": "1.2", "input_video_second_cny": "1.2"}},
+		}}},
+	}}}
+	route := RouteConfigWrite{
+		RouteModelID: 9, ConfigVersion: "v2", MinimumTaskPoints: "0", RoundingStepPoints: 1, MaxOutputCount: 1, Enabled: true,
+		CandidateParameterMappings: map[string]any{"7": map[string]any{"resolutions": map[string]any{"720p": "768p"}}},
+		VisibleCombinations:        []VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}},
+	}
+	if _, err := NewService(store).SaveRouteConfig(t.Context(), route); err == nil {
+		t.Fatal("mapped capability without a corresponding native rate must block route enable")
 	}
 }
 
@@ -212,7 +257,9 @@ func TestEnabledRouteRequiresVisibleCompatibleCombination(t *testing.T) {
 	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
 		Capabilities: []CapabilitySummary{{AccountModelID: 7, Capability: capability, ValidationState: "verified", Enabled: true}},
 		Routes:       []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
-		RateCards:    []RateCardSummary{{AccountModelID: 7, PricingSchema: "seedance_token_v1", Enabled: true}},
+		RateCards: []RateCardSummary{{AccountModelID: 7, PricingSchema: "seedance_token_v1", Enabled: true, RateConfig: map[string]any{
+			"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
+		}}},
 	}}}
 	service := NewService(store)
 	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "v2", MinimumTaskPoints: "0", RoundingStepPoints: 1, MaxOutputCount: 4, Enabled: true}
@@ -234,8 +281,10 @@ func TestEnabledRouteUsesCandidateResolutionMappingForCapabilityValidation(t *te
 		Capabilities: []CapabilitySummary{{
 			AccountModelID: 7, Capability: domainVideoCapabilityMap("768p"), ValidationState: "verified", Enabled: true,
 		}},
-		Routes:    []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
-		RateCards: []RateCardSummary{{AccountModelID: 7, PricingSchema: "minimax_h3_second_v1", Enabled: true}},
+		Routes: []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
+		RateCards: []RateCardSummary{{AccountModelID: 7, PricingSchema: "minimax_h3_second_v1", Enabled: true, RateConfig: map[string]any{
+			"resolutions": map[string]any{"768p": map[string]any{"output_second_cny": "0.8", "input_video_second_cny": "0.8"}},
+		}}},
 	}}}
 	route := RouteConfigWrite{
 		RouteModelID: 9, ConfigVersion: "v2", MinimumTaskPoints: "0", RoundingStepPoints: 1, MaxOutputCount: 4, Enabled: true,

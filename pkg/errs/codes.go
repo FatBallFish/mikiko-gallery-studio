@@ -29,6 +29,7 @@ const (
 	CodeVideoFieldInvalid              = "VIDEO_FIELD_INVALID"
 	CodeVideoInputInvalid              = "VIDEO_INPUT_INVALID"
 	CodeVideoPricingSchemaUnsupported  = "VIDEO_PRICING_SCHEMA_UNSUPPORTED"
+	CodeVideoRateCardInvalid           = "VIDEO_RATE_CARD_INVALID"
 	CodeVideoRateCardMissing           = "VIDEO_RATE_CARD_MISSING"
 	CodeVideoCandidateNotPriceable     = "VIDEO_CANDIDATE_NOT_PRICEABLE"
 	CodeVideoRoutePriceUnavailable     = "VIDEO_ROUTE_PRICE_UNAVAILABLE"

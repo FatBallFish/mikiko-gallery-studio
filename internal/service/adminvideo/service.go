@@ -141,15 +141,26 @@ func deriveImpacts(snapshot Snapshot) []Impact {
 		if route.CandidateCount == 0 {
 			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_candidate", Summary: "启用的视频路由没有可用候选", Blocking: true, FixRoute: "routing"})
 		}
-		if visibleCombinationCount(route.VisibleOptions) == 0 {
+		combinations := visibleCombinations(route.VisibleOptions)
+		if len(combinations) == 0 {
 			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_visible_combination", Summary: "启用的视频路由没有完整的用户可见参数组合", Blocking: true, FixRoute: "routing"})
 		}
+		hasVerifiedCapability := false
+		hasEnabledRate := false
 		for _, accountModelID := range route.CandidateAccountModelIDs {
-			if !verifiedCapabilities[accountModelID] {
-				impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_verified_capability", Summary: "启用的视频路由存在缺少已验证能力的候选真实模型", Blocking: true, FixRoute: "models"})
-			}
-			if !enabledRates[accountModelID] {
-				impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_rate_card", Summary: "启用的视频路由存在缺少销售费率的候选真实模型", Blocking: true, FixRoute: "models"})
+			hasVerifiedCapability = hasVerifiedCapability || verifiedCapabilities[accountModelID]
+			hasEnabledRate = hasEnabledRate || enabledRates[accountModelID]
+		}
+		if !hasVerifiedCapability {
+			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_verified_capability", Summary: "启用的视频路由没有已验证能力的候选真实模型", Blocking: true, FixRoute: "models"})
+		}
+		if !hasEnabledRate {
+			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_rate_card", Summary: "启用的视频路由没有配置销售费率的候选真实模型", Blocking: true, FixRoute: "models"})
+		}
+		for _, combination := range combinations {
+			if !snapshotHasPriceableCombination(snapshot, route.CandidateAccountModelIDs, route.CandidateParameterMappings, combination) {
+				impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "unpriceable_visible_combination", Summary: "启用的视频路由存在无法报价的公开参数组合", Blocking: true, FixRoute: "pricing"})
+				break
 			}
 		}
 	}
@@ -157,25 +168,27 @@ func deriveImpacts(snapshot Snapshot) []Impact {
 }
 
 func visibleCombinationCount(options map[string]any) int {
+	return len(visibleCombinations(options))
+}
+
+func visibleCombinations(options map[string]any) []VisibleCombination {
 	raw, ok := options["combinations"]
 	if !ok || raw == nil {
-		return 0
+		return nil
 	}
 	switch values := raw.(type) {
 	case []VisibleCombination:
-		return len(values)
-	case []any:
-		return len(values)
+		return values
 	}
 	payload, err := json.Marshal(raw)
 	if err != nil {
-		return 0
+		return nil
 	}
 	var values []VisibleCombination
 	if json.Unmarshal(payload, &values) != nil {
-		return 0
+		return nil
 	}
-	return len(values)
+	return values
 }
 
 type TaskFilter struct {

@@ -18,4 +18,3 @@
 测试先行实施计划：
 
 - `docs/plans/2026-08-17-video-native-pricing-refactor-implementation.md`
-

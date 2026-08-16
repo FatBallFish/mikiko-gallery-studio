@@ -34,9 +34,6 @@ func RetireLegacyVideoPricingConfiguration(ctx context.Context, client *repoent.
 	if _, err = tx.VideoRouteConfig.Update().SetEnabled(false).Save(ctx); err != nil {
 		return fmt.Errorf("disable legacy video routes: %w", err)
 	}
-	if _, err = tx.VideoProviderCostRule.Update().SetEnabled(false).SetDeletedAt(now).Save(ctx); err != nil {
-		return fmt.Errorf("retire legacy video cost rules: %w", err)
-	}
 	if _, err = tx.VideoPricingStrategy.Update().SetEnabled(false).SetDeletedAt(now).Save(ctx); err != nil {
 		return fmt.Errorf("retire legacy video pricing strategies: %w", err)
 	}

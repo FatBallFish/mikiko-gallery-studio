@@ -204,7 +204,7 @@ func (s *Service) SimulateRouteQuote(ctx context.Context, input QuoteSimulationR
 		}
 		card, decodeErr := decodeNativeRateCard(candidate.ProviderCode, candidate.ModelCode, candidate.RateCard.PricingSchema, candidate.RateCard.RateConfig)
 		if decodeErr != nil {
-			row.ExclusionCode = errs.CodeVideoPricingSchemaUnsupported
+			row.ExclusionCode = nativeRateCardExclusionCode(decodeErr)
 			row.Calculation["error"] = decodeErr.Error()
 			result.Candidates = append(result.Candidates, row)
 			continue
@@ -214,7 +214,7 @@ func (s *Service) SimulateRouteQuote(ctx context.Context, input QuoteSimulationR
 			ReferenceImageCount: input.ReferenceImageCount, HasInputAudio: input.HasInputAudio,
 		}, card)
 		if quoteErr != nil {
-			row.ExclusionCode = errs.CodeVideoPricingSchemaUnsupported
+			row.ExclusionCode = errs.CodeVideoRateCardInvalid
 			row.Calculation["error"] = quoteErr.Error()
 			result.Candidates = append(result.Candidates, row)
 			continue
@@ -256,6 +256,13 @@ func (s *Service) SimulateRouteQuote(ctx context.Context, input QuoteSimulationR
 	result.UnitPoints = unit.StringFixed(5)
 	result.TotalPoints = unit.Mul(decimal.NewFromInt(int64(input.OutputCount))).StringFixed(5)
 	return result, nil
+}
+
+func nativeRateCardExclusionCode(err error) string {
+	if typed, ok := err.(*errs.Error); ok && typed.Code == errs.CodeVideoPricingSchemaUnsupported {
+		return errs.CodeVideoPricingSchemaUnsupported
+	}
+	return errs.CodeVideoRateCardInvalid
 }
 
 func decodeNativeRateCard(providerCode, modelCode, schema string, config map[string]any) (domainvideo.RateCard, error) {

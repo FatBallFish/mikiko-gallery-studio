@@ -4,7 +4,7 @@
 
 **Goal:** Replace the current generic video cost/strategy/rule stack with provider-native Seedance and MiniMax H3 sales rate cards, mixed-route fixed quoting, and a simplified admin workflow.
 
-**Architecture:** Each real video model owns a versioned, schema-discriminated CNY sales rate card. A route quote filters eligible candidates, calculates every candidate through a provider-specific calculator, locks the maximum CNY quote, converts it through the global `billing_pricing.cny_per_point`, and stores a v2 pricing snapshot. Legacy task snapshots remain settleable while legacy configuration tables and APIs are retired.
+**Architecture:** Each real video model owns a versioned, schema-discriminated CNY sales rate card. A route quote filters eligible candidates, calculates every candidate through a provider-specific calculator, locks the maximum CNY quote, converts it through the global `billing_pricing.cny_per_point`, and stores a v2 pricing snapshot. Legacy task snapshots remain settleable while legacy configuration tables and APIs are retired; provider cost rules stay narrowly readable for pre-upgrade tasks that still need to create an attempt.
 
 **Tech Stack:** Go 1.24, Ent/Atlas, PostgreSQL, `shopspring/decimal`, React 19, TypeScript, Vite, repository workflow scripts.
 
@@ -590,7 +590,7 @@ Seed:
 Assert migration:
 
 - creates the new rate-card structure
-- clears or retires legacy config
+- clears or retires legacy config while retaining provider cost rules for pre-upgrade in-flight task attempts
 - disables existing video routes
 - preserves account/model/candidate/capability rows
 - preserves task and ledger rows byte-for-byte where applicable

@@ -176,31 +176,19 @@ func (s *Service) SaveRouteConfig(ctx context.Context, input RouteConfigWrite) (
 		if len(input.VisibleCombinations) == 0 {
 			return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "enabled video route must expose at least one complete combination")
 		}
-		for _, accountModelID := range route.CandidateAccountModelIDs {
-			hasRate := false
-			for _, card := range snapshot.RateCards {
-				if card.AccountModelID == accountModelID && card.Enabled {
-					hasRate = true
-					break
-				}
-			}
-			if !hasRate {
-				return RouteConfigSummary{}, errs.New(409, errs.CodeVideoRateCardMissing, "every enabled video candidate must have an enabled rate card")
-			}
-		}
 		for _, combo := range input.VisibleCombinations {
 			if combo.TaskType == "" || combo.Resolution == "" || combo.AudioMode == "" || combo.DurationSeconds <= 0 {
 				return RouteConfigSummary{}, errs.BadRequest("visible video combination is incomplete")
 			}
-			if !snapshotSupportsCombination(snapshot, route.CandidateAccountModelIDs, input.CandidateParameterMappings, combo) {
-				return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "visible video combination is unsupported by every enabled candidate")
+			if !snapshotHasPriceableCombination(snapshot, route.CandidateAccountModelIDs, input.CandidateParameterMappings, combo) {
+				return RouteConfigSummary{}, errs.New(409, errs.CodeVideoRoutePriceUnavailable, "visible video combination has no priceable candidate")
 			}
 		}
 	}
 	return s.store.SaveRouteConfig(ctx, input)
 }
 
-func snapshotSupportsCombination(snapshot Snapshot, candidateIDs []int64, mappings map[string]any, combo VisibleCombination) bool {
+func snapshotHasPriceableCombination(snapshot Snapshot, candidateIDs []int64, mappings map[string]any, combo VisibleCombination) bool {
 	for _, capability := range snapshot.Capabilities {
 		if !capability.Enabled || capability.ValidationState != "verified" || !containsInt64(candidateIDs, capability.AccountModelID) {
 			continue
@@ -224,9 +212,46 @@ func snapshotSupportsCombination(snapshot Snapshot, candidateIDs []int64, mappin
 		if combo.AspectRatio != "" && !containsAspectValue(task.AspectRatios, domainvideo.AspectRatio(combo.AspectRatio)) {
 			continue
 		}
-		return true
+		for _, card := range snapshot.RateCards {
+			if card.AccountModelID == capability.AccountModelID && card.Enabled && rateCardPricesResolution(card, resolution) {
+				return true
+			}
+		}
 	}
 	return false
+}
+
+func rateCardPricesResolution(card RateCardSummary, resolution string) bool {
+	payload, err := json.Marshal(card.RateConfig)
+	if err != nil {
+		return false
+	}
+	switch domainvideo.PricingSchema(card.PricingSchema) {
+	case domainvideo.PricingSchemaSeedanceTokenV1:
+		var config domainvideo.SeedanceTokenRateCard
+		if json.Unmarshal(payload, &config) != nil {
+			return false
+		}
+		rate, ok := config.Resolutions[domainvideo.Resolution(resolution)]
+		if !ok {
+			return false
+		}
+		_, err = parsePositivePointDecimal(rate.WithoutInputVideoMillionTokensCNY, "without_input_video_million_tokens_cny")
+		return err == nil
+	case domainvideo.PricingSchemaMiniMaxH3SecondV1:
+		var config domainvideo.MiniMaxH3SecondRateCard
+		if json.Unmarshal(payload, &config) != nil {
+			return false
+		}
+		rate, ok := config.Resolutions[domainvideo.Resolution(resolution)]
+		if !ok {
+			return false
+		}
+		_, err = parsePositivePointDecimal(rate.OutputSecondCNY, "output_second_cny")
+		return err == nil
+	default:
+		return false
+	}
 }
 
 func mappedCandidateResolution(mappings map[string]any, accountModelID int64, fallback string) string {
