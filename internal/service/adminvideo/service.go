@@ -3,12 +3,10 @@ package adminvideo
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
 
 	domainmedia "github.com/fatballfish/pic-gallery/internal/domain/media"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
@@ -31,9 +29,6 @@ type Store interface {
 	GetEffectiveVideoModelRateCard(context.Context, int64, time.Time) (RateCardSummary, error)
 	GetVideoModelPricingContext(context.Context, int64) (ModelPricingContext, error)
 	GetVideoRouteQuoteContext(context.Context, int64, time.Time) (RouteQuoteContext, error)
-	SaveCostRule(context.Context, CostRuleWrite) (CostRuleSummary, error)
-	SaveStrategy(context.Context, StrategyWrite) (PricingStrategySummary, error)
-	SavePriceRule(context.Context, PriceRuleWrite) (PriceRuleSummary, error)
 	SaveRouteConfig(context.Context, RouteConfigWrite) (RouteConfigSummary, error)
 	DeleteVideoConfig(context.Context, ConfigKind, int64, int64) error
 }
@@ -50,22 +45,6 @@ type CapabilitySummary struct {
 	Enabled         bool           `json:"enabled"`
 }
 
-type CostRuleSummary struct {
-	ID                int64          `json:"id"`
-	AccountModelID    int64          `json:"account_model_id"`
-	BillingMode       string         `json:"billing_mode"`
-	RuleVersion       int            `json:"rule_version"`
-	Currency          string         `json:"currency"`
-	Rates             map[string]any `json:"rates"`
-	CostReserveMarkup string         `json:"cost_reserve_markup"`
-	SourceType        string         `json:"source_type"`
-	SourceReference   string         `json:"source_reference"`
-	Validation        string         `json:"validation_status"`
-	EffectiveAt       time.Time      `json:"effective_at"`
-	ExpiresAt         *time.Time     `json:"expires_at,omitempty"`
-	Enabled           bool           `json:"enabled"`
-}
-
 type RateCardSummary struct {
 	ID              int64          `json:"id"`
 	AccountModelID  int64          `json:"account_model_id"`
@@ -79,59 +58,11 @@ type RateCardSummary struct {
 	Enabled         bool           `json:"enabled"`
 }
 
-type PricingStrategySummary struct {
-	ID                          int64  `json:"id"`
-	Code                        string `json:"code"`
-	Name                        string `json:"name"`
-	StrategyVersion             int    `json:"strategy_version"`
-	MinimumNetPointIncomeCNY    string `json:"minimum_net_point_income_cny"`
-	TargetMarginRate            string `json:"target_margin_rate"`
-	ProviderCostBufferRate      string `json:"provider_cost_buffer_rate"`
-	PaymentFeeRate              string `json:"payment_fee_rate"`
-	PlatformFixedCostCNY        string `json:"platform_fixed_cost_cny"`
-	PlatformOutputSecondCostCNY string `json:"platform_output_second_cost_cny"`
-	PlatformReferenceCostCNY    string `json:"platform_reference_cost_cny"`
-	GrossPointValueCNY          string `json:"gross_point_value_cny"`
-	MaxBonusRatio               string `json:"max_bonus_ratio"`
-	PlatformAudioFixedCostCNY   string `json:"platform_audio_fixed_cost_cny"`
-	PlatformAudioSecondCostCNY  string `json:"platform_audio_second_cost_cny"`
-	ExactReserveMarkup          string `json:"exact_reserve_markup"`
-	MeteredReserveMarkup        string `json:"metered_reserve_markup"`
-	Enabled                     bool   `json:"enabled"`
-}
-
-type PriceRuleSummary struct {
-	ID                         int64      `json:"id"`
-	StrategyID                 int64      `json:"pricing_strategy_id"`
-	TaskType                   string     `json:"task_type"`
-	Resolution                 string     `json:"resolution"`
-	AudioMode                  string     `json:"audio_mode"`
-	PricingMode                string     `json:"pricing_mode"`
-	RuleVersion                int        `json:"rule_version"`
-	EffectiveAt                time.Time  `json:"effective_at"`
-	ExpiresAt                  *time.Time `json:"expires_at,omitempty"`
-	OutputSecondPoints         string     `json:"output_second_points"`
-	FixedTaskPoints            string     `json:"fixed_task_points"`
-	ReferenceImagePoints       string     `json:"reference_image_points"`
-	InputVideoSecondPoints     string     `json:"input_video_second_points"`
-	ReferenceAudioSecondPoints string     `json:"reference_audio_second_points"`
-	GeneratedAudioFixedPoints  string     `json:"generated_audio_fixed_points"`
-	GeneratedAudioSecondPoints string     `json:"generated_audio_second_points"`
-	MinimumBillableSeconds     int        `json:"minimum_billable_seconds"`
-	MinimumTaskPoints          string     `json:"minimum_task_points"`
-	ReserveMarkup              string     `json:"reserve_markup"`
-	SafetyPoints               string     `json:"safety_points"`
-	SalesPoints                string     `json:"sales_points"`
-	CandidateCostUpperCNY      string     `json:"candidate_cost_upper_cny"`
-	Enabled                    bool       `json:"enabled"`
-}
-
 type RouteConfigSummary struct {
 	RouteModelID               int64          `json:"route_model_id"`
 	RouteCode                  string         `json:"route_code"`
 	RouteName                  string         `json:"route_name"`
 	ConfigVersion              string         `json:"config_version"`
-	PricingStrategyID          int64          `json:"pricing_strategy_id"`
 	CandidateParameterMappings map[string]any `json:"candidate_parameter_mappings"`
 	MinimumTaskPoints          string         `json:"minimum_task_points"`
 	RoundingStepPoints         int            `json:"rounding_step_points"`
@@ -146,7 +77,6 @@ type RouteConfigSummary struct {
 
 type Impact struct {
 	RouteModelID int64  `json:"route_model_id,omitempty"`
-	StrategyID   int64  `json:"pricing_strategy_id,omitempty"`
 	Code         string `json:"code"`
 	Summary      string `json:"summary"`
 	Blocking     bool   `json:"blocking"`
@@ -154,15 +84,11 @@ type Impact struct {
 }
 
 type Snapshot struct {
-	Capabilities []CapabilitySummary      `json:"capabilities"`
-	RateCards    []RateCardSummary        `json:"rate_cards"`
-	CostRules    []CostRuleSummary        `json:"cost_rules"`
-	Strategies   []PricingStrategySummary `json:"pricing_strategies"`
-	PriceRules   []PriceRuleSummary       `json:"price_rules"`
-	Routes       []RouteConfigSummary     `json:"routes"`
-	Plans        []PointProduct           `json:"point_products"`
-	Impacts      []Impact                 `json:"impacts"`
-	GeneratedAt  time.Time                `json:"generated_at"`
+	Capabilities []CapabilitySummary  `json:"capabilities"`
+	RateCards    []RateCardSummary    `json:"rate_cards"`
+	Routes       []RouteConfigSummary `json:"routes"`
+	Impacts      []Impact             `json:"impacts"`
+	GeneratedAt  time.Time            `json:"generated_at"`
 }
 
 func (s *Service) Snapshot(ctx context.Context) (Snapshot, error) {
@@ -185,23 +111,11 @@ func normalizeSnapshotCollections(snapshot *Snapshot) {
 	if snapshot.Capabilities == nil {
 		snapshot.Capabilities = []CapabilitySummary{}
 	}
-	if snapshot.CostRules == nil {
-		snapshot.CostRules = []CostRuleSummary{}
-	}
 	if snapshot.RateCards == nil {
 		snapshot.RateCards = []RateCardSummary{}
 	}
-	if snapshot.Strategies == nil {
-		snapshot.Strategies = []PricingStrategySummary{}
-	}
-	if snapshot.PriceRules == nil {
-		snapshot.PriceRules = []PriceRuleSummary{}
-	}
 	if snapshot.Routes == nil {
 		snapshot.Routes = []RouteConfigSummary{}
-	}
-	if snapshot.Plans == nil {
-		snapshot.Plans = []PointProduct{}
 	}
 	if snapshot.Impacts == nil {
 		snapshot.Impacts = []Impact{}
@@ -210,22 +124,14 @@ func normalizeSnapshotCollections(snapshot *Snapshot) {
 
 func deriveImpacts(snapshot Snapshot) []Impact {
 	impacts := make([]Impact, 0)
-	strategyRules := make(map[int64][]PriceRuleSummary)
-	for _, rule := range snapshot.PriceRules {
-		if rule.Enabled {
-			strategyRules[rule.StrategyID] = append(strategyRules[rule.StrategyID], rule)
-		}
-		if !rule.Enabled {
-			continue
-		}
-		sales, salesErr := decimal.NewFromString(rule.SalesPoints)
-		safety, safetyErr := decimal.NewFromString(rule.SafetyPoints)
-		if salesErr != nil || safetyErr != nil || sales.LessThan(safety) {
-			summary := "价格规则无法证明满足候选最坏成本安全线"
-			if salesErr == nil && safetyErr == nil {
-				summary = "价格策略 " + decimal.NewFromInt(rule.StrategyID).String() + " 的 " + rule.TaskType + " / " + rule.Resolution + " / " + rule.AudioMode + " 组合售价 " + sales.String() + " 积分，低于安全线 " + safety.String() + " 积分"
-			}
-			impacts = append(impacts, Impact{StrategyID: rule.StrategyID, Code: "price_below_safety_floor", Summary: summary, Blocking: true, FixRoute: "pricing"})
+	verifiedCapabilities := make(map[int64]bool, len(snapshot.Capabilities))
+	for _, capability := range snapshot.Capabilities {
+		verifiedCapabilities[capability.AccountModelID] = capability.Enabled && capability.ValidationState == "verified"
+	}
+	enabledRates := make(map[int64]bool, len(snapshot.RateCards))
+	for _, rateCard := range snapshot.RateCards {
+		if rateCard.Enabled {
+			enabledRates[rateCard.AccountModelID] = true
 		}
 	}
 	for _, route := range snapshot.Routes {
@@ -233,61 +139,43 @@ func deriveImpacts(snapshot Snapshot) []Impact {
 			continue
 		}
 		if route.CandidateCount == 0 {
-			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, StrategyID: route.PricingStrategyID, Code: "missing_candidate", Summary: "启用的视频路由没有可用候选", Blocking: true, FixRoute: "routing"})
+			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_candidate", Summary: "启用的视频路由没有可用候选", Blocking: true, FixRoute: "routing"})
 		}
-		combinations := visibleCombinations(route.VisibleOptions)
-		bindings, _ := decodePricingBindings(route.VisibleOptions)
-		if len(combinations) == 0 && len(strategyRules[route.PricingStrategyID]) == 0 {
-			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, StrategyID: route.PricingStrategyID, Code: "missing_price", Summary: "路由 " + routeImpactName(route) + " 没有可用销售价格", Blocking: true, FixRoute: "pricing"})
+		if visibleCombinationCount(route.VisibleOptions) == 0 {
+			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_visible_combination", Summary: "启用的视频路由没有完整的用户可见参数组合", Blocking: true, FixRoute: "routing"})
 		}
-		for _, combo := range combinations {
-			strategyID := pricingStrategyForCombination(route.PricingStrategyID, bindings, combo)
-			if hasPriceForCombination(strategyRules[strategyID], combo) {
-				continue
+		for _, accountModelID := range route.CandidateAccountModelIDs {
+			if !verifiedCapabilities[accountModelID] {
+				impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_verified_capability", Summary: "启用的视频路由存在缺少已验证能力的候选真实模型", Blocking: true, FixRoute: "models"})
 			}
-			impacts = append(impacts, Impact{
-				RouteModelID: route.RouteModelID, StrategyID: strategyID, Code: "missing_price",
-				Summary:  "路由 " + routeImpactName(route) + " 缺少 " + combo.TaskType + " / " + combo.Resolution + " / " + combo.AudioMode + " / " + fmt.Sprintf("%d", combo.DurationSeconds) + " 秒的销售价格",
-				Blocking: true, FixRoute: "pricing",
-			})
+			if !enabledRates[accountModelID] {
+				impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_rate_card", Summary: "启用的视频路由存在缺少销售费率的候选真实模型", Blocking: true, FixRoute: "models"})
+			}
 		}
 	}
 	return impacts
 }
 
-func visibleCombinations(options map[string]any) []VisibleCombination {
+func visibleCombinationCount(options map[string]any) int {
 	raw, ok := options["combinations"]
 	if !ok || raw == nil {
-		return nil
+		return 0
+	}
+	switch values := raw.(type) {
+	case []VisibleCombination:
+		return len(values)
+	case []any:
+		return len(values)
 	}
 	payload, err := json.Marshal(raw)
 	if err != nil {
-		return nil
+		return 0
 	}
-	var combinations []VisibleCombination
-	if err := json.Unmarshal(payload, &combinations); err != nil {
-		return nil
+	var values []VisibleCombination
+	if json.Unmarshal(payload, &values) != nil {
+		return 0
 	}
-	return combinations
-}
-
-func hasPriceForCombination(rules []PriceRuleSummary, combo VisibleCombination) bool {
-	for _, rule := range rules {
-		if rule.TaskType == combo.TaskType && rule.Resolution == combo.Resolution && rule.AudioMode == combo.AudioMode {
-			return true
-		}
-	}
-	return false
-}
-
-func routeImpactName(route RouteConfigSummary) string {
-	if strings.TrimSpace(route.RouteName) != "" {
-		return strings.TrimSpace(route.RouteName)
-	}
-	if strings.TrimSpace(route.RouteCode) != "" {
-		return strings.TrimSpace(route.RouteCode)
-	}
-	return fmt.Sprintf("#%d", route.RouteModelID)
+	return len(values)
 }
 
 type TaskFilter struct {

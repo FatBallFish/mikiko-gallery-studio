@@ -41,9 +41,25 @@ func TestAdminVideoConfigurationRoutesAndOpenAPIStayAligned(t *testing.T) {
 	for _, obsolete := range []string{
 		`mux.HandleFunc("/api/ops/admin/v1/video-pricing-strategies"`,
 		`mux.HandleFunc("/api/ops/admin/v1/video-price-rules"`,
+		`"/api/ops/admin/v1/video-pricing-strategies"`,
+		`"/api/ops/admin/v1/video-price-rules"`,
+		`/video-cost-rules"`,
 	} {
 		if strings.Contains(string(routerSource), obsolete) {
 			t.Errorf("router must not register obsolete video pricing route %s", obsolete)
+		}
+		if strings.Contains(string(openAPI), obsolete) {
+			t.Errorf("OpenAPI must not document obsolete video pricing contract %s", obsolete)
+		}
+	}
+	for _, obsoleteSchema := range []string{
+		"AdminVideoCostRuleWrite:",
+		"AdminVideoStrategyWrite:",
+		"AdminVideoPriceRuleWrite:",
+		"pricing_strategy_id:",
+	} {
+		if strings.Contains(string(openAPI), obsoleteSchema) {
+			t.Errorf("OpenAPI must not expose obsolete video pricing schema %s", obsoleteSchema)
 		}
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	adminvideoservice "github.com/fatballfish/pic-gallery/internal/service/adminvideo"
 	authservice "github.com/fatballfish/pic-gallery/internal/service/auth"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
@@ -65,17 +66,16 @@ func TestVideoTasksAPICreatesReplaysListsGetsAndCancels(t *testing.T) {
 	_, _ = client.VideoModelCapability.Create().SetAccountModelID(int64(accountModel.ID)).SetCapabilityVersion("cap-v1").SetCapabilityJSON(capabilityJSON).SetValidationStatus("verified").SetEnabled(true).Save(ctx)
 	route, _ := client.RouteModel.Create().SetCode("cinema").SetName("Cinema").SetMediaType("video").SetVisibility("public").SetEnabled(true).Save(ctx)
 	_, _ = client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(accountModel.ID)).SetEnabled(true).Save(ctx)
-	strategy, _ := client.VideoPricingStrategy.Create().SetCode("video").SetName("Video").SetEnabled(true).Save(ctx)
-	_, _ = client.VideoPriceRule.Create().SetPricingStrategyID(int64(strategy.ID)).SetTaskType("image_to_video").SetResolution("2k").SetAudioMode("silent").SetEffectiveAt(now.Add(-time.Hour)).SetOutputSecondPoints("2.00000").SetMinimumTaskPoints("8.00000").SetReserveMarkup("1.00000").SetSafetyPoints("8.00000").SetSafetySnapshot(map[string]any{}).SetEnabled(true).Save(ctx)
-	_, _ = client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"image_to_video"}).SetVisibleOptions(map[string]any{"legacy_pricing_strategy_id": int64(strategy.ID)}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetMinimumTaskPoints("8.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v1").SetEnabled(true).Save(ctx)
+	_, _ = client.VideoModelRateCard.Create().SetAccountModelID(int64(accountModel.ID)).SetProviderCode("minimax").SetPricingSchema("minimax_h3_second_v1").SetRateVersion(1).SetCurrency("CNY").SetRateConfig(minimaxH3TestRateConfig()).SetSourceReference("test fixture").SetEffectiveAt(now.Add(-time.Hour)).SetEnabled(true).Save(ctx)
+	_, _ = client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"image_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetMinimumTaskPoints("8.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v2").SetEnabled(true).Save(ctx)
 
 	billingStore := entstore.NewBillingStore(client, 5)
-	if _, err := billingStore.Adjust(ctx, billingservice.AdjustStoreRequest{UserID: userID, ChangePoints: "100.00000", Reason: "seed"}); err != nil {
+	if _, err := billingStore.Adjust(ctx, billingservice.AdjustStoreRequest{UserID: userID, ChangePoints: "1000.00000", Reason: "seed"}); err != nil {
 		t.Fatal(err)
 	}
 	configStore := entstore.NewVideoConfigStore(client)
 	routing := videoroutingservice.NewService(configStore)
-	quotes := videotaskservice.NewQuoteService(routing, videopricingservice.NewService(configStore, func() time.Time { return now }), []byte("test-video-quote-signing-key-32bytes"), func() time.Time { return now })
+	quotes := videotaskservice.NewQuoteService(routing, videopricingservice.NewService(adminvideoservice.NewService(entstore.NewAdminVideoStore(client)), func() time.Time { return now }), []byte("test-video-quote-signing-key-32bytes"), func() time.Time { return now })
 	mediaService := mediaassetservice.NewService(entstore.NewMediaStore(client), storage.NewStaticRouter(storage.NewLocalBackend(t.TempDir())), mediaassetservice.Options{Policy: domainmedia.DefaultPolicy()})
 	taskService := videotaskservice.NewService(entstore.NewVideoTaskStore(client, billingStore), quotes, projectservice.NewService(entstore.NewProjectStore(client)), mediaService, func() time.Time { return now })
 	api := handlers.NewAPIWithRuntimeServices(taskAPIConfig("http://provider.invalid"), authSvc, nil, nil, enabledFeatureAdmin(t, "video_creation"), nil)
@@ -102,7 +102,21 @@ func TestVideoTasksAPICreatesReplaysListsGetsAndCancels(t *testing.T) {
 	var createResponse struct {
 		Data videotaskservice.Task `json:"data"`
 	}
-	_ = json.Unmarshal(created.Body.Bytes(), &createResponse)
+	if err := json.Unmarshal(created.Body.Bytes(), &createResponse); err != nil {
+		t.Fatal(err)
+	}
+	if createResponse.Data.PricingSnapshot["schema_version"] != float64(2) || createResponse.Data.PricingSnapshot["quote_mode"] != "route_candidate_max_fixed" {
+		t.Fatalf("native pricing snapshot=%#v", createResponse.Data.PricingSnapshot)
+	}
+	if _, exists := createResponse.Data.PricingSnapshot["sales_rule"]; exists {
+		t.Fatalf("native pricing snapshot contains legacy sales_rule: %#v", createResponse.Data.PricingSnapshot)
+	}
+	if createResponse.Data.ReservedPoints != createResponse.Data.EstimatedPoints || createResponse.Data.PricingSnapshot["conversion_version"] == "" {
+		t.Fatalf("native quote lock task=%#v", createResponse.Data)
+	}
+	if candidates, ok := createResponse.Data.PricingSnapshot["candidate_quotes"].([]any); !ok || len(candidates) != 1 {
+		t.Fatalf("native candidate quote snapshot=%#v", createResponse.Data.PricingSnapshot["candidate_quotes"])
+	}
 	replay := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodPost, "/api/agent/video/v1/tasks", createBody, map[string]string{"Idempotency-Key": "video-create-1"})
 	if replay.Code != http.StatusOK || !bytes.Contains(replay.Body.Bytes(), []byte(createResponse.Data.ID.String())) {
 		t.Fatalf("replay=%d %s", replay.Code, replay.Body.String())
@@ -511,14 +525,10 @@ func newVideoTaskAPIFixture(t *testing.T) videoTaskAPIFixture {
 	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(accountModel.ID)).SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
-	strategy, err := client.VideoPricingStrategy.Create().SetCode("video").SetName("Video").SetEnabled(true).Save(ctx)
-	if err != nil {
+	if _, err := client.VideoModelRateCard.Create().SetAccountModelID(int64(accountModel.ID)).SetProviderCode("minimax").SetPricingSchema("minimax_h3_second_v1").SetRateVersion(1).SetCurrency("CNY").SetRateConfig(minimaxH3TestRateConfig()).SetSourceReference("test fixture").SetEffectiveAt(now.Add(-time.Hour)).SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.VideoPriceRule.Create().SetPricingStrategyID(int64(strategy.ID)).SetTaskType("image_to_video").SetResolution("2k").SetAudioMode("silent").SetEffectiveAt(now.Add(-time.Hour)).SetOutputSecondPoints("2.00000").SetMinimumTaskPoints("8.00000").SetReserveMarkup("1.00000").SetSafetyPoints("8.00000").SetSafetySnapshot(map[string]any{}).SetEnabled(true).Save(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"image_to_video"}).SetVisibleOptions(map[string]any{"legacy_pricing_strategy_id": int64(strategy.ID)}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetMinimumTaskPoints("8.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v1").SetEnabled(true).Save(ctx); err != nil {
+	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"image_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetMinimumTaskPoints("8.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v2").SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
 	billingStore := entstore.NewBillingStore(client, 5)
@@ -527,7 +537,7 @@ func newVideoTaskAPIFixture(t *testing.T) videoTaskAPIFixture {
 	}
 	configStore := entstore.NewVideoConfigStore(client)
 	routing := videoroutingservice.NewService(configStore)
-	quotes := videotaskservice.NewQuoteService(routing, videopricingservice.NewService(configStore, func() time.Time { return now }), []byte("test-video-quote-signing-key-32bytes"), func() time.Time { return now })
+	quotes := videotaskservice.NewQuoteService(routing, videopricingservice.NewService(adminvideoservice.NewService(entstore.NewAdminVideoStore(client)), func() time.Time { return now }), []byte("test-video-quote-signing-key-32bytes"), func() time.Time { return now })
 	mediaService := mediaassetservice.NewService(entstore.NewMediaStore(client), storage.NewStaticRouter(storage.NewLocalBackend(t.TempDir())), mediaassetservice.Options{Policy: domainmedia.DefaultPolicy()})
 	taskService := videotaskservice.NewService(entstore.NewVideoTaskStore(client, billingStore), quotes, projectservice.NewService(entstore.NewProjectStore(client)), mediaService, func() time.Time { return now })
 	api := handlers.NewAPIWithRuntimeServices(taskAPIConfig("http://provider.invalid"), authSvc, nil, nil, enabledFeatureAdmin(t, "video_creation"), nil)
@@ -535,6 +545,17 @@ func newVideoTaskAPIFixture(t *testing.T) videoTaskAPIFixture {
 	api.SetVideoServices(routing, quotes, taskService)
 	estimateBody := `{"project_id":"` + project.ID.String() + `","route_model_code":"cinema","task_type":"image_to_video","prompt_template":"make {{@hero}} move","reference_bindings":[{"name":"hero","asset_id":"` + assetID.String() + `"}],"duration_seconds":5,"resolution":"2k","aspect_ratio":"adaptive","audio_mode":"silent","output_count":1,"inputs":[{"asset_id":"` + assetID.String() + `","role":"first_frame","ordinal":0}]}`
 	return videoTaskAPIFixture{client: client, auth: authSvc, owner: owner, handler: NewWithAPI(api), projectID: project.ID, assetID: assetID, estimateBody: estimateBody}
+}
+
+func minimaxH3TestRateConfig() map[string]any {
+	return map[string]any{
+		"resolutions": map[string]any{
+			"2k": map[string]any{"output_second_cny": "0.50", "input_video_second_cny": "0.50"},
+		},
+		"free_image_count": 5,
+		"extra_image_cny":  "0.20",
+		"input_audio_free": true,
+	}
 }
 
 func (fixture videoTaskAPIFixture) createBody(quoteToken string) string {

@@ -4,14 +4,13 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type fakeConfigStore struct {
 	fakeStore
 	capability   CapabilityWrite
-	cost         CostRuleWrite
-	strategy     StrategyWrite
-	price        PriceRuleWrite
 	route        RouteConfigWrite
 	modelContext ModelPricingContext
 	routeContext RouteQuoteContext
@@ -31,18 +30,6 @@ func (s *fakeConfigStore) GetVideoRouteQuoteContext(context.Context, int64, time
 func (s *fakeConfigStore) SaveVideoModelRateCard(_ context.Context, input RateCardWrite) (RateCardSummary, error) {
 	s.rateCard = input
 	return RateCardSummary{AccountModelID: input.AccountModelID, ProviderCode: input.ProviderCode, PricingSchema: input.PricingSchema, RateVersion: input.ExpectedRateVersion + 1, RateConfig: input.RateConfig, Enabled: input.Enabled}, nil
-}
-func (s *fakeConfigStore) SaveCostRule(_ context.Context, input CostRuleWrite) (CostRuleSummary, error) {
-	s.cost = input
-	return CostRuleSummary{ID: 1, AccountModelID: input.AccountModelID, RuleVersion: input.ExpectedRuleVersion + 1, Enabled: input.Enabled}, nil
-}
-func (s *fakeConfigStore) SaveStrategy(_ context.Context, input StrategyWrite) (PricingStrategySummary, error) {
-	s.strategy = input
-	return PricingStrategySummary{ID: input.ID, StrategyVersion: input.ExpectedVersion + 1, Enabled: input.Enabled}, nil
-}
-func (s *fakeConfigStore) SavePriceRule(_ context.Context, input PriceRuleWrite) (PriceRuleSummary, error) {
-	s.price = input
-	return PriceRuleSummary{ID: input.ID, StrategyID: input.StrategyID, RuleVersion: input.ExpectedVersion + 1, SalesPoints: input.MinimumTaskPoints, SafetyPoints: input.SafetyPoints, Enabled: input.Enabled}, nil
 }
 func (s *fakeConfigStore) SaveRouteConfig(_ context.Context, input RouteConfigWrite) (RouteConfigSummary, error) {
 	s.route = input
@@ -71,14 +58,10 @@ func TestSaveVideoModelRateCardValidatesProviderSchemaAndCapability(t *testing.T
 		},
 		Enabled: true,
 	}
-	if _, err := service.SaveVideoModelRateCard(t.Context(), input); err == nil {
-		t.Fatal("provider mismatch must fail")
-	}
-	input.ProviderCode = "seedance"
 	if _, err := service.SaveVideoModelRateCard(t.Context(), input); err != nil {
-		t.Fatal(err)
+		t.Fatalf("provider and system metadata must be derived from the real model: %v", err)
 	}
-	if store.rateCard.Currency != "CNY" || store.rateCard.PricingSchema != "seedance_token_v1" {
+	if store.rateCard.ProviderCode != "seedance" || store.rateCard.Currency != "CNY" || store.rateCard.PricingSchema != "seedance_token_v1" || store.rateCard.SourceReference == "" || store.rateCard.EffectiveAt.IsZero() {
 		t.Fatalf("normalized rate card = %#v", store.rateCard)
 	}
 }
@@ -103,6 +86,17 @@ func TestRouteQuoteSimulationUsesMappedCandidatesAndHighestCNY(t *testing.T) {
 					"free_image_count": 5, "extra_image_cny": "0.20", "input_audio_free": true,
 				}},
 			},
+			{
+				RouteCandidateID: 13, AccountModelID: 103, ProviderCode: "minimax", ModelCode: "MiniMax-H3",
+			},
+			{
+				RouteCandidateID: 14, AccountModelID: 104, ProviderCode: "minimax", ModelCode: "MiniMax-H3", Capability: minimaxCapability,
+				PreflightExclusionCode: "VIDEO_CANDIDATE_NOT_PRICEABLE", ResolutionMappings: map[string]string{"720p": "768p"},
+				RateCard: RateCardSummary{ProviderCode: "minimax", PricingSchema: "minimax_h3_second_v1", RateVersion: 1, RateConfig: map[string]any{
+					"resolutions":      map[string]any{"768p": map[string]any{"output_second_cny": "100.00", "input_video_second_cny": "100.00"}},
+					"free_image_count": 5, "extra_image_cny": "0.20", "input_audio_free": true,
+				}},
+			},
 		},
 	}}
 	result, err := NewService(store).SimulateRouteQuote(t.Context(), QuoteSimulationRequest{
@@ -111,11 +105,34 @@ func TestRouteQuoteSimulationUsesMappedCandidatesAndHighestCNY(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Candidates) != 2 || result.HighestAccountModelID != 101 || result.HighestCNY != "4.96800" || result.UnitPoints != "497.00000" {
+	if len(result.Candidates) != 4 || result.HighestAccountModelID != 101 || result.HighestCNY != "4.96800" || result.UnitPoints != "497.00000" {
 		t.Fatalf("simulation = %#v", result)
 	}
 	if result.Candidates[1].MappedResolution != "768p" || !result.Candidates[1].Eligible {
 		t.Fatalf("mapped minimax candidate = %#v", result.Candidates[1])
+	}
+	if result.Candidates[2].ExclusionCode != "VIDEO_CAPABILITY_INVALID" {
+		t.Fatalf("invalid capability candidate = %#v", result.Candidates[2])
+	}
+	if result.Candidates[3].Eligible || result.Candidates[3].ExclusionCode != "VIDEO_CANDIDATE_NOT_PRICEABLE" {
+		t.Fatalf("unavailable candidate = %#v", result.Candidates[3])
+	}
+}
+
+func TestRouteQuoteSimulationReturnsRoutePriceUnavailableWhenEveryCandidateIsExcluded(t *testing.T) {
+	store := &fakeConfigStore{routeContext: RouteQuoteContext{
+		Route:       RouteConfigSummary{RouteModelID: 9, ConfigVersion: "route-v2", RoundingStepPoints: 1},
+		CNYPerPoint: "0.01", ConversionVersion: "billing-v3",
+		Candidates: []RouteQuoteCandidate{{
+			RouteCandidateID: 11, AccountModelID: 101, ProviderCode: "seedance", ModelCode: "doubao-seedance-2-0-260128",
+		}},
+	}}
+	_, err := NewService(store).SimulateRouteQuote(t.Context(), QuoteSimulationRequest{
+		RouteModelID: 9, TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5, OutputCount: 1,
+	})
+	typed, ok := err.(*errs.Error)
+	if !ok || typed.Code != "VIDEO_ROUTE_PRICE_UNAVAILABLE" || len(typed.Details["candidates"].([]QuoteSimulationCandidate)) != 1 {
+		t.Fatalf("route unavailable error = %#v", err)
 	}
 }
 
@@ -161,88 +178,30 @@ func TestCapabilityWriteValidatesEveryDeclaredCombination(t *testing.T) {
 	}
 }
 
-func TestEnableStrategyAndRouteRejectUnsafePlansPricesAndMissingCombinations(t *testing.T) {
+func TestEnabledRouteRequiresEveryCandidateToHaveEnabledRateCard(t *testing.T) {
 	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
-		Plans: []PointProduct{{ID: 1, Code: "diluted", PriceCNY: "10", Points: "100", BonusPoints: "20", Enabled: true}},
-		Capabilities: []CapabilitySummary{{AccountModelID: 7, ValidationState: "verified", Enabled: true, Capability: map[string]any{
-			"schema_version": 1, "provider_native_max_n": 1,
-			"task_types": map[string]any{"text_to_video": map[string]any{"durations": map[string]any{"values": []any{5}}, "resolutions": []any{"720p"}, "aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"}}},
-		}}},
-		CostRules:  []CostRuleSummary{{AccountModelID: 7, Validation: "verified", Rates: map[string]any{"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "cost_cny": "0.5"}}}, Enabled: true}},
-		Strategies: []PricingStrategySummary{{ID: 3, StrategyVersion: 1, MinimumNetPointIncomeCNY: "0.10000", TargetMarginRate: "0.25000", ProviderCostBufferRate: "0.10000", PaymentFeeRate: "0.03000", PlatformFixedCostCNY: "0", PlatformOutputSecondCostCNY: "0", PlatformReferenceCostCNY: "0", Enabled: true}},
-		Routes:     []RouteConfigSummary{{RouteModelID: 9, PricingStrategyID: 3, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
-		PriceRules: []PriceRuleSummary{{StrategyID: 3, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", SalesPoints: "7", SafetyPoints: "8", Enabled: true}},
+		Routes: []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 2, CandidateAccountModelIDs: []int64{7, 8}}},
+		Capabilities: []CapabilitySummary{
+			{AccountModelID: 7, Capability: domainVideoCapabilityMap("720p"), ValidationState: "verified", Enabled: true},
+			{AccountModelID: 8, Capability: domainVideoCapabilityMap("720p"), ValidationState: "verified", Enabled: true},
+		},
+		RateCards: []RateCardSummary{
+			{AccountModelID: 7, PricingSchema: "seedance_token_v1", Enabled: true},
+			{AccountModelID: 8, PricingSchema: "minimax_h3_second_v1", Enabled: false},
+		},
 	}}}
 	service := NewService(store)
-	strategy := StrategyWrite{ID: 3, ExpectedVersion: 1, MinimumNetPointIncomeCNY: "0.10000", PaymentFeeRate: "0.03000", TargetMarginRate: "0.25000", ProviderCostBufferRate: "0.10000", Enabled: true}
-	if _, err := service.SaveStrategy(t.Context(), strategy); err == nil {
-		t.Fatal("diluted point package must block strategy enable")
-	}
-	store.snapshot.Plans[0].PriceCNY = "20"
-	if _, err := service.SaveStrategy(t.Context(), strategy); err != nil {
-		t.Fatal(err)
-	}
-	route := RouteConfigWrite{RouteModelID: 9, ExpectedVersion: "", ConfigVersion: "route-v2", PricingStrategyID: 3, TaskTypes: []string{"text_to_video"}, VisibleCombinations: []VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}}, MaxOutputCount: 4, Enabled: true}
+	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "route-v2", MinimumTaskPoints: "0", RoundingStepPoints: 5, TaskTypes: []string{"text_to_video"}, VisibleCombinations: []VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}}, MaxOutputCount: 4, Enabled: true}
 	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
-		t.Fatal("price below safety floor must block route enable")
+		t.Fatal("candidate without an enabled rate card must block route enable")
 	}
-	store.snapshot.PriceRules[0].SalesPoints = "8"
+	store.snapshot.RateCards[1].Enabled = true
 	if _, err := service.SaveRouteConfig(t.Context(), route); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestSimulateAndRecalculateUseWorstCandidateAndCreateNewRuleVersion(t *testing.T) {
-	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
-		Plans:      []PointProduct{{ID: 1, PriceCNY: "31.25", Points: "100", Enabled: true}},
-		Strategies: []PricingStrategySummary{{ID: 3, StrategyVersion: 2, MinimumNetPointIncomeCNY: "0.25260", TargetMarginRate: "0.25000", ProviderCostBufferRate: "0.10000", PlatformFixedCostCNY: "0.15000", PlatformOutputSecondCostCNY: "0.02000", PlatformReferenceCostCNY: "0.03000"}},
-		CostRules:  []CostRuleSummary{{AccountModelID: 7, RuleVersion: 1, Rates: map[string]any{"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "cost_cny": "1.00000"}}}, Enabled: true}, {AccountModelID: 8, RuleVersion: 2, Rates: map[string]any{"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "cost_cny": "2.00000"}}}, Enabled: true}},
-		Routes:     []RouteConfigSummary{{RouteModelID: 9, PricingStrategyID: 3, CandidateAccountModelIDs: []int64{7, 8}}},
-		PriceRules: []PriceRuleSummary{{ID: 11, StrategyID: 3, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", PricingMode: "metered", RuleVersion: 4}},
-	}}}
-	service := NewService(store)
-	result, err := service.Simulate(t.Context(), SimulationRequest{RouteModelID: 9, StrategyID: 3, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", DurationSeconds: 5})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.WorstCandidateCostCNY != "2.00000" || result.SafetyPoints == "0.00000" {
-		t.Fatalf("simulation=%#v", result)
-	}
-	if _, err := service.Recalculate(t.Context(), RecalculateRequest{RouteModelID: 9, StrategyID: 3, Combinations: []SimulationRequest{{TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", DurationSeconds: 5}}, EffectiveAt: time.Now()}); err != nil {
-		t.Fatal(err)
-	}
-	if store.price.ExpectedVersion != 4 || store.price.PricingMode != "metered" || store.price.SafetyPoints == "" || store.price.MinimumTaskPoints == "" {
-		t.Fatalf("recalculated=%#v", store.price)
-	}
-}
-
-func TestStrategyRejectsInvalidDecimalAndRateFields(t *testing.T) {
-	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{Plans: []PointProduct{{Code: "standard", PriceCNY: "100", Points: "100", Enabled: true}}}}}
-	service := NewService(store)
-	valid := StrategyWrite{
-		Code: "video", Name: "Video", GrossPointValueCNY: "1", MinimumNetPointIncomeCNY: "0.5",
-		MaxBonusRatio: "0.2", PaymentFeeRate: "0.03", TargetMarginRate: "0.25", ProviderCostBufferRate: "0.1",
-		PlatformFixedCostCNY: "0", PlatformOutputSecondCostCNY: "0", PlatformReferenceCostCNY: "0",
-		PlatformAudioFixedCostCNY: "0", PlatformAudioSecondCostCNY: "0", ExactReserveMarkup: "1", MeteredReserveMarkup: "1.1",
-	}
-	invalid := valid
-	invalid.TargetMarginRate = "1"
-	if _, err := service.SaveStrategy(t.Context(), invalid); err == nil {
-		t.Fatal("target margin >= 1 must fail")
-	}
-	invalid = valid
-	invalid.PlatformFixedCostCNY = "-0.01"
-	if _, err := service.SaveStrategy(t.Context(), invalid); err == nil {
-		t.Fatal("negative platform cost must fail")
-	}
-	invalid = valid
-	invalid.ExactReserveMarkup = "0.9"
-	if _, err := service.SaveStrategy(t.Context(), invalid); err == nil {
-		t.Fatal("reserve markup below one must fail")
-	}
-}
-
-func TestEnabledRouteRequiresVisibleCompatibleCombinationAndTargetMargin(t *testing.T) {
+func TestEnabledRouteRequiresVisibleCompatibleCombination(t *testing.T) {
 	capability := map[string]any{
 		"schema_version": 1, "provider_native_max_n": 1,
 		"task_types": map[string]any{"text_to_video": map[string]any{
@@ -251,15 +210,12 @@ func TestEnabledRouteRequiresVisibleCompatibleCombinationAndTargetMargin(t *test
 		}},
 	}
 	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
-		Plans:        []PointProduct{{Code: "standard", PriceCNY: "100", Points: "100", Enabled: true}},
 		Capabilities: []CapabilitySummary{{AccountModelID: 7, Capability: capability, ValidationState: "verified", Enabled: true}},
-		Strategies:   []PricingStrategySummary{{ID: 3, MinimumNetPointIncomeCNY: "0.5", PaymentFeeRate: "0.03", TargetMarginRate: "0.25", ProviderCostBufferRate: "0", PlatformFixedCostCNY: "0", PlatformOutputSecondCostCNY: "0", PlatformReferenceCostCNY: "0", Enabled: true}},
-		CostRules:    []CostRuleSummary{{AccountModelID: 7, Validation: "verified", Rates: map[string]any{"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "cost_cny": "3"}}}, Enabled: true}},
 		Routes:       []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
-		PriceRules:   []PriceRuleSummary{{StrategyID: 3, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", SalesPoints: "7", SafetyPoints: "8", Enabled: true}},
+		RateCards:    []RateCardSummary{{AccountModelID: 7, PricingSchema: "seedance_token_v1", Enabled: true}},
 	}}}
 	service := NewService(store)
-	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "v2", PricingStrategyID: 3, MaxOutputCount: 4, Enabled: true}
+	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "v2", MinimumTaskPoints: "0", RoundingStepPoints: 1, MaxOutputCount: 4, Enabled: true}
 	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
 		t.Fatal("enabled route without visible combinations must fail")
 	}
@@ -268,43 +224,45 @@ func TestEnabledRouteRequiresVisibleCompatibleCombinationAndTargetMargin(t *test
 		t.Fatal("combination unsupported by every candidate must fail")
 	}
 	route.VisibleCombinations[0].Resolution = "720p"
-	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
-		t.Fatal("sales below target-margin safety floor must fail")
-	}
-	store.snapshot.PriceRules[0].SalesPoints = "8"
 	if _, err := service.SaveRouteConfig(t.Context(), route); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestEnabledRouteValidatesParameterPricingBindings(t *testing.T) {
-	capability := map[string]any{
-		"schema_version": 1, "provider_native_max_n": 1,
-		"task_types": map[string]any{"text_to_video": map[string]any{
-			"durations": map[string]any{"values": []any{5}}, "resolutions": []any{"720p"},
-			"aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"},
-		}},
-	}
+func TestEnabledRouteUsesCandidateResolutionMappingForCapabilityValidation(t *testing.T) {
 	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
-		Plans:        []PointProduct{{Code: "standard", PriceCNY: "100", Points: "100", Enabled: true}},
-		Capabilities: []CapabilitySummary{{AccountModelID: 7, Capability: capability, ValidationState: "verified", Enabled: true}},
-		Strategies: []PricingStrategySummary{
-			{ID: 3, MinimumNetPointIncomeCNY: "0.5", PaymentFeeRate: "0.03", TargetMarginRate: "0.25", ProviderCostBufferRate: "0", PlatformFixedCostCNY: "0", PlatformOutputSecondCostCNY: "0", PlatformReferenceCostCNY: "0", Enabled: true},
-			{ID: 4, MinimumNetPointIncomeCNY: "0.5", PaymentFeeRate: "0.03", TargetMarginRate: "0.25", ProviderCostBufferRate: "0", PlatformFixedCostCNY: "0", PlatformOutputSecondCostCNY: "0", PlatformReferenceCostCNY: "0", Enabled: true},
-		},
-		CostRules:  []CostRuleSummary{{AccountModelID: 7, Rates: map[string]any{"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "cost_cny": "3"}}}, Enabled: true}},
-		Routes:     []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
-		PriceRules: []PriceRuleSummary{{StrategyID: 4, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", SalesPoints: "8", SafetyPoints: "8", Enabled: true}},
+		Capabilities: []CapabilitySummary{{
+			AccountModelID: 7, Capability: domainVideoCapabilityMap("768p"), ValidationState: "verified", Enabled: true,
+		}},
+		Routes:    []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
+		RateCards: []RateCardSummary{{AccountModelID: 7, PricingSchema: "minimax_h3_second_v1", Enabled: true}},
 	}}}
-	service := NewService(store)
-	combo := VisibleCombination{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}
-	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "v2", PricingStrategyID: 3, MaxOutputCount: 1, Enabled: true, VisibleCombinations: []VisibleCombination{combo}, VisibleOptions: map[string]any{"pricing_bindings": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "aspect_ratio": "16:9", "audio_mode": "silent", "duration_seconds": 5, "pricing_strategy_id": 4}}}}
-	if _, err := service.SaveRouteConfig(t.Context(), route); err != nil {
-		t.Fatalf("bound strategy price rejected: %v", err)
+	route := RouteConfigWrite{
+		RouteModelID: 9, ConfigVersion: "v2", MinimumTaskPoints: "0", RoundingStepPoints: 1, MaxOutputCount: 4, Enabled: true,
+		CandidateParameterMappings: map[string]any{"7": map[string]any{"resolutions": map[string]any{"720p": "768p"}}},
+		VisibleCombinations:        []VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}},
 	}
-	route.VisibleOptions["pricing_bindings"] = []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "pricing_strategy_id": 99}}
+	if _, err := NewService(store).SaveRouteConfig(t.Context(), route); err != nil {
+		t.Fatalf("mapped route combination must match the provider-native capability: %v", err)
+	}
+}
+
+func TestRouteConfigValidatesMinimumPointsAndRoundingStep(t *testing.T) {
+	service := NewService(&fakeConfigStore{})
+	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "v2", MinimumTaskPoints: "-1", RoundingStepPoints: 1, MaxOutputCount: 1}
 	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
-		t.Fatal("unknown pricing binding strategy must be rejected")
+		t.Fatal("negative minimum task points must be rejected")
+	}
+	route.MinimumTaskPoints = "0"
+	route.RoundingStepPoints = 2
+	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
+		t.Fatal("rounding step outside 1, 5, and 10 must be rejected")
+	}
+	for _, step := range []int{1, 5, 10} {
+		route.RoundingStepPoints = step
+		if _, err := service.SaveRouteConfig(t.Context(), route); err != nil {
+			t.Fatalf("rounding step %d rejected: %v", step, err)
+		}
 	}
 }
 
@@ -338,25 +296,5 @@ func TestSaveCapabilityRejectsEnabledUntestedConfiguration(t *testing.T) {
 	}
 	if _, err := service.SaveCapability(t.Context(), CapabilityWrite{AccountModelID: 7, CapabilityVersion: "cap-v1", Capability: capability, ValidationStatus: "untested", Enabled: true}); err == nil {
 		t.Fatal("enabled capability must require verified validation status")
-	}
-}
-
-func TestEnabledPriceRuleUsesServerSimulationInsteadOfSubmittedSafety(t *testing.T) {
-	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
-		Strategies: []PricingStrategySummary{{ID: 3, MinimumNetPointIncomeCNY: "0.5", TargetMarginRate: "0.25", ProviderCostBufferRate: "0", PlatformFixedCostCNY: "0", PlatformOutputSecondCostCNY: "0", PlatformReferenceCostCNY: "0"}},
-		CostRules:  []CostRuleSummary{{AccountModelID: 7, Rates: map[string]any{"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": 5, "cost_cny": "3"}}}, Enabled: true}},
-		Routes:     []RouteConfigSummary{{RouteModelID: 9, CandidateAccountModelIDs: []int64{7}}},
-	}}}
-	service := NewService(store)
-	input := PriceRuleWrite{RouteModelID: 9, StrategyID: 3, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", DurationSeconds: 5, EffectiveAt: time.Now(), MinimumTaskPoints: "7", SafetyPoints: "0.1", Enabled: true}
-	if _, err := service.SavePriceRule(t.Context(), input); err == nil {
-		t.Fatal("submitted safety below server-calculated safety must not bypass the gate")
-	}
-	input.MinimumTaskPoints = "8"
-	if _, err := service.SavePriceRule(t.Context(), input); err != nil {
-		t.Fatal(err)
-	}
-	if store.price.SafetyPoints != "8.00000" || store.price.CandidateCostUpperCNY != "3.00000" {
-		t.Fatalf("stored server safety=%s cost=%s", store.price.SafetyPoints, store.price.CandidateCostUpperCNY)
 	}
 }

@@ -22,7 +22,7 @@ func TestSnapshotNormalizesEmptyCollectionsForJSONClients(t *testing.T) {
 	if err := json.Unmarshal(payload, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"capabilities", "cost_rules", "pricing_strategies", "price_rules", "routes", "point_products", "impacts"} {
+	for _, field := range []string{"capabilities", "rate_cards", "routes", "impacts"} {
 		items, ok := decoded[field].([]any)
 		if !ok || len(items) != 0 {
 			t.Fatalf("%s must serialize as an empty array, payload=%s", field, payload)
@@ -70,54 +70,18 @@ func (s *fakeStore) GetVideoModelPricingContext(context.Context, int64) (ModelPr
 func (s *fakeStore) GetVideoRouteQuoteContext(context.Context, int64, time.Time) (RouteQuoteContext, error) {
 	return RouteQuoteContext{}, nil
 }
-func (s *fakeStore) SaveCostRule(context.Context, CostRuleWrite) (CostRuleSummary, error) {
-	return CostRuleSummary{}, nil
-}
-func (s *fakeStore) SaveStrategy(context.Context, StrategyWrite) (PricingStrategySummary, error) {
-	return PricingStrategySummary{}, nil
-}
-func (s *fakeStore) SavePriceRule(context.Context, PriceRuleWrite) (PriceRuleSummary, error) {
-	return PriceRuleSummary{}, nil
-}
 func (s *fakeStore) SaveRouteConfig(context.Context, RouteConfigWrite) (RouteConfigSummary, error) {
 	return RouteConfigSummary{}, nil
 }
 func (s *fakeStore) DeleteVideoConfig(context.Context, ConfigKind, int64, int64) error { return nil }
 
-func TestSnapshotIncludesIndependentVersionsAndBlockingImpact(t *testing.T) {
+func TestSnapshotIncludesNativePricingVersionsAndBlockingImpacts(t *testing.T) {
 	store := &fakeStore{snapshot: Snapshot{
-		Capabilities: []CapabilitySummary{{AccountModelID: 11, Version: "cap-v2", Enabled: true}},
-		CostRules:    []CostRuleSummary{{AccountModelID: 11, RuleVersion: 3, Enabled: true}},
-		Strategies:   []PricingStrategySummary{{ID: 21, StrategyVersion: 4, Enabled: true}},
-		PriceRules:   []PriceRuleSummary{{StrategyID: 21, TaskType: "text_to_video", Resolution: "1080p", AudioMode: "generated", RuleVersion: 5, SafetyPoints: "8", SalesPoints: "7", Enabled: true}},
-		Routes:       []RouteConfigSummary{{RouteModelID: 31, ConfigVersion: "route-v6", PricingStrategyID: 21, CandidateCount: 1, Enabled: true}},
-	}}
-
-	got, err := NewService(store).Snapshot(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Capabilities[0].Version != "cap-v2" || got.CostRules[0].RuleVersion != 3 || got.Strategies[0].StrategyVersion != 4 || got.Routes[0].ConfigVersion != "route-v6" {
-		t.Fatalf("independent versions were lost: %#v", got)
-	}
-	if len(got.Impacts) != 1 || !got.Impacts[0].Blocking || got.Impacts[0].Code != "price_below_safety_floor" {
-		t.Fatalf("expected price safety impact, got %#v", got.Impacts)
-	}
-	if got.Impacts[0].Summary != "价格策略 21 的 text_to_video / 1080p / generated 组合售价 7 积分，低于安全线 8 积分" {
-		t.Fatalf("impact must identify the affected strategy, combination, and values: %#v", got.Impacts[0])
-	}
-}
-
-func TestSnapshotReportsEachVisibleCombinationMissingPrice(t *testing.T) {
-	store := &fakeStore{snapshot: Snapshot{
-		Strategies: []PricingStrategySummary{{ID: 21, Enabled: true}},
-		PriceRules: []PriceRuleSummary{{StrategyID: 21, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", SafetyPoints: "8", SalesPoints: "8", Enabled: true}},
+		Capabilities: []CapabilitySummary{{AccountModelID: 11, Version: "cap-v2", ValidationState: "untested", Enabled: true}},
+		RateCards:    []RateCardSummary{{AccountModelID: 11, RateVersion: 3, Enabled: false}},
 		Routes: []RouteConfigSummary{{
-			RouteModelID: 31, RouteName: "视频创作", PricingStrategyID: 21, CandidateCount: 1, Enabled: true,
-			VisibleOptions: map[string]any{"combinations": []any{
-				map[string]any{"task_type": "text_to_video", "resolution": "720p", "audio_mode": "silent", "duration_seconds": float64(5)},
-				map[string]any{"task_type": "image_to_video", "resolution": "1080p", "audio_mode": "generated", "duration_seconds": float64(10)},
-			}},
+			RouteModelID: 31, ConfigVersion: "route-v6", CandidateCount: 1,
+			CandidateAccountModelIDs: []int64{11}, Enabled: true,
 		}},
 	}}
 
@@ -125,21 +89,23 @@ func TestSnapshotReportsEachVisibleCombinationMissingPrice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Impacts) != 1 || got.Impacts[0].Code != "missing_price" || got.Impacts[0].Summary != "路由 视频创作 缺少 image_to_video / 1080p / generated / 10 秒的销售价格" {
-		t.Fatalf("expected one precise missing combination impact, got %#v", got.Impacts)
+	if got.Capabilities[0].Version != "cap-v2" || got.RateCards[0].RateVersion != 3 || got.Routes[0].ConfigVersion != "route-v6" {
+		t.Fatalf("independent versions were lost: %#v", got)
+	}
+	if len(got.Impacts) != 3 {
+		t.Fatalf("expected missing combination, capability, and rate impacts, got %#v", got.Impacts)
 	}
 }
 
-func TestSnapshotUsesParameterPricingBindingForMissingPriceDiagnostics(t *testing.T) {
+func TestSnapshotAcceptsTypedVisibleCombinationsWithCompleteCandidate(t *testing.T) {
 	store := &fakeStore{snapshot: Snapshot{
-		Strategies: []PricingStrategySummary{{ID: 21, Enabled: true}, {ID: 22, Enabled: true}},
-		PriceRules: []PriceRuleSummary{{StrategyID: 22, TaskType: "text_to_video", Resolution: "720p", AudioMode: "silent", SafetyPoints: "8", SalesPoints: "8", Enabled: true}},
+		Capabilities: []CapabilitySummary{{AccountModelID: 11, ValidationState: "verified", Enabled: true}},
+		RateCards:    []RateCardSummary{{AccountModelID: 11, RateVersion: 2, Enabled: true}},
 		Routes: []RouteConfigSummary{{
-			RouteModelID: 31, RouteName: "视频创作", PricingStrategyID: 21, CandidateCount: 1, Enabled: true,
-			VisibleOptions: map[string]any{
-				"combinations":     []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "aspect_ratio": "16:9", "audio_mode": "silent", "duration_seconds": float64(5)}},
-				"pricing_bindings": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p", "aspect_ratio": "16:9", "audio_mode": "silent", "duration_seconds": float64(5), "pricing_strategy_id": float64(22)}},
-			},
+			RouteModelID: 31, RouteName: "视频创作", CandidateCount: 1, CandidateAccountModelIDs: []int64{11}, Enabled: true,
+			VisibleOptions: map[string]any{"combinations": []VisibleCombination{{
+				TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5,
+			}}},
 		}},
 	}}
 
@@ -148,7 +114,7 @@ func TestSnapshotUsesParameterPricingBindingForMissingPriceDiagnostics(t *testin
 		t.Fatal(err)
 	}
 	if len(got.Impacts) != 0 {
-		t.Fatalf("bound pricing strategy must satisfy missing-price diagnostics, got %#v", got.Impacts)
+		t.Fatalf("complete native pricing configuration must not report impacts, got %#v", got.Impacts)
 	}
 }
 

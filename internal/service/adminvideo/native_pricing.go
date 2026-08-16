@@ -21,14 +21,15 @@ type ModelPricingContext struct {
 }
 
 type RouteQuoteCandidate struct {
-	RouteCandidateID   int64
-	AccountModelID     int64
-	ProviderCode       string
-	ModelCode          string
-	CapabilityVersion  string
-	Capability         map[string]any
-	ResolutionMappings map[string]string
-	RateCard           RateCardSummary
+	RouteCandidateID       int64
+	AccountModelID         int64
+	ProviderCode           string
+	ModelCode              string
+	PreflightExclusionCode string
+	CapabilityVersion      string
+	Capability             map[string]any
+	ResolutionMappings     map[string]string
+	RateCard               RateCardSummary
 }
 
 type RouteQuoteContext struct {
@@ -39,28 +40,32 @@ type RouteQuoteContext struct {
 }
 
 type QuoteSimulationRequest struct {
-	RouteModelID        int64  `json:"route_model_id"`
-	TaskType            string `json:"task_type"`
-	Resolution          string `json:"resolution"`
-	AspectRatio         string `json:"aspect_ratio"`
-	AudioMode           string `json:"audio_mode"`
-	DurationSeconds     int    `json:"duration_seconds"`
-	OutputCount         int    `json:"output_count"`
-	ReferenceImageCount int    `json:"reference_image_count"`
-	InputVideoSeconds   string `json:"input_video_seconds"`
-	HasInputAudio       bool   `json:"has_input_audio"`
+	RouteModelID        int64               `json:"route_model_id"`
+	TaskType            string              `json:"task_type"`
+	Resolution          string              `json:"resolution"`
+	AspectRatio         string              `json:"aspect_ratio"`
+	AudioMode           string              `json:"audio_mode"`
+	DurationSeconds     int                 `json:"duration_seconds"`
+	OutputCount         int                 `json:"output_count"`
+	ReferenceImageCount int                 `json:"reference_image_count"`
+	InputVideoSeconds   string              `json:"input_video_seconds"`
+	HasInputAudio       bool                `json:"has_input_audio"`
+	Inputs              []domainvideo.Input `json:"inputs,omitempty"`
 }
 
 type QuoteSimulationCandidate struct {
-	RouteCandidateID int64          `json:"route_candidate_id"`
-	AccountModelID   int64          `json:"account_model_id"`
-	ProviderCode     string         `json:"provider_code"`
-	ModelCode        string         `json:"model_code"`
-	Eligible         bool           `json:"eligible"`
-	MappedResolution string         `json:"mapped_resolution"`
-	EstimatedCNY     string         `json:"estimated_cny"`
-	ExclusionCode    string         `json:"exclusion_code"`
-	Calculation      map[string]any `json:"calculation"`
+	RouteCandidateID  int64          `json:"route_candidate_id"`
+	AccountModelID    int64          `json:"account_model_id"`
+	ProviderCode      string         `json:"provider_code"`
+	ModelCode         string         `json:"model_code"`
+	CapabilityVersion string         `json:"capability_version"`
+	PricingSchema     string         `json:"pricing_schema"`
+	RateVersion       int            `json:"rate_version"`
+	Eligible          bool           `json:"eligible"`
+	MappedResolution  string         `json:"mapped_resolution"`
+	EstimatedCNY      string         `json:"estimated_cny"`
+	ExclusionCode     string         `json:"exclusion_code"`
+	Calculation       map[string]any `json:"calculation"`
 }
 
 type QuoteSimulationResult struct {
@@ -85,9 +90,10 @@ func (s *Service) SaveVideoModelRateCard(ctx context.Context, input RateCardWrit
 	if err != nil {
 		return RateCardSummary{}, err
 	}
-	if model.AccountModelID != input.AccountModelID || !strings.EqualFold(strings.TrimSpace(model.ProviderCode), strings.TrimSpace(input.ProviderCode)) {
-		return RateCardSummary{}, errs.BadRequest("video rate card provider does not match the real model account")
+	if model.AccountModelID != input.AccountModelID {
+		return RateCardSummary{}, errs.BadRequest("video rate card does not match the real model")
 	}
+	input.ProviderCode = strings.ToLower(strings.TrimSpace(model.ProviderCode))
 	capability, err := decodePricingCapability(model.Capability)
 	if err != nil {
 		return RateCardSummary{}, err
@@ -99,12 +105,21 @@ func (s *Service) SaveVideoModelRateCard(ctx context.Context, input RateCardWrit
 	if err := domainvideo.ValidateRateCard(card, capability); err != nil {
 		return RateCardSummary{}, errs.WithDetails(errs.New(422, errs.CodeValidationFailed, "video rate card is invalid"), map[string]any{"reason": err.Error()})
 	}
-	input.ProviderCode = strings.ToLower(strings.TrimSpace(model.ProviderCode))
 	input.Currency = "CNY"
-	if input.EffectiveAt.IsZero() {
-		input.EffectiveAt = time.Now().UTC()
-	}
+	input.SourceReference = nativePricingSourceReference(input.PricingSchema)
+	input.EffectiveAt = time.Now().UTC()
 	return s.store.SaveVideoModelRateCard(ctx, input)
+}
+
+func nativePricingSourceReference(schema string) string {
+	switch domainvideo.PricingSchema(schema) {
+	case domainvideo.PricingSchemaSeedanceTokenV1:
+		return "https://docs.volcengine.com/docs/82379/1544106?lang=zh"
+	case domainvideo.PricingSchemaMiniMaxH3SecondV1:
+		return "https://platform.minimaxi.com/docs/guides/pricing-paygo"
+	default:
+		return ""
+	}
 }
 
 func (s *Service) ListVideoModelRateCards(ctx context.Context, accountModelID int64) ([]RateCardSummary, error) {
@@ -132,6 +147,7 @@ func (s *Service) SimulateRouteQuote(ctx context.Context, input QuoteSimulationR
 		TaskType: domainvideo.TaskType(input.TaskType), DurationSeconds: input.DurationSeconds,
 		Resolution: domainvideo.Resolution(input.Resolution), AspectRatio: domainvideo.AspectRatio(input.AspectRatio),
 		AudioMode: domainvideo.AudioMode(input.AudioMode), OutputCount: input.OutputCount,
+		Inputs: append([]domainvideo.Input(nil), input.Inputs...),
 	}
 	contextValue, err := s.store.GetVideoRouteQuoteContext(ctx, input.RouteModelID, time.Now().UTC())
 	if err != nil {
@@ -152,7 +168,9 @@ func (s *Service) SimulateRouteQuote(ctx context.Context, input QuoteSimulationR
 	for _, candidate := range contextValue.Candidates {
 		row := QuoteSimulationCandidate{
 			RouteCandidateID: candidate.RouteCandidateID, AccountModelID: candidate.AccountModelID,
-			ProviderCode: candidate.ProviderCode, ModelCode: candidate.ModelCode, EstimatedCNY: "0.00000",
+			ProviderCode: candidate.ProviderCode, ModelCode: candidate.ModelCode,
+			CapabilityVersion: candidate.CapabilityVersion, PricingSchema: candidate.RateCard.PricingSchema,
+			RateVersion: candidate.RateCard.RateVersion, EstimatedCNY: "0.00000",
 			Calculation: map[string]any{},
 		}
 		mappedRequest := request
@@ -162,6 +180,11 @@ func (s *Service) SimulateRouteQuote(ctx context.Context, input QuoteSimulationR
 			mappedRequest.Resolution = domainvideo.Resolution(mapped)
 		}
 		row.MappedResolution = mappedResolution
+		if candidate.PreflightExclusionCode != "" {
+			row.ExclusionCode = candidate.PreflightExclusionCode
+			result.Candidates = append(result.Candidates, row)
+			continue
+		}
 		capability, decodeErr := decodePricingCapability(candidate.Capability)
 		if decodeErr != nil {
 			row.ExclusionCode = "VIDEO_CAPABILITY_INVALID"
@@ -211,7 +234,10 @@ func (s *Service) SimulateRouteQuote(ctx context.Context, input QuoteSimulationR
 		result.Candidates = append(result.Candidates, row)
 	}
 	if eligibleCount == 0 {
-		return QuoteSimulationResult{}, errs.New(409, errs.CodeVideoRateCardMissing, "no eligible video candidate has a valid rate card")
+		return QuoteSimulationResult{}, errs.WithDetails(
+			errs.New(409, errs.CodeVideoRoutePriceUnavailable, "no eligible video candidate has a valid price"),
+			map[string]any{"candidates": result.Candidates},
+		)
 	}
 	cnyPerPoint, err := parsePositivePointDecimal(contextValue.CNYPerPoint, "cny_per_point")
 	if err != nil {
@@ -258,12 +284,18 @@ func decodeNativeRateCard(providerCode, modelCode, schema string, config map[str
 }
 
 func decodePricingCapability(value map[string]any) (domainvideo.Capability, error) {
+	if len(value) == 0 {
+		return domainvideo.Capability{}, errs.BadRequest("invalid video capability")
+	}
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return domainvideo.Capability{}, errs.BadRequest("invalid video capability")
 	}
 	var capability domainvideo.Capability
 	if err := json.Unmarshal(payload, &capability); err != nil {
+		return domainvideo.Capability{}, errs.BadRequest("invalid video capability")
+	}
+	if capability.SchemaVersion != 1 || capability.ProviderNativeMaxN < 1 || capability.ProviderNativeMaxN > 10 || len(capability.TaskTypes) == 0 {
 		return domainvideo.Capability{}, errs.BadRequest("invalid video capability")
 	}
 	return capability, nil
