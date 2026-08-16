@@ -347,7 +347,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
           ) : <EmptyBlock title="选择路由模型" detail="从左侧选择一个路由，查看候选、能力与价格状态。" />}
         </section>
       ) : null}
-      {media === 'video' && selectedRoute ? <VideoRouteConfigPanel route={selectedRoute} config={videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(selectedRoute.id))} strategies={videoSnapshot?.pricing_strategies ?? []} onSaved={() => void load(String(selectedRoute.id))} /> : null}
+      {media === 'video' && selectedRoute ? <VideoRouteConfigPanel route={selectedRoute} config={videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(selectedRoute.id))} candidates={candidates[String(selectedRoute.id)] ?? selectedRoute.candidates ?? []} onSaved={() => void load(String(selectedRoute.id))} /> : null}
       {routeDialog ? (
         <Modal title={routeDialog.row ? '编辑路由模型' : '新增路由模型'} detail="保存后需要继续配置候选真实模型和价格，完成后才会对用户可用。" onClose={closeRouteDialog} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={closeRouteDialog}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !routeDialog.code || !routeDialog.name} onClick={() => void saveRoute()}>{saving ? '保存中...' : '保存并继续配置候选'}</button></>}>
           {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
@@ -418,15 +418,7 @@ function routeReadinessForMedia({
   })
   if (base.state !== 'ready' || route.media_type !== 'video') return base
   if (!videoConfig?.enabled) return { state: 'missing_price' as const, label: '不可用 · 未配置视频参数', tone: 'warning' as const }
-  const strategyIDs = new Set<number>([videoConfig.pricing_strategy_id])
-  const bindings = Array.isArray(videoConfig.visible_options?.pricing_bindings) ? videoConfig.visible_options.pricing_bindings : []
-  for (const binding of bindings) {
-    if (binding && typeof binding === 'object') {
-      const strategyID = Number((binding as { pricing_strategy_id?: unknown }).pricing_strategy_id)
-      if (strategyID > 0) strategyIDs.add(strategyID)
-    }
-  }
-  const impact = videoImpacts.find((item) => item.blocking && (String(item.route_model_id ?? '') === String(route.id) || (item.pricing_strategy_id != null && strategyIDs.has(item.pricing_strategy_id))))
+  const impact = videoImpacts.find((item) => item.blocking && String(item.route_model_id ?? '') === String(route.id))
   if (!impact) return base
   if (impact.code === 'missing_candidate') return { state: 'missing_candidate' as const, label: '不可用 · 缺候选', tone: 'danger' as const }
   return { state: 'missing_price' as const, label: '不可用 · 视频配置阻断', tone: 'warning' as const }
@@ -508,7 +500,7 @@ function RouteDetailWorkspace({
         <StatusFact label="创作类型" value={route.media_type === 'video' ? '视频' : '图片'} detail="决定使用图片或视频的能力与计费配置" />
         <StatusFact label="可见范围" value={<RouteBadge badge={routeVisibilityBadge(route.visibility)} />} detail={routeGroupNames(route.group_ids, groups)} />
         <StatusFact label="候选模型" value={routeCandidateSummary(routeCandidates)} detail={`${routeCandidates.filter((candidate) => candidate.enabled).length} 个可参与路由`} />
-        <StatusFact label="价格配置" value={route.media_type === 'video' ? (videoConfig?.pricing_strategy_id ? '已绑定默认策略' : '尚未绑定') : `${enabledPrices.length} 个启用价格`} detail={route.media_type === 'video' ? '参数组合可覆盖绑定其他视频价格策略' : (routePrices.length ? `共 ${routePrices.length} 条价格策略` : '尚未配置价格')} />
+        <StatusFact label="价格配置" value={route.media_type === 'video' ? (videoConfig?.enabled ? '原生费率报价' : '尚未启用') : `${enabledPrices.length} 个启用价格`} detail={route.media_type === 'video' ? `最低 ${videoConfig?.minimum_task_points ?? '0'} 积分 · 步长 ${videoConfig?.rounding_step_points ?? 1}` : (routePrices.length ? `共 ${routePrices.length} 条价格策略` : '尚未配置价格')} />
         <StatusFact label="排序顺序" value={<code className={adminDataGrid.code}>{String(route.sort_order)}</code>} detail="数值越小展示越靠前" />
       </section>
 
