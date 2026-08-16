@@ -96,8 +96,13 @@ func (s *Service) Resolve(ctx context.Context, code string, request domainvideo.
 	matched := make([]Candidate, 0, len(group.Candidates))
 	var fieldErrors []domainvideo.FieldError
 	for _, candidate := range group.Candidates {
-		match := candidate.Capability.Match(request)
+		mapped := request
+		if resolution := candidate.ResolutionMappings[request.Resolution]; resolution != "" {
+			mapped.Resolution = resolution
+		}
+		match := candidate.Capability.Match(mapped)
 		if match.Matches {
+			candidate.MappedRequest = mapped
 			matched = append(matched, candidate)
 		} else if len(fieldErrors) == 0 {
 			fieldErrors = match.FieldErrors

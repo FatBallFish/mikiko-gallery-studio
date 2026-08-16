@@ -11,6 +11,7 @@ import (
 	"time"
 
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
+	adminvideo "github.com/fatballfish/pic-gallery/internal/service/adminvideo"
 	videopricingservice "github.com/fatballfish/pic-gallery/internal/service/videopricing"
 	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
@@ -24,22 +25,23 @@ type EstimateRequest struct {
 }
 
 type Estimate struct {
-	RouteModelID      int64                 `json:"route_model_id,omitempty"`
-	RouteModelCode    string                `json:"route_model_code"`
-	CapabilityVersion string                `json:"capability_version"`
-	ConfigVersion     string                `json:"config_version"`
-	PriceVersion      string                `json:"price_version"`
-	UnitPoints        string                `json:"unit_points"`
-	EstimatedPoints   string                `json:"estimated_points"`
-	MaxReservedPoints string                `json:"max_reserved_points"`
-	QuoteToken        string                `json:"quote_token"`
-	ExpiresAt         time.Time             `json:"expires_at"`
-	RouteCandidateID  int64                 `json:"-"`
-	AccountModelID    int64                 `json:"-"`
-	ModelAccountID    int64                 `json:"-"`
-	ProviderCode      string                `json:"-"`
-	ModelCode         string                `json:"-"`
-	SalesRule         domainvideo.SalesRule `json:"-"`
+	RouteModelID      int64                  `json:"route_model_id,omitempty"`
+	RouteModelCode    string                 `json:"route_model_code"`
+	CapabilityVersion string                 `json:"capability_version"`
+	ConfigVersion     string                 `json:"config_version"`
+	PriceVersion      string                 `json:"price_version"`
+	UnitPoints        string                 `json:"unit_points"`
+	EstimatedPoints   string                 `json:"estimated_points"`
+	MaxReservedPoints string                 `json:"max_reserved_points"`
+	QuoteToken        string                 `json:"quote_token"`
+	ExpiresAt         time.Time              `json:"expires_at"`
+	RouteCandidateID  int64                  `json:"-"`
+	AccountModelID    int64                  `json:"-"`
+	ModelAccountID    int64                  `json:"-"`
+	ProviderCode      string                 `json:"-"`
+	ModelCode         string                 `json:"-"`
+	PricingSnapshot   map[string]any         `json:"-"`
+	MappedResolution  domainvideo.Resolution `json:"-"`
 }
 
 type QuoteService struct {
@@ -50,21 +52,30 @@ type QuoteService struct {
 }
 
 type quoteTokenPayload struct {
-	UserID            int64                 `json:"uid"`
-	Fingerprint       string                `json:"fp"`
-	CapabilityVersion string                `json:"cv"`
-	ConfigVersion     string                `json:"rv"`
-	PriceVersion      string                `json:"pv"`
-	UnitPoints        string                `json:"up"`
-	EstimatedPoints   string                `json:"ep"`
-	MaxReservedPoints string                `json:"mr"`
-	ExpiresAtUnix     int64                 `json:"exp"`
-	RouteCandidateID  int64                 `json:"rc"`
-	AccountModelID    int64                 `json:"am"`
-	ModelAccountID    int64                 `json:"ma"`
-	ProviderCode      string                `json:"pc"`
-	ModelCode         string                `json:"mc"`
-	SalesRule         domainvideo.SalesRule `json:"sr"`
+	UserID                int64                                 `json:"uid"`
+	Fingerprint           string                                `json:"fp"`
+	CapabilityVersion     string                                `json:"cv"`
+	ConfigVersion         string                                `json:"rv"`
+	PriceVersion          string                                `json:"pv"`
+	UnitPoints            string                                `json:"up"`
+	EstimatedPoints       string                                `json:"ep"`
+	MaxReservedPoints     string                                `json:"mr"`
+	ExpiresAtUnix         int64                                 `json:"exp"`
+	RouteCandidateID      int64                                 `json:"rc"`
+	AccountModelID        int64                                 `json:"am"`
+	ModelAccountID        int64                                 `json:"ma"`
+	ProviderCode          string                                `json:"pc"`
+	ModelCode             string                                `json:"mc"`
+	SchemaVersion         int                                   `json:"sv"`
+	QuoteMode             string                                `json:"qm"`
+	HighestCNY            string                                `json:"hc"`
+	CNYPerPoint           string                                `json:"cpp"`
+	ConversionVersion     string                                `json:"conv"`
+	MinimumTaskPoints     string                                `json:"min"`
+	RoundingStepPoints    int                                   `json:"step"`
+	CandidateQuotes       []adminvideo.QuoteSimulationCandidate `json:"cq"`
+	HighestAccountModelID int64                                 `json:"ham"`
+	MappedResolution      domainvideo.Resolution                `json:"mres"`
 }
 
 func NewQuoteService(routing *videoroutingservice.Service, pricing *videopricingservice.Service, key []byte, now func() time.Time) *QuoteService {
@@ -82,11 +93,14 @@ func (s *QuoteService) Estimate(ctx context.Context, userID int64, request Estim
 	if err != nil {
 		return Estimate{}, err
 	}
-	quoted, err := s.pricing.Quote(ctx, resolved.Group.PricingStrategyFor(request.Video), request.Video)
+	quoted, err := s.pricing.Quote(ctx, resolved.Group.RouteModelID, request.Video)
 	if err != nil {
 		return Estimate{}, err
 	}
-	selected := resolved.Candidates[0]
+	selected, ok := firstPriceableRouteCandidate(resolved.Candidates, quoted.CandidateQuotes)
+	if !ok {
+		return Estimate{}, errs.New(409, errs.CodeVideoRoutePriceUnavailable, "no routed video candidate is priceable")
+	}
 	fingerprint, err := estimateFingerprint(request)
 	if err != nil {
 		return Estimate{}, err
@@ -98,7 +112,11 @@ func (s *QuoteService) Estimate(ctx context.Context, userID int64, request Estim
 		MaxReservedPoints: quoted.MaxReservedPoints, ExpiresAtUnix: expiresAt.Unix(),
 		RouteCandidateID: selected.RouteCandidateID, AccountModelID: selected.AccountModelID, ModelAccountID: selected.ModelAccountID,
 		ProviderCode: selected.AdapterType, ModelCode: selected.ModelCode,
-		SalesRule: quoted.SalesRule,
+		SchemaVersion: quoted.SchemaVersion, QuoteMode: quoted.QuoteMode, HighestCNY: quoted.HighestCNY,
+		CNYPerPoint: quoted.CNYPerPoint, ConversionVersion: quoted.ConversionVersion,
+		MinimumTaskPoints: quoted.MinimumTaskPoints, RoundingStepPoints: quoted.RoundingStepPoints,
+		CandidateQuotes: quoted.CandidateQuotes, HighestAccountModelID: quoted.HighestAccountModelID,
+		MappedResolution: selected.MappedRequest.Resolution,
 	}
 	token, err := s.sign(payload)
 	if err != nil {
@@ -109,8 +127,45 @@ func (s *QuoteService) Estimate(ctx context.Context, userID int64, request Estim
 		PriceVersion: payload.PriceVersion, UnitPoints: payload.UnitPoints, EstimatedPoints: payload.EstimatedPoints,
 		MaxReservedPoints: payload.MaxReservedPoints, QuoteToken: token, ExpiresAt: expiresAt,
 		RouteCandidateID: payload.RouteCandidateID, AccountModelID: payload.AccountModelID, ModelAccountID: payload.ModelAccountID,
-		ProviderCode: payload.ProviderCode, ModelCode: payload.ModelCode, SalesRule: payload.SalesRule,
+		ProviderCode: payload.ProviderCode, ModelCode: payload.ModelCode, MappedResolution: payload.MappedResolution,
+		PricingSnapshot: pricingSnapshot(payload),
 	}, nil
+}
+
+func firstPriceableRouteCandidate(routed []videoroutingservice.Candidate, quoted []adminvideo.QuoteSimulationCandidate) (videoroutingservice.Candidate, bool) {
+	eligibleRoutes := make(map[int64]struct{}, len(quoted))
+	eligibleModels := make(map[int64]struct{}, len(quoted))
+	for _, candidate := range quoted {
+		if !candidate.Eligible {
+			continue
+		}
+		if candidate.RouteCandidateID > 0 {
+			eligibleRoutes[candidate.RouteCandidateID] = struct{}{}
+		} else {
+			eligibleModels[candidate.AccountModelID] = struct{}{}
+		}
+	}
+	for _, candidate := range routed {
+		if _, ok := eligibleRoutes[candidate.RouteCandidateID]; ok {
+			return candidate, true
+		}
+		if _, ok := eligibleModels[candidate.AccountModelID]; ok {
+			return candidate, true
+		}
+	}
+	return videoroutingservice.Candidate{}, false
+}
+
+func pricingSnapshot(payload quoteTokenPayload) map[string]any {
+	return map[string]any{
+		"schema_version": payload.SchemaVersion, "quote_mode": payload.QuoteMode,
+		"price_version": payload.PriceVersion, "unit_points": payload.UnitPoints,
+		"estimated_points": payload.EstimatedPoints, "max_reserved_points": payload.MaxReservedPoints,
+		"highest_cny": payload.HighestCNY, "cny_per_point": payload.CNYPerPoint,
+		"conversion_version": payload.ConversionVersion, "minimum_task_points": payload.MinimumTaskPoints,
+		"rounding_step_points": payload.RoundingStepPoints, "candidate_quotes": payload.CandidateQuotes,
+		"highest_account_model_id": payload.HighestAccountModelID,
+	}
 }
 
 func (s *QuoteService) Verify(ctx context.Context, userID int64, request EstimateRequest, token string) (Estimate, error) {

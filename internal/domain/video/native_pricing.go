@@ -102,6 +102,11 @@ func validateSeedanceRateCard(card RateCard, capability Capability) error {
 		return fmt.Errorf("seedance resolutions are required")
 	}
 	supported := capabilityResolutions(capability)
+	for resolution := range supported {
+		if _, ok := card.Seedance.Resolutions[resolution]; !ok {
+			return fmt.Errorf("seedance rate is missing for resolution %s", resolution)
+		}
+	}
 	requiresInputVideoRate := capabilitySupportsMediaType(capability, "video")
 	for resolution, rate := range card.Seedance.Resolutions {
 		if _, ok := supported[resolution]; !ok {
@@ -149,6 +154,11 @@ func validateMiniMaxRateCard(card RateCard, capability Capability) error {
 		return err
 	}
 	supported := capabilityResolutions(capability)
+	for resolution := range supported {
+		if _, ok := card.MiniMaxH3.Resolutions[resolution]; !ok {
+			return fmt.Errorf("minimax h3 rate is missing for resolution %s", resolution)
+		}
+	}
 	requiresInputVideoRate := capabilitySupportsMediaType(capability, "video")
 	for resolution, rate := range card.MiniMaxH3.Resolutions {
 		if _, ok := supported[resolution]; !ok {

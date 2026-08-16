@@ -157,7 +157,7 @@ func (c *Client) VerifyCallback(_ context.Context, headers http.Header, body []b
 	return videoprovider.CallbackEvent{EventID: response.EventID, JobID: status.JobID, Status: status}, nil
 }
 func (c *Client) NormalizeUsage(status videoprovider.Status) (videoprovider.Usage, error) {
-	return videoprovider.Usage{OutputSeconds: decimal3(status.Usage["output_seconds"]), InputVideoSeconds: decimal3(status.Usage["input_seconds"]), ReferenceImageCount: intValue(status.Usage["input_image_count"]), ProviderTokens: integerString(firstValue(status.Usage, "total_tokens", "completion_tokens")), Raw: clone(status.Usage)}, nil
+	return videoprovider.Usage{OutputSeconds: decimal3(status.Usage["output_seconds"]), InputVideoSeconds: decimal3(status.Usage["input_seconds"]), ReferenceImageCount: intValue(status.Usage["input_image_count"]), ProviderTokens: integerString(firstValue(status.Usage, "completion_tokens", "total_tokens")), Raw: clone(status.Usage)}, nil
 }
 
 type seedanceTask struct {

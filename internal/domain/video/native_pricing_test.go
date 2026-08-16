@@ -56,6 +56,15 @@ func TestNativePricingValidatesSeedanceRateCardAgainstCapability(t *testing.T) {
 			want: "must be positive",
 		},
 		{
+			name: "missing supported resolution rate",
+			mutate: func(_ *RateCard, capability *Capability) {
+				task := capability.TaskTypes[TaskTypeTextToVideo]
+				task.Resolutions = append(task.Resolutions, Resolution1080P)
+				capability.TaskTypes[TaskTypeTextToVideo] = task
+			},
+			want: "rate is missing for resolution 1080p",
+		},
+		{
 			name: "video input rate required",
 			mutate: func(_ *RateCard, capability *Capability) {
 				task := capability.TaskTypes[TaskTypeTextToVideo]
