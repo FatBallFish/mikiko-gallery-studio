@@ -100,6 +100,11 @@ func (s *Service) Snapshot(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	snapshot.Impacts = append(snapshot.Impacts, deriveImpacts(snapshot)...)
+	pricingImpacts, err := s.derivePricingImpacts(ctx, snapshot)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	snapshot.Impacts = append(snapshot.Impacts, pricingImpacts...)
 	normalizeSnapshotCollections(&snapshot)
 	if snapshot.GeneratedAt.IsZero() {
 		snapshot.GeneratedAt = time.Now().UTC()
@@ -157,14 +162,32 @@ func deriveImpacts(snapshot Snapshot) []Impact {
 		if !hasEnabledRate {
 			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_rate_card", Summary: "启用的视频路由没有配置销售费率的候选真实模型", Blocking: true, FixRoute: "models"})
 		}
+	}
+	return impacts
+}
+
+func (s *Service) derivePricingImpacts(ctx context.Context, snapshot Snapshot) ([]Impact, error) {
+	impacts := make([]Impact, 0)
+	for _, route := range snapshot.Routes {
+		if !route.Enabled {
+			continue
+		}
+		combinations := visibleCombinations(route.VisibleOptions)
+		if len(combinations) == 0 {
+			continue
+		}
+		quoteContext, err := s.store.GetVideoRouteQuoteContext(ctx, route.RouteModelID, snapshot.GeneratedAt)
+		if err != nil {
+			return nil, err
+		}
 		for _, combination := range combinations {
-			if !snapshotHasPriceableCombination(snapshot, route.CandidateAccountModelIDs, route.CandidateParameterMappings, combination) {
+			if !routeQuoteContextHasPriceableCombination(quoteContext, route.CandidateParameterMappings, combination) {
 				impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "unpriceable_visible_combination", Summary: "启用的视频路由存在无法报价的公开参数组合", Blocking: true, FixRoute: "pricing"})
 				break
 			}
 		}
 	}
-	return impacts
+	return impacts, nil
 }
 
 func visibleCombinationCount(options map[string]any) int {
@@ -448,7 +471,7 @@ func (s *Service) Readiness(ctx context.Context, now time.Time) (ReadinessSnapsh
 			return ReadinessSnapshot{}, err
 		}
 		for _, combo := range combinations {
-			if !routeQuoteContextHasPriceableCombination(quoteContext, combo) {
+			if !routeQuoteContextHasPriceableCombination(quoteContext, route.CandidateParameterMappings, combo) {
 				result.VisibleCombosMissingPrice++
 				break
 			}

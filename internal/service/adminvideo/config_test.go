@@ -24,8 +24,11 @@ func (s *fakeConfigStore) SaveCapability(_ context.Context, input CapabilityWrit
 func (s *fakeConfigStore) GetVideoModelPricingContext(context.Context, int64) (ModelPricingContext, error) {
 	return s.modelContext, nil
 }
-func (s *fakeConfigStore) GetVideoRouteQuoteContext(context.Context, int64, time.Time) (RouteQuoteContext, error) {
-	return s.routeContext, nil
+func (s *fakeConfigStore) GetVideoRouteQuoteContext(_ context.Context, routeModelID int64, _ time.Time) (RouteQuoteContext, error) {
+	if len(s.routeContext.Candidates) > 0 {
+		return s.routeContext, nil
+	}
+	return fakeRouteQuoteContext(s.snapshot, routeModelID), nil
 }
 func (s *fakeConfigStore) SaveVideoModelRateCard(_ context.Context, input RateCardWrite) (RateCardSummary, error) {
 	s.rateCard = input
@@ -228,6 +231,30 @@ func TestEnabledRouteAllowsUnpricedCandidateWhenCombinationHasPriceableCandidate
 	}
 }
 
+func TestEnabledRouteRejectsCandidateFromDisabledAccount(t *testing.T) {
+	const routeModelID = int64(9)
+	store := &fakeConfigStore{
+		fakeStore: fakeStore{snapshot: Snapshot{
+			Routes:       []RouteConfigSummary{{RouteModelID: routeModelID, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
+			Capabilities: []CapabilitySummary{{AccountModelID: 7, Capability: domainVideoCapabilityMap("720p"), ValidationState: "verified", Enabled: true}},
+			RateCards: []RateCardSummary{{AccountModelID: 7, ProviderCode: "seedance", PricingSchema: "seedance_token_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
+				"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
+			}}},
+		}},
+		routeContext: RouteQuoteContext{Candidates: []RouteQuoteCandidate{{
+			AccountModelID: 7, PreflightExclusionCode: "VIDEO_CANDIDATE_NOT_PRICEABLE",
+		}}},
+	}
+	route := RouteConfigWrite{
+		RouteModelID: routeModelID, ConfigVersion: "route-v2", MinimumTaskPoints: "0", RoundingStepPoints: 1,
+		VisibleCombinations: []VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}},
+		MaxOutputCount:      1, Enabled: true,
+	}
+	if _, err := NewService(store).SaveRouteConfig(t.Context(), route); err == nil {
+		t.Fatal("candidate from a disabled account must not allow route enable")
+	}
+}
+
 func TestEnabledRouteRejectsCapabilityMatchWithoutMappedResolutionRate(t *testing.T) {
 	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
 		Routes:       []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
@@ -283,7 +310,8 @@ func TestEnabledRouteUsesCandidateResolutionMappingForCapabilityValidation(t *te
 		}},
 		Routes: []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
 		RateCards: []RateCardSummary{{AccountModelID: 7, PricingSchema: "minimax_h3_second_v1", Enabled: true, RateConfig: map[string]any{
-			"resolutions": map[string]any{"768p": map[string]any{"output_second_cny": "0.8", "input_video_second_cny": "0.8"}},
+			"resolutions":      map[string]any{"768p": map[string]any{"output_second_cny": "0.8", "input_video_second_cny": "0.8"}},
+			"free_image_count": 5, "extra_image_cny": "0", "input_audio_free": true,
 		}}},
 	}}}
 	route := RouteConfigWrite{

@@ -70,12 +70,62 @@ func (s *fakeStore) GetVideoModelPricingContext(context.Context, int64) (ModelPr
 	return ModelPricingContext{}, nil
 }
 func (s *fakeStore) GetVideoRouteQuoteContext(_ context.Context, routeModelID int64, _ time.Time) (RouteQuoteContext, error) {
-	return s.routeQuoteContexts[routeModelID], nil
+	if contextValue, ok := s.routeQuoteContexts[routeModelID]; ok {
+		return contextValue, nil
+	}
+	return fakeRouteQuoteContext(s.snapshot, routeModelID), nil
 }
 func (s *fakeStore) SaveRouteConfig(context.Context, RouteConfigWrite) (RouteConfigSummary, error) {
 	return RouteConfigSummary{}, nil
 }
 func (s *fakeStore) DeleteVideoConfig(context.Context, ConfigKind, int64, int64) error { return nil }
+
+func fakeRouteQuoteContext(snapshot Snapshot, routeModelID int64) RouteQuoteContext {
+	result := RouteQuoteContext{CNYPerPoint: "0.01", ConversionVersion: "billing-v1"}
+	for _, route := range snapshot.Routes {
+		if route.RouteModelID == routeModelID {
+			result.Route = route
+			break
+		}
+	}
+	for _, accountModelID := range result.Route.CandidateAccountModelIDs {
+		candidate := RouteQuoteCandidate{AccountModelID: accountModelID}
+		for _, capability := range snapshot.Capabilities {
+			if capability.AccountModelID == accountModelID && capability.Enabled && capability.ValidationState == "verified" {
+				candidate.CapabilityVersion = capability.Version
+				candidate.Capability = capability.Capability
+				break
+			}
+		}
+		for _, card := range snapshot.RateCards {
+			if card.AccountModelID != accountModelID || !card.Enabled {
+				continue
+			}
+			candidate.RateCard = card
+			if candidate.RateCard.RateVersion == 0 {
+				candidate.RateCard.RateVersion = 1
+			}
+			candidate.ProviderCode = card.ProviderCode
+			if candidate.ProviderCode == "" {
+				switch card.PricingSchema {
+				case "seedance_token_v1":
+					candidate.ProviderCode = "seedance"
+				case "minimax_h3_second_v1":
+					candidate.ProviderCode = "minimax"
+				}
+			}
+			break
+		}
+		switch candidate.ProviderCode {
+		case "seedance":
+			candidate.ModelCode = "doubao-seedance-2-0-260128"
+		case "minimax":
+			candidate.ModelCode = "MiniMax-H3"
+		}
+		result.Candidates = append(result.Candidates, candidate)
+	}
+	return result
+}
 
 func TestSnapshotIncludesNativePricingVersionsAndBlockingImpacts(t *testing.T) {
 	store := &fakeStore{snapshot: Snapshot{
@@ -148,6 +198,38 @@ func TestSnapshotDoesNotBlockMixedRouteWhenOneCandidateIsPriceable(t *testing.T)
 	if len(got.Impacts) != 0 {
 		t.Fatalf("an excluded unpriced candidate must not block a priceable mixed route: %#v", got.Impacts)
 	}
+}
+
+func TestSnapshotReportsUnpriceableCombinationAfterCandidateAccountIsDisabled(t *testing.T) {
+	const routeModelID = int64(31)
+	route := RouteConfigSummary{
+		RouteModelID: routeModelID, CandidateCount: 1, CandidateAccountModelIDs: []int64{11}, Enabled: true,
+		VisibleOptions: map[string]any{"combinations": []VisibleCombination{{
+			TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5,
+		}}},
+	}
+	store := &fakeStore{
+		snapshot: Snapshot{
+			Capabilities: []CapabilitySummary{{AccountModelID: 11, ValidationState: "verified", Enabled: true, Capability: domainVideoCapabilityMap("720p")}},
+			RateCards: []RateCardSummary{{AccountModelID: 11, ProviderCode: "seedance", PricingSchema: "seedance_token_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
+				"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
+			}}},
+			Routes: []RouteConfigSummary{route},
+		},
+		routeQuoteContexts: map[int64]RouteQuoteContext{routeModelID: {
+			Route: route, Candidates: []RouteQuoteCandidate{{AccountModelID: 11, PreflightExclusionCode: "VIDEO_CANDIDATE_NOT_PRICEABLE"}},
+		}},
+	}
+	got, err := NewService(store).Snapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, impact := range got.Impacts {
+		if impact.Code == "unpriceable_visible_combination" {
+			return
+		}
+	}
+	t.Fatalf("disabled account must produce an unpriceable combination impact: %#v", got.Impacts)
 }
 
 func TestReadinessRequiresAFormallyPriceableCandidateForEveryVisibleCombination(t *testing.T) {

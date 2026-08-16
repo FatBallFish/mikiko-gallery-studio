@@ -176,82 +176,20 @@ func (s *Service) SaveRouteConfig(ctx context.Context, input RouteConfigWrite) (
 		if len(input.VisibleCombinations) == 0 {
 			return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "enabled video route must expose at least one complete combination")
 		}
+		quoteContext, err := s.store.GetVideoRouteQuoteContext(ctx, input.RouteModelID, time.Now().UTC())
+		if err != nil {
+			return RouteConfigSummary{}, err
+		}
 		for _, combo := range input.VisibleCombinations {
 			if combo.TaskType == "" || combo.Resolution == "" || combo.AudioMode == "" || combo.DurationSeconds <= 0 {
 				return RouteConfigSummary{}, errs.BadRequest("visible video combination is incomplete")
 			}
-			if !snapshotHasPriceableCombination(snapshot, route.CandidateAccountModelIDs, input.CandidateParameterMappings, combo) {
+			if !routeQuoteContextHasPriceableCombination(quoteContext, input.CandidateParameterMappings, combo) {
 				return RouteConfigSummary{}, errs.New(409, errs.CodeVideoRoutePriceUnavailable, "visible video combination has no priceable candidate")
 			}
 		}
 	}
 	return s.store.SaveRouteConfig(ctx, input)
-}
-
-func snapshotHasPriceableCombination(snapshot Snapshot, candidateIDs []int64, mappings map[string]any, combo VisibleCombination) bool {
-	for _, capability := range snapshot.Capabilities {
-		if !capability.Enabled || capability.ValidationState != "verified" || !containsInt64(candidateIDs, capability.AccountModelID) {
-			continue
-		}
-		payload, err := json.Marshal(capability.Capability)
-		if err != nil {
-			continue
-		}
-		var parsed domainvideo.Capability
-		if json.Unmarshal(payload, &parsed) != nil {
-			continue
-		}
-		task, ok := parsed.TaskTypes[domainvideo.TaskType(combo.TaskType)]
-		if !ok || !task.Durations.Contains(combo.DurationSeconds) {
-			continue
-		}
-		resolution := mappedCandidateResolution(mappings, capability.AccountModelID, combo.Resolution)
-		if !containsResolutionValue(task.Resolutions, domainvideo.Resolution(resolution)) || !containsAudioValue(task.AudioModes, domainvideo.AudioMode(combo.AudioMode)) {
-			continue
-		}
-		if combo.AspectRatio != "" && !containsAspectValue(task.AspectRatios, domainvideo.AspectRatio(combo.AspectRatio)) {
-			continue
-		}
-		for _, card := range snapshot.RateCards {
-			if card.AccountModelID == capability.AccountModelID && card.Enabled && rateCardPricesResolution(card, resolution) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func rateCardPricesResolution(card RateCardSummary, resolution string) bool {
-	payload, err := json.Marshal(card.RateConfig)
-	if err != nil {
-		return false
-	}
-	switch domainvideo.PricingSchema(card.PricingSchema) {
-	case domainvideo.PricingSchemaSeedanceTokenV1:
-		var config domainvideo.SeedanceTokenRateCard
-		if json.Unmarshal(payload, &config) != nil {
-			return false
-		}
-		rate, ok := config.Resolutions[domainvideo.Resolution(resolution)]
-		if !ok {
-			return false
-		}
-		_, err = parsePositivePointDecimal(rate.WithoutInputVideoMillionTokensCNY, "without_input_video_million_tokens_cny")
-		return err == nil
-	case domainvideo.PricingSchemaMiniMaxH3SecondV1:
-		var config domainvideo.MiniMaxH3SecondRateCard
-		if json.Unmarshal(payload, &config) != nil {
-			return false
-		}
-		rate, ok := config.Resolutions[domainvideo.Resolution(resolution)]
-		if !ok {
-			return false
-		}
-		_, err = parsePositivePointDecimal(rate.OutputSecondCNY, "output_second_cny")
-		return err == nil
-	default:
-		return false
-	}
 }
 
 func mappedCandidateResolution(mappings map[string]any, accountModelID int64, fallback string) string {
@@ -270,38 +208,4 @@ func mappedCandidateResolution(mappings map[string]any, accountModelID int64, fa
 		return fallback
 	}
 	return mapping.Resolutions[fallback]
-}
-
-func containsResolutionValue(values []domainvideo.Resolution, target domainvideo.Resolution) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-func containsAudioValue(values []domainvideo.AudioMode, target domainvideo.AudioMode) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-func containsAspectValue(values []domainvideo.AspectRatio, target domainvideo.AspectRatio) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-
-func containsInt64(values []int64, target int64) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }

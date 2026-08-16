@@ -135,6 +135,34 @@ func TestAdminVideoSnapshotIncludesUnconfiguredVideoRouteCandidates(t *testing.T
 	}
 }
 
+func TestAdminVideoRouteQuoteContextSupportsFirstRouteConfiguration(t *testing.T) {
+	client, store := openAdminVideoTestStore(t, "admin-video-first-route-configuration")
+	ctx := t.Context()
+	account, err := client.ModelAccount.Create().SetName("Seedance").SetAdapterType("seedance").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("enabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("doubao-seedance-2-0-260128").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := client.RouteModel.Create().SetCode("first-config").SetName("First config").SetMediaType("video").SetEnabled(false).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(model.ID)).SetEnabled(true).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	quoteContext, err := store.GetVideoRouteQuoteContext(ctx, int64(route.ID), time.Now().UTC())
+	if err != nil {
+		t.Fatalf("first route configuration must load candidates before config exists: %v", err)
+	}
+	if quoteContext.Route.RouteModelID != int64(route.ID) || len(quoteContext.Candidates) != 1 {
+		t.Fatalf("quote context = %#v", quoteContext)
+	}
+}
+
 func TestAdminVideoRouteQuoteContextKeepsCandidateWithoutCapabilityOrRateCard(t *testing.T) {
 	client, store := openAdminVideoTestStore(t, "admin-video-quote-candidate-gaps")
 	ctx := t.Context()

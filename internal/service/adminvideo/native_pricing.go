@@ -265,8 +265,13 @@ func evaluateRouteQuoteCandidate(input QuoteSimulationRequest, candidate RouteQu
 	return row, value, nil
 }
 
-func routeQuoteContextHasPriceableCombination(contextValue RouteQuoteContext, combo VisibleCombination) bool {
+func routeQuoteContextHasPriceableCombination(contextValue RouteQuoteContext, mappings map[string]any, combo VisibleCombination) bool {
 	for _, candidate := range contextValue.Candidates {
+		candidate.ResolutionMappings = nil
+		mappedResolution := mappedCandidateResolution(mappings, candidate.AccountModelID, combo.Resolution)
+		if mappedResolution != combo.Resolution {
+			candidate.ResolutionMappings = map[string]string{combo.Resolution: mappedResolution}
+		}
 		input := QuoteSimulationRequest{
 			RouteModelID: contextValue.Route.RouteModelID, TaskType: combo.TaskType,
 			Resolution: combo.Resolution, AspectRatio: combo.AspectRatio, AudioMode: combo.AudioMode,
@@ -275,6 +280,9 @@ func routeQuoteContextHasPriceableCombination(contextValue RouteQuoteContext, co
 		capability, err := decodePricingCapability(candidate.Capability)
 		if err == nil {
 			if task, ok := capability.TaskTypes[domainvideo.TaskType(combo.TaskType)]; ok {
+				if input.AspectRatio == "" && len(task.AspectRatios) > 0 {
+					input.AspectRatio = string(task.AspectRatios[0])
+				}
 				input.Inputs = capabilityValidationInputs(task)
 				for _, mediaInput := range input.Inputs {
 					switch {

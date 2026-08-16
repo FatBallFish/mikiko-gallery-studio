@@ -177,16 +177,21 @@ func (s *AdminVideoStore) GetVideoRouteQuoteContext(ctx context.Context, routeMo
 	config, err := s.client.VideoRouteConfig.Query().Where(
 		videorouteconfig.RouteModelIDEQ(routeModelID), videorouteconfig.DeletedAtIsNil(),
 	).Only(ctx)
-	if err != nil {
+	if err != nil && !repoent.IsNotFound(err) {
 		return adminvideo.RouteQuoteContext{}, err
 	}
-	result := adminvideo.RouteQuoteContext{Route: adminvideo.RouteConfigSummary{
-		RouteModelID: routeModelID, ConfigVersion: config.ConfigVersion,
-		CandidateParameterMappings: deepCloneAnyMap(config.CandidateParameterMappings),
-		MinimumTaskPoints:          config.MinimumTaskPoints, RoundingStepPoints: config.RoundingStepPoints,
-		TaskTypes: append([]string(nil), config.TaskTypes...), VisibleOptions: deepCloneAnyMap(config.VisibleOptions),
-		Defaults: deepCloneAnyMap(config.Defaults), MaxOutputCount: config.MaxOutputCount, Enabled: config.Enabled,
-	}}
+	result := adminvideo.RouteQuoteContext{Route: adminvideo.RouteConfigSummary{RouteModelID: routeModelID}}
+	if config != nil {
+		result.Route.ConfigVersion = config.ConfigVersion
+		result.Route.CandidateParameterMappings = deepCloneAnyMap(config.CandidateParameterMappings)
+		result.Route.MinimumTaskPoints = config.MinimumTaskPoints
+		result.Route.RoundingStepPoints = config.RoundingStepPoints
+		result.Route.TaskTypes = append([]string(nil), config.TaskTypes...)
+		result.Route.VisibleOptions = deepCloneAnyMap(config.VisibleOptions)
+		result.Route.Defaults = deepCloneAnyMap(config.Defaults)
+		result.Route.MaxOutputCount = config.MaxOutputCount
+		result.Route.Enabled = config.Enabled
+	}
 	rows, err := s.client.RouteModelCandidate.Query().Where(
 		routemodelcandidate.RouteModelIDEQ(routeModelID), routemodelcandidate.EnabledEQ(true), routemodelcandidate.DeletedAtIsNil(),
 	).Order(repoent.Asc(routemodelcandidate.FieldPriority), repoent.Asc(routemodelcandidate.FieldFallbackOrder)).All(ctx)
@@ -197,7 +202,7 @@ func (s *AdminVideoStore) GetVideoRouteQuoteContext(ctx context.Context, routeMo
 		quoteCandidate := adminvideo.RouteQuoteCandidate{
 			RouteCandidateID:   int64(candidate.ID),
 			AccountModelID:     candidate.AccountModelID,
-			ResolutionMappings: decodeCandidateResolutionMappings(config.CandidateParameterMappings, candidate.AccountModelID),
+			ResolutionMappings: decodeCandidateResolutionMappings(result.Route.CandidateParameterMappings, candidate.AccountModelID),
 		}
 		model, modelErr := s.client.ModelAccountModel.Query().Where(
 			modelaccountmodel.IDEQ(int(candidate.AccountModelID)), modelaccountmodel.DeletedAtIsNil(),
