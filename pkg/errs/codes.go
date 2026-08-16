@@ -28,6 +28,8 @@ const (
 	CodeImageTaskFailed                = "IMAGE_TASK_FAILED"
 	CodeVideoFieldInvalid              = "VIDEO_FIELD_INVALID"
 	CodeVideoInputInvalid              = "VIDEO_INPUT_INVALID"
+	CodeVideoPricingSchemaUnsupported  = "VIDEO_PRICING_SCHEMA_UNSUPPORTED"
+	CodeVideoRateCardMissing           = "VIDEO_RATE_CARD_MISSING"
 	CodeVideoQuoteStale                = "VIDEO_QUOTE_STALE"
 	CodeIdempotencyKeyReused           = "IDEMPOTENCY_KEY_REUSED"
 	CodeVideoCapabilityMismatch        = "VIDEO_CAPABILITY_MISMATCH"
