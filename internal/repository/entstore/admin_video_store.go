@@ -362,16 +362,11 @@ func videoRouteHasMissingPrice(route adminvideoservice.RouteConfigSummary, cards
 		return true
 	}
 	for _, accountModelID := range route.CandidateAccountModelIDs {
-		priced := false
 		for _, card := range cards {
 			if card.AccountModelID == accountModelID && card.Enabled {
-				priced = true
-				break
+				return false
 			}
 		}
-		if !priced {
-			return true
-		}
 	}
-	return false
+	return true
 }

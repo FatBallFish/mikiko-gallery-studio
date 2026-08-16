@@ -16,14 +16,13 @@ func TestVideoResolutionMappingsDecodePerCandidate(t *testing.T) {
 	}
 }
 
-func TestVideoRouteMissingPriceRequiresEveryCandidateRateCard(t *testing.T) {
+func TestVideoRouteMissingPriceRequiresAtLeastOneCandidateRateCard(t *testing.T) {
 	route := adminvideoservice.RouteConfigSummary{CandidateAccountModelIDs: []int64{21, 22}}
-	cards := []adminvideoservice.RateCardSummary{{AccountModelID: 21, Enabled: true}}
-	if !videoRouteHasMissingPrice(route, cards) {
-		t.Fatal("missing candidate rate card must block readiness")
+	if !videoRouteHasMissingPrice(route, nil) {
+		t.Fatal("route without any candidate rate card must fail readiness")
 	}
-	cards = append(cards, adminvideoservice.RateCardSummary{AccountModelID: 22, Enabled: true})
+	cards := []adminvideoservice.RateCardSummary{{AccountModelID: 21, Enabled: true}}
 	if videoRouteHasMissingPrice(route, cards) {
-		t.Fatal("all candidate rate cards should satisfy readiness")
+		t.Fatal("one priceable candidate should satisfy mixed-route readiness")
 	}
 }
