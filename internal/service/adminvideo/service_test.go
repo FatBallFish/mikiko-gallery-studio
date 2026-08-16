@@ -164,6 +164,16 @@ func TestReadinessRequiresAFormallyPriceableCandidateForEveryVisibleCombination(
 			"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
 		}},
 	}
+	requiredVideoCapability := map[string]any{
+		"schema_version": 1, "provider_native_max_n": 1,
+		"task_types": map[string]any{"text_to_video": map[string]any{
+			"durations": map[string]any{"values": []any{5}}, "resolutions": []any{"768p"},
+			"aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"},
+			"inputs": map[string]any{"first_frame": map[string]any{
+				"required": true, "max_count": 1, "media_types": []any{"video"}, "formats": []any{"mp4"},
+			}},
+		}},
+	}
 	tests := []struct {
 		name       string
 		candidates []RouteQuoteCandidate
@@ -213,6 +223,18 @@ func TestReadinessRequiresAFormallyPriceableCandidateForEveryVisibleCombination(
 				Capability: validCandidate.Capability,
 				RateCard: RateCardSummary{AccountModelID: 11, PricingSchema: "seedance_token_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
 					"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "0"}},
+				}},
+			}},
+			missing: 1,
+		},
+		{
+			name: "required input video without its native rate is excluded",
+			candidates: []RouteQuoteCandidate{{
+				RouteCandidateID: 11, AccountModelID: 11, ProviderCode: "minimax", ModelCode: "MiniMax-H3",
+				Capability: requiredVideoCapability, ResolutionMappings: map[string]string{"720p": "768p"},
+				RateCard: RateCardSummary{AccountModelID: 11, PricingSchema: "minimax_h3_second_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
+					"resolutions":      map[string]any{"768p": map[string]any{"output_second_cny": "0.5"}},
+					"free_image_count": 5, "extra_image_cny": "0", "input_audio_free": true,
 				}},
 			}},
 			missing: 1,

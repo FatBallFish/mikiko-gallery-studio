@@ -205,6 +205,37 @@ func TestAdminVideoRouteQuoteContextMarksDisabledModelAsNotPriceable(t *testing.
 	}
 }
 
+func TestAdminVideoRouteQuoteContextMarksDisabledAccountAsNotPriceable(t *testing.T) {
+	client, store := openAdminVideoTestStore(t, "admin-video-disabled-account-quote-candidate")
+	ctx := t.Context()
+	account, err := client.ModelAccount.Create().SetName("MiniMax").SetAdapterType("minimax").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("disabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("MiniMax-H3").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := client.RouteModel.Create().SetCode("disabled-account-candidate").SetName("Disabled account candidate").SetMediaType("video").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(model.ID)).SetEnabled(true).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"text_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMinimumTaskPoints("0.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v1").SetEnabled(false).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	quoteContext, err := store.GetVideoRouteQuoteContext(ctx, int64(route.ID), time.Now().UTC())
+	if err != nil || len(quoteContext.Candidates) != 1 {
+		t.Fatalf("quote context=%#v err=%v", quoteContext, err)
+	}
+	if quoteContext.Candidates[0].PreflightExclusionCode != "VIDEO_CANDIDATE_NOT_PRICEABLE" {
+		t.Fatalf("disabled account candidate = %#v", quoteContext.Candidates[0])
+	}
+}
+
 func TestAdminVideoStoreProjectsConfigurationTaskDiagnosticsAndRecovery(t *testing.T) {
 	ctx := t.Context()
 	client, err := repoent.Open(dialect.SQLite, "file:admin-video-"+uuid.NewString()+"?mode=memory&cache=shared&_fk=1")

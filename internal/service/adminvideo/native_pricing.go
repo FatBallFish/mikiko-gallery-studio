@@ -241,6 +241,11 @@ func evaluateRouteQuoteCandidate(input QuoteSimulationRequest, candidate RouteQu
 		row.Calculation["error"] = decodeErr.Error()
 		return row, decimal.Zero, nil
 	}
+	if validationErr := domainvideo.ValidateRateCard(card, capability); validationErr != nil {
+		row.ExclusionCode = errs.CodeVideoRateCardInvalid
+		row.Calculation["error"] = validationErr.Error()
+		return row, decimal.Zero, nil
+	}
 	quote, quoteErr := domainvideo.QuoteNativePricing(domainvideo.NativePricingRequest{
 		Video: mappedRequest, InputVideoSeconds: input.InputVideoSeconds,
 		ReferenceImageCount: input.ReferenceImageCount, HasInputAudio: input.HasInputAudio,
@@ -272,8 +277,13 @@ func routeQuoteContextHasPriceableCombination(contextValue RouteQuoteContext, co
 			if task, ok := capability.TaskTypes[domainvideo.TaskType(combo.TaskType)]; ok {
 				input.Inputs = capabilityValidationInputs(task)
 				for _, mediaInput := range input.Inputs {
-					if strings.EqualFold(mediaInput.MediaType, "image") {
+					switch {
+					case strings.EqualFold(mediaInput.MediaType, "image"):
 						input.ReferenceImageCount++
+					case strings.EqualFold(mediaInput.MediaType, "video"):
+						input.InputVideoSeconds = "1"
+					case strings.EqualFold(mediaInput.MediaType, "audio"):
+						input.HasInputAudio = true
 					}
 				}
 			}
