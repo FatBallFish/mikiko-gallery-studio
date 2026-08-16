@@ -42,7 +42,7 @@ func TestClientSubmitGetCancelAndNormalizeUsage(t *testing.T) {
 			_, _ = io.WriteString(w, `{"id":"ark-job-1","status":"queued"}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/contents/generations/tasks/ark-job-1":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"id":"ark-job-1","status":"succeeded","content":{"video_url":"https://video.example.com/seedance.mp4"},"duration":5,"usage":{"completion_tokens":120,"total_tokens":120}}`)
+			_, _ = io.WriteString(w, `{"id":"ark-job-1","status":"succeeded","content":{"video_url":"https://video.example.com/seedance.mp4"},"duration":5,"usage":{"completion_tokens":120,"total_tokens":999}}`)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v3/contents/generations/tasks/ark-job-1":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"id":"ark-job-1","status":"cancelled"}`)

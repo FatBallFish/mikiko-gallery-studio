@@ -7,51 +7,28 @@ import (
 )
 
 type Candidate struct {
-	RouteCandidateID  int64
-	AccountModelID    int64
-	ModelAccountID    int64
-	ModelCode         string
-	AdapterType       string
-	CapabilityVersion string
-	Capability        domainvideo.Capability
-}
-
-type PricingBinding struct {
-	TaskType          domainvideo.TaskType
-	Resolution        domainvideo.Resolution
-	AspectRatio       domainvideo.AspectRatio
-	AudioMode         domainvideo.AudioMode
-	DurationSeconds   int
-	PricingStrategyID int64
+	RouteCandidateID   int64
+	AccountModelID     int64
+	ModelAccountID     int64
+	ModelCode          string
+	AdapterType        string
+	CapabilityVersion  string
+	Capability         domainvideo.Capability
+	ResolutionMappings map[domainvideo.Resolution]domainvideo.Resolution
+	MappedRequest      domainvideo.Request
 }
 
 type Group struct {
-	RouteModelID      int64
-	Code              string
-	Name              string
-	Description       string
-	ConfigVersion     string
-	PricingStrategyID int64
-	PricingBindings   []PricingBinding
-	MaxOutputCount    int
-	TaskTypes         []domainvideo.TaskType
-	Candidates        []Candidate
-}
-
-func (group Group) PricingStrategyFor(request domainvideo.Request) int64 {
-	for _, binding := range group.PricingBindings {
-		if binding.PricingStrategyID <= 0 || binding.TaskType != request.TaskType || binding.Resolution != request.Resolution || binding.AudioMode != request.AudioMode {
-			continue
-		}
-		if binding.AspectRatio != "" && binding.AspectRatio != request.AspectRatio {
-			continue
-		}
-		if binding.DurationSeconds > 0 && binding.DurationSeconds != request.DurationSeconds {
-			continue
-		}
-		return binding.PricingStrategyID
-	}
-	return group.PricingStrategyID
+	RouteModelID       int64
+	Code               string
+	Name               string
+	Description        string
+	ConfigVersion      string
+	MinimumTaskPoints  string
+	RoundingStepPoints int
+	MaxOutputCount     int
+	TaskTypes          []domainvideo.TaskType
+	Candidates         []Candidate
 }
 
 type Store interface {

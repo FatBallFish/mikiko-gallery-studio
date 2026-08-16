@@ -20,7 +20,7 @@ import (
 const (
 	// CurrentDatabaseSchemaVersion is advanced whenever an application release
 	// requires a database migration before ordinary nodes may start.
-	CurrentDatabaseSchemaVersion = 6
+	CurrentDatabaseSchemaVersion = 7
 
 	// A fixed signed 64-bit key coordinates every explicit migrator for one
 	// PostgreSQL database. Session locks are scoped by database, so installations
@@ -225,6 +225,9 @@ func migrateLocked(ctx context.Context, database *sql.DB, req MigrationRequest) 
 	client := repoent.NewClient(repoent.Driver(driver))
 	if err := client.Schema.Create(ctx); err != nil {
 		return MigrationResult{}, fmt.Errorf("create database schema: %w", err)
+	}
+	if err := RetireLegacyVideoPricingConfiguration(ctx, client); err != nil {
+		return MigrationResult{}, fmt.Errorf("retire legacy video pricing configuration: %w", err)
 	}
 	backfilled, err := BackfillLegacyModelAccountCapabilities(ctx, client)
 	if err != nil {

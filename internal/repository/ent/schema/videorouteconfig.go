@@ -1,7 +1,10 @@
 package schema
 
 import (
+	"fmt"
+
 	"entgo.io/ent"
+	"entgo.io/ent/dialect"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
@@ -17,7 +20,14 @@ func (VideoRouteConfig) Fields() []ent.Field {
 		field.JSON("visible_options", map[string]any{}),
 		field.JSON("defaults", map[string]any{}),
 		field.Int("max_output_count").Default(1).Range(1, 4),
-		field.Int64("pricing_strategy_id"),
+		field.JSON("candidate_parameter_mappings", map[string]any{}).Default(map[string]any{}),
+		field.String("minimum_task_points").SchemaType(map[string]string{dialect.Postgres: "numeric(20,5)"}).Default("0.00000"),
+		field.Int("rounding_step_points").Default(1).Validate(func(value int) error {
+			if value != 1 && value != 5 && value != 10 {
+				return fmt.Errorf("rounding step points must be 1, 5, or 10")
+			}
+			return nil
+		}),
 		field.String("config_version").MaxLen(64).NotEmpty(),
 		field.Bool("enabled").Default(false),
 	}
@@ -26,7 +36,6 @@ func (VideoRouteConfig) Fields() []ent.Field {
 func (VideoRouteConfig) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("route_model_id").Unique(),
-		index.Fields("pricing_strategy_id"),
 		index.Fields("enabled"),
 	}
 }

@@ -2035,15 +2035,14 @@ PY
   minimax_model_id="$(assert_json_field "$minimax_model_body" "data.id")"
   capability_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/model-account-models/${minimax_model_id}/video-capability" \
     -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-    --data '{"expected_version":"","capability_version":"smoke-cap-v1","validation_status":"verified","enabled":true,"capability":{"schema_version":1,"provider_native_max_n":1,"prompt_max_runes":2000,"task_types":{"text_to_video":{"durations":{"values":[5]},"resolutions":["720p"],"aspect_ratios":["16:9"],"audio_modes":["silent"]}}}}')"
+    --data '{"expected_version":"","capability_version":"smoke-cap-v1","validation_status":"verified","enabled":true,"capability":{"schema_version":1,"provider_native_max_n":1,"prompt_max_runes":2000,"task_types":{"text_to_video":{"durations":{"values":[5]},"resolutions":["768p"],"aspect_ratios":["16:9"],"audio_modes":["silent"]}}}}')"
   [[ "$(assert_json_field "$capability_body" "data.validation_status")" == "verified" ]]
 
-  local effective_at cost_body route_body route_id candidate_body strategy_body strategy_id simulation_body price_body route_config_body
-  effective_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  cost_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-account-models/${minimax_model_id}/video-cost-rules" \
+  local rate_card_body route_body route_id candidate_body simulation_body route_config_body
+  rate_card_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/video-models/${minimax_model_id}/rate-cards" \
     -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-    --data "{\"expected_rule_version\":0,\"billing_mode\":\"output_second\",\"currency\":\"CNY\",\"rates\":{\"combinations\":[{\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"audio_mode\":\"silent\",\"duration_seconds\":5,\"cost_cny\":\"0.01000\"}]},\"cost_reserve_markup\":\"1.00000\",\"validation_status\":\"verified\",\"source_type\":\"smoke\",\"source_reference\":\"isolated-fake-minimax\",\"effective_at\":\"${effective_at}\",\"enabled\":true}")"
-  assert_json_field "$cost_body" "data.id" >/dev/null
+    --data '{"expected_rate_version":0,"pricing_schema":"minimax_h3_second_v1","rate_config":{"resolutions":{"768p":{"output_second_cny":"0.00200","input_video_second_cny":"0.00200"}},"free_image_count":5,"extra_image_cny":"0.00000","input_audio_free":true},"enabled":true}')"
+  [[ "$(assert_json_field "$rate_card_body" "data.rate_version")" == "1" ]]
   route_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/route-models" \
     -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
     --data '{"code":"smoke-video","name":"Smoke Video","description":"Isolated API smoke route","visibility":"public","media_type":"video","enabled":true,"sort_order":999}')"
@@ -2052,23 +2051,16 @@ PY
     -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
     --data "{\"account_model_id\":${minimax_model_id},\"priority\":1,\"weight\":100,\"fallback_order\":0,\"enabled\":true}")"
   assert_json_field "$candidate_body" "data.id" >/dev/null
-  strategy_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/video-pricing-strategies" \
-    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-    --data '{"code":"smoke-video-pricing","name":"Smoke Video Pricing","gross_point_value_cny":"1.00000","minimum_net_point_income_cny":"0.10000","max_bonus_ratio":"0.50000","payment_fee_rate":"0.00000","target_margin_rate":"0.25000","provider_cost_buffer_rate":"0.00000","platform_fixed_cost_cny":"0.00000","platform_output_second_cost_cny":"0.00000","platform_reference_cost_cny":"0.00000","platform_audio_fixed_cost_cny":"0.00000","platform_audio_second_cost_cny":"0.00000","exact_reserve_markup":"1.00000","metered_reserve_markup":"1.00000","enabled":true}')"
-  strategy_id="$(assert_json_field "$strategy_body" "data.id")"
-  simulation_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/video-pricing-strategies/${strategy_id}:simulate" \
-    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-    --data "{\"route_model_id\":${route_id},\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"audio_mode\":\"silent\",\"duration_seconds\":5,\"reference_image_count\":0}")"
-  [[ "$(assert_json_field "$simulation_body" "data.worst_candidate_cost_cny")" == "0.01000" ]]
-  [[ "$(assert_json_field "$simulation_body" "data.safety_points")" == "0.20000" ]]
-  price_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/video-price-rules" \
-    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-    --data "{\"route_model_id\":${route_id},\"pricing_strategy_id\":${strategy_id},\"expected_version\":0,\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"audio_mode\":\"silent\",\"duration_seconds\":5,\"effective_at\":\"${effective_at}\",\"fixed_task_points\":\"1.00000\",\"output_second_points\":\"0.00000\",\"reference_image_points\":\"0.00000\",\"input_video_second_points\":\"0.00000\",\"reference_audio_second_points\":\"0.00000\",\"generated_audio_fixed_points\":\"0.00000\",\"generated_audio_second_points\":\"0.00000\",\"minimum_billable_seconds\":1,\"minimum_task_points\":\"1.00000\",\"reserve_markup\":\"1.00000\",\"enabled\":true,\"internal_note\":\"isolated API smoke\"}")"
-  assert_json_field "$price_body" "data.id" >/dev/null
   route_config_body="$(request -X PUT "$BASE_URL/api/ops/admin/v1/route-models/${route_id}/video-config" \
     -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-    --data "{\"expected_version\":\"\",\"config_version\":\"smoke-route-v1\",\"pricing_strategy_id\":${strategy_id},\"task_types\":[\"text_to_video\"],\"visible_options\":{},\"defaults\":{\"task_type\":\"text_to_video\",\"duration_seconds\":5,\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"output_count\":1},\"visible_combinations\":[{\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"duration_seconds\":5}],\"max_output_count\":4,\"enabled\":true}")"
+    --data "{\"expected_version\":\"\",\"config_version\":\"smoke-route-v1\",\"candidate_parameter_mappings\":{\"${minimax_model_id}\":{\"resolutions\":{\"720p\":\"768p\"}}},\"minimum_task_points\":\"0.00000\",\"rounding_step_points\":1,\"task_types\":[\"text_to_video\"],\"visible_options\":{},\"defaults\":{\"task_type\":\"text_to_video\",\"duration_seconds\":5,\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"output_count\":1},\"visible_combinations\":[{\"task_type\":\"text_to_video\",\"resolution\":\"720p\",\"aspect_ratio\":\"16:9\",\"audio_mode\":\"silent\",\"duration_seconds\":5}],\"max_output_count\":4,\"enabled\":true}")"
   [[ "$(assert_json_field "$route_config_body" "data.enabled")" == "True" || "$(assert_json_field "$route_config_body" "data.enabled")" == "true" ]]
+  simulation_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/video-routes/${route_id}/quote-simulation" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+    --data '{"task_type":"text_to_video","resolution":"720p","aspect_ratio":"16:9","audio_mode":"silent","duration_seconds":5,"output_count":1}')"
+  [[ "$(assert_json_field "$simulation_body" "data.candidates.0.mapped_resolution")" == "768p" ]]
+  [[ "$(assert_json_field "$simulation_body" "data.highest_cny")" == "0.01000" ]]
+  [[ "$(assert_json_field "$simulation_body" "data.unit_points")" == "1.00000" ]]
 
   local capabilities_body video_request estimate_video_body quote_token create_video_body video_task_id replay_status
   local video_task_body generated_video_asset_id generated_video_asset_body video_access_body video_access_url downloaded_video

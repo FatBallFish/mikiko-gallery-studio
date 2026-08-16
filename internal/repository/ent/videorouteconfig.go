@@ -34,8 +34,12 @@ type VideoRouteConfig struct {
 	Defaults map[string]interface{} `json:"defaults,omitempty"`
 	// MaxOutputCount holds the value of the "max_output_count" field.
 	MaxOutputCount int `json:"max_output_count,omitempty"`
-	// PricingStrategyID holds the value of the "pricing_strategy_id" field.
-	PricingStrategyID int64 `json:"pricing_strategy_id,omitempty"`
+	// CandidateParameterMappings holds the value of the "candidate_parameter_mappings" field.
+	CandidateParameterMappings map[string]interface{} `json:"candidate_parameter_mappings,omitempty"`
+	// MinimumTaskPoints holds the value of the "minimum_task_points" field.
+	MinimumTaskPoints string `json:"minimum_task_points,omitempty"`
+	// RoundingStepPoints holds the value of the "rounding_step_points" field.
+	RoundingStepPoints int `json:"rounding_step_points,omitempty"`
 	// ConfigVersion holds the value of the "config_version" field.
 	ConfigVersion string `json:"config_version,omitempty"`
 	// Enabled holds the value of the "enabled" field.
@@ -48,13 +52,13 @@ func (*VideoRouteConfig) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case videorouteconfig.FieldTaskTypes, videorouteconfig.FieldVisibleOptions, videorouteconfig.FieldDefaults:
+		case videorouteconfig.FieldTaskTypes, videorouteconfig.FieldVisibleOptions, videorouteconfig.FieldDefaults, videorouteconfig.FieldCandidateParameterMappings:
 			values[i] = new([]byte)
 		case videorouteconfig.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case videorouteconfig.FieldID, videorouteconfig.FieldRouteModelID, videorouteconfig.FieldMaxOutputCount, videorouteconfig.FieldPricingStrategyID:
+		case videorouteconfig.FieldID, videorouteconfig.FieldRouteModelID, videorouteconfig.FieldMaxOutputCount, videorouteconfig.FieldRoundingStepPoints:
 			values[i] = new(sql.NullInt64)
-		case videorouteconfig.FieldConfigVersion:
+		case videorouteconfig.FieldMinimumTaskPoints, videorouteconfig.FieldConfigVersion:
 			values[i] = new(sql.NullString)
 		case videorouteconfig.FieldCreatedAt, videorouteconfig.FieldUpdatedAt, videorouteconfig.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
@@ -134,11 +138,25 @@ func (_m *VideoRouteConfig) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.MaxOutputCount = int(value.Int64)
 			}
-		case videorouteconfig.FieldPricingStrategyID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field pricing_strategy_id", values[i])
+		case videorouteconfig.FieldCandidateParameterMappings:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field candidate_parameter_mappings", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.CandidateParameterMappings); err != nil {
+					return fmt.Errorf("unmarshal field candidate_parameter_mappings: %w", err)
+				}
+			}
+		case videorouteconfig.FieldMinimumTaskPoints:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field minimum_task_points", values[i])
 			} else if value.Valid {
-				_m.PricingStrategyID = value.Int64
+				_m.MinimumTaskPoints = value.String
+			}
+		case videorouteconfig.FieldRoundingStepPoints:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field rounding_step_points", values[i])
+			} else if value.Valid {
+				_m.RoundingStepPoints = int(value.Int64)
 			}
 		case videorouteconfig.FieldConfigVersion:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -214,8 +232,14 @@ func (_m *VideoRouteConfig) String() string {
 	builder.WriteString("max_output_count=")
 	builder.WriteString(fmt.Sprintf("%v", _m.MaxOutputCount))
 	builder.WriteString(", ")
-	builder.WriteString("pricing_strategy_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.PricingStrategyID))
+	builder.WriteString("candidate_parameter_mappings=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CandidateParameterMappings))
+	builder.WriteString(", ")
+	builder.WriteString("minimum_task_points=")
+	builder.WriteString(_m.MinimumTaskPoints)
+	builder.WriteString(", ")
+	builder.WriteString("rounding_step_points=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RoundingStepPoints))
 	builder.WriteString(", ")
 	builder.WriteString("config_version=")
 	builder.WriteString(_m.ConfigVersion)

@@ -79,9 +79,14 @@ func MaxOutputCount(v int) predicate.VideoRouteConfig {
 	return predicate.VideoRouteConfig(sql.FieldEQ(FieldMaxOutputCount, v))
 }
 
-// PricingStrategyID applies equality check predicate on the "pricing_strategy_id" field. It's identical to PricingStrategyIDEQ.
-func PricingStrategyID(v int64) predicate.VideoRouteConfig {
-	return predicate.VideoRouteConfig(sql.FieldEQ(FieldPricingStrategyID, v))
+// MinimumTaskPoints applies equality check predicate on the "minimum_task_points" field. It's identical to MinimumTaskPointsEQ.
+func MinimumTaskPoints(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldEQ(FieldMinimumTaskPoints, v))
+}
+
+// RoundingStepPoints applies equality check predicate on the "rounding_step_points" field. It's identical to RoundingStepPointsEQ.
+func RoundingStepPoints(v int) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldEQ(FieldRoundingStepPoints, v))
 }
 
 // ConfigVersion applies equality check predicate on the "config_version" field. It's identical to ConfigVersionEQ.
@@ -304,44 +309,109 @@ func MaxOutputCountLTE(v int) predicate.VideoRouteConfig {
 	return predicate.VideoRouteConfig(sql.FieldLTE(FieldMaxOutputCount, v))
 }
 
-// PricingStrategyIDEQ applies the EQ predicate on the "pricing_strategy_id" field.
-func PricingStrategyIDEQ(v int64) predicate.VideoRouteConfig {
-	return predicate.VideoRouteConfig(sql.FieldEQ(FieldPricingStrategyID, v))
+// MinimumTaskPointsEQ applies the EQ predicate on the "minimum_task_points" field.
+func MinimumTaskPointsEQ(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldEQ(FieldMinimumTaskPoints, v))
 }
 
-// PricingStrategyIDNEQ applies the NEQ predicate on the "pricing_strategy_id" field.
-func PricingStrategyIDNEQ(v int64) predicate.VideoRouteConfig {
-	return predicate.VideoRouteConfig(sql.FieldNEQ(FieldPricingStrategyID, v))
+// MinimumTaskPointsNEQ applies the NEQ predicate on the "minimum_task_points" field.
+func MinimumTaskPointsNEQ(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldNEQ(FieldMinimumTaskPoints, v))
 }
 
-// PricingStrategyIDIn applies the In predicate on the "pricing_strategy_id" field.
-func PricingStrategyIDIn(vs ...int64) predicate.VideoRouteConfig {
-	return predicate.VideoRouteConfig(sql.FieldIn(FieldPricingStrategyID, vs...))
+// MinimumTaskPointsIn applies the In predicate on the "minimum_task_points" field.
+func MinimumTaskPointsIn(vs ...string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldIn(FieldMinimumTaskPoints, vs...))
 }
 
-// PricingStrategyIDNotIn applies the NotIn predicate on the "pricing_strategy_id" field.
-func PricingStrategyIDNotIn(vs ...int64) predicate.VideoRouteConfig {
-	return predicate.VideoRouteConfig(sql.FieldNotIn(FieldPricingStrategyID, vs...))
+// MinimumTaskPointsNotIn applies the NotIn predicate on the "minimum_task_points" field.
+func MinimumTaskPointsNotIn(vs ...string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldNotIn(FieldMinimumTaskPoints, vs...))
 }
 
-// PricingStrategyIDGT applies the GT predicate on the "pricing_strategy_id" field.
-func PricingStrategyIDGT(v int64) predicate.VideoRouteConfig {
-	return predicate.VideoRouteConfig(sql.FieldGT(FieldPricingStrategyID, v))
+// MinimumTaskPointsGT applies the GT predicate on the "minimum_task_points" field.
+func MinimumTaskPointsGT(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldGT(FieldMinimumTaskPoints, v))
 }
 
-// PricingStrategyIDGTE applies the GTE predicate on the "pricing_strategy_id" field.
-func PricingStrategyIDGTE(v int64) predicate.VideoRouteConfig {
-	return predicate.VideoRouteConfig(sql.FieldGTE(FieldPricingStrategyID, v))
+// MinimumTaskPointsGTE applies the GTE predicate on the "minimum_task_points" field.
+func MinimumTaskPointsGTE(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldGTE(FieldMinimumTaskPoints, v))
 }
 
-// PricingStrategyIDLT applies the LT predicate on the "pricing_strategy_id" field.
-func PricingStrategyIDLT(v int64) predicate.VideoRouteConfig {
-	return predicate.VideoRouteConfig(sql.FieldLT(FieldPricingStrategyID, v))
+// MinimumTaskPointsLT applies the LT predicate on the "minimum_task_points" field.
+func MinimumTaskPointsLT(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldLT(FieldMinimumTaskPoints, v))
 }
 
-// PricingStrategyIDLTE applies the LTE predicate on the "pricing_strategy_id" field.
-func PricingStrategyIDLTE(v int64) predicate.VideoRouteConfig {
-	return predicate.VideoRouteConfig(sql.FieldLTE(FieldPricingStrategyID, v))
+// MinimumTaskPointsLTE applies the LTE predicate on the "minimum_task_points" field.
+func MinimumTaskPointsLTE(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldLTE(FieldMinimumTaskPoints, v))
+}
+
+// MinimumTaskPointsContains applies the Contains predicate on the "minimum_task_points" field.
+func MinimumTaskPointsContains(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldContains(FieldMinimumTaskPoints, v))
+}
+
+// MinimumTaskPointsHasPrefix applies the HasPrefix predicate on the "minimum_task_points" field.
+func MinimumTaskPointsHasPrefix(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldHasPrefix(FieldMinimumTaskPoints, v))
+}
+
+// MinimumTaskPointsHasSuffix applies the HasSuffix predicate on the "minimum_task_points" field.
+func MinimumTaskPointsHasSuffix(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldHasSuffix(FieldMinimumTaskPoints, v))
+}
+
+// MinimumTaskPointsEqualFold applies the EqualFold predicate on the "minimum_task_points" field.
+func MinimumTaskPointsEqualFold(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldEqualFold(FieldMinimumTaskPoints, v))
+}
+
+// MinimumTaskPointsContainsFold applies the ContainsFold predicate on the "minimum_task_points" field.
+func MinimumTaskPointsContainsFold(v string) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldContainsFold(FieldMinimumTaskPoints, v))
+}
+
+// RoundingStepPointsEQ applies the EQ predicate on the "rounding_step_points" field.
+func RoundingStepPointsEQ(v int) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldEQ(FieldRoundingStepPoints, v))
+}
+
+// RoundingStepPointsNEQ applies the NEQ predicate on the "rounding_step_points" field.
+func RoundingStepPointsNEQ(v int) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldNEQ(FieldRoundingStepPoints, v))
+}
+
+// RoundingStepPointsIn applies the In predicate on the "rounding_step_points" field.
+func RoundingStepPointsIn(vs ...int) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldIn(FieldRoundingStepPoints, vs...))
+}
+
+// RoundingStepPointsNotIn applies the NotIn predicate on the "rounding_step_points" field.
+func RoundingStepPointsNotIn(vs ...int) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldNotIn(FieldRoundingStepPoints, vs...))
+}
+
+// RoundingStepPointsGT applies the GT predicate on the "rounding_step_points" field.
+func RoundingStepPointsGT(v int) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldGT(FieldRoundingStepPoints, v))
+}
+
+// RoundingStepPointsGTE applies the GTE predicate on the "rounding_step_points" field.
+func RoundingStepPointsGTE(v int) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldGTE(FieldRoundingStepPoints, v))
+}
+
+// RoundingStepPointsLT applies the LT predicate on the "rounding_step_points" field.
+func RoundingStepPointsLT(v int) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldLT(FieldRoundingStepPoints, v))
+}
+
+// RoundingStepPointsLTE applies the LTE predicate on the "rounding_step_points" field.
+func RoundingStepPointsLTE(v int) predicate.VideoRouteConfig {
+	return predicate.VideoRouteConfig(sql.FieldLTE(FieldRoundingStepPoints, v))
 }
 
 // ConfigVersionEQ applies the EQ predicate on the "config_version" field.

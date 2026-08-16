@@ -1,7 +1,6 @@
 package entstore
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -25,48 +24,53 @@ func openAdminVideoTestStore(t *testing.T, name string) (*repoent.Client, *Admin
 	return client, NewAdminVideoStore(client)
 }
 
-func TestAdminVideoConfigStoreKeepsImmutableVersionsAndRollsBackFailedInsert(t *testing.T) {
-	client, store := openAdminVideoTestStore(t, "admin-video-config-versions")
+func TestAdminVideoStoreVersionsModelRateCardsAndClonesConfig(t *testing.T) {
+	client, store := openAdminVideoTestStore(t, "admin-video-rate-cards")
 	ctx := t.Context()
-	account, err := client.ModelAccount.Create().SetName("Provider").SetAdapterType("minimax").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("enabled").Save(ctx)
+	account, err := client.ModelAccount.Create().SetName("Seedance").SetAdapterType("seedance").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("enabled").Save(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	model, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("video-model").SetEnabled(true).Save(ctx)
+	model, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("doubao-seedance-2-0-260128").SetEnabled(true).Save(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
-	first, err := store.SaveCostRule(ctx, adminvideoservice.CostRuleWrite{AccountModelID: int64(model.ID), EffectiveAt: now, BillingMode: "output_second", Currency: "CNY", Rates: map[string]any{"combinations": []any{map[string]any{"cost_cny": "1"}}}, ExpectedRuleVersion: 0})
+	now := time.Now().UTC().Truncate(time.Second)
+	config := map[string]any{"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}}}
+	first, err := store.SaveVideoModelRateCard(ctx, adminvideoservice.RateCardWrite{
+		AccountModelID: int64(model.ID), ProviderCode: "seedance", PricingSchema: "seedance_token_v1",
+		ExpectedRateVersion: 0, Currency: "CNY", RateConfig: config, EffectiveAt: now, Enabled: true,
+	})
+	if err != nil || first.RateVersion != 1 {
+		t.Fatalf("first=%#v err=%v", first, err)
+	}
+	config["resolutions"].(map[string]any)["720p"].(map[string]any)["without_input_video_million_tokens_cny"] = "999"
+	loaded, err := store.GetEffectiveVideoModelRateCard(ctx, int64(model.ID), now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := store.SaveCostRule(ctx, adminvideoservice.CostRuleWrite{ID: first.ID, AccountModelID: int64(model.ID), EffectiveAt: now, BillingMode: "output_second", Currency: "CNY", Rates: map[string]any{"combinations": []any{map[string]any{"cost_cny": "2"}}}, ExpectedRuleVersion: 1, Enabled: true})
-	if err != nil || second.RuleVersion != 2 {
+	gotRate := loaded.RateConfig["resolutions"].(map[string]any)["720p"].(map[string]any)["without_input_video_million_tokens_cny"]
+	if gotRate != "46" {
+		t.Fatalf("stored config mutated through caller map: %#v", loaded.RateConfig)
+	}
+
+	second, err := store.SaveVideoModelRateCard(ctx, adminvideoservice.RateCardWrite{
+		AccountModelID: int64(model.ID), ProviderCode: "seedance", PricingSchema: "seedance_token_v1",
+		ExpectedRateVersion: 1, Currency: "CNY", RateConfig: map[string]any{"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "50"}}}, EffectiveAt: now.Add(time.Minute), Enabled: true,
+	})
+	if err != nil || second.RateVersion != 2 {
 		t.Fatalf("second=%#v err=%v", second, err)
 	}
-	rows, err := client.VideoProviderCostRule.Query().All(ctx)
+	if _, err := store.SaveVideoModelRateCard(ctx, adminvideoservice.RateCardWrite{AccountModelID: int64(model.ID), ExpectedRateVersion: 1}); err == nil {
+		t.Fatal("stale rate card version must fail")
+	}
+	rows, err := store.ListVideoModelRateCards(ctx, int64(model.ID))
 	if err != nil || len(rows) != 2 || rows[0].Enabled || !rows[1].Enabled {
 		t.Fatalf("rows=%#v err=%v", rows, err)
 	}
-	if _, err := store.SaveCostRule(ctx, adminvideoservice.CostRuleWrite{ID: first.ID, AccountModelID: int64(model.ID), EffectiveAt: now, BillingMode: "output_second", Currency: "CNY", Rates: map[string]any{"x": "3"}, ExpectedRuleVersion: 1}); err == nil {
-		t.Fatal("stale cost rule version must fail")
-	}
-
-	strategyV1, err := client.VideoPricingStrategy.Create().SetCode("video").SetName("Video v1").SetStrategyVersion(1).SetEnabled(true).Save(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.VideoPricingStrategy.Create().SetCode("video").SetName("collision").SetStrategyVersion(2).SetEnabled(false).Save(ctx); err != nil {
-		t.Fatal(err)
-	}
-	_, err = store.SaveStrategy(ctx, adminvideoservice.StrategyWrite{ID: int64(strategyV1.ID), ExpectedVersion: 1, Code: "video", Name: strings.Repeat("x", 300)})
-	if err == nil {
-		t.Fatal("duplicate next version must fail")
-	}
-	refreshed, getErr := client.VideoPricingStrategy.Get(ctx, strategyV1.ID)
-	if getErr != nil || !refreshed.Enabled {
-		t.Fatalf("failed insert must roll back old strategy disable: enabled=%v err=%v", refreshed.Enabled, getErr)
+	current, err := store.GetEffectiveVideoModelRateCard(ctx, int64(model.ID), now.Add(2*time.Minute))
+	if err != nil || current.RateVersion != 2 {
+		t.Fatalf("current=%#v err=%v", current, err)
 	}
 }
 
@@ -82,17 +86,16 @@ func TestAdminVideoConfigStoreCapabilityAndRouteUseCASAndDoNotMutateInput(t *tes
 	if _, err := store.SaveCapability(ctx, adminvideoservice.CapabilityWrite{AccountModelID: int64(model.ID), ExpectedVersion: "stale", CapabilityVersion: "v2", Capability: map[string]any{"schema_version": 1}}); err == nil {
 		t.Fatal("stale capability version must fail")
 	}
-	strategy, _ := client.VideoPricingStrategy.Create().SetCode("video").SetName("Video").SetStrategyVersion(1).Save(ctx)
 	route, _ := client.RouteModel.Create().SetCode("video").SetName("Video").SetMediaType("video").Save(ctx)
 	visible := map[string]any{"resolutions": []any{"720p"}}
-	saved, err := store.SaveRouteConfig(ctx, adminvideoservice.RouteConfigWrite{RouteModelID: int64(route.ID), ConfigVersion: "v1", PricingStrategyID: int64(strategy.ID), TaskTypes: []string{"text_to_video"}, VisibleOptions: visible, VisibleCombinations: []adminvideoservice.VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", DurationSeconds: 5}}, Defaults: map[string]any{}, MaxOutputCount: 1})
+	saved, err := store.SaveRouteConfig(ctx, adminvideoservice.RouteConfigWrite{RouteModelID: int64(route.ID), ConfigVersion: "v1", TaskTypes: []string{"text_to_video"}, VisibleOptions: visible, VisibleCombinations: []adminvideoservice.VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", DurationSeconds: 5}}, Defaults: map[string]any{}, MaxOutputCount: 1})
 	if err != nil || saved.ConfigVersion != "v1" {
 		t.Fatalf("route=%#v err=%v", saved, err)
 	}
 	if _, exists := visible["combinations"]; exists {
 		t.Fatal("SaveRouteConfig must not mutate caller-owned visible options")
 	}
-	if _, err := store.SaveRouteConfig(ctx, adminvideoservice.RouteConfigWrite{RouteModelID: int64(route.ID), ExpectedVersion: "stale", ConfigVersion: "v2", PricingStrategyID: int64(strategy.ID), MaxOutputCount: 1}); err == nil {
+	if _, err := store.SaveRouteConfig(ctx, adminvideoservice.RouteConfigWrite{RouteModelID: int64(route.ID), ExpectedVersion: "stale", ConfigVersion: "v2", MaxOutputCount: 1}); err == nil {
 		t.Fatal("stale route config version must fail")
 	}
 }
@@ -127,8 +130,137 @@ func TestAdminVideoSnapshotIncludesUnconfiguredVideoRouteCandidates(t *testing.T
 	if got.RouteModelID != int64(route.ID) || got.CandidateCount != 1 || len(got.CandidateAccountModelIDs) != 1 || got.CandidateAccountModelIDs[0] != int64(model.ID) {
 		t.Fatalf("unconfigured route projection = %#v", got)
 	}
-	if got.ConfigVersion != "" || got.PricingStrategyID != 0 || got.Enabled {
+	if got.ConfigVersion != "" || got.Enabled {
 		t.Fatalf("unconfigured route must remain disabled until configured: %#v", got)
+	}
+}
+
+func TestAdminVideoRouteQuoteContextSupportsFirstRouteConfiguration(t *testing.T) {
+	client, store := openAdminVideoTestStore(t, "admin-video-first-route-configuration")
+	ctx := t.Context()
+	account, err := client.ModelAccount.Create().SetName("Seedance").SetAdapterType("seedance").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("enabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("doubao-seedance-2-0-260128").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := client.RouteModel.Create().SetCode("first-config").SetName("First config").SetMediaType("video").SetEnabled(false).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(model.ID)).SetEnabled(true).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	quoteContext, err := store.GetVideoRouteQuoteContext(ctx, int64(route.ID), time.Now().UTC())
+	if err != nil {
+		t.Fatalf("first route configuration must load candidates before config exists: %v", err)
+	}
+	if quoteContext.Route.RouteModelID != int64(route.ID) || len(quoteContext.Candidates) != 1 {
+		t.Fatalf("quote context = %#v", quoteContext)
+	}
+}
+
+func TestAdminVideoRouteQuoteContextKeepsCandidateWithoutCapabilityOrRateCard(t *testing.T) {
+	client, store := openAdminVideoTestStore(t, "admin-video-quote-candidate-gaps")
+	ctx := t.Context()
+	account, err := client.ModelAccount.Create().SetName("MiniMax").SetAdapterType("minimax").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("enabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("MiniMax-H3").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := client.RouteModel.Create().SetCode("quote-gaps").SetName("Quote gaps").SetMediaType("video").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(model.ID)).SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"text_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMinimumTaskPoints("0.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v1").SetEnabled(false).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	quoteContext, err := store.GetVideoRouteQuoteContext(ctx, int64(route.ID), time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(quoteContext.Candidates) != 1 {
+		t.Fatalf("quote candidates = %#v", quoteContext.Candidates)
+	}
+	got := quoteContext.Candidates[0]
+	if got.RouteCandidateID != int64(candidate.ID) || got.AccountModelID != int64(model.ID) || got.ProviderCode != "minimax" || got.ModelCode != "MiniMax-H3" {
+		t.Fatalf("quote candidate = %#v", got)
+	}
+	if got.Capability != nil || got.RateCard.RateVersion != 0 {
+		t.Fatalf("unconfigured candidate must preserve empty capability and rate card: %#v", got)
+	}
+}
+
+func TestAdminVideoRouteQuoteContextMarksDisabledModelAsNotPriceable(t *testing.T) {
+	client, store := openAdminVideoTestStore(t, "admin-video-disabled-quote-candidate")
+	ctx := t.Context()
+	account, err := client.ModelAccount.Create().SetName("MiniMax").SetAdapterType("minimax").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("enabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("MiniMax-H3").SetEnabled(false).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := client.RouteModel.Create().SetCode("disabled-candidate").SetName("Disabled candidate").SetMediaType("video").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(model.ID)).SetEnabled(true).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"text_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMinimumTaskPoints("0.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v1").SetEnabled(false).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	quoteContext, err := store.GetVideoRouteQuoteContext(ctx, int64(route.ID), time.Now().UTC())
+	if err != nil || len(quoteContext.Candidates) != 1 {
+		t.Fatalf("quote context=%#v err=%v", quoteContext, err)
+	}
+	if quoteContext.Candidates[0].PreflightExclusionCode != "VIDEO_CANDIDATE_NOT_PRICEABLE" {
+		t.Fatalf("disabled model candidate = %#v", quoteContext.Candidates[0])
+	}
+}
+
+func TestAdminVideoRouteQuoteContextMarksDisabledAccountAsNotPriceable(t *testing.T) {
+	client, store := openAdminVideoTestStore(t, "admin-video-disabled-account-quote-candidate")
+	ctx := t.Context()
+	account, err := client.ModelAccount.Create().SetName("MiniMax").SetAdapterType("minimax").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("disabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("MiniMax-H3").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := client.RouteModel.Create().SetCode("disabled-account-candidate").SetName("Disabled account candidate").SetMediaType("video").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(model.ID)).SetEnabled(true).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"text_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMinimumTaskPoints("0.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v1").SetEnabled(false).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	quoteContext, err := store.GetVideoRouteQuoteContext(ctx, int64(route.ID), time.Now().UTC())
+	if err != nil || len(quoteContext.Candidates) != 1 {
+		t.Fatalf("quote context=%#v err=%v", quoteContext, err)
+	}
+	if quoteContext.Candidates[0].PreflightExclusionCode != "VIDEO_CANDIDATE_NOT_PRICEABLE" {
+		t.Fatalf("disabled account candidate = %#v", quoteContext.Candidates[0])
 	}
 }
 
@@ -155,6 +287,9 @@ func TestAdminVideoStoreProjectsConfigurationTaskDiagnosticsAndRecovery(t *testi
 	if _, err := client.VideoModelCapability.Create().SetAccountModelID(int64(model.ID)).SetCapabilityVersion("cap-v3").SetCapabilityJSON(map[string]any{"schema_version": 1}).SetValidationStatus("verified").SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := client.VideoModelRateCard.Create().SetAccountModelID(int64(model.ID)).SetProviderCode("minimax").SetPricingSchema("minimax_h3_second_v1").SetRateVersion(1).SetCurrency("CNY").SetRateConfig(map[string]any{"resolutions": map[string]any{"768p": map[string]any{"output_second_cny": "0.5", "input_video_second_cny": "0.5"}}, "free_image_count": 5, "extra_image_cny": "0", "input_audio_free": true}).SetEffectiveAt(now.Add(-time.Hour)).SetEnabled(true).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := client.VideoProviderCostRule.Create().SetAccountModelID(int64(model.ID)).SetBillingMode("output_second").SetRuleVersion(2).SetRatesJSON(map[string]any{"720p": "0.1"}).SetEffectiveAt(now.Add(-time.Hour)).SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +307,7 @@ func TestAdminVideoStoreProjectsConfigurationTaskDiagnosticsAndRecovery(t *testi
 	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(model.ID)).SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"text_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetPricingStrategyID(int64(strategy.ID)).SetConfigVersion("route-v6").SetEnabled(true).Save(ctx); err != nil {
+	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"text_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMinimumTaskPoints("9.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v6").SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -201,7 +336,7 @@ func TestAdminVideoStoreProjectsConfigurationTaskDiagnosticsAndRecovery(t *testi
 
 	store := NewAdminVideoStore(client)
 	snapshot, err := store.Snapshot(ctx)
-	if err != nil || snapshot.Capabilities[0].Version != "cap-v3" || snapshot.CostRules[0].RuleVersion != 2 || snapshot.Strategies[0].StrategyVersion != 4 || snapshot.Routes[0].ConfigVersion != "route-v6" {
+	if err != nil || snapshot.Capabilities[0].Version != "cap-v3" || snapshot.RateCards[0].RateVersion != 1 || snapshot.Routes[0].ConfigVersion != "route-v6" {
 		t.Fatalf("snapshot=%#v err=%v", snapshot, err)
 	}
 	detail, err := store.GetTask(ctx, taskID)

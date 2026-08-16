@@ -53,8 +53,9 @@ type ModelDraft = {
   promptMaxRunes: number;
   inputFormats: string;
   inputMaxMB: number;
-  costCNY: string;
-  costReserveMarkup: string;
+  rateRows: Record<string, { primary: string; secondary: string }>;
+  freeImageCount: number;
+  extraImageCNY: string;
   validationStatus: "untested" | "verified";
   enabled: boolean;
 };
@@ -153,6 +154,7 @@ export function VideoProviderAccountsPanel() {
     setBusy(true);
     setError("");
     try {
+      const shouldEnable = modelDraft.enabled;
       const baseInput = {
         model_code: modelDraft.modelCode,
         display_name: modelDraft.displayName,
@@ -182,7 +184,7 @@ export function VideoProviderAccountsPanel() {
         moderation: [],
         cost_per_image: "0.00000",
         currency: "CNY",
-        enabled: modelDraft.enabled,
+        enabled: false,
         extra: { media_type: "video" },
       };
       const saved = modelDraft.row
@@ -210,7 +212,7 @@ export function VideoProviderAccountsPanel() {
       const existingCapability = snapshot?.capabilities.find(
         (item) => String(item.account_model_id) === String(saved.id),
       );
-      await adminApi.saveVideoCapability(saved.id, {
+      const capabilityInput = {
         expected_version: existingCapability?.capability_version ?? "",
         capability_version: nextVersion(
           "video-cap",
@@ -223,37 +225,54 @@ export function VideoProviderAccountsPanel() {
           task_types: taskTypes,
         },
         validation_status: modelDraft.validationStatus,
-        enabled: modelDraft.enabled,
-      });
-      const combinations = modelDraft.taskTypes.flatMap((task) =>
-        numberList(modelDraft.durations).flatMap((duration) =>
-          stringList(modelDraft.resolutions).flatMap((resolution) =>
-            modelDraft.audioModes.map((audio) => ({
-              task_type: task,
-              resolution,
-              audio_mode: audio,
-              duration_seconds: duration,
-              cost_cny: modelDraft.costCNY,
-            })),
-          ),
-        ),
+        enabled: false,
+      };
+      const savedCapability = await adminApi.saveVideoCapability(
+        saved.id,
+        capabilityInput,
       );
-      const existingCost = snapshot?.cost_rules
+      const existingRate = snapshot?.rate_cards
         .filter((item) => String(item.account_model_id) === String(saved.id))
-        .sort((a, b) => b.rule_version - a.rule_version)[0];
-      await adminApi.saveVideoCostRule(saved.id, {
-        id: existingCost?.id,
-        expected_rule_version: existingCost?.rule_version ?? 0,
-        billing_mode: "combination",
-        currency: "CNY",
-        rates: { combinations },
-        cost_reserve_markup: modelDraft.costReserveMarkup,
-        source_type: "admin",
-        source_reference: "structured_video_model_form",
-        validation_status: modelDraft.validationStatus,
-        effective_at: new Date().toISOString(),
-        enabled: modelDraft.enabled,
-      });
+        .sort((a, b) => b.rate_version - a.rate_version)[0];
+      const resolutions = stringList(modelDraft.resolutions);
+      if (modelDraft.account.adapter_type === "minimax") {
+        await adminApi.saveVideoRateCard(saved.id, {
+          pricing_schema: "minimax_h3_second_v1",
+          expected_rate_version: existingRate?.rate_version ?? 0, enabled: shouldEnable,
+          rate_config: {
+            resolutions: Object.fromEntries(resolutions.map((resolution) => [resolution, {
+              output_second_cny: modelDraft.rateRows[resolution]?.primary || "0",
+              input_video_second_cny: modelDraft.rateRows[resolution]?.secondary || modelDraft.rateRows[resolution]?.primary || "0",
+            }])),
+            free_image_count: modelDraft.freeImageCount, extra_image_cny: modelDraft.extraImageCNY, input_audio_free: true,
+          },
+        });
+      } else {
+        await adminApi.saveVideoRateCard(saved.id, {
+          pricing_schema: "seedance_token_v1",
+          expected_rate_version: existingRate?.rate_version ?? 0, enabled: shouldEnable,
+          rate_config: { resolutions: Object.fromEntries(resolutions.map((resolution) => [resolution, {
+            without_input_video_million_tokens_cny: modelDraft.rateRows[resolution]?.primary || "0",
+            with_input_video_million_tokens_cny: modelDraft.rateRows[resolution]?.secondary || undefined,
+          }])) },
+        });
+      }
+      if (shouldEnable) {
+        await adminApi.saveVideoCapability(saved.id, {
+          ...capabilityInput,
+          expected_version: savedCapability.capability_version,
+          capability_version: nextVersion(
+            "video-cap",
+            savedCapability.capability_version,
+          ),
+          enabled: true,
+        });
+        await adminApi.updateModelAccountModel(
+          modelDraft.account.id,
+          saved.id,
+          { ...baseInput, enabled: true },
+        );
+      }
       setModelDraft(null);
       await load(String(modelDraft.account.id));
     } catch (caught) {
@@ -299,7 +318,7 @@ export function VideoProviderAccountsPanel() {
     <section className={adminPage.stack} data-video-provider-accounts>
       <PageHeader
         title="视频接入账号"
-        description="一个账号可配置多个真实视频模型；能力与成本按真实模型独立维护。"
+        description="一个账号可配置多个真实视频模型；能力与厂商原生销售费率按真实模型独立维护。"
         primaryAction={
           <button
             type="button"
@@ -412,7 +431,7 @@ export function VideoProviderAccountsPanel() {
                           <th>真实模型</th>
                           <th>任务类型</th>
                           <th>能力版本</th>
-                          <th>成本版本</th>
+                          <th>销售费率版本</th>
                           <th>状态</th>
                           <th>操作</th>
                         </tr>
@@ -424,13 +443,13 @@ export function VideoProviderAccountsPanel() {
                               String(item.account_model_id) ===
                               String(model.id),
                           );
-                          const cost = snapshot?.cost_rules
+                          const rate = snapshot?.rate_cards
                             .filter(
                               (item) =>
                                 String(item.account_model_id) ===
                                 String(model.id),
                             )
-                            .sort((a, b) => b.rule_version - a.rule_version)[0];
+                            .sort((a, b) => b.rate_version - a.rate_version)[0];
                           return (
                             <tr key={String(model.id)}>
                               <td>
@@ -450,8 +469,8 @@ export function VideoProviderAccountsPanel() {
                                 {capability?.capability_version || "未配置"}
                               </td>
                               <td>
-                                {cost
-                                  ? `v${cost.rule_version} · ${cost.currency}`
+                                {rate
+                                  ? `v${rate.rate_version} · ${rate.currency}`
                                   : "未配置"}
                               </td>
                               <td>
@@ -459,14 +478,14 @@ export function VideoProviderAccountsPanel() {
                                   tone={
                                     model.enabled &&
                                     capability?.enabled &&
-                                    cost?.enabled
+                                    rate?.enabled
                                       ? "success"
                                       : "warning"
                                   }
                                 >
                                   {model.enabled &&
                                   capability?.enabled &&
-                                  cost?.enabled
+                                  rate?.enabled
                                     ? "可用"
                                     : "待完善"}
                                 </Badge>
@@ -638,7 +657,7 @@ export function VideoProviderAccountsPanel() {
       {modelDraft ? (
         <Modal
           title={modelDraft.row ? "编辑真实视频模型" : "新增真实视频模型"}
-          detail={`${modelDraft.account.name} · 能力和成本将同步保存`}
+          detail={`${modelDraft.account.name} · 能力和销售费率将同步保存`}
           onClose={() => setModelDraft(null)}
           footer={
             <>
@@ -658,7 +677,7 @@ export function VideoProviderAccountsPanel() {
                 }
                 onClick={() => void saveModel()}
               >
-                保存模型、能力和成本
+                保存模型、能力和费率
               </button>
             </>
           }
@@ -805,27 +824,32 @@ export function VideoProviderAccountsPanel() {
                 }
               />
             </Field>
-            <Field label="单组合成本（CNY）">
-              <input
-                inputMode="decimal"
-                value={modelDraft.costCNY}
-                onChange={(e) =>
-                  setModelDraft({ ...modelDraft, costCNY: e.target.value })
-                }
-              />
-            </Field>
-            <Field label="Provider 成本预留倍率">
-              <input
-                inputMode="decimal"
-                value={modelDraft.costReserveMarkup}
-                onChange={(e) =>
-                  setModelDraft({
-                    ...modelDraft,
-                    costReserveMarkup: e.target.value,
-                  })
-                }
-              />
-            </Field>
+            <div className="grid gap-3 lg:col-span-2">
+              <strong className="text-sm">厂商原生销售费率</strong>
+              {stringList(modelDraft.resolutions).map((resolution) => (
+                <div key={resolution} className="grid gap-3 rounded-md border border-[var(--border)] p-3 md:grid-cols-[100px_1fr_1fr]">
+                  <span className="self-center text-sm font-medium">{resolution}</span>
+                  <Field label={modelDraft.account.adapter_type === "minimax" ? "输出视频 CNY/秒" : "不含输入视频 CNY/百万 Token"}>
+                    <input inputMode="decimal" value={modelDraft.rateRows[resolution]?.primary ?? ""} onChange={(e) => setModelDraft({ ...modelDraft, rateRows: { ...modelDraft.rateRows, [resolution]: { primary: e.target.value, secondary: modelDraft.rateRows[resolution]?.secondary ?? "" } } })} />
+                  </Field>
+                  {modelDraft.account.adapter_type === "minimax" ? (
+                    <Field label="输入视频 CNY/秒">
+                      <input inputMode="decimal" value={modelDraft.rateRows[resolution]?.secondary ?? ""} onChange={(e) => setModelDraft({ ...modelDraft, rateRows: { ...modelDraft.rateRows, [resolution]: { primary: modelDraft.rateRows[resolution]?.primary ?? "", secondary: e.target.value } } })} />
+                    </Field>
+                  ) : (
+                    <Field label="包含输入视频 CNY/百万 Token">
+                      <input inputMode="decimal" value={modelDraft.rateRows[resolution]?.secondary ?? ""} placeholder="未接入输入视频时可留空" onChange={(e) => setModelDraft({ ...modelDraft, rateRows: { ...modelDraft.rateRows, [resolution]: { primary: modelDraft.rateRows[resolution]?.primary ?? "", secondary: e.target.value } } })} />
+                    </Field>
+                  )}
+                </div>
+              ))}
+              {modelDraft.account.adapter_type === "minimax" ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="免费输入图片数"><input type="number" min="0" value={modelDraft.freeImageCount} onChange={(e) => setModelDraft({ ...modelDraft, freeImageCount: Math.max(0, Number(e.target.value)) })} /></Field>
+                  <Field label="超额图片 CNY/张"><input inputMode="decimal" value={modelDraft.extraImageCNY} onChange={(e) => setModelDraft({ ...modelDraft, extraImageCNY: e.target.value })} /></Field>
+                </div>
+              ) : null}
+            </div>
             <Field label="能力验证状态">
               <select
                 value={modelDraft.validationStatus}
@@ -892,13 +916,14 @@ function editAccount(row: ModelAccount): AccountDraft {
   };
 }
 function blankModel(account: ModelAccount): ModelDraft {
-  return {
+	const minimax = account.adapter_type === "minimax";
+	return {
     account,
     modelCode: "",
     displayName: "",
     taskTypes: ["text_to_video"],
     durations: "5,10",
-    resolutions: "720p,1080p",
+    resolutions: minimax ? "768p,2k" : "720p",
     ratios: "16:9,9:16,1:1",
     audioModes: ["silent"],
     providerMaxN: 1,
@@ -908,8 +933,11 @@ function blankModel(account: ModelAccount): ModelDraft {
         ? "jpg,jpeg,png,webp,heic,heif"
         : "jpg,jpeg,png,webp,bmp,tiff,gif",
     inputMaxMB: 30,
-    costCNY: "1.00000",
-    costReserveMarkup: "1.10000",
+    rateRows: minimax
+      ? { "768p": { primary: "0.80000", secondary: "0.80000" }, "2k": { primary: "1.20000", secondary: "1.20000" } }
+      : { "720p": { primary: "46.00000", secondary: "" } },
+    freeImageCount: 5,
+    extraImageCNY: "0.10000",
     validationStatus: "untested",
     enabled: false,
   };
@@ -929,13 +957,14 @@ function editModel(
     Record<string, any> | undefined;
   const input = Object.values(task?.inputs ?? {})[0] as
     Record<string, any> | undefined;
-  const latestCost = snapshot?.cost_rules
+  const latestRate = snapshot?.rate_cards
     .filter((item) => String(item.account_model_id) === String(row.id))
-    .sort((a, b) => b.rule_version - a.rule_version)[0];
-  const firstCost = (
-    latestCost?.rates?.combinations as
-      Array<Record<string, unknown>> | undefined
-  )?.[0]?.cost_cny;
+    .sort((a, b) => b.rate_version - a.rate_version)[0];
+  const rateConfig = latestRate?.rate_config;
+  const rateRows = Object.fromEntries(Object.entries(rateConfig?.resolutions ?? {}).map(([resolution, value]) => [resolution, {
+    primary: "output_second_cny" in value ? value.output_second_cny : value.without_input_video_million_tokens_cny,
+    secondary: "input_video_second_cny" in value ? value.input_video_second_cny : value.with_input_video_million_tokens_cny ?? "",
+  }]));
   return {
     account,
     row,
@@ -957,8 +986,9 @@ function editModel(
         Number(input?.max_bytes ?? 30 * 1024 * 1024) / (1024 * 1024),
       ),
     ),
-    costCNY: String(firstCost ?? "1.00000"),
-    costReserveMarkup: latestCost?.cost_reserve_markup || "1.10000",
+    rateRows,
+    freeImageCount: latestRate?.pricing_schema === "minimax_h3_second_v1" ? latestRate.rate_config.free_image_count : 5,
+    extraImageCNY: latestRate?.pricing_schema === "minimax_h3_second_v1" ? latestRate.rate_config.extra_image_cny : "0.10000",
     validationStatus:
       capabilitySummary?.validation_status === "verified"
         ? "verified"

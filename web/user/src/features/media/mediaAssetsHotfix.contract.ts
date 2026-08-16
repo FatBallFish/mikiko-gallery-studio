@@ -4,16 +4,13 @@ import { mediaMarqueeSelection, mediaSelectionDragDistance, mediaSelectionRectan
 
 const normalized = normalizeAdminVideoConfiguration({
   capabilities: null,
-  cost_rules: null,
-  pricing_strategies: null,
-  price_rules: null,
+  rate_cards: null,
   routes: null,
-  point_products: null,
   impacts: null,
   generated_at: '2026-08-13T00:00:00Z',
 } as never)
 
-for (const field of ['capabilities', 'cost_rules', 'pricing_strategies', 'price_rules', 'routes', 'point_products', 'impacts'] as const) {
+for (const field of ['capabilities', 'rate_cards', 'routes', 'impacts'] as const) {
   if (!Array.isArray(normalized[field]) || normalized[field].length !== 0) throw new Error(`${field} must normalize to []`)
 }
 

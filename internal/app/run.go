@@ -363,6 +363,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	slog.Info("database-backed stores enabled")
 
 	adminVideoStore := entstore.NewAdminVideoStore(client)
+	adminVideoSvc := adminvideoservice.NewService(adminVideoStore)
 	api := handlers.NewAPIWithModelAdminService(cfg, authSvc, assetSvc, taskSvc, adminSvc, billingSvc, apiKeySvc, adminAuthSvc, auditSvc, adminUserSvc, redeemSvc, callRecordSvc, modelAdminSvc)
 	mediaAssetSvc := mediaassetservice.NewService(entstore.NewMediaStore(client), storageRegistry, mediaassetservice.Options{
 		Policy: domainmedia.DefaultPolicy(), Observer: observability.DefaultMetrics(),
@@ -379,10 +380,10 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	videoConfigStore := entstore.NewVideoConfigStore(client)
 	videoRoutingSvc := videoroutingservice.NewService(videoConfigStore)
 	videoQuoteKey := sha256.Sum256([]byte("video-quote:" + cfg.Security.PromptOptimizationQuoteSigningKey))
-	videoQuoteSvc := videotaskservice.NewQuoteService(videoRoutingSvc, videopricingservice.NewService(videoConfigStore, nil), videoQuoteKey[:], nil)
+	videoQuoteSvc := videotaskservice.NewQuoteService(videoRoutingSvc, videopricingservice.NewService(adminVideoSvc, nil), videoQuoteKey[:], nil)
 	videoTaskSvc := videotaskservice.NewService(entstore.NewVideoTaskStore(client, billingStore), videoQuoteSvc, projectSvc, mediaAssetSvc, nil)
 	api.SetVideoServices(videoRoutingSvc, videoQuoteSvc, videoTaskSvc)
-	api.SetAdminVideoService(adminvideoservice.NewService(adminVideoStore))
+	api.SetAdminVideoService(adminVideoSvc)
 	canvasGenerator := canvasservice.NewTaskGenerator(taskSvc, canvasservice.NewImageBillingEstimator(billingSvc), videoTaskSvc)
 	canvasSvc := canvasservice.NewService(entstore.NewCanvasStore(client), canvasGenerator, nil)
 	canvasSvc.SetObserver(observability.DefaultMetrics())

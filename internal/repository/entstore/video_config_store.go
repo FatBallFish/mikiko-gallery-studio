@@ -3,7 +3,6 @@ package entstore
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
@@ -12,10 +11,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
-	videopricingservice "github.com/fatballfish/pic-gallery/internal/service/videopricing"
 	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -47,9 +43,8 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 	}
 	group := videoroutingservice.Group{
 		RouteModelID: int64(entity.ID), Code: entity.Code, Name: entity.Name, Description: entity.Description,
-		ConfigVersion: config.ConfigVersion, PricingStrategyID: config.PricingStrategyID, MaxOutputCount: config.MaxOutputCount,
+		ConfigVersion: config.ConfigVersion, MinimumTaskPoints: config.MinimumTaskPoints, RoundingStepPoints: config.RoundingStepPoints, MaxOutputCount: config.MaxOutputCount,
 	}
-	group.PricingBindings = decodeVideoPricingBindings(config.VisibleOptions)
 	for _, value := range config.TaskTypes {
 		group.TaskTypes = append(group.TaskTypes, domainvideo.TaskType(value))
 	}
@@ -96,33 +91,17 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 			RouteCandidateID: int64(candidate.ID), AccountModelID: int64(accountModel.ID), ModelAccountID: int64(account.ID),
 			ModelCode: accountModel.ModelCode, AdapterType: account.AdapterType,
 			CapabilityVersion: capabilityEntity.CapabilityVersion, Capability: capability,
+			ResolutionMappings: videoResolutionMappings(config.CandidateParameterMappings, int64(accountModel.ID)),
 		})
 	}
 	return group, nil
 }
 
-func decodeVideoPricingBindings(options map[string]any) []videoroutingservice.PricingBinding {
-	raw, err := json.Marshal(options["pricing_bindings"])
-	if err != nil {
-		return nil
-	}
-	var values []struct {
-		TaskType          string `json:"task_type"`
-		Resolution        string `json:"resolution"`
-		AspectRatio       string `json:"aspect_ratio"`
-		AudioMode         string `json:"audio_mode"`
-		DurationSeconds   int    `json:"duration_seconds"`
-		PricingStrategyID int64  `json:"pricing_strategy_id"`
-	}
-	if json.Unmarshal(raw, &values) != nil {
-		return nil
-	}
-	result := make([]videoroutingservice.PricingBinding, 0, len(values))
-	for _, value := range values {
-		if value.PricingStrategyID <= 0 || value.TaskType == "" || value.Resolution == "" || value.AudioMode == "" {
-			continue
-		}
-		result = append(result, videoroutingservice.PricingBinding{TaskType: domainvideo.TaskType(value.TaskType), Resolution: domainvideo.Resolution(value.Resolution), AspectRatio: domainvideo.AspectRatio(value.AspectRatio), AudioMode: domainvideo.AudioMode(value.AudioMode), DurationSeconds: value.DurationSeconds, PricingStrategyID: value.PricingStrategyID})
+func videoResolutionMappings(value map[string]any, accountModelID int64) map[domainvideo.Resolution]domainvideo.Resolution {
+	decoded := decodeCandidateResolutionMappings(value, accountModelID)
+	result := make(map[domainvideo.Resolution]domainvideo.Resolution, len(decoded))
+	for source, target := range decoded {
+		result[domainvideo.Resolution(source)] = domainvideo.Resolution(target)
 	}
 	return result
 }
@@ -143,40 +122,6 @@ func (s *VideoConfigStore) ListVideoGroups(ctx context.Context) ([]videoroutings
 		groups = append(groups, group)
 	}
 	return groups, nil
-}
-
-func (s *VideoConfigStore) GetVideoPriceRule(ctx context.Context, strategyID int64, taskType domainvideo.TaskType, resolution domainvideo.Resolution, audioMode domainvideo.AudioMode, now time.Time) (videopricingservice.Rule, error) {
-	strategy, err := s.client.VideoPricingStrategy.Query().Where(
-		videopricingstrategy.IDEQ(int(strategyID)), videopricingstrategy.EnabledEQ(true), videopricingstrategy.DeletedAtIsNil(),
-	).Only(ctx)
-	if repoent.IsNotFound(err) {
-		return videopricingservice.Rule{}, errs.New(409, errs.CodeConflict, "video pricing strategy is unavailable")
-	}
-	if err != nil {
-		return videopricingservice.Rule{}, err
-	}
-	rule, err := s.client.VideoPriceRule.Query().Where(
-		videopricerule.PricingStrategyIDEQ(strategyID), videopricerule.TaskTypeEQ(string(taskType)),
-		videopricerule.ResolutionEQ(string(resolution)), videopricerule.AudioModeEQ(string(audioMode)),
-		videopricerule.EnabledEQ(true), videopricerule.EffectiveAtLTE(now), videopricerule.DeletedAtIsNil(),
-		videopricerule.Or(videopricerule.ExpiresAtIsNil(), videopricerule.ExpiresAtGT(now)),
-	).Order(repoent.Desc(videopricerule.FieldRuleVersion)).First(ctx)
-	if repoent.IsNotFound(err) {
-		return videopricingservice.Rule{}, errs.New(409, errs.CodeConflict, "video price rule is unavailable for this combination")
-	}
-	if err != nil {
-		return videopricingservice.Rule{}, err
-	}
-	return videopricingservice.Rule{
-		StrategyID: strategyID, StrategyVersion: strategy.StrategyVersion, RuleVersion: rule.RuleVersion, SafetyPoints: rule.SafetyPoints,
-		SalesRule: domainvideo.SalesRule{
-			PricingMode:     rule.PricingMode,
-			FixedTaskPoints: rule.FixedTaskPoints, OutputSecondPoints: rule.OutputSecondPoints, ReferenceImagePoints: rule.ReferenceImagePoints,
-			InputVideoSecondPoints: rule.InputVideoSecondPoints, ReferenceAudioSecondPoints: rule.ReferenceAudioSecondPoints,
-			GeneratedAudioFixedPoints: rule.GeneratedAudioFixedPoints, GeneratedAudioSecondPoints: rule.GeneratedAudioSecondPoints,
-			MinimumBillableSeconds: rule.MinimumBillableSeconds, MinimumTaskPoints: rule.MinimumTaskPoints, ReserveMarkup: rule.ReserveMarkup,
-		},
-	}, nil
 }
 
 func decodeVideoCapability(value map[string]any) (domainvideo.Capability, error) {

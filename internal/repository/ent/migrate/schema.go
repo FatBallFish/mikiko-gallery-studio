@@ -2656,6 +2656,45 @@ var (
 			},
 		},
 	}
+	// VideoModelRateCardsColumns holds the columns for the "video_model_rate_cards" table.
+	VideoModelRateCardsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "account_model_id", Type: field.TypeInt64},
+		{Name: "provider_code", Type: field.TypeString, Size: 32},
+		{Name: "pricing_schema", Type: field.TypeString, Size: 64},
+		{Name: "rate_version", Type: field.TypeInt},
+		{Name: "currency", Type: field.TypeString, Size: 16, Default: "CNY"},
+		{Name: "rate_config", Type: field.TypeJSON},
+		{Name: "source_reference", Type: field.TypeString, Size: 512, Default: ""},
+		{Name: "effective_at", Type: field.TypeTime},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+	}
+	// VideoModelRateCardsTable holds the schema information for the "video_model_rate_cards" table.
+	VideoModelRateCardsTable = &schema.Table{
+		Name:       "video_model_rate_cards",
+		Columns:    VideoModelRateCardsColumns,
+		PrimaryKey: []*schema.Column{VideoModelRateCardsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "videomodelratecard_account_model_id_rate_version",
+				Unique:  true,
+				Columns: []*schema.Column{VideoModelRateCardsColumns[4], VideoModelRateCardsColumns[7]},
+			},
+			{
+				Name:    "videomodelratecard_account_model_id_enabled_effective_at",
+				Unique:  false,
+				Columns: []*schema.Column{VideoModelRateCardsColumns[4], VideoModelRateCardsColumns[12], VideoModelRateCardsColumns[11]},
+			},
+			{
+				Name:    "videomodelratecard_provider_code_pricing_schema",
+				Unique:  false,
+				Columns: []*schema.Column{VideoModelRateCardsColumns[5], VideoModelRateCardsColumns[6]},
+			},
+		},
+	}
 	// VideoPriceRulesColumns holds the columns for the "video_price_rules" table.
 	VideoPriceRulesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -2845,7 +2884,9 @@ var (
 		{Name: "visible_options", Type: field.TypeJSON},
 		{Name: "defaults", Type: field.TypeJSON},
 		{Name: "max_output_count", Type: field.TypeInt, Default: 1},
-		{Name: "pricing_strategy_id", Type: field.TypeInt64},
+		{Name: "candidate_parameter_mappings", Type: field.TypeJSON},
+		{Name: "minimum_task_points", Type: field.TypeString, Default: "0.00000", SchemaType: map[string]string{"postgres": "numeric(20,5)"}},
+		{Name: "rounding_step_points", Type: field.TypeInt, Default: 1},
 		{Name: "config_version", Type: field.TypeString, Size: 64},
 		{Name: "enabled", Type: field.TypeBool, Default: false},
 	}
@@ -2861,14 +2902,9 @@ var (
 				Columns: []*schema.Column{VideoRouteConfigsColumns[4]},
 			},
 			{
-				Name:    "videorouteconfig_pricing_strategy_id",
-				Unique:  false,
-				Columns: []*schema.Column{VideoRouteConfigsColumns[9]},
-			},
-			{
 				Name:    "videorouteconfig_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{VideoRouteConfigsColumns[11]},
+				Columns: []*schema.Column{VideoRouteConfigsColumns[13]},
 			},
 		},
 	}
@@ -3291,6 +3327,7 @@ var (
 		UserGroupMembersTable,
 		UserSubscriptionsTable,
 		VideoModelCapabilitiesTable,
+		VideoModelRateCardsTable,
 		VideoPriceRulesTable,
 		VideoPricingStrategiesTable,
 		VideoProviderCallbackEventsTable,

@@ -66,6 +66,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelratecard"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercallbackevent"
@@ -143,6 +144,7 @@ const (
 	TypeUserGroupMember             = "UserGroupMember"
 	TypeUserSubscription            = "UserSubscription"
 	TypeVideoModelCapability        = "VideoModelCapability"
+	TypeVideoModelRateCard          = "VideoModelRateCard"
 	TypeVideoPriceRule              = "VideoPriceRule"
 	TypeVideoPricingStrategy        = "VideoPricingStrategy"
 	TypeVideoProviderCallbackEvent  = "VideoProviderCallbackEvent"
@@ -71161,6 +71163,1017 @@ func (m *VideoModelCapabilityMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown VideoModelCapability edge %s", name)
 }
 
+// VideoModelRateCardMutation represents an operation that mutates the VideoModelRateCard nodes in the graph.
+type VideoModelRateCardMutation struct {
+	config
+	op                  Op
+	typ                 string
+	id                  *int
+	created_at          *time.Time
+	updated_at          *time.Time
+	deleted_at          *time.Time
+	account_model_id    *int64
+	addaccount_model_id *int64
+	provider_code       *string
+	pricing_schema      *string
+	rate_version        *int
+	addrate_version     *int
+	currency            *string
+	rate_config         *map[string]interface{}
+	source_reference    *string
+	effective_at        *time.Time
+	enabled             *bool
+	clearedFields       map[string]struct{}
+	done                bool
+	oldValue            func(context.Context) (*VideoModelRateCard, error)
+	predicates          []predicate.VideoModelRateCard
+}
+
+var _ ent.Mutation = (*VideoModelRateCardMutation)(nil)
+
+// videomodelratecardOption allows management of the mutation configuration using functional options.
+type videomodelratecardOption func(*VideoModelRateCardMutation)
+
+// newVideoModelRateCardMutation creates new mutation for the VideoModelRateCard entity.
+func newVideoModelRateCardMutation(c config, op Op, opts ...videomodelratecardOption) *VideoModelRateCardMutation {
+	m := &VideoModelRateCardMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeVideoModelRateCard,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withVideoModelRateCardID sets the ID field of the mutation.
+func withVideoModelRateCardID(id int) videomodelratecardOption {
+	return func(m *VideoModelRateCardMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *VideoModelRateCard
+		)
+		m.oldValue = func(ctx context.Context) (*VideoModelRateCard, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().VideoModelRateCard.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withVideoModelRateCard sets the old VideoModelRateCard of the mutation.
+func withVideoModelRateCard(node *VideoModelRateCard) videomodelratecardOption {
+	return func(m *VideoModelRateCardMutation) {
+		m.oldValue = func(context.Context) (*VideoModelRateCard, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m VideoModelRateCardMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m VideoModelRateCardMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *VideoModelRateCardMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *VideoModelRateCardMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().VideoModelRateCard.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *VideoModelRateCardMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *VideoModelRateCardMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *VideoModelRateCardMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *VideoModelRateCardMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *VideoModelRateCardMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *VideoModelRateCardMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (m *VideoModelRateCardMutation) SetDeletedAt(t time.Time) {
+	m.deleted_at = &t
+}
+
+// DeletedAt returns the value of the "deleted_at" field in the mutation.
+func (m *VideoModelRateCardMutation) DeletedAt() (r time.Time, exists bool) {
+	v := m.deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAt returns the old "deleted_at" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAt: %w", err)
+	}
+	return oldValue.DeletedAt, nil
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (m *VideoModelRateCardMutation) ClearDeletedAt() {
+	m.deleted_at = nil
+	m.clearedFields[videomodelratecard.FieldDeletedAt] = struct{}{}
+}
+
+// DeletedAtCleared returns if the "deleted_at" field was cleared in this mutation.
+func (m *VideoModelRateCardMutation) DeletedAtCleared() bool {
+	_, ok := m.clearedFields[videomodelratecard.FieldDeletedAt]
+	return ok
+}
+
+// ResetDeletedAt resets all changes to the "deleted_at" field.
+func (m *VideoModelRateCardMutation) ResetDeletedAt() {
+	m.deleted_at = nil
+	delete(m.clearedFields, videomodelratecard.FieldDeletedAt)
+}
+
+// SetAccountModelID sets the "account_model_id" field.
+func (m *VideoModelRateCardMutation) SetAccountModelID(i int64) {
+	m.account_model_id = &i
+	m.addaccount_model_id = nil
+}
+
+// AccountModelID returns the value of the "account_model_id" field in the mutation.
+func (m *VideoModelRateCardMutation) AccountModelID() (r int64, exists bool) {
+	v := m.account_model_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountModelID returns the old "account_model_id" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldAccountModelID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountModelID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountModelID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountModelID: %w", err)
+	}
+	return oldValue.AccountModelID, nil
+}
+
+// AddAccountModelID adds i to the "account_model_id" field.
+func (m *VideoModelRateCardMutation) AddAccountModelID(i int64) {
+	if m.addaccount_model_id != nil {
+		*m.addaccount_model_id += i
+	} else {
+		m.addaccount_model_id = &i
+	}
+}
+
+// AddedAccountModelID returns the value that was added to the "account_model_id" field in this mutation.
+func (m *VideoModelRateCardMutation) AddedAccountModelID() (r int64, exists bool) {
+	v := m.addaccount_model_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAccountModelID resets all changes to the "account_model_id" field.
+func (m *VideoModelRateCardMutation) ResetAccountModelID() {
+	m.account_model_id = nil
+	m.addaccount_model_id = nil
+}
+
+// SetProviderCode sets the "provider_code" field.
+func (m *VideoModelRateCardMutation) SetProviderCode(s string) {
+	m.provider_code = &s
+}
+
+// ProviderCode returns the value of the "provider_code" field in the mutation.
+func (m *VideoModelRateCardMutation) ProviderCode() (r string, exists bool) {
+	v := m.provider_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderCode returns the old "provider_code" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldProviderCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderCode: %w", err)
+	}
+	return oldValue.ProviderCode, nil
+}
+
+// ResetProviderCode resets all changes to the "provider_code" field.
+func (m *VideoModelRateCardMutation) ResetProviderCode() {
+	m.provider_code = nil
+}
+
+// SetPricingSchema sets the "pricing_schema" field.
+func (m *VideoModelRateCardMutation) SetPricingSchema(s string) {
+	m.pricing_schema = &s
+}
+
+// PricingSchema returns the value of the "pricing_schema" field in the mutation.
+func (m *VideoModelRateCardMutation) PricingSchema() (r string, exists bool) {
+	v := m.pricing_schema
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPricingSchema returns the old "pricing_schema" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldPricingSchema(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPricingSchema is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPricingSchema requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPricingSchema: %w", err)
+	}
+	return oldValue.PricingSchema, nil
+}
+
+// ResetPricingSchema resets all changes to the "pricing_schema" field.
+func (m *VideoModelRateCardMutation) ResetPricingSchema() {
+	m.pricing_schema = nil
+}
+
+// SetRateVersion sets the "rate_version" field.
+func (m *VideoModelRateCardMutation) SetRateVersion(i int) {
+	m.rate_version = &i
+	m.addrate_version = nil
+}
+
+// RateVersion returns the value of the "rate_version" field in the mutation.
+func (m *VideoModelRateCardMutation) RateVersion() (r int, exists bool) {
+	v := m.rate_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRateVersion returns the old "rate_version" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldRateVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRateVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRateVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRateVersion: %w", err)
+	}
+	return oldValue.RateVersion, nil
+}
+
+// AddRateVersion adds i to the "rate_version" field.
+func (m *VideoModelRateCardMutation) AddRateVersion(i int) {
+	if m.addrate_version != nil {
+		*m.addrate_version += i
+	} else {
+		m.addrate_version = &i
+	}
+}
+
+// AddedRateVersion returns the value that was added to the "rate_version" field in this mutation.
+func (m *VideoModelRateCardMutation) AddedRateVersion() (r int, exists bool) {
+	v := m.addrate_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRateVersion resets all changes to the "rate_version" field.
+func (m *VideoModelRateCardMutation) ResetRateVersion() {
+	m.rate_version = nil
+	m.addrate_version = nil
+}
+
+// SetCurrency sets the "currency" field.
+func (m *VideoModelRateCardMutation) SetCurrency(s string) {
+	m.currency = &s
+}
+
+// Currency returns the value of the "currency" field in the mutation.
+func (m *VideoModelRateCardMutation) Currency() (r string, exists bool) {
+	v := m.currency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCurrency returns the old "currency" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldCurrency(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCurrency: %w", err)
+	}
+	return oldValue.Currency, nil
+}
+
+// ResetCurrency resets all changes to the "currency" field.
+func (m *VideoModelRateCardMutation) ResetCurrency() {
+	m.currency = nil
+}
+
+// SetRateConfig sets the "rate_config" field.
+func (m *VideoModelRateCardMutation) SetRateConfig(value map[string]interface{}) {
+	m.rate_config = &value
+}
+
+// RateConfig returns the value of the "rate_config" field in the mutation.
+func (m *VideoModelRateCardMutation) RateConfig() (r map[string]interface{}, exists bool) {
+	v := m.rate_config
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRateConfig returns the old "rate_config" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldRateConfig(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRateConfig is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRateConfig requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRateConfig: %w", err)
+	}
+	return oldValue.RateConfig, nil
+}
+
+// ResetRateConfig resets all changes to the "rate_config" field.
+func (m *VideoModelRateCardMutation) ResetRateConfig() {
+	m.rate_config = nil
+}
+
+// SetSourceReference sets the "source_reference" field.
+func (m *VideoModelRateCardMutation) SetSourceReference(s string) {
+	m.source_reference = &s
+}
+
+// SourceReference returns the value of the "source_reference" field in the mutation.
+func (m *VideoModelRateCardMutation) SourceReference() (r string, exists bool) {
+	v := m.source_reference
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceReference returns the old "source_reference" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldSourceReference(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceReference is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceReference requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceReference: %w", err)
+	}
+	return oldValue.SourceReference, nil
+}
+
+// ResetSourceReference resets all changes to the "source_reference" field.
+func (m *VideoModelRateCardMutation) ResetSourceReference() {
+	m.source_reference = nil
+}
+
+// SetEffectiveAt sets the "effective_at" field.
+func (m *VideoModelRateCardMutation) SetEffectiveAt(t time.Time) {
+	m.effective_at = &t
+}
+
+// EffectiveAt returns the value of the "effective_at" field in the mutation.
+func (m *VideoModelRateCardMutation) EffectiveAt() (r time.Time, exists bool) {
+	v := m.effective_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEffectiveAt returns the old "effective_at" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldEffectiveAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEffectiveAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEffectiveAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEffectiveAt: %w", err)
+	}
+	return oldValue.EffectiveAt, nil
+}
+
+// ResetEffectiveAt resets all changes to the "effective_at" field.
+func (m *VideoModelRateCardMutation) ResetEffectiveAt() {
+	m.effective_at = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *VideoModelRateCardMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *VideoModelRateCardMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the VideoModelRateCard entity.
+// If the VideoModelRateCard object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoModelRateCardMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *VideoModelRateCardMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// Where appends a list predicates to the VideoModelRateCardMutation builder.
+func (m *VideoModelRateCardMutation) Where(ps ...predicate.VideoModelRateCard) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the VideoModelRateCardMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *VideoModelRateCardMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.VideoModelRateCard, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *VideoModelRateCardMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *VideoModelRateCardMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (VideoModelRateCard).
+func (m *VideoModelRateCardMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *VideoModelRateCardMutation) Fields() []string {
+	fields := make([]string, 0, 12)
+	if m.created_at != nil {
+		fields = append(fields, videomodelratecard.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, videomodelratecard.FieldUpdatedAt)
+	}
+	if m.deleted_at != nil {
+		fields = append(fields, videomodelratecard.FieldDeletedAt)
+	}
+	if m.account_model_id != nil {
+		fields = append(fields, videomodelratecard.FieldAccountModelID)
+	}
+	if m.provider_code != nil {
+		fields = append(fields, videomodelratecard.FieldProviderCode)
+	}
+	if m.pricing_schema != nil {
+		fields = append(fields, videomodelratecard.FieldPricingSchema)
+	}
+	if m.rate_version != nil {
+		fields = append(fields, videomodelratecard.FieldRateVersion)
+	}
+	if m.currency != nil {
+		fields = append(fields, videomodelratecard.FieldCurrency)
+	}
+	if m.rate_config != nil {
+		fields = append(fields, videomodelratecard.FieldRateConfig)
+	}
+	if m.source_reference != nil {
+		fields = append(fields, videomodelratecard.FieldSourceReference)
+	}
+	if m.effective_at != nil {
+		fields = append(fields, videomodelratecard.FieldEffectiveAt)
+	}
+	if m.enabled != nil {
+		fields = append(fields, videomodelratecard.FieldEnabled)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *VideoModelRateCardMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case videomodelratecard.FieldCreatedAt:
+		return m.CreatedAt()
+	case videomodelratecard.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case videomodelratecard.FieldDeletedAt:
+		return m.DeletedAt()
+	case videomodelratecard.FieldAccountModelID:
+		return m.AccountModelID()
+	case videomodelratecard.FieldProviderCode:
+		return m.ProviderCode()
+	case videomodelratecard.FieldPricingSchema:
+		return m.PricingSchema()
+	case videomodelratecard.FieldRateVersion:
+		return m.RateVersion()
+	case videomodelratecard.FieldCurrency:
+		return m.Currency()
+	case videomodelratecard.FieldRateConfig:
+		return m.RateConfig()
+	case videomodelratecard.FieldSourceReference:
+		return m.SourceReference()
+	case videomodelratecard.FieldEffectiveAt:
+		return m.EffectiveAt()
+	case videomodelratecard.FieldEnabled:
+		return m.Enabled()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *VideoModelRateCardMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case videomodelratecard.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case videomodelratecard.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case videomodelratecard.FieldDeletedAt:
+		return m.OldDeletedAt(ctx)
+	case videomodelratecard.FieldAccountModelID:
+		return m.OldAccountModelID(ctx)
+	case videomodelratecard.FieldProviderCode:
+		return m.OldProviderCode(ctx)
+	case videomodelratecard.FieldPricingSchema:
+		return m.OldPricingSchema(ctx)
+	case videomodelratecard.FieldRateVersion:
+		return m.OldRateVersion(ctx)
+	case videomodelratecard.FieldCurrency:
+		return m.OldCurrency(ctx)
+	case videomodelratecard.FieldRateConfig:
+		return m.OldRateConfig(ctx)
+	case videomodelratecard.FieldSourceReference:
+		return m.OldSourceReference(ctx)
+	case videomodelratecard.FieldEffectiveAt:
+		return m.OldEffectiveAt(ctx)
+	case videomodelratecard.FieldEnabled:
+		return m.OldEnabled(ctx)
+	}
+	return nil, fmt.Errorf("unknown VideoModelRateCard field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *VideoModelRateCardMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case videomodelratecard.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case videomodelratecard.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case videomodelratecard.FieldDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAt(v)
+		return nil
+	case videomodelratecard.FieldAccountModelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountModelID(v)
+		return nil
+	case videomodelratecard.FieldProviderCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderCode(v)
+		return nil
+	case videomodelratecard.FieldPricingSchema:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPricingSchema(v)
+		return nil
+	case videomodelratecard.FieldRateVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRateVersion(v)
+		return nil
+	case videomodelratecard.FieldCurrency:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCurrency(v)
+		return nil
+	case videomodelratecard.FieldRateConfig:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRateConfig(v)
+		return nil
+	case videomodelratecard.FieldSourceReference:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceReference(v)
+		return nil
+	case videomodelratecard.FieldEffectiveAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEffectiveAt(v)
+		return nil
+	case videomodelratecard.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	}
+	return fmt.Errorf("unknown VideoModelRateCard field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *VideoModelRateCardMutation) AddedFields() []string {
+	var fields []string
+	if m.addaccount_model_id != nil {
+		fields = append(fields, videomodelratecard.FieldAccountModelID)
+	}
+	if m.addrate_version != nil {
+		fields = append(fields, videomodelratecard.FieldRateVersion)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *VideoModelRateCardMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case videomodelratecard.FieldAccountModelID:
+		return m.AddedAccountModelID()
+	case videomodelratecard.FieldRateVersion:
+		return m.AddedRateVersion()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *VideoModelRateCardMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case videomodelratecard.FieldAccountModelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAccountModelID(v)
+		return nil
+	case videomodelratecard.FieldRateVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRateVersion(v)
+		return nil
+	}
+	return fmt.Errorf("unknown VideoModelRateCard numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *VideoModelRateCardMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(videomodelratecard.FieldDeletedAt) {
+		fields = append(fields, videomodelratecard.FieldDeletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *VideoModelRateCardMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *VideoModelRateCardMutation) ClearField(name string) error {
+	switch name {
+	case videomodelratecard.FieldDeletedAt:
+		m.ClearDeletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown VideoModelRateCard nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *VideoModelRateCardMutation) ResetField(name string) error {
+	switch name {
+	case videomodelratecard.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case videomodelratecard.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case videomodelratecard.FieldDeletedAt:
+		m.ResetDeletedAt()
+		return nil
+	case videomodelratecard.FieldAccountModelID:
+		m.ResetAccountModelID()
+		return nil
+	case videomodelratecard.FieldProviderCode:
+		m.ResetProviderCode()
+		return nil
+	case videomodelratecard.FieldPricingSchema:
+		m.ResetPricingSchema()
+		return nil
+	case videomodelratecard.FieldRateVersion:
+		m.ResetRateVersion()
+		return nil
+	case videomodelratecard.FieldCurrency:
+		m.ResetCurrency()
+		return nil
+	case videomodelratecard.FieldRateConfig:
+		m.ResetRateConfig()
+		return nil
+	case videomodelratecard.FieldSourceReference:
+		m.ResetSourceReference()
+		return nil
+	case videomodelratecard.FieldEffectiveAt:
+		m.ResetEffectiveAt()
+		return nil
+	case videomodelratecard.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	}
+	return fmt.Errorf("unknown VideoModelRateCard field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *VideoModelRateCardMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *VideoModelRateCardMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *VideoModelRateCardMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *VideoModelRateCardMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *VideoModelRateCardMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *VideoModelRateCardMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *VideoModelRateCardMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown VideoModelRateCard unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *VideoModelRateCardMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown VideoModelRateCard edge %s", name)
+}
+
 // VideoPriceRuleMutation represents an operation that mutates the VideoPriceRule nodes in the graph.
 type VideoPriceRuleMutation struct {
 	config
@@ -76767,28 +77780,30 @@ func (m *VideoProviderCostRuleMutation) ResetEdge(name string) error {
 // VideoRouteConfigMutation represents an operation that mutates the VideoRouteConfig nodes in the graph.
 type VideoRouteConfigMutation struct {
 	config
-	op                     Op
-	typ                    string
-	id                     *int
-	created_at             *time.Time
-	updated_at             *time.Time
-	deleted_at             *time.Time
-	route_model_id         *int64
-	addroute_model_id      *int64
-	task_types             *[]string
-	appendtask_types       []string
-	visible_options        *map[string]interface{}
-	defaults               *map[string]interface{}
-	max_output_count       *int
-	addmax_output_count    *int
-	pricing_strategy_id    *int64
-	addpricing_strategy_id *int64
-	config_version         *string
-	enabled                *bool
-	clearedFields          map[string]struct{}
-	done                   bool
-	oldValue               func(context.Context) (*VideoRouteConfig, error)
-	predicates             []predicate.VideoRouteConfig
+	op                           Op
+	typ                          string
+	id                           *int
+	created_at                   *time.Time
+	updated_at                   *time.Time
+	deleted_at                   *time.Time
+	route_model_id               *int64
+	addroute_model_id            *int64
+	task_types                   *[]string
+	appendtask_types             []string
+	visible_options              *map[string]interface{}
+	defaults                     *map[string]interface{}
+	max_output_count             *int
+	addmax_output_count          *int
+	candidate_parameter_mappings *map[string]interface{}
+	minimum_task_points          *string
+	rounding_step_points         *int
+	addrounding_step_points      *int
+	config_version               *string
+	enabled                      *bool
+	clearedFields                map[string]struct{}
+	done                         bool
+	oldValue                     func(context.Context) (*VideoRouteConfig, error)
+	predicates                   []predicate.VideoRouteConfig
 }
 
 var _ ent.Mutation = (*VideoRouteConfigMutation)(nil)
@@ -77245,60 +78260,132 @@ func (m *VideoRouteConfigMutation) ResetMaxOutputCount() {
 	m.addmax_output_count = nil
 }
 
-// SetPricingStrategyID sets the "pricing_strategy_id" field.
-func (m *VideoRouteConfigMutation) SetPricingStrategyID(i int64) {
-	m.pricing_strategy_id = &i
-	m.addpricing_strategy_id = nil
+// SetCandidateParameterMappings sets the "candidate_parameter_mappings" field.
+func (m *VideoRouteConfigMutation) SetCandidateParameterMappings(value map[string]interface{}) {
+	m.candidate_parameter_mappings = &value
 }
 
-// PricingStrategyID returns the value of the "pricing_strategy_id" field in the mutation.
-func (m *VideoRouteConfigMutation) PricingStrategyID() (r int64, exists bool) {
-	v := m.pricing_strategy_id
+// CandidateParameterMappings returns the value of the "candidate_parameter_mappings" field in the mutation.
+func (m *VideoRouteConfigMutation) CandidateParameterMappings() (r map[string]interface{}, exists bool) {
+	v := m.candidate_parameter_mappings
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldPricingStrategyID returns the old "pricing_strategy_id" field's value of the VideoRouteConfig entity.
+// OldCandidateParameterMappings returns the old "candidate_parameter_mappings" field's value of the VideoRouteConfig entity.
 // If the VideoRouteConfig object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *VideoRouteConfigMutation) OldPricingStrategyID(ctx context.Context) (v int64, err error) {
+func (m *VideoRouteConfigMutation) OldCandidateParameterMappings(ctx context.Context) (v map[string]interface{}, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPricingStrategyID is only allowed on UpdateOne operations")
+		return v, errors.New("OldCandidateParameterMappings is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPricingStrategyID requires an ID field in the mutation")
+		return v, errors.New("OldCandidateParameterMappings requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPricingStrategyID: %w", err)
+		return v, fmt.Errorf("querying old value for OldCandidateParameterMappings: %w", err)
 	}
-	return oldValue.PricingStrategyID, nil
+	return oldValue.CandidateParameterMappings, nil
 }
 
-// AddPricingStrategyID adds i to the "pricing_strategy_id" field.
-func (m *VideoRouteConfigMutation) AddPricingStrategyID(i int64) {
-	if m.addpricing_strategy_id != nil {
-		*m.addpricing_strategy_id += i
-	} else {
-		m.addpricing_strategy_id = &i
-	}
+// ResetCandidateParameterMappings resets all changes to the "candidate_parameter_mappings" field.
+func (m *VideoRouteConfigMutation) ResetCandidateParameterMappings() {
+	m.candidate_parameter_mappings = nil
 }
 
-// AddedPricingStrategyID returns the value that was added to the "pricing_strategy_id" field in this mutation.
-func (m *VideoRouteConfigMutation) AddedPricingStrategyID() (r int64, exists bool) {
-	v := m.addpricing_strategy_id
+// SetMinimumTaskPoints sets the "minimum_task_points" field.
+func (m *VideoRouteConfigMutation) SetMinimumTaskPoints(s string) {
+	m.minimum_task_points = &s
+}
+
+// MinimumTaskPoints returns the value of the "minimum_task_points" field in the mutation.
+func (m *VideoRouteConfigMutation) MinimumTaskPoints() (r string, exists bool) {
+	v := m.minimum_task_points
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetPricingStrategyID resets all changes to the "pricing_strategy_id" field.
-func (m *VideoRouteConfigMutation) ResetPricingStrategyID() {
-	m.pricing_strategy_id = nil
-	m.addpricing_strategy_id = nil
+// OldMinimumTaskPoints returns the old "minimum_task_points" field's value of the VideoRouteConfig entity.
+// If the VideoRouteConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoRouteConfigMutation) OldMinimumTaskPoints(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMinimumTaskPoints is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMinimumTaskPoints requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMinimumTaskPoints: %w", err)
+	}
+	return oldValue.MinimumTaskPoints, nil
+}
+
+// ResetMinimumTaskPoints resets all changes to the "minimum_task_points" field.
+func (m *VideoRouteConfigMutation) ResetMinimumTaskPoints() {
+	m.minimum_task_points = nil
+}
+
+// SetRoundingStepPoints sets the "rounding_step_points" field.
+func (m *VideoRouteConfigMutation) SetRoundingStepPoints(i int) {
+	m.rounding_step_points = &i
+	m.addrounding_step_points = nil
+}
+
+// RoundingStepPoints returns the value of the "rounding_step_points" field in the mutation.
+func (m *VideoRouteConfigMutation) RoundingStepPoints() (r int, exists bool) {
+	v := m.rounding_step_points
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRoundingStepPoints returns the old "rounding_step_points" field's value of the VideoRouteConfig entity.
+// If the VideoRouteConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoRouteConfigMutation) OldRoundingStepPoints(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRoundingStepPoints is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRoundingStepPoints requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRoundingStepPoints: %w", err)
+	}
+	return oldValue.RoundingStepPoints, nil
+}
+
+// AddRoundingStepPoints adds i to the "rounding_step_points" field.
+func (m *VideoRouteConfigMutation) AddRoundingStepPoints(i int) {
+	if m.addrounding_step_points != nil {
+		*m.addrounding_step_points += i
+	} else {
+		m.addrounding_step_points = &i
+	}
+}
+
+// AddedRoundingStepPoints returns the value that was added to the "rounding_step_points" field in this mutation.
+func (m *VideoRouteConfigMutation) AddedRoundingStepPoints() (r int, exists bool) {
+	v := m.addrounding_step_points
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRoundingStepPoints resets all changes to the "rounding_step_points" field.
+func (m *VideoRouteConfigMutation) ResetRoundingStepPoints() {
+	m.rounding_step_points = nil
+	m.addrounding_step_points = nil
 }
 
 // SetConfigVersion sets the "config_version" field.
@@ -77407,7 +78494,7 @@ func (m *VideoRouteConfigMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *VideoRouteConfigMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 13)
 	if m.created_at != nil {
 		fields = append(fields, videorouteconfig.FieldCreatedAt)
 	}
@@ -77432,8 +78519,14 @@ func (m *VideoRouteConfigMutation) Fields() []string {
 	if m.max_output_count != nil {
 		fields = append(fields, videorouteconfig.FieldMaxOutputCount)
 	}
-	if m.pricing_strategy_id != nil {
-		fields = append(fields, videorouteconfig.FieldPricingStrategyID)
+	if m.candidate_parameter_mappings != nil {
+		fields = append(fields, videorouteconfig.FieldCandidateParameterMappings)
+	}
+	if m.minimum_task_points != nil {
+		fields = append(fields, videorouteconfig.FieldMinimumTaskPoints)
+	}
+	if m.rounding_step_points != nil {
+		fields = append(fields, videorouteconfig.FieldRoundingStepPoints)
 	}
 	if m.config_version != nil {
 		fields = append(fields, videorouteconfig.FieldConfigVersion)
@@ -77465,8 +78558,12 @@ func (m *VideoRouteConfigMutation) Field(name string) (ent.Value, bool) {
 		return m.Defaults()
 	case videorouteconfig.FieldMaxOutputCount:
 		return m.MaxOutputCount()
-	case videorouteconfig.FieldPricingStrategyID:
-		return m.PricingStrategyID()
+	case videorouteconfig.FieldCandidateParameterMappings:
+		return m.CandidateParameterMappings()
+	case videorouteconfig.FieldMinimumTaskPoints:
+		return m.MinimumTaskPoints()
+	case videorouteconfig.FieldRoundingStepPoints:
+		return m.RoundingStepPoints()
 	case videorouteconfig.FieldConfigVersion:
 		return m.ConfigVersion()
 	case videorouteconfig.FieldEnabled:
@@ -77496,8 +78593,12 @@ func (m *VideoRouteConfigMutation) OldField(ctx context.Context, name string) (e
 		return m.OldDefaults(ctx)
 	case videorouteconfig.FieldMaxOutputCount:
 		return m.OldMaxOutputCount(ctx)
-	case videorouteconfig.FieldPricingStrategyID:
-		return m.OldPricingStrategyID(ctx)
+	case videorouteconfig.FieldCandidateParameterMappings:
+		return m.OldCandidateParameterMappings(ctx)
+	case videorouteconfig.FieldMinimumTaskPoints:
+		return m.OldMinimumTaskPoints(ctx)
+	case videorouteconfig.FieldRoundingStepPoints:
+		return m.OldRoundingStepPoints(ctx)
 	case videorouteconfig.FieldConfigVersion:
 		return m.OldConfigVersion(ctx)
 	case videorouteconfig.FieldEnabled:
@@ -77567,12 +78668,26 @@ func (m *VideoRouteConfigMutation) SetField(name string, value ent.Value) error 
 		}
 		m.SetMaxOutputCount(v)
 		return nil
-	case videorouteconfig.FieldPricingStrategyID:
-		v, ok := value.(int64)
+	case videorouteconfig.FieldCandidateParameterMappings:
+		v, ok := value.(map[string]interface{})
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetPricingStrategyID(v)
+		m.SetCandidateParameterMappings(v)
+		return nil
+	case videorouteconfig.FieldMinimumTaskPoints:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMinimumTaskPoints(v)
+		return nil
+	case videorouteconfig.FieldRoundingStepPoints:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRoundingStepPoints(v)
 		return nil
 	case videorouteconfig.FieldConfigVersion:
 		v, ok := value.(string)
@@ -77602,8 +78717,8 @@ func (m *VideoRouteConfigMutation) AddedFields() []string {
 	if m.addmax_output_count != nil {
 		fields = append(fields, videorouteconfig.FieldMaxOutputCount)
 	}
-	if m.addpricing_strategy_id != nil {
-		fields = append(fields, videorouteconfig.FieldPricingStrategyID)
+	if m.addrounding_step_points != nil {
+		fields = append(fields, videorouteconfig.FieldRoundingStepPoints)
 	}
 	return fields
 }
@@ -77617,8 +78732,8 @@ func (m *VideoRouteConfigMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedRouteModelID()
 	case videorouteconfig.FieldMaxOutputCount:
 		return m.AddedMaxOutputCount()
-	case videorouteconfig.FieldPricingStrategyID:
-		return m.AddedPricingStrategyID()
+	case videorouteconfig.FieldRoundingStepPoints:
+		return m.AddedRoundingStepPoints()
 	}
 	return nil, false
 }
@@ -77642,12 +78757,12 @@ func (m *VideoRouteConfigMutation) AddField(name string, value ent.Value) error 
 		}
 		m.AddMaxOutputCount(v)
 		return nil
-	case videorouteconfig.FieldPricingStrategyID:
-		v, ok := value.(int64)
+	case videorouteconfig.FieldRoundingStepPoints:
+		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddPricingStrategyID(v)
+		m.AddRoundingStepPoints(v)
 		return nil
 	}
 	return fmt.Errorf("unknown VideoRouteConfig numeric field %s", name)
@@ -77709,8 +78824,14 @@ func (m *VideoRouteConfigMutation) ResetField(name string) error {
 	case videorouteconfig.FieldMaxOutputCount:
 		m.ResetMaxOutputCount()
 		return nil
-	case videorouteconfig.FieldPricingStrategyID:
-		m.ResetPricingStrategyID()
+	case videorouteconfig.FieldCandidateParameterMappings:
+		m.ResetCandidateParameterMappings()
+		return nil
+	case videorouteconfig.FieldMinimumTaskPoints:
+		m.ResetMinimumTaskPoints()
+		return nil
+	case videorouteconfig.FieldRoundingStepPoints:
+		m.ResetRoundingStepPoints()
 		return nil
 	case videorouteconfig.FieldConfigVersion:
 		m.ResetConfigVersion()

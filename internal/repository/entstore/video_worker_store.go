@@ -186,6 +186,9 @@ func hasProviderUsage(req worker.ApplyStepRequest) bool {
 }
 
 func calculateProviderCost(snapshot map[string]any, usage providervideo.Usage) (string, error) {
+	if int64Snapshot(snapshot, "schema_version") == 2 {
+		return "", nil
+	}
 	rates, _ := snapshot["rates"].(map[string]any)
 	if rates == nil {
 		return "0.00000", errors.New("video provider cost snapshot has no rates")
@@ -282,9 +285,12 @@ func (s *VideoTaskStore) PrepareAttempt(ctx context.Context, req worker.PrepareA
 		if err != nil {
 			return worker.WorkItem{}, err
 		}
-		costSnapshot, err := loadVideoCostSnapshot(ctx, tx.Client(), accountModelID, request, time.Now().UTC())
-		if err != nil {
-			return worker.WorkItem{}, err
+		costSnapshot := map[string]any{"schema_version": 2, "provider_cost_status": "unknown"}
+		if int64Snapshot(item.Edges.Task.PricingSnapshot, "schema_version") != 2 {
+			costSnapshot, err = loadVideoCostSnapshot(ctx, tx.Client(), accountModelID, request, time.Now().UTC())
+			if err != nil {
+				return worker.WorkItem{}, err
+			}
 		}
 		if _, err := tx.VideoTaskAttempt.Create().SetID(attemptID).SetItemID(itemID).SetAttemptNo(attemptNo + 1).
 			SetRouteCandidateID(routeCandidateID).SetAccountModelID(accountModelID).SetModelAccountID(modelAccountID).
@@ -373,9 +379,11 @@ func (s *VideoTaskStore) ApplyStep(ctx context.Context, req worker.ApplyStepRequ
 				if costErr != nil {
 					return false, costErr
 				}
-				attemptUpdate.SetProviderCost(providerCost)
-				if _, costUpdateErr := tx.VideoTaskItem.UpdateOneID(itemID).SetProviderCost(providerCost).Save(ctx); costUpdateErr != nil {
-					return false, costUpdateErr
+				if providerCost != "" {
+					attemptUpdate.SetProviderCost(providerCost)
+					if _, costUpdateErr := tx.VideoTaskItem.UpdateOneID(itemID).SetProviderCost(providerCost).Save(ctx); costUpdateErr != nil {
+						return false, costUpdateErr
+					}
 				}
 			}
 			if req.ProviderStatusSnapshot != nil {
@@ -594,8 +602,11 @@ func projectVideoCallback(ctx context.Context, tx *repoent.Tx, now time.Time) er
 				if costErr != nil {
 					return costErr
 				}
-				update.SetProviderCost(providerCost)
-				attemptUpdate := tx.VideoTaskAttempt.UpdateOne(attempt).SetProviderCost(providerCost).SetStatus(string(transition.Snapshot.State))
+				attemptUpdate := tx.VideoTaskAttempt.UpdateOne(attempt).SetStatus(string(transition.Snapshot.State))
+				if providerCost != "" {
+					update.SetProviderCost(providerCost)
+					attemptUpdate.SetProviderCost(providerCost)
+				}
 				if raw, ok := event.PayloadSnapshot["usage"].(map[string]any); ok {
 					attemptUpdate.SetUsageRaw(cloneMap(raw))
 				}
@@ -706,7 +717,11 @@ func latestVideoAttempt(ctx context.Context, client *repoent.Client, itemID uuid
 }
 
 func providerRequestFromTask(task *repoent.VideoTask, itemID uuid.UUID) providervideo.Request {
-	return providervideo.Request{TaskID: task.ID.String(), ItemID: itemID.String(), TaskType: task.TaskType, Prompt: task.ExecutionPrompt, DurationSeconds: task.DurationSeconds, Resolution: task.Resolution, AspectRatio: task.AspectRatio, GenerateAudio: task.GenerateAudio, OutputFormat: "mp4"}
+	resolution := task.Resolution
+	if mapped := stringSnapshot(task.RoutingSnapshot, "mapped_resolution"); mapped != "" {
+		resolution = mapped
+	}
+	return providervideo.Request{TaskID: task.ID.String(), ItemID: itemID.String(), TaskType: task.TaskType, Prompt: task.ExecutionPrompt, DurationSeconds: task.DurationSeconds, Resolution: resolution, AspectRatio: task.AspectRatio, GenerateAudio: task.GenerateAudio, OutputFormat: "mp4"}
 }
 
 func callbackProjection(snapshot map[string]any) (domainvideo.ItemState, providervideo.Artifact, string, string, bool) {
@@ -795,6 +810,9 @@ func itemPricePoints(item *repoent.VideoTaskItem, task *repoent.VideoTask) strin
 
 func actualVideoItemPoints(item *repoent.VideoTaskItem, task *repoent.VideoTask) (string, bool, error) {
 	quoted := itemPricePoints(item, task)
+	if int64Snapshot(task.PricingSnapshot, "schema_version") == 2 {
+		return quoted, false, nil
+	}
 	var rule domainvideo.SalesRule
 	if err := mapStruct(task.PricingSnapshot["sales_rule"], &rule); err != nil || rule.PricingMode == "" || rule.PricingMode == "exact" {
 		return quoted, false, nil

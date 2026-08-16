@@ -43,6 +43,37 @@ BEGIN
         WHERE public_id IS NULL;
     END IF;
 
+    IF to_regclass(current_schema() || '.video_route_configs') IS NOT NULL THEN
+        ALTER TABLE video_route_configs
+            ADD COLUMN IF NOT EXISTS candidate_parameter_mappings jsonb DEFAULT '{}'::jsonb;
+        UPDATE video_route_configs
+        SET candidate_parameter_mappings = '{}'::jsonb
+        WHERE candidate_parameter_mappings IS NULL;
+        ALTER TABLE video_route_configs
+            ALTER COLUMN candidate_parameter_mappings SET DEFAULT '{}'::jsonb,
+            ALTER COLUMN candidate_parameter_mappings SET NOT NULL;
+
+        ALTER TABLE video_route_configs
+            ADD COLUMN IF NOT EXISTS minimum_task_points numeric(20,5) DEFAULT 0.00000;
+        UPDATE video_route_configs
+        SET minimum_task_points = 0.00000
+        WHERE minimum_task_points IS NULL;
+        ALTER TABLE video_route_configs
+            ALTER COLUMN minimum_task_points SET DEFAULT 0.00000,
+            ALTER COLUMN minimum_task_points SET NOT NULL;
+
+        ALTER TABLE video_route_configs
+            ADD COLUMN IF NOT EXISTS rounding_step_points bigint DEFAULT 1;
+        UPDATE video_route_configs
+        SET rounding_step_points = 1
+        WHERE rounding_step_points IS NULL OR rounding_step_points NOT IN (1, 5, 10);
+        ALTER TABLE video_route_configs
+            ALTER COLUMN rounding_step_points SET DEFAULT 1,
+            ALTER COLUMN rounding_step_points SET NOT NULL;
+
+        ALTER TABLE video_route_configs DROP COLUMN IF EXISTS pricing_strategy_id CASCADE;
+    END IF;
+
     IF to_regclass(current_schema() || '.image_tasks') IS NOT NULL THEN
         IF to_regclass(current_schema() || '.public_image_interactions') IS NOT NULL
            AND to_regclass(current_schema() || '.task_images') IS NOT NULL THEN

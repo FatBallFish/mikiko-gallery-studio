@@ -15,6 +15,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/http/handlers"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/entstore"
+	adminvideoservice "github.com/fatballfish/pic-gallery/internal/service/adminvideo"
 	videopricingservice "github.com/fatballfish/pic-gallery/internal/service/videopricing"
 	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
 	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
@@ -35,7 +36,7 @@ func TestVideoCapabilityAndEstimateUseCompleteVerifiedCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accountModel, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("seedance-2.5").SetDisplayName("Seedance 2.5").SetEnabled(true).Save(ctx)
+	accountModel, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("doubao-seedance-2-5-260815").SetDisplayName("Seedance 2.5").SetEnabled(true).Save(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,23 +63,18 @@ func TestVideoCapabilityAndEstimateUseCompleteVerifiedCandidate(t *testing.T) {
 	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(accountModel.ID)).SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
-	strategy, err := client.VideoPricingStrategy.Create().SetCode("default-video").SetName("默认视频价格").SetEnabled(true).Save(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.VideoPriceRule.Create().SetPricingStrategyID(int64(strategy.ID)).SetTaskType(string(domainvideo.TaskTypeTextToVideo)).
-		SetResolution(string(domainvideo.Resolution720P)).SetAudioMode(string(domainvideo.AudioModeSilent)).SetEffectiveAt(now.Add(-time.Hour)).
-		SetOutputSecondPoints("2.00000").SetMinimumTaskPoints("8.00000").SetReserveMarkup("1.00000").SetSafetyPoints("8.00000").SetSafetySnapshot(map[string]any{}).SetEnabled(true).Save(ctx); err != nil {
+	if _, err := client.VideoModelRateCard.Create().SetAccountModelID(int64(accountModel.ID)).SetProviderCode("seedance").SetPricingSchema("seedance_token_v1").SetRateVersion(1).SetCurrency("CNY").
+		SetRateConfig(map[string]any{"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}}}).SetSourceReference("test fixture").SetEffectiveAt(now.Add(-time.Hour)).SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{string(domainvideo.TaskTypeTextToVideo)}).
-		SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetPricingStrategyID(int64(strategy.ID)).SetConfigVersion("route-v1").SetEnabled(true).Save(ctx); err != nil {
+		SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetMinimumTaskPoints("8.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v2").SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
 
 	configStore := entstore.NewVideoConfigStore(client)
 	routing := videoroutingservice.NewService(configStore)
-	pricing := videopricingservice.NewService(configStore, func() time.Time { return now })
+	pricing := videopricingservice.NewService(adminvideoservice.NewService(entstore.NewAdminVideoStore(client)), func() time.Time { return now })
 	quotes := videotaskservice.NewQuoteService(routing, pricing, []byte("test-video-quote-signing-key-32bytes"), func() time.Time { return now })
 	authSvc, session := loginTestUser(t, "video-capability@example.com")
 	api := handlers.NewAPIWithRuntimeServices(taskAPIConfig("http://provider.invalid"), authSvc, nil, nil, enabledFeatureAdmin(t, "video_creation"), nil)
@@ -95,7 +91,7 @@ func TestVideoCapabilityAndEstimateUseCompleteVerifiedCandidate(t *testing.T) {
 	}
 	estimateBody := `{"route_model_code":"cinema","task_type":"text_to_video","prompt":"a quiet lake","duration_seconds":5,"resolution":"720p","aspect_ratio":"16:9","audio_mode":"silent","output_count":2}`
 	estimate := authenticatedMediaRequest(t, handler, session.AccessToken, http.MethodPost, "/api/agent/video/v1/estimates", estimateBody, nil)
-	if estimate.Code != http.StatusOK || !bytes.Contains(estimate.Body.Bytes(), []byte(`"unit_points":"10.00000"`)) || !bytes.Contains(estimate.Body.Bytes(), []byte(`"estimated_points":"20.00000"`)) || !bytes.Contains(estimate.Body.Bytes(), []byte(`"quote_token"`)) {
+	if estimate.Code != http.StatusOK || !bytes.Contains(estimate.Body.Bytes(), []byte(`"unit_points":"497.00000"`)) || !bytes.Contains(estimate.Body.Bytes(), []byte(`"estimated_points":"994.00000"`)) || !bytes.Contains(estimate.Body.Bytes(), []byte(`"quote_token"`)) {
 		t.Fatalf("estimate=%d %s", estimate.Code, estimate.Body.String())
 	}
 }

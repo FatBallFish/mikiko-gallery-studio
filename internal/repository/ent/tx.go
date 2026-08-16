@@ -120,6 +120,8 @@ type Tx struct {
 	UserSubscription *UserSubscriptionClient
 	// VideoModelCapability is the client for interacting with the VideoModelCapability builders.
 	VideoModelCapability *VideoModelCapabilityClient
+	// VideoModelRateCard is the client for interacting with the VideoModelRateCard builders.
+	VideoModelRateCard *VideoModelRateCardClient
 	// VideoPriceRule is the client for interacting with the VideoPriceRule builders.
 	VideoPriceRule *VideoPriceRuleClient
 	// VideoPricingStrategy is the client for interacting with the VideoPricingStrategy builders.
@@ -327,6 +329,7 @@ func (tx *Tx) init() {
 	tx.UserGroupMember = NewUserGroupMemberClient(tx.config)
 	tx.UserSubscription = NewUserSubscriptionClient(tx.config)
 	tx.VideoModelCapability = NewVideoModelCapabilityClient(tx.config)
+	tx.VideoModelRateCard = NewVideoModelRateCardClient(tx.config)
 	tx.VideoPriceRule = NewVideoPriceRuleClient(tx.config)
 	tx.VideoPricingStrategy = NewVideoPricingStrategyClient(tx.config)
 	tx.VideoProviderCallbackEvent = NewVideoProviderCallbackEventClient(tx.config)

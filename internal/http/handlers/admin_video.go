@@ -57,11 +57,111 @@ func (a *API) HandleAdminVideoModelConfiguration(w http.ResponseWriter, r *http.
 		a.handleAdminVideoCapability(w, r, modelID)
 		return
 	}
-	if parts[1] == "video-cost-rules" {
-		a.handleAdminVideoCostRules(w, r, modelID, parts[2:])
+	httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "video model configuration route not found"))
+}
+
+func (a *API) HandleAdminVideoRateCards(w http.ResponseWriter, r *http.Request) {
+	if a.adminVideo == nil {
+		httpx.WriteError(w, r, errs.Internal("video administration is unavailable"))
 		return
 	}
-	httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "video model configuration route not found"))
+	parts := splitAdminSuffix(r.URL.Path, "/api/ops/admin/v1/video-models/")
+	accountModelID, appErr := parseInt64Part(parts, 0, "account_model_id")
+	if appErr != nil || len(parts) < 2 || parts[1] != "rate-cards" || len(parts) > 3 {
+		if appErr == nil {
+			appErr = errs.New(http.StatusNotFound, errs.CodeNotFound, "video rate card route not found")
+		}
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if r.Method == http.MethodGet && len(parts) == 2 {
+		if _, permissionErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly); permissionErr != nil {
+			httpx.WriteError(w, r, permissionErr)
+			return
+		}
+		items, err := a.adminVideo.ListVideoModelRateCards(r.Context(), accountModelID)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": items})
+		return
+	}
+	admin, permissionErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels)
+	if permissionErr != nil {
+		httpx.WriteError(w, r, permissionErr)
+		return
+	}
+	if r.Method == http.MethodPost && len(parts) == 2 {
+		var input adminvideoservice.RateCardWrite
+		if !decodeJSONBody(w, r, &input) {
+			return
+		}
+		input.AccountModelID = accountModelID
+		result, err := a.adminVideo.SaveVideoModelRateCard(r.Context(), input)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_rate_card.save", "video_model_rate_card", fmt.Sprintf("%d", result.ID), map[string]any{"rate_version": result.RateVersion})
+		httpx.WriteSuccess(w, r, http.StatusCreated, result)
+		return
+	}
+	if r.Method == http.MethodDelete && len(parts) == 3 {
+		id, parseErr := strconv.ParseInt(parts[2], 10, 64)
+		if parseErr != nil || id <= 0 {
+			httpx.WriteError(w, r, errs.BadRequest("invalid rate card id"))
+			return
+		}
+		expected, parseErr := strconv.Atoi(r.URL.Query().Get("expected_version"))
+		if parseErr != nil || expected <= 0 {
+			httpx.WriteError(w, r, errs.BadRequest("expected_version is required"))
+			return
+		}
+		if err := a.adminVideo.DeleteVideoModelRateCard(r.Context(), id, expected); err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_rate_card.delete", "video_model_rate_card", fmt.Sprintf("%d", id), nil)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeMethodNotAllowed(w, r)
+}
+
+func (a *API) HandleAdminVideoRouteQuoteSimulation(w http.ResponseWriter, r *http.Request) {
+	if a.adminVideo == nil {
+		httpx.WriteError(w, r, errs.Internal("video administration is unavailable"))
+		return
+	}
+	if _, permissionErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels); permissionErr != nil {
+		httpx.WriteError(w, r, permissionErr)
+		return
+	}
+	parts := splitAdminSuffix(r.URL.Path, "/api/ops/admin/v1/video-routes/")
+	routeModelID, appErr := parseInt64Part(parts, 0, "route_model_id")
+	if appErr != nil || len(parts) != 2 || parts[1] != "quote-simulation" {
+		if appErr == nil {
+			appErr = errs.New(http.StatusNotFound, errs.CodeNotFound, "video route quote simulation route not found")
+		}
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	var input adminvideoservice.QuoteSimulationRequest
+	if !decodeJSONBody(w, r, &input) {
+		return
+	}
+	input.RouteModelID = routeModelID
+	result, err := a.adminVideo.SimulateRouteQuote(r.Context(), input)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, result)
 }
 
 func (a *API) handleAdminVideoCapability(w http.ResponseWriter, r *http.Request, modelID int64) {
@@ -116,286 +216,6 @@ func (a *API) handleAdminVideoCapability(w http.ResponseWriter, r *http.Request,
 	default:
 		writeMethodNotAllowed(w, r)
 	}
-}
-
-func (a *API) handleAdminVideoCostRules(w http.ResponseWriter, r *http.Request, modelID int64, suffix []string) {
-	if r.Method == http.MethodGet && len(suffix) == 0 {
-		if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly); appErr != nil {
-			httpx.WriteError(w, r, appErr)
-			return
-		}
-		snapshot, err := a.adminVideo.Snapshot(r.Context())
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		items := make([]adminvideoservice.CostRuleSummary, 0)
-		for _, item := range snapshot.CostRules {
-			if item.AccountModelID == modelID {
-				items = append(items, item)
-			}
-		}
-		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": items})
-		return
-	}
-	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels)
-	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
-		return
-	}
-	if r.Method == http.MethodPost && len(suffix) == 0 {
-		var input adminvideoservice.CostRuleWrite
-		if !decodeJSONBody(w, r, &input) {
-			return
-		}
-		input.AccountModelID = modelID
-		result, err := a.adminVideo.SaveCostRule(r.Context(), input)
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_cost_rule.save", "video_provider_cost_rule", fmt.Sprintf("%d", result.ID), map[string]any{"version": result.RuleVersion})
-		httpx.WriteSuccess(w, r, http.StatusCreated, result)
-		return
-	}
-	if r.Method == http.MethodDelete && len(suffix) == 1 {
-		id, err := strconv.ParseInt(suffix[0], 10, 64)
-		if err != nil {
-			httpx.WriteError(w, r, errs.BadRequest("invalid cost rule id"))
-			return
-		}
-		expected, parseErr := strconv.ParseInt(r.URL.Query().Get("expected_version"), 10, 64)
-		if parseErr != nil {
-			httpx.WriteError(w, r, errs.BadRequest("expected_version is required"))
-			return
-		}
-		if err := a.adminVideo.DeleteConfig(r.Context(), adminvideoservice.ConfigCostRule, id, expected); err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_cost_rule.delete", "video_provider_cost_rule", fmt.Sprintf("%d", id), nil)
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	writeMethodNotAllowed(w, r)
-}
-
-func (a *API) HandleAdminVideoPricingStrategies(w http.ResponseWriter, r *http.Request) {
-	if a.adminVideo == nil {
-		httpx.WriteError(w, r, errs.Internal("video administration is unavailable"))
-		return
-	}
-	if r.Method == http.MethodGet {
-		if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly); appErr != nil {
-			httpx.WriteError(w, r, appErr)
-			return
-		}
-		snapshot, err := a.adminVideo.Snapshot(r.Context())
-		if err != nil {
-			httpx.WriteError(w, r, normalizeAppError(err))
-			return
-		}
-		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": snapshot.Strategies, "price_rules": snapshot.PriceRules})
-		return
-	}
-	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels)
-	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
-		return
-	}
-	if r.Method != http.MethodPost {
-		writeMethodNotAllowed(w, r)
-		return
-	}
-	var input adminvideoservice.StrategyWrite
-	if !decodeJSONBody(w, r, &input) {
-		return
-	}
-	result, err := a.adminVideo.SaveStrategy(r.Context(), input)
-	if err != nil {
-		httpx.WriteError(w, r, normalizeAppError(err))
-		return
-	}
-	_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_pricing_strategy.create", "video_pricing_strategy", fmt.Sprintf("%d", result.ID), map[string]any{"version": result.StrategyVersion})
-	httpx.WriteSuccess(w, r, http.StatusCreated, result)
-}
-
-func (a *API) HandleAdminVideoPricingStrategyDetail(w http.ResponseWriter, r *http.Request) {
-	if a.adminVideo == nil {
-		httpx.WriteError(w, r, errs.Internal("video administration is unavailable"))
-		return
-	}
-	parts := splitAdminSuffix(r.URL.Path, "/api/ops/admin/v1/video-pricing-strategies/")
-	if len(parts) != 1 {
-		httpx.WriteError(w, r, errs.BadRequest("invalid strategy route"))
-		return
-	}
-	raw := parts[0]
-	action := ""
-	for _, candidate := range []string{":simulate", ":recalculate"} {
-		if strings.HasSuffix(raw, candidate) {
-			action = candidate
-			raw = strings.TrimSuffix(raw, candidate)
-		}
-	}
-	id, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || id <= 0 {
-		httpx.WriteError(w, r, errs.BadRequest("invalid strategy id"))
-		return
-	}
-	if r.Method == http.MethodGet && action == "" {
-		if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionReadOnly); appErr != nil {
-			httpx.WriteError(w, r, appErr)
-			return
-		}
-		snapshot, loadErr := a.adminVideo.Snapshot(r.Context())
-		if loadErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(loadErr))
-			return
-		}
-		for _, item := range snapshot.Strategies {
-			if item.ID == id {
-				httpx.WriteSuccess(w, r, http.StatusOK, item)
-				return
-			}
-		}
-		httpx.WriteError(w, r, errs.New(404, errs.CodeNotFound, "strategy not found"))
-		return
-	}
-	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels)
-	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
-		return
-	}
-	if action == ":simulate" && r.Method == http.MethodPost {
-		var input adminvideoservice.SimulationRequest
-		if !decodeJSONBody(w, r, &input) {
-			return
-		}
-		input.StrategyID = id
-		result, serviceErr := a.adminVideo.Simulate(r.Context(), input)
-		if serviceErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(serviceErr))
-			return
-		}
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
-		return
-	}
-	if action == ":recalculate" && r.Method == http.MethodPost {
-		var input adminvideoservice.RecalculateRequest
-		if !decodeJSONBody(w, r, &input) {
-			return
-		}
-		input.StrategyID = id
-		result, serviceErr := a.adminVideo.Recalculate(r.Context(), input)
-		if serviceErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(serviceErr))
-			return
-		}
-		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_pricing_strategy.recalculate", "video_pricing_strategy", raw, map[string]any{"rules": len(result)})
-		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": result})
-		return
-	}
-	if action != "" {
-		writeMethodNotAllowed(w, r)
-		return
-	}
-	if r.Method == http.MethodPut {
-		var input adminvideoservice.StrategyWrite
-		if !decodeJSONBody(w, r, &input) {
-			return
-		}
-		input.ID = id
-		result, serviceErr := a.adminVideo.SaveStrategy(r.Context(), input)
-		if serviceErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(serviceErr))
-			return
-		}
-		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_pricing_strategy.update", "video_pricing_strategy", raw, map[string]any{"version": result.StrategyVersion})
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
-		return
-	}
-	if r.Method == http.MethodDelete {
-		expected, parseErr := strconv.ParseInt(r.URL.Query().Get("expected_version"), 10, 64)
-		if parseErr != nil {
-			httpx.WriteError(w, r, errs.BadRequest("expected_version is required"))
-			return
-		}
-		if serviceErr := a.adminVideo.DeleteConfig(r.Context(), adminvideoservice.ConfigStrategy, id, expected); serviceErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(serviceErr))
-			return
-		}
-		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_pricing_strategy.delete", "video_pricing_strategy", raw, nil)
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	writeMethodNotAllowed(w, r)
-}
-
-func (a *API) HandleAdminVideoPriceRules(w http.ResponseWriter, r *http.Request) {
-	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels)
-	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
-		return
-	}
-	if r.Method != http.MethodPost {
-		writeMethodNotAllowed(w, r)
-		return
-	}
-	var input adminvideoservice.PriceRuleWrite
-	if !decodeJSONBody(w, r, &input) {
-		return
-	}
-	result, err := a.adminVideo.SavePriceRule(r.Context(), input)
-	if err != nil {
-		httpx.WriteError(w, r, normalizeAppError(err))
-		return
-	}
-	_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_price_rule.create", "video_price_rule", fmt.Sprintf("%d", result.ID), map[string]any{"version": result.RuleVersion})
-	httpx.WriteSuccess(w, r, http.StatusCreated, result)
-}
-
-func (a *API) HandleAdminVideoPriceRuleDetail(w http.ResponseWriter, r *http.Request) {
-	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels)
-	if appErr != nil {
-		httpx.WriteError(w, r, appErr)
-		return
-	}
-	id, err := strconv.ParseInt(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/ops/admin/v1/video-price-rules/"), "/"), 10, 64)
-	if err != nil {
-		httpx.WriteError(w, r, errs.BadRequest("invalid price rule id"))
-		return
-	}
-	if r.Method == http.MethodPut {
-		var input adminvideoservice.PriceRuleWrite
-		if !decodeJSONBody(w, r, &input) {
-			return
-		}
-		input.ID = id
-		result, serviceErr := a.adminVideo.SavePriceRule(r.Context(), input)
-		if serviceErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(serviceErr))
-			return
-		}
-		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_price_rule.update", "video_price_rule", fmt.Sprintf("%d", id), map[string]any{"version": result.RuleVersion})
-		httpx.WriteSuccess(w, r, http.StatusOK, result)
-		return
-	}
-	if r.Method == http.MethodDelete {
-		expected, parseErr := strconv.ParseInt(r.URL.Query().Get("expected_version"), 10, 64)
-		if parseErr != nil {
-			httpx.WriteError(w, r, errs.BadRequest("expected_version is required"))
-			return
-		}
-		if serviceErr := a.adminVideo.DeleteConfig(r.Context(), adminvideoservice.ConfigPriceRule, id, expected); serviceErr != nil {
-			httpx.WriteError(w, r, normalizeAppError(serviceErr))
-			return
-		}
-		_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "video_price_rule.delete", "video_price_rule", fmt.Sprintf("%d", id), nil)
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	writeMethodNotAllowed(w, r)
 }
 
 func (a *API) HandleAdminRouteVideoConfiguration(w http.ResponseWriter, r *http.Request, adminID, routeID int64, action string) bool {
