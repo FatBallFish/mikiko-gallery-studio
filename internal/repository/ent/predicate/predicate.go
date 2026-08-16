@@ -168,6 +168,9 @@ type UserSubscription func(*sql.Selector)
 // VideoModelCapability is the predicate function for videomodelcapability builders.
 type VideoModelCapability func(*sql.Selector)
 
+// VideoModelRateCard is the predicate function for videomodelratecard builders.
+type VideoModelRateCard func(*sql.Selector)
+
 // VideoPriceRule is the predicate function for videopricerule builders.
 type VideoPriceRule func(*sql.Selector)
 

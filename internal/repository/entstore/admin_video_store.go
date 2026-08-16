@@ -15,6 +15,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/subscriptionplan"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelratecard"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
@@ -45,6 +46,10 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 	if err != nil {
 		return adminvideoservice.Snapshot{}, err
 	}
+	rateCards, err := s.client.VideoModelRateCard.Query().Where(videomodelratecard.DeletedAtIsNil()).All(ctx)
+	if err != nil {
+		return adminvideoservice.Snapshot{}, err
+	}
 	strategies, err := s.client.VideoPricingStrategy.Query().Where(videopricingstrategy.DeletedAtIsNil()).All(ctx)
 	if err != nil {
 		return adminvideoservice.Snapshot{}, err
@@ -65,6 +70,9 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 	snapshot := adminvideoservice.Snapshot{GeneratedAt: time.Now().UTC()}
 	for _, row := range capabilities {
 		snapshot.Capabilities = append(snapshot.Capabilities, adminvideoservice.CapabilitySummary{AccountModelID: row.AccountModelID, Version: row.CapabilityVersion, ValidationState: row.ValidationStatus, Capability: row.CapabilityJSON, Enabled: row.Enabled})
+	}
+	for _, row := range rateCards {
+		snapshot.RateCards = append(snapshot.RateCards, projectVideoModelRateCard(row))
 	}
 	for _, row := range costRules {
 		snapshot.CostRules = append(snapshot.CostRules, adminvideoservice.CostRuleSummary{ID: int64(row.ID), AccountModelID: row.AccountModelID, BillingMode: row.BillingMode, RuleVersion: row.RuleVersion, Currency: row.Currency, Rates: row.RatesJSON, CostReserveMarkup: row.CostReserveMarkup, SourceType: row.SourceType, SourceReference: row.SourceReference, Validation: row.ValidationStatus, EffectiveAt: row.EffectiveAt, ExpiresAt: row.ExpiresAt, Enabled: row.Enabled})
@@ -99,7 +107,9 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 		}
 		if row := configsByRouteID[routeID]; row != nil {
 			summary.ConfigVersion = row.ConfigVersion
-			summary.PricingStrategyID = row.PricingStrategyID
+			summary.CandidateParameterMappings = deepCloneAnyMap(row.CandidateParameterMappings)
+			summary.MinimumTaskPoints = row.MinimumTaskPoints
+			summary.RoundingStepPoints = row.RoundingStepPoints
 			summary.TaskTypes = row.TaskTypes
 			summary.VisibleOptions = row.VisibleOptions
 			summary.Defaults = row.Defaults

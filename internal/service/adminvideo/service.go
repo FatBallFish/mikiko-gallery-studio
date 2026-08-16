@@ -25,6 +25,10 @@ type Store interface {
 	SaveMediaPolicy(context.Context, MediaPolicy, int64) (MediaPolicy, error)
 	Readiness(context.Context, time.Time) (ReadinessSnapshot, error)
 	SaveCapability(context.Context, CapabilityWrite) (CapabilitySummary, error)
+	ListVideoModelRateCards(context.Context, int64) ([]RateCardSummary, error)
+	SaveVideoModelRateCard(context.Context, RateCardWrite) (RateCardSummary, error)
+	DeleteVideoModelRateCard(context.Context, int64, int) error
+	GetEffectiveVideoModelRateCard(context.Context, int64, time.Time) (RateCardSummary, error)
 	SaveCostRule(context.Context, CostRuleWrite) (CostRuleSummary, error)
 	SaveStrategy(context.Context, StrategyWrite) (PricingStrategySummary, error)
 	SavePriceRule(context.Context, PriceRuleWrite) (PriceRuleSummary, error)
@@ -58,6 +62,19 @@ type CostRuleSummary struct {
 	EffectiveAt       time.Time      `json:"effective_at"`
 	ExpiresAt         *time.Time     `json:"expires_at,omitempty"`
 	Enabled           bool           `json:"enabled"`
+}
+
+type RateCardSummary struct {
+	ID              int64          `json:"id"`
+	AccountModelID  int64          `json:"account_model_id"`
+	ProviderCode    string         `json:"provider_code"`
+	PricingSchema   string         `json:"pricing_schema"`
+	RateVersion     int            `json:"rate_version"`
+	Currency        string         `json:"currency"`
+	RateConfig      map[string]any `json:"rate_config"`
+	SourceReference string         `json:"source_reference"`
+	EffectiveAt     time.Time      `json:"effective_at"`
+	Enabled         bool           `json:"enabled"`
 }
 
 type PricingStrategySummary struct {
@@ -108,18 +125,21 @@ type PriceRuleSummary struct {
 }
 
 type RouteConfigSummary struct {
-	RouteModelID             int64          `json:"route_model_id"`
-	RouteCode                string         `json:"route_code"`
-	RouteName                string         `json:"route_name"`
-	ConfigVersion            string         `json:"config_version"`
-	PricingStrategyID        int64          `json:"pricing_strategy_id"`
-	CandidateCount           int            `json:"candidate_count"`
-	CandidateAccountModelIDs []int64        `json:"candidate_account_model_ids"`
-	TaskTypes                []string       `json:"task_types"`
-	VisibleOptions           map[string]any `json:"visible_options"`
-	Defaults                 map[string]any `json:"defaults"`
-	MaxOutputCount           int            `json:"max_output_count"`
-	Enabled                  bool           `json:"enabled"`
+	RouteModelID               int64          `json:"route_model_id"`
+	RouteCode                  string         `json:"route_code"`
+	RouteName                  string         `json:"route_name"`
+	ConfigVersion              string         `json:"config_version"`
+	PricingStrategyID          int64          `json:"pricing_strategy_id"`
+	CandidateParameterMappings map[string]any `json:"candidate_parameter_mappings"`
+	MinimumTaskPoints          string         `json:"minimum_task_points"`
+	RoundingStepPoints         int            `json:"rounding_step_points"`
+	CandidateCount             int            `json:"candidate_count"`
+	CandidateAccountModelIDs   []int64        `json:"candidate_account_model_ids"`
+	TaskTypes                  []string       `json:"task_types"`
+	VisibleOptions             map[string]any `json:"visible_options"`
+	Defaults                   map[string]any `json:"defaults"`
+	MaxOutputCount             int            `json:"max_output_count"`
+	Enabled                    bool           `json:"enabled"`
 }
 
 type Impact struct {
@@ -133,6 +153,7 @@ type Impact struct {
 
 type Snapshot struct {
 	Capabilities []CapabilitySummary      `json:"capabilities"`
+	RateCards    []RateCardSummary        `json:"rate_cards"`
 	CostRules    []CostRuleSummary        `json:"cost_rules"`
 	Strategies   []PricingStrategySummary `json:"pricing_strategies"`
 	PriceRules   []PriceRuleSummary       `json:"price_rules"`
@@ -164,6 +185,9 @@ func normalizeSnapshotCollections(snapshot *Snapshot) {
 	}
 	if snapshot.CostRules == nil {
 		snapshot.CostRules = []CostRuleSummary{}
+	}
+	if snapshot.RateCards == nil {
+		snapshot.RateCards = []RateCardSummary{}
 	}
 	if snapshot.Strategies == nil {
 		snapshot.Strategies = []PricingStrategySummary{}

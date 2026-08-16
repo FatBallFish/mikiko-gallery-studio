@@ -29,8 +29,12 @@ const (
 	FieldDefaults = "defaults"
 	// FieldMaxOutputCount holds the string denoting the max_output_count field in the database.
 	FieldMaxOutputCount = "max_output_count"
-	// FieldPricingStrategyID holds the string denoting the pricing_strategy_id field in the database.
-	FieldPricingStrategyID = "pricing_strategy_id"
+	// FieldCandidateParameterMappings holds the string denoting the candidate_parameter_mappings field in the database.
+	FieldCandidateParameterMappings = "candidate_parameter_mappings"
+	// FieldMinimumTaskPoints holds the string denoting the minimum_task_points field in the database.
+	FieldMinimumTaskPoints = "minimum_task_points"
+	// FieldRoundingStepPoints holds the string denoting the rounding_step_points field in the database.
+	FieldRoundingStepPoints = "rounding_step_points"
 	// FieldConfigVersion holds the string denoting the config_version field in the database.
 	FieldConfigVersion = "config_version"
 	// FieldEnabled holds the string denoting the enabled field in the database.
@@ -50,7 +54,9 @@ var Columns = []string{
 	FieldVisibleOptions,
 	FieldDefaults,
 	FieldMaxOutputCount,
-	FieldPricingStrategyID,
+	FieldCandidateParameterMappings,
+	FieldMinimumTaskPoints,
+	FieldRoundingStepPoints,
 	FieldConfigVersion,
 	FieldEnabled,
 }
@@ -76,6 +82,14 @@ var (
 	DefaultMaxOutputCount int
 	// MaxOutputCountValidator is a validator for the "max_output_count" field. It is called by the builders before save.
 	MaxOutputCountValidator func(int) error
+	// DefaultCandidateParameterMappings holds the default value on creation for the "candidate_parameter_mappings" field.
+	DefaultCandidateParameterMappings map[string]interface{}
+	// DefaultMinimumTaskPoints holds the default value on creation for the "minimum_task_points" field.
+	DefaultMinimumTaskPoints string
+	// DefaultRoundingStepPoints holds the default value on creation for the "rounding_step_points" field.
+	DefaultRoundingStepPoints int
+	// RoundingStepPointsValidator is a validator for the "rounding_step_points" field. It is called by the builders before save.
+	RoundingStepPointsValidator func(int) error
 	// ConfigVersionValidator is a validator for the "config_version" field. It is called by the builders before save.
 	ConfigVersionValidator func(string) error
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
@@ -115,9 +129,14 @@ func ByMaxOutputCount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMaxOutputCount, opts...).ToFunc()
 }
 
-// ByPricingStrategyID orders the results by the pricing_strategy_id field.
-func ByPricingStrategyID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPricingStrategyID, opts...).ToFunc()
+// ByMinimumTaskPoints orders the results by the minimum_task_points field.
+func ByMinimumTaskPoints(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMinimumTaskPoints, opts...).ToFunc()
+}
+
+// ByRoundingStepPoints orders the results by the rounding_step_points field.
+func ByRoundingStepPoints(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRoundingStepPoints, opts...).ToFunc()
 }
 
 // ByConfigVersion orders the results by the config_version field.

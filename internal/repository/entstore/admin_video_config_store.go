@@ -6,6 +6,7 @@ import (
 
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelratecard"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercostrule"
@@ -37,6 +38,110 @@ func saveVideoCapability(ctx context.Context, client *repoent.Client, input admi
 		return adminvideo.CapabilitySummary{}, err
 	}
 	return adminvideo.CapabilitySummary{AccountModelID: row.AccountModelID, Version: row.CapabilityVersion, ValidationState: row.ValidationStatus, Capability: row.CapabilityJSON, Enabled: row.Enabled}, nil
+}
+
+func (s *AdminVideoStore) ListVideoModelRateCards(ctx context.Context, accountModelID int64) ([]adminvideo.RateCardSummary, error) {
+	rows, err := s.client.VideoModelRateCard.Query().Where(
+		videomodelratecard.AccountModelIDEQ(accountModelID),
+		videomodelratecard.DeletedAtIsNil(),
+	).Order(repoent.Asc(videomodelratecard.FieldRateVersion)).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]adminvideo.RateCardSummary, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, projectVideoModelRateCard(row))
+	}
+	return result, nil
+}
+
+func (s *AdminVideoStore) SaveVideoModelRateCard(ctx context.Context, input adminvideo.RateCardWrite) (adminvideo.RateCardSummary, error) {
+	return withSerializableTx(ctx, s.client, func(tx *repoent.Tx) (adminvideo.RateCardSummary, error) {
+		query := tx.VideoModelRateCard.Query().Where(
+			videomodelratecard.AccountModelIDEQ(input.AccountModelID),
+			videomodelratecard.DeletedAtIsNil(),
+		).Order(repoent.Desc(videomodelratecard.FieldRateVersion))
+		current, err := query.First(ctx)
+		if repoent.IsNotFound(err) {
+			current = nil
+			err = nil
+		}
+		if err != nil {
+			return adminvideo.RateCardSummary{}, err
+		}
+		currentVersion := 0
+		if current != nil {
+			currentVersion = current.RateVersion
+		}
+		if currentVersion != input.ExpectedRateVersion {
+			return adminvideo.RateCardSummary{}, errs.New(409, errs.CodeConflict, "video rate card version conflict")
+		}
+		if current != nil && current.Enabled {
+			if _, err := current.Update().SetEnabled(false).Save(ctx); err != nil {
+				return adminvideo.RateCardSummary{}, err
+			}
+		}
+		effectiveAt := input.EffectiveAt
+		if effectiveAt.IsZero() {
+			effectiveAt = time.Now().UTC()
+		}
+		currency := input.Currency
+		if currency == "" {
+			currency = "CNY"
+		}
+		row, err := tx.VideoModelRateCard.Create().
+			SetAccountModelID(input.AccountModelID).
+			SetProviderCode(input.ProviderCode).
+			SetPricingSchema(input.PricingSchema).
+			SetRateVersion(currentVersion + 1).
+			SetCurrency(currency).
+			SetRateConfig(deepCloneAnyMap(input.RateConfig)).
+			SetSourceReference(input.SourceReference).
+			SetEffectiveAt(effectiveAt).
+			SetEnabled(input.Enabled).
+			Save(ctx)
+		if err != nil {
+			return adminvideo.RateCardSummary{}, err
+		}
+		return projectVideoModelRateCard(row), nil
+	})
+}
+
+func (s *AdminVideoStore) DeleteVideoModelRateCard(ctx context.Context, id int64, expectedVersion int) error {
+	row, err := s.client.VideoModelRateCard.Query().Where(
+		videomodelratecard.IDEQ(int(id)),
+		videomodelratecard.DeletedAtIsNil(),
+	).Only(ctx)
+	if err != nil {
+		return err
+	}
+	if row.RateVersion != expectedVersion {
+		return errs.New(409, errs.CodeConflict, "video rate card version conflict")
+	}
+	_, err = row.Update().SetEnabled(false).SetDeletedAt(time.Now().UTC()).Save(ctx)
+	return err
+}
+
+func (s *AdminVideoStore) GetEffectiveVideoModelRateCard(ctx context.Context, accountModelID int64, at time.Time) (adminvideo.RateCardSummary, error) {
+	row, err := s.client.VideoModelRateCard.Query().Where(
+		videomodelratecard.AccountModelIDEQ(accountModelID),
+		videomodelratecard.EnabledEQ(true),
+		videomodelratecard.EffectiveAtLTE(at),
+		videomodelratecard.DeletedAtIsNil(),
+	).Order(repoent.Desc(videomodelratecard.FieldRateVersion)).First(ctx)
+	if err != nil {
+		return adminvideo.RateCardSummary{}, err
+	}
+	return projectVideoModelRateCard(row), nil
+}
+
+func projectVideoModelRateCard(row *repoent.VideoModelRateCard) adminvideo.RateCardSummary {
+	return adminvideo.RateCardSummary{
+		ID: int64(row.ID), AccountModelID: row.AccountModelID, ProviderCode: row.ProviderCode,
+		PricingSchema: row.PricingSchema, RateVersion: row.RateVersion, Currency: row.Currency,
+		RateConfig: deepCloneAnyMap(row.RateConfig), SourceReference: row.SourceReference,
+		EffectiveAt: row.EffectiveAt, Enabled: row.Enabled,
+	}
 }
 
 func (s *AdminVideoStore) SaveCostRule(ctx context.Context, input adminvideo.CostRuleWrite) (adminvideo.CostRuleSummary, error) {
@@ -141,17 +246,17 @@ func saveVideoRouteConfig(ctx context.Context, client *repoent.Client, input adm
 		if input.ExpectedVersion != "" {
 			return adminvideo.RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "video route config version conflict")
 		}
-		row, err = client.VideoRouteConfig.Create().SetRouteModelID(input.RouteModelID).SetTaskTypes(input.TaskTypes).SetVisibleOptions(visible).SetDefaults(input.Defaults).SetMaxOutputCount(input.MaxOutputCount).SetPricingStrategyID(input.PricingStrategyID).SetConfigVersion(input.ConfigVersion).SetEnabled(input.Enabled).Save(ctx)
+		row, err = client.VideoRouteConfig.Create().SetRouteModelID(input.RouteModelID).SetTaskTypes(input.TaskTypes).SetVisibleOptions(visible).SetDefaults(input.Defaults).SetMaxOutputCount(input.MaxOutputCount).SetCandidateParameterMappings(deepCloneAnyMap(input.CandidateParameterMappings)).SetMinimumTaskPoints(normalizeMinimumTaskPoints(input.MinimumTaskPoints)).SetRoundingStepPoints(normalizeRoundingStep(input.RoundingStepPoints)).SetConfigVersion(input.ConfigVersion).SetEnabled(input.Enabled).Save(ctx)
 	} else if err == nil {
 		if row.ConfigVersion != input.ExpectedVersion {
 			return adminvideo.RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "video route config version conflict")
 		}
-		row, err = row.Update().SetTaskTypes(input.TaskTypes).SetVisibleOptions(visible).SetDefaults(input.Defaults).SetMaxOutputCount(input.MaxOutputCount).SetPricingStrategyID(input.PricingStrategyID).SetConfigVersion(input.ConfigVersion).SetEnabled(input.Enabled).Save(ctx)
+		row, err = row.Update().SetTaskTypes(input.TaskTypes).SetVisibleOptions(visible).SetDefaults(input.Defaults).SetMaxOutputCount(input.MaxOutputCount).SetCandidateParameterMappings(deepCloneAnyMap(input.CandidateParameterMappings)).SetMinimumTaskPoints(normalizeMinimumTaskPoints(input.MinimumTaskPoints)).SetRoundingStepPoints(normalizeRoundingStep(input.RoundingStepPoints)).SetConfigVersion(input.ConfigVersion).SetEnabled(input.Enabled).Save(ctx)
 	}
 	if err != nil {
 		return adminvideo.RouteConfigSummary{}, err
 	}
-	return adminvideo.RouteConfigSummary{RouteModelID: row.RouteModelID, ConfigVersion: row.ConfigVersion, PricingStrategyID: row.PricingStrategyID, TaskTypes: row.TaskTypes, VisibleOptions: row.VisibleOptions, Defaults: row.Defaults, MaxOutputCount: row.MaxOutputCount, Enabled: row.Enabled}, nil
+	return adminvideo.RouteConfigSummary{RouteModelID: row.RouteModelID, ConfigVersion: row.ConfigVersion, CandidateParameterMappings: deepCloneAnyMap(row.CandidateParameterMappings), MinimumTaskPoints: row.MinimumTaskPoints, RoundingStepPoints: row.RoundingStepPoints, TaskTypes: row.TaskTypes, VisibleOptions: row.VisibleOptions, Defaults: row.Defaults, MaxOutputCount: row.MaxOutputCount, Enabled: row.Enabled}, nil
 }
 
 func cloneAnyMap(source map[string]any) map[string]any {
@@ -160,6 +265,46 @@ func cloneAnyMap(source map[string]any) map[string]any {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func deepCloneAnyMap(source map[string]any) map[string]any {
+	if source == nil {
+		return map[string]any{}
+	}
+	cloned := make(map[string]any, len(source))
+	for key, value := range source {
+		cloned[key] = deepCloneAnyValue(value)
+	}
+	return cloned
+}
+
+func deepCloneAnyValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return deepCloneAnyMap(typed)
+	case []any:
+		cloned := make([]any, len(typed))
+		for index, item := range typed {
+			cloned[index] = deepCloneAnyValue(item)
+		}
+		return cloned
+	default:
+		return value
+	}
+}
+
+func normalizeMinimumTaskPoints(value string) string {
+	if value == "" {
+		return "0.00000"
+	}
+	return value
+}
+
+func normalizeRoundingStep(value int) int {
+	if value == 0 {
+		return 1
+	}
+	return value
 }
 
 func (s *AdminVideoStore) DeleteVideoConfig(ctx context.Context, kind adminvideo.ConfigKind, id int64, expected int64) error {

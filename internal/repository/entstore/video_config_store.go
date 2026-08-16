@@ -47,7 +47,7 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 	}
 	group := videoroutingservice.Group{
 		RouteModelID: int64(entity.ID), Code: entity.Code, Name: entity.Name, Description: entity.Description,
-		ConfigVersion: config.ConfigVersion, PricingStrategyID: config.PricingStrategyID, MaxOutputCount: config.MaxOutputCount,
+		ConfigVersion: config.ConfigVersion, PricingStrategyID: legacyPricingStrategyID(config.VisibleOptions), MaxOutputCount: config.MaxOutputCount,
 	}
 	group.PricingBindings = decodeVideoPricingBindings(config.VisibleOptions)
 	for _, value := range config.TaskTypes {
@@ -99,6 +99,19 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 		})
 	}
 	return group, nil
+}
+
+func legacyPricingStrategyID(options map[string]any) int64 {
+	switch value := options["legacy_pricing_strategy_id"].(type) {
+	case int:
+		return int64(value)
+	case int64:
+		return value
+	case float64:
+		return int64(value)
+	default:
+		return 0
+	}
 }
 
 func decodeVideoPricingBindings(options map[string]any) []videoroutingservice.PricingBinding {

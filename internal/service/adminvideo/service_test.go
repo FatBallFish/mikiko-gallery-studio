@@ -54,6 +54,16 @@ func (s *fakeStore) Readiness(context.Context, time.Time) (ReadinessSnapshot, er
 func (s *fakeStore) SaveCapability(context.Context, CapabilityWrite) (CapabilitySummary, error) {
 	return CapabilitySummary{}, nil
 }
+func (s *fakeStore) ListVideoModelRateCards(context.Context, int64) ([]RateCardSummary, error) {
+	return nil, nil
+}
+func (s *fakeStore) SaveVideoModelRateCard(context.Context, RateCardWrite) (RateCardSummary, error) {
+	return RateCardSummary{}, nil
+}
+func (s *fakeStore) DeleteVideoModelRateCard(context.Context, int64, int) error { return nil }
+func (s *fakeStore) GetEffectiveVideoModelRateCard(context.Context, int64, time.Time) (RateCardSummary, error) {
+	return RateCardSummary{}, nil
+}
 func (s *fakeStore) SaveCostRule(context.Context, CostRuleWrite) (CostRuleSummary, error) {
 	return CostRuleSummary{}, nil
 }

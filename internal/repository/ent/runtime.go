@@ -59,6 +59,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelratecard"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricerule"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videopricingstrategy"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videoprovidercallbackevent"
@@ -4727,6 +4728,77 @@ func init() {
 	videomodelcapabilityDescEnabled := videomodelcapabilityFields[6].Descriptor()
 	// videomodelcapability.DefaultEnabled holds the default value on creation for the enabled field.
 	videomodelcapability.DefaultEnabled = videomodelcapabilityDescEnabled.Default.(bool)
+	videomodelratecardMixin := schema.VideoModelRateCard{}.Mixin()
+	videomodelratecardMixinFields0 := videomodelratecardMixin[0].Fields()
+	_ = videomodelratecardMixinFields0
+	videomodelratecardFields := schema.VideoModelRateCard{}.Fields()
+	_ = videomodelratecardFields
+	// videomodelratecardDescCreatedAt is the schema descriptor for created_at field.
+	videomodelratecardDescCreatedAt := videomodelratecardMixinFields0[0].Descriptor()
+	// videomodelratecard.DefaultCreatedAt holds the default value on creation for the created_at field.
+	videomodelratecard.DefaultCreatedAt = videomodelratecardDescCreatedAt.Default.(func() time.Time)
+	// videomodelratecardDescUpdatedAt is the schema descriptor for updated_at field.
+	videomodelratecardDescUpdatedAt := videomodelratecardMixinFields0[1].Descriptor()
+	// videomodelratecard.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	videomodelratecard.DefaultUpdatedAt = videomodelratecardDescUpdatedAt.Default.(func() time.Time)
+	// videomodelratecard.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	videomodelratecard.UpdateDefaultUpdatedAt = videomodelratecardDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// videomodelratecardDescProviderCode is the schema descriptor for provider_code field.
+	videomodelratecardDescProviderCode := videomodelratecardFields[1].Descriptor()
+	// videomodelratecard.ProviderCodeValidator is a validator for the "provider_code" field. It is called by the builders before save.
+	videomodelratecard.ProviderCodeValidator = func() func(string) error {
+		validators := videomodelratecardDescProviderCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_code string) error {
+			for _, fn := range fns {
+				if err := fn(provider_code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videomodelratecardDescPricingSchema is the schema descriptor for pricing_schema field.
+	videomodelratecardDescPricingSchema := videomodelratecardFields[2].Descriptor()
+	// videomodelratecard.PricingSchemaValidator is a validator for the "pricing_schema" field. It is called by the builders before save.
+	videomodelratecard.PricingSchemaValidator = func() func(string) error {
+		validators := videomodelratecardDescPricingSchema.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(pricing_schema string) error {
+			for _, fn := range fns {
+				if err := fn(pricing_schema); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// videomodelratecardDescRateVersion is the schema descriptor for rate_version field.
+	videomodelratecardDescRateVersion := videomodelratecardFields[3].Descriptor()
+	// videomodelratecard.RateVersionValidator is a validator for the "rate_version" field. It is called by the builders before save.
+	videomodelratecard.RateVersionValidator = videomodelratecardDescRateVersion.Validators[0].(func(int) error)
+	// videomodelratecardDescCurrency is the schema descriptor for currency field.
+	videomodelratecardDescCurrency := videomodelratecardFields[4].Descriptor()
+	// videomodelratecard.DefaultCurrency holds the default value on creation for the currency field.
+	videomodelratecard.DefaultCurrency = videomodelratecardDescCurrency.Default.(string)
+	// videomodelratecard.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	videomodelratecard.CurrencyValidator = videomodelratecardDescCurrency.Validators[0].(func(string) error)
+	// videomodelratecardDescSourceReference is the schema descriptor for source_reference field.
+	videomodelratecardDescSourceReference := videomodelratecardFields[6].Descriptor()
+	// videomodelratecard.DefaultSourceReference holds the default value on creation for the source_reference field.
+	videomodelratecard.DefaultSourceReference = videomodelratecardDescSourceReference.Default.(string)
+	// videomodelratecard.SourceReferenceValidator is a validator for the "source_reference" field. It is called by the builders before save.
+	videomodelratecard.SourceReferenceValidator = videomodelratecardDescSourceReference.Validators[0].(func(string) error)
+	// videomodelratecardDescEnabled is the schema descriptor for enabled field.
+	videomodelratecardDescEnabled := videomodelratecardFields[8].Descriptor()
+	// videomodelratecard.DefaultEnabled holds the default value on creation for the enabled field.
+	videomodelratecard.DefaultEnabled = videomodelratecardDescEnabled.Default.(bool)
 	videopriceruleMixin := schema.VideoPriceRule{}.Mixin()
 	videopriceruleMixinFields0 := videopriceruleMixin[0].Fields()
 	_ = videopriceruleMixinFields0
@@ -5154,8 +5226,22 @@ func init() {
 	videorouteconfig.DefaultMaxOutputCount = videorouteconfigDescMaxOutputCount.Default.(int)
 	// videorouteconfig.MaxOutputCountValidator is a validator for the "max_output_count" field. It is called by the builders before save.
 	videorouteconfig.MaxOutputCountValidator = videorouteconfigDescMaxOutputCount.Validators[0].(func(int) error)
+	// videorouteconfigDescCandidateParameterMappings is the schema descriptor for candidate_parameter_mappings field.
+	videorouteconfigDescCandidateParameterMappings := videorouteconfigFields[5].Descriptor()
+	// videorouteconfig.DefaultCandidateParameterMappings holds the default value on creation for the candidate_parameter_mappings field.
+	videorouteconfig.DefaultCandidateParameterMappings = videorouteconfigDescCandidateParameterMappings.Default.(map[string]interface{})
+	// videorouteconfigDescMinimumTaskPoints is the schema descriptor for minimum_task_points field.
+	videorouteconfigDescMinimumTaskPoints := videorouteconfigFields[6].Descriptor()
+	// videorouteconfig.DefaultMinimumTaskPoints holds the default value on creation for the minimum_task_points field.
+	videorouteconfig.DefaultMinimumTaskPoints = videorouteconfigDescMinimumTaskPoints.Default.(string)
+	// videorouteconfigDescRoundingStepPoints is the schema descriptor for rounding_step_points field.
+	videorouteconfigDescRoundingStepPoints := videorouteconfigFields[7].Descriptor()
+	// videorouteconfig.DefaultRoundingStepPoints holds the default value on creation for the rounding_step_points field.
+	videorouteconfig.DefaultRoundingStepPoints = videorouteconfigDescRoundingStepPoints.Default.(int)
+	// videorouteconfig.RoundingStepPointsValidator is a validator for the "rounding_step_points" field. It is called by the builders before save.
+	videorouteconfig.RoundingStepPointsValidator = videorouteconfigDescRoundingStepPoints.Validators[0].(func(int) error)
 	// videorouteconfigDescConfigVersion is the schema descriptor for config_version field.
-	videorouteconfigDescConfigVersion := videorouteconfigFields[6].Descriptor()
+	videorouteconfigDescConfigVersion := videorouteconfigFields[8].Descriptor()
 	// videorouteconfig.ConfigVersionValidator is a validator for the "config_version" field. It is called by the builders before save.
 	videorouteconfig.ConfigVersionValidator = func() func(string) error {
 		validators := videorouteconfigDescConfigVersion.Validators
@@ -5173,7 +5259,7 @@ func init() {
 		}
 	}()
 	// videorouteconfigDescEnabled is the schema descriptor for enabled field.
-	videorouteconfigDescEnabled := videorouteconfigFields[7].Descriptor()
+	videorouteconfigDescEnabled := videorouteconfigFields[9].Descriptor()
 	// videorouteconfig.DefaultEnabled holds the default value on creation for the enabled field.
 	videorouteconfig.DefaultEnabled = videorouteconfigDescEnabled.Default.(bool)
 	videotaskMixin := schema.VideoTask{}.Mixin()

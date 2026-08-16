@@ -14,7 +14,8 @@ func TestMultimediaSchemasExposeRequiredContracts(t *testing.T) {
 		required []string
 	}{
 		{name: "video_model_capabilities", fields: VideoModelCapability{}.Fields(), required: []string{"account_model_id", "schema_version", "capability_version", "capability_json", "validation_status", "enabled"}},
-		{name: "video_route_configs", fields: VideoRouteConfig{}.Fields(), required: []string{"route_model_id", "task_types", "visible_options", "defaults", "max_output_count", "pricing_strategy_id", "config_version", "enabled"}},
+		{name: "video_model_rate_cards", fields: VideoModelRateCard{}.Fields(), required: []string{"account_model_id", "provider_code", "pricing_schema", "rate_version", "currency", "rate_config", "source_reference", "effective_at", "enabled"}},
+		{name: "video_route_configs", fields: VideoRouteConfig{}.Fields(), required: []string{"route_model_id", "task_types", "visible_options", "defaults", "max_output_count", "candidate_parameter_mappings", "minimum_task_points", "rounding_step_points", "config_version", "enabled"}},
 		{name: "video_pricing_strategies", fields: VideoPricingStrategy{}.Fields(), required: []string{"code", "gross_point_value_cny", "minimum_net_point_income_cny", "target_margin_rate", "provider_cost_buffer_rate", "exact_reserve_markup", "metered_reserve_markup", "strategy_version", "enabled"}},
 		{name: "video_price_rules", fields: VideoPriceRule{}.Fields(), required: []string{"pricing_strategy_id", "task_type", "resolution", "audio_mode", "rule_version", "output_second_points", "reserve_markup", "safety_points", "candidate_cost_upper_cny", "safety_snapshot", "enabled"}},
 		{name: "video_provider_cost_rules", fields: VideoProviderCostRule{}.Fields(), required: []string{"account_model_id", "billing_mode", "rule_version", "currency", "rates_json", "cost_reserve_markup", "validation_status", "effective_at", "enabled"}},
@@ -42,6 +43,16 @@ func TestMultimediaSchemasExposeRequiredContracts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestVideoRouteConfigNoLongerBindsLegacyPricingStrategy(t *testing.T) {
+	fields := schemaFieldDescriptors(VideoRouteConfig{}.Fields())
+	if _, exists := fields["pricing_strategy_id"]; exists {
+		t.Fatal("video_route_configs.pricing_strategy_id must be removed from the active schema")
+	}
+	if !hasIndexFields(VideoModelRateCard{}.Indexes(), []string{"account_model_id", "rate_version"}, true) {
+		t.Fatal("video model rate cards must have immutable versions per account model")
 	}
 }
 

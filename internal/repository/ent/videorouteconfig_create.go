@@ -100,9 +100,37 @@ func (_c *VideoRouteConfigCreate) SetNillableMaxOutputCount(v *int) *VideoRouteC
 	return _c
 }
 
-// SetPricingStrategyID sets the "pricing_strategy_id" field.
-func (_c *VideoRouteConfigCreate) SetPricingStrategyID(v int64) *VideoRouteConfigCreate {
-	_c.mutation.SetPricingStrategyID(v)
+// SetCandidateParameterMappings sets the "candidate_parameter_mappings" field.
+func (_c *VideoRouteConfigCreate) SetCandidateParameterMappings(v map[string]interface{}) *VideoRouteConfigCreate {
+	_c.mutation.SetCandidateParameterMappings(v)
+	return _c
+}
+
+// SetMinimumTaskPoints sets the "minimum_task_points" field.
+func (_c *VideoRouteConfigCreate) SetMinimumTaskPoints(v string) *VideoRouteConfigCreate {
+	_c.mutation.SetMinimumTaskPoints(v)
+	return _c
+}
+
+// SetNillableMinimumTaskPoints sets the "minimum_task_points" field if the given value is not nil.
+func (_c *VideoRouteConfigCreate) SetNillableMinimumTaskPoints(v *string) *VideoRouteConfigCreate {
+	if v != nil {
+		_c.SetMinimumTaskPoints(*v)
+	}
+	return _c
+}
+
+// SetRoundingStepPoints sets the "rounding_step_points" field.
+func (_c *VideoRouteConfigCreate) SetRoundingStepPoints(v int) *VideoRouteConfigCreate {
+	_c.mutation.SetRoundingStepPoints(v)
+	return _c
+}
+
+// SetNillableRoundingStepPoints sets the "rounding_step_points" field if the given value is not nil.
+func (_c *VideoRouteConfigCreate) SetNillableRoundingStepPoints(v *int) *VideoRouteConfigCreate {
+	if v != nil {
+		_c.SetRoundingStepPoints(*v)
+	}
 	return _c
 }
 
@@ -173,6 +201,18 @@ func (_c *VideoRouteConfigCreate) defaults() {
 		v := videorouteconfig.DefaultMaxOutputCount
 		_c.mutation.SetMaxOutputCount(v)
 	}
+	if _, ok := _c.mutation.CandidateParameterMappings(); !ok {
+		v := videorouteconfig.DefaultCandidateParameterMappings
+		_c.mutation.SetCandidateParameterMappings(v)
+	}
+	if _, ok := _c.mutation.MinimumTaskPoints(); !ok {
+		v := videorouteconfig.DefaultMinimumTaskPoints
+		_c.mutation.SetMinimumTaskPoints(v)
+	}
+	if _, ok := _c.mutation.RoundingStepPoints(); !ok {
+		v := videorouteconfig.DefaultRoundingStepPoints
+		_c.mutation.SetRoundingStepPoints(v)
+	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		v := videorouteconfig.DefaultEnabled
 		_c.mutation.SetEnabled(v)
@@ -207,8 +247,19 @@ func (_c *VideoRouteConfigCreate) check() error {
 			return &ValidationError{Name: "max_output_count", err: fmt.Errorf(`ent: validator failed for field "VideoRouteConfig.max_output_count": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.PricingStrategyID(); !ok {
-		return &ValidationError{Name: "pricing_strategy_id", err: errors.New(`ent: missing required field "VideoRouteConfig.pricing_strategy_id"`)}
+	if _, ok := _c.mutation.CandidateParameterMappings(); !ok {
+		return &ValidationError{Name: "candidate_parameter_mappings", err: errors.New(`ent: missing required field "VideoRouteConfig.candidate_parameter_mappings"`)}
+	}
+	if _, ok := _c.mutation.MinimumTaskPoints(); !ok {
+		return &ValidationError{Name: "minimum_task_points", err: errors.New(`ent: missing required field "VideoRouteConfig.minimum_task_points"`)}
+	}
+	if _, ok := _c.mutation.RoundingStepPoints(); !ok {
+		return &ValidationError{Name: "rounding_step_points", err: errors.New(`ent: missing required field "VideoRouteConfig.rounding_step_points"`)}
+	}
+	if v, ok := _c.mutation.RoundingStepPoints(); ok {
+		if err := videorouteconfig.RoundingStepPointsValidator(v); err != nil {
+			return &ValidationError{Name: "rounding_step_points", err: fmt.Errorf(`ent: validator failed for field "VideoRouteConfig.rounding_step_points": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.ConfigVersion(); !ok {
 		return &ValidationError{Name: "config_version", err: errors.New(`ent: missing required field "VideoRouteConfig.config_version"`)}
@@ -279,9 +330,17 @@ func (_c *VideoRouteConfigCreate) createSpec() (*VideoRouteConfig, *sqlgraph.Cre
 		_spec.SetField(videorouteconfig.FieldMaxOutputCount, field.TypeInt, value)
 		_node.MaxOutputCount = value
 	}
-	if value, ok := _c.mutation.PricingStrategyID(); ok {
-		_spec.SetField(videorouteconfig.FieldPricingStrategyID, field.TypeInt64, value)
-		_node.PricingStrategyID = value
+	if value, ok := _c.mutation.CandidateParameterMappings(); ok {
+		_spec.SetField(videorouteconfig.FieldCandidateParameterMappings, field.TypeJSON, value)
+		_node.CandidateParameterMappings = value
+	}
+	if value, ok := _c.mutation.MinimumTaskPoints(); ok {
+		_spec.SetField(videorouteconfig.FieldMinimumTaskPoints, field.TypeString, value)
+		_node.MinimumTaskPoints = value
+	}
+	if value, ok := _c.mutation.RoundingStepPoints(); ok {
+		_spec.SetField(videorouteconfig.FieldRoundingStepPoints, field.TypeInt, value)
+		_node.RoundingStepPoints = value
 	}
 	if value, ok := _c.mutation.ConfigVersion(); ok {
 		_spec.SetField(videorouteconfig.FieldConfigVersion, field.TypeString, value)

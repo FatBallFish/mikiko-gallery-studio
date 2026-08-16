@@ -64,6 +64,18 @@ type CostRuleWrite struct {
 	Enabled             bool           `json:"enabled"`
 }
 
+type RateCardWrite struct {
+	AccountModelID      int64          `json:"account_model_id"`
+	ProviderCode        string         `json:"provider_code"`
+	PricingSchema       string         `json:"pricing_schema"`
+	ExpectedRateVersion int            `json:"expected_rate_version"`
+	Currency            string         `json:"currency"`
+	RateConfig          map[string]any `json:"rate_config"`
+	SourceReference     string         `json:"source_reference"`
+	EffectiveAt         time.Time      `json:"effective_at"`
+	Enabled             bool           `json:"enabled"`
+}
+
 type StrategyWrite struct {
 	ID                          int64  `json:"id"`
 	ExpectedVersion             int    `json:"expected_version"`
@@ -122,16 +134,19 @@ type VisibleCombination struct {
 	DurationSeconds int    `json:"duration_seconds"`
 }
 type RouteConfigWrite struct {
-	RouteModelID        int64                `json:"route_model_id"`
-	ExpectedVersion     string               `json:"expected_version"`
-	ConfigVersion       string               `json:"config_version"`
-	PricingStrategyID   int64                `json:"pricing_strategy_id"`
-	TaskTypes           []string             `json:"task_types"`
-	VisibleOptions      map[string]any       `json:"visible_options"`
-	Defaults            map[string]any       `json:"defaults"`
-	VisibleCombinations []VisibleCombination `json:"visible_combinations"`
-	MaxOutputCount      int                  `json:"max_output_count"`
-	Enabled             bool                 `json:"enabled"`
+	RouteModelID               int64                `json:"route_model_id"`
+	ExpectedVersion            string               `json:"expected_version"`
+	ConfigVersion              string               `json:"config_version"`
+	PricingStrategyID          int64                `json:"pricing_strategy_id"`
+	CandidateParameterMappings map[string]any       `json:"candidate_parameter_mappings"`
+	MinimumTaskPoints          string               `json:"minimum_task_points"`
+	RoundingStepPoints         int                  `json:"rounding_step_points"`
+	TaskTypes                  []string             `json:"task_types"`
+	VisibleOptions             map[string]any       `json:"visible_options"`
+	Defaults                   map[string]any       `json:"defaults"`
+	VisibleCombinations        []VisibleCombination `json:"visible_combinations"`
+	MaxOutputCount             int                  `json:"max_output_count"`
+	Enabled                    bool                 `json:"enabled"`
 }
 
 func (s *Service) SaveCapability(ctx context.Context, input CapabilityWrite) (CapabilitySummary, error) {

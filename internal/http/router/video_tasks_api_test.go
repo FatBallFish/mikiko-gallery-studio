@@ -67,7 +67,7 @@ func TestVideoTasksAPICreatesReplaysListsGetsAndCancels(t *testing.T) {
 	_, _ = client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(accountModel.ID)).SetEnabled(true).Save(ctx)
 	strategy, _ := client.VideoPricingStrategy.Create().SetCode("video").SetName("Video").SetEnabled(true).Save(ctx)
 	_, _ = client.VideoPriceRule.Create().SetPricingStrategyID(int64(strategy.ID)).SetTaskType("image_to_video").SetResolution("2k").SetAudioMode("silent").SetEffectiveAt(now.Add(-time.Hour)).SetOutputSecondPoints("2.00000").SetMinimumTaskPoints("8.00000").SetReserveMarkup("1.00000").SetSafetyPoints("8.00000").SetSafetySnapshot(map[string]any{}).SetEnabled(true).Save(ctx)
-	_, _ = client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"image_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetPricingStrategyID(int64(strategy.ID)).SetConfigVersion("route-v1").SetEnabled(true).Save(ctx)
+	_, _ = client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"image_to_video"}).SetVisibleOptions(map[string]any{"legacy_pricing_strategy_id": int64(strategy.ID)}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetMinimumTaskPoints("8.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v1").SetEnabled(true).Save(ctx)
 
 	billingStore := entstore.NewBillingStore(client, 5)
 	if _, err := billingStore.Adjust(ctx, billingservice.AdjustStoreRequest{UserID: userID, ChangePoints: "100.00000", Reason: "seed"}); err != nil {
@@ -518,7 +518,7 @@ func newVideoTaskAPIFixture(t *testing.T) videoTaskAPIFixture {
 	if _, err := client.VideoPriceRule.Create().SetPricingStrategyID(int64(strategy.ID)).SetTaskType("image_to_video").SetResolution("2k").SetAudioMode("silent").SetEffectiveAt(now.Add(-time.Hour)).SetOutputSecondPoints("2.00000").SetMinimumTaskPoints("8.00000").SetReserveMarkup("1.00000").SetSafetyPoints("8.00000").SetSafetySnapshot(map[string]any{}).SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"image_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetPricingStrategyID(int64(strategy.ID)).SetConfigVersion("route-v1").SetEnabled(true).Save(ctx); err != nil {
+	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"image_to_video"}).SetVisibleOptions(map[string]any{"legacy_pricing_strategy_id": int64(strategy.ID)}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetMinimumTaskPoints("8.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v1").SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
 	billingStore := entstore.NewBillingStore(client, 5)

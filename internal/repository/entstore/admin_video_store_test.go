@@ -70,6 +70,56 @@ func TestAdminVideoConfigStoreKeepsImmutableVersionsAndRollsBackFailedInsert(t *
 	}
 }
 
+func TestAdminVideoStoreVersionsModelRateCardsAndClonesConfig(t *testing.T) {
+	client, store := openAdminVideoTestStore(t, "admin-video-rate-cards")
+	ctx := t.Context()
+	account, err := client.ModelAccount.Create().SetName("Seedance").SetAdapterType("seedance").SetAuthType("api_key").SetBaseURL("https://provider.invalid").SetStatus("enabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := client.ModelAccountModel.Create().SetAccountID(int64(account.ID)).SetModelCode("doubao-seedance-2-0-260128").SetEnabled(true).Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	config := map[string]any{"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}}}
+	first, err := store.SaveVideoModelRateCard(ctx, adminvideoservice.RateCardWrite{
+		AccountModelID: int64(model.ID), ProviderCode: "seedance", PricingSchema: "seedance_token_v1",
+		ExpectedRateVersion: 0, Currency: "CNY", RateConfig: config, EffectiveAt: now, Enabled: true,
+	})
+	if err != nil || first.RateVersion != 1 {
+		t.Fatalf("first=%#v err=%v", first, err)
+	}
+	config["resolutions"].(map[string]any)["720p"].(map[string]any)["without_input_video_million_tokens_cny"] = "999"
+	loaded, err := store.GetEffectiveVideoModelRateCard(ctx, int64(model.ID), now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotRate := loaded.RateConfig["resolutions"].(map[string]any)["720p"].(map[string]any)["without_input_video_million_tokens_cny"]
+	if gotRate != "46" {
+		t.Fatalf("stored config mutated through caller map: %#v", loaded.RateConfig)
+	}
+
+	second, err := store.SaveVideoModelRateCard(ctx, adminvideoservice.RateCardWrite{
+		AccountModelID: int64(model.ID), ProviderCode: "seedance", PricingSchema: "seedance_token_v1",
+		ExpectedRateVersion: 1, Currency: "CNY", RateConfig: map[string]any{"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "50"}}}, EffectiveAt: now.Add(time.Minute), Enabled: true,
+	})
+	if err != nil || second.RateVersion != 2 {
+		t.Fatalf("second=%#v err=%v", second, err)
+	}
+	if _, err := store.SaveVideoModelRateCard(ctx, adminvideoservice.RateCardWrite{AccountModelID: int64(model.ID), ExpectedRateVersion: 1}); err == nil {
+		t.Fatal("stale rate card version must fail")
+	}
+	rows, err := store.ListVideoModelRateCards(ctx, int64(model.ID))
+	if err != nil || len(rows) != 2 || rows[0].Enabled || !rows[1].Enabled {
+		t.Fatalf("rows=%#v err=%v", rows, err)
+	}
+	current, err := store.GetEffectiveVideoModelRateCard(ctx, int64(model.ID), now.Add(2*time.Minute))
+	if err != nil || current.RateVersion != 2 {
+		t.Fatalf("current=%#v err=%v", current, err)
+	}
+}
+
 func TestAdminVideoConfigStoreCapabilityAndRouteUseCASAndDoNotMutateInput(t *testing.T) {
 	client, store := openAdminVideoTestStore(t, "admin-video-config-cas")
 	ctx := t.Context()
@@ -172,7 +222,7 @@ func TestAdminVideoStoreProjectsConfigurationTaskDiagnosticsAndRecovery(t *testi
 	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(model.ID)).SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"text_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetPricingStrategyID(int64(strategy.ID)).SetConfigVersion("route-v6").SetEnabled(true).Save(ctx); err != nil {
+	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"text_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMinimumTaskPoints("9.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v6").SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
 

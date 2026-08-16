@@ -657,6 +657,18 @@ func (f VideoModelCapabilityFunc) Mutate(ctx context.Context, m ent.Mutation) (e
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoModelCapabilityMutation", m)
 }
 
+// The VideoModelRateCardFunc type is an adapter to allow the use of ordinary
+// function as VideoModelRateCard mutator.
+type VideoModelRateCardFunc func(context.Context, *ent.VideoModelRateCardMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f VideoModelRateCardFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.VideoModelRateCardMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.VideoModelRateCardMutation", m)
+}
+
 // The VideoPriceRuleFunc type is an adapter to allow the use of ordinary
 // function as VideoPriceRule mutator.
 type VideoPriceRuleFunc func(context.Context, *ent.VideoPriceRuleMutation) (ent.Value, error)

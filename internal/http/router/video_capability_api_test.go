@@ -72,7 +72,7 @@ func TestVideoCapabilityAndEstimateUseCompleteVerifiedCandidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{string(domainvideo.TaskTypeTextToVideo)}).
-		SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetPricingStrategyID(int64(strategy.ID)).SetConfigVersion("route-v1").SetEnabled(true).Save(ctx); err != nil {
+		SetVisibleOptions(map[string]any{"legacy_pricing_strategy_id": int64(strategy.ID)}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetMinimumTaskPoints("8.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v1").SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
 
