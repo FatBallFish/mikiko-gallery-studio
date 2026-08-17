@@ -3,6 +3,9 @@ import {
   attachCanvasResults,
   connectCanvasNodes,
   canvasGenerationEstimateSignature,
+  canvasImageDraftForTask,
+  canvasImageParameterErrors,
+  canvasImageTaskType,
   canvasImageSizeDraftPatch,
   prepareCanvasEstimate,
   resolveCanvasEstimate,
@@ -140,6 +143,18 @@ const estimateDocument: CanvasDocument = {
   nodes: resourceDocument.nodes.map((node) => node.id === 'resource-gen' ? { ...node, payload: { draft: { route_model_code: 'plus', output_image_count: 2 } } } : node),
 }
 const estimateSignature = canvasGenerationEstimateSignature(estimateDocument, 'resource-gen')
+if (canvasImageTaskType(estimateDocument, 'resource-gen') !== 'image_edit') throw new Error('connected references must select image_edit')
+if (canvasImageTaskType({ ...estimateDocument, edges: estimateDocument.edges.filter((edge) => edge.input_role !== 'reference') }, 'resource-gen') !== 'text_to_image') {
+  throw new Error('an image node without references must select text_to_image')
+}
+const emptyReferenceDocument: CanvasDocument = {
+  ...estimateDocument,
+  nodes: estimateDocument.nodes.map((node) => node.id === 'resource-a' ? { ...node, asset_id: undefined } : node),
+  edges: estimateDocument.edges.filter((edge) => edge.source !== 'resource-b'),
+}
+if (canvasImageTaskType(emptyReferenceDocument, 'resource-gen') !== 'text_to_image') {
+  throw new Error('an empty connected image frame must not select image_edit')
+}
 const movedEstimateSignature = canvasGenerationEstimateSignature({ ...estimateDocument, viewport: { x: 200, y: 80, zoom: 0.5 }, nodes: estimateDocument.nodes.map((node) => ({ ...node, position: { x: node.position.x + 100, y: node.position.y + 40 } })) }, 'resource-gen')
 if (estimateSignature !== movedEstimateSignature) throw new Error('canvas estimate signatures must ignore layout-only changes')
 const changedPromptSignature = canvasGenerationEstimateSignature({ ...estimateDocument, nodes: estimateDocument.nodes.map((node) => node.id === 'resource-prompt' ? { ...node, payload: { text: 'changed prompt' } } : node) }, 'resource-gen')
@@ -158,6 +173,44 @@ const ratioSize = canvasImageSizeDraftPatch('ratio', sizeOptions)
 if (ratioSize.base_resolution !== '1k' || ratioSize.aspect_ratio !== '16:9' || ratioSize.requested_size) throw new Error(`ratio size mode must only keep ratio fields: ${JSON.stringify(ratioSize)}`)
 const pixelSize = canvasImageSizeDraftPatch('pixel', sizeOptions)
 if (pixelSize.requested_size !== '1024x1024' || pixelSize.base_resolution || pixelSize.aspect_ratio) throw new Error(`pixel size mode must only keep requested_size: ${JSON.stringify(pixelSize)}`)
+
+const taskCapability = {
+  model_groups: [
+    {
+      id: 'text-only', code: 'text-only', name: 'Text only', task_types: ['text_to_image'] as const,
+      size_modes: ['auto'], aspect_ratios: [], quality: ['auto'], output_format: ['jpeg'],
+      max_output_image_count: 2, max_reference_image_count: 0, prices: [], supports_reference: false,
+    },
+    {
+      id: 'both', code: 'both', name: 'Both', task_types: ['text_to_image', 'image_edit'] as const,
+      size_modes: ['auto'], aspect_ratios: [], quality: ['auto'], output_format: ['jpeg'],
+      max_output_image_count: 4, max_reference_image_count: 2, prices: [], supports_reference: true,
+      capabilities_by_task_type: {
+        text_to_image: { size_modes: ['auto'], quality: ['auto'], output_format: ['jpeg'], max_output_image_count: 4, max_reference_image_count: 0 },
+        image_edit: { size_modes: ['pixel'], pixel_sizes: ['1536x1024'], quality: ['high'], output_format: ['png'], max_output_image_count: 2, max_reference_image_count: 2 },
+      },
+    },
+  ],
+} as const
+const switchedTaskDraft = canvasImageDraftForTask({
+  route_model_code: 'both', task_type: 'text_to_image', size_mode: 'auto', quality: 'auto', output_format: 'jpeg', output_image_count: 3,
+}, taskCapability, 'image_edit')
+if (switchedTaskDraft.route_model_code !== 'both' || switchedTaskDraft.task_type !== 'image_edit' || switchedTaskDraft.size_mode !== 'pixel'
+  || switchedTaskDraft.requested_size !== '1536x1024' || switchedTaskDraft.quality !== 'high' || switchedTaskDraft.output_format !== 'png'
+  || switchedTaskDraft.output_image_count !== 3) {
+  throw new Error(`task changes must normalize scoped image parameters: ${JSON.stringify(switchedTaskDraft)}`)
+}
+const switchedModelDraft = canvasImageDraftForTask({ route_model_code: 'text-only', output_image_count: 1 }, taskCapability, 'image_edit')
+if (switchedModelDraft.route_model_code !== 'both' || switchedModelDraft.task_type !== 'image_edit') {
+  throw new Error(`task changes must select a model that supports the derived task: ${JSON.stringify(switchedModelDraft)}`)
+}
+const unsupportedEditErrors = canvasImageParameterErrors({ route_model_code: 'text-only', size_mode: 'auto', quality: 'auto', output_format: 'jpeg', output_image_count: 1 }, { model_groups: [taskCapability.model_groups[0]] }, 'image_edit')
+if (!unsupportedEditErrors.includes('当前没有支持图片编辑的模型分组')) {
+  throw new Error(`unsupported derived tasks must expose an actionable error: ${JSON.stringify(unsupportedEditErrors)}`)
+}
+if (canvasImageParameterErrors(switchedTaskDraft, taskCapability, 'image_edit').length) {
+  throw new Error(`normalized task parameters must pass capability validation: ${JSON.stringify(canvasImageParameterErrors(switchedTaskDraft, taskCapability, 'image_edit'))}`)
+}
 
 const attached = attachCanvasResults(state, 'run-1', 'image-gen', [{ asset_id: 'asset-new', media_type: 'image' }])
 const attachedAgain = attachCanvasResults(attached, 'run-1', 'image-gen', [{ asset_id: 'asset-new', media_type: 'image' }])

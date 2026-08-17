@@ -14,8 +14,11 @@ export function CanvasAssetDrawer({ projectID, mediaType, onSelect, onClose }: {
     let alive = true
     setLoading(true)
     setError('')
-    void userApi.listMediaAssets({ project_id: projectID, status: 'ready', keyword: keyword.trim(), limit: 40 }).then((page) => {
-      if (alive) setItems(page.items.filter((asset) => mediaType ? asset.media_type === mediaType : ['image', 'video', 'audio'].includes(asset.media_type)))
+    void userApi.listMediaAssets({ project_id: projectID, keyword: keyword.trim(), limit: 40 }).then((page) => {
+      if (alive) setItems(page.items.filter((asset) => {
+        if (['uploading', 'deleted', 'deleting'].includes(asset.status)) return false
+        return mediaType ? asset.media_type === mediaType : ['image', 'video', 'audio'].includes(asset.media_type)
+      }))
     }).catch((caught) => { if (alive) setError(caught instanceof Error ? caught.message : '资产加载失败') }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [keyword, mediaType, projectID])

@@ -157,8 +157,8 @@ func TestS3MultipartLifecycleAndPartSigning(t *testing.T) {
 	if parsed.Query().Get("uploadId") != "provider-upload-1" || parsed.Query().Get("partNumber") != "2" || parsed.Query().Get("X-Amz-Signature") == "" {
 		t.Fatalf("invalid signed part target: %s", target.URL)
 	}
-	if target.Headers["x-amz-checksum-sha256"] == "" || !target.ExpiresAt.After(backend.now()) {
-		t.Fatalf("signed part checksum/expiry missing: %#v", target)
+	if len(target.Headers) != 0 || parsed.Query().Get("X-Amz-SignedHeaders") != "host" || !target.ExpiresAt.After(backend.now()) {
+		t.Fatalf("signed part must avoid optional checksum headers and include expiry: %#v", target)
 	}
 	completed, err := multipart.CompleteMultipart(t.Context(), upload, []CompletedPart{{PartNumber: 1, ETag: "one"}, {PartNumber: 2, ETag: "two"}})
 	if err != nil || completed.ETag != "object-etag" {
@@ -184,12 +184,11 @@ func TestS3MultipartProxyStreamsSignedPart(t *testing.T) {
 		if r.ContentLength != int64(len(content)) {
 			t.Fatalf("content length = %d", r.ContentLength)
 		}
-		_, checksumBase64, _ := normalizeSHA256Checksum(checksum)
-		if r.Header.Get("X-Amz-Checksum-Sha256") != checksumBase64 || r.Header.Get("X-Amz-Content-Sha256") != checksum {
+		if r.Header.Get("X-Amz-Checksum-Sha256") != "" || r.Header.Get("X-Amz-Content-Sha256") != checksum {
 			t.Fatalf("checksum headers = %#v", r.Header)
 		}
-		if authorization := r.Header.Get("Authorization"); !strings.Contains(authorization, "x-amz-checksum-sha256;x-amz-content-sha256;x-amz-date") {
-			t.Fatalf("checksum headers are not signed: %s", authorization)
+		if authorization := r.Header.Get("Authorization"); strings.Contains(authorization, "x-amz-checksum-sha256") || !strings.Contains(authorization, "x-amz-content-sha256;x-amz-date") {
+			t.Fatalf("proxy upload must sign the payload hash without the optional checksum extension: %s", authorization)
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil || !bytes.Equal(body, content) {

@@ -54,6 +54,100 @@ export function canvasImageSizeDraftPatch(sizeMode: string, options: { base_reso
   }
 }
 
+type CanvasImageTaskOptions = {
+  size_modes?: readonly string[]
+  base_resolution?: readonly string[]
+  aspect_ratios?: readonly string[]
+  pixel_sizes?: readonly string[]
+  quality?: readonly string[]
+  output_format?: readonly string[]
+}
+
+type CanvasImageModelCapability = CanvasImageTaskOptions & {
+  code: string
+  task_types: readonly string[]
+  capabilities_by_task_type?: Partial<Record<'text_to_image' | 'image_edit', CanvasImageTaskOptions>>
+}
+
+export function canvasImageDraftForTask(
+  draft: Record<string, unknown>,
+  capability: { model_groups: readonly CanvasImageModelCapability[] },
+  taskType: 'text_to_image' | 'image_edit',
+): Record<string, unknown> & { task_type: 'text_to_image' | 'image_edit' } {
+  const supportedModels = capability.model_groups.filter((model) => model.task_types.includes(taskType))
+  const currentCode = String(draft.route_model_code ?? draft.abstract_model ?? '').trim()
+  const model = supportedModels.find((item) => item.code === currentCode) ?? supportedModels[0]
+  if (!model) return { ...draft, task_type: taskType }
+
+  const scoped = model.capabilities_by_task_type?.[taskType]
+  const options = {
+    size_modes: scoped?.size_modes ?? model.size_modes ?? ['auto'],
+    base_resolution: scoped?.base_resolution ?? model.base_resolution ?? [],
+    aspect_ratios: scoped?.aspect_ratios ?? model.aspect_ratios ?? [],
+    pixel_sizes: scoped?.pixel_sizes ?? model.pixel_sizes ?? [],
+    quality: scoped?.quality ?? model.quality ?? [],
+    output_format: scoped?.output_format ?? model.output_format ?? [],
+  }
+  const currentSizeMode = String(draft.size_mode ?? '').trim()
+  const sizeMode = options.size_modes.includes(currentSizeMode)
+    ? currentSizeMode
+    : options.size_modes.includes('auto') ? 'auto' : options.size_modes[0] ?? ''
+  const sizePatch = canvasImageSizeDraftPatch(sizeMode, options)
+  if (sizeMode === 'ratio') {
+    if (options.base_resolution.includes(String(draft.base_resolution ?? ''))) sizePatch.base_resolution = String(draft.base_resolution)
+    if (options.aspect_ratios.includes(String(draft.aspect_ratio ?? ''))) sizePatch.aspect_ratio = String(draft.aspect_ratio)
+  }
+  if (sizeMode === 'pixel' && options.pixel_sizes.includes(String(draft.requested_size ?? ''))) {
+    sizePatch.requested_size = String(draft.requested_size)
+  }
+  const currentQuality = String(draft.quality ?? '')
+  const currentOutputFormat = String(draft.output_format ?? '')
+  return {
+    ...draft,
+    route_model_code: model.code,
+    task_type: taskType,
+    ...sizePatch,
+    quality: options.quality.includes(currentQuality) ? currentQuality : options.quality[0] ?? '',
+    output_format: options.output_format.includes(currentOutputFormat) ? currentOutputFormat : options.output_format[0] ?? '',
+  }
+}
+
+export function canvasImageParameterErrors(
+  draft: Record<string, unknown>,
+  capability: { model_groups: readonly CanvasImageModelCapability[] },
+  taskType: 'text_to_image' | 'image_edit',
+  maxOutputImageCount = 10,
+) {
+  const supportedModels = capability.model_groups.filter((model) => model.task_types.includes(taskType))
+  if (!supportedModels.length) return [`当前没有支持${taskType === 'image_edit' ? '图片编辑' : '图片生成'}的模型分组`]
+  const modelCode = String(draft.route_model_code ?? draft.abstract_model ?? '').trim()
+  const model = supportedModels.find((item) => item.code === modelCode)
+  if (!model) return modelCode ? ['模型分组当前不可用'] : ['请选择模型分组']
+
+  const scoped = model.capabilities_by_task_type?.[taskType]
+  const options = {
+    size_modes: scoped?.size_modes ?? model.size_modes ?? ['auto'],
+    base_resolution: scoped?.base_resolution ?? model.base_resolution ?? [],
+    aspect_ratios: scoped?.aspect_ratios ?? model.aspect_ratios ?? [],
+    pixel_sizes: scoped?.pixel_sizes ?? model.pixel_sizes ?? [],
+    quality: scoped?.quality ?? model.quality ?? [],
+    output_format: scoped?.output_format ?? model.output_format ?? [],
+  }
+  const errors: string[] = []
+  const sizeMode = String(draft.size_mode ?? '').trim()
+  if (!sizeMode || !options.size_modes.includes(sizeMode)) errors.push('请选择有效的尺寸模式')
+  if (sizeMode === 'ratio') {
+    if (!options.base_resolution.includes(String(draft.base_resolution ?? ''))) errors.push('请选择基础分辨率')
+    if (!options.aspect_ratios.includes(String(draft.aspect_ratio ?? ''))) errors.push('请选择图片比例')
+  }
+  if (sizeMode === 'pixel' && !options.pixel_sizes.includes(String(draft.requested_size ?? ''))) errors.push('请选择像素尺寸')
+  if (options.quality.length && !options.quality.includes(String(draft.quality ?? ''))) errors.push('请选择图片质量')
+  if (options.output_format.length && !options.output_format.includes(String(draft.output_format ?? ''))) errors.push('请选择输出格式')
+  const count = Number(draft.output_image_count ?? 1)
+  if (!Number.isInteger(count) || count < 1 || count > maxOutputImageCount) errors.push(`生成数量需为 1-${maxOutputImageCount} 的整数`)
+  return errors
+}
+
 export function updateCanvasNode(state: CanvasCommandState, nodeID: string, update: (node: CanvasNode) => CanvasNode) {
   const current = state.present.nodes.find((node) => node.id === nodeID)
   if (!current) return state
@@ -139,7 +233,7 @@ export function compatibleCanvasTargets(_document: CanvasDocument, sourceID: str
   return []
 }
 
-export type CanvasPromptResourceCandidate = { nodeID: string; assetID: string; name: string; duplicateName: boolean }
+export type CanvasPromptResourceCandidate = { nodeID: string; assetID: string; name: string; duplicateName: boolean; mimeType?: string; width?: number; height?: number }
 
 export type CanvasEstimateState = {
   status: 'waiting' | 'loading' | 'ready' | 'error'
@@ -163,6 +257,11 @@ export function canvasGenerationEstimateSignature(document: CanvasDocument, node
       source: source ? { id: source.id, type: source.type, assetID: source.asset_id ?? '', payload: source.payload ?? {} } : null,
     }))
   return JSON.stringify({ node: { id: node.id, type: node.type, payload: node.payload ?? {} }, inputs })
+}
+
+export function canvasImageTaskType(document: CanvasDocument, nodeID: string): 'text_to_image' | 'image_edit' {
+  const nodeByID = new Map(document.nodes.map((node) => [node.id, node]))
+  return document.edges.some((edge) => edge.target === nodeID && edge.input_role === 'reference' && Boolean(nodeByID.get(edge.source)?.asset_id)) ? 'image_edit' : 'text_to_image'
 }
 
 export function prepareCanvasEstimate(current: CanvasEstimateState | undefined, signature: string, eligible: boolean, requestID: number) {
@@ -201,7 +300,7 @@ export function canvasPromptResourceCandidates(document: CanvasDocument, promptN
       if (seen.has(node.id)) return []
       seen.add(node.id)
       const name = String(node.payload?.name ?? '').trim()
-      return name ? [{ nodeID: node.id, assetID: node.asset_id!, name }] : []
+      return name ? [{ nodeID: node.id, assetID: node.asset_id!, name, mimeType: String(node.payload?.mime_type ?? '') || undefined, width: Number(node.payload?.width) || undefined, height: Number(node.payload?.height) || undefined }] : []
     })
   const nameCounts = new Map<string, number>()
   candidates.forEach((candidate) => nameCounts.set(candidate.name, (nameCounts.get(candidate.name) ?? 0) + 1))

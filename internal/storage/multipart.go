@@ -173,8 +173,7 @@ func (b *S3Backend) SignMultipartPart(ctx context.Context, upload MultipartUploa
 	if _, err := expectedMultipartPartSize(upload, partNumber); err != nil {
 		return MultipartPartTarget{}, err
 	}
-	_, checksumBase64, err := normalizeSHA256Checksum(checksum)
-	if err != nil {
+	if _, _, err := normalizeSHA256Checksum(checksum); err != nil {
 		return MultipartPartTarget{}, err
 	}
 	key := b.normalizeKey(upload.ObjectKey)
@@ -205,15 +204,15 @@ func (b *S3Backend) SignMultipartPart(ctx context.Context, upload MultipartUploa
 		"X-Amz-Credential":    {b.accessKeyID + "/" + credentialScope},
 		"X-Amz-Date":          {amzDate},
 		"X-Amz-Expires":       {strconv.FormatInt(int64(expiry/time.Second), 10)},
-		"X-Amz-SignedHeaders": {"host;x-amz-checksum-sha256"},
+		"X-Amz-SignedHeaders": {"host"},
 	}
-	canonicalHeaders := "host:" + host + "\n" + "x-amz-checksum-sha256:" + checksumBase64 + "\n"
-	canonicalRequest := strings.Join([]string{http.MethodPut, canonicalURI, awsCanonicalQuery(query), canonicalHeaders, "host;x-amz-checksum-sha256", "UNSIGNED-PAYLOAD"}, "\n")
+	canonicalHeaders := "host:" + host + "\n"
+	canonicalRequest := strings.Join([]string{http.MethodPut, canonicalURI, awsCanonicalQuery(query), canonicalHeaders, "host", "UNSIGNED-PAYLOAD"}, "\n")
 	stringToSign := strings.Join([]string{"AWS4-HMAC-SHA256", amzDate, credentialScope, sha256Hex([]byte(canonicalRequest))}, "\n")
 	query.Set("X-Amz-Signature", hex.EncodeToString(hmacSHA256(b.signingKey(dateStamp), stringToSign)))
 	target.RawQuery = awsCanonicalQuery(query)
 	return MultipartPartTarget{
-		URL: target.String(), Headers: map[string]string{"x-amz-checksum-sha256": checksumBase64}, ExpiresAt: now.Add(expiry),
+		URL: target.String(), Headers: map[string]string{}, ExpiresAt: now.Add(expiry),
 	}, nil
 }
 
@@ -231,7 +230,7 @@ func (b *S3Backend) PutMultipartPart(ctx context.Context, upload MultipartUpload
 	if size != expectedSize {
 		return CompletedPart{}, ErrSizeMismatch
 	}
-	checksumHex, checksumBase64, err := normalizeSHA256Checksum(checksum)
+	checksumHex, _, err := normalizeSHA256Checksum(checksum)
 	if err != nil {
 		return CompletedPart{}, err
 	}
@@ -248,7 +247,7 @@ func (b *S3Backend) PutMultipartPart(ctx context.Context, upload MultipartUpload
 		io.TeeReader(contextReader{ctx: ctx, reader: reader}, hasher),
 		size,
 		checksumHex,
-		checksumBase64,
+		"",
 	)
 	if err != nil {
 		return CompletedPart{}, err
