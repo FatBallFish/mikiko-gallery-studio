@@ -40,7 +40,7 @@ func TestCanvasStorePersistsRevisionReferencesAndCAS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "image", Type: domaincanvas.NodeTypeImage, AssetID: assetID.String()}}}
+	document := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "image", Type: domaincanvas.NodeTypeImage, AssetID: assetID.String(), Size: domaincanvas.Size{Width: 220, Height: 160}}}}
 	saved, err := service.SaveDocument(t.Context(), canvasservice.SaveDocumentRequest{UserID: 12, CanvasID: created.ID, ExpectedRevision: 1, Document: document})
 	if err != nil {
 		t.Fatal(err)

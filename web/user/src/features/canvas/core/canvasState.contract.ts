@@ -11,6 +11,7 @@ import {
   removeCanvasNodes,
   moveCanvasNodes,
   redoCanvasCommand,
+  resizeCanvasNode,
   selectCanvasNodesInRect,
   undoCanvasCommand,
   updateCanvasNode,
@@ -37,6 +38,16 @@ state = undoCanvasCommand(state)
 if (state.present.nodes[0].position.x !== 0) throw new Error('undo must restore the previous document')
 state = redoCanvasCommand(state)
 if (state.present.nodes[0].position.x !== 80) throw new Error('redo must restore the moved document')
+
+const resizeStart = createCanvasState(document, 4)
+const resized = resizeCanvasNode(resizeStart, 'prompt', { width: 180, height: 100 })
+const resizedPrompt = resized.present.nodes.find((node) => node.id === 'prompt')
+if (resizedPrompt?.size.width !== 220 || resizedPrompt.size.height !== 140) throw new Error('prompt resize must clamp to its node-type minimum')
+if (resized.past.length !== 1) throw new Error('a completed resize gesture must create exactly one undo entry')
+if (undoCanvasCommand(resized).present.nodes.find((node) => node.id === 'prompt')?.size.width !== 240) throw new Error('node resize must be undoable')
+if (redoCanvasCommand(undoCanvasCommand(resized)).present.nodes.find((node) => node.id === 'prompt')?.size.width !== 220) throw new Error('node resize must be redoable')
+const resizedGeneration = resizeCanvasNode(resizeStart, 'image-gen', { width: 200, height: 120 }).present.nodes.find((node) => node.id === 'image-gen')
+if (resizedGeneration?.size.width !== 280 || resizedGeneration.size.height !== 200) throw new Error('generation resize must preserve its larger minimum')
 
 const selected = selectCanvasNodesInRect(state.present.nodes, { x: 0, y: 0, width: 620, height: 560 })
 if (!selected.includes('prompt') || !selected.includes('image-gen') || selected.includes('video')) throw new Error(`selection rectangle is incorrect: ${selected}`)

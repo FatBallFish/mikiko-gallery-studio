@@ -185,7 +185,7 @@
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface) 97%, transparent);
   box-shadow: 0 10px 28px color-mix(in srgb, #000 18%, transparent);
-  cursor: grab;
+  cursor: default;
   user-select: none;
 }
 
@@ -201,7 +201,25 @@
 .canvas-node[data-type="video"] { border-top-color: #d29851; }
 .canvas-node[data-type="audio"] { border-top-color: #c16f7d; }
 .canvas-node[data-type="image_generation"], .canvas-node[data-type="video_generation"] { border-top-color: var(--accent); }
-.canvas-node:active { cursor: grabbing; }
+.canvas-node > header[data-canvas-drag-handle] { cursor: grab; touch-action: none; }
+.canvas-node > header[data-canvas-drag-handle]:active { cursor: grabbing; }
+
+.canvas-node-resize {
+  position: absolute;
+  z-index: 6;
+  right: 2px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  border-radius: 0 0 4px;
+  background: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+}
 
 .canvas-port {
   position: absolute;

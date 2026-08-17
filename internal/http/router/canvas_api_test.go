@@ -41,7 +41,7 @@ func TestCanvasAPICRUDRevisionConflictAndOwnerIsolation(t *testing.T) {
 		t.Fatalf("foreign=%d %s", foreign.Code, foreign.Body.String())
 	}
 
-	doc := `{"expected_revision":1,"document":{"schema_version":1,"viewport":{"x":0,"y":0,"zoom":1},"nodes":[{"id":"note","type":"note","position":{"x":0,"y":0},"size":{"width":100,"height":100}}],"edges":[]}}`
+	doc := `{"expected_revision":1,"document":{"schema_version":1,"viewport":{"x":0,"y":0,"zoom":1},"nodes":[{"id":"note","type":"note","position":{"x":0,"y":0},"size":{"width":220,"height":140}}],"edges":[]}}`
 	saved := authenticatedProjectRequest(t, handler, owner.AccessToken, http.MethodPut, "/api/agent/canvas/v1/canvases/"+payload.Data.ID+"/document", doc, nil)
 	if saved.Code != http.StatusOK || !bytes.Contains(saved.Body.Bytes(), []byte(`"revision":2`)) {
 		t.Fatalf("save=%d %s", saved.Code, saved.Body.String())

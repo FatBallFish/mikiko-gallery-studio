@@ -16,10 +16,12 @@ for (const required of [
   'active_prompt_node_id', '提示词来源', '资源绑定', 'buildCanvasPromptBindings',
   '查看详情', '继续生图', '生成视频', '复用参数', 'canvas-media-facts', 'MediaPreviewDialog',
   'pointerType === \'touch\'', 'activePointersRef', 'pinchRef', 'longPressRef', 'visualViewport', 'canvas-keyboard-open',
+  'data-canvas-drag-handle', 'data-canvas-interactive', 'data-canvas-resize-handle', 'onResizeStart', 'resizeNode',
 ]) {
   if (!source.includes(required)) throw new Error(`canvas editor must include ${required}`)
 }
 if (!source.includes('setPointerCapture') || !source.includes('releasePointerCapture')) throw new Error('port dragging must retain pointer ownership until release')
+if (!source.includes("closest('[data-canvas-interactive]')")) throw new Error('interactive node controls must never initiate node dragging')
 if (!source.includes('parsePromptTemplate(template)')) throw new Error('canvas resource bindings must use the shared parser so escaped placeholders stay literal')
 if (!source.includes("app.notify('error', '当前生成关系不能形成循环')")) throw new Error('cycle rejection must use the product copy from the PRD')
 if (!source.includes('<svg') || !source.includes('<path')) throw new Error('canvas edges must render in an SVG layer')

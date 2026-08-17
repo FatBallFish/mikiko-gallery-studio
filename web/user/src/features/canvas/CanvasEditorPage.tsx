@@ -17,7 +17,7 @@ import { mediaCreationActions } from '../media/mediaExperience'
 import { promptVariableNames } from '../../pages/promptTemplateEditorModel'
 import { parsePromptTemplate } from '../../pages/promptTemplateParser'
 import { computeCanvasBounds, fitCanvasViewport, minimapGeometry, visibleCanvasNodeIDs } from './core/canvasLayout'
-import { compatibleCanvasTargets, inspectCanvasConnection, selectCanvasNodesInRect } from './core/canvasState'
+import { canvasNodeMinimumSize, compatibleCanvasTargets, inspectCanvasConnection, selectCanvasNodesInRect } from './core/canvasState'
 import type { CanvasDocument, CanvasEdge, CanvasNode, CanvasNodeType, CanvasViewport } from './core/types'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
 import { CanvasNodeSearch } from './CanvasNodeSearch'
@@ -28,6 +28,7 @@ import './canvas.css'
 
 type Props = { canvasID: string; onBack: () => void }
 type DragState = { startX: number; startY: number; selectedIDs: string[]; delta: { x: number; y: number } }
+type ResizeState = { pointerID: number; nodeID: string; startX: number; startY: number; startSize: { width: number; height: number }; size: { width: number; height: number } }
 type SelectionState = { start: { x: number; y: number }; current: { x: number; y: number } }
 type PanState = { startX: number; startY: number; viewport: CanvasViewport }
 type PinchState = { distance: number; center: { x: number; y: number }; viewport: CanvasViewport }
@@ -73,6 +74,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 })
   const [drag, setDrag] = useState<DragState | null>(null)
+  const [resize, setResize] = useState<ResizeState | null>(null)
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const [pan, setPan] = useState<PanState | null>(null)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
@@ -238,7 +240,8 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   const documentState = state.command.present
   const documentSignature = JSON.stringify(documentState)
   const unplacedRuns = runs.filter((run) => run.status === 'unplaced')
-  const transientNodes = drag ? documentState.nodes.map((node) => drag.selectedIDs.includes(node.id) ? { ...node, position: { x: node.position.x + drag.delta.x, y: node.position.y + drag.delta.y } } : node) : documentState.nodes
+  const movedNodes = drag ? documentState.nodes.map((node) => drag.selectedIDs.includes(node.id) ? { ...node, position: { x: node.position.x + drag.delta.x, y: node.position.y + drag.delta.y } } : node) : documentState.nodes
+  const transientNodes = resize ? movedNodes.map((node) => node.id === resize.nodeID ? { ...node, size: resize.size } : node) : movedNodes
   const nodeByID = new Map(transientNodes.map((node) => [node.id, node]))
   const selectedSet = new Set(state.selectedIDs)
   const selectedEdgeSet = new Set(state.selectedEdgeIDs)
@@ -532,14 +535,34 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
             event.stopPropagation()
             if (connectionDraft) finishConnection(connectionDraft, node.id)
           }} onSelect={(event) => {
-          if ((event.target as Element).closest('[data-canvas-no-drag]')) return
+          const target = event.target as Element
+          const interactive = target.closest('[data-canvas-interactive]')
+          const dragHandle = target.closest('[data-canvas-drag-handle]')
+          if (interactive && !selectedSet.has(node.id)) store.getState().select([node.id])
+          if (interactive || !dragHandle) return
           if (state.mode === 'connect') { connectTo(node); return }
           const selected = selectedSet.has(node.id) ? state.selectedIDs : event.shiftKey ? [...state.selectedIDs, node.id] : [node.id]
           store.getState().select(selected)
           if (readOnly) return
           setDrag({ startX: event.clientX, startY: event.clientY, selectedIDs: selected, delta: { x: 0, y: 0 } })
           event.currentTarget.setPointerCapture(event.pointerId)
-        }} onDrag={(event) => { if (drag) setDrag({ ...drag, delta: { x: (event.clientX - drag.startX) / documentState.viewport.zoom, y: (event.clientY - drag.startY) / documentState.viewport.zoom } }) }} onDragEnd={() => { if (drag) store.getState().moveSelected(drag.delta); setDrag(null) }} onUpdate={(payload) => store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, ...payload } }))} onEstimate={() => void estimateNode(node)} onGenerate={() => void generateNode(node)} onAttach={() => { const run = runs.find((item) => item.node_id === node.id && item.status === 'succeeded'); if (run) void attachRun(run) }} onCancel={() => { const run = runs.find((item) => item.node_id === node.id && activeRunStatuses.has(item.status)); if (run) void userApi.cancelCanvasRun(canvas.id, run.id).then((next) => setRuns((items) => [next, ...items.filter((item) => item.id !== next.id)])) }} onMediaDetail={() => { if (node.asset_id) void userApi.getMediaAsset(node.asset_id).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught))) }} onContinueImage={() => addGenerationFromMedia(node, 'image_generation')} onContinueVideo={() => addGenerationFromMedia(node, 'video_generation')} onReuseVideo={() => { const taskID = String(node.payload?.source_task_id ?? '').trim(); if (taskID) window.location.hash = userHashForRoute('genpic', { media: 'video', taskId: taskID }) }} />
+        }} onDrag={(event) => { if (drag) setDrag({ ...drag, delta: { x: (event.clientX - drag.startX) / documentState.viewport.zoom, y: (event.clientY - drag.startY) / documentState.viewport.zoom } }) }} onDragEnd={() => { if (drag) store.getState().moveSelected(drag.delta); setDrag(null) }} onResizeStart={(event) => {
+          event.stopPropagation()
+          store.getState().select([node.id])
+          setResize({ pointerID: event.pointerId, nodeID: node.id, startX: event.clientX, startY: event.clientY, startSize: node.size, size: node.size })
+          event.currentTarget.setPointerCapture(event.pointerId)
+        }} onResize={(event) => {
+          if (!resize || resize.nodeID !== node.id || resize.pointerID !== event.pointerId) return
+          event.stopPropagation()
+          const minimum = canvasNodeMinimumSize(node.type)
+          setResize({ ...resize, size: { width: Math.max(minimum.width, resize.startSize.width + (event.clientX - resize.startX) / documentState.viewport.zoom), height: Math.max(minimum.height, resize.startSize.height + (event.clientY - resize.startY) / documentState.viewport.zoom) } })
+        }} onResizeEnd={(event) => {
+          if (!resize || resize.nodeID !== node.id || resize.pointerID !== event.pointerId) return
+          event.stopPropagation()
+          store.getState().resizeNode(node.id, resize.size)
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+          setResize(null)
+        }} onUpdate={(payload) => store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, ...payload } }))} onEstimate={() => void estimateNode(node)} onGenerate={() => void generateNode(node)} onAttach={() => { const run = runs.find((item) => item.node_id === node.id && item.status === 'succeeded'); if (run) void attachRun(run) }} onCancel={() => { const run = runs.find((item) => item.node_id === node.id && activeRunStatuses.has(item.status)); if (run) void userApi.cancelCanvasRun(canvas.id, run.id).then((next) => setRuns((items) => [next, ...items.filter((item) => item.id !== next.id)])) }} onMediaDetail={() => { if (node.asset_id) void userApi.getMediaAsset(node.asset_id).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught))) }} onContinueImage={() => addGenerationFromMedia(node, 'image_generation')} onContinueVideo={() => addGenerationFromMedia(node, 'video_generation')} onReuseVideo={() => { const taskID = String(node.payload?.source_task_id ?? '').trim(); if (taskID) window.location.hash = userHashForRoute('genpic', { media: 'video', taskId: taskID }) }} />
         })}
         {selection ? <div className="canvas-selection-box" style={rectStyle(normalizedRect(selection.start, selection.current))} /> : null}
         {nodeMenu ? <div className="canvas-node-menu" data-canvas-no-zoom style={{ left: nodeMenu.point.x, top: nodeMenu.point.y }} role="menu" aria-label={nodeMenu.sourceID ? '添加兼容节点' : '添加节点'}>
@@ -577,10 +600,11 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   </main>
 }
 
-function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, run, estimate, busy, imageCapability, videoCapability, balance, inputSummary, onSelect, onDrag, onDragEnd, onStartConnection, onFinishConnection, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onMediaDetail, onContinueImage, onContinueVideo, onReuseVideo }: {
+function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, run, estimate, busy, imageCapability, videoCapability, balance, inputSummary, onSelect, onDrag, onDragEnd, onResizeStart, onResize, onResizeEnd, onStartConnection, onFinishConnection, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onMediaDetail, onContinueImage, onContinueVideo, onReuseVideo }: {
   node: CanvasNode; selected: boolean; readOnly: boolean; connecting: boolean; connectValid: boolean; connectInvalid: boolean; run?: CanvasRun; estimate?: NodeEstimate; busy: boolean
   imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary
   onSelect: (event: React.PointerEvent<HTMLElement>) => void; onDrag: (event: React.PointerEvent<HTMLElement>) => void; onDragEnd: () => void
+  onResizeStart: (event: React.PointerEvent<HTMLButtonElement>) => void; onResize: (event: React.PointerEvent<HTMLButtonElement>) => void; onResizeEnd: (event: React.PointerEvent<HTMLButtonElement>) => void
   onStartConnection: (event: React.PointerEvent<HTMLButtonElement>) => void; onFinishConnection: (event: React.PointerEvent<HTMLButtonElement>) => void
   onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void
   onMediaDetail: () => void; onContinueImage: () => void; onContinueVideo: () => void; onReuseVideo: () => void
@@ -588,15 +612,16 @@ function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, co
   const editable = node.type === 'prompt' || node.type === 'note'
   const generation = node.type === 'image_generation' || node.type === 'video_generation'
   return <article className="canvas-node" data-canvas-node data-node-id={node.id} data-type={node.type} data-selected={selected} data-connecting={connecting} data-connect-valid={connectValid || undefined} data-connect-invalid={connectInvalid || undefined} style={{ left: node.position.x, top: node.position.y, width: node.size.width, height: node.size.height }} onPointerDown={onSelect} onPointerMove={onDrag} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
-    {!readOnly ? <button type="button" className="canvas-port canvas-port-target" data-canvas-port="target" title="连接到此节点" aria-label={`连接到${nodeLabels[node.type]}`} onPointerUp={onFinishConnection} /> : null}
-    <header><span>{nodeTypeIcon(node.type)}</span><strong>{String(node.payload?.title ?? nodeLabels[node.type])}</strong>{run ? <i data-status={run.status}>{run.status}</i> : null}</header>
-    <div className="canvas-node-body" data-canvas-no-zoom={editable || generation ? '' : undefined}>
+    {!readOnly ? <button type="button" className="canvas-port canvas-port-target" data-canvas-interactive data-canvas-port="target" title="连接到此节点" aria-label={`连接到${nodeLabels[node.type]}`} onPointerUp={onFinishConnection} /> : null}
+    <header data-canvas-drag-handle><span>{nodeTypeIcon(node.type)}</span><strong>{String(node.payload?.title ?? nodeLabels[node.type])}</strong>{run ? <i data-status={run.status}>{run.status}</i> : null}</header>
+    <div className="canvas-node-body" data-canvas-interactive data-canvas-no-zoom={editable || generation ? '' : undefined}>
       {node.type === 'prompt' ? <PromptNodeBody node={node} readOnly={readOnly} busy={busy} onUpdate={onUpdate} /> : null}
       {node.type === 'note' ? <textarea readOnly={readOnly} defaultValue={String(node.payload?.text ?? '')} placeholder="记录创作想法" onBlur={(event) => onUpdate({ text: event.target.value })} /> : null}
       {node.type === 'image' || node.type === 'video' || node.type === 'audio' ? <CanvasMediaNode node={node} onDetail={onMediaDetail} onContinueImage={onContinueImage} onContinueVideo={onContinueVideo} onReuseVideo={onReuseVideo} /> : null}
       {generation ? <GenerationNodeBody node={node} run={run} estimate={estimate} busy={busy} readOnly={readOnly} imageCapability={imageCapability} videoCapability={videoCapability} balance={balance} inputSummary={inputSummary} onUpdate={onUpdate} onEstimate={onEstimate} onGenerate={onGenerate} onAttach={onAttach} onCancel={onCancel} /> : null}
     </div>
-    {!readOnly ? <button type="button" className="canvas-port canvas-port-source" data-canvas-port="source" title="从此节点连接" aria-label={`从${nodeLabels[node.type]}连接`} onPointerDown={onStartConnection} /> : null}
+    {!readOnly ? <button type="button" className="canvas-port canvas-port-source" data-canvas-interactive data-canvas-port="source" title="从此节点连接" aria-label={`从${nodeLabels[node.type]}连接`} onPointerDown={onStartConnection} /> : null}
+    {!readOnly && selected ? <button type="button" className="canvas-node-resize" data-canvas-interactive data-canvas-resize-handle title="调整节点大小" aria-label={`调整${nodeLabels[node.type]}大小`} onPointerDown={onResizeStart} onPointerMove={onResize} onPointerUp={onResizeEnd} onPointerCancel={onResizeEnd} /> : null}
   </article>
 }
 

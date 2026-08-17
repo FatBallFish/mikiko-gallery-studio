@@ -23,6 +23,28 @@ export function moveCanvasNodes(state: CanvasCommandState, nodeIDs: string[], de
   })
 }
 
+export function resizeCanvasNode(state: CanvasCommandState, nodeID: string, size: { width: number; height: number }) {
+  const current = state.present.nodes.find((node) => node.id === nodeID)
+  if (!current) return state
+  const minimum = canvasNodeMinimumSize(current.type)
+  const nextSize = {
+    width: Math.max(minimum.width, Number.isFinite(size.width) ? size.width : current.size.width),
+    height: Math.max(minimum.height, Number.isFinite(size.height) ? size.height : current.size.height),
+  }
+  if (nextSize.width === current.size.width && nextSize.height === current.size.height) return state
+  return commit(state, {
+    ...state.present,
+    nodes: state.present.nodes.map((node) => node.id === nodeID ? { ...node, size: nextSize } : node),
+  })
+}
+
+export function canvasNodeMinimumSize(nodeType: CanvasNodeType) {
+  if (nodeType === 'image' || nodeType === 'video') return { width: 220, height: 160 }
+  if (nodeType === 'audio') return { width: 240, height: 120 }
+  if (nodeType === 'image_generation' || nodeType === 'video_generation') return { width: 280, height: 200 }
+  return { width: 220, height: 140 }
+}
+
 export function updateCanvasNode(state: CanvasCommandState, nodeID: string, update: (node: CanvasNode) => CanvasNode) {
   const current = state.present.nodes.find((node) => node.id === nodeID)
   if (!current) return state

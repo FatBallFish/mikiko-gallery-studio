@@ -32,7 +32,7 @@ func TestCanvasCRUDRevisionAndOwnerIsolation(t *testing.T) {
 		t.Fatalf("foreign ListRuns() error = %v, want not found", err)
 	}
 
-	saved, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 7, CanvasID: created.ID, ExpectedRevision: 1, Document: domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "asset", Type: domaincanvas.NodeTypeImage, AssetID: "  " + uuid.NewString() + "  "}}}})
+	saved, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 7, CanvasID: created.ID, ExpectedRevision: 1, Document: domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "asset", Type: domaincanvas.NodeTypeImage, AssetID: "  " + uuid.NewString() + "  ", Size: domaincanvas.Size{Width: 220, Height: 160}}}}})
 	if err != nil {
 		t.Fatalf("SaveDocument() error = %v", err)
 	}
@@ -153,11 +153,11 @@ func mustJSON(t *testing.T, value any) []byte {
 func TestCanvasDocumentAllowsURLInPromptButRejectsPersistedURLField(t *testing.T) {
 	service := NewService(NewMemoryStore(), nil, nil)
 	projectID := uuid.New()
-	allowed := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "prompt", Type: domaincanvas.NodeTypePrompt, Payload: []byte(`{"text":"describe https://example.com"}`)}}}
+	allowed := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "prompt", Type: domaincanvas.NodeTypePrompt, Size: domaincanvas.Size{Width: 220, Height: 140}, Payload: []byte(`{"text":"describe https://example.com"}`)}}}
 	if _, err := service.Create(t.Context(), CreateRequest{UserID: 3, ProjectID: projectID, Name: "Allowed", Document: &allowed}); err != nil {
 		t.Fatalf("prompt URL rejected: %v", err)
 	}
-	forbidden := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "note", Type: domaincanvas.NodeTypeNote, Payload: []byte(`{"preview_url":"https://example.com/media"}`)}}}
+	forbidden := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "note", Type: domaincanvas.NodeTypeNote, Size: domaincanvas.Size{Width: 220, Height: 140}, Payload: []byte(`{"preview_url":"https://example.com/media"}`)}}}
 	if _, err := service.Create(t.Context(), CreateRequest{UserID: 3, ProjectID: projectID, Name: "Forbidden", Document: &forbidden}); err == nil {
 		t.Fatal("persisted preview_url was accepted")
 	}
