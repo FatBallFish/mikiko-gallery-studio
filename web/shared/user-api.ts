@@ -645,7 +645,7 @@ export const userApi = {
   signMediaUploadPart: (upload_id: string, part_number: number, checksum: string) => sharedApiClient.request<MediaPartTarget>(API_PATHS.agent.mediaUploadPartSign, {
     method: 'POST', pathParams: { upload_id, part_number }, body: { checksum },
   }),
-  uploadMediaLocalPart: async (upload_id: string, part_number: number, chunk: Blob, checksum: string, accessToken?: string | null, signal?: AbortSignal) => {
+  uploadMediaProxyPart: async (upload_id: string, part_number: number, chunk: Blob, checksum: string, accessToken?: string | null, signal?: AbortSignal) => {
     const path = fillPath(API_PATHS.agent.mediaUploadPart, { upload_id, part_number })
     const response = await fetch(`${getDefaultBaseUrl()}${path}`, {
       method: 'PUT', credentials: 'include', body: chunk, signal,

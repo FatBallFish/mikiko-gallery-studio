@@ -17,6 +17,7 @@ import {
   restoreUploadSnapshots,
   retry,
   serializeUploadSnapshots,
+  shouldFallbackToProxy,
   type UploadSnapshot,
 } from './uploadManager'
 
@@ -30,7 +31,7 @@ async function sha256Hex(blob: Blob) {
 
 function s3CompletedPart(partNumber: number, chunk: Blob, checksum: string, response: Response): MediaCompletedPart {
   const etag = response.headers.get('etag')?.replace(/^"|"$/g, '')
-  if (!etag) throw new Error('对象存储未返回 ETag，请检查 CORS ExposeHeaders 配置')
+  if (!etag) throw Object.assign(new Error('对象存储 ETag 不可读'), { code: 'DIRECT_ETAG_UNAVAILABLE' })
   return { part_number: partNumber, etag, checksum, size_bytes: chunk.size }
 }
 
@@ -97,6 +98,7 @@ export function UploadTray() {
       }
       snapshot = reconcileUploadSession(snapshot, session)
       update(snapshot.localID, () => ({ ...snapshot, status: 'uploading', error: undefined }))
+      const transport = { current: snapshot.transport }
       const uploaded = new Map(snapshot.completedParts.map((part) => [part.part_number, part]))
       const completed = new Set(completedPartNumbers(snapshot))
       const missing = Array.from({ length: session.part_count }, (_, index) => index + 1).filter((part) => !completed.has(part))
@@ -106,13 +108,28 @@ export function UploadTray() {
         const chunk = file.slice(start, Math.min(file.size, start + session.part_size))
         const checksum = await sha256Hex(chunk)
         const part = await retry(async () => {
-          if (session.storage_driver === 'local') {
-            return userApi.uploadMediaLocalPart(session.id, partNumber, chunk, checksum, app.session?.token, controller.signal)
+          if (transport.current === 'proxy') {
+            try {
+              return await userApi.uploadMediaProxyPart(session.id, partNumber, chunk, checksum, app.session?.token, controller.signal)
+            } catch (caught) {
+              throw uploadPartError(partNumber, caught)
+            }
           }
           const target = await userApi.signMediaUploadPart(session.id, partNumber, checksum)
-          const response = await fetch(target.url, { method: 'PUT', body: chunk, headers: target.headers, signal: controller.signal })
-          if (!response.ok) throw Object.assign(new Error(`分片 ${partNumber} 上传失败`), { status: response.status })
-          return s3CompletedPart(partNumber, chunk, checksum, response)
+          try {
+            const response = await fetch(target.url, { method: 'PUT', body: chunk, headers: target.headers, signal: controller.signal })
+            if (!response.ok) throw Object.assign(new Error(`分片 ${partNumber}：对象存储返回 ${response.status}`), { status: response.status })
+            return s3CompletedPart(partNumber, chunk, checksum, response)
+          } catch (caught) {
+            if (!shouldFallbackToProxy(caught)) throw caught
+            transport.current = 'proxy'
+            update(snapshot.localID, (item) => ({ ...item, transport: 'proxy', error: undefined }))
+            try {
+              return await userApi.uploadMediaProxyPart(session.id, partNumber, chunk, checksum, app.session?.token, controller.signal)
+            } catch (proxyError) {
+              throw uploadPartError(partNumber, proxyError)
+            }
+          }
         })
         uploaded.set(partNumber, part)
         const completedParts = Array.from(uploaded.values()).sort((a, b) => a.part_number - b.part_number)
@@ -203,8 +220,14 @@ export function UploadTray() {
 
 function uploadStatusLabel(item: UploadSnapshot) {
   const labels: Record<UploadSnapshot['status'], string> = {
-    queued: '等待上传', initializing: '正在创建会话', uploading: `${Math.round(item.progress * 100)}%`, paused: '已暂停',
+    queued: '等待上传', initializing: '正在创建会话', uploading: `${item.transport === 'proxy' ? '兼容上传 · ' : ''}${Math.round(item.progress * 100)}%`, paused: '已暂停',
     needs_file: '需要重新选择文件', completing: '正在完成', completed: '已完成', failed: '上传失败', cancelled: '已取消',
   }
   return labels[item.status]
+}
+
+function uploadPartError(partNumber: number, error: unknown) {
+  if (error instanceof DOMException && error.name === 'AbortError') return error
+  const message = error instanceof Error ? error.message : '上传失败'
+  return new Error(`分片 ${partNumber}：${message}`)
 }

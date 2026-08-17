@@ -147,7 +147,7 @@ func (a *API) handleMediaUploadPart(w http.ResponseWriter, r *http.Request, user
 		httpx.WriteError(w, r, errs.BadRequest("invalid upload part size"))
 		return
 	}
-	part, err := a.mediaAssets.UploadLocalPart(r.Context(), userID, sessionID, partNumber, r.Body, r.ContentLength, r.Header.Get("X-Content-SHA256"))
+	part, err := a.mediaAssets.UploadPart(r.Context(), userID, sessionID, partNumber, r.Body, r.ContentLength, r.Header.Get("X-Content-SHA256"))
 	if err != nil {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return

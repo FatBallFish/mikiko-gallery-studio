@@ -217,8 +217,66 @@ func (b *S3Backend) SignMultipartPart(ctx context.Context, upload MultipartUploa
 	}, nil
 }
 
-func (*S3Backend) PutMultipartPart(context.Context, MultipartUpload, int, io.Reader, int64, string) (CompletedPart, error) {
-	return CompletedPart{}, ErrDirectUploadRequired
+func (b *S3Backend) PutMultipartPart(ctx context.Context, upload MultipartUpload, partNumber int, reader io.Reader, size int64, checksum string) (CompletedPart, error) {
+	if err := contextError(ctx); err != nil {
+		return CompletedPart{}, err
+	}
+	if reader == nil {
+		return CompletedPart{}, ErrSizeMismatch
+	}
+	expectedSize, err := expectedMultipartPartSize(upload, partNumber)
+	if err != nil {
+		return CompletedPart{}, err
+	}
+	if size != expectedSize {
+		return CompletedPart{}, ErrSizeMismatch
+	}
+	checksumHex, checksumBase64, err := normalizeSHA256Checksum(checksum)
+	if err != nil {
+		return CompletedPart{}, err
+	}
+	if strings.TrimSpace(upload.UploadID) == "" {
+		return CompletedPart{}, errors.New("invalid s3 multipart upload")
+	}
+	hasher := sha256.New()
+	request, err := b.newSignedMultipartReaderRequest(
+		ctx,
+		http.MethodPut,
+		upload.ObjectKey,
+		url.Values{"partNumber": {strconv.Itoa(partNumber)}, "uploadId": {upload.UploadID}},
+		upload.ContentType,
+		io.TeeReader(contextReader{ctx: ctx, reader: reader}, hasher),
+		size,
+		checksumHex,
+		checksumBase64,
+	)
+	if err != nil {
+		return CompletedPart{}, err
+	}
+	response, err := b.client.Do(request)
+	if err != nil {
+		if ctxErr := contextError(ctx); ctxErr != nil {
+			return CompletedPart{}, ctxErr
+		}
+		return CompletedPart{}, fmt.Errorf("upload s3 multipart part: %w", err)
+	}
+	defer response.Body.Close()
+	if got := hex.EncodeToString(hasher.Sum(nil)); got != checksumHex {
+		return CompletedPart{}, ErrMultipartChecksum
+	}
+	var extra [1]byte
+	if count, readErr := reader.Read(extra[:]); count != 0 || (readErr != nil && !errors.Is(readErr, io.EOF)) {
+		return CompletedPart{}, ErrSizeMismatch
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
+		return CompletedPart{}, fmt.Errorf("upload s3 multipart part: status=%d body=%s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	etag := strings.Trim(strings.TrimSpace(response.Header.Get("ETag")), `"`)
+	if etag == "" {
+		return CompletedPart{}, errors.New("s3 multipart part response did not include etag")
+	}
+	return CompletedPart{PartNumber: partNumber, ETag: etag, Checksum: checksumHex, SizeBytes: size}, nil
 }
 
 func (b *S3Backend) MultipartStatus(ctx context.Context, upload MultipartUpload) (MultipartStatus, error) {
@@ -317,6 +375,10 @@ func (b *S3Backend) AbortMultipart(ctx context.Context, upload MultipartUpload) 
 }
 
 func (b *S3Backend) newSignedMultipartRequest(ctx context.Context, method, objectKey string, query url.Values, contentType string, body []byte) (*http.Request, error) {
+	return b.newSignedMultipartReaderRequest(ctx, method, objectKey, query, contentType, bytes.NewReader(body), int64(len(body)), sha256Hex(body), "")
+}
+
+func (b *S3Backend) newSignedMultipartReaderRequest(ctx context.Context, method, objectKey string, query url.Values, contentType string, reader io.Reader, size int64, payloadHash, checksumBase64 string) (*http.Request, error) {
 	key := b.normalizeKey(objectKey)
 	if key == "" {
 		return nil, fmt.Errorf("invalid s3 object key %q", objectKey)
@@ -330,23 +392,29 @@ func (b *S3Backend) newSignedMultipartRequest(ctx context.Context, method, objec
 		return nil, err
 	}
 	target.RawQuery = awsCanonicalQuery(query)
-	payloadHash := sha256Hex(body)
 	now := b.nowUTC()
 	amzDate, dateStamp := now.Format("20060102T150405Z"), now.Format("20060102")
-	request, err := http.NewRequestWithContext(ctx, method, target.String(), bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, method, target.String(), reader)
 	if err != nil {
 		return nil, err
 	}
 	request.Host = host
-	request.ContentLength = int64(len(body))
+	request.ContentLength = size
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
 	request.Header.Set("Host", host)
 	request.Header.Set("X-Amz-Content-Sha256", payloadHash)
 	request.Header.Set("X-Amz-Date", amzDate)
-	canonicalHeaders := "host:" + host + "\n" + "x-amz-content-sha256:" + payloadHash + "\n" + "x-amz-date:" + amzDate + "\n"
-	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
+	canonicalHeaders := "host:" + host + "\n"
+	signedHeaders := "host"
+	if checksumBase64 != "" {
+		request.Header.Set("X-Amz-Checksum-Sha256", checksumBase64)
+		canonicalHeaders += "x-amz-checksum-sha256:" + checksumBase64 + "\n"
+		signedHeaders += ";x-amz-checksum-sha256"
+	}
+	canonicalHeaders += "x-amz-content-sha256:" + payloadHash + "\n" + "x-amz-date:" + amzDate + "\n"
+	signedHeaders += ";x-amz-content-sha256;x-amz-date"
 	canonicalRequest := strings.Join([]string{method, canonicalURI, awsCanonicalQuery(query), canonicalHeaders, signedHeaders, payloadHash}, "\n")
 	credentialScope := dateStamp + "/" + b.region + "/s3/aws4_request"
 	stringToSign := strings.Join([]string{"AWS4-HMAC-SHA256", amzDate, credentialScope, sha256Hex([]byte(canonicalRequest))}, "\n")

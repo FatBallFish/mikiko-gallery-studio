@@ -13,6 +13,7 @@ const acceptedMIMETypes: Record<MediaType, readonly string[]> = {
 }
 
 export type UploadStatus = 'queued' | 'initializing' | 'uploading' | 'paused' | 'needs_file' | 'completing' | 'completed' | 'failed' | 'cancelled'
+export type UploadTransport = 'direct' | 'proxy'
 
 export type UploadSnapshot = {
   localID: string
@@ -25,6 +26,7 @@ export type UploadSnapshot = {
   mimeType: string
   mediaType: MediaType
   status: UploadStatus
+  transport: UploadTransport
   storageDriver?: string
   partSize?: number
   partCount?: number
@@ -88,7 +90,7 @@ export function createUploadSnapshot(file: File, projectID: string, groupName = 
   if (!mediaType) throw new Error('不支持的文件格式')
   return {
     localID: crypto.randomUUID(), projectID, groupName, fileName: file.name, fileSize: file.size,
-    mimeType: file.type, mediaType, status: 'queued', completedParts: [], progress: 0, contentFingerprint,
+    mimeType: file.type, mediaType, status: 'queued', transport: 'direct', completedParts: [], progress: 0, contentFingerprint,
   }
 }
 
@@ -110,6 +112,7 @@ export function reconcileUploadSession(snapshot: UploadSnapshot, session: MediaU
     mimeType: session.declared_mime_type,
     mediaType: session.declared_media_type,
     storageDriver: session.storage_driver,
+    transport: session.storage_driver === 'local' ? 'proxy' : snapshot.transport ?? 'direct',
     partSize: session.part_size,
     partCount: session.part_count,
     completedParts,
@@ -133,6 +136,7 @@ export function restoreUploadSnapshots(raw: string | null): UploadSnapshot[] {
       const expired = item.expiresAt ? new Date(item.expiresAt).getTime() <= now : false
       return {
         ...item,
+        transport: item.transport === 'proxy' ? 'proxy' : 'direct',
         ...(expired ? { uploadID: undefined, completedParts: [], progress: 0, expiresAt: undefined } : {}),
         completedParts: expired ? [] : Array.isArray(item.completedParts) ? item.completedParts : [],
         status: item.status === 'completed' ? 'completed' : item.status === 'failed' && !expired ? 'failed' : 'needs_file',
@@ -142,6 +146,15 @@ export function restoreUploadSnapshots(raw: string | null): UploadSnapshot[] {
   } catch {
     return []
   }
+}
+
+export function shouldFallbackToProxy(error: unknown) {
+  if (error instanceof DOMException && error.name === 'AbortError') return false
+  if (typeof error === 'object' && error !== null) {
+    if ('status' in error && typeof error.status === 'number') return false
+    if ('code' in error && error.code === 'DIRECT_ETAG_UNAVAILABLE') return true
+  }
+  return error instanceof TypeError
 }
 
 export async function mapConcurrent<T>(items: T[], concurrency: number, operation: (item: T) => Promise<void>) {
