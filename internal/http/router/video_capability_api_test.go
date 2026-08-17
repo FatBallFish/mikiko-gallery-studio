@@ -56,8 +56,15 @@ func TestVideoCapabilityAndEstimateUseCompleteVerifiedCandidate(t *testing.T) {
 		SetValidationStatus("verified").SetEnabled(true).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
-	route, err := client.RouteModel.Create().SetCode("cinema").SetName("电影感视频").SetDescription("稳定的短视频生成").SetMediaType("video").SetVisibility("public").SetEnabled(true).Save(ctx)
+	route, err := client.RouteModel.Create().SetCode("cinema").SetName("电影感视频").SetDescription("稳定的短视频生成").SetMediaType("video").SetVisibility("groups").SetEnabled(true).Save(ctx)
 	if err != nil {
+		t.Fatal(err)
+	}
+	basicGroup, err := client.UserGroup.Create().SetGroupCode("basic").SetGroupName("Basic").SetStatus("enabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RouteModelVisibilityGroup.Create().SetRouteModelID(int64(route.ID)).SetGroupID(int64(basicGroup.ID)).Save(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(accountModel.ID)).SetEnabled(true).Save(ctx); err != nil {
@@ -93,5 +100,19 @@ func TestVideoCapabilityAndEstimateUseCompleteVerifiedCandidate(t *testing.T) {
 	estimate := authenticatedMediaRequest(t, handler, session.AccessToken, http.MethodPost, "/api/agent/video/v1/estimates", estimateBody, nil)
 	if estimate.Code != http.StatusOK || !bytes.Contains(estimate.Body.Bytes(), []byte(`"unit_points":"497.00000"`)) || !bytes.Contains(estimate.Body.Bytes(), []byte(`"estimated_points":"994.00000"`)) || !bytes.Contains(estimate.Body.Bytes(), []byte(`"quote_token"`)) {
 		t.Fatalf("estimate=%d %s", estimate.Code, estimate.Body.String())
+	}
+	if _, err := client.RouteModelVisibilityGroup.Delete().Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	otherGroup, err := client.UserGroup.Create().SetGroupCode("other").SetGroupName("Other").SetStatus("enabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RouteModelVisibilityGroup.Create().SetRouteModelID(int64(route.ID)).SetGroupID(int64(otherGroup.ID)).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	forbidden := authenticatedMediaRequest(t, handler, session.AccessToken, http.MethodGet, "/api/agent/video/v1/capabilities?route_model_code=cinema", "", nil)
+	if forbidden.Code != http.StatusForbidden || !bytes.Contains(forbidden.Body.Bytes(), []byte(`"code":"MODEL_ROUTE_NOT_VISIBLE"`)) {
+		t.Fatalf("forbidden capability=%d %s", forbidden.Code, forbidden.Body.String())
 	}
 }

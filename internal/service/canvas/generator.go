@@ -277,6 +277,7 @@ func videoRequest(submission GenerationSubmission) (videotaskservice.CreateReque
 		return request, fmt.Errorf("decode video generation node: %w", err)
 	}
 	request.UserID = submission.UserID
+	request.UserGroupCodes = append([]string(nil), submission.UserGroupCodes...)
 	request.ProjectID = submission.ProjectID
 	request.IdempotencyKey = submission.IdempotencyKey
 	request.SourceChannel = "canvas"

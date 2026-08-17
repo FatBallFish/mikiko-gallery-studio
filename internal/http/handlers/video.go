@@ -63,7 +63,8 @@ func (a *API) HandleVideoCapabilities(w http.ResponseWriter, r *http.Request) {
 		writeMethodNotAllowed(w, r)
 		return
 	}
-	if _, appErr := a.requireUser(r); appErr != nil {
+	user, appErr := a.requireUser(r)
+	if appErr != nil {
 		httpx.WriteError(w, r, appErr)
 		return
 	}
@@ -73,7 +74,7 @@ func (a *API) HandleVideoCapabilities(w http.ResponseWriter, r *http.Request) {
 	}
 	code := strings.TrimSpace(r.URL.Query().Get("route_model_code"))
 	if code == "" {
-		response, err := a.videoRouting.ListCapabilities(r.Context())
+		response, err := a.videoRouting.ListCapabilities(r.Context(), userGroupCodes(user))
 		if err != nil {
 			httpx.WriteError(w, r, normalizeVideoTaskError(err))
 			return
@@ -81,7 +82,7 @@ func (a *API) HandleVideoCapabilities(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteSuccess(w, r, http.StatusOK, response)
 		return
 	}
-	response, err := a.videoRouting.Capabilities(r.Context(), code)
+	response, err := a.videoRouting.Capabilities(r.Context(), code, userGroupCodes(user))
 	if err != nil {
 		httpx.WriteError(w, r, normalizeVideoTaskError(err))
 		return
@@ -114,6 +115,7 @@ func (a *API) HandleVideoEstimates(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		request.UserID = user.ID
+		request.UserGroupCodes = userGroupCodes(user)
 		estimate, err := a.videoTasks.Estimate(r.Context(), request)
 		if err != nil {
 			httpx.WriteError(w, r, normalizeVideoTaskError(err))
@@ -148,6 +150,7 @@ func (a *API) HandleVideoEstimates(w http.ResponseWriter, r *http.Request) {
 	}
 	request := videotaskservice.EstimateRequest{
 		RouteModelCode: strings.TrimSpace(body.RouteModelCode),
+		UserGroupCodes: userGroupCodes(user),
 		Video: domainvideo.Request{
 			TaskType: domainvideo.TaskType(body.TaskType), Prompt: body.Prompt, DurationSeconds: body.Duration,
 			Resolution: domainvideo.Resolution(body.Resolution), AspectRatio: domainvideo.AspectRatio(body.AspectRatio),
@@ -190,6 +193,7 @@ func (a *API) HandleVideoTasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		request.UserID = user.ID
+		request.UserGroupCodes = userGroupCodes(user)
 		request.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 		if request.IdempotencyKey == "" {
 			httpx.WriteError(w, r, videoFieldInvalid("Idempotency-Key is required"))

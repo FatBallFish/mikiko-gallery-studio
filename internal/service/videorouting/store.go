@@ -32,6 +32,6 @@ type Group struct {
 }
 
 type Store interface {
-	GetVideoGroup(context.Context, string) (Group, error)
-	ListVideoGroups(context.Context) ([]Group, error)
+	GetVideoGroup(context.Context, string, []string) (Group, error)
+	ListVideoGroups(context.Context, []string) ([]Group, error)
 }

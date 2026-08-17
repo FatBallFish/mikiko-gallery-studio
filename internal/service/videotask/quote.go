@@ -21,6 +21,7 @@ const videoQuoteTTL = 120 * time.Second
 
 type EstimateRequest struct {
 	RouteModelCode string
+	UserGroupCodes []string
 	Video          domainvideo.Request
 }
 
@@ -89,7 +90,7 @@ func (s *QuoteService) Estimate(ctx context.Context, userID int64, request Estim
 	if s == nil || s.routing == nil || s.pricing == nil || len(s.key) < 32 {
 		return Estimate{}, errs.Internal("video quote service is unavailable")
 	}
-	resolved, err := s.routing.Resolve(ctx, request.RouteModelCode, request.Video)
+	resolved, err := s.routing.Resolve(ctx, request.RouteModelCode, request.UserGroupCodes, request.Video)
 	if err != nil {
 		return Estimate{}, err
 	}
