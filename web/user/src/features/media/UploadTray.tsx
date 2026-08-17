@@ -197,7 +197,7 @@ export function UploadTray() {
   const clearFinished = () => setItems((current) => current.filter((item) => item.status !== 'completed' && item.status !== 'cancelled'))
 
   return (
-    <aside className={`media-upload-tray${expanded ? ' is-expanded' : ''}`} aria-label="上传队列">
+    <aside className={`media-upload-tray${expanded ? ' is-expanded' : ''}${items.length ? '' : ' is-empty'}`} aria-label="上传队列">
       <header>
         <button type="button" className="media-upload-title" onClick={() => setExpanded((value) => !value)}>
           <Upload size={17} /><strong>上传</strong>{items.length ? <span>{items.length}</span> : null}{expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}

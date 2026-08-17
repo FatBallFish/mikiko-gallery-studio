@@ -3,6 +3,7 @@ import {
   attachCanvasResults,
   connectCanvasNodes,
   canvasGenerationEstimateSignature,
+  canvasImageSizeDraftPatch,
   prepareCanvasEstimate,
   resolveCanvasEstimate,
   canvasPromptResourceCandidates,
@@ -149,6 +150,14 @@ const readyEstimate = resolveCanvasEstimate(waitingEstimate, estimateSignature, 
 const staleEstimate = resolveCanvasEstimate(readyEstimate, estimateSignature, 3, { points: '1.00000' })
 if (readyEstimate?.status !== 'ready' || readyEstimate.points !== '8.00000' || staleEstimate !== readyEstimate) throw new Error('out-of-order estimate responses must be ignored')
 if (prepareCanvasEstimate(readyEstimate, `${estimateSignature}-changed`, false, 5) !== undefined) throw new Error('incomplete generation inputs must suppress and clear estimates')
+
+const sizeOptions = { base_resolution: ['1k'], aspect_ratios: ['16:9'], pixel_sizes: ['1024x1024'] }
+const autoSize = canvasImageSizeDraftPatch('auto', sizeOptions)
+if (autoSize.base_resolution || autoSize.aspect_ratio || autoSize.requested_size) throw new Error(`automatic size mode must clear every explicit size field: ${JSON.stringify(autoSize)}`)
+const ratioSize = canvasImageSizeDraftPatch('ratio', sizeOptions)
+if (ratioSize.base_resolution !== '1k' || ratioSize.aspect_ratio !== '16:9' || ratioSize.requested_size) throw new Error(`ratio size mode must only keep ratio fields: ${JSON.stringify(ratioSize)}`)
+const pixelSize = canvasImageSizeDraftPatch('pixel', sizeOptions)
+if (pixelSize.requested_size !== '1024x1024' || pixelSize.base_resolution || pixelSize.aspect_ratio) throw new Error(`pixel size mode must only keep requested_size: ${JSON.stringify(pixelSize)}`)
 
 const attached = attachCanvasResults(state, 'run-1', 'image-gen', [{ asset_id: 'asset-new', media_type: 'image' }])
 const attachedAgain = attachCanvasResults(attached, 'run-1', 'image-gen', [{ asset_id: 'asset-new', media_type: 'image' }])

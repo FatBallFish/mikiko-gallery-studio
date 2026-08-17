@@ -45,6 +45,15 @@ export function canvasNodeMinimumSize(nodeType: CanvasNodeType) {
   return { width: 220, height: 140 }
 }
 
+export function canvasImageSizeDraftPatch(sizeMode: string, options: { base_resolution?: readonly string[]; aspect_ratios?: readonly string[]; pixel_sizes?: readonly string[] }) {
+  return {
+    size_mode: sizeMode,
+    requested_size: sizeMode === 'pixel' ? options.pixel_sizes?.[0] ?? '' : '',
+    base_resolution: sizeMode === 'ratio' ? options.base_resolution?.[0] ?? '' : '',
+    aspect_ratio: sizeMode === 'ratio' ? options.aspect_ratios?.[0] ?? '' : '',
+  }
+}
+
 export function updateCanvasNode(state: CanvasCommandState, nodeID: string, update: (node: CanvasNode) => CanvasNode) {
   const current = state.present.nodes.find((node) => node.id === nodeID)
   if (!current) return state

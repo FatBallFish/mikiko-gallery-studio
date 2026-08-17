@@ -89,6 +89,10 @@ for (const required of ['mediaUploadSessionKey(userID)', 'fileContentFingerprint
 if (!traySource.includes('useState(false)')) {
   throw new Error('an empty upload tray must start collapsed so it does not cover page actions or footer links')
 }
+const stylesSource = await import('node:fs').then(({ readFileSync }) => readFileSync(new URL('../../styles.css', import.meta.url), 'utf8'))
+if (!traySource.includes("items.length ? '' : ' is-empty'") || !stylesSource.includes('.canvas-editor ~ .media-upload-tray.is-empty:not(.is-expanded)')) {
+  throw new Error('an idle upload tray must collapse to an icon-sized canvas control instead of covering generation actions')
+}
 if (traySource.includes('sessionStorage.getItem(MEDIA_UPLOAD_SESSION_KEY)')) {
   throw new Error('UploadTray must never restore another account through the legacy global session key')
 }

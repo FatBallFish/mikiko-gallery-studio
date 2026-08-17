@@ -4,6 +4,29 @@ import type { CanvasDocument, CanvasNode, CanvasViewport } from './types'
 export type CanvasBounds = { x: number; y: number; width: number; height: number }
 export type ViewportSize = { width: number; height: number }
 
+export function nextCanvasNodePosition(nodes: CanvasNode[], center: { x: number; y: number }, size: { width: number; height: number }, gap = 24) {
+  const origin = { x: center.x - size.width / 2, y: center.y - size.height / 2 }
+  const stepX = size.width + gap
+  const stepY = size.height + gap
+  const available = (position: { x: number; y: number }) => nodes.every((node) => (
+    position.x + size.width + gap <= node.position.x
+    || node.position.x + node.size.width + gap <= position.x
+    || position.y + size.height + gap <= node.position.y
+    || node.position.y + node.size.height + gap <= position.y
+  ))
+  if (available(origin)) return origin
+  for (let radius = 1; radius <= 64; radius += 1) {
+    for (let y = -radius; y <= radius; y += 1) {
+      for (let x = -radius; x <= radius; x += 1) {
+        if (Math.max(Math.abs(x), Math.abs(y)) !== radius) continue
+        const candidate = { x: origin.x + x * stepX, y: origin.y + y * stepY }
+        if (available(candidate)) return candidate
+      }
+    }
+  }
+  return { x: origin.x + (nodes.length + 1) * stepX, y: origin.y }
+}
+
 export function visibleCanvasNodeIDs(nodes: CanvasNode[], viewport: CanvasViewport, viewportSize: ViewportSize, overscan = 160, pinnedIDs: string[] = []) {
   const zoom = Math.max(viewport.zoom, 0.001)
   const bounds = {

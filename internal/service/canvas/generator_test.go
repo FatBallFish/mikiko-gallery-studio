@@ -29,6 +29,35 @@ func TestImageRequestUsesDraftAndServerSideIdentityAndInputs(t *testing.T) {
 	}
 }
 
+func TestImageRequestNormalizesHiddenSizeFieldsByMode(t *testing.T) {
+	base := GenerationSubmission{
+		UserID: 31, ProjectID: uuid.New(), CanvasID: uuid.New(), NodeID: "gen", Kind: TaskKindImage,
+		Inputs: []GenerationInput{{Role: domaincanvas.InputRolePrompt, Node: domaincanvas.Node{ID: "prompt", Type: domaincanvas.NodeTypePrompt, Payload: json.RawMessage(`{"text":"connected prompt"}`)}}},
+	}
+	for _, test := range []struct {
+		name               string
+		draft              string
+		wantRequestedSize  string
+		wantBaseResolution string
+		wantAspectRatio    string
+	}{
+		{name: "auto", draft: `{"route_model_code":"basic","task_type":"text_to_image","size_mode":"auto","requested_size":"1024x1024","base_resolution":"1k","aspect_ratio":"16:9"}`},
+		{name: "pixel", draft: `{"route_model_code":"basic","task_type":"text_to_image","size_mode":"pixel","requested_size":"1024x1024","base_resolution":"1k","aspect_ratio":"16:9"}`, wantRequestedSize: "1024x1024"},
+		{name: "ratio", draft: `{"route_model_code":"basic","task_type":"text_to_image","size_mode":"ratio","requested_size":"1024x1024","base_resolution":"1k","aspect_ratio":"16:9"}`, wantBaseResolution: "1k", wantAspectRatio: "16:9"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			base.Node = domaincanvas.Node{ID: "gen", Type: domaincanvas.NodeTypeImageGeneration, Payload: json.RawMessage(`{"draft":` + test.draft + `}`)}
+			request, err := imageRequest(base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if request.RequestedSize != test.wantRequestedSize || request.BaseResolution != test.wantBaseResolution || request.AspectRatio != test.wantAspectRatio {
+				t.Fatalf("normalized size fields = requested:%q base:%q ratio:%q", request.RequestedSize, request.BaseResolution, request.AspectRatio)
+			}
+		})
+	}
+}
+
 func TestVideoRequestRebuildsCanvasSourceAndFrameInputs(t *testing.T) {
 	projectID, canvasID, firstFrame := uuid.New(), uuid.New(), uuid.New()
 	payload := json.RawMessage(`{"draft":{"quote_token":"quote","route_model_code":"cinema","task_type":"image_to_video","prompt_template":"hidden","duration_seconds":5,"resolution":"720p","aspect_ratio":"16:9","audio_mode":"silent","output_count":1}}`)

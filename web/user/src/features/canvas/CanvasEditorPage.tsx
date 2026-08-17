@@ -16,10 +16,10 @@ import { MediaPreviewDialog } from '../media/MediaPreviewDialog'
 import { mediaCreationActions } from '../media/mediaExperience'
 import { promptVariableNames } from '../../pages/promptTemplateEditorModel'
 import { parsePromptTemplate } from '../../pages/promptTemplateParser'
-import { computeCanvasBounds, fitCanvasViewport, minimapGeometry, visibleCanvasNodeIDs } from './core/canvasLayout'
+import { computeCanvasBounds, fitCanvasViewport, minimapGeometry, nextCanvasNodePosition, visibleCanvasNodeIDs } from './core/canvasLayout'
 import {
   canvasGenerationEstimateSignature, canvasNodeMinimumSize, canvasPromptResourceCandidates, compatibleCanvasTargets, inspectCanvasConnection,
-  prepareCanvasEstimate, rejectCanvasEstimate, resolveCanvasEstimate, selectCanvasNodesInRect, startCanvasEstimate,
+  canvasImageSizeDraftPatch, prepareCanvasEstimate, rejectCanvasEstimate, resolveCanvasEstimate, selectCanvasNodesInRect, startCanvasEstimate,
   type CanvasEstimateState, type CanvasPromptResourceCandidate,
 } from './core/canvasState'
 import type { CanvasDocument, CanvasEdge, CanvasNode, CanvasNodeType, CanvasViewport } from './core/types'
@@ -363,7 +363,8 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     const center = at ?? worldPoint(viewportSize.width / 2 + (viewportRef.current?.getBoundingClientRect().left ?? 0), viewportSize.height / 2 + (viewportRef.current?.getBoundingClientRect().top ?? 0))
     const id = `${type}-${crypto.randomUUID().slice(0, 8)}`
     const size = type === 'audio' ? { width: 280, height: 140 } : type.includes('generation') ? { width: 320, height: 230 } : { width: 260, height: 180 }
-    store!.getState().addNode({ id, type, position: { x: center.x - size.width / 2, y: center.y - size.height / 2 }, size, payload: defaultNodePayload(type, imageCapability, videoCapability) })
+    const position = nextCanvasNodePosition(store!.getState().command.present.nodes, center, size)
+    store!.getState().addNode({ id, type, position, size, payload: defaultNodePayload(type, imageCapability, videoCapability) })
     return id
   }
   function addAsset(asset: MediaAsset) {
@@ -803,7 +804,7 @@ function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapabili
         const taskType = model?.task_types[0] ?? 'text_to_image'
         const options = model?.capabilities_by_task_type?.[taskType] ?? model
         const sizeMode = options?.size_modes?.includes('auto') ? 'auto' : options?.size_modes?.[0] ?? 'auto'
-        patchDraft({ route_model_code: event.target.value, task_type: taskType, size_mode: sizeMode, base_resolution: options?.base_resolution?.[0] ?? '', aspect_ratio: options?.aspect_ratios?.[0] ?? '', requested_size: options?.pixel_sizes?.[0] ?? '', quality: options?.quality?.[0] ?? '', output_format: options?.output_format?.[0] ?? '', output_image_count: imageCount })
+        patchDraft({ route_model_code: event.target.value, task_type: taskType, ...canvasImageSizeDraftPatch(sizeMode, options ?? {}), quality: options?.quality?.[0] ?? '', output_format: options?.output_format?.[0] ?? '', output_image_count: imageCount })
       } else {
         const model = videoCapability?.model_groups.find((item) => item.code === event.target.value)
         const taskType = model?.defaults.task_type ?? model?.task_types[0] ?? 'text_to_video'
@@ -811,7 +812,7 @@ function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapabili
       }
     }}>{models.map((model) => <option key={model.code} value={model.code}>{model.name}</option>)}</select></label>
     {node.type === 'image_generation' ? <>
-      <label>尺寸模式<select disabled={readOnly} value={String(draft.size_mode ?? imageOptions?.size_modes?.[0] ?? 'auto')} onChange={(event) => patchDraft({ size_mode: event.target.value })}>{(imageOptions?.size_modes ?? ['auto']).map((value) => <option key={value} value={value}>{value === 'auto' ? '自动' : value === 'ratio' ? '按比例' : '按像素'}</option>)}</select></label>
+      <label>尺寸模式<select disabled={readOnly} value={String(draft.size_mode ?? imageOptions?.size_modes?.[0] ?? 'auto')} onChange={(event) => patchDraft(canvasImageSizeDraftPatch(event.target.value, imageOptions ?? {}))}>{(imageOptions?.size_modes ?? ['auto']).map((value) => <option key={value} value={value}>{value === 'auto' ? '自动' : value === 'ratio' ? '按比例' : '按像素'}</option>)}</select></label>
       {draft.size_mode === 'pixel' ? <label>像素尺寸<select disabled={readOnly} value={String(draft.requested_size ?? imageOptions?.pixel_sizes?.[0] ?? '')} onChange={(event) => patchDraft({ requested_size: event.target.value })}>{(imageOptions?.pixel_sizes ?? []).map((value) => <option key={value}>{value}</option>)}</select></label> : draft.size_mode === 'ratio' ? <><label>基础分辨率<select disabled={readOnly} value={String(draft.base_resolution ?? imageOptions?.base_resolution?.[0] ?? '')} onChange={(event) => patchDraft({ base_resolution: event.target.value })}>{(imageOptions?.base_resolution ?? []).map((value) => <option key={value}>{value}</option>)}</select></label><label>比例<select disabled={readOnly} value={String(draft.aspect_ratio ?? imageOptions?.aspect_ratios?.[0] ?? '')} onChange={(event) => patchDraft({ aspect_ratio: event.target.value })}>{(imageOptions?.aspect_ratios ?? []).map((value) => <option key={value}>{value}</option>)}</select></label></> : null}
       <label>质量<select disabled={readOnly} value={String(draft.quality ?? imageOptions?.quality?.[0] ?? '')} onChange={(event) => patchDraft({ quality: event.target.value })}>{(imageOptions?.quality ?? []).map((value) => <option key={value}>{value}</option>)}</select></label>
       <label>输出格式<select disabled={readOnly} value={String(draft.output_format ?? imageOptions?.output_format?.[0] ?? '')} onChange={(event) => patchDraft({ output_format: event.target.value })}>{(imageOptions?.output_format ?? []).map((value) => <option key={value}>{value.toUpperCase()}</option>)}</select></label>
@@ -948,7 +949,7 @@ function defaultNodePayload(type: CanvasNodeType, imageCapability?: Capability |
     const taskType = model?.task_types[0] ?? 'text_to_image'
     const options = model?.capabilities_by_task_type?.[taskType] ?? model
     const sizeMode = options?.size_modes?.includes('auto') ? 'auto' : options?.size_modes?.[0] ?? 'auto'
-    return { title: '图片生成', draft: { route_model_code: model?.code ?? '', task_type: taskType, size_mode: sizeMode, requested_size: options?.pixel_sizes?.[0] ?? '', base_resolution: options?.base_resolution?.[0] ?? '', aspect_ratio: options?.aspect_ratios?.[0] ?? '', quality: options?.quality?.[0] ?? '', output_format: options?.output_format?.[0] ?? '', output_image_count: 1 } }
+    return { title: '图片生成', draft: { route_model_code: model?.code ?? '', task_type: taskType, ...canvasImageSizeDraftPatch(sizeMode, options ?? {}), quality: options?.quality?.[0] ?? '', output_format: options?.output_format?.[0] ?? '', output_image_count: 1 } }
   }
   if (type === 'video_generation') {
     const model = videoCapability?.model_groups[0]

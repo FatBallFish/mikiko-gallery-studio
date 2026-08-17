@@ -110,6 +110,7 @@ base_url = os.environ['MULTIMEDIA_VISUAL_BASE_URL']
 output_dir = Path(os.environ['MULTIMEDIA_VISUAL_OUTPUT_DIR'])
 matrix = json.loads(os.environ['MULTIMEDIA_VISUAL_MATRIX'])
 output_dir.mkdir(parents=True, exist_ok=True)
+external_font_stylesheets = {'api.fontshare.com', 'fonts.googleapis.com'}
 
 project = {'id': 'project-default', 'name': '默认项目', 'is_default': True, 'status': 'active', 'version': 1, 'created_at': '2026-08-12T08:00:00Z', 'updated_at': '2026-08-12T08:00:00Z'}
 profile = {'id': '1001', 'email': 'visual@example.test', 'has_password': True, 'display_name': '视觉验收', 'avatar_initials': '视觉', 'tier': 'PRO', 'group': 'DEFAULT', 'signature': '', 'preferences': {'model_group': 'image-pro', 'base_resolution': '1k', 'quality': 'high', 'aspect_ratio': '16:9', 'image_count': 1}}
@@ -173,6 +174,9 @@ def install_routes(page, counters):
   def handler(route):
     parsed = urlparse(route.request.url)
     path = parsed.path
+    if parsed.hostname in external_font_stylesheets:
+      route.fulfill(status=200, content_type='text/css', body='')
+      return
     if path.startswith('/visual-media/'):
       purpose = path.rsplit('/', 1)[-1]
       counters['served'][purpose] = counters['served'].get(purpose, 0) + 1
@@ -294,7 +298,8 @@ with sync_playwright() as playwright:
           counters = {'purposes': {}, 'served': {}, 'originalMediaRequests': 0}
           install_routes(page, counters)
           label = f"{viewport['name']}/{theme}/{route_info['route']}"
-          page.goto(base_url + '#' + route_info['hash'], wait_until='networkidle')
+          page.goto(base_url + '#' + route_info['hash'], wait_until='domcontentloaded')
+          page.locator('main').wait_for(state='visible')
           page.wait_for_timeout(500)
           assert page.locator('main').count() > 0, f'{label} did not render the real application page'
           screenshot = output_dir / f"{viewport['name']}-{theme}-{route_info['route']}.png"
