@@ -173,6 +173,56 @@ func TestUnifiedMediaUploadAPICompletesLocalUpload(t *testing.T) {
 	}
 }
 
+type s3ProxyTestBackend struct{ *storage.LocalBackend }
+
+func (*s3ProxyTestBackend) Driver() string { return "s3" }
+
+func TestUnifiedMediaUploadAPIAcceptsProxyPartForS3Session(t *testing.T) {
+	cfg := taskAPIConfig("http://provider.invalid")
+	authSvc, owner := loginTestUser(t, "media-upload-s3-proxy@example.com")
+	claims, err := authSvc.ParseAccessToken(owner.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := repoent.Open(dialect.SQLite, "file:media-upload-s3-proxy?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Schema.Create(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	project, err := client.Project.Create().SetUserID(claims.UserID).SetName("Default").SetNameKey("default").SetIsDefault(true).Save(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &s3ProxyTestBackend{LocalBackend: storage.NewLocalBackend(t.TempDir())}
+	mediaService := mediaassetservice.NewService(entstore.NewMediaStore(client), storage.NewStaticRouter(backend), mediaassetservice.Options{
+		Policy: domainmedia.DefaultPolicy(), PartSize: 8 << 20, UploadTTL: time.Hour,
+	})
+	api := handlers.NewAPIWithRuntimeServices(cfg, authSvc, nil, nil, enabledFeatureAdmin(t, "media_upload"), nil)
+	api.SetMediaAssetService(mediaService)
+	handler := NewWithAPI(api)
+	content := []byte("proxy-part")
+	checksum := mediaSHA256Hex(content)
+	initialized := authenticatedMediaRequest(t, handler, owner.AccessToken, http.MethodPost, "/api/agent/media/v1/uploads", `{"project_id":"`+project.ID.String()+`","filename":"proxy.wav","media_type":"audio","mime_type":"audio/wav","size_bytes":10}`, map[string]string{"Idempotency-Key": "media-api-s3-proxy"})
+	if initialized.Code != http.StatusCreated {
+		t.Fatalf("init=%d %s", initialized.Code, initialized.Body.String())
+	}
+	var payload struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(initialized.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	part := authenticatedMediaRequestBytes(t, handler, owner.AccessToken, http.MethodPut, "/api/agent/media/v1/uploads/"+payload.Data.ID+"/parts/1", content, map[string]string{"X-Content-SHA256": checksum, "Content-Type": "application/octet-stream"})
+	if part.Code != http.StatusOK || !bytes.Contains(part.Body.Bytes(), []byte(`"part_number":1`)) {
+		t.Fatalf("proxy part=%d %s", part.Code, part.Body.String())
+	}
+}
+
 func TestUnifiedMediaAssetBatchReturnsPerItemResults(t *testing.T) {
 	cfg := taskAPIConfig("http://provider.invalid")
 	authSvc, owner := loginTestUser(t, "media-batch-api@example.com")

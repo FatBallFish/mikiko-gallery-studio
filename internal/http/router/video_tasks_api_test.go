@@ -64,7 +64,14 @@ func TestVideoTasksAPICreatesReplaysListsGetsAndCancels(t *testing.T) {
 	raw, _ := json.Marshal(capability)
 	_ = json.Unmarshal(raw, &capabilityJSON)
 	_, _ = client.VideoModelCapability.Create().SetAccountModelID(int64(accountModel.ID)).SetCapabilityVersion("cap-v1").SetCapabilityJSON(capabilityJSON).SetValidationStatus("verified").SetEnabled(true).Save(ctx)
-	route, _ := client.RouteModel.Create().SetCode("cinema").SetName("Cinema").SetMediaType("video").SetVisibility("public").SetEnabled(true).Save(ctx)
+	route, _ := client.RouteModel.Create().SetCode("cinema").SetName("Cinema").SetMediaType("video").SetVisibility("groups").SetEnabled(true).Save(ctx)
+	basicGroup, err := client.UserGroup.Create().SetGroupCode("basic").SetGroupName("Basic").SetStatus("enabled").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RouteModelVisibilityGroup.Create().SetRouteModelID(int64(route.ID)).SetGroupID(int64(basicGroup.ID)).Save(ctx); err != nil {
+		t.Fatal(err)
+	}
 	_, _ = client.RouteModelCandidate.Create().SetRouteModelID(int64(route.ID)).SetAccountModelID(int64(accountModel.ID)).SetEnabled(true).Save(ctx)
 	_, _ = client.VideoModelRateCard.Create().SetAccountModelID(int64(accountModel.ID)).SetProviderCode("minimax").SetPricingSchema("minimax_h3_second_v1").SetRateVersion(1).SetCurrency("CNY").SetRateConfig(minimaxH3TestRateConfig()).SetSourceReference("test fixture").SetEffectiveAt(now.Add(-time.Hour)).SetEnabled(true).Save(ctx)
 	_, _ = client.VideoRouteConfig.Create().SetRouteModelID(int64(route.ID)).SetTaskTypes([]string{"image_to_video"}).SetVisibleOptions(map[string]any{}).SetDefaults(map[string]any{}).SetMaxOutputCount(4).SetMinimumTaskPoints("8.00000").SetRoundingStepPoints(1).SetConfigVersion("route-v2").SetEnabled(true).Save(ctx)

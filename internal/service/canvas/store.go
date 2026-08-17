@@ -58,12 +58,14 @@ type RunUpdate struct {
 }
 
 type AttachRecord struct {
-	UserID          int64
-	CanvasID        uuid.UUID
-	RunID           uuid.UUID
-	Nodes           []domaincanvas.Node
-	Edges           []domaincanvas.Edge
-	RecoverUnplaced bool
+	UserID           int64
+	CanvasID         uuid.UUID
+	RunID            uuid.UUID
+	ExpectedRevision int64
+	UpdatedNodes     []domaincanvas.Node
+	Nodes            []domaincanvas.Node
+	Edges            []domaincanvas.Edge
+	RecoverUnplaced  bool
 }
 
 type MemoryStore struct {
@@ -286,6 +288,21 @@ func (s *MemoryStore) AttachResults(_ context.Context, req AttachRecord) (Run, e
 	}
 	if req.RecoverUnplaced && run.Status != RunStatusUnplaced {
 		return Run{}, fmt.Errorf("canvas run is not unplaced")
+	}
+	if !req.RecoverUnplaced && req.ExpectedRevision > 0 && item.Revision != req.ExpectedRevision {
+		run.Status = RunStatusUnplaced
+		run.UpdatedAt = time.Now().UTC()
+		s.runs[run.ID] = run
+		return cloneRun(run), nil
+	}
+	existingNodeIndexes := make(map[string]int, len(item.Document.Nodes))
+	for index, node := range item.Document.Nodes {
+		existingNodeIndexes[node.ID] = index
+	}
+	for _, node := range req.UpdatedNodes {
+		if index, exists := existingNodeIndexes[node.ID]; exists {
+			item.Document.Nodes[index] = node
+		}
 	}
 	existingNodes := make(map[string]struct{}, len(item.Document.Nodes))
 	for _, node := range item.Document.Nodes {

@@ -36,6 +36,7 @@ type InputRequest struct {
 
 type CreateRequest struct {
 	UserID             int64                   `json:"-"`
+	UserGroupCodes     []string                `json:"-"`
 	ProjectID          uuid.UUID               `json:"project_id"`
 	IdempotencyKey     string                  `json:"-"`
 	QuoteToken         string                  `json:"quote_token"`
@@ -97,7 +98,7 @@ func (s *Service) Estimate(ctx context.Context, req CreateRequest) (Estimate, er
 	if !ok {
 		return Estimate{}, errs.Internal("video estimates are unavailable")
 	}
-	return estimator.Estimate(ctx, req.UserID, EstimateRequest{RouteModelCode: strings.TrimSpace(req.RouteModelCode), Video: prepared.video})
+	return estimator.Estimate(ctx, req.UserID, EstimateRequest{RouteModelCode: strings.TrimSpace(req.RouteModelCode), UserGroupCodes: append([]string(nil), req.UserGroupCodes...), Video: prepared.video})
 }
 
 func (s *Service) Create(ctx context.Context, req CreateRequest) (Task, bool, error) {
@@ -126,7 +127,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Task, bool, er
 	if err != nil {
 		return Task{}, false, err
 	}
-	verified, err := s.quotes.Verify(ctx, req.UserID, EstimateRequest{RouteModelCode: strings.TrimSpace(req.RouteModelCode), Video: prepared.video}, req.QuoteToken)
+	verified, err := s.quotes.Verify(ctx, req.UserID, EstimateRequest{RouteModelCode: strings.TrimSpace(req.RouteModelCode), UserGroupCodes: append([]string(nil), req.UserGroupCodes...), Video: prepared.video}, req.QuoteToken)
 	if err != nil {
 		return Task{}, false, err
 	}

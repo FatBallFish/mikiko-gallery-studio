@@ -185,7 +185,7 @@
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface) 97%, transparent);
   box-shadow: 0 10px 28px color-mix(in srgb, #000 18%, transparent);
-  cursor: grab;
+  cursor: default;
   user-select: none;
 }
 
@@ -201,7 +201,25 @@
 .canvas-node[data-type="video"] { border-top-color: #d29851; }
 .canvas-node[data-type="audio"] { border-top-color: #c16f7d; }
 .canvas-node[data-type="image_generation"], .canvas-node[data-type="video_generation"] { border-top-color: var(--accent); }
-.canvas-node:active { cursor: grabbing; }
+.canvas-node > header[data-canvas-drag-handle] { cursor: grab; touch-action: none; }
+.canvas-node > header[data-canvas-drag-handle]:active { cursor: grabbing; }
+
+.canvas-node-resize {
+  position: absolute;
+  z-index: 6;
+  right: 2px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  border-radius: 0 0 4px;
+  background: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+}
 
 .canvas-port {
   position: absolute;
@@ -326,9 +344,17 @@
 .canvas-media-facts strong { font-size: 11px; }
 .canvas-media-facts span { color: var(--muted); font-size: 9px; }
 .canvas-media-actions { display: flex; flex-wrap: wrap; gap: 4px; }
-.canvas-media-actions button, .canvas-prompt-actions button { min-height: 28px; padding: 0 7px; border: 1px solid var(--border); border-radius: 4px; color: var(--fg); background: var(--bg); font-size: 9px; cursor: pointer; }
+.canvas-media-actions button, .canvas-prompt-actions button { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 7px; border: 1px solid var(--border); border-radius: 4px; color: var(--fg); background: var(--bg); font-size: 9px; cursor: pointer; }
+.canvas-image-frame-empty { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 8px; width: 100%; height: 100%; }
 .canvas-prompt-body { display: grid; grid-template-rows: auto minmax(48px, 1fr) auto; gap: 6px; height: 100%; overflow: auto; }
 .canvas-prompt-actions { display: flex; gap: 4px; }
+.canvas-prompt-resource-picker { display: grid; max-height: 132px; overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); }
+.canvas-prompt-resource-picker > span { padding: 8px; color: var(--muted); font-size: 9px; text-align: center; }
+.canvas-prompt-resource-picker > button { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 34px; padding: 3px 5px; border: 0; border-radius: 4px; color: var(--fg); background: transparent; text-align: left; cursor: pointer; }
+.canvas-prompt-resource-picker > button:hover, .canvas-prompt-resource-picker > button:focus-visible { background: var(--surface); outline: none; }
+.canvas-prompt-resource-picker img, .canvas-prompt-resource-picker button > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 3px; object-fit: cover; background: var(--surface); }
+.canvas-prompt-resource-picker strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-prompt-resource-picker i { color: #d96c69; font-size: 8px; font-style: normal; }
 .canvas-prompt-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .canvas-prompt-tags span { max-width: 100%; overflow: hidden; padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-radius: 4px; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .canvas-prompt-variable { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 6px; font-size: 9px; }

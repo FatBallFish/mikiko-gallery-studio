@@ -82,7 +82,8 @@ func (s *AdminVideoStore) Snapshot(ctx context.Context) (adminvideoservice.Snaps
 			summary.MinimumTaskPoints = row.MinimumTaskPoints
 			summary.RoundingStepPoints = row.RoundingStepPoints
 			summary.TaskTypes = row.TaskTypes
-			summary.VisibleOptions = row.VisibleOptions
+			summary.VisibleOptions = cloneAnyMap(row.VisibleOptions)
+			delete(summary.VisibleOptions, "combinations")
 			summary.Defaults = row.Defaults
 			summary.MaxOutputCount = row.MaxOutputCount
 			summary.Enabled = row.Enabled && route.Enabled

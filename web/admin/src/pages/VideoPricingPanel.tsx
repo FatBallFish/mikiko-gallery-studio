@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AdminVideoConfiguration, AdminVideoQuoteCandidate, AdminVideoQuoteSimulationResult, AdminVideoVisibleCombination, RouteModel } from "../../../shared/api-types";
+import type { AdminVideoConfiguration, AdminVideoQuoteCandidate, AdminVideoQuoteSimulationResult, RouteModel } from "../../../shared/api-types";
 import { adminApi } from "../../../shared/admin-api";
 import { cn } from "../../../shared/classnames";
 import { ApiError } from "../../../shared/http-client";
@@ -42,12 +42,13 @@ export function VideoPricingPanel() {
     if (!selectedRoute || !config) return;
     setBusy(true); setError(""); setMessage("");
     try {
-      const combinations = Array.isArray(config.visible_options?.combinations) ? config.visible_options.combinations as AdminVideoVisibleCombination[] : [];
+      const visibleOptions = { ...(config.visible_options ?? {}) };
+      delete visibleOptions.combinations;
       await adminApi.saveRouteVideoConfig(selectedRoute.id, {
         expected_version: config.config_version, config_version: nextVersion(config.config_version),
         candidate_parameter_mappings: config.candidate_parameter_mappings ?? {}, minimum_task_points: minimumPoints, rounding_step_points: roundingStep,
-        task_types: config.task_types, visible_options: config.visible_options, defaults: config.defaults,
-        visible_combinations: combinations, max_output_count: config.max_output_count, enabled: config.enabled,
+        task_types: config.task_types, visible_options: visibleOptions, defaults: config.defaults,
+        max_output_count: config.max_output_count, enabled: config.enabled,
       });
       setMessage("报价设置已保存"); await load(selectedID);
     } catch (caught) { setError(errorText(caught)); }

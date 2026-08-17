@@ -206,7 +206,7 @@ func TestCapabilityWriteValidatesEveryDeclaredCombination(t *testing.T) {
 	}
 }
 
-func TestEnabledRouteAllowsUnpricedCandidateWhenCombinationHasPriceableCandidate(t *testing.T) {
+func TestEnabledRouteDefersCandidatePricingValidationToQuoteTime(t *testing.T) {
 	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
 		Routes: []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 2, CandidateAccountModelIDs: []int64{7, 8}}},
 		Capabilities: []CapabilitySummary{
@@ -221,41 +221,33 @@ func TestEnabledRouteAllowsUnpricedCandidateWhenCombinationHasPriceableCandidate
 		},
 	}}}
 	service := NewService(store)
-	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "route-v2", MinimumTaskPoints: "0", RoundingStepPoints: 5, TaskTypes: []string{"text_to_video"}, VisibleCombinations: []VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}}, MaxOutputCount: 4, Enabled: true}
+	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "route-v2", MinimumTaskPoints: "0", RoundingStepPoints: 5, TaskTypes: []string{"text_to_video"}, MaxOutputCount: 4, Enabled: true}
 	if _, err := service.SaveRouteConfig(t.Context(), route); err != nil {
 		t.Fatalf("one priceable candidate must allow route enable: %v", err)
 	}
 	store.snapshot.RateCards[0].Enabled = false
-	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
-		t.Fatal("a combination without any priceable candidate must block route enable")
+	if _, err := service.SaveRouteConfig(t.Context(), route); err != nil {
+		t.Fatalf("route save must not validate an artificial visible combination: %v", err)
 	}
 }
 
-func TestEnabledRouteRejectsCandidateFromDisabledAccount(t *testing.T) {
+func TestEnabledRouteRequiresConfiguredCandidate(t *testing.T) {
 	const routeModelID = int64(9)
 	store := &fakeConfigStore{
 		fakeStore: fakeStore{snapshot: Snapshot{
-			Routes:       []RouteConfigSummary{{RouteModelID: routeModelID, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
-			Capabilities: []CapabilitySummary{{AccountModelID: 7, Capability: domainVideoCapabilityMap("720p"), ValidationState: "verified", Enabled: true}},
-			RateCards: []RateCardSummary{{AccountModelID: 7, ProviderCode: "seedance", PricingSchema: "seedance_token_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
-				"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
-			}}},
+			Routes: []RouteConfigSummary{{RouteModelID: routeModelID, CandidateCount: 0}},
 		}},
-		routeContext: RouteQuoteContext{Candidates: []RouteQuoteCandidate{{
-			AccountModelID: 7, PreflightExclusionCode: "VIDEO_CANDIDATE_NOT_PRICEABLE",
-		}}},
 	}
 	route := RouteConfigWrite{
 		RouteModelID: routeModelID, ConfigVersion: "route-v2", MinimumTaskPoints: "0", RoundingStepPoints: 1,
-		VisibleCombinations: []VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}},
-		MaxOutputCount:      1, Enabled: true,
+		MaxOutputCount: 1, Enabled: true,
 	}
 	if _, err := NewService(store).SaveRouteConfig(t.Context(), route); err == nil {
-		t.Fatal("candidate from a disabled account must not allow route enable")
+		t.Fatal("route without any configured candidate must not be enabled")
 	}
 }
 
-func TestEnabledRouteRejectsCapabilityMatchWithoutMappedResolutionRate(t *testing.T) {
+func TestEnabledRouteSavesCandidateResolutionMappingWithoutVisibleCombination(t *testing.T) {
 	store := &fakeConfigStore{fakeStore: fakeStore{snapshot: Snapshot{
 		Routes:       []RouteConfigSummary{{RouteModelID: 9, CandidateCount: 1, CandidateAccountModelIDs: []int64{7}}},
 		Capabilities: []CapabilitySummary{{AccountModelID: 7, Capability: domainVideoCapabilityMap("768p"), ValidationState: "verified", Enabled: true}},
@@ -266,14 +258,13 @@ func TestEnabledRouteRejectsCapabilityMatchWithoutMappedResolutionRate(t *testin
 	route := RouteConfigWrite{
 		RouteModelID: 9, ConfigVersion: "v2", MinimumTaskPoints: "0", RoundingStepPoints: 1, MaxOutputCount: 1, Enabled: true,
 		CandidateParameterMappings: map[string]any{"7": map[string]any{"resolutions": map[string]any{"720p": "768p"}}},
-		VisibleCombinations:        []VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}},
 	}
-	if _, err := NewService(store).SaveRouteConfig(t.Context(), route); err == nil {
-		t.Fatal("mapped capability without a corresponding native rate must block route enable")
+	if _, err := NewService(store).SaveRouteConfig(t.Context(), route); err != nil {
+		t.Fatalf("route mapping must be saved independently of request-time pricing: %v", err)
 	}
 }
 
-func TestEnabledRouteRequiresVisibleCompatibleCombination(t *testing.T) {
+func TestEnabledRouteDerivesSupportedCombinationsFromCandidates(t *testing.T) {
 	capability := map[string]any{
 		"schema_version": 1, "provider_native_max_n": 1,
 		"task_types": map[string]any{"text_to_video": map[string]any{
@@ -290,16 +281,8 @@ func TestEnabledRouteRequiresVisibleCompatibleCombination(t *testing.T) {
 	}}}
 	service := NewService(store)
 	route := RouteConfigWrite{RouteModelID: 9, ConfigVersion: "v2", MinimumTaskPoints: "0", RoundingStepPoints: 1, MaxOutputCount: 4, Enabled: true}
-	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
-		t.Fatal("enabled route without visible combinations must fail")
-	}
-	route.VisibleCombinations = []VisibleCombination{{TaskType: "text_to_video", Resolution: "1080p", AudioMode: "silent", DurationSeconds: 5}}
-	if _, err := service.SaveRouteConfig(t.Context(), route); err == nil {
-		t.Fatal("combination unsupported by every candidate must fail")
-	}
-	route.VisibleCombinations[0].Resolution = "720p"
 	if _, err := service.SaveRouteConfig(t.Context(), route); err != nil {
-		t.Fatal(err)
+		t.Fatalf("candidate capabilities must replace manually configured visible combinations: %v", err)
 	}
 }
 
@@ -317,7 +300,6 @@ func TestEnabledRouteUsesCandidateResolutionMappingForCapabilityValidation(t *te
 	route := RouteConfigWrite{
 		RouteModelID: 9, ConfigVersion: "v2", MinimumTaskPoints: "0", RoundingStepPoints: 1, MaxOutputCount: 4, Enabled: true,
 		CandidateParameterMappings: map[string]any{"7": map[string]any{"resolutions": map[string]any{"720p": "768p"}}},
-		VisibleCombinations:        []VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}},
 	}
 	if _, err := NewService(store).SaveRouteConfig(t.Context(), route); err != nil {
 		t.Fatalf("mapped route combination must match the provider-native capability: %v", err)

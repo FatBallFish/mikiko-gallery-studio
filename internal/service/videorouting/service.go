@@ -37,8 +37,8 @@ type CapabilityListResponse struct {
 
 func NewService(store Store) *Service { return &Service{store: store} }
 
-func (s *Service) Capabilities(ctx context.Context, code string) (CapabilityResponse, error) {
-	group, err := s.group(ctx, code)
+func (s *Service) Capabilities(ctx context.Context, code string, userGroupCodes []string) (CapabilityResponse, error) {
+	group, err := s.group(ctx, code, userGroupCodes)
 	if err != nil {
 		return CapabilityResponse{}, err
 	}
@@ -66,17 +66,17 @@ func (s *Service) Capabilities(ctx context.Context, code string) (CapabilityResp
 	return response, nil
 }
 
-func (s *Service) ListCapabilities(ctx context.Context) (CapabilityListResponse, error) {
+func (s *Service) ListCapabilities(ctx context.Context, userGroupCodes []string) (CapabilityListResponse, error) {
 	if s == nil || s.store == nil {
 		return CapabilityListResponse{}, errs.Internal("video routing service is unavailable")
 	}
-	groups, err := s.store.ListVideoGroups(ctx)
+	groups, err := s.store.ListVideoGroups(ctx, userGroupCodes)
 	if err != nil {
 		return CapabilityListResponse{}, err
 	}
 	response := CapabilityListResponse{Groups: make([]CapabilityResponse, 0, len(groups))}
 	for _, group := range groups {
-		capability, err := s.Capabilities(ctx, group.Code)
+		capability, err := s.Capabilities(ctx, group.Code, userGroupCodes)
 		if err != nil {
 			continue
 		}
@@ -85,8 +85,8 @@ func (s *Service) ListCapabilities(ctx context.Context) (CapabilityListResponse,
 	return response, nil
 }
 
-func (s *Service) Resolve(ctx context.Context, code string, request domainvideo.Request) (Resolution, error) {
-	group, err := s.group(ctx, code)
+func (s *Service) Resolve(ctx context.Context, code string, userGroupCodes []string, request domainvideo.Request) (Resolution, error) {
+	group, err := s.group(ctx, code, userGroupCodes)
 	if err != nil {
 		return Resolution{}, err
 	}
@@ -114,11 +114,11 @@ func (s *Service) Resolve(ctx context.Context, code string, request domainvideo.
 	return Resolution{Group: group, Request: request, Candidates: matched, CapabilityVersion: capabilityVersion(matched)}, nil
 }
 
-func (s *Service) group(ctx context.Context, code string) (Group, error) {
+func (s *Service) group(ctx context.Context, code string, userGroupCodes []string) (Group, error) {
 	if s == nil || s.store == nil || strings.TrimSpace(code) == "" {
 		return Group{}, errs.BadRequest("route_model_code is required")
 	}
-	group, err := s.store.GetVideoGroup(ctx, strings.TrimSpace(code))
+	group, err := s.store.GetVideoGroup(ctx, strings.TrimSpace(code), userGroupCodes)
 	if err != nil {
 		return Group{}, err
 	}

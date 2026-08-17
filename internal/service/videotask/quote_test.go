@@ -14,10 +14,10 @@ import (
 
 type quoteRoutingStore struct{ group videoroutingservice.Group }
 
-func (s *quoteRoutingStore) GetVideoGroup(context.Context, string) (videoroutingservice.Group, error) {
+func (s *quoteRoutingStore) GetVideoGroup(context.Context, string, []string) (videoroutingservice.Group, error) {
 	return s.group, nil
 }
-func (s *quoteRoutingStore) ListVideoGroups(context.Context) ([]videoroutingservice.Group, error) {
+func (s *quoteRoutingStore) ListVideoGroups(context.Context, []string) ([]videoroutingservice.Group, error) {
 	return []videoroutingservice.Group{s.group}, nil
 }
 

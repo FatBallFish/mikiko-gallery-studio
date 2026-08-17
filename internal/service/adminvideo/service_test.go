@@ -144,12 +144,12 @@ func TestSnapshotIncludesNativePricingVersionsAndBlockingImpacts(t *testing.T) {
 	if got.Capabilities[0].Version != "cap-v2" || got.RateCards[0].RateVersion != 3 || got.Routes[0].ConfigVersion != "route-v6" {
 		t.Fatalf("independent versions were lost: %#v", got)
 	}
-	if len(got.Impacts) != 3 {
-		t.Fatalf("expected missing combination, capability, and rate impacts, got %#v", got.Impacts)
+	if len(got.Impacts) != 2 {
+		t.Fatalf("expected capability and rate impacts, got %#v", got.Impacts)
 	}
 }
 
-func TestSnapshotAcceptsTypedVisibleCombinationsWithCompleteCandidate(t *testing.T) {
+func TestSnapshotAcceptsCompleteCandidateWithoutVisibleCombinations(t *testing.T) {
 	store := &fakeStore{snapshot: Snapshot{
 		Capabilities: []CapabilitySummary{{AccountModelID: 11, ValidationState: "verified", Enabled: true, Capability: domainVideoCapabilityMap("720p")}},
 		RateCards: []RateCardSummary{{AccountModelID: 11, ProviderCode: "seedance", PricingSchema: "seedance_token_v1", RateVersion: 2, Enabled: true, RateConfig: map[string]any{
@@ -157,9 +157,6 @@ func TestSnapshotAcceptsTypedVisibleCombinationsWithCompleteCandidate(t *testing
 		}}},
 		Routes: []RouteConfigSummary{{
 			RouteModelID: 31, RouteName: "视频创作", CandidateCount: 1, CandidateAccountModelIDs: []int64{11}, Enabled: true,
-			VisibleOptions: map[string]any{"combinations": []VisibleCombination{{
-				TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5,
-			}}},
 		}},
 	}}
 
@@ -185,9 +182,6 @@ func TestSnapshotDoesNotBlockMixedRouteWhenOneCandidateIsPriceable(t *testing.T)
 		},
 		Routes: []RouteConfigSummary{{
 			RouteModelID: 31, RouteName: "混合路由", CandidateCount: 2, CandidateAccountModelIDs: []int64{11, 12}, Enabled: true,
-			VisibleOptions: map[string]any{"combinations": []VisibleCombination{{
-				TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5,
-			}}},
 		}},
 	}}
 
@@ -200,154 +194,32 @@ func TestSnapshotDoesNotBlockMixedRouteWhenOneCandidateIsPriceable(t *testing.T)
 	}
 }
 
-func TestSnapshotReportsUnpriceableCombinationAfterCandidateAccountIsDisabled(t *testing.T) {
-	const routeModelID = int64(31)
-	route := RouteConfigSummary{
-		RouteModelID: routeModelID, CandidateCount: 1, CandidateAccountModelIDs: []int64{11}, Enabled: true,
-		VisibleOptions: map[string]any{"combinations": []VisibleCombination{{
-			TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5,
-		}}},
-	}
-	store := &fakeStore{
-		snapshot: Snapshot{
-			Capabilities: []CapabilitySummary{{AccountModelID: 11, ValidationState: "verified", Enabled: true, Capability: domainVideoCapabilityMap("720p")}},
-			RateCards: []RateCardSummary{{AccountModelID: 11, ProviderCode: "seedance", PricingSchema: "seedance_token_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
-				"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
-			}}},
-			Routes: []RouteConfigSummary{route},
-		},
-		routeQuoteContexts: map[int64]RouteQuoteContext{routeModelID: {
-			Route: route, Candidates: []RouteQuoteCandidate{{AccountModelID: 11, PreflightExclusionCode: "VIDEO_CANDIDATE_NOT_PRICEABLE"}},
+func TestSnapshotIgnoresHistoricalVisibleCombinations(t *testing.T) {
+	store := &fakeStore{snapshot: Snapshot{
+		Capabilities: []CapabilitySummary{{AccountModelID: 11, ValidationState: "verified", Enabled: true}},
+		RateCards:    []RateCardSummary{{AccountModelID: 11, Enabled: true}},
+		Routes: []RouteConfigSummary{{
+			RouteModelID: 31, CandidateCount: 1, CandidateAccountModelIDs: []int64{11}, Enabled: true,
+			VisibleOptions: map[string]any{"combinations": []any{map[string]any{"resolution": "legacy"}}},
 		}},
-	}
+	}}
 	got, err := NewService(store).Snapshot(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, impact := range got.Impacts {
-		if impact.Code == "unpriceable_visible_combination" {
-			return
-		}
+	if len(got.Impacts) != 0 {
+		t.Fatalf("historical visible combinations must not affect readiness: %#v", got.Impacts)
 	}
-	t.Fatalf("disabled account must produce an unpriceable combination impact: %#v", got.Impacts)
 }
 
-func TestReadinessRequiresAFormallyPriceableCandidateForEveryVisibleCombination(t *testing.T) {
-	const routeModelID = int64(31)
-	combo := VisibleCombination{TaskType: "text_to_video", Resolution: "720p", AspectRatio: "16:9", AudioMode: "silent", DurationSeconds: 5}
-	route := RouteConfigSummary{
-		RouteModelID: routeModelID, CandidateCount: 2, CandidateAccountModelIDs: []int64{11, 12}, Enabled: true,
-		VisibleOptions: map[string]any{"combinations": []VisibleCombination{combo}},
+func TestReadinessDoesNotRecomputeRemovedVisibleCombinations(t *testing.T) {
+	store := &fakeStore{readiness: ReadinessSnapshot{EnabledVideoRoutes: 1}}
+	got, err := NewService(store).Readiness(t.Context(), time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
 	}
-	validCandidate := RouteQuoteCandidate{
-		RouteCandidateID: 11, AccountModelID: 11, ProviderCode: "seedance", ModelCode: "doubao-seedance-2-0-260128",
-		CapabilityVersion: "cap-v1", Capability: domainVideoCapabilityMap("720p"),
-		RateCard: RateCardSummary{AccountModelID: 11, PricingSchema: "seedance_token_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
-			"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "46"}},
-		}},
-	}
-	requiredVideoCapability := map[string]any{
-		"schema_version": 1, "provider_native_max_n": 1,
-		"task_types": map[string]any{"text_to_video": map[string]any{
-			"durations": map[string]any{"values": []any{5}}, "resolutions": []any{"768p"},
-			"aspect_ratios": []any{"16:9"}, "audio_modes": []any{"silent"},
-			"inputs": map[string]any{"first_frame": map[string]any{
-				"required": true, "max_count": 1, "media_types": []any{"video"}, "formats": []any{"mp4"},
-			}},
-		}},
-	}
-	tests := []struct {
-		name       string
-		candidates []RouteQuoteCandidate
-		missing    int
-	}{
-		{
-			name: "disabled account or model is excluded",
-			candidates: []RouteQuoteCandidate{{
-				RouteCandidateID: 11, AccountModelID: 11, PreflightExclusionCode: "VIDEO_CANDIDATE_NOT_PRICEABLE",
-				ProviderCode: validCandidate.ProviderCode, ModelCode: validCandidate.ModelCode,
-				Capability: validCandidate.Capability, RateCard: validCandidate.RateCard,
-			}},
-			missing: 1,
-		},
-		{
-			name: "invalid capability is excluded",
-			candidates: []RouteQuoteCandidate{{
-				RouteCandidateID: 11, AccountModelID: 11, ProviderCode: validCandidate.ProviderCode, ModelCode: validCandidate.ModelCode,
-				Capability: map[string]any{"schema_version": 99}, RateCard: validCandidate.RateCard,
-			}},
-			missing: 1,
-		},
-		{
-			name: "mapped resolution without a native rate is excluded",
-			candidates: []RouteQuoteCandidate{{
-				RouteCandidateID: 11, AccountModelID: 11, ProviderCode: "minimax", ModelCode: "MiniMax-H3",
-				Capability: domainVideoCapabilityMap("768p"), ResolutionMappings: map[string]string{"720p": "768p"},
-				RateCard: RateCardSummary{AccountModelID: 11, PricingSchema: "minimax_h3_second_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
-					"resolutions": map[string]any{"2k": map[string]any{"output_second_cny": "1.2", "input_video_second_cny": "1.2"}},
-				}},
-			}},
-			missing: 1,
-		},
-		{
-			name: "unsupported pricing schema is excluded",
-			candidates: []RouteQuoteCandidate{{
-				RouteCandidateID: 11, AccountModelID: 11, ProviderCode: validCandidate.ProviderCode, ModelCode: validCandidate.ModelCode,
-				Capability: validCandidate.Capability,
-				RateCard:   RateCardSummary{AccountModelID: 11, PricingSchema: "legacy", RateVersion: 1, Enabled: true, RateConfig: map[string]any{}},
-			}},
-			missing: 1,
-		},
-		{
-			name: "invalid rate config is excluded",
-			candidates: []RouteQuoteCandidate{{
-				RouteCandidateID: 11, AccountModelID: 11, ProviderCode: validCandidate.ProviderCode, ModelCode: validCandidate.ModelCode,
-				Capability: validCandidate.Capability,
-				RateCard: RateCardSummary{AccountModelID: 11, PricingSchema: "seedance_token_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
-					"resolutions": map[string]any{"720p": map[string]any{"without_input_video_million_tokens_cny": "0"}},
-				}},
-			}},
-			missing: 1,
-		},
-		{
-			name: "required input video without its native rate is excluded",
-			candidates: []RouteQuoteCandidate{{
-				RouteCandidateID: 11, AccountModelID: 11, ProviderCode: "minimax", ModelCode: "MiniMax-H3",
-				Capability: requiredVideoCapability, ResolutionMappings: map[string]string{"720p": "768p"},
-				RateCard: RateCardSummary{AccountModelID: 11, PricingSchema: "minimax_h3_second_v1", RateVersion: 1, Enabled: true, RateConfig: map[string]any{
-					"resolutions":      map[string]any{"768p": map[string]any{"output_second_cny": "0.5"}},
-					"free_image_count": 5, "extra_image_cny": "0", "input_audio_free": true,
-				}},
-			}},
-			missing: 1,
-		},
-		{
-			name: "one valid candidate keeps a mixed route ready",
-			candidates: []RouteQuoteCandidate{
-				{RouteCandidateID: 12, AccountModelID: 12, PreflightExclusionCode: "VIDEO_CANDIDATE_NOT_PRICEABLE"},
-				validCandidate,
-			},
-			missing: 0,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			store := &fakeStore{
-				snapshot:  Snapshot{Routes: []RouteConfigSummary{route}},
-				readiness: ReadinessSnapshot{EnabledVideoRoutes: 1, VisibleCombosMissingPrice: 99},
-				routeQuoteContexts: map[int64]RouteQuoteContext{routeModelID: {
-					Route: route, Candidates: test.candidates, CNYPerPoint: "0.01", ConversionVersion: "billing-v1",
-				}},
-			}
-			got, err := NewService(store).Readiness(t.Context(), time.Now().UTC())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got.VisibleCombosMissingPrice != test.missing {
-				t.Fatalf("visible combinations missing price = %d, want %d", got.VisibleCombosMissingPrice, test.missing)
-			}
-		})
+	if got.EnabledVideoRoutes != 1 || got.VisibleCombosMissingPrice != 0 {
+		t.Fatalf("readiness = %#v", got)
 	}
 }
 

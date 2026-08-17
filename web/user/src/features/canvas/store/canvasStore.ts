@@ -12,6 +12,7 @@ import {
   redoCanvasCommand,
   removeCanvasEdges,
   removeCanvasNodes,
+  resizeCanvasNode,
   undoCanvasCommand,
   updateCanvasNode,
 } from '../core/canvasState'
@@ -32,6 +33,7 @@ export type CanvasStoreState = {
   setViewport: (viewport: CanvasViewport) => void
   addNode: (node: CanvasNode) => void
   moveSelected: (delta: { x: number; y: number }) => void
+  resizeNode: (nodeID: string, size: { width: number; height: number }) => void
   updateNode: (nodeID: string, update: (node: CanvasNode) => CanvasNode) => void
   connect: (edge: CanvasEdge) => void
   copySelected: () => void
@@ -60,6 +62,7 @@ export function createCanvasStore(document: CanvasDocument, revision: number, op
     setViewport: (viewport) => set((state) => ({ command: { ...state.command, present: { ...state.command.present, viewport }, dirty: true } })),
     addNode: (node) => set((state) => ({ command: addCanvasNode(state.command, node), selectedIDs: [node.id], selectedEdgeIDs: [] })),
     moveSelected: (delta) => set((state) => ({ command: moveCanvasNodes(state.command, state.selectedIDs, delta) })),
+    resizeNode: (nodeID, size) => set((state) => ({ command: resizeCanvasNode(state.command, nodeID, size) })),
     updateNode: (nodeID, update) => set((state) => ({ command: updateCanvasNode(state.command, nodeID, update) })),
     connect: (edge) => set((state) => ({ command: connectCanvasNodes(state.command, edge) })),
     copySelected: () => set((state) => ({ clipboard: copyCanvasSelection(state.command.present, state.selectedIDs), pasteCount: 0 })),

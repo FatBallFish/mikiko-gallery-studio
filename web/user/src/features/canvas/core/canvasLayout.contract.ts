@@ -1,4 +1,4 @@
-import { autoLayoutCanvasNodes, computeCanvasBounds, fitCanvasViewport, minimapGeometry, visibleCanvasNodeIDs } from './canvasLayout'
+import { autoLayoutCanvasNodes, computeCanvasBounds, fitCanvasViewport, minimapGeometry, nextCanvasNodePosition, visibleCanvasNodeIDs } from './canvasLayout'
 import type { CanvasDocument } from './types'
 
 const document: CanvasDocument = {
@@ -57,3 +57,20 @@ for (const edge of largeEdges) {
 const elapsed = performance.now() - startedAt
 if (!largeVisible.size || largeVisible.size >= 50) throw new Error(`200-node benchmark must cull distant media nodes: ${largeVisible.size}`)
 if (elapsed >= 100) throw new Error(`200-node/300-edge interaction index must remain below the 100ms long-task budget: ${elapsed.toFixed(2)}ms`)
+
+const placementCenter = { x: 640, y: 400 }
+const firstPlacement = nextCanvasNodePosition([], placementCenter, { width: 260, height: 180 })
+const firstNode = { id: 'new-prompt', type: 'prompt' as const, position: firstPlacement, size: { width: 260, height: 180 } }
+const secondPlacement = nextCanvasNodePosition([firstNode], placementCenter, { width: 320, height: 230 })
+const secondNode = { id: 'new-generator', type: 'image_generation' as const, position: secondPlacement, size: { width: 320, height: 230 } }
+const thirdPlacement = nextCanvasNodePosition([firstNode, secondNode], placementCenter, { width: 260, height: 180 })
+const overlaps = (left: { position: { x: number; y: number }; size: { width: number; height: number } }, right: { position: { x: number; y: number }; size: { width: number; height: number } }) => !(
+  left.position.x + left.size.width + 24 <= right.position.x
+  || right.position.x + right.size.width + 24 <= left.position.x
+  || left.position.y + left.size.height + 24 <= right.position.y
+  || right.position.y + right.size.height + 24 <= left.position.y
+)
+const thirdNode = { id: 'new-image', type: 'image' as const, position: thirdPlacement, size: { width: 260, height: 180 } }
+if (overlaps(firstNode, secondNode) || overlaps(firstNode, thirdNode) || overlaps(secondNode, thirdNode)) {
+  throw new Error(`successive toolbar nodes must use distinct non-overlapping positions: ${JSON.stringify([firstNode, secondNode, thirdNode])}`)
+}

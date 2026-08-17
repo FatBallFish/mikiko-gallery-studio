@@ -362,6 +362,22 @@ func (s *CanvasStore) AttachResults(ctx context.Context, req canvasservice.Attac
 		if req.RecoverUnplaced && run.Status != string(canvasservice.RunStatusUnplaced) {
 			return canvasservice.Run{}, fmt.Errorf("canvas run is not unplaced")
 		}
+		if !req.RecoverUnplaced && req.ExpectedRevision > 0 && canvas.Revision != req.ExpectedRevision {
+			updated, err := tx.CanvasGenerationRun.UpdateOneID(run.ID).SetStatus(string(canvasservice.RunStatusUnplaced)).Save(ctx)
+			if err != nil {
+				return canvasservice.Run{}, err
+			}
+			return mapRunEntity(updated), nil
+		}
+		nodeIndexes := make(map[string]int, len(document.Nodes))
+		for index, node := range document.Nodes {
+			nodeIndexes[node.ID] = index
+		}
+		for _, node := range req.UpdatedNodes {
+			if index, ok := nodeIndexes[node.ID]; ok {
+				document.Nodes[index] = node
+			}
+		}
 		nodes := map[string]struct{}{}
 		for _, node := range document.Nodes {
 			nodes[node.ID] = struct{}{}
@@ -383,8 +399,17 @@ func (s *CanvasStore) AttachResults(ctx context.Context, req canvasservice.Attac
 		raw, _ := json.Marshal(document)
 		documentJSON, _ := documentMap(document)
 		next := canvas.Revision + 1
-		if _, err := tx.CreativeCanvas.UpdateOneID(canvas.ID).SetDocumentJSON(documentJSON).SetDocumentBytes(len(raw)).SetNodeCount(len(document.Nodes)).SetEdgeCount(len(document.Edges)).SetRevision(next).SetLastSavedAt(time.Now().UTC()).Save(ctx); err != nil {
+		update := tx.CreativeCanvas.Update().Where(creativecanvas.IDEQ(canvas.ID), creativecanvas.RevisionEQ(canvas.Revision), creativecanvas.StatusEQ("active"), creativecanvas.DeletedAtIsNil()).SetDocumentJSON(documentJSON).SetDocumentBytes(len(raw)).SetNodeCount(len(document.Nodes)).SetEdgeCount(len(document.Edges)).SetRevision(next).SetLastSavedAt(time.Now().UTC())
+		affected, err := update.Save(ctx)
+		if err != nil {
 			return canvasservice.Run{}, err
+		}
+		if affected == 0 {
+			updated, err := tx.CanvasGenerationRun.UpdateOneID(run.ID).SetStatus(string(canvasservice.RunStatusUnplaced)).Save(ctx)
+			if err != nil {
+				return canvasservice.Run{}, err
+			}
+			return mapRunEntity(updated), nil
 		}
 		if _, err := tx.CreativeCanvasRevision.Create().SetCanvasID(canvas.ID).SetRevision(next).SetSchemaVersion(document.SchemaVersion).SetDocumentJSON(documentJSON).SetReason("attach").SetCreatedBy("system").SetDocumentBytes(len(raw)).Save(ctx); err != nil {
 			return canvasservice.Run{}, err

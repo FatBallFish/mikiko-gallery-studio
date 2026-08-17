@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -390,23 +391,32 @@ func (s *Service) SignPart(ctx context.Context, userID int64, sessionID uuid.UUI
 	return multipart.SignMultipartPart(ctx, session.MultipartUpload(), partNumber, checksum, 5*time.Minute)
 }
 
-func (s *Service) UploadLocalPart(ctx context.Context, userID int64, sessionID uuid.UUID, partNumber int, reader io.Reader, size int64, checksum string) (storage.CompletedPart, error) {
+func (s *Service) UploadPart(ctx context.Context, userID int64, sessionID uuid.UUID, partNumber int, reader io.Reader, size int64, checksum string) (storage.CompletedPart, error) {
 	session, multipart, err := s.uploadBackend(ctx, userID, sessionID)
 	if err != nil {
 		return storage.CompletedPart{}, err
 	}
-	if session.StorageDriver != "local" || session.Status == "completed" || session.Status == "aborted" || session.ExpiresAt.Before(s.opts.Now().UTC()) {
-		return storage.CompletedPart{}, errs.New(409, errs.CodeConflict, "upload session is not writable through the local endpoint")
+	if session.Status == "completed" || session.Status == "aborted" || session.ExpiresAt.Before(s.opts.Now().UTC()) {
+		return storage.CompletedPart{}, errs.New(409, errs.CodeConflict, "upload session is not writable through the proxy endpoint")
 	}
 	part, err := multipart.PutMultipartPart(ctx, session.MultipartUpload(), partNumber, reader, size, checksum)
 	if err != nil {
 		return storage.CompletedPart{}, err
 	}
-	status, err := multipart.MultipartStatus(ctx, session.MultipartUpload())
-	if err != nil {
-		return storage.CompletedPart{}, err
+	parts := append([]storage.CompletedPart(nil), session.CompletedParts...)
+	replaced := false
+	for index := range parts {
+		if parts[index].PartNumber == part.PartNumber {
+			parts[index] = part
+			replaced = true
+			break
+		}
 	}
-	if _, err := s.store.RecordCompletedParts(ctx, userID, sessionID, status.CompletedParts); err != nil {
+	if !replaced {
+		parts = append(parts, part)
+	}
+	sort.Slice(parts, func(i, j int) bool { return parts[i].PartNumber < parts[j].PartNumber })
+	if _, err := s.store.RecordCompletedParts(ctx, userID, sessionID, parts); err != nil {
 		return storage.CompletedPart{}, err
 	}
 	return part, nil

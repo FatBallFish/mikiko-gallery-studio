@@ -10,6 +10,7 @@ import {
   retry,
   restoreUploadSnapshots,
   serializeUploadSnapshots,
+  shouldFallbackToProxy,
 } from './uploadManager'
 
 const image = new File(['image'], 'cover.png', { type: 'image/png' })
@@ -31,10 +32,24 @@ if (acceptUploadFiles([overLimit]).rejected[0]?.reason !== '文件超过 1 GiB �
 
 const fingerprint = await fileContentFingerprint(image, 2)
 const pending = createUploadSnapshot(image, 'project-a', 'campaign', fingerprint)
+if (pending.transport !== 'direct') throw new Error('new uploads must prefer direct object-storage transport')
 const restored = restoreUploadSnapshots(serializeUploadSnapshots([pending]))
 if (restored.length !== 1 || restored[0]?.fileName !== 'cover.png' || restored[0]?.status !== 'needs_file') {
   throw new Error('persisted uploads must survive navigation without pretending the File object survived reload')
 }
+if (restoreUploadSnapshots(JSON.stringify([{ ...pending, transport: undefined }]))[0]?.transport !== 'direct') {
+  throw new Error('legacy upload snapshots must restore with direct transport preference')
+}
+const targeted = createUploadSnapshot(image, 'project-a', '', fingerprint, { canvasID: 'canvas-a', nodeID: 'image-frame-a' })
+const restoredTarget = restoreUploadSnapshots(serializeUploadSnapshots([targeted]))[0]?.target
+if (restoredTarget?.canvasID !== 'canvas-a' || restoredTarget.nodeID !== 'image-frame-a') throw new Error('canvas upload targets must survive upload session persistence')
+const malformedTarget = restoreUploadSnapshots(JSON.stringify([{ ...targeted, target: { canvasID: '', nodeID: 7 } }]))[0]?.target
+if (malformedTarget !== undefined) throw new Error('malformed persisted canvas upload targets must be discarded')
+
+if (!shouldFallbackToProxy(new TypeError('Failed to fetch'))) throw new Error('browser network failures must trigger proxy fallback')
+if (!shouldFallbackToProxy(Object.assign(new Error('ETag unavailable'), { code: 'DIRECT_ETAG_UNAVAILABLE' }))) throw new Error('unreadable ETag must trigger proxy fallback')
+if (shouldFallbackToProxy(Object.assign(new Error('forbidden'), { status: 403 }))) throw new Error('explicit object-storage responses must not be disguised as CORS failures')
+if (shouldFallbackToProxy(new DOMException('paused', 'AbortError'))) throw new Error('paused uploads must not trigger proxy fallback')
 
 if (mediaUploadSessionKey('user-a') === mediaUploadSessionKey('user-b')) {
   throw new Error('upload persistence keys must be isolated by current user id')
@@ -68,11 +83,15 @@ if (JSON.stringify(sampledRanges) !== JSON.stringify([[0, 8], [MEDIA_UPLOAD_MAX_
 }
 
 const traySource = await import('node:fs').then(({ readFileSync }) => readFileSync(new URL('./UploadTray.tsx', import.meta.url), 'utf8'))
-for (const required of ['mediaUploadSessionKey(userID)', 'fileContentFingerprint(candidate.file)', 'recoverableUploadSnapshot(item, candidate.file, candidate.contentFingerprint)']) {
+for (const required of ['mediaUploadSessionKey(userID)', 'fileContentFingerprint(candidate.file)', 'recoverableUploadSnapshot(item, candidate.file, candidate.contentFingerprint)', 'uploadMediaProxyPart', "transport: 'proxy'", 'MEDIA_UPLOAD_COMPLETED_EVENT', 'options.target']) {
   if (!traySource.includes(required)) throw new Error(`UploadTray must wire safe user-scoped recovery through ${required}`)
 }
 if (!traySource.includes('useState(false)')) {
   throw new Error('an empty upload tray must start collapsed so it does not cover page actions or footer links')
+}
+const stylesSource = await import('node:fs').then(({ readFileSync }) => readFileSync(new URL('../../styles.css', import.meta.url), 'utf8'))
+if (!traySource.includes("items.length ? '' : ' is-empty'") || !stylesSource.includes('.canvas-editor ~ .media-upload-tray.is-empty:not(.is-expanded)')) {
+  throw new Error('an idle upload tray must collapse to an icon-sized canvas control instead of covering generation actions')
 }
 if (traySource.includes('sessionStorage.getItem(MEDIA_UPLOAD_SESSION_KEY)')) {
   throw new Error('UploadTray must never restore another account through the legacy global session key')

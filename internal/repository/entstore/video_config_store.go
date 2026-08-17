@@ -3,6 +3,8 @@ package entstore
 import (
 	"context"
 	"encoding/json"
+	"sort"
+	"strings"
 
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
@@ -10,6 +12,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/modelaccountmodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videorouteconfig"
 	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
@@ -22,15 +26,22 @@ func NewVideoConfigStore(client *repoent.Client) *VideoConfigStore {
 	return &VideoConfigStore{client: client}
 }
 
-func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (videoroutingservice.Group, error) {
+func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string, userGroupCodes []string) (videoroutingservice.Group, error) {
 	entity, err := s.client.RouteModel.Query().Where(
-		routemodel.CodeEQ(code), routemodel.MediaTypeEQ("video"), routemodel.EnabledEQ(true), routemodel.VisibilityEQ("public"), routemodel.DeletedAtIsNil(),
+		routemodel.CodeEQ(code), routemodel.MediaTypeEQ("video"), routemodel.EnabledEQ(true), routemodel.DeletedAtIsNil(),
 	).Only(ctx)
 	if repoent.IsNotFound(err) {
 		return videoroutingservice.Group{}, errs.New(404, errs.CodeNotFound, "video route model not found")
 	}
 	if err != nil {
 		return videoroutingservice.Group{}, err
+	}
+	visible, err := s.videoRouteVisible(ctx, int64(entity.ID), entity.Visibility, userGroupCodes)
+	if err != nil {
+		return videoroutingservice.Group{}, err
+	}
+	if !visible {
+		return videoroutingservice.Group{}, errs.New(403, errs.CodeModelRouteNotVisible, "video route model is not visible")
 	}
 	config, err := s.client.VideoRouteConfig.Query().Where(
 		videorouteconfig.RouteModelIDEQ(int64(entity.ID)), videorouteconfig.EnabledEQ(true), videorouteconfig.DeletedAtIsNil(),
@@ -44,9 +55,6 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 	group := videoroutingservice.Group{
 		RouteModelID: int64(entity.ID), Code: entity.Code, Name: entity.Name, Description: entity.Description,
 		ConfigVersion: config.ConfigVersion, MinimumTaskPoints: config.MinimumTaskPoints, RoundingStepPoints: config.RoundingStepPoints, MaxOutputCount: config.MaxOutputCount,
-	}
-	for _, value := range config.TaskTypes {
-		group.TaskTypes = append(group.TaskTypes, domainvideo.TaskType(value))
 	}
 	candidates, err := s.client.RouteModelCandidate.Query().Where(
 		routemodelcandidate.RouteModelIDEQ(int64(entity.ID)), routemodelcandidate.EnabledEQ(true), routemodelcandidate.DeletedAtIsNil(),
@@ -94,7 +102,23 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 			ResolutionMappings: videoResolutionMappings(config.CandidateParameterMappings, int64(accountModel.ID)),
 		})
 	}
+	group.TaskTypes = deriveVideoGroupTaskTypes(group.Candidates)
 	return group, nil
+}
+
+func deriveVideoGroupTaskTypes(candidates []videoroutingservice.Candidate) []domainvideo.TaskType {
+	seen := make(map[domainvideo.TaskType]struct{})
+	for _, candidate := range candidates {
+		for taskType := range candidate.Capability.TaskTypes {
+			seen[taskType] = struct{}{}
+		}
+	}
+	taskTypes := make([]domainvideo.TaskType, 0, len(seen))
+	for taskType := range seen {
+		taskTypes = append(taskTypes, taskType)
+	}
+	sort.Slice(taskTypes, func(i, j int) bool { return taskTypes[i] < taskTypes[j] })
+	return taskTypes
 }
 
 func videoResolutionMappings(value map[string]any, accountModelID int64) map[domainvideo.Resolution]domainvideo.Resolution {
@@ -106,22 +130,64 @@ func videoResolutionMappings(value map[string]any, accountModelID int64) map[dom
 	return result
 }
 
-func (s *VideoConfigStore) ListVideoGroups(ctx context.Context) ([]videoroutingservice.Group, error) {
+func (s *VideoConfigStore) ListVideoGroups(ctx context.Context, userGroupCodes []string) ([]videoroutingservice.Group, error) {
 	entities, err := s.client.RouteModel.Query().Where(
-		routemodel.MediaTypeEQ("video"), routemodel.EnabledEQ(true), routemodel.VisibilityEQ("public"), routemodel.DeletedAtIsNil(),
+		routemodel.MediaTypeEQ("video"), routemodel.EnabledEQ(true), routemodel.DeletedAtIsNil(),
 	).Order(repoent.Asc(routemodel.FieldSortOrder), repoent.Asc(routemodel.FieldID)).All(ctx)
 	if err != nil {
 		return nil, err
 	}
 	groups := make([]videoroutingservice.Group, 0, len(entities))
 	for _, entity := range entities {
-		group, err := s.GetVideoGroup(ctx, entity.Code)
+		group, err := s.GetVideoGroup(ctx, entity.Code, userGroupCodes)
 		if err != nil {
 			continue
 		}
 		groups = append(groups, group)
 	}
 	return groups, nil
+}
+
+func (s *VideoConfigStore) videoRouteVisible(ctx context.Context, routeModelID int64, visibility string, userGroupCodes []string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(visibility)) {
+	case "public":
+		return true, nil
+	case "groups":
+		codes := make([]string, 0, len(userGroupCodes))
+		seen := make(map[string]struct{}, len(userGroupCodes))
+		for _, value := range userGroupCodes {
+			code := strings.ToLower(strings.TrimSpace(value))
+			if code == "" {
+				continue
+			}
+			if _, exists := seen[code]; exists {
+				continue
+			}
+			seen[code] = struct{}{}
+			codes = append(codes, code)
+		}
+		if len(codes) == 0 {
+			return false, nil
+		}
+		groups, err := s.client.UserGroup.Query().Where(usergroup.GroupCodeIn(codes...), usergroup.StatusEQ("enabled")).All(ctx)
+		if err != nil {
+			return false, err
+		}
+		groupIDs := make([]int64, 0, len(groups))
+		for _, group := range groups {
+			groupIDs = append(groupIDs, int64(group.ID))
+		}
+		if len(groupIDs) == 0 {
+			return false, nil
+		}
+		count, err := s.client.RouteModelVisibilityGroup.Query().Where(
+			routemodelvisibilitygroup.RouteModelIDEQ(routeModelID),
+			routemodelvisibilitygroup.GroupIDIn(groupIDs...),
+		).Count(ctx)
+		return count > 0, err
+	default:
+		return false, nil
+	}
 }
 
 func decodeVideoCapability(value map[string]any) (domainvideo.Capability, error) {

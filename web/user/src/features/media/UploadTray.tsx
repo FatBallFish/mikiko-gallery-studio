@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, CirclePause, Play, RotateCcw, Trash2, Upload, X } from 'lucide-react'
-import type { MediaCompletedPart, MediaUploadSession } from '../../../../shared/api-types'
+import type { MediaAsset, MediaCompletedPart, MediaUploadSession } from '../../../../shared/api-types'
 import { userApi } from '../../../../shared/user-api'
 import { useProjects } from '../../ProjectContext'
 import { useApp } from '../../components'
@@ -17,11 +17,16 @@ import {
   restoreUploadSnapshots,
   retry,
   serializeUploadSnapshots,
+  shouldFallbackToProxy,
   type UploadSnapshot,
+  type UploadTarget,
 } from './uploadManager'
 
 export const MEDIA_ASSETS_CHANGED_EVENT = 'mgs:media-assets-changed'
 export const QUEUE_MEDIA_UPLOAD_EVENT = 'mgs:queue-media-upload'
+export const MEDIA_UPLOAD_COMPLETED_EVENT = 'mgs:media-upload-completed'
+export type QueueMediaUploadDetail = { files?: File[]; projectID?: string; target?: UploadTarget }
+export type MediaUploadCompletedDetail = { projectID: string; assetID: string; mediaType: MediaAsset['media_type']; target?: UploadTarget; asset: MediaAsset }
 
 async function sha256Hex(blob: Blob) {
   const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
@@ -30,7 +35,7 @@ async function sha256Hex(blob: Blob) {
 
 function s3CompletedPart(partNumber: number, chunk: Blob, checksum: string, response: Response): MediaCompletedPart {
   const etag = response.headers.get('etag')?.replace(/^"|"$/g, '')
-  if (!etag) throw new Error('对象存储未返回 ETag，请检查 CORS ExposeHeaders 配置')
+  if (!etag) throw Object.assign(new Error('对象存储 ETag 不可读'), { code: 'DIRECT_ETAG_UNAVAILABLE' })
   return { part_number: partNumber, etag, checksum, size_bytes: chunk.size }
 }
 
@@ -64,9 +69,9 @@ export function UploadTray() {
 
   useEffect(() => {
     const queueUpload = (event: Event) => {
-      const detail = (event as CustomEvent<{ files?: File[]; projectID?: string }>).detail
-      if (!detail?.files?.length || (detail.projectID && detail.projectID !== projects.selectedProjectID)) return
-      void addFiles(detail.files)
+      const detail = (event as CustomEvent<QueueMediaUploadDetail>).detail
+      if (!detail?.files?.length) return
+      void addFiles(detail.files, { projectID: detail.projectID, target: detail.target })
     }
     window.addEventListener(QUEUE_MEDIA_UPLOAD_EVENT, queueUpload)
     return () => window.removeEventListener(QUEUE_MEDIA_UPLOAD_EVENT, queueUpload)
@@ -97,6 +102,7 @@ export function UploadTray() {
       }
       snapshot = reconcileUploadSession(snapshot, session)
       update(snapshot.localID, () => ({ ...snapshot, status: 'uploading', error: undefined }))
+      const transport = { current: snapshot.transport }
       const uploaded = new Map(snapshot.completedParts.map((part) => [part.part_number, part]))
       const completed = new Set(completedPartNumbers(snapshot))
       const missing = Array.from({ length: session.part_count }, (_, index) => index + 1).filter((part) => !completed.has(part))
@@ -106,13 +112,28 @@ export function UploadTray() {
         const chunk = file.slice(start, Math.min(file.size, start + session.part_size))
         const checksum = await sha256Hex(chunk)
         const part = await retry(async () => {
-          if (session.storage_driver === 'local') {
-            return userApi.uploadMediaLocalPart(session.id, partNumber, chunk, checksum, app.session?.token, controller.signal)
+          if (transport.current === 'proxy') {
+            try {
+              return await userApi.uploadMediaProxyPart(session.id, partNumber, chunk, checksum, app.session?.token, controller.signal)
+            } catch (caught) {
+              throw uploadPartError(partNumber, caught)
+            }
           }
           const target = await userApi.signMediaUploadPart(session.id, partNumber, checksum)
-          const response = await fetch(target.url, { method: 'PUT', body: chunk, headers: target.headers, signal: controller.signal })
-          if (!response.ok) throw Object.assign(new Error(`分片 ${partNumber} 上传失败`), { status: response.status })
-          return s3CompletedPart(partNumber, chunk, checksum, response)
+          try {
+            const response = await fetch(target.url, { method: 'PUT', body: chunk, headers: target.headers, signal: controller.signal })
+            if (!response.ok) throw Object.assign(new Error(`分片 ${partNumber}：对象存储返回 ${response.status}`), { status: response.status })
+            return s3CompletedPart(partNumber, chunk, checksum, response)
+          } catch (caught) {
+            if (!shouldFallbackToProxy(caught)) throw caught
+            transport.current = 'proxy'
+            update(snapshot.localID, (item) => ({ ...item, transport: 'proxy', error: undefined }))
+            try {
+              return await userApi.uploadMediaProxyPart(session.id, partNumber, chunk, checksum, app.session?.token, controller.signal)
+            } catch (proxyError) {
+              throw uploadPartError(partNumber, proxyError)
+            }
+          }
         })
         uploaded.set(partNumber, part)
         const completedParts = Array.from(uploaded.values()).sort((a, b) => a.part_number - b.part_number)
@@ -123,6 +144,7 @@ export function UploadTray() {
       update(snapshot.localID, (item) => ({ ...item, status: 'completed', assetID: asset.id, progress: 1, error: undefined }))
       files.current.delete(snapshot.localID)
       window.dispatchEvent(new CustomEvent(MEDIA_ASSETS_CHANGED_EVENT, { detail: { projectID: asset.project_id, assetID: asset.id, mediaType: asset.media_type } }))
+      window.dispatchEvent(new CustomEvent<MediaUploadCompletedDetail>(MEDIA_UPLOAD_COMPLETED_EVENT, { detail: { projectID: asset.project_id, assetID: asset.id, mediaType: asset.media_type, target: snapshot.target, asset } }))
       app.notify('success', `${snapshot.fileName} 上传完成`)
     } catch (caught) {
       const aborted = caught instanceof DOMException && caught.name === 'AbortError'
@@ -132,8 +154,9 @@ export function UploadTray() {
     }
   }, [app, update])
 
-  const addFiles = async (incoming: Iterable<File> | FileList | null) => {
-    if (!incoming || !projects.selectedProjectID) return
+  const addFiles = async (incoming: Iterable<File> | FileList | null, options: { projectID?: string; target?: UploadTarget } = {}) => {
+    const projectID = options.projectID || projects.selectedProjectID
+    if (!incoming || !projectID) return
     const result = acceptUploadFiles(incoming)
     const accepted = await Promise.all(result.accepted.map(async (candidate) => ({
       ...candidate,
@@ -142,14 +165,14 @@ export function UploadTray() {
     const additions: UploadSnapshot[] = []
     const claimedRecovered = new Set<string>()
     for (const candidate of accepted) {
-      const existing = items.find((item) => !claimedRecovered.has(item.localID) && item.status === 'needs_file' && recoverableUploadSnapshot(item, candidate.file, candidate.contentFingerprint))
+      const existing = items.find((item) => !claimedRecovered.has(item.localID) && item.status === 'needs_file' && (!options.target || (item.target?.canvasID === options.target.canvasID && item.target.nodeID === options.target.nodeID)) && recoverableUploadSnapshot(item, candidate.file, candidate.contentFingerprint))
       if (existing) {
         claimedRecovered.add(existing.localID)
         files.current.set(existing.localID, candidate.file)
         update(existing.localID, (item) => ({ ...item, status: 'paused', error: undefined }))
         queueMicrotask(() => void runUpload({ ...existing, status: 'paused', error: undefined }))
       } else {
-        const snapshot = createUploadSnapshot(candidate.file, projects.selectedProjectID, '', candidate.contentFingerprint)
+        const snapshot = createUploadSnapshot(candidate.file, projectID, '', candidate.contentFingerprint, options.target)
         files.current.set(snapshot.localID, candidate.file)
         additions.push(snapshot)
         queueMicrotask(() => void runUpload(snapshot))
@@ -174,7 +197,7 @@ export function UploadTray() {
   const clearFinished = () => setItems((current) => current.filter((item) => item.status !== 'completed' && item.status !== 'cancelled'))
 
   return (
-    <aside className={`media-upload-tray${expanded ? ' is-expanded' : ''}`} aria-label="上传队列">
+    <aside className={`media-upload-tray${expanded ? ' is-expanded' : ''}${items.length ? '' : ' is-empty'}`} aria-label="上传队列">
       <header>
         <button type="button" className="media-upload-title" onClick={() => setExpanded((value) => !value)}>
           <Upload size={17} /><strong>上传</strong>{items.length ? <span>{items.length}</span> : null}{expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
@@ -203,8 +226,14 @@ export function UploadTray() {
 
 function uploadStatusLabel(item: UploadSnapshot) {
   const labels: Record<UploadSnapshot['status'], string> = {
-    queued: '等待上传', initializing: '正在创建会话', uploading: `${Math.round(item.progress * 100)}%`, paused: '已暂停',
+    queued: '等待上传', initializing: '正在创建会话', uploading: `${item.transport === 'proxy' ? '兼容上传 · ' : ''}${Math.round(item.progress * 100)}%`, paused: '已暂停',
     needs_file: '需要重新选择文件', completing: '正在完成', completed: '已完成', failed: '上传失败', cancelled: '已取消',
   }
   return labels[item.status]
+}
+
+function uploadPartError(partNumber: number, error: unknown) {
+  if (error instanceof DOMException && error.name === 'AbortError') return error
+  const message = error instanceof Error ? error.message : '上传失败'
+  return new Error(`分片 ${partNumber}：${message}`)
 }

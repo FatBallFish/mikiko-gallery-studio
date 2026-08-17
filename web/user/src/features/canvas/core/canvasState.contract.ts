@@ -2,6 +2,11 @@ import {
   addCanvasNode,
   attachCanvasResults,
   connectCanvasNodes,
+  canvasGenerationEstimateSignature,
+  canvasImageSizeDraftPatch,
+  prepareCanvasEstimate,
+  resolveCanvasEstimate,
+  canvasPromptResourceCandidates,
   compatibleCanvasTargets,
   copyCanvasSelection,
   createCanvasState,
@@ -11,6 +16,7 @@ import {
   removeCanvasNodes,
   moveCanvasNodes,
   redoCanvasCommand,
+  resizeCanvasNode,
   selectCanvasNodesInRect,
   undoCanvasCommand,
   updateCanvasNode,
@@ -37,6 +43,16 @@ state = undoCanvasCommand(state)
 if (state.present.nodes[0].position.x !== 0) throw new Error('undo must restore the previous document')
 state = redoCanvasCommand(state)
 if (state.present.nodes[0].position.x !== 80) throw new Error('redo must restore the moved document')
+
+const resizeStart = createCanvasState(document, 4)
+const resized = resizeCanvasNode(resizeStart, 'prompt', { width: 180, height: 100 })
+const resizedPrompt = resized.present.nodes.find((node) => node.id === 'prompt')
+if (resizedPrompt?.size.width !== 220 || resizedPrompt.size.height !== 140) throw new Error('prompt resize must clamp to its node-type minimum')
+if (resized.past.length !== 1) throw new Error('a completed resize gesture must create exactly one undo entry')
+if (undoCanvasCommand(resized).present.nodes.find((node) => node.id === 'prompt')?.size.width !== 240) throw new Error('node resize must be undoable')
+if (redoCanvasCommand(undoCanvasCommand(resized)).present.nodes.find((node) => node.id === 'prompt')?.size.width !== 220) throw new Error('node resize must be redoable')
+const resizedGeneration = resizeCanvasNode(resizeStart, 'image-gen', { width: 200, height: 120 }).present.nodes.find((node) => node.id === 'image-gen')
+if (resizedGeneration?.size.width !== 280 || resizedGeneration.size.height !== 200) throw new Error('generation resize must preserve its larger minimum')
 
 const selected = selectCanvasNodesInRect(state.present.nodes, { x: 0, y: 0, width: 620, height: 560 })
 if (!selected.includes('prompt') || !selected.includes('image-gen') || selected.includes('video')) throw new Error(`selection rectangle is incorrect: ${selected}`)
@@ -71,6 +87,11 @@ if (!imageTargets.some((target) => target.type === 'image_generation' && target.
 if (compatibleCanvasTargets(state.present, 'video').length || compatibleCanvasTargets(state.present, 'audio').length || compatibleCanvasTargets(state.present, 'note').length) {
   throw new Error('media and note nodes without P0 outputs must not offer connection-created targets')
 }
+const generationTargets = compatibleCanvasTargets(state.present, 'image-gen')
+if (!generationTargets.some((target) => target.type === 'image' && target.role === 'result')) throw new Error('image generation output must offer an empty image frame target')
+if (inspectCanvasConnection(state.present, { id: 'occupied-output', source: 'image-gen', target: 'image', input_role: 'result' }) !== 'output_slot_occupied') {
+  throw new Error('a bound image asset must not become a new generation output slot')
+}
 if (inspectCanvasConnection(state.present, { id: 'candidate', source: 'audio', target: 'video-gen', input_role: 'reference' }) !== 'illegal_connection') {
   throw new Error('connection inspection must report an illegal target before mutation')
 }
@@ -85,7 +106,7 @@ try {
 }
 if (!illegal) throw new Error('illegal connections must be rejected with an actionable code')
 
-const cycleSource = addCanvasNode(state, { id: 'result-image', type: 'image', asset_id: 'asset-result', position: { x: 800, y: 600 }, size: { width: 240, height: 180 } })
+const cycleSource = addCanvasNode(state, { id: 'result-image', type: 'image', position: { x: 800, y: 600 }, size: { width: 240, height: 180 } })
 const withResult = connectCanvasNodes(cycleSource, { id: 'result-link', source: 'image-gen', target: 'result-image', input_role: 'result' })
 let cycle = false
 try {
@@ -94,6 +115,49 @@ try {
   cycle = error instanceof Error && error.message.includes('cycle')
 }
 if (!cycle) throw new Error('directed generation cycles must be rejected')
+
+const resourceDocument: CanvasDocument = {
+  schema_version: 1, viewport: { x: 0, y: 0, zoom: 1 },
+  nodes: [
+    { id: 'resource-prompt', type: 'prompt', position: { x: 0, y: 0 }, size: { width: 220, height: 140 } },
+    { id: 'resource-gen', type: 'image_generation', position: { x: 300, y: 0 }, size: { width: 280, height: 200 } },
+    { id: 'resource-a', type: 'image', asset_id: 'asset-a', position: { x: 0, y: 240 }, size: { width: 220, height: 160 }, payload: { name: '主体' } },
+    { id: 'resource-b', type: 'image', asset_id: 'asset-b', position: { x: 260, y: 240 }, size: { width: 220, height: 160 }, payload: { name: '主体' } },
+  ],
+  edges: [
+    { id: 'resource-prompt-edge', source: 'resource-prompt', target: 'resource-gen', input_role: 'prompt' },
+    { id: 'resource-a-edge', source: 'resource-a', target: 'resource-gen', input_role: 'reference', ordinal: 1 },
+    { id: 'resource-b-edge', source: 'resource-b', target: 'resource-gen', input_role: 'reference', ordinal: 2 },
+  ],
+}
+const resources = canvasPromptResourceCandidates(resourceDocument, 'resource-prompt')
+if (resources.length !== 2 || resources.some((resource) => resource.name !== '主体' || !resource.duplicateName)) {
+  throw new Error(`prompt resources must expose connected image candidates and duplicate names: ${JSON.stringify(resources)}`)
+}
+
+const estimateDocument: CanvasDocument = {
+  ...resourceDocument,
+  nodes: resourceDocument.nodes.map((node) => node.id === 'resource-gen' ? { ...node, payload: { draft: { route_model_code: 'plus', output_image_count: 2 } } } : node),
+}
+const estimateSignature = canvasGenerationEstimateSignature(estimateDocument, 'resource-gen')
+const movedEstimateSignature = canvasGenerationEstimateSignature({ ...estimateDocument, viewport: { x: 200, y: 80, zoom: 0.5 }, nodes: estimateDocument.nodes.map((node) => ({ ...node, position: { x: node.position.x + 100, y: node.position.y + 40 } })) }, 'resource-gen')
+if (estimateSignature !== movedEstimateSignature) throw new Error('canvas estimate signatures must ignore layout-only changes')
+const changedPromptSignature = canvasGenerationEstimateSignature({ ...estimateDocument, nodes: estimateDocument.nodes.map((node) => node.id === 'resource-prompt' ? { ...node, payload: { text: 'changed prompt' } } : node) }, 'resource-gen')
+if (estimateSignature === changedPromptSignature) throw new Error('canvas estimate signatures must change with generation inputs')
+const waitingEstimate = prepareCanvasEstimate(undefined, estimateSignature, true, 4)
+if (waitingEstimate?.status !== 'waiting') throw new Error('eligible image nodes must enter waiting estimate state')
+const readyEstimate = resolveCanvasEstimate(waitingEstimate, estimateSignature, 4, { points: '8.00000' })
+const staleEstimate = resolveCanvasEstimate(readyEstimate, estimateSignature, 3, { points: '1.00000' })
+if (readyEstimate?.status !== 'ready' || readyEstimate.points !== '8.00000' || staleEstimate !== readyEstimate) throw new Error('out-of-order estimate responses must be ignored')
+if (prepareCanvasEstimate(readyEstimate, `${estimateSignature}-changed`, false, 5) !== undefined) throw new Error('incomplete generation inputs must suppress and clear estimates')
+
+const sizeOptions = { base_resolution: ['1k'], aspect_ratios: ['16:9'], pixel_sizes: ['1024x1024'] }
+const autoSize = canvasImageSizeDraftPatch('auto', sizeOptions)
+if (autoSize.base_resolution || autoSize.aspect_ratio || autoSize.requested_size) throw new Error(`automatic size mode must clear every explicit size field: ${JSON.stringify(autoSize)}`)
+const ratioSize = canvasImageSizeDraftPatch('ratio', sizeOptions)
+if (ratioSize.base_resolution !== '1k' || ratioSize.aspect_ratio !== '16:9' || ratioSize.requested_size) throw new Error(`ratio size mode must only keep ratio fields: ${JSON.stringify(ratioSize)}`)
+const pixelSize = canvasImageSizeDraftPatch('pixel', sizeOptions)
+if (pixelSize.requested_size !== '1024x1024' || pixelSize.base_resolution || pixelSize.aspect_ratio) throw new Error(`pixel size mode must only keep requested_size: ${JSON.stringify(pixelSize)}`)
 
 const attached = attachCanvasResults(state, 'run-1', 'image-gen', [{ asset_id: 'asset-new', media_type: 'image' }])
 const attachedAgain = attachCanvasResults(attached, 'run-1', 'image-gen', [{ asset_id: 'asset-new', media_type: 'image' }])

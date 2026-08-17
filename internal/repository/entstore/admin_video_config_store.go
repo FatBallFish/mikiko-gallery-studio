@@ -324,7 +324,7 @@ func (s *AdminVideoStore) SaveRouteConfig(ctx context.Context, input adminvideo.
 func saveVideoRouteConfig(ctx context.Context, client *repoent.Client, input adminvideo.RouteConfigWrite) (adminvideo.RouteConfigSummary, error) {
 	row, err := client.VideoRouteConfig.Query().Where(videorouteconfig.RouteModelIDEQ(input.RouteModelID), videorouteconfig.DeletedAtIsNil()).Only(ctx)
 	visible := cloneAnyMap(input.VisibleOptions)
-	visible["combinations"] = input.VisibleCombinations
+	delete(visible, "combinations")
 	if repoent.IsNotFound(err) {
 		if input.ExpectedVersion != "" {
 			return adminvideo.RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "video route config version conflict")

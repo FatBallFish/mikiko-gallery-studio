@@ -172,6 +172,52 @@ func TestS3MultipartLifecycleAndPartSigning(t *testing.T) {
 	}
 }
 
+func TestS3MultipartProxyStreamsSignedPart(t *testing.T) {
+	content := []byte("streamed multipart body")
+	checksum := sha256HexTest(content)
+	requestSeen := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestSeen = true
+		if r.Method != http.MethodPut || r.URL.Query().Get("uploadId") != "proxy-upload" || r.URL.Query().Get("partNumber") != "1" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		if r.ContentLength != int64(len(content)) {
+			t.Fatalf("content length = %d", r.ContentLength)
+		}
+		_, checksumBase64, _ := normalizeSHA256Checksum(checksum)
+		if r.Header.Get("X-Amz-Checksum-Sha256") != checksumBase64 || r.Header.Get("X-Amz-Content-Sha256") != checksum {
+			t.Fatalf("checksum headers = %#v", r.Header)
+		}
+		if authorization := r.Header.Get("Authorization"); !strings.Contains(authorization, "x-amz-checksum-sha256;x-amz-content-sha256;x-amz-date") {
+			t.Fatalf("checksum headers are not signed: %s", authorization)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil || !bytes.Equal(body, content) {
+			t.Fatalf("body=%q err=%v", body, err)
+		}
+		w.Header().Set("ETag", `"proxy-etag"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	backend, err := NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{
+		Endpoint: server.URL, Region: "auto", Bucket: "media", AccessKeyID: "test", SecretAccessKey: "secret", ForcePathStyle: true,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.client = server.Client()
+	backend.now = func() time.Time { return time.Date(2026, 8, 17, 8, 0, 0, 0, time.UTC) }
+	upload := MultipartUpload{UploadID: "proxy-upload", ObjectKey: "media/original/video.mp4", ContentType: "video/mp4", SizeBytes: int64(len(content)), PartSize: int64(len(content)), PartCount: 1, Driver: "s3"}
+
+	part, err := backend.PutMultipartPart(t.Context(), upload, 1, bytes.NewReader(content), int64(len(content)), checksum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !requestSeen || part.PartNumber != 1 || part.ETag != "proxy-etag" || part.Checksum != checksum || part.SizeBytes != int64(len(content)) {
+		t.Fatalf("part = %#v", part)
+	}
+}
+
 func sha256HexTest(content []byte) string {
 	sum := sha256.Sum256(content)
 	return hex.EncodeToString(sum[:])

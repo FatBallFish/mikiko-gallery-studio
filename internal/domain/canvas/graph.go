@@ -5,9 +5,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
+
+const maxCanvasCoordinate = 1_000_000
 
 type GraphArc struct {
 	Source string
@@ -24,15 +27,6 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 	if limits.MaxEdges > 0 && len(document.Edges) > limits.MaxEdges {
 		return graphError("too_many_edges", "", "", "canvas contains too many edges")
 	}
-	if limits.MaxDocumentBytes > 0 {
-		raw, err := json.Marshal(document)
-		if err != nil {
-			return graphError("invalid_document", "", "", "canvas document cannot be encoded")
-		}
-		if len(raw) > limits.MaxDocumentBytes {
-			return graphError("document_too_large", "", "", "canvas document exceeds the size limit")
-		}
-	}
 	nodes := make(map[string]Node, len(document.Nodes))
 	for _, node := range document.Nodes {
 		if strings.TrimSpace(node.ID) == "" || len(node.ID) > 64 {
@@ -44,13 +38,29 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 		if !isNodeType(node.Type) {
 			return graphError("unsupported_node_type", node.ID, "", "canvas node type is unsupported")
 		}
-		if isMediaNode(node.Type) && strings.TrimSpace(node.AssetID) == "" {
+		if !isFinite(node.Position.X) || !isFinite(node.Position.Y) || math.Abs(node.Position.X) > maxCanvasCoordinate || math.Abs(node.Position.Y) > maxCanvasCoordinate {
+			return graphError("invalid_node_position", node.ID, "", "canvas node position is outside the safety range")
+		}
+		minimum := minimumNodeSize(node.Type)
+		if !isFinite(node.Size.Width) || !isFinite(node.Size.Height) || node.Size.Width < minimum.Width || node.Size.Height < minimum.Height {
+			return graphError("invalid_node_size", node.ID, "", "canvas node size is below the supported minimum")
+		}
+		if isMediaNode(node.Type) && node.Type != NodeTypeImage && strings.TrimSpace(node.AssetID) == "" {
 			return graphError("asset_required", node.ID, "", "media node must reference an asset")
 		}
 		if limits.MaxNodeBytes > 0 && len(node.Payload) > limits.MaxNodeBytes {
 			return graphError("node_too_large", node.ID, "", "canvas node payload exceeds the size limit")
 		}
 		nodes[node.ID] = node
+	}
+	if limits.MaxDocumentBytes > 0 {
+		raw, err := json.Marshal(document)
+		if err != nil {
+			return graphError("invalid_document", "", "", "canvas document cannot be encoded")
+		}
+		if len(raw) > limits.MaxDocumentBytes {
+			return graphError("document_too_large", "", "", "canvas document exceeds the size limit")
+		}
 	}
 	edges := make(map[string]struct{}, len(document.Edges))
 	arcs := make([]GraphArc, 0, len(document.Edges))
@@ -80,6 +90,21 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 		}
 		arcs = append(arcs, GraphArc{Source: edge.Source, Target: edge.Target})
 	}
+	for _, node := range document.Nodes {
+		if node.Type != NodeTypeImage || strings.TrimSpace(node.AssetID) != "" {
+			continue
+		}
+		connectedOutput := false
+		for _, edge := range document.Edges {
+			if edge.Target == node.ID && edge.InputRole == InputRoleResult {
+				connectedOutput = true
+				break
+			}
+		}
+		if !connectedOutput {
+			return graphError("asset_required", node.ID, "", "empty image node must be connected to an image generation result")
+		}
+	}
 	nodeIDs := make([]string, 0, len(nodes))
 	for id := range nodes {
 		nodeIDs = append(nodeIDs, id)
@@ -88,6 +113,23 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 		return graphError("cycle", "", "", "canvas generation relationship cannot contain a cycle")
 	}
 	return nil
+}
+
+func minimumNodeSize(nodeType NodeType) Size {
+	switch nodeType {
+	case NodeTypeImage, NodeTypeVideo:
+		return Size{Width: 220, Height: 160}
+	case NodeTypeAudio:
+		return Size{Width: 240, Height: 120}
+	case NodeTypeImageGeneration, NodeTypeVideoGeneration:
+		return Size{Width: 280, Height: 200}
+	default:
+		return Size{Width: 220, Height: 140}
+	}
+}
+
+func isFinite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func HasDirectedCycle(nodeIDs []string, arcs []GraphArc) bool {

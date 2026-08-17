@@ -219,6 +219,14 @@ func imageRequest(submission GenerationSubmission) (domainimagetask.CreateReques
 		return domainimagetask.CreateRequest{}, fmt.Errorf("decode image generation node: %w", err)
 	}
 	request := domainimagetask.CreateRequest{AbstractModel: draft.AbstractModel, RouteModelCode: draft.RouteModelCode, TaskType: draft.TaskType, Prompt: draft.Prompt, PromptTemplate: draft.PromptTemplate, NegativePrompt: draft.NegativePrompt, SizeMode: draft.SizeMode, RequestedSize: draft.RequestedSize, BaseResolution: draft.BaseResolution, Quality: draft.Quality, OutputFormat: draft.OutputFormat, Background: draft.Background, OutputCompression: draft.OutputCompression, Moderation: draft.Moderation, AspectRatio: draft.AspectRatio, OutputImageCount: draft.OutputImageCount, ReferenceStrength: draft.ReferenceStrength, Seed: draft.Seed, ResponseMode: draft.ResponseMode, SavePolicy: draft.SavePolicy, CapabilityVersion: draft.CapabilityVersion}
+	switch request.SizeMode {
+	case "auto":
+		request.RequestedSize, request.BaseResolution, request.AspectRatio = "", "", ""
+	case "pixel":
+		request.BaseResolution, request.AspectRatio = "", ""
+	case "ratio":
+		request.RequestedSize = ""
+	}
 	prompt, err := promptFromInputs(submission)
 	if err != nil {
 		return request, err
@@ -277,6 +285,7 @@ func videoRequest(submission GenerationSubmission) (videotaskservice.CreateReque
 		return request, fmt.Errorf("decode video generation node: %w", err)
 	}
 	request.UserID = submission.UserID
+	request.UserGroupCodes = append([]string(nil), submission.UserGroupCodes...)
 	request.ProjectID = submission.ProjectID
 	request.IdempotencyKey = submission.IdempotencyKey
 	request.SourceChannel = "canvas"

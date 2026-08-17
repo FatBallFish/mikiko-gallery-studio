@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -463,8 +464,18 @@ func (s *Service) attachSucceededResults(ctx context.Context, run Run) (Run, err
 	if !ok {
 		return s.store.AttachResults(ctx, AttachRecord{UserID: run.UserID, CanvasID: run.CanvasID, RunID: run.ID})
 	}
-	nodes, edges := resultPlacement(run, source)
-	return s.store.AttachResults(ctx, AttachRecord{UserID: run.UserID, CanvasID: run.CanvasID, RunID: run.ID, Nodes: nodes, Edges: edges})
+	runs, err := s.store.ListRuns(ctx, run.UserID, run.CanvasID)
+	if err != nil {
+		return Run{}, err
+	}
+	batchIndex := 0
+	for _, existing := range runs {
+		if existing.ID != run.ID && existing.NodeID == run.NodeID && existing.Status == RunStatusAttached && existing.AttachedRevision != nil {
+			batchIndex++
+		}
+	}
+	updatedNodes, nodes, edges := resultPlacement(run, source, canvas.Document, batchIndex == 0, batchIndex)
+	return s.store.AttachResults(ctx, AttachRecord{UserID: run.UserID, CanvasID: run.CanvasID, RunID: run.ID, ExpectedRevision: canvas.Revision, UpdatedNodes: updatedNodes, Nodes: nodes, Edges: edges})
 }
 
 func (s *Service) submission(ctx context.Context, req GenerateRequest) (GenerationSubmission, error) {
@@ -515,6 +526,9 @@ func normalizeDocument(doc domaincanvas.DocumentV1, limits domaincanvas.Limits) 
 	refs := parseAssetReferences(normalized)
 	for _, node := range normalized.Nodes {
 		if node.Type == domaincanvas.NodeTypeImage || node.Type == domaincanvas.NodeTypeVideo || node.Type == domaincanvas.NodeTypeAudio {
+			if node.Type == domaincanvas.NodeTypeImage && strings.TrimSpace(node.AssetID) == "" {
+				continue
+			}
 			if _, err := uuid.Parse(strings.TrimSpace(node.AssetID)); err != nil {
 				return doc, nil, nil, fmt.Errorf("invalid asset id on node %s", node.ID)
 			}
@@ -592,7 +606,8 @@ func cloneDocument(doc domaincanvas.DocumentV1) domaincanvas.DocumentV1 {
 	_ = json.Unmarshal(raw, &result)
 	return result
 }
-func resultPlacement(run Run, source domaincanvas.Node) ([]domaincanvas.Node, []domaincanvas.Edge) {
+func resultPlacement(run Run, source domaincanvas.Node, document domaincanvas.DocumentV1, consumeEmptySlots bool, batchIndex int) ([]domaincanvas.Node, []domaincanvas.Node, []domaincanvas.Edge) {
+	updatedNodes := make([]domaincanvas.Node, 0)
 	nodes := make([]domaincanvas.Node, 0, len(run.ResultAssetIDs))
 	edges := make([]domaincanvas.Edge, 0, len(run.ResultAssetIDs))
 	mediaType := domaincanvas.NodeTypeImage
@@ -607,12 +622,51 @@ func resultPlacement(run Run, source domaincanvas.Node) ([]domaincanvas.Node, []
 	if height <= 0 {
 		height = 240
 	}
-	for index, assetID := range run.ResultAssetIDs {
-		id := domaincanvas.StableResultNodeID(run.ID.String(), assetID.String())
-		nodes = append(nodes, domaincanvas.Node{ID: id, Type: mediaType, AssetID: assetID.String(), Position: domaincanvas.Point{X: source.Position.X + source.Size.Width + 80, Y: source.Position.Y + float64(index)*(height+32)}, Size: domaincanvas.Size{Width: width, Height: height}})
-		edges = append(edges, domaincanvas.Edge{ID: "edge-" + id, Source: source.ID, Target: id, InputRole: domaincanvas.InputRoleResult, Ordinal: index})
+	type outputSlot struct {
+		node      domaincanvas.Node
+		ordinal   int
+		edgeIndex int
 	}
-	return nodes, edges
+	slots := make([]outputSlot, 0)
+	nodeByID := make(map[string]domaincanvas.Node, len(document.Nodes))
+	for _, node := range document.Nodes {
+		nodeByID[node.ID] = node
+	}
+	nextOrdinal := 0
+	for index, edge := range document.Edges {
+		if edge.Source != source.ID || edge.InputRole != domaincanvas.InputRoleResult {
+			continue
+		}
+		if edge.Ordinal >= nextOrdinal {
+			nextOrdinal = edge.Ordinal + 1
+		}
+		target, ok := nodeByID[edge.Target]
+		if consumeEmptySlots && ok && target.Type == domaincanvas.NodeTypeImage && strings.TrimSpace(target.AssetID) == "" {
+			slots = append(slots, outputSlot{node: target, ordinal: edge.Ordinal, edgeIndex: index})
+		}
+	}
+	sort.SliceStable(slots, func(i, j int) bool {
+		if slots[i].ordinal == slots[j].ordinal {
+			return slots[i].edgeIndex < slots[j].edgeIndex
+		}
+		return slots[i].ordinal < slots[j].ordinal
+	})
+	resultIndex := 0
+	for resultIndex < len(run.ResultAssetIDs) && resultIndex < len(slots) {
+		slot := slots[resultIndex].node
+		slot.AssetID = run.ResultAssetIDs[resultIndex].String()
+		slot.Payload = ensureResultNodeName(slot.Payload, resultNodeName(mediaType, batchIndex, resultIndex))
+		updatedNodes = append(updatedNodes, slot)
+		resultIndex++
+	}
+	for index := resultIndex; index < len(run.ResultAssetIDs); index++ {
+		assetID := run.ResultAssetIDs[index]
+		id := domaincanvas.StableResultNodeID(run.ID.String(), assetID.String())
+		nodes = append(nodes, domaincanvas.Node{ID: id, Type: mediaType, AssetID: assetID.String(), Position: domaincanvas.Point{X: source.Position.X + source.Size.Width + 80 + float64(batchIndex)*(width+48), Y: source.Position.Y + float64(index)*(height+32)}, Size: domaincanvas.Size{Width: width, Height: height}, Payload: ensureResultNodeName(nil, resultNodeName(mediaType, batchIndex, index))})
+		edges = append(edges, domaincanvas.Edge{ID: "edge-" + id, Source: source.ID, Target: id, InputRole: domaincanvas.InputRoleResult, Ordinal: nextOrdinal})
+		nextOrdinal++
+	}
+	return updatedNodes, nodes, edges
 }
 
 func recoveredResultPlacement(run Run, center domaincanvas.Point) []domaincanvas.Node {
@@ -631,10 +685,31 @@ func recoveredResultPlacement(run Run, center domaincanvas.Point) []domaincanvas
 				X: center.X - width/2,
 				Y: center.Y - height/2 + float64(index)*(height+gap),
 			},
-			Size: domaincanvas.Size{Width: width, Height: height},
+			Size:    domaincanvas.Size{Width: width, Height: height},
+			Payload: ensureResultNodeName(nil, resultNodeName(mediaType, 0, index)),
 		})
 	}
 	return nodes
+}
+
+func resultNodeName(mediaType domaincanvas.NodeType, batchIndex, resultIndex int) string {
+	kind := "图片"
+	if mediaType == domaincanvas.NodeTypeVideo {
+		kind = "视频"
+	}
+	return fmt.Sprintf("生成%s %d-%d", kind, batchIndex+1, resultIndex+1)
+}
+
+func ensureResultNodeName(raw json.RawMessage, fallback string) json.RawMessage {
+	payload := make(map[string]any)
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &payload)
+	}
+	if name, ok := payload["name"].(string); !ok || strings.TrimSpace(name) == "" {
+		payload["name"] = fallback
+	}
+	encoded, _ := json.Marshal(payload)
+	return encoded
 }
 func templateDocument(template Template) domaincanvas.DocumentV1 {
 	doc := domaincanvas.DocumentV1{SchemaVersion: 1, Viewport: domaincanvas.Viewport{Zoom: 1}, Nodes: make([]domaincanvas.Node, 0), Edges: make([]domaincanvas.Edge, 0)}

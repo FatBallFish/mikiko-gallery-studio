@@ -87,16 +87,55 @@ func TestAdminVideoConfigStoreCapabilityAndRouteUseCASAndDoNotMutateInput(t *tes
 		t.Fatal("stale capability version must fail")
 	}
 	route, _ := client.RouteModel.Create().SetCode("video").SetName("Video").SetMediaType("video").Save(ctx)
-	visible := map[string]any{"resolutions": []any{"720p"}}
-	saved, err := store.SaveRouteConfig(ctx, adminvideoservice.RouteConfigWrite{RouteModelID: int64(route.ID), ConfigVersion: "v1", TaskTypes: []string{"text_to_video"}, VisibleOptions: visible, VisibleCombinations: []adminvideoservice.VisibleCombination{{TaskType: "text_to_video", Resolution: "720p", DurationSeconds: 5}}, Defaults: map[string]any{}, MaxOutputCount: 1})
+	visible := map[string]any{
+		"resolutions":  []any{"720p"},
+		"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "legacy"}},
+	}
+	saved, err := store.SaveRouteConfig(ctx, adminvideoservice.RouteConfigWrite{RouteModelID: int64(route.ID), ConfigVersion: "v1", TaskTypes: []string{"text_to_video"}, VisibleOptions: visible, Defaults: map[string]any{}, MaxOutputCount: 1})
 	if err != nil || saved.ConfigVersion != "v1" {
 		t.Fatalf("route=%#v err=%v", saved, err)
 	}
-	if _, exists := visible["combinations"]; exists {
+	if _, exists := saved.VisibleOptions["combinations"]; exists {
+		t.Fatalf("saved route must discard legacy visible combinations: %#v", saved.VisibleOptions)
+	}
+	if _, exists := visible["combinations"]; !exists {
 		t.Fatal("SaveRouteConfig must not mutate caller-owned visible options")
 	}
 	if _, err := store.SaveRouteConfig(ctx, adminvideoservice.RouteConfigWrite{RouteModelID: int64(route.ID), ExpectedVersion: "stale", ConfigVersion: "v2", MaxOutputCount: 1}); err == nil {
 		t.Fatal("stale route config version must fail")
+	}
+}
+
+func TestAdminVideoSnapshotOmitsHistoricalVisibleCombinations(t *testing.T) {
+	client, store := openAdminVideoTestStore(t, "admin-video-legacy-visible-combinations")
+	ctx := t.Context()
+	route, err := client.RouteModel.Create().SetCode("legacy-video").SetName("Legacy video").SetMediaType("video").Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.VideoRouteConfig.Create().
+		SetRouteModelID(int64(route.ID)).
+		SetTaskTypes([]string{"text_to_video"}).
+		SetVisibleOptions(map[string]any{
+			"resolutions":  []any{"720p"},
+			"combinations": []any{map[string]any{"task_type": "text_to_video", "resolution": "720p"}},
+		}).
+		SetDefaults(map[string]any{}).
+		SetMaxOutputCount(1).
+		SetConfigVersion("legacy-v1").
+		Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := store.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Routes) != 1 {
+		t.Fatalf("routes = %#v", snapshot.Routes)
+	}
+	if _, exists := snapshot.Routes[0].VisibleOptions["combinations"]; exists {
+		t.Fatalf("historical combinations leaked through snapshot: %#v", snapshot.Routes[0].VisibleOptions)
 	}
 }
 

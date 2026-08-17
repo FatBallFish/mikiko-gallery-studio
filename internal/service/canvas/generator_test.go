@@ -11,7 +11,7 @@ import (
 func TestImageRequestUsesDraftAndServerSideIdentityAndInputs(t *testing.T) {
 	projectID := uuid.New()
 	assetID := uuid.New()
-	payload := json.RawMessage(`{"draft":{"abstract_model":"plus","task_type":"text_to_image","prompt":"hidden prompt","output_image_count":2,"user_group_multiplier":"0.1","reference_asset_ids":["forged"]}}`)
+	payload := json.RawMessage(`{"draft":{"abstract_model":"plus","task_type":"text_to_image","prompt":"hidden prompt","output_image_count":12,"user_group_multiplier":"0.1","reference_asset_ids":["forged"]}}`)
 	submission := GenerationSubmission{
 		UserID: 31, UserGroupCode: "paid", UserGroupCodes: []string{"paid", "beta"}, UserGroupMultiplier: "1.25000",
 		ProjectID: projectID, CanvasID: uuid.New(), NodeID: "gen", Kind: TaskKindImage, Node: domaincanvas.Node{ID: "gen", Type: domaincanvas.NodeTypeImageGeneration, Payload: payload},
@@ -24,8 +24,37 @@ func TestImageRequestUsesDraftAndServerSideIdentityAndInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.UserID != 31 || request.ProjectID != projectID.String() || request.UserGroupMultiplier != "1.25000" || request.Prompt != "connected prompt" || len(request.ReferenceAssetIDs) != 1 || request.ReferenceAssetIDs[0] != assetID.String() {
+	if request.UserID != 31 || request.ProjectID != projectID.String() || request.UserGroupMultiplier != "1.25000" || request.Prompt != "connected prompt" || request.OutputImageCount != 12 || len(request.ReferenceAssetIDs) != 1 || request.ReferenceAssetIDs[0] != assetID.String() {
 		t.Fatalf("image request = %#v", request)
+	}
+}
+
+func TestImageRequestNormalizesHiddenSizeFieldsByMode(t *testing.T) {
+	base := GenerationSubmission{
+		UserID: 31, ProjectID: uuid.New(), CanvasID: uuid.New(), NodeID: "gen", Kind: TaskKindImage,
+		Inputs: []GenerationInput{{Role: domaincanvas.InputRolePrompt, Node: domaincanvas.Node{ID: "prompt", Type: domaincanvas.NodeTypePrompt, Payload: json.RawMessage(`{"text":"connected prompt"}`)}}},
+	}
+	for _, test := range []struct {
+		name               string
+		draft              string
+		wantRequestedSize  string
+		wantBaseResolution string
+		wantAspectRatio    string
+	}{
+		{name: "auto", draft: `{"route_model_code":"basic","task_type":"text_to_image","size_mode":"auto","requested_size":"1024x1024","base_resolution":"1k","aspect_ratio":"16:9"}`},
+		{name: "pixel", draft: `{"route_model_code":"basic","task_type":"text_to_image","size_mode":"pixel","requested_size":"1024x1024","base_resolution":"1k","aspect_ratio":"16:9"}`, wantRequestedSize: "1024x1024"},
+		{name: "ratio", draft: `{"route_model_code":"basic","task_type":"text_to_image","size_mode":"ratio","requested_size":"1024x1024","base_resolution":"1k","aspect_ratio":"16:9"}`, wantBaseResolution: "1k", wantAspectRatio: "16:9"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			base.Node = domaincanvas.Node{ID: "gen", Type: domaincanvas.NodeTypeImageGeneration, Payload: json.RawMessage(`{"draft":` + test.draft + `}`)}
+			request, err := imageRequest(base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if request.RequestedSize != test.wantRequestedSize || request.BaseResolution != test.wantBaseResolution || request.AspectRatio != test.wantAspectRatio {
+				t.Fatalf("normalized size fields = requested:%q base:%q ratio:%q", request.RequestedSize, request.BaseResolution, request.AspectRatio)
+			}
+		})
 	}
 }
 

@@ -193,6 +193,9 @@
 
 .media-upload-tray { position: fixed; z-index: 70; right: 20px; bottom: 20px; width: min(360px, calc(100vw - 40px)); overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-solid); box-shadow: var(--shadow-lg); }
 .canvas-editor ~ .media-upload-tray { right: 20px; bottom: 84px; }
+.canvas-editor ~ .media-upload-tray.is-empty:not(.is-expanded) { width: 48px; }
+.canvas-editor ~ .media-upload-tray.is-empty:not(.is-expanded) > header { justify-content: center; padding: 0; }
+.canvas-editor ~ .media-upload-tray.is-empty:not(.is-expanded) .media-upload-title { display: none; }
 .media-upload-tray > header { display: flex; height: 48px; align-items: center; padding: 0 7px 0 12px; }
 .media-upload-title { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--fg); cursor: pointer; }
 .media-upload-title strong { font-size: 13px; }

@@ -99,7 +99,7 @@ func TestMediaUploadServiceIsIdempotentAndCompletesAssetTransaction(t *testing.T
 
 	content := []byte("0123456789")
 	checksum := sha256.Sum256(content)
-	part, err := service.UploadLocalPart(ctx, 41, session.ID, 1, bytes.NewReader(content), int64(len(content)), hex.EncodeToString(checksum[:]))
+	part, err := service.UploadPart(ctx, 41, session.ID, 1, bytes.NewReader(content), int64(len(content)), hex.EncodeToString(checksum[:]))
 	if err != nil {
 		t.Fatal(err)
 	}
