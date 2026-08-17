@@ -84,7 +84,16 @@ func TestCanvasStoreAttachAndTransferAreAtomic(t *testing.T) {
 	}
 	store := NewCanvasStore(client)
 	service := canvasservice.NewService(store, &fakeCanvasStoreGenerator{result: resultAssetID}, nil)
-	created, _ := service.Create(t.Context(), canvasservice.CreateRequest{UserID: 22, ProjectID: projectOne, Name: "Run", Template: canvasservice.TemplateImageExploration})
+	created, err := service.Create(t.Context(), canvasservice.CreateRequest{UserID: 22, ProjectID: projectOne, Name: "Run", Template: canvasservice.TemplateImageExploration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created.Document.Nodes = append(created.Document.Nodes, domaincanvas.Node{ID: "result-slot", Type: domaincanvas.NodeTypeImage, Position: domaincanvas.Point{X: 800, Y: 80}, Size: domaincanvas.Size{Width: 220, Height: 160}})
+	created.Document.Edges = append(created.Document.Edges, domaincanvas.Edge{ID: "result-slot-edge", Source: "image-generation", Target: "result-slot", InputRole: domaincanvas.InputRoleResult})
+	created, err = service.SaveDocument(t.Context(), canvasservice.SaveDocumentRequest{UserID: 22, CanvasID: created.ID, ExpectedRevision: created.Revision, Document: created.Document})
+	if err != nil {
+		t.Fatal(err)
+	}
 	run, err := service.Generate(t.Context(), canvasservice.GenerateRequest{UserID: 22, CanvasID: created.ID, NodeID: "image-generation", IdempotencyKey: "one"})
 	if err != nil {
 		t.Fatal(err)
@@ -95,6 +104,14 @@ func TestCanvasStoreAttachAndTransferAreAtomic(t *testing.T) {
 	attached, err := service.AttachResults(t.Context(), canvasservice.AttachResultsRequest{UserID: 22, CanvasID: created.ID, RunID: run.ID})
 	if err != nil || attached.Status != canvasservice.RunStatusAttached {
 		t.Fatalf("attach = (%#v,%v)", attached, err)
+	}
+	afterAttach, err := service.Get(t.Context(), 22, created.ID)
+	if err != nil || len(afterAttach.Document.Nodes) != 3 || afterAttach.Document.Nodes[2].ID != "result-slot" || afterAttach.Document.Nodes[2].AssetID != resultAssetID.String() {
+		t.Fatalf("persisted result slot = (%#v, %v)", afterAttach.Document, err)
+	}
+	refs, err := client.MediaAssetReference.Query().Where(mediaassetreference.RefTypeEQ("canvas_node"), mediaassetreference.RefIDEQ(created.ID), mediaassetreference.DeletedAtIsNil()).All(t.Context())
+	if err != nil || len(refs) != 1 || refs[0].AssetID != resultAssetID {
+		t.Fatalf("result slot references = (%#v, %v)", refs, err)
 	}
 	moved, err := service.TransferProject(t.Context(), canvasservice.TransferProjectRequest{UserID: 22, CanvasID: created.ID, TargetProjectID: projectTwo, ExpectedMetadataVersion: 1})
 	if err != nil || moved.ProjectID != projectTwo {

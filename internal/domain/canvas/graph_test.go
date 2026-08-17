@@ -105,6 +105,31 @@ func TestValidateDocumentRejectsUnsafeNodeGeometry(t *testing.T) {
 	}
 }
 
+func TestValidateDocumentAllowsOnlyConnectedEmptyImageOutputSlots(t *testing.T) {
+	generation := testCanvasNode("image-gen", NodeTypeImageGeneration)
+	emptyImage := testCanvasNode("empty-image", NodeTypeImage)
+	valid := DocumentV1{SchemaVersion: 1, Nodes: []Node{generation, emptyImage}, Edges: []Edge{{ID: "result", Source: generation.ID, Target: emptyImage.ID, InputRole: InputRoleResult}}}
+	if err := ValidateDocument(valid, DefaultLimits()); err != nil {
+		t.Fatalf("connected empty image output slot rejected: %v", err)
+	}
+	if refs := ExtractAssetReferences(valid); len(refs) != 0 {
+		t.Fatalf("empty output slot asset references = %#v, want none", refs)
+	}
+
+	missingEdge := valid
+	missingEdge.Edges = nil
+	if err := ValidateDocument(missingEdge, DefaultLimits()); err == nil || err.Code != "asset_required" || err.NodeID != emptyImage.ID {
+		t.Fatalf("unconnected empty image error = %#v", err)
+	}
+
+	emptyVideo := testCanvasNode("empty-video", NodeTypeVideo)
+	videoGeneration := testCanvasNode("video-gen", NodeTypeVideoGeneration)
+	invalidVideo := DocumentV1{SchemaVersion: 1, Nodes: []Node{videoGeneration, emptyVideo}, Edges: []Edge{{ID: "video-result", Source: videoGeneration.ID, Target: emptyVideo.ID, InputRole: InputRoleResult}}}
+	if err := ValidateDocument(invalidVideo, DefaultLimits()); err == nil || err.Code != "asset_required" || err.NodeID != emptyVideo.ID {
+		t.Fatalf("empty video output error = %#v", err)
+	}
+}
+
 func TestStableResultNodeIDIsIdempotent(t *testing.T) {
 	first := StableResultNodeID("run-1", "asset-1")
 	second := StableResultNodeID("run-1", "asset-1")

@@ -45,7 +45,7 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 		if !isFinite(node.Size.Width) || !isFinite(node.Size.Height) || node.Size.Width < minimum.Width || node.Size.Height < minimum.Height {
 			return graphError("invalid_node_size", node.ID, "", "canvas node size is below the supported minimum")
 		}
-		if isMediaNode(node.Type) && strings.TrimSpace(node.AssetID) == "" {
+		if isMediaNode(node.Type) && node.Type != NodeTypeImage && strings.TrimSpace(node.AssetID) == "" {
 			return graphError("asset_required", node.ID, "", "media node must reference an asset")
 		}
 		if limits.MaxNodeBytes > 0 && len(node.Payload) > limits.MaxNodeBytes {
@@ -89,6 +89,21 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 			roleTargets[key] = edge.ID
 		}
 		arcs = append(arcs, GraphArc{Source: edge.Source, Target: edge.Target})
+	}
+	for _, node := range document.Nodes {
+		if node.Type != NodeTypeImage || strings.TrimSpace(node.AssetID) != "" {
+			continue
+		}
+		connectedOutput := false
+		for _, edge := range document.Edges {
+			if edge.Target == node.ID && edge.InputRole == InputRoleResult {
+				connectedOutput = true
+				break
+			}
+		}
+		if !connectedOutput {
+			return graphError("asset_required", node.ID, "", "empty image node must be connected to an image generation result")
+		}
 	}
 	nodeIDs := make([]string, 0, len(nodes))
 	for id := range nodes {
