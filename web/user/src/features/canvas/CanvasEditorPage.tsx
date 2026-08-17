@@ -17,7 +17,11 @@ import { mediaCreationActions } from '../media/mediaExperience'
 import { promptVariableNames } from '../../pages/promptTemplateEditorModel'
 import { parsePromptTemplate } from '../../pages/promptTemplateParser'
 import { computeCanvasBounds, fitCanvasViewport, minimapGeometry, visibleCanvasNodeIDs } from './core/canvasLayout'
-import { canvasNodeMinimumSize, canvasPromptResourceCandidates, compatibleCanvasTargets, inspectCanvasConnection, selectCanvasNodesInRect, type CanvasPromptResourceCandidate } from './core/canvasState'
+import {
+  canvasGenerationEstimateSignature, canvasNodeMinimumSize, canvasPromptResourceCandidates, compatibleCanvasTargets, inspectCanvasConnection,
+  prepareCanvasEstimate, rejectCanvasEstimate, resolveCanvasEstimate, selectCanvasNodesInRect, startCanvasEstimate,
+  type CanvasEstimateState, type CanvasPromptResourceCandidate,
+} from './core/canvasState'
 import type { CanvasDocument, CanvasEdge, CanvasNode, CanvasNodeType, CanvasViewport } from './core/types'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
 import { CanvasNodeSearch } from './CanvasNodeSearch'
@@ -26,6 +30,7 @@ import { createCanvasRemoteSaveScheduler } from './persistence/canvasRemoteSave'
 import { createCanvasStore } from './store/canvasStore'
 import { MEDIA_UPLOAD_COMPLETED_EVENT, QUEUE_MEDIA_UPLOAD_EVENT, type MediaUploadCompletedDetail, type QueueMediaUploadDetail } from '../media/UploadTray'
 import { mediaTypeForFile } from '../media/uploadManager'
+import { normalizeWorkspaceImageCount, workspaceTaskImageSafetyLimit } from '../../pages/workspaceViewModel'
 import './canvas.css'
 
 type Props = { canvasID: string; onBack: () => void }
@@ -36,7 +41,6 @@ type PanState = { startX: number; startY: number; viewport: CanvasViewport }
 type PinchState = { distance: number; center: { x: number; y: number }; viewport: CanvasViewport }
 type ConnectionDraft = { pointerID: number; sourceID: string; point: { x: number; y: number }; targetID: string; error: string | null }
 type NodeMenuState = { point: { x: number; y: number }; sourceID?: string; options: Array<{ type: CanvasNodeType; role?: CanvasEdge['input_role'] }> }
-type NodeEstimate = { points: string; detail?: Record<string, unknown>; documentSignature: string }
 type GenerationInputSummary = {
   prompts: number
   images: number
@@ -61,7 +65,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [runs, setRuns] = useState<CanvasRun[]>([])
-  const [nodeEstimates, setNodeEstimates] = useState<Record<string, NodeEstimate>>({})
+  const [nodeEstimates, setNodeEstimates] = useState<Record<string, CanvasEstimateState>>({})
   const [imageCapability, setImageCapability] = useState<Capability | null>(null)
   const [videoCapability, setVideoCapability] = useState<VideoCapability | null>(null)
   const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null)
@@ -83,12 +87,29 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const [pan, setPan] = useState<PanState | null>(null)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
+  const [estimateRetryVersion, setEstimateRetryVersion] = useState(0)
   const activePointersRef = useRef(new Map<number, { x: number; y: number }>())
   const pinchRef = useRef<PinchState | null>(null)
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const draftWriterRef = useRef(createCanvasDraftWriter())
   const remoteSaveRef = useRef<ReturnType<typeof createCanvasRemoteSaveScheduler> | null>(null)
+  const nodeEstimatesRef = useRef<Record<string, CanvasEstimateState>>({})
+  const estimateSequenceRef = useRef(0)
+  const estimateRetryNodesRef = useRef(new Set<string>())
+  const estimateTimersRef = useRef(new Map<string, number>())
   const state = useStore(store ?? emptyCanvasStore, (value) => value)
+  const documentState = state.command.present
+
+  const updateNodeEstimate = useCallback((nodeID: string, updater: (current: CanvasEstimateState | undefined) => CanvasEstimateState | undefined) => {
+    setNodeEstimates((current) => {
+      const value = updater(current[nodeID])
+      const next = { ...current }
+      if (value) next[nodeID] = value
+      else delete next[nodeID]
+      nodeEstimatesRef.current = next
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     if (!store) return undefined
@@ -125,6 +146,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
       setRuns(refreshedRuns)
       setImageCapability(imageOptions)
       setVideoCapability(videoOptions)
+      nodeEstimatesRef.current = {}
       setNodeEstimates({})
     } catch (caught) {
       setError(errorMessage(caught))
@@ -186,6 +208,11 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     if (!store) return false
     const command = store.getState().command
     if (!command.dirty) return true
+    const unboundImage = command.present.nodes.find((node) => node.type === 'image' && !node.asset_id && !command.present.edges.some((edge) => edge.target === node.id && edge.input_role === 'result'))
+    if (unboundImage) {
+      setSaveError('请选择图片或连接生成输出')
+      return false
+    }
     setSaving(true)
     setSaveError('')
     try {
@@ -217,6 +244,64 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     }
     return saveDocument()
   }, [saveDocument, store])
+
+  useEffect(() => {
+    if (!store || !canvas || !imageCapability) return undefined
+    const activeNodeIDs = new Set(runs.filter((run) => activeRunStatuses.has(run.status)).map((run) => run.node_id))
+    const imageNodes = documentState.nodes.filter((item) => item.type === 'image_generation')
+    const imageNodeIDs = new Set(imageNodes.map((node) => node.id))
+    estimateTimersRef.current.forEach((timer, nodeID) => {
+      if (!imageNodeIDs.has(nodeID)) {
+        window.clearTimeout(timer)
+        estimateTimersRef.current.delete(nodeID)
+      }
+    })
+    for (const node of imageNodes) {
+      const signature = canvasGenerationEstimateSignature(documentState, node.id)
+      const errors = [...generationInputSummary(node, documentState).errors, ...imageGenerationParameterErrors(node, imageCapability)]
+      const eligible = errors.length === 0 && !activeNodeIDs.has(node.id)
+      const current = nodeEstimatesRef.current[node.id]
+      const forced = estimateRetryNodesRef.current.delete(node.id)
+      if (!eligible) {
+        const timer = estimateTimersRef.current.get(node.id)
+        if (timer !== undefined) window.clearTimeout(timer)
+        estimateTimersRef.current.delete(node.id)
+        if (current) updateNodeEstimate(node.id, () => undefined)
+        continue
+      }
+      if (!forced && current?.signature === signature) continue
+      const previousTimer = estimateTimersRef.current.get(node.id)
+      if (previousTimer !== undefined) window.clearTimeout(previousTimer)
+      const requestID = ++estimateSequenceRef.current
+      updateNodeEstimate(node.id, (value) => prepareCanvasEstimate(forced ? undefined : value, signature, true, requestID))
+      const timer = window.setTimeout(() => {
+        estimateTimersRef.current.delete(node.id)
+        updateNodeEstimate(node.id, (value) => startCanvasEstimate(value, signature, requestID))
+        void (async () => {
+          if (!await flushDocument()) {
+            updateNodeEstimate(node.id, (value) => rejectCanvasEstimate(value, signature, requestID, '画布尚未保存，暂时无法估价'))
+            return
+          }
+          const latestSignature = canvasGenerationEstimateSignature(store.getState().command.present, node.id)
+          if (latestSignature !== signature) return
+          try {
+            const estimate = await userApi.estimateCanvasNode(canvas.id, node.id)
+            if (canvasGenerationEstimateSignature(store.getState().command.present, node.id) !== signature) return
+            updateNodeEstimate(node.id, (value) => resolveCanvasEstimate(value, signature, requestID, estimate))
+          } catch (caught) {
+            updateNodeEstimate(node.id, (value) => rejectCanvasEstimate(value, signature, requestID, errorMessage(caught)))
+          }
+        })()
+      }, 300)
+      estimateTimersRef.current.set(node.id, timer)
+    }
+    return undefined
+  }, [canvas, documentState, estimateRetryVersion, flushDocument, imageCapability, runs, store, updateNodeEstimate])
+
+  useEffect(() => () => {
+    estimateTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+    estimateTimersRef.current.clear()
+  }, [])
 
   useEffect(() => {
     if (!store) return undefined
@@ -255,8 +340,6 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   if (loading) return <LoadingState label="正在打开创意画布..." />
   if (error || !canvas || !store) return <ErrorState message={error || '画布不存在'} onRetry={() => void loadCanvas()} />
 
-  const documentState = state.command.present
-  const documentSignature = JSON.stringify(documentState)
   const unplacedRuns = runs.filter((run) => run.status === 'unplaced')
   const movedNodes = drag ? documentState.nodes.map((node) => drag.selectedIDs.includes(node.id) ? { ...node, position: { x: node.position.x + drag.delta.x, y: node.position.y + drag.delta.y } } : node) : documentState.nodes
   const transientNodes = resize ? movedNodes.map((node) => node.id === resize.nodeID ? { ...node, size: resize.size } : node) : movedNodes
@@ -315,6 +398,10 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     if (imageUploadInputRef.current) imageUploadInputRef.current.value = ''
   }
   async function estimateNode(node: CanvasNode) {
+    const requestID = ++estimateSequenceRef.current
+    const signature = canvasGenerationEstimateSignature(store!.getState().command.present, node.id)
+    updateNodeEstimate(node.id, () => prepareCanvasEstimate(undefined, signature, true, requestID))
+    updateNodeEstimate(node.id, (value) => startCanvasEstimate(value, signature, requestID))
     setBusyNodeID(node.id)
     try {
       if (!await flushDocument()) return
@@ -323,22 +410,36 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
         store!.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, draft: { ...(asObject(current.payload?.draft)), quote_token: estimate.detail!.quote_token } } }))
         if (!await flushDocument()) return
       }
-      setNodeEstimates((current) => ({ ...current, [node.id]: { ...estimate, documentSignature: JSON.stringify(store!.getState().command.present) } }))
-    } catch (caught) { app.notify('error', errorMessage(caught)) } finally { setBusyNodeID('') }
+      const latestSignature = canvasGenerationEstimateSignature(store!.getState().command.present, node.id)
+      updateNodeEstimate(node.id, () => resolveCanvasEstimate(prepareCanvasEstimate(undefined, latestSignature, true, requestID), latestSignature, requestID, estimate))
+    } catch (caught) {
+      updateNodeEstimate(node.id, (value) => rejectCanvasEstimate(value, signature, requestID, errorMessage(caught)))
+      app.notify('error', errorMessage(caught))
+    } finally { setBusyNodeID('') }
   }
   async function generateNode(node: CanvasNode) {
-    const estimate = nodeEstimates[node.id]
-    if (!estimate || estimate.documentSignature !== JSON.stringify(store!.getState().command.present)) {
-      setNodeEstimates((current) => { const next = { ...current }; delete next[node.id]; return next })
-      app.notify('error', '画布内容已变化，请重新估价')
+    const signature = canvasGenerationEstimateSignature(store!.getState().command.present, node.id)
+    const estimate = nodeEstimatesRef.current[node.id]
+    if (!estimate || estimate.status !== 'ready' || estimate.signature !== signature) {
+      if (node.type === 'image_generation') {
+        estimateRetryNodesRef.current.add(node.id)
+        setEstimateRetryVersion((value) => value + 1)
+      }
+      app.notify('error', '画布内容已变化，正在重新估价')
       return
     }
     setBusyNodeID(node.id)
     try {
       if (!await flushDocument()) return
+      if (canvasGenerationEstimateSignature(store!.getState().command.present, node.id) !== estimate.signature) {
+        estimateRetryNodesRef.current.add(node.id)
+        setEstimateRetryVersion((value) => value + 1)
+        app.notify('error', '画布内容已变化，正在重新估价')
+        return
+      }
       const run = await userApi.generateCanvasNode(canvas!.id, node.id)
       setRuns((items) => [run, ...items.filter((item) => item.id !== run.id)])
-      setNodeEstimates((current) => { const next = { ...current }; delete next[node.id]; return next })
+      updateNodeEstimate(node.id, () => undefined)
       app.notify('success', `已提交${node.type === 'video_generation' ? '视频' : '图片'}生成任务`)
     } catch (caught) { app.notify('error', errorMessage(caught)) } finally { setBusyNodeID('') }
   }
@@ -575,7 +676,9 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
         </svg>
         {transientNodes.filter((node) => visibleNodeIDs.has(node.id)).map((node) => {
           const targetCandidate = connectionDraft?.sourceID && connectionDraft.sourceID !== node.id ? connectionCandidate(connectionDraft.sourceID, node.id) : null
-          return <CanvasNodeView key={node.id} node={node} selected={selectedSet.has(node.id)} readOnly={readOnly} connecting={connectSource === node.id} connectValid={Boolean(targetCandidate?.edge && !targetCandidate.error)} connectInvalid={Boolean(targetCandidate?.error)} run={runs.find((run) => run.node_id === node.id)} estimate={nodeEstimates[node.id]?.documentSignature === documentSignature ? nodeEstimates[node.id] : undefined} busy={busyNodeID === node.id} imageCapability={imageCapability} videoCapability={videoCapability} balance={app.balance?.available_points ?? '0.00000'} inputSummary={generationInputSummary(node, documentState)} promptResourceCandidates={node.type === 'prompt' ? canvasPromptResourceCandidates(documentState, node.id) : []} onStartConnection={(event) => {
+          const estimate = nodeEstimates[node.id]
+          const currentEstimate = estimate?.signature === canvasGenerationEstimateSignature(documentState, node.id) ? estimate : undefined
+          return <CanvasNodeView key={node.id} node={node} selected={selectedSet.has(node.id)} readOnly={readOnly} connecting={connectSource === node.id} connectValid={Boolean(targetCandidate?.edge && !targetCandidate.error)} connectInvalid={Boolean(targetCandidate?.error)} run={runs.find((run) => run.node_id === node.id)} estimate={currentEstimate} busy={busyNodeID === node.id} imageCapability={imageCapability} videoCapability={videoCapability} balance={app.balance?.available_points ?? '0.00000'} inputSummary={generationInputSummary(node, documentState)} promptResourceCandidates={node.type === 'prompt' ? canvasPromptResourceCandidates(documentState, node.id) : []} onStartConnection={(event) => {
             event.stopPropagation()
             setConnectionDraft({ pointerID: event.pointerId, sourceID: node.id, point: worldPoint(event.clientX, event.clientY), targetID: '', error: null })
             viewportRef.current?.setPointerCapture(event.pointerId)
@@ -610,7 +713,12 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
           store.getState().resizeNode(node.id, resize.size)
           if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
           setResize(null)
-        }} onUpdate={(payload) => store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, ...payload } }))} onEstimate={() => void estimateNode(node)} onGenerate={() => void generateNode(node)} onAttach={() => { const run = runs.find((item) => item.node_id === node.id && item.status === 'succeeded'); if (run) void attachRun(run) }} onCancel={() => { const run = runs.find((item) => item.node_id === node.id && activeRunStatuses.has(item.status)); if (run) void userApi.cancelCanvasRun(canvas.id, run.id).then((next) => setRuns((items) => [next, ...items.filter((item) => item.id !== next.id)])) }} onMediaDetail={() => { if (node.asset_id) void userApi.getMediaAsset(node.asset_id).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught))) }} onChooseImage={() => chooseImageForFrame(node.id)} onUploadImage={() => uploadImageForFrame(node.id)} canUpload={app.featureFlags.media_upload} onContinueImage={() => addGenerationFromMedia(node, 'image_generation')} onContinueVideo={() => addGenerationFromMedia(node, 'video_generation')} onReuseVideo={() => { const taskID = String(node.payload?.source_task_id ?? '').trim(); if (taskID) window.location.hash = userHashForRoute('genpic', { media: 'video', taskId: taskID }) }} />
+        }} onUpdate={(payload) => store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, ...payload } }))} onEstimate={() => {
+          if (node.type === 'image_generation') {
+            estimateRetryNodesRef.current.add(node.id)
+            setEstimateRetryVersion((value) => value + 1)
+          } else void estimateNode(node)
+        }} onGenerate={() => void generateNode(node)} onAttach={() => { const run = runs.find((item) => item.node_id === node.id && item.status === 'succeeded'); if (run) void attachRun(run) }} onCancel={() => { const run = runs.find((item) => item.node_id === node.id && activeRunStatuses.has(item.status)); if (run) void userApi.cancelCanvasRun(canvas.id, run.id).then((next) => setRuns((items) => [next, ...items.filter((item) => item.id !== next.id)])) }} onMediaDetail={() => { if (node.asset_id) void userApi.getMediaAsset(node.asset_id).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught))) }} onChooseImage={() => chooseImageForFrame(node.id)} onUploadImage={() => uploadImageForFrame(node.id)} canUpload={app.featureFlags.media_upload} onContinueImage={() => addGenerationFromMedia(node, 'image_generation')} onContinueVideo={() => addGenerationFromMedia(node, 'video_generation')} onReuseVideo={() => { const taskID = String(node.payload?.source_task_id ?? '').trim(); if (taskID) window.location.hash = userHashForRoute('genpic', { media: 'video', taskId: taskID }) }} />
         })}
         {selection ? <div className="canvas-selection-box" style={rectStyle(normalizedRect(selection.start, selection.current))} /> : null}
         {nodeMenu ? <div className="canvas-node-menu" data-canvas-no-zoom style={{ left: nodeMenu.point.x, top: nodeMenu.point.y }} role="menu" aria-label={nodeMenu.sourceID ? '添加兼容节点' : '添加节点'}>
@@ -649,7 +757,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
 }
 
 function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, run, estimate, busy, imageCapability, videoCapability, balance, inputSummary, promptResourceCandidates, canUpload, onSelect, onDrag, onDragEnd, onResizeStart, onResize, onResizeEnd, onStartConnection, onFinishConnection, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onMediaDetail, onChooseImage, onUploadImage, onContinueImage, onContinueVideo, onReuseVideo }: {
-  node: CanvasNode; selected: boolean; readOnly: boolean; connecting: boolean; connectValid: boolean; connectInvalid: boolean; run?: CanvasRun; estimate?: NodeEstimate; busy: boolean
+  node: CanvasNode; selected: boolean; readOnly: boolean; connecting: boolean; connectValid: boolean; connectInvalid: boolean; run?: CanvasRun; estimate?: CanvasEstimateState; busy: boolean
   imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; promptResourceCandidates: CanvasPromptResourceCandidate[]; canUpload: boolean
   onSelect: (event: React.PointerEvent<HTMLElement>) => void; onDrag: (event: React.PointerEvent<HTMLElement>) => void; onDragEnd: () => void
   onResizeStart: (event: React.PointerEvent<HTMLButtonElement>) => void; onResize: (event: React.PointerEvent<HTMLButtonElement>) => void; onResizeEnd: (event: React.PointerEvent<HTMLButtonElement>) => void
@@ -673,7 +781,7 @@ function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, co
   </article>
 }
 
-function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapability, videoCapability, balance, inputSummary, onUpdate, onEstimate, onGenerate, onAttach, onCancel }: { node: CanvasNode; run?: CanvasRun; estimate?: NodeEstimate; busy: boolean; readOnly: boolean; imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void }) {
+function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapability, videoCapability, balance, inputSummary, onUpdate, onEstimate, onGenerate, onAttach, onCancel }: { node: CanvasNode; run?: CanvasRun; estimate?: CanvasEstimateState; busy: boolean; readOnly: boolean; imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void }) {
   const draft = asObject(node.payload?.draft)
   const active = run && activeRunStatuses.has(run.status)
   const recoverable = run?.status === 'succeeded' || run?.status === 'unplaced'
@@ -683,7 +791,10 @@ function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapabili
   const videoTaskType = String(draft.task_type ?? videoModel?.defaults.task_type ?? 'text_to_video') as 'text_to_video' | 'image_to_video' | 'first_last_frame_to_video'
   const videoOptions = videoModel?.options_by_task_type[videoTaskType]
   const models = node.type === 'image_generation' ? imageCapability?.model_groups ?? [] : videoCapability?.model_groups ?? []
-  const countMax = Math.max(1, Math.min(10, node.type === 'image_generation' ? imageModel?.max_output_image_count ?? imageCapability?.max_image_count ?? 1 : videoModel?.max_output_count ?? 1))
+  const countMax = Math.max(1, Math.min(10, videoModel?.max_output_count ?? 1))
+  const imageCount = normalizeWorkspaceImageCount(Number(draft.output_image_count ?? 1))
+  const estimateReady = estimate?.status === 'ready'
+  const estimatePending = estimate?.status === 'waiting' || estimate?.status === 'loading'
   const patchDraft = (patch: Record<string, unknown>) => onUpdate({ draft: { ...draft, ...patch } })
   return <div className="canvas-generation-body">
     <label>模型分组<select disabled={readOnly || !models.length} value={String(draft.route_model_code ?? models[0]?.code ?? '')} onChange={(event) => {
@@ -691,7 +802,8 @@ function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapabili
         const model = imageCapability?.model_groups.find((item) => item.code === event.target.value)
         const taskType = model?.task_types[0] ?? 'text_to_image'
         const options = model?.capabilities_by_task_type?.[taskType] ?? model
-        patchDraft({ route_model_code: event.target.value, task_type: taskType, size_mode: options?.size_modes?.[0] ?? 'auto', base_resolution: options?.base_resolution?.[0] ?? '', aspect_ratio: options?.aspect_ratios?.[0] ?? '', requested_size: options?.pixel_sizes?.[0] ?? '', quality: options?.quality?.[0] ?? '', output_format: options?.output_format?.[0] ?? '', output_image_count: 1 })
+        const sizeMode = options?.size_modes?.includes('auto') ? 'auto' : options?.size_modes?.[0] ?? 'auto'
+        patchDraft({ route_model_code: event.target.value, task_type: taskType, size_mode: sizeMode, base_resolution: options?.base_resolution?.[0] ?? '', aspect_ratio: options?.aspect_ratios?.[0] ?? '', requested_size: options?.pixel_sizes?.[0] ?? '', quality: options?.quality?.[0] ?? '', output_format: options?.output_format?.[0] ?? '', output_image_count: imageCount })
       } else {
         const model = videoCapability?.model_groups.find((item) => item.code === event.target.value)
         const taskType = model?.defaults.task_type ?? model?.task_types[0] ?? 'text_to_video'
@@ -709,7 +821,9 @@ function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapabili
       <label>清晰度<select disabled={readOnly} value={String(draft.resolution ?? videoModel?.defaults.resolution ?? '')} onChange={(event) => patchDraft({ resolution: event.target.value })}>{(videoOptions?.resolutions ?? []).map((value) => <option key={value}>{value.toUpperCase()}</option>)}</select></label>
       <label>比例<select disabled={readOnly} value={String(draft.aspect_ratio ?? videoModel?.defaults.aspect_ratio ?? '')} onChange={(event) => patchDraft({ aspect_ratio: event.target.value })}>{(videoOptions?.aspect_ratios ?? []).map((value) => <option key={value}>{value}</option>)}</select></label>
     </>}
-    <label>生成数量<select disabled={readOnly} value={String(draft.output_count ?? draft.output_image_count ?? 1)} onChange={(event) => patchDraft({ output_count: Number(event.target.value), output_image_count: Number(event.target.value) })}>{Array.from({ length: countMax }, (_, index) => index + 1).map((value) => <option key={value}>{value}</option>)}</select></label>
+    {node.type === 'image_generation'
+      ? <label>生成数量<input type="number" min={1} max={workspaceTaskImageSafetyLimit} step={1} disabled={readOnly} value={imageCount} onChange={(event) => patchDraft({ output_image_count: normalizeWorkspaceImageCount(event.target.valueAsNumber) })} /></label>
+      : <label>生成数量<select disabled={readOnly} value={String(draft.output_count ?? 1)} onChange={(event) => patchDraft({ output_count: Number(event.target.value) })}>{Array.from({ length: countMax }, (_, index) => index + 1).map((value) => <option key={value}>{value}</option>)}</select></label>}
     {inputSummary.promptNodes.length ? <label>提示词来源<select disabled={readOnly || inputSummary.promptNodes.length === 1} value={inputSummary.selectedPromptID} onChange={(event) => onUpdate({ active_prompt_node_id: event.target.value })}>
       {inputSummary.promptNodes.length > 1 && !inputSummary.selectedPromptID ? <option value="">请选择提示词</option> : null}
       {inputSummary.promptNodes.map((prompt) => <option key={prompt.id} value={prompt.id}>{String(prompt.payload?.title ?? prompt.payload?.text ?? prompt.id).slice(0, 36)}</option>)}
@@ -717,8 +831,11 @@ function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapabili
     {inputSummary.referenceBindings.length ? <div className="canvas-generation-bindings"><strong>资源绑定</strong>{inputSummary.referenceBindings.map((binding) => <span key={binding.name} data-valid={Boolean(binding.assetID)}><b>@{binding.name}</b><i>{binding.assetName ?? '未关联同名资产'}</i></span>)}</div> : null}
     <div className="canvas-generation-inputs">提示词 {inputSummary.prompts} · 图片 {inputSummary.images}</div>
     {inputSummary.errors.length ? <div className="canvas-generation-errors" role="alert">{inputSummary.errors.join('；')}</div> : null}
-    <div className="canvas-generation-estimate"><span>{estimate ? '预计积分' : '当前余额'}</span><strong>{estimate?.points ?? balance}</strong></div>
-    <div className="canvas-generation-actions">{active ? <button type="button" onClick={onCancel}><CircleStop size={15} />取消</button> : recoverable ? <button type="button" onClick={onAttach}><RefreshCw size={15} />恢复结果</button> : !readOnly ? estimate ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />确认生成</button> : <button type="button" disabled={busy} onClick={onEstimate}><Sparkles size={15} />{busy ? '正在估价' : '查看费用'}</button> : null}</div>
+    <div className="canvas-generation-estimate"><span>{node.type === 'image_generation' || estimate ? '预计积分' : '当前余额'}</span><strong>{estimateReady ? estimate.points : estimatePending ? '计算中' : node.type === 'image_generation' ? '--' : balance}</strong></div>
+    {estimate?.status === 'error' ? <small className="canvas-generation-errors">{estimate.error}</small> : null}
+    <div className="canvas-generation-actions">{active ? <button type="button" onClick={onCancel}><CircleStop size={15} />取消</button> : recoverable ? <button type="button" onClick={onAttach}><RefreshCw size={15} />恢复结果</button> : !readOnly ? node.type === 'image_generation'
+      ? estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />确认生成</button> : estimate?.status === 'error' ? <button type="button" disabled={busy} onClick={onEstimate}><RefreshCw size={15} />重新估价</button> : <button type="button" disabled><Sparkles size={15} />{estimatePending ? '正在估价' : '等待参数'}</button>
+      : estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />确认生成</button> : <button type="button" disabled={busy || estimatePending} onClick={onEstimate}>{estimate?.status === 'error' ? <RefreshCw size={15} /> : <Sparkles size={15} />}{estimate?.status === 'error' ? '重新估价' : busy || estimatePending ? '正在估价' : '查看费用'}</button> : null}</div>
     {run?.error_message ? <small className="canvas-generation-errors">{run.error_message}</small> : null}
   </div>
 }
@@ -830,7 +947,8 @@ function defaultNodePayload(type: CanvasNodeType, imageCapability?: Capability |
     const model = imageCapability?.model_groups[0]
     const taskType = model?.task_types[0] ?? 'text_to_image'
     const options = model?.capabilities_by_task_type?.[taskType] ?? model
-    return { title: '图片生成', draft: { route_model_code: model?.code ?? '', task_type: taskType, size_mode: options?.size_modes?.[0] ?? 'auto', requested_size: options?.pixel_sizes?.[0] ?? '', base_resolution: options?.base_resolution?.[0] ?? '', aspect_ratio: options?.aspect_ratios?.[0] ?? '', quality: options?.quality?.[0] ?? '', output_format: options?.output_format?.[0] ?? '', output_image_count: 1 } }
+    const sizeMode = options?.size_modes?.includes('auto') ? 'auto' : options?.size_modes?.[0] ?? 'auto'
+    return { title: '图片生成', draft: { route_model_code: model?.code ?? '', task_type: taskType, size_mode: sizeMode, requested_size: options?.pixel_sizes?.[0] ?? '', base_resolution: options?.base_resolution?.[0] ?? '', aspect_ratio: options?.aspect_ratios?.[0] ?? '', quality: options?.quality?.[0] ?? '', output_format: options?.output_format?.[0] ?? '', output_image_count: 1 } }
   }
   if (type === 'video_generation') {
     const model = videoCapability?.model_groups[0]
@@ -871,8 +989,32 @@ function generationInputSummary(node: CanvasNode, document: CanvasDocument): Gen
   const missingReferences = referenceBindings.filter((binding) => !binding.assetID).map((binding) => binding.name)
   if (missingReferences.length) errors.push(`未关联同名资产：${missingReferences.join('、')}`)
   if (!String(draft.route_model_code ?? draft.abstract_model ?? '').trim()) errors.push('请选择模型分组')
+  if (node.type === 'image_generation' && String(draft.task_type ?? '') === 'image_edit' && !images) errors.push('缺少参考图片')
   if (node.type === 'video_generation' && String(draft.task_type ?? '').includes('image') && !images) errors.push('缺少首帧图片')
   return { prompts, images, promptNodes, selectedPromptID, referenceBindings, errors }
+}
+function imageGenerationParameterErrors(node: CanvasNode, capability: Capability) {
+  if (node.type !== 'image_generation') return []
+  const errors: string[] = []
+  const draft = asObject(node.payload?.draft)
+  const modelCode = String(draft.route_model_code ?? draft.abstract_model ?? '').trim()
+  const model = capability.model_groups.find((item) => item.code === modelCode)
+  if (!model) return modelCode ? ['模型分组当前不可用'] : ['请选择模型分组']
+  const taskType = String(draft.task_type ?? 'text_to_image') as 'text_to_image' | 'image_edit'
+  if (!model.task_types.includes(taskType)) errors.push('当前模型不支持所选生成方式')
+  const options = model.capabilities_by_task_type?.[taskType] ?? model
+  const sizeMode = String(draft.size_mode ?? '').trim()
+  if (!sizeMode || !options.size_modes?.includes(sizeMode)) errors.push('请选择有效的尺寸模式')
+  if (sizeMode === 'ratio') {
+    if (!String(draft.base_resolution ?? '').trim()) errors.push('请选择基础分辨率')
+    if (!String(draft.aspect_ratio ?? '').trim()) errors.push('请选择图片比例')
+  }
+  if (sizeMode === 'pixel' && !String(draft.requested_size ?? '').trim()) errors.push('请选择像素尺寸')
+  if (options.quality?.length && !options.quality.includes(String(draft.quality ?? ''))) errors.push('请选择图片质量')
+  if (options.output_format?.length && !options.output_format.includes(String(draft.output_format ?? ''))) errors.push('请选择输出格式')
+  const count = Number(draft.output_image_count ?? 1)
+  if (!Number.isInteger(count) || count < 1 || count > workspaceTaskImageSafetyLimit) errors.push(`生成数量需为 1-${workspaceTaskImageSafetyLimit} 的整数`)
+  return errors
 }
 function buildCanvasPromptBindings(template: string, imageNodes: CanvasNode[]) {
   const parsed = parsePromptTemplate(template)

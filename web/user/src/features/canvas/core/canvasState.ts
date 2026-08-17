@@ -132,6 +132,51 @@ export function compatibleCanvasTargets(_document: CanvasDocument, sourceID: str
 
 export type CanvasPromptResourceCandidate = { nodeID: string; assetID: string; name: string; duplicateName: boolean }
 
+export type CanvasEstimateState = {
+  status: 'waiting' | 'loading' | 'ready' | 'error'
+  signature: string
+  requestID: number
+  points?: string
+  detail?: Record<string, unknown>
+  error?: string
+}
+
+export function canvasGenerationEstimateSignature(document: CanvasDocument, nodeID: string) {
+  const node = document.nodes.find((item) => item.id === nodeID)
+  if (!node || (node.type !== 'image_generation' && node.type !== 'video_generation')) return ''
+  const nodeByID = new Map(document.nodes.map((item) => [item.id, item]))
+  const inputs = document.edges
+    .filter((edge) => edge.target === nodeID && edge.input_role !== 'result')
+    .map((edge) => ({ edge, source: nodeByID.get(edge.source) }))
+    .sort((a, b) => a.edge.input_role.localeCompare(b.edge.input_role) || (a.edge.ordinal ?? 0) - (b.edge.ordinal ?? 0) || a.edge.id.localeCompare(b.edge.id))
+    .map(({ edge, source }) => ({
+      edge: { id: edge.id, source: edge.source, role: edge.input_role, ordinal: edge.ordinal ?? 0 },
+      source: source ? { id: source.id, type: source.type, assetID: source.asset_id ?? '', payload: source.payload ?? {} } : null,
+    }))
+  return JSON.stringify({ node: { id: node.id, type: node.type, payload: node.payload ?? {} }, inputs })
+}
+
+export function prepareCanvasEstimate(current: CanvasEstimateState | undefined, signature: string, eligible: boolean, requestID: number) {
+  if (!eligible || !signature) return undefined
+  if (current?.signature === signature) return current
+  return { status: 'waiting' as const, signature, requestID }
+}
+
+export function startCanvasEstimate(current: CanvasEstimateState | undefined, signature: string, requestID: number) {
+  if (!current || current.signature !== signature || current.requestID !== requestID) return current
+  return { ...current, status: 'loading' as const, error: undefined }
+}
+
+export function resolveCanvasEstimate(current: CanvasEstimateState | undefined, signature: string, requestID: number, result: { points: string; detail?: Record<string, unknown> }) {
+  if (!current || current.signature !== signature || current.requestID !== requestID) return current
+  return { status: 'ready' as const, signature, requestID, points: result.points, detail: result.detail }
+}
+
+export function rejectCanvasEstimate(current: CanvasEstimateState | undefined, signature: string, requestID: number, error: string) {
+  if (!current || current.signature !== signature || current.requestID !== requestID) return current
+  return { status: 'error' as const, signature, requestID, error }
+}
+
 export function canvasPromptResourceCandidates(document: CanvasDocument, promptNodeID: string): CanvasPromptResourceCandidate[] {
   const generationIDs = new Set(document.edges.filter((edge) => edge.source === promptNodeID && edge.input_role === 'prompt')
     .map((edge) => document.nodes.find((node) => node.id === edge.target))

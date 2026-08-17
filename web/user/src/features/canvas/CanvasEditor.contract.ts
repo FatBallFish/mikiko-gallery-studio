@@ -19,9 +19,11 @@ for (const required of [
   'data-canvas-drag-handle', 'data-canvas-interactive', 'data-canvas-resize-handle', 'onResizeStart', 'resizeNode',
   '添加图片框', 'QUEUE_MEDIA_UPLOAD_EVENT', 'MEDIA_UPLOAD_COMPLETED_EVENT', 'canvasPromptResourceCandidates', 'selectionStart', 'canvas-prompt-resource-picker',
   '图片框仅支持 JPG、PNG、WEBP 图片',
+  'normalizeWorkspaceImageCount', 'workspaceTaskImageSafetyLimit', 'type="number"', '重新估价', 'canvasGenerationEstimateSignature',
 ]) {
   if (!source.includes(required)) throw new Error(`canvas editor must include ${required}`)
 }
+if ((source.match(/查看费用/g) ?? []).length !== 1 || !source.includes("node.type === 'image_generation'")) throw new Error('only video generation may retain the explicit view-cost step')
 if (!source.includes('setPointerCapture') || !source.includes('releasePointerCapture')) throw new Error('port dragging must retain pointer ownership until release')
 if (!source.includes("closest('[data-canvas-interactive]')")) throw new Error('interactive node controls must never initiate node dragging')
 if (!source.includes('parsePromptTemplate(template)')) throw new Error('canvas resource bindings must use the shared parser so escaped placeholders stay literal')
@@ -30,7 +32,7 @@ if (!source.includes('<svg') || !source.includes('<path')) throw new Error('canv
 if (source.includes('<svg') && !source.includes('vectorEffect="non-scaling-stroke"')) throw new Error('edge stroke must remain stable while zooming')
 const generateBody = source.slice(source.indexOf('async function generateNode'), source.indexOf('async function attachRun'))
 if (generateBody.includes('estimateCanvasNode')) throw new Error('estimate and generation must require separate user actions')
-if (!generateBody.includes('nodeEstimates[node.id]') || !generateBody.includes('generateCanvasNode')) throw new Error('generation must require a current estimate before submission')
+if (!generateBody.includes('nodeEstimatesRef.current[node.id]') || !generateBody.includes("estimate.status !== 'ready'") || !generateBody.includes('generateCanvasNode')) throw new Error('generation must require a current estimate before submission')
 if (!source.includes('setConflict({ remote, local: store.getState().command.present })')) throw new Error('revision conflict must retain edits made while the save request was in flight')
 if (!source.includes("runs.filter((run) => run.status === 'unplaced')") || !source.includes('recoveryPosition') || !source.includes('恢复到当前视图')) {
   throw new Error('unplaced results must expose a canvas-level recovery action at the current viewport center')

@@ -11,7 +11,7 @@ import (
 func TestImageRequestUsesDraftAndServerSideIdentityAndInputs(t *testing.T) {
 	projectID := uuid.New()
 	assetID := uuid.New()
-	payload := json.RawMessage(`{"draft":{"abstract_model":"plus","task_type":"text_to_image","prompt":"hidden prompt","output_image_count":2,"user_group_multiplier":"0.1","reference_asset_ids":["forged"]}}`)
+	payload := json.RawMessage(`{"draft":{"abstract_model":"plus","task_type":"text_to_image","prompt":"hidden prompt","output_image_count":12,"user_group_multiplier":"0.1","reference_asset_ids":["forged"]}}`)
 	submission := GenerationSubmission{
 		UserID: 31, UserGroupCode: "paid", UserGroupCodes: []string{"paid", "beta"}, UserGroupMultiplier: "1.25000",
 		ProjectID: projectID, CanvasID: uuid.New(), NodeID: "gen", Kind: TaskKindImage, Node: domaincanvas.Node{ID: "gen", Type: domaincanvas.NodeTypeImageGeneration, Payload: payload},
@@ -24,7 +24,7 @@ func TestImageRequestUsesDraftAndServerSideIdentityAndInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.UserID != 31 || request.ProjectID != projectID.String() || request.UserGroupMultiplier != "1.25000" || request.Prompt != "connected prompt" || len(request.ReferenceAssetIDs) != 1 || request.ReferenceAssetIDs[0] != assetID.String() {
+	if request.UserID != 31 || request.ProjectID != projectID.String() || request.UserGroupMultiplier != "1.25000" || request.Prompt != "connected prompt" || request.OutputImageCount != 12 || len(request.ReferenceAssetIDs) != 1 || request.ReferenceAssetIDs[0] != assetID.String() {
 		t.Fatalf("image request = %#v", request)
 	}
 }

@@ -2,6 +2,9 @@ import {
   addCanvasNode,
   attachCanvasResults,
   connectCanvasNodes,
+  canvasGenerationEstimateSignature,
+  prepareCanvasEstimate,
+  resolveCanvasEstimate,
   canvasPromptResourceCandidates,
   compatibleCanvasTargets,
   copyCanvasSelection,
@@ -130,6 +133,22 @@ const resources = canvasPromptResourceCandidates(resourceDocument, 'resource-pro
 if (resources.length !== 2 || resources.some((resource) => resource.name !== '主体' || !resource.duplicateName)) {
   throw new Error(`prompt resources must expose connected image candidates and duplicate names: ${JSON.stringify(resources)}`)
 }
+
+const estimateDocument: CanvasDocument = {
+  ...resourceDocument,
+  nodes: resourceDocument.nodes.map((node) => node.id === 'resource-gen' ? { ...node, payload: { draft: { route_model_code: 'plus', output_image_count: 2 } } } : node),
+}
+const estimateSignature = canvasGenerationEstimateSignature(estimateDocument, 'resource-gen')
+const movedEstimateSignature = canvasGenerationEstimateSignature({ ...estimateDocument, viewport: { x: 200, y: 80, zoom: 0.5 }, nodes: estimateDocument.nodes.map((node) => ({ ...node, position: { x: node.position.x + 100, y: node.position.y + 40 } })) }, 'resource-gen')
+if (estimateSignature !== movedEstimateSignature) throw new Error('canvas estimate signatures must ignore layout-only changes')
+const changedPromptSignature = canvasGenerationEstimateSignature({ ...estimateDocument, nodes: estimateDocument.nodes.map((node) => node.id === 'resource-prompt' ? { ...node, payload: { text: 'changed prompt' } } : node) }, 'resource-gen')
+if (estimateSignature === changedPromptSignature) throw new Error('canvas estimate signatures must change with generation inputs')
+const waitingEstimate = prepareCanvasEstimate(undefined, estimateSignature, true, 4)
+if (waitingEstimate?.status !== 'waiting') throw new Error('eligible image nodes must enter waiting estimate state')
+const readyEstimate = resolveCanvasEstimate(waitingEstimate, estimateSignature, 4, { points: '8.00000' })
+const staleEstimate = resolveCanvasEstimate(readyEstimate, estimateSignature, 3, { points: '1.00000' })
+if (readyEstimate?.status !== 'ready' || readyEstimate.points !== '8.00000' || staleEstimate !== readyEstimate) throw new Error('out-of-order estimate responses must be ignored')
+if (prepareCanvasEstimate(readyEstimate, `${estimateSignature}-changed`, false, 5) !== undefined) throw new Error('incomplete generation inputs must suppress and clear estimates')
 
 const attached = attachCanvasResults(state, 'run-1', 'image-gen', [{ asset_id: 'asset-new', media_type: 'image' }])
 const attachedAgain = attachCanvasResults(attached, 'run-1', 'image-gen', [{ asset_id: 'asset-new', media_type: 'image' }])
