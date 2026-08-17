@@ -99,13 +99,16 @@ export function connectCanvasNodes(state: CanvasCommandState, edge: CanvasEdge) 
   return commit(state, next)
 }
 
-export type CanvasConnectionError = 'node_not_found' | 'illegal_connection' | 'input_role_conflict' | 'cycle'
+export type CanvasConnectionError = 'node_not_found' | 'illegal_connection' | 'input_role_conflict' | 'output_slot_occupied' | 'cycle'
 
 export function inspectCanvasConnection(document: CanvasDocument, edge: CanvasEdge): CanvasConnectionError | null {
   const source = document.nodes.find((node) => node.id === edge.source)
   const target = document.nodes.find((node) => node.id === edge.target)
   if (!source || !target) return 'node_not_found'
   if (!isLegalConnection(source.type, target.type, edge.input_role)) return 'illegal_connection'
+  if (edge.input_role === 'result' && target.asset_id && !document.edges.some((item) => item.source === edge.source && item.target === edge.target && item.input_role === 'result')) {
+    return 'output_slot_occupied'
+  }
   if ((edge.input_role === 'first_frame' || edge.input_role === 'last_frame') && document.edges.some((item) => item.target === edge.target && item.input_role === edge.input_role)) {
     return 'input_role_conflict'
   }
@@ -123,7 +126,32 @@ export function compatibleCanvasTargets(_document: CanvasDocument, sourceID: str
     { type: 'image_generation', role: 'reference' },
     { type: 'video_generation', role: 'first_frame' },
   ]
+  if (source.type === 'image_generation') return [{ type: 'image', role: 'result' }]
   return []
+}
+
+export type CanvasPromptResourceCandidate = { nodeID: string; assetID: string; name: string; duplicateName: boolean }
+
+export function canvasPromptResourceCandidates(document: CanvasDocument, promptNodeID: string): CanvasPromptResourceCandidate[] {
+  const generationIDs = new Set(document.edges.filter((edge) => edge.source === promptNodeID && edge.input_role === 'prompt')
+    .map((edge) => document.nodes.find((node) => node.id === edge.target))
+    .filter((node): node is CanvasNode => node?.type === 'image_generation')
+    .map((node) => node.id))
+  const nodeByID = new Map(document.nodes.map((node) => [node.id, node]))
+  const seen = new Set<string>()
+  const candidates = document.edges.filter((edge) => generationIDs.has(edge.target) && edge.input_role === 'reference')
+    .map((edge, edgeIndex) => ({ edge, edgeIndex, node: nodeByID.get(edge.source) }))
+    .filter((item): item is { edge: CanvasEdge; edgeIndex: number; node: CanvasNode } => item.node?.type === 'image' && Boolean(item.node.asset_id))
+    .sort((a, b) => (a.edge.ordinal ?? a.edgeIndex) - (b.edge.ordinal ?? b.edgeIndex))
+    .flatMap(({ node }) => {
+      if (seen.has(node.id)) return []
+      seen.add(node.id)
+      const name = String(node.payload?.name ?? '').trim()
+      return name ? [{ nodeID: node.id, assetID: node.asset_id!, name }] : []
+    })
+  const nameCounts = new Map<string, number>()
+  candidates.forEach((candidate) => nameCounts.set(candidate.name, (nameCounts.get(candidate.name) ?? 0) + 1))
+  return candidates.map((candidate) => ({ ...candidate, duplicateName: (nameCounts.get(candidate.name) ?? 0) > 1 }))
 }
 
 export function selectCanvasNodesInRect(nodes: CanvasNode[], rect: { x: number; y: number; width: number; height: number }) {

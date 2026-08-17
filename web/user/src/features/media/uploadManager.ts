@@ -14,6 +14,7 @@ const acceptedMIMETypes: Record<MediaType, readonly string[]> = {
 
 export type UploadStatus = 'queued' | 'initializing' | 'uploading' | 'paused' | 'needs_file' | 'completing' | 'completed' | 'failed' | 'cancelled'
 export type UploadTransport = 'direct' | 'proxy'
+export type UploadTarget = { canvasID: string; nodeID: string }
 
 export type UploadSnapshot = {
   localID: string
@@ -35,6 +36,7 @@ export type UploadSnapshot = {
   error?: string
   expiresAt?: string
   contentFingerprint?: string
+  target?: UploadTarget
 }
 
 export type UploadCandidate = { file: File; mediaType: MediaType }
@@ -85,12 +87,12 @@ export function recoverableUploadSnapshot(snapshot: UploadSnapshot, file: Pick<F
   return snapshot.fileName === file.name && snapshot.fileSize === file.size && snapshot.mimeType === file.type ? snapshot : null
 }
 
-export function createUploadSnapshot(file: File, projectID: string, groupName = '', contentFingerprint?: string): UploadSnapshot {
+export function createUploadSnapshot(file: File, projectID: string, groupName = '', contentFingerprint?: string, target?: UploadTarget): UploadSnapshot {
   const mediaType = mediaTypeForFile(file)
   if (!mediaType) throw new Error('不支持的文件格式')
   return {
     localID: crypto.randomUUID(), projectID, groupName, fileName: file.name, fileSize: file.size,
-    mimeType: file.type, mediaType, status: 'queued', transport: 'direct', completedParts: [], progress: 0, contentFingerprint,
+    mimeType: file.type, mediaType, status: 'queued', transport: 'direct', completedParts: [], progress: 0, contentFingerprint, target,
   }
 }
 
@@ -134,8 +136,12 @@ export function restoreUploadSnapshots(raw: string | null): UploadSnapshot[] {
     const now = Date.now()
     return items.filter((item) => item && typeof item.localID === 'string').map((item) => {
       const expired = item.expiresAt ? new Date(item.expiresAt).getTime() <= now : false
+      const target = item.target && typeof item.target.canvasID === 'string' && item.target.canvasID.trim() && typeof item.target.nodeID === 'string' && item.target.nodeID.trim()
+        ? { canvasID: item.target.canvasID, nodeID: item.target.nodeID }
+        : undefined
       return {
         ...item,
+        target,
         transport: item.transport === 'proxy' ? 'proxy' : 'direct',
         ...(expired ? { uploadID: undefined, completedParts: [], progress: 0, expiresAt: undefined } : {}),
         completedParts: expired ? [] : Array.isArray(item.completedParts) ? item.completedParts : [],

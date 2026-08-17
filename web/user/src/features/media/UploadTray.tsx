@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, CirclePause, Play, RotateCcw, Trash2, Upload, X } from 'lucide-react'
-import type { MediaCompletedPart, MediaUploadSession } from '../../../../shared/api-types'
+import type { MediaAsset, MediaCompletedPart, MediaUploadSession } from '../../../../shared/api-types'
 import { userApi } from '../../../../shared/user-api'
 import { useProjects } from '../../ProjectContext'
 import { useApp } from '../../components'
@@ -19,10 +19,14 @@ import {
   serializeUploadSnapshots,
   shouldFallbackToProxy,
   type UploadSnapshot,
+  type UploadTarget,
 } from './uploadManager'
 
 export const MEDIA_ASSETS_CHANGED_EVENT = 'mgs:media-assets-changed'
 export const QUEUE_MEDIA_UPLOAD_EVENT = 'mgs:queue-media-upload'
+export const MEDIA_UPLOAD_COMPLETED_EVENT = 'mgs:media-upload-completed'
+export type QueueMediaUploadDetail = { files?: File[]; projectID?: string; target?: UploadTarget }
+export type MediaUploadCompletedDetail = { projectID: string; assetID: string; mediaType: MediaAsset['media_type']; target?: UploadTarget; asset: MediaAsset }
 
 async function sha256Hex(blob: Blob) {
   const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
@@ -65,9 +69,9 @@ export function UploadTray() {
 
   useEffect(() => {
     const queueUpload = (event: Event) => {
-      const detail = (event as CustomEvent<{ files?: File[]; projectID?: string }>).detail
-      if (!detail?.files?.length || (detail.projectID && detail.projectID !== projects.selectedProjectID)) return
-      void addFiles(detail.files)
+      const detail = (event as CustomEvent<QueueMediaUploadDetail>).detail
+      if (!detail?.files?.length) return
+      void addFiles(detail.files, { projectID: detail.projectID, target: detail.target })
     }
     window.addEventListener(QUEUE_MEDIA_UPLOAD_EVENT, queueUpload)
     return () => window.removeEventListener(QUEUE_MEDIA_UPLOAD_EVENT, queueUpload)
@@ -140,6 +144,7 @@ export function UploadTray() {
       update(snapshot.localID, (item) => ({ ...item, status: 'completed', assetID: asset.id, progress: 1, error: undefined }))
       files.current.delete(snapshot.localID)
       window.dispatchEvent(new CustomEvent(MEDIA_ASSETS_CHANGED_EVENT, { detail: { projectID: asset.project_id, assetID: asset.id, mediaType: asset.media_type } }))
+      window.dispatchEvent(new CustomEvent<MediaUploadCompletedDetail>(MEDIA_UPLOAD_COMPLETED_EVENT, { detail: { projectID: asset.project_id, assetID: asset.id, mediaType: asset.media_type, target: snapshot.target, asset } }))
       app.notify('success', `${snapshot.fileName} 上传完成`)
     } catch (caught) {
       const aborted = caught instanceof DOMException && caught.name === 'AbortError'
@@ -149,8 +154,9 @@ export function UploadTray() {
     }
   }, [app, update])
 
-  const addFiles = async (incoming: Iterable<File> | FileList | null) => {
-    if (!incoming || !projects.selectedProjectID) return
+  const addFiles = async (incoming: Iterable<File> | FileList | null, options: { projectID?: string; target?: UploadTarget } = {}) => {
+    const projectID = options.projectID || projects.selectedProjectID
+    if (!incoming || !projectID) return
     const result = acceptUploadFiles(incoming)
     const accepted = await Promise.all(result.accepted.map(async (candidate) => ({
       ...candidate,
@@ -159,14 +165,14 @@ export function UploadTray() {
     const additions: UploadSnapshot[] = []
     const claimedRecovered = new Set<string>()
     for (const candidate of accepted) {
-      const existing = items.find((item) => !claimedRecovered.has(item.localID) && item.status === 'needs_file' && recoverableUploadSnapshot(item, candidate.file, candidate.contentFingerprint))
+      const existing = items.find((item) => !claimedRecovered.has(item.localID) && item.status === 'needs_file' && (!options.target || (item.target?.canvasID === options.target.canvasID && item.target.nodeID === options.target.nodeID)) && recoverableUploadSnapshot(item, candidate.file, candidate.contentFingerprint))
       if (existing) {
         claimedRecovered.add(existing.localID)
         files.current.set(existing.localID, candidate.file)
         update(existing.localID, (item) => ({ ...item, status: 'paused', error: undefined }))
         queueMicrotask(() => void runUpload({ ...existing, status: 'paused', error: undefined }))
       } else {
-        const snapshot = createUploadSnapshot(candidate.file, projects.selectedProjectID, '', candidate.contentFingerprint)
+        const snapshot = createUploadSnapshot(candidate.file, projectID, '', candidate.contentFingerprint, options.target)
         files.current.set(snapshot.localID, candidate.file)
         additions.push(snapshot)
         queueMicrotask(() => void runUpload(snapshot))

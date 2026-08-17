@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from 'zustand'
 import {
-  ArrowLeft, BoxSelect, CircleStop, ClipboardPaste, Copy, Download, Film, Focus, Image, LayoutTemplate, Link2, MousePointer2,
-  Move, Music2, Plus, Redo2, RefreshCw, Save, Search, Sparkles, StickyNote, Trash2, Undo2, ZoomIn, ZoomOut,
+  ArrowLeft, BoxSelect, CircleStop, ClipboardPaste, Copy, Download, Film, Focus, Image, ImagePlus, LayoutTemplate, Link2, MousePointer2,
+  Move, Music2, Plus, Redo2, RefreshCw, Save, Search, Sparkles, StickyNote, Trash2, Undo2, Upload, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import type { Capability, CanvasRun, CreativeCanvas, MediaAsset, VideoCapability } from '../../../../shared/api-types'
 import { ApiError } from '../../../../shared/http-client'
@@ -17,13 +17,15 @@ import { mediaCreationActions } from '../media/mediaExperience'
 import { promptVariableNames } from '../../pages/promptTemplateEditorModel'
 import { parsePromptTemplate } from '../../pages/promptTemplateParser'
 import { computeCanvasBounds, fitCanvasViewport, minimapGeometry, visibleCanvasNodeIDs } from './core/canvasLayout'
-import { canvasNodeMinimumSize, compatibleCanvasTargets, inspectCanvasConnection, selectCanvasNodesInRect } from './core/canvasState'
+import { canvasNodeMinimumSize, canvasPromptResourceCandidates, compatibleCanvasTargets, inspectCanvasConnection, selectCanvasNodesInRect, type CanvasPromptResourceCandidate } from './core/canvasState'
 import type { CanvasDocument, CanvasEdge, CanvasNode, CanvasNodeType, CanvasViewport } from './core/types'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
 import { CanvasNodeSearch } from './CanvasNodeSearch'
 import { createCanvasDraftWriter, decideCanvasDraftRecovery, readCanvasDraft, removeCanvasDraft } from './persistence/canvasDraftPersistence'
 import { createCanvasRemoteSaveScheduler } from './persistence/canvasRemoteSave'
 import { createCanvasStore } from './store/canvasStore'
+import { MEDIA_UPLOAD_COMPLETED_EVENT, QUEUE_MEDIA_UPLOAD_EVENT, type MediaUploadCompletedDetail, type QueueMediaUploadDetail } from '../media/UploadTray'
+import { mediaTypeForFile } from '../media/uploadManager'
 import './canvas.css'
 
 type Props = { canvasID: string; onBack: () => void }
@@ -45,7 +47,7 @@ type GenerationInputSummary = {
 }
 
 const nodeLabels: Record<CanvasNodeType, string> = {
-  prompt: '提示词', image: '图片资产', video: '视频资产', audio: '音频资产', image_generation: '图片生成', video_generation: '视频生成', note: '便签',
+  prompt: '提示词', image: '图片框', video: '视频资产', audio: '音频资产', image_generation: '图片生成', video_generation: '视频生成', note: '便签',
 }
 const activeRunStatuses = new Set(['submitting', 'queued', 'running', 'saving'])
 
@@ -65,6 +67,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null)
   const [busyNodeID, setBusyNodeID] = useState('')
   const [showAssets, setShowAssets] = useState(false)
+  const [assetTargetNodeID, setAssetTargetNodeID] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [connectSource, setConnectSource] = useState('')
   const [connectionDraft, setConnectionDraft] = useState<ConnectionDraft | null>(null)
@@ -72,6 +75,8 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   const [conflict, setConflict] = useState<{ remote: CreativeCanvas; local: CanvasDocument } | null>(null)
   const [readOnly, setReadOnly] = useState(() => window.matchMedia('(max-width: 767px) and (orientation: portrait)').matches)
   const viewportRef = useRef<HTMLDivElement | null>(null)
+  const imageUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const imageUploadTargetRef = useRef('')
   const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 })
   const [drag, setDrag] = useState<DragState | null>(null)
   const [resize, setResize] = useState<ResizeState | null>(null)
@@ -84,6 +89,19 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   const draftWriterRef = useRef(createCanvasDraftWriter())
   const remoteSaveRef = useRef<ReturnType<typeof createCanvasRemoteSaveScheduler> | null>(null)
   const state = useStore(store ?? emptyCanvasStore, (value) => value)
+
+  useEffect(() => {
+    if (!store) return undefined
+    const complete = (event: Event) => {
+      const detail = (event as CustomEvent<MediaUploadCompletedDetail>).detail
+      if (!detail?.target || detail.target.canvasID !== canvasID || detail.mediaType !== 'image') return
+      const current = store.getState().command.present.nodes.find((node) => node.id === detail.target?.nodeID)
+      if (!current || current.type !== 'image') return
+      store.getState().updateNode(current.id, (node) => fillImageFrame(node, detail.asset))
+    }
+    window.addEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete)
+    return () => window.removeEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete)
+  }, [canvasID, store])
 
   const loadCanvas = useCallback(async () => {
     setLoading(true)
@@ -266,8 +284,35 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     return id
   }
   function addAsset(asset: MediaAsset) {
-    addAssetNode(store!, asset, worldPoint(viewportSize.width / 2 + (viewportRef.current?.getBoundingClientRect().left ?? 0), viewportSize.height / 2 + (viewportRef.current?.getBoundingClientRect().top ?? 0)))
+    if (assetTargetNodeID) {
+      if (asset.media_type !== 'image') { app.notify('error', '图片框只能选择图片资产'); return }
+      store!.getState().updateNode(assetTargetNodeID, (node) => fillImageFrame(node, asset))
+      setAssetTargetNodeID('')
+    } else {
+      addAssetNode(store!, asset, worldPoint(viewportSize.width / 2 + (viewportRef.current?.getBoundingClientRect().left ?? 0), viewportSize.height / 2 + (viewportRef.current?.getBoundingClientRect().top ?? 0)))
+    }
     setShowAssets(false)
+  }
+  function chooseImageForFrame(nodeID: string) {
+    setAssetTargetNodeID(nodeID)
+    setShowAssets(true)
+  }
+  function uploadImageForFrame(nodeID: string) {
+    imageUploadTargetRef.current = nodeID
+    imageUploadInputRef.current?.click()
+  }
+  function queueImageFrameUpload(files: FileList | null) {
+    const file = files?.[0]
+    const nodeID = imageUploadTargetRef.current
+    if (!file || !nodeID) return
+    if (mediaTypeForFile(file) !== 'image') {
+      app.notify('error', '图片框仅支持 JPG、PNG、WEBP 图片')
+      if (imageUploadInputRef.current) imageUploadInputRef.current.value = ''
+      return
+    }
+    const detail: QueueMediaUploadDetail = { files: [file], projectID: canvas!.project_id, target: { canvasID, nodeID } }
+    window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail }))
+    if (imageUploadInputRef.current) imageUploadInputRef.current.value = ''
   }
   async function estimateNode(node: CanvasNode) {
     setBusyNodeID(node.id)
@@ -319,7 +364,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     try {
       store!.getState().connect({ id: `edge-${crypto.randomUUID().slice(0, 12)}`, source: source.id, target: node.id, input_role: role })
       setConnectSource('')
-    } catch (caught) { app.notify('error', errorMessage(caught)) }
+    } catch (caught) { app.notify('error', caught instanceof Error && caught.message === 'output_slot_occupied' ? '已有图片不能作为新的生成输出，请使用空图片框' : errorMessage(caught)) }
   }
   function connectionCandidate(sourceID: string, targetID: string) {
     const source = nodeByID.get(sourceID)
@@ -340,13 +385,14 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     }
     if (candidate.error === 'cycle') app.notify('error', '当前生成关系不能形成循环')
     else if (candidate.error === 'input_role_conflict') app.notify('error', '首帧和尾帧均已设置，请先移除或替换现有连接')
+    else if (candidate.error === 'output_slot_occupied') app.notify('error', '已有图片不能作为新的生成输出，请使用空图片框')
     else app.notify('error', '这两个节点不能连接')
     setConnectionDraft(null)
   }
   function openNodeMenu(clientX: number, clientY: number, sourceID?: string) {
     const point = worldPoint(clientX, clientY)
     const options = sourceID ? compatibleCanvasTargets(documentState, sourceID) : [
-      { type: 'prompt' as const }, { type: 'image_generation' as const }, { type: 'video_generation' as const }, { type: 'note' as const },
+      { type: 'prompt' as const }, { type: 'image' as const }, { type: 'image_generation' as const }, { type: 'video_generation' as const }, { type: 'note' as const },
     ]
     if (!options.length) return
     setNodeMenu({ point, sourceID, options })
@@ -367,6 +413,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   }
 
   return <main className="canvas-editor" data-canvas-editor data-readonly={readOnly} data-canvas-keyboard-open={keyboardOpen || undefined}>
+    <input ref={imageUploadInputRef} hidden type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={(event) => queueImageFrameUpload(event.target.files)} />
     <header className="canvas-editor-header">
       <button type="button" title="返回画布列表" onClick={onBack}><ArrowLeft size={18} /></button>
       <div><span>{projects.projects.find((project) => project.id === canvas.project_id)?.name ?? '项目'}</span><strong>{canvas.name}</strong></div>
@@ -388,6 +435,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
       <button type="button" aria-pressed={state.mode === 'connect'} title="连接节点" onClick={() => { store.getState().setMode('connect'); setConnectSource('') }}><Link2 size={18} /></button>
       <i />
       <button type="button" title="添加提示词" onClick={() => addNode('prompt')}><Plus size={13} /><Sparkles size={17} /></button>
+      <button type="button" title="添加图片框" onClick={() => addNode('image')}><Plus size={13} /><ImagePlus size={17} /></button>
       <button type="button" title="添加图片生成" onClick={() => addNode('image_generation')}><Plus size={13} /><Image size={17} /></button>
       <button type="button" title="添加视频生成" onClick={() => addNode('video_generation')}><Plus size={13} /><Film size={17} /></button>
       <button type="button" title="添加便签" onClick={() => addNode('note')}><StickyNote size={17} /></button>
@@ -527,7 +575,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
         </svg>
         {transientNodes.filter((node) => visibleNodeIDs.has(node.id)).map((node) => {
           const targetCandidate = connectionDraft?.sourceID && connectionDraft.sourceID !== node.id ? connectionCandidate(connectionDraft.sourceID, node.id) : null
-          return <CanvasNodeView key={node.id} node={node} selected={selectedSet.has(node.id)} readOnly={readOnly} connecting={connectSource === node.id} connectValid={Boolean(targetCandidate?.edge && !targetCandidate.error)} connectInvalid={Boolean(targetCandidate?.error)} run={runs.find((run) => run.node_id === node.id)} estimate={nodeEstimates[node.id]?.documentSignature === documentSignature ? nodeEstimates[node.id] : undefined} busy={busyNodeID === node.id} imageCapability={imageCapability} videoCapability={videoCapability} balance={app.balance?.available_points ?? '0.00000'} inputSummary={generationInputSummary(node, documentState)} onStartConnection={(event) => {
+          return <CanvasNodeView key={node.id} node={node} selected={selectedSet.has(node.id)} readOnly={readOnly} connecting={connectSource === node.id} connectValid={Boolean(targetCandidate?.edge && !targetCandidate.error)} connectInvalid={Boolean(targetCandidate?.error)} run={runs.find((run) => run.node_id === node.id)} estimate={nodeEstimates[node.id]?.documentSignature === documentSignature ? nodeEstimates[node.id] : undefined} busy={busyNodeID === node.id} imageCapability={imageCapability} videoCapability={videoCapability} balance={app.balance?.available_points ?? '0.00000'} inputSummary={generationInputSummary(node, documentState)} promptResourceCandidates={node.type === 'prompt' ? canvasPromptResourceCandidates(documentState, node.id) : []} onStartConnection={(event) => {
             event.stopPropagation()
             setConnectionDraft({ pointerID: event.pointerId, sourceID: node.id, point: worldPoint(event.clientX, event.clientY), targetID: '', error: null })
             viewportRef.current?.setPointerCapture(event.pointerId)
@@ -562,7 +610,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
           store.getState().resizeNode(node.id, resize.size)
           if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
           setResize(null)
-        }} onUpdate={(payload) => store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, ...payload } }))} onEstimate={() => void estimateNode(node)} onGenerate={() => void generateNode(node)} onAttach={() => { const run = runs.find((item) => item.node_id === node.id && item.status === 'succeeded'); if (run) void attachRun(run) }} onCancel={() => { const run = runs.find((item) => item.node_id === node.id && activeRunStatuses.has(item.status)); if (run) void userApi.cancelCanvasRun(canvas.id, run.id).then((next) => setRuns((items) => [next, ...items.filter((item) => item.id !== next.id)])) }} onMediaDetail={() => { if (node.asset_id) void userApi.getMediaAsset(node.asset_id).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught))) }} onContinueImage={() => addGenerationFromMedia(node, 'image_generation')} onContinueVideo={() => addGenerationFromMedia(node, 'video_generation')} onReuseVideo={() => { const taskID = String(node.payload?.source_task_id ?? '').trim(); if (taskID) window.location.hash = userHashForRoute('genpic', { media: 'video', taskId: taskID }) }} />
+        }} onUpdate={(payload) => store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, ...payload } }))} onEstimate={() => void estimateNode(node)} onGenerate={() => void generateNode(node)} onAttach={() => { const run = runs.find((item) => item.node_id === node.id && item.status === 'succeeded'); if (run) void attachRun(run) }} onCancel={() => { const run = runs.find((item) => item.node_id === node.id && activeRunStatuses.has(item.status)); if (run) void userApi.cancelCanvasRun(canvas.id, run.id).then((next) => setRuns((items) => [next, ...items.filter((item) => item.id !== next.id)])) }} onMediaDetail={() => { if (node.asset_id) void userApi.getMediaAsset(node.asset_id).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught))) }} onChooseImage={() => chooseImageForFrame(node.id)} onUploadImage={() => uploadImageForFrame(node.id)} canUpload={app.featureFlags.media_upload} onContinueImage={() => addGenerationFromMedia(node, 'image_generation')} onContinueVideo={() => addGenerationFromMedia(node, 'video_generation')} onReuseVideo={() => { const taskID = String(node.payload?.source_task_id ?? '').trim(); if (taskID) window.location.hash = userHashForRoute('genpic', { media: 'video', taskId: taskID }) }} />
         })}
         {selection ? <div className="canvas-selection-box" style={rectStyle(normalizedRect(selection.start, selection.current))} /> : null}
         {nodeMenu ? <div className="canvas-node-menu" data-canvas-no-zoom style={{ left: nodeMenu.point.x, top: nodeMenu.point.y }} role="menu" aria-label={nodeMenu.sourceID ? '添加兼容节点' : '添加节点'}>
@@ -594,20 +642,20 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
       </button>
     </div>
     {showSearch ? <CanvasNodeSearch nodes={transientNodes} onClose={() => setShowSearch(false)} onSelect={(node) => { store.getState().select([node.id]); store.getState().setViewport(fitCanvasViewport(computeCanvasBounds([node]), viewportSize, 120)); setShowSearch(false) }} /> : null}
-    {showAssets ? <CanvasAssetDrawer projectID={canvas.project_id} onClose={() => setShowAssets(false)} onSelect={addAsset} /> : null}
+    {showAssets ? <CanvasAssetDrawer projectID={canvas.project_id} mediaType={assetTargetNodeID ? 'image' : undefined} onClose={() => { setShowAssets(false); setAssetTargetNodeID('') }} onSelect={addAsset} /> : null}
     {previewAsset ? <MediaPreviewDialog asset={previewAsset} projects={projects.projects} creationActions={mediaCreationActions(previewAsset)} onClose={() => setPreviewAsset(null)} onChanged={setPreviewAsset} onDeleted={() => setPreviewAsset(null)} onContinue={(options) => { window.location.hash = userHashForRoute('genpic', options) }} /> : null}
     {conflict ? <div className="canvas-conflict" role="dialog" aria-modal="true" data-canvas-no-zoom><div><strong>画布已在其他页面更新</strong><p>远端版本 r{conflict.remote.revision}，本地草稿基于 r{state.command.revision}。请选择保留方式，系统不会自动覆盖。</p><footer><Button tone="ghost" onClick={() => { store.getState().replaceRemote(toLocalDocument(conflict.remote.document), conflict.remote.revision); setCanvas(conflict.remote); setConflict(null) }}>使用远端版本</Button><Button onClick={() => void userApi.createCanvas({ project_id: canvas.project_id, name: `${canvas.name} 本地副本`, document: toWireDocument(conflict.local) }).then((copy) => { setConflict(null); app.notify('success', `已创建副本：${copy.name}`) })}>复制本地版本</Button></footer></div></div> : null}
   </main>
 }
 
-function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, run, estimate, busy, imageCapability, videoCapability, balance, inputSummary, onSelect, onDrag, onDragEnd, onResizeStart, onResize, onResizeEnd, onStartConnection, onFinishConnection, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onMediaDetail, onContinueImage, onContinueVideo, onReuseVideo }: {
+function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, run, estimate, busy, imageCapability, videoCapability, balance, inputSummary, promptResourceCandidates, canUpload, onSelect, onDrag, onDragEnd, onResizeStart, onResize, onResizeEnd, onStartConnection, onFinishConnection, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onMediaDetail, onChooseImage, onUploadImage, onContinueImage, onContinueVideo, onReuseVideo }: {
   node: CanvasNode; selected: boolean; readOnly: boolean; connecting: boolean; connectValid: boolean; connectInvalid: boolean; run?: CanvasRun; estimate?: NodeEstimate; busy: boolean
-  imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary
+  imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; promptResourceCandidates: CanvasPromptResourceCandidate[]; canUpload: boolean
   onSelect: (event: React.PointerEvent<HTMLElement>) => void; onDrag: (event: React.PointerEvent<HTMLElement>) => void; onDragEnd: () => void
   onResizeStart: (event: React.PointerEvent<HTMLButtonElement>) => void; onResize: (event: React.PointerEvent<HTMLButtonElement>) => void; onResizeEnd: (event: React.PointerEvent<HTMLButtonElement>) => void
   onStartConnection: (event: React.PointerEvent<HTMLButtonElement>) => void; onFinishConnection: (event: React.PointerEvent<HTMLButtonElement>) => void
   onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void
-  onMediaDetail: () => void; onContinueImage: () => void; onContinueVideo: () => void; onReuseVideo: () => void
+  onMediaDetail: () => void; onChooseImage: () => void; onUploadImage: () => void; onContinueImage: () => void; onContinueVideo: () => void; onReuseVideo: () => void
 }) {
   const editable = node.type === 'prompt' || node.type === 'note'
   const generation = node.type === 'image_generation' || node.type === 'video_generation'
@@ -615,9 +663,9 @@ function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, co
     {!readOnly ? <button type="button" className="canvas-port canvas-port-target" data-canvas-interactive data-canvas-port="target" title="连接到此节点" aria-label={`连接到${nodeLabels[node.type]}`} onPointerUp={onFinishConnection} /> : null}
     <header data-canvas-drag-handle><span>{nodeTypeIcon(node.type)}</span><strong>{String(node.payload?.title ?? nodeLabels[node.type])}</strong>{run ? <i data-status={run.status}>{run.status}</i> : null}</header>
     <div className="canvas-node-body" data-canvas-interactive data-canvas-no-zoom={editable || generation ? '' : undefined}>
-      {node.type === 'prompt' ? <PromptNodeBody node={node} readOnly={readOnly} busy={busy} onUpdate={onUpdate} /> : null}
+      {node.type === 'prompt' ? <PromptNodeBody node={node} readOnly={readOnly} busy={busy} resourceCandidates={promptResourceCandidates} onUpdate={onUpdate} /> : null}
       {node.type === 'note' ? <textarea readOnly={readOnly} defaultValue={String(node.payload?.text ?? '')} placeholder="记录创作想法" onBlur={(event) => onUpdate({ text: event.target.value })} /> : null}
-      {node.type === 'image' || node.type === 'video' || node.type === 'audio' ? <CanvasMediaNode node={node} onDetail={onMediaDetail} onContinueImage={onContinueImage} onContinueVideo={onContinueVideo} onReuseVideo={onReuseVideo} /> : null}
+      {node.type === 'image' || node.type === 'video' || node.type === 'audio' ? <CanvasMediaNode node={node} readOnly={readOnly} canUpload={canUpload} onChooseImage={onChooseImage} onUploadImage={onUploadImage} onDetail={onMediaDetail} onContinueImage={onContinueImage} onContinueVideo={onContinueVideo} onReuseVideo={onReuseVideo} /> : null}
       {generation ? <GenerationNodeBody node={node} run={run} estimate={estimate} busy={busy} readOnly={readOnly} imageCapability={imageCapability} videoCapability={videoCapability} balance={balance} inputSummary={inputSummary} onUpdate={onUpdate} onEstimate={onEstimate} onGenerate={onGenerate} onAttach={onAttach} onCancel={onCancel} /> : null}
     </div>
     {!readOnly ? <button type="button" className="canvas-port canvas-port-source" data-canvas-interactive data-canvas-port="source" title="从此节点连接" aria-label={`从${nodeLabels[node.type]}连接`} onPointerDown={onStartConnection} /> : null}
@@ -675,18 +723,24 @@ function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapabili
   </div>
 }
 
-function PromptNodeBody({ node, readOnly, onUpdate }: { node: CanvasNode; readOnly: boolean; busy: boolean; onUpdate: (payload: Record<string, unknown>) => void }) {
+function PromptNodeBody({ node, readOnly, resourceCandidates, onUpdate }: { node: CanvasNode; readOnly: boolean; busy: boolean; resourceCandidates: CanvasPromptResourceCandidate[]; onUpdate: (payload: Record<string, unknown>) => void }) {
   const [text, setText] = useState(String(node.payload?.text ?? ''))
   const [optimizing, setOptimizing] = useState(false)
+  const [showResources, setShowResources] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const variables = asObject(node.payload?.variables)
   const names = promptVariableNames(text)
   const resourceTags = Array.from(text.matchAll(/\{\{@([^{}]+)}}/g), (match) => match[1]).filter((name, index, all) => all.indexOf(name) === index)
   useEffect(() => setText(String(node.payload?.text ?? '')), [node.payload?.text])
   const commitText = (next = text) => onUpdate({ text: next, variables: Object.fromEntries(promptVariableNames(next).map((name) => [name, String(variables[name] ?? '')])) })
-  const insertToken = (token: '{{$变量}}' | '{{@资源}}') => {
-    const next = `${text}${text && !text.endsWith(' ') ? ' ' : ''}${token}`
+  const insertToken = (token: string) => {
+    const input = textareaRef.current
+    const start = input?.selectionStart ?? text.length
+    const end = input?.selectionEnd ?? start
+    const next = `${text.slice(0, start)}${token}${text.slice(end)}`
     setText(next)
     commitText(next)
+    requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(start + token.length, start + token.length) })
   }
   const optimize = async () => {
     const value = text.trim()
@@ -701,17 +755,35 @@ function PromptNodeBody({ node, readOnly, onUpdate }: { node: CanvasNode; readOn
     } finally { setOptimizing(false) }
   }
   return <div className="canvas-prompt-body">
-    <div className="canvas-prompt-actions"><button type="button" disabled={readOnly} onClick={() => insertToken('{{$变量}}')}>变量</button><button type="button" disabled={readOnly} onClick={() => insertToken('{{@资源}}')}>资源</button><button type="button" disabled={readOnly || optimizing || Array.from(text.trim()).length < 8} onClick={() => void optimize()}>{optimizing ? '优化中' : '优化'}</button></div>
-    <textarea readOnly={readOnly} value={text} placeholder="描述你想生成的画面" onChange={(event) => setText(event.target.value)} onBlur={() => commitText()} />
+    <div className="canvas-prompt-actions"><button type="button" disabled={readOnly} onClick={() => insertToken('{{$变量}}')}>变量</button><button type="button" title="插入{{@资源}}" disabled={readOnly} aria-expanded={showResources} onClick={() => setShowResources((value) => !value)}>资源</button><button type="button" disabled={readOnly || optimizing || Array.from(text.trim()).length < 8} onClick={() => void optimize()}>{optimizing ? '优化中' : '优化'}</button></div>
+    {showResources ? <div className="canvas-prompt-resource-picker" role="listbox" aria-label="选择提示词资源">
+      {resourceCandidates.length ? resourceCandidates.map((candidate) => <CanvasPromptResourceOption key={candidate.nodeID} candidate={candidate} onSelect={() => { insertToken(`{{@${candidate.name}}}`); setShowResources(false) }} />) : <span>当前生成链路没有可用图片</span>}
+    </div> : null}
+    <textarea ref={textareaRef} readOnly={readOnly} value={text} placeholder="描述你想生成的画面" onChange={(event) => setText(event.target.value)} onBlur={() => commitText()} />
     {names.length || resourceTags.length ? <div className="canvas-prompt-tags">{names.map((name) => <span key={`variable-${name}`}>${name}</span>)}{resourceTags.map((name) => <span key={`resource-${name}`}>@{name}</span>)}</div> : null}
     {names.map((name) => <label className="canvas-prompt-variable" key={name}><span>{name}</span><input readOnly={readOnly} value={String(variables[name] ?? '')} onChange={(event) => onUpdate({ text, variables: { ...variables, [name]: event.target.value } })} placeholder="填写变量值" /></label>)}
   </div>
 }
 
-function CanvasMediaNode({ node, onDetail, onContinueImage, onContinueVideo, onReuseVideo }: { node: CanvasNode; onDetail: () => void; onContinueImage: () => void; onContinueVideo: () => void; onReuseVideo: () => void }) {
+function CanvasPromptResourceOption({ candidate, onSelect }: { candidate: CanvasPromptResourceCandidate; onSelect: () => void }) {
+  const [previewURL, setPreviewURL] = useState('')
+  useEffect(() => {
+    let alive = true
+    void userApi.getMediaAssetAccess(candidate.assetID, 'preview').then((access) => { if (alive) setPreviewURL(access.url) }).catch(() => undefined)
+    return () => { alive = false }
+  }, [candidate.assetID])
+  return <button type="button" role="option" data-duplicate={candidate.duplicateName || undefined} onClick={onSelect}>
+    {previewURL ? <img src={previewURL} alt="" /> : <span><Image size={14} /></span>}
+    <strong>{candidate.name}</strong>{candidate.duplicateName ? <i>重名</i> : null}
+  </button>
+}
+
+function CanvasMediaNode({ node, readOnly, canUpload, onChooseImage, onUploadImage, onDetail, onContinueImage, onContinueVideo, onReuseVideo }: { node: CanvasNode; readOnly: boolean; canUpload: boolean; onChooseImage: () => void; onUploadImage: () => void; onDetail: () => void; onContinueImage: () => void; onContinueVideo: () => void; onReuseVideo: () => void }) {
   const [previewURL, setPreviewURL] = useState('')
   const [accessError, setAccessError] = useState('')
   useEffect(() => {
+    setPreviewURL('')
+    setAccessError('')
     if (!node.asset_id) return undefined
     let alive = true
     void userApi.getMediaAssetAccess(node.asset_id, 'preview').then((access) => {
@@ -730,6 +802,10 @@ function CanvasMediaNode({ node, onDetail, onContinueImage, onContinueVideo, onR
   }
   const dimensions = Number(node.payload?.width) && Number(node.payload?.height) ? `${node.payload?.width} x ${node.payload?.height}` : ''
   const duration = Number(node.payload?.duration_ms) ? `${(Number(node.payload?.duration_ms) / 1000).toFixed(1)} 秒` : ''
+  if (node.type === 'image' && !node.asset_id) return <div className="canvas-image-frame-empty">
+    <div className="canvas-media-placeholder"><ImagePlus size={24} /><span>选择图片，或连接为生成输出</span></div>
+    {!readOnly ? <div className="canvas-media-actions"><button type="button" onClick={onChooseImage}><Image size={14} />选择资产</button>{canUpload ? <button type="button" onClick={onUploadImage}><Upload size={14} />上传图片</button> : null}</div> : null}
+  </div>
   return <div className="canvas-media-node" data-canvas-no-drag>
     <div className="canvas-media-preview">
       {previewURL && node.type === 'image' ? <img src={previewURL} alt={String(node.payload?.name ?? '图片结果')} loading="lazy" /> : null}
@@ -748,6 +824,7 @@ function toWireDocument(document: CanvasDocument): CreativeCanvas['document'] { 
 function asObject(value: unknown) { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {} }
 function defaultNodePayload(type: CanvasNodeType, imageCapability?: Capability | null, videoCapability?: VideoCapability | null) {
   if (type === 'prompt') return { title: '提示词', text: '' }
+  if (type === 'image') return { title: '图片框' }
   if (type === 'note') return { title: '便签', text: '' }
   if (type === 'image_generation') {
     const model = imageCapability?.model_groups[0]
@@ -760,6 +837,13 @@ function defaultNodePayload(type: CanvasNodeType, imageCapability?: Capability |
     return { title: '视频生成', draft: { route_model_code: model?.code ?? '', task_type: model?.defaults.task_type ?? model?.task_types[0] ?? 'text_to_video', duration_seconds: model?.defaults.duration_seconds, resolution: model?.defaults.resolution, aspect_ratio: model?.defaults.aspect_ratio, audio_mode: model?.defaults.generate_audio ? 'generated' : 'silent', output_count: 1 } }
   }
   return {}
+}
+function fillImageFrame(node: CanvasNode, asset: MediaAsset): CanvasNode {
+  return {
+    ...node,
+    asset_id: asset.id,
+    payload: { ...node.payload, name: asset.name, mime_type: asset.mime_type, width: asset.width, height: asset.height, source_type: asset.source_type, source_task_kind: asset.source_task_kind, source_task_id: asset.source_task_id },
+  }
 }
 function addAssetNode(store: ReturnType<typeof createCanvasStore>, asset: MediaAsset, position: { x: number; y: number }) {
   const size = asset.media_type === 'audio' ? { width: 280, height: 140 } : asset.media_type === 'video' ? { width: 320, height: 200 } : { width: 280, height: 220 }

@@ -655,13 +655,14 @@ func resultPlacement(run Run, source domaincanvas.Node, document domaincanvas.Do
 	for resultIndex < len(run.ResultAssetIDs) && resultIndex < len(slots) {
 		slot := slots[resultIndex].node
 		slot.AssetID = run.ResultAssetIDs[resultIndex].String()
+		slot.Payload = ensureResultNodeName(slot.Payload, resultNodeName(mediaType, batchIndex, resultIndex))
 		updatedNodes = append(updatedNodes, slot)
 		resultIndex++
 	}
 	for index := resultIndex; index < len(run.ResultAssetIDs); index++ {
 		assetID := run.ResultAssetIDs[index]
 		id := domaincanvas.StableResultNodeID(run.ID.String(), assetID.String())
-		nodes = append(nodes, domaincanvas.Node{ID: id, Type: mediaType, AssetID: assetID.String(), Position: domaincanvas.Point{X: source.Position.X + source.Size.Width + 80 + float64(batchIndex)*(width+48), Y: source.Position.Y + float64(index)*(height+32)}, Size: domaincanvas.Size{Width: width, Height: height}})
+		nodes = append(nodes, domaincanvas.Node{ID: id, Type: mediaType, AssetID: assetID.String(), Position: domaincanvas.Point{X: source.Position.X + source.Size.Width + 80 + float64(batchIndex)*(width+48), Y: source.Position.Y + float64(index)*(height+32)}, Size: domaincanvas.Size{Width: width, Height: height}, Payload: ensureResultNodeName(nil, resultNodeName(mediaType, batchIndex, index))})
 		edges = append(edges, domaincanvas.Edge{ID: "edge-" + id, Source: source.ID, Target: id, InputRole: domaincanvas.InputRoleResult, Ordinal: nextOrdinal})
 		nextOrdinal++
 	}
@@ -684,10 +685,31 @@ func recoveredResultPlacement(run Run, center domaincanvas.Point) []domaincanvas
 				X: center.X - width/2,
 				Y: center.Y - height/2 + float64(index)*(height+gap),
 			},
-			Size: domaincanvas.Size{Width: width, Height: height},
+			Size:    domaincanvas.Size{Width: width, Height: height},
+			Payload: ensureResultNodeName(nil, resultNodeName(mediaType, 0, index)),
 		})
 	}
 	return nodes
+}
+
+func resultNodeName(mediaType domaincanvas.NodeType, batchIndex, resultIndex int) string {
+	kind := "图片"
+	if mediaType == domaincanvas.NodeTypeVideo {
+		kind = "视频"
+	}
+	return fmt.Sprintf("生成%s %d-%d", kind, batchIndex+1, resultIndex+1)
+}
+
+func ensureResultNodeName(raw json.RawMessage, fallback string) json.RawMessage {
+	payload := make(map[string]any)
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &payload)
+	}
+	if name, ok := payload["name"].(string); !ok || strings.TrimSpace(name) == "" {
+		payload["name"] = fallback
+	}
+	encoded, _ := json.Marshal(payload)
+	return encoded
 }
 func templateDocument(template Template) domaincanvas.DocumentV1 {
 	doc := domaincanvas.DocumentV1{SchemaVersion: 1, Viewport: domaincanvas.Viewport{Zoom: 1}, Nodes: make([]domaincanvas.Node, 0), Edges: make([]domaincanvas.Edge, 0)}

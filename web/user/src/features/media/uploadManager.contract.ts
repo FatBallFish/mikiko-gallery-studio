@@ -40,6 +40,11 @@ if (restored.length !== 1 || restored[0]?.fileName !== 'cover.png' || restored[0
 if (restoreUploadSnapshots(JSON.stringify([{ ...pending, transport: undefined }]))[0]?.transport !== 'direct') {
   throw new Error('legacy upload snapshots must restore with direct transport preference')
 }
+const targeted = createUploadSnapshot(image, 'project-a', '', fingerprint, { canvasID: 'canvas-a', nodeID: 'image-frame-a' })
+const restoredTarget = restoreUploadSnapshots(serializeUploadSnapshots([targeted]))[0]?.target
+if (restoredTarget?.canvasID !== 'canvas-a' || restoredTarget.nodeID !== 'image-frame-a') throw new Error('canvas upload targets must survive upload session persistence')
+const malformedTarget = restoreUploadSnapshots(JSON.stringify([{ ...targeted, target: { canvasID: '', nodeID: 7 } }]))[0]?.target
+if (malformedTarget !== undefined) throw new Error('malformed persisted canvas upload targets must be discarded')
 
 if (!shouldFallbackToProxy(new TypeError('Failed to fetch'))) throw new Error('browser network failures must trigger proxy fallback')
 if (!shouldFallbackToProxy(Object.assign(new Error('ETag unavailable'), { code: 'DIRECT_ETAG_UNAVAILABLE' }))) throw new Error('unreadable ETag must trigger proxy fallback')
@@ -78,7 +83,7 @@ if (JSON.stringify(sampledRanges) !== JSON.stringify([[0, 8], [MEDIA_UPLOAD_MAX_
 }
 
 const traySource = await import('node:fs').then(({ readFileSync }) => readFileSync(new URL('./UploadTray.tsx', import.meta.url), 'utf8'))
-for (const required of ['mediaUploadSessionKey(userID)', 'fileContentFingerprint(candidate.file)', 'recoverableUploadSnapshot(item, candidate.file, candidate.contentFingerprint)', 'uploadMediaProxyPart', "transport: 'proxy'"]) {
+for (const required of ['mediaUploadSessionKey(userID)', 'fileContentFingerprint(candidate.file)', 'recoverableUploadSnapshot(item, candidate.file, candidate.contentFingerprint)', 'uploadMediaProxyPart', "transport: 'proxy'", 'MEDIA_UPLOAD_COMPLETED_EVENT', 'options.target']) {
   if (!traySource.includes(required)) throw new Error(`UploadTray must wire safe user-scoped recovery through ${required}`)
 }
 if (!traySource.includes('useState(false)')) {

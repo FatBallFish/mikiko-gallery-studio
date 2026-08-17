@@ -234,7 +234,7 @@ func TestCanvasResultPlacementFillsFirstRunSlotsAndAppendsLaterRuns(t *testing.T
 	document := created.Document
 	document.Nodes = append(document.Nodes,
 		domaincanvas.Node{ID: "slot-later", Type: domaincanvas.NodeTypeImage, Position: domaincanvas.Point{X: 820, Y: 520}, Size: domaincanvas.Size{Width: 220, Height: 160}},
-		domaincanvas.Node{ID: "slot-first", Type: domaincanvas.NodeTypeImage, Position: domaincanvas.Point{X: 820, Y: 80}, Size: domaincanvas.Size{Width: 220, Height: 160}},
+		domaincanvas.Node{ID: "slot-first", Type: domaincanvas.NodeTypeImage, Position: domaincanvas.Point{X: 820, Y: 80}, Size: domaincanvas.Size{Width: 220, Height: 160}, Payload: json.RawMessage(`{"name":"主输出"}`)},
 	)
 	document.Edges = append(document.Edges,
 		domaincanvas.Edge{ID: "slot-later-edge", Source: "image-generation", Target: "slot-later", InputRole: domaincanvas.InputRoleResult, Ordinal: 2},
@@ -258,10 +258,19 @@ func TestCanvasResultPlacementFillsFirstRunSlotsAndAppendsLaterRuns(t *testing.T
 	if got := findAssetID(afterFirst.Document, "slot-later"); got != firstAssets[1].String() {
 		t.Fatalf("second ordered slot asset = %q, want %q", got, firstAssets[1])
 	}
+	if got := findNodeName(afterFirst.Document, "slot-first"); got != "主输出" {
+		t.Fatalf("named output slot alias = %q, want preserved alias", got)
+	}
+	if got := findNodeName(afterFirst.Document, "slot-later"); got == "" {
+		t.Fatal("filled output slot must receive a default resource name")
+	}
 	firstOverflowID := domaincanvas.StableResultNodeID(firstRun.ID.String(), firstAssets[2].String())
 	firstOverflow, ok := findNode(afterFirst.Document, firstOverflowID)
 	if !ok || firstOverflow.AssetID != firstAssets[2].String() {
 		t.Fatalf("first overflow node = %#v", firstOverflow)
+	}
+	if got := findNodeName(afterFirst.Document, firstOverflowID); got == "" {
+		t.Fatal("created result node must receive a default resource name")
 	}
 
 	afterFirst.Document.Nodes = append(afterFirst.Document.Nodes, domaincanvas.Node{ID: "late-empty-slot", Type: domaincanvas.NodeTypeImage, Position: domaincanvas.Point{X: 820, Y: 760}, Size: domaincanvas.Size{Width: 220, Height: 160}})
@@ -314,6 +323,18 @@ func TestCanvasResultPlacementRevisionConflictBecomesUnplaced(t *testing.T) {
 func findAssetID(document domaincanvas.DocumentV1, nodeID string) string {
 	node, _ := findNode(document, nodeID)
 	return node.AssetID
+}
+
+func findNodeName(document domaincanvas.DocumentV1, nodeID string) string {
+	node, ok := findNode(document, nodeID)
+	if !ok {
+		return ""
+	}
+	var payload struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(node.Payload, &payload)
+	return payload.Name
 }
 
 type revisionBumpingCanvasStore struct {

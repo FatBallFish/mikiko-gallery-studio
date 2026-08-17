@@ -2,6 +2,7 @@ import {
   addCanvasNode,
   attachCanvasResults,
   connectCanvasNodes,
+  canvasPromptResourceCandidates,
   compatibleCanvasTargets,
   copyCanvasSelection,
   createCanvasState,
@@ -82,6 +83,11 @@ if (!imageTargets.some((target) => target.type === 'image_generation' && target.
 if (compatibleCanvasTargets(state.present, 'video').length || compatibleCanvasTargets(state.present, 'audio').length || compatibleCanvasTargets(state.present, 'note').length) {
   throw new Error('media and note nodes without P0 outputs must not offer connection-created targets')
 }
+const generationTargets = compatibleCanvasTargets(state.present, 'image-gen')
+if (!generationTargets.some((target) => target.type === 'image' && target.role === 'result')) throw new Error('image generation output must offer an empty image frame target')
+if (inspectCanvasConnection(state.present, { id: 'occupied-output', source: 'image-gen', target: 'image', input_role: 'result' }) !== 'output_slot_occupied') {
+  throw new Error('a bound image asset must not become a new generation output slot')
+}
 if (inspectCanvasConnection(state.present, { id: 'candidate', source: 'audio', target: 'video-gen', input_role: 'reference' }) !== 'illegal_connection') {
   throw new Error('connection inspection must report an illegal target before mutation')
 }
@@ -96,7 +102,7 @@ try {
 }
 if (!illegal) throw new Error('illegal connections must be rejected with an actionable code')
 
-const cycleSource = addCanvasNode(state, { id: 'result-image', type: 'image', asset_id: 'asset-result', position: { x: 800, y: 600 }, size: { width: 240, height: 180 } })
+const cycleSource = addCanvasNode(state, { id: 'result-image', type: 'image', position: { x: 800, y: 600 }, size: { width: 240, height: 180 } })
 const withResult = connectCanvasNodes(cycleSource, { id: 'result-link', source: 'image-gen', target: 'result-image', input_role: 'result' })
 let cycle = false
 try {
@@ -105,6 +111,25 @@ try {
   cycle = error instanceof Error && error.message.includes('cycle')
 }
 if (!cycle) throw new Error('directed generation cycles must be rejected')
+
+const resourceDocument: CanvasDocument = {
+  schema_version: 1, viewport: { x: 0, y: 0, zoom: 1 },
+  nodes: [
+    { id: 'resource-prompt', type: 'prompt', position: { x: 0, y: 0 }, size: { width: 220, height: 140 } },
+    { id: 'resource-gen', type: 'image_generation', position: { x: 300, y: 0 }, size: { width: 280, height: 200 } },
+    { id: 'resource-a', type: 'image', asset_id: 'asset-a', position: { x: 0, y: 240 }, size: { width: 220, height: 160 }, payload: { name: '主体' } },
+    { id: 'resource-b', type: 'image', asset_id: 'asset-b', position: { x: 260, y: 240 }, size: { width: 220, height: 160 }, payload: { name: '主体' } },
+  ],
+  edges: [
+    { id: 'resource-prompt-edge', source: 'resource-prompt', target: 'resource-gen', input_role: 'prompt' },
+    { id: 'resource-a-edge', source: 'resource-a', target: 'resource-gen', input_role: 'reference', ordinal: 1 },
+    { id: 'resource-b-edge', source: 'resource-b', target: 'resource-gen', input_role: 'reference', ordinal: 2 },
+  ],
+}
+const resources = canvasPromptResourceCandidates(resourceDocument, 'resource-prompt')
+if (resources.length !== 2 || resources.some((resource) => resource.name !== '主体' || !resource.duplicateName)) {
+  throw new Error(`prompt resources must expose connected image candidates and duplicate names: ${JSON.stringify(resources)}`)
+}
 
 const attached = attachCanvasResults(state, 'run-1', 'image-gen', [{ asset_id: 'asset-new', media_type: 'image' }])
 const attachedAgain = attachCanvasResults(attached, 'run-1', 'image-gen', [{ asset_id: 'asset-new', media_type: 'image' }])

@@ -17,6 +17,8 @@ for (const required of [
   '查看详情', '继续生图', '生成视频', '复用参数', 'canvas-media-facts', 'MediaPreviewDialog',
   'pointerType === \'touch\'', 'activePointersRef', 'pinchRef', 'longPressRef', 'visualViewport', 'canvas-keyboard-open',
   'data-canvas-drag-handle', 'data-canvas-interactive', 'data-canvas-resize-handle', 'onResizeStart', 'resizeNode',
+  '添加图片框', 'QUEUE_MEDIA_UPLOAD_EVENT', 'MEDIA_UPLOAD_COMPLETED_EVENT', 'canvasPromptResourceCandidates', 'selectionStart', 'canvas-prompt-resource-picker',
+  '图片框仅支持 JPG、PNG、WEBP 图片',
 ]) {
   if (!source.includes(required)) throw new Error(`canvas editor must include ${required}`)
 }
@@ -41,3 +43,5 @@ const styles = fs.readFileSync(new URL('./canvas.css', import.meta.url), 'utf8')
 for (const query of ['(orientation: portrait)', '(pointer: coarse)', 'min-height: 44px', 'touch-action: none']) {
   if (!styles.includes(query)) throw new Error(`canvas responsive CSS must include ${query}`)
 }
+const drawerSource = fs.readFileSync(new URL('./CanvasAssetDrawer.tsx', import.meta.url), 'utf8')
+if (!drawerSource.includes('mediaType') || !drawerSource.includes('asset.media_type === mediaType')) throw new Error('canvas image frames must open an image-only asset drawer')
