@@ -314,7 +314,6 @@ export type AdminVideoConfiguration = {
   impacts: AdminVideoImpact[]
   generated_at: string
 }
-export type AdminVideoVisibleCombination = { task_type: string; resolution: string; aspect_ratio?: string; audio_mode: string; duration_seconds: number }
 export type AdminVideoRouteConfig = {
   route_model_id: number; route_code: string; route_name: string; config_version: string; candidate_count: number
   candidate_parameter_mappings: Record<string, { resolutions?: Record<string, string> }>; minimum_task_points: string; rounding_step_points: number
@@ -357,7 +356,7 @@ export type AdminVideoQuoteSimulationResult = {
   highest_cny: string; cny_per_point: string; conversion_version: string; minimum_task_points: string
   rounding_step_points: number; unit_points: string; total_points: string
 }
-export type AdminVideoRouteConfigWrite = { expected_version: string; config_version: string; candidate_parameter_mappings: Record<string, { resolutions?: Record<string, string> }>; minimum_task_points: string; rounding_step_points: number; task_types: string[]; visible_options: Record<string, unknown>; defaults: Record<string, unknown>; visible_combinations: AdminVideoVisibleCombination[]; max_output_count: number; enabled: boolean }
+export type AdminVideoRouteConfigWrite = { expected_version: string; config_version: string; candidate_parameter_mappings: Record<string, { resolutions?: Record<string, string> }>; minimum_task_points: string; rounding_step_points: number; task_types: string[]; visible_options: Record<string, unknown>; defaults: Record<string, unknown>; max_output_count: number; enabled: boolean }
 export type AdminVideoTaskSummary = { id: string; user_id: number; project_id: string; route_model_id: number; route_model_code: string; status: string; settlement_status: string; estimated_points: string; actual_points: string; created_at: string; updated_at: string }
 export type AdminVideoAttempt = { id: string; item_id: string; attempt_no: number; provider_code: string; model_code: string; provider_job_id?: string; status: string; usage_raw: Record<string, unknown>; usage_normalized: Record<string, unknown>; cost_snapshot: Record<string, unknown>; provider_cost: string; error_category?: string; error_code?: string; error_message?: string; started_at?: string; finished_at?: string }
 export type AdminVideoTaskDetail = AdminVideoTaskSummary & { pricing_snapshot: Record<string, unknown>; routing_snapshot: Record<string, unknown>; reserved_points: string; items: Array<{ id: string; ordinal: number; status: string; stage: string; result_asset_id?: string; actual_points: string; provider_cost: string; artifact_snapshot: Record<string, unknown>; error_code?: string; error_message?: string; attempts: AdminVideoAttempt[] }> }

@@ -45,26 +45,18 @@ type RateCardWrite struct {
 	Enabled             bool           `json:"enabled"`
 }
 
-type VisibleCombination struct {
-	TaskType        string `json:"task_type"`
-	Resolution      string `json:"resolution"`
-	AspectRatio     string `json:"aspect_ratio"`
-	AudioMode       string `json:"audio_mode"`
-	DurationSeconds int    `json:"duration_seconds"`
-}
 type RouteConfigWrite struct {
-	RouteModelID               int64                `json:"route_model_id"`
-	ExpectedVersion            string               `json:"expected_version"`
-	ConfigVersion              string               `json:"config_version"`
-	CandidateParameterMappings map[string]any       `json:"candidate_parameter_mappings"`
-	MinimumTaskPoints          string               `json:"minimum_task_points"`
-	RoundingStepPoints         int                  `json:"rounding_step_points"`
-	TaskTypes                  []string             `json:"task_types"`
-	VisibleOptions             map[string]any       `json:"visible_options"`
-	Defaults                   map[string]any       `json:"defaults"`
-	VisibleCombinations        []VisibleCombination `json:"visible_combinations"`
-	MaxOutputCount             int                  `json:"max_output_count"`
-	Enabled                    bool                 `json:"enabled"`
+	RouteModelID               int64          `json:"route_model_id"`
+	ExpectedVersion            string         `json:"expected_version"`
+	ConfigVersion              string         `json:"config_version"`
+	CandidateParameterMappings map[string]any `json:"candidate_parameter_mappings"`
+	MinimumTaskPoints          string         `json:"minimum_task_points"`
+	RoundingStepPoints         int            `json:"rounding_step_points"`
+	TaskTypes                  []string       `json:"task_types"`
+	VisibleOptions             map[string]any `json:"visible_options"`
+	Defaults                   map[string]any `json:"defaults"`
+	MaxOutputCount             int            `json:"max_output_count"`
+	Enabled                    bool           `json:"enabled"`
 }
 
 func (s *Service) SaveCapability(ctx context.Context, input CapabilityWrite) (CapabilitySummary, error) {
@@ -172,21 +164,6 @@ func (s *Service) SaveRouteConfig(ctx context.Context, input RouteConfigWrite) (
 		}
 		if route.CandidateCount == 0 {
 			return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "video route has no enabled candidate")
-		}
-		if len(input.VisibleCombinations) == 0 {
-			return RouteConfigSummary{}, errs.New(409, errs.CodeConflict, "enabled video route must expose at least one complete combination")
-		}
-		quoteContext, err := s.store.GetVideoRouteQuoteContext(ctx, input.RouteModelID, time.Now().UTC())
-		if err != nil {
-			return RouteConfigSummary{}, err
-		}
-		for _, combo := range input.VisibleCombinations {
-			if combo.TaskType == "" || combo.Resolution == "" || combo.AudioMode == "" || combo.DurationSeconds <= 0 {
-				return RouteConfigSummary{}, errs.BadRequest("visible video combination is incomplete")
-			}
-			if !routeQuoteContextHasPriceableCombination(quoteContext, input.CandidateParameterMappings, combo) {
-				return RouteConfigSummary{}, errs.New(409, errs.CodeVideoRoutePriceUnavailable, "visible video combination has no priceable candidate")
-			}
 		}
 	}
 	return s.store.SaveRouteConfig(ctx, input)

@@ -3,6 +3,7 @@ package entstore
 import (
 	"context"
 	"encoding/json"
+	"sort"
 
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
@@ -44,9 +45,6 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 	group := videoroutingservice.Group{
 		RouteModelID: int64(entity.ID), Code: entity.Code, Name: entity.Name, Description: entity.Description,
 		ConfigVersion: config.ConfigVersion, MinimumTaskPoints: config.MinimumTaskPoints, RoundingStepPoints: config.RoundingStepPoints, MaxOutputCount: config.MaxOutputCount,
-	}
-	for _, value := range config.TaskTypes {
-		group.TaskTypes = append(group.TaskTypes, domainvideo.TaskType(value))
 	}
 	candidates, err := s.client.RouteModelCandidate.Query().Where(
 		routemodelcandidate.RouteModelIDEQ(int64(entity.ID)), routemodelcandidate.EnabledEQ(true), routemodelcandidate.DeletedAtIsNil(),
@@ -94,7 +92,23 @@ func (s *VideoConfigStore) GetVideoGroup(ctx context.Context, code string) (vide
 			ResolutionMappings: videoResolutionMappings(config.CandidateParameterMappings, int64(accountModel.ID)),
 		})
 	}
+	group.TaskTypes = deriveVideoGroupTaskTypes(group.Candidates)
 	return group, nil
+}
+
+func deriveVideoGroupTaskTypes(candidates []videoroutingservice.Candidate) []domainvideo.TaskType {
+	seen := make(map[domainvideo.TaskType]struct{})
+	for _, candidate := range candidates {
+		for taskType := range candidate.Capability.TaskTypes {
+			seen[taskType] = struct{}{}
+		}
+	}
+	taskTypes := make([]domainvideo.TaskType, 0, len(seen))
+	for taskType := range seen {
+		taskTypes = append(taskTypes, taskType)
+	}
+	sort.Slice(taskTypes, func(i, j int) bool { return taskTypes[i] < taskTypes[j] })
+	return taskTypes
 }
 
 func videoResolutionMappings(value map[string]any, accountModelID int64) map[domainvideo.Resolution]domainvideo.Resolution {

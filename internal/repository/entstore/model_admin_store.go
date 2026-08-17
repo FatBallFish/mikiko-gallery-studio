@@ -480,9 +480,13 @@ func (s *ModelAdminStore) ListRouteModels(ctx context.Context, req domainmodelad
 	if err != nil {
 		return domainmodeladmin.RouteModelListPage{}, err
 	}
+	groupIDsByRoute, err := s.routeVisibilityGroupIDs(ctx, entities)
+	if err != nil {
+		return domainmodeladmin.RouteModelListPage{}, err
+	}
 	items := make([]domainmodeladmin.RouteModel, 0, len(entities))
 	for _, entity := range entities {
-		items = append(items, mapRouteModel(entity, nil))
+		items = append(items, mapRouteModel(entity, groupIDsByRoute[int64(entity.ID)]))
 	}
 	return domainmodeladmin.RouteModelListPage{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
 }
@@ -495,7 +499,41 @@ func (s *ModelAdminStore) GetRouteModel(ctx context.Context, routeModelID int64)
 		}
 		return domainmodeladmin.RouteModel{}, err
 	}
-	return mapRouteModel(entity, nil), nil
+	groupIDsByRoute, err := s.routeVisibilityGroupIDs(ctx, []*repoent.RouteModel{entity})
+	if err != nil {
+		return domainmodeladmin.RouteModel{}, err
+	}
+	return mapRouteModel(entity, groupIDsByRoute[routeModelID]), nil
+}
+
+func (s *ModelAdminStore) routeVisibilityGroupIDs(ctx context.Context, routes []*repoent.RouteModel) (map[int64][]int64, error) {
+	result := make(map[int64][]int64, len(routes))
+	if len(routes) == 0 {
+		return result, nil
+	}
+	routeIDs := make([]int64, 0, len(routes))
+	for _, route := range routes {
+		routeIDs = append(routeIDs, int64(route.ID))
+	}
+	rows, err := s.client.RouteModelVisibilityGroup.Query().Where(routemodelvisibilitygroup.RouteModelIDIn(routeIDs...)).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[int64]map[int64]struct{}, len(routes))
+	for _, row := range rows {
+		if seen[row.RouteModelID] == nil {
+			seen[row.RouteModelID] = make(map[int64]struct{})
+		}
+		if _, exists := seen[row.RouteModelID][row.GroupID]; exists {
+			continue
+		}
+		seen[row.RouteModelID][row.GroupID] = struct{}{}
+		result[row.RouteModelID] = append(result[row.RouteModelID], row.GroupID)
+	}
+	for routeID := range result {
+		sort.Slice(result[routeID], func(i, j int) bool { return result[routeID][i] < result[routeID][j] })
+	}
+	return result, nil
 }
 
 func (s *ModelAdminStore) CreateRouteModel(ctx context.Context, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error) {

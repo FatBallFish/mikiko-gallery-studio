@@ -8,9 +8,10 @@ for (const required of ['seedance', 'minimax', 'listModelAccountModels', 'saveVi
 if (provider.includes('真实模型 ID')) throw new Error('video provider management must not require a database model ID')
 
 const routing = fs.readFileSync(new URL('./VideoRouteConfigPanel.tsx', import.meta.url), 'utf8')
-for (const required of ['visible_combinations', 'candidate_parameter_mappings', 'minimum_task_points', 'rounding_step_points', 'max_output_count', 'saveRouteVideoConfig', 'deleteRouteVideoConfig', '删除视频配置']) {
+for (const required of ['candidate_parameter_mappings', 'minimum_task_points', 'rounding_step_points', 'max_output_count', 'saveRouteVideoConfig', 'deleteRouteVideoConfig', '删除视频配置']) {
   if (!routing.includes(required)) throw new Error(`video route panel must include ${required}`)
 }
+for (const removed of ['用户可见参数组合', 'visible_combinations']) if (routing.includes(removed)) throw new Error(`video route panel must derive capabilities instead of exposing ${removed}`)
 if (routing.includes('路由模型 ID')) throw new Error('video route management must derive the selected route ID')
 if (routing.includes('真实模型 ID')) throw new Error('video route mappings must display account and model names instead of database IDs')
 

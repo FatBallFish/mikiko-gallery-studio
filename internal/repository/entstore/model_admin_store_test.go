@@ -44,6 +44,36 @@ func TestModelAdminStoreAuditedDeleteRollsBackWhenAuditWriteFails(t *testing.T) 
 	}
 }
 
+func TestModelAdminStoreRouteModelListAndDetailReturnVisibilityGroupIDs(t *testing.T) {
+	ctx := t.Context()
+	client := openModelAdminTestClient(t, "model-admin-route-groups")
+	store := entstore.NewModelAdminStore(client)
+
+	route, err := store.CreateRouteModel(ctx, domainmodeladmin.RouteModelWriteRequest{
+		Code: "group-visible-video", Name: "Group visible video", MediaType: "video",
+		Visibility: "groups", GroupIDs: []int64{23, 7, 23}, Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	detail, err := store.GetRouteModel(ctx, route.ID)
+	if err != nil {
+		t.Fatalf("get route: %v", err)
+	}
+	if !reflect.DeepEqual(detail.GroupIDs, []int64{7, 23}) {
+		t.Fatalf("detail group ids = %#v, want [7 23]", detail.GroupIDs)
+	}
+
+	page, err := store.ListRouteModels(ctx, domainmodeladmin.RouteModelListRequest{Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list routes: %v", err)
+	}
+	if len(page.Items) != 1 || !reflect.DeepEqual(page.Items[0].GroupIDs, []int64{7, 23}) {
+		t.Fatalf("listed routes = %#v, want saved group ids", page.Items)
+	}
+}
+
 func TestModelAdminStoreNestedDeleteEnforcesParentOwnership(t *testing.T) {
 	ctx := t.Context()
 	client := openModelAdminTestClient(t, "model-admin-nested-delete-ownership")

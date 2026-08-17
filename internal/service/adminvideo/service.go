@@ -2,7 +2,6 @@ package adminvideo
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -100,11 +99,6 @@ func (s *Service) Snapshot(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	snapshot.Impacts = append(snapshot.Impacts, deriveImpacts(snapshot)...)
-	pricingImpacts, err := s.derivePricingImpacts(ctx, snapshot)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	snapshot.Impacts = append(snapshot.Impacts, pricingImpacts...)
 	normalizeSnapshotCollections(&snapshot)
 	if snapshot.GeneratedAt.IsZero() {
 		snapshot.GeneratedAt = time.Now().UTC()
@@ -146,10 +140,6 @@ func deriveImpacts(snapshot Snapshot) []Impact {
 		if route.CandidateCount == 0 {
 			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_candidate", Summary: "启用的视频路由没有可用候选", Blocking: true, FixRoute: "routing"})
 		}
-		combinations := visibleCombinations(route.VisibleOptions)
-		if len(combinations) == 0 {
-			impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "missing_visible_combination", Summary: "启用的视频路由没有完整的用户可见参数组合", Blocking: true, FixRoute: "routing"})
-		}
 		hasVerifiedCapability := false
 		hasEnabledRate := false
 		for _, accountModelID := range route.CandidateAccountModelIDs {
@@ -164,54 +154,6 @@ func deriveImpacts(snapshot Snapshot) []Impact {
 		}
 	}
 	return impacts
-}
-
-func (s *Service) derivePricingImpacts(ctx context.Context, snapshot Snapshot) ([]Impact, error) {
-	impacts := make([]Impact, 0)
-	for _, route := range snapshot.Routes {
-		if !route.Enabled {
-			continue
-		}
-		combinations := visibleCombinations(route.VisibleOptions)
-		if len(combinations) == 0 {
-			continue
-		}
-		quoteContext, err := s.store.GetVideoRouteQuoteContext(ctx, route.RouteModelID, snapshot.GeneratedAt)
-		if err != nil {
-			return nil, err
-		}
-		for _, combination := range combinations {
-			if !routeQuoteContextHasPriceableCombination(quoteContext, route.CandidateParameterMappings, combination) {
-				impacts = append(impacts, Impact{RouteModelID: route.RouteModelID, Code: "unpriceable_visible_combination", Summary: "启用的视频路由存在无法报价的公开参数组合", Blocking: true, FixRoute: "pricing"})
-				break
-			}
-		}
-	}
-	return impacts, nil
-}
-
-func visibleCombinationCount(options map[string]any) int {
-	return len(visibleCombinations(options))
-}
-
-func visibleCombinations(options map[string]any) []VisibleCombination {
-	raw, ok := options["combinations"]
-	if !ok || raw == nil {
-		return nil
-	}
-	switch values := raw.(type) {
-	case []VisibleCombination:
-		return values
-	}
-	payload, err := json.Marshal(raw)
-	if err != nil {
-		return nil
-	}
-	var values []VisibleCombination
-	if json.Unmarshal(payload, &values) != nil {
-		return nil
-	}
-	return values
 }
 
 type TaskFilter struct {
@@ -448,34 +390,5 @@ func (s *Service) Readiness(ctx context.Context, now time.Time) (ReadinessSnapsh
 	if s == nil || s.store == nil {
 		return ReadinessSnapshot{}, errs.Internal("video administration is unavailable")
 	}
-	result, err := s.store.Readiness(ctx, now)
-	if err != nil {
-		return ReadinessSnapshot{}, err
-	}
-	snapshot, err := s.store.Snapshot(ctx)
-	if err != nil {
-		return ReadinessSnapshot{}, err
-	}
-	result.VisibleCombosMissingPrice = 0
-	for _, route := range snapshot.Routes {
-		if !route.Enabled {
-			continue
-		}
-		combinations := visibleCombinations(route.VisibleOptions)
-		if len(combinations) == 0 {
-			result.VisibleCombosMissingPrice++
-			continue
-		}
-		quoteContext, err := s.store.GetVideoRouteQuoteContext(ctx, route.RouteModelID, now)
-		if err != nil {
-			return ReadinessSnapshot{}, err
-		}
-		for _, combo := range combinations {
-			if !routeQuoteContextHasPriceableCombination(quoteContext, route.CandidateParameterMappings, combo) {
-				result.VisibleCombosMissingPrice++
-				break
-			}
-		}
-	}
-	return result, nil
+	return s.store.Readiness(ctx, now)
 }
