@@ -369,7 +369,7 @@ export function StorageConfigPage({
           </div>
           {draft.driver === 's3' ? <div className="mt-4 border-t border-[var(--border)] pt-3 text-xs leading-5 text-[var(--muted)]">
             <strong className="block text-[var(--text)]">浏览器直传 CORS</strong>
-            <span>Bucket 需允许用户端 Origin 使用 PUT，请放行请求头 x-amz-checksum-sha256 并暴露响应头 ETag。规则缺失时上传会自动切换兼容上传，经同源 API 流式转发。</span>
+            <span>Bucket 需允许用户端 Origin 使用 PUT，并暴露响应头 ETag。规则缺失时上传会自动切换兼容上传，经同源 API 流式转发。</span>
           </div> : null}
         </section>
         </fieldset>

@@ -11,13 +11,13 @@ for (const required of [
   'data-canvas-edge-hit', 'selectedEdgeIDs', 'selectEdges', 'data-canvas-port="source"', 'data-canvas-port="target"',
   'inspectCanvasConnection', 'compatibleCanvasTargets', 'data-connect-valid', 'data-connect-invalid',
   'onDoubleClick', 'onContextMenu', 'canvas-node-menu', 'application/x-canvas-asset', 'onDragOver', 'onDrop',
-  'estimatePromptOptimization', 'optimizePrompt', '{{$变量}}', '{{@资源}}', 'promptVariableNames', 'canvas-prompt-tags',
+  'estimatePromptOptimization', 'optimizePrompt', 'PromptTemplateEditor', 'PromptVariableForm',
   'userApi.getCapabilities', 'userApi.getVideoCapabilities', 'canvas-generation-inputs', 'canvas-generation-errors', '当前余额',
   'active_prompt_node_id', '提示词来源', '资源绑定', 'buildCanvasPromptBindings',
   '查看详情', '继续生图', '生成视频', '复用参数', 'canvas-media-facts', 'MediaPreviewDialog',
   'pointerType === \'touch\'', 'activePointersRef', 'pinchRef', 'longPressRef', 'visualViewport', 'canvas-keyboard-open',
   'data-canvas-drag-handle', 'data-canvas-interactive', 'data-canvas-resize-handle', 'onResizeStart', 'resizeNode',
-  '添加图片框', 'QUEUE_MEDIA_UPLOAD_EVENT', 'MEDIA_UPLOAD_COMPLETED_EVENT', 'canvasPromptResourceCandidates', 'selectionStart', 'canvas-prompt-resource-picker',
+  '添加图片框', 'QUEUE_MEDIA_UPLOAD_EVENT', 'MEDIA_UPLOAD_COMPLETED_EVENT', 'canvasPromptResourceCandidates',
   '图片框仅支持 JPG、PNG、WEBP 图片',
   'normalizeWorkspaceImageCount', 'workspaceTaskImageSafetyLimit', 'type="number"', '重新估价', 'canvasGenerationEstimateSignature',
 ]) {
@@ -34,6 +34,7 @@ const generateBody = source.slice(source.indexOf('async function generateNode'),
 if (generateBody.includes('estimateCanvasNode')) throw new Error('estimate and generation must require separate user actions')
 if (!generateBody.includes('nodeEstimatesRef.current[node.id]') || !generateBody.includes("estimate.status !== 'ready'") || !generateBody.includes('generateCanvasNode')) throw new Error('generation must require a current estimate before submission')
 if (!source.includes('setConflict({ remote, local: store.getState().command.present })')) throw new Error('revision conflict must retain edits made while the save request was in flight')
+if (!source.includes('if (readOnly || !store || !imageCapability) return')) throw new Error('read-only canvas views must not persist automatic image task normalization')
 if (!source.includes("runs.filter((run) => run.status === 'unplaced')") || !source.includes('recoveryPosition') || !source.includes('恢复到当前视图')) {
   throw new Error('unplaced results must expose a canvas-level recovery action at the current viewport center')
 }
@@ -47,3 +48,4 @@ for (const query of ['(orientation: portrait)', '(pointer: coarse)', 'min-height
 }
 const drawerSource = fs.readFileSync(new URL('./CanvasAssetDrawer.tsx', import.meta.url), 'utf8')
 if (!drawerSource.includes('mediaType') || !drawerSource.includes('asset.media_type === mediaType')) throw new Error('canvas image frames must open an image-only asset drawer')
+if (drawerSource.includes("status: 'ready'")) throw new Error('canvas asset drawer must not hide usable originals when derivative processing failed')

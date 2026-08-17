@@ -27,6 +27,34 @@ func TestImageRequestUsesDraftAndServerSideIdentityAndInputs(t *testing.T) {
 	if request.UserID != 31 || request.ProjectID != projectID.String() || request.UserGroupMultiplier != "1.25000" || request.Prompt != "connected prompt" || request.OutputImageCount != 12 || len(request.ReferenceAssetIDs) != 1 || request.ReferenceAssetIDs[0] != assetID.String() {
 		t.Fatalf("image request = %#v", request)
 	}
+	if request.TaskType != "image_edit" {
+		t.Fatalf("image request with a reference must use image_edit, got %q", request.TaskType)
+	}
+}
+
+func TestImageRequestDerivesTaskTypeFromConnectedReferences(t *testing.T) {
+	base := GenerationSubmission{
+		UserID: 31, ProjectID: uuid.New(), CanvasID: uuid.New(), NodeID: "gen", Kind: TaskKindImage,
+		Node:   domaincanvas.Node{ID: "gen", Type: domaincanvas.NodeTypeImageGeneration, Payload: json.RawMessage(`{"draft":{"route_model_code":"basic","task_type":"image_edit","output_image_count":1}}`)},
+		Inputs: []GenerationInput{{Role: domaincanvas.InputRolePrompt, Node: domaincanvas.Node{ID: "prompt", Type: domaincanvas.NodeTypePrompt, Payload: json.RawMessage(`{"text":"connected prompt"}`)}}},
+	}
+	request, err := imageRequest(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.TaskType != "text_to_image" {
+		t.Fatalf("image request without references must use text_to_image, got %q", request.TaskType)
+	}
+
+	base.Node.Payload = json.RawMessage(`{"draft":{"route_model_code":"basic","task_type":"text_to_image","output_image_count":1}}`)
+	base.Inputs = append(base.Inputs, GenerationInput{Role: domaincanvas.InputRoleReference, Node: domaincanvas.Node{ID: "image", Type: domaincanvas.NodeTypeImage, AssetID: uuid.NewString()}})
+	request, err = imageRequest(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.TaskType != "image_edit" {
+		t.Fatalf("image request with references must use image_edit, got %q", request.TaskType)
+	}
 }
 
 func TestImageRequestNormalizesHiddenSizeFieldsByMode(t *testing.T) {

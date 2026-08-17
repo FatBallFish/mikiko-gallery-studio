@@ -35,7 +35,7 @@ for (const operationLabel of ['测试草稿连接', '探测已保存配置', '�
   }
 }
 
-for (const corsGuide of ['浏览器直传 CORS', 'PUT', 'x-amz-checksum-sha256', 'ETag', '自动切换兼容上传']) {
+for (const corsGuide of ['浏览器直传 CORS', 'PUT', 'ETag', '自动切换兼容上传']) {
   if (!storagePageSource.includes(corsGuide)) throw new Error(`S3/R2 storage guidance must include ${corsGuide}`)
 }
 

@@ -242,9 +242,6 @@ func imageRequest(submission GenerationSubmission) (domainimagetask.CreateReques
 			request.PromptVariables = append(request.PromptVariables, domainimagetask.PromptVariableInput{Name: name, Value: prompt.Variables[name]})
 		}
 	}
-	if request.TaskType == "" {
-		request.TaskType = "text_to_image"
-	}
 	if request.OutputImageCount <= 0 {
 		request.OutputImageCount = 1
 	}
@@ -268,6 +265,10 @@ func imageRequest(submission GenerationSubmission) (domainimagetask.CreateReques
 		}
 	}
 	request.ReferenceImageCount = len(request.ReferenceAssetIDs)
+	request.TaskType = "text_to_image"
+	if request.ReferenceImageCount > 0 {
+		request.TaskType = "image_edit"
+	}
 	bindings, err := promptReferenceBindings(prompt.ReferenceNames, submission.Inputs)
 	if err != nil {
 		return request, err
