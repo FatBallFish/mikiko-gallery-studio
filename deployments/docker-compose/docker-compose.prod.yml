@@ -121,7 +121,6 @@ services:
       - type: bind
         source: ${MGSCTL_RUNTIME_DIR:-.}/data
         target: /app/data
-      - worker-temp:/var/lib/pic-gallery/tmp
 
   user-web:
     profiles: ["full", "core", "user-web"]
@@ -216,4 +215,3 @@ volumes:
   redis-data:
   minio-data:
   prometheus-data:
-  worker-temp:

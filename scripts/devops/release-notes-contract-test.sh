@@ -36,6 +36,8 @@ section() {
   local start=$1
   local end=$2
   local file=$3
+  # LC_ALL=C keeps awk string equality as exact byte comparison; some macOS awk
+  # builds treat distinct multibyte headings as equal under UTF-8 locales.
   LC_ALL=C awk -v start="$start" -v end="$end" '
     $0 == start { active = 1; next }
     $0 == end { exit }

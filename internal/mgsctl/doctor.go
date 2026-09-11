@@ -61,6 +61,7 @@ type DoctorDependencies struct {
 	CheckSchema                 func(context.Context, map[string]string) error
 	LookPath                    func(string) (string, error)
 	CheckDockerWorkerMediaTools func(context.Context, string, map[string]string, string, string) error
+	CheckDockerWorkerTempDir    func(context.Context, string, map[string]string, string) error
 	CheckWorkerTempDir          func(string) error
 }
 
@@ -68,6 +69,7 @@ func ProductionDoctorDependencies() DoctorDependencies {
 	return DoctorDependencies{
 		LookPath:                    exec.LookPath,
 		CheckDockerWorkerMediaTools: checkDockerWorkerMediaTools,
+		CheckDockerWorkerTempDir:    checkDockerWorkerTempDir,
 		CheckWorkerTempDir: func(path string) error {
 			if err := os.MkdirAll(path, 0o700); err != nil {
 				return err
@@ -183,6 +185,45 @@ func checkDockerWorkerMediaTools(ctx context.Context, runtimeDir string, values 
 	}
 	if err := (OSProcessRunner{Stdout: io.Discard, Stderr: io.Discard}).Run(ctx, spec); err != nil {
 		return fmt.Errorf("check Docker Worker media tools: %w", err)
+	}
+	return nil
+}
+
+const dockerWorkerTempDirCheckScript = `mkdir -p -- "$1" && t="$(mktemp "$1/.doctor-XXXXXX")" && rm -f -- "$t"`
+
+func BuildDockerWorkerTempDirCheckSpec(runtimeDir, installationID, nodeID, tempDir string, baseEnvironment []string) (ProcessSpec, error) {
+	absoluteRuntime, err := filepath.Abs(runtimeDir)
+	if err != nil {
+		return ProcessSpec{}, fmt.Errorf("resolve Docker runtime directory: %w", err)
+	}
+	projectName, err := dockerProjectName(installationID, nodeID)
+	if err != nil {
+		return ProcessSpec{}, err
+	}
+	return ProcessSpec{
+		Executable: "docker",
+		Arguments: []string{
+			"compose", "--project-directory", absoluteRuntime,
+			"--env-file", filepath.Join(absoluteRuntime, "config", "runtime.env"),
+			"--file", filepath.Join(absoluteRuntime, "compose.yml"),
+			"--project-name", projectName,
+			"exec", "--no-TTY", "worker", "sh", "-c",
+			dockerWorkerTempDirCheckScript, "mgsctl-worker-temp-dir", tempDir,
+		},
+		Directory:   absoluteRuntime,
+		Environment: sanitizeDockerEnvironment(baseEnvironment, absoluteRuntime, dockerRuntimeUser()),
+	}, nil
+}
+
+func checkDockerWorkerTempDir(ctx context.Context, runtimeDir string, values map[string]string, tempDir string) error {
+	spec, err := BuildDockerWorkerTempDirCheckSpec(
+		runtimeDir, values["INSTALLATION_ID"], values["CLUSTER_NODE_ID"], tempDir, os.Environ(),
+	)
+	if err != nil {
+		return fmt.Errorf("build Docker Worker temp dir check: %w", err)
+	}
+	if err := (OSProcessRunner{Stdout: io.Discard, Stderr: io.Discard}).Run(ctx, spec); err != nil {
+		return fmt.Errorf("check Docker Worker temp dir: %w", err)
 	}
 	return nil
 }
@@ -330,14 +371,25 @@ func Doctor(ctx context.Context, runtimeDir string, dependencies DoctorDependenc
 	tempMessage := "media role is not enabled on this node"
 	if mediaEnabled {
 		tempDir := defaultString(strings.TrimSpace(values["MEDIA_TEMP_DIR"]), "./data/tmp")
-		if !filepath.IsAbs(tempDir) {
-			tempDir = filepath.Join(runtimeDir, tempDir)
-		}
-		if err := dependencies.CheckWorkerTempDir(tempDir); err != nil {
-			tempOK = false
-			tempMessage = "media temporary directory is unavailable or not writable"
+		if values["DEPLOYMENT_MODE"] == string(config.DeploymentModeDocker) {
+			if dependencies.CheckDockerWorkerTempDir == nil || dependencies.CheckDockerWorkerTempDir(ctx, runtimeDir, cloneRuntimeValues(values), tempDir) != nil {
+				tempOK = false
+			}
+			if tempOK {
+				tempMessage = "media temporary directory is writable"
+			} else {
+				tempMessage = "media temporary directory is unavailable or not writable"
+			}
 		} else {
-			tempMessage = "media temporary directory is writable"
+			if !filepath.IsAbs(tempDir) {
+				tempDir = filepath.Join(runtimeDir, tempDir)
+			}
+			if err := dependencies.CheckWorkerTempDir(tempDir); err != nil {
+				tempOK = false
+				tempMessage = "media temporary directory is unavailable or not writable"
+			} else {
+				tempMessage = "media temporary directory is writable"
+			}
 		}
 	}
 	report.add("WORKER_TEMP_DIR", tempOK, tempMessage)

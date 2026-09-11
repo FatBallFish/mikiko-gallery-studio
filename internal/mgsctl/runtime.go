@@ -236,7 +236,7 @@ func BuildPendingRuntimeArtifacts(plan InstallPlan, snapshot pendingInstallSnaps
 
 func workerTempDir(mode config.DeploymentMode) string {
 	if mode == config.DeploymentModeDocker {
-		return "/var/lib/pic-gallery/tmp"
+		return "/app/data/tmp"
 	}
 	return "./data/tmp"
 }
