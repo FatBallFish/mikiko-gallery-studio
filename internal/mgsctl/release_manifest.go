@@ -99,6 +99,14 @@ func ResolveReleaseManifest(ctx context.Context, options ReleaseManifestOptions,
 		releasePath = "download/" + url.PathEscape(selector)
 	}
 	manifestURL := strings.TrimRight(baseURL, "/") + "/" + releasePath + "/" + releaseManifestName
+	if selector == "latest" {
+		// mgsctl releases claim the GitHub "latest" marker, so the legacy
+		// latest/download path may miss application releases; prefer the newest
+		// release that actually carries a manifest and fall back to legacy.
+		if assetURL := resolveLatestReleaseManifestURL(ctx, client, baseURL); assetURL != "" {
+			manifestURL = assetURL
+		}
+	}
 	checksumContent, _, err := downloadBytes(ctx, client, manifestURL+".sha256", maxMGSCTLChecksumSize)
 	if err != nil {
 		return ResolvedRelease{}, fmt.Errorf("download release manifest checksum: %w", err)
@@ -146,6 +154,80 @@ func ResolveReleaseManifest(ctx context.Context, options ReleaseManifestOptions,
 		Assets:             assets,
 		ManifestURL:        finalURL,
 	}, nil
+}
+
+const maxGitHubReleaseListSize = 8 << 20
+
+// githubAPIRoot is a package variable so tests can point release discovery at
+// a local server while production keeps the public GitHub API.
+var githubAPIRoot = "https://api.github.com"
+
+type gitHubReleaseAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+type gitHubRelease struct {
+	Draft  bool                 `json:"draft"`
+	Assets []gitHubReleaseAsset `json:"assets"`
+}
+
+// githubReleasesAPIURL converts a github.com release base URL into the
+// repository releases API endpoint. It returns an empty string for any other
+// host or shape so callers can fall back to the legacy download path.
+func githubReleasesAPIURL(baseURL string) string {
+	parsed, err := url.Parse(strings.TrimRight(baseURL, "/"))
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" {
+		return ""
+	}
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) != 3 || segments[2] != "releases" || segments[0] == "" || segments[1] == "" {
+		return ""
+	}
+	return githubAPIRoot + "/repos/" + segments[0] + "/" + segments[1] + "/releases?per_page=100"
+}
+
+// resolveLatestReleaseManifestURL returns the browser download URL of
+// release-manifest.json on the newest non-draft release that carries it. Any
+// failure returns an empty string so the caller falls back to the legacy
+// latest/download path.
+func resolveLatestReleaseManifestURL(ctx context.Context, client *http.Client, baseURL string) string {
+	apiURL := githubReleasesAPIURL(baseURL)
+	if apiURL == "" {
+		return ""
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return ""
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	response, err := client.Do(request)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxGitHubReleaseListSize))
+	if err != nil {
+		return ""
+	}
+	var releases []gitHubRelease
+	if err := json.Unmarshal(body, &releases); err != nil {
+		return ""
+	}
+	for _, release := range releases {
+		if release.Draft {
+			continue
+		}
+		for _, asset := range release.Assets {
+			if asset.Name == releaseManifestName && validateMGSCTLDownloadURL(asset.BrowserDownloadURL, false) == nil {
+				return asset.BrowserDownloadURL
+			}
+		}
+	}
+	return ""
 }
 
 func decodeReleaseManifest(content []byte) (ReleaseManifest, error) {

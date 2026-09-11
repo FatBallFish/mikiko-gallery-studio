@@ -22,7 +22,7 @@ Mikiko Gallery Studio 是一个可自部署的 AI 图片生成与管理平台，
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/FatBallFish/mikiko-gallery-studio/{{VERSION}}/scripts/install.sh \
-  | MGSCTL_VERSION={{VERSION}} sh -s -- install --yes
+  | sh -s -- install --image-tag {{VERSION}} --yes
 ```
 
 该命令采用默认的 Docker、`full`、`single` 和 `latest` 安装方案。安装完成后，根据终端输出访问 Setup 页面并完成中间件检测与首个管理员初始化。

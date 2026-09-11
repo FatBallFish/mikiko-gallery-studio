@@ -171,3 +171,171 @@ func releaseManifestServer(t *testing.T, manifest ReleaseManifest, checksumOverr
 		}
 	}))
 }
+
+func TestResolveLatestReleasePrefersNewestManifestCarryingRelease(t *testing.T) {
+	previous := githubAPIRoot
+	t.Cleanup(func() { githubAPIRoot = previous })
+
+	manifest := validReleaseManifestForTest()
+	content, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(content)
+	checksum := hex.EncodeToString(digest[:])
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.URL.Path == "/repos/owner/repo/releases":
+			if request.Header.Get("Accept") != "application/vnd.github+json" {
+				t.Errorf("releases API accept header = %q", request.Header.Get("Accept"))
+			}
+			_, _ = fmt.Fprintf(writer, `[
+				{"draft": false, "assets": [{"name": "mgsctl-linux-amd64", "browser_download_url": %q}]},
+				{"draft": false, "assets": [{"name": "release-manifest.json", "browser_download_url": %q}]},
+				{"draft": false, "assets": [{"name": "release-manifest.json", "browser_download_url": %q}]}
+			]`,
+				server.URL+"/releases/download/mgsctl-v0.2.0/mgsctl-linux-amd64",
+				server.URL+"/releases/download/v1.2.3/release-manifest.json",
+				server.URL+"/releases/download/v1.1.0/release-manifest.json")
+		case request.URL.Path == "/releases/download/v1.2.3/release-manifest.json.sha256":
+			_, _ = fmt.Fprintf(writer, "%s  release-manifest.json\n", checksum)
+		case request.URL.Path == "/releases/download/v1.2.3/release-manifest.json":
+			_, _ = writer.Write(content)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	githubAPIRoot = server.URL
+
+	resolved, err := ResolveReleaseManifest(context.Background(), ReleaseManifestOptions{
+		ReleaseBaseURL: "https://github.com/owner/repo/releases",
+		Version:        "latest",
+		Components:     []Component{ComponentAPI},
+	}, ReleaseManifestDependencies{HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("ResolveReleaseManifest: %v", err)
+	}
+	if resolved.ApplicationVersion != "v1.2.3" {
+		t.Fatalf("resolved version = %q, want the newest manifest-carrying release", resolved.ApplicationVersion)
+	}
+}
+
+func TestResolveLatestReleaseManifestURLRequiresManifestCarryingRelease(t *testing.T) {
+	previous := githubAPIRoot
+	t.Cleanup(func() { githubAPIRoot = previous })
+
+	manifest := validReleaseManifestForTest()
+	content, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(content)
+	checksum := hex.EncodeToString(digest[:])
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.URL.Path == "/repos/owner/repo/releases":
+			if request.URL.Query().Get("scenario") == "" {
+				_, _ = writer.Write([]byte(`[
+					{"draft": true, "assets": [{"name": "release-manifest.json", "browser_download_url": "https://example.invalid/m.json"}]},
+					{"draft": false, "assets": [{"name": "mgsctl-linux-amd64", "browser_download_url": "https://example.invalid/m"}]}
+				]`))
+				return
+			}
+			http.Error(writer, "boom", http.StatusInternalServerError)
+		case strings.HasSuffix(request.URL.Path, "/release-manifest.json.sha256"):
+			_, _ = fmt.Fprintf(writer, "%s  release-manifest.json\n", checksum)
+		case strings.HasSuffix(request.URL.Path, "/release-manifest.json"):
+			_, _ = writer.Write(content)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	githubAPIRoot = server.URL
+	client := server.Client()
+	const base = "https://github.com/owner/repo/releases"
+
+	if url := resolveLatestReleaseManifestURL(context.Background(), client, base); url != "" {
+		t.Fatalf("latest manifest URL = %q, want empty when no release carries the manifest", url)
+	}
+	if url := githubReleasesAPIURL(base); url != server.URL+"/repos/owner/repo/releases?per_page=100" {
+		t.Fatalf("releases API URL = %q", url)
+	}
+	if url := githubReleasesAPIURL("https://example.com/owner/repo/releases"); url != "" {
+		t.Fatalf("non-github base should skip the API, got %q", url)
+	}
+	if url := githubReleasesAPIURL("https://github.com/owner/repo/releases/v1.2.3"); url != "" {
+		t.Fatalf("unexpected release base shape should skip the API, got %q", url)
+	}
+
+	var manifestServer *httptest.Server
+	manifestServer = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.URL.Path == "/repos/owner/repo/releases":
+			_, _ = fmt.Fprintf(writer, `[
+				{"draft": false, "assets": [{"name": "release-manifest.json", "browser_download_url": %q}]}
+			]`, manifestServer.URL+"/releases/download/v2.0.0/release-manifest.json")
+		case strings.HasSuffix(request.URL.Path, "/release-manifest.json"):
+			_, _ = writer.Write(content)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer manifestServer.Close()
+	githubAPIRoot = manifestServer.URL
+	if url := resolveLatestReleaseManifestURL(context.Background(), manifestServer.Client(), base); url == "" {
+		t.Fatal("latest manifest URL was empty although a release carries the manifest")
+	}
+}
+
+func TestResolveLatestReleaseSkipsGitHubAPIForOtherHosts(t *testing.T) {
+	previous := githubAPIRoot
+	t.Cleanup(func() { githubAPIRoot = previous })
+
+	manifest := validReleaseManifestForTest()
+	apiRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if strings.HasPrefix(request.URL.Path, "/repos/") {
+			apiRequests++
+			t.Errorf("releases API was queried for a non-github base URL: %s", request.URL.Path)
+			http.NotFound(writer, request)
+			return
+		}
+		switch {
+		case strings.HasSuffix(request.URL.Path, "/release-manifest.json.sha256"):
+			content, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			digest := sha256.Sum256(content)
+			_, _ = fmt.Fprintf(writer, "%s  release-manifest.json\n", hex.EncodeToString(digest[:]))
+		case strings.HasSuffix(request.URL.Path, "/release-manifest.json"):
+			content, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = writer.Write(content)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	githubAPIRoot = server.URL
+
+	resolved, err := ResolveReleaseManifest(context.Background(), ReleaseManifestOptions{
+		ReleaseBaseURL: server.URL + "/releases",
+		Version:        "latest",
+		Components:     []Component{ComponentAPI},
+	}, ReleaseManifestDependencies{HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("ResolveReleaseManifest: %v", err)
+	}
+	if apiRequests != 0 || resolved.ApplicationVersion != "v1.2.3" {
+		t.Fatalf("non-github resolution = %#v apiRequests=%d", resolved, apiRequests)
+	}
+}

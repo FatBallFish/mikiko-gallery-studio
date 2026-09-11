@@ -1,0 +1,113 @@
+name: Tagged mgsctl Release
+
+on:
+  push:
+    tags:
+      - 'mgsctl-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: startsWith(github.ref, 'refs/tags/mgsctl-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ripgrep
+      - name: Validate mgsctl SemVer tag
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^mgsctl-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Vet mgsctl
+        run: go vet ./internal/mgsctl ./cmd/mgsctl
+      - name: Test mgsctl
+        run: go test ./internal/mgsctl -count=1
+      - name: Test install fallback
+        run: ./scripts/test/install-wrapper-contract.sh
+
+  build-mgsctl:
+    if: startsWith(github.ref, 'refs/tags/mgsctl-v')
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux, darwin, windows]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Package mgsctl
+        env:
+          RELEASE_GOOS: ${{ matrix.os }}
+          RELEASE_GOARCH: ${{ matrix.arch }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_TARGET_ROOT: target/release
+        run: scripts/devops/package-mgsctl.sh
+      - name: Require adjacent checksum
+        run: test -s target/release/mgsctl-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-mgsctl-${{ matrix.os }}-${{ matrix.arch }}
+          path: target/release/mgsctl-${{ matrix.os }}-${{ matrix.arch }}*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/mgsctl-v')
+    needs: [build-mgsctl]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-mgsctl-*
+          path: target/release
+          merge-multiple: true
+      - name: Create release, upload missing assets, and verify contents
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --latest --notes "mgsctl $RELEASE_TAG"
+          else
+            gh release edit "$RELEASE_TAG" --latest --notes "mgsctl $RELEASE_TAG"
+          fi
+          existing_assets="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+          comparison_dir="$(mktemp -d)"
+          verification_dir="$(mktemp -d)"
+          trap 'rm -rf "$comparison_dir" "$verification_dir"' EXIT
+          while IFS= read -r asset; do
+            name="$(basename "$asset")"
+            if printf '%s\n' "$existing_assets" | grep -Fxq "$name"; then
+              gh release download "$RELEASE_TAG" --pattern "$name" --dir "$comparison_dir"
+              cmp "$asset" "$comparison_dir/$name" || {
+                echo "existing Release asset differs: $name" >&2
+                exit 1
+              }
+              continue
+            fi
+            gh release upload "$RELEASE_TAG" "$asset"
+          done < <(find target/release -type f -print | sort)
+          while IFS= read -r asset; do
+            name="$(basename "$asset")"
+            gh release download "$RELEASE_TAG" --pattern "$name" --dir "$verification_dir"
+            cmp "$asset" "$verification_dir/$name"
+          done < <(find target/release -type f -print | sort)
