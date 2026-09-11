@@ -662,6 +662,7 @@ func (b *LocalBackend) resolvePath(objectKey string) (string, bool) {
 
 type S3Backend struct {
 	endpoint        *url.URL
+	presignEndpoint *url.URL
 	region          string
 	bucket          string
 	accessKeyID     string
@@ -695,8 +696,13 @@ func NewS3Backend(cfg config.StorageConfig) (*S3Backend, error) {
 	if strings.TrimSpace(cfg.S3.AccessKeyID) == "" || strings.TrimSpace(cfg.S3.SecretAccessKey) == "" {
 		return nil, fmt.Errorf("storage.s3 credentials are required")
 	}
+	presignEndpoint, err := s3PresignEndpoint(cfg.PublicBaseURL)
+	if err != nil {
+		return nil, err
+	}
 	return &S3Backend{
 		endpoint:        endpoint,
+		presignEndpoint: presignEndpoint,
 		region:          strings.TrimSpace(cfg.S3.Region),
 		bucket:          strings.TrimSpace(cfg.S3.Bucket),
 		accessKeyID:     strings.TrimSpace(cfg.S3.AccessKeyID),
@@ -718,7 +724,7 @@ func (b *S3Backend) TemporaryGetURL(ctx context.Context, objectKey string, optio
 	if key == "" {
 		return "", fmt.Errorf("invalid s3 object key %q", objectKey)
 	}
-	requestURL, host, canonicalURI, err := b.requestTarget(key)
+	requestURL, host, canonicalURI, err := b.requestTargetForEndpoint(*b.presignTarget(), key)
 	if err != nil {
 		return "", err
 	}
@@ -1360,29 +1366,63 @@ func (b *S3Backend) newSignedRequestWithReaderAndHeaders(ctx context.Context, me
 	return req, nil
 }
 
+// s3PresignEndpoint validates the optional browser-facing base URL used for
+// presigned GET URLs. Only scheme plus host (and port) are honored; any path,
+// query, credentials, or fragment makes the value invalid so deployments fail
+// closed instead of silently issuing unusable URLs.
+func s3PresignEndpoint(rawPublicBaseURL string) (*url.URL, error) {
+	value := strings.TrimSpace(rawPublicBaseURL)
+	if value == "" {
+		return nil, nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
+		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" && parsed.Path != "/" {
+		return nil, fmt.Errorf("storage.public_base_url must be an absolute http(s) origin without path, query, credentials, or fragment when the s3 driver is used")
+	}
+	parsed.Path = ""
+	return parsed, nil
+}
+
+// presignTarget returns the endpoint presigned GET URLs are signed against:
+// the configured browser-facing public base URL when present, otherwise the
+// data-plane endpoint.
+func (b *S3Backend) presignTarget() *url.URL {
+	if b.presignEndpoint != nil {
+		return b.presignEndpoint
+	}
+	return b.endpoint
+}
+
 func (b *S3Backend) requestTarget(key string) (string, string, string, error) {
-	clone := *b.endpoint
-	host := clone.Host
+	return b.requestTargetForEndpoint(*b.endpoint, key)
+}
+
+func (b *S3Backend) requestTargetForEndpoint(endpoint url.URL, key string) (string, string, string, error) {
+	host := endpoint.Host
 	canonicalURI := "/" + b.bucket + "/" + escapePath(key)
 	requestPath := "/" + b.bucket + "/" + key
-	if !b.usePathStyle() {
-		host = b.bucket + "." + clone.Host
-		clone.Host = host
+	if !b.usePathStyleForHost(endpoint.Hostname()) {
+		host = b.bucket + "." + endpoint.Host
+		endpoint.Host = host
 		canonicalURI = "/" + escapePath(key)
 		requestPath = "/" + key
 	}
-	clone.Path = requestPath
-	clone.RawPath = canonicalURI
-	clone.RawQuery = ""
-	clone.Fragment = ""
-	return clone.String(), host, canonicalURI, nil
+	endpoint.Path = requestPath
+	endpoint.RawPath = canonicalURI
+	endpoint.RawQuery = ""
+	endpoint.Fragment = ""
+	return endpoint.String(), host, canonicalURI, nil
 }
 
 func (b *S3Backend) usePathStyle() bool {
+	return b.usePathStyleForHost(b.endpoint.Hostname())
+}
+
+func (b *S3Backend) usePathStyleForHost(host string) bool {
 	if b.forcePathStyle {
 		return true
 	}
-	host := b.endpoint.Hostname()
 	if host == "" {
 		return true
 	}

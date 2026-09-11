@@ -328,7 +328,7 @@ func (s *Service) recordForWrite(ctx context.Context, current domainstorageconfi
 	if err != nil {
 		return domainstorageconfig.ConfigRecord{}, err
 	}
-	if err := s.validate(record, secrets, false); err != nil {
+	if err := s.validate(record, secrets, s.bootstrapStorageManaged); err != nil {
 		return domainstorageconfig.ConfigRecord{}, err
 	}
 	record.SecretEncrypted, err = s.codec.EncryptJSON(secrets)

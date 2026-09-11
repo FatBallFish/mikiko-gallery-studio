@@ -1089,3 +1089,67 @@ func (transport *recordingRoundTripper) RoundTrip(*http.Request) (*http.Response
 	transport.calls++
 	return transport.response, transport.err
 }
+
+func TestS3BackendTemporaryGetURLSignsAgainstPublicBaseURL(t *testing.T) {
+	backend, err := NewS3Backend(config.StorageConfig{
+		Driver:        "s3",
+		PublicBaseURL: "http://127.0.0.1:9000",
+		S3: config.StorageS3Config{
+			Endpoint: "http://minio:9000", Region: "us-east-1", Bucket: "app-assets",
+			AccessKeyID: "AKIDEXAMPLE", SecretAccessKey: "secret-example", ForcePathStyle: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewS3Backend: %v", err)
+	}
+	backend.now = func() time.Time { return time.Date(2026, time.September, 11, 10, 0, 0, 0, time.UTC) }
+
+	presigned, err := backend.TemporaryGetURL(t.Context(), "generated-images/1/x.png", TemporaryGetURLOptions{Expiry: 6 * time.Minute})
+	if err != nil {
+		t.Fatalf("TemporaryGetURL: %v", err)
+	}
+	parsed, err := url.Parse(presigned)
+	if err != nil {
+		t.Fatalf("parse presigned URL: %v", err)
+	}
+	if parsed.Scheme != "http" || parsed.Host != "127.0.0.1:9000" {
+		t.Fatalf("presigned origin = %s://%s, want http://127.0.0.1:9000", parsed.Scheme, parsed.Host)
+	}
+	if parsed.Path != "/app-assets/generated-images/1/x.png" {
+		t.Fatalf("presigned path = %q", parsed.Path)
+	}
+	if query := parsed.Query(); query.Get("X-Amz-Credential") != "AKIDEXAMPLE/20260911/us-east-1/s3/aws4_request" {
+		t.Fatalf("credential = %q", query.Get("X-Amz-Credential"))
+	}
+
+	// Data-plane requests must keep using the internal endpoint.
+	var dataPlaneHosts []string
+	backend.client = &http.Client{Transport: captureHostRoundTripper{hosts: &dataPlaneHosts}}
+	if _, err := backend.Get(t.Context(), "generated-images/1/x.png"); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(dataPlaneHosts) != 1 || dataPlaneHosts[0] != "minio:9000" {
+		t.Fatalf("data-plane hosts = %v, want [minio:9000]", dataPlaneHosts)
+	}
+}
+
+func TestS3BackendRejectsInvalidPublicBaseURL(t *testing.T) {
+	for _, value := range []string{"http://127.0.0.1:9000/files", "http://127.0.0.1:9000?a=b", "ftp://example.com", "http://user:secret@example.com"} {
+		if _, err := NewS3Backend(config.StorageConfig{
+			Driver:        "s3",
+			PublicBaseURL: value,
+			S3:            config.StorageS3Config{Endpoint: "http://minio:9000", Region: "us-east-1", Bucket: "b", AccessKeyID: "k", SecretAccessKey: "s", ForcePathStyle: true},
+		}); err == nil {
+			t.Fatalf("NewS3Backend accepted invalid public base URL %q", value)
+		}
+	}
+}
+
+type captureHostRoundTripper struct {
+	hosts *[]string
+}
+
+func (transport captureHostRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	*transport.hosts = append(*transport.hosts, request.URL.Host)
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+}
