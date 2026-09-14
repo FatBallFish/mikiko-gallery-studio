@@ -204,3 +204,54 @@ func TestMiniMaxH3NativePricingUsesSecondsAndMaterialRules(t *testing.T) {
 		})
 	}
 }
+
+func TestSeedance25Supports1080pPricingPreset(t *testing.T) {
+	const model25 = "doubao-seedance-2-5-260628"
+	for _, resolution := range []Resolution{Resolution480P, Resolution720P, Resolution1080P} {
+		if !seedanceModelSupportsResolution(model25, resolution) {
+			t.Fatalf("seedance 2.5 should support %s", resolution)
+		}
+		width, height, fps, err := seedanceOutputPreset(model25, Resolution1080P, AspectRatio16x9)
+		if err != nil {
+			t.Fatalf("1080p preset: %v", err)
+		}
+		if width != 1920 || height != 1080 || fps != 24 {
+			t.Fatalf("1080p preset = %dx%d@%d, want 1920x1080@24", width, height, fps)
+		}
+	}
+
+	capability := Capability{
+		SchemaVersion:      1,
+		ProviderNativeMaxN: 1,
+		TaskTypes: map[TaskType]TaskCapability{
+			TaskTypeTextToVideo: {
+				Durations:    IntValues{Values: []int{5}},
+				Resolutions:  []Resolution{Resolution480P, Resolution720P, Resolution1080P},
+				AspectRatios: []AspectRatio{AspectRatio16x9},
+				AudioModes:   []AudioMode{AudioModeSilent, AudioModeGenerated},
+			},
+		},
+	}
+	card := RateCard{
+		ProviderCode: "seedance", ModelCode: model25,
+		PricingSchema: PricingSchemaSeedanceTokenV1, RuleVersion: SeedanceRuleVersion202608,
+		Seedance: &SeedanceTokenRateCard{Resolutions: map[Resolution]SeedanceResolutionRate{
+			Resolution480P:  {WithoutInputVideoMillionTokensCNY: "60"},
+			Resolution720P:  {WithoutInputVideoMillionTokensCNY: "90"},
+			Resolution1080P: {WithoutInputVideoMillionTokensCNY: "150"},
+		}},
+	}
+	if err := ValidateRateCard(card, capability); err != nil {
+		t.Fatalf("seedance 2.5 1080p rate card rejected: %v", err)
+	}
+	quote, err := QuoteNativePricing(NativePricingRequest{Video: Request{
+		TaskType: TaskTypeTextToVideo, DurationSeconds: 5, Resolution: Resolution1080P,
+		AspectRatio: AspectRatio16x9, AudioMode: AudioModeSilent, OutputCount: 1,
+	}}, card)
+	if err != nil {
+		t.Fatalf("quote seedance 2.5 1080p: %v", err)
+	}
+	if !strings.Contains(quote.CNY, ".") && quote.CNY == "" {
+		t.Fatalf("empty 1080p quote")
+	}
+}
