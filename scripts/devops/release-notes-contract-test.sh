@@ -36,7 +36,7 @@ section() {
   local start=$1
   local end=$2
   local file=$3
-  awk -v start="$start" -v end="$end" '
+  LC_ALL=C awk -v start="$start" -v end="$end" '
     $0 == start { active = 1; next }
     $0 == end { exit }
     active { print }
