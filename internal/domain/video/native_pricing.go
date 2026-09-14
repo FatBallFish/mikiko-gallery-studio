@@ -315,7 +315,9 @@ func seedanceModelSupportsResolution(modelCode string, resolution Resolution) bo
 	model := strings.ToLower(strings.TrimSpace(modelCode))
 	switch {
 	case strings.Contains(model, "seedance-2-5"):
-		return resolution == Resolution480P || resolution == Resolution720P
+		// 1080p audited against the live Ark API on 2026-09-14: a 5s
+		// doubao-seedance-2-5-260628 1080p task returned 1920x1080 H.264.
+		return resolution == Resolution480P || resolution == Resolution720P || resolution == Resolution1080P
 	case strings.Contains(model, "seedance-2-0"):
 		return resolution == Resolution480P || resolution == Resolution720P || resolution == Resolution1080P || resolution == Resolution4K
 	default:

@@ -223,6 +223,117 @@ func TestDoctorReportsGenericDockerMediaToolFailureWithoutLeakingDetails(t *test
 	}
 }
 
+func TestDoctorChecksDockerMediaWorkerTempDirInsideWorkerContainer(t *testing.T) {
+	runtimeDir := writeDoctorRuntime(t, "docker", "api,worker")
+	envPath := filepath.Join(runtimeDir, "config", "runtime.env")
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content, []byte("WORKER_ROLES=image,video,media,cleanup\nMEDIA_TEMP_DIR=/var/lib/pic-gallery/tmp\n")...)
+	if err := os.WriteFile(envPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	containerChecks := 0
+	report := Doctor(t.Context(), runtimeDir, DoctorDependencies{
+		CheckRuntimeReadiness: func(context.Context, map[string]string) error { return nil },
+		CheckDockerWorkerMediaTools: func(context.Context, string, map[string]string, string, string) error {
+			return nil
+		},
+		CheckWorkerTempDir: func(string) error {
+			t.Fatal("Docker doctor attempted a host-side media temp directory check")
+			return errors.New("unreachable")
+		},
+		CheckDockerWorkerTempDir: func(_ context.Context, gotRuntimeDir string, values map[string]string, tempDir string) error {
+			containerChecks++
+			if gotRuntimeDir != runtimeDir || values["INSTALLATION_ID"] != "runtime-id" {
+				t.Fatalf("Docker temp dir check context = %q, %#v", gotRuntimeDir, values)
+			}
+			if tempDir != "/var/lib/pic-gallery/tmp" {
+				t.Fatalf("Docker temp dir = %q", tempDir)
+			}
+			return nil
+		},
+	})
+	if containerChecks != 1 || !doctorCheckOK(report, "WORKER_TEMP_DIR") {
+		t.Fatalf("Docker worker temp dir checks = %#v calls=%d", report.Checks, containerChecks)
+	}
+}
+
+func TestBuildDockerWorkerTempDirCheckSpecUsesRuntimeIdentityAndSafeArguments(t *testing.T) {
+	runtimeDir := t.TempDir()
+	const installationID = "019d0000-0000-7000-8000-000000000123"
+	const nodeID = "019d0000-0000-7000-8000-000000000456"
+	const tempDir = "/var/lib/pic-gallery/tmp; rm -rf /"
+
+	spec, err := BuildDockerWorkerTempDirCheckSpec(runtimeDir, installationID, nodeID, tempDir, []string{"PATH=/usr/bin", "DATABASE_URL=host-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectName, err := dockerProjectName(installationID, nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPrefix := []string{
+		"compose", "--project-directory", runtimeDir,
+		"--env-file", filepath.Join(runtimeDir, "config", "runtime.env"),
+		"--file", filepath.Join(runtimeDir, "compose.yml"),
+		"--project-name", projectName,
+		"exec", "--no-TTY", "worker", "sh", "-c",
+	}
+	if len(spec.Arguments) != len(wantPrefix)+3 || !slices.Equal(spec.Arguments[:len(wantPrefix)], wantPrefix) {
+		t.Fatalf("Docker temp dir check arguments = %q", spec.Arguments)
+	}
+	if spec.Arguments[len(spec.Arguments)-2] != "mgsctl-worker-temp-dir" {
+		t.Fatalf("Docker temp dir check shell name = %q", spec.Arguments)
+	}
+	if spec.Arguments[len(spec.Arguments)-1] != tempDir {
+		t.Fatalf("temp dir was not passed as a separate argument: %q", spec.Arguments)
+	}
+	if strings.Contains(strings.Join(spec.Arguments[:len(spec.Arguments)-1], " "), tempDir) {
+		t.Fatalf("temp dir was interpolated into the command: %q", spec.Arguments)
+	}
+	if strings.Contains(strings.Join(spec.Environment, "\n"), "host-secret") {
+		t.Fatalf("Docker temp dir check inherited a runtime secret: %q", spec.Environment)
+	}
+}
+
+func TestDoctorReportsGenericDockerTempDirFailureWithoutLeakingDetails(t *testing.T) {
+	runtimeDir := writeDoctorRuntime(t, "docker", "api,worker")
+	envPath := filepath.Join(runtimeDir, "config", "runtime.env")
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content, []byte("WORKER_ROLES=media\nMEDIA_TEMP_DIR=/secret/media-tmp\n")...)
+	if err := os.WriteFile(envPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report := Doctor(t.Context(), runtimeDir, DoctorDependencies{
+		CheckRuntimeReadiness: func(context.Context, map[string]string) error { return nil },
+		CheckDockerWorkerMediaTools: func(context.Context, string, map[string]string, string, string) error {
+			return nil
+		},
+		CheckDockerWorkerTempDir: func(context.Context, string, map[string]string, string) error {
+			return errors.New("docker exec failed with DATABASE_URL=postgres://user:password@example/database")
+		},
+	})
+	rendered := report.String()
+	if doctorCheckOK(report, "WORKER_TEMP_DIR") {
+		t.Fatalf("Docker worker temp dir unexpectedly passed: %#v", report.Checks)
+	}
+	if !strings.Contains(rendered, "media temporary directory is unavailable or not writable") {
+		t.Fatalf("Docker temp dir failure was not generic: %s", rendered)
+	}
+	for _, secret := range []string{"password", "DATABASE_URL", "/secret/media-tmp"} {
+		if strings.Contains(rendered, secret) {
+			t.Fatalf("Docker temp dir failure leaked %q: %s", secret, rendered)
+		}
+	}
+}
+
 func TestDoctorSkipsMediaToolsForVideoOnlyWorker(t *testing.T) {
 	runtimeDir := writeDoctorRuntime(t, "native", "worker")
 	envPath := filepath.Join(runtimeDir, "config", "runtime.env")

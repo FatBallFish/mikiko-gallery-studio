@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/release.yml"
+MGSCTL_WORKFLOW="$ROOT/.github/workflows/release-mgsctl.yml"
 PACKAGER="$ROOT/scripts/devops/package-mgsctl.sh"
 MANIFEST_RENDERER="$ROOT/scripts/devops/render-release-manifest.sh"
 MAINTAINER_DOC="$ROOT/deployments/devops/README.md"
@@ -72,6 +73,7 @@ require_occurrences() {
 }
 
 require_file "$WORKFLOW"
+require_file "$MGSCTL_WORKFLOW"
 require_file "$PACKAGER"
 require_file "$MANIFEST_RENDERER"
 require_file "$MAINTAINER_DOC"
@@ -173,10 +175,8 @@ for required in \
   "./scripts/workflow/verify.sh" \
   "go test ./internal/mgsctl" \
   "./scripts/test/install-wrapper-contract.sh" \
-  "os: [linux, darwin, windows]" \
   "arch: [amd64, arm64]" \
   "os: [linux, windows]" \
-  "scripts/devops/package-mgsctl.sh" \
   "scripts/devops/package.sh native" \
   "actions/upload-artifact@v4" \
   "actions/download-artifact@v4" \
@@ -208,6 +208,35 @@ done
 for image in api worker user-web admin-web docs-web; do
   require_text "$WORKFLOW" "mikiko-gallery-studio-$image"
 done
+
+forbid_text "$WORKFLOW" "build-mgsctl"
+forbid_text "$WORKFLOW" "package-mgsctl.sh"
+require_text "$WORKFLOW" "--latest=false"
+
+for required in \
+  "mgsctl-v*" \
+  "workflow_dispatch:" \
+  "startsWith(github.ref, 'refs/tags/mgsctl-v')" \
+  "contents: read" \
+  "contents: write" \
+  "needs: verify" \
+  "go test ./internal/mgsctl" \
+  "./scripts/test/install-wrapper-contract.sh" \
+  "os: [linux, darwin, windows]" \
+  "arch: [amd64, arm64]" \
+  "scripts/devops/package-mgsctl.sh" \
+  "actions/upload-artifact@v4" \
+  "actions/download-artifact@v4" \
+  "needs: [build-mgsctl]" \
+  "gh release view" \
+  "gh release create" \
+  "gh release upload" \
+  "--latest" \
+  ".sha256"; do
+  require_text "$MGSCTL_WORKFLOW" "$required"
+done
+forbid_text "$MGSCTL_WORKFLOW" "docker/build-push-action"
+forbid_text "$MGSCTL_WORKFLOW" "render-release-manifest.sh"
 for package_target in api-release worker-release user-web-release admin-web-release docs-web-release; do
   require_text "$WORKFLOW" "scripts/devops/package.sh $package_target"
 done
@@ -235,9 +264,9 @@ done
 
 manifest_fixture=$(mktemp -d)
 trap 'rm -rf "$manifest_fixture"' EXIT
-printf 'mgsctl fixture\n' > "$manifest_fixture/mgsctl-linux-amd64"
+printf 'native fixture\n' > "$manifest_fixture/mikiko-gallery-studio-native-linux-amd64.tar.gz"
 if command -v sha256sum >/dev/null 2>&1; then
-  (cd "$manifest_fixture" && sha256sum mgsctl-linux-amd64 > mgsctl-linux-amd64.sha256)
+  (cd "$manifest_fixture" && sha256sum mikiko-gallery-studio-native-linux-amd64.tar.gz > mikiko-gallery-studio-native-linux-amd64.tar.gz.sha256)
 else
   (cd "$manifest_fixture" && shasum -a 256 mgsctl-linux-amd64 > mgsctl-linux-amd64.sha256)
 fi
@@ -265,7 +294,7 @@ with open(sys.argv[1], encoding="utf-8") as source:
 assert manifest["schema_version"] == 1
 assert manifest["application_version"] == "v1.2.3"
 assert sorted(manifest["images"]) == ["admin-web", "api", "docs-web", "user-web", "worker"]
-assert manifest["assets"]["mgsctl-linux-amd64"]["name"] == "mgsctl-linux-amd64"
+assert manifest["assets"]["mikiko-gallery-studio-native-linux-amd64.tar.gz"]["name"] == "mikiko-gallery-studio-native-linux-amd64.tar.gz"
 PY
 forbid_text "$WORKFLOW" "--clobber"
 forbid_text "$WORKFLOW" "docker tag"

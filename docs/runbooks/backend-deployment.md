@@ -145,6 +145,8 @@ Runtime discovery is shared by status, doctor, restart, upgrade, uninstall, Setu
 
 `mgsctl self-update` replaces only the control-tool executable. Checksum and binary stages independently retry transient failures up to three attempts. Connection, TLS, response-header, and idle-body waits remain bounded, but an actively progressing body has no two-minute whole-request deadline. TTY output reports byte progress, percentage when content length is known, and average rate; redirected output emits no progress churn. `mgsctl upgrade` resolves and deploys an application Release, performs the target database migration when authorized, and rolls the selected services. Updating the tool does not implicitly change a running application.
 
+Application and mgsctl releases are versioned independently: `v*` tags publish application images, packages, and `release-manifest.json`; `mgsctl-v*` tags publish only the mgsctl binaries. mgsctl Releases own the GitHub "latest" marker, and mgsctl resolves an application `latest` manifest from the newest Release carrying `release-manifest.json`, falling back to the legacy `latest/download` path. mgsctl binaries deployed before the split resolve app `latest` through the legacy path only; if that path no longer resolves, run `mgsctl self-update` first, then `mgsctl upgrade`.
+
 ```bash
 mgsctl status
 mgsctl doctor

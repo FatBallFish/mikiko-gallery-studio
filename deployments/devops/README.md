@@ -4,15 +4,15 @@ This directory contains templates and launchers used to assemble native applicat
 
 ## Tagged Releases
 
-Pushing a SemVer `v*` tag runs `.github/workflows/release.yml`. The workflow runs full repository verification, builds all release assets, publishes five multi-architecture Docker images, renders `release-manifest.json`, verifies the GitHub Release, and only then promotes the published image digests to `latest`.
+Application and mgsctl releases are independent pipelines with independent versions.
+
+Pushing a SemVer `v*` tag runs `.github/workflows/release.yml`. The workflow runs full repository verification, builds all application release assets, publishes five multi-architecture Docker images, renders `release-manifest.json`, verifies the GitHub Release, and only then promotes the published image digests to `latest`. The application Release is created with `--latest=false` so the GitHub "latest" marker stays on the newest mgsctl Release and `releases/latest/download/mgsctl-*` keeps resolving.
+
+Pushing an `mgsctl-v*` tag runs `.github/workflows/release-mgsctl.yml`. It verifies and packages only the mgsctl tool and publishes a dedicated Release marked as GitHub "latest". It never builds application images, packages, or the release manifest.
+
+Application Release assets:
 
 ```text
-mgsctl-linux-amd64
-mgsctl-linux-arm64
-mgsctl-darwin-amd64
-mgsctl-darwin-arm64
-mgsctl-windows-amd64.exe
-mgsctl-windows-arm64.exe
 mikiko-gallery-studio-native-linux-amd64.tar.gz
 mikiko-gallery-studio-native-linux-arm64.tar.gz
 mikiko-gallery-studio-native-windows-amd64.tar.gz
@@ -35,7 +35,11 @@ Every artifact has an adjacent `.sha256` file. The workflow creates a missing Re
 
 Configure the repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` for Docker Hub publication under `docker.io/fatballfish`. The five repositories are `mikiko-gallery-studio-api`, `mikiko-gallery-studio-worker`, `mikiko-gallery-studio-user-web`, `mikiko-gallery-studio-admin-web`, and `mikiko-gallery-studio-docs-web`. The API image also contains the `mikiko-gallery-studio-db-migrate` executable; no separate migration image is published.
 
-`workflow_dispatch` is available for retrying a tag workflow, but the selected ref must still be a `v*` tag. Ordinary branch pushes never create a Release.
+`workflow_dispatch` is available for retrying a tag workflow, but the selected ref must still be a `v*` (application) or `mgsctl-v*` (mgsctl) tag. Ordinary branch pushes never create a Release.
+
+Because mgsctl Releases own the GitHub "latest" marker, `mgsctl` resolves an application `latest` release manifest by listing repository Releases and choosing the newest one that carries `release-manifest.json`, falling back to the legacy `releases/latest/download/release-manifest.json` path. Deployed mgsctl binaries older than the split resolve app `latest` through the legacy path; run `mgsctl self-update` first if that path 404s.
+
+Explicit versions keep their tag names: `mgsctl self-update --version mgsctl-v0.1.0` and `mgsctl upgrade --image-tag v1.2.3`.
 
 ## Package MGSCTL Locally
 

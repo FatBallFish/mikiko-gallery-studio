@@ -36,7 +36,9 @@ section() {
   local start=$1
   local end=$2
   local file=$3
-  awk -v start="$start" -v end="$end" '
+  # LC_ALL=C keeps awk string equality as exact byte comparison; some macOS awk
+  # builds treat distinct multibyte headings as equal under UTF-8 locales.
+  LC_ALL=C awk -v start="$start" -v end="$end" '
     $0 == start { active = 1; next }
     $0 == end { exit }
     active { print }
@@ -105,7 +107,7 @@ history_output="$fixture_root/history.md"
 render_fixture "$history_fixture" v1.1.0 "$history_output"
 require_text "# Mikiko Gallery Studio v1.1.0" "$history_output"
 require_text "https://raw.githubusercontent.com/FatBallFish/mikiko-gallery-studio/v1.1.0/scripts/install.sh" "$history_output"
-require_text "MGSCTL_VERSION=v1.1.0" "$history_output"
+require_text "install --image-tag v1.1.0" "$history_output"
 require_text "mgsctl upgrade" "$history_output"
 require_text "mgsctl doctor" "$history_output"
 

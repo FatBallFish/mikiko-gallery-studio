@@ -305,7 +305,7 @@ If the Release artifact or checksum file is unavailable, the wrapper falls back 
 | --- | --- |
 | `MGSCTL_BIN` | Use a specific local mgsctl binary; useful for offline or source builds |
 | `MGSCTL_INSTALL_DIR` | Persistent mgsctl directory; defaults to the user-local paths above |
-| `MGSCTL_VERSION` | Select the mgsctl release to download; defaults to `latest` |
+| `MGSCTL_VERSION` | Select the mgsctl release to download (`latest` or an `mgsctl-vX.Y.Z` tag) |
 | `MGSCTL_RELEASE_BASE_URL` | Override the mgsctl and native bundle release repository base URL |
 | `MGSCTL_DOWNLOAD_URL` | Override the complete mgsctl artifact URL |
 | `MGSCTL_SHA256` | Pin the expected checksum instead of downloading the `.sha256` file |

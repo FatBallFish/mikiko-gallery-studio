@@ -305,7 +305,7 @@ Linux 和 macOS 使用 `scripts/install.sh`，Windows 使用 `scripts/install.ps
 | --- | --- |
 | `MGSCTL_BIN` | 指定本地 mgsctl 二进制，适合离线环境或源码构建 |
 | `MGSCTL_INSTALL_DIR` | mgsctl 持久化安装目录；默认使用上面的用户级路径 |
-| `MGSCTL_VERSION` | 指定要下载的 mgsctl 版本，默认 `latest` |
+| `MGSCTL_VERSION` | 指定要下载的 mgsctl 版本（`latest` 或 `mgsctl-vX.Y.Z` 标签），默认 `latest` |
 | `MGSCTL_RELEASE_BASE_URL` | 覆盖 mgsctl 与原生发布包的仓库基础 URL |
 | `MGSCTL_DOWNLOAD_URL` | 覆盖完整的 mgsctl 文件下载 URL |
 | `MGSCTL_SHA256` | 直接指定预期校验值，不再下载 `.sha256` 文件 |
