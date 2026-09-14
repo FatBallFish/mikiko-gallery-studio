@@ -88,6 +88,7 @@ func (s *Service) Estimate(ctx context.Context, req CreateRequest) (Estimate, er
 	if req.UserID <= 0 || req.ProjectID == uuid.Nil {
 		return Estimate{}, errs.BadRequest("user and project are required")
 	}
+	normalizeEnums(&req)
 	prepared, err := s.prepare(ctx, req)
 	if err != nil {
 		return Estimate{}, err
@@ -111,6 +112,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Task, bool, er
 	if len(req.IdempotencyKey) > 128 {
 		return Task{}, false, errs.BadRequest("idempotency key is too long")
 	}
+	normalizeEnums(&req)
 	fingerprint, err := createFingerprint(req)
 	if err != nil {
 		return Task{}, false, err
@@ -200,8 +202,18 @@ func (s *Service) prepare(ctx context.Context, req CreateRequest) (preparedReque
 	if err != nil {
 		return preparedRequest{}, mapPromptError(err)
 	}
+	// Enum tokens are compared case-sensitively against admin-configured
+	// capabilities; normalize callers that send display casing (e.g. canvas
+	// drafts persisted with "720P" before the option values were pinned).
 	videoReq := domainvideo.Request{TaskType: req.TaskType, Prompt: resolved.Expanded, DurationSeconds: req.DurationSeconds, Resolution: req.Resolution, AspectRatio: req.AspectRatio, AudioMode: req.AudioMode, OutputCount: req.OutputCount, Inputs: domainInputs}
 	return preparedRequest{video: videoReq, resolved: resolved, inputRecords: inputRecords}, nil
+}
+
+func normalizeEnums(req *CreateRequest) {
+	req.TaskType = domainvideo.TaskType(strings.ToLower(strings.TrimSpace(string(req.TaskType))))
+	req.Resolution = domainvideo.Resolution(strings.ToLower(strings.TrimSpace(string(req.Resolution))))
+	req.AspectRatio = domainvideo.AspectRatio(strings.ToLower(strings.TrimSpace(string(req.AspectRatio))))
+	req.AudioMode = domainvideo.AudioMode(strings.ToLower(strings.TrimSpace(string(req.AudioMode))))
 }
 
 func (s *Service) List(ctx context.Context, req ListRequest) (Page, error) {

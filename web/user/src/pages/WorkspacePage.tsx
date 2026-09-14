@@ -1,6 +1,6 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ChevronUp, Pencil, SlidersHorizontal } from 'lucide-react'
+import { ChevronUp, Copy, Info, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
@@ -609,13 +609,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
   }, [records])
 
-  useEffect(() => {
+  const applyCreationDraft = useCallback((draft: WorkspaceCreationDraft) => {
     if (!capability) return undefined
-    if (pendingCreationDraftRef.current === undefined) {
-      pendingCreationDraftRef.current = consumeWorkspaceCreationDraft(window.sessionStorage, window.history)
-    }
-    const draft = pendingCreationDraftRef.current
-    if (!draft) return undefined
     let cancelled = false
     let normalized: ReturnType<typeof normalizeWorkspaceCreationDraft>
     try {
@@ -673,6 +668,24 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     void restoreReferences()
     return () => { cancelled = true }
   }, [capability])
+
+  useEffect(() => {
+    if (!capability) return undefined
+    if (pendingCreationDraftRef.current === undefined) {
+      pendingCreationDraftRef.current = consumeWorkspaceCreationDraft(window.sessionStorage, window.history)
+    }
+    const draft = pendingCreationDraftRef.current
+    if (!draft) return undefined
+    return applyCreationDraft(draft)
+  }, [applyCreationDraft, capability])
+
+  function reuseTaskConfig(task: ImageTask) {
+    try {
+      void applyCreationDraft(workspaceCreationDraftFromSnapshot(task))
+    } catch (err) {
+      app.notify('error', errorMessage(err))
+    }
+  }
 
   useEffect(() => {
     if (editRefs.length) setEditSourceOpen(true)
@@ -1872,6 +1885,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 }}
                 onUseReference={applyAsEditSource}
                 onPreviewImage={setPreviewImage}
+                onReuseConfig={reuseTaskConfig}
+                onOpenDetail={() => setHistoryTaskDialog(latestTask)}
                 onRetryTask={async (task) => {
                   setBusy(true)
                   try {
@@ -2434,7 +2449,7 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
   )
 }
 
-function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken, onDownloadImage, onImageMediaRefresh, onReferenceMediaRefresh }: {
+function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken, onDownloadImage, onImageMediaRefresh, onReferenceMediaRefresh, onReuseConfig, onOpenDetail }: {
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
   onCopyPrompt: () => Promise<void>
@@ -2446,6 +2461,8 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
   onDownloadImage: (image: ImageResult) => Promise<void>
   onImageMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
   onReferenceMediaRefresh: (assetId: string) => string | undefined | void | Promise<string | undefined | void>
+  onReuseConfig: (task: ImageTask) => void
+  onOpenDetail: () => void
 }) {
   const slots = generationSlots(task)
   const activeStage = task.progress_message || task.progress_stage || '等待后端返回任务进度'
@@ -2465,11 +2482,6 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
     return () => window.clearTimeout(timer)
   }, [task.id, task.status, successImages.length])
 
-  const downloadAll = () => {
-    successImages.forEach((slot, index) => {
-      window.setTimeout(() => void onDownloadImage(slot.image), index * 120)
-    })
-  }
   return (
     <article className={workspaceClasses.record}>
       {showInitialLoading ? (
@@ -2523,6 +2535,9 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
                     onPreview={onPreviewImage}
                     onDownload={onDownloadImage}
                     onMediaRefresh={() => onImageMediaRefresh(slot.image.id)}
+                    onCopyPrompt={() => void onCopyPrompt()}
+                    onReuseConfig={() => onReuseConfig(task)}
+                    onOpenDetail={onOpenDetail}
                   />
                 )
               }
@@ -2532,17 +2547,6 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
               return <GenerationSlotPending key={`pending-${slot.index}`} label={slot.label} skeleton={skeletonPhase} />
             })}
           </div>
-          {successImages.length && primaryImage ? (
-            <div className={workspaceClasses.outputActions}>
-              <button className={workspaceClasses.generatedAction} type="button" title="下载" onClick={downloadAll}>{successImages.length > 1 ? '全部下载' : '下载'}</button>
-              <div className="mx-1 h-4 w-px bg-[var(--border)]" />
-              <button className={workspaceClasses.generatedAction} type="button" title="复制提示词" onClick={() => void onCopyPrompt()}>提示词</button>
-              <div className="mx-1 h-4 w-px bg-[var(--border)]" />
-              <button className={workspaceClasses.generatedAction} type="button" title="再次编辑" onClick={() => {
-                void onUseReference(primaryImage)
-              }}>编辑</button>
-            </div>
-          ) : null}
           <div className={workspaceClasses.outputMetaRow}>
             <span>模型: {task.route_model_name || task.route_model_code || task.model_group}</span>
             <span>{task.size_mode === 'pixel' ? `尺寸: ${task.requested_size || task.aspect_ratio}` : `比例: ${task.aspect_ratio}`}</span>
@@ -2633,7 +2637,7 @@ function normalizeAspectRatio(input?: string) {
   return undefined
 }
 
-function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken, onUseReference, onPreview, onDownload, onMediaRefresh }: {
+function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken, onUseReference, onPreview, onDownload, onMediaRefresh, onCopyPrompt, onReuseConfig, onOpenDetail }: {
   image: ImageResult
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
@@ -2644,6 +2648,9 @@ function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken,
   onPreview: (image: ImagePreviewPayload) => void
   onDownload: (image: ImageResult) => Promise<void>
   onMediaRefresh: () => string | undefined | void | Promise<string | undefined | void>
+  onCopyPrompt: () => void
+  onReuseConfig: () => void
+  onOpenDetail: () => void
 }) {
   const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
   const aspectRatio = image.width && image.height ? `${image.width} / ${image.height}` : normalizeAspectRatio(fallbackRatio)
@@ -2676,7 +2683,10 @@ function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken,
         <RefreshableMediaImage className={cn(workspaceClasses.generatedImage, sizeClass)} src={imageUrl} mediaExpiresAt={image.preview_expires_at} alt={alt} onMediaRefresh={onMediaRefresh} />
       </button>
       <figcaption className={workspaceClasses.generatedCaption}>
+        <button className={workspaceClasses.generatedIconAction} type="button" title="复制提示词" aria-label="复制提示词" onClick={onCopyPrompt}><Copy size={16} /></button>
+        <button className={workspaceClasses.generatedIconAction} type="button" title="复用参数" aria-label="复用参数" onClick={onReuseConfig}><RotateCcw size={16} /></button>
         <button className={workspaceClasses.generatedIconAction} type="button" title="编辑" aria-label="编辑图片" onClick={() => void onUseReference(image)}><EditGlyph /></button>
+        <button className={workspaceClasses.generatedIconAction} type="button" title="详情" aria-label="查看任务详情" onClick={onOpenDetail}><Info size={16} /></button>
         <button className={workspaceClasses.generatedIconAction} type="button" title="下载" aria-label="下载图片" onClick={() => void onDownload(image)}><DownloadGlyph /></button>
       </figcaption>
     </figure>

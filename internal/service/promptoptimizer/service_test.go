@@ -30,6 +30,21 @@ func (f *fakeOptimizer) Optimize(_ context.Context, request textprovider.Optimiz
 	return f.result, f.err
 }
 
+func TestServiceSelectsSystemPromptByMediaType(t *testing.T) {
+	if prompt := promptoptimizer.SystemPromptForMedia(""); prompt != promptoptimizer.SystemPromptForMedia("image") {
+		t.Fatalf("default media type must use the image system prompt")
+	}
+	video := promptoptimizer.SystemPromptForMedia("video")
+	for _, want := range []string{"video-generation", "镜头 1", "one camera move", "不要字幕", "placeholder", "must not"} {
+		if !strings.Contains(video, want) {
+			t.Fatalf("video system prompt missing %q: %q", want, video)
+		}
+	}
+	if strings.Contains(promptoptimizer.SystemPromptForMedia("image"), "video-generation") {
+		t.Fatalf("image system prompt must not carry video instructions")
+	}
+}
+
 func TestServiceProtectsAndRestoresPromptTemplateTokens(t *testing.T) {
 	ctx := t.Context()
 	textStore := textmodelservice.NewMemoryStore()

@@ -5,9 +5,12 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -77,9 +80,20 @@ func (c *Client) Submit(ctx context.Context, req videoprovider.Request) (videopr
 	}
 	content := []map[string]any{{"type": "text", "text": req.Prompt}}
 	for _, input := range req.Inputs {
-		content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": input.URL}, "role": input.Role})
+		imageURL := input.URL
+		if inline, err := c.inlinePrivateImage(ctx, input); err != nil {
+			return videoprovider.Job{}, err
+		} else if inline != "" {
+			imageURL = inline
+		}
+		content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL}, "role": input.Role})
 	}
-	payload := map[string]any{"model": c.modelCode, "content": content, "duration": req.DurationSeconds, "resolution": strings.ToLower(req.Resolution), "ratio": req.AspectRatio, "generate_audio": req.GenerateAudio, "output_format": req.OutputFormat}
+	payload := map[string]any{"model": c.modelCode, "content": content, "duration": req.DurationSeconds, "resolution": strings.ToLower(req.Resolution), "generate_audio": req.GenerateAudio, "output_format": req.OutputFormat}
+	// Ark rejects an explicit ratio for first-frame / first-last-frame tasks: the
+	// output ratio follows the first-frame image, so ratio is text-to-video only.
+	if !hasFrameInput(req) {
+		payload["ratio"] = req.AspectRatio
+	}
 	if c.callbackURL != "" {
 		payload["callback_url"] = c.callbackURL
 	}
@@ -213,6 +227,80 @@ func mapState(value string) (videoprovider.State, error) {
 		return "", invalidResponse("unknown provider status "+value, nil)
 	}
 }
+
+const maxInlineImageBytes = 10 << 20 // Ark caps frame images at 10MB; base64 payloads stay under it via a hard stop.
+
+// inlinePrivateImage downloads loopback/private-network image URLs and returns
+// them as base64 data URLs. Ark fetches image_url itself, so a presigned URL
+// that only resolves inside the deployment network (e.g. MinIO on 127.0.0.1 or
+// a docker bridge) is rejected upstream as an invalid image.
+func (c *Client) inlinePrivateImage(ctx context.Context, input videoprovider.Input) (string, error) {
+	if input.URL == "" || publiclyRoutableImageURL(input.URL) {
+		return "", nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, input.URL, nil)
+	if err != nil {
+		return "", invalidRequest("parse private image url: " + err.Error())
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", invalidRequest("download private image: " + err.Error())
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", invalidRequest(fmt.Sprintf("download private image: status %d", resp.StatusCode))
+	}
+	limited := io.LimitReader(resp.Body, maxInlineImageBytes+1)
+	raw, err := io.ReadAll(limited)
+	if err != nil {
+		return "", invalidRequest("read private image: " + err.Error())
+	}
+	if len(raw) > maxInlineImageBytes {
+		return "", invalidRequest("private image exceeds 10MB inline limit")
+	}
+	mimeType := strings.TrimSpace(input.MIMEType)
+	if mimeType == "" {
+		mimeType = http.DetectContentType(raw)
+	}
+	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(raw), nil
+}
+
+func publiclyRoutableImageURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return false
+	}
+	ips := []net.IP{}
+	if ip := net.ParseIP(host); ip != nil {
+		ips = append(ips, ip)
+	} else if resolved, err := net.LookupIP(host); err == nil {
+		ips = resolved
+	} else {
+		// Unresolvable for us means unreachable for Ark too.
+		return false
+	}
+	for _, ip := range ips {
+		if ip.IsGlobalUnicast() && !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFrameInput(req videoprovider.Request) bool {
+	for _, input := range req.Inputs {
+		role := strings.ToLower(strings.TrimSpace(input.Role))
+		if role == "first_frame" || role == "last_frame" {
+			return true
+		}
+	}
+	return false
+}
+
 func validateRequest(req videoprovider.Request) error {
 	if strings.TrimSpace(req.IdempotencyKey) == "" || req.Prompt == "" || req.DurationSeconds <= 0 || req.Resolution == "" || req.AspectRatio == "" || req.OutputFormat == "" {
 		return invalidRequest("idempotency key, prompt, duration, resolution, aspect ratio and output format are required")

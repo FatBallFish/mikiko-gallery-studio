@@ -599,7 +599,10 @@ export const userApi = {
 	createVideoTask: (req: VideoCreateTaskRequest, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTasks, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { ...buildVideoEstimateWireRequest(req), quote_token: req.quote_token } }),
   listVideoTasks: async (filters: { project_id: string; status?: string; cursor?: string; limit?: number }) => {
     const response = await sharedApiClient.request<{ items?: VideoTask[]; next_cursor?: string } | VideoTask[]>(API_PATHS.agent.videoTasks, { query: filters })
-    return Array.isArray(response) ? { items: response } : { items: response.items ?? [], next_cursor: response.next_cursor }
+    const raw = Array.isArray(response) ? response : response.items ?? []
+    // Older projections serialize empty inputs/items as null; normalize so
+    // every consumer can map over them safely.
+    return { items: raw.map((task) => ({ ...task, items: task.items ?? [], inputs: task.inputs ?? [] })), next_cursor: Array.isArray(response) ? undefined : response.next_cursor }
   },
   getVideoTask: (task_id: string) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTaskDetail, { pathParams: { task_id } }),
 	cancelVideoTask: (task_id: string, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTaskCancel, { method: 'POST', pathParams: { task_id }, headers: { 'Idempotency-Key': idempotencyKey } }),
@@ -659,8 +662,8 @@ export const userApi = {
     method: 'POST', pathParams: { upload_id }, body: { parts },
   }),
   abortMediaUpload: (upload_id: string) => sharedApiClient.request<{ status: string }>(API_PATHS.agent.mediaUploadDetail, { method: 'DELETE', pathParams: { upload_id } }),
-  estimatePromptOptimization: (prompt: string) => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt } }),
-  optimizePrompt: (prompt: string, quote: string) => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote } }),
+  estimatePromptOptimization: (prompt: string, mediaType?: 'image' | 'video') => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt, ...(mediaType ? { media_type: mediaType } : {}) } }),
+  optimizePrompt: (prompt: string, quote: string, mediaType?: 'image' | 'video') => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote, ...(mediaType ? { media_type: mediaType } : {}) } }),
   estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: buildEstimateWireRequest(req) }), req),
   uploadReferenceAsset: async (file: File | string, sizeBytes?: number) => {
     if (typeof file === 'string') {

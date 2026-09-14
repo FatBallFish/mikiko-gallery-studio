@@ -412,6 +412,10 @@ func mapVideoTask(entity *repoent.VideoTask) videotaskservice.Task {
 	if entity.SourceCanvasNodeID != nil {
 		result.SourceCanvasNodeID = *entity.SourceCanvasNodeID
 	}
+	// Always emit arrays: a null items/inputs on the wire crashed the web
+	// client's detail dialog for text-to-video tasks without inputs.
+	result.Items = make([]videotaskservice.Item, 0, len(entity.Edges.Items))
+	result.Inputs = make([]videotaskservice.Input, 0, len(entity.Edges.Inputs))
 	for _, item := range entity.Edges.Items {
 		result.Items = append(result.Items, videotaskservice.Item{ID: item.ID, Ordinal: item.Ordinal, Status: domainvideo.ItemState(item.Status), Stage: item.Stage,
 			ResultAssetID: item.ResultAssetID, ActualOutputSeconds: item.ActualOutputSeconds, ActualPoints: item.ActualPoints,

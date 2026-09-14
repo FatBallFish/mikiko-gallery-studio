@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -16,6 +17,55 @@ import (
 	videoprovider "github.com/fatballfish/pic-gallery/internal/provider/video"
 	"github.com/fatballfish/pic-gallery/internal/provider/video/seedance"
 )
+
+func TestClientSubmitOmitsRatioAndInlinesPrivateFrameImages(t *testing.T) {
+	pngBytes := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 13}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/first.png" {
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(pngBytes)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if _, present := body["ratio"]; present {
+			t.Fatalf("ratio must be omitted for first-frame tasks: %#v", body)
+		}
+		if _, present := body["resolution"]; !present {
+			t.Fatalf("resolution must still be sent: %#v", body)
+		}
+		content, _ := body["content"].([]any)
+		if len(content) != 2 {
+			t.Fatalf("content must carry prompt plus first frame: %#v", content)
+		}
+		frame, _ := content[1].(map[string]any)
+		imageURL, _ := frame["image_url"].(map[string]any)["url"].(string)
+		want := "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)
+		if imageURL != want {
+			t.Fatalf("first frame must be inlined as a data URL:\n got %q\nwant %q", imageURL, want)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"ark-job-2","status":"queued"}`)
+	}))
+	defer server.Close()
+
+	client, err := seedance.NewClient(seedance.Config{BaseURL: server.URL, APIKey: "ark-key", ModelCode: "doubao-seedance-2-5-260628", HTTPClient: server.Client(), Verified: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoprovider.Request{
+		TaskID: "task-2", ItemID: "item-2", AttemptID: "attempt-2", IdempotencyKey: "idem-2",
+		TaskType: "image_to_video", Prompt: "A paper boat", DurationSeconds: 5,
+		Resolution: "720p", AspectRatio: "1:1", GenerateAudio: true, OutputFormat: "mp4",
+		Inputs: []videoprovider.Input{{AssetID: "asset-1", Role: "first_frame", URL: server.URL + "/first.png", MIMEType: "image/png"}},
+	}
+	job, err := client.Submit(t.Context(), req)
+	if err != nil || job.ID != "ark-job-2" {
+		t.Fatalf("Submit() = %#v, %v", job, err)
+	}
+}
 
 func TestClientSubmitGetCancelAndNormalizeUsage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

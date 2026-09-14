@@ -64,6 +64,40 @@ func TestServiceCreateVerifiesQuoteOwnershipTemplateAndIdempotency(t *testing.T)
 	}
 }
 
+func TestServiceNormalizesDisplayCasedEnumTokens(t *testing.T) {
+	projectID := uuid.New()
+	store := &memoryTaskStore{}
+	quotes := &capturingQuoteVerifier{fakeQuoteVerifier: fakeQuoteVerifier{estimate: videotask.Estimate{MaxReservedPoints: "10.00000"}}}
+	service := videotask.NewService(store, quotes, &fakeProjectResolver{project: domainproject.Project{ID: projectID.String(), UserID: 44, Status: "active"}}, store, time.Now)
+
+	request := videotask.CreateRequest{
+		UserID: 44, ProjectID: projectID, IdempotencyKey: "upper-res", QuoteToken: "quote-token", RouteModelCode: "seedance-2.5",
+		TaskType: "IMAGE_TO_VIDEO", PromptTemplate: "paper boat",
+		Resolution: domainvideo.Resolution("720P"), AspectRatio: domainvideo.AspectRatio("1:1"), AudioMode: "GENERATED",
+		DurationSeconds: 5, OutputCount: 1,
+	}
+	created, replayed, err := service.Create(t.Context(), request)
+	if err != nil || replayed {
+		t.Fatalf("Create() err=%v replayed=%v", err, replayed)
+	}
+	if created.Resolution != domainvideo.Resolution720P || created.TaskType != domainvideo.TaskTypeImageToVideo || created.AspectRatio != domainvideo.AspectRatio1x1 || !created.GenerateAudio {
+		t.Fatalf("stored enum tokens not normalized: %#v", created)
+	}
+	if quotes.verifyVideo.Resolution != domainvideo.Resolution720P || quotes.verifyVideo.TaskType != domainvideo.TaskTypeImageToVideo {
+		t.Fatalf("verified request not normalized: %#v", quotes.verifyVideo)
+	}
+
+	lowercase := request
+	lowercase.TaskType = domainvideo.TaskTypeImageToVideo
+	lowercase.Resolution = domainvideo.Resolution720P
+	lowercase.AspectRatio = domainvideo.AspectRatio1x1
+	lowercase.AudioMode = domainvideo.AudioModeGenerated
+	replayedTask, replayed, err := service.Create(t.Context(), lowercase)
+	if err != nil || !replayed || replayedTask.ID != created.ID {
+		t.Fatalf("normalized replay err=%v replayed=%v", err, replayed)
+	}
+}
+
 func TestServiceRejectsForeignOrUnavailableInput(t *testing.T) {
 	projectID := uuid.New()
 	assetID := uuid.New()
@@ -96,6 +130,16 @@ func TestServiceListGetAndCancelAreOwnerScopedAndMonotonic(t *testing.T) {
 type fakeQuoteVerifier struct{ estimate videotask.Estimate }
 
 func (f *fakeQuoteVerifier) Verify(context.Context, int64, videotask.EstimateRequest, string) (videotask.Estimate, error) {
+	return f.estimate, nil
+}
+
+type capturingQuoteVerifier struct {
+	fakeQuoteVerifier
+	verifyVideo domainvideo.Request
+}
+
+func (f *capturingQuoteVerifier) Verify(_ context.Context, _ int64, req videotask.EstimateRequest, _ string) (videotask.Estimate, error) {
+	f.verifyVideo = req.Video
 	return f.estimate, nil
 }
 
