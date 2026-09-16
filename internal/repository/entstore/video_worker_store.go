@@ -368,6 +368,18 @@ func (s *VideoTaskStore) ApplyStep(ctx context.Context, req worker.ApplyStepRequ
 		if err != nil || count != 1 {
 			return false, err
 		}
+		// Mirror the item stage onto the task so user-facing projections show
+		// live progress (生成中/保存原件/...) instead of the stale creation-time
+		// "queued" until finalize. Skipped for terminal items: FinalizeTask
+		// writes the task terminal stage itself.
+		if !isTerminalVideoItem(transition.Snapshot.State) {
+			if _, err := tx.VideoTask.UpdateOneID(item.TaskID).
+				SetStatus(string(domainvideo.TaskStatusRunning)).
+				SetProgressStage(stepStage(req)).
+				Save(ctx); err != nil {
+				return false, err
+			}
+		}
 		attempt, err := latestVideoAttempt(ctx, tx.Client(), itemID)
 		if err != nil && !repoent.IsNotFound(err) {
 			return false, err

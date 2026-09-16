@@ -23,11 +23,19 @@ export type CanvasEdge = {
   ordinal?: number
 }
 
+export type CanvasGroup = {
+  id: string
+  label: string
+  background?: string
+  node_ids: string[]
+}
+
 export type CanvasDocument = {
   schema_version: 1
   viewport: CanvasViewport
   nodes: CanvasNode[]
   edges: CanvasEdge[]
+  groups?: CanvasGroup[]
 }
 
 export type CanvasCommandState = {

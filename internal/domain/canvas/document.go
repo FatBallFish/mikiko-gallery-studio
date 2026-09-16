@@ -64,6 +64,16 @@ type DocumentV1 struct {
 	Viewport      Viewport `json:"viewport"`
 	Nodes         []Node   `json:"nodes"`
 	Edges         []Edge   `json:"edges"`
+	// Groups is optional so pre-grouping documents keep loading unchanged;
+	// a missing/nil slice normalizes to an empty slice before validation.
+	Groups []Group `json:"groups,omitempty"`
+}
+
+type Group struct {
+	ID         string   `json:"id"`
+	Label      string   `json:"label"`
+	Background string   `json:"background,omitempty"`
+	NodeIDs    []string `json:"node_ids"`
 }
 
 func NormalizeCollections(document DocumentV1) DocumentV1 {
@@ -72,6 +82,9 @@ func NormalizeCollections(document DocumentV1) DocumentV1 {
 	}
 	if document.Edges == nil {
 		document.Edges = make([]Edge, 0)
+	}
+	if document.Groups == nil {
+		document.Groups = make([]Group, 0)
 	}
 	return document
 }

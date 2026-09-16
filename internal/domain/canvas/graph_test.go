@@ -138,3 +138,35 @@ func TestStableResultNodeIDIsIdempotent(t *testing.T) {
 		t.Fatalf("stable IDs = %q %q %q", first, second, other)
 	}
 }
+
+func TestValidateDocumentGroups(t *testing.T) {
+	base := func(groups ...Group) DocumentV1 {
+		return NormalizeCollections(DocumentV1{
+			SchemaVersion: 1,
+			Nodes: []Node{
+				{ID: "note-1", Type: NodeTypeNote, Position: Point{X: 1, Y: 1}, Size: Size{Width: 220, Height: 140}},
+				{ID: "note-2", Type: NodeTypeNote, Position: Point{X: 2, Y: 2}, Size: Size{Width: 220, Height: 140}},
+			},
+			Groups: groups,
+		})
+	}
+	if err := ValidateDocument(base(Group{ID: "g1", Label: "灵感", Background: "#ff8800", NodeIDs: []string{"note-1", "note-2"}}), DefaultLimits()); err != nil {
+		t.Fatalf("valid group rejected: %v", err)
+	}
+	tests := []struct {
+		name  string
+		group Group
+		code  string
+	}{
+		{"missing node", Group{ID: "g", NodeIDs: []string{"note-x"}}, "node_not_found"},
+		{"duplicate member", Group{ID: "g", NodeIDs: []string{"note-1", "note-1"}}, "duplicate_group_member"},
+		{"empty members", Group{ID: "g"}, "invalid_group_members"},
+		{"bad color", Group{ID: "g", Background: "orange", NodeIDs: []string{"note-1"}}, "invalid_group_background"},
+		{"long label", Group{ID: "g", Label: strings.Repeat("长", 65), NodeIDs: []string{"note-1"}}, "invalid_group_label"},
+	}
+	for _, test := range tests {
+		if err := ValidateDocument(base(test.group), DefaultLimits()); err == nil || err.Code != test.code {
+			t.Fatalf("%s: got %v, want code %s", test.name, err, test.code)
+		}
+	}
+}
