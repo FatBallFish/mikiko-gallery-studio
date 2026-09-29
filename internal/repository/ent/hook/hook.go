@@ -525,6 +525,30 @@ func (f RouteModelCandidateFunc) Mutate(ctx context.Context, m ent.Mutation) (en
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RouteModelCandidateMutation", m)
 }
 
+// The RouteModelGroupFunc type is an adapter to allow the use of ordinary
+// function as RouteModelGroup mutator.
+type RouteModelGroupFunc func(context.Context, *ent.RouteModelGroupMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RouteModelGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RouteModelGroupMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RouteModelGroupMutation", m)
+}
+
+// The RouteModelGroupMemberFunc type is an adapter to allow the use of ordinary
+// function as RouteModelGroupMember mutator.
+type RouteModelGroupMemberFunc func(context.Context, *ent.RouteModelGroupMemberMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RouteModelGroupMemberFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RouteModelGroupMemberMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RouteModelGroupMemberMutation", m)
+}
+
 // The RouteModelPriceFunc type is an adapter to allow the use of ordinary
 // function as RouteModelPrice mutator.
 type RouteModelPriceFunc func(context.Context, *ent.RouteModelPriceMutation) (ent.Value, error)

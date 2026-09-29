@@ -213,7 +213,8 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   const model = useMemo(() => capability && draft ? videoModelForDraft(capability, draft) : undefined, [capability, draft])
   const options = model && draft ? model.options_by_task_type[draft.task_type] : undefined
   const modelOptions = useMemo(() => (capability?.model_groups ?? []).map((item) => ({
-    id: item.code, code: item.code, name: item.name, description: item.description, minimum_points: item.minimum_points,
+    ...item,
+    id: item.code,
     task_types: ['text_to_image'], base_resolution: [], quality: [], output_format: [], moderation: [], prices: [],
     max_output_image_count: 1, max_reference_image_count: 0, supports_reference: false,
   })) as CapabilityModelGroup[], [capability])
@@ -415,7 +416,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         </div>
 
         <section className="video-control-section">
-          <label className="video-field"><span>模型分组</span><ModelGroupSelect options={modelOptions} value={draft.route_model_code} onChange={(route_model_code) => patchDraft({ route_model_code })} /></label>
+          <label className="video-field"><span>模型分组</span><ModelGroupSelect options={modelOptions} groups={capability?.route_model_groups} value={draft.route_model_code} onChange={(route_model_code) => patchDraft({ route_model_code })} /></label>
           <div className="video-field"><span>生成方式</span><div className="video-segmented" role="group" aria-label="生成方式">
             {model.task_types.map((value) => <button key={value} type="button" aria-pressed={draft.task_type === value} onClick={() => { const stale = VIDEO_TASK_INPUT_ROLES[value].length === 0 ? [] : draft.inputs.filter((item) => VIDEO_TASK_INPUT_ROLES[value].includes(item.role)); patchDraft({ task_type: value, inputs: stale }) }}>{taskTypeLabels[value]}</button>)}
           </div></div>

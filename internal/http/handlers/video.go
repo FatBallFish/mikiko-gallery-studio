@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/google/uuid"
 
+	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
+	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
 	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/fatballfish/pic-gallery/pkg/httpx"
@@ -79,6 +82,7 @@ func (a *API) HandleVideoCapabilities(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, normalizeVideoTaskError(err))
 			return
 		}
+		a.decorateVideoCapabilities(r.Context(), &response)
 		httpx.WriteSuccess(w, r, http.StatusOK, response)
 		return
 	}
@@ -468,6 +472,54 @@ func videoTaskQueryStatus(value string) (string, *errs.Error) {
 	default:
 		return "", videoFieldInvalid("invalid video task status")
 	}
+}
+
+// decorateVideoCapabilities attaches admin-configured route model groups
+// and icons to the video capability payload for the two-level picker.
+func (a *API) decorateVideoCapabilities(ctx context.Context, response *videoroutingservice.CapabilityListResponse) {
+	if a.modelAdmin == nil || response == nil {
+		return
+	}
+	groups, models, err := a.modelAdmin.ListVisibleRouteModelGroups(ctx, "video")
+	if err != nil {
+		return
+	}
+	modelByCode := make(map[string]domainmodeladmin.RouteModel, len(models))
+	for _, model := range models {
+		modelByCode[model.Code] = model
+	}
+	codeByGroup := make(map[string][]string, len(groups))
+	for _, group := range groups {
+		for _, memberID := range group.RouteModelIDs {
+			for _, model := range models {
+				if model.ID == memberID {
+					codeByGroup[group.Code] = append(codeByGroup[group.Code], model.Code)
+					break
+				}
+			}
+		}
+	}
+	for index := range response.Groups {
+		admin, ok := modelByCode[response.Groups[index].RouteModelCode]
+		if !ok {
+			continue
+		}
+		response.Groups[index].IconKey = admin.IconKey
+		response.Groups[index].IconSVG = admin.IconSVG
+		for _, group := range groups {
+			for _, memberID := range group.RouteModelIDs {
+				if memberID == admin.ID {
+					response.Groups[index].GroupCodes = append(response.Groups[index].GroupCodes, group.Code)
+					break
+				}
+			}
+		}
+	}
+	infos := make([]videoroutingservice.RouteModelGroupInfo, 0, len(groups))
+	for _, group := range groups {
+		infos = append(infos, videoroutingservice.RouteModelGroupInfo{Code: group.Code, Name: group.Name, IconKey: group.IconKey, IconSVG: group.IconSVG, RouteModelCodes: codeByGroup[group.Code]})
+	}
+	response.RouteModelGroups = infos
 }
 
 func normalizeVideoTaskError(err error) *errs.Error {

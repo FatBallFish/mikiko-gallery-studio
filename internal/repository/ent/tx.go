@@ -98,6 +98,10 @@ type Tx struct {
 	RouteModel *RouteModelClient
 	// RouteModelCandidate is the client for interacting with the RouteModelCandidate builders.
 	RouteModelCandidate *RouteModelCandidateClient
+	// RouteModelGroup is the client for interacting with the RouteModelGroup builders.
+	RouteModelGroup *RouteModelGroupClient
+	// RouteModelGroupMember is the client for interacting with the RouteModelGroupMember builders.
+	RouteModelGroupMember *RouteModelGroupMemberClient
 	// RouteModelPrice is the client for interacting with the RouteModelPrice builders.
 	RouteModelPrice *RouteModelPriceClient
 	// RouteModelVisibilityGroup is the client for interacting with the RouteModelVisibilityGroup builders.
@@ -318,6 +322,8 @@ func (tx *Tx) init() {
 	tx.RefreshSession = NewRefreshSessionClient(tx.config)
 	tx.RouteModel = NewRouteModelClient(tx.config)
 	tx.RouteModelCandidate = NewRouteModelCandidateClient(tx.config)
+	tx.RouteModelGroup = NewRouteModelGroupClient(tx.config)
+	tx.RouteModelGroupMember = NewRouteModelGroupMemberClient(tx.config)
 	tx.RouteModelPrice = NewRouteModelPriceClient(tx.config)
 	tx.RouteModelVisibilityGroup = NewRouteModelVisibilityGroupClient(tx.config)
 	tx.SecureConfig = NewSecureConfigClient(tx.config)

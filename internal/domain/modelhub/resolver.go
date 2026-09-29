@@ -685,6 +685,9 @@ type VisibleRouteModel struct {
 	Code                         string                                     `json:"code"`
 	Name                         string                                     `json:"name"`
 	Description                  string                                     `json:"description,omitempty"`
+	IconKey                      string                                     `json:"icon_key,omitempty"`
+	IconSVG                      string                                     `json:"icon_svg,omitempty"`
+	GroupCodes                   []string                                   `json:"group_codes,omitempty"`
 	TaskTypes                    []string                                   `json:"task_types"`
 	BaseResolution               []string                                   `json:"base_resolution"`
 	AutoBaseResolutionByTaskType map[string]string                          `json:"auto_base_resolution_by_task_type"`

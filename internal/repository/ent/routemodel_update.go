@@ -159,6 +159,34 @@ func (_u *RouteModelUpdate) AddSortOrder(v int) *RouteModelUpdate {
 	return _u
 }
 
+// SetIconKey sets the "icon_key" field.
+func (_u *RouteModelUpdate) SetIconKey(v string) *RouteModelUpdate {
+	_u.mutation.SetIconKey(v)
+	return _u
+}
+
+// SetNillableIconKey sets the "icon_key" field if the given value is not nil.
+func (_u *RouteModelUpdate) SetNillableIconKey(v *string) *RouteModelUpdate {
+	if v != nil {
+		_u.SetIconKey(*v)
+	}
+	return _u
+}
+
+// SetIconSvg sets the "icon_svg" field.
+func (_u *RouteModelUpdate) SetIconSvg(v string) *RouteModelUpdate {
+	_u.mutation.SetIconSvg(v)
+	return _u
+}
+
+// SetNillableIconSvg sets the "icon_svg" field if the given value is not nil.
+func (_u *RouteModelUpdate) SetNillableIconSvg(v *string) *RouteModelUpdate {
+	if v != nil {
+		_u.SetIconSvg(*v)
+	}
+	return _u
+}
+
 // Mutation returns the RouteModelMutation object of the builder.
 func (_u *RouteModelUpdate) Mutation() *RouteModelMutation {
 	return _u.mutation
@@ -222,6 +250,16 @@ func (_u *RouteModelUpdate) check() error {
 			return &ValidationError{Name: "media_type", err: fmt.Errorf(`ent: validator failed for field "RouteModel.media_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.IconKey(); ok {
+		if err := routemodel.IconKeyValidator(v); err != nil {
+			return &ValidationError{Name: "icon_key", err: fmt.Errorf(`ent: validator failed for field "RouteModel.icon_key": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.IconSvg(); ok {
+		if err := routemodel.IconSvgValidator(v); err != nil {
+			return &ValidationError{Name: "icon_svg", err: fmt.Errorf(`ent: validator failed for field "RouteModel.icon_svg": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -269,6 +307,12 @@ func (_u *RouteModelUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	}
 	if value, ok := _u.mutation.AddedSortOrder(); ok {
 		_spec.AddField(routemodel.FieldSortOrder, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.IconKey(); ok {
+		_spec.SetField(routemodel.FieldIconKey, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.IconSvg(); ok {
+		_spec.SetField(routemodel.FieldIconSvg, field.TypeString, value)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -421,6 +465,34 @@ func (_u *RouteModelUpdateOne) AddSortOrder(v int) *RouteModelUpdateOne {
 	return _u
 }
 
+// SetIconKey sets the "icon_key" field.
+func (_u *RouteModelUpdateOne) SetIconKey(v string) *RouteModelUpdateOne {
+	_u.mutation.SetIconKey(v)
+	return _u
+}
+
+// SetNillableIconKey sets the "icon_key" field if the given value is not nil.
+func (_u *RouteModelUpdateOne) SetNillableIconKey(v *string) *RouteModelUpdateOne {
+	if v != nil {
+		_u.SetIconKey(*v)
+	}
+	return _u
+}
+
+// SetIconSvg sets the "icon_svg" field.
+func (_u *RouteModelUpdateOne) SetIconSvg(v string) *RouteModelUpdateOne {
+	_u.mutation.SetIconSvg(v)
+	return _u
+}
+
+// SetNillableIconSvg sets the "icon_svg" field if the given value is not nil.
+func (_u *RouteModelUpdateOne) SetNillableIconSvg(v *string) *RouteModelUpdateOne {
+	if v != nil {
+		_u.SetIconSvg(*v)
+	}
+	return _u
+}
+
 // Mutation returns the RouteModelMutation object of the builder.
 func (_u *RouteModelUpdateOne) Mutation() *RouteModelMutation {
 	return _u.mutation
@@ -497,6 +569,16 @@ func (_u *RouteModelUpdateOne) check() error {
 			return &ValidationError{Name: "media_type", err: fmt.Errorf(`ent: validator failed for field "RouteModel.media_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.IconKey(); ok {
+		if err := routemodel.IconKeyValidator(v); err != nil {
+			return &ValidationError{Name: "icon_key", err: fmt.Errorf(`ent: validator failed for field "RouteModel.icon_key": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.IconSvg(); ok {
+		if err := routemodel.IconSvgValidator(v); err != nil {
+			return &ValidationError{Name: "icon_svg", err: fmt.Errorf(`ent: validator failed for field "RouteModel.icon_svg": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -561,6 +643,12 @@ func (_u *RouteModelUpdateOne) sqlSave(ctx context.Context) (_node *RouteModel, 
 	}
 	if value, ok := _u.mutation.AddedSortOrder(); ok {
 		_spec.AddField(routemodel.FieldSortOrder, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.IconKey(); ok {
+		_spec.SetField(routemodel.FieldIconKey, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.IconSvg(); ok {
+		_spec.SetField(routemodel.FieldIconSvg, field.TypeString, value)
 	}
 	_node = &RouteModel{config: _u.config}
 	_spec.Assign = _node.assignValues

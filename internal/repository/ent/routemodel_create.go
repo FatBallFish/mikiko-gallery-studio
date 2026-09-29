@@ -144,6 +144,34 @@ func (_c *RouteModelCreate) SetNillableSortOrder(v *int) *RouteModelCreate {
 	return _c
 }
 
+// SetIconKey sets the "icon_key" field.
+func (_c *RouteModelCreate) SetIconKey(v string) *RouteModelCreate {
+	_c.mutation.SetIconKey(v)
+	return _c
+}
+
+// SetNillableIconKey sets the "icon_key" field if the given value is not nil.
+func (_c *RouteModelCreate) SetNillableIconKey(v *string) *RouteModelCreate {
+	if v != nil {
+		_c.SetIconKey(*v)
+	}
+	return _c
+}
+
+// SetIconSvg sets the "icon_svg" field.
+func (_c *RouteModelCreate) SetIconSvg(v string) *RouteModelCreate {
+	_c.mutation.SetIconSvg(v)
+	return _c
+}
+
+// SetNillableIconSvg sets the "icon_svg" field if the given value is not nil.
+func (_c *RouteModelCreate) SetNillableIconSvg(v *string) *RouteModelCreate {
+	if v != nil {
+		_c.SetIconSvg(*v)
+	}
+	return _c
+}
+
 // Mutation returns the RouteModelMutation object of the builder.
 func (_c *RouteModelCreate) Mutation() *RouteModelMutation {
 	return _c.mutation
@@ -207,6 +235,14 @@ func (_c *RouteModelCreate) defaults() {
 		v := routemodel.DefaultSortOrder
 		_c.mutation.SetSortOrder(v)
 	}
+	if _, ok := _c.mutation.IconKey(); !ok {
+		v := routemodel.DefaultIconKey
+		_c.mutation.SetIconKey(v)
+	}
+	if _, ok := _c.mutation.IconSvg(); !ok {
+		v := routemodel.DefaultIconSvg
+		_c.mutation.SetIconSvg(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -257,6 +293,22 @@ func (_c *RouteModelCreate) check() error {
 	}
 	if _, ok := _c.mutation.SortOrder(); !ok {
 		return &ValidationError{Name: "sort_order", err: errors.New(`ent: missing required field "RouteModel.sort_order"`)}
+	}
+	if _, ok := _c.mutation.IconKey(); !ok {
+		return &ValidationError{Name: "icon_key", err: errors.New(`ent: missing required field "RouteModel.icon_key"`)}
+	}
+	if v, ok := _c.mutation.IconKey(); ok {
+		if err := routemodel.IconKeyValidator(v); err != nil {
+			return &ValidationError{Name: "icon_key", err: fmt.Errorf(`ent: validator failed for field "RouteModel.icon_key": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.IconSvg(); !ok {
+		return &ValidationError{Name: "icon_svg", err: errors.New(`ent: missing required field "RouteModel.icon_svg"`)}
+	}
+	if v, ok := _c.mutation.IconSvg(); ok {
+		if err := routemodel.IconSvgValidator(v); err != nil {
+			return &ValidationError{Name: "icon_svg", err: fmt.Errorf(`ent: validator failed for field "RouteModel.icon_svg": %w`, err)}
+		}
 	}
 	return nil
 }
@@ -323,6 +375,14 @@ func (_c *RouteModelCreate) createSpec() (*RouteModel, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.SortOrder(); ok {
 		_spec.SetField(routemodel.FieldSortOrder, field.TypeInt, value)
 		_node.SortOrder = value
+	}
+	if value, ok := _c.mutation.IconKey(); ok {
+		_spec.SetField(routemodel.FieldIconKey, field.TypeString, value)
+		_node.IconKey = value
+	}
+	if value, ok := _c.mutation.IconSvg(); ok {
+		_spec.SetField(routemodel.FieldIconSvg, field.TypeString, value)
+		_node.IconSvg = value
 	}
 	return _node, _spec
 }

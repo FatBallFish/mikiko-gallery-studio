@@ -1797,7 +1797,68 @@ func (a *API) HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, normalizeAppError(err))
 		return
 	}
+	result.RouteModelGroups = a.decorateImageCapabilities(r.Context(), &result.ModelGroups)
 	httpx.WriteSuccess(w, r, http.StatusOK, result)
+}
+
+type adminRouteModelSnapshot struct {
+	Groups []domainmodeladmin.RouteModelGroup
+	Models []domainmodeladmin.RouteModel
+}
+
+func (a *API) loadRouteModelGroups(ctx context.Context, mediaType string) adminRouteModelSnapshot {
+	if a.modelAdmin == nil {
+		return adminRouteModelSnapshot{}
+	}
+	groups, models, err := a.modelAdmin.ListVisibleRouteModelGroups(ctx, mediaType)
+	if err != nil {
+		return adminRouteModelSnapshot{}
+	}
+	return adminRouteModelSnapshot{Groups: groups, Models: models}
+}
+
+// decorateImageCapabilities fills icon/group metadata on visible route models.
+func (a *API) decorateImageCapabilities(ctx context.Context, models *[]domainmodelhub.VisibleRouteModel) []capserv.RouteModelGroupInfo {
+	payload := a.loadRouteModelGroups(ctx, "image")
+	modelByID := make(map[int64]domainmodeladmin.RouteModel, len(payload.Models))
+	for _, model := range payload.Models {
+		modelByID[model.ID] = model
+	}
+	idByCode := make(map[string]int64, len(payload.Models))
+	for _, model := range payload.Models {
+		idByCode[model.Code] = model.ID
+	}
+	membersByGroup := make(map[string][]string, len(payload.Groups))
+	for _, group := range payload.Groups {
+		for _, modelID := range group.RouteModelIDs {
+			if model, ok := modelByID[modelID]; ok {
+				membersByGroup[group.Code] = append(membersByGroup[group.Code], model.Code)
+			}
+		}
+	}
+	if models != nil {
+		for index := range *models {
+			admin, ok := modelByID[idByCode[(*models)[index].Code]]
+			if !ok {
+				continue
+			}
+			(*models)[index].IconKey = admin.IconKey
+			(*models)[index].IconSVG = admin.IconSVG
+			for _, group := range payload.Groups {
+				for _, memberID := range group.RouteModelIDs {
+					if memberID == admin.ID {
+						(*models)[index].GroupCodes = append((*models)[index].GroupCodes, group.Code)
+						break
+					}
+				}
+			}
+		}
+	}
+	infos := make([]capserv.RouteModelGroupInfo, 0, len(payload.Groups))
+	for _, group := range payload.Groups {
+		infos = append(infos, capserv.RouteModelGroupInfo{Code: group.Code, Name: group.Name, IconKey: group.IconKey, IconSVG: group.IconSVG, RouteModelCodes: membersByGroup[group.Code]})
+	}
+	return infos
 }
 
 func (a *API) HandleOpenCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -9967,12 +10028,113 @@ func decodeRouteModelWriteRequest(w http.ResponseWriter, r *http.Request) (domai
 		Enabled     bool    `json:"enabled"`
 		SortOrder   int     `json:"sort_order"`
 		GroupIDs    []int64 `json:"group_ids"`
+		IconKey     string  `json:"icon_key"`
+		IconSVG     string  `json:"icon_svg"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return domainmodeladmin.RouteModelWriteRequest{}, false
 	}
-	return domainmodeladmin.RouteModelWriteRequest{Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, MediaType: req.MediaType, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: req.GroupIDs}, true
+	_ = req.IconSVG
+	return domainmodeladmin.RouteModelWriteRequest{Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, MediaType: req.MediaType, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: req.GroupIDs, IconKey: req.IconKey, IconSVG: req.IconSVG}, true
+}
+
+func (a *API) HandleAdminRouteModelGroups(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		items, err := a.modelAdmin.ListRouteModelGroups(r.Context(), r.URL.Query().Get("media_type"))
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": items})
+	case http.MethodPost:
+		req, ok := decodeRouteModelGroupWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		created, err := a.modelAdmin.CreateRouteModelGroup(r.Context(), req)
+		if err != nil {
+			httpx.WriteError(w, r, normalizeAppError(err))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model_group.create", "route_model_group", fmt.Sprintf("%d", created.ID), map[string]any{"code": created.Code})
+		httpx.WriteSuccess(w, r, http.StatusCreated, created)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func (a *API) HandleAdminRouteModelGroupDetail(w http.ResponseWriter, r *http.Request) {
+	admin, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels)
+	if appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	parts := splitAdminSuffix(r.URL.Path, "/api/ops/admin/v1/route-model-groups/")
+	groupID, err := parseInt64Part(parts, 0, "group_id")
+	if err != nil || len(parts) != 1 {
+		if err == nil {
+			err = errs.BadRequest("invalid route model group route")
+		}
+		httpx.WriteError(w, r, err)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		item, getErr := a.modelAdmin.GetRouteModelGroup(r.Context(), groupID)
+		_ = getErr
+		if getErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(getErr))
+			return
+		}
+		httpx.WriteSuccess(w, r, http.StatusOK, item)
+	case http.MethodPut:
+		req, ok := decodeRouteModelGroupWriteRequest(w, r)
+		if !ok {
+			return
+		}
+		updated, updateErr := a.modelAdmin.UpdateRouteModelGroup(r.Context(), groupID, req)
+		if updateErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(updateErr))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model_group.update", "route_model_group", fmt.Sprintf("%d", groupID), map[string]any{"code": updated.Code})
+		httpx.WriteSuccess(w, r, http.StatusOK, updated)
+	case http.MethodDelete:
+		if delErr := a.modelAdmin.DeleteRouteModelGroup(r.Context(), groupID); delErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(delErr))
+			return
+		}
+		a.recordAudit(r, "admin", fmt.Sprintf("%d", admin.AdminID), "route_model_group.delete", "route_model_group", fmt.Sprintf("%d", groupID), nil)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeMethodNotAllowed(w, r)
+	}
+}
+
+func decodeRouteModelGroupWriteRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.RouteModelGroupWriteRequest, bool) {
+	var req struct {
+		Code          string  `json:"code"`
+		Name          string  `json:"name"`
+		Description   string  `json:"description"`
+		MediaType     string  `json:"media_type"`
+		IconKey       string  `json:"icon_key"`
+		IconSVG       string  `json:"icon_svg"`
+		SortOrder     int     `json:"sort_order"`
+		Enabled       bool    `json:"enabled"`
+		RouteModelIDs []int64 `json:"route_model_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return domainmodeladmin.RouteModelGroupWriteRequest{}, false
+	}
+	return domainmodeladmin.RouteModelGroupWriteRequest{Code: req.Code, Name: req.Name, Description: req.Description, MediaType: req.MediaType, IconKey: req.IconKey, IconSVG: req.IconSVG, SortOrder: req.SortOrder, Enabled: req.Enabled, RouteModelIDs: req.RouteModelIDs}, true
 }
 
 func decodeRouteModelCandidateWriteRequest(w http.ResponseWriter, r *http.Request, routeModelID int64) (domainmodeladmin.RouteModelCandidateWriteRequest, bool) {

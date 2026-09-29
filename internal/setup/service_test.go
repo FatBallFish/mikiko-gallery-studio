@@ -763,9 +763,9 @@ func TestSetupRequestDigestAllowsReleaseUpdatesWithoutWeakeningSetupBinding(t *t
 	}
 
 	for key, value := range map[string]string{
-		"DATABASE_URL":                             "postgres://app:other@127.0.0.1:5432/app?sslmode=disable",
-		"REDIS_KEY_PREFIX":                         "other-gallery",
-		"STORAGE_S3_BUCKET":                        "other-assets",
+		"DATABASE_URL":      "postgres://app:other@127.0.0.1:5432/app?sslmode=disable",
+		"REDIS_KEY_PREFIX":  "other-gallery",
+		"STORAGE_S3_BUCKET": "other-assets",
 		"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": strings.Repeat("f", 64),
 		"INSTALLATION_ID":                          uuid.NewString(),
 		"CONFIG_REVISION":                          "2",

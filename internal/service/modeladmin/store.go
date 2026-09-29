@@ -24,6 +24,12 @@ type Store interface {
 	DeleteModelAccountModel(ctx context.Context, accountID, accountModelID int64) error
 	DeleteModelAccountModelAudited(ctx context.Context, accountID, accountModelID int64, audit domainmodeladmin.LifecycleAudit) error
 	ListRouteModels(ctx context.Context, req domainmodeladmin.RouteModelListRequest) (domainmodeladmin.RouteModelListPage, error)
+	ListRouteModelGroups(ctx context.Context, mediaType string) ([]domainmodeladmin.RouteModelGroup, error)
+	GetRouteModelGroup(ctx context.Context, groupID int64) (domainmodeladmin.RouteModelGroup, error)
+	CreateRouteModelGroup(ctx context.Context, req domainmodeladmin.RouteModelGroupWriteRequest) (domainmodeladmin.RouteModelGroup, error)
+	UpdateRouteModelGroup(ctx context.Context, groupID int64, req domainmodeladmin.RouteModelGroupWriteRequest) (domainmodeladmin.RouteModelGroup, error)
+	DeleteRouteModelGroup(ctx context.Context, groupID int64) error
+	ListVisibleRouteModelGroups(ctx context.Context, mediaType string) ([]domainmodeladmin.RouteModelGroup, []domainmodeladmin.RouteModel, error)
 	GetRouteModel(ctx context.Context, routeModelID int64) (domainmodeladmin.RouteModel, error)
 	CreateRouteModel(ctx context.Context, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error)
 	UpdateRouteModel(ctx context.Context, routeModelID int64, req domainmodeladmin.RouteModelWriteRequest) (domainmodeladmin.RouteModel, error)
@@ -60,29 +66,31 @@ type Store interface {
 }
 
 type MemoryStore struct {
-	mu            sync.RWMutex
-	nextID        int64
-	providers     map[string]domainmodeladmin.Provider
-	models        map[int64]domainmodeladmin.ProviderModel
-	routes        map[int64]domainmodeladmin.Route
-	accounts      map[int64]domainmodeladmin.ModelAccount
-	accountModels map[int64]domainmodeladmin.ModelAccountModel
-	routeModels   map[int64]domainmodeladmin.RouteModel
-	candidates    map[int64]domainmodeladmin.RouteModelCandidate
-	prices        map[int64]domainmodeladmin.RouteModelPrice
+	mu               sync.RWMutex
+	nextID           int64
+	providers        map[string]domainmodeladmin.Provider
+	models           map[int64]domainmodeladmin.ProviderModel
+	routes           map[int64]domainmodeladmin.Route
+	accounts         map[int64]domainmodeladmin.ModelAccount
+	accountModels    map[int64]domainmodeladmin.ModelAccountModel
+	routeModels      map[int64]domainmodeladmin.RouteModel
+	candidates       map[int64]domainmodeladmin.RouteModelCandidate
+	prices           map[int64]domainmodeladmin.RouteModelPrice
+	routeModelGroups []domainmodeladmin.RouteModelGroup
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		nextID:        1,
-		providers:     map[string]domainmodeladmin.Provider{},
-		models:        map[int64]domainmodeladmin.ProviderModel{},
-		routes:        map[int64]domainmodeladmin.Route{},
-		accounts:      map[int64]domainmodeladmin.ModelAccount{},
-		accountModels: map[int64]domainmodeladmin.ModelAccountModel{},
-		routeModels:   map[int64]domainmodeladmin.RouteModel{},
-		candidates:    map[int64]domainmodeladmin.RouteModelCandidate{},
-		prices:        map[int64]domainmodeladmin.RouteModelPrice{},
+		nextID:           1,
+		providers:        map[string]domainmodeladmin.Provider{},
+		models:           map[int64]domainmodeladmin.ProviderModel{},
+		routes:           map[int64]domainmodeladmin.Route{},
+		accounts:         map[int64]domainmodeladmin.ModelAccount{},
+		accountModels:    map[int64]domainmodeladmin.ModelAccountModel{},
+		routeModels:      map[int64]domainmodeladmin.RouteModel{},
+		candidates:       map[int64]domainmodeladmin.RouteModelCandidate{},
+		prices:           map[int64]domainmodeladmin.RouteModelPrice{},
+		routeModelGroups: []domainmodeladmin.RouteModelGroup{},
 	}
 }
 
@@ -509,6 +517,83 @@ func (s *MemoryStore) DeleteProviderModel(_ context.Context, providerModelID int
 	}
 	delete(s.models, providerModelID)
 	return nil
+}
+
+func (s *MemoryStore) ListRouteModelGroups(ctx context.Context, mediaType string) ([]domainmodeladmin.RouteModelGroup, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]domainmodeladmin.RouteModelGroup, 0)
+	for _, group := range s.routeModelGroups {
+		if mediaType == "" || group.MediaType == mediaType {
+			items = append(items, group)
+		}
+	}
+	return items, nil
+}
+
+func (s *MemoryStore) GetRouteModelGroup(ctx context.Context, groupID int64) (domainmodeladmin.RouteModelGroup, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, group := range s.routeModelGroups {
+		if group.ID == groupID {
+			return group, nil
+		}
+	}
+	return domainmodeladmin.RouteModelGroup{}, repoerr.ErrNotFound
+}
+
+func (s *MemoryStore) CreateRouteModelGroup(ctx context.Context, req domainmodeladmin.RouteModelGroupWriteRequest) (domainmodeladmin.RouteModelGroup, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item := domainmodeladmin.RouteModelGroup{ID: int64(len(s.routeModelGroups) + 1), Code: req.Code, Name: req.Name, Description: req.Description, MediaType: req.MediaType, IconKey: req.IconKey, IconSVG: req.IconSVG, SortOrder: req.SortOrder, Enabled: req.Enabled, RouteModelIDs: append([]int64(nil), req.RouteModelIDs...)}
+	s.routeModelGroups = append(s.routeModelGroups, item)
+	return item, nil
+}
+
+func (s *MemoryStore) UpdateRouteModelGroup(ctx context.Context, groupID int64, req domainmodeladmin.RouteModelGroupWriteRequest) (domainmodeladmin.RouteModelGroup, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.routeModelGroups {
+		if s.routeModelGroups[index].ID != groupID {
+			continue
+		}
+		s.routeModelGroups[index] = domainmodeladmin.RouteModelGroup{ID: groupID, Code: req.Code, Name: req.Name, Description: req.Description, MediaType: req.MediaType, IconKey: req.IconKey, IconSVG: req.IconSVG, SortOrder: req.SortOrder, Enabled: req.Enabled, RouteModelIDs: append([]int64(nil), req.RouteModelIDs...)}
+		return s.routeModelGroups[index], nil
+	}
+	return domainmodeladmin.RouteModelGroup{}, repoerr.ErrNotFound
+}
+
+func (s *MemoryStore) DeleteRouteModelGroup(ctx context.Context, groupID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.routeModelGroups[:0]
+	for _, group := range s.routeModelGroups {
+		if group.ID != groupID {
+			next = append(next, group)
+		}
+	}
+	s.routeModelGroups = next
+	return nil
+}
+
+func (s *MemoryStore) ListVisibleRouteModelGroups(ctx context.Context, mediaType string) ([]domainmodeladmin.RouteModelGroup, []domainmodeladmin.RouteModel, error) {
+	groups, err := s.ListRouteModelGroups(ctx, mediaType)
+	if err != nil {
+		return nil, nil, err
+	}
+	visible := make([]domainmodeladmin.RouteModelGroup, 0, len(groups))
+	for _, group := range groups {
+		if group.Enabled {
+			visible = append(visible, group)
+		}
+	}
+	models := make([]domainmodeladmin.RouteModel, 0)
+	for _, model := range s.routeModels {
+		if model.MediaType == mediaType && model.Enabled {
+			models = append(models, model)
+		}
+	}
+	return visible, models, nil
 }
 
 func (s *MemoryStore) ListRouteModels(_ context.Context, req domainmodeladmin.RouteModelListRequest) (domainmodeladmin.RouteModelListPage, error) {

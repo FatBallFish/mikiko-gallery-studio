@@ -59,6 +59,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
@@ -175,6 +177,10 @@ type Client struct {
 	RouteModel *RouteModelClient
 	// RouteModelCandidate is the client for interacting with the RouteModelCandidate builders.
 	RouteModelCandidate *RouteModelCandidateClient
+	// RouteModelGroup is the client for interacting with the RouteModelGroup builders.
+	RouteModelGroup *RouteModelGroupClient
+	// RouteModelGroupMember is the client for interacting with the RouteModelGroupMember builders.
+	RouteModelGroupMember *RouteModelGroupMemberClient
 	// RouteModelPrice is the client for interacting with the RouteModelPrice builders.
 	RouteModelPrice *RouteModelPriceClient
 	// RouteModelVisibilityGroup is the client for interacting with the RouteModelVisibilityGroup builders.
@@ -275,6 +281,8 @@ func (c *Client) init() {
 	c.RefreshSession = NewRefreshSessionClient(c.config)
 	c.RouteModel = NewRouteModelClient(c.config)
 	c.RouteModelCandidate = NewRouteModelCandidateClient(c.config)
+	c.RouteModelGroup = NewRouteModelGroupClient(c.config)
+	c.RouteModelGroupMember = NewRouteModelGroupMemberClient(c.config)
 	c.RouteModelPrice = NewRouteModelPriceClient(c.config)
 	c.RouteModelVisibilityGroup = NewRouteModelVisibilityGroupClient(c.config)
 	c.SecureConfig = NewSecureConfigClient(c.config)
@@ -433,6 +441,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		RefreshSession:              NewRefreshSessionClient(cfg),
 		RouteModel:                  NewRouteModelClient(cfg),
 		RouteModelCandidate:         NewRouteModelCandidateClient(cfg),
+		RouteModelGroup:             NewRouteModelGroupClient(cfg),
+		RouteModelGroupMember:       NewRouteModelGroupMemberClient(cfg),
 		RouteModelPrice:             NewRouteModelPriceClient(cfg),
 		RouteModelVisibilityGroup:   NewRouteModelVisibilityGroupClient(cfg),
 		SecureConfig:                NewSecureConfigClient(cfg),
@@ -518,6 +528,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		RefreshSession:              NewRefreshSessionClient(cfg),
 		RouteModel:                  NewRouteModelClient(cfg),
 		RouteModelCandidate:         NewRouteModelCandidateClient(cfg),
+		RouteModelGroup:             NewRouteModelGroupClient(cfg),
+		RouteModelGroupMember:       NewRouteModelGroupMemberClient(cfg),
 		RouteModelPrice:             NewRouteModelPriceClient(cfg),
 		RouteModelVisibilityGroup:   NewRouteModelVisibilityGroupClient(cfg),
 		SecureConfig:                NewSecureConfigClient(cfg),
@@ -581,13 +593,14 @@ func (c *Client) Use(hooks ...Hook) {
 		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
 		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
 		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
-		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
-		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
-		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
-		c.VideoModelCapability, c.VideoModelRateCard, c.VideoPriceRule,
-		c.VideoPricingStrategy, c.VideoProviderCallbackEvent, c.VideoProviderCostRule,
-		c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput,
-		c.VideoTaskItem, c.WalletGrant, c.WalletReservationAllocation,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelGroup,
+		c.RouteModelGroupMember, c.RouteModelPrice, c.RouteModelVisibilityGroup,
+		c.SecureConfig, c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User,
+		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.VideoModelCapability,
+		c.VideoModelRateCard, c.VideoPriceRule, c.VideoPricingStrategy,
+		c.VideoProviderCallbackEvent, c.VideoProviderCostRule, c.VideoRouteConfig,
+		c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput, c.VideoTaskItem,
+		c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
 	}
@@ -608,13 +621,14 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.PaymentProviderInstance, c.PaymentWebhookEvent, c.PointLedger, c.Project,
 		c.PromptOptimizationRun, c.ProviderErrorPolicy, c.ProviderModel,
 		c.PublicImageInteraction, c.PublicImageStat, c.RedeemCode, c.ReferenceAsset,
-		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelPrice,
-		c.RouteModelVisibilityGroup, c.SecureConfig, c.SubscriptionPlan, c.TextModel,
-		c.TextModelAccount, c.User, c.UserGroup, c.UserGroupMember, c.UserSubscription,
-		c.VideoModelCapability, c.VideoModelRateCard, c.VideoPriceRule,
-		c.VideoPricingStrategy, c.VideoProviderCallbackEvent, c.VideoProviderCostRule,
-		c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput,
-		c.VideoTaskItem, c.WalletGrant, c.WalletReservationAllocation,
+		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelGroup,
+		c.RouteModelGroupMember, c.RouteModelPrice, c.RouteModelVisibilityGroup,
+		c.SecureConfig, c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User,
+		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.VideoModelCapability,
+		c.VideoModelRateCard, c.VideoPriceRule, c.VideoPricingStrategy,
+		c.VideoProviderCallbackEvent, c.VideoProviderCostRule, c.VideoRouteConfig,
+		c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput, c.VideoTaskItem,
+		c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -709,6 +723,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.RouteModel.mutate(ctx, m)
 	case *RouteModelCandidateMutation:
 		return c.RouteModelCandidate.mutate(ctx, m)
+	case *RouteModelGroupMutation:
+		return c.RouteModelGroup.mutate(ctx, m)
+	case *RouteModelGroupMemberMutation:
+		return c.RouteModelGroupMember.mutate(ctx, m)
 	case *RouteModelPriceMutation:
 		return c.RouteModelPrice.mutate(ctx, m)
 	case *RouteModelVisibilityGroupMutation:
@@ -6799,6 +6817,272 @@ func (c *RouteModelCandidateClient) mutate(ctx context.Context, m *RouteModelCan
 	}
 }
 
+// RouteModelGroupClient is a client for the RouteModelGroup schema.
+type RouteModelGroupClient struct {
+	config
+}
+
+// NewRouteModelGroupClient returns a client for the RouteModelGroup from the given config.
+func NewRouteModelGroupClient(c config) *RouteModelGroupClient {
+	return &RouteModelGroupClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `routemodelgroup.Hooks(f(g(h())))`.
+func (c *RouteModelGroupClient) Use(hooks ...Hook) {
+	c.hooks.RouteModelGroup = append(c.hooks.RouteModelGroup, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `routemodelgroup.Intercept(f(g(h())))`.
+func (c *RouteModelGroupClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RouteModelGroup = append(c.inters.RouteModelGroup, interceptors...)
+}
+
+// Create returns a builder for creating a RouteModelGroup entity.
+func (c *RouteModelGroupClient) Create() *RouteModelGroupCreate {
+	mutation := newRouteModelGroupMutation(c.config, OpCreate)
+	return &RouteModelGroupCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RouteModelGroup entities.
+func (c *RouteModelGroupClient) CreateBulk(builders ...*RouteModelGroupCreate) *RouteModelGroupCreateBulk {
+	return &RouteModelGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RouteModelGroupClient) MapCreateBulk(slice any, setFunc func(*RouteModelGroupCreate, int)) *RouteModelGroupCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RouteModelGroupCreateBulk{err: fmt.Errorf("calling to RouteModelGroupClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RouteModelGroupCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RouteModelGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RouteModelGroup.
+func (c *RouteModelGroupClient) Update() *RouteModelGroupUpdate {
+	mutation := newRouteModelGroupMutation(c.config, OpUpdate)
+	return &RouteModelGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RouteModelGroupClient) UpdateOne(_m *RouteModelGroup) *RouteModelGroupUpdateOne {
+	mutation := newRouteModelGroupMutation(c.config, OpUpdateOne, withRouteModelGroup(_m))
+	return &RouteModelGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RouteModelGroupClient) UpdateOneID(id int) *RouteModelGroupUpdateOne {
+	mutation := newRouteModelGroupMutation(c.config, OpUpdateOne, withRouteModelGroupID(id))
+	return &RouteModelGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RouteModelGroup.
+func (c *RouteModelGroupClient) Delete() *RouteModelGroupDelete {
+	mutation := newRouteModelGroupMutation(c.config, OpDelete)
+	return &RouteModelGroupDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RouteModelGroupClient) DeleteOne(_m *RouteModelGroup) *RouteModelGroupDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RouteModelGroupClient) DeleteOneID(id int) *RouteModelGroupDeleteOne {
+	builder := c.Delete().Where(routemodelgroup.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RouteModelGroupDeleteOne{builder}
+}
+
+// Query returns a query builder for RouteModelGroup.
+func (c *RouteModelGroupClient) Query() *RouteModelGroupQuery {
+	return &RouteModelGroupQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRouteModelGroup},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RouteModelGroup entity by its id.
+func (c *RouteModelGroupClient) Get(ctx context.Context, id int) (*RouteModelGroup, error) {
+	return c.Query().Where(routemodelgroup.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RouteModelGroupClient) GetX(ctx context.Context, id int) *RouteModelGroup {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RouteModelGroupClient) Hooks() []Hook {
+	return c.hooks.RouteModelGroup
+}
+
+// Interceptors returns the client interceptors.
+func (c *RouteModelGroupClient) Interceptors() []Interceptor {
+	return c.inters.RouteModelGroup
+}
+
+func (c *RouteModelGroupClient) mutate(ctx context.Context, m *RouteModelGroupMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RouteModelGroupCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RouteModelGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RouteModelGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RouteModelGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RouteModelGroup mutation op: %q", m.Op())
+	}
+}
+
+// RouteModelGroupMemberClient is a client for the RouteModelGroupMember schema.
+type RouteModelGroupMemberClient struct {
+	config
+}
+
+// NewRouteModelGroupMemberClient returns a client for the RouteModelGroupMember from the given config.
+func NewRouteModelGroupMemberClient(c config) *RouteModelGroupMemberClient {
+	return &RouteModelGroupMemberClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `routemodelgroupmember.Hooks(f(g(h())))`.
+func (c *RouteModelGroupMemberClient) Use(hooks ...Hook) {
+	c.hooks.RouteModelGroupMember = append(c.hooks.RouteModelGroupMember, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `routemodelgroupmember.Intercept(f(g(h())))`.
+func (c *RouteModelGroupMemberClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RouteModelGroupMember = append(c.inters.RouteModelGroupMember, interceptors...)
+}
+
+// Create returns a builder for creating a RouteModelGroupMember entity.
+func (c *RouteModelGroupMemberClient) Create() *RouteModelGroupMemberCreate {
+	mutation := newRouteModelGroupMemberMutation(c.config, OpCreate)
+	return &RouteModelGroupMemberCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RouteModelGroupMember entities.
+func (c *RouteModelGroupMemberClient) CreateBulk(builders ...*RouteModelGroupMemberCreate) *RouteModelGroupMemberCreateBulk {
+	return &RouteModelGroupMemberCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RouteModelGroupMemberClient) MapCreateBulk(slice any, setFunc func(*RouteModelGroupMemberCreate, int)) *RouteModelGroupMemberCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RouteModelGroupMemberCreateBulk{err: fmt.Errorf("calling to RouteModelGroupMemberClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RouteModelGroupMemberCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RouteModelGroupMemberCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RouteModelGroupMember.
+func (c *RouteModelGroupMemberClient) Update() *RouteModelGroupMemberUpdate {
+	mutation := newRouteModelGroupMemberMutation(c.config, OpUpdate)
+	return &RouteModelGroupMemberUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RouteModelGroupMemberClient) UpdateOne(_m *RouteModelGroupMember) *RouteModelGroupMemberUpdateOne {
+	mutation := newRouteModelGroupMemberMutation(c.config, OpUpdateOne, withRouteModelGroupMember(_m))
+	return &RouteModelGroupMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RouteModelGroupMemberClient) UpdateOneID(id int) *RouteModelGroupMemberUpdateOne {
+	mutation := newRouteModelGroupMemberMutation(c.config, OpUpdateOne, withRouteModelGroupMemberID(id))
+	return &RouteModelGroupMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RouteModelGroupMember.
+func (c *RouteModelGroupMemberClient) Delete() *RouteModelGroupMemberDelete {
+	mutation := newRouteModelGroupMemberMutation(c.config, OpDelete)
+	return &RouteModelGroupMemberDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RouteModelGroupMemberClient) DeleteOne(_m *RouteModelGroupMember) *RouteModelGroupMemberDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RouteModelGroupMemberClient) DeleteOneID(id int) *RouteModelGroupMemberDeleteOne {
+	builder := c.Delete().Where(routemodelgroupmember.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RouteModelGroupMemberDeleteOne{builder}
+}
+
+// Query returns a query builder for RouteModelGroupMember.
+func (c *RouteModelGroupMemberClient) Query() *RouteModelGroupMemberQuery {
+	return &RouteModelGroupMemberQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRouteModelGroupMember},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RouteModelGroupMember entity by its id.
+func (c *RouteModelGroupMemberClient) Get(ctx context.Context, id int) (*RouteModelGroupMember, error) {
+	return c.Query().Where(routemodelgroupmember.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RouteModelGroupMemberClient) GetX(ctx context.Context, id int) *RouteModelGroupMember {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RouteModelGroupMemberClient) Hooks() []Hook {
+	return c.hooks.RouteModelGroupMember
+}
+
+// Interceptors returns the client interceptors.
+func (c *RouteModelGroupMemberClient) Interceptors() []Interceptor {
+	return c.inters.RouteModelGroupMember
+}
+
+func (c *RouteModelGroupMemberClient) mutate(ctx context.Context, m *RouteModelGroupMemberMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RouteModelGroupMemberCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RouteModelGroupMemberUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RouteModelGroupMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RouteModelGroupMemberDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RouteModelGroupMember mutation op: %q", m.Op())
+	}
+}
+
 // RouteModelPriceClient is a client for the RouteModelPrice schema.
 type RouteModelPriceClient struct {
 	config
@@ -9999,12 +10283,13 @@ type (
 		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
 		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
 		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
-		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
-		UserSubscription, VideoModelCapability, VideoModelRateCard, VideoPriceRule,
-		VideoPricingStrategy, VideoProviderCallbackEvent, VideoProviderCostRule,
-		VideoRouteConfig, VideoTask, VideoTaskAttempt, VideoTaskInput, VideoTaskItem,
-		WalletGrant, WalletReservationAllocation []ent.Hook
+		RouteModelGroup, RouteModelGroupMember, RouteModelPrice,
+		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
+		TextModelAccount, User, UserGroup, UserGroupMember, UserSubscription,
+		VideoModelCapability, VideoModelRateCard, VideoPriceRule, VideoPricingStrategy,
+		VideoProviderCallbackEvent, VideoProviderCostRule, VideoRouteConfig, VideoTask,
+		VideoTaskAttempt, VideoTaskInput, VideoTaskItem, WalletGrant,
+		WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, CanvasGenerationRun,
@@ -10017,11 +10302,12 @@ type (
 		PaymentWebhookEvent, PointLedger, Project, PromptOptimizationRun,
 		ProviderErrorPolicy, ProviderModel, PublicImageInteraction, PublicImageStat,
 		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
-		RouteModelPrice, RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan,
-		TextModel, TextModelAccount, User, UserGroup, UserGroupMember,
-		UserSubscription, VideoModelCapability, VideoModelRateCard, VideoPriceRule,
-		VideoPricingStrategy, VideoProviderCallbackEvent, VideoProviderCostRule,
-		VideoRouteConfig, VideoTask, VideoTaskAttempt, VideoTaskInput, VideoTaskItem,
-		WalletGrant, WalletReservationAllocation []ent.Interceptor
+		RouteModelGroup, RouteModelGroupMember, RouteModelPrice,
+		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
+		TextModelAccount, User, UserGroup, UserGroupMember, UserSubscription,
+		VideoModelCapability, VideoModelRateCard, VideoPriceRule, VideoPricingStrategy,
+		VideoProviderCallbackEvent, VideoProviderCostRule, VideoRouteConfig, VideoTask,
+		VideoTaskAttempt, VideoTaskInput, VideoTaskItem, WalletGrant,
+		WalletReservationAllocation []ent.Interceptor
 	}
 )

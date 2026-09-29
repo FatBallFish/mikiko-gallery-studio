@@ -167,6 +167,8 @@ export const API_PATHS = {
     textModelDefault: '/api/ops/admin/v1/text-models/{model_id}:default',
     textModelTest: '/api/ops/admin/v1/text-models/{model_id}:test',
     routeModels: '/api/ops/admin/v1/route-models',
+    routeModelGroups: '/api/ops/admin/v1/route-model-groups',
+    routeModelGroupDetail: '/api/ops/admin/v1/route-model-groups/{group_id}',
     routeModelDetail: '/api/ops/admin/v1/route-models/{route_model_id}',
     routeModelCandidates: '/api/ops/admin/v1/route-models/{route_model_id}/candidates',
     routeModelCandidateDetail: '/api/ops/admin/v1/route-models/{route_model_id}/candidates/{candidate_id}',
@@ -261,10 +263,10 @@ export type VideoCapabilityModelGroup = {
   defaults: { task_type: VideoTaskType; duration_seconds: number; resolution: string; aspect_ratio: string; generate_audio: boolean }
   options_by_task_type: Partial<Record<VideoTaskType, VideoTaskOptions>>
 }
-export type VideoCapability = { capability_version: string; model_groups: VideoCapabilityModelGroup[] }
+export type VideoCapability = { capability_version: string; model_groups: VideoCapabilityModelGroup[]; route_model_groups?: RouteModelGroupMeta[] }
 export type VideoCapabilityCombinationWire = { task_type: VideoTaskType; duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode: 'silent' | 'generated' }
 export type VideoCapabilityGroupWire = {
-  route_model_code: string; name: string; description?: string; config_version: string; capability_version: string
+  route_model_code: string; name: string; description?: string; icon_key?: string; icon_svg?: string; group_codes?: string[]; config_version: string; capability_version: string
   max_output_count: number; task_types: VideoTaskType[]; combinations: VideoCapabilityCombinationWire[]
 }
 export type VideoCapabilityListWire = { groups: VideoCapabilityGroupWire[] }
@@ -860,11 +862,15 @@ export type RouteModelPriceQuote = {
   display_points: string
   reference_multiplier?: string
 }
+export type RouteModelGroupMeta = { code: string; name: string; icon_key?: string; icon_svg?: string }
 export type CapabilityModelGroup = {
   id: string
   code: string
   name: string
   description?: string
+  icon_key?: string
+  icon_svg?: string
+  group_codes?: string[]
   task_types: ImageTaskType[]
   qualities?: string[]
   base_resolution?: string[]
@@ -893,6 +899,7 @@ export type CapabilityModelGroup = {
   display_points?: string
 }
 export type Capability = {
+  route_model_groups?: RouteModelGroupMeta[]
   items?: CapabilityItem[]
   raw?: unknown
   unavailable_reason?: { code: string; message: string } | null
@@ -1503,6 +1510,8 @@ export type RouteModel = {
   code: string
   name: string
   description?: string
+  icon_key?: string
+  icon_svg?: string
   visibility: RouteModelVisibility
   media_type: RouteModelMediaType
   enabled: boolean
@@ -1514,7 +1523,9 @@ export type RouteModel = {
   created_at: string
   updated_at: string
 }
-export type RouteModelWriteRequest = { code: string; name: string; description?: string; visibility: RouteModelVisibility; media_type: RouteModelMediaType; enabled: boolean; sort_order: number; group_ids?: ID[] }
+export type RouteModelWriteRequest = { code: string; name: string; description?: string; visibility: RouteModelVisibility; media_type: RouteModelMediaType; enabled: boolean; sort_order: number; group_ids?: ID[]; icon_key?: string; icon_svg?: string }
+export type RouteModelGroupRecord = { id: ID; code: string; name: string; description: string; media_type: RouteModelMediaType; icon_key?: string; icon_svg?: string; sort_order: number; enabled: boolean; route_model_ids: ID[]; created_at?: string; updated_at?: string }
+export type RouteModelGroupWriteRequest = { code: string; name: string; description?: string; media_type: RouteModelMediaType; icon_key?: string; icon_svg?: string; sort_order: number; enabled: boolean; route_model_ids: ID[] }
 export type RouteModelCandidate = {
   id: ID
   route_model_id: ID

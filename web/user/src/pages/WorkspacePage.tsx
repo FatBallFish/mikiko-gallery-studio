@@ -1424,7 +1424,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             <label className={workspaceClasses.fieldLabel} htmlFor="workspace-model-group">模型分组</label>
             {loading && !capability ? <LoadingState label="正在加载可用模型..." /> : null}
             {!loading && availableModels.length ? (
-              <ModelGroupSelect options={availableModels} value={model} onChange={setModel} />
+              <ModelGroupSelect options={availableModels} groups={capability?.route_model_groups} value={model} onChange={setModel} />
             ) : null}
             {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
           </div>

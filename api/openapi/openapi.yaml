@@ -3714,6 +3714,62 @@ paths:
             schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminRouteModelWriteRequest }
       responses:
         '201': { description: Route model created }
+  /api/ops/admin/v1/route-model-groups:
+    get:
+      tags: [Admin Model Routing]
+      summary: List route model groups
+      parameters:
+        - name: media_type
+          in: query
+          schema: { type: string, enum: [image, video] }
+      responses:
+        '200': { description: Route model group list }
+    post:
+      tags: [Admin Model Routing]
+      summary: Create route model group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminRouteModelGroupWriteRequest }
+      responses:
+        '201': { description: Route model group created }
+  /api/ops/admin/v1/route-model-groups/{group_id}:
+    get:
+      tags: [Admin Model Routing]
+      summary: Get route model group
+      parameters:
+        - name: group_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '200': { description: Route model group detail }
+    put:
+      tags: [Admin Model Routing]
+      summary: Update route model group
+      parameters:
+        - name: group_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ./components/schemas/admin.yaml#/components/schemas/AdminRouteModelGroupWriteRequest }
+      responses:
+        '200': { description: Route model group updated }
+    delete:
+      tags: [Admin Model Routing]
+      summary: Delete route model group
+      parameters:
+        - name: group_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Route model group deleted }
   /api/ops/admin/v1/route-models/{route_model_id}:
     put:
       tags: [Admin Model Routing]

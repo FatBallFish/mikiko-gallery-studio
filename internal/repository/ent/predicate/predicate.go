@@ -135,6 +135,12 @@ type RouteModel func(*sql.Selector)
 // RouteModelCandidate is the predicate function for routemodelcandidate builders.
 type RouteModelCandidate func(*sql.Selector)
 
+// RouteModelGroup is the predicate function for routemodelgroup builders.
+type RouteModelGroup func(*sql.Selector)
+
+// RouteModelGroupMember is the predicate function for routemodelgroupmember builders.
+type RouteModelGroupMember func(*sql.Selector)
+
 // RouteModelPrice is the predicate function for routemodelprice builders.
 type RouteModelPrice func(*sql.Selector)
 

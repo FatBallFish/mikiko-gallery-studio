@@ -9,11 +9,11 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroup"
 )
 
-// RouteModel is the model entity for the RouteModel schema.
-type RouteModel struct {
+// RouteModelGroup is the model entity for the RouteModelGroup schema.
+type RouteModelGroup struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
@@ -29,33 +29,31 @@ type RouteModel struct {
 	Name string `json:"name,omitempty"`
 	// Description holds the value of the "description" field.
 	Description string `json:"description,omitempty"`
-	// Visibility holds the value of the "visibility" field.
-	Visibility string `json:"visibility,omitempty"`
 	// MediaType holds the value of the "media_type" field.
 	MediaType string `json:"media_type,omitempty"`
-	// Enabled holds the value of the "enabled" field.
-	Enabled bool `json:"enabled,omitempty"`
-	// SortOrder holds the value of the "sort_order" field.
-	SortOrder int `json:"sort_order,omitempty"`
 	// IconKey holds the value of the "icon_key" field.
 	IconKey string `json:"icon_key,omitempty"`
 	// IconSvg holds the value of the "icon_svg" field.
-	IconSvg      string `json:"icon_svg,omitempty"`
+	IconSvg string `json:"icon_svg,omitempty"`
+	// SortOrder holds the value of the "sort_order" field.
+	SortOrder int `json:"sort_order,omitempty"`
+	// Enabled holds the value of the "enabled" field.
+	Enabled      bool `json:"enabled,omitempty"`
 	selectValues sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
-func (*RouteModel) scanValues(columns []string) ([]any, error) {
+func (*RouteModelGroup) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case routemodel.FieldEnabled:
+		case routemodelgroup.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case routemodel.FieldID, routemodel.FieldSortOrder:
+		case routemodelgroup.FieldID, routemodelgroup.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
-		case routemodel.FieldCode, routemodel.FieldName, routemodel.FieldDescription, routemodel.FieldVisibility, routemodel.FieldMediaType, routemodel.FieldIconKey, routemodel.FieldIconSvg:
+		case routemodelgroup.FieldCode, routemodelgroup.FieldName, routemodelgroup.FieldDescription, routemodelgroup.FieldMediaType, routemodelgroup.FieldIconKey, routemodelgroup.FieldIconSvg:
 			values[i] = new(sql.NullString)
-		case routemodel.FieldCreatedAt, routemodel.FieldUpdatedAt, routemodel.FieldDeletedAt:
+		case routemodelgroup.FieldCreatedAt, routemodelgroup.FieldUpdatedAt, routemodelgroup.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -65,91 +63,85 @@ func (*RouteModel) scanValues(columns []string) ([]any, error) {
 }
 
 // assignValues assigns the values that were returned from sql.Rows (after scanning)
-// to the RouteModel fields.
-func (_m *RouteModel) assignValues(columns []string, values []any) error {
+// to the RouteModelGroup fields.
+func (_m *RouteModelGroup) assignValues(columns []string, values []any) error {
 	if m, n := len(values), len(columns); m < n {
 		return fmt.Errorf("mismatch number of scan values: %d != %d", m, n)
 	}
 	for i := range columns {
 		switch columns[i] {
-		case routemodel.FieldID:
+		case routemodelgroup.FieldID:
 			value, ok := values[i].(*sql.NullInt64)
 			if !ok {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
 			_m.ID = int(value.Int64)
-		case routemodel.FieldCreatedAt:
+		case routemodelgroup.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
 			} else if value.Valid {
 				_m.CreatedAt = value.Time
 			}
-		case routemodel.FieldUpdatedAt:
+		case routemodelgroup.FieldUpdatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field updated_at", values[i])
 			} else if value.Valid {
 				_m.UpdatedAt = value.Time
 			}
-		case routemodel.FieldDeletedAt:
+		case routemodelgroup.FieldDeletedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field deleted_at", values[i])
 			} else if value.Valid {
 				_m.DeletedAt = new(time.Time)
 				*_m.DeletedAt = value.Time
 			}
-		case routemodel.FieldCode:
+		case routemodelgroup.FieldCode:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field code", values[i])
 			} else if value.Valid {
 				_m.Code = value.String
 			}
-		case routemodel.FieldName:
+		case routemodelgroup.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field name", values[i])
 			} else if value.Valid {
 				_m.Name = value.String
 			}
-		case routemodel.FieldDescription:
+		case routemodelgroup.FieldDescription:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field description", values[i])
 			} else if value.Valid {
 				_m.Description = value.String
 			}
-		case routemodel.FieldVisibility:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field visibility", values[i])
-			} else if value.Valid {
-				_m.Visibility = value.String
-			}
-		case routemodel.FieldMediaType:
+		case routemodelgroup.FieldMediaType:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field media_type", values[i])
 			} else if value.Valid {
 				_m.MediaType = value.String
 			}
-		case routemodel.FieldEnabled:
-			if value, ok := values[i].(*sql.NullBool); !ok {
-				return fmt.Errorf("unexpected type %T for field enabled", values[i])
-			} else if value.Valid {
-				_m.Enabled = value.Bool
-			}
-		case routemodel.FieldSortOrder:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field sort_order", values[i])
-			} else if value.Valid {
-				_m.SortOrder = int(value.Int64)
-			}
-		case routemodel.FieldIconKey:
+		case routemodelgroup.FieldIconKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field icon_key", values[i])
 			} else if value.Valid {
 				_m.IconKey = value.String
 			}
-		case routemodel.FieldIconSvg:
+		case routemodelgroup.FieldIconSvg:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field icon_svg", values[i])
 			} else if value.Valid {
 				_m.IconSvg = value.String
+			}
+		case routemodelgroup.FieldSortOrder:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field sort_order", values[i])
+			} else if value.Valid {
+				_m.SortOrder = int(value.Int64)
+			}
+		case routemodelgroup.FieldEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field enabled", values[i])
+			} else if value.Valid {
+				_m.Enabled = value.Bool
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -158,34 +150,34 @@ func (_m *RouteModel) assignValues(columns []string, values []any) error {
 	return nil
 }
 
-// Value returns the ent.Value that was dynamically selected and assigned to the RouteModel.
+// Value returns the ent.Value that was dynamically selected and assigned to the RouteModelGroup.
 // This includes values selected through modifiers, order, etc.
-func (_m *RouteModel) Value(name string) (ent.Value, error) {
+func (_m *RouteModelGroup) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
 }
 
-// Update returns a builder for updating this RouteModel.
-// Note that you need to call RouteModel.Unwrap() before calling this method if this RouteModel
+// Update returns a builder for updating this RouteModelGroup.
+// Note that you need to call RouteModelGroup.Unwrap() before calling this method if this RouteModelGroup
 // was returned from a transaction, and the transaction was committed or rolled back.
-func (_m *RouteModel) Update() *RouteModelUpdateOne {
-	return NewRouteModelClient(_m.config).UpdateOne(_m)
+func (_m *RouteModelGroup) Update() *RouteModelGroupUpdateOne {
+	return NewRouteModelGroupClient(_m.config).UpdateOne(_m)
 }
 
-// Unwrap unwraps the RouteModel entity that was returned from a transaction after it was closed,
+// Unwrap unwraps the RouteModelGroup entity that was returned from a transaction after it was closed,
 // so that all future queries will be executed through the driver which created the transaction.
-func (_m *RouteModel) Unwrap() *RouteModel {
+func (_m *RouteModelGroup) Unwrap() *RouteModelGroup {
 	_tx, ok := _m.config.driver.(*txDriver)
 	if !ok {
-		panic("ent: RouteModel is not a transactional entity")
+		panic("ent: RouteModelGroup is not a transactional entity")
 	}
 	_m.config.driver = _tx.drv
 	return _m
 }
 
 // String implements the fmt.Stringer.
-func (_m *RouteModel) String() string {
+func (_m *RouteModelGroup) String() string {
 	var builder strings.Builder
-	builder.WriteString("RouteModel(")
+	builder.WriteString("RouteModelGroup(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))
@@ -207,26 +199,23 @@ func (_m *RouteModel) String() string {
 	builder.WriteString("description=")
 	builder.WriteString(_m.Description)
 	builder.WriteString(", ")
-	builder.WriteString("visibility=")
-	builder.WriteString(_m.Visibility)
-	builder.WriteString(", ")
 	builder.WriteString("media_type=")
 	builder.WriteString(_m.MediaType)
-	builder.WriteString(", ")
-	builder.WriteString("enabled=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Enabled))
-	builder.WriteString(", ")
-	builder.WriteString("sort_order=")
-	builder.WriteString(fmt.Sprintf("%v", _m.SortOrder))
 	builder.WriteString(", ")
 	builder.WriteString("icon_key=")
 	builder.WriteString(_m.IconKey)
 	builder.WriteString(", ")
 	builder.WriteString("icon_svg=")
 	builder.WriteString(_m.IconSvg)
+	builder.WriteString(", ")
+	builder.WriteString("sort_order=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SortOrder))
+	builder.WriteString(", ")
+	builder.WriteString("enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Enabled))
 	builder.WriteByte(')')
 	return builder.String()
 }
 
-// RouteModels is a parsable slice of RouteModel.
-type RouteModels []*RouteModel
+// RouteModelGroups is a parsable slice of RouteModelGroup.
+type RouteModelGroups []*RouteModelGroup
