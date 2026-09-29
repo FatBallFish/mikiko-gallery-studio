@@ -1252,6 +1252,7 @@ html[data-theme-mode="dark"] .pg-date-input {
 .video-task-region {
   min-height: 620px;
   overflow: hidden;
+  border-radius: 16px;
 }
 
 .video-task-region > header > span {
@@ -1356,7 +1357,7 @@ html[data-theme-mode="dark"] .pg-date-input {
 .video-current-task {
   display: grid;
   width: 100%;
-  max-width: 960px;
+  max-width: 1024px;
   margin: 0 auto;
   min-width: 0;
   gap: 14px;

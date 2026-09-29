@@ -1,0 +1,30 @@
+// Shared visual language for the creation console output region. Both the
+// image workspace and the video creation panel import these so the two
+// consoles (progress rail, output tabs, result figures, failure blocks,
+// history grids, recent strip) read as one product surface.
+export const consoleClasses = {
+  outputTabs: 'mx-auto flex w-full max-w-5xl shrink-0 rounded-xl border border-[var(--border)] bg-[var(--surface)]/72 p-1 backdrop-blur',
+  outputTab: 'flex-1 rounded-xl px-4 py-2 text-sm font-bold text-[var(--muted)] transition hover:bg-[var(--accent)] hover:text-white',
+  outputTabActive: 'bg-[var(--accent)] text-white shadow-[0_8px_24px_rgba(var(--accent-rgb),0.18)]',
+  feed: 'flex min-h-0 flex-1 flex-col justify-start gap-4 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-3 sm:px-5',
+  pending: 'mx-auto grid min-h-[360px] w-full max-w-2xl place-items-center content-center gap-2 rounded-3xl border border-dashed border-[var(--border)] bg-[var(--bg)]/55 text-center text-[var(--muted)]',
+  pendingFailed: 'border-[color-mix(in_oklch,var(--accent-coral)_62%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_16%,var(--surface))]',
+  pendingFailedTitle: 'text-[var(--accent-coral)]',
+  failureMeta: 'mt-1.5 flex flex-wrap justify-center gap-2',
+  failureMetaItem: 'inline-flex max-w-full items-center gap-1.5 rounded-xl border border-[color-mix(in_oklch,var(--accent-coral)_50%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_14%,var(--surface))] px-2 py-1 text-[11px]',
+  failureMetaLabel: 'text-[var(--muted)]',
+  failureMetaValue: 'm-0 font-mono text-[var(--fg)] [overflow-wrap:anywhere]',
+  generatedFigure: 'group relative m-0 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg)] shadow-xl',
+  generatedStage: 'block w-full cursor-zoom-in border-0 bg-transparent p-0 [aspect-ratio:var(--generated-ratio)] max-h-[calc(100vh-430px)]',
+  generatedMedia: 'block size-full max-h-[calc(100vh-430px)] object-contain transition duration-500 group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100',
+  generatedCaption: 'absolute right-3 top-3 z-10 flex translate-y-1 justify-end gap-1.5 rounded-xl border border-[var(--image-action-border)] bg-[var(--image-action-bg)] p-1 opacity-0 shadow-2xl backdrop-blur-2xl transition motion-reduce:transition-none group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 max-[760px]:translate-y-0 max-[760px]:opacity-100',
+  generatedIconAction: 'grid size-8 place-items-center rounded-xl text-[var(--image-action-text)] transition hover:bg-[var(--image-action-hover-bg)] hover:text-[var(--image-action-hover-text)] [&_svg]:size-4',
+  outputMetaRow: 'mt-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 border-t border-[var(--border)]/30 pt-4 text-[10px] font-vault-mono text-[var(--muted)]',
+  historyGrid: 'grid min-h-0 w-full grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4 overflow-y-auto pr-1',
+  historyCard: 'group relative flex min-w-0 flex-col gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)]/60 p-3 text-left transition hover:-translate-y-1 hover:border-[var(--accent)] hover:shadow-xl hover:shadow-[rgba(var(--accent-rgb),0.14)]',
+  recentStrip: 'border-b border-[var(--border)] px-3 py-2.5 sm:px-5',
+  recentScroll: 'flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]',
+  recentItem: 'grid min-w-[154px] grid-cols-[42px_minmax(0,1fr)] items-center gap-2 rounded-xl border bg-[var(--surface)]/55 p-1.5 text-left transition-colors duration-[var(--motion-fast)] hover:border-[var(--accent)] motion-reduce:transition-none',
+  recentItemActive: 'border-[var(--accent)]',
+  recentThumb: 'grid size-[42px] place-items-center overflow-hidden rounded-lg bg-[var(--bg)] text-[10px] text-[var(--muted)]',
+} as const

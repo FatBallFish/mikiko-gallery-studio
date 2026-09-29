@@ -10,6 +10,7 @@ import { userButton, userForm, userState } from '../ui/classes'
 import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
 import { RefreshableMediaImage } from '../ui/mediaRefresh'
+import { consoleClasses } from './consoleClasses'
 import { errorMessage } from '../useApiResource'
 import { mediaAccess, type MediaResource } from '../mediaAccess'
 import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
@@ -152,7 +153,8 @@ function generationParameterErrorMessage(error: unknown) {
   return errorMessage(error)
 }
 
-const workspaceClasses = {
+const workspaceClasses: typeof consoleClasses & Record<string, string> = {
+  ...consoleClasses,
   root: 'relative grid w-full max-w-full min-w-0 flex-1 grid-cols-1 gap-4 overflow-x-hidden p-4 pb-44 min-[761px]:grid-cols-[360px_minmax(0,1fr)] min-[761px]:items-start min-[761px]:p-6 min-[1180px]:grid-cols-[390px_minmax(0,1fr)]',
   panel: 'z-40 flex min-w-0 flex-col overflow-hidden border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_90%,transparent)] shadow-[var(--pg-shadow-lg)] backdrop-blur-2xl max-[760px]:fixed max-[760px]:inset-x-3 max-[760px]:bottom-[calc(68px+env(safe-area-inset-bottom))] max-[760px]:max-h-[82dvh] max-[760px]:rounded-2xl min-[761px]:sticky min-[761px]:top-24 min-[761px]:h-[calc(100dvh-120px)] min-[761px]:rounded-2xl',
   parameterRegion: 'flex min-h-0 flex-1 flex-col overflow-hidden transition-[max-height] duration-[var(--motion-route)] motion-reduce:transition-none max-[760px]:flex-none',

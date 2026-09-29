@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Ban, Copy, Download, FastForward, Film, Image as ImageIcon, Info, LoaderCircle, Play, RefreshCw, RotateCcw, Sparkles, Volume2, VolumeX, X } from 'lucide-react'
 import type { CapabilityModelGroup, MediaAsset, PromptReferenceBinding, ReferenceAsset, VideoCapability, VideoEstimateRequest, VideoTask, VideoTaskType } from '../../../../shared/api-types'
 import { userApi } from '../../../../shared/user-api'
+import { cn } from '../../../../shared/classnames'
 import { Button, EmptyState, ErrorState, InlineCopyButton, LoadingState, Modal, copyText, useApp } from '../../components'
 import { ProjectSelector, useProjects } from '../../ProjectContext'
 import { ModelGroupSelect } from '../../pages/ModelGroupSelect'
@@ -18,6 +19,8 @@ import { MediaPreviewDialog } from '../media/MediaPreviewDialog'
 import { QUEUE_MEDIA_UPLOAD_EVENT } from '../media/UploadTray'
 import { buildVideoQuoteBreakdown, buildVideoTaskAccounting } from './videoAccounting'
 import { applyVideoCapability, defaultVideoDraft, invalidateVideoQuote, reuseVideoTask, videoDraftKey, videoModelForDraft, VIDEO_TASK_INPUT_ROLES, videoTaskInputLabel, videoTaskInputMissing, type VideoDraft, type VideoDraftInputRole, type VideoQuoteState } from './videoDraft'
+import { cachedVideoCapability, loadVideoCapability } from './videoCapabilityCache'
+import { consoleClasses } from '../../pages/consoleClasses'
 import { videoFieldErrors, type VideoFieldErrors } from './videoErrors'
 
 type Props = { initialTaskId?: string; initialAssetId?: string }
@@ -34,8 +37,11 @@ const stageLabels: Record<string, string> = {
 export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   const app = useApp()
   const projects = useProjects()
-  const [capability, setCapability] = useState<VideoCapability | null>(null)
-  const [draft, setDraft] = useState<VideoDraft | null>(null)
+  const [capability, setCapability] = useState<VideoCapability | null>(() => cachedVideoCapability())
+  const [draft, setDraft] = useState<VideoDraft | null>(() => {
+    const snapshot = cachedVideoCapability()
+    return snapshot ? defaultVideoDraft(snapshot, initialAssetId ? 'image_to_video' : undefined) : null
+  })
   const [quote, setQuote] = useState<VideoQuoteState | null>(null)
   const [tasks, setTasks] = useState<VideoTask[]>([])
   const [loading, setLoading] = useState(true)
@@ -59,8 +65,16 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
 
   useEffect(() => {
     let alive = true
-    setLoading(true)
-    userApi.getVideoCapabilities().then((next) => {
+    // Serve the cached snapshot immediately: tab switches must not blank the
+    // console behind the capability spinner. Only the very first visit (no
+    // cache yet) shows 正在读取视频能力.
+    const snapshot = cachedVideoCapability()
+    if (snapshot && !capability) {
+      setCapability(snapshot)
+      setDraft((current) => current ?? defaultVideoDraft(snapshot, initialAssetId ? 'image_to_video' : undefined))
+    }
+    if (!snapshot) setLoading(true)
+    loadVideoCapability().then((next) => {
       if (!alive) return
       setCapability(next)
       setDraft((current) => {
@@ -210,7 +224,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   const orderedTasks = useMemo(() => [...tasks].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '')), [tasks])
   const currentTask = useMemo(() => orderedTasks.find((task) => task.id === selectedTaskID) ?? orderedTasks[0], [orderedTasks, selectedTaskID])
 
-  if (loading) return <LoadingState label="正在读取视频能力..." />
+  if (loading && !capability) return <LoadingState label="正在读取视频能力..." />
   if (error && !capability) return <ErrorState message={error} />
   if (!capability || !draft || !model || !options) return <EmptyState title="暂无可用视频模型" detail="当前用户组没有已启用的视频模型分组。" />
   const activeCapability = capability
@@ -465,15 +479,15 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         <header><div><span>任务队列</span><h2>视频生成</h2></div><span>{tasks.length} 个任务</span></header>
         {currentTask ? <WorkspaceStatusRail task={videoTaskRailView(currentTask)} startedAt={currentTask.created_at} finishedAt={currentTask.updated_at} /> : null}
         {orderedTasks.length > 1 ? <VideoRecentStrip tasks={orderedTasks} activeTaskID={currentTask?.id} onSelectTask={(task) => { setSelectedTaskID(task.id); setTaskTab('current') }} /> : null}
-        <div className="video-output-feed">
-          <div className="video-output-tabs" role="tablist" aria-label="创作输出">
-            <button type="button" role="tab" aria-selected={taskTab === 'current'} className={taskTab === 'current' ? 'is-active' : ''} onClick={() => setTaskTab('current')}>当前创作</button>
-            <button type="button" role="tab" aria-selected={taskTab === 'history'} className={taskTab === 'history' ? 'is-active' : ''} onClick={() => setTaskTab('history')}>历史创作</button>
+        <div className={consoleClasses.feed}>
+          <div className={consoleClasses.outputTabs} role="tablist" aria-label="创作输出">
+            <button type="button" role="tab" aria-selected={taskTab === 'current'} className={cn(consoleClasses.outputTab, taskTab === 'current' && consoleClasses.outputTabActive)} onClick={() => setTaskTab('current')}>当前创作</button>
+            <button type="button" role="tab" aria-selected={taskTab === 'history'} className={cn(consoleClasses.outputTab, taskTab === 'history' && consoleClasses.outputTabActive)} onClick={() => setTaskTab('history')}>历史创作</button>
           </div>
           {taskTab === 'current' ? (
             currentTask ? <VideoCurrentTaskCard task={currentTask} busy={taskAction === currentTask.id} editing={editingAsset} onCancel={() => void cancelTask(currentTask)} onDetail={() => setDetailTask(currentTask)} onReuse={() => reuseDraft(currentTask)} onResult={(assetID) => void openResultPreview(assetID)} onExtend={(assetID) => void editFromResult(assetID)} onDownload={(assetID) => void downloadResult(assetID)} onCopyPrompt={() => { void copyText(currentTask.prompt_template).then(() => app.notify('success', '提示词已复制')).catch(() => app.notify('error', '复制失败')) }} /> : <EmptyState title="还没有视频任务" detail="填写参数并确认报价后，当前任务进度会展示在这里。" icon={<Film size={24} />} />
           ) : (
-            orderedTasks.length ? <div className="video-history-grid">{orderedTasks.map((task) => <VideoHistoryCard key={task.id} task={task} busy={taskAction === task.id} onRefresh={() => void refreshTask(task)} onDetail={() => setDetailTask(task)} onReuse={() => reuseDraft(task)} onResult={(assetID) => void openResultPreview(assetID)} />)}</div> : <EmptyState title="暂无历史创作" detail="完成一次视频创作后，记录会展示在这里。" icon={<Film size={24} />} />
+            orderedTasks.length ? <div className={consoleClasses.historyGrid}>{orderedTasks.map((task) => <VideoHistoryCard key={task.id} task={task} busy={taskAction === task.id} onRefresh={() => void refreshTask(task)} onDetail={() => setDetailTask(task)} onReuse={() => reuseDraft(task)} onResult={(assetID) => void openResultPreview(assetID)} />)}</div> : <EmptyState title="暂无历史创作" detail="完成一次视频创作后，记录会展示在这里。" icon={<Film size={24} />} />
           )}
         </div>
       </section>
@@ -607,14 +621,14 @@ function videoTaskRailView(task: VideoTask): WorkspaceTaskView {
 
 function VideoRecentStrip({ tasks, activeTaskID, onSelectTask }: { tasks: VideoTask[]; activeTaskID?: string; onSelectTask: (task: VideoTask) => void }) {
   return (
-    <section className="video-recent-strip" aria-label="最近创作">
-      <div className="video-recent-scroll">
+    <section className={consoleClasses.recentStrip} aria-label="最近创作">
+      <div className={consoleClasses.recentScroll}>
         {tasks.slice(0, 8).map((task) => {
           const stage = task.progress_stage || task.status
           const resultAssetID = task.items.find((item) => item.result_asset_id)?.result_asset_id
           return (
-            <button key={task.id} type="button" className={task.id === activeTaskID ? 'is-active' : ''} aria-current={task.id === activeTaskID ? 'true' : undefined} onClick={() => onSelectTask(task)}>
-              <span className="video-recent-thumb">{resultAssetID ? <StripPoster assetID={resultAssetID} /> : <span>{stageLabels[stage] ?? stage}</span>}</span>
+            <button key={task.id} type="button" className={cn(consoleClasses.recentItem, task.id === activeTaskID && consoleClasses.recentItemActive)} aria-current={task.id === activeTaskID ? 'true' : undefined} onClick={() => onSelectTask(task)}>
+              <span className={consoleClasses.recentThumb}>{resultAssetID ? <StripPoster assetID={resultAssetID} /> : <span>{stageLabels[stage] ?? stage}</span>}</span>
               <span className="video-recent-copy">
                 <strong>{taskTypeLabels[task.task_type] ?? task.task_type}</strong>
                 <span>{stageLabels[stage] ?? stage} · {formatVideoHistoryTime(task.created_at)}</span>
@@ -690,13 +704,15 @@ function VideoResultThumb({ assetID, alt }: { assetID: string; alt: string }) {
 
 // Class strings mirrored from the image workspace result component so both
 // surfaces share the same figure frame, hover reveal and meta typography.
+// Result figures share the image console's visual language; only the
+// aspect-ratio custom property differs (--video-result-ratio).
 const resultClasses = {
-  figure: 'group relative m-0 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg)] shadow-xl',
+  figure: consoleClasses.generatedFigure,
   stage: 'block w-full cursor-zoom-in border-0 bg-transparent p-0 [aspect-ratio:var(--video-result-ratio)] max-h-[calc(100vh-430px)]',
-  media: 'size-full max-h-[calc(100vh-430px)] object-contain transition duration-500 group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100',
-  caption: 'absolute right-3 top-3 z-10 flex translate-y-1 justify-end gap-1.5 rounded-xl border border-[var(--image-action-border)] bg-[var(--image-action-bg)] p-1 opacity-0 shadow-2xl backdrop-blur-2xl transition motion-reduce:transition-none group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 max-[760px]:translate-y-0 max-[760px]:opacity-100',
-  iconAction: 'grid size-8 place-items-center rounded-xl text-[var(--image-action-text)] transition hover:bg-[var(--image-action-hover-bg)] hover:text-[var(--image-action-hover-text)] [&_svg]:size-4',
-  metaRow: 'mt-1 flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 border-t border-[var(--border)]/30 pt-3 text-[10px] font-vault-mono text-[var(--muted)]',
+  media: consoleClasses.generatedMedia,
+  caption: consoleClasses.generatedCaption,
+  iconAction: consoleClasses.generatedIconAction,
+  metaRow: consoleClasses.outputMetaRow,
 }
 
 function videoAspectRatioStyle(ratio: string | undefined) {
@@ -727,14 +743,17 @@ function VideoCurrentTaskCard({ task, busy, onCancel, onDetail, onReuse, onResul
       <span className="video-current-progress-track"><span className="video-current-progress-bar" data-stage={stage} /></span>
       <span className="video-current-progress-copy"><LoaderCircle className="animate-spin" size={15} />{stageLabels[stage] ?? stage} · 预留 {reserved} 积分</span>
     </div> : null}
-    {failed ? <>
-      <p className="video-current-error" role="alert">{task.items.find((item) => item.error_message)?.error_message || task.progress_message || (task.status === 'cancelled' ? '任务已取消，预留积分已退回。' : '生成失败，预留积分已退回。')}</p>
-      <p className="video-current-taskid"><span>任务ID: {task.id}</span><InlineCopyButton text={task.id} label="复制任务ID" /></p>
-      <div className="video-current-actions">
-        <button type="button" onClick={onDetail}><Info size={15} />详情</button>
-        <button type="button" onClick={onReuse}><RotateCcw size={15} />复用参数</button>
+    {failed ? <div className={cn(consoleClasses.pending, consoleClasses.pendingFailed)} role="alert">
+      <strong className={consoleClasses.pendingFailedTitle}>{task.status === 'cancelled' ? '任务已取消' : '生成失败'}</strong>
+      <p className="m-0">{task.items.find((item) => item.error_message)?.error_message || task.progress_message || (task.status === 'cancelled' ? '预留积分已退回。' : '预留积分已退回。')}</p>
+      <div className={consoleClasses.failureMeta}>
+        <span className={consoleClasses.failureMetaItem}><span className={consoleClasses.failureMetaLabel}>任务ID</span><span className={consoleClasses.failureMetaValue}>{task.id}</span><InlineCopyButton text={task.id} label="复制任务ID" /></span>
       </div>
-    </> : null}
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
+        <button className="min-h-9 rounded-xl px-3 text-sm" type="button" onClick={onDetail}><Info size={15} />详情</button>
+        <button className="min-h-9 rounded-xl px-3 text-sm" type="button" onClick={onReuse}><RotateCcw size={15} />复用参数</button>
+      </div>
+    </div> : null}
     {resultItems.length ? (
       <div className={resultItems.length === 1 ? 'w-full max-w-5xl' : 'grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]'}>
         {resultItems.map((item) => <VideoResultFigure key={item.id} assetID={item.result_asset_id!} ordinal={item.ordinal} aspectRatio={task.aspect_ratio} editing={editing} onOpen={() => item.result_asset_id && onResult(item.result_asset_id)} onCopyPrompt={onCopyPrompt} onReuse={onReuse} onExtend={() => item.result_asset_id && onExtend(item.result_asset_id)} onDetail={onDetail} onDownload={() => item.result_asset_id && onDownload(item.result_asset_id)} />)}
@@ -796,7 +815,7 @@ function VideoHistoryCard({ task, busy, onRefresh, onDetail, onReuse, onResult }
   const terminal = isVideoTaskTerminal(task)
   const stage = task.progress_stage || task.status
   const resultItem = task.items.find((item) => item.result_asset_id)
-  return <article className="video-history-card" data-status={task.status}>
+  return <article className={consoleClasses.historyCard} data-status={task.status}>
     <button type="button" className="video-history-stage" onClick={() => resultItem ? onResult(resultItem.result_asset_id!) : onDetail()} title={resultItem ? '播放结果' : '查看任务详情'}>
       {resultItem ? <VideoResultThumb assetID={resultItem.result_asset_id!} alt={task.prompt_template.slice(0, 30)} /> : terminal ? <span className="video-history-state"><Ban size={20} /><span>{task.status === 'cancelled' ? '已取消' : '生成失败'}</span></span> : <span className="video-history-state"><LoaderCircle className="animate-spin" size={20} /><span>{stageLabels[stage] ?? stage}</span></span>}
       <span className="video-history-badges">{videoTaskBadges(task).map((badge) => <i key={badge}>{badge}</i>)}</span>
