@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
@@ -137,7 +138,20 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Task, bool, er
 	task := Task{ID: uuid.New(), UserID: req.UserID, ProjectID: req.ProjectID, SourceChannel: defaultSource(req.SourceChannel), SourceCanvasID: req.SourceCanvasID, SourceCanvasNodeID: req.SourceCanvasNodeID, TaskType: req.TaskType, Status: domainvideo.TaskStatusQueued, ProgressStage: "queued", PromptTemplate: prepared.resolved.CanonicalTemplate, ExecutionPrompt: prepared.resolved.Expanded, RouteModelID: verified.RouteModelID, RouteModelCode: strings.TrimSpace(req.RouteModelCode), DurationSeconds: req.DurationSeconds, Resolution: req.Resolution, AspectRatio: req.AspectRatio, GenerateAudio: req.AudioMode == domainvideo.AudioModeGenerated, RequestedOutputCount: req.OutputCount, EstimatedPoints: verified.EstimatedPoints, ReservedPoints: verified.MaxReservedPoints, ActualPoints: "0.00000", SettlementStatus: "reserved", IdempotencyKey: strings.TrimSpace(req.IdempotencyKey), RequestFingerprint: fingerprint, Version: 1, CreatedAt: now, UpdatedAt: now}
 	task.PromptBindingSnapshot = promptSnapshot(prepared.resolved, req.PromptVariables)
 	task.PricingSnapshot = cloneMap(verified.PricingSnapshot)
-	task.PricingSnapshot["reference_image_count"] = len(req.Inputs)
+	referenceImages := 0
+	inputVideoSeconds := decimal.Zero
+	for _, input := range prepared.video.Inputs {
+		if input.MediaType == "image" {
+			referenceImages++
+		}
+		if input.MediaType == "video" && input.DurationSeconds > 0 {
+			inputVideoSeconds = inputVideoSeconds.Add(decimal.NewFromInt(int64(input.DurationSeconds)))
+		}
+	}
+	task.PricingSnapshot["reference_image_count"] = referenceImages
+	if inputVideoSeconds.GreaterThan(decimal.Zero) {
+		task.PricingSnapshot["input_video_seconds"] = inputVideoSeconds.StringFixed(3)
+	}
 	task.RoutingSnapshot = map[string]any{
 		"capability_version": verified.CapabilityVersion, "config_version": verified.ConfigVersion, "route_model_code": verified.RouteModelCode,
 		"route_candidate_id": verified.RouteCandidateID, "account_model_id": verified.AccountModelID, "model_account_id": verified.ModelAccountID,
@@ -179,10 +193,18 @@ func (s *Service) prepare(ctx context.Context, req CreateRequest) (preparedReque
 		if assetErr != nil {
 			return preparedRequest{}, mapOwnershipError(assetErr, "input asset not found")
 		}
-		if asset.MediaType != "image" || !(asset.Status == "ready" || asset.Status == "ready_original") {
-			return preparedRequest{}, errs.BadRequest("video input asset must be a ready image")
+		allowedKind := "image"
+		if input.Role == domainvideo.InputRoleReferenceVideo {
+			allowedKind = "video"
 		}
-		domainInputs = append(domainInputs, domainvideo.Input{AssetID: asset.ID.String(), Role: input.Role, Ordinal: input.Ordinal, MediaType: string(asset.MediaType), Format: asset.MIMEType, SizeBytes: asset.FileSizeBytes, Width: intValuePtr(asset.Width), Height: intValuePtr(asset.Height)})
+		if string(asset.MediaType) != allowedKind || !(asset.Status == "ready" || asset.Status == "ready_original") {
+			return preparedRequest{}, errs.BadRequest("video input asset must be a ready " + allowedKind)
+		}
+		domainInput := domainvideo.Input{AssetID: asset.ID.String(), Role: input.Role, Ordinal: input.Ordinal, MediaType: string(asset.MediaType), Format: asset.MIMEType, SizeBytes: asset.FileSizeBytes, Width: intValuePtr(asset.Width), Height: intValuePtr(asset.Height)}
+		if asset.MediaType == "video" && asset.DurationMS != nil {
+			domainInput.DurationSeconds = int((*asset.DurationMS + 999) / 1000)
+		}
+		domainInputs = append(domainInputs, domainInput)
 		if _, ok := seen[asset.ID]; !ok {
 			seen[asset.ID] = struct{}{}
 			selectedIDs = append(selectedIDs, asset.ID.String())

@@ -22,11 +22,15 @@ const (
 	TaskTypeTextToVideo           TaskType = "text_to_video"
 	TaskTypeImageToVideo          TaskType = "image_to_video"
 	TaskTypeFirstLastFrameToVideo TaskType = "first_last_frame_to_video"
+	TaskTypeReferenceToVideo      TaskType = "reference_to_video"
+	TaskTypeVideoEdit             TaskType = "video_edit"
+	TaskTypeVideoExtend           TaskType = "video_extend"
 )
 
 func IsSupportedTaskType(value string) bool {
 	switch TaskType(value) {
-	case TaskTypeTextToImage, TaskTypeImageEdit, TaskTypeTextToVideo, TaskTypeImageToVideo, TaskTypeFirstLastFrameToVideo:
+	case TaskTypeTextToImage, TaskTypeImageEdit, TaskTypeTextToVideo, TaskTypeImageToVideo, TaskTypeFirstLastFrameToVideo,
+		TaskTypeReferenceToVideo, TaskTypeVideoEdit, TaskTypeVideoExtend:
 		return true
 	default:
 		return false

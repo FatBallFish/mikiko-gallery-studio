@@ -17,13 +17,14 @@ import { MediaAssetPicker } from '../media/MediaAssetPicker'
 import { MediaPreviewDialog } from '../media/MediaPreviewDialog'
 import { QUEUE_MEDIA_UPLOAD_EVENT } from '../media/UploadTray'
 import { buildVideoQuoteBreakdown, buildVideoTaskAccounting } from './videoAccounting'
-import { applyVideoCapability, defaultVideoDraft, invalidateVideoQuote, reuseVideoTask, videoDraftKey, videoModelForDraft, type VideoDraft, type VideoQuoteState } from './videoDraft'
+import { applyVideoCapability, defaultVideoDraft, invalidateVideoQuote, reuseVideoTask, videoDraftKey, videoModelForDraft, VIDEO_TASK_INPUT_ROLES, videoTaskInputLabel, videoTaskInputMissing, type VideoDraft, type VideoDraftInputRole, type VideoQuoteState } from './videoDraft'
 import { videoFieldErrors, type VideoFieldErrors } from './videoErrors'
 
 type Props = { initialTaskId?: string; initialAssetId?: string }
 
 const taskTypeLabels: Record<VideoTaskType, string> = {
   text_to_video: '文生视频', image_to_video: '首帧生视频', first_last_frame_to_video: '首尾帧生视频',
+  reference_to_video: '参考生视频', video_edit: '视频编辑', video_extend: '视频延长',
 }
 const stageLabels: Record<string, string> = {
   queued: '排队中', submitting: '正在提交', reconciling: '正在确认', provider_queued: '上游排队', provider_running: '生成中',
@@ -44,7 +45,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   const [submitting, setSubmitting] = useState(false)
   const [taskAction, setTaskAction] = useState('')
   const [selectedAssets, setSelectedAssets] = useState<Record<string, MediaAsset>>({})
-  const [pickerRole, setPickerRole] = useState<'first_frame' | 'last_frame' | null>(null)
+  const [pickerRole, setPickerRole] = useState<VideoDraftInputRole | null>(null)
   const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null)
   const [detailTask, setDetailTask] = useState<VideoTask | null>(null)
   const [taskTab, setTaskTab] = useState<'current' | 'history'>('current')
@@ -153,9 +154,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
       setQuote(null)
       return undefined
     }
-		const hasFirstFrame = draft.inputs.some((input) => input.role === 'first_frame' && input.asset_id.trim())
-		const hasLastFrame = draft.inputs.some((input) => input.role === 'last_frame' && input.asset_id.trim())
-		if ((draft.task_type !== 'text_to_video' && !hasFirstFrame) || (draft.task_type === 'first_last_frame_to_video' && !hasLastFrame)) {
+		if (videoTaskInputMissing(draft.task_type, draft.inputs)) {
       setQuote(null)
       return undefined
     }
@@ -404,13 +403,12 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         <section className="video-control-section">
           <label className="video-field"><span>模型分组</span><ModelGroupSelect options={modelOptions} value={draft.route_model_code} onChange={(route_model_code) => patchDraft({ route_model_code })} /></label>
           <div className="video-field"><span>生成方式</span><div className="video-segmented" role="group" aria-label="生成方式">
-            {model.task_types.map((value) => <button key={value} type="button" aria-pressed={draft.task_type === value} onClick={() => patchDraft({ task_type: value })}>{taskTypeLabels[value]}</button>)}
+            {model.task_types.map((value) => <button key={value} type="button" aria-pressed={draft.task_type === value} onClick={() => { const stale = VIDEO_TASK_INPUT_ROLES[value].length === 0 ? [] : draft.inputs.filter((item) => VIDEO_TASK_INPUT_ROLES[value].includes(item.role)); patchDraft({ task_type: value, inputs: stale }) }}>{taskTypeLabels[value]}</button>)}
           </div></div>
         </section>
 
         {draft.task_type !== 'text_to_video' ? <section className="video-control-section video-frame-inputs">
-          <FrameInput label="首帧资产" error={fieldErrorFor(fieldErrors, 'inputs.first_frame')} asset={selectedAssets[draft.inputs.find((item) => item.role === 'first_frame')?.asset_id ?? '']} onSelect={() => setPickerRole('first_frame')} onPreview={setPreviewAsset} onRemove={() => patchDraft({ inputs: replaceInput(draft.inputs, 'first_frame', '') })} />
-          {draft.task_type === 'first_last_frame_to_video' ? <FrameInput label="尾帧资产" error={fieldErrorFor(fieldErrors, 'inputs.last_frame')} asset={selectedAssets[draft.inputs.find((item) => item.role === 'last_frame')?.asset_id ?? '']} onSelect={() => setPickerRole('last_frame')} onPreview={setPreviewAsset} onRemove={() => patchDraft({ inputs: replaceInput(draft.inputs, 'last_frame', '') })} /> : null}
+          {VIDEO_TASK_INPUT_ROLES[draft.task_type].map((role) => <FrameInput key={role} label={videoTaskInputLabel(role)} error={fieldErrorFor(fieldErrors, `inputs.${role}`)} asset={selectedAssets[draft.inputs.find((item) => item.role === role)?.asset_id ?? '']} onSelect={() => setPickerRole(role)} onPreview={setPreviewAsset} onRemove={() => patchDraft({ inputs: replaceInput(draft.inputs, role, '') })} />)}
         </section> : null}
 
         <section className="video-control-section">
@@ -479,7 +477,14 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
           )}
         </div>
       </section>
-      {pickerRole ? <MediaAssetPicker projectID={projects.selectedProjectID} mediaTypes={['image']} title={pickerRole === 'first_frame' ? '选择首帧图片' : '选择尾帧图片'} onClose={() => setPickerRole(null)} onConfirm={(assets) => {
+      {pickerRole && pickerRole !== 'reference_video' ? <MediaAssetPicker projectID={projects.selectedProjectID} mediaTypes={['image']} title={pickerRole === 'first_frame' ? '选择首帧图片' : '选择参考图片'} onClose={() => setPickerRole(null)} onConfirm={(assets) => {
+        const asset = assets[0]
+        if (!asset) return
+        setSelectedAssets((current) => ({ ...current, [asset.id]: asset }))
+        patchDraft({ inputs: replaceInput(draft.inputs, pickerRole, asset.id) })
+        setPickerRole(null)
+      }} /> : null}
+      {pickerRole === 'reference_video' ? <MediaAssetPicker projectID={projects.selectedProjectID} mediaTypes={['video']} title="选择参考视频" onClose={() => setPickerRole(null)} onConfirm={(assets) => {
         const asset = assets[0]
         if (!asset) return
         setSelectedAssets((current) => ({ ...current, [asset.id]: asset }))
@@ -908,10 +913,12 @@ function formatVideoTime(value: string) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(date)
 }
 
-function replaceInput(inputs: VideoDraft['inputs'], role: 'first_frame' | 'last_frame', assetId: string) {
+function replaceInput(inputs: VideoDraft['inputs'], role: VideoDraftInputRole, assetId: string) {
   const filtered = inputs.filter((item) => item.role !== role)
-  return assetId ? [...filtered, { asset_id: assetId, role, ordinal: role === 'first_frame' ? 0 : 1 }] : filtered
+  const ordinal = VIDEO_TASK_INPUT_ROLES_ORDER[role]
+  return assetId ? [...filtered, { asset_id: assetId, role, ordinal }] : filtered
 }
+const VIDEO_TASK_INPUT_ROLES_ORDER: Record<VideoDraftInputRole, number> = { first_frame: 0, last_frame: 1, reference_image: 2, reference_video: 3 }
 
 function reconcileVariables(template: string, current: VideoDraft['prompt_variables']) {
   const names = Array.from(new Set(Array.from(template.matchAll(/\{\{\s*([a-zA-Z][\w-]{0,63})\s*\}\}/g), (match) => match[1])))

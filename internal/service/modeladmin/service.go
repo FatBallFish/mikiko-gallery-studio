@@ -429,7 +429,7 @@ func normalizeModelAccountWrite(req domainmodeladmin.ModelAccountWriteRequest, c
 	if req.Name == "" || req.AdapterType == "" || req.AuthType == "" || req.BaseURL == "" {
 		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("name, adapter_type, auth_type and base_url are required")
 	}
-	if req.AdapterType != domainmodeladmin.AdapterTypeOpenAICompatible && req.AdapterType != domainmodeladmin.AdapterTypeOpenRouter && req.AdapterType != domainmodeladmin.AdapterTypeSeedance && req.AdapterType != domainmodeladmin.AdapterTypeMiniMax && req.AdapterType != domainmodeladmin.AdapterTypeGasic {
+	if req.AdapterType != domainmodeladmin.AdapterTypeOpenAICompatible && req.AdapterType != domainmodeladmin.AdapterTypeOpenRouter && req.AdapterType != domainmodeladmin.AdapterTypeSeedance && req.AdapterType != domainmodeladmin.AdapterTypeMiniMax && req.AdapterType != domainmodeladmin.AdapterTypeGasic && req.AdapterType != domainmodeladmin.AdapterTypeBailian {
 		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("unsupported adapter_type")
 	}
 	if req.AuthType != domainmodeladmin.AuthTypeAPIKey {

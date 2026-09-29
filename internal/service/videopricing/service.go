@@ -10,6 +10,8 @@ import (
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	adminvideo "github.com/fatballfish/pic-gallery/internal/service/adminvideo"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
+
+	"github.com/shopspring/decimal"
 )
 
 type Service struct {
@@ -46,19 +48,24 @@ func (s *Service) Quote(ctx context.Context, routeModelID int64, request domainv
 	}
 	referenceImages := 0
 	inputVideoSeconds := ""
-	hasInputAudio := false
+	videoInputTotal := decimal.Zero
 	for _, input := range request.Inputs {
 		switch input.MediaType {
 		case "image":
 			referenceImages++
-		case "audio":
-			hasInputAudio = true
+		case "video":
+			if input.DurationSeconds > 0 {
+				videoInputTotal = videoInputTotal.Add(decimal.NewFromInt(int64(input.DurationSeconds)))
+			}
 		}
+	}
+	if videoInputTotal.GreaterThan(decimal.Zero) {
+		inputVideoSeconds = videoInputTotal.StringFixed(3)
 	}
 	simulation, err := s.simulator.SimulateRouteQuote(ctx, adminvideo.QuoteSimulationRequest{
 		RouteModelID: routeModelID, TaskType: string(request.TaskType), Resolution: string(request.Resolution),
 		AspectRatio: string(request.AspectRatio), AudioMode: string(request.AudioMode), DurationSeconds: request.DurationSeconds,
-		OutputCount: request.OutputCount, ReferenceImageCount: referenceImages, InputVideoSeconds: inputVideoSeconds, HasInputAudio: hasInputAudio,
+		OutputCount: request.OutputCount, ReferenceImageCount: referenceImages, InputVideoSeconds: inputVideoSeconds, HasInputAudio: false,
 		Inputs: append([]domainvideo.Input(nil), request.Inputs...),
 	})
 	if err != nil {

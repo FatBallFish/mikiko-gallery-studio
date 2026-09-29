@@ -555,7 +555,7 @@ function modelColumns(onEdit: (model: ModelAccountModel) => void, onDelete: (mod
       key: 'capability',
       title: '任务与尺寸能力',
       width: 'minmax(280px,2.5fr)',
-      render: (model) => <span className={accountTableClasses.modelCapability}>{model.task_types.join(' / ') || '未配置任务类型'}<br />{normalizeBaseResolution(model.base_resolution).join(' / ') || '未配置基础分辨率'} · {capabilitySummary(model)}</span>,
+      render: (model) => <span className={accountTableClasses.modelCapability}>{(model.task_types ?? []).join(' / ') || '未配置任务类型'}<br />{normalizeBaseResolution(model.base_resolution).join(' / ') || '未配置基础分辨率'} · {capabilitySummary(model)}</span>,
     },
     {
       key: 'output',
@@ -729,8 +729,8 @@ function BaseResolutionTagInput({ draft, onChange }: { draft: ModelDraft; onChan
   )
 }
 
-function normalizeBaseResolution(values: string[]) {
-  return values.map(normalizeBaseResolutionValue).filter(Boolean)
+function normalizeBaseResolution(values?: string[] | null) {
+  return (values ?? []).map(normalizeBaseResolutionValue).filter(Boolean)
 }
 
 function normalizeBaseResolutionValue(value: string) {

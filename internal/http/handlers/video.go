@@ -134,14 +134,15 @@ func (a *API) HandleVideoEstimates(w http.ResponseWriter, r *http.Request) {
 		AudioMode      string `json:"audio_mode"`
 		OutputCount    int    `json:"output_count"`
 		Inputs         []struct {
-			AssetID   string `json:"asset_id"`
-			Role      string `json:"role"`
-			Ordinal   int    `json:"ordinal"`
-			MediaType string `json:"media_type"`
-			Format    string `json:"format"`
-			SizeBytes int64  `json:"size_bytes"`
-			Width     int    `json:"width"`
-			Height    int    `json:"height"`
+			AssetID         string `json:"asset_id"`
+			Role            string `json:"role"`
+			Ordinal         int    `json:"ordinal"`
+			MediaType       string `json:"media_type"`
+			Format          string `json:"format"`
+			SizeBytes       int64  `json:"size_bytes"`
+			Width           int    `json:"width"`
+			Height          int    `json:"height"`
+			DurationSeconds int    `json:"duration_seconds"`
 		} `json:"inputs"`
 	}
 	if err := decodeStrictJSON(r, &body); err != nil {
@@ -161,6 +162,7 @@ func (a *API) HandleVideoEstimates(w http.ResponseWriter, r *http.Request) {
 		request.Video.Inputs = append(request.Video.Inputs, domainvideo.Input{
 			AssetID: input.AssetID, Role: domainvideo.InputRole(input.Role), Ordinal: input.Ordinal, MediaType: input.MediaType,
 			Format: input.Format, SizeBytes: input.SizeBytes, Width: input.Width, Height: input.Height,
+			DurationSeconds: input.DurationSeconds,
 		})
 	}
 	estimate, err := a.videoQuotes.Estimate(r.Context(), user.ID, request)

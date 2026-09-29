@@ -217,7 +217,18 @@ func (s *AdminVideoStore) Retry(ctx context.Context, request adminvideoservice.R
 	case adminvideoservice.RetryArtifact:
 		query := s.client.VideoTaskItem.Update().Where(
 			videotaskitem.TaskIDEQ(request.TaskID),
-			videotaskitem.Or(videotaskitem.StatusIn("artifact_failed", "artifact_retry"), videotaskitem.StageEQ("artifact_failed")),
+			videotaskitem.Or(
+				videotaskitem.StatusIn("artifact_failed", "artifact_retry"),
+				videotaskitem.StageEQ("artifact_failed"),
+				// Exhausted items went terminal-failed, but the provider URL
+				// usually stays valid for hours (Ark 24h, DashScope 24h):
+				// operators fixing an allowlist or storage issue within that
+				// window can still redrive the download.
+				videotaskitem.And(
+					videotaskitem.StatusEQ("failed"),
+					videotaskitem.ArtifactSnapshotNotNil(),
+				),
+			),
 		)
 		if request.ItemID != uuid.Nil {
 			query.Where(videotaskitem.IDEQ(request.ItemID))

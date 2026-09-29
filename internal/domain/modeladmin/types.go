@@ -19,6 +19,7 @@ const (
 	AdapterTypeSeedance         = "seedance"
 	AdapterTypeMiniMax          = "minimax"
 	AdapterTypeGasic            = "gasic"
+	AdapterTypeBailian          = "bailian"
 	AuthTypeAPIKey              = "api_key"
 
 	ModelAccountStatusEnabled  = "enabled"

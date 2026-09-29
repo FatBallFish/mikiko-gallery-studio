@@ -247,7 +247,7 @@ export type PagedResponse<T> = { items: T[]; pagination: Pagination }
 export type PageResult<T> = { items: T[]; total: number; next_cursor?: string; pagination?: Pagination }
 
 export type ImageTaskType = 'text_to_image' | 'image_edit'
-export type VideoTaskType = 'text_to_video' | 'image_to_video' | 'first_last_frame_to_video'
+export type VideoTaskType = 'text_to_video' | 'image_to_video' | 'first_last_frame_to_video' | 'reference_to_video' | 'video_edit' | 'video_extend'
 export type VideoTaskStatus = 'queued' | 'running' | 'saving' | 'succeeded' | 'partial' | 'failed' | 'cancelled' | string
 export type VideoTaskCombination = { duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode: 'silent' | 'generated' }
 export type VideoTaskOptions = { durations: number[]; resolutions: string[]; aspect_ratios: string[]; audio_generation: boolean; combinations: VideoTaskCombination[] }
@@ -268,7 +268,8 @@ export type VideoCapabilityGroupWire = {
   max_output_count: number; task_types: VideoTaskType[]; combinations: VideoCapabilityCombinationWire[]
 }
 export type VideoCapabilityListWire = { groups: VideoCapabilityGroupWire[] }
-export type VideoInput = { id?: string; asset_id: string; role: 'first_frame' | 'last_frame'; ordinal: number; asset_snapshot?: Record<string, unknown>; asset?: { id: string; name?: string; preview_url?: string } }
+export type VideoInputRole = 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video'
+export type VideoInput = { id?: string; asset_id: string; role: VideoInputRole; ordinal: number; asset_snapshot?: Record<string, unknown>; asset?: { id: string; name?: string; preview_url?: string } }
 export type VideoEstimateRequest = {
   project_id: string; route_model_code: string; task_type: VideoTaskType; prompt_template: string
   prompt_variables: Array<{ name: string; value: string }>; inputs: Array<Omit<VideoInput, 'id' | 'asset'>>
@@ -332,6 +333,9 @@ export type MiniMaxH3VideoRateConfig = {
 export type GasicPerTaskRateConfig = {
   per_task_cny: string
 }
+export type BailianPerSecondRateConfig = {
+  resolutions: Record<string, { output_second_cny: string; input_video_second_cny: string }>
+}
 export type AdminVideoRateCard = {
   id: number; account_model_id: number; currency: 'CNY'; rate_version: number
   source_reference: string; effective_at: string; enabled: boolean
@@ -339,6 +343,7 @@ export type AdminVideoRateCard = {
   | { provider_code: 'seedance'; pricing_schema: 'seedance_token_v1'; rate_config: SeedanceVideoRateConfig }
   | { provider_code: 'minimax'; pricing_schema: 'minimax_h3_second_v1'; rate_config: MiniMaxH3VideoRateConfig }
   | { provider_code: 'gasic'; pricing_schema: 'gasic_per_task_v1'; rate_config: GasicPerTaskRateConfig }
+  | { provider_code: 'bailian'; pricing_schema: 'bailian_per_second_v1'; rate_config: BailianPerSecondRateConfig }
 )
 export type AdminVideoRateCardWrite = {
   expected_rate_version: number; enabled: boolean
@@ -346,6 +351,7 @@ export type AdminVideoRateCardWrite = {
   | { pricing_schema: 'seedance_token_v1'; rate_config: SeedanceVideoRateConfig }
   | { pricing_schema: 'minimax_h3_second_v1'; rate_config: MiniMaxH3VideoRateConfig }
   | { pricing_schema: 'gasic_per_task_v1'; rate_config: GasicPerTaskRateConfig }
+  | { pricing_schema: 'bailian_per_second_v1'; rate_config: BailianPerSecondRateConfig }
 )
 export type AdminVideoQuoteSimulationRequest = {
   task_type: string; resolution: string; aspect_ratio: string; audio_mode: string; duration_seconds: number

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	providervideo "github.com/fatballfish/pic-gallery/internal/provider/video"
+	"github.com/fatballfish/pic-gallery/internal/provider/video/bailian"
 	"github.com/fatballfish/pic-gallery/internal/provider/video/gasic"
 	"github.com/fatballfish/pic-gallery/internal/provider/video/minimax"
 	"github.com/fatballfish/pic-gallery/internal/provider/video/seedance"
@@ -75,6 +76,11 @@ func buildExecutionProvider(account ExecutionAccount) (providervideo.Provider, e
 		})
 	case "gasic":
 		return gasic.NewClient(gasic.Config{
+			BaseURL: account.BaseURL, APIKey: account.APIKey, ModelCode: account.ModelCode,
+			Timeout: account.Timeout, Verified: true,
+		})
+	case "bailian":
+		return bailian.NewClient(bailian.Config{
 			BaseURL: account.BaseURL, APIKey: account.APIKey, ModelCode: account.ModelCode,
 			Timeout: account.Timeout, Verified: true,
 		})

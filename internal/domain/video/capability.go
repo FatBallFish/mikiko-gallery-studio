@@ -50,6 +50,10 @@ type TaskCapability struct {
 	AspectRatios []AspectRatio                 `json:"aspect_ratios"`
 	AudioModes   []AudioMode                   `json:"audio_modes"`
 	Inputs       map[InputRole]InputCapability `json:"inputs,omitempty"`
+	// MinInputs enforces "at least one input overall" for modes whose roles
+	// are individually optional (e.g. reference-to-video accepts images
+	// and/or videos but rejects an empty input set).
+	MinInputs int `json:"min_inputs,omitempty"`
 }
 
 type Capability struct {
@@ -107,6 +111,9 @@ func (capability Capability) Match(request Request) MatchResult {
 	}
 	if !containsAudioMode(task.AudioModes, request.AudioMode) {
 		return mismatch("generate_audio", "unsupported", "generated audio is not supported for this combination")
+	}
+	if task.MinInputs > 0 && len(request.Inputs) < task.MinInputs {
+		return mismatch("inputs", "required", fmt.Sprintf("at least %d video input is required", task.MinInputs))
 	}
 	for role, inputCapability := range task.Inputs {
 		inputs := inputsForRole(request.Inputs, role)

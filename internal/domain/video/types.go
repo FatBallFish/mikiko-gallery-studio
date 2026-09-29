@@ -6,6 +6,9 @@ const (
 	TaskTypeTextToVideo           TaskType = "text_to_video"
 	TaskTypeImageToVideo          TaskType = "image_to_video"
 	TaskTypeFirstLastFrameToVideo TaskType = "first_last_frame_to_video"
+	TaskTypeReferenceToVideo      TaskType = "reference_to_video"
+	TaskTypeVideoEdit             TaskType = "video_edit"
+	TaskTypeVideoExtend           TaskType = "video_extend"
 )
 
 type Resolution string
@@ -41,19 +44,22 @@ const (
 type InputRole string
 
 const (
-	InputRoleFirstFrame InputRole = "first_frame"
-	InputRoleLastFrame  InputRole = "last_frame"
+	InputRoleFirstFrame     InputRole = "first_frame"
+	InputRoleLastFrame      InputRole = "last_frame"
+	InputRoleReferenceImage InputRole = "reference_image"
+	InputRoleReferenceVideo InputRole = "reference_video"
 )
 
 type Input struct {
-	AssetID   string
-	Role      InputRole
-	Ordinal   int
-	MediaType string
-	Format    string
-	SizeBytes int64
-	Width     int
-	Height    int
+	AssetID         string
+	Role            InputRole
+	Ordinal         int
+	MediaType       string
+	Format          string
+	SizeBytes       int64
+	Width           int
+	Height          int
+	DurationSeconds int
 }
 
 type Request struct {
