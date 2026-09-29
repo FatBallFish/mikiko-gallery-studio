@@ -16,6 +16,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videotaskitem"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	billingservice "github.com/fatballfish/pic-gallery/internal/service/billing"
+	mediaerrors "github.com/fatballfish/pic-gallery/internal/service/mediaerrors"
 	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -417,9 +418,20 @@ func mapVideoTask(entity *repoent.VideoTask) videotaskservice.Task {
 	result.Items = make([]videotaskservice.Item, 0, len(entity.Edges.Items))
 	result.Inputs = make([]videotaskservice.Input, 0, len(entity.Edges.Inputs))
 	for _, item := range entity.Edges.Items {
+		itemCode := optionalStringValue(item.ErrorCode)
+		itemMessage := optionalStringValue(item.ErrorMessage)
+		if itemCode != "" || itemMessage != "" {
+			// Vendor codes and messages stay in the database; user-facing
+			// responses carry the platform-unified code and curated copy.
+			resolution := mediaerrors.ResolveVideoItem(itemCode, itemMessage)
+			if resolution.Code != "" {
+				itemCode = resolution.Code
+			}
+			itemMessage = resolution.Message
+		}
 		result.Items = append(result.Items, videotaskservice.Item{ID: item.ID, Ordinal: item.Ordinal, Status: domainvideo.ItemState(item.Status), Stage: item.Stage,
 			ResultAssetID: item.ResultAssetID, ActualOutputSeconds: item.ActualOutputSeconds, ActualPoints: item.ActualPoints,
-			ErrorCode: optionalStringValue(item.ErrorCode), ErrorMessage: optionalStringValue(item.ErrorMessage), NextActionAt: item.NextActionAt, Version: item.Version})
+			ErrorCode: itemCode, ErrorMessage: itemMessage, NextActionAt: item.NextActionAt, Version: item.Version})
 	}
 	for _, input := range entity.Edges.Inputs {
 		result.Inputs = append(result.Inputs, videotaskservice.Input{ID: input.ID, AssetID: input.AssetID, Role: input.Role, Ordinal: input.Ordinal, AssetSnapshot: cloneMap(input.AssetSnapshot)})

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Ban, Copy, Download, FastForward, Film, Image as ImageIcon, Info, LoaderCircle, Play, RefreshCw, RotateCcw, Sparkles, Volume2, VolumeX, X } from 'lucide-react'
 import type { CapabilityModelGroup, MediaAsset, PromptReferenceBinding, ReferenceAsset, VideoCapability, VideoEstimateRequest, VideoTask, VideoTaskType } from '../../../../shared/api-types'
 import { userApi } from '../../../../shared/user-api'
-import { Button, EmptyState, ErrorState, LoadingState, Modal, copyText, useApp } from '../../components'
+import { Button, EmptyState, ErrorState, InlineCopyButton, LoadingState, Modal, copyText, useApp } from '../../components'
 import { ProjectSelector, useProjects } from '../../ProjectContext'
 import { ModelGroupSelect } from '../../pages/ModelGroupSelect'
 import { PromptTemplateEditor, type PromptTemplateEditorHandle } from '../../pages/PromptTemplateEditor'
@@ -724,6 +724,7 @@ function VideoCurrentTaskCard({ task, busy, onCancel, onDetail, onReuse, onResul
     </div> : null}
     {failed ? <>
       <p className="video-current-error" role="alert">{task.items.find((item) => item.error_message)?.error_message || task.progress_message || (task.status === 'cancelled' ? '任务已取消，预留积分已退回。' : '生成失败，预留积分已退回。')}</p>
+      <p className="video-current-taskid"><span>任务ID: {task.id}</span><InlineCopyButton text={task.id} label="复制任务ID" /></p>
       <div className="video-current-actions">
         <button type="button" onClick={onDetail}><Info size={15} />详情</button>
         <button type="button" onClick={onReuse}><RotateCcw size={15} />复用参数</button>
@@ -745,6 +746,7 @@ function VideoCurrentTaskCard({ task, busy, onCancel, onDetail, onReuse, onResul
         <span>数量: {task.requested_output_count}</span>
         <span>任务时间: {formatVideoHistoryTime(task.created_at)}</span>
         <span>消耗: {charged} ◈</span>
+        <span className="inline-flex items-center gap-1">任务ID: {task.id}<InlineCopyButton text={task.id} label="复制任务ID" /></span>
       </div>
     </> : null}
   </article>
@@ -798,6 +800,7 @@ function VideoHistoryCard({ task, busy, onRefresh, onDetail, onReuse, onResult }
     <div className="video-history-meta">
       <span>{formatVideoHistoryTime(task.created_at)}</span>
       <span>{task.actual_points && task.actual_points !== '0.00000' ? `${task.actual_points} 积分` : `预留 ${task.reserved_points ?? task.estimated_points ?? '--'}`}</span>
+      <span className="inline-flex items-center gap-1"><span title={task.id}>任务ID: {task.id.slice(0, 8)}…</span><InlineCopyButton text={task.id} label="复制任务ID" /></span>
     </div>
     <div className="video-history-actions">
       <button type="button" onClick={onDetail}><Info size={14} />详情</button>
@@ -873,6 +876,7 @@ function VideoTaskDetailDialog({ task, onClose, onResult, onReuse }: { task: Vid
   const accounting = buildVideoTaskAccounting(task)
   return <Modal title="视频任务详情" onClose={onClose} className="video-task-detail-dialog">
     <div className="video-task-detail-summary">
+      <div><span>任务ID</span><strong className="inline-flex items-center gap-1 break-all font-vault-mono text-xs">{task.id}<InlineCopyButton text={task.id} label="复制任务ID" /></strong></div>
       <div><span>状态</span><strong>{stageLabels[task.progress_stage || task.status] ?? task.status}</strong></div>
       <div><span>预计积分</span><strong>{accounting.estimatedPoints}</strong></div>
       <div><span>预留积分</span><strong>{accounting.reservedPoints}</strong></div>

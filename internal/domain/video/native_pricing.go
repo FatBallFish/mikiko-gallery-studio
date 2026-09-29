@@ -138,7 +138,8 @@ func validateMiniMaxRateCard(card RateCard, capability Capability) error {
 	if card.RuleVersion != MiniMaxH3RuleVersion202608 {
 		return fmt.Errorf("unsupported minimax h3 rule version %q", card.RuleVersion)
 	}
-	if !strings.EqualFold(strings.TrimSpace(card.ModelCode), "MiniMax-H3") {
+	allowedResolutions, ok := miniMaxPricingResolutions(card.ModelCode)
+	if !ok {
 		return fmt.Errorf("minimax h3 pricing schema does not support model %s", card.ModelCode)
 	}
 	if card.MiniMaxH3 == nil || len(card.MiniMaxH3.Resolutions) == 0 {
@@ -164,8 +165,8 @@ func validateMiniMaxRateCard(card RateCard, capability Capability) error {
 		if _, ok := supported[resolution]; !ok {
 			return fmt.Errorf("resolution %s is not supported by the model capability", resolution)
 		}
-		if resolution != Resolution768P && resolution != Resolution2K {
-			return fmt.Errorf("resolution %s is unsupported by minimax h3 pricing", resolution)
+		if _, ok := allowedResolutions[resolution]; !ok {
+			return fmt.Errorf("resolution %s is unsupported by %s pricing", resolution, card.ModelCode)
 		}
 		if _, err := parsePositiveDecimal(rate.OutputSecondCNY, "output_second_cny"); err != nil {
 			return err
@@ -177,6 +178,19 @@ func validateMiniMaxRateCard(card RateCard, capability Capability) error {
 		}
 	}
 	return nil
+}
+
+// miniMaxPricingResolutions mirrors the paygo doc: H3 sells 768P/2K output
+// seconds and H3-Max sells 480P/768P output seconds.
+func miniMaxPricingResolutions(modelCode string) (map[Resolution]struct{}, bool) {
+	switch strings.ToLower(strings.TrimSpace(modelCode)) {
+	case "minimax-h3":
+		return map[Resolution]struct{}{Resolution768P: {}, Resolution2K: {}}, true
+	case "minimax-h3-max":
+		return map[Resolution]struct{}{Resolution480P: {}, Resolution768P: {}}, true
+	default:
+		return nil, false
+	}
 }
 
 func quoteSeedance(request NativePricingRequest, inputVideoSeconds decimal.Decimal, card RateCard) (CandidateQuote, error) {

@@ -1186,3 +1186,21 @@ export function CopyButton({ text, label = '复制' }: { text: string; label?: s
     }}>{label}</Button>
   )
 }
+
+// Compact icon-only copy affordance for meta rows (task ids, tracking ids).
+export function InlineCopyButton({ text, label }: { text: string; label?: string }) {
+  const app = useApp()
+  return (
+    <button
+      type="button"
+      className="inline-flex shrink-0 items-center rounded p-0.5 align-middle text-[var(--muted)] transition-colors hover:text-[var(--fg)]"
+      title={label ?? '复制'}
+      aria-label={label ?? '复制'}
+      onClick={async (event) => {
+        event.stopPropagation()
+        await copyText(text)
+        app.notify('success', '已复制到剪贴板')
+      }}
+    >{label ?? <Copy size={13} aria-hidden="true" />}</button>
+  )
+}

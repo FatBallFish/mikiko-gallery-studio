@@ -5,7 +5,7 @@ import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, I
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
 import { toTask, userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, ImageDetailModal, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImagePreviewPayload } from '../components'
+import { Button, EmptyState, ErrorState, ImageDetailModal, InlineCopyButton, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImagePreviewPayload } from '../components'
 import { userButton, userForm, userState } from '../ui/classes'
 import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
@@ -2405,6 +2405,7 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
         <span className="min-w-0 flex-1 truncate" title={task.prompt || task.title}>{task.prompt || task.title || '未命名创作'}</span>
         <span>{task.results.length}/{requested} 张</span>
         <span>{formatHistoryTime(task.created_at)}</span>
+        <span className="inline-flex items-center gap-1"><span title={task.id}>任务ID: {task.id}</span><InlineCopyButton text={task.id} label="复制任务ID" /></span>
       </div>
       <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
         {task.results.map((image, index) => {
@@ -2609,7 +2610,10 @@ function TaskFailureBlock({ task, onRetry, onDelete }: { task: ImageTask; onRetr
           {view.meta.map((item) => (
             <div className={workspaceClasses.failureMetaItem} key={item.label}>
               <dt className={workspaceClasses.failureMetaLabel}>{item.label}</dt>
-              <dd className={workspaceClasses.failureMetaValue}>{item.value}</dd>
+              <dd className={cn(workspaceClasses.failureMetaValue, 'inline-flex items-center gap-1 break-all')}>
+                {item.value}
+                {item.label === '任务ID' ? <InlineCopyButton text={item.value} label="复制任务ID" /> : null}
+              </dd>
             </div>
           ))}
         </dl>

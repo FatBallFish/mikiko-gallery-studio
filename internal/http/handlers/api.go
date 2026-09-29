@@ -76,6 +76,7 @@ import (
 	galleryexportservice "github.com/fatballfish/pic-gallery/internal/service/galleryexport"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
+	mediaerrors "github.com/fatballfish/pic-gallery/internal/service/mediaerrors"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
@@ -3156,6 +3157,29 @@ func decorateTaskProgressList(tasks []domainimagetask.Task) []domainimagetask.Ta
 }
 
 func decorateTaskProgress(task domainimagetask.Task) domainimagetask.Task {
+	// Vendor codes and messages stay in the database; user-facing responses
+	// carry the platform-unified code and curated copy.
+	if task.ErrorMessage != "" || task.ErrorCode != "" {
+		resolution := mediaerrors.ResolveImageTask(task.ErrorCode, task.ErrorMessage)
+		if resolution.Code != "" {
+			task.ErrorCode = resolution.Code
+		}
+		task.ErrorMessage = resolution.Message
+	}
+	for index := range task.Attempts {
+		attemptResolution := mediaerrors.ResolveImageTask(task.Attempts[index].ErrorCode, task.Attempts[index].ErrorMessage)
+		if attemptResolution.Code != "" {
+			task.Attempts[index].ErrorCode = attemptResolution.Code
+		}
+		task.Attempts[index].ErrorMessage = attemptResolution.Message
+		if task.Attempts[index].Error != "" {
+			task.Attempts[index].Error = mediaerrors.Sanitize(task.Attempts[index].Error)
+		}
+		task.Attempts[index].ErrorDetail = nil
+	}
+	if task.ProgressMessage != "" {
+		task.ProgressMessage = mediaerrors.Sanitize(task.ProgressMessage)
+	}
 	if task.ProgressStage != "" && task.ProgressMessage != "" {
 		return task
 	}

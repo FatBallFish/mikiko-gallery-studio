@@ -925,16 +925,16 @@ function blankModel(account: ModelAccount): ModelDraft {
     durations: "5,10",
     resolutions: minimax ? "768p,2k" : "720p",
     ratios: "16:9,9:16,1:1",
-    audioModes: ["silent"],
+    audioModes: minimax ? ["generated"] : ["silent"],
     providerMaxN: 1,
-    promptMaxRunes: 2000,
+    promptMaxRunes: minimax ? 7000 : 2000,
     inputFormats:
       account.adapter_type === "minimax"
         ? "jpg,jpeg,png,webp,heic,heif"
         : "jpg,jpeg,png,webp,bmp,tiff,gif",
     inputMaxMB: 30,
     rateRows: minimax
-      ? { "768p": { primary: "0.80000", secondary: "0.80000" }, "2k": { primary: "1.20000", secondary: "1.20000" } }
+      ? { "768p": { primary: "0.50000", secondary: "0.50000" }, "2k": { primary: "0.80000", secondary: "0.80000" } }
       : { "720p": { primary: "46.00000", secondary: "" } },
     freeImageCount: 5,
     extraImageCNY: "0.10000",

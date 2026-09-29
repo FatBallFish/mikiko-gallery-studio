@@ -205,6 +205,69 @@ func TestMiniMaxH3NativePricingUsesSecondsAndMaterialRules(t *testing.T) {
 	}
 }
 
+func TestMiniMaxH3MaxNativePricingSupports480pAnd768p(t *testing.T) {
+	capability := Capability{
+		SchemaVersion:      1,
+		ProviderNativeMaxN: 1,
+		TaskTypes: map[TaskType]TaskCapability{
+			TaskTypeTextToVideo: {
+				Durations:    IntValues{Min: 5, Max: 15},
+				Resolutions:  []Resolution{Resolution480P, Resolution768P},
+				AspectRatios: []AspectRatio{AspectRatio16x9},
+				AudioModes:   []AudioMode{AudioModeGenerated},
+			},
+		},
+	}
+	card := RateCard{
+		ProviderCode:  "minimax",
+		ModelCode:     "MiniMax-H3-Max",
+		PricingSchema: PricingSchemaMiniMaxH3SecondV1,
+		RuleVersion:   MiniMaxH3RuleVersion202608,
+		MiniMaxH3: &MiniMaxH3SecondRateCard{
+			Resolutions: map[Resolution]MiniMaxResolutionRate{
+				Resolution480P: {OutputSecondCNY: "0.30", InputVideoSecondCNY: "0.30"},
+				Resolution768P: {OutputSecondCNY: "0.50", InputVideoSecondCNY: "0.50"},
+			},
+			FreeImageCount: 5,
+			ExtraImageCNY:  "0.20",
+			InputAudioFree: true,
+		},
+	}
+	if err := ValidateRateCard(card, capability); err != nil {
+		t.Fatalf("H3-Max rate card should validate: %v", err)
+	}
+	quote, err := QuoteNativePricing(NativePricingRequest{Video: Request{
+		TaskType: TaskTypeTextToVideo, DurationSeconds: 6, Resolution: Resolution480P, AspectRatio: AspectRatio16x9, OutputCount: 1,
+	}}, card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quote.CNY != "1.80000" {
+		t.Fatalf("expected 1.80000 CNY for 6s@480p, got %s", quote.CNY)
+	}
+	invalid := card
+	invalid.MiniMaxH3 = &MiniMaxH3SecondRateCard{
+		Resolutions: map[Resolution]MiniMaxResolutionRate{
+			Resolution480P: {OutputSecondCNY: "0.30", InputVideoSecondCNY: "0.30"},
+			Resolution768P: {OutputSecondCNY: "0.50", InputVideoSecondCNY: "0.50"},
+			Resolution2K:   {OutputSecondCNY: "0.80", InputVideoSecondCNY: "0.80"},
+		},
+		FreeImageCount: 5, ExtraImageCNY: "0.20", InputAudioFree: true,
+	}
+	widerCapability := capability
+	widerCapability.TaskTypes = map[TaskType]TaskCapability{
+		TaskTypeTextToVideo: {
+			Durations:    IntValues{Min: 5, Max: 15},
+			Resolutions:  []Resolution{Resolution480P, Resolution768P, Resolution2K},
+			AspectRatios: []AspectRatio{AspectRatio16x9},
+			AudioModes:   []AudioMode{AudioModeGenerated},
+		},
+	}
+	if err := ValidateRateCard(invalid, widerCapability); err == nil || !strings.Contains(err.Error(), "unsupported by MiniMax-H3-Max pricing") {
+		t.Fatalf("2K should be rejected for H3-Max, got %v", err)
+	}
+}
+
 func TestSeedance25Supports1080pPricingPreset(t *testing.T) {
 	const model25 = "doubao-seedance-2-5-260628"
 	for _, resolution := range []Resolution{Resolution480P, Resolution720P, Resolution1080P} {

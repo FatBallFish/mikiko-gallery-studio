@@ -8,7 +8,7 @@ import type { Capability, CanvasRun, CreativeCanvas, MediaAsset, ReferenceAsset,
 import { ApiError } from '../../../../shared/http-client'
 import { userApi } from '../../../../shared/user-api'
 import { normalizeCanvasDocument } from '../../../../shared/canvas-document'
-import { Button, EmptyState, ErrorState, LoadingState, Modal, useApp } from '../../components'
+import { Button, EmptyState, ErrorState, InlineCopyButton, LoadingState, Modal, useApp } from '../../components'
 import { useProjects } from '../../ProjectContext'
 import { errorMessage } from '../../useApiResource'
 import { userHashForRoute } from '../../routeState'
@@ -952,6 +952,7 @@ function GenerationNodeSummary({ node, run, estimate, busy, readOnly, imageCapab
       ? estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />生成</button> : estimate?.status === 'error' ? <button type="button" disabled={busy} onClick={onEstimate}><RefreshCw size={15} />重新估价</button> : <button type="button" disabled><Sparkles size={15} />{estimatePending ? '估价中' : '待参数'}</button>
       : estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />生成</button> : <button type="button" disabled={busy || estimatePending} onClick={onEstimate}>{estimate?.status === 'error' ? <RefreshCw size={15} /> : <Sparkles size={15} />}{estimate?.status === 'error' ? '重新估价' : busy || estimatePending ? '估价中' : '预估费用'}</button> : null}</div>
     {run?.error_message ? <small className="canvas-generation-errors">{run.error_message}</small> : null}
+    {run?.task_id ? <small className="canvas-generation-taskid inline-flex items-center gap-1"><span title={run.task_id}>任务ID: {run.task_id}</span><InlineCopyButton text={run.task_id} label="复制任务ID" /></small> : null}
   </div>
 }
 
@@ -1015,6 +1016,7 @@ function GenerationNodeForm({ node, run, estimate, busy, readOnly, imageCapabili
       ? estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />确认生成</button> : estimate?.status === 'error' ? <button type="button" disabled={busy} onClick={onEstimate}><RefreshCw size={15} />重新估价</button> : <button type="button" disabled><Sparkles size={15} />{estimatePending ? '正在估价' : '等待参数'}</button>
       : estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />确认生成</button> : <button type="button" disabled={busy || estimatePending} onClick={onEstimate}>{estimate?.status === 'error' ? <RefreshCw size={15} /> : <Sparkles size={15} />}{estimate?.status === 'error' ? '重新估价' : busy || estimatePending ? '正在估价' : '查看费用'}</button> : null}</div>
     {run?.error_message ? <small className="canvas-generation-errors">{run.error_message}</small> : null}
+    {run?.task_id ? <small className="canvas-generation-taskid inline-flex items-center gap-1"><span title={run.task_id}>任务ID: {run.task_id}</span><InlineCopyButton text={run.task_id} label="复制任务ID" /></small> : null}
   </div>
 }
 
