@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import type { CashierOptions, CashierOrder, CashierPlan, PublicPaymentVisibleMethod } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
+import { pointsExchangeRules } from '../../../shared/pointsDisplay'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, LoadingState, useApp } from '../components'
 import { rdBilling } from '../ui/redesign-classes'
@@ -249,6 +250,11 @@ export function CheckoutPage() {
           <div>
             <h1 className={checkoutClasses.title}>积分充值</h1>
             <p className={checkoutClasses.detail}>自定义金额充值积分长期有效。</p>
+            <div className="mt-4 grid gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 px-4 py-3 text-xs leading-relaxed text-[var(--muted)]" aria-label="积分汇率规则">
+              <strong className="text-[var(--fg)]">积分等级与汇率</strong>
+              {pointsExchangeRules.map((rule) => <span key={rule}>{rule}</span>)}
+              <span>展示口径：余额与消耗按等级自动换算（如 300 积分 = 3 银币）；本页积分包与订单记录展示原始积分值。</span>
+            </div>
           </div>
           <Button tone="ghost" onClick={() => void load()}>刷新配置</Button>
         </div>

@@ -11,6 +11,7 @@ import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
 import { RefreshableMediaImage } from '../ui/mediaRefresh'
 import { consoleClasses } from './consoleClasses'
+import { pointsText } from '../../../shared/pointsDisplay'
 import { errorMessage } from '../useApiResource'
 import { mediaAccess, type MediaResource } from '../mediaAccess'
 import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
@@ -72,10 +73,7 @@ function isTerminalStatus(status: ImageTaskStatus | string) {
 }
 
 function displayTaskPoints(task: ImageTask) {
-  const raw = task.actual_points ?? task.estimate_points ?? task.estimated_points ?? '0.00000'
-  const value = Number(raw)
-  if (!Number.isFinite(value)) return raw
-  return value.toFixed(2)
+  return pointsText(task.actual_points ?? task.estimate_points ?? task.estimated_points ?? '0')
 }
 
 function formatFileSize(bytes?: number) {
@@ -1763,8 +1761,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           {estimate && !estimate.sufficient ? (
             <div className={workspaceClasses.formError}>
               <div>
-                积分不足，还差 {displayPoints(estimate.insufficient_points)} 积分。
-                当前可用 {displayPoints(estimate.balance?.available_points)} 积分。
+                积分不足，还差 {displayPoints(estimate.insufficient_points)}。
+                当前可用 {displayPoints(estimate.balance?.available_points)}。
               </div>
               <div className={workspaceClasses.formActions}>
                 <button className={cn(userButton.base, userButton.primary)} type="button" onClick={() => app.navigate('checkout')}>去充值</button>
@@ -2555,7 +2553,7 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
             <span>{task.size_mode === 'pixel' ? `尺寸: ${task.requested_size || task.aspect_ratio}` : `比例: ${task.aspect_ratio}`}</span>
             <span>数量: {task.image_count}</span>
             <span>耗时: {formatCompactDuration(taskElapsedMs(task))}</span>
-            <span>消耗: {displayTaskPoints(task)} ◈</span>
+            <span>消耗: {displayTaskPoints(task)}</span>
           </div>
         </div>
       ) : isTerminalStatus(task.status) ? (

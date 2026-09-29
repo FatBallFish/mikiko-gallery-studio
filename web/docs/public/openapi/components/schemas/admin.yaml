@@ -2160,6 +2160,21 @@ components:
         group_ids:
           type: array
           items: { type: integer, format: int64 }
+        icon_key: { type: string, maxLength: 64 }
+        icon_svg: { type: string, maxLength: 65536 }
+    AdminRouteModelGroupWriteRequest:
+      type: object
+      required: [code, name, media_type]
+      properties:
+        code: { type: string, maxLength: 64 }
+        name: { type: string, maxLength: 128 }
+        description: { type: string }
+        media_type: { type: string, enum: [image, video] }
+        icon_key: { type: string, maxLength: 64 }
+        icon_svg: { type: string, maxLength: 65536 }
+        sort_order: { type: integer }
+        enabled: { type: boolean }
+        route_model_ids: { type: array, items: { type: integer, format: int64 } }
     AdminRouteModelWriteRequest:
       type: object
       required: [code, name, visibility, media_type]

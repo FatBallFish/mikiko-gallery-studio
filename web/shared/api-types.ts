@@ -266,7 +266,7 @@ export type VideoCapabilityModelGroup = {
 export type VideoCapability = { capability_version: string; model_groups: VideoCapabilityModelGroup[]; route_model_groups?: RouteModelGroupMeta[] }
 export type VideoCapabilityCombinationWire = { task_type: VideoTaskType; duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode: 'silent' | 'generated' }
 export type VideoCapabilityGroupWire = {
-  route_model_code: string; name: string; description?: string; icon_key?: string; icon_svg?: string; group_codes?: string[]; config_version: string; capability_version: string
+  route_model_code: string; name: string; description?: string; icon_key?: string; icon_svg?: string; group_codes?: string[]; config_version: string; capability_version: string; minimum_points?: string
   max_output_count: number; task_types: VideoTaskType[]; combinations: VideoCapabilityCombinationWire[]
 }
 export type VideoCapabilityListWire = { groups: VideoCapabilityGroupWire[] }

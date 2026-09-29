@@ -500,7 +500,7 @@ export function normalizeVideoCapabilities(raw: VideoCapabilityListWire): VideoC
 				icon_key: group.icon_key,
 				icon_svg: group.icon_svg,
 				group_codes: group.group_codes,
-				minimum_points: '',
+				minimum_points: group.minimum_points ?? '',
 				max_output_count: group.max_output_count,
 				task_types: taskTypes,
 				defaults: {

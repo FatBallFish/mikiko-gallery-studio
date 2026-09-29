@@ -6,7 +6,7 @@ for (const required of [
   'onPointerDown', 'setPointerCapture', 'onWheel', 'autoLayoutSelected',
   '手机仅支持查看', 'window.matchMedia', 'CanvasNodeSearch', 'CanvasAssetDrawer',
   'userApi.estimateCanvasNode', 'userApi.generateCanvasNode', 'userApi.listCanvasRuns',
-  '确认生成', '预计积分', 'createCanvasRemoteSaveScheduler', 'copySelected', 'pasteClipboard', 'deleteSelected',
+  '确认生成', '预计消耗', 'createCanvasRemoteSaveScheduler', 'copySelected', 'pasteClipboard', 'deleteSelected',
   'visibleCanvasNodeIDs', 'getMediaAssetAccess', "'preview'", "'download'", '<video', '<audio',
   'data-canvas-edge-hit', 'selectedEdgeIDs', 'selectEdges', 'data-canvas-port="source"', 'data-canvas-port="target"',
   'inspectCanvasConnection', 'compatibleCanvasTargets', 'data-connect-valid', 'data-connect-invalid',

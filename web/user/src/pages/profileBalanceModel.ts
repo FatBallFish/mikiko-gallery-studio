@@ -54,6 +54,8 @@ function ledgerTitle(type?: string) {
 }
 
 function formatLedgerAmount(value?: string) {
+  // Ledger amounts stay in raw base points: they reconcile against recharge
+  // orders and admin grants, so tier conversion here would confuse users.
   if (!value) return '0.00000'
   if (value.startsWith('-') || value.startsWith('+')) return value
   return `+${value}`

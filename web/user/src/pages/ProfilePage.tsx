@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useId, useState } from 'react'
 import type { Balance, LedgerEntry, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
+import { pointsExchangeRules, pointsText } from '../../../shared/pointsDisplay'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, Field, Modal, useApp } from '../components'
 import { button as btn, card, form } from '../ui/redesign-classes'
@@ -113,8 +114,8 @@ export function ProfilePage() {
           <div className={cn(profileClasses.card, 'pg-enter')}>
             <div className={profileClasses.cardTitle}>◈ 我的积分</div>
             <div className={profileClasses.balanceDisplay}>
-              <div className={profileClasses.balanceNum}>{balance?.available_points ?? app.balance?.available_points ?? '0.00000'}</div>
-              <div className={profileClasses.balanceLabel}>可用积分余额 (◈) / 冻结 {balance?.frozen_points ?? app.balance?.frozen_points ?? '0.00000'}</div>
+              <div className={profileClasses.balanceNum}>{pointsText(balance?.available_points ?? app.balance?.available_points ?? '0')}</div>
+              <div className={profileClasses.balanceLabel}>可用余额 (◈) / 冻结 {pointsText(balance?.frozen_points ?? app.balance?.frozen_points ?? '0')} · {pointsExchangeRules.join(' · ')}</div>
             </div>
             <div className={profileClasses.compactStack}>
               <button className={cn(btn.base, btn.primary)} type="button" onClick={() => app.navigate('checkout')}>充值积分</button>
@@ -222,7 +223,7 @@ function BalanceBuckets({ balance }: { balance: Balance | null }) {
           <div key={`${bucket.bucket}-${bucket.expires_at ?? 'never'}`} className={cn(profileClasses.bucketCard, bucket.bucket === 'trial' && profileClasses.bucketTrial, bucket.expire_warning && profileClasses.bucketWarning)}>
             <div className={profileClasses.bucketHead}>
               <span className={profileClasses.bucketTitle}>{bucket.label ?? balanceBucketLabel(bucket.bucket)}</span>
-              <span className={profileClasses.bucketAmount}>{bucket.available_points}</span>
+              <span className={profileClasses.bucketAmount}>{pointsText(bucket.available_points)}</span>
             </div>
             <div className={cn(profileClasses.bucketHint, bucket.expire_warning && profileClasses.bucketHintWarning)}>
               {bucketExpiryText(bucket)}

@@ -17,6 +17,7 @@ type CapabilityResponse struct {
 	RouteModelCode    string                    `json:"route_model_code"`
 	Name              string                    `json:"name"`
 	Description       string                    `json:"description,omitempty"`
+	MinimumPoints     string                    `json:"minimum_points"`
 	IconKey           string                    `json:"icon_key,omitempty"`
 	IconSVG           string                    `json:"icon_svg,omitempty"`
 	GroupCodes        []string                  `json:"group_codes,omitempty"`
@@ -58,7 +59,7 @@ func (s *Service) Capabilities(ctx context.Context, code string, userGroupCodes 
 	}
 	response := CapabilityResponse{
 		RouteModelCode: group.Code, Name: group.Name, Description: group.Description, ConfigVersion: group.ConfigVersion,
-		CapabilityVersion: capabilityVersion(group.Candidates), MaxOutputCount: group.MaxOutputCount, TaskTypes: append([]domainvideo.TaskType(nil), group.TaskTypes...),
+		MinimumPoints: group.MinimumTaskPoints, CapabilityVersion: capabilityVersion(group.Candidates), MaxOutputCount: group.MaxOutputCount, TaskTypes: append([]domainvideo.TaskType(nil), group.TaskTypes...),
 	}
 	seen := make(map[string]struct{})
 	for _, taskType := range group.TaskTypes {

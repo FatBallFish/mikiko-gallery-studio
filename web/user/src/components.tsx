@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { GalleryImage, ImageResult, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../shared/api-types'
 import { cn } from '../../shared/classnames'
+import { pointsExchangeRules, pointsText } from '../../shared/pointsDisplay'
 import { RefreshableMediaImage, useMediaRefreshOnce, type MediaRefreshHandler } from './ui/mediaRefresh'
 import { avatarMenuItems, type AvatarMenuIcon } from './avatarMenu'
 import { BrandMark, siteBrand } from './brand'
@@ -574,9 +575,13 @@ export function Shell({ children, scrollMode = 'app' }: { children: React.ReactN
             >
               {isDark ? <MoonIcon /> : <SunIcon />}
             </button>
-            <div className={rdShell.balancePill}>
+            <div
+              className={rdShell.balancePill}
+              title={pointsExchangeRules.join('\n')}
+              aria-label={`可用余额 ${app.balance ? pointsText(app.balance.available_points) : '...'}。${pointsExchangeRules.join('；')}`}
+            >
               <span className={rdShell.balanceText}>◈</span>
-              <b className={rdShell.balanceValue}>{app.balance?.available_points ?? '...'}</b>
+              <b className={rdShell.balanceValue}>{app.balance ? pointsText(app.balance.available_points) : '...'}</b>
               <button type="button" className={rdShell.rechargeBtn} onClick={() => app.navigate('checkout')} aria-label="充值积分">+</button>
             </div>
             <div className="relative" ref={menuRef}>

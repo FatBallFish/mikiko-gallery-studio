@@ -868,7 +868,17 @@ html[data-theme-mode="dark"] .pg-date-input {
   text-align: left;
   cursor: pointer;
 }
-.model-group-select-trigger { min-height: 52px; border-radius: 8px; padding: 8px 11px; }
+.model-group-select-trigger {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 8px 11px;
+}
+.model-group-select-trigger .model-group-select-copy { flex: 1 1 auto; min-width: 0; }
+.model-group-select-trigger .model-group-select-copy strong,
+.model-group-select-trigger .model-group-select-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-group-select-trigger:hover,
 .model-group-select-trigger:focus-visible,
 .model-group-select-trigger[aria-expanded="true"] { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 14%, transparent); }
@@ -879,20 +889,52 @@ html[data-theme-mode="dark"] .pg-date-input {
 .model-group-select-copy small { margin-top: 3px; color: var(--muted); font-size: 11px; font-weight: 400; }
 .model-group-select-subject { flex: none; color: var(--accent); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .model-group-select-chevron { color: var(--muted); transition: transform var(--motion-fast); }
-.model-group-select-section { display: grid; gap: 2px; }
-.model-group-select-section + .model-group-select-section { margin-top: 4px; }
-.model-group-select-section-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px 2px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
 .model-group-select-trigger > img, .model-group-select-menu button > img { flex: none; }
 .model-group-select-option-icon { margin-left: 6px; }
+
+.model-group-select-menu { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 6px); border: 1px solid var(--border); border-radius: 12px; background: var(--surface-solid); box-shadow: 0 16px 44px rgba(0, 0, 0, 0.16); overflow: hidden; }
+.model-group-select-trigger-icon { flex: none; }
+
+/* Drill-down pages: level 1 groups / level 2 models slide horizontally. */
+.model-group-select-page { position: relative; height: 320px; overflow: hidden; }
+.model-group-select-level {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  overflow-y: auto;
+  transition: transform var(--motion-route, 220ms) ease, opacity var(--motion-route, 220ms) ease;
+}
+.model-group-select-level[data-level='1'] { transform: translateX(0); }
+.model-group-select-level[data-level='2'] { transform: translateX(100%); opacity: 0; pointer-events: none; }
+.model-group-select-menu.is-level2 .model-group-select-level[data-level='1'] { transform: translateX(-24%); opacity: 0; pointer-events: none; }
+.model-group-select-menu.is-level2 .model-group-select-level[data-level='2'] { transform: translateX(0); opacity: 1; pointer-events: auto; }
+.model-group-select-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.model-group-select-row { display: flex; width: 100%; align-items: center; gap: 10px; padding: 9px 10px; border: 0; border-radius: 10px; background: transparent; text-align: left; cursor: pointer; transition: background 140ms ease; }
+.model-group-select-row:hover { background: color-mix(in oklch, var(--accent) 8%, transparent); }
+.model-group-select-row.is-active { background: color-mix(in oklch, var(--accent) 12%, transparent); }
+.model-group-select-row-copy { display: grid; gap: 2px; min-width: 0; flex: 1; text-align: left; }
+.model-group-select-row-copy strong { overflow: hidden; font-size: 13px; font-weight: 700; color: var(--fg); text-overflow: ellipsis; white-space: nowrap; }
+.model-group-select-row-copy small { overflow: hidden; font-size: 11px; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.model-group-select-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--fg) 5%, transparent);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+.model-group-select-back:hover { background: color-mix(in oklch, var(--accent) 10%, transparent); }
+.model-group-select-subject { flex: none; font-family: var(--font-vault-mono, ui-monospace, monospace); font-size: 10px; font-weight: 700; color: var(--muted); }
+.model-group-select-check { flex: none; color: var(--accent); }
 
 .model-group-select-menu {
   position: absolute;

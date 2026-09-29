@@ -21,6 +21,7 @@ import { buildVideoQuoteBreakdown, buildVideoTaskAccounting } from './videoAccou
 import { applyVideoCapability, defaultVideoDraft, invalidateVideoQuote, reuseVideoTask, videoDraftKey, videoModelForDraft, VIDEO_TASK_INPUT_ROLES, videoTaskInputLabel, videoTaskInputMissing, type VideoDraft, type VideoDraftInputRole, type VideoQuoteState } from './videoDraft'
 import { cachedVideoCapability, loadVideoCapability } from './videoCapabilityCache'
 import { consoleClasses } from '../../pages/consoleClasses'
+import { pointsText } from '../../../../shared/pointsDisplay'
 import { videoFieldErrors, type VideoFieldErrors } from './videoErrors'
 
 type Props = { initialTaskId?: string; initialAssetId?: string }
@@ -463,14 +464,14 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         </section>
 
         <div className="video-quote-breakdown" aria-label="视频费用预估">
-          <div><span>单价</span><strong>{quoteBreakdown ? `${quoteBreakdown.unitPoints} 积分` : '--'}</strong></div>
+          <div><span>单价</span><strong>{quoteBreakdown ? pointsText(quoteBreakdown.unitPoints) : '--'}</strong></div>
           <div><span>数量</span><strong>{quoteBreakdown ? `${quoteBreakdown.outputCount} 个` : '--'}</strong></div>
-          <div><span>预计总价</span><strong>{quoteBreakdown ? `${quoteBreakdown.estimatedPoints} 积分` : '--'}</strong></div>
-          <div><span>最大预留</span><strong>{quoteBreakdown ? `${quoteBreakdown.maxReservedPoints} 积分` : '--'}</strong></div>
-          <div><span>可用余额</span><strong>{quoteBreakdown?.availablePoints ? `${quoteBreakdown.availablePoints} 积分` : '--'}</strong></div>
+          <div><span>预计总价</span><strong>{quoteBreakdown ? pointsText(quoteBreakdown.estimatedPoints) : '--'}</strong></div>
+          <div><span>最大预留</span><strong>{quoteBreakdown ? pointsText(quoteBreakdown.maxReservedPoints) : '--'}</strong></div>
+          <div><span>可用余额</span><strong>{quoteBreakdown?.availablePoints ? pointsText(quoteBreakdown.availablePoints) : '--'}</strong></div>
         </div>
         <div className="video-submit-bar">
-          <div><span>提交时预留</span><strong>{quote?.display_points ?? quote?.max_reserved_points ?? '--'} 积分</strong>{estimateError ? <small>{estimateError}</small> : quote?.sufficient === false ? <small>积分不足</small> : null}</div>
+          <div><span>提交时预留</span><strong>{quote ? pointsText(quote.display_points ?? quote.max_reserved_points) : '--'}</strong>{estimateError ? <small>{estimateError}</small> : quote?.sufficient === false ? <small>积分不足</small> : null}</div>
           <Button busy={submitting} disabled={!quote || quote.sufficient === false || submitting} onClick={() => void submit()}><Sparkles size={17} />生成视频</Button>
         </div>
         {error ? <p className="video-inline-error" role="alert">{error}</p> : null}
@@ -742,7 +743,7 @@ function VideoCurrentTaskCard({ task, busy, onCancel, onDetail, onReuse, onResul
     </header> : null}
     {!terminal ? <div className="video-current-progress" role="status">
       <span className="video-current-progress-track"><span className="video-current-progress-bar" data-stage={stage} /></span>
-      <span className="video-current-progress-copy"><LoaderCircle className="animate-spin" size={15} />{stageLabels[stage] ?? stage} · 预留 {reserved} 积分</span>
+      <span className="video-current-progress-copy"><LoaderCircle className="animate-spin" size={15} />{stageLabels[stage] ?? stage} · 预留 {pointsText(reserved)}</span>
     </div> : null}
     {failed ? <div className={cn(consoleClasses.pending, consoleClasses.pendingFailed)} role="alert">
       <strong className={consoleClasses.pendingFailedTitle}>{task.status === 'cancelled' ? '任务已取消' : '生成失败'}</strong>
@@ -770,7 +771,7 @@ function VideoCurrentTaskCard({ task, busy, onCancel, onDetail, onReuse, onResul
         <span>{task.audio_mode === 'generated' || task.generate_audio ? '有声' : '静音'}</span>
         <span>数量: {task.requested_output_count}</span>
         <span>任务时间: {formatVideoHistoryTime(task.created_at)}</span>
-        <span>消耗: {charged} ◈</span>
+        <span>消耗: {pointsText(charged)}</span>
         <span className="inline-flex items-center gap-1">任务ID: {task.id}<InlineCopyButton text={task.id} label="复制任务ID" /></span>
       </div>
     </> : null}
@@ -824,7 +825,7 @@ function VideoHistoryCard({ task, busy, onRefresh, onDetail, onReuse, onResult }
     <p className="video-history-title">{task.prompt_template || '未填写提示词'}</p>
     <div className="video-history-meta">
       <span>{formatVideoHistoryTime(task.created_at)}</span>
-      <span>{task.actual_points && task.actual_points !== '0.00000' ? `${task.actual_points} 积分` : `预留 ${task.reserved_points ?? task.estimated_points ?? '--'}`}</span>
+      <span>{task.actual_points && task.actual_points !== '0.00000' ? pointsText(task.actual_points) : `预留 ${pointsText(task.reserved_points ?? task.estimated_points ?? '0')}`}</span>
       <span className="inline-flex items-center gap-1"><span title={task.id}>任务ID: {task.id.slice(0, 8)}…</span><InlineCopyButton text={task.id} label="复制任务ID" /></span>
     </div>
     <div className="video-history-actions">
@@ -903,17 +904,17 @@ function VideoTaskDetailDialog({ task, onClose, onResult, onReuse }: { task: Vid
     <div className="video-task-detail-summary">
       <div><span>任务ID</span><strong className="inline-flex items-center gap-1 break-all font-vault-mono text-xs">{task.id}<InlineCopyButton text={task.id} label="复制任务ID" /></strong></div>
       <div><span>状态</span><strong>{stageLabels[task.progress_stage || task.status] ?? task.status}</strong></div>
-      <div><span>预计积分</span><strong>{accounting.estimatedPoints}</strong></div>
-      <div><span>预留积分</span><strong>{accounting.reservedPoints}</strong></div>
-      <div><span>实际扣除</span><strong>{accounting.actualPoints}</strong></div>
-      <div><span>退回积分</span><strong>{accounting.refundPoints}</strong></div>
+      <div><span>预计积分</span><strong>{pointsText(accounting.estimatedPoints)}</strong></div>
+      <div><span>预留积分</span><strong>{pointsText(accounting.reservedPoints)}</strong></div>
+      <div><span>实际扣除</span><strong>{pointsText(accounting.actualPoints)}</strong></div>
+      <div><span>退回积分</span><strong>{pointsText(accounting.refundPoints)}</strong></div>
       <div><span>结算状态</span><strong>{settlementLabels[accounting.settlementStatus] ?? accounting.settlementStatus}</strong></div>
     </div>
-    <section className="video-task-detail-section"><h3>生成参数</h3><dl><div><dt>模型分组</dt><dd>{task.route_model_code}</dd></div><div><dt>生成方式</dt><dd>{taskTypeLabels[task.task_type]}</dd></div><div><dt>时长</dt><dd>{task.duration_seconds} 秒</dd></div><div><dt>清晰度</dt><dd>{task.resolution.toUpperCase()}</dd></div><div><dt>比例</dt><dd>{task.aspect_ratio}</dd></div><div><dt>音频</dt><dd>{task.audio_mode === 'generated' || task.generate_audio ? '生成音频' : '静音'}</dd></div><div><dt>方案数量</dt><dd>{task.requested_output_count}</dd></div>{accounting.unitPoints ? <div><dt>单价</dt><dd>{accounting.unitPoints} 积分</dd></div> : null}</dl><p>{task.prompt_template}</p></section>
+    <section className="video-task-detail-section"><h3>生成参数</h3><dl><div><dt>模型分组</dt><dd>{task.route_model_code}</dd></div><div><dt>生成方式</dt><dd>{taskTypeLabels[task.task_type]}</dd></div><div><dt>时长</dt><dd>{task.duration_seconds} 秒</dd></div><div><dt>清晰度</dt><dd>{task.resolution.toUpperCase()}</dd></div><div><dt>比例</dt><dd>{task.aspect_ratio}</dd></div><div><dt>音频</dt><dd>{task.audio_mode === 'generated' || task.generate_audio ? '生成音频' : '静音'}</dd></div><div><dt>方案数量</dt><dd>{task.requested_output_count}</dd></div>{accounting.unitPoints ? <div><dt>单价</dt><dd>{pointsText(accounting.unitPoints)}</dd></div> : null}</dl><p>{task.prompt_template}</p></section>
     {accounting.variables.length ? <section className="video-task-detail-section"><h3>本次变量</h3><dl>{accounting.variables.map((variable) => <div key={variable.name}><dt>{variable.name}</dt><dd>{variable.value}</dd></div>)}</dl></section> : null}
     {accounting.inputs.length ? <section className="video-task-detail-section"><h3>输入素材</h3><ul>{accounting.inputs.map((input) => <li key={`${input.role}-${input.assetID}`}><span>{input.role === 'first_frame' ? '首帧' : '尾帧'}</span><strong>{input.name}</strong></li>)}</ul></section> : null}
     <section className="video-task-detail-section"><h3>时间记录</h3><ul>{accounting.timeline.map((event) => <li key={event.label}><span>{event.label}</span><time dateTime={event.value}>{formatVideoTime(event.value)}</time></li>)}</ul></section>
-    <section className="video-task-detail-section"><h3>结果与费用</h3><ul>{accounting.items.map((item) => <li key={item.id}><span>方案 #{item.ordinal + 1}</span><strong>{stageLabels[item.status] ?? item.status} · {item.actualSeconds ? `${item.actualSeconds} 秒 · ` : ''}{item.actualPoints} 积分</strong>{item.error ? <small>{item.error}</small> : null}{item.resultAssetID ? <button type="button" onClick={() => onResult(item.resultAssetID!)}>查看结果</button> : null}</li>)}</ul></section>
+    <section className="video-task-detail-section"><h3>结果与费用</h3><ul>{accounting.items.map((item) => <li key={item.id}><span>方案 #{item.ordinal + 1}</span><strong>{stageLabels[item.status] ?? item.status} · {item.actualSeconds ? `${item.actualSeconds} 秒 · ` : ''}{pointsText(item.actualPoints)}</strong>{item.error ? <small>{item.error}</small> : null}{item.resultAssetID ? <button type="button" onClick={() => onResult(item.resultAssetID!)}>查看结果</button> : null}</li>)}</ul></section>
     <div className="video-task-detail-actions"><Button tone="ghost" onClick={onReuse}><RotateCcw size={16} />复用参数</Button></div>
   </Modal>
 }

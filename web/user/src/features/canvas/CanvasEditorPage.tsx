@@ -9,6 +9,7 @@ import { ApiError } from '../../../../shared/http-client'
 import { userApi } from '../../../../shared/user-api'
 import { normalizeCanvasDocument } from '../../../../shared/canvas-document'
 import { Button, EmptyState, ErrorState, InlineCopyButton, LoadingState, Modal, useApp } from '../../components'
+import { pointsText } from '../../../../shared/pointsDisplay'
 import { useProjects } from '../../ProjectContext'
 import { errorMessage } from '../../useApiResource'
 import { userHashForRoute } from '../../routeState'
@@ -945,7 +946,7 @@ function GenerationNodeSummary({ node, run, estimate, busy, readOnly, imageCapab
     <div className="canvas-generation-summary-inputs">提示词 {inputSummary.prompts} · 图片 {inputSummary.images}{inputSummary.selectedPromptID ? ' · 已选提示词' : ''}</div>
     {inputSummary.errors.length ? <div className="canvas-generation-summary-errors" role="alert" onDoubleClick={(event) => { event.stopPropagation(); onOpenConfig() }}>{inputSummary.errors[0]}{inputSummary.errors.length > 1 ? ` 等 ${inputSummary.errors.length} 项待处理` : ''}</div> : null}
     <div className="canvas-generation-summary-foot">
-      <span>{estimateReady ? `预计 ${estimate.points} 积分` : estimatePending ? '估价中' : isImage ? '-- 积分' : `余额 ${balance}`}</span>
+      <span>{estimateReady ? `预计 ${pointsText(estimate.points)}` : estimatePending ? '估价中' : isImage ? '--' : `余额 ${pointsText(balance)}`}</span>
       <button type="button" onClick={onOpenConfig} title="配置参数（双击节点同样打开）">配置</button>
     </div>
     <div className="canvas-generation-actions">{active ? <button type="button" onClick={onCancel}><CircleStop size={15} />取消</button> : recoverable ? <button type="button" onClick={onAttach}><RefreshCw size={15} />恢复结果</button> : !readOnly ? isImage
@@ -1010,7 +1011,7 @@ function GenerationNodeForm({ node, run, estimate, busy, readOnly, imageCapabili
     {inputSummary.referenceBindings.length ? <div className="canvas-generation-bindings"><strong>资源绑定</strong>{inputSummary.referenceBindings.map((binding) => <span key={binding.name} data-valid={Boolean(binding.assetID)}><b>@{binding.name}</b><i>{binding.assetName ?? '未关联同名资产'}</i></span>)}</div> : null}
     <div className="canvas-generation-inputs">提示词 {inputSummary.prompts} · 图片 {inputSummary.images}</div>
     {inputSummary.errors.length ? <div className="canvas-generation-errors" role="alert">{inputSummary.errors.join('；')}</div> : null}
-    <div className="canvas-generation-estimate"><span>{node.type === 'image_generation' || estimate ? '预计积分' : '当前余额'}</span><strong>{estimateReady ? estimate.points : estimatePending ? '计算中' : node.type === 'image_generation' ? '--' : balance}</strong></div>
+    <div className="canvas-generation-estimate"><span>{node.type === 'image_generation' || estimate ? '预计消耗' : '当前余额'}</span><strong>{estimateReady ? pointsText(estimate.points) : estimatePending ? '计算中' : node.type === 'image_generation' ? '--' : pointsText(balance)}</strong></div>
     {estimate?.status === 'error' ? <small className="canvas-generation-errors">{estimate.error}</small> : null}
     <div className="canvas-generation-actions">{active ? <button type="button" onClick={onCancel}><CircleStop size={15} />取消</button> : recoverable ? <button type="button" onClick={onAttach}><RefreshCw size={15} />恢复结果</button> : !readOnly ? node.type === 'image_generation'
       ? estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />确认生成</button> : estimate?.status === 'error' ? <button type="button" disabled={busy} onClick={onEstimate}><RefreshCw size={15} />重新估价</button> : <button type="button" disabled><Sparkles size={15} />{estimatePending ? '正在估价' : '等待参数'}</button>
@@ -1051,7 +1052,7 @@ function PromptNodeBody({ node, readOnly, resourceCandidates, onUpdate }: { node
     setOptimizing(true)
     try {
       const estimate = await userApi.estimatePromptOptimization(value)
-      if (!window.confirm(`优化提示词预计消耗 ${estimate.estimated_points} 积分，是否继续？`)) return
+      if (!window.confirm(`优化提示词预计消耗 ${pointsText(estimate.estimated_points)}，是否继续？`)) return
       const result = await userApi.optimizePrompt(value, estimate.quote)
       commitText(result.optimized_prompt)
     } finally { setOptimizing(false) }
