@@ -8,6 +8,7 @@ import (
 	"time"
 
 	providervideo "github.com/fatballfish/pic-gallery/internal/provider/video"
+	"github.com/fatballfish/pic-gallery/internal/provider/video/gasic"
 	"github.com/fatballfish/pic-gallery/internal/provider/video/minimax"
 	"github.com/fatballfish/pic-gallery/internal/provider/video/seedance"
 )
@@ -71,6 +72,11 @@ func buildExecutionProvider(account ExecutionAccount) (providervideo.Provider, e
 		return minimax.NewClient(minimax.Config{
 			BaseURL: account.BaseURL, APIKey: account.APIKey, ModelCode: account.ModelCode, CallbackURL: account.CallbackURL,
 			CallbackSecret: account.CallbackSecret, Timeout: account.Timeout, Verified: true,
+		})
+	case "gasic":
+		return gasic.NewClient(gasic.Config{
+			BaseURL: account.BaseURL, APIKey: account.APIKey, ModelCode: account.ModelCode,
+			Timeout: account.Timeout, Verified: true,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported video provider %q", account.ProviderCode)

@@ -268,6 +268,48 @@ func TestMiniMaxH3MaxNativePricingSupports480pAnd768p(t *testing.T) {
 	}
 }
 
+func TestGasicPerTaskPricingChargesFlatRate(t *testing.T) {
+	card := RateCard{
+		ProviderCode:  "gasic",
+		ModelCode:     "doubao-seedance-2-5-260628",
+		PricingSchema: PricingSchemaGasicPerTaskV1,
+		RuleVersion:   GasicRuleVersion202609,
+		Gasic:         &GasicPerTaskRateCard{PerTaskCNY: "2.00000"},
+	}
+	for _, duration := range []int{4, 5, 20} {
+		quote, err := QuoteNativePricing(NativePricingRequest{Video: Request{
+			TaskType: TaskTypeTextToVideo, DurationSeconds: duration, Resolution: Resolution1080P, AspectRatio: AspectRatio16x9, OutputCount: 1,
+		}}, card)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if quote.CNY != "2.00000" {
+			t.Fatalf("duration %d should cost a flat 2 CNY, got %s", duration, quote.CNY)
+		}
+		if quote.Calculation["billing_mode"] != "per_task" {
+			t.Fatalf("expected per_task billing mode, got %#v", quote.Calculation)
+		}
+	}
+	if err := ValidateRateCard(card, Capability{}); err != nil {
+		t.Fatalf("valid gasic card should pass: %v", err)
+	}
+	wrongProvider := card
+	wrongProvider.ProviderCode = "seedance"
+	if err := ValidateRateCard(wrongProvider, Capability{}); err == nil {
+		t.Fatal("gasic schema should require the gasic provider")
+	}
+	badVersion := card
+	badVersion.RuleVersion = "gasic-rules-future"
+	if err := ValidateRateCard(badVersion, Capability{}); err == nil {
+		t.Fatal("unsupported rule version should be rejected")
+	}
+	zeroRate := card
+	zeroRate.Gasic = &GasicPerTaskRateCard{PerTaskCNY: "0"}
+	if err := ValidateRateCard(zeroRate, Capability{}); err == nil {
+		t.Fatal("zero per-task rate should be rejected")
+	}
+}
+
 func TestSeedance25Supports1080pPricingPreset(t *testing.T) {
 	const model25 = "doubao-seedance-2-5-260628"
 	for _, resolution := range []Resolution{Resolution480P, Resolution720P, Resolution1080P} {

@@ -18,6 +18,7 @@ const (
 	AdapterTypeOpenRouter       = "openrouter"
 	AdapterTypeSeedance         = "seedance"
 	AdapterTypeMiniMax          = "minimax"
+	AdapterTypeGasic            = "gasic"
 	AuthTypeAPIKey              = "api_key"
 
 	ModelAccountStatusEnabled  = "enabled"

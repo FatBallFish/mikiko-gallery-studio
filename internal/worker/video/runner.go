@@ -348,6 +348,13 @@ func (r *Runner) poll(ctx context.Context, item WorkItem) error {
 }
 
 func (r *Runner) cancel(ctx context.Context, item WorkItem) error {
+	if strings.TrimSpace(item.Attempt.JobID) == "" {
+		// Cancelled before any submission created a remote job (no attempt or
+		// a submit that never returned one): there is nothing to reach
+		// upstream, so cancel locally instead of failing provider resolution
+		// forever.
+		return r.apply(ctx, item, domainvideo.ItemStateCancelled, "cancelled", "", providervideo.Artifact{}, nil, "", "", false)
+	}
 	provider, err := r.resolveProvider(ctx, item)
 	if err != nil {
 		return r.schedule(ctx, item, item.State, "cancel_requested", "provider_unavailable", err.Error())

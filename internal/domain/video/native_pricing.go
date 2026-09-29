@@ -12,9 +12,11 @@ type PricingSchema string
 const (
 	PricingSchemaSeedanceTokenV1   PricingSchema = "seedance_token_v1"
 	PricingSchemaMiniMaxH3SecondV1 PricingSchema = "minimax_h3_second_v1"
+	PricingSchemaGasicPerTaskV1    PricingSchema = "gasic_per_task_v1"
 
 	SeedanceRuleVersion202608  = "seedance-rules-2026-08"
 	MiniMaxH3RuleVersion202608 = "minimax-h3-rules-2026-08"
+	GasicRuleVersion202609     = "gasic-rules-2026-09"
 )
 
 type SeedanceTokenRateCard struct {
@@ -38,6 +40,12 @@ type MiniMaxResolutionRate struct {
 	InputVideoSecondCNY string `json:"input_video_second_cny"`
 }
 
+// GasicPerTaskRateCard prices the GASIC relay: a flat CNY amount per task
+// regardless of duration or resolution (failed tasks are refunded upstream).
+type GasicPerTaskRateCard struct {
+	PerTaskCNY string `json:"per_task_cny"`
+}
+
 type RateCard struct {
 	ProviderCode  string                   `json:"provider_code"`
 	ModelCode     string                   `json:"model_code"`
@@ -45,6 +53,7 @@ type RateCard struct {
 	RuleVersion   string                   `json:"rule_version"`
 	Seedance      *SeedanceTokenRateCard   `json:"seedance,omitempty"`
 	MiniMaxH3     *MiniMaxH3SecondRateCard `json:"minimax_h3,omitempty"`
+	Gasic         *GasicPerTaskRateCard    `json:"gasic,omitempty"`
 }
 
 type NativePricingRequest struct {
@@ -65,6 +74,8 @@ func ValidateRateCard(card RateCard, capability Capability) error {
 		return validateSeedanceRateCard(card, capability)
 	case PricingSchemaMiniMaxH3SecondV1:
 		return validateMiniMaxRateCard(card, capability)
+	case PricingSchemaGasicPerTaskV1:
+		return validateGasicRateCard(card)
 	default:
 		return fmt.Errorf("unsupported pricing schema %q", card.PricingSchema)
 	}
@@ -86,9 +97,50 @@ func QuoteNativePricing(request NativePricingRequest, card RateCard) (CandidateQ
 		return quoteSeedance(request, inputVideoSeconds, card)
 	case PricingSchemaMiniMaxH3SecondV1:
 		return quoteMiniMaxH3(request, inputVideoSeconds, card)
+	case PricingSchemaGasicPerTaskV1:
+		return quoteGasicPerTask(request, card)
 	default:
 		return CandidateQuote{}, fmt.Errorf("unsupported pricing schema %q", card.PricingSchema)
 	}
+}
+
+func validateGasicRateCard(card RateCard) error {
+	if !strings.EqualFold(strings.TrimSpace(card.ProviderCode), "gasic") {
+		return fmt.Errorf("gasic pricing schema requires gasic provider")
+	}
+	if card.RuleVersion != GasicRuleVersion202609 {
+		return fmt.Errorf("unsupported gasic rule version %q", card.RuleVersion)
+	}
+	if card.Gasic == nil {
+		return fmt.Errorf("gasic rate config is required")
+	}
+	if _, err := parsePositiveDecimal(card.Gasic.PerTaskCNY, "per_task_cny"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func quoteGasicPerTask(request NativePricingRequest, card RateCard) (CandidateQuote, error) {
+	if card.RuleVersion != GasicRuleVersion202609 {
+		return CandidateQuote{}, fmt.Errorf("unsupported gasic rule version %q", card.RuleVersion)
+	}
+	if card.Gasic == nil {
+		return CandidateQuote{}, fmt.Errorf("gasic rate config is required")
+	}
+	perTask, err := parsePositiveDecimal(card.Gasic.PerTaskCNY, "per_task_cny")
+	if err != nil {
+		return CandidateQuote{}, err
+	}
+	return CandidateQuote{
+		CNY: perTask.Round(5).StringFixed(5),
+		Calculation: map[string]any{
+			"rule_version":     card.RuleVersion,
+			"billing_mode":     "per_task",
+			"per_task_cny":     perTask.String(),
+			"duration_seconds": request.Video.DurationSeconds,
+			"resolution":       string(request.Video.Resolution),
+		},
+	}, nil
 }
 
 func validateSeedanceRateCard(card RateCard, capability Capability) error {

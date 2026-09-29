@@ -30,7 +30,7 @@ const videoTasks = [
 type AccountDraft = {
   row?: ModelAccount;
   name: string;
-  adapter: "seedance" | "minimax";
+  adapter: "seedance" | "minimax" | "gasic";
   baseURL: string;
   apiKey: string;
   status: string;
@@ -245,6 +245,14 @@ export function VideoProviderAccountsPanel() {
               input_video_second_cny: modelDraft.rateRows[resolution]?.secondary || modelDraft.rateRows[resolution]?.primary || "0",
             }])),
             free_image_count: modelDraft.freeImageCount, extra_image_cny: modelDraft.extraImageCNY, input_audio_free: true,
+          },
+        });
+      } else if (modelDraft.account.adapter_type === "gasic") {
+        await adminApi.saveVideoRateCard(saved.id, {
+          pricing_schema: "gasic_per_task_v1",
+          expected_rate_version: existingRate?.rate_version ?? 0, enabled: shouldEnable,
+          rate_config: {
+            per_task_cny: modelDraft.rateRows["per_task"]?.primary || "2.00000",
           },
         });
       } else {
@@ -568,6 +576,7 @@ export function VideoProviderAccountsPanel() {
               >
                 <option value="seedance">Seedance</option>
                 <option value="minimax">MiniMax</option>
+                <option value="gasic">GASIC 中转</option>
               </select>
             </Field>
             <Field label="Base URL">
@@ -826,7 +835,12 @@ export function VideoProviderAccountsPanel() {
             </Field>
             <div className="grid gap-3 lg:col-span-2">
               <strong className="text-sm">厂商原生销售费率</strong>
-              {stringList(modelDraft.resolutions).map((resolution) => (
+              {modelDraft.account.adapter_type === "gasic" ? (
+                <Field label="每条视频 CNY（按次计费，与时长/分辨率无关）">
+                  <input inputMode="decimal" value={modelDraft.rateRows["per_task"]?.primary ?? ""} onChange={(e) => setModelDraft({ ...modelDraft, rateRows: { ...modelDraft.rateRows, per_task: { primary: e.target.value, secondary: "" } } })} />
+                </Field>
+              ) : (
+                stringList(modelDraft.resolutions).map((resolution) => (
                 <div key={resolution} className="grid gap-3 rounded-md border border-[var(--border)] p-3 md:grid-cols-[100px_1fr_1fr]">
                   <span className="self-center text-sm font-medium">{resolution}</span>
                   <Field label={modelDraft.account.adapter_type === "minimax" ? "输出视频 CNY/秒" : "不含输入视频 CNY/百万 Token"}>
@@ -842,7 +856,8 @@ export function VideoProviderAccountsPanel() {
                     </Field>
                   )}
                 </div>
-              ))}
+                ))
+              )}
               {modelDraft.account.adapter_type === "minimax" ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   <Field label="免费输入图片数"><input type="number" min="0" value={modelDraft.freeImageCount} onChange={(e) => setModelDraft({ ...modelDraft, freeImageCount: Math.max(0, Number(e.target.value)) })} /></Field>
@@ -905,7 +920,12 @@ function editAccount(row: ModelAccount): AccountDraft {
   return {
     row,
     name: row.name,
-    adapter: row.adapter_type === "minimax" ? "minimax" : "seedance",
+    adapter:
+      row.adapter_type === "minimax"
+        ? "minimax"
+        : row.adapter_type === "gasic"
+          ? "gasic"
+          : "seedance",
     baseURL: row.base_url,
     apiKey: "",
     status: row.status,
@@ -917,15 +937,16 @@ function editAccount(row: ModelAccount): AccountDraft {
 }
 function blankModel(account: ModelAccount): ModelDraft {
 	const minimax = account.adapter_type === "minimax";
+	const gasic = account.adapter_type === "gasic";
 	return {
     account,
     modelCode: "",
     displayName: "",
     taskTypes: ["text_to_video"],
     durations: "5,10",
-    resolutions: minimax ? "768p,2k" : "720p",
+    resolutions: minimax ? "768p,2k" : gasic ? "480p,720p,1080p" : "720p",
     ratios: "16:9,9:16,1:1",
-    audioModes: minimax ? ["generated"] : ["silent"],
+    audioModes: minimax ? ["generated"] : ["silent", "generated"],
     providerMaxN: 1,
     promptMaxRunes: minimax ? 7000 : 2000,
     inputFormats:
@@ -935,7 +956,9 @@ function blankModel(account: ModelAccount): ModelDraft {
     inputMaxMB: 30,
     rateRows: minimax
       ? { "768p": { primary: "0.50000", secondary: "0.50000" }, "2k": { primary: "0.80000", secondary: "0.80000" } }
-      : { "720p": { primary: "46.00000", secondary: "" } },
+      : gasic
+        ? { per_task: { primary: "2.00000", secondary: "" } }
+        : { "720p": { primary: "46.00000", secondary: "" } },
     freeImageCount: 5,
     extraImageCNY: "0.10000",
     validationStatus: "untested",
@@ -961,10 +984,14 @@ function editModel(
     .filter((item) => String(item.account_model_id) === String(row.id))
     .sort((a, b) => b.rate_version - a.rate_version)[0];
   const rateConfig = latestRate?.rate_config;
-  const rateRows = Object.fromEntries(Object.entries(rateConfig?.resolutions ?? {}).map(([resolution, value]) => [resolution, {
-    primary: "output_second_cny" in value ? value.output_second_cny : value.without_input_video_million_tokens_cny,
-    secondary: "input_video_second_cny" in value ? value.input_video_second_cny : value.with_input_video_million_tokens_cny ?? "",
-  }]));
+  const rateRows = rateConfig && "per_task_cny" in rateConfig
+    ? { per_task: { primary: String(rateConfig.per_task_cny ?? ""), secondary: "" } }
+    : Object.fromEntries(
+        (Object.entries((rateConfig as Record<string, any> | undefined)?.resolutions ?? {}) as [string, Record<string, any>][]).map(([resolution, value]) => [resolution, {
+          primary: "output_second_cny" in value ? value.output_second_cny : value.without_input_video_million_tokens_cny,
+          secondary: "input_video_second_cny" in value ? value.input_video_second_cny : value.with_input_video_million_tokens_cny ?? "",
+        }]),
+      );
   return {
     account,
     row,

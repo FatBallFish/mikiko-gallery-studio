@@ -251,6 +251,22 @@ func TestRunnerTreatsProviderSuccessAfterCancelAsArtifactPending(t *testing.T) {
 	}
 }
 
+func TestRunnerCancelsLocallyWhenCancelArrivesBeforeFirstSubmission(t *testing.T) {
+	now := time.Date(2026, 8, 12, 11, 0, 0, 0, time.UTC)
+	store := newMemoryStore(WorkItem{ID: "item-queued-cancel", TaskID: "task-queued-cancel", State: domainvideo.ItemStateCancelRequested, Version: 2})
+	provider := &providerStub{cancelResult: providervideo.CancelResult{Accepted: true, State: providervideo.StateCancelled}}
+	runner := newTestRunner(store, provider, now)
+
+	processed, err := runner.RunOnce(t.Context())
+	if err != nil || !processed {
+		t.Fatalf("queued cancel processed=%v err=%v", processed, err)
+	}
+	item := store.itemSnapshot()
+	if item.State != domainvideo.ItemStateCancelled || provider.cancelCalls != 0 {
+		t.Fatalf("queued cancel item=%#v cancel_calls=%d", item, provider.cancelCalls)
+	}
+}
+
 func TestRunnerStreamsValidatedArtifactAndCommitsReadyOriginal(t *testing.T) {
 	payload := bytes.Repeat([]byte("video"), 1024)
 	digest := sha256.Sum256(payload)

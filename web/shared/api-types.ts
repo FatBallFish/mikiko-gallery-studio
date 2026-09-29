@@ -329,18 +329,23 @@ export type MiniMaxH3VideoRateConfig = {
   extra_image_cny: string
   input_audio_free: true
 }
+export type GasicPerTaskRateConfig = {
+  per_task_cny: string
+}
 export type AdminVideoRateCard = {
   id: number; account_model_id: number; currency: 'CNY'; rate_version: number
   source_reference: string; effective_at: string; enabled: boolean
 } & (
   | { provider_code: 'seedance'; pricing_schema: 'seedance_token_v1'; rate_config: SeedanceVideoRateConfig }
   | { provider_code: 'minimax'; pricing_schema: 'minimax_h3_second_v1'; rate_config: MiniMaxH3VideoRateConfig }
+  | { provider_code: 'gasic'; pricing_schema: 'gasic_per_task_v1'; rate_config: GasicPerTaskRateConfig }
 )
 export type AdminVideoRateCardWrite = {
   expected_rate_version: number; enabled: boolean
 } & (
   | { pricing_schema: 'seedance_token_v1'; rate_config: SeedanceVideoRateConfig }
   | { pricing_schema: 'minimax_h3_second_v1'; rate_config: MiniMaxH3VideoRateConfig }
+  | { pricing_schema: 'gasic_per_task_v1'; rate_config: GasicPerTaskRateConfig }
 )
 export type AdminVideoQuoteSimulationRequest = {
   task_type: string; resolution: string; aspect_ratio: string; audio_mode: string; duration_seconds: number
