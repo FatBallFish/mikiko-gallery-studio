@@ -86,6 +86,16 @@ func TestResolveImageTaskMapsKnownCodesToUnifiedResults(t *testing.T) {
 	}
 }
 
+func TestResolveImageTaskKeepsPlatformStorageCode(t *testing.T) {
+	got := ResolveImageTask("IMAGE_STORAGE_FAILED", "mkdir /var/folders/xx/runtime-storage: not a directory")
+	if got.Code != "IMAGE_STORAGE_FAILED" {
+		t.Fatalf("platform storage code must survive translation, got %q", got.Code)
+	}
+	if got.Message != "作品保存失败，系统会自动重试" {
+		t.Fatalf("storage failure copy = %q", got.Message)
+	}
+}
+
 func TestEmptyMessageYieldsGenericCopy(t *testing.T) {
 	if got := ResolveVideoItem("", ""); got.Message != genericCopy {
 		t.Fatalf("empty message should yield generic copy, got %+v", got)

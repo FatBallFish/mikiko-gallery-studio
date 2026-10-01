@@ -159,6 +159,7 @@ var imageCodes = map[string]Resolution{
 	"invalid_request_error":               paramResolution,
 	// Platform errs codes surfaced on tasks (already unified; identity codes).
 	"image_capability_mismatch":   {Code: "IMAGE_CAPABILITY_MISMATCH", Message: mismatchCopy},
+	"image_storage_failed":        {Code: "IMAGE_STORAGE_FAILED", Message: "作品保存失败，系统会自动重试"},
 	"video_capability_mismatch":   {Code: "VIDEO_CAPABILITY_MISMATCH", Message: mismatchCopy},
 	"not_found":                   {Code: "NOT_FOUND", Message: notFoundCopy},
 	"billing_insufficient_points": insufficientResolution,
