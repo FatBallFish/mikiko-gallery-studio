@@ -18,6 +18,8 @@ const (
 	AdapterTypeOpenRouter       = "openrouter"
 	AdapterTypeSeedance         = "seedance"
 	AdapterTypeMiniMax          = "minimax"
+	AdapterTypeGasic            = "gasic"
+	AdapterTypeBailian          = "bailian"
 	AuthTypeAPIKey              = "api_key"
 
 	ModelAccountStatusEnabled  = "enabled"
@@ -172,8 +174,39 @@ type RouteModel struct {
 	SortOrder   int       `json:"sort_order"`
 	GroupIDs    []int64   `json:"group_ids,omitempty"`
 	GroupCodes  []string  `json:"group_codes,omitempty"`
+	IconKey     string    `json:"icon_key,omitempty"`
+	IconSVG     string    `json:"icon_svg,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// RouteModelGroup buckets route models for the two-level user picker. A
+// route model may belong to several groups.
+type RouteModelGroup struct {
+	ID            int64     `json:"id"`
+	Code          string    `json:"code"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	MediaType     string    `json:"media_type"`
+	IconKey       string    `json:"icon_key,omitempty"`
+	IconSVG       string    `json:"icon_svg,omitempty"`
+	SortOrder     int       `json:"sort_order"`
+	Enabled       bool      `json:"enabled"`
+	RouteModelIDs []int64   `json:"route_model_ids,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type RouteModelGroupWriteRequest struct {
+	Code          string
+	Name          string
+	Description   string
+	MediaType     string
+	IconKey       string
+	IconSVG       string
+	SortOrder     int
+	Enabled       bool
+	RouteModelIDs []int64
 }
 
 type RouteModelWriteRequest struct {
@@ -185,6 +218,8 @@ type RouteModelWriteRequest struct {
 	Enabled     bool
 	SortOrder   int
 	GroupIDs    []int64
+	IconKey     string
+	IconSVG     string
 }
 
 type RouteModelListRequest struct {

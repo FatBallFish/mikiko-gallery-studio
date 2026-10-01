@@ -65,13 +65,14 @@ export function workspaceTaskPendingView(task: ImageTask): WorkspaceTaskPendingV
 
 export function workspaceTaskFailureView(task: ImageTask): WorkspaceTaskFailureView {
   const errorCode = task.error_code?.trim()
-  const traceID = task.request_id?.trim() || task.id
+  const requestID = task.request_id?.trim()
   return {
     title: task.status === 'failed' || task.status === 'rejected' ? '生成失败' : '没有可用结果',
     reason: userFriendlyFailureReason(task),
     meta: [
       errorCode ? { label: '错误码', value: errorCode } : null,
-      traceID ? { label: '追踪 ID', value: traceID } : null,
+      task.id ? { label: '任务ID', value: task.id } : null,
+      requestID && requestID !== task.id ? { label: '追踪 ID', value: requestID } : null,
     ].filter((item): item is WorkspaceTaskFailureMeta => Boolean(item)),
   }
 }
@@ -79,17 +80,44 @@ export function workspaceTaskFailureView(task: ImageTask): WorkspaceTaskFailureV
 function userFriendlyFailureReason(task: ImageTask) {
   const errorCode = task.error_code?.trim().toUpperCase()
   const reason = task.failure_reason?.trim() || task.error_message?.trim()
-  if (errorCode === 'INSUFFICIENT_POINTS' || errorCode === 'BALANCE_INSUFFICIENT') {
+  if (errorCode === 'INSUFFICIENT_POINTS' || errorCode === 'BALANCE_INSUFFICIENT' || errorCode === 'BILLING_INSUFFICIENT_POINTS') {
     return '积分余额不足，本次任务未扣费。请充值或兑换积分后再试。'
+  }
+  if (errorCode === 'GENERATION_CONTENT_BLOCKED_INPUT' || errorCode === 'GENERATION_CONTENT_BLOCKED_OUTPUT') {
+    return '生成内容未通过安全审核，请调整提示词或素材后重试。'
+  }
+  if (errorCode === 'GENERATION_PROVIDER_BUSY') {
+    return '图片服务暂时繁忙，请稍后重试。'
+  }
+  if (errorCode === 'GENERATION_PROVIDER_TIMEOUT') {
+    return '生成等待超时，请稍后重试。'
+  }
+  if (errorCode === 'GENERATION_PROVIDER_UNAVAILABLE' || errorCode === 'PROVIDER_UNAVAILABLE' || errorCode === 'PROVIDER_ERROR') {
+    return '图片服务暂时繁忙，本次任务未扣费。请稍后重试。'
+  }
+  if (errorCode === 'GENERATION_PROVIDER_CAPACITY_EXCEEDED') {
+    return '服务容量暂时不足，请稍后重试。'
+  }
+  if (errorCode === 'GENERATION_PROVIDER_AUTH_FAILED') {
+    return '服务暂时不可用，正在恢复中，请稍后重试。'
+  }
+  if (errorCode === 'GENERATION_REQUEST_REJECTED') {
+    return '生成参数未通过上游校验，请调整参数或内容后重试。'
+  }
+  if (errorCode === 'GENERATION_MODEL_UNAVAILABLE') {
+    return '所选模型暂时不可用，请稍后重试或更换模型。'
+  }
+  if (errorCode === 'GENERATION_ARTIFACT_FAILED') {
+    return '作品保存失败，系统会自动重试。'
+  }
+  if (errorCode === 'GENERATION_INPUT_ASSET_UNAVAILABLE') {
+    return '输入素材暂时无法读取，请重新选择素材后重试。'
   }
   if (errorCode === 'MODEL_ROUTE_NOT_FOUND' || errorCode === 'MODEL_ROUTE_UNAVAILABLE' || errorCode === 'MODEL_ROUTE_NO_CANDIDATE') {
     return '平台生图能力正在配置中，本次任务未扣费。请稍后再试。'
   }
   if (errorCode === 'MODEL_PRICE_NOT_FOUND' || errorCode === 'PRICE_NOT_FOUND') {
     return '平台计费配置正在更新，本次任务未扣费。请稍后再试。'
-  }
-  if (errorCode === 'PROVIDER_UNAVAILABLE' || errorCode === 'PROVIDER_ERROR') {
-    return '图片服务暂时繁忙，本次任务未扣费。请稍后重试。'
   }
   if (errorCode === 'PROVIDER_TIMEOUT' || errorCode === 'TASK_TIMEOUT') {
     return '生成等待超时，本次任务未扣费。请稍后重试。'

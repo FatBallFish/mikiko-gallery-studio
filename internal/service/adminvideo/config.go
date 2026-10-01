@@ -3,6 +3,7 @@ package adminvideo
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strconv"
 	"time"
 
@@ -134,6 +135,30 @@ func capabilityValidationInputs(task domainvideo.TaskCapability) []domainvideo.I
 			input.Format = config.Formats[0]
 		}
 		inputs = append(inputs, input)
+	}
+	// Modes with individually optional roles but a minimum total (e.g.
+	// reference-to-video) still need synthetic inputs for the combination
+	// sweep to be satisfiable.
+	if len(inputs) < task.MinInputs {
+		roles := make([]string, 0, len(task.Inputs))
+		for role := range task.Inputs {
+			roles = append(roles, string(role))
+		}
+		sort.Strings(roles)
+		for _, role := range roles {
+			if len(inputs) >= task.MinInputs {
+				break
+			}
+			config := task.Inputs[domainvideo.InputRole(role)]
+			input := domainvideo.Input{Role: domainvideo.InputRole(role), SizeBytes: 1}
+			if len(config.MediaTypes) > 0 {
+				input.MediaType = config.MediaTypes[0]
+			}
+			if len(config.Formats) > 0 {
+				input.Format = config.Formats[0]
+			}
+			inputs = append(inputs, input)
+		}
 	}
 	return inputs
 }

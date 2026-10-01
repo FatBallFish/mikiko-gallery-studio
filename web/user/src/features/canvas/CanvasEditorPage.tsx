@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from 'zustand'
 import {
-  ArrowLeft, BoxSelect, CircleStop, ClipboardPaste, Copy, Download, Film, Focus, Image, ImagePlus, LayoutTemplate, Link2, MousePointer2,
-  Move, Music2, Plus, Redo2, RefreshCw, Save, Search, Sparkles, StickyNote, Trash2, Undo2, Upload, ZoomIn, ZoomOut,
+  ArrowLeft, BoxSelect, CircleStop, ClipboardPaste, Copy, Download, Film, Focus, Group, Hand, Image, ImagePlus, Keyboard, LayoutTemplate, Layers, Link2, MousePointer2,
+  Move, Music2, Plus, Redo2, RefreshCw, Save, Search, Sparkles, StickyNote, Trash2, Undo2, Ungroup, Upload, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import type { Capability, CanvasRun, CreativeCanvas, MediaAsset, ReferenceAsset, VideoCapability } from '../../../../shared/api-types'
 import { ApiError } from '../../../../shared/http-client'
 import { userApi } from '../../../../shared/user-api'
 import { normalizeCanvasDocument } from '../../../../shared/canvas-document'
-import { Button, EmptyState, ErrorState, LoadingState, useApp } from '../../components'
+import { Button, EmptyState, ErrorState, InlineCopyButton, LoadingState, Modal, useApp } from '../../components'
+import { pointsText } from '../../../../shared/pointsDisplay'
 import { useProjects } from '../../ProjectContext'
 import { errorMessage } from '../../useApiResource'
 import { userHashForRoute } from '../../routeState'
@@ -20,11 +21,11 @@ import { PromptVariableForm } from '../../pages/PromptVariableForm'
 import { parsePromptTemplate } from '../../pages/promptTemplateParser'
 import { computeCanvasBounds, fitCanvasViewport, minimapGeometry, nextCanvasNodePosition, visibleCanvasNodeIDs } from './core/canvasLayout'
 import {
-  canvasGenerationEstimateSignature, canvasImageDraftForTask, canvasImageParameterErrors, canvasImageTaskType, canvasNodeMinimumSize, canvasPromptResourceCandidates, compatibleCanvasTargets, inspectCanvasConnection,
+  canvasGenerationEstimateSignature, canvasGroupBounds, canvasGroupMembers, canvasGroupsForNode, canvasImageDraftForTask, canvasImageParameterErrors, canvasImageTaskType, canvasNodeMinimumSize, canvasPromptResourceCandidates, compatibleCanvasTargets, inspectCanvasConnection,
   canvasImageSizeDraftPatch, prepareCanvasEstimate, rejectCanvasEstimate, resolveCanvasEstimate, selectCanvasNodesInRect, startCanvasEstimate,
   type CanvasEstimateState, type CanvasPromptResourceCandidate,
 } from './core/canvasState'
-import type { CanvasDocument, CanvasEdge, CanvasNode, CanvasNodeType, CanvasViewport } from './core/types'
+import type { CanvasDocument, CanvasEdge, CanvasGroup, CanvasNode, CanvasNodeType, CanvasViewport } from './core/types'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
 import { CanvasNodeSearch } from './CanvasNodeSearch'
 import { createCanvasDraftWriter, decideCanvasDraftRecovery, readCanvasDraft, removeCanvasDraft } from './persistence/canvasDraftPersistence'
@@ -75,6 +76,12 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   const [showAssets, setShowAssets] = useState(false)
   const [assetTargetNodeID, setAssetTargetNodeID] = useState('')
   const [showSearch, setShowSearch] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const [dockAddOpen, setDockAddOpen] = useState(false)
+  const [configNodeID, setConfigNodeID] = useState('')
+  const [groupConfigID, setGroupConfigID] = useState('')
+  const spacePressedRef = useRef(false)
+  const [spacePressed, setSpacePressed] = useState(false)
   const [connectSource, setConnectSource] = useState('')
   const [connectionDraft, setConnectionDraft] = useState<ConnectionDraft | null>(null)
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null)
@@ -137,7 +144,10 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
       let document = toLocalDocument(remote.document)
       let recoveredDraft = false
       if (local) {
-        const same = JSON.stringify(local.document) === JSON.stringify(document)
+        // Compare through canonical documents: the state cloner always emits
+        // groups: [] while pre-group remote documents omit the key, and a raw
+        // JSON compare would flag every unchanged canvas as a conflict.
+        const same = JSON.stringify(canonicalCanvasDocument(local.document)) === JSON.stringify(canonicalCanvasDocument(document))
         const decision = decideCanvasDraftRecovery(local, remote.revision, same)
         if (decision === 'recover_local') { document = local.document; recoveredDraft = true }
         if (decision === 'conflict') setConflict({ remote, local: local.document })
@@ -190,20 +200,74 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   }, [app.profile?.id, canvas, canvasID, store])
   useEffect(() => {
     if (!store || readOnly) return
+    function isTypingTarget(target: EventTarget | null) {
+      return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target as HTMLElement)?.isContentEditable || (target as HTMLElement)?.closest?.('[data-canvas-no-zoom]')
+    }
     function keydown(event: KeyboardEvent) {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target as HTMLElement)?.isContentEditable) return
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+      if (event.code === 'Space' && !isTypingTarget(event.target)) {
         event.preventDefault()
-        if (event.shiftKey) store!.getState().redo(); else store!.getState().undo()
+        if (!spacePressedRef.current) { spacePressedRef.current = true; setSpacePressed(true) }
+        return
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); void flushDocument() }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); setShowSearch(true) }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c') { event.preventDefault(); store!.getState().copySelected() }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') { event.preventDefault(); store!.getState().pasteClipboard() }
-      if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); store!.getState().deleteSelected() }
+      if (isTypingTarget(event.target)) return
+      const state = store!.getState()
+      const mod = event.metaKey || event.ctrlKey
+      const key = event.key.toLowerCase()
+      if (mod && key === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) state.redo(); else state.undo()
+      } else if (mod && key === 's') {
+        event.preventDefault(); void flushDocument()
+      } else if (mod && key === 'f') {
+        event.preventDefault(); setShowSearch(true)
+      } else if (mod && key === 'c') {
+        event.preventDefault(); state.copySelected()
+      } else if (mod && key === 'v') {
+        event.preventDefault(); state.pasteClipboard()
+      } else if (mod && key === 'a') {
+        event.preventDefault(); state.select(state.command.present.nodes.map((node) => node.id))
+      } else if (mod && key === 'd') {
+        event.preventDefault(); if (state.selectedIDs.length) { state.copySelected(); state.pasteClipboard() }
+      } else if (mod) {
+        return
+      } else if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault(); state.deleteSelected()
+      } else if (event.key === 'Escape') {
+        if (nodeMenu || dockAddOpen) { setNodeMenu(null); setDockAddOpen(false) }
+        else if (configNodeID) setConfigNodeID('')
+        else if (groupConfigID) setGroupConfigID('')
+        else state.select([])
+      } else if (key === 'v') {
+        state.setMode('select')
+      } else if (key === 'h') {
+        state.setMode('pan')
+      } else if (key === 'l') {
+        state.setMode('connect'); setConnectSource('')
+      } else if (key === 'g') {
+        if (event.shiftKey) state.disbandSelectedGroups(); else if (state.selectedIDs.length >= 2) state.groupSelected()
+      } else if (key === '0') {
+        fitNodes()
+      } else if (key === '?') {
+        setShowShortcuts(true)
+      } else if (event.key === 'Enter') {
+        const selected = state.command.present.nodes.find((node) => node.id === state.selectedIDs[0] && (node.type === 'image_generation' || node.type === 'video_generation'))
+        if (selected) { event.preventDefault(); void generateNode(selected) }
+      } else if (event.key.startsWith('Arrow')) {
+        if (!state.selectedIDs.length) return
+        event.preventDefault()
+        const step = event.shiftKey ? 16 : 2
+        const delta = event.key === 'ArrowLeft' ? { x: -step, y: 0 } : event.key === 'ArrowRight' ? { x: step, y: 0 } : event.key === 'ArrowUp' ? { x: 0, y: -step } : { x: 0, y: step }
+        state.moveSelected(delta)
+      }
+    }
+    function keyup(event: KeyboardEvent) {
+      if (event.code === 'Space') { spacePressedRef.current = false; setSpacePressed(false) }
     }
     window.addEventListener('keydown', keydown)
-    return () => window.removeEventListener('keydown', keydown)
+    window.addEventListener('keyup', keyup)
+    // Note: no ref reset here — this effect re-registers on every render and
+    // resetting would drop a held Space key mid-interaction.
+    return () => { window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup) }
   })
 
   const saveDocument = useCallback(async () => {
@@ -375,7 +439,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   function addNode(type: CanvasNodeType, at?: { x: number; y: number }) {
     const center = at ?? worldPoint(viewportSize.width / 2 + (viewportRef.current?.getBoundingClientRect().left ?? 0), viewportSize.height / 2 + (viewportRef.current?.getBoundingClientRect().top ?? 0))
     const id = `${type}-${crypto.randomUUID().slice(0, 8)}`
-    const size = type === 'audio' ? { width: 280, height: 140 } : type.includes('generation') ? { width: 320, height: 230 } : { width: 260, height: 180 }
+    const size = type === 'audio' ? { width: 360, height: 180 } : type === 'image_generation' ? { width: 420, height: 340 } : type === 'video_generation' ? { width: 440, height: 360 } : type === 'prompt' ? { width: 380, height: 260 } : { width: 340, height: 300 }
     const position = nextCanvasNodePosition(store!.getState().command.present.nodes, center, size)
     store!.getState().addNode({ id, type, position, size, payload: defaultNodePayload(type, imageCapability, videoCapability) })
     return id
@@ -544,22 +608,30 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
       <span>{unplacedRuns.length} 组生成结果待归位</span>
       {!readOnly ? <button type="button" disabled={busyNodeID === unplacedRuns[0].node_id} onClick={() => void attachRun(unplacedRuns[0])}><RefreshCw size={15} />恢复到当前视图</button> : null}
     </div> : null}
-    {!readOnly ? <nav className="canvas-toolbox" aria-label="画布工具" data-canvas-no-zoom>
-      <button type="button" aria-pressed={state.mode === 'select'} title="选择" onClick={() => store.getState().setMode('select')}><MousePointer2 size={18} /></button>
-      <button type="button" aria-pressed={state.mode === 'pan'} title="平移" onClick={() => store.getState().setMode('pan')}><Move size={18} /></button>
-      <button type="button" aria-pressed={state.mode === 'connect'} title="连接节点" onClick={() => { store.getState().setMode('connect'); setConnectSource('') }}><Link2 size={18} /></button>
+    {!readOnly ? <nav className="canvas-dock" aria-label="画布工具" data-canvas-no-zoom>
+      {dockAddOpen ? <div className="canvas-dock-menu" role="menu" aria-label="添加节点">
+        <button type="button" role="menuitem" title="添加提示词" onClick={() => { addNode('prompt'); setDockAddOpen(false) }}><Sparkles size={16} />提示词</button>
+        <button type="button" role="menuitem" title="添加图片框" onClick={() => { addNode('image'); setDockAddOpen(false) }}><ImagePlus size={16} />图片框</button>
+        <button type="button" role="menuitem" title="添加图片生成" onClick={() => { addNode('image_generation'); setDockAddOpen(false) }}><Image size={16} />图片生成</button>
+        <button type="button" role="menuitem" title="添加视频生成" onClick={() => { addNode('video_generation'); setDockAddOpen(false) }}><Film size={16} />视频生成</button>
+        <button type="button" role="menuitem" onClick={() => { addNode('note'); setDockAddOpen(false) }}><StickyNote size={16} />便签</button>
+        <button type="button" role="menuitem" onClick={() => { setShowAssets(true); setDockAddOpen(false) }}><LayoutTemplate size={16} />资产库</button>
+      </div> : null}
+      <button type="button" aria-expanded={dockAddOpen} title="添加节点" aria-label="添加节点" aria-pressed={dockAddOpen} onClick={() => setDockAddOpen((open) => !open)}><Plus size={19} /></button>
       <i />
-      <button type="button" title="添加提示词" onClick={() => addNode('prompt')}><Plus size={13} /><Sparkles size={17} /></button>
-      <button type="button" title="添加图片框" onClick={() => addNode('image')}><Plus size={13} /><ImagePlus size={17} /></button>
-      <button type="button" title="添加图片生成" onClick={() => addNode('image_generation')}><Plus size={13} /><Image size={17} /></button>
-      <button type="button" title="添加视频生成" onClick={() => addNode('video_generation')}><Plus size={13} /><Film size={17} /></button>
-      <button type="button" title="添加便签" onClick={() => addNode('note')}><StickyNote size={17} /></button>
-      <button type="button" title="添加资产" onClick={() => setShowAssets(true)}><LayoutTemplate size={17} /></button>
+      <button type="button" aria-pressed={state.mode === 'select'} title="选择 (V)" onClick={() => store.getState().setMode('select')}><MousePointer2 size={18} /></button>
+      <button type="button" aria-pressed={state.mode === 'pan'} title="平移 (H / 按住 Space)" onClick={() => store.getState().setMode('pan')}><Hand size={18} /></button>
+      <button type="button" aria-pressed={state.mode === 'connect'} title="连接节点 (L)" onClick={() => { store.getState().setMode('connect'); setConnectSource('') }}><Link2 size={18} /></button>
+      <i />
+      <button type="button" title="搜索节点 (Ctrl+F)" onClick={() => setShowSearch(true)}><Search size={18} /></button>
+      <button type="button" title="自动整理选中节点" disabled={state.selectedIDs.length < 2} onClick={() => store.getState().autoLayoutSelected()}><BoxSelect size={18} /></button>
+      <button type="button" title="快捷键 (?)" aria-label="快捷键帮助" onClick={() => setShowShortcuts(true)}><Keyboard size={18} /></button>
     </nav> : null}
     <div
       ref={viewportRef}
       className="canvas-viewport"
       data-mode={state.mode}
+      data-space={spacePressed || undefined}
       onDoubleClick={(event) => {
         if (readOnly || (event.target as Element).closest('[data-canvas-node],[data-canvas-no-zoom]')) return
         openNodeMenu(event.clientX, event.clientY)
@@ -610,7 +682,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
           }
         }
         event.currentTarget.setPointerCapture(event.pointerId)
-        if (readOnly || state.mode === 'pan' || event.button === 1) setPan({ startX: event.clientX, startY: event.clientY, viewport: documentState.viewport })
+        if (readOnly || state.mode === 'pan' || event.button === 1 || spacePressedRef.current) setPan({ startX: event.clientX, startY: event.clientY, viewport: documentState.viewport })
         else {
           const point = worldPoint(event.clientX, event.clientY)
           setSelection({ start: point, current: point })
@@ -673,6 +745,14 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     >
       <div className="canvas-grid" style={gridStyle(documentState.viewport)} />
       <div className="canvas-world" data-canvas-world style={{ transform: `translate(${documentState.viewport.x}px, ${documentState.viewport.y}px) scale(${documentState.viewport.zoom})` }}>
+        {(documentState.groups ?? []).map((group) => {
+          const bounds = canvasGroupBounds(documentState, group)
+          if (!bounds) return null
+          const groupSelected = group.node_ids.every((id) => selectedSet.has(id))
+          return <div key={group.id} className="canvas-group" data-group-id={group.id} data-selected={groupSelected} style={{ left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height, ...(group.background ? { background: `${group.background}1f`, borderColor: `${group.background}66` } : null) }}>
+            <button type="button" className="canvas-group-label" data-canvas-no-zoom title={`${group.label}（双击配置分组）`} onPointerDown={(event) => { event.stopPropagation(); store.getState().select(group.node_ids) }} onDoubleClick={(event) => { event.stopPropagation(); setGroupConfigID(group.id) }}>{group.label}</button>
+          </div>
+        })}
         <svg className="canvas-edges" aria-label="画布连接">
           {documentState.edges.map((edge) => {
             const source = nodeByID.get(edge.source); const target = nodeByID.get(edge.target)
@@ -713,7 +793,17 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
           const selected = selectedSet.has(node.id) ? state.selectedIDs : event.shiftKey ? [...state.selectedIDs, node.id] : [node.id]
           store.getState().select(selected)
           if (readOnly) return
-          setDrag({ startX: event.clientX, startY: event.clientY, selectedIDs: selected, delta: { x: 0, y: 0 } })
+          // Alt/Option + drag duplicates the selection first (competitor convention).
+          let dragIDs = selected
+          if (event.altKey) {
+            store.getState().copySelected()
+            store.getState().pasteClipboard()
+            dragIDs = store.getState().selectedIDs
+          }
+          // Dragging any group member moves the whole group.
+          dragIDs = canvasGroupMembers(documentState, dragIDs)
+          if (dragIDs.length !== store.getState().selectedIDs.length) store.getState().select(dragIDs)
+          setDrag({ startX: event.clientX, startY: event.clientY, selectedIDs: dragIDs, delta: { x: 0, y: 0 } })
           event.currentTarget.setPointerCapture(event.pointerId)
         }} onDrag={(event) => { if (drag) setDrag({ ...drag, delta: { x: (event.clientX - drag.startX) / documentState.viewport.zoom, y: (event.clientY - drag.startY) / documentState.viewport.zoom } }) }} onDragEnd={() => { if (drag) store.getState().moveSelected(drag.delta); setDrag(null) }} onResizeStart={(event) => {
           event.stopPropagation()
@@ -736,7 +826,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
             estimateRetryNodesRef.current.add(node.id)
             setEstimateRetryVersion((value) => value + 1)
           } else void estimateNode(node)
-        }} onGenerate={() => void generateNode(node)} onAttach={() => { const run = runs.find((item) => item.node_id === node.id && item.status === 'succeeded'); if (run) void attachRun(run) }} onCancel={() => { const run = runs.find((item) => item.node_id === node.id && activeRunStatuses.has(item.status)); if (run) void userApi.cancelCanvasRun(canvas.id, run.id).then((next) => setRuns((items) => [next, ...items.filter((item) => item.id !== next.id)])) }} onMediaDetail={() => { if (node.asset_id) void userApi.getMediaAsset(node.asset_id).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught))) }} onChooseImage={() => chooseImageForFrame(node.id)} onUploadImage={() => uploadImageForFrame(node.id)} canUpload={app.featureFlags.media_upload} onContinueImage={() => addGenerationFromMedia(node, 'image_generation')} onContinueVideo={() => addGenerationFromMedia(node, 'video_generation')} onReuseVideo={() => { const taskID = String(node.payload?.source_task_id ?? '').trim(); if (taskID) window.location.hash = userHashForRoute('genpic', { media: 'video', taskId: taskID }) }} />
+        }} onGenerate={() => void generateNode(node)} onAttach={() => { const run = runs.find((item) => item.node_id === node.id && item.status === 'succeeded'); if (run) void attachRun(run) }} onCancel={() => { const run = runs.find((item) => item.node_id === node.id && activeRunStatuses.has(item.status)); if (run) void userApi.cancelCanvasRun(canvas.id, run.id).then((next) => setRuns((items) => [next, ...items.filter((item) => item.id !== next.id)])) }} onMediaDetail={() => { if (node.asset_id) void userApi.getMediaAsset(node.asset_id).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught))) }} onChooseImage={() => chooseImageForFrame(node.id)} onUploadImage={() => uploadImageForFrame(node.id)} canUpload={app.featureFlags.media_upload} onContinueImage={() => addGenerationFromMedia(node, 'image_generation')} onContinueVideo={() => addGenerationFromMedia(node, 'video_generation')} onReuseVideo={() => { const taskID = String(node.payload?.source_task_id ?? '').trim(); if (taskID) window.location.hash = userHashForRoute('genpic', { media: 'video', taskId: taskID }) }} onOpenConfig={() => setConfigNodeID(node.id)} onResizeMedia={(size) => store.getState().resizeNode(node.id, size)} />
         })}
         {selection ? <div className="canvas-selection-box" style={rectStyle(normalizedRect(selection.start, selection.current))} /> : null}
         {nodeMenu ? <div className="canvas-node-menu" data-canvas-no-zoom style={{ left: nodeMenu.point.x, top: nodeMenu.point.y }} role="menu" aria-label={nodeMenu.sourceID ? '添加兼容节点' : '添加节点'}>
@@ -755,6 +845,8 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
         <button type="button" title="复制" disabled={!state.selectedIDs.length} onClick={() => store.getState().copySelected()}><Copy size={17} /></button>
         <button type="button" title="粘贴" disabled={!state.clipboard?.nodes.length} onClick={() => store.getState().pasteClipboard()}><ClipboardPaste size={17} /></button>
         <button type="button" title="删除" disabled={!state.selectedIDs.length && !state.selectedEdgeIDs.length} onClick={() => store.getState().deleteSelected()}><Trash2 size={17} /></button>
+        <button type="button" title="成组 (G)" disabled={state.selectedIDs.length < 2} onClick={() => store.getState().groupSelected()}><Group size={17} /></button>
+        <button type="button" title="解组 (Shift+G)" disabled={!(documentState.groups ?? []).some((group) => group.node_ids.some((id) => selectedSet.has(id)))} onClick={() => store.getState().disbandSelectedGroups()}><Ungroup size={17} /></button>
         <button type="button" title="自动整理选中节点" disabled={state.selectedIDs.length < 2} onClick={() => store.getState().autoLayoutSelected()}><BoxSelect size={17} /></button>
       </div> : null}
       <button className="canvas-minimap" type="button" data-canvas-minimap data-canvas-no-zoom title="点击定位视图" onClick={(event) => {
@@ -769,37 +861,103 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     </div>
     {showSearch ? <CanvasNodeSearch nodes={transientNodes} onClose={() => setShowSearch(false)} onSelect={(node) => { store.getState().select([node.id]); store.getState().setViewport(fitCanvasViewport(computeCanvasBounds([node]), viewportSize, 120)); setShowSearch(false) }} /> : null}
     {showAssets ? <CanvasAssetDrawer projectID={canvas.project_id} mediaType={assetTargetNodeID ? 'image' : undefined} onClose={() => { setShowAssets(false); setAssetTargetNodeID('') }} onSelect={addAsset} /> : null}
+    {configNodeID ? (() => {
+      const node = transientNodes.find((item) => item.id === configNodeID)
+      if (!node || (node.type !== 'image_generation' && node.type !== 'video_generation')) return null
+      const estimate = nodeEstimates[node.id]
+      const currentEstimate = estimate?.signature === canvasGenerationEstimateSignature(documentState, node.id) ? estimate : undefined
+      const summary = generationInputSummary(node, documentState)
+      const inputSummary = node.type === 'image_generation' && imageCapability
+        ? { ...summary, errors: [...summary.errors, ...canvasImageParameterErrors(asObject(node.payload?.draft), imageCapability, canvasImageTaskType(documentState, node.id), workspaceTaskImageSafetyLimit)] }
+        : summary
+      return <Modal title={`${nodeLabels[node.type]}配置`} onClose={() => setConfigNodeID('')} className="canvas-node-config-dialog">
+        <GenerationNodeForm node={node} run={runs.find((run) => run.node_id === node.id)} estimate={currentEstimate} busy={busyNodeID === node.id} readOnly={readOnly} imageCapability={imageCapability} videoCapability={videoCapability} balance={app.balance?.available_points ?? '0.00000'} inputSummary={inputSummary} onUpdate={(payload) => store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, ...payload } }))} onEstimate={() => {
+          if (node.type === 'image_generation') { estimateRetryNodesRef.current.add(node.id); setEstimateRetryVersion((value) => value + 1) } else void estimateNode(node)
+        }} onGenerate={() => { void generateNode(node); setConfigNodeID('') }} onAttach={() => { const run = runs.find((item) => item.node_id === node.id && item.status === 'succeeded'); if (run) void attachRun(run) }} onCancel={() => { const run = runs.find((item) => item.node_id === node.id && activeRunStatuses.has(item.status)); if (run) void userApi.cancelCanvasRun(canvas.id, run.id).then((next) => setRuns((items) => [next, ...items.filter((item) => item.id !== next.id)])) }} />
+      </Modal>
+    })() : null}
+    {groupConfigID ? (() => {
+      const group = (documentState.groups ?? []).find((item) => item.id === groupConfigID)
+      if (!group) return null
+      return <Modal title="分组配置" onClose={() => setGroupConfigID('')} className="canvas-group-config-dialog">
+        <label className="canvas-group-field"><span>分组名称</span><input value={group.label} maxLength={64} onChange={(event) => store.getState().updateGroup(group.id, { label: event.target.value })} /></label>
+        <div className="canvas-group-field"><span>背景颜色</span><div className="canvas-group-swatches">
+          {['', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b'].map((color) => <button key={color || 'default'} type="button" data-active={(group.background ?? '') === color} style={color ? { background: `${color}33`, borderColor: color } : undefined} title={color || '默认'} aria-label={color || '默认背景'} onClick={() => store.getState().updateGroup(group.id, { background: color })} />)}
+        </div></div>
+        <div className="canvas-group-field"><span>成员节点（{group.node_ids.length}）</span><ul>{group.node_ids.map((id) => { const member = documentState.nodes.find((item) => item.id === id); return <li key={id}>{member ? `${nodeLabels[member.type]} · ${String(member.payload?.title ?? '')}` : id}</li> })}</ul></div>
+        <div className="canvas-group-config-actions">
+          <Button tone="ghost" onClick={() => { store.getState().select(group.node_ids); setGroupConfigID('') }}>选中成员</Button>
+          <Button onClick={() => { store.getState().disbandSelectedGroups(); store.getState().select(group.node_ids); setGroupConfigID('') }}>解散分组</Button>
+        </div>
+      </Modal>
+    })() : null}
+    {showShortcuts ? <Modal title="快捷键" onClose={() => setShowShortcuts(false)} className="canvas-shortcuts-dialog">
+      <div className="canvas-shortcuts-grid">
+        {[['Space / H / V', '平移 / 抓手工具 / 选择工具'], ['L', '连接节点'], ['G / Shift+G', '成组 / 解组'], ['双击节点', '打开参数配置'], ['Ctrl+Z / Shift+Z', '撤销 / 重做'], ['Ctrl+C / V / D', '复制 / 粘贴 / 副本'], ['Ctrl+A / F', '全选 / 搜索节点'], ['Alt+拖动', '拖动复制节点'], ['Enter', '生成所选节点'], ['0', '适应视图'], ['方向键', '微移（Shift 加速）'], ['Delete', '删除所选']].map(([keys, label]) => <div key={keys}><kbd>{keys}</kbd><span>{label}</span></div>)}
+      </div>
+    </Modal> : null}
     {previewAsset ? <MediaPreviewDialog asset={previewAsset} projects={projects.projects} creationActions={mediaCreationActions(previewAsset)} onClose={() => setPreviewAsset(null)} onChanged={setPreviewAsset} onDeleted={() => setPreviewAsset(null)} onContinue={(options) => { window.location.hash = userHashForRoute('genpic', options) }} /> : null}
     {conflict ? <div className="canvas-conflict" role="dialog" aria-modal="true" data-canvas-no-zoom><div><strong>画布已在其他页面更新</strong><p>远端版本 r{conflict.remote.revision}，本地草稿基于 r{state.command.revision}。请选择保留方式，系统不会自动覆盖。</p><footer><Button tone="ghost" onClick={() => { store.getState().replaceRemote(toLocalDocument(conflict.remote.document), conflict.remote.revision); setCanvas(conflict.remote); setConflict(null) }}>使用远端版本</Button><Button onClick={() => void userApi.createCanvas({ project_id: canvas.project_id, name: `${canvas.name} 本地副本`, document: toWireDocument(conflict.local) }).then((copy) => { setConflict(null); app.notify('success', `已创建副本：${copy.name}`) })}>复制本地版本</Button></footer></div></div> : null}
   </main>
 }
 
-function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, run, estimate, busy, imageCapability, videoCapability, balance, inputSummary, promptResourceCandidates, canUpload, onSelect, onDrag, onDragEnd, onResizeStart, onResize, onResizeEnd, onStartConnection, onFinishConnection, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onMediaDetail, onChooseImage, onUploadImage, onContinueImage, onContinueVideo, onReuseVideo }: {
+function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, run, estimate, busy, imageCapability, videoCapability, balance, inputSummary, promptResourceCandidates, canUpload, onSelect, onDrag, onDragEnd, onResizeStart, onResize, onResizeEnd, onStartConnection, onFinishConnection, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onMediaDetail, onChooseImage, onUploadImage, onContinueImage, onContinueVideo, onReuseVideo, onOpenConfig, onResizeMedia }: {
   node: CanvasNode; selected: boolean; readOnly: boolean; connecting: boolean; connectValid: boolean; connectInvalid: boolean; run?: CanvasRun; estimate?: CanvasEstimateState; busy: boolean
   imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; promptResourceCandidates: CanvasPromptResourceCandidate[]; canUpload: boolean
   onSelect: (event: React.PointerEvent<HTMLElement>) => void; onDrag: (event: React.PointerEvent<HTMLElement>) => void; onDragEnd: () => void
   onResizeStart: (event: React.PointerEvent<HTMLButtonElement>) => void; onResize: (event: React.PointerEvent<HTMLButtonElement>) => void; onResizeEnd: (event: React.PointerEvent<HTMLButtonElement>) => void
   onStartConnection: (event: React.PointerEvent<HTMLButtonElement>) => void; onFinishConnection: (event: React.PointerEvent<HTMLButtonElement>) => void
   onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void
-  onMediaDetail: () => void; onChooseImage: () => void; onUploadImage: () => void; onContinueImage: () => void; onContinueVideo: () => void; onReuseVideo: () => void
+  onMediaDetail: () => void; onChooseImage: () => void; onUploadImage: () => void; onContinueImage: () => void; onContinueVideo: () => void; onReuseVideo: () => void; onOpenConfig: () => void; onResizeMedia: (size: { width: number; height: number }) => void
 }) {
   const editable = node.type === 'prompt' || node.type === 'note'
   const generation = node.type === 'image_generation' || node.type === 'video_generation'
-  return <article className="canvas-node" data-canvas-node data-node-id={node.id} data-type={node.type} data-selected={selected} data-connecting={connecting} data-connect-valid={connectValid || undefined} data-connect-invalid={connectInvalid || undefined} style={{ left: node.position.x, top: node.position.y, width: node.size.width, height: node.size.height }} onPointerDown={onSelect} onPointerMove={onDrag} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
+  return <article className="canvas-node" data-canvas-node data-node-id={node.id} data-type={node.type} data-selected={selected} data-connecting={connecting} data-connect-valid={connectValid || undefined} data-connect-invalid={connectInvalid || undefined} style={{ left: node.position.x, top: node.position.y, width: node.size.width, height: node.size.height }} onPointerDown={onSelect} onPointerMove={onDrag} onPointerUp={onDragEnd} onPointerCancel={onDragEnd} onDoubleClick={(event) => { if (generation && !(event.target as Element).closest('[data-canvas-interactive]')) { event.stopPropagation(); onOpenConfig() } }}>
     {!readOnly ? <button type="button" className="canvas-port canvas-port-target" data-canvas-interactive data-canvas-port="target" title="连接到此节点" aria-label={`连接到${nodeLabels[node.type]}`} onPointerUp={onFinishConnection} /> : null}
     <header data-canvas-drag-handle><span>{nodeTypeIcon(node.type)}</span><strong>{String(node.payload?.title ?? nodeLabels[node.type])}</strong>{run ? <i data-status={run.status}>{run.status}</i> : null}</header>
     <div className="canvas-node-body" data-canvas-interactive data-canvas-no-zoom={editable || generation ? '' : undefined}>
       {node.type === 'prompt' ? <PromptNodeBody node={node} readOnly={readOnly} busy={busy} resourceCandidates={promptResourceCandidates} onUpdate={onUpdate} /> : null}
       {node.type === 'note' ? <textarea readOnly={readOnly} defaultValue={String(node.payload?.text ?? '')} placeholder="记录创作想法" onBlur={(event) => onUpdate({ text: event.target.value })} /> : null}
-      {node.type === 'image' || node.type === 'video' || node.type === 'audio' ? <CanvasMediaNode node={node} readOnly={readOnly} canUpload={canUpload} onChooseImage={onChooseImage} onUploadImage={onUploadImage} onDetail={onMediaDetail} onContinueImage={onContinueImage} onContinueVideo={onContinueVideo} onReuseVideo={onReuseVideo} /> : null}
-      {generation ? <GenerationNodeBody node={node} run={run} estimate={estimate} busy={busy} readOnly={readOnly} imageCapability={imageCapability} videoCapability={videoCapability} balance={balance} inputSummary={inputSummary} onUpdate={onUpdate} onEstimate={onEstimate} onGenerate={onGenerate} onAttach={onAttach} onCancel={onCancel} /> : null}
+      {node.type === 'image' || node.type === 'video' || node.type === 'audio' ? <CanvasMediaNode node={node} readOnly={readOnly} canUpload={canUpload} onChooseImage={onChooseImage} onUploadImage={onUploadImage} onDetail={onMediaDetail} onContinueImage={onContinueImage} onContinueVideo={onContinueVideo} onReuseVideo={onReuseVideo} onFitMedia={onResizeMedia} /> : null}
+      {generation ? <GenerationNodeSummary node={node} run={run} estimate={estimate} busy={busy} readOnly={readOnly} imageCapability={imageCapability} videoCapability={videoCapability} balance={balance} inputSummary={inputSummary} onUpdate={onUpdate} onEstimate={onEstimate} onGenerate={onGenerate} onAttach={onAttach} onCancel={onCancel} onOpenConfig={onOpenConfig} /> : null}
     </div>
     {!readOnly ? <button type="button" className="canvas-port canvas-port-source" data-canvas-interactive data-canvas-port="source" title="从此节点连接" aria-label={`从${nodeLabels[node.type]}连接`} onPointerDown={onStartConnection} /> : null}
     {!readOnly && selected ? <button type="button" className="canvas-node-resize" data-canvas-interactive data-canvas-resize-handle title="调整节点大小" aria-label={`调整${nodeLabels[node.type]}大小`} onPointerDown={onResizeStart} onPointerMove={onResize} onPointerUp={onResizeEnd} onPointerCancel={onResizeEnd} /> : null}
   </article>
 }
 
-function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapability, videoCapability, balance, inputSummary, onUpdate, onEstimate, onGenerate, onAttach, onCancel }: { node: CanvasNode; run?: CanvasRun; estimate?: CanvasEstimateState; busy: boolean; readOnly: boolean; imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void }) {
+function GenerationNodeSummary({ node, run, estimate, busy, readOnly, imageCapability, videoCapability, balance, inputSummary, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onOpenConfig }: { node: CanvasNode; run?: CanvasRun; estimate?: CanvasEstimateState; busy: boolean; readOnly: boolean; imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void; onOpenConfig: () => void }) {
+  const draft = asObject(node.payload?.draft)
+  const active = run && activeRunStatuses.has(run.status)
+  const recoverable = run?.status === 'succeeded' || run?.status === 'unplaced'
+  const isImage = node.type === 'image_generation'
+  const models = isImage ? imageCapability?.model_groups ?? [] : videoCapability?.model_groups ?? []
+  const model = models.find((item) => item.code === draft.route_model_code) ?? models[0]
+  const estimateReady = estimate?.status === 'ready'
+  const estimatePending = estimate?.status === 'waiting' || estimate?.status === 'loading'
+  const digest = isImage
+    ? [String(draft.quality ?? '') || null, draft.size_mode === 'pixel' ? String(draft.requested_size ?? '') : String(draft.aspect_ratio ?? ''), `x${normalizeWorkspaceImageCount(Number(draft.output_image_count ?? 1))}`].filter(Boolean).join(' · ')
+    : [String(draft.duration_seconds ?? '') + 's', String(draft.resolution ?? '').toUpperCase(), String(draft.aspect_ratio ?? ''), draft.audio_mode === 'generated' || draft.generate_audio ? '有声' : '静音'].filter(Boolean).join(' · ')
+  return <div className="canvas-generation-summary" data-canvas-interactive onDoubleClick={(event) => { event.stopPropagation(); onOpenConfig() }}>
+    <div className="canvas-generation-summary-digest">
+      <strong>{model?.name ?? String(draft.route_model_code ?? '未选择模型')}</strong>
+      <span>{digest || '双击配置参数'}</span>
+    </div>
+    <div className="canvas-generation-summary-inputs">提示词 {inputSummary.prompts} · 图片 {inputSummary.images}{inputSummary.selectedPromptID ? ' · 已选提示词' : ''}</div>
+    {inputSummary.errors.length ? <div className="canvas-generation-summary-errors" role="alert" onDoubleClick={(event) => { event.stopPropagation(); onOpenConfig() }}>{inputSummary.errors[0]}{inputSummary.errors.length > 1 ? ` 等 ${inputSummary.errors.length} 项待处理` : ''}</div> : null}
+    <div className="canvas-generation-summary-foot">
+      <span>{estimateReady ? `预计 ${pointsText(estimate.points)}` : estimatePending ? '估价中' : isImage ? '--' : `余额 ${pointsText(balance)}`}</span>
+      <button type="button" onClick={onOpenConfig} title="配置参数（双击节点同样打开）">配置</button>
+    </div>
+    <div className="canvas-generation-actions">{active ? <button type="button" onClick={onCancel}><CircleStop size={15} />取消</button> : recoverable ? <button type="button" onClick={onAttach}><RefreshCw size={15} />恢复结果</button> : !readOnly ? isImage
+      ? estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />生成</button> : estimate?.status === 'error' ? <button type="button" disabled={busy} onClick={onEstimate}><RefreshCw size={15} />重新估价</button> : <button type="button" disabled><Sparkles size={15} />{estimatePending ? '估价中' : '待参数'}</button>
+      : estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />生成</button> : <button type="button" disabled={busy || estimatePending} onClick={onEstimate}>{estimate?.status === 'error' ? <RefreshCw size={15} /> : <Sparkles size={15} />}{estimate?.status === 'error' ? '重新估价' : busy || estimatePending ? '估价中' : '预估费用'}</button> : null}</div>
+    {run?.error_message ? <small className="canvas-generation-errors">{run.error_message}</small> : null}
+    {run?.task_id ? <small className="canvas-generation-taskid inline-flex items-center gap-1"><span title={run.task_id}>任务ID: {run.task_id}</span><InlineCopyButton text={run.task_id} label="复制任务ID" /></small> : null}
+  </div>
+}
+
+function GenerationNodeForm({ node, run, estimate, busy, readOnly, imageCapability, videoCapability, balance, inputSummary, onUpdate, onEstimate, onGenerate, onAttach, onCancel }: { node: CanvasNode; run?: CanvasRun; estimate?: CanvasEstimateState; busy: boolean; readOnly: boolean; imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; onUpdate: (payload: Record<string, unknown>) => void; onEstimate: () => void; onGenerate: () => void; onAttach: () => void; onCancel: () => void }) {
   const draft = asObject(node.payload?.draft)
   const active = run && activeRunStatuses.has(run.status)
   const recoverable = run?.status === 'succeeded' || run?.status === 'unplaced'
@@ -833,16 +991,19 @@ function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapabili
       <label>尺寸模式<select disabled={readOnly} value={String(draft.size_mode ?? imageOptions?.size_modes?.[0] ?? 'auto')} onChange={(event) => patchDraft(canvasImageSizeDraftPatch(event.target.value, imageOptions ?? {}))}>{(imageOptions?.size_modes ?? ['auto']).map((value) => <option key={value} value={value}>{value === 'auto' ? '自动' : value === 'ratio' ? '按比例' : '按像素'}</option>)}</select></label>
       {draft.size_mode === 'pixel' ? <label>像素尺寸<select disabled={readOnly} value={String(draft.requested_size ?? imageOptions?.pixel_sizes?.[0] ?? '')} onChange={(event) => patchDraft({ requested_size: event.target.value })}>{(imageOptions?.pixel_sizes ?? []).map((value) => <option key={value}>{value}</option>)}</select></label> : draft.size_mode === 'ratio' ? <><label>基础分辨率<select disabled={readOnly} value={String(draft.base_resolution ?? imageOptions?.base_resolution?.[0] ?? '')} onChange={(event) => patchDraft({ base_resolution: event.target.value })}>{(imageOptions?.base_resolution ?? []).map((value) => <option key={value}>{value}</option>)}</select></label><label>比例<select disabled={readOnly} value={String(draft.aspect_ratio ?? imageOptions?.aspect_ratios?.[0] ?? '')} onChange={(event) => patchDraft({ aspect_ratio: event.target.value })}>{(imageOptions?.aspect_ratios ?? []).map((value) => <option key={value}>{value}</option>)}</select></label></> : null}
       <label>质量<select disabled={readOnly} value={String(draft.quality ?? imageOptions?.quality?.[0] ?? '')} onChange={(event) => patchDraft({ quality: event.target.value })}>{(imageOptions?.quality ?? []).map((value) => <option key={value}>{value}</option>)}</select></label>
-      <label>输出格式<select disabled={readOnly} value={String(draft.output_format ?? imageOptions?.output_format?.[0] ?? '')} onChange={(event) => patchDraft({ output_format: event.target.value })}>{(imageOptions?.output_format ?? []).map((value) => <option key={value}>{value.toUpperCase()}</option>)}</select></label>
+      <label>输出格式<select disabled={readOnly} value={String(draft.output_format ?? imageOptions?.output_format?.[0] ?? '')} onChange={(event) => patchDraft({ output_format: event.target.value })}>{(imageOptions?.output_format ?? []).map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select></label>
     </> : <>
       <label>生成方式<select disabled={readOnly} value={videoTaskType} onChange={(event) => patchDraft({ task_type: event.target.value })}>{(videoModel?.task_types ?? []).map((value) => <option key={value} value={value}>{value === 'text_to_video' ? '文生视频' : value === 'image_to_video' ? '图生视频' : '首尾帧生视频'}</option>)}</select></label>
       <label>时长<select disabled={readOnly} value={String(draft.duration_seconds ?? videoModel?.defaults.duration_seconds ?? '')} onChange={(event) => patchDraft({ duration_seconds: Number(event.target.value) })}>{(videoOptions?.durations ?? []).map((value) => <option key={value} value={value}>{value} 秒</option>)}</select></label>
-      <label>清晰度<select disabled={readOnly} value={String(draft.resolution ?? videoModel?.defaults.resolution ?? '')} onChange={(event) => patchDraft({ resolution: event.target.value })}>{(videoOptions?.resolutions ?? []).map((value) => <option key={value}>{value.toUpperCase()}</option>)}</select></label>
+      <label>清晰度<select disabled={readOnly} value={String(draft.resolution ?? videoModel?.defaults.resolution ?? '').toLowerCase()} onChange={(event) => patchDraft({ resolution: event.target.value })}>{(videoOptions?.resolutions ?? []).map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select></label>
       <label>比例<select disabled={readOnly} value={String(draft.aspect_ratio ?? videoModel?.defaults.aspect_ratio ?? '')} onChange={(event) => patchDraft({ aspect_ratio: event.target.value })}>{(videoOptions?.aspect_ratios ?? []).map((value) => <option key={value}>{value}</option>)}</select></label>
     </>}
     {node.type === 'image_generation'
       ? <label>生成数量<input type="number" min={1} max={workspaceTaskImageSafetyLimit} step={1} disabled={readOnly} value={imageCount} onChange={(event) => patchDraft({ output_image_count: normalizeWorkspaceImageCount(event.target.valueAsNumber) })} /></label>
-      : <label>生成数量<select disabled={readOnly} value={String(draft.output_count ?? 1)} onChange={(event) => patchDraft({ output_count: Number(event.target.value) })}>{Array.from({ length: countMax }, (_, index) => index + 1).map((value) => <option key={value}>{value}</option>)}</select></label>}
+      : <>
+        <label>生成数量<select disabled={readOnly} value={String(draft.output_count ?? 1)} onChange={(event) => patchDraft({ output_count: Number(event.target.value) })}>{Array.from({ length: countMax }, (_, index) => index + 1).map((value) => <option key={value}>{value}</option>)}</select></label>
+        <label className="canvas-video-audio-toggle">生成音频<input type="checkbox" disabled={readOnly || !(videoOptions?.audio_generation ?? true)} checked={draft.audio_mode === 'generated' || draft.generate_audio === true} onChange={(event) => patchDraft({ audio_mode: event.target.checked ? 'generated' : 'silent', generate_audio: event.target.checked })} /></label>
+      </>}
     {inputSummary.promptNodes.length ? <label>提示词来源<select disabled={readOnly || inputSummary.promptNodes.length === 1} value={inputSummary.selectedPromptID} onChange={(event) => onUpdate({ active_prompt_node_id: event.target.value })}>
       {inputSummary.promptNodes.length > 1 && !inputSummary.selectedPromptID ? <option value="">请选择提示词</option> : null}
       {inputSummary.promptNodes.map((prompt) => <option key={prompt.id} value={prompt.id}>{String(prompt.payload?.title ?? prompt.payload?.text ?? prompt.id).slice(0, 36)}</option>)}
@@ -850,12 +1011,13 @@ function GenerationNodeBody({ node, run, estimate, busy, readOnly, imageCapabili
     {inputSummary.referenceBindings.length ? <div className="canvas-generation-bindings"><strong>资源绑定</strong>{inputSummary.referenceBindings.map((binding) => <span key={binding.name} data-valid={Boolean(binding.assetID)}><b>@{binding.name}</b><i>{binding.assetName ?? '未关联同名资产'}</i></span>)}</div> : null}
     <div className="canvas-generation-inputs">提示词 {inputSummary.prompts} · 图片 {inputSummary.images}</div>
     {inputSummary.errors.length ? <div className="canvas-generation-errors" role="alert">{inputSummary.errors.join('；')}</div> : null}
-    <div className="canvas-generation-estimate"><span>{node.type === 'image_generation' || estimate ? '预计积分' : '当前余额'}</span><strong>{estimateReady ? estimate.points : estimatePending ? '计算中' : node.type === 'image_generation' ? '--' : balance}</strong></div>
+    <div className="canvas-generation-estimate"><span>{node.type === 'image_generation' || estimate ? '预计消耗' : '当前余额'}</span><strong>{estimateReady ? pointsText(estimate.points) : estimatePending ? '计算中' : node.type === 'image_generation' ? '--' : pointsText(balance)}</strong></div>
     {estimate?.status === 'error' ? <small className="canvas-generation-errors">{estimate.error}</small> : null}
     <div className="canvas-generation-actions">{active ? <button type="button" onClick={onCancel}><CircleStop size={15} />取消</button> : recoverable ? <button type="button" onClick={onAttach}><RefreshCw size={15} />恢复结果</button> : !readOnly ? node.type === 'image_generation'
       ? estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />确认生成</button> : estimate?.status === 'error' ? <button type="button" disabled={busy} onClick={onEstimate}><RefreshCw size={15} />重新估价</button> : <button type="button" disabled><Sparkles size={15} />{estimatePending ? '正在估价' : '等待参数'}</button>
       : estimateReady ? <button type="button" disabled={busy} onClick={onGenerate}><Sparkles size={15} />确认生成</button> : <button type="button" disabled={busy || estimatePending} onClick={onEstimate}>{estimate?.status === 'error' ? <RefreshCw size={15} /> : <Sparkles size={15} />}{estimate?.status === 'error' ? '重新估价' : busy || estimatePending ? '正在估价' : '查看费用'}</button> : null}</div>
     {run?.error_message ? <small className="canvas-generation-errors">{run.error_message}</small> : null}
+    {run?.task_id ? <small className="canvas-generation-taskid inline-flex items-center gap-1"><span title={run.task_id}>任务ID: {run.task_id}</span><InlineCopyButton text={run.task_id} label="复制任务ID" /></small> : null}
   </div>
 }
 
@@ -890,7 +1052,7 @@ function PromptNodeBody({ node, readOnly, resourceCandidates, onUpdate }: { node
     setOptimizing(true)
     try {
       const estimate = await userApi.estimatePromptOptimization(value)
-      if (!window.confirm(`优化提示词预计消耗 ${estimate.estimated_points} 积分，是否继续？`)) return
+      if (!window.confirm(`优化提示词预计消耗 ${pointsText(estimate.estimated_points)}，是否继续？`)) return
       const result = await userApi.optimizePrompt(value, estimate.quote)
       commitText(result.optimized_prompt)
     } finally { setOptimizing(false) }
@@ -906,7 +1068,7 @@ function canvasPromptReferenceAsset(candidate: CanvasPromptResourceCandidate): R
   return { id: candidate.assetID, name: candidate.name, status: 'ready', created_at: '', mime_type: candidate.mimeType, width: candidate.width, height: candidate.height }
 }
 
-function CanvasMediaNode({ node, readOnly, canUpload, onChooseImage, onUploadImage, onDetail, onContinueImage, onContinueVideo, onReuseVideo }: { node: CanvasNode; readOnly: boolean; canUpload: boolean; onChooseImage: () => void; onUploadImage: () => void; onDetail: () => void; onContinueImage: () => void; onContinueVideo: () => void; onReuseVideo: () => void }) {
+function CanvasMediaNode({ node, readOnly, canUpload, onChooseImage, onUploadImage, onDetail, onContinueImage, onContinueVideo, onReuseVideo, onFitMedia }: { node: CanvasNode; readOnly: boolean; canUpload: boolean; onChooseImage: () => void; onUploadImage: () => void; onDetail: () => void; onContinueImage: () => void; onContinueVideo: () => void; onReuseVideo: () => void; onFitMedia: (size: { width: number; height: number }) => void }) {
   const [previewURL, setPreviewURL] = useState('')
   const [accessError, setAccessError] = useState('')
   useEffect(() => {
@@ -936,8 +1098,14 @@ function CanvasMediaNode({ node, readOnly, canUpload, onChooseImage, onUploadIma
   </div>
   return <div className="canvas-media-node" data-canvas-no-drag>
     <div className="canvas-media-preview">
-      {previewURL && node.type === 'image' ? <img src={previewURL} alt={String(node.payload?.name ?? '图片结果')} loading="lazy" /> : null}
-      {previewURL && node.type === 'video' ? <video src={previewURL} controls playsInline preload="metadata" /> : null}
+      {previewURL && node.type === 'image' ? <img src={previewURL} alt={String(node.payload?.name ?? '图片结果')} loading="lazy" onLoad={(event) => {
+        const image = event.currentTarget
+        if (image.naturalWidth && image.naturalHeight) onFitMedia(canvasMediaFitSize(node, image.naturalWidth, image.naturalHeight))
+      }} /> : null}
+      {previewURL && node.type === 'video' ? <video src={previewURL} controls playsInline preload="metadata" onLoadedMetadata={(event) => {
+        const video = event.currentTarget
+        if (video.videoWidth && video.videoHeight) onFitMedia(canvasMediaFitSize(node, video.videoWidth, video.videoHeight))
+      }} /> : null}
       {previewURL && node.type === 'audio' ? <audio src={previewURL} controls preload="metadata" /> : null}
       {!previewURL ? <div className="canvas-media-placeholder">{nodeTypeIcon(node.type)}<span>{accessError || String(node.payload?.name ?? node.asset_id)}</span></div> : null}
     </div>
@@ -946,8 +1114,28 @@ function CanvasMediaNode({ node, readOnly, canUpload, onChooseImage, onUploadIma
   </div>
 }
 
+// Fit the node to the media's aspect ratio within comfortable canvas bounds —
+// never a 1:1 pixel blow-up. Long side caps around 560px, respects minimums.
+function canvasMediaFitSize(node: CanvasNode, mediaWidth: number, mediaHeight: number) {
+  const minimum = canvasNodeMinimumSize(node.type)
+  const longSide = 560
+  const scale = longSide / Math.max(mediaWidth, mediaHeight)
+  const width = Math.max(minimum.width, Math.round(mediaWidth * Math.min(1, scale)))
+  const height = Math.max(minimum.height, Math.round(mediaHeight * Math.min(1, scale)))
+  return { width, height }
+}
+
 const emptyCanvasStore = createCanvasStore({ schema_version: 1, viewport: { x: 0, y: 0, zoom: 1 }, nodes: [], edges: [] }, 0)
 function toLocalDocument(document: CreativeCanvas['document']): CanvasDocument { return normalizeCanvasDocument(document) as CanvasDocument }
+function canonicalCanvasDocument(document: CanvasDocument) {
+  return {
+    schema_version: 1,
+    viewport: { x: document.viewport.x, y: document.viewport.y, zoom: document.viewport.zoom },
+    nodes: document.nodes,
+    edges: document.edges,
+    groups: document.groups?.length ? document.groups : [],
+  }
+}
 function toWireDocument(document: CanvasDocument): CreativeCanvas['document'] { return document as CreativeCanvas['document'] }
 function asObject(value: unknown) { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {} }
 function defaultNodePayload(type: CanvasNodeType, imageCapability?: Capability | null, videoCapability?: VideoCapability | null) {

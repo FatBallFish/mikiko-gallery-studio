@@ -2222,6 +2222,8 @@ var (
 		{Name: "media_type", Type: field.TypeString, Size: 16, Default: "image"},
 		{Name: "enabled", Type: field.TypeBool, Default: false},
 		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "icon_key", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "icon_svg", Type: field.TypeString, Size: 65536, Default: ""},
 	}
 	// RouteModelsTable holds the schema information for the "route_models" table.
 	RouteModelsTable = &schema.Table{
@@ -2274,6 +2276,64 @@ var (
 				Name:    "routemodelcandidate_route_model_id_account_model_id",
 				Unique:  true,
 				Columns: []*schema.Column{RouteModelCandidatesColumns[4], RouteModelCandidatesColumns[5]},
+			},
+		},
+	}
+	// RouteModelGroupsColumns holds the columns for the "route_model_groups" table.
+	RouteModelGroupsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "code", Type: field.TypeString, Size: 64},
+		{Name: "name", Type: field.TypeString, Size: 128},
+		{Name: "description", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "media_type", Type: field.TypeString, Size: 16, Default: "image"},
+		{Name: "icon_key", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "icon_svg", Type: field.TypeString, Size: 65536, Default: ""},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+	}
+	// RouteModelGroupsTable holds the schema information for the "route_model_groups" table.
+	RouteModelGroupsTable = &schema.Table{
+		Name:       "route_model_groups",
+		Columns:    RouteModelGroupsColumns,
+		PrimaryKey: []*schema.Column{RouteModelGroupsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "routemodelgroup_code",
+				Unique:  true,
+				Columns: []*schema.Column{RouteModelGroupsColumns[4]},
+			},
+			{
+				Name:    "routemodelgroup_media_type_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{RouteModelGroupsColumns[7], RouteModelGroupsColumns[11]},
+			},
+		},
+	}
+	// RouteModelGroupMembersColumns holds the columns for the "route_model_group_members" table.
+	RouteModelGroupMembersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "group_id", Type: field.TypeInt64},
+		{Name: "route_model_id", Type: field.TypeInt64},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+	}
+	// RouteModelGroupMembersTable holds the schema information for the "route_model_group_members" table.
+	RouteModelGroupMembersTable = &schema.Table{
+		Name:       "route_model_group_members",
+		Columns:    RouteModelGroupMembersColumns,
+		PrimaryKey: []*schema.Column{RouteModelGroupMembersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "routemodelgroupmember_group_id_route_model_id",
+				Unique:  true,
+				Columns: []*schema.Column{RouteModelGroupMembersColumns[1], RouteModelGroupMembersColumns[2]},
+			},
+			{
+				Name:    "routemodelgroupmember_route_model_id",
+				Unique:  false,
+				Columns: []*schema.Column{RouteModelGroupMembersColumns[2]},
 			},
 		},
 	}
@@ -3316,6 +3376,8 @@ var (
 		RefreshSessionsTable,
 		RouteModelsTable,
 		RouteModelCandidatesTable,
+		RouteModelGroupsTable,
+		RouteModelGroupMembersTable,
 		RouteModelPricesTable,
 		RouteModelVisibilityGroupsTable,
 		SecureConfigsTable,
@@ -3412,6 +3474,12 @@ func init() {
 	}
 	RouteModelCandidatesTable.Annotation = &entsql.Annotation{
 		Table: "route_model_candidates",
+	}
+	RouteModelGroupsTable.Annotation = &entsql.Annotation{
+		Table: "route_model_groups",
+	}
+	RouteModelGroupMembersTable.Annotation = &entsql.Annotation{
+		Table: "route_model_group_members",
 	}
 	RouteModelPricesTable.Annotation = &entsql.Annotation{
 		Table: "route_model_prices",

@@ -1,12 +1,13 @@
 import type { VideoCapability, VideoCapabilityModelGroup, VideoTask, VideoTaskType } from '../../../../shared/api-types'
 
 export type CreationMediaMode = 'image' | 'video'
+export type VideoDraftInputRole = 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video'
 export type VideoDraft = {
   route_model_code: string
   task_type: VideoTaskType
   prompt_template: string
   prompt_variables: Array<{ name: string; value: string }>
-  inputs: Array<{ asset_id: string; role: 'first_frame' | 'last_frame'; ordinal: number }>
+  inputs: Array<{ asset_id: string; role: VideoDraftInputRole; ordinal: number }>
   duration_seconds: number
   resolution: string
   aspect_ratio: string
@@ -118,4 +119,40 @@ export function reuseVideoTask(task: VideoTask): VideoDraft {
 
 export function videoModelForDraft(capability: VideoCapability, draft: VideoDraft): VideoCapabilityModelGroup | undefined {
   return capability.model_groups.find((item) => item.code === draft.route_model_code)
+}
+
+// Input rows shown for each task type, in render order. Video-edit and
+// video-extend reuse Wan3.0's reference-video input; reference-to-video
+// accepts both images and videos.
+export const VIDEO_TASK_INPUT_ROLES: Record<VideoTaskType, VideoDraftInputRole[]> = {
+  text_to_video: [],
+  image_to_video: ['first_frame'],
+  first_last_frame_to_video: ['first_frame', 'last_frame'],
+  reference_to_video: ['reference_image', 'reference_video'],
+  video_edit: ['reference_video'],
+  video_extend: ['reference_video'],
+}
+
+export function videoTaskRequiresInputs(taskType: VideoTaskType): boolean {
+  return taskType !== 'text_to_video'
+}
+
+export function videoTaskInputLabel(role: VideoDraftInputRole): string {
+  switch (role) {
+    case 'first_frame': return '首帧资产'
+    case 'last_frame': return '尾帧资产'
+    case 'reference_image': return '参考图片'
+    case 'reference_video': return '参考视频'
+  }
+}
+
+export function videoTaskInputMissing(taskType: VideoTaskType, inputs: VideoDraft['inputs']): boolean {
+  const filled = new Set(inputs.filter((item) => item.asset_id.trim()).map((item) => item.role))
+  switch (taskType) {
+    case 'text_to_video': return false
+    case 'image_to_video': return !filled.has('first_frame')
+    case 'first_last_frame_to_video': return !filled.has('first_frame') || !filled.has('last_frame')
+    case 'reference_to_video': return !filled.has('reference_image') && !filled.has('reference_video')
+    case 'video_edit': case 'video_extend': return !filled.has('reference_video')
+  }
 }

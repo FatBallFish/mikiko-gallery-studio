@@ -117,6 +117,10 @@ func nativePricingSourceReference(schema string) string {
 		return "https://docs.volcengine.com/docs/82379/1544106?lang=zh"
 	case domainvideo.PricingSchemaMiniMaxH3SecondV1:
 		return "https://platform.minimaxi.com/docs/guides/pricing-paygo"
+	case domainvideo.PricingSchemaGasicPerTaskV1:
+		return "https://g-aisc.xyz/v1"
+	case domainvideo.PricingSchemaBailianPerSecond:
+		return "https://docs.bailian.console.aliyun.com/zh/model-studio/model-pricing"
 	default:
 		return ""
 	}
@@ -290,6 +294,18 @@ func decodeNativeRateCard(providerCode, modelCode, schema string, config map[str
 		card.MiniMaxH3 = &domainvideo.MiniMaxH3SecondRateCard{}
 		if err := json.Unmarshal(payload, card.MiniMaxH3); err != nil {
 			return domainvideo.RateCard{}, errs.BadRequest("invalid minimax h3 rate config")
+		}
+	case domainvideo.PricingSchemaGasicPerTaskV1:
+		card.RuleVersion = domainvideo.GasicRuleVersion202609
+		card.Gasic = &domainvideo.GasicPerTaskRateCard{}
+		if err := json.Unmarshal(payload, card.Gasic); err != nil {
+			return domainvideo.RateCard{}, errs.BadRequest("invalid gasic rate config")
+		}
+	case domainvideo.PricingSchemaBailianPerSecond:
+		card.RuleVersion = domainvideo.BailianRuleVersion202609
+		card.Bailian = &domainvideo.BailianPerSecondRateCard{}
+		if err := json.Unmarshal(payload, card.Bailian); err != nil {
+			return domainvideo.RateCard{}, errs.BadRequest("invalid bailian rate config")
 		}
 	default:
 		return domainvideo.RateCard{}, errs.New(422, errs.CodeVideoPricingSchemaUnsupported, fmt.Sprintf("unsupported video pricing schema %q", schema))

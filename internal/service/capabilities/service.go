@@ -17,9 +17,18 @@ type Item struct {
 	MaxReferenceImageCount int      `json:"max_reference_image_count"`
 }
 
+type RouteModelGroupInfo struct {
+	Code            string   `json:"code"`
+	Name            string   `json:"name"`
+	IconKey         string   `json:"icon_key,omitempty"`
+	IconSVG         string   `json:"icon_svg,omitempty"`
+	RouteModelCodes []string `json:"route_model_codes"`
+}
+
 type Response struct {
 	Items                          []Item                       `json:"items,omitempty"`
 	ModelGroups                    []modelhub.VisibleRouteModel `json:"model_groups,omitempty"`
+	RouteModelGroups               []RouteModelGroupInfo        `json:"route_model_groups,omitempty"`
 	ReferenceImageMaxMB            int                          `json:"reference_image_max_mb,omitempty"`
 	ReferenceImageMaxBytes         int64                        `json:"reference_image_max_bytes,omitempty"`
 	ReferenceImageAllowedFormats   []string                     `json:"reference_image_allowed_formats,omitempty"`

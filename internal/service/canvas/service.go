@@ -12,6 +12,7 @@ import (
 	"time"
 
 	domaincanvas "github.com/fatballfish/pic-gallery/internal/domain/canvas"
+	mediaerrors "github.com/fatballfish/pic-gallery/internal/service/mediaerrors"
 	"github.com/google/uuid"
 )
 
@@ -385,6 +386,18 @@ func (s *Service) ListRuns(ctx context.Context, userID int64, canvasID uuid.UUID
 				}
 			}
 		}
+	}
+	for i := range runs {
+		// Historical runs may carry raw vendor text; serve the unified code
+		// and curated copy instead.
+		resolution := mediaerrors.ResolveImageTask(runs[i].ErrorCode, runs[i].ErrorMessage)
+		if runs[i].TaskKind == TaskKindVideo {
+			resolution = mediaerrors.ResolveVideoItem(runs[i].ErrorCode, runs[i].ErrorMessage)
+		}
+		if resolution.Code != "" {
+			runs[i].ErrorCode = resolution.Code
+		}
+		runs[i].ErrorMessage = resolution.Message
 	}
 	return runs, nil
 }

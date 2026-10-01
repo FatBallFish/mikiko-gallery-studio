@@ -1,4 +1,5 @@
 import { Maximize2, Sparkles, Undo2 } from 'lucide-react'
+import { pointsText } from '../../../shared/pointsDisplay'
 import type { ReferenceAsset } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
@@ -66,7 +67,7 @@ export function PromptOptimizationPanel({ state, onConfirm, onApply, onCancel }:
 }) {
   if (state.stage === 'estimating' || state.stage === 'optimizing') return <div className="mt-4 rounded-md border border-[var(--border)] bg-[var(--surface)] p-4 text-sm">{state.stage === 'estimating' ? '正在计算预估费用...' : '正在优化提示词...'}</div>
   if (state.stage === 'error') return <div className="mt-4 rounded-md border border-[var(--accent-coral)] p-4"><p className="m-0 text-sm text-[var(--accent-coral)]">{state.error}</p><div className="mt-3 flex justify-end"><Button tone="ghost" onClick={onCancel}>关闭</Button></div></div>
-  if (state.stage === 'confirming' && state.estimate) return <div className="mt-4 rounded-md border border-[var(--border)] bg-[var(--surface)] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><strong className="block text-sm">确认优化提示词</strong><span className="text-xs text-[var(--muted)]">{state.estimate.model.display_name} · 预计 {state.estimate.estimated_points} 积分</span></div><div className="flex gap-2"><Button tone="ghost" onClick={onCancel}>取消</Button><Button onClick={onConfirm}>确认优化</Button></div></div></div>
+  if (state.stage === 'confirming' && state.estimate) return <div className="mt-4 rounded-md border border-[var(--border)] bg-[var(--surface)] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><strong className="block text-sm">确认优化提示词</strong><span className="text-xs text-[var(--muted)]">{state.estimate.model.display_name} · 预计 {pointsText(state.estimate.estimated_points)}</span></div><div className="flex gap-2"><Button tone="ghost" onClick={onCancel}>取消</Button><Button onClick={onConfirm}>确认优化</Button></div></div></div>
   if (state.stage === 'comparing' && state.result) return <div className="mt-4 border-t border-[var(--border)] pt-4"><div className="grid gap-3 md:grid-cols-2"><PromptCompare label="原提示词" value={state.originalPrompt} /><PromptCompare label="优化后" value={state.result.optimized_prompt} accent /></div><div className="mt-3 flex justify-end gap-2"><Button tone="ghost" onClick={onCancel}>保留原文</Button><Button onClick={onApply}>应用优化</Button></div></div>
   return null
 }

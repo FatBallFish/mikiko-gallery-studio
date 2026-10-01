@@ -167,6 +167,8 @@ export const API_PATHS = {
     textModelDefault: '/api/ops/admin/v1/text-models/{model_id}:default',
     textModelTest: '/api/ops/admin/v1/text-models/{model_id}:test',
     routeModels: '/api/ops/admin/v1/route-models',
+    routeModelGroups: '/api/ops/admin/v1/route-model-groups',
+    routeModelGroupDetail: '/api/ops/admin/v1/route-model-groups/{group_id}',
     routeModelDetail: '/api/ops/admin/v1/route-models/{route_model_id}',
     routeModelCandidates: '/api/ops/admin/v1/route-models/{route_model_id}/candidates',
     routeModelCandidateDetail: '/api/ops/admin/v1/route-models/{route_model_id}/candidates/{candidate_id}',
@@ -247,7 +249,7 @@ export type PagedResponse<T> = { items: T[]; pagination: Pagination }
 export type PageResult<T> = { items: T[]; total: number; next_cursor?: string; pagination?: Pagination }
 
 export type ImageTaskType = 'text_to_image' | 'image_edit'
-export type VideoTaskType = 'text_to_video' | 'image_to_video' | 'first_last_frame_to_video'
+export type VideoTaskType = 'text_to_video' | 'image_to_video' | 'first_last_frame_to_video' | 'reference_to_video' | 'video_edit' | 'video_extend'
 export type VideoTaskStatus = 'queued' | 'running' | 'saving' | 'succeeded' | 'partial' | 'failed' | 'cancelled' | string
 export type VideoTaskCombination = { duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode: 'silent' | 'generated' }
 export type VideoTaskOptions = { durations: number[]; resolutions: string[]; aspect_ratios: string[]; audio_generation: boolean; combinations: VideoTaskCombination[] }
@@ -261,14 +263,15 @@ export type VideoCapabilityModelGroup = {
   defaults: { task_type: VideoTaskType; duration_seconds: number; resolution: string; aspect_ratio: string; generate_audio: boolean }
   options_by_task_type: Partial<Record<VideoTaskType, VideoTaskOptions>>
 }
-export type VideoCapability = { capability_version: string; model_groups: VideoCapabilityModelGroup[] }
+export type VideoCapability = { capability_version: string; model_groups: VideoCapabilityModelGroup[]; route_model_groups?: RouteModelGroupMeta[] }
 export type VideoCapabilityCombinationWire = { task_type: VideoTaskType; duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode: 'silent' | 'generated' }
 export type VideoCapabilityGroupWire = {
-  route_model_code: string; name: string; description?: string; config_version: string; capability_version: string
+  route_model_code: string; name: string; description?: string; icon_key?: string; icon_svg?: string; group_codes?: string[]; config_version: string; capability_version: string; minimum_points?: string
   max_output_count: number; task_types: VideoTaskType[]; combinations: VideoCapabilityCombinationWire[]
 }
 export type VideoCapabilityListWire = { groups: VideoCapabilityGroupWire[] }
-export type VideoInput = { id?: string; asset_id: string; role: 'first_frame' | 'last_frame'; ordinal: number; asset_snapshot?: Record<string, unknown>; asset?: { id: string; name?: string; preview_url?: string } }
+export type VideoInputRole = 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video'
+export type VideoInput = { id?: string; asset_id: string; role: VideoInputRole; ordinal: number; asset_snapshot?: Record<string, unknown>; asset?: { id: string; name?: string; preview_url?: string } }
 export type VideoEstimateRequest = {
   project_id: string; route_model_code: string; task_type: VideoTaskType; prompt_template: string
   prompt_variables: Array<{ name: string; value: string }>; inputs: Array<Omit<VideoInput, 'id' | 'asset'>>
@@ -329,18 +332,28 @@ export type MiniMaxH3VideoRateConfig = {
   extra_image_cny: string
   input_audio_free: true
 }
+export type GasicPerTaskRateConfig = {
+  per_task_cny: string
+}
+export type BailianPerSecondRateConfig = {
+  resolutions: Record<string, { output_second_cny: string; input_video_second_cny: string }>
+}
 export type AdminVideoRateCard = {
   id: number; account_model_id: number; currency: 'CNY'; rate_version: number
   source_reference: string; effective_at: string; enabled: boolean
 } & (
   | { provider_code: 'seedance'; pricing_schema: 'seedance_token_v1'; rate_config: SeedanceVideoRateConfig }
   | { provider_code: 'minimax'; pricing_schema: 'minimax_h3_second_v1'; rate_config: MiniMaxH3VideoRateConfig }
+  | { provider_code: 'gasic'; pricing_schema: 'gasic_per_task_v1'; rate_config: GasicPerTaskRateConfig }
+  | { provider_code: 'bailian'; pricing_schema: 'bailian_per_second_v1'; rate_config: BailianPerSecondRateConfig }
 )
 export type AdminVideoRateCardWrite = {
   expected_rate_version: number; enabled: boolean
 } & (
   | { pricing_schema: 'seedance_token_v1'; rate_config: SeedanceVideoRateConfig }
   | { pricing_schema: 'minimax_h3_second_v1'; rate_config: MiniMaxH3VideoRateConfig }
+  | { pricing_schema: 'gasic_per_task_v1'; rate_config: GasicPerTaskRateConfig }
+  | { pricing_schema: 'bailian_per_second_v1'; rate_config: BailianPerSecondRateConfig }
 )
 export type AdminVideoQuoteSimulationRequest = {
   task_type: string; resolution: string; aspect_ratio: string; audio_mode: string; duration_seconds: number
@@ -849,11 +862,15 @@ export type RouteModelPriceQuote = {
   display_points: string
   reference_multiplier?: string
 }
+export type RouteModelGroupMeta = { code: string; name: string; icon_key?: string; icon_svg?: string }
 export type CapabilityModelGroup = {
   id: string
   code: string
   name: string
   description?: string
+  icon_key?: string
+  icon_svg?: string
+  group_codes?: string[]
   task_types: ImageTaskType[]
   qualities?: string[]
   base_resolution?: string[]
@@ -882,6 +899,7 @@ export type CapabilityModelGroup = {
   display_points?: string
 }
 export type Capability = {
+  route_model_groups?: RouteModelGroupMeta[]
   items?: CapabilityItem[]
   raw?: unknown
   unavailable_reason?: { code: string; message: string } | null
@@ -1492,6 +1510,8 @@ export type RouteModel = {
   code: string
   name: string
   description?: string
+  icon_key?: string
+  icon_svg?: string
   visibility: RouteModelVisibility
   media_type: RouteModelMediaType
   enabled: boolean
@@ -1503,7 +1523,9 @@ export type RouteModel = {
   created_at: string
   updated_at: string
 }
-export type RouteModelWriteRequest = { code: string; name: string; description?: string; visibility: RouteModelVisibility; media_type: RouteModelMediaType; enabled: boolean; sort_order: number; group_ids?: ID[] }
+export type RouteModelWriteRequest = { code: string; name: string; description?: string; visibility: RouteModelVisibility; media_type: RouteModelMediaType; enabled: boolean; sort_order: number; group_ids?: ID[]; icon_key?: string; icon_svg?: string }
+export type RouteModelGroupRecord = { id: ID; code: string; name: string; description: string; media_type: RouteModelMediaType; icon_key?: string; icon_svg?: string; sort_order: number; enabled: boolean; route_model_ids: ID[]; created_at?: string; updated_at?: string }
+export type RouteModelGroupWriteRequest = { code: string; name: string; description?: string; media_type: RouteModelMediaType; icon_key?: string; icon_svg?: string; sort_order: number; enabled: boolean; route_model_ids: ID[] }
 export type RouteModelCandidate = {
   id: ID
   route_model_id: ID

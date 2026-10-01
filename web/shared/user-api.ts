@@ -9,7 +9,7 @@ import type {
   CashierOrderSyncResponse,
   CanvasDocument,
   CanvasRun,
-  Capability,
+  Capability, RouteModelGroupMeta,
   CapabilityTaskOptions,
   CreateApiKeyRequest,
   CreateCashierOrderRequest,
@@ -383,6 +383,7 @@ function minimumDisplayPoints(prices: Array<{ charged_points: string }>) {
 }
 
 export function normalizeCapabilities(raw: any): Capability {
+  const routeModelGroups = (Array.isArray(raw?.route_model_groups) ? raw.route_model_groups : []) as RouteModelGroupMeta[]
   const models = pick<any[]>(raw, 'model_groups', 'ModelGroups', 'abstract_models', 'AbstractModels', 'models', 'Models', 'items', 'Items') ?? []
   const normalizedModels: Capability['model_groups'] = models.flatMap((item: any) => {
     const taskTypes = pick<string[]>(item, 'task_types', 'TaskTypes') ?? ['text_to_image']
@@ -392,6 +393,9 @@ export function normalizeCapabilities(raw: any): Capability {
       ?? ['auto']
 		const baseResolution = normalizeBaseResolutions(pick<string[]>(item, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? qualities)
     const autoBaseResolutionByTaskType = pick<Record<string, string>>(item, 'auto_base_resolution_by_task_type', 'AutoBaseResolutionByTaskType')
+    const iconKey = pick<string>(item, 'icon_key', 'IconKey')
+    const iconSvg = pick<string>(item, 'icon_svg', 'IconSvg')
+    const groupCodes = pick<string[]>(item, 'group_codes', 'GroupCodes')
     const prices = (pick<any[]>(item, 'prices', 'Prices') ?? []).map((price: any) => {
       const quality = String(pick(price, 'quality', 'Quality', 'base_resolution', 'BaseResolution') ?? 'auto')
       return {
@@ -425,6 +429,9 @@ export function normalizeCapabilities(raw: any): Capability {
       max_output_image_count: Number(pick(item, 'max_output_image_count', 'MaxOutputImageCount', 'max_image_count', 'MaxImageCount') ?? pick(raw, 'max_image_count', 'MaxImageCount') ?? 4),
       max_reference_image_count: maxReference,
       effective_multiplier: pick<string>(item, 'effective_multiplier', 'EffectiveMultiplier'),
+      icon_key: iconKey,
+      icon_svg: iconSvg,
+      group_codes: groupCodes,
       minimum_points: pick<string>(item, 'minimum_points', 'MinimumPoints') ?? minimumDisplayPoints(prices),
       prices,
       supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.includes('image_edit'))),
@@ -436,6 +443,7 @@ export function normalizeCapabilities(raw: any): Capability {
   return {
     raw,
     unavailable_reason: pick(raw, 'unavailable_reason', 'UnavailableReason') ?? null,
+    route_model_groups: routeModelGroups,
     model_groups: normalizedModels,
     qualities,
 		base_resolution: normalizeBaseResolutions(pick<string[]>(raw, 'base_resolution', 'BaseResolution', 'supported_base_resolution', 'SupportedBaseResolution') ?? normalizedModels[0]?.base_resolution ?? qualities),
@@ -469,6 +477,7 @@ export function normalizeVideoCapabilities(raw: VideoCapabilityListWire): VideoC
 	const groups = Array.isArray(raw?.groups) ? raw.groups : []
 	return {
 		capability_version: groups[0]?.capability_version ?? '',
+		route_model_groups: (raw as { route_model_groups?: RouteModelGroupMeta[] }).route_model_groups ?? [],
 		model_groups: groups.flatMap((group) => {
 			const taskTypes = uniqueValues(group.task_types ?? group.combinations.map((item) => item.task_type))
 			const first = group.combinations[0]
@@ -488,7 +497,10 @@ export function normalizeVideoCapabilities(raw: VideoCapabilityListWire): VideoC
 				code: group.route_model_code,
 				name: group.name,
 				description: group.description,
-				minimum_points: '',
+				icon_key: group.icon_key,
+				icon_svg: group.icon_svg,
+				group_codes: group.group_codes,
+				minimum_points: group.minimum_points ?? '',
 				max_output_count: group.max_output_count,
 				task_types: taskTypes,
 				defaults: {
@@ -599,7 +611,10 @@ export const userApi = {
 	createVideoTask: (req: VideoCreateTaskRequest, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTasks, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { ...buildVideoEstimateWireRequest(req), quote_token: req.quote_token } }),
   listVideoTasks: async (filters: { project_id: string; status?: string; cursor?: string; limit?: number }) => {
     const response = await sharedApiClient.request<{ items?: VideoTask[]; next_cursor?: string } | VideoTask[]>(API_PATHS.agent.videoTasks, { query: filters })
-    return Array.isArray(response) ? { items: response } : { items: response.items ?? [], next_cursor: response.next_cursor }
+    const raw = Array.isArray(response) ? response : response.items ?? []
+    // Older projections serialize empty inputs/items as null; normalize so
+    // every consumer can map over them safely.
+    return { items: raw.map((task) => ({ ...task, items: task.items ?? [], inputs: task.inputs ?? [] })), next_cursor: Array.isArray(response) ? undefined : response.next_cursor }
   },
   getVideoTask: (task_id: string) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTaskDetail, { pathParams: { task_id } }),
 	cancelVideoTask: (task_id: string, idempotencyKey: string = crypto.randomUUID()) => sharedApiClient.request<VideoTask>(API_PATHS.agent.videoTaskCancel, { method: 'POST', pathParams: { task_id }, headers: { 'Idempotency-Key': idempotencyKey } }),
@@ -659,8 +674,8 @@ export const userApi = {
     method: 'POST', pathParams: { upload_id }, body: { parts },
   }),
   abortMediaUpload: (upload_id: string) => sharedApiClient.request<{ status: string }>(API_PATHS.agent.mediaUploadDetail, { method: 'DELETE', pathParams: { upload_id } }),
-  estimatePromptOptimization: (prompt: string) => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt } }),
-  optimizePrompt: (prompt: string, quote: string) => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote } }),
+  estimatePromptOptimization: (prompt: string, mediaType?: 'image' | 'video') => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt, ...(mediaType ? { media_type: mediaType } : {}) } }),
+  optimizePrompt: (prompt: string, quote: string, mediaType?: 'image' | 'video') => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote, ...(mediaType ? { media_type: mediaType } : {}) } }),
   estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: buildEstimateWireRequest(req) }), req),
   uploadReferenceAsset: async (file: File | string, sizeBytes?: number) => {
     if (typeof file === 'string') {

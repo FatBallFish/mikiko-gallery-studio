@@ -25,12 +25,15 @@ const videoTasks = [
   { value: "text_to_video", label: "文生视频" },
   { value: "image_to_video", label: "图生视频" },
   { value: "first_last_frame_to_video", label: "首尾帧生视频" },
+  { value: "reference_to_video", label: "参考生视频" },
+  { value: "video_edit", label: "视频编辑" },
+  { value: "video_extend", label: "视频延长" },
 ] as const;
 
 type AccountDraft = {
   row?: ModelAccount;
   name: string;
-  adapter: "seedance" | "minimax";
+  adapter: "seedance" | "minimax" | "gasic" | "bailian";
   baseURL: string;
   apiKey: string;
   status: string;
@@ -59,6 +62,17 @@ type ModelDraft = {
   validationStatus: "untested" | "verified";
   enabled: boolean;
 };
+
+const adapterBadgeLabels: Record<string, string> = {
+  seedance: "Seedance",
+  minimax: "MiniMax",
+  gasic: "GASIC 中转",
+  bailian: "阿里百炼",
+};
+
+function adapterBadgeLabel(adapterType: string) {
+  return adapterBadgeLabels[adapterType] ?? adapterType;
+}
 
 export function VideoProviderAccountsPanel() {
   const [accounts, setAccounts] = useState<ModelAccount[]>([]);
@@ -205,7 +219,7 @@ export function VideoProviderAccountsPanel() {
             resolutions: stringList(modelDraft.resolutions),
             aspect_ratios: stringList(modelDraft.ratios),
             audio_modes: modelDraft.audioModes,
-            inputs: videoTaskInputs(task, modelDraft),
+            ...videoTaskInputs(task, modelDraft),
           },
         ]),
       );
@@ -245,6 +259,23 @@ export function VideoProviderAccountsPanel() {
               input_video_second_cny: modelDraft.rateRows[resolution]?.secondary || modelDraft.rateRows[resolution]?.primary || "0",
             }])),
             free_image_count: modelDraft.freeImageCount, extra_image_cny: modelDraft.extraImageCNY, input_audio_free: true,
+          },
+        });
+      } else if (modelDraft.account.adapter_type === "bailian") {
+        await adminApi.saveVideoRateCard(saved.id, {
+          pricing_schema: "bailian_per_second_v1",
+          expected_rate_version: existingRate?.rate_version ?? 0, enabled: shouldEnable,
+          rate_config: { resolutions: Object.fromEntries(resolutions.map((resolution) => [resolution, {
+            output_second_cny: modelDraft.rateRows[resolution]?.primary || "0",
+            input_video_second_cny: modelDraft.rateRows[resolution]?.secondary || modelDraft.rateRows[resolution]?.primary || "0",
+          }])) },
+        });
+      } else if (modelDraft.account.adapter_type === "gasic") {
+        await adminApi.saveVideoRateCard(saved.id, {
+          pricing_schema: "gasic_per_task_v1",
+          expected_rate_version: existingRate?.rate_version ?? 0, enabled: shouldEnable,
+          rate_config: {
+            per_task_cny: modelDraft.rateRows["per_task"]?.primary || "2.00000",
           },
         });
       } else {
@@ -363,9 +394,7 @@ export function VideoProviderAccountsPanel() {
                     {account.name}
                   </strong>
                   <small className="text-[var(--muted)]">
-                    {account.adapter_type === "seedance"
-                      ? "Seedance"
-                      : "MiniMax"}{" "}
+                    {adapterBadgeLabel(account.adapter_type)}{" "}
                     · {(models[String(account.id)] ?? []).length} 个模型
                   </small>
                 </span>
@@ -568,6 +597,8 @@ export function VideoProviderAccountsPanel() {
               >
                 <option value="seedance">Seedance</option>
                 <option value="minimax">MiniMax</option>
+                <option value="gasic">GASIC 中转</option>
+                <option value="bailian">阿里百炼</option>
               </select>
             </Field>
             <Field label="Base URL">
@@ -826,13 +857,18 @@ export function VideoProviderAccountsPanel() {
             </Field>
             <div className="grid gap-3 lg:col-span-2">
               <strong className="text-sm">厂商原生销售费率</strong>
-              {stringList(modelDraft.resolutions).map((resolution) => (
+              {modelDraft.account.adapter_type === "gasic" ? (
+                <Field label="每条视频 CNY（按次计费，与时长/分辨率无关）">
+                  <input inputMode="decimal" value={modelDraft.rateRows["per_task"]?.primary ?? ""} onChange={(e) => setModelDraft({ ...modelDraft, rateRows: { ...modelDraft.rateRows, per_task: { primary: e.target.value, secondary: "" } } })} />
+                </Field>
+              ) : (
+                stringList(modelDraft.resolutions).map((resolution) => (
                 <div key={resolution} className="grid gap-3 rounded-md border border-[var(--border)] p-3 md:grid-cols-[100px_1fr_1fr]">
                   <span className="self-center text-sm font-medium">{resolution}</span>
-                  <Field label={modelDraft.account.adapter_type === "minimax" ? "输出视频 CNY/秒" : "不含输入视频 CNY/百万 Token"}>
+                  <Field label={modelDraft.account.adapter_type === "minimax" || modelDraft.account.adapter_type === "bailian" ? "输出视频 CNY/秒" : "不含输入视频 CNY/百万 Token"}>
                     <input inputMode="decimal" value={modelDraft.rateRows[resolution]?.primary ?? ""} onChange={(e) => setModelDraft({ ...modelDraft, rateRows: { ...modelDraft.rateRows, [resolution]: { primary: e.target.value, secondary: modelDraft.rateRows[resolution]?.secondary ?? "" } } })} />
                   </Field>
-                  {modelDraft.account.adapter_type === "minimax" ? (
+                  {modelDraft.account.adapter_type === "minimax" || modelDraft.account.adapter_type === "bailian" ? (
                     <Field label="输入视频 CNY/秒">
                       <input inputMode="decimal" value={modelDraft.rateRows[resolution]?.secondary ?? ""} onChange={(e) => setModelDraft({ ...modelDraft, rateRows: { ...modelDraft.rateRows, [resolution]: { primary: modelDraft.rateRows[resolution]?.primary ?? "", secondary: e.target.value } } })} />
                     </Field>
@@ -842,7 +878,8 @@ export function VideoProviderAccountsPanel() {
                     </Field>
                   )}
                 </div>
-              ))}
+                ))
+              )}
               {modelDraft.account.adapter_type === "minimax" ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   <Field label="免费输入图片数"><input type="number" min="0" value={modelDraft.freeImageCount} onChange={(e) => setModelDraft({ ...modelDraft, freeImageCount: Math.max(0, Number(e.target.value)) })} /></Field>
@@ -905,7 +942,14 @@ function editAccount(row: ModelAccount): AccountDraft {
   return {
     row,
     name: row.name,
-    adapter: row.adapter_type === "minimax" ? "minimax" : "seedance",
+    adapter:
+      row.adapter_type === "minimax"
+        ? "minimax"
+        : row.adapter_type === "gasic"
+          ? "gasic"
+          : row.adapter_type === "bailian"
+            ? "bailian"
+            : "seedance",
     baseURL: row.base_url,
     apiKey: "",
     status: row.status,
@@ -917,25 +961,31 @@ function editAccount(row: ModelAccount): AccountDraft {
 }
 function blankModel(account: ModelAccount): ModelDraft {
 	const minimax = account.adapter_type === "minimax";
+	const gasic = account.adapter_type === "gasic";
+	const bailian = account.adapter_type === "bailian";
 	return {
     account,
     modelCode: "",
     displayName: "",
     taskTypes: ["text_to_video"],
     durations: "5,10",
-    resolutions: minimax ? "768p,2k" : "720p",
-    ratios: "16:9,9:16,1:1",
-    audioModes: ["silent"],
+    resolutions: minimax ? "768p,2k" : bailian || gasic ? "480p,720p,1080p" : "720p",
+    ratios: bailian ? "21:9,16:9,4:3,1:1,3:4,9:16" : "16:9,9:16,1:1",
+    audioModes: minimax ? ["generated"] : ["silent", "generated"],
     providerMaxN: 1,
-    promptMaxRunes: 2000,
+    promptMaxRunes: minimax ? 7000 : 2000,
     inputFormats:
       account.adapter_type === "minimax"
         ? "jpg,jpeg,png,webp,heic,heif"
         : "jpg,jpeg,png,webp,bmp,tiff,gif",
     inputMaxMB: 30,
     rateRows: minimax
-      ? { "768p": { primary: "0.80000", secondary: "0.80000" }, "2k": { primary: "1.20000", secondary: "1.20000" } }
-      : { "720p": { primary: "46.00000", secondary: "" } },
+      ? { "768p": { primary: "0.50000", secondary: "0.50000" }, "2k": { primary: "0.80000", secondary: "0.80000" } }
+      : bailian
+        ? { "480p": { primary: "0.30000", secondary: "0.30000" }, "720p": { primary: "0.60000", secondary: "0.60000" }, "1080p": { primary: "1.20000", secondary: "1.20000" } }
+        : gasic
+          ? { per_task: { primary: "2.00000", secondary: "" } }
+          : { "720p": { primary: "46.00000", secondary: "" } },
     freeImageCount: 5,
     extraImageCNY: "0.10000",
     validationStatus: "untested",
@@ -961,10 +1011,14 @@ function editModel(
     .filter((item) => String(item.account_model_id) === String(row.id))
     .sort((a, b) => b.rate_version - a.rate_version)[0];
   const rateConfig = latestRate?.rate_config;
-  const rateRows = Object.fromEntries(Object.entries(rateConfig?.resolutions ?? {}).map(([resolution, value]) => [resolution, {
-    primary: "output_second_cny" in value ? value.output_second_cny : value.without_input_video_million_tokens_cny,
-    secondary: "input_video_second_cny" in value ? value.input_video_second_cny : value.with_input_video_million_tokens_cny ?? "",
-  }]));
+  const rateRows = rateConfig && "per_task_cny" in rateConfig
+    ? { per_task: { primary: String(rateConfig.per_task_cny ?? ""), secondary: "" } }
+    : Object.fromEntries(
+        (Object.entries((rateConfig as Record<string, any> | undefined)?.resolutions ?? {}) as [string, Record<string, any>][]).map(([resolution, value]) => [resolution, {
+          primary: "output_second_cny" in value ? value.output_second_cny : value.without_input_video_million_tokens_cny,
+          secondary: "input_video_second_cny" in value ? value.input_video_second_cny : value.with_input_video_million_tokens_cny ?? "",
+        }]),
+      );
   return {
     account,
     row,
@@ -1004,11 +1058,25 @@ function videoTaskInputs(task: string, draft: ModelDraft) {
     media_types: ["image"],
     formats: stringList(draft.inputFormats),
   };
-  if (task === "image_to_video") return { first_frame: input };
+  const optional = { ...input, required: false };
+  const videoInput = { ...input, media_types: ["video"], formats: ["video/mp4", "video/quicktime"] };
+  if (task === "image_to_video") return { inputs: { first_frame: input } };
   if (task === "first_last_frame_to_video") {
-    return { first_frame: input, last_frame: { ...input } };
+    return { inputs: { first_frame: input, last_frame: { ...input } } };
   }
-  return {};
+  if (task === "reference_to_video") {
+    return {
+      inputs: {
+        reference_image: { ...optional, max_count: 10 },
+        reference_video: { ...optional, media_types: ["video"], max_count: 5, max_bytes: 100 * 1024 * 1024, formats: ["video/mp4", "video/quicktime"] },
+      },
+      min_inputs: 1,
+    };
+  }
+  if (task === "video_edit" || task === "video_extend") {
+    return { inputs: { reference_video: { ...videoInput, max_bytes: 100 * 1024 * 1024 } } };
+  }
+  return { inputs: {} };
 }
 function stringList(value: string) {
   return value

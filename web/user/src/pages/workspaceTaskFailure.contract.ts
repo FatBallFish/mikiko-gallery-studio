@@ -23,8 +23,12 @@ if (!failedView.meta.some((item) => item.label === '错误码' && item.value ===
   throw new Error(`failure meta should include error_code, got ${JSON.stringify(failedView.meta)}`)
 }
 
+if (!failedView.meta.some((item) => item.label === '任务ID' && item.value === 'task-failed-001')) {
+  throw new Error(`failure meta should include the task id for admin lookup, got ${JSON.stringify(failedView.meta)}`)
+}
+
 if (!failedView.meta.some((item) => item.label === '追踪 ID' && item.value === 'req-123')) {
-  throw new Error(`failure meta should prefer request_id as trace id, got ${JSON.stringify(failedView.meta)}`)
+  throw new Error(`failure meta should show request_id as trace id, got ${JSON.stringify(failedView.meta)}`)
 }
 
 const rejectedWithoutRequest = workspaceTaskFailureView({
@@ -38,8 +42,12 @@ if (rejectedWithoutRequest.title !== '生成失败') {
   throw new Error(`rejected task should still be titled 生成失败, got ${rejectedWithoutRequest.title}`)
 }
 
-if (!rejectedWithoutRequest.meta.some((item) => item.label === '追踪 ID' && item.value === 'task-rejected-001')) {
-  throw new Error(`failure meta should fall back to task id, got ${JSON.stringify(rejectedWithoutRequest.meta)}`)
+if (!rejectedWithoutRequest.meta.some((item) => item.label === '任务ID' && item.value === 'task-rejected-001')) {
+  throw new Error(`failure meta should always carry the task id, got ${JSON.stringify(rejectedWithoutRequest.meta)}`)
+}
+
+if (rejectedWithoutRequest.meta.some((item) => item.label === '追踪 ID')) {
+  throw new Error(`trace id row should be omitted when request_id is absent, got ${JSON.stringify(rejectedWithoutRequest.meta)}`)
 }
 
 if (!rejectedWithoutRequest.reason.includes('积分余额不足')) {

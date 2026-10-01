@@ -55,6 +55,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
@@ -181,6 +183,8 @@ func checkColumn(t, c string) error {
 			refreshsession.Table:              refreshsession.ValidColumn,
 			routemodel.Table:                  routemodel.ValidColumn,
 			routemodelcandidate.Table:         routemodelcandidate.ValidColumn,
+			routemodelgroup.Table:             routemodelgroup.ValidColumn,
+			routemodelgroupmember.Table:       routemodelgroupmember.ValidColumn,
 			routemodelprice.Table:             routemodelprice.ValidColumn,
 			routemodelvisibilitygroup.Table:   routemodelvisibilitygroup.ValidColumn,
 			secureconfig.Table:                secureconfig.ValidColumn,

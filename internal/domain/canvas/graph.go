@@ -112,7 +112,63 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 	if HasDirectedCycle(nodeIDs, arcs) {
 		return graphError("cycle", "", "", "canvas generation relationship cannot contain a cycle")
 	}
+	if err := validateGroups(document, nodes); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateGroups(document DocumentV1, nodes map[string]Node) *ValidationError {
+	const (
+		maxGroups      = 50
+		maxGroupLabel  = 64
+		maxGroupMember = 64
+	)
+	if len(document.Groups) > maxGroups {
+		return graphError("too_many_groups", "", "", "canvas contains too many groups")
+	}
+	groupIDs := make(map[string]struct{}, len(document.Groups))
+	for _, group := range document.Groups {
+		if strings.TrimSpace(group.ID) == "" || len(group.ID) > 64 {
+			return graphError("invalid_group_id", group.ID, "", "canvas group ID is invalid")
+		}
+		if _, ok := groupIDs[group.ID]; ok {
+			return graphError("duplicate_group", group.ID, "", "canvas group ID is duplicated")
+		}
+		groupIDs[group.ID] = struct{}{}
+		if len([]rune(group.Label)) > maxGroupLabel {
+			return graphError("invalid_group_label", group.ID, "", "canvas group label is too long")
+		}
+		if group.Background != "" && !isHexColor(group.Background) {
+			return graphError("invalid_group_background", group.ID, "", "canvas group background must be a hex color")
+		}
+		if len(group.NodeIDs) < 1 || len(group.NodeIDs) > maxGroupMember {
+			return graphError("invalid_group_members", group.ID, "", "canvas group must reference between 1 and 64 nodes")
+		}
+		seen := make(map[string]struct{}, len(group.NodeIDs))
+		for _, nodeID := range group.NodeIDs {
+			if _, ok := nodes[nodeID]; !ok {
+				return graphError("node_not_found", group.ID, "", "canvas group references a missing node")
+			}
+			if _, ok := seen[nodeID]; ok {
+				return graphError("duplicate_group_member", group.ID, "", "canvas group duplicates a node reference")
+			}
+			seen[nodeID] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func isHexColor(value string) bool {
+	if len(value) != 7 || value[0] != '#' {
+		return false
+	}
+	for _, char := range value[1:] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+			return false
+		}
+	}
+	return true
 }
 
 func minimumNodeSize(nodeType NodeType) Size {

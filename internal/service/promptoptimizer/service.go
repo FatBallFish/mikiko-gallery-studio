@@ -44,8 +44,9 @@ type Service struct {
 }
 
 type EstimateRequest struct {
-	UserID int64  `json:"-"`
-	Prompt string `json:"prompt"`
+	UserID    int64  `json:"-"`
+	Prompt    string `json:"prompt"`
+	MediaType string `json:"media_type"`
 }
 
 type ModelSummary struct {
@@ -63,9 +64,10 @@ type EstimateResult struct {
 }
 
 type OptimizeRequest struct {
-	UserID int64  `json:"-"`
-	Prompt string `json:"prompt"`
-	Quote  string `json:"quote"`
+	UserID    int64  `json:"-"`
+	Prompt    string `json:"prompt"`
+	Quote     string `json:"quote"`
+	MediaType string `json:"media_type"`
 }
 
 type OptimizeResult struct {
@@ -158,7 +160,7 @@ func (s *Service) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeRe
 	}
 	response, optimizeErr := client.Optimize(ctx, textprovider.OptimizeRequest{
 		Model:        model.ModelCode,
-		SystemPrompt: "Rewrite the user's image-generation prompt with precise subject, composition, lighting, style, and constraints. Preserve intent. Strings shaped like MGS_TOKEN markers are protected placeholders: you must not modify, translate, duplicate, remove, split, or add them. Return only the rewritten prompt.",
+		SystemPrompt: SystemPromptForMedia(req.MediaType),
 		Prompt:       protected.Text, MaxOutputTokens: 2000,
 	})
 	if optimizeErr != nil {
@@ -187,6 +189,34 @@ func (s *Service) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeRe
 		RunID: run.ID, OptimizedPrompt: optimized, InputTokens: response.InputTokens, OutputTokens: response.OutputTokens,
 		EstimatedPoints: zeroPoints, ActualPoints: zeroPoints,
 	}, nil
+}
+
+const (
+	mediaTypeVideo = "video"
+
+	protectedPlaceholderRule = "Strings shaped like MGS_TOKEN markers are protected placeholders: you must not modify, translate, duplicate, remove, split, or add them. Return only the rewritten prompt."
+
+	imageSystemPrompt = "Rewrite the user's image-generation prompt with precise subject, composition, lighting, style, and constraints. Preserve intent. " + protectedPlaceholderRule
+
+	// videoSystemPrompt follows the official Doubao Seedance 2.5 / 2.0 prompt
+	// guides: director-style structured brief, shot-by-shot timeline, concrete
+	// body-level action, one camera move per shot, symbol conventions and
+	// negative constraints (no subtitles / watermark / logo).
+	videoSystemPrompt = "Rewrite the user's video-generation prompt as a director-style structured shooting brief in the user's language. " +
+		"Structure: (1) one-line overview: subject + location + event + genre/style + signature camera move; " +
+		"(2) subject and environment details: appearance, materials, lighting; " +
+		"(3) a shot-by-shot timeline labeled 镜头 1 / 镜头 2 (optionally continuous integer-second ranges like 0-3s / 3-8s, never overlapping or gapped), each shot describing framing, exactly one camera move using standard terms (推/拉/摇/移/跟/环绕/固定/特写/全景), concrete body-level action with speed and amplitude, emotion externalized as physical details, and diegetic sound; " +
+		"(4) a closing pass with consistent camera position, depth of field, ambient sound, atmosphere, and negative constraints such as 不要字幕、不要水印、不要Logo. " +
+		"Prefer slow, continuous, connected movements over abrupt high-energy bursts, avoid repeating the same action, and keep total duration and intent unchanged. " +
+		"Use （） for music, <> for sound effects, {} for spoken lines, and 【】 for on-screen text. " +
+		protectedPlaceholderRule
+)
+
+func SystemPromptForMedia(mediaType string) string {
+	if strings.EqualFold(strings.TrimSpace(mediaType), mediaTypeVideo) {
+		return videoSystemPrompt
+	}
+	return imageSystemPrompt
 }
 
 type protectedPrompt struct {

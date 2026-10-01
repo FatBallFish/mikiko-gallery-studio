@@ -24,11 +24,11 @@ if (labels.includes('消息') || labels.includes('活动') || values.includes('3
   throw new Error(`topbar should not expose fake message/activity counters, got ${JSON.stringify(chips)}`)
 }
 
-if (!chips.some((chip) => chip.label === '体验额度' && chip.value === '18.00' && chip.detail === '即将过期 2026/06/12')) {
+if (!chips.some((chip) => chip.label === '体验额度' && chip.value === '18 积分' && chip.detail === '即将过期 2026/06/12')) {
   throw new Error(`topbar should show real trial balance and expiry warning, got ${JSON.stringify(chips)}`)
 }
 
-if (!chips.some((chip) => chip.label === '充值余额' && chip.value === '100.00')) {
+if (!chips.some((chip) => chip.label === '充值余额' && chip.value === '1 银币')) {
   throw new Error(`topbar should show real recharge balance, got ${JSON.stringify(chips)}`)
 }
 

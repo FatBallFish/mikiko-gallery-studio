@@ -55,6 +55,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
@@ -133,6 +135,8 @@ const (
 	TypeRefreshSession              = "RefreshSession"
 	TypeRouteModel                  = "RouteModel"
 	TypeRouteModelCandidate         = "RouteModelCandidate"
+	TypeRouteModelGroup             = "RouteModelGroup"
+	TypeRouteModelGroupMember       = "RouteModelGroupMember"
 	TypeRouteModelPrice             = "RouteModelPrice"
 	TypeRouteModelVisibilityGroup   = "RouteModelVisibilityGroup"
 	TypeSecureConfig                = "SecureConfig"
@@ -59085,6 +59089,8 @@ type RouteModelMutation struct {
 	enabled       *bool
 	sort_order    *int
 	addsort_order *int
+	icon_key      *string
+	icon_svg      *string
 	clearedFields map[string]struct{}
 	done          bool
 	oldValue      func(context.Context) (*RouteModel, error)
@@ -59582,6 +59588,78 @@ func (m *RouteModelMutation) ResetSortOrder() {
 	m.addsort_order = nil
 }
 
+// SetIconKey sets the "icon_key" field.
+func (m *RouteModelMutation) SetIconKey(s string) {
+	m.icon_key = &s
+}
+
+// IconKey returns the value of the "icon_key" field in the mutation.
+func (m *RouteModelMutation) IconKey() (r string, exists bool) {
+	v := m.icon_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIconKey returns the old "icon_key" field's value of the RouteModel entity.
+// If the RouteModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelMutation) OldIconKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIconKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIconKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIconKey: %w", err)
+	}
+	return oldValue.IconKey, nil
+}
+
+// ResetIconKey resets all changes to the "icon_key" field.
+func (m *RouteModelMutation) ResetIconKey() {
+	m.icon_key = nil
+}
+
+// SetIconSvg sets the "icon_svg" field.
+func (m *RouteModelMutation) SetIconSvg(s string) {
+	m.icon_svg = &s
+}
+
+// IconSvg returns the value of the "icon_svg" field in the mutation.
+func (m *RouteModelMutation) IconSvg() (r string, exists bool) {
+	v := m.icon_svg
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIconSvg returns the old "icon_svg" field's value of the RouteModel entity.
+// If the RouteModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelMutation) OldIconSvg(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIconSvg is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIconSvg requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIconSvg: %w", err)
+	}
+	return oldValue.IconSvg, nil
+}
+
+// ResetIconSvg resets all changes to the "icon_svg" field.
+func (m *RouteModelMutation) ResetIconSvg() {
+	m.icon_svg = nil
+}
+
 // Where appends a list predicates to the RouteModelMutation builder.
 func (m *RouteModelMutation) Where(ps ...predicate.RouteModel) {
 	m.predicates = append(m.predicates, ps...)
@@ -59616,7 +59694,7 @@ func (m *RouteModelMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RouteModelMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 12)
 	if m.created_at != nil {
 		fields = append(fields, routemodel.FieldCreatedAt)
 	}
@@ -59647,6 +59725,12 @@ func (m *RouteModelMutation) Fields() []string {
 	if m.sort_order != nil {
 		fields = append(fields, routemodel.FieldSortOrder)
 	}
+	if m.icon_key != nil {
+		fields = append(fields, routemodel.FieldIconKey)
+	}
+	if m.icon_svg != nil {
+		fields = append(fields, routemodel.FieldIconSvg)
+	}
 	return fields
 }
 
@@ -59675,6 +59759,10 @@ func (m *RouteModelMutation) Field(name string) (ent.Value, bool) {
 		return m.Enabled()
 	case routemodel.FieldSortOrder:
 		return m.SortOrder()
+	case routemodel.FieldIconKey:
+		return m.IconKey()
+	case routemodel.FieldIconSvg:
+		return m.IconSvg()
 	}
 	return nil, false
 }
@@ -59704,6 +59792,10 @@ func (m *RouteModelMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldEnabled(ctx)
 	case routemodel.FieldSortOrder:
 		return m.OldSortOrder(ctx)
+	case routemodel.FieldIconKey:
+		return m.OldIconKey(ctx)
+	case routemodel.FieldIconSvg:
+		return m.OldIconSvg(ctx)
 	}
 	return nil, fmt.Errorf("unknown RouteModel field %s", name)
 }
@@ -59782,6 +59874,20 @@ func (m *RouteModelMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSortOrder(v)
+		return nil
+	case routemodel.FieldIconKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIconKey(v)
+		return nil
+	case routemodel.FieldIconSvg:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIconSvg(v)
 		return nil
 	}
 	return fmt.Errorf("unknown RouteModel field %s", name)
@@ -59885,6 +59991,12 @@ func (m *RouteModelMutation) ResetField(name string) error {
 		return nil
 	case routemodel.FieldSortOrder:
 		m.ResetSortOrder()
+		return nil
+	case routemodel.FieldIconKey:
+		m.ResetIconKey()
+		return nil
+	case routemodel.FieldIconSvg:
+		m.ResetIconSvg()
 		return nil
 	}
 	return fmt.Errorf("unknown RouteModel field %s", name)
@@ -60884,6 +60996,1466 @@ func (m *RouteModelCandidateMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *RouteModelCandidateMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown RouteModelCandidate edge %s", name)
+}
+
+// RouteModelGroupMutation represents an operation that mutates the RouteModelGroup nodes in the graph.
+type RouteModelGroupMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int
+	created_at    *time.Time
+	updated_at    *time.Time
+	deleted_at    *time.Time
+	code          *string
+	name          *string
+	description   *string
+	media_type    *string
+	icon_key      *string
+	icon_svg      *string
+	sort_order    *int
+	addsort_order *int
+	enabled       *bool
+	clearedFields map[string]struct{}
+	done          bool
+	oldValue      func(context.Context) (*RouteModelGroup, error)
+	predicates    []predicate.RouteModelGroup
+}
+
+var _ ent.Mutation = (*RouteModelGroupMutation)(nil)
+
+// routemodelgroupOption allows management of the mutation configuration using functional options.
+type routemodelgroupOption func(*RouteModelGroupMutation)
+
+// newRouteModelGroupMutation creates new mutation for the RouteModelGroup entity.
+func newRouteModelGroupMutation(c config, op Op, opts ...routemodelgroupOption) *RouteModelGroupMutation {
+	m := &RouteModelGroupMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRouteModelGroup,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRouteModelGroupID sets the ID field of the mutation.
+func withRouteModelGroupID(id int) routemodelgroupOption {
+	return func(m *RouteModelGroupMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RouteModelGroup
+		)
+		m.oldValue = func(ctx context.Context) (*RouteModelGroup, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RouteModelGroup.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRouteModelGroup sets the old RouteModelGroup of the mutation.
+func withRouteModelGroup(node *RouteModelGroup) routemodelgroupOption {
+	return func(m *RouteModelGroupMutation) {
+		m.oldValue = func(context.Context) (*RouteModelGroup, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RouteModelGroupMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RouteModelGroupMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RouteModelGroupMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RouteModelGroupMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RouteModelGroup.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RouteModelGroupMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RouteModelGroupMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RouteModelGroupMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *RouteModelGroupMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *RouteModelGroupMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *RouteModelGroupMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (m *RouteModelGroupMutation) SetDeletedAt(t time.Time) {
+	m.deleted_at = &t
+}
+
+// DeletedAt returns the value of the "deleted_at" field in the mutation.
+func (m *RouteModelGroupMutation) DeletedAt() (r time.Time, exists bool) {
+	v := m.deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAt returns the old "deleted_at" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAt: %w", err)
+	}
+	return oldValue.DeletedAt, nil
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (m *RouteModelGroupMutation) ClearDeletedAt() {
+	m.deleted_at = nil
+	m.clearedFields[routemodelgroup.FieldDeletedAt] = struct{}{}
+}
+
+// DeletedAtCleared returns if the "deleted_at" field was cleared in this mutation.
+func (m *RouteModelGroupMutation) DeletedAtCleared() bool {
+	_, ok := m.clearedFields[routemodelgroup.FieldDeletedAt]
+	return ok
+}
+
+// ResetDeletedAt resets all changes to the "deleted_at" field.
+func (m *RouteModelGroupMutation) ResetDeletedAt() {
+	m.deleted_at = nil
+	delete(m.clearedFields, routemodelgroup.FieldDeletedAt)
+}
+
+// SetCode sets the "code" field.
+func (m *RouteModelGroupMutation) SetCode(s string) {
+	m.code = &s
+}
+
+// Code returns the value of the "code" field in the mutation.
+func (m *RouteModelGroupMutation) Code() (r string, exists bool) {
+	v := m.code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCode returns the old "code" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCode: %w", err)
+	}
+	return oldValue.Code, nil
+}
+
+// ResetCode resets all changes to the "code" field.
+func (m *RouteModelGroupMutation) ResetCode() {
+	m.code = nil
+}
+
+// SetName sets the "name" field.
+func (m *RouteModelGroupMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *RouteModelGroupMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *RouteModelGroupMutation) ResetName() {
+	m.name = nil
+}
+
+// SetDescription sets the "description" field.
+func (m *RouteModelGroupMutation) SetDescription(s string) {
+	m.description = &s
+}
+
+// Description returns the value of the "description" field in the mutation.
+func (m *RouteModelGroupMutation) Description() (r string, exists bool) {
+	v := m.description
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDescription returns the old "description" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldDescription(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDescription requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
+	}
+	return oldValue.Description, nil
+}
+
+// ResetDescription resets all changes to the "description" field.
+func (m *RouteModelGroupMutation) ResetDescription() {
+	m.description = nil
+}
+
+// SetMediaType sets the "media_type" field.
+func (m *RouteModelGroupMutation) SetMediaType(s string) {
+	m.media_type = &s
+}
+
+// MediaType returns the value of the "media_type" field in the mutation.
+func (m *RouteModelGroupMutation) MediaType() (r string, exists bool) {
+	v := m.media_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMediaType returns the old "media_type" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldMediaType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMediaType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMediaType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMediaType: %w", err)
+	}
+	return oldValue.MediaType, nil
+}
+
+// ResetMediaType resets all changes to the "media_type" field.
+func (m *RouteModelGroupMutation) ResetMediaType() {
+	m.media_type = nil
+}
+
+// SetIconKey sets the "icon_key" field.
+func (m *RouteModelGroupMutation) SetIconKey(s string) {
+	m.icon_key = &s
+}
+
+// IconKey returns the value of the "icon_key" field in the mutation.
+func (m *RouteModelGroupMutation) IconKey() (r string, exists bool) {
+	v := m.icon_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIconKey returns the old "icon_key" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldIconKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIconKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIconKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIconKey: %w", err)
+	}
+	return oldValue.IconKey, nil
+}
+
+// ResetIconKey resets all changes to the "icon_key" field.
+func (m *RouteModelGroupMutation) ResetIconKey() {
+	m.icon_key = nil
+}
+
+// SetIconSvg sets the "icon_svg" field.
+func (m *RouteModelGroupMutation) SetIconSvg(s string) {
+	m.icon_svg = &s
+}
+
+// IconSvg returns the value of the "icon_svg" field in the mutation.
+func (m *RouteModelGroupMutation) IconSvg() (r string, exists bool) {
+	v := m.icon_svg
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIconSvg returns the old "icon_svg" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldIconSvg(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIconSvg is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIconSvg requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIconSvg: %w", err)
+	}
+	return oldValue.IconSvg, nil
+}
+
+// ResetIconSvg resets all changes to the "icon_svg" field.
+func (m *RouteModelGroupMutation) ResetIconSvg() {
+	m.icon_svg = nil
+}
+
+// SetSortOrder sets the "sort_order" field.
+func (m *RouteModelGroupMutation) SetSortOrder(i int) {
+	m.sort_order = &i
+	m.addsort_order = nil
+}
+
+// SortOrder returns the value of the "sort_order" field in the mutation.
+func (m *RouteModelGroupMutation) SortOrder() (r int, exists bool) {
+	v := m.sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSortOrder returns the old "sort_order" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldSortOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSortOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSortOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSortOrder: %w", err)
+	}
+	return oldValue.SortOrder, nil
+}
+
+// AddSortOrder adds i to the "sort_order" field.
+func (m *RouteModelGroupMutation) AddSortOrder(i int) {
+	if m.addsort_order != nil {
+		*m.addsort_order += i
+	} else {
+		m.addsort_order = &i
+	}
+}
+
+// AddedSortOrder returns the value that was added to the "sort_order" field in this mutation.
+func (m *RouteModelGroupMutation) AddedSortOrder() (r int, exists bool) {
+	v := m.addsort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSortOrder resets all changes to the "sort_order" field.
+func (m *RouteModelGroupMutation) ResetSortOrder() {
+	m.sort_order = nil
+	m.addsort_order = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *RouteModelGroupMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *RouteModelGroupMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the RouteModelGroup entity.
+// If the RouteModelGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *RouteModelGroupMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// Where appends a list predicates to the RouteModelGroupMutation builder.
+func (m *RouteModelGroupMutation) Where(ps ...predicate.RouteModelGroup) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RouteModelGroupMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RouteModelGroupMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RouteModelGroup, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RouteModelGroupMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RouteModelGroupMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RouteModelGroup).
+func (m *RouteModelGroupMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RouteModelGroupMutation) Fields() []string {
+	fields := make([]string, 0, 11)
+	if m.created_at != nil {
+		fields = append(fields, routemodelgroup.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, routemodelgroup.FieldUpdatedAt)
+	}
+	if m.deleted_at != nil {
+		fields = append(fields, routemodelgroup.FieldDeletedAt)
+	}
+	if m.code != nil {
+		fields = append(fields, routemodelgroup.FieldCode)
+	}
+	if m.name != nil {
+		fields = append(fields, routemodelgroup.FieldName)
+	}
+	if m.description != nil {
+		fields = append(fields, routemodelgroup.FieldDescription)
+	}
+	if m.media_type != nil {
+		fields = append(fields, routemodelgroup.FieldMediaType)
+	}
+	if m.icon_key != nil {
+		fields = append(fields, routemodelgroup.FieldIconKey)
+	}
+	if m.icon_svg != nil {
+		fields = append(fields, routemodelgroup.FieldIconSvg)
+	}
+	if m.sort_order != nil {
+		fields = append(fields, routemodelgroup.FieldSortOrder)
+	}
+	if m.enabled != nil {
+		fields = append(fields, routemodelgroup.FieldEnabled)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RouteModelGroupMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case routemodelgroup.FieldCreatedAt:
+		return m.CreatedAt()
+	case routemodelgroup.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case routemodelgroup.FieldDeletedAt:
+		return m.DeletedAt()
+	case routemodelgroup.FieldCode:
+		return m.Code()
+	case routemodelgroup.FieldName:
+		return m.Name()
+	case routemodelgroup.FieldDescription:
+		return m.Description()
+	case routemodelgroup.FieldMediaType:
+		return m.MediaType()
+	case routemodelgroup.FieldIconKey:
+		return m.IconKey()
+	case routemodelgroup.FieldIconSvg:
+		return m.IconSvg()
+	case routemodelgroup.FieldSortOrder:
+		return m.SortOrder()
+	case routemodelgroup.FieldEnabled:
+		return m.Enabled()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RouteModelGroupMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case routemodelgroup.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case routemodelgroup.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case routemodelgroup.FieldDeletedAt:
+		return m.OldDeletedAt(ctx)
+	case routemodelgroup.FieldCode:
+		return m.OldCode(ctx)
+	case routemodelgroup.FieldName:
+		return m.OldName(ctx)
+	case routemodelgroup.FieldDescription:
+		return m.OldDescription(ctx)
+	case routemodelgroup.FieldMediaType:
+		return m.OldMediaType(ctx)
+	case routemodelgroup.FieldIconKey:
+		return m.OldIconKey(ctx)
+	case routemodelgroup.FieldIconSvg:
+		return m.OldIconSvg(ctx)
+	case routemodelgroup.FieldSortOrder:
+		return m.OldSortOrder(ctx)
+	case routemodelgroup.FieldEnabled:
+		return m.OldEnabled(ctx)
+	}
+	return nil, fmt.Errorf("unknown RouteModelGroup field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RouteModelGroupMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case routemodelgroup.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case routemodelgroup.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case routemodelgroup.FieldDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAt(v)
+		return nil
+	case routemodelgroup.FieldCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCode(v)
+		return nil
+	case routemodelgroup.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case routemodelgroup.FieldDescription:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDescription(v)
+		return nil
+	case routemodelgroup.FieldMediaType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMediaType(v)
+		return nil
+	case routemodelgroup.FieldIconKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIconKey(v)
+		return nil
+	case routemodelgroup.FieldIconSvg:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIconSvg(v)
+		return nil
+	case routemodelgroup.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSortOrder(v)
+		return nil
+	case routemodelgroup.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RouteModelGroup field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RouteModelGroupMutation) AddedFields() []string {
+	var fields []string
+	if m.addsort_order != nil {
+		fields = append(fields, routemodelgroup.FieldSortOrder)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RouteModelGroupMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case routemodelgroup.FieldSortOrder:
+		return m.AddedSortOrder()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RouteModelGroupMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case routemodelgroup.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSortOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RouteModelGroup numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RouteModelGroupMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(routemodelgroup.FieldDeletedAt) {
+		fields = append(fields, routemodelgroup.FieldDeletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RouteModelGroupMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RouteModelGroupMutation) ClearField(name string) error {
+	switch name {
+	case routemodelgroup.FieldDeletedAt:
+		m.ClearDeletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RouteModelGroup nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RouteModelGroupMutation) ResetField(name string) error {
+	switch name {
+	case routemodelgroup.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case routemodelgroup.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case routemodelgroup.FieldDeletedAt:
+		m.ResetDeletedAt()
+		return nil
+	case routemodelgroup.FieldCode:
+		m.ResetCode()
+		return nil
+	case routemodelgroup.FieldName:
+		m.ResetName()
+		return nil
+	case routemodelgroup.FieldDescription:
+		m.ResetDescription()
+		return nil
+	case routemodelgroup.FieldMediaType:
+		m.ResetMediaType()
+		return nil
+	case routemodelgroup.FieldIconKey:
+		m.ResetIconKey()
+		return nil
+	case routemodelgroup.FieldIconSvg:
+		m.ResetIconSvg()
+		return nil
+	case routemodelgroup.FieldSortOrder:
+		m.ResetSortOrder()
+		return nil
+	case routemodelgroup.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	}
+	return fmt.Errorf("unknown RouteModelGroup field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RouteModelGroupMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RouteModelGroupMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RouteModelGroupMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RouteModelGroupMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RouteModelGroupMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RouteModelGroupMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RouteModelGroupMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown RouteModelGroup unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RouteModelGroupMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown RouteModelGroup edge %s", name)
+}
+
+// RouteModelGroupMemberMutation represents an operation that mutates the RouteModelGroupMember nodes in the graph.
+type RouteModelGroupMemberMutation struct {
+	config
+	op                Op
+	typ               string
+	id                *int
+	group_id          *int64
+	addgroup_id       *int64
+	route_model_id    *int64
+	addroute_model_id *int64
+	sort_order        *int
+	addsort_order     *int
+	clearedFields     map[string]struct{}
+	done              bool
+	oldValue          func(context.Context) (*RouteModelGroupMember, error)
+	predicates        []predicate.RouteModelGroupMember
+}
+
+var _ ent.Mutation = (*RouteModelGroupMemberMutation)(nil)
+
+// routemodelgroupmemberOption allows management of the mutation configuration using functional options.
+type routemodelgroupmemberOption func(*RouteModelGroupMemberMutation)
+
+// newRouteModelGroupMemberMutation creates new mutation for the RouteModelGroupMember entity.
+func newRouteModelGroupMemberMutation(c config, op Op, opts ...routemodelgroupmemberOption) *RouteModelGroupMemberMutation {
+	m := &RouteModelGroupMemberMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRouteModelGroupMember,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRouteModelGroupMemberID sets the ID field of the mutation.
+func withRouteModelGroupMemberID(id int) routemodelgroupmemberOption {
+	return func(m *RouteModelGroupMemberMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RouteModelGroupMember
+		)
+		m.oldValue = func(ctx context.Context) (*RouteModelGroupMember, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RouteModelGroupMember.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRouteModelGroupMember sets the old RouteModelGroupMember of the mutation.
+func withRouteModelGroupMember(node *RouteModelGroupMember) routemodelgroupmemberOption {
+	return func(m *RouteModelGroupMemberMutation) {
+		m.oldValue = func(context.Context) (*RouteModelGroupMember, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RouteModelGroupMemberMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RouteModelGroupMemberMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RouteModelGroupMemberMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RouteModelGroupMemberMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RouteModelGroupMember.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *RouteModelGroupMemberMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *RouteModelGroupMemberMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the RouteModelGroupMember entity.
+// If the RouteModelGroupMember object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMemberMutation) OldGroupID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *RouteModelGroupMemberMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *RouteModelGroupMemberMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *RouteModelGroupMemberMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+}
+
+// SetRouteModelID sets the "route_model_id" field.
+func (m *RouteModelGroupMemberMutation) SetRouteModelID(i int64) {
+	m.route_model_id = &i
+	m.addroute_model_id = nil
+}
+
+// RouteModelID returns the value of the "route_model_id" field in the mutation.
+func (m *RouteModelGroupMemberMutation) RouteModelID() (r int64, exists bool) {
+	v := m.route_model_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRouteModelID returns the old "route_model_id" field's value of the RouteModelGroupMember entity.
+// If the RouteModelGroupMember object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMemberMutation) OldRouteModelID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRouteModelID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRouteModelID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRouteModelID: %w", err)
+	}
+	return oldValue.RouteModelID, nil
+}
+
+// AddRouteModelID adds i to the "route_model_id" field.
+func (m *RouteModelGroupMemberMutation) AddRouteModelID(i int64) {
+	if m.addroute_model_id != nil {
+		*m.addroute_model_id += i
+	} else {
+		m.addroute_model_id = &i
+	}
+}
+
+// AddedRouteModelID returns the value that was added to the "route_model_id" field in this mutation.
+func (m *RouteModelGroupMemberMutation) AddedRouteModelID() (r int64, exists bool) {
+	v := m.addroute_model_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRouteModelID resets all changes to the "route_model_id" field.
+func (m *RouteModelGroupMemberMutation) ResetRouteModelID() {
+	m.route_model_id = nil
+	m.addroute_model_id = nil
+}
+
+// SetSortOrder sets the "sort_order" field.
+func (m *RouteModelGroupMemberMutation) SetSortOrder(i int) {
+	m.sort_order = &i
+	m.addsort_order = nil
+}
+
+// SortOrder returns the value of the "sort_order" field in the mutation.
+func (m *RouteModelGroupMemberMutation) SortOrder() (r int, exists bool) {
+	v := m.sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSortOrder returns the old "sort_order" field's value of the RouteModelGroupMember entity.
+// If the RouteModelGroupMember object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelGroupMemberMutation) OldSortOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSortOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSortOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSortOrder: %w", err)
+	}
+	return oldValue.SortOrder, nil
+}
+
+// AddSortOrder adds i to the "sort_order" field.
+func (m *RouteModelGroupMemberMutation) AddSortOrder(i int) {
+	if m.addsort_order != nil {
+		*m.addsort_order += i
+	} else {
+		m.addsort_order = &i
+	}
+}
+
+// AddedSortOrder returns the value that was added to the "sort_order" field in this mutation.
+func (m *RouteModelGroupMemberMutation) AddedSortOrder() (r int, exists bool) {
+	v := m.addsort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSortOrder resets all changes to the "sort_order" field.
+func (m *RouteModelGroupMemberMutation) ResetSortOrder() {
+	m.sort_order = nil
+	m.addsort_order = nil
+}
+
+// Where appends a list predicates to the RouteModelGroupMemberMutation builder.
+func (m *RouteModelGroupMemberMutation) Where(ps ...predicate.RouteModelGroupMember) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RouteModelGroupMemberMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RouteModelGroupMemberMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RouteModelGroupMember, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RouteModelGroupMemberMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RouteModelGroupMemberMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RouteModelGroupMember).
+func (m *RouteModelGroupMemberMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RouteModelGroupMemberMutation) Fields() []string {
+	fields := make([]string, 0, 3)
+	if m.group_id != nil {
+		fields = append(fields, routemodelgroupmember.FieldGroupID)
+	}
+	if m.route_model_id != nil {
+		fields = append(fields, routemodelgroupmember.FieldRouteModelID)
+	}
+	if m.sort_order != nil {
+		fields = append(fields, routemodelgroupmember.FieldSortOrder)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RouteModelGroupMemberMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case routemodelgroupmember.FieldGroupID:
+		return m.GroupID()
+	case routemodelgroupmember.FieldRouteModelID:
+		return m.RouteModelID()
+	case routemodelgroupmember.FieldSortOrder:
+		return m.SortOrder()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RouteModelGroupMemberMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case routemodelgroupmember.FieldGroupID:
+		return m.OldGroupID(ctx)
+	case routemodelgroupmember.FieldRouteModelID:
+		return m.OldRouteModelID(ctx)
+	case routemodelgroupmember.FieldSortOrder:
+		return m.OldSortOrder(ctx)
+	}
+	return nil, fmt.Errorf("unknown RouteModelGroupMember field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RouteModelGroupMemberMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case routemodelgroupmember.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	case routemodelgroupmember.FieldRouteModelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRouteModelID(v)
+		return nil
+	case routemodelgroupmember.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSortOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RouteModelGroupMember field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RouteModelGroupMemberMutation) AddedFields() []string {
+	var fields []string
+	if m.addgroup_id != nil {
+		fields = append(fields, routemodelgroupmember.FieldGroupID)
+	}
+	if m.addroute_model_id != nil {
+		fields = append(fields, routemodelgroupmember.FieldRouteModelID)
+	}
+	if m.addsort_order != nil {
+		fields = append(fields, routemodelgroupmember.FieldSortOrder)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RouteModelGroupMemberMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case routemodelgroupmember.FieldGroupID:
+		return m.AddedGroupID()
+	case routemodelgroupmember.FieldRouteModelID:
+		return m.AddedRouteModelID()
+	case routemodelgroupmember.FieldSortOrder:
+		return m.AddedSortOrder()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RouteModelGroupMemberMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case routemodelgroupmember.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
+	case routemodelgroupmember.FieldRouteModelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRouteModelID(v)
+		return nil
+	case routemodelgroupmember.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSortOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RouteModelGroupMember numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RouteModelGroupMemberMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RouteModelGroupMemberMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RouteModelGroupMemberMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown RouteModelGroupMember nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RouteModelGroupMemberMutation) ResetField(name string) error {
+	switch name {
+	case routemodelgroupmember.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	case routemodelgroupmember.FieldRouteModelID:
+		m.ResetRouteModelID()
+		return nil
+	case routemodelgroupmember.FieldSortOrder:
+		m.ResetSortOrder()
+		return nil
+	}
+	return fmt.Errorf("unknown RouteModelGroupMember field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RouteModelGroupMemberMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RouteModelGroupMemberMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RouteModelGroupMemberMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RouteModelGroupMemberMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RouteModelGroupMemberMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RouteModelGroupMemberMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RouteModelGroupMemberMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown RouteModelGroupMember unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RouteModelGroupMemberMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown RouteModelGroupMember edge %s", name)
 }
 
 // RouteModelPriceMutation represents an operation that mutates the RouteModelPrice nodes in the graph.

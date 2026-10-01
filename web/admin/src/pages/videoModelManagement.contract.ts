@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 
 const provider = fs.readFileSync(new URL('./VideoProviderAccountsPanel.tsx', import.meta.url), 'utf8')
-for (const required of ['seedance', 'minimax', 'listModelAccountModels', 'saveVideoCapability', 'saveVideoRateCard', 'seedance_token_v1', 'minimax_h3_second_v1', 'provider_native_max_n', 'prompt_max_runes', 'first_frame', 'last_frame', 'inputFormats', 'inputMaxMB']) {
+for (const required of ['seedance', 'minimax', 'gasic', 'listModelAccountModels', 'saveVideoCapability', 'saveVideoRateCard', 'seedance_token_v1', 'minimax_h3_second_v1', 'gasic_per_task_v1', 'provider_native_max_n', 'prompt_max_runes', 'first_frame', 'last_frame', 'inputFormats', 'inputMaxMB']) {
   if (!provider.includes(required)) throw new Error(`video provider hierarchy must include ${required}`)
 }
 if (provider.includes('真实模型 ID')) throw new Error('video provider management must not require a database model ID')

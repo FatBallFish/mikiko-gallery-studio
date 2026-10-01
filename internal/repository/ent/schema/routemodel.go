@@ -21,6 +21,10 @@ func (RouteModel) Fields() []ent.Field {
 		field.String("media_type").MaxLen(16).Default("image"),
 		field.Bool("enabled").Default(false),
 		field.Int("sort_order").Default(0),
+		// Icon presentation: built-in vendor icon key or an admin uploaded
+		// SVG document; empty both fall back to the site favicon.
+		field.String("icon_key").MaxLen(64).Default(""),
+		field.Text("icon_svg").MaxLen(65536).Default(""),
 	}
 }
 

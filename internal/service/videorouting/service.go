@@ -17,11 +17,25 @@ type CapabilityResponse struct {
 	RouteModelCode    string                    `json:"route_model_code"`
 	Name              string                    `json:"name"`
 	Description       string                    `json:"description,omitempty"`
+	MinimumPoints     string                    `json:"minimum_points"`
+	IconKey           string                    `json:"icon_key,omitempty"`
+	IconSVG           string                    `json:"icon_svg,omitempty"`
+	GroupCodes        []string                  `json:"group_codes,omitempty"`
 	ConfigVersion     string                    `json:"config_version"`
 	CapabilityVersion string                    `json:"capability_version"`
 	MaxOutputCount    int                       `json:"max_output_count"`
 	TaskTypes         []domainvideo.TaskType    `json:"task_types"`
 	Combinations      []domainvideo.Combination `json:"combinations"`
+}
+
+// RouteModelGroupInfo mirrors the image capability payload's grouping
+// metadata so both consoles render the same two-level picker.
+type RouteModelGroupInfo struct {
+	Code            string   `json:"code"`
+	Name            string   `json:"name"`
+	IconKey         string   `json:"icon_key,omitempty"`
+	IconSVG         string   `json:"icon_svg,omitempty"`
+	RouteModelCodes []string `json:"route_model_codes"`
 }
 
 type Resolution struct {
@@ -32,7 +46,8 @@ type Resolution struct {
 }
 
 type CapabilityListResponse struct {
-	Groups []CapabilityResponse `json:"groups"`
+	Groups           []CapabilityResponse  `json:"groups"`
+	RouteModelGroups []RouteModelGroupInfo `json:"route_model_groups,omitempty"`
 }
 
 func NewService(store Store) *Service { return &Service{store: store} }
@@ -44,7 +59,7 @@ func (s *Service) Capabilities(ctx context.Context, code string, userGroupCodes 
 	}
 	response := CapabilityResponse{
 		RouteModelCode: group.Code, Name: group.Name, Description: group.Description, ConfigVersion: group.ConfigVersion,
-		CapabilityVersion: capabilityVersion(group.Candidates), MaxOutputCount: group.MaxOutputCount, TaskTypes: append([]domainvideo.TaskType(nil), group.TaskTypes...),
+		MinimumPoints: group.MinimumTaskPoints, CapabilityVersion: capabilityVersion(group.Candidates), MaxOutputCount: group.MaxOutputCount, TaskTypes: append([]domainvideo.TaskType(nil), group.TaskTypes...),
 	}
 	seen := make(map[string]struct{})
 	for _, taskType := range group.TaskTypes {

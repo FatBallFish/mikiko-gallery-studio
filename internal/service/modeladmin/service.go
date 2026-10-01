@@ -429,7 +429,7 @@ func normalizeModelAccountWrite(req domainmodeladmin.ModelAccountWriteRequest, c
 	if req.Name == "" || req.AdapterType == "" || req.AuthType == "" || req.BaseURL == "" {
 		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("name, adapter_type, auth_type and base_url are required")
 	}
-	if req.AdapterType != domainmodeladmin.AdapterTypeOpenAICompatible && req.AdapterType != domainmodeladmin.AdapterTypeOpenRouter && req.AdapterType != domainmodeladmin.AdapterTypeSeedance && req.AdapterType != domainmodeladmin.AdapterTypeMiniMax {
+	if req.AdapterType != domainmodeladmin.AdapterTypeOpenAICompatible && req.AdapterType != domainmodeladmin.AdapterTypeOpenRouter && req.AdapterType != domainmodeladmin.AdapterTypeSeedance && req.AdapterType != domainmodeladmin.AdapterTypeMiniMax && req.AdapterType != domainmodeladmin.AdapterTypeGasic && req.AdapterType != domainmodeladmin.AdapterTypeBailian {
 		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("unsupported adapter_type")
 	}
 	if req.AuthType != domainmodeladmin.AuthTypeAPIKey {
@@ -542,6 +542,91 @@ func normalizeModelAccountModelWrite(req domainmodeladmin.ModelAccountModelWrite
 	return req, nil
 }
 
+func (s *Service) ListRouteModelGroups(ctx context.Context, mediaType string) ([]domainmodeladmin.RouteModelGroup, error) {
+	return s.store.ListRouteModelGroups(ctx, normalizeCode(mediaType))
+}
+
+func (s *Service) ListVisibleRouteModelGroups(ctx context.Context, mediaType string) ([]domainmodeladmin.RouteModelGroup, []domainmodeladmin.RouteModel, error) {
+	return s.store.ListVisibleRouteModelGroups(ctx, normalizeCode(mediaType))
+}
+
+func (s *Service) GetRouteModelGroup(ctx context.Context, groupID int64) (domainmodeladmin.RouteModelGroup, error) {
+	if groupID <= 0 {
+		return domainmodeladmin.RouteModelGroup{}, errs.BadRequest("invalid route model group id")
+	}
+	return s.store.GetRouteModelGroup(ctx, groupID)
+}
+
+func (s *Service) CreateRouteModelGroup(ctx context.Context, req domainmodeladmin.RouteModelGroupWriteRequest) (domainmodeladmin.RouteModelGroup, error) {
+	normalized, err := normalizeRouteModelGroupWrite(req, true)
+	if err != nil {
+		return domainmodeladmin.RouteModelGroup{}, err
+	}
+	return s.store.CreateRouteModelGroup(ctx, normalized)
+}
+
+func (s *Service) UpdateRouteModelGroup(ctx context.Context, groupID int64, req domainmodeladmin.RouteModelGroupWriteRequest) (domainmodeladmin.RouteModelGroup, error) {
+	if groupID <= 0 {
+		return domainmodeladmin.RouteModelGroup{}, errs.BadRequest("invalid route model group id")
+	}
+	normalized, err := normalizeRouteModelGroupWrite(req, false)
+	if err != nil {
+		return domainmodeladmin.RouteModelGroup{}, err
+	}
+	return s.store.UpdateRouteModelGroup(ctx, groupID, normalized)
+}
+
+func (s *Service) DeleteRouteModelGroup(ctx context.Context, groupID int64) error {
+	if groupID <= 0 {
+		return errs.BadRequest("invalid route model group id")
+	}
+	return s.store.DeleteRouteModelGroup(ctx, groupID)
+}
+
+func normalizeRouteModelGroupWrite(req domainmodeladmin.RouteModelGroupWriteRequest, requireCode bool) (domainmodeladmin.RouteModelGroupWriteRequest, error) {
+	req.Code = normalizeCode(req.Code)
+	req.Name = strings.TrimSpace(req.Name)
+	req.Description = strings.TrimSpace(req.Description)
+	req.MediaType = normalizeCode(req.MediaType)
+	req.IconKey = normalizeCode(req.IconKey)
+	req.IconSVG = strings.TrimSpace(req.IconSVG)
+	if requireCode && req.Code == "" {
+		return domainmodeladmin.RouteModelGroupWriteRequest{}, errs.BadRequest("code is required")
+	}
+	if req.Name == "" {
+		return domainmodeladmin.RouteModelGroupWriteRequest{}, errs.BadRequest("name is required")
+	}
+	if req.MediaType == "" {
+		req.MediaType = "image"
+	}
+	if req.MediaType != "image" && req.MediaType != "video" {
+		return domainmodeladmin.RouteModelGroupWriteRequest{}, errs.BadRequest("invalid media_type")
+	}
+	if err := validateIconWrite(req.IconKey, req.IconSVG); err != nil {
+		return domainmodeladmin.RouteModelGroupWriteRequest{}, err
+	}
+	return req, nil
+}
+
+// validateIconWrite guards the admin-provided icon pair: the built-in key is
+// a short slug, and an uploaded SVG must be an SVG document within the
+// column budget. Empty values fall back to the site favicon at render time.
+func validateIconWrite(iconKey, iconSVG string) error {
+	if len(iconKey) > 64 {
+		return errs.BadRequest("icon_key is too long")
+	}
+	if iconSVG == "" {
+		return nil
+	}
+	if len(iconSVG) > 65536 {
+		return errs.BadRequest("icon_svg exceeds 64KB")
+	}
+	if !strings.HasPrefix(strings.ToLower(iconSVG), "<svg") {
+		return errs.BadRequest("icon_svg must be an SVG document")
+	}
+	return nil
+}
+
 func normalizeRouteModelWrite(req domainmodeladmin.RouteModelWriteRequest, requireCode bool) (domainmodeladmin.RouteModelWriteRequest, error) {
 	req.Code = normalizeCode(req.Code)
 	req.Name = strings.TrimSpace(req.Name)
@@ -565,6 +650,11 @@ func normalizeRouteModelWrite(req domainmodeladmin.RouteModelWriteRequest, requi
 	}
 	if req.MediaType != "image" && req.MediaType != "video" {
 		return domainmodeladmin.RouteModelWriteRequest{}, errs.BadRequest("invalid media_type")
+	}
+	req.IconKey = normalizeCode(req.IconKey)
+	req.IconSVG = strings.TrimSpace(req.IconSVG)
+	if err := validateIconWrite(req.IconKey, req.IconSVG); err != nil {
+		return domainmodeladmin.RouteModelWriteRequest{}, err
 	}
 	return req, nil
 }

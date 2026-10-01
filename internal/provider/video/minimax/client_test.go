@@ -253,8 +253,169 @@ func videoRequest() videoprovider.Request {
 		TaskType: "first_last_frame_to_video", Prompt: "A child grows up", DurationSeconds: 5,
 		Resolution: "2k", AspectRatio: "adaptive", OutputFormat: "mp4",
 		Inputs: []videoprovider.Input{
-			{AssetID: "first", Role: "first_frame", URL: "https://assets.example.com/first.png"},
-			{AssetID: "last", Role: "last_frame", URL: "https://assets.example.com/last.png"},
+			{AssetID: "first", Role: "first_frame", URL: "https://93.184.216.34/first.png"},
+			{AssetID: "last", Role: "last_frame", URL: "https://93.184.216.34/last.png"},
 		},
+	}
+}
+
+func TestClientNormalizesBaseURLWithVersionSuffix(t *testing.T) {
+	paths := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v2/query/video_generation/mm-job-1":
+			_, _ = io.WriteString(w, `{"task":{"id":"mm-job-1","status":"queued"}}`)
+		default:
+			_, _ = io.WriteString(w, `{"task_id":"mm-job-1"}`)
+		}
+	}))
+	defer server.Close()
+	client, err := minimax.NewClient(minimax.Config{
+		BaseURL: server.URL + "/v2/", APIKey: "key", ModelCode: "MiniMax-H3", Verified: true, HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Submit(t.Context(), videoRequest()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Get(t.Context(), videoprovider.JobRef{ID: "mm-job-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 || paths[0] != "/v2/video_generation" || paths[1] != "/v2/query/video_generation/mm-job-1" {
+		t.Fatalf("paths = %#v", paths)
+	}
+}
+
+func TestClientRejectsAdaptiveRatioForTextToVideo(t *testing.T) {
+	client, err := minimax.NewClient(minimax.Config{BaseURL: "https://93.184.216.34", APIKey: "key", ModelCode: "MiniMax-H3", Verified: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoRequest()
+	req.Inputs = nil
+	if _, err := client.Submit(t.Context(), req); err == nil {
+		t.Fatal("expected adaptive ratio to be rejected for text-to-video")
+	}
+}
+
+func TestClientSubmitTextToVideoPayloadShape(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"task_id":"mm-job-2"}`)
+	}))
+	defer server.Close()
+	client, err := minimax.NewClient(minimax.Config{BaseURL: server.URL, APIKey: "key", ModelCode: "MiniMax-H3", Verified: true, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoRequest()
+	req.TaskType = "text_to_video"
+	req.Inputs = nil
+	req.AspectRatio = "9:16"
+	req.Resolution = "768p"
+	if _, err := client.Submit(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	if body["ratio"] != "9:16" || body["resolution"] != "768P" || body["duration"] != float64(5) {
+		t.Fatalf("t2v body = %#v", body)
+	}
+}
+
+func TestClientForcesAdaptiveRatioForFrameInputs(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"task_id":"mm-job-3"}`)
+	}))
+	defer server.Close()
+	client, err := minimax.NewClient(minimax.Config{BaseURL: server.URL, APIKey: "key", ModelCode: "MiniMax-H3", Verified: true, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoRequest()
+	req.AspectRatio = "9:16"
+	req.Inputs = []videoprovider.Input{
+		{AssetID: "first", Role: "first_frame", URL: "https://93.184.216.34/first.png"},
+	}
+	if _, err := client.Submit(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	if body["ratio"] != "adaptive" {
+		t.Fatalf("i2v ratio = %#v", body["ratio"])
+	}
+	content, ok := body["content"].([]any)
+	if !ok || len(content) != 2 {
+		t.Fatalf("content = %#v", body["content"])
+	}
+	first := content[1].(map[string]any)
+	if first["role"] != "first_frame" {
+		t.Fatalf("first frame entry = %#v", first)
+	}
+}
+
+func TestClientOmitsEmptyRole(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"task_id":"mm-job-4"}`)
+	}))
+	defer server.Close()
+	client, err := minimax.NewClient(minimax.Config{BaseURL: server.URL, APIKey: "key", ModelCode: "MiniMax-H3", Verified: true, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoRequest()
+	req.AspectRatio = "9:16"
+	req.Inputs = []videoprovider.Input{{AssetID: "frame", Role: "  ", URL: "https://93.184.216.34/frame.png"}}
+	if _, err := client.Submit(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	entry := body["content"].([]any)[1].(map[string]any)
+	if _, ok := entry["role"]; ok {
+		t.Fatalf("empty role should be omitted: %#v", entry)
+	}
+}
+
+func TestClientInlinesPrivateImageAsDataURI(t *testing.T) {
+	var body map[string]any
+	image := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte{0x89, 'P', 'N', 'G'})
+	}))
+	defer image.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"task_id":"mm-job-5"}`)
+	}))
+	defer server.Close()
+	client, err := minimax.NewClient(minimax.Config{BaseURL: server.URL, APIKey: "key", ModelCode: "MiniMax-H3", Verified: true, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoRequest()
+	req.Inputs = []videoprovider.Input{{AssetID: "frame", Role: "first_frame", URL: image.URL + "/frame.png", MIMEType: "image/png"}}
+	if _, err := client.Submit(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	entry := body["content"].([]any)[1].(map[string]any)
+	url := entry["image_url"].(map[string]any)["url"].(string)
+	if !strings.HasPrefix(url, "data:image/png;base64,") {
+		t.Fatalf("private image should be inlined as data URI: %s", url)
 	}
 }

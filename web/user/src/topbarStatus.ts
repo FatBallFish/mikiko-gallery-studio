@@ -1,4 +1,5 @@
 import type { Balance, BalanceBucket } from '../../shared/api-types'
+import { pointsText } from '../../shared/pointsDisplay'
 
 export type TopbarStatusChip = {
   label: string
@@ -49,9 +50,8 @@ function positivePoints(value?: string) {
 }
 
 function displayPoints(value?: string) {
-  const parsed = Number(value ?? '0')
-  if (!Number.isFinite(parsed)) return value ?? '0.00000'
-  return parsed.toFixed(2)
+  if (value === undefined || value === null || value === '') return '0'
+  return pointsText(value)
 }
 
 function expiryDetail(bucket?: BalanceBucket) {

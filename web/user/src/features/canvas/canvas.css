@@ -433,7 +433,7 @@
 .canvas-toolbox button > svg:first-of-type:not(:last-child) { position: absolute; top: 4px; left: 4px; }
 .canvas-zoom-controls { right: 16px; bottom: 18px; }
 .canvas-zoom-controls span { min-width: 48px; color: var(--muted); font-size: 11px; text-align: center; }
-.canvas-command-controls { left: 50%; bottom: 18px; transform: translateX(-50%); }
+.canvas-command-controls { right: 16px; bottom: 70px; flex-direction: column; }
 
 .canvas-minimap {
   position: absolute;
@@ -578,3 +578,136 @@
   .canvas-template-row > button { border-right: 0; border-bottom: 1px solid var(--border); }
   .canvas-template-row > button:last-child { border-bottom: 0; }
 }
+
+/* ---- floating dock (replaces the left toolbox) ---- */
+.canvas-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--pg-shadow-lg, 0 12px 32px rgba(0, 0, 0, .12));
+  backdrop-filter: blur(14px);
+}
+
+.canvas-dock i { width: 1px; height: 20px; margin: 0 3px; background: var(--border); }
+
+.canvas-dock button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.canvas-dock button:hover { color: var(--fg); border-color: var(--border); background: var(--bg); }
+.canvas-dock button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.canvas-dock button:disabled { opacity: .38; cursor: not-allowed; }
+
+.canvas-dock-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  display: grid;
+  min-width: 148px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--pg-shadow-lg, 0 12px 32px rgba(0, 0, 0, .12));
+}
+
+.canvas-dock-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  justify-content: flex-start;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---- node groups ---- */
+.canvas-group {
+  position: absolute;
+  z-index: 0;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  pointer-events: none;
+}
+
+.canvas-group[data-selected="true"] { border-style: solid; border-color: color-mix(in srgb, var(--accent) 80%, transparent); }
+
+.canvas-group-label {
+  position: absolute;
+  top: -13px;
+  left: 14px;
+  max-width: 60%;
+  overflow: hidden;
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* ---- compact generation node ---- */
+.canvas-generation-summary { display: grid; align-content: start; gap: 8px; padding: 2px 2px 0; }
+.canvas-generation-summary-digest { display: grid; gap: 2px; }
+.canvas-generation-summary-digest strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-generation-summary-digest span { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-generation-summary-inputs { color: var(--muted); font-size: 11px; }
+.canvas-generation-summary-errors { color: var(--danger, #e5484d); font-size: 11px; line-height: 1.4; cursor: pointer; overflow-wrap: anywhere; }
+.canvas-generation-summary-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; }
+.canvas-generation-summary-foot button { min-height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font-size: 11px; font-weight: 700; cursor: pointer; }
+.canvas-generation-summary-foot button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---- dialogs ---- */
+.canvas-node-config-dialog { width: min(560px, calc(100vw - 2rem)); }
+.canvas-node-config-dialog .canvas-generation-body { border: 0; padding: 0; }
+.canvas-group-config-dialog { width: min(460px, calc(100vw - 2rem)); }
+.canvas-group-field { display: grid; gap: 7px; margin-bottom: 16px; }
+.canvas-group-field > span { color: var(--muted); font-size: 11px; font-weight: 700; }
+.canvas-group-field input { min-height: 38px; padding: 0 11px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--fg); font: inherit; }
+.canvas-group-swatches { display: flex; gap: 8px; }
+.canvas-group-swatches button { width: 34px; height: 34px; border: 2px solid var(--border); border-radius: 9px; background: var(--bg); cursor: pointer; }
+.canvas-group-swatches button[data-active="true"] { outline: 2px solid var(--accent); outline-offset: 2px; }
+.canvas-group-field ul { display: grid; gap: 4px; max-height: 180px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.canvas-group-field li { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); font-size: 12px; }
+.canvas-group-config-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.canvas-shortcuts-dialog { width: min(520px, calc(100vw - 2rem)); }
+.canvas-shortcuts-grid { display: grid; gap: 8px; }
+.canvas-shortcuts-grid > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 2px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.canvas-shortcuts-grid > div:last-child { border-bottom: 0; }
+.canvas-shortcuts-grid kbd { padding: 3px 8px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; background: var(--bg); font-family: var(--pg-mono, monospace); font-size: 11px; }
+.canvas-shortcuts-grid span { color: var(--muted); font-size: 12px; }
+
+@media (max-width: 767px) {
+  .canvas-dock { left: 12px; right: 12px; transform: none; justify-content: space-between; }
+}
+
+.canvas-viewport[data-space] { cursor: grab; }
+.canvas-viewport[data-space]:active { cursor: grabbing; }
+
+.canvas-video-audio-toggle { display: flex !important; align-items: center; justify-content: space-between; gap: 10px; }
+.canvas-video-audio-toggle input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }

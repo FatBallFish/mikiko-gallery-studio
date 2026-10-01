@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
@@ -88,6 +89,7 @@ func (s *Service) Estimate(ctx context.Context, req CreateRequest) (Estimate, er
 	if req.UserID <= 0 || req.ProjectID == uuid.Nil {
 		return Estimate{}, errs.BadRequest("user and project are required")
 	}
+	normalizeEnums(&req)
 	prepared, err := s.prepare(ctx, req)
 	if err != nil {
 		return Estimate{}, err
@@ -111,6 +113,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Task, bool, er
 	if len(req.IdempotencyKey) > 128 {
 		return Task{}, false, errs.BadRequest("idempotency key is too long")
 	}
+	normalizeEnums(&req)
 	fingerprint, err := createFingerprint(req)
 	if err != nil {
 		return Task{}, false, err
@@ -135,7 +138,20 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Task, bool, er
 	task := Task{ID: uuid.New(), UserID: req.UserID, ProjectID: req.ProjectID, SourceChannel: defaultSource(req.SourceChannel), SourceCanvasID: req.SourceCanvasID, SourceCanvasNodeID: req.SourceCanvasNodeID, TaskType: req.TaskType, Status: domainvideo.TaskStatusQueued, ProgressStage: "queued", PromptTemplate: prepared.resolved.CanonicalTemplate, ExecutionPrompt: prepared.resolved.Expanded, RouteModelID: verified.RouteModelID, RouteModelCode: strings.TrimSpace(req.RouteModelCode), DurationSeconds: req.DurationSeconds, Resolution: req.Resolution, AspectRatio: req.AspectRatio, GenerateAudio: req.AudioMode == domainvideo.AudioModeGenerated, RequestedOutputCount: req.OutputCount, EstimatedPoints: verified.EstimatedPoints, ReservedPoints: verified.MaxReservedPoints, ActualPoints: "0.00000", SettlementStatus: "reserved", IdempotencyKey: strings.TrimSpace(req.IdempotencyKey), RequestFingerprint: fingerprint, Version: 1, CreatedAt: now, UpdatedAt: now}
 	task.PromptBindingSnapshot = promptSnapshot(prepared.resolved, req.PromptVariables)
 	task.PricingSnapshot = cloneMap(verified.PricingSnapshot)
-	task.PricingSnapshot["reference_image_count"] = len(req.Inputs)
+	referenceImages := 0
+	inputVideoSeconds := decimal.Zero
+	for _, input := range prepared.video.Inputs {
+		if input.MediaType == "image" {
+			referenceImages++
+		}
+		if input.MediaType == "video" && input.DurationSeconds > 0 {
+			inputVideoSeconds = inputVideoSeconds.Add(decimal.NewFromInt(int64(input.DurationSeconds)))
+		}
+	}
+	task.PricingSnapshot["reference_image_count"] = referenceImages
+	if inputVideoSeconds.GreaterThan(decimal.Zero) {
+		task.PricingSnapshot["input_video_seconds"] = inputVideoSeconds.StringFixed(3)
+	}
 	task.RoutingSnapshot = map[string]any{
 		"capability_version": verified.CapabilityVersion, "config_version": verified.ConfigVersion, "route_model_code": verified.RouteModelCode,
 		"route_candidate_id": verified.RouteCandidateID, "account_model_id": verified.AccountModelID, "model_account_id": verified.ModelAccountID,
@@ -177,10 +193,18 @@ func (s *Service) prepare(ctx context.Context, req CreateRequest) (preparedReque
 		if assetErr != nil {
 			return preparedRequest{}, mapOwnershipError(assetErr, "input asset not found")
 		}
-		if asset.MediaType != "image" || !(asset.Status == "ready" || asset.Status == "ready_original") {
-			return preparedRequest{}, errs.BadRequest("video input asset must be a ready image")
+		allowedKind := "image"
+		if input.Role == domainvideo.InputRoleReferenceVideo {
+			allowedKind = "video"
 		}
-		domainInputs = append(domainInputs, domainvideo.Input{AssetID: asset.ID.String(), Role: input.Role, Ordinal: input.Ordinal, MediaType: string(asset.MediaType), Format: asset.MIMEType, SizeBytes: asset.FileSizeBytes, Width: intValuePtr(asset.Width), Height: intValuePtr(asset.Height)})
+		if string(asset.MediaType) != allowedKind || !(asset.Status == "ready" || asset.Status == "ready_original") {
+			return preparedRequest{}, errs.BadRequest("video input asset must be a ready " + allowedKind)
+		}
+		domainInput := domainvideo.Input{AssetID: asset.ID.String(), Role: input.Role, Ordinal: input.Ordinal, MediaType: string(asset.MediaType), Format: asset.MIMEType, SizeBytes: asset.FileSizeBytes, Width: intValuePtr(asset.Width), Height: intValuePtr(asset.Height)}
+		if asset.MediaType == "video" && asset.DurationMS != nil {
+			domainInput.DurationSeconds = int((*asset.DurationMS + 999) / 1000)
+		}
+		domainInputs = append(domainInputs, domainInput)
 		if _, ok := seen[asset.ID]; !ok {
 			seen[asset.ID] = struct{}{}
 			selectedIDs = append(selectedIDs, asset.ID.String())
@@ -200,8 +224,18 @@ func (s *Service) prepare(ctx context.Context, req CreateRequest) (preparedReque
 	if err != nil {
 		return preparedRequest{}, mapPromptError(err)
 	}
+	// Enum tokens are compared case-sensitively against admin-configured
+	// capabilities; normalize callers that send display casing (e.g. canvas
+	// drafts persisted with "720P" before the option values were pinned).
 	videoReq := domainvideo.Request{TaskType: req.TaskType, Prompt: resolved.Expanded, DurationSeconds: req.DurationSeconds, Resolution: req.Resolution, AspectRatio: req.AspectRatio, AudioMode: req.AudioMode, OutputCount: req.OutputCount, Inputs: domainInputs}
 	return preparedRequest{video: videoReq, resolved: resolved, inputRecords: inputRecords}, nil
+}
+
+func normalizeEnums(req *CreateRequest) {
+	req.TaskType = domainvideo.TaskType(strings.ToLower(strings.TrimSpace(string(req.TaskType))))
+	req.Resolution = domainvideo.Resolution(strings.ToLower(strings.TrimSpace(string(req.Resolution))))
+	req.AspectRatio = domainvideo.AspectRatio(strings.ToLower(strings.TrimSpace(string(req.AspectRatio))))
+	req.AudioMode = domainvideo.AudioMode(strings.ToLower(strings.TrimSpace(string(req.AudioMode))))
 }
 
 func (s *Service) List(ctx context.Context, req ListRequest) (Page, error) {

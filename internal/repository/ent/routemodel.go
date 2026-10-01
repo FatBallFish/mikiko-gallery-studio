@@ -36,7 +36,11 @@ type RouteModel struct {
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
 	// SortOrder holds the value of the "sort_order" field.
-	SortOrder    int `json:"sort_order,omitempty"`
+	SortOrder int `json:"sort_order,omitempty"`
+	// IconKey holds the value of the "icon_key" field.
+	IconKey string `json:"icon_key,omitempty"`
+	// IconSvg holds the value of the "icon_svg" field.
+	IconSvg      string `json:"icon_svg,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -49,7 +53,7 @@ func (*RouteModel) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case routemodel.FieldID, routemodel.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
-		case routemodel.FieldCode, routemodel.FieldName, routemodel.FieldDescription, routemodel.FieldVisibility, routemodel.FieldMediaType:
+		case routemodel.FieldCode, routemodel.FieldName, routemodel.FieldDescription, routemodel.FieldVisibility, routemodel.FieldMediaType, routemodel.FieldIconKey, routemodel.FieldIconSvg:
 			values[i] = new(sql.NullString)
 		case routemodel.FieldCreatedAt, routemodel.FieldUpdatedAt, routemodel.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
@@ -135,6 +139,18 @@ func (_m *RouteModel) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.SortOrder = int(value.Int64)
 			}
+		case routemodel.FieldIconKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field icon_key", values[i])
+			} else if value.Valid {
+				_m.IconKey = value.String
+			}
+		case routemodel.FieldIconSvg:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field icon_svg", values[i])
+			} else if value.Valid {
+				_m.IconSvg = value.String
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -202,6 +218,12 @@ func (_m *RouteModel) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("sort_order=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SortOrder))
+	builder.WriteString(", ")
+	builder.WriteString("icon_key=")
+	builder.WriteString(_m.IconKey)
+	builder.WriteString(", ")
+	builder.WriteString("icon_svg=")
+	builder.WriteString(_m.IconSvg)
 	builder.WriteByte(')')
 	return builder.String()
 }

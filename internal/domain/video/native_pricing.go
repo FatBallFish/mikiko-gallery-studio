@@ -12,9 +12,13 @@ type PricingSchema string
 const (
 	PricingSchemaSeedanceTokenV1   PricingSchema = "seedance_token_v1"
 	PricingSchemaMiniMaxH3SecondV1 PricingSchema = "minimax_h3_second_v1"
+	PricingSchemaGasicPerTaskV1    PricingSchema = "gasic_per_task_v1"
+	PricingSchemaBailianPerSecond  PricingSchema = "bailian_per_second_v1"
 
 	SeedanceRuleVersion202608  = "seedance-rules-2026-08"
 	MiniMaxH3RuleVersion202608 = "minimax-h3-rules-2026-08"
+	GasicRuleVersion202609     = "gasic-rules-2026-09"
+	BailianRuleVersion202609   = "bailian-wan3-rules-2026-09"
 )
 
 type SeedanceTokenRateCard struct {
@@ -38,13 +42,33 @@ type MiniMaxResolutionRate struct {
 	InputVideoSecondCNY string `json:"input_video_second_cny"`
 }
 
+// GasicPerTaskRateCard prices the GASIC relay: a flat CNY amount per task
+// regardless of duration or resolution (failed tasks are refunded upstream).
+type GasicPerTaskRateCard struct {
+	PerTaskCNY string `json:"per_task_cny"`
+}
+
+// BailianPerSecondRate prices one Wan3.0 resolution. Bailian bills input and
+// output video seconds together; InputVideoSecondCNY defaults to the output
+// rate when omitted.
+type BailianPerSecondRate struct {
+	OutputSecondCNY     string `json:"output_second_cny"`
+	InputVideoSecondCNY string `json:"input_video_second_cny,omitempty"`
+}
+
+type BailianPerSecondRateCard struct {
+	Resolutions map[Resolution]BailianPerSecondRate `json:"resolutions"`
+}
+
 type RateCard struct {
-	ProviderCode  string                   `json:"provider_code"`
-	ModelCode     string                   `json:"model_code"`
-	PricingSchema PricingSchema            `json:"pricing_schema"`
-	RuleVersion   string                   `json:"rule_version"`
-	Seedance      *SeedanceTokenRateCard   `json:"seedance,omitempty"`
-	MiniMaxH3     *MiniMaxH3SecondRateCard `json:"minimax_h3,omitempty"`
+	ProviderCode  string                    `json:"provider_code"`
+	ModelCode     string                    `json:"model_code"`
+	PricingSchema PricingSchema             `json:"pricing_schema"`
+	RuleVersion   string                    `json:"rule_version"`
+	Seedance      *SeedanceTokenRateCard    `json:"seedance,omitempty"`
+	MiniMaxH3     *MiniMaxH3SecondRateCard  `json:"minimax_h3,omitempty"`
+	Gasic         *GasicPerTaskRateCard     `json:"gasic,omitempty"`
+	Bailian       *BailianPerSecondRateCard `json:"bailian,omitempty"`
 }
 
 type NativePricingRequest struct {
@@ -65,9 +89,41 @@ func ValidateRateCard(card RateCard, capability Capability) error {
 		return validateSeedanceRateCard(card, capability)
 	case PricingSchemaMiniMaxH3SecondV1:
 		return validateMiniMaxRateCard(card, capability)
+	case PricingSchemaGasicPerTaskV1:
+		return validateGasicRateCard(card)
+	case PricingSchemaBailianPerSecond:
+		return validateBailianRateCard(card)
 	default:
 		return fmt.Errorf("unsupported pricing schema %q", card.PricingSchema)
 	}
+}
+
+// validateBailianRateCard checks a Wan3.0 per-second card. Wan3.0 sells
+// 480P/720P/1080P only.
+func validateBailianRateCard(card RateCard) error {
+	if !strings.EqualFold(strings.TrimSpace(card.ProviderCode), "bailian") {
+		return fmt.Errorf("bailian pricing schema requires bailian provider")
+	}
+	if card.RuleVersion != BailianRuleVersion202609 {
+		return fmt.Errorf("unsupported bailian rule version %q", card.RuleVersion)
+	}
+	if card.Bailian == nil || len(card.Bailian.Resolutions) == 0 {
+		return fmt.Errorf("bailian resolutions are required")
+	}
+	for resolution, rate := range card.Bailian.Resolutions {
+		if resolution != Resolution480P && resolution != Resolution720P && resolution != Resolution1080P {
+			return fmt.Errorf("resolution %s is unsupported by bailian pricing", resolution)
+		}
+		if _, err := parsePositiveDecimal(rate.OutputSecondCNY, "output_second_cny"); err != nil {
+			return err
+		}
+		if strings.TrimSpace(rate.InputVideoSecondCNY) != "" {
+			if _, err := parsePositiveDecimal(rate.InputVideoSecondCNY, "input_video_second_cny"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func QuoteNativePricing(request NativePricingRequest, card RateCard) (CandidateQuote, error) {
@@ -86,9 +142,88 @@ func QuoteNativePricing(request NativePricingRequest, card RateCard) (CandidateQ
 		return quoteSeedance(request, inputVideoSeconds, card)
 	case PricingSchemaMiniMaxH3SecondV1:
 		return quoteMiniMaxH3(request, inputVideoSeconds, card)
+	case PricingSchemaGasicPerTaskV1:
+		return quoteGasicPerTask(request, card)
+	case PricingSchemaBailianPerSecond:
+		return quoteBailianPerSecond(request, inputVideoSeconds, card)
 	default:
 		return CandidateQuote{}, fmt.Errorf("unsupported pricing schema %q", card.PricingSchema)
 	}
+}
+
+// quoteBailianPerSecond bills output seconds plus input video seconds
+// (Bailian's rule: 计费时长 = 输入视频时长 + 输出视频时长).
+func quoteBailianPerSecond(request NativePricingRequest, inputVideoSeconds decimal.Decimal, card RateCard) (CandidateQuote, error) {
+	if card.RuleVersion != BailianRuleVersion202609 {
+		return CandidateQuote{}, fmt.Errorf("unsupported bailian rule version %q", card.RuleVersion)
+	}
+	if card.Bailian == nil {
+		return CandidateQuote{}, fmt.Errorf("bailian rate config is required")
+	}
+	rate, ok := card.Bailian.Resolutions[request.Video.Resolution]
+	if !ok {
+		return CandidateQuote{}, fmt.Errorf("bailian rate is missing for resolution %s", request.Video.Resolution)
+	}
+	outputRate, err := parsePositiveDecimal(rate.OutputSecondCNY, "output_second_cny")
+	if err != nil {
+		return CandidateQuote{}, err
+	}
+	inputRate := outputRate
+	if strings.TrimSpace(rate.InputVideoSecondCNY) != "" {
+		if inputRate, err = parsePositiveDecimal(rate.InputVideoSecondCNY, "input_video_second_cny"); err != nil {
+			return CandidateQuote{}, err
+		}
+	}
+	outputCost := decimal.NewFromInt(int64(request.Video.DurationSeconds)).Mul(outputRate)
+	inputCost := inputVideoSeconds.Mul(inputRate)
+	total := outputCost.Add(inputCost)
+	calculation := map[string]any{
+		"rule_version":           card.RuleVersion,
+		"output_seconds":         request.Video.DurationSeconds,
+		"output_second_rate_cny": outputRate.String(),
+		"input_video_seconds":    inputVideoSeconds.String(),
+		"input_second_rate_cny":  inputRate.String(),
+	}
+	return CandidateQuote{CNY: total.Round(5).StringFixed(5), Calculation: calculation}, nil
+}
+
+func validateGasicRateCard(card RateCard) error {
+	if !strings.EqualFold(strings.TrimSpace(card.ProviderCode), "gasic") {
+		return fmt.Errorf("gasic pricing schema requires gasic provider")
+	}
+	if card.RuleVersion != GasicRuleVersion202609 {
+		return fmt.Errorf("unsupported gasic rule version %q", card.RuleVersion)
+	}
+	if card.Gasic == nil {
+		return fmt.Errorf("gasic rate config is required")
+	}
+	if _, err := parsePositiveDecimal(card.Gasic.PerTaskCNY, "per_task_cny"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func quoteGasicPerTask(request NativePricingRequest, card RateCard) (CandidateQuote, error) {
+	if card.RuleVersion != GasicRuleVersion202609 {
+		return CandidateQuote{}, fmt.Errorf("unsupported gasic rule version %q", card.RuleVersion)
+	}
+	if card.Gasic == nil {
+		return CandidateQuote{}, fmt.Errorf("gasic rate config is required")
+	}
+	perTask, err := parsePositiveDecimal(card.Gasic.PerTaskCNY, "per_task_cny")
+	if err != nil {
+		return CandidateQuote{}, err
+	}
+	return CandidateQuote{
+		CNY: perTask.Round(5).StringFixed(5),
+		Calculation: map[string]any{
+			"rule_version":     card.RuleVersion,
+			"billing_mode":     "per_task",
+			"per_task_cny":     perTask.String(),
+			"duration_seconds": request.Video.DurationSeconds,
+			"resolution":       string(request.Video.Resolution),
+		},
+	}, nil
 }
 
 func validateSeedanceRateCard(card RateCard, capability Capability) error {
@@ -138,7 +273,8 @@ func validateMiniMaxRateCard(card RateCard, capability Capability) error {
 	if card.RuleVersion != MiniMaxH3RuleVersion202608 {
 		return fmt.Errorf("unsupported minimax h3 rule version %q", card.RuleVersion)
 	}
-	if !strings.EqualFold(strings.TrimSpace(card.ModelCode), "MiniMax-H3") {
+	allowedResolutions, ok := miniMaxPricingResolutions(card.ModelCode)
+	if !ok {
 		return fmt.Errorf("minimax h3 pricing schema does not support model %s", card.ModelCode)
 	}
 	if card.MiniMaxH3 == nil || len(card.MiniMaxH3.Resolutions) == 0 {
@@ -164,8 +300,8 @@ func validateMiniMaxRateCard(card RateCard, capability Capability) error {
 		if _, ok := supported[resolution]; !ok {
 			return fmt.Errorf("resolution %s is not supported by the model capability", resolution)
 		}
-		if resolution != Resolution768P && resolution != Resolution2K {
-			return fmt.Errorf("resolution %s is unsupported by minimax h3 pricing", resolution)
+		if _, ok := allowedResolutions[resolution]; !ok {
+			return fmt.Errorf("resolution %s is unsupported by %s pricing", resolution, card.ModelCode)
 		}
 		if _, err := parsePositiveDecimal(rate.OutputSecondCNY, "output_second_cny"); err != nil {
 			return err
@@ -177,6 +313,19 @@ func validateMiniMaxRateCard(card RateCard, capability Capability) error {
 		}
 	}
 	return nil
+}
+
+// miniMaxPricingResolutions mirrors the paygo doc: H3 sells 768P/2K output
+// seconds and H3-Max sells 480P/768P output seconds.
+func miniMaxPricingResolutions(modelCode string) (map[Resolution]struct{}, bool) {
+	switch strings.ToLower(strings.TrimSpace(modelCode)) {
+	case "minimax-h3":
+		return map[Resolution]struct{}{Resolution768P: {}, Resolution2K: {}}, true
+	case "minimax-h3-max":
+		return map[Resolution]struct{}{Resolution480P: {}, Resolution768P: {}}, true
+	default:
+		return nil, false
+	}
 }
 
 func quoteSeedance(request NativePricingRequest, inputVideoSeconds decimal.Decimal, card RateCard) (CandidateQuote, error) {

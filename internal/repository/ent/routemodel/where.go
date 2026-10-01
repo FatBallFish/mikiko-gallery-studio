@@ -104,6 +104,16 @@ func SortOrder(v int) predicate.RouteModel {
 	return predicate.RouteModel(sql.FieldEQ(FieldSortOrder, v))
 }
 
+// IconKey applies equality check predicate on the "icon_key" field. It's identical to IconKeyEQ.
+func IconKey(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldEQ(FieldIconKey, v))
+}
+
+// IconSvg applies equality check predicate on the "icon_svg" field. It's identical to IconSvgEQ.
+func IconSvg(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldEQ(FieldIconSvg, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.RouteModel {
 	return predicate.RouteModel(sql.FieldEQ(FieldCreatedAt, v))
@@ -607,6 +617,136 @@ func SortOrderLT(v int) predicate.RouteModel {
 // SortOrderLTE applies the LTE predicate on the "sort_order" field.
 func SortOrderLTE(v int) predicate.RouteModel {
 	return predicate.RouteModel(sql.FieldLTE(FieldSortOrder, v))
+}
+
+// IconKeyEQ applies the EQ predicate on the "icon_key" field.
+func IconKeyEQ(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldEQ(FieldIconKey, v))
+}
+
+// IconKeyNEQ applies the NEQ predicate on the "icon_key" field.
+func IconKeyNEQ(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldNEQ(FieldIconKey, v))
+}
+
+// IconKeyIn applies the In predicate on the "icon_key" field.
+func IconKeyIn(vs ...string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldIn(FieldIconKey, vs...))
+}
+
+// IconKeyNotIn applies the NotIn predicate on the "icon_key" field.
+func IconKeyNotIn(vs ...string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldNotIn(FieldIconKey, vs...))
+}
+
+// IconKeyGT applies the GT predicate on the "icon_key" field.
+func IconKeyGT(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldGT(FieldIconKey, v))
+}
+
+// IconKeyGTE applies the GTE predicate on the "icon_key" field.
+func IconKeyGTE(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldGTE(FieldIconKey, v))
+}
+
+// IconKeyLT applies the LT predicate on the "icon_key" field.
+func IconKeyLT(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldLT(FieldIconKey, v))
+}
+
+// IconKeyLTE applies the LTE predicate on the "icon_key" field.
+func IconKeyLTE(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldLTE(FieldIconKey, v))
+}
+
+// IconKeyContains applies the Contains predicate on the "icon_key" field.
+func IconKeyContains(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldContains(FieldIconKey, v))
+}
+
+// IconKeyHasPrefix applies the HasPrefix predicate on the "icon_key" field.
+func IconKeyHasPrefix(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldHasPrefix(FieldIconKey, v))
+}
+
+// IconKeyHasSuffix applies the HasSuffix predicate on the "icon_key" field.
+func IconKeyHasSuffix(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldHasSuffix(FieldIconKey, v))
+}
+
+// IconKeyEqualFold applies the EqualFold predicate on the "icon_key" field.
+func IconKeyEqualFold(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldEqualFold(FieldIconKey, v))
+}
+
+// IconKeyContainsFold applies the ContainsFold predicate on the "icon_key" field.
+func IconKeyContainsFold(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldContainsFold(FieldIconKey, v))
+}
+
+// IconSvgEQ applies the EQ predicate on the "icon_svg" field.
+func IconSvgEQ(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldEQ(FieldIconSvg, v))
+}
+
+// IconSvgNEQ applies the NEQ predicate on the "icon_svg" field.
+func IconSvgNEQ(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldNEQ(FieldIconSvg, v))
+}
+
+// IconSvgIn applies the In predicate on the "icon_svg" field.
+func IconSvgIn(vs ...string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldIn(FieldIconSvg, vs...))
+}
+
+// IconSvgNotIn applies the NotIn predicate on the "icon_svg" field.
+func IconSvgNotIn(vs ...string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldNotIn(FieldIconSvg, vs...))
+}
+
+// IconSvgGT applies the GT predicate on the "icon_svg" field.
+func IconSvgGT(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldGT(FieldIconSvg, v))
+}
+
+// IconSvgGTE applies the GTE predicate on the "icon_svg" field.
+func IconSvgGTE(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldGTE(FieldIconSvg, v))
+}
+
+// IconSvgLT applies the LT predicate on the "icon_svg" field.
+func IconSvgLT(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldLT(FieldIconSvg, v))
+}
+
+// IconSvgLTE applies the LTE predicate on the "icon_svg" field.
+func IconSvgLTE(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldLTE(FieldIconSvg, v))
+}
+
+// IconSvgContains applies the Contains predicate on the "icon_svg" field.
+func IconSvgContains(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldContains(FieldIconSvg, v))
+}
+
+// IconSvgHasPrefix applies the HasPrefix predicate on the "icon_svg" field.
+func IconSvgHasPrefix(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldHasPrefix(FieldIconSvg, v))
+}
+
+// IconSvgHasSuffix applies the HasSuffix predicate on the "icon_svg" field.
+func IconSvgHasSuffix(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldHasSuffix(FieldIconSvg, v))
+}
+
+// IconSvgEqualFold applies the EqualFold predicate on the "icon_svg" field.
+func IconSvgEqualFold(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldEqualFold(FieldIconSvg, v))
+}
+
+// IconSvgContainsFold applies the ContainsFold predicate on the "icon_svg" field.
+func IconSvgContainsFold(v string) predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldContainsFold(FieldIconSvg, v))
 }
 
 // And groups predicates with the AND operator between them.

@@ -1,5 +1,6 @@
 import type { Capability, CapabilityModelGroup, EstimateResult, ImageTask, ImageTaskType } from '../../../shared/api-types'
 import { displayPoints, publicUnavailableReason, workspaceGenerateReadiness } from './workspaceGenerateReadiness'
+import { pointsText } from '../../../shared/pointsDisplay'
 import { workspaceReferenceMaximum } from './workspaceReferenceLimit'
 import { workspaceTaskFailureView, workspaceTaskPendingView } from './workspaceTaskFailure'
 import { generationSlots, workspaceProgressNodes, type WorkspaceProgressNode } from './workspaceTaskProgress'
@@ -104,9 +105,9 @@ export function createWorkspaceViewModel(input: WorkspaceViewModelInput) {
     : input.estimatePending || (!input.estimate && Boolean(model) && input.parametersReady)
       ? { state: 'loading' as const, label: '正在预估', detail: '参数变化后会自动更新积分。' }
       : input.estimate && !input.estimate.sufficient
-        ? { state: 'insufficient' as const, label: `${input.estimate.display_points ?? displayPoints(input.estimate.points)} 积分`, detail: `余额不足，还差 ${displayPoints(input.estimate.insufficient_points)} 积分。` }
+        ? { state: 'insufficient' as const, label: pointsText(input.estimate.display_points ?? input.estimate.points), detail: `余额不足，还差 ${displayPoints(input.estimate.insufficient_points)}。` }
         : input.estimate
-          ? { state: 'ready' as const, label: `${input.estimate.display_points ?? displayPoints(input.estimate.points)} 积分`, detail: '生成前仅冻结预估积分，最终按实际结果结算。' }
+          ? { state: 'ready' as const, label: pointsText(input.estimate.display_points ?? input.estimate.points), detail: '生成前仅冻结预估积分，最终按实际结果结算。' }
           : { state: 'unavailable' as const, label: input.parameterError ? '参数有误' : '等待参数', detail: readiness.reason }
 
   return {

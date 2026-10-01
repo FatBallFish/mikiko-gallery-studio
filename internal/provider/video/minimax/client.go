@@ -5,10 +5,12 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -53,7 +55,10 @@ func NewClient(cfg Config) (*Client, error) {
 	if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.ModelCode) == "" {
 		return nil, fmt.Errorf("minimax base URL, API key and model code are required")
 	}
-	if _, err := url.ParseRequestURI(cfg.BaseURL); err != nil {
+	// The v2 paths below already carry the /v2 prefix; accounts may store either
+	// https://api.minimax.cn or https://api.minimax.cn/v2.
+	normalizedBase := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"), "/v2")
+	if _, err := url.ParseRequestURI(normalizedBase); err != nil {
 		return nil, fmt.Errorf("parse minimax base URL: %w", err)
 	}
 	client := cfg.HTTPClient
@@ -73,7 +78,7 @@ func NewClient(cfg Config) (*Client, error) {
 		callbackTolerance = defaultCallbackTolerance
 	}
 	return &Client{
-		baseURL: strings.TrimRight(cfg.BaseURL, "/"), apiKey: cfg.APIKey, modelCode: cfg.ModelCode,
+		baseURL: normalizedBase, apiKey: cfg.APIKey, modelCode: cfg.ModelCode,
 		httpClient: client, timeout: timeout, callbackURL: cfg.CallbackURL, callbackSecret: cfg.CallbackSecret,
 		now: now, callbackTolerance: callbackTolerance,
 	}, nil
@@ -85,9 +90,29 @@ func (c *Client) Submit(ctx context.Context, req videoprovider.Request) (videopr
 	}
 	content := []map[string]any{{"type": "text", "text": req.Prompt}}
 	for _, input := range req.Inputs {
-		content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": input.URL}, "role": input.Role})
+		imageURL := input.URL
+		if inline, err := c.inlinePrivateImage(ctx, input); err != nil {
+			return videoprovider.Job{}, err
+		} else if inline != "" {
+			imageURL = inline
+		}
+		entry := map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL}}
+		if strings.TrimSpace(input.Role) != "" {
+			entry["role"] = input.Role
+		}
+		content = append(content, entry)
 	}
-	payload := map[string]any{"model": c.modelCode, "content": content, "duration": req.DurationSeconds, "resolution": mapResolution(req.Resolution), "ratio": req.AspectRatio}
+	payload := map[string]any{"model": c.modelCode, "content": content, "duration": req.DurationSeconds, "resolution": mapResolution(req.Resolution)}
+	// v2: text-to-video requires a concrete ratio (adaptive is rejected), while
+	// image-to-video ignores ratio entirely and always outputs adaptive.
+	if hasFrameInput(req) {
+		payload["ratio"] = "adaptive"
+	} else {
+		if strings.EqualFold(strings.TrimSpace(req.AspectRatio), "adaptive") {
+			return videoprovider.Job{}, invalidRequest("aspect ratio must be a concrete value for text-to-video")
+		}
+		payload["ratio"] = req.AspectRatio
+	}
 	if c.callbackURL != "" {
 		payload["callback_url"] = c.callbackURL
 	}
@@ -243,6 +268,79 @@ func mapResolution(value string) string {
 	return strings.ToUpper(value)
 }
 
+func hasFrameInput(req videoprovider.Request) bool {
+	for _, input := range req.Inputs {
+		role := strings.ToLower(strings.TrimSpace(input.Role))
+		if role == "first_frame" || role == "last_frame" {
+			return true
+		}
+	}
+	return false
+}
+
+const maxInlineImageBytes = 10 << 20 // kept at parity with the seedance adapter; capability caps inputs at 10MB.
+
+// inlinePrivateImage downloads loopback/private-network image URLs and returns
+// them as base64 data URLs. MiniMax fetches image_url itself, so a presigned
+// URL that only resolves inside the deployment network (e.g. MinIO on 127.0.0.1
+// or a docker bridge) is unreachable upstream.
+func (c *Client) inlinePrivateImage(ctx context.Context, input videoprovider.Input) (string, error) {
+	if input.URL == "" || publiclyRoutableImageURL(input.URL) {
+		return "", nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, input.URL, nil)
+	if err != nil {
+		return "", invalidRequest("parse private image url: " + err.Error())
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", invalidRequest("download private image: " + err.Error())
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", invalidRequest(fmt.Sprintf("download private image: status %d", resp.StatusCode))
+	}
+	limited := io.LimitReader(resp.Body, maxInlineImageBytes+1)
+	raw, err := io.ReadAll(limited)
+	if err != nil {
+		return "", invalidRequest("read private image: " + err.Error())
+	}
+	if len(raw) > maxInlineImageBytes {
+		return "", invalidRequest("private image exceeds 10MB inline limit")
+	}
+	mimeType := strings.TrimSpace(input.MIMEType)
+	if mimeType == "" {
+		mimeType = http.DetectContentType(raw)
+	}
+	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(raw), nil
+}
+
+func publiclyRoutableImageURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return false
+	}
+	ips := []net.IP{}
+	if ip := net.ParseIP(host); ip != nil {
+		ips = append(ips, ip)
+	} else if resolved, err := net.LookupIP(host); err == nil {
+		ips = resolved
+	} else {
+		// Unresolvable for us means unreachable for MiniMax too.
+		return false
+	}
+	for _, ip := range ips {
+		if ip.IsGlobalUnicast() && !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Client) doJSON(parent context.Context, method, path string, payload any, target any, submit bool, idempotencyKey ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, c.timeout)
 	defer cancel()
@@ -388,5 +486,3 @@ func decimal3(value any) string {
 	}
 	return "0.000"
 }
-
-var _ = errors.Is

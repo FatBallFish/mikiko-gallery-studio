@@ -5,7 +5,9 @@ import {
   attachCanvasResults,
   connectCanvasNodes,
   copyCanvasSelection,
+  createCanvasGroup,
   createCanvasState,
+  disbandCanvasGroups,
   markCanvasSaved,
   moveCanvasNodes,
   pasteCanvasSelection,
@@ -14,10 +16,11 @@ import {
   removeCanvasNodes,
   resizeCanvasNode,
   undoCanvasCommand,
+  updateCanvasGroup,
   updateCanvasNode,
 } from '../core/canvasState'
 import { autoLayoutCanvasNodes } from '../core/canvasLayout'
-import type { CanvasClipboard, CanvasCommandState, CanvasDocument, CanvasEdge, CanvasNode, CanvasResult, CanvasViewport } from '../core/types'
+import type { CanvasClipboard, CanvasCommandState, CanvasDocument, CanvasEdge, CanvasGroup, CanvasNode, CanvasResult, CanvasViewport } from '../core/types'
 
 export type CanvasInteractionMode = 'select' | 'pan' | 'connect'
 export type CanvasStoreState = {
@@ -39,6 +42,9 @@ export type CanvasStoreState = {
   copySelected: () => void
   pasteClipboard: () => void
   deleteSelected: () => void
+  groupSelected: (label?: string) => void
+  disbandSelectedGroups: () => void
+  updateGroup: (groupID: string, patch: Partial<Pick<CanvasGroup, 'label' | 'background'>>) => void
   attachResults: (runID: string, sourceNodeID: string, results: CanvasResult[]) => void
   autoLayoutSelected: () => void
   undo: () => void
@@ -77,6 +83,23 @@ export function createCanvasStore(document: CanvasDocument, revision: number, op
       selectedIDs: [],
       selectedEdgeIDs: [],
     })),
+    groupSelected: (label) => set((state) => {
+      const nodeIDs = Array.from(new Set(state.selectedIDs))
+      if (nodeIDs.length < 2) return state
+      try {
+        const group: CanvasGroup = { id: `group-${crypto.randomUUID().slice(0, 8)}`, label: label?.trim() || `分组 ${(state.command.present.groups?.length ?? 0) + 1}`, node_ids: nodeIDs }
+        return { command: createCanvasGroup(state.command, group) }
+      } catch {
+        return state
+      }
+    }),
+    disbandSelectedGroups: () => set((state) => {
+      const selected = new Set(state.selectedIDs)
+      const groupIDs = (state.command.present.groups ?? []).filter((group) => group.node_ids.some((id) => selected.has(id))).map((group) => group.id)
+      if (!groupIDs.length) return state
+      return { command: disbandCanvasGroups(state.command, groupIDs) }
+    }),
+    updateGroup: (groupID, patch) => set((state) => ({ command: updateCanvasGroup(state.command, groupID, patch) })),
     attachResults: (runID, sourceNodeID, results) => set((state) => ({ command: attachCanvasResults(state.command, runID, sourceNodeID, results) })),
     autoLayoutSelected: () => set((state) => ({
       command: state.selectedIDs.length < 2 ? state.command : {

@@ -1,4 +1,5 @@
 import type { EstimateResult, ImageTaskType } from '../../../shared/api-types'
+import { pointsText } from '../../../shared/pointsDisplay'
 
 export const WORKSPACE_REFERENCE_REQUIRED_MESSAGE = '当前任务要求至少1张参考图。'
 
@@ -47,8 +48,9 @@ export function publicUnavailableReason(reason?: { code: string; message: string
   return message
 }
 
+// Tiered user-facing formatting (钻石/金币/银币/积分); raw base points stay
+// untouched everywhere else. pointsText carries the unit.
 export function displayPoints(raw?: string) {
-  const value = Number(raw ?? '0')
-  if (!Number.isFinite(value)) return raw ?? '0.00000'
-  return value.toFixed(2)
+  if (raw === undefined || raw === null || raw === '') return '0'
+  return pointsText(raw)
 }

@@ -20,6 +20,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/providermodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelvisibilitygroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
@@ -545,6 +547,8 @@ func (s *ModelAdminStore) CreateRouteModel(ctx context.Context, req domainmodela
 		SetMediaType(req.MediaType).
 		SetEnabled(req.Enabled).
 		SetSortOrder(req.SortOrder).
+		SetIconKey(req.IconKey).
+		SetIconSvg(req.IconSVG).
 		Save(ctx)
 	if err != nil {
 		if repoent.IsConstraintError(err) {
@@ -575,6 +579,8 @@ func (s *ModelAdminStore) UpdateRouteModel(ctx context.Context, routeModelID int
 			SetMediaType(req.MediaType).
 			SetEnabled(req.Enabled).
 			SetSortOrder(req.SortOrder).
+			SetIconKey(req.IconKey).
+			SetIconSvg(req.IconSVG).
 			Save(ctx)
 		if err != nil {
 			if repoent.IsConstraintError(err) {
@@ -1737,8 +1743,204 @@ func mapRouteModel(entity *repoent.RouteModel, groupIDs []int64) domainmodeladmi
 		Enabled:     entity.Enabled,
 		SortOrder:   entity.SortOrder,
 		GroupIDs:    append([]int64(nil), groupIDs...),
+		IconKey:     entity.IconKey,
+		IconSVG:     entity.IconSvg,
 		CreatedAt:   entity.CreatedAt,
 		UpdatedAt:   entity.UpdatedAt,
+	}
+}
+
+func (s *ModelAdminStore) ListRouteModelGroups(ctx context.Context, mediaType string) ([]domainmodeladmin.RouteModelGroup, error) {
+	query := s.client.RouteModelGroup.Query().Where(routemodelgroup.DeletedAtIsNil())
+	if mediaType != "" {
+		query = query.Where(routemodelgroup.MediaTypeEQ(mediaType))
+	}
+	entities, err := query.Order(repoent.Asc(routemodelgroup.FieldSortOrder), repoent.Asc(routemodelgroup.FieldCode)).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	membersByGroup, err := s.routeModelGroupMembers(ctx, entities)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domainmodeladmin.RouteModelGroup, 0, len(entities))
+	for _, entity := range entities {
+		items = append(items, mapRouteModelGroup(entity, membersByGroup[int64(entity.ID)]))
+	}
+	return items, nil
+}
+
+func (s *ModelAdminStore) GetRouteModelGroup(ctx context.Context, groupID int64) (domainmodeladmin.RouteModelGroup, error) {
+	entity, err := s.client.RouteModelGroup.Query().Where(routemodelgroup.IDEQ(int(groupID)), routemodelgroup.DeletedAtIsNil()).Only(ctx)
+	if err != nil {
+		if repoent.IsNotFound(err) {
+			return domainmodeladmin.RouteModelGroup{}, repoerr.ErrNotFound
+		}
+		return domainmodeladmin.RouteModelGroup{}, err
+	}
+	membersByGroup, err := s.routeModelGroupMembers(ctx, []*repoent.RouteModelGroup{entity})
+	if err != nil {
+		return domainmodeladmin.RouteModelGroup{}, err
+	}
+	return mapRouteModelGroup(entity, membersByGroup[groupID]), nil
+}
+
+func (s *ModelAdminStore) CreateRouteModelGroup(ctx context.Context, req domainmodeladmin.RouteModelGroupWriteRequest) (domainmodeladmin.RouteModelGroup, error) {
+	return withModelAdminTx(ctx, s, func(store *ModelAdminStore) (domainmodeladmin.RouteModelGroup, error) {
+		entity, err := store.client.RouteModelGroup.Create().
+			SetCode(req.Code).
+			SetName(req.Name).
+			SetDescription(req.Description).
+			SetMediaType(req.MediaType).
+			SetIconKey(req.IconKey).
+			SetIconSvg(req.IconSVG).
+			SetSortOrder(req.SortOrder).
+			SetEnabled(req.Enabled).
+			Save(ctx)
+		if err != nil {
+			if repoent.IsConstraintError(err) {
+				return domainmodeladmin.RouteModelGroup{}, repoerr.ErrConflict
+			}
+			return domainmodeladmin.RouteModelGroup{}, err
+		}
+		if err := store.replaceRouteModelGroupMembers(ctx, int64(entity.ID), req.RouteModelIDs); err != nil {
+			return domainmodeladmin.RouteModelGroup{}, err
+		}
+		return mapRouteModelGroup(entity, req.RouteModelIDs), nil
+	})
+}
+
+func (s *ModelAdminStore) UpdateRouteModelGroup(ctx context.Context, groupID int64, req domainmodeladmin.RouteModelGroupWriteRequest) (domainmodeladmin.RouteModelGroup, error) {
+	return withModelAdminTx(ctx, s, func(store *ModelAdminStore) (domainmodeladmin.RouteModelGroup, error) {
+		current, err := store.client.RouteModelGroup.Query().Where(routemodelgroup.IDEQ(int(groupID)), routemodelgroup.DeletedAtIsNil(), lockRouteModelGroupRow()).Only(ctx)
+		if err != nil {
+			if repoent.IsNotFound(err) {
+				return domainmodeladmin.RouteModelGroup{}, repoerr.ErrNotFound
+			}
+			return domainmodeladmin.RouteModelGroup{}, err
+		}
+		entity, err := store.client.RouteModelGroup.UpdateOne(current).
+			SetCode(req.Code).
+			SetName(req.Name).
+			SetDescription(req.Description).
+			SetMediaType(req.MediaType).
+			SetIconKey(req.IconKey).
+			SetIconSvg(req.IconSVG).
+			SetSortOrder(req.SortOrder).
+			SetEnabled(req.Enabled).
+			Save(ctx)
+		if err != nil {
+			if repoent.IsConstraintError(err) {
+				return domainmodeladmin.RouteModelGroup{}, repoerr.ErrConflict
+			}
+			return domainmodeladmin.RouteModelGroup{}, err
+		}
+		if err := store.replaceRouteModelGroupMembers(ctx, groupID, req.RouteModelIDs); err != nil {
+			return domainmodeladmin.RouteModelGroup{}, err
+		}
+		return mapRouteModelGroup(entity, req.RouteModelIDs), nil
+	})
+}
+
+func (s *ModelAdminStore) DeleteRouteModelGroup(ctx context.Context, groupID int64) error {
+	_, err := withModelAdminTx(ctx, s, func(store *ModelAdminStore) (struct{}, error) {
+		current, err := store.client.RouteModelGroup.Query().Where(routemodelgroup.IDEQ(int(groupID)), routemodelgroup.DeletedAtIsNil()).Only(ctx)
+		if err != nil {
+			if repoent.IsNotFound(err) {
+				return struct{}{}, repoerr.ErrNotFound
+			}
+			return struct{}{}, err
+		}
+		if _, err := store.client.RouteModelGroupMember.Delete().Where(routemodelgroupmember.GroupIDEQ(groupID)).Exec(ctx); err != nil {
+			return struct{}{}, err
+		}
+		if err := store.client.RouteModelGroup.DeleteOne(current).Exec(ctx); err != nil {
+			return struct{}{}, err
+		}
+		return struct{}{}, nil
+	})
+	return err
+}
+
+// ListVisibleRouteModelGroups returns enabled groups (with member route
+// model ids and codes) for user-facing capability payloads.
+func (s *ModelAdminStore) ListVisibleRouteModelGroups(ctx context.Context, mediaType string) ([]domainmodeladmin.RouteModelGroup, []domainmodeladmin.RouteModel, error) {
+	groups, err := s.ListRouteModelGroups(ctx, mediaType)
+	if err != nil {
+		return nil, nil, err
+	}
+	visible := make([]domainmodeladmin.RouteModelGroup, 0, len(groups))
+	for _, group := range groups {
+		if group.Enabled {
+			visible = append(visible, group)
+		}
+	}
+	models, err := s.client.RouteModel.Query().Where(routemodel.MediaTypeEQ(mediaType), routemodel.EnabledEQ(true), routemodel.DeletedAtIsNil()).Order(repoent.Asc(routemodel.FieldSortOrder)).All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	mapped := make([]domainmodeladmin.RouteModel, 0, len(models))
+	for _, entity := range models {
+		mapped = append(mapped, mapRouteModel(entity, nil))
+	}
+	return visible, mapped, nil
+}
+
+func lockRouteModelGroupRow() predicate.RouteModelGroup {
+	return func(selector *entsql.Selector) { lockModelAdminRow(selector) }
+}
+
+func (s *ModelAdminStore) replaceRouteModelGroupMembers(ctx context.Context, groupID int64, routeModelIDs []int64) error {
+	if _, err := s.client.RouteModelGroupMember.Delete().Where(routemodelgroupmember.GroupIDEQ(groupID)).Exec(ctx); err != nil {
+		return err
+	}
+	for index, routeModelID := range routeModelIDs {
+		if routeModelID <= 0 {
+			continue
+		}
+		if _, err := s.client.RouteModelGroupMember.Create().SetGroupID(groupID).SetRouteModelID(routeModelID).SetSortOrder(index).Save(ctx); err != nil {
+			if repoent.IsConstraintError(err) {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *ModelAdminStore) routeModelGroupMembers(ctx context.Context, groups []*repoent.RouteModelGroup) (map[int64][]int64, error) {
+	result := make(map[int64][]int64, len(groups))
+	if len(groups) == 0 {
+		return result, nil
+	}
+	groupIDs := make([]int64, 0, len(groups))
+	for _, group := range groups {
+		groupIDs = append(groupIDs, int64(group.ID))
+	}
+	rows, err := s.client.RouteModelGroupMember.Query().Where(routemodelgroupmember.GroupIDIn(groupIDs...)).Order(repoent.Asc(routemodelgroupmember.FieldSortOrder), repoent.Asc(routemodelgroupmember.FieldRouteModelID)).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.GroupID] = append(result[row.GroupID], row.RouteModelID)
+	}
+	return result, nil
+}
+
+func mapRouteModelGroup(entity *repoent.RouteModelGroup, memberIDs []int64) domainmodeladmin.RouteModelGroup {
+	return domainmodeladmin.RouteModelGroup{
+		ID:            int64(entity.ID),
+		Code:          entity.Code,
+		Name:          entity.Name,
+		Description:   entity.Description,
+		MediaType:     entity.MediaType,
+		IconKey:       entity.IconKey,
+		IconSVG:       entity.IconSvg,
+		SortOrder:     entity.SortOrder,
+		Enabled:       entity.Enabled,
+		RouteModelIDs: append([]int64(nil), memberIDs...),
+		CreatedAt:     entity.CreatedAt,
+		UpdatedAt:     entity.UpdatedAt,
 	}
 }
 

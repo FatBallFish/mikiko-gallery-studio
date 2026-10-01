@@ -33,12 +33,17 @@ export function adminModelMediaHref(
   return `#/${route}?media=${media}`;
 }
 
+// Video adapter codes default to the video tab unless the account extra
+// explicitly overrides the media type. Keep in sync with the adapters
+// registered in internal/worker/video/account_resolver.go.
+const videoAdapterTypes = new Set(['seedance', 'minimax', 'gasic', 'bailian']);
+
 export function modelAccountMediaType(
   account: Pick<ModelAccount, 'adapter_type' | 'extra'>,
 ): AdminModelMediaTab {
   const explicit = account.extra?.media_type;
   if (explicit === 'image' || explicit === 'video' || explicit === 'audio' || explicit === 'text') return explicit;
-  return account.adapter_type === 'seedance' || account.adapter_type === 'minimax' ? 'video' : 'image';
+  return videoAdapterTypes.has(account.adapter_type) ? 'video' : 'image';
 }
 
 export function modelMediaType(

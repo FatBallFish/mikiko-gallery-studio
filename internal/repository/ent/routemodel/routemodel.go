@@ -33,6 +33,10 @@ const (
 	FieldEnabled = "enabled"
 	// FieldSortOrder holds the string denoting the sort_order field in the database.
 	FieldSortOrder = "sort_order"
+	// FieldIconKey holds the string denoting the icon_key field in the database.
+	FieldIconKey = "icon_key"
+	// FieldIconSvg holds the string denoting the icon_svg field in the database.
+	FieldIconSvg = "icon_svg"
 	// Table holds the table name of the routemodel in the database.
 	Table = "route_models"
 )
@@ -50,6 +54,8 @@ var Columns = []string{
 	FieldMediaType,
 	FieldEnabled,
 	FieldSortOrder,
+	FieldIconKey,
+	FieldIconSvg,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -87,6 +93,14 @@ var (
 	DefaultEnabled bool
 	// DefaultSortOrder holds the default value on creation for the "sort_order" field.
 	DefaultSortOrder int
+	// DefaultIconKey holds the default value on creation for the "icon_key" field.
+	DefaultIconKey string
+	// IconKeyValidator is a validator for the "icon_key" field. It is called by the builders before save.
+	IconKeyValidator func(string) error
+	// DefaultIconSvg holds the default value on creation for the "icon_svg" field.
+	DefaultIconSvg string
+	// IconSvgValidator is a validator for the "icon_svg" field. It is called by the builders before save.
+	IconSvgValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the RouteModel queries.
@@ -145,4 +159,14 @@ func ByEnabled(opts ...sql.OrderTermOption) OrderOption {
 // BySortOrder orders the results by the sort_order field.
 func BySortOrder(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSortOrder, opts...).ToFunc()
+}
+
+// ByIconKey orders the results by the icon_key field.
+func ByIconKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIconKey, opts...).ToFunc()
+}
+
+// ByIconSvg orders the results by the icon_svg field.
+func ByIconSvg(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIconSvg, opts...).ToFunc()
 }

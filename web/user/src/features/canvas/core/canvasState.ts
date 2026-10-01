@@ -1,4 +1,4 @@
-import type { CanvasClipboard, CanvasCommandState, CanvasDocument, CanvasEdge, CanvasNode, CanvasNodeType, CanvasPoint, CanvasResult } from './types'
+import type { CanvasClipboard, CanvasCommandState, CanvasDocument, CanvasEdge, CanvasGroup, CanvasNode, CanvasNodeType, CanvasPoint, CanvasResult } from './types'
 
 const HISTORY_LIMIT = 100
 
@@ -159,11 +159,62 @@ export function updateCanvasNode(state: CanvasCommandState, nodeID: string, upda
 export function removeCanvasNodes(state: CanvasCommandState, nodeIDs: string[]) {
   const removed = new Set(nodeIDs)
   if (!removed.size || !state.present.nodes.some((node) => removed.has(node.id))) return state
+  const groups = (state.present.groups ?? [])
+    .map((group) => ({ ...group, node_ids: group.node_ids.filter((id) => !removed.has(id)) }))
+    .filter((group) => group.node_ids.length > 0)
   return commit(state, {
     ...state.present,
     nodes: state.present.nodes.filter((node) => !removed.has(node.id)),
     edges: state.present.edges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target)),
+    groups,
   })
+}
+
+export function createCanvasGroup(state: CanvasCommandState, group: CanvasGroup) {
+  if (state.present.groups?.some((item) => item.id === group.id)) throw new Error('duplicate_group')
+  const nodeIDs = new Set(state.present.nodes.map((node) => node.id))
+  if (!group.node_ids.every((id) => nodeIDs.has(id))) throw new Error('node_not_found')
+  return commit(state, { ...state.present, groups: [...(state.present.groups ?? []), { ...group, node_ids: [...group.node_ids] }] })
+}
+
+export function updateCanvasGroup(state: CanvasCommandState, groupID: string, patch: Partial<Pick<CanvasGroup, 'label' | 'background'>>) {
+  const current = state.present.groups?.find((group) => group.id === groupID)
+  if (!current) return state
+  return commit(state, {
+    ...state.present,
+    groups: (state.present.groups ?? []).map((group) => group.id === groupID ? { ...group, ...patch } : group),
+  })
+}
+
+export function disbandCanvasGroups(state: CanvasCommandState, groupIDs: string[]) {
+  const removed = new Set(groupIDs)
+  const groups = (state.present.groups ?? []).filter((group) => !removed.has(group.id))
+  if (groups.length === (state.present.groups ?? []).length) return state
+  return commit(state, { ...state.present, groups })
+}
+
+export function canvasGroupsForNode(document: CanvasDocument, nodeID: string): CanvasGroup[] {
+  return (document.groups ?? []).filter((group) => group.node_ids.includes(nodeID))
+}
+
+export function canvasGroupMembers(document: CanvasDocument, nodeIDs: string[]): string[] {
+  const groups = new Set<string>()
+  nodeIDs.forEach((id) => (document.groups ?? []).forEach((group) => { if (group.node_ids.includes(id)) groups.add(group.id) }))
+  const members = new Set(nodeIDs)
+  ;(document.groups ?? []).forEach((group) => { if (groups.has(group.id)) group.node_ids.forEach((id) => members.add(id)) })
+  return Array.from(members)
+}
+
+export function canvasGroupBounds(document: CanvasDocument, group: CanvasGroup, padding = 28) {
+  const nodes = group.node_ids
+    .map((id) => document.nodes.find((node) => node.id === id))
+    .filter((node): node is CanvasNode => Boolean(node))
+  if (!nodes.length) return null
+  const minX = Math.min(...nodes.map((node) => node.position.x))
+  const minY = Math.min(...nodes.map((node) => node.position.y))
+  const maxX = Math.max(...nodes.map((node) => node.position.x + node.size.width))
+  const maxY = Math.max(...nodes.map((node) => node.position.y + node.size.height))
+  return { x: minX - padding, y: minY - padding - 24, width: maxX - minX + padding * 2, height: maxY - minY + padding * 2 + 24 }
 }
 
 export function removeCanvasEdges(state: CanvasCommandState, edgeIDs: string[]) {
@@ -369,6 +420,7 @@ function cloneDocument(document: CanvasDocument): CanvasDocument {
     viewport: { ...document.viewport },
     nodes: document.nodes.map(cloneNode),
     edges: document.edges.map((edge) => ({ ...edge })),
+    groups: (document.groups ?? []).map((group) => ({ ...group, node_ids: [...group.node_ids] })),
   }
 }
 

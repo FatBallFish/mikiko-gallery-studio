@@ -63,6 +63,8 @@ import type {
   RouteModelPrice,
   RouteModelPriceWriteRequest,
   RouteModelWriteRequest,
+  RouteModelGroupRecord,
+  RouteModelGroupWriteRequest,
   RefundPaymentOrderRequest,
   SMTPConfigView,
   SMTPConfigWriteRequest,
@@ -330,6 +332,10 @@ export const adminApi = {
   createRouteModel: async (input: RouteModelWriteRequest) => toRouteModel(await sharedApiClient.request(API_PATHS.ops.routeModels, { method: 'POST', body: input })),
   updateRouteModel: async (route_model_id: string | number, input: Partial<RouteModelWriteRequest>) => toRouteModel(await sharedApiClient.request(API_PATHS.ops.routeModelDetail, { method: 'PUT', pathParams: { route_model_id }, body: input })),
   deleteRouteModel: (route_model_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.routeModelDetail, { method: 'DELETE', pathParams: { route_model_id } }),
+  listRouteModelGroups: async (media_type?: string): Promise<RouteModelGroupRecord[]> => ((await sharedApiClient.request<{ items?: any[] }>(API_PATHS.ops.routeModelGroups, { query: media_type ? { media_type } : undefined })).items ?? []).map(toRouteModelGroup),
+  createRouteModelGroup: async (input: RouteModelGroupWriteRequest) => toRouteModelGroup(await sharedApiClient.request(API_PATHS.ops.routeModelGroups, { method: 'POST', body: input })),
+  updateRouteModelGroup: async (group_id: string | number, input: RouteModelGroupWriteRequest) => toRouteModelGroup(await sharedApiClient.request(API_PATHS.ops.routeModelGroupDetail, { method: 'PUT', pathParams: { group_id }, body: input })),
+  deleteRouteModelGroup: (group_id: string | number) => sharedApiClient.request<void>(API_PATHS.ops.routeModelGroupDetail, { method: 'DELETE', pathParams: { group_id } }),
   listRouteModelCandidates: async (route_model_id: string | number) => (normalizePage<any>(await sharedApiClient.request(API_PATHS.ops.routeModelCandidates, { pathParams: { route_model_id } }))).items.map((row) => toRouteModelCandidate(row, route_model_id)),
   createRouteModelCandidate: async (route_model_id: string | number, input: RouteModelCandidateWriteRequest) => toRouteModelCandidate(await sharedApiClient.request(API_PATHS.ops.routeModelCandidates, { method: 'POST', pathParams: { route_model_id }, body: input }), route_model_id),
   updateRouteModelCandidate: async (route_model_id: string | number, candidate_id: string | number, input: Partial<RouteModelCandidateWriteRequest>) => toRouteModelCandidate(await sharedApiClient.request(API_PATHS.ops.routeModelCandidateDetail, { method: 'PUT', pathParams: { route_model_id, candidate_id }, body: input }), route_model_id),
@@ -558,6 +564,23 @@ function toModelAccountModel(raw: any, accountId?: string | number): ModelAccoun
     extra: raw.extra ?? {},
     created_at: raw.created_at ?? '',
     updated_at: raw.updated_at ?? '',
+  }
+}
+
+function toRouteModelGroup(raw: any): RouteModelGroupRecord {
+  return {
+    id: raw.id ?? raw.group_id,
+    code: raw.code ?? '',
+    name: raw.name ?? raw.code ?? '',
+    description: raw.description ?? '',
+    media_type: raw.media_type === 'video' ? 'video' : 'image',
+    icon_key: raw.icon_key ?? '',
+    icon_svg: raw.icon_svg ?? '',
+    sort_order: Number(raw.sort_order ?? 0),
+    enabled: Boolean(raw.enabled ?? false),
+    route_model_ids: (raw.route_model_ids ?? []).map((id: any) => id ?? 0),
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
   }
 }
 

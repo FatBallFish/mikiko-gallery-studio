@@ -1,15 +1,17 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { ChevronUp, Pencil, SlidersHorizontal } from 'lucide-react'
+import { ChevronUp, Copy, Info, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
 import { toTask, userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, ImageDetailModal, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImagePreviewPayload } from '../components'
+import { Button, EmptyState, ErrorState, ImageDetailModal, InlineCopyButton, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImagePreviewPayload } from '../components'
 import { userButton, userForm, userState } from '../ui/classes'
 import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
 import { RefreshableMediaImage } from '../ui/mediaRefresh'
+import { consoleClasses } from './consoleClasses'
+import { pointsText } from '../../../shared/pointsDisplay'
 import { errorMessage } from '../useApiResource'
 import { mediaAccess, type MediaResource } from '../mediaAccess'
 import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
@@ -71,10 +73,7 @@ function isTerminalStatus(status: ImageTaskStatus | string) {
 }
 
 function displayTaskPoints(task: ImageTask) {
-  const raw = task.actual_points ?? task.estimate_points ?? task.estimated_points ?? '0.00000'
-  const value = Number(raw)
-  if (!Number.isFinite(value)) return raw
-  return value.toFixed(2)
+  return pointsText(task.actual_points ?? task.estimate_points ?? task.estimated_points ?? '0')
 }
 
 function formatFileSize(bytes?: number) {
@@ -152,7 +151,8 @@ function generationParameterErrorMessage(error: unknown) {
   return errorMessage(error)
 }
 
-const workspaceClasses = {
+const workspaceClasses: typeof consoleClasses & Record<string, string> = {
+  ...consoleClasses,
   root: 'relative grid w-full max-w-full min-w-0 flex-1 grid-cols-1 gap-4 overflow-x-hidden p-4 pb-44 min-[761px]:grid-cols-[360px_minmax(0,1fr)] min-[761px]:items-start min-[761px]:p-6 min-[1180px]:grid-cols-[390px_minmax(0,1fr)]',
   panel: 'z-40 flex min-w-0 flex-col overflow-hidden border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_90%,transparent)] shadow-[var(--pg-shadow-lg)] backdrop-blur-2xl max-[760px]:fixed max-[760px]:inset-x-3 max-[760px]:bottom-[calc(68px+env(safe-area-inset-bottom))] max-[760px]:max-h-[82dvh] max-[760px]:rounded-2xl min-[761px]:sticky min-[761px]:top-24 min-[761px]:h-[calc(100dvh-120px)] min-[761px]:rounded-2xl',
   parameterRegion: 'flex min-h-0 flex-1 flex-col overflow-hidden transition-[max-height] duration-[var(--motion-route)] motion-reduce:transition-none max-[760px]:flex-none',
@@ -609,13 +609,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     feedEndRef.current?.scrollIntoView({ block: 'end' })
   }, [records])
 
-  useEffect(() => {
+  const applyCreationDraft = useCallback((draft: WorkspaceCreationDraft) => {
     if (!capability) return undefined
-    if (pendingCreationDraftRef.current === undefined) {
-      pendingCreationDraftRef.current = consumeWorkspaceCreationDraft(window.sessionStorage, window.history)
-    }
-    const draft = pendingCreationDraftRef.current
-    if (!draft) return undefined
     let cancelled = false
     let normalized: ReturnType<typeof normalizeWorkspaceCreationDraft>
     try {
@@ -673,6 +668,24 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     void restoreReferences()
     return () => { cancelled = true }
   }, [capability])
+
+  useEffect(() => {
+    if (!capability) return undefined
+    if (pendingCreationDraftRef.current === undefined) {
+      pendingCreationDraftRef.current = consumeWorkspaceCreationDraft(window.sessionStorage, window.history)
+    }
+    const draft = pendingCreationDraftRef.current
+    if (!draft) return undefined
+    return applyCreationDraft(draft)
+  }, [applyCreationDraft, capability])
+
+  function reuseTaskConfig(task: ImageTask) {
+    try {
+      void applyCreationDraft(workspaceCreationDraftFromSnapshot(task))
+    } catch (err) {
+      app.notify('error', errorMessage(err))
+    }
+  }
 
   useEffect(() => {
     if (editRefs.length) setEditSourceOpen(true)
@@ -1409,7 +1422,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             <label className={workspaceClasses.fieldLabel} htmlFor="workspace-model-group">模型分组</label>
             {loading && !capability ? <LoadingState label="正在加载可用模型..." /> : null}
             {!loading && availableModels.length ? (
-              <ModelGroupSelect options={availableModels} value={model} onChange={setModel} />
+              <ModelGroupSelect options={availableModels} groups={capability?.route_model_groups} value={model} onChange={setModel} />
             ) : null}
             {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
           </div>
@@ -1748,8 +1761,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           {estimate && !estimate.sufficient ? (
             <div className={workspaceClasses.formError}>
               <div>
-                积分不足，还差 {displayPoints(estimate.insufficient_points)} 积分。
-                当前可用 {displayPoints(estimate.balance?.available_points)} 积分。
+                积分不足，还差 {displayPoints(estimate.insufficient_points)}。
+                当前可用 {displayPoints(estimate.balance?.available_points)}。
               </div>
               <div className={workspaceClasses.formActions}>
                 <button className={cn(userButton.base, userButton.primary)} type="button" onClick={() => app.navigate('checkout')}>去充值</button>
@@ -1872,6 +1885,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 }}
                 onUseReference={applyAsEditSource}
                 onPreviewImage={setPreviewImage}
+                onReuseConfig={reuseTaskConfig}
+                onOpenDetail={() => setHistoryTaskDialog(latestTask)}
                 onRetryTask={async (task) => {
                   setBusy(true)
                   try {
@@ -2390,6 +2405,7 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
         <span className="min-w-0 flex-1 truncate" title={task.prompt || task.title}>{task.prompt || task.title || '未命名创作'}</span>
         <span>{task.results.length}/{requested} 张</span>
         <span>{formatHistoryTime(task.created_at)}</span>
+        <span className="inline-flex items-center gap-1"><span title={task.id}>任务ID: {task.id}</span><InlineCopyButton text={task.id} label="复制任务ID" /></span>
       </div>
       <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
         {task.results.map((image, index) => {
@@ -2434,7 +2450,7 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
   )
 }
 
-function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken, onDownloadImage, onImageMediaRefresh, onReferenceMediaRefresh }: {
+function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPreviewImage, onRetryTask, onDeleteTask, accessToken, onDownloadImage, onImageMediaRefresh, onReferenceMediaRefresh, onReuseConfig, onOpenDetail }: {
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
   onCopyPrompt: () => Promise<void>
@@ -2446,6 +2462,8 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
   onDownloadImage: (image: ImageResult) => Promise<void>
   onImageMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
   onReferenceMediaRefresh: (assetId: string) => string | undefined | void | Promise<string | undefined | void>
+  onReuseConfig: (task: ImageTask) => void
+  onOpenDetail: () => void
 }) {
   const slots = generationSlots(task)
   const activeStage = task.progress_message || task.progress_stage || '等待后端返回任务进度'
@@ -2465,11 +2483,6 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
     return () => window.clearTimeout(timer)
   }, [task.id, task.status, successImages.length])
 
-  const downloadAll = () => {
-    successImages.forEach((slot, index) => {
-      window.setTimeout(() => void onDownloadImage(slot.image), index * 120)
-    })
-  }
   return (
     <article className={workspaceClasses.record}>
       {showInitialLoading ? (
@@ -2523,6 +2536,9 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
                     onPreview={onPreviewImage}
                     onDownload={onDownloadImage}
                     onMediaRefresh={() => onImageMediaRefresh(slot.image.id)}
+                    onCopyPrompt={() => void onCopyPrompt()}
+                    onReuseConfig={() => onReuseConfig(task)}
+                    onOpenDetail={onOpenDetail}
                   />
                 )
               }
@@ -2532,23 +2548,12 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
               return <GenerationSlotPending key={`pending-${slot.index}`} label={slot.label} skeleton={skeletonPhase} />
             })}
           </div>
-          {successImages.length && primaryImage ? (
-            <div className={workspaceClasses.outputActions}>
-              <button className={workspaceClasses.generatedAction} type="button" title="下载" onClick={downloadAll}>{successImages.length > 1 ? '全部下载' : '下载'}</button>
-              <div className="mx-1 h-4 w-px bg-[var(--border)]" />
-              <button className={workspaceClasses.generatedAction} type="button" title="复制提示词" onClick={() => void onCopyPrompt()}>提示词</button>
-              <div className="mx-1 h-4 w-px bg-[var(--border)]" />
-              <button className={workspaceClasses.generatedAction} type="button" title="再次编辑" onClick={() => {
-                void onUseReference(primaryImage)
-              }}>编辑</button>
-            </div>
-          ) : null}
           <div className={workspaceClasses.outputMetaRow}>
             <span>模型: {task.route_model_name || task.route_model_code || task.model_group}</span>
             <span>{task.size_mode === 'pixel' ? `尺寸: ${task.requested_size || task.aspect_ratio}` : `比例: ${task.aspect_ratio}`}</span>
             <span>数量: {task.image_count}</span>
             <span>耗时: {formatCompactDuration(taskElapsedMs(task))}</span>
-            <span>消耗: {displayTaskPoints(task)} ◈</span>
+            <span>消耗: {displayTaskPoints(task)}</span>
           </div>
         </div>
       ) : isTerminalStatus(task.status) ? (
@@ -2605,7 +2610,10 @@ function TaskFailureBlock({ task, onRetry, onDelete }: { task: ImageTask; onRetr
           {view.meta.map((item) => (
             <div className={workspaceClasses.failureMetaItem} key={item.label}>
               <dt className={workspaceClasses.failureMetaLabel}>{item.label}</dt>
-              <dd className={workspaceClasses.failureMetaValue}>{item.value}</dd>
+              <dd className={cn(workspaceClasses.failureMetaValue, 'inline-flex items-center gap-1 break-all')}>
+                {item.value}
+                {item.label === '任务ID' ? <InlineCopyButton text={item.value} label="复制任务ID" /> : null}
+              </dd>
             </div>
           ))}
         </dl>
@@ -2633,7 +2641,7 @@ function normalizeAspectRatio(input?: string) {
   return undefined
 }
 
-function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken, onUseReference, onPreview, onDownload, onMediaRefresh }: {
+function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken, onUseReference, onPreview, onDownload, onMediaRefresh, onCopyPrompt, onReuseConfig, onOpenDetail }: {
   image: ImageResult
   task: ImageTask
   profile?: Pick<UserProfile, 'display_name'> | null
@@ -2644,6 +2652,9 @@ function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken,
   onPreview: (image: ImagePreviewPayload) => void
   onDownload: (image: ImageResult) => Promise<void>
   onMediaRefresh: () => string | undefined | void | Promise<string | undefined | void>
+  onCopyPrompt: () => void
+  onReuseConfig: () => void
+  onOpenDetail: () => void
 }) {
   const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
   const aspectRatio = image.width && image.height ? `${image.width} / ${image.height}` : normalizeAspectRatio(fallbackRatio)
@@ -2676,7 +2687,10 @@ function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken,
         <RefreshableMediaImage className={cn(workspaceClasses.generatedImage, sizeClass)} src={imageUrl} mediaExpiresAt={image.preview_expires_at} alt={alt} onMediaRefresh={onMediaRefresh} />
       </button>
       <figcaption className={workspaceClasses.generatedCaption}>
+        <button className={workspaceClasses.generatedIconAction} type="button" title="复制提示词" aria-label="复制提示词" onClick={onCopyPrompt}><Copy size={16} /></button>
+        <button className={workspaceClasses.generatedIconAction} type="button" title="复用参数" aria-label="复用参数" onClick={onReuseConfig}><RotateCcw size={16} /></button>
         <button className={workspaceClasses.generatedIconAction} type="button" title="编辑" aria-label="编辑图片" onClick={() => void onUseReference(image)}><EditGlyph /></button>
+        <button className={workspaceClasses.generatedIconAction} type="button" title="详情" aria-label="查看任务详情" onClick={onOpenDetail}><Info size={16} /></button>
         <button className={workspaceClasses.generatedIconAction} type="button" title="下载" aria-label="下载图片" onClick={() => void onDownload(image)}><DownloadGlyph /></button>
       </figcaption>
     </figure>

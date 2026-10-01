@@ -6,6 +6,7 @@ import { Trash2 } from 'lucide-react'
 import { Badge, EmptyBlock, ErrorBlock, Field, GroupOptionGrid, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, RefreshIconButton, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
 import { adminDataGrid } from '../ui/dataGrid'
+import { ModelIconPicker, RouteModelGroupsPanel } from './RouteModelGroupsPanel'
 import { FilterToolbar } from '../ui/dataTable'
 import { loadAllRouteModelPrices } from './loadAllRouteModelPrices'
 import { modelLifecycleErrorMessage } from './adminModelLifecycle'
@@ -26,7 +27,7 @@ import {
   routeVisibilityOptions,
 } from './routingRows'
 
-type RouteDialog = { row?: RouteModel; code: string; name: string; description: string; visibility: RouteModelVisibility; mediaType: RouteModelMediaType; enabled: boolean; sortOrder: string; groupIds: string[] }
+type RouteDialog = { row?: RouteModel; code: string; name: string; description: string; visibility: RouteModelVisibility; mediaType: RouteModelMediaType; enabled: boolean; sortOrder: string; groupIds: string[]; iconKey: string; iconSvg: string }
 type CandidateDialog = { route: RouteModel; row?: RouteModelCandidate; accountModelId: string; priority: string; weight: string; fallbackOrder: string; enabled: boolean }
 type DeleteTarget = { kind: 'route'; route: RouteModel } | { kind: 'candidate'; route: RouteModel; candidate: RouteModelCandidate }
 
@@ -188,6 +189,8 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
         enabled: routeDialog.enabled,
         sort_order: Number(routeDialog.sortOrder),
         group_ids: groupIds,
+        icon_key: routeDialog.iconKey,
+        icon_svg: routeDialog.iconSvg,
       }
       const saved = routeDialog.row ? await adminApi.updateRouteModel(routeDialog.row.id, payload) : await adminApi.createRouteModel(payload)
       const created = !routeDialog.row
@@ -281,6 +284,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
         secondaryActions={<RefreshIconButton label="刷新路由模型" refreshing={loading} onClick={() => void load()} />}
       />
       {media === 'video' ? <VideoConfigurationImpact context="routing" /> : null}
+      <RouteModelGroupsPanel media={media} routes={routes} onFeedback={onFeedback} onChanged={() => void load()} />
       {error ? <InlineFeedback tone="danger" message={`路由模型刷新失败：${error}`} /> : null}
       <MetricStrip metrics={summaryMetrics} />
       <FilterToolbar
@@ -361,6 +365,9 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
               <Field label="可见分组"><GroupOptionGrid selected={routeDialog.groupIds} groups={groups} onChange={(groupIds) => setRouteDialog({ ...routeDialog, groupIds })} /></Field>
             ) : null}
             <Field label="排序"><input type="number" value={routeDialog.sortOrder} onChange={(event) => setRouteDialog({ ...routeDialog, sortOrder: event.target.value })} /></Field>
+            <Field label="图标（内置或上传 SVG，缺省用站点图标）">
+              <ModelIconPicker iconKey={routeDialog.iconKey} iconSvg={routeDialog.iconSvg} onChange={(iconKey) => setRouteDialog({ ...routeDialog, iconKey })} onSvgChange={(iconSvg) => setRouteDialog({ ...routeDialog, iconSvg })} />
+            </Field>
             <Field label="状态"><select value={routeDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setRouteDialog({ ...routeDialog, enabled: event.target.value === 'enabled' })}>{routeEnabledOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
           </div>
         </Modal>
@@ -393,7 +400,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
 }
 
 function newRouteDialog(groups: UserGroup[]): RouteDialog {
-  return { code: '', name: '', description: '', visibility: 'public', mediaType: 'image', enabled: true, sortOrder: '10', groupIds: [] }
+  return { code: '', name: '', description: '', visibility: 'public', mediaType: 'image', enabled: true, sortOrder: '10', groupIds: [], iconKey: '', iconSvg: '' }
 }
 
 function routeReadinessForMedia({
@@ -425,7 +432,7 @@ function routeReadinessForMedia({
 }
 
 function editRouteDialog(row: RouteModel): RouteDialog {
-  return { row, code: row.code, name: row.name, description: row.description ?? '', visibility: row.visibility, mediaType: row.media_type, enabled: row.enabled, sortOrder: String(row.sort_order), groupIds: (row.group_ids ?? []).map(String) }
+  return { row, code: row.code, name: row.name, description: row.description ?? '', visibility: row.visibility, mediaType: row.media_type, enabled: row.enabled, sortOrder: String(row.sort_order), groupIds: (row.group_ids ?? []).map(String), iconKey: row.icon_key ?? '', iconSvg: row.icon_svg ?? '' }
 }
 
 function newCandidateDialog(route: RouteModel, accountModels: ModelAccountModel[]): CandidateDialog {

@@ -48,6 +48,8 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/refreshsession"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelcandidate"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroup"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelgroupmember"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodelprice"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/schema"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/secureconfig"
@@ -4054,6 +4056,18 @@ func init() {
 	routemodelDescSortOrder := routemodelFields[6].Descriptor()
 	// routemodel.DefaultSortOrder holds the default value on creation for the sort_order field.
 	routemodel.DefaultSortOrder = routemodelDescSortOrder.Default.(int)
+	// routemodelDescIconKey is the schema descriptor for icon_key field.
+	routemodelDescIconKey := routemodelFields[7].Descriptor()
+	// routemodel.DefaultIconKey holds the default value on creation for the icon_key field.
+	routemodel.DefaultIconKey = routemodelDescIconKey.Default.(string)
+	// routemodel.IconKeyValidator is a validator for the "icon_key" field. It is called by the builders before save.
+	routemodel.IconKeyValidator = routemodelDescIconKey.Validators[0].(func(string) error)
+	// routemodelDescIconSvg is the schema descriptor for icon_svg field.
+	routemodelDescIconSvg := routemodelFields[8].Descriptor()
+	// routemodel.DefaultIconSvg holds the default value on creation for the icon_svg field.
+	routemodel.DefaultIconSvg = routemodelDescIconSvg.Default.(string)
+	// routemodel.IconSvgValidator is a validator for the "icon_svg" field. It is called by the builders before save.
+	routemodel.IconSvgValidator = routemodelDescIconSvg.Validators[0].(func(string) error)
 	routemodelcandidateMixin := schema.RouteModelCandidate{}.Mixin()
 	routemodelcandidateMixinFields0 := routemodelcandidateMixin[0].Fields()
 	_ = routemodelcandidateMixinFields0
@@ -4085,6 +4099,93 @@ func init() {
 	routemodelcandidateDescEnabled := routemodelcandidateFields[5].Descriptor()
 	// routemodelcandidate.DefaultEnabled holds the default value on creation for the enabled field.
 	routemodelcandidate.DefaultEnabled = routemodelcandidateDescEnabled.Default.(bool)
+	routemodelgroupMixin := schema.RouteModelGroup{}.Mixin()
+	routemodelgroupMixinFields0 := routemodelgroupMixin[0].Fields()
+	_ = routemodelgroupMixinFields0
+	routemodelgroupFields := schema.RouteModelGroup{}.Fields()
+	_ = routemodelgroupFields
+	// routemodelgroupDescCreatedAt is the schema descriptor for created_at field.
+	routemodelgroupDescCreatedAt := routemodelgroupMixinFields0[0].Descriptor()
+	// routemodelgroup.DefaultCreatedAt holds the default value on creation for the created_at field.
+	routemodelgroup.DefaultCreatedAt = routemodelgroupDescCreatedAt.Default.(func() time.Time)
+	// routemodelgroupDescUpdatedAt is the schema descriptor for updated_at field.
+	routemodelgroupDescUpdatedAt := routemodelgroupMixinFields0[1].Descriptor()
+	// routemodelgroup.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	routemodelgroup.DefaultUpdatedAt = routemodelgroupDescUpdatedAt.Default.(func() time.Time)
+	// routemodelgroup.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	routemodelgroup.UpdateDefaultUpdatedAt = routemodelgroupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// routemodelgroupDescCode is the schema descriptor for code field.
+	routemodelgroupDescCode := routemodelgroupFields[0].Descriptor()
+	// routemodelgroup.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	routemodelgroup.CodeValidator = func() func(string) error {
+		validators := routemodelgroupDescCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code string) error {
+			for _, fn := range fns {
+				if err := fn(code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// routemodelgroupDescName is the schema descriptor for name field.
+	routemodelgroupDescName := routemodelgroupFields[1].Descriptor()
+	// routemodelgroup.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	routemodelgroup.NameValidator = func() func(string) error {
+		validators := routemodelgroupDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// routemodelgroupDescDescription is the schema descriptor for description field.
+	routemodelgroupDescDescription := routemodelgroupFields[2].Descriptor()
+	// routemodelgroup.DefaultDescription holds the default value on creation for the description field.
+	routemodelgroup.DefaultDescription = routemodelgroupDescDescription.Default.(string)
+	// routemodelgroupDescMediaType is the schema descriptor for media_type field.
+	routemodelgroupDescMediaType := routemodelgroupFields[3].Descriptor()
+	// routemodelgroup.DefaultMediaType holds the default value on creation for the media_type field.
+	routemodelgroup.DefaultMediaType = routemodelgroupDescMediaType.Default.(string)
+	// routemodelgroup.MediaTypeValidator is a validator for the "media_type" field. It is called by the builders before save.
+	routemodelgroup.MediaTypeValidator = routemodelgroupDescMediaType.Validators[0].(func(string) error)
+	// routemodelgroupDescIconKey is the schema descriptor for icon_key field.
+	routemodelgroupDescIconKey := routemodelgroupFields[4].Descriptor()
+	// routemodelgroup.DefaultIconKey holds the default value on creation for the icon_key field.
+	routemodelgroup.DefaultIconKey = routemodelgroupDescIconKey.Default.(string)
+	// routemodelgroup.IconKeyValidator is a validator for the "icon_key" field. It is called by the builders before save.
+	routemodelgroup.IconKeyValidator = routemodelgroupDescIconKey.Validators[0].(func(string) error)
+	// routemodelgroupDescIconSvg is the schema descriptor for icon_svg field.
+	routemodelgroupDescIconSvg := routemodelgroupFields[5].Descriptor()
+	// routemodelgroup.DefaultIconSvg holds the default value on creation for the icon_svg field.
+	routemodelgroup.DefaultIconSvg = routemodelgroupDescIconSvg.Default.(string)
+	// routemodelgroup.IconSvgValidator is a validator for the "icon_svg" field. It is called by the builders before save.
+	routemodelgroup.IconSvgValidator = routemodelgroupDescIconSvg.Validators[0].(func(string) error)
+	// routemodelgroupDescSortOrder is the schema descriptor for sort_order field.
+	routemodelgroupDescSortOrder := routemodelgroupFields[6].Descriptor()
+	// routemodelgroup.DefaultSortOrder holds the default value on creation for the sort_order field.
+	routemodelgroup.DefaultSortOrder = routemodelgroupDescSortOrder.Default.(int)
+	// routemodelgroupDescEnabled is the schema descriptor for enabled field.
+	routemodelgroupDescEnabled := routemodelgroupFields[7].Descriptor()
+	// routemodelgroup.DefaultEnabled holds the default value on creation for the enabled field.
+	routemodelgroup.DefaultEnabled = routemodelgroupDescEnabled.Default.(bool)
+	routemodelgroupmemberFields := schema.RouteModelGroupMember{}.Fields()
+	_ = routemodelgroupmemberFields
+	// routemodelgroupmemberDescSortOrder is the schema descriptor for sort_order field.
+	routemodelgroupmemberDescSortOrder := routemodelgroupmemberFields[2].Descriptor()
+	// routemodelgroupmember.DefaultSortOrder holds the default value on creation for the sort_order field.
+	routemodelgroupmember.DefaultSortOrder = routemodelgroupmemberDescSortOrder.Default.(int)
 	routemodelpriceMixin := schema.RouteModelPrice{}.Mixin()
 	routemodelpriceMixinFields0 := routemodelpriceMixin[0].Fields()
 	_ = routemodelpriceMixinFields0

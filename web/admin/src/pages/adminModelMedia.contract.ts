@@ -7,6 +7,8 @@ if (adminModelMediaTabFromHash('#/routing?media=video') !== 'video') throw new E
 if (adminModelMediaTabFromHash('#/pricing?media=unknown') !== 'image') throw new Error('unknown media query must fall back to image')
 if (adminModelMediaHref('access-accounts', 'text') !== '#/access-accounts?media=text') throw new Error('media tab href must preserve page route')
 if (modelAccountMediaType({ adapter_type: 'seedance', extra: {} } as any) !== 'video') throw new Error('legacy Seedance accounts must remain video accounts')
+if (modelAccountMediaType({ adapter_type: 'gasic', extra: {} } as any) !== 'video') throw new Error('GASIC relay accounts must be video accounts')
+if (modelAccountMediaType({ adapter_type: 'bailian', extra: {} } as any) !== 'video') throw new Error('Bailian accounts must be video accounts')
 if (modelAccountMediaType({ adapter_type: 'openai_compatible', extra: { media_type: 'video' } } as any) !== 'video') throw new Error('explicit account media type must take priority')
 if (modelMediaType({ extra: { media_type: 'video' } } as any, { adapter_type: 'openai_compatible', extra: {} } as any) !== 'video') throw new Error('model media type must override its account default')
 if (modelMediaType({ extra: {} } as any, { adapter_type: 'openai_compatible', extra: {} } as any) !== 'image') throw new Error('legacy image models must remain image models')
