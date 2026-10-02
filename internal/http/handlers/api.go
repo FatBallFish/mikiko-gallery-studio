@@ -3228,6 +3228,12 @@ func decorateTaskProgress(task domainimagetask.Task) domainimagetask.Task {
 		task.ErrorMessage = resolution.Message
 	}
 	for index := range task.Attempts {
+		if task.Attempts[index].ErrorCode == "" && task.Attempts[index].ErrorMessage == "" {
+			// Healthy attempts must stay untouched; resolving empty fields
+			// would attach the generic failure code and copy.
+			task.Attempts[index].ErrorDetail = nil
+			continue
+		}
 		attemptResolution := mediaerrors.ResolveImageTask(task.Attempts[index].ErrorCode, task.Attempts[index].ErrorMessage)
 		if attemptResolution.Code != "" {
 			task.Attempts[index].ErrorCode = attemptResolution.Code

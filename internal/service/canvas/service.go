@@ -389,7 +389,11 @@ func (s *Service) ListRuns(ctx context.Context, userID int64, canvasID uuid.UUID
 	}
 	for i := range runs {
 		// Historical runs may carry raw vendor text; serve the unified code
-		// and curated copy instead.
+		// and curated copy instead. Runs without any error stay untouched —
+		// resolving empty fields would inject the generic failure copy.
+		if runs[i].ErrorCode == "" && runs[i].ErrorMessage == "" {
+			continue
+		}
 		resolution := mediaerrors.ResolveImageTask(runs[i].ErrorCode, runs[i].ErrorMessage)
 		if runs[i].TaskKind == TaskKindVideo {
 			resolution = mediaerrors.ResolveVideoItem(runs[i].ErrorCode, runs[i].ErrorMessage)

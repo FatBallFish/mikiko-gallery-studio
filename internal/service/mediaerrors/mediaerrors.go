@@ -211,6 +211,13 @@ func Sanitize(message string) string {
 func resolve(code, message string, table map[string]Resolution) Resolution {
 	trimmedCode := strings.TrimSpace(code)
 	trimmedMessage := strings.TrimSpace(message)
+	// No code and no message means "no error": running/succeeded tasks and
+	// healthy attempts pass through here and must not be decorated with the
+	// generic failure resolution (that injected fake errors into every
+	// canvas run response on 2026-10-03).
+	if trimmedCode == "" && trimmedMessage == "" {
+		return Resolution{}
+	}
 	if resolution, ok := lookupCode(trimmedCode, table); ok {
 		return refineModerationSide(resolution, trimmedCode, trimmedMessage)
 	}

@@ -68,6 +68,39 @@ func (spy *canvasObserverSpy) RecordCanvasSave(result string) {
 	spy.results = append(spy.results, result)
 }
 
+// A healthy run carries no error fields; serving it must never decorate the
+// response with the generic failure resolution (prod incident 2026-10-03:
+// every running canvas video run showed 生成未能完成… with
+// GENERATION_PROVIDER_UNAVAILABLE injected at read time).
+func TestListRunsDoesNotInjectErrorsIntoHealthyRuns(t *testing.T) {
+	store := NewMemoryStore()
+	service := NewService(store, &fakeGenerator{}, nil)
+	created, err := service.Create(t.Context(), CreateRequest{UserID: 9, ProjectID: uuid.New(), Name: "视频", Template: TemplateImageExploration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := domaincanvas.DocumentV1{SchemaVersion: 1, Nodes: []domaincanvas.Node{{ID: "video-generation-1", Type: domaincanvas.NodeTypeVideoGeneration, Position: domaincanvas.Point{X: 10, Y: 10}, Size: domaincanvas.Size{Width: 320, Height: 240}}}}
+	if _, err := service.SaveDocument(t.Context(), SaveDocumentRequest{UserID: 9, CanvasID: created.ID, ExpectedRevision: created.Revision, Document: document}); err != nil {
+		t.Fatal(err)
+	}
+	run, err := service.Generate(t.Context(), GenerateRequest{UserID: 9, CanvasID: created.ID, NodeID: "video-generation-1", IdempotencyKey: "video-run-1"})
+	if err != nil || run.Status != RunStatusRunning {
+		t.Fatalf("Generate() = (%#v, %v)", run, err)
+	}
+	runs, err := service.ListRuns(t.Context(), 9, created.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, listed := range runs {
+		if listed.ID != run.ID {
+			continue
+		}
+		if listed.ErrorCode != "" || listed.ErrorMessage != "" {
+			t.Fatalf("healthy running run must not carry an injected error, got %s/%s", listed.ErrorCode, listed.ErrorMessage)
+		}
+	}
+}
+
 func TestCanvasDeleteAndTransferRejectActiveRuns(t *testing.T) {
 	store := NewMemoryStore()
 	service := NewService(store, &fakeGenerator{}, nil)
