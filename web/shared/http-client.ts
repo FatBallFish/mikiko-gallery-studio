@@ -123,6 +123,14 @@ const errorMessages: Record<string, Record<ErrorLocale, string>> = {
     zh: '上游模型服务暂不可用，请稍后重试。',
     en: 'The upstream model service is temporarily unavailable. Please try again later.',
   },
+  PROMPT_OPTIMIZATION_FAILED: {
+    zh: '提示词优化暂时失败，已保留原提示词，请稍后重试。',
+    en: 'Prompt optimization failed this time. Your original prompt is unchanged; please try again later.',
+  },
+  INVALID_OPTIMIZATION_RESULT: {
+    zh: '优化结果未能完整保留素材引用，已保留原提示词，请再试一次。',
+    en: 'The optimized result did not preserve every asset reference. Your original prompt is unchanged; please try again.',
+  },
   PAYMENT_PROVIDER_UNAVAILABLE: {
     zh: '支付渠道暂时不可用，请稍后重试。',
     en: 'The payment channel is temporarily unavailable. Please try again later.',

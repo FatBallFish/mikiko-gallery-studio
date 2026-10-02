@@ -8,6 +8,13 @@ const redesignClasses = readFileSync(new URL('../ui/redesign-classes.ts', import
 for (const required of ['提示词编辑器', '优化提示词', '图片编辑来源', '不会发送给文本模型', 'estimated_points', '原提示词', '优化后', '应用优化', '撤销提示词优化']) {
   if (!dialog.includes(required)) throw new Error(`expanded prompt editor must include ${required}`)
 }
+for (const required of ['promptGuideLabel', '已装载模型专属优化提示词（']) {
+  if (!dialog.includes(required)) throw new Error(`prompt optimization must surface the matched guide badge: ${required}`)
+}
+const optimizationModel = readFileSync(new URL('./workspacePromptOptimization.ts', import.meta.url), 'utf8')
+for (const required of ["seedance_2_5: 'Seedance 2.5'", "seedance_2_0: 'Seedance 2.0'", "wan_3_0: '万相3.0'", "minimax_h3: 'MiniMax H3'"]) {
+  if (!optimizationModel.includes(required)) throw new Error(`guide label map must cover ${required}`)
+}
 for (const required of ['<PromptEditorActions', 'onExpand={() => setPromptExpanded(true)}', '<PromptEditorDialog', 'estimatePromptOptimization', 'optimizePrompt', 'applyOptimization', 'undoOptimization']) {
   if (!workspace.includes(required)) throw new Error(`workspace prompt optimization must include ${required}`)
 }
