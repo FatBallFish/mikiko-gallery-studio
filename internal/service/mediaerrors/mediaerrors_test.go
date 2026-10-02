@@ -48,6 +48,22 @@ func TestResolveVideoItemFallsBackForUnknownCodes(t *testing.T) {
 	}
 }
 
+// Healthy runs and attempts carry no error fields at all; resolving them must
+// stay empty instead of decorating them with the generic failure resolution.
+func TestResolveEmptyErrorFieldsStaysEmpty(t *testing.T) {
+	for name, resolver := range map[string]func(string, string) Resolution{
+		"video": ResolveVideoItem,
+		"image": ResolveImageTask,
+	} {
+		if got := resolver("", ""); got.Code != "" || got.Message != "" {
+			t.Fatalf("%s: empty error fields must resolve to no error, got %+v", name, got)
+		}
+		if got := resolver("  ", "  "); got.Code != "" || got.Message != "" {
+			t.Fatalf("%s: whitespace-only error fields must resolve to no error, got %+v", name, got)
+		}
+	}
+}
+
 func TestMessageCopyRedactsLeakMarkers(t *testing.T) {
 	if got := Sanitize("生成失败: https://oss.example.com/a.mp4?Expires=1&Signature=secret 已过期"); got != genericCopy {
 		t.Fatalf("signed URL must never reach users, got %q", got)
@@ -96,12 +112,17 @@ func TestResolveImageTaskKeepsPlatformStorageCode(t *testing.T) {
 	}
 }
 
+// Empty code + empty message means "no error" (healthy runs/attempts), while
+// a present code with no message is a real failure and keeps the generic copy.
 func TestEmptyMessageYieldsGenericCopy(t *testing.T) {
-	if got := ResolveVideoItem("", ""); got.Message != genericCopy {
-		t.Fatalf("empty message should yield generic copy, got %+v", got)
+	if got := ResolveVideoItem("", ""); got.Code != "" || got.Message != "" {
+		t.Fatalf("empty code and message is a healthy task, got %+v", got)
 	}
-	if got := ResolveImageTask("", "  "); got.Message != genericCopy {
-		t.Fatalf("blank message should yield generic copy, got %+v", got)
+	if got := ResolveImageTask("", "  "); got.Code != "" || got.Message != "" {
+		t.Fatalf("whitespace-only fields are a healthy task, got %+v", got)
+	}
+	if got := ResolveVideoItem("9999", ""); got.Code != CodeProviderUnavailable || got.Message != genericCopy {
+		t.Fatalf("unknown code with empty message must yield generic copy, got %+v", got)
 	}
 }
 
