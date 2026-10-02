@@ -419,3 +419,83 @@ func TestClientInlinesPrivateImageAsDataURI(t *testing.T) {
 		t.Fatalf("private image should be inlined as data URI: %s", url)
 	}
 }
+
+func TestClientSubmitsReferenceVideoAndAudioInputs(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"task_id":"mm-job-ref"}`)
+	}))
+	defer server.Close()
+	client, err := minimax.NewClient(minimax.Config{BaseURL: server.URL, APIKey: "key", ModelCode: "MiniMax-H3", Verified: true, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoprovider.Request{
+		TaskID: "task-ref", IdempotencyKey: "idem-ref", TaskType: "reference_to_video",
+		Prompt: "让参考角色跳舞", DurationSeconds: 8, Resolution: "768p", AspectRatio: "adaptive",
+		Inputs: []videoprovider.Input{
+			{AssetID: "ref-img", Role: "reference_image", URL: "https://93.184.216.34/ref.png", MediaType: "image", MIMEType: "image/png"},
+			{AssetID: "ref-vid", Role: "reference_video", URL: "https://93.184.216.34/ref.mp4", MediaType: "video", MIMEType: "video/mp4"},
+			{AssetID: "ref-audio", Role: "reference_audio", URL: "https://93.184.216.34/ref.wav", MediaType: "audio", MIMEType: "audio/wav"},
+		},
+	}
+	if _, err := client.Submit(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	content, ok := body["content"].([]any)
+	if !ok || len(content) != 4 {
+		t.Fatalf("content = %#v", body["content"])
+	}
+	image := content[1].(map[string]any)
+	video := content[2].(map[string]any)
+	audio := content[3].(map[string]any)
+	if image["type"] != "image_url" || image["role"] != "reference_image" {
+		t.Fatalf("reference image entry = %#v", image)
+	}
+	if video["type"] != "video_url" || video["role"] != "reference_video" || video["video_url"].(map[string]any)["url"] != "https://93.184.216.34/ref.mp4" {
+		t.Fatalf("reference video entry = %#v", video)
+	}
+	if audio["type"] != "audio_url" || audio["role"] != "reference_audio" || audio["audio_url"].(map[string]any)["url"] != "https://93.184.216.34/ref.wav" {
+		t.Fatalf("reference audio entry = %#v", audio)
+	}
+	// Adaptive stays the documented default for multimodal reference tasks,
+	// so the adapter must not send an explicit ratio.
+	if _, sent := body["ratio"]; sent {
+		t.Fatalf("adaptive ratio must be omitted for reference tasks: %#v", body["ratio"])
+	}
+}
+
+func TestClientFallsBackToMIMEPrefixWhenMediaTypeMissing(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"task_id":"mm-job-mime"}`)
+	}))
+	defer server.Close()
+	client, err := minimax.NewClient(minimax.Config{BaseURL: server.URL, APIKey: "key", ModelCode: "MiniMax-H3", Verified: true, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoprovider.Request{
+		TaskID: "task-mime", IdempotencyKey: "idem-mime", TaskType: "reference_to_video",
+		Prompt: "参考视频演绎", DurationSeconds: 6, Resolution: "768p", AspectRatio: "16:9",
+		Inputs: []videoprovider.Input{{AssetID: "clip", Role: "reference_video", URL: "https://93.184.216.34/clip.mp4", MIMEType: "video/mp4"}},
+	}
+	if _, err := client.Submit(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	entry := body["content"].([]any)[1].(map[string]any)
+	if entry["type"] != "video_url" || entry["role"] != "reference_video" {
+		t.Fatalf("video entry from MIME fallback = %#v", entry)
+	}
+	if body["ratio"] != "16:9" {
+		t.Fatalf("concrete ratio must pass through for reference tasks: %#v", body["ratio"])
+	}
+}

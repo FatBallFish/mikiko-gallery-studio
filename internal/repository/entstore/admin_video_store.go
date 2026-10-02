@@ -136,7 +136,7 @@ func (s *AdminVideoStore) ListTasks(ctx context.Context, filter adminvideoservic
 	if err != nil {
 		return adminvideoservice.TaskPage{}, err
 	}
-	page := adminvideoservice.TaskPage{}
+	page := adminvideoservice.TaskPage{Items: []adminvideoservice.TaskSummary{}}
 	for _, row := range rows {
 		if !adminVideoTaskMatchesAttempts(row, filter) {
 			continue
@@ -178,9 +178,9 @@ func (s *AdminVideoStore) GetTask(ctx context.Context, id uuid.UUID) (adminvideo
 	if err != nil {
 		return adminvideoservice.TaskDetail{}, err
 	}
-	detail := adminvideoservice.TaskDetail{TaskSummary: mapAdminVideoTaskSummary(row), PricingSnapshot: row.PricingSnapshot, RoutingSnapshot: row.RoutingSnapshot, ReservedPoints: row.ReservedPoints}
+	detail := adminvideoservice.TaskDetail{TaskSummary: mapAdminVideoTaskSummary(row), PricingSnapshot: row.PricingSnapshot, RoutingSnapshot: row.RoutingSnapshot, ReservedPoints: row.ReservedPoints, Items: []adminvideoservice.TaskItem{}}
 	for _, item := range row.Edges.Items {
-		mapped := adminvideoservice.TaskItem{ID: item.ID, Ordinal: item.Ordinal, Status: item.Status, Stage: item.Stage, ResultAssetID: item.ResultAssetID, ActualPoints: item.ActualPoints, ProviderCost: item.ProviderCost, ArtifactSnapshot: item.ArtifactSnapshot}
+		mapped := adminvideoservice.TaskItem{ID: item.ID, Ordinal: item.Ordinal, Status: item.Status, Stage: item.Stage, ResultAssetID: item.ResultAssetID, ActualPoints: item.ActualPoints, ProviderCost: item.ProviderCost, ArtifactSnapshot: item.ArtifactSnapshot, Attempts: []adminvideoservice.Attempt{}}
 		if item.ErrorCode != nil {
 			mapped.ErrorCode = *item.ErrorCode
 		}

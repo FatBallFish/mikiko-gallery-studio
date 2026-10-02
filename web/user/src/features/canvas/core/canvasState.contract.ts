@@ -87,8 +87,16 @@ const imageTargets = compatibleCanvasTargets(state.present, 'image')
 if (!imageTargets.some((target) => target.type === 'image_generation' && target.role === 'reference') || !imageTargets.some((target) => target.type === 'video_generation' && target.role === 'first_frame')) {
   throw new Error(`image output must expose reference and first-frame targets: ${JSON.stringify(imageTargets)}`)
 }
-if (compatibleCanvasTargets(state.present, 'video').length || compatibleCanvasTargets(state.present, 'audio').length || compatibleCanvasTargets(state.present, 'note').length) {
-  throw new Error('media and note nodes without P0 outputs must not offer connection-created targets')
+const videoTargets = compatibleCanvasTargets(state.present, 'video')
+if (videoTargets.length !== 1 || !videoTargets.some((target) => target.type === 'video_generation' && target.role === 'reference_video')) {
+  throw new Error(`video assets must feed video generation as reference video: ${JSON.stringify(videoTargets)}`)
+}
+const audioTargets = compatibleCanvasTargets(state.present, 'audio')
+if (audioTargets.length !== 1 || !audioTargets.some((target) => target.type === 'video_generation' && target.role === 'reference_audio')) {
+  throw new Error(`audio assets must feed video generation as reference audio: ${JSON.stringify(audioTargets)}`)
+}
+if (compatibleCanvasTargets(state.present, 'note').length) {
+  throw new Error('note nodes must not offer connection-created targets')
 }
 const generationTargets = compatibleCanvasTargets(state.present, 'image-gen')
 if (!generationTargets.some((target) => target.type === 'image' && target.role === 'result')) throw new Error('image generation output must offer an empty image frame target')

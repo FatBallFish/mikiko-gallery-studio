@@ -49,6 +49,7 @@ func (s *Service) Quote(ctx context.Context, routeModelID int64, request domainv
 	referenceImages := 0
 	inputVideoSeconds := ""
 	videoInputTotal := decimal.Zero
+	hasInputAudio := false
 	for _, input := range request.Inputs {
 		switch input.MediaType {
 		case "image":
@@ -57,6 +58,8 @@ func (s *Service) Quote(ctx context.Context, routeModelID int64, request domainv
 			if input.DurationSeconds > 0 {
 				videoInputTotal = videoInputTotal.Add(decimal.NewFromInt(int64(input.DurationSeconds)))
 			}
+		case "audio":
+			hasInputAudio = true
 		}
 	}
 	if videoInputTotal.GreaterThan(decimal.Zero) {
@@ -65,7 +68,7 @@ func (s *Service) Quote(ctx context.Context, routeModelID int64, request domainv
 	simulation, err := s.simulator.SimulateRouteQuote(ctx, adminvideo.QuoteSimulationRequest{
 		RouteModelID: routeModelID, TaskType: string(request.TaskType), Resolution: string(request.Resolution),
 		AspectRatio: string(request.AspectRatio), AudioMode: string(request.AudioMode), DurationSeconds: request.DurationSeconds,
-		OutputCount: request.OutputCount, ReferenceImageCount: referenceImages, InputVideoSeconds: inputVideoSeconds, HasInputAudio: false,
+		OutputCount: request.OutputCount, ReferenceImageCount: referenceImages, InputVideoSeconds: inputVideoSeconds, HasInputAudio: hasInputAudio,
 		Inputs: append([]domainvideo.Input(nil), request.Inputs...),
 	})
 	if err != nil {

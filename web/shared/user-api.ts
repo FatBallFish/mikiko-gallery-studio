@@ -674,8 +674,8 @@ export const userApi = {
     method: 'POST', pathParams: { upload_id }, body: { parts },
   }),
   abortMediaUpload: (upload_id: string) => sharedApiClient.request<{ status: string }>(API_PATHS.agent.mediaUploadDetail, { method: 'DELETE', pathParams: { upload_id } }),
-  estimatePromptOptimization: (prompt: string, mediaType?: 'image' | 'video') => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt, ...(mediaType ? { media_type: mediaType } : {}) } }),
-  optimizePrompt: (prompt: string, quote: string, mediaType?: 'image' | 'video') => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote, ...(mediaType ? { media_type: mediaType } : {}) } }),
+  estimatePromptOptimization: (prompt: string, mediaType?: 'image' | 'video', routeModelCode?: string) => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt, ...(mediaType ? { media_type: mediaType } : {}), ...(routeModelCode ? { route_model_code: routeModelCode } : {}) } }),
+  optimizePrompt: (prompt: string, quote: string, mediaType?: 'image' | 'video', routeModelCode?: string) => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote, ...(mediaType ? { media_type: mediaType } : {}), ...(routeModelCode ? { route_model_code: routeModelCode } : {}) } }),
   estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: buildEstimateWireRequest(req) }), req),
   uploadReferenceAsset: async (file: File | string, sizeBytes?: number) => {
     if (typeof file === 'string') {

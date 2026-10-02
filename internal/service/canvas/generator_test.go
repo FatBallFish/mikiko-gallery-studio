@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	domaincanvas "github.com/fatballfish/pic-gallery/internal/domain/canvas"
+	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	"github.com/google/uuid"
 )
 
@@ -160,5 +161,33 @@ func TestVideoRequestCarriesCanvasPromptBindings(t *testing.T) {
 	}
 	if len(request.ReferenceBindings) != 1 || request.ReferenceBindings[0].Name != "首帧" || request.ReferenceBindings[0].AssetID != firstFrame {
 		t.Fatalf("video reference bindings = %#v", request.ReferenceBindings)
+	}
+}
+
+func TestVideoRequestCarriesReferenceMediaInputs(t *testing.T) {
+	projectID, imageID, videoID, audioID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	payload := json.RawMessage(`{"draft":{"quote_token":"quote","route_model_code":"cinema","task_type":"reference_to_video","prompt_template":"hidden","duration_seconds":8,"resolution":"720p","aspect_ratio":"adaptive","audio_mode":"silent","output_count":1}}`)
+	submission := GenerationSubmission{UserID: 7, ProjectID: projectID, CanvasID: uuid.New(), NodeID: "video-gen", IdempotencyKey: "idem-ref", Kind: TaskKindVideo, Node: domaincanvas.Node{ID: "video-gen", Type: domaincanvas.NodeTypeVideoGeneration, Payload: payload}, Inputs: []GenerationInput{
+		{Role: domaincanvas.InputRoleReferenceImage, Ordinal: 0, Node: domaincanvas.Node{ID: "img", Type: domaincanvas.NodeTypeImage, AssetID: imageID.String()}},
+		{Role: domaincanvas.InputRoleReferenceVideo, Ordinal: 1, Node: domaincanvas.Node{ID: "vid", Type: domaincanvas.NodeTypeVideo, AssetID: videoID.String()}},
+		{Role: domaincanvas.InputRoleReferenceAudio, Ordinal: 2, Node: domaincanvas.Node{ID: "aud", Type: domaincanvas.NodeTypeAudio, AssetID: audioID.String()}},
+	}}
+	request, err := videoRequest(submission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(request.Inputs) != 3 {
+		t.Fatalf("reference inputs = %#v", request.Inputs)
+	}
+	want := []struct {
+		assetID uuid.UUID
+		role    domainvideo.InputRole
+		ordinal int
+	}{{imageID, domainvideo.InputRoleReferenceImage, 0}, {videoID, domainvideo.InputRoleReferenceVideo, 1}, {audioID, domainvideo.InputRoleReferenceAudio, 2}}
+	for index, expect := range want {
+		got := request.Inputs[index]
+		if got.AssetID != expect.assetID || got.Role != expect.role || got.Ordinal != expect.ordinal {
+			t.Fatalf("input[%d] = %#v, want asset %s role %s", index, got, expect.assetID, expect.role)
+		}
 	}
 }

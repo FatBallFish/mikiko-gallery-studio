@@ -194,8 +194,11 @@ func (s *Service) prepare(ctx context.Context, req CreateRequest) (preparedReque
 			return preparedRequest{}, mapOwnershipError(assetErr, "input asset not found")
 		}
 		allowedKind := "image"
-		if input.Role == domainvideo.InputRoleReferenceVideo {
+		switch input.Role {
+		case domainvideo.InputRoleReferenceVideo:
 			allowedKind = "video"
+		case domainvideo.InputRoleReferenceAudio:
+			allowedKind = "audio"
 		}
 		if string(asset.MediaType) != allowedKind || !(asset.Status == "ready" || asset.Status == "ready_original") {
 			return preparedRequest{}, errs.BadRequest("video input asset must be a ready " + allowedKind)

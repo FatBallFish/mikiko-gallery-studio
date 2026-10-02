@@ -133,6 +133,10 @@ func (f *fakeQuoteVerifier) Verify(context.Context, int64, videotask.EstimateReq
 	return f.estimate, nil
 }
 
+func (f *fakeQuoteVerifier) Estimate(context.Context, int64, videotask.EstimateRequest) (videotask.Estimate, error) {
+	return f.estimate, nil
+}
+
 type capturingQuoteVerifier struct {
 	fakeQuoteVerifier
 	verifyVideo domainvideo.Request
@@ -213,3 +217,43 @@ func (s *memoryTaskStore) GetAsset(_ context.Context, userID int64, id uuid.UUID
 	}
 	return asset, nil
 }
+
+func TestServicePrepareAcceptsReferenceMediaRolesByKind(t *testing.T) {
+	projectID := uuid.New()
+	imageID, videoID, audioID := uuid.New(), uuid.New(), uuid.New()
+	store := &memoryTaskStore{assets: map[uuid.UUID]mediaassetservice.Asset{
+		imageID: {ID: imageID, UserID: 9, ProjectID: projectID, Name: "参考图", MediaType: domainmedia.MediaTypeImage, Status: "ready_original", MIMEType: "image/png", FileSizeBytes: 100},
+		videoID: {ID: videoID, UserID: 9, ProjectID: projectID, Name: "参考视频", MediaType: domainmedia.MediaTypeVideo, Status: "ready", MIMEType: "video/mp4", FileSizeBytes: 4096, DurationMS: int64Ptr(5200)},
+		audioID: {ID: audioID, UserID: 9, ProjectID: projectID, Name: "参考音频", MediaType: domainmedia.MediaTypeAudio, Status: "ready", MIMEType: "audio/wav", FileSizeBytes: 512},
+	}}
+	quotes := &fakeQuoteVerifier{estimate: videotask.Estimate{RouteModelCode: "cinema", CapabilityVersion: "cap-v1", ConfigVersion: "route-v1", PriceVersion: "price-v1", UnitPoints: "20.00000", EstimatedPoints: "20.00000", MaxReservedPoints: "20.00000", RouteCandidateID: 1, AccountModelID: 1, ModelAccountID: 1, ProviderCode: "minimax", ModelCode: "MiniMax-H3", ExpiresAt: time.Now().Add(time.Minute)}}
+	projects := &fakeProjectResolver{project: domainproject.Project{ID: projectID.String(), UserID: 9, Status: "active"}}
+	service := videotask.NewService(store, quotes, projects, store, func() time.Time { return time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC) })
+
+	request := videotask.CreateRequest{
+		UserID: 9, ProjectID: projectID, IdempotencyKey: "reference-media", QuoteToken: "quote-token", RouteModelCode: "cinema",
+		TaskType: domainvideo.TaskTypeReferenceToVideo, PromptTemplate: "参考素材演绎",
+		Inputs: []videotask.InputRequest{
+			{AssetID: imageID, Role: domainvideo.InputRoleReferenceImage, Ordinal: 0},
+			{AssetID: videoID, Role: domainvideo.InputRoleReferenceVideo, Ordinal: 1},
+			{AssetID: audioID, Role: domainvideo.InputRoleReferenceAudio, Ordinal: 2},
+		},
+		DurationSeconds: 8, Resolution: domainvideo.Resolution768P, AspectRatio: domainvideo.AspectRatioAdaptive,
+		AudioMode: domainvideo.AudioModeSilent, OutputCount: 1,
+	}
+	estimate, err := service.Estimate(t.Context(), request)
+	if err != nil {
+		t.Fatalf("Estimate() error = %v", err)
+	}
+	if estimate.EstimatedPoints != "20.00000" {
+		t.Fatalf("estimate = %#v", estimate)
+	}
+
+	wrongKind := request
+	wrongKind.Inputs = []videotask.InputRequest{{AssetID: audioID, Role: domainvideo.InputRoleReferenceVideo, Ordinal: 0}}
+	if _, err := service.Estimate(t.Context(), wrongKind); err == nil {
+		t.Fatal("audio asset with reference_video role must be rejected")
+	}
+}
+
+func int64Ptr(value int) *int64 { out := int64(value); return &out }

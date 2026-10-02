@@ -44,9 +44,10 @@ type Service struct {
 }
 
 type EstimateRequest struct {
-	UserID    int64  `json:"-"`
-	Prompt    string `json:"prompt"`
-	MediaType string `json:"media_type"`
+	UserID         int64  `json:"-"`
+	Prompt         string `json:"prompt"`
+	MediaType      string `json:"media_type"`
+	RouteModelCode string `json:"route_model_code"`
 }
 
 type ModelSummary struct {
@@ -61,13 +62,15 @@ type EstimateResult struct {
 	ExpiresAt       time.Time    `json:"expires_at"`
 	EstimatedPoints string       `json:"estimated_points"`
 	Model           ModelSummary `json:"model"`
+	Guide           string       `json:"guide,omitempty"`
 }
 
 type OptimizeRequest struct {
-	UserID    int64  `json:"-"`
-	Prompt    string `json:"prompt"`
-	Quote     string `json:"quote"`
-	MediaType string `json:"media_type"`
+	UserID         int64  `json:"-"`
+	Prompt         string `json:"prompt"`
+	Quote          string `json:"quote"`
+	MediaType      string `json:"media_type"`
+	RouteModelCode string `json:"route_model_code"`
 }
 
 type OptimizeResult struct {
@@ -77,6 +80,7 @@ type OptimizeResult struct {
 	OutputTokens    int    `json:"output_tokens"`
 	EstimatedPoints string `json:"estimated_points"`
 	ActualPoints    string `json:"actual_points"`
+	Guide           string `json:"guide,omitempty"`
 }
 
 type quotePayload struct {
@@ -119,6 +123,7 @@ func (s *Service) Estimate(ctx context.Context, req EstimateRequest) (EstimateRe
 	return EstimateResult{
 		Quote: quote, ExpiresAt: expiresAt, EstimatedPoints: zeroPoints,
 		Model: ModelSummary{ID: model.ID, ModelCode: model.ModelCode, DisplayName: model.DisplayName, APIStyle: account.APIStyle},
+		Guide: guideForRequest(req.MediaType, req.RouteModelCode),
 	}, nil
 }
 
@@ -160,8 +165,8 @@ func (s *Service) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeRe
 	}
 	response, optimizeErr := client.Optimize(ctx, textprovider.OptimizeRequest{
 		Model:        model.ModelCode,
-		SystemPrompt: SystemPromptForMedia(req.MediaType),
-		Prompt:       protected.Text, MaxOutputTokens: 2000,
+		SystemPrompt: SystemPromptForMedia(req.MediaType, req.RouteModelCode),
+		Prompt:       protected.Text, MaxOutputTokens: 3000,
 	})
 	if optimizeErr != nil {
 		run.Status = "failed"
@@ -187,34 +192,33 @@ func (s *Service) Optimize(ctx context.Context, req OptimizeRequest) (OptimizeRe
 	}
 	return OptimizeResult{
 		RunID: run.ID, OptimizedPrompt: optimized, InputTokens: response.InputTokens, OutputTokens: response.OutputTokens,
-		EstimatedPoints: zeroPoints, ActualPoints: zeroPoints,
+		EstimatedPoints: zeroPoints, ActualPoints: zeroPoints, Guide: guideForRequest(req.MediaType, req.RouteModelCode),
 	}, nil
 }
 
 const (
 	mediaTypeVideo = "video"
 
-	protectedPlaceholderRule = "Strings shaped like MGS_TOKEN markers are protected placeholders: you must not modify, translate, duplicate, remove, split, or add them. Return only the rewritten prompt."
+	protectedPlaceholderRule = "Strings shaped like MGS_TOKEN markers are protected placeholders: never modify, translate, shorten, split, or reword them — copy them verbatim. You may repeat a marker whenever the same asset is referenced again. Return only the rewritten prompt."
 
 	imageSystemPrompt = "Rewrite the user's image-generation prompt with precise subject, composition, lighting, style, and constraints. Preserve intent. " + protectedPlaceholderRule
-
-	// videoSystemPrompt follows the official Doubao Seedance 2.5 / 2.0 prompt
-	// guides: director-style structured brief, shot-by-shot timeline, concrete
-	// body-level action, one camera move per shot, symbol conventions and
-	// negative constraints (no subtitles / watermark / logo).
-	videoSystemPrompt = "Rewrite the user's video-generation prompt as a director-style structured shooting brief in the user's language. " +
-		"Structure: (1) one-line overview: subject + location + event + genre/style + signature camera move; " +
-		"(2) subject and environment details: appearance, materials, lighting; " +
-		"(3) a shot-by-shot timeline labeled 镜头 1 / 镜头 2 (optionally continuous integer-second ranges like 0-3s / 3-8s, never overlapping or gapped), each shot describing framing, exactly one camera move using standard terms (推/拉/摇/移/跟/环绕/固定/特写/全景), concrete body-level action with speed and amplitude, emotion externalized as physical details, and diegetic sound; " +
-		"(4) a closing pass with consistent camera position, depth of field, ambient sound, atmosphere, and negative constraints such as 不要字幕、不要水印、不要Logo. " +
-		"Prefer slow, continuous, connected movements over abrupt high-energy bursts, avoid repeating the same action, and keep total duration and intent unchanged. " +
-		"Use （） for music, <> for sound effects, {} for spoken lines, and 【】 for on-screen text. " +
-		protectedPlaceholderRule
 )
 
-func SystemPromptForMedia(mediaType string) string {
+// guideForRequest resolves the video guide kind for a request; image requests
+// carry no guide. The kind doubles as the response field so clients can tell
+// model-specific optimization (anything but "universal") from the fallback.
+func guideForRequest(mediaType, routeModelCode string) string {
 	if strings.EqualFold(strings.TrimSpace(mediaType), mediaTypeVideo) {
-		return videoSystemPrompt
+		return string(VideoGuideForRouteModel(routeModelCode))
+	}
+	return ""
+}
+
+// SystemPromptForMedia picks the image system prompt or the video guide prompt
+// for the given route model code (universal fallback for unknown codes).
+func SystemPromptForMedia(mediaType, routeModelCode string) string {
+	if guide := guideForRequest(mediaType, routeModelCode); guide != "" {
+		return SystemPromptForVideo(VideoGuideKind(guide))
 	}
 	return imageSystemPrompt
 }
@@ -237,19 +241,31 @@ func protectPromptTemplate(prompt string) (protectedPrompt, error) {
 	}
 	builder := strings.Builder{}
 	tokenIndex := 0
+	// One sentinel per unique placeholder, not per occurrence: director-style
+	// rewrites reference the same asset many times (17 {{@少女}} slots in one
+	// real prompt), and forcing the model to preserve 17 distinct opaque
+	// markers under compression pressure just gives it more ways to fail the
+	// restore contract. A shared sentinel only needs to survive once; copies
+	// restore to repeated placeholders, which the generation resolver accepts.
+	sentinels := make(map[string]string, len(document.Occurrences))
 	for _, segment := range document.Segments {
 		if segment.Kind == prompttemplate.KindText {
 			builder.WriteString(segment.Source)
 			continue
 		}
-		tokenIndex++
-		sentinel := fmt.Sprintf("⟦MGS_TOKEN_%s_%04d⟧", nonce, tokenIndex)
-		placeholder := "{{@" + segment.Name + "}}"
-		if segment.Kind == prompttemplate.KindVariable {
-			placeholder = "{{$" + segment.Name + "}}"
+		key := promptTokenKey(segment.Kind, segment.Name)
+		sentinel, ok := sentinels[key]
+		if !ok {
+			tokenIndex++
+			sentinel = fmt.Sprintf("⟦MGS_TOKEN_%s_%04d⟧", nonce, tokenIndex)
+			placeholder := "{{@" + segment.Name + "}}"
+			if segment.Kind == prompttemplate.KindVariable {
+				placeholder = "{{$" + segment.Name + "}}"
+			}
+			sentinels[key] = sentinel
+			result.replacements[sentinel] = placeholder
+			result.expected[key]++
 		}
-		result.replacements[sentinel] = placeholder
-		result.expected[promptTokenKey(segment.Kind, segment.Name)]++
 		builder.WriteString(sentinel)
 	}
 	result.Text = builder.String()
@@ -257,12 +273,17 @@ func protectPromptTemplate(prompt string) (protectedPrompt, error) {
 }
 
 func (p protectedPrompt) Restore(raw string) (string, error) {
+	// Every protected sentinel must survive, but the model may legitimately
+	// re-reference the same asset across shots (director-style rewrites do),
+	// so a copied sentinel simply becomes a repeated template placeholder —
+	// the generation resolver supports repeated references. What stays
+	// forbidden: dropping a sentinel, altering one, or injecting new ones.
 	restored := raw
 	for sentinel, placeholder := range p.replacements {
-		if strings.Count(restored, sentinel) != 1 {
+		if !strings.Contains(restored, sentinel) {
 			return "", errors.New("protected prompt sentinel mismatch")
 		}
-		restored = strings.Replace(restored, sentinel, placeholder, 1)
+		restored = strings.ReplaceAll(restored, sentinel, placeholder)
 	}
 	if strings.Contains(restored, "⟦MGS_TOKEN_") {
 		return "", errors.New("unknown protected prompt sentinel")
@@ -271,17 +292,18 @@ func (p protectedPrompt) Restore(raw string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	actual := make(map[string]int, len(document.Occurrences))
+	actual := make(map[string]struct{}, len(document.Occurrences))
 	for _, occurrence := range document.Occurrences {
-		actual[promptTokenKey(occurrence.Kind, occurrence.Name)]++
+		actual[promptTokenKey(occurrence.Kind, occurrence.Name)] = struct{}{}
 	}
-	if len(actual) != len(p.expected) {
-		return "", errors.New("protected prompt placeholder set mismatch")
-	}
-	for key, expected := range p.expected {
-		if actual[key] != expected {
+	for key := range p.expected {
+		if _, ok := actual[key]; !ok {
 			return "", errors.New("protected prompt placeholder set mismatch")
 		}
+		delete(actual, key)
+	}
+	if len(actual) > 0 {
+		return "", errors.New("protected prompt placeholder set mismatch")
 	}
 	return document.Canonical, nil
 }

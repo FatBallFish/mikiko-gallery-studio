@@ -4,7 +4,7 @@ import {
   ArrowLeft, BoxSelect, CircleStop, ClipboardPaste, Copy, Download, Film, Focus, Group, Hand, Image, ImagePlus, Keyboard, LayoutTemplate, Layers, Link2, MousePointer2,
   Move, Music2, Plus, Redo2, RefreshCw, Save, Search, Sparkles, StickyNote, Trash2, Undo2, Ungroup, Upload, ZoomIn, ZoomOut,
 } from 'lucide-react'
-import type { Capability, CanvasRun, CreativeCanvas, MediaAsset, ReferenceAsset, VideoCapability } from '../../../../shared/api-types'
+import type { Capability, CanvasRun, CreativeCanvas, MediaAsset, ReferenceAsset, VideoCapability, VideoTaskType } from '../../../../shared/api-types'
 import { ApiError } from '../../../../shared/http-client'
 import { userApi } from '../../../../shared/user-api'
 import { normalizeCanvasDocument } from '../../../../shared/canvas-document'
@@ -16,14 +16,15 @@ import { userHashForRoute } from '../../routeState'
 import { MediaPreviewDialog } from '../media/MediaPreviewDialog'
 import { mediaCreationActions } from '../media/mediaExperience'
 import { promptVariableNames } from '../../pages/promptTemplateEditorModel'
+import { promptGuideLabel } from '../../pages/workspacePromptOptimization'
 import { PromptTemplateEditor } from '../../pages/PromptTemplateEditor'
 import { PromptVariableForm } from '../../pages/PromptVariableForm'
 import { parsePromptTemplate } from '../../pages/promptTemplateParser'
 import { computeCanvasBounds, fitCanvasViewport, minimapGeometry, nextCanvasNodePosition, visibleCanvasNodeIDs } from './core/canvasLayout'
 import {
-  canvasGenerationEstimateSignature, canvasGroupBounds, canvasGroupMembers, canvasGroupsForNode, canvasImageDraftForTask, canvasImageParameterErrors, canvasImageTaskType, canvasNodeMinimumSize, canvasPromptResourceCandidates, compatibleCanvasTargets, inspectCanvasConnection,
+  canvasGenerationEstimateSignature, canvasGroupBounds, canvasGroupMembers, canvasGroupsForNode, canvasImageDraftForTask, canvasImageParameterErrors, canvasImageTaskType, canvasNodeMinimumSize, canvasPromptOptimizationTarget, canvasPromptResourceCandidates, compatibleCanvasTargets, inspectCanvasConnection,
   canvasImageSizeDraftPatch, prepareCanvasEstimate, rejectCanvasEstimate, resolveCanvasEstimate, selectCanvasNodesInRect, startCanvasEstimate,
-  type CanvasEstimateState, type CanvasPromptResourceCandidate,
+  type CanvasEstimateState, type CanvasPromptOptimizationTarget, type CanvasPromptResourceCandidate,
 } from './core/canvasState'
 import type { CanvasDocument, CanvasEdge, CanvasGroup, CanvasNode, CanvasNodeType, CanvasViewport } from './core/types'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
@@ -538,7 +539,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     if (connectSource === node.id) { setConnectSource(''); return }
     const source = nodeByID.get(connectSource)
     if (!source) return
-    const role = suggestedRole(source.type, node.type, documentState.edges, node.id)
+    const role = suggestedRole(source.type, node.type, documentState.edges, node.id, String(asObject(node.payload?.draft)?.task_type ?? ''))
     if (!role) { app.notify('error', '这两个节点不能连接'); return }
     try {
       store!.getState().connect({ id: `edge-${crypto.randomUUID().slice(0, 12)}`, source: source.id, target: node.id, input_role: role })
@@ -549,7 +550,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     const source = nodeByID.get(sourceID)
     const target = nodeByID.get(targetID)
     if (!source || !target || sourceID === targetID) return { edge: null, error: 'illegal_connection' }
-    const role = suggestedRole(source.type, target.type, documentState.edges, target.id)
+    const role = suggestedRole(source.type, target.type, documentState.edges, target.id, String(asObject(target.payload?.draft)?.task_type ?? ''))
     if (!role) return { edge: null, error: 'illegal_connection' }
     const edge: CanvasEdge = { id: `edge-${crypto.randomUUID().slice(0, 12)}`, source: sourceID, target: targetID, input_role: role }
     return { edge, error: inspectCanvasConnection(documentState, edge) }
@@ -776,7 +777,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
           const inputSummary = node.type === 'image_generation' && imageCapability
             ? { ...summary, errors: [...summary.errors, ...canvasImageParameterErrors(asObject(node.payload?.draft), imageCapability, canvasImageTaskType(documentState, node.id), workspaceTaskImageSafetyLimit)] }
             : summary
-          return <CanvasNodeView key={node.id} node={node} selected={selectedSet.has(node.id)} readOnly={readOnly} connecting={connectSource === node.id} connectValid={Boolean(targetCandidate?.edge && !targetCandidate.error)} connectInvalid={Boolean(targetCandidate?.error)} run={runs.find((run) => run.node_id === node.id)} estimate={currentEstimate} busy={busyNodeID === node.id} imageCapability={imageCapability} videoCapability={videoCapability} balance={app.balance?.available_points ?? '0.00000'} inputSummary={inputSummary} promptResourceCandidates={node.type === 'prompt' ? canvasPromptResourceCandidates(documentState, node.id) : []} onStartConnection={(event) => {
+          return <CanvasNodeView key={node.id} node={node} selected={selectedSet.has(node.id)} readOnly={readOnly} connecting={connectSource === node.id} connectValid={Boolean(targetCandidate?.edge && !targetCandidate.error)} connectInvalid={Boolean(targetCandidate?.error)} run={runs.find((run) => run.node_id === node.id)} estimate={currentEstimate} busy={busyNodeID === node.id} imageCapability={imageCapability} videoCapability={videoCapability} balance={app.balance?.available_points ?? '0.00000'} inputSummary={inputSummary} promptResourceCandidates={node.type === 'prompt' ? canvasPromptResourceCandidates(documentState, node.id) : []} promptOptimizationTarget={node.type === 'prompt' ? canvasPromptOptimizationTarget(documentState, node.id) : {}} onStartConnection={(event) => {
             event.stopPropagation()
             setConnectionDraft({ pointerID: event.pointerId, sourceID: node.id, point: worldPoint(event.clientX, event.clientY), targetID: '', error: null })
             viewportRef.current?.setPointerCapture(event.pointerId)
@@ -830,7 +831,10 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
         })}
         {selection ? <div className="canvas-selection-box" style={rectStyle(normalizedRect(selection.start, selection.current))} /> : null}
         {nodeMenu ? <div className="canvas-node-menu" data-canvas-no-zoom style={{ left: nodeMenu.point.x, top: nodeMenu.point.y }} role="menu" aria-label={nodeMenu.sourceID ? '添加兼容节点' : '添加节点'}>
-          {nodeMenu.options.map((option) => <button key={`${option.type}-${option.role ?? ''}`} type="button" role="menuitem" onClick={() => chooseNodeMenuOption(option)}>{nodeTypeIcon(option.type)}<span>{nodeLabels[option.type]}</span></button>)}
+          {nodeMenu.options.map((option, index) => {
+          const duplicated = nodeMenu.options.some((other, otherIndex) => otherIndex !== index && other.type === option.type)
+          return <button key={`${option.type}-${option.role ?? ''}`} type="button" role="menuitem" onClick={() => chooseNodeMenuOption(option)}>{nodeTypeIcon(option.type)}<span>{nodeLabels[option.type]}{duplicated ? `（${canvasEdgeRoleLabel(option.role)}）` : ''}</span></button>
+        })}
         </div> : null}
       </div>
       <div className="canvas-zoom-controls" data-canvas-no-zoom>
@@ -901,9 +905,9 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   </main>
 }
 
-function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, run, estimate, busy, imageCapability, videoCapability, balance, inputSummary, promptResourceCandidates, canUpload, onSelect, onDrag, onDragEnd, onResizeStart, onResize, onResizeEnd, onStartConnection, onFinishConnection, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onMediaDetail, onChooseImage, onUploadImage, onContinueImage, onContinueVideo, onReuseVideo, onOpenConfig, onResizeMedia }: {
+function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, connectInvalid, run, estimate, busy, imageCapability, videoCapability, balance, inputSummary, promptResourceCandidates, promptOptimizationTarget, canUpload, onSelect, onDrag, onDragEnd, onResizeStart, onResize, onResizeEnd, onStartConnection, onFinishConnection, onUpdate, onEstimate, onGenerate, onAttach, onCancel, onMediaDetail, onChooseImage, onUploadImage, onContinueImage, onContinueVideo, onReuseVideo, onOpenConfig, onResizeMedia }: {
   node: CanvasNode; selected: boolean; readOnly: boolean; connecting: boolean; connectValid: boolean; connectInvalid: boolean; run?: CanvasRun; estimate?: CanvasEstimateState; busy: boolean
-  imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; promptResourceCandidates: CanvasPromptResourceCandidate[]; canUpload: boolean
+  imageCapability: Capability | null; videoCapability: VideoCapability | null; balance: string; inputSummary: GenerationInputSummary; promptResourceCandidates: CanvasPromptResourceCandidate[]; promptOptimizationTarget: CanvasPromptOptimizationTarget; canUpload: boolean
   onSelect: (event: React.PointerEvent<HTMLElement>) => void; onDrag: (event: React.PointerEvent<HTMLElement>) => void; onDragEnd: () => void
   onResizeStart: (event: React.PointerEvent<HTMLButtonElement>) => void; onResize: (event: React.PointerEvent<HTMLButtonElement>) => void; onResizeEnd: (event: React.PointerEvent<HTMLButtonElement>) => void
   onStartConnection: (event: React.PointerEvent<HTMLButtonElement>) => void; onFinishConnection: (event: React.PointerEvent<HTMLButtonElement>) => void
@@ -916,7 +920,7 @@ function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, co
     {!readOnly ? <button type="button" className="canvas-port canvas-port-target" data-canvas-interactive data-canvas-port="target" title="连接到此节点" aria-label={`连接到${nodeLabels[node.type]}`} onPointerUp={onFinishConnection} /> : null}
     <header data-canvas-drag-handle><span>{nodeTypeIcon(node.type)}</span><strong>{String(node.payload?.title ?? nodeLabels[node.type])}</strong>{run ? <i data-status={run.status}>{run.status}</i> : null}</header>
     <div className="canvas-node-body" data-canvas-interactive data-canvas-no-zoom={editable || generation ? '' : undefined}>
-      {node.type === 'prompt' ? <PromptNodeBody node={node} readOnly={readOnly} busy={busy} resourceCandidates={promptResourceCandidates} onUpdate={onUpdate} /> : null}
+      {node.type === 'prompt' ? <PromptNodeBody node={node} readOnly={readOnly} busy={busy} resourceCandidates={promptResourceCandidates} optimizationTarget={promptOptimizationTarget} onUpdate={onUpdate} /> : null}
       {node.type === 'note' ? <textarea readOnly={readOnly} defaultValue={String(node.payload?.text ?? '')} placeholder="记录创作想法" onBlur={(event) => onUpdate({ text: event.target.value })} /> : null}
       {node.type === 'image' || node.type === 'video' || node.type === 'audio' ? <CanvasMediaNode node={node} readOnly={readOnly} canUpload={canUpload} onChooseImage={onChooseImage} onUploadImage={onUploadImage} onDetail={onMediaDetail} onContinueImage={onContinueImage} onContinueVideo={onContinueVideo} onReuseVideo={onReuseVideo} onFitMedia={onResizeMedia} /> : null}
       {generation ? <GenerationNodeSummary node={node} run={run} estimate={estimate} busy={busy} readOnly={readOnly} imageCapability={imageCapability} videoCapability={videoCapability} balance={balance} inputSummary={inputSummary} onUpdate={onUpdate} onEstimate={onEstimate} onGenerate={onGenerate} onAttach={onAttach} onCancel={onCancel} onOpenConfig={onOpenConfig} /> : null}
@@ -965,7 +969,7 @@ function GenerationNodeForm({ node, run, estimate, busy, readOnly, imageCapabili
   const videoModel = videoCapability?.model_groups.find((group) => group.code === draft.route_model_code) ?? videoCapability?.model_groups[0]
   const imageTaskType = inputSummary.images > 0 ? 'image_edit' : 'text_to_image'
   const imageOptions = imageModel?.capabilities_by_task_type?.[imageTaskType] ?? imageModel
-  const videoTaskType = String(draft.task_type ?? videoModel?.defaults.task_type ?? 'text_to_video') as 'text_to_video' | 'image_to_video' | 'first_last_frame_to_video'
+  const videoTaskType = String(draft.task_type ?? videoModel?.defaults.task_type ?? 'text_to_video') as VideoTaskType
   const videoOptions = videoModel?.options_by_task_type[videoTaskType]
   const models = node.type === 'image_generation' ? imageCapability?.model_groups ?? [] : videoCapability?.model_groups ?? []
   const countMax = Math.max(1, Math.min(10, videoModel?.max_output_count ?? 1))
@@ -993,7 +997,7 @@ function GenerationNodeForm({ node, run, estimate, busy, readOnly, imageCapabili
       <label>质量<select disabled={readOnly} value={String(draft.quality ?? imageOptions?.quality?.[0] ?? '')} onChange={(event) => patchDraft({ quality: event.target.value })}>{(imageOptions?.quality ?? []).map((value) => <option key={value}>{value}</option>)}</select></label>
       <label>输出格式<select disabled={readOnly} value={String(draft.output_format ?? imageOptions?.output_format?.[0] ?? '')} onChange={(event) => patchDraft({ output_format: event.target.value })}>{(imageOptions?.output_format ?? []).map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select></label>
     </> : <>
-      <label>生成方式<select disabled={readOnly} value={videoTaskType} onChange={(event) => patchDraft({ task_type: event.target.value })}>{(videoModel?.task_types ?? []).map((value) => <option key={value} value={value}>{value === 'text_to_video' ? '文生视频' : value === 'image_to_video' ? '图生视频' : '首尾帧生视频'}</option>)}</select></label>
+      <label>生成方式<select disabled={readOnly} value={videoTaskType} onChange={(event) => patchDraft({ task_type: event.target.value })}>{(videoModel?.task_types ?? []).map((value) => <option key={value} value={value}>{CANVAS_VIDEO_TASK_LABELS[value] ?? value}</option>)}</select></label>
       <label>时长<select disabled={readOnly} value={String(draft.duration_seconds ?? videoModel?.defaults.duration_seconds ?? '')} onChange={(event) => patchDraft({ duration_seconds: Number(event.target.value) })}>{(videoOptions?.durations ?? []).map((value) => <option key={value} value={value}>{value} 秒</option>)}</select></label>
       <label>清晰度<select disabled={readOnly} value={String(draft.resolution ?? videoModel?.defaults.resolution ?? '').toLowerCase()} onChange={(event) => patchDraft({ resolution: event.target.value })}>{(videoOptions?.resolutions ?? []).map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select></label>
       <label>比例<select disabled={readOnly} value={String(draft.aspect_ratio ?? videoModel?.defaults.aspect_ratio ?? '')} onChange={(event) => patchDraft({ aspect_ratio: event.target.value })}>{(videoOptions?.aspect_ratios ?? []).map((value) => <option key={value}>{value}</option>)}</select></label>
@@ -1021,7 +1025,7 @@ function GenerationNodeForm({ node, run, estimate, busy, readOnly, imageCapabili
   </div>
 }
 
-function PromptNodeBody({ node, readOnly, resourceCandidates, onUpdate }: { node: CanvasNode; readOnly: boolean; busy: boolean; resourceCandidates: CanvasPromptResourceCandidate[]; onUpdate: (payload: Record<string, unknown>) => void }) {
+function PromptNodeBody({ node, readOnly, resourceCandidates, optimizationTarget, onUpdate }: { node: CanvasNode; readOnly: boolean; busy: boolean; resourceCandidates: CanvasPromptResourceCandidate[]; optimizationTarget: CanvasPromptOptimizationTarget; onUpdate: (payload: Record<string, unknown>) => void }) {
   const [text, setText] = useState(String(node.payload?.text ?? ''))
   const [optimizing, setOptimizing] = useState(false)
   const [assets, setAssets] = useState<ReferenceAsset[]>([])
@@ -1051,9 +1055,10 @@ function PromptNodeBody({ node, readOnly, resourceCandidates, onUpdate }: { node
     if (Array.from(value).length < 8) return
     setOptimizing(true)
     try {
-      const estimate = await userApi.estimatePromptOptimization(value)
-      if (!window.confirm(`优化提示词预计消耗 ${pointsText(estimate.estimated_points)}，是否继续？`)) return
-      const result = await userApi.optimizePrompt(value, estimate.quote)
+      const estimate = await userApi.estimatePromptOptimization(value, optimizationTarget.mediaType, optimizationTarget.routeModelCode)
+      const guideLabel = promptGuideLabel(estimate.guide)
+      if (!window.confirm(`优化提示词预计消耗 ${pointsText(estimate.estimated_points)}${guideLabel ? `（已装载模型专属优化提示词：${guideLabel}）` : ''}，是否继续？`)) return
+      const result = await userApi.optimizePrompt(value, estimate.quote, optimizationTarget.mediaType, optimizationTarget.routeModelCode)
       commitText(result.optimized_prompt)
     } finally { setOptimizing(false) }
   }
@@ -1171,7 +1176,8 @@ function generationInputSummary(node: CanvasNode, document: CanvasDocument): Gen
   const incoming = document.edges.filter((edge) => edge.target === node.id)
   const nodeByID = new Map(document.nodes.map((item) => [item.id, item]))
   const promptNodes = incoming.filter((edge) => edge.input_role === 'prompt').map((edge) => nodeByID.get(edge.source)).filter((item): item is CanvasNode => Boolean(item))
-  const imageNodes = incoming.filter((edge) => ['reference', 'first_frame', 'last_frame'].includes(edge.input_role)).map((edge) => nodeByID.get(edge.source)).filter((item): item is CanvasNode => Boolean(item?.asset_id))
+  const imageNodes = incoming.filter((edge) => ['reference', 'first_frame', 'last_frame', 'reference_image'].includes(edge.input_role)).map((edge) => nodeByID.get(edge.source)).filter((item): item is CanvasNode => Boolean(item?.asset_id))
+  const mediaNodes = incoming.filter((edge) => ['reference', 'first_frame', 'last_frame', 'reference_image', 'reference_video', 'reference_audio'].includes(edge.input_role)).map((edge) => nodeByID.get(edge.source)).filter((item): item is CanvasNode => Boolean(item?.asset_id))
   const prompts = promptNodes.length
   const images = imageNodes.length
   const errors: string[] = []
@@ -1188,7 +1194,10 @@ function generationInputSummary(node: CanvasNode, document: CanvasDocument): Gen
   const missingReferences = referenceBindings.filter((binding) => !binding.assetID).map((binding) => binding.name)
   if (missingReferences.length) errors.push(`未关联同名资产：${missingReferences.join('、')}`)
   if (!String(draft.route_model_code ?? draft.abstract_model ?? '').trim()) errors.push('请选择模型分组')
-  if (node.type === 'video_generation' && String(draft.task_type ?? '').includes('image') && !images) errors.push('缺少首帧图片')
+  const videoTaskType = String(draft.task_type ?? '')
+  if (node.type === 'video_generation' && (videoTaskType === 'image_to_video' || videoTaskType === 'first_last_frame_to_video') && !images) errors.push('缺少首帧图片')
+  if (node.type === 'video_generation' && videoTaskType === 'reference_to_video' && !mediaNodes.length) errors.push('缺少参考素材：连接图片、视频或音频资产')
+  if (node.type === 'video_generation' && (videoTaskType === 'video_edit' || videoTaskType === 'video_extend') && !incoming.some((edge) => edge.input_role === 'reference_video')) errors.push('缺少参考视频')
   return { prompts, images, promptNodes, selectedPromptID, referenceBindings, errors }
 }
 function buildCanvasPromptBindings(template: string, imageNodes: CanvasNode[]) {
@@ -1205,10 +1214,20 @@ function buildCanvasPromptBindings(template: string, imageNodes: CanvasNode[]) {
     return { name, assetName: asset ? String(asset.payload?.name ?? '') : matches.length > 1 ? '存在多个同名资产' : undefined, assetID: asset?.asset_id }
   })
 }
-function suggestedRole(source: CanvasNodeType, target: CanvasNodeType, edges: CanvasEdge[], targetID: string): CanvasEdge['input_role'] | null {
+const CANVAS_VIDEO_TASK_LABELS: Record<string, string> = {
+  text_to_video: '文生视频', image_to_video: '图生视频', first_last_frame_to_video: '首尾帧生视频',
+  reference_to_video: '参考生视频', video_edit: '视频编辑', video_extend: '视频延长',
+}
+
+function suggestedRole(source: CanvasNodeType, target: CanvasNodeType, edges: CanvasEdge[], targetID: string, targetVideoTaskType = ''): CanvasEdge['input_role'] | null {
   if (source === 'prompt' && (target === 'image_generation' || target === 'video_generation')) return 'prompt'
   if (source === 'image' && target === 'image_generation') return 'reference'
-  if (source === 'image' && target === 'video_generation') return edges.some((edge) => edge.target === targetID && edge.input_role === 'first_frame') ? 'last_frame' : 'first_frame'
+  if (source === 'image' && target === 'video_generation') {
+    if (targetVideoTaskType === 'reference_to_video') return 'reference_image'
+    return edges.some((edge) => edge.target === targetID && edge.input_role === 'first_frame') ? 'last_frame' : 'first_frame'
+  }
+  if (source === 'video' && target === 'video_generation') return 'reference_video'
+  if (source === 'audio' && target === 'video_generation') return 'reference_audio'
   if (source === 'image_generation' && target === 'image') return 'result'
   if (source === 'video_generation' && target === 'video') return 'result'
   return null
@@ -1218,6 +1237,17 @@ function connectionPath(source: CanvasNode, end: { x: number; y: number }) {
   const bend = Math.max(60, Math.abs(end.x - start.x) * 0.45)
   return `M ${start.x} ${start.y} C ${start.x + bend} ${start.y}, ${end.x - bend} ${end.y}, ${end.x} ${end.y}`
 }
+function canvasEdgeRoleLabel(role?: CanvasEdge['input_role'] | null) {
+  switch (role) {
+    case 'first_frame': return '首帧'
+    case 'last_frame': return '尾帧'
+    case 'reference': case 'reference_image': return '参考图'
+    case 'reference_video': return '参考视频'
+    case 'reference_audio': return '参考音频'
+    default: return '输入'
+  }
+}
+
 function nodeTypeIcon(type: CanvasNodeType) {
   if (type === 'image' || type === 'image_generation') return <Image size={16} />
   if (type === 'video' || type === 'video_generation') return <Film size={16} />

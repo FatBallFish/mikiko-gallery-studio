@@ -46,6 +46,19 @@ const styles = fs.readFileSync(new URL('./canvas.css', import.meta.url), 'utf8')
 for (const query of ['(orientation: portrait)', '(pointer: coarse)', 'min-height: 44px', 'touch-action: none']) {
   if (!styles.includes(query)) throw new Error(`canvas responsive CSS must include ${query}`)
 }
+// Reference-to-video support: video/audio nodes connect into video generation
+// nodes with reference roles, and the mode select offers 参考生视频.
+const canvasStateSource = fs.readFileSync(new URL('./core/canvasState.ts', import.meta.url), 'utf8')
+for (const required of ["role === 'reference_video'", "role === 'reference_audio'", "role === 'first_frame' || role === 'last_frame' || role === 'reference_image'"]) {
+  if (!canvasStateSource.includes(required)) throw new Error(`canvas connection rules must accept reference media edges: ${required}`)
+}
+const canvasTypesSource = fs.readFileSync(new URL('./core/types.ts', import.meta.url), 'utf8')
+for (const role of ['reference_image', 'reference_video', 'reference_audio']) {
+  if (!canvasTypesSource.includes(`'${role}'`)) throw new Error(`canvas edge roles must declare ${role}`)
+}
+for (const required of ['参考生视频', '缺少参考素材', 'reference_video', 'reference_audio']) {
+  if (!source.includes(required)) throw new Error(`canvas editor must support reference-to-video: ${required}`)
+}
 const drawerSource = fs.readFileSync(new URL('./CanvasAssetDrawer.tsx', import.meta.url), 'utf8')
 if (!drawerSource.includes('mediaType') || !drawerSource.includes('asset.media_type === mediaType')) throw new Error('canvas image frames must open an image-only asset drawer')
 if (drawerSource.includes("status: 'ready'")) throw new Error('canvas asset drawer must not hide usable originals when derivative processing failed')

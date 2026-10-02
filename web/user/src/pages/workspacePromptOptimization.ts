@@ -1,5 +1,18 @@
 import type { PromptOptimizationEstimate, PromptOptimizationResult } from '../../../shared/api-types'
 
+// Guide kinds mirror the backend promptoptimizer.VideoGuideKind values;
+// "universal" is the fallback and never surfaces as a model-specific badge.
+const PROMPT_GUIDE_LABELS: Record<string, string> = {
+  seedance_2_5: 'Seedance 2.5',
+  seedance_2_0: 'Seedance 2.0',
+  wan_3_0: '万相3.0',
+  minimax_h3: 'MiniMax H3',
+}
+
+export function promptGuideLabel(guide?: string): string {
+  return guide ? PROMPT_GUIDE_LABELS[guide] ?? '' : ''
+}
+
 export type PromptOptimizationState = {
   stage: 'idle' | 'estimating' | 'confirming' | 'optimizing' | 'comparing' | 'applied' | 'error'
   originalPrompt: string

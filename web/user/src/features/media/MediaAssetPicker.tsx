@@ -6,6 +6,11 @@ import { Button, EmptyState, Modal } from '../../components'
 import { useProjects } from '../../ProjectContext'
 import { MediaAssetCard } from './MediaAssetCard'
 
+// Generation inputs must accept generated originals (ready_original), not just
+// assets whose derivative processing has finished — mirroring the backend's
+// own usable-input rule (ready | ready_original).
+const PICKER_USABLE_STATUSES = new Set(['ready', 'ready_original'])
+
 export function MediaAssetPicker({ projectID, mediaTypes, allowedTypes, multiple = false, title = '选择资产', onConfirm, onSelect, onClose }: {
   projectID: string
   mediaTypes?: MediaType[]
@@ -29,9 +34,9 @@ export function MediaAssetPicker({ projectID, mediaTypes, allowedTypes, multiple
   useEffect(() => {
     let alive = true
     setLoading(true)
-    void userApi.listMediaAssets({ project_id: projectFilter || undefined, status: 'ready', keyword: keyword.trim(), limit: 40 }).then((page) => {
+    void userApi.listMediaAssets({ project_id: projectFilter || undefined, keyword: keyword.trim(), limit: 40 }).then((page) => {
       if (alive) {
-        setItems(page.items.filter((item) => acceptedTypes.includes(item.media_type)))
+        setItems(page.items.filter((item) => acceptedTypes.includes(item.media_type) && PICKER_USABLE_STATUSES.has(item.status)))
         setNextCursor(page.next_cursor ?? '')
         setSelected(new Set())
       }
@@ -43,8 +48,8 @@ export function MediaAssetPicker({ projectID, mediaTypes, allowedTypes, multiple
     if (!nextCursor || loading) return
     setLoading(true)
     try {
-      const page = await userApi.listMediaAssets({ project_id: projectFilter || undefined, status: 'ready', keyword: keyword.trim(), cursor: nextCursor, limit: 40 })
-      setItems((current) => [...current, ...page.items.filter((item) => acceptedTypes.includes(item.media_type) && !current.some((existing) => existing.id === item.id))])
+      const page = await userApi.listMediaAssets({ project_id: projectFilter || undefined, keyword: keyword.trim(), cursor: nextCursor, limit: 40 })
+      setItems((current) => [...current, ...page.items.filter((item) => acceptedTypes.includes(item.media_type) && PICKER_USABLE_STATUSES.has(item.status) && !current.some((existing) => existing.id === item.id))])
       setNextCursor(page.next_cursor ?? '')
     } catch (caught) { setError(caught instanceof Error ? caught.message : '资产加载失败') } finally { setLoading(false) }
   }

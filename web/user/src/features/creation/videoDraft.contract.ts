@@ -1,5 +1,6 @@
 import type { VideoCapability, VideoTask } from '../../../../shared/api-types'
 import { parseUserHashState, userHashForRoute } from '../../routeState'
+import { VIDEO_TASK_INPUT_ROLES, promptReferenceNames, videoTaskInputMissing, videoTaskInputLabel } from './videoDraft'
 import {
   applyVideoCapability,
   defaultVideoDraft,
@@ -69,6 +70,35 @@ const task = {
   prompt_binding_snapshot: { variables: [{ name: 'speed', value: 'private' }] }, inputs: [{ id: 'input-1', asset_id: 'asset-1', role: 'first_frame', ordinal: 0 }],
 } as VideoTask
 const reused = reuseVideoTask(task)
-if (reused.prompt_variables.length !== 0 || reused.inputs.length !== 0 || reused.prompt_template !== task.prompt_template || reused.output_count !== 2) {
-  throw new Error(`reuse must keep parameters without variable values or first frame: ${JSON.stringify(reused)}`)
+if (reused.prompt_variables.length !== 0 || reused.prompt_template !== task.prompt_template || reused.output_count !== 2) {
+  throw new Error(`reuse must keep parameters without variable values: ${JSON.stringify(reused)}`)
+}
+// Reference videos/audios are hard to re-pick, so reuse must carry inputs over.
+if (reused.inputs.length !== 1 || reused.inputs[0].asset_id !== 'asset-1' || reused.inputs[0].role !== 'first_frame') {
+  throw new Error(`reuse must carry the task inputs over: ${JSON.stringify(reused.inputs)}`)
+}
+
+// reference_to_video accepts image, video and audio inputs, and any single one satisfies the gate.
+const referenceRoles = VIDEO_TASK_INPUT_ROLES.reference_to_video
+for (const role of ['reference_image', 'reference_video', 'reference_audio']) {
+  if (!referenceRoles.includes(role as (typeof referenceRoles)[number])) throw new Error(`reference_to_video must accept ${role}`)
+  if (!videoTaskInputLabel(role as (typeof referenceRoles)[number])) throw new Error(`${role} must have a Chinese label`)
+}
+if (videoTaskInputMissing('reference_to_video', [{ asset_id: 'a', role: 'reference_audio', ordinal: 0 }])) {
+  throw new Error('a lone reference audio must satisfy the reference-to-video input gate')
+}
+if (!videoTaskInputMissing('reference_to_video', [])) {
+  throw new Error('empty inputs must still block reference-to-video estimates')
+}
+
+// Reference-name extraction must mirror the backend parser exactly: extra
+// bindings are rejected with reference_extra, so only {{@名称}} counts —
+// NFC-normalized, trimmed, and escaped placeholders stay literal.
+const names = promptReferenceNames('让 {{@ 参考图 }} 在 {{$场景}} 中奔跑，\\{\\{@escaped\\}\\} 保持字面')
+if (names.size !== 1 || !names.has('参考图')) {
+  throw new Error(`reference extraction must trim names and skip escaped placeholders: ${JSON.stringify([...names])}`)
+}
+const nfcNames = promptReferenceNames('{{@\u304b\u3099}}')
+if (nfcNames.size !== 1 || !nfcNames.has('\u304c')) {
+  throw new Error('reference extraction must NFC-normalize names like the backend resolver')
 }

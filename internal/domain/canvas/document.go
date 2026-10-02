@@ -17,11 +17,14 @@ const (
 type InputRole string
 
 const (
-	InputRolePrompt     InputRole = "prompt"
-	InputRoleReference  InputRole = "reference"
-	InputRoleFirstFrame InputRole = "first_frame"
-	InputRoleLastFrame  InputRole = "last_frame"
-	InputRoleResult     InputRole = "result"
+	InputRolePrompt         InputRole = "prompt"
+	InputRoleReference      InputRole = "reference"
+	InputRoleFirstFrame     InputRole = "first_frame"
+	InputRoleLastFrame      InputRole = "last_frame"
+	InputRoleReferenceImage InputRole = "reference_image"
+	InputRoleReferenceVideo InputRole = "reference_video"
+	InputRoleReferenceAudio InputRole = "reference_audio"
+	InputRoleResult         InputRole = "result"
 )
 
 type Point struct {

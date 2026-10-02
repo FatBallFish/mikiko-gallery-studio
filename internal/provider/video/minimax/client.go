@@ -90,24 +90,30 @@ func (c *Client) Submit(ctx context.Context, req videoprovider.Request) (videopr
 	}
 	content := []map[string]any{{"type": "text", "text": req.Prompt}}
 	for _, input := range req.Inputs {
-		imageURL := input.URL
-		if inline, err := c.inlinePrivateImage(ctx, input); err != nil {
+		mediaURL := input.URL
+		if inline, err := c.inlinePrivateMedia(ctx, input); err != nil {
 			return videoprovider.Job{}, err
 		} else if inline != "" {
-			imageURL = inline
+			mediaURL = inline
 		}
-		entry := map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL}}
-		if strings.TrimSpace(input.Role) != "" {
-			entry["role"] = input.Role
+		entry, err := mediaEntry(input, mediaURL)
+		if err != nil {
+			return videoprovider.Job{}, err
 		}
 		content = append(content, entry)
 	}
 	payload := map[string]any{"model": c.modelCode, "content": content, "duration": req.DurationSeconds, "resolution": mapResolution(req.Resolution)}
-	// v2: text-to-video requires a concrete ratio (adaptive is rejected), while
-	// image-to-video ignores ratio entirely and always outputs adaptive.
-	if hasFrameInput(req) {
+	// v2: text-to-video requires a concrete ratio (adaptive is rejected),
+	// frame inputs always output adaptive, and multimodal reference tasks
+	// accept a concrete ratio while adaptive stays the documented default.
+	switch {
+	case hasFrameInput(req):
 		payload["ratio"] = "adaptive"
-	} else {
+	case hasReferenceInput(req):
+		if !strings.EqualFold(strings.TrimSpace(req.AspectRatio), "adaptive") {
+			payload["ratio"] = req.AspectRatio
+		}
+	default:
 		if strings.EqualFold(strings.TrimSpace(req.AspectRatio), "adaptive") {
 			return videoprovider.Job{}, invalidRequest("aspect ratio must be a concrete value for text-to-video")
 		}
@@ -130,6 +136,54 @@ func (c *Client) Submit(ctx context.Context, req videoprovider.Request) (videopr
 		return videoprovider.Job{}, invalidResponse("missing task_id", nil)
 	}
 	return videoprovider.Job{ID: response.TaskID, State: videoprovider.StateQueued, RequestID: requestID}, nil
+}
+
+// mediaEntry maps one input to the v2 content entry declared by the official
+// API: image_url / video_url / audio_url, with roles first_frame, last_frame,
+// reference_image, reference_video and reference_audio. Frame images and
+// reference inputs are mutually exclusive upstream; role selection is
+// enforced by the platform capability check before submission.
+func mediaEntry(input videoprovider.Input, mediaURL string) (map[string]any, error) {
+	role := strings.TrimSpace(input.Role)
+	switch mediaKind(input) {
+	case "video":
+		if role == "" {
+			role = "reference_video"
+		}
+		return map[string]any{"type": "video_url", "video_url": map[string]any{"url": mediaURL}, "role": role}, nil
+	case "audio":
+		if role == "" {
+			role = "reference_audio"
+		}
+		return map[string]any{"type": "audio_url", "audio_url": map[string]any{"url": mediaURL}, "role": role}, nil
+	case "image":
+		entry := map[string]any{"type": "image_url", "image_url": map[string]any{"url": mediaURL}}
+		if role != "" {
+			entry["role"] = role
+		}
+		return entry, nil
+	default:
+		return nil, invalidRequest("unsupported input media type " + mediaKind(input))
+	}
+}
+
+// mediaKind prefers the storage-declared media type and falls back to the
+// MIME prefix so legacy tasks without MediaType keep their image behaviour.
+func mediaKind(input videoprovider.Input) string {
+	kind := strings.ToLower(strings.TrimSpace(input.MediaType))
+	switch kind {
+	case "image", "video", "audio":
+		return kind
+	}
+	mimeType := strings.ToLower(strings.TrimSpace(input.MIMEType))
+	switch {
+	case strings.HasPrefix(mimeType, "video/"):
+		return "video"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "audio"
+	default:
+		return "image"
+	}
 }
 
 func (c *Client) Reconcile(ctx context.Context, req videoprovider.Request) (videoprovider.Job, bool, error) {
@@ -278,35 +332,66 @@ func hasFrameInput(req videoprovider.Request) bool {
 	return false
 }
 
-const maxInlineImageBytes = 10 << 20 // kept at parity with the seedance adapter; capability caps inputs at 10MB.
+func hasReferenceInput(req videoprovider.Request) bool {
+	for _, input := range req.Inputs {
+		role := strings.ToLower(strings.TrimSpace(input.Role))
+		if role == "reference_image" || role == "reference_video" || role == "reference_audio" {
+			return true
+		}
+	}
+	return false
+}
 
-// inlinePrivateImage downloads loopback/private-network image URLs and returns
-// them as base64 data URLs. MiniMax fetches image_url itself, so a presigned
+const (
+	// Inline caps mirror the official r2va limits while keeping the base64
+	// request body under MiniMax's 64MB ceiling: reference videos are capped
+	// at 50MB upstream but base64 inflates by ~4/3, so 40MB keeps the total
+	// body feasible; audio caps at the 15MB upstream limit.
+	maxInlineImageBytes = 10 << 20
+	maxInlineVideoBytes = 40 << 20
+	maxInlineAudioBytes = 15 << 20
+)
+
+func inlineLimitFor(kind string) int64 {
+	switch kind {
+	case "video":
+		return maxInlineVideoBytes
+	case "audio":
+		return maxInlineAudioBytes
+	default:
+		return maxInlineImageBytes
+	}
+}
+
+// inlinePrivateMedia downloads loopback/private-network input URLs and returns
+// them as base64 data URLs. MiniMax fetches content itself, so a presigned
 // URL that only resolves inside the deployment network (e.g. MinIO on 127.0.0.1
 // or a docker bridge) is unreachable upstream.
-func (c *Client) inlinePrivateImage(ctx context.Context, input videoprovider.Input) (string, error) {
+func (c *Client) inlinePrivateMedia(ctx context.Context, input videoprovider.Input) (string, error) {
 	if input.URL == "" || publiclyRoutableImageURL(input.URL) {
 		return "", nil
 	}
+	kind := mediaKind(input)
+	limit := inlineLimitFor(kind)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, input.URL, nil)
 	if err != nil {
-		return "", invalidRequest("parse private image url: " + err.Error())
+		return "", invalidRequest("parse private media url: " + err.Error())
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", invalidRequest("download private image: " + err.Error())
+		return "", invalidRequest("download private media: " + err.Error())
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", invalidRequest(fmt.Sprintf("download private image: status %d", resp.StatusCode))
+		return "", invalidRequest(fmt.Sprintf("download private media: status %d", resp.StatusCode))
 	}
-	limited := io.LimitReader(resp.Body, maxInlineImageBytes+1)
+	limited := io.LimitReader(resp.Body, limit+1)
 	raw, err := io.ReadAll(limited)
 	if err != nil {
-		return "", invalidRequest("read private image: " + err.Error())
+		return "", invalidRequest("read private media: " + err.Error())
 	}
-	if len(raw) > maxInlineImageBytes {
-		return "", invalidRequest("private image exceeds 10MB inline limit")
+	if int64(len(raw)) > limit {
+		return "", invalidRequest(fmt.Sprintf("private %s exceeds %dMB inline limit; store it on publicly reachable storage", kind, limit>>20))
 	}
 	mimeType := strings.TrimSpace(input.MIMEType)
 	if mimeType == "" {

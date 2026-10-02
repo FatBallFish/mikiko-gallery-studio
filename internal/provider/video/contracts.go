@@ -28,6 +28,10 @@ type Input struct {
 	StorageDriver   string `json:"-"`
 	ObjectKey       string `json:"-"`
 	MIMEType        string `json:"-"`
+	// MediaType discriminates image/video/audio inputs so adapters can pick
+	// the provider's matching content entry (image_url vs video_url vs
+	// audio_url). Empty means image for legacy tasks.
+	MediaType string `json:"-"`
 }
 
 type Request struct {
