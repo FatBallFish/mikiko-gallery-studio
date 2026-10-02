@@ -279,7 +279,10 @@ export function compatibleCanvasTargets(_document: CanvasDocument, sourceID: str
   if (source.type === 'image') return [
     { type: 'image_generation', role: 'reference' },
     { type: 'video_generation', role: 'first_frame' },
+    { type: 'video_generation', role: 'reference_image' },
   ]
+  if (source.type === 'video') return [{ type: 'video_generation', role: 'reference_video' }]
+  if (source.type === 'audio') return [{ type: 'video_generation', role: 'reference_audio' }]
   if (source.type === 'image_generation') return [{ type: 'image', role: 'result' }]
   return []
 }
@@ -358,6 +361,24 @@ export function canvasPromptResourceCandidates(document: CanvasDocument, promptN
   return candidates.map((candidate) => ({ ...candidate, duplicateName: (nameCounts.get(candidate.name) ?? 0) > 1 }))
 }
 
+export type CanvasPromptOptimizationTarget = { mediaType?: 'image' | 'video'; routeModelCode?: string }
+
+// The optimization guide follows the connected generation node: a video node
+// selects its route model's guide, an image node the image prompt, and a
+// prompt node with no generation downstream stays untyped.
+export function canvasPromptOptimizationTarget(document: CanvasDocument, promptNodeID: string): CanvasPromptOptimizationTarget {
+  const targets = document.edges.filter((edge) => edge.source === promptNodeID && edge.input_role === 'prompt')
+    .map((edge) => document.nodes.find((node) => node.id === edge.target))
+    .filter((node): node is CanvasNode => node?.type === 'image_generation' || node?.type === 'video_generation')
+  const video = targets.find((node) => node.type === 'video_generation')
+  if (video) {
+    const draft = video.payload?.draft
+    const code = draft && typeof draft === 'object' ? String((draft as Record<string, unknown>).route_model_code ?? '').trim() : ''
+    return { mediaType: 'video', routeModelCode: code || undefined }
+  }
+  return targets.length ? { mediaType: 'image' } : {}
+}
+
 export function selectCanvasNodesInRect(nodes: CanvasNode[], rect: { x: number; y: number; width: number; height: number }) {
   const right = rect.x + rect.width
   const bottom = rect.y + rect.height
@@ -431,7 +452,9 @@ function cloneNode(node: CanvasNode): CanvasNode {
 function isLegalConnection(source: CanvasNodeType, target: CanvasNodeType, role: CanvasEdge['input_role']) {
   if (source === 'prompt' && (target === 'image_generation' || target === 'video_generation')) return role === 'prompt'
   if (source === 'image' && target === 'image_generation') return role === 'reference'
-  if (source === 'image' && target === 'video_generation') return role === 'first_frame' || role === 'last_frame'
+  if (source === 'image' && target === 'video_generation') return role === 'first_frame' || role === 'last_frame' || role === 'reference_image'
+  if (source === 'video' && target === 'video_generation') return role === 'reference_video'
+  if (source === 'audio' && target === 'video_generation') return role === 'reference_audio'
   if ((source === 'image_generation' && target === 'image') || (source === 'video_generation' && target === 'video')) return role === 'result'
   return false
 }

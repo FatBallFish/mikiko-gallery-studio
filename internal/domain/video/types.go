@@ -48,6 +48,7 @@ const (
 	InputRoleLastFrame      InputRole = "last_frame"
 	InputRoleReferenceImage InputRole = "reference_image"
 	InputRoleReferenceVideo InputRole = "reference_video"
+	InputRoleReferenceAudio InputRole = "reference_audio"
 )
 
 type Input struct {

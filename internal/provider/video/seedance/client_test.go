@@ -264,3 +264,80 @@ func seedanceCallbackHeaders(secret, timestamp string, body []byte) http.Header 
 		"X-Ark-Signature": []string{hex.EncodeToString(mac.Sum(nil))},
 	}
 }
+
+func TestClientSubmitsReferenceVideoAndAudioInputs(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"ark-job-ref","status":"queued"}`)
+	}))
+	defer server.Close()
+	client, err := seedance.NewClient(seedance.Config{BaseURL: server.URL, APIKey: "key", ModelCode: "doubao-seedance-2-0-260128", Verified: true, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoprovider.Request{
+		TaskID: "task-ref", IdempotencyKey: "idem-ref", TaskType: "reference_to_video",
+		Prompt: "让参考角色跳舞", DurationSeconds: 8, Resolution: "720p", AspectRatio: "adaptive",
+		OutputFormat: "mp4", GenerateAudio: false,
+		Inputs: []videoprovider.Input{
+			{AssetID: "ref-img", Role: "reference_image", URL: "https://93.184.216.34/ref.png", MediaType: "image", MIMEType: "image/png"},
+			{AssetID: "ref-vid", Role: "reference_video", URL: "https://93.184.216.34/ref.mp4", MediaType: "video", MIMEType: "video/mp4"},
+			{AssetID: "ref-audio", Role: "reference_audio", URL: "https://93.184.216.34/ref.wav", MediaType: "audio", MIMEType: "audio/wav"},
+		},
+	}
+	if _, err := client.Submit(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	content, ok := body["content"].([]any)
+	if !ok || len(content) != 4 {
+		t.Fatalf("content = %#v", body["content"])
+	}
+	image := content[1].(map[string]any)
+	video := content[2].(map[string]any)
+	audio := content[3].(map[string]any)
+	if image["type"] != "image_url" || image["role"] != "reference_image" {
+		t.Fatalf("reference image entry = %#v", image)
+	}
+	if video["type"] != "video_url" || video["role"] != "reference_video" || video["video_url"].(map[string]any)["url"] != "https://93.184.216.34/ref.mp4" {
+		t.Fatalf("reference video entry = %#v", video)
+	}
+	if audio["type"] != "audio_url" || audio["role"] != "reference_audio" || audio["audio_url"].(map[string]any)["url"] != "https://93.184.216.34/ref.wav" {
+		t.Fatalf("reference audio entry = %#v", audio)
+	}
+	if body["model"] != "doubao-seedance-2-0-260128" || body["generate_audio"] != false {
+		t.Fatalf("submit body = %#v", body)
+	}
+}
+
+func TestClientDefaultsVideoRoleFromMIMEWhenRoleMissing(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"ark-job-mime","status":"queued"}`)
+	}))
+	defer server.Close()
+	client, err := seedance.NewClient(seedance.Config{BaseURL: server.URL, APIKey: "key", ModelCode: "doubao-seedance-2-0-260128", Verified: true, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := videoprovider.Request{
+		TaskID: "task-mime", IdempotencyKey: "idem-mime", TaskType: "reference_to_video",
+		Prompt: "参考视频演绎", DurationSeconds: 6, Resolution: "720p", AspectRatio: "16:9",
+		OutputFormat: "mp4",
+		Inputs:       []videoprovider.Input{{AssetID: "clip", URL: "https://93.184.216.34/clip.mp4", MIMEType: "video/mp4"}},
+	}
+	if _, err := client.Submit(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	entry := body["content"].([]any)[1].(map[string]any)
+	if entry["type"] != "video_url" || entry["role"] != "reference_video" {
+		t.Fatalf("video entry from MIME fallback = %#v", entry)
+	}
+}

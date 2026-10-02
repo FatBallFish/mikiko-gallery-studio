@@ -316,7 +316,9 @@ func videoRequest(submission GenerationSubmission) (videotaskservice.CreateReque
 			return request, fmt.Errorf("invalid video input asset id: %w", err)
 		}
 		role := domainvideo.InputRole(input.Role)
-		if role != domainvideo.InputRoleFirstFrame && role != domainvideo.InputRoleLastFrame {
+		switch role {
+		case domainvideo.InputRoleFirstFrame, domainvideo.InputRoleLastFrame, domainvideo.InputRoleReferenceImage, domainvideo.InputRoleReferenceVideo, domainvideo.InputRoleReferenceAudio:
+		default:
 			continue
 		}
 		request.Inputs = append(request.Inputs, videotaskservice.InputRequest{AssetID: assetID, Role: role, Ordinal: input.Ordinal})
@@ -420,7 +422,9 @@ func promptReferenceBindings(names []string, inputs []GenerationInput) ([]prompt
 	}
 	assetsByName := make(map[string]string)
 	for _, input := range inputs {
-		if input.Role != domaincanvas.InputRoleReference && input.Role != domaincanvas.InputRoleFirstFrame && input.Role != domaincanvas.InputRoleLastFrame {
+		switch input.Role {
+		case domaincanvas.InputRoleReference, domaincanvas.InputRoleFirstFrame, domaincanvas.InputRoleLastFrame, domaincanvas.InputRoleReferenceImage:
+		default:
 			continue
 		}
 		var payload struct {

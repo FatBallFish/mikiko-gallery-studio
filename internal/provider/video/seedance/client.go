@@ -83,13 +83,17 @@ func (c *Client) Submit(ctx context.Context, req videoprovider.Request) (videopr
 	}
 	content := []map[string]any{{"type": "text", "text": req.Prompt}}
 	for _, input := range req.Inputs {
-		imageURL := input.URL
-		if inline, err := c.inlinePrivateImage(ctx, input); err != nil {
+		mediaURL := input.URL
+		if inline, err := c.inlinePrivateMedia(ctx, input); err != nil {
 			return videoprovider.Job{}, err
 		} else if inline != "" {
-			imageURL = inline
+			mediaURL = inline
 		}
-		content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL}, "role": input.Role})
+		entry, err := mediaEntry(input, mediaURL)
+		if err != nil {
+			return videoprovider.Job{}, err
+		}
+		content = append(content, entry)
 	}
 	payload := map[string]any{"model": c.modelCode, "content": content, "duration": req.DurationSeconds, "resolution": strings.ToLower(req.Resolution), "generate_audio": req.GenerateAudio, "output_format": req.OutputFormat}
 	// Ark rejects an explicit ratio for first-frame / first-last-frame tasks: the
@@ -231,35 +235,35 @@ func mapState(value string) (videoprovider.State, error) {
 	}
 }
 
-const maxInlineImageBytes = 10 << 20 // Ark caps frame images at 10MB; base64 payloads stay under it via a hard stop.
-
-// inlinePrivateImage downloads loopback/private-network image URLs and returns
-// them as base64 data URLs. Ark fetches image_url itself, so a presigned URL
+// inlinePrivateMedia downloads loopback/private-network input URLs and returns
+// them as base64 data URLs. Ark fetches content itself, so a presigned URL
 // that only resolves inside the deployment network (e.g. MinIO on 127.0.0.1 or
-// a docker bridge) is rejected upstream as an invalid image.
-func (c *Client) inlinePrivateImage(ctx context.Context, input videoprovider.Input) (string, error) {
+// a docker bridge) is rejected upstream as an invalid asset.
+func (c *Client) inlinePrivateMedia(ctx context.Context, input videoprovider.Input) (string, error) {
 	if input.URL == "" || publiclyRoutableImageURL(input.URL) {
 		return "", nil
 	}
+	kind := mediaKind(input)
+	limit := inlineLimitFor(kind)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, input.URL, nil)
 	if err != nil {
-		return "", invalidRequest("parse private image url: " + err.Error())
+		return "", invalidRequest("parse private media url: " + err.Error())
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", invalidRequest("download private image: " + err.Error())
+		return "", invalidRequest("download private media: " + err.Error())
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", invalidRequest(fmt.Sprintf("download private image: status %d", resp.StatusCode))
+		return "", invalidRequest(fmt.Sprintf("download private media: status %d", resp.StatusCode))
 	}
-	limited := io.LimitReader(resp.Body, maxInlineImageBytes+1)
+	limited := io.LimitReader(resp.Body, limit+1)
 	raw, err := io.ReadAll(limited)
 	if err != nil {
-		return "", invalidRequest("read private image: " + err.Error())
+		return "", invalidRequest("read private media: " + err.Error())
 	}
-	if len(raw) > maxInlineImageBytes {
-		return "", invalidRequest("private image exceeds 10MB inline limit")
+	if int64(len(raw)) > limit {
+		return "", invalidRequest(fmt.Sprintf("private %s exceeds %dMB inline limit; store it on publicly reachable storage", kind, limit>>20))
 	}
 	mimeType := strings.TrimSpace(input.MIMEType)
 	if mimeType == "" {
@@ -302,6 +306,71 @@ func hasFrameInput(req videoprovider.Request) bool {
 		}
 	}
 	return false
+}
+
+// mediaEntry maps one input to the Ark content entry declared by the official
+// API: image_url / video_url / audio_url. Ark only accepts role
+// reference_video on video entries and reference_audio on audio entries, so
+// empty roles fall back to those defaults; image roles (first_frame,
+// last_frame, reference_image) pass through verbatim.
+func mediaEntry(input videoprovider.Input, mediaURL string) (map[string]any, error) {
+	role := strings.TrimSpace(input.Role)
+	switch mediaKind(input) {
+	case "video":
+		if role == "" {
+			role = "reference_video"
+		}
+		return map[string]any{"type": "video_url", "video_url": map[string]any{"url": mediaURL}, "role": role}, nil
+	case "audio":
+		if role == "" {
+			role = "reference_audio"
+		}
+		return map[string]any{"type": "audio_url", "audio_url": map[string]any{"url": mediaURL}, "role": role}, nil
+	case "image":
+		return map[string]any{"type": "image_url", "image_url": map[string]any{"url": mediaURL}, "role": role}, nil
+	default:
+		return nil, invalidRequest("unsupported input media type " + mediaKind(input))
+	}
+}
+
+// mediaKind prefers the storage-declared media type and falls back to the
+// MIME prefix so legacy tasks without MediaType keep their image behaviour.
+func mediaKind(input videoprovider.Input) string {
+	kind := strings.ToLower(strings.TrimSpace(input.MediaType))
+	switch kind {
+	case "image", "video", "audio":
+		return kind
+	}
+	mimeType := strings.ToLower(strings.TrimSpace(input.MIMEType))
+	switch {
+	case strings.HasPrefix(mimeType, "video/"):
+		return "video"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "audio"
+	default:
+		return "image"
+	}
+}
+
+const (
+	// Inline caps mirror the official multimodal-reference limits while
+	// keeping the base64 body inside Ark's 64MB ceiling: reference videos
+	// cap at 50MB upstream but base64 inflates by ~4/3, so 40MB keeps the
+	// total body feasible; audio caps at the 15MB upstream limit.
+	maxInlineImageBytes = 10 << 20
+	maxInlineVideoBytes = 40 << 20
+	maxInlineAudioBytes = 15 << 20
+)
+
+func inlineLimitFor(kind string) int64 {
+	switch kind {
+	case "video":
+		return maxInlineVideoBytes
+	case "audio":
+		return maxInlineAudioBytes
+	default:
+		return maxInlineImageBytes
+	}
 }
 
 func validateRequest(req videoprovider.Request) error {

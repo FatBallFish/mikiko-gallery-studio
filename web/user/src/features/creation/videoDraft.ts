@@ -1,7 +1,7 @@
 import type { VideoCapability, VideoCapabilityModelGroup, VideoTask, VideoTaskType } from '../../../../shared/api-types'
 
 export type CreationMediaMode = 'image' | 'video'
-export type VideoDraftInputRole = 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video'
+export type VideoDraftInputRole = 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio'
 export type VideoDraft = {
   route_model_code: string
   task_type: VideoTaskType
@@ -110,11 +110,25 @@ export function videoDraftAfterFailure(draft: VideoDraft, error: unknown) {
 }
 
 export function reuseVideoTask(task: VideoTask): VideoDraft {
+  const inputs = (task.inputs ?? [])
+    .filter((input) => input.role === 'first_frame' || input.role === 'last_frame' || input.role === 'reference_image' || input.role === 'reference_video' || input.role === 'reference_audio')
+    .map((input, index) => ({ asset_id: input.asset_id, role: input.role as VideoDraftInputRole, ordinal: input.ordinal ?? index }))
   return {
     route_model_code: task.route_model_code, task_type: task.task_type, prompt_template: task.prompt_template,
-    prompt_variables: [], inputs: [], duration_seconds: task.duration_seconds, resolution: task.resolution,
+    prompt_variables: [], inputs, duration_seconds: task.duration_seconds, resolution: task.resolution,
     aspect_ratio: task.aspect_ratio, generate_audio: task.audio_mode ? task.audio_mode === 'generated' : Boolean(task.generate_audio), output_count: task.requested_output_count,
   }
+}
+
+// Names referenced as {{@名称}} in a prompt template, matching the backend
+// parser: NFC-normalized, trimmed, and escaped \{\{@…\}\} stays literal.
+export function promptReferenceNames(template: string) {
+  const names = new Set<string>()
+  for (const match of template.matchAll(/(?<!\\)\{\{@([^{}]*?)\}\}/g)) {
+    const name = match[1].trim().normalize('NFC')
+    if (name) names.add(name)
+  }
+  return names
 }
 
 export function videoModelForDraft(capability: VideoCapability, draft: VideoDraft): VideoCapabilityModelGroup | undefined {
@@ -128,7 +142,7 @@ export const VIDEO_TASK_INPUT_ROLES: Record<VideoTaskType, VideoDraftInputRole[]
   text_to_video: [],
   image_to_video: ['first_frame'],
   first_last_frame_to_video: ['first_frame', 'last_frame'],
-  reference_to_video: ['reference_image', 'reference_video'],
+  reference_to_video: ['reference_image', 'reference_video', 'reference_audio'],
   video_edit: ['reference_video'],
   video_extend: ['reference_video'],
 }
@@ -143,6 +157,7 @@ export function videoTaskInputLabel(role: VideoDraftInputRole): string {
     case 'last_frame': return '尾帧资产'
     case 'reference_image': return '参考图片'
     case 'reference_video': return '参考视频'
+    case 'reference_audio': return '参考音频'
   }
 }
 
@@ -152,7 +167,7 @@ export function videoTaskInputMissing(taskType: VideoTaskType, inputs: VideoDraf
     case 'text_to_video': return false
     case 'image_to_video': return !filled.has('first_frame')
     case 'first_last_frame_to_video': return !filled.has('first_frame') || !filled.has('last_frame')
-    case 'reference_to_video': return !filled.has('reference_image') && !filled.has('reference_video')
+    case 'reference_to_video': return !filled.has('reference_image') && !filled.has('reference_video') && !filled.has('reference_audio')
     case 'video_edit': case 'video_extend': return !filled.has('reference_video')
   }
 }

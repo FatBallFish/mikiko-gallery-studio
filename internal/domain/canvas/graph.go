@@ -271,7 +271,11 @@ func isLegalConnection(source, target NodeType, role InputRole) bool {
 	case source == NodeTypeImage && target == NodeTypeImageGeneration:
 		return role == InputRoleReference
 	case source == NodeTypeImage && target == NodeTypeVideoGeneration:
-		return role == InputRoleFirstFrame || role == InputRoleLastFrame
+		return role == InputRoleFirstFrame || role == InputRoleLastFrame || role == InputRoleReferenceImage
+	case source == NodeTypeVideo && target == NodeTypeVideoGeneration:
+		return role == InputRoleReferenceVideo
+	case source == NodeTypeAudio && target == NodeTypeVideoGeneration:
+		return role == InputRoleReferenceAudio
 	case (source == NodeTypeImageGeneration && target == NodeTypeImage) || (source == NodeTypeVideoGeneration && target == NodeTypeVideo):
 		return role == InputRoleResult
 	default:

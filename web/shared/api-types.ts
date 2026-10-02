@@ -270,7 +270,7 @@ export type VideoCapabilityGroupWire = {
   max_output_count: number; task_types: VideoTaskType[]; combinations: VideoCapabilityCombinationWire[]
 }
 export type VideoCapabilityListWire = { groups: VideoCapabilityGroupWire[] }
-export type VideoInputRole = 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video'
+export type VideoInputRole = 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio'
 export type VideoInput = { id?: string; asset_id: string; role: VideoInputRole; ordinal: number; asset_snapshot?: Record<string, unknown>; asset?: { id: string; name?: string; preview_url?: string } }
 export type VideoEstimateRequest = {
   project_id: string; route_model_code: string; task_type: VideoTaskType; prompt_template: string
@@ -1501,8 +1501,8 @@ export type TextModelWriteRequest = {
 }
 export type TextModelConnectionTest = { status: 'success'; model_id: ID; model_code: string; api_style: TextModelAPIStyle; latency_ms: number }
 export type PromptOptimizationModelSummary = { id: ID; model_code: string; display_name: string; api_style: TextModelAPIStyle }
-export type PromptOptimizationEstimate = { quote: string; expires_at: string; estimated_points: string; model: PromptOptimizationModelSummary }
-export type PromptOptimizationResult = { run_id: string; optimized_prompt: string; input_tokens: number; output_tokens: number; estimated_points: string; actual_points: string }
+export type PromptOptimizationEstimate = { quote: string; expires_at: string; estimated_points: string; model: PromptOptimizationModelSummary; guide?: string }
+export type PromptOptimizationResult = { run_id: string; optimized_prompt: string; input_tokens: number; output_tokens: number; estimated_points: string; actual_points: string; guide?: string }
 export type RouteModelVisibility = 'public' | 'groups' | 'hidden' | string
 export type RouteModelMediaType = 'image' | 'video'
 export type RouteModel = {

@@ -8,13 +8,14 @@
       "display_name": "Seedance 2.5",
       "validation_status": "untested",
       "execution_mode": "poll",
-      "task_types": ["text_to_video", "image_to_video", "first_last_frame_to_video"],
+      "task_types": ["text_to_video", "image_to_video", "first_last_frame_to_video", "reference_to_video"],
       "input_formats": ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif"],
       "output_formats": ["mp4", "mov"],
       "provider_native_max_n": 1,
       "source_reference": "https://console.volcengine.com/ark/region:cn-beijing/docs/82379/2607688?lang=zh",
       "notes": [
         "模型代码来自已确认产品输入。",
+        "多模态参考上限：30 图 / 10 视频 / 10 音频（总计 50），参考视频与音频总时长各 ≤30 秒；视频 mp4/mov，音频 wav/mp3。",
         "参数组合、音频、回调、限流与结果 URL 生命周期必须由真实账号 PoC 后才能标记 valid。"
       ]
     },
@@ -24,13 +25,14 @@
       "display_name": "Seedance 2.0",
       "validation_status": "untested",
       "execution_mode": "poll",
-      "task_types": ["text_to_video", "image_to_video", "first_last_frame_to_video"],
+      "task_types": ["text_to_video", "image_to_video", "first_last_frame_to_video", "reference_to_video"],
       "input_formats": ["jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif"],
       "output_formats": ["mp4", "mov"],
       "provider_native_max_n": 1,
-      "source_reference": "https://console.volcengine.com/ark/region:cn-beijing/docs/82379/2607688?lang=zh",
+      "source_reference": "https://console.volcengine.com/ark/region:cn-beijing/docs/82379/1520757?lang=zh",
       "notes": [
         "模型代码来自已确认产品输入。",
+        "多模态参考上限：9 图 / 3 视频 / 3 音频，参考视频与音频各 2-15 秒且总时长 ≤15 秒、单个 ≤50MB/15MB，请求体 ≤64MB；音频不能脱离图片或视频单独输入。",
         "参数组合、音频、回调、限流与结果 URL 生命周期必须由真实账号 PoC 后才能标记 valid。"
       ]
     },
@@ -40,13 +42,31 @@
       "display_name": "MiniMax H3",
       "validation_status": "untested",
       "execution_mode": "callback_poll",
-      "task_types": ["text_to_video", "image_to_video", "first_last_frame_to_video"],
+      "task_types": ["text_to_video", "image_to_video", "first_last_frame_to_video", "reference_to_video"],
       "input_formats": ["jpg", "jpeg", "png", "webp", "heic", "heif"],
       "output_formats": ["mp4"],
       "provider_native_max_n": 1,
-      "source_reference": "https://platform.minimaxi.com/docs/guides/video-generation",
+      "source_reference": "https://platform.minimaxi.com/docs/api-reference/video-generation-v2-create",
       "notes": [
         "模型代码来自已确认产品输入。",
+        "多模态参考上限：9 图 / 3 视频 / 3 音频（总计 12），参考视频与音频各 2-15 秒且总时长 ≤15 秒、单个 ≤50MB/15MB，请求体 ≤64MB；帧输入与参考输入互斥。",
+        "参数组合、音频、回调、限流与结果 URL 生命周期必须由真实账号 PoC 后才能标记 valid。"
+      ]
+    },
+    {
+      "provider_code": "minimax",
+      "model_code": "MiniMax-H3-Max",
+      "display_name": "MiniMax H3 Max",
+      "validation_status": "untested",
+      "execution_mode": "callback_poll",
+      "task_types": ["text_to_video", "image_to_video", "first_last_frame_to_video", "reference_to_video"],
+      "input_formats": ["jpg", "jpeg", "png", "webp", "heic", "heif"],
+      "output_formats": ["mp4"],
+      "provider_native_max_n": 1,
+      "source_reference": "https://platform.minimaxi.com/docs/api-reference/video-generation-v2-create",
+      "notes": [
+        "H3-Max 支持 480P/768P、时长 5-15 秒（不支持 4 秒）与 extra.prompt_expansion_mode。",
+        "多模态参考上限与 H3 相同：9 图 / 3 视频 / 3 音频（总计 12）。",
         "参数组合、音频、回调、限流与结果 URL 生命周期必须由真实账号 PoC 后才能标记 valid。"
       ]
     }

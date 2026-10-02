@@ -1069,6 +1069,7 @@ function videoTaskInputs(task: string, draft: ModelDraft) {
       inputs: {
         reference_image: { ...optional, max_count: 10 },
         reference_video: { ...optional, media_types: ["video"], max_count: 5, max_bytes: 100 * 1024 * 1024, formats: ["video/mp4", "video/quicktime"] },
+        reference_audio: { ...optional, media_types: ["audio"], max_count: 3, max_bytes: 15 * 1024 * 1024, formats: ["audio/wav", "audio/x-wav", "audio/mpeg"] },
       },
       min_inputs: 1,
     };
