@@ -48,7 +48,10 @@ func NewClient(cfg Config) (*Client, error) {
 	if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.ModelCode) == "" {
 		return nil, fmt.Errorf("seedance base URL, API key and model code are required")
 	}
-	if _, err := url.ParseRequestURI(cfg.BaseURL); err != nil {
+	// Paths below already carry the /api/v3 prefix; accounts may store either
+	// https://ark.cn-beijing.volces.com or .../api/v3.
+	normalizedBase := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"), "/api/v3")
+	if _, err := url.ParseRequestURI(normalizedBase); err != nil {
 		return nil, fmt.Errorf("parse seedance base URL: %w", err)
 	}
 	client := cfg.HTTPClient
@@ -68,7 +71,7 @@ func NewClient(cfg Config) (*Client, error) {
 		callbackTolerance = defaultCallbackTolerance
 	}
 	return &Client{
-		baseURL: strings.TrimRight(cfg.BaseURL, "/"), apiKey: cfg.APIKey, modelCode: cfg.ModelCode,
+		baseURL: normalizedBase, apiKey: cfg.APIKey, modelCode: cfg.ModelCode,
 		httpClient: client, timeout: timeout, callbackURL: cfg.CallbackURL, callbackSecret: cfg.CallbackSecret,
 		now: now, callbackTolerance: callbackTolerance,
 	}, nil

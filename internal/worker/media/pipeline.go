@@ -51,6 +51,12 @@ func NewPipeline(router storage.Router, probe ProbeInspector, derivatives Deriva
 	if options.TempDir == "" {
 		options.TempDir = filepath.Join(os.TempDir(), "pic-gallery-media")
 	}
+	// Deployment env may carry a relative MEDIA_TEMP_DIR (the default is
+	// "./data/tmp"); probe/poster stages require absolute local paths, so
+	// normalize once at construction.
+	if abs, absErr := filepath.Abs(options.TempDir); absErr == nil {
+		options.TempDir = abs
+	}
 	if options.Policy.SingleFileMaxBytes <= 0 {
 		options.Policy = domainmedia.DefaultPolicy()
 	}
