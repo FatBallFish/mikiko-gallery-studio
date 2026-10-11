@@ -136,3 +136,23 @@ if (malformedDisplayModel.kind !== 'none') {
 if (/后续|版本|暂未|即将/.test(`${malformedDisplayModel.label}${malformedDisplayModel.detail}`)) {
   throw new Error(`malformed payment display should give current actionable guidance without weak wording, got ${JSON.stringify(malformedDisplayModel)}`)
 }
+
+const fallbackDecisionIndex = checkoutPageSource.indexOf('redirectPaymentFallbackAction(paymentWindow, display, dispatched, isMobileDeviceUA())')
+if (fallbackDecisionIndex < 0 || fallbackDecisionIndex < dispatchIndex) {
+  throw new Error('checkout must decide the redirect fallback from the dispatch result and the detected device after dispatching')
+}
+if (!checkoutPageSource.includes('assignCurrentWindowToPaymentURL(')) {
+  throw new Error('blocked redirects on mobile must fall back to assigning the current page to the payment url')
+}
+if (!checkoutPageSource.includes('redirectScanFallback={redirectScanFallback}')) {
+  throw new Error('a popup-blocked desktop redirect must preselect the QR scan fallback inside the payment monitor')
+}
+if (!paymentMonitorSource.includes('redirectPaymentFallbackAction(paymentWindow, display, dispatched, mobileDevice)') || !paymentMonitorSource.includes('assignCurrentWindowToPaymentURL(')) {
+  throw new Error('reopening a redirect payment from the monitor must reuse the device-aware fallback')
+}
+if (!paymentMonitorSource.includes('!mobileDevice') || !paymentMonitorSource.includes('>扫码支付</Button>')) {
+  throw new Error('desktop redirect payments must offer a manual QR scan entry while mobile falls back to same-page navigation')
+}
+if (!paymentMonitorSource.includes('重新打开支付页面')) {
+  throw new Error('the QR scan fallback must offer to reopen the payment window')
+}

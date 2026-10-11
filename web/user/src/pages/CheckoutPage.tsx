@@ -4,13 +4,14 @@ import { cn } from '../../../shared/classnames'
 import { pointsExchangeRules } from '../../../shared/pointsDisplay'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, LoadingState, useApp } from '../components'
+import { isMobileDeviceUA } from '../device'
 import { rdBilling } from '../ui/redesign-classes'
 import { QrCode } from '../ui/icons'
 import { errorMessage } from '../useApiResource'
 import { checkoutPaymentMethodEmptyState, checkoutPlanEmptyState, checkoutUnavailableEmptyState, type CheckoutUnavailableEmptyState } from './checkoutEmptyState'
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import { checkoutPaymentErrorMessage } from './checkoutPaymentError'
-import { closePaymentWindow, dispatchPaymentWindow, paymentMethodNeedsReservedWindow, reservePaymentWindow } from './checkoutPaymentWindow'
+import { assignCurrentWindowToPaymentURL, closePaymentWindow, dispatchPaymentWindow, paymentMethodNeedsReservedWindow, redirectPaymentFallbackAction, reservePaymentWindow } from './checkoutPaymentWindow'
 import { checkoutPublicPaymentMethod, type CheckoutPaymentBrand } from './checkoutPaymentMethods'
 import { checkoutCancelResultState, checkoutMoney, checkoutOrderActionState, checkoutPoints, checkoutRecentOrderRows } from './checkoutOrderState'
 import { checkoutPlanValidityLabel, checkoutPurchasablePlans } from './checkoutPlans'
@@ -76,6 +77,7 @@ export function CheckoutPage() {
   const [customAmount, setCustomAmount] = useState('25.00')
   const [purchaseType, setPurchaseType] = useState<'plan' | 'custom_amount'>('plan')
   const [monitorOrder, setMonitorOrder] = useState<CashierOrder | null>(null)
+  const [redirectScanFallback, setRedirectScanFallback] = useState(false)
   const [detailOrder, setDetailOrder] = useState<CashierOrder | null>(null)
   const [recentOrders, setRecentOrders] = useState<CashierOrder[]>([])
   const [recentLoading, setRecentLoading] = useState(true)
@@ -164,7 +166,11 @@ export function CheckoutPage() {
         visible_method: selectedMethod,
         client_return_url: `${window.location.origin}${window.location.pathname}#/checkout`,
       }, orderIdempotencyKey)
-      dispatchPaymentWindow(paymentWindow, checkoutPaymentDisplayModel(nextOrder))
+      const display = checkoutPaymentDisplayModel(nextOrder)
+      const dispatched = dispatchPaymentWindow(paymentWindow, checkoutPaymentDisplayModel(nextOrder))
+      const redirectFallback = redirectPaymentFallbackAction(paymentWindow, display, dispatched, isMobileDeviceUA())
+      if (redirectFallback.kind === 'assign') assignCurrentWindowToPaymentURL(redirectFallback.href)
+      setRedirectScanFallback(redirectFallback.kind === 'qr')
       setDetailOrder(null)
       setMonitorOrder(nextOrder)
       void loadRecentOrders()
@@ -382,6 +388,7 @@ export function CheckoutPage() {
         <PaymentMonitorModal
           order={monitorOrder}
           busy={busy}
+          redirectScanFallback={redirectScanFallback}
           onOrderChange={setMonitorOrder}
           onSuccess={(next) => {
             setMonitorOrder(next)
@@ -391,6 +398,7 @@ export function CheckoutPage() {
           }}
           onClose={() => {
             setMonitorOrder(null)
+            setRedirectScanFallback(false)
           }}
           onCancel={(target) => void cancelOrder(target)}
           onMockPay={(target) => void mockPay(target)}

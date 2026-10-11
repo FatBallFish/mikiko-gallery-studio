@@ -1,10 +1,12 @@
 import fs from 'node:fs'
 import type { CheckoutPaymentDisplayModel } from './checkoutPaymentDisplay'
 import {
+  assignCurrentWindowToPaymentURL,
   closePaymentWindow,
   dispatchPaymentWindow,
   parsePaymentFormHTML,
   paymentMethodNeedsReservedWindow,
+  redirectPaymentFallbackAction,
   reservePaymentWindow,
   type PaymentWindow,
 } from './checkoutPaymentWindow'
@@ -175,4 +177,38 @@ if (explicitlyClosed.closedCount !== 1) {
 
 if (reservePaymentWindow(() => null) !== null) {
   throw new Error('popup blocker should be represented by a null reservation')
+}
+
+const wapRedirect: CheckoutPaymentDisplayModel = {
+  kind: 'redirect',
+  label: '跳转支付',
+  detail: '测试',
+  href: 'https://openapi.alipay.com/gateway.do?method=alipay.trade.wap.pay',
+}
+if (redirectPaymentFallbackAction(fakeWindow(), wapRedirect, true, true).kind !== 'none' || redirectPaymentFallbackAction(fakeWindow(), wapRedirect, true, false).kind !== 'none') {
+  throw new Error('a dispatched redirect must not trigger a fallback on either device kind')
+}
+if (redirectPaymentFallbackAction(fakeWindow(), wapRedirect, false, true).kind !== 'none') {
+  throw new Error('an existing window handle must never trigger the redirect fallback')
+}
+const blockedMobile = redirectPaymentFallbackAction(null, wapRedirect, false, true)
+if (blockedMobile.kind !== 'assign' || blockedMobile.href !== wapRedirect.href) {
+  throw new Error(`a blocked redirect on mobile must assign the current page, got ${JSON.stringify(blockedMobile)}`)
+}
+const blockedDesktop = redirectPaymentFallbackAction(null, wapRedirect, false, false)
+if (blockedDesktop.kind !== 'qr' || blockedDesktop.href !== wapRedirect.href) {
+  throw new Error(`a blocked redirect on desktop must fall back to the QR scan panel, got ${JSON.stringify(blockedDesktop)}`)
+}
+for (const display of [
+  { kind: 'qr_code', label: '扫码支付', detail: '测试', href: 'weixin://pay' },
+  { kind: 'form', label: '表单支付', detail: '测试', formHtml: '<form></form>' },
+  { kind: 'redirect', label: '跳转支付', detail: '测试' },
+] satisfies CheckoutPaymentDisplayModel[]) {
+  if (redirectPaymentFallbackAction(null, display, false, true).kind !== 'none' || redirectPaymentFallbackAction(null, display, false, false).kind !== 'none') {
+    throw new Error(`${display.kind} without a dispatched redirect href must not trigger the fallback`)
+  }
+}
+
+if (assignCurrentWindowToPaymentURL('javascript:alert(1)') || assignCurrentWindowToPaymentURL('data:text/html,boom') || assignCurrentWindowToPaymentURL('http://pay.example.test/pay')) {
+  throw new Error('current-page payment assignment must reject unsafe URLs')
 }
