@@ -136,10 +136,22 @@ func alipayRSA2Sign(values url.Values, privateKeyPEM string) (string, error) {
 	return base64.StdEncoding.EncodeToString(signature), nil
 }
 
+// alipaySignContent builds the request signing content per the Alipay open
+// gateway request rule: exclude the signature itself and empty values, sort
+// by key ASCII ascending, join raw (non URL-encoded) key=value pairs.
+//
+// sign_type STAYS in the content for request signing — verified against the
+// live gateway (signing without it always yields isv.invalid-signature while
+// the same key verifies once sign_type participates) and matching the
+// reference SDK behavior (alipay-sdk-java request signing, smartwalle/alipay
+// URLValues+sign). This is deliberately asymmetric with webhook verification
+// in the handlers package, where Alipay's async notify signatures must be
+// checked over content that EXCLUDES sign_type.
 func alipaySignContent(values url.Values) string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
-		if key == "sign" || key == "sign_type" {
+		value := strings.TrimSpace(values.Get(key))
+		if key == "sign" || value == "" {
 			continue
 		}
 		keys = append(keys, key)
@@ -147,11 +159,7 @@ func alipaySignContent(values url.Values) string {
 	sort.Strings(keys)
 	parts := make([]string, 0, len(keys))
 	for _, key := range keys {
-		value := strings.TrimSpace(values.Get(key))
-		if value == "" {
-			continue
-		}
-		parts = append(parts, key+"="+value)
+		parts = append(parts, key+"="+values.Get(key))
 	}
 	return strings.Join(parts, "&")
 }

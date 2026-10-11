@@ -2,12 +2,16 @@ package cashier
 
 import (
 	"context"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -92,6 +96,12 @@ func TestAlipayPaymentRejectsFractionalFen(t *testing.T) {
 
 func alipayTestPrivateKeyPEM(t *testing.T) string {
 	t.Helper()
+	_, pem := alipayTestKeyPair(t)
+	return pem
+}
+
+func alipayTestKeyPair(t *testing.T) (*rsa.PrivateKey, string) {
+	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
 		t.Fatalf("generate rsa key: %v", err)
@@ -100,7 +110,57 @@ func alipayTestPrivateKeyPEM(t *testing.T) string {
 	if len(privatePEM) == 0 {
 		t.Fatal("expected private key pem")
 	}
-	return string(privatePEM)
+	return key, string(privatePEM)
+}
+
+// TestAlipayRequestSignatureIncludesSignType pins the gateway contract that
+// cost us a production incident: the signed request content includes
+// sign_type (only sign itself and empty values are excluded), so the
+// signature must verify over the sorted content rebuilt with sign_type.
+func TestAlipayRequestSignatureIncludesSignType(t *testing.T) {
+	privateKey, privatePEM := alipayTestKeyPair(t)
+	paymentURL, _, err := BuildAlipayPaymentURL(CallbackURLConfig{SiteBaseURL: "https://pic.example.com"}, PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "alipay_direct", Config: map[string]any{
+			"app_id": "app-123", "app_private_key": privatePEM,
+		}},
+		OrderNo: "PGO-ALI-SIGNTYPE", AmountCNY: "1.00", Subject: "sign type",
+	})
+	if err != nil {
+		t.Fatalf("build payment url: %v", err)
+	}
+	query := mustAlipayQuery(t, paymentURL)
+	signature, err := base64.StdEncoding.DecodeString(query.Get("sign"))
+	if err != nil {
+		t.Fatalf("decode signature: %v", err)
+	}
+
+	rebuild := func(includeSignType bool) string {
+		keys := make([]string, 0, len(query))
+		for key := range query {
+			if key == "sign" || query.Get(key) == "" {
+				continue
+			}
+			if key == "sign_type" && !includeSignType {
+				continue
+			}
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			parts = append(parts, key+"="+query.Get(key))
+		}
+		return strings.Join(parts, "&")
+	}
+
+	digest := sha256.Sum256([]byte(rebuild(true)))
+	if err := rsa.VerifyPKCS1v15(&privateKey.PublicKey, crypto.SHA256, digest[:], signature); err != nil {
+		t.Fatalf("signature must verify over content including sign_type: %v", err)
+	}
+	digestWithout := sha256.Sum256([]byte(rebuild(false)))
+	if err := rsa.VerifyPKCS1v15(&privateKey.PublicKey, crypto.SHA256, digestWithout[:], signature); err == nil {
+		t.Fatal("signature must NOT verify over content excluding sign_type")
+	}
 }
 
 func TestAlipayPaymentUsesWapPayForMobileDevices(t *testing.T) {
