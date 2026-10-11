@@ -37,6 +37,28 @@ func NewAlipayPaymentDisplayBuilder(callbacks CallbackURLConfig) PaymentDisplayB
 	}
 }
 
+// alipayBeijingTime formats timestamps in GMT+8 as required by the Alipay
+// open API gateway (timestamp uses Beijing local time, not UTC).
+func alipayBeijingTime() string {
+	const beijing = 8 * 60 * 60
+	return time.Now().In(time.FixedZone("GMT+8", beijing)).Format("2006-01-02 15:04:05")
+}
+
+// alipayTradeProduct describes the trade page variant: the PC web cashier
+// (alipay.trade.page.pay) and the mobile web cashier (alipay.trade.wap.pay)
+// differ in method, product_code and cashier behavior.
+type alipayTradeProduct struct {
+	method      string
+	productCode string
+}
+
+func alipayTradeProductForDevice(clientDevice string) alipayTradeProduct {
+	if strings.EqualFold(strings.TrimSpace(clientDevice), "mobile") {
+		return alipayTradeProduct{method: "alipay.trade.wap.pay", productCode: "QUICK_WAP_WAY"}
+	}
+	return alipayTradeProduct{method: "alipay.trade.page.pay", productCode: "FAST_INSTANT_TRADE_PAY"}
+}
+
 func BuildAlipayPaymentURL(callbacks CallbackURLConfig, req PaymentDisplayRequest) (string, bool, error) {
 	instance := req.Instance
 	gatewayURL := strings.TrimSpace(configString(instance.Config, "gateway_url", "gatewayUrl"))
@@ -51,19 +73,20 @@ func BuildAlipayPaymentURL(callbacks CallbackURLConfig, req PaymentDisplayReques
 	if amountErr != nil {
 		return "", false, amountErr
 	}
+	product := alipayTradeProductForDevice(req.ClientDevice)
 	notifyURL, returnURL := cashierCallbackURLs(callbacks, instance.Config, "alipay_direct", req.ClientReturnURL)
 	bizContent, _ := json.Marshal(map[string]string{
 		"out_trade_no": strings.TrimSpace(req.OrderNo),
 		"total_amount": amountCNY,
 		"subject":      defaultString(strings.TrimSpace(req.Subject), "Pic Gallery 充值"),
-		"product_code": "FAST_INSTANT_TRADE_PAY",
+		"product_code": product.productCode,
 	})
 	values := url.Values{}
 	values.Set("app_id", appID)
-	values.Set("method", "alipay.trade.page.pay")
+	values.Set("method", product.method)
 	values.Set("charset", "utf-8")
 	values.Set("sign_type", "RSA2")
-	values.Set("timestamp", time.Now().UTC().Format("2006-01-02 15:04:05"))
+	values.Set("timestamp", alipayBeijingTime())
 	values.Set("version", "1.0")
 	values.Set("notify_url", notifyURL)
 	values.Set("return_url", returnURL)

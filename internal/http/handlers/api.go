@@ -1338,6 +1338,7 @@ func (a *API) HandleCashierOrders(w http.ResponseWriter, r *http.Request) {
 		VisibleMethod:   req.VisibleMethod,
 		ClientReturnURL: req.ClientReturnURL,
 		IdempotencyKey:  strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+		ClientDevice:    cashierClientDeviceKind(r.Header.Get("User-Agent")),
 	})
 	if createErr != nil {
 		httpx.WriteError(w, r, createErr)
@@ -1353,6 +1354,31 @@ type cashierOrderCreateInput struct {
 	VisibleMethod   string
 	ClientReturnURL string
 	IdempotencyKey  string
+	ClientDevice    string
+}
+
+// cashierClientDeviceKind classifies a request user agent as "mobile" or
+// "desktop" so providers can pick the matching cashier product (Alipay
+// page.pay vs wap.pay). Returns "" when the agent cannot be classified.
+func cashierClientDeviceKind(userAgent string) string {
+	ua := strings.ToLower(userAgent)
+	if ua == "" {
+		return ""
+	}
+	mobileHints := []string{
+		"android", "iphone", "ipod", "ipad", "mobile", "phone",
+		"windows phone", "harmonyos", "micromessenger", "aliapp", "alipayclient",
+	}
+	for _, hint := range mobileHints {
+		if strings.Contains(ua, hint) {
+			return "mobile"
+		}
+	}
+	// iPadOS 13+ Safari identifies as macOS; touch-capable Macs are mobile web.
+	if strings.Contains(ua, "macintosh") && strings.Contains(ua, "safari") {
+		return "desktop"
+	}
+	return ""
 }
 
 func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierOrderCreateInput) (domainbilling.PaymentOrder, *errs.Error) {
@@ -1420,6 +1446,7 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 			AmountCNY:       result.AmountCNY,
 			Subject:         result.PlanName,
 			ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
+			ClientDevice:    req.ClientDevice,
 		})
 		if paymentErr != nil {
 			if !outcomeUncertain {
@@ -1464,6 +1491,7 @@ func (a *API) createCashierOrder(ctx context.Context, userID int64, req cashierO
 		AmountCNY:       result.AmountCNY,
 		Subject:         result.PlanName,
 		ClientReturnURL: strings.TrimSpace(req.ClientReturnURL),
+		ClientDevice:    req.ClientDevice,
 	})
 	if paymentErr != nil {
 		if !outcomeUncertain {
@@ -4919,7 +4947,7 @@ func (a *API) HandleAdminCashierProviderInstances(w http.ResponseWriter, r *http
 			httpx.WriteError(w, r, normalizeAppError(err))
 			return
 		}
-		items := cashierProviderInstancePayloads(instances)
+		items := a.cashierProviderInstancePayloads(instances)
 		httpx.WriteSuccess(w, r, http.StatusOK, pagedPayload(paginateAny(items, page, pageSize), page, pageSize, len(items)))
 	case http.MethodPost:
 		req, ok := decodeCashierProviderInstanceRequest(w, r)
@@ -4935,7 +4963,7 @@ func (a *API) HandleAdminCashierProviderInstances(w http.ResponseWriter, r *http
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusCreated, cashierProviderInstancePayload(normalized))
+		httpx.WriteSuccess(w, r, http.StatusCreated, a.cashierProviderInstancePayload(normalized))
 	default:
 		writeMethodNotAllowed(w, r)
 	}
@@ -4970,7 +4998,7 @@ func (a *API) HandleAdminCashierProviderInstanceDetail(w http.ResponseWriter, r 
 	}
 	switch r.Method {
 	case http.MethodGet:
-		httpx.WriteSuccess(w, r, http.StatusOK, cashierProviderInstancePayload(instances[index]))
+		httpx.WriteSuccess(w, r, http.StatusOK, a.cashierProviderInstancePayload(instances[index]))
 	case http.MethodPut:
 		req, ok := decodeCashierProviderInstanceRequest(w, r)
 		if !ok {
@@ -4985,7 +5013,7 @@ func (a *API) HandleAdminCashierProviderInstanceDetail(w http.ResponseWriter, r 
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, cashierProviderInstancePayload(normalized))
+		httpx.WriteSuccess(w, r, http.StatusOK, a.cashierProviderInstancePayload(normalized))
 	case http.MethodDelete:
 		deleted, err := a.cashierConfigFacade().DeleteProviderInstance(r.Context(), instanceID, admin.AdminID)
 		if err != nil {
@@ -4996,10 +5024,87 @@ func (a *API) HandleAdminCashierProviderInstanceDetail(w http.ResponseWriter, r 
 			httpx.WriteError(w, r, normalizeAppError(auditErr))
 			return
 		}
-		httpx.WriteSuccess(w, r, http.StatusOK, cashierProviderInstancePayload(deleted))
+		httpx.WriteSuccess(w, r, http.StatusOK, a.cashierProviderInstancePayload(deleted))
 	default:
 		writeMethodNotAllowed(w, r)
 	}
+}
+
+// HandleAdminAlipaySignatureCheck lets operators verify an Alipay direct
+// instance's key pair against the live gateway without creating a real order.
+// It signs a harmless alipay.trade.query for a non-existent trade; the
+// gateway verifies the signature before business logic, so the response
+// distinguishes a key mismatch (invalid-signature) from a working setup.
+func (a *API) HandleAdminAlipaySignatureCheck(w http.ResponseWriter, r *http.Request) {
+	if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageCashier); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	var req struct {
+		InstanceID    int64  `json:"instance_id"`
+		GatewayURL    string `json:"gateway_url"`
+		AppID         string `json:"app_id"`
+		AppPrivateKey string `json:"app_private_key"`
+	}
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
+		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
+		return
+	}
+	// An instance_id lets operators verify an already-saved instance without
+	// retyping its private key; explicit body values win over stored config so
+	// a new key can be checked before saving.
+	if req.InstanceID > 0 {
+		instances, listErr := a.cashierConfigFacade().ProviderInstances(r.Context())
+		if listErr != nil {
+			httpx.WriteError(w, r, normalizeAppError(listErr))
+			return
+		}
+		var stored *cashierProviderInstance
+		for index := range instances {
+			if instances[index].ID == req.InstanceID {
+				stored = &instances[index]
+				break
+			}
+		}
+		if stored == nil {
+			httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "payment provider instance not found"))
+			return
+		}
+		if strings.TrimSpace(req.GatewayURL) == "" {
+			req.GatewayURL = mapStringValue(stored.Config, "gateway_url", "gatewayUrl")
+		}
+		if strings.TrimSpace(req.AppID) == "" {
+			req.AppID = mapStringValue(stored.Config, "app_id", "appId")
+		}
+		if strings.TrimSpace(req.AppPrivateKey) == "" {
+			req.AppPrivateKey = mapStringValue(stored.Config, "app_private_key", "private_key", "privateKey")
+		}
+	}
+	if strings.TrimSpace(req.AppPrivateKey) == "" {
+		httpx.WriteError(w, r, errs.BadRequest("app_private_key is required"))
+		return
+	}
+	result, checkErr := cashierservice.CheckAlipaySignature(r.Context(), cashierservice.AlipaySignatureCheckRequest{
+		GatewayURL:    req.GatewayURL,
+		AppID:         req.AppID,
+		AppPrivateKey: req.AppPrivateKey,
+	})
+	if checkErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(checkErr))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"signature_ok":     result.SignatureOK,
+		"network_error":    result.NetworkError,
+		"gateway_code":     result.Code,
+		"gateway_sub_code": result.SubCode,
+		"gateway_msg":      result.Msg,
+		"hint":             cashierservice.AlipaySignatureCheckHint(result),
+	})
 }
 
 func (a *API) HandleAdminCashierOrders(w http.ResponseWriter, r *http.Request) {
@@ -10810,24 +10915,6 @@ func appendQuery(raw string, values url.Values) string {
 	return parsed.String()
 }
 
-func alipayRSA2Sign(values url.Values, privateKeyPEM string) (string, *errs.Error) {
-	privateKeyPEM = strings.TrimSpace(privateKeyPEM)
-	if privateKeyPEM == "" {
-		return "", errs.BadRequest("alipay private key is required")
-	}
-	privateKey, err := parseRSAPrivateKey(privateKeyPEM)
-	if err != nil {
-		return "", errs.BadRequest("alipay private key is invalid")
-	}
-	signContent := alipaySignContent(values)
-	digest := sha256.Sum256([]byte(signContent))
-	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, digest[:])
-	if err != nil {
-		return "", errs.Internal("failed to sign alipay payment")
-	}
-	return base64.StdEncoding.EncodeToString(signature), nil
-}
-
 func alipayRSA2Verify(values url.Values, publicKeyPEM string, signatureBase64 string) bool {
 	publicKey, err := parseRSAPublicKey(publicKeyPEM)
 	if err != nil {
@@ -11035,11 +11122,15 @@ func parseRSAPublicKey(raw string) (*rsa.PublicKey, error) {
 	return key, nil
 }
 
+// alipaySignContent builds the string to verify against an Alipay RSA2
+// signature. Per the official signing rules both the signature itself and
+// sign_type are excluded, values keep their raw (non URL-encoded) form, and
+// empty values are skipped — this applies to async notify payloads as well.
 func alipaySignContent(values url.Values) string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		value := strings.TrimSpace(values.Get(key))
-		if key == "sign" || value == "" {
+		if key == "sign" || key == "sign_type" || value == "" {
 			continue
 		}
 		keys = append(keys, key)
@@ -11217,16 +11308,25 @@ func (a *API) cashierProviderInstances(ctx context.Context) []cashierProviderIns
 	return instances
 }
 
-func cashierProviderInstancePayloads(instances []cashierProviderInstance) []map[string]any {
+func (a *API) cashierProviderInstancePayloads(instances []cashierProviderInstance) []map[string]any {
 	items := make([]map[string]any, 0, len(instances))
 	for _, item := range instances {
-		items = append(items, cashierProviderInstancePayload(item))
+		items = append(items, a.cashierProviderInstancePayload(item))
 	}
 	return items
 }
 
-func cashierProviderInstancePayload(item cashierProviderInstance) map[string]any {
-	return cashierservice.ProviderInstancePayload(item)
+// cashierProviderInstancePayload renders an instance for the admin console
+// and includes the effective callback URLs (notify/return) so operators can
+// copy them into the provider platform configuration.
+func (a *API) cashierProviderInstancePayload(item cashierProviderInstance) map[string]any {
+	payload := cashierservice.ProviderInstancePayload(item)
+	notifyURL, returnURL := a.cashierCallbackURLs(item, item.ProviderType)
+	payload["callback_urls"] = map[string]any{
+		"notify_url": notifyURL,
+		"return_url": returnURL,
+	}
+	return payload
 }
 
 func int64FromAny(value any) int64 {

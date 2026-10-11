@@ -6,9 +6,11 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
 )
@@ -99,4 +101,84 @@ func alipayTestPrivateKeyPEM(t *testing.T) string {
 		t.Fatal("expected private key pem")
 	}
 	return string(privatePEM)
+}
+
+func TestAlipayPaymentUsesWapPayForMobileDevices(t *testing.T) {
+	privateKey := alipayTestPrivateKeyPEM(t)
+	config := map[string]any{"app_id": "app-123", "app_private_key": privateKey}
+	base := PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ID: 7, ProviderType: "alipay_direct", Config: config},
+		OrderNo:  "PGO-ALI-DEV", AmountCNY: "9.9", Subject: "device test",
+	}
+
+	desktop := base
+	desktopURL, _, err := BuildAlipayPaymentURL(CallbackURLConfig{SiteBaseURL: "https://pic.example.com"}, desktop)
+	if err != nil {
+		t.Fatalf("build desktop payment url: %v", err)
+	}
+	if desktopQuery := mustAlipayQuery(t, desktopURL); desktopQuery.Get("method") != "alipay.trade.page.pay" || !strings.Contains(desktopQuery.Get("biz_content"), "FAST_INSTANT_TRADE_PAY") {
+		t.Fatalf("desktop must use page.pay, got %s", desktopURL)
+	}
+
+	mobile := base
+	mobile.ClientDevice = "mobile"
+	mobileURL, _, err := BuildAlipayPaymentURL(CallbackURLConfig{SiteBaseURL: "https://pic.example.com"}, mobile)
+	if err != nil {
+		t.Fatalf("build mobile payment url: %v", err)
+	}
+	mobileQuery := mustAlipayQuery(t, mobileURL)
+	if mobileQuery.Get("method") != "alipay.trade.wap.pay" || !strings.Contains(mobileQuery.Get("biz_content"), "QUICK_WAP_WAY") {
+		t.Fatalf("mobile must use wap.pay with QUICK_WAP_WAY, got %s", mobileURL)
+	}
+}
+
+func TestAlipayPaymentNormalizesTotalAmountToTwoDecimals(t *testing.T) {
+	privateKey := alipayTestPrivateKeyPEM(t)
+	for raw, want := range map[string]string{"9.90000": "9.90", "9.9": "9.90", "12.50000": "12.50"} {
+		req := PaymentDisplayRequest{
+			Instance: domaincashier.ProviderInstance{ProviderType: "alipay_direct", Config: map[string]any{
+				"app_id": "app-123", "app_private_key": privateKey,
+			}},
+			OrderNo: "PGO-ALI-AMOUNT", AmountCNY: raw, Subject: "amount",
+		}
+		paymentURL, _, err := BuildAlipayPaymentURL(CallbackURLConfig{}, req)
+		if err != nil {
+			t.Fatalf("build payment url for %s: %v", raw, err)
+		}
+		bizContent := mustAlipayQuery(t, paymentURL).Get("biz_content")
+		if !strings.Contains(bizContent, fmt.Sprintf(`"total_amount":%q`, want)) {
+			t.Fatalf("expected total_amount %s for raw %s, got %s", want, raw, bizContent)
+		}
+	}
+}
+
+func TestAlipayPaymentTimestampUsesBeijingTime(t *testing.T) {
+	privateKey := alipayTestPrivateKeyPEM(t)
+	paymentURL, _, err := BuildAlipayPaymentURL(CallbackURLConfig{}, PaymentDisplayRequest{
+		Instance: domaincashier.ProviderInstance{ProviderType: "alipay_direct", Config: map[string]any{
+			"app_id": "app-123", "app_private_key": privateKey,
+		}},
+		OrderNo: "PGO-ALI-TZ", AmountCNY: "1.00", Subject: "tz",
+	})
+	if err != nil {
+		t.Fatalf("build payment url: %v", err)
+	}
+	timestamp := mustAlipayQuery(t, paymentURL).Get("timestamp")
+	parsed, err := time.ParseInLocation("2006-01-02 15:04:05", timestamp, time.FixedZone("GMT+8", 8*60*60))
+	if err != nil {
+		t.Fatalf("timestamp %q is not in alipay format", timestamp)
+	}
+	beijingNow := time.Now().In(time.FixedZone("GMT+8", 8*60*60))
+	if diff := parsed.Sub(beijingNow); diff > time.Minute || diff < -time.Minute {
+		t.Fatalf("timestamp %q must be Beijing local time, now=%s", timestamp, beijingNow.Format("2006-01-02 15:04:05"))
+	}
+}
+
+func mustAlipayQuery(t *testing.T, paymentURL string) url.Values {
+	t.Helper()
+	parsed, err := url.Parse(paymentURL)
+	if err != nil {
+		t.Fatalf("parse payment url: %v", err)
+	}
+	return parsed.Query()
 }

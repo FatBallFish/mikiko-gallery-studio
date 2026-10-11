@@ -41,6 +41,9 @@ type PaymentDisplayRequest struct {
 	AmountCNY       string
 	Subject         string
 	ClientReturnURL string
+	// ClientDevice is the caller's device kind derived from the request
+	// user agent: "mobile", "desktop" or "" when unknown.
+	ClientDevice string
 }
 
 type PaymentDisplayResult struct {
@@ -137,5 +140,5 @@ func cashierAmountCNYWithExactFen(raw string) (string, error) {
 	if !amountFen.Equal(amountFen.Truncate(0)) {
 		return "", errs.BadRequest("amount_cny must not contain fractional fen")
 	}
-	return strings.TrimSpace(raw), nil
+	return amount.StringFixed(2), nil
 }
