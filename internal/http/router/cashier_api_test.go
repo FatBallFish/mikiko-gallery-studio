@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1670,7 +1671,11 @@ func TestCashierOrderSchedulesConfiguredProviderInstance(t *testing.T) {
 	if err := json.Unmarshal([]byte(query.Get("biz_content")), &bizContent); err != nil {
 		t.Fatalf("decode alipay biz_content: %v", err)
 	}
-	if query.Get("notify_url") == "" || query.Get("return_url") == "" || bizContent["out_trade_no"] != createResp.Data.OrderNo || bizContent["total_amount"] != createResp.Data.AmountCNY {
+	amountValue, parseErr := strconv.ParseFloat(createResp.Data.AmountCNY, 64)
+	if parseErr != nil {
+		t.Fatalf("parse order amount %q: %v", createResp.Data.AmountCNY, parseErr)
+	}
+	if query.Get("notify_url") == "" || query.Get("return_url") == "" || bizContent["out_trade_no"] != createResp.Data.OrderNo || bizContent["total_amount"] != fmt.Sprintf("%.2f", amountValue) {
 		t.Fatalf("expected alipay url to carry callback and order payload, got %s", createResp.Data.PaymentURL)
 	}
 	if query.Get("sign_type") != "RSA2" || query.Get("sign") == "" {
@@ -1852,7 +1857,7 @@ func TestCashierEasyPayPopupDisplayIsSignedAndPersisted(t *testing.T) {
 	if payURL.String() == "mock://checkout/"+createResp.Data.OrderNo || !strings.HasSuffix(payURL.Path, "/submit.php") {
 		t.Fatalf("expected easypay submit URL, got %s", createResp.Data.PaymentURL)
 	}
-	if query.Get("pid") != "10001" || query.Get("type") != "alipay" || query.Get("out_trade_no") != createResp.Data.OrderNo || query.Get("money") != "12.50000" || query.Get("sign") == "" || query.Get("sign_type") != "MD5" {
+	if query.Get("pid") != "10001" || query.Get("type") != "alipay" || query.Get("out_trade_no") != createResp.Data.OrderNo || query.Get("money") != "12.50" || query.Get("sign") == "" || query.Get("sign_type") != "MD5" {
 		t.Fatalf("unexpected easypay query params: %s", createResp.Data.PaymentURL)
 	}
 	if createResp.Data.PaymentDisplay["payment_url"] != createResp.Data.PaymentURL {
@@ -1956,7 +1961,7 @@ func TestCashierEasyPayAPIModeUsesMAPIAndPersistsDisplay(t *testing.T) {
 	if upstreamPath != "/mapi.php" {
 		t.Fatalf("expected easypay mapi path, got %q", upstreamPath)
 	}
-	if upstreamValues.Get("pid") != "10001" || upstreamValues.Get("type") != "alipay" || upstreamValues.Get("out_trade_no") != createResp.Data.OrderNo || upstreamValues.Get("money") != "12.50000" || upstreamValues.Get("clientip") != "127.0.0.1" || upstreamValues.Get("sign") == "" || upstreamValues.Get("sign_type") != "MD5" {
+	if upstreamValues.Get("pid") != "10001" || upstreamValues.Get("type") != "alipay" || upstreamValues.Get("out_trade_no") != createResp.Data.OrderNo || upstreamValues.Get("money") != "12.50" || upstreamValues.Get("clientip") != "127.0.0.1" || upstreamValues.Get("sign") == "" || upstreamValues.Get("sign_type") != "MD5" {
 		t.Fatalf("unexpected easypay mapi params: %#v", upstreamValues)
 	}
 	if createResp.Data.PaymentURL != "https://pay.example.com/h5/session" || createResp.Data.QRCode != "https://pay.example.com/qr/session" {
@@ -2135,7 +2140,7 @@ func TestCashierEasyPayWebhookRejectsOversizedSignedBody(t *testing.T) {
 }
 
 func TestCashierAlipayWebhookRejectsInvalidSignature(t *testing.T) {
-	handler, userToken, privateKey := setupAlipayCashierTest(t, "cashier-alipay-invalid-sign-user@example.com")
+	handler, userToken, privateKey, _ := setupAlipayCashierTest(t, "cashier-alipay-invalid-sign-user@example.com")
 	order := createAlipayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
 	values := alipayWebhookValuesForTest(t, order, "app-123", privateKey, "12.50000", "alipay-trade-invalid-sign")
 	values.Set("sign", "invalid-signature")
@@ -2153,7 +2158,7 @@ func TestCashierAlipayWebhookRejectsInvalidSignature(t *testing.T) {
 }
 
 func TestCashierAlipayWebhookRejectsAmountMismatch(t *testing.T) {
-	handler, userToken, privateKey := setupAlipayCashierTest(t, "cashier-alipay-amount-mismatch-user@example.com")
+	handler, userToken, privateKey, _ := setupAlipayCashierTest(t, "cashier-alipay-amount-mismatch-user@example.com")
 	order := createAlipayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
 	values := alipayWebhookValuesForTest(t, order, "app-123", privateKey, "10.00000", "alipay-trade-amount-mismatch")
 
@@ -2170,7 +2175,7 @@ func TestCashierAlipayWebhookRejectsAmountMismatch(t *testing.T) {
 }
 
 func TestCashierAlipayWebhookRequiresAmount(t *testing.T) {
-	handler, userToken, privateKey := setupAlipayCashierTest(t, "cashier-alipay-missing-amount@example.com")
+	handler, userToken, privateKey, _ := setupAlipayCashierTest(t, "cashier-alipay-missing-amount@example.com")
 	order := createAlipayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
 	values := alipayWebhookValuesForTest(t, order, "app-123", privateKey, "12.50000", "alipay-trade-missing-amount")
 	values.Del("total_amount")
@@ -2189,7 +2194,7 @@ func TestCashierAlipayWebhookRequiresAmount(t *testing.T) {
 }
 
 func TestCashierAlipayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
-	handler, userToken, privateKey := setupAlipayCashierTest(t, "cashier-alipay-success-user@example.com")
+	handler, userToken, privateKey, _ := setupAlipayCashierTest(t, "cashier-alipay-success-user@example.com")
 	order := createAlipayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
 	values := alipayWebhookValuesForTest(t, order, "app-123", privateKey, "12.50000", "alipay-trade-success")
 
@@ -2242,7 +2247,7 @@ func TestCashierAlipayWebhookCompletesRechargeOrderIdempotently(t *testing.T) {
 }
 
 func TestCashierAlipayWebhookRequiresExplicitSuccessStatus(t *testing.T) {
-	handler, userToken, privateKey := setupAlipayCashierTest(t, "cashier-alipay-missing-status@example.com")
+	handler, userToken, privateKey, _ := setupAlipayCashierTest(t, "cashier-alipay-missing-status@example.com")
 	order := createAlipayCustomAmountOrderForWebhookTest(t, handler, userToken, "12.50000")
 	values := alipayWebhookValuesForTest(t, order, "app-123", privateKey, "12.50000", "alipay-trade-missing-status")
 	values.Del("trade_status")
@@ -3208,7 +3213,7 @@ func setupJeePayCashierTest(t *testing.T, userEmail string, upstreamHandlers ...
 	return handler, userSession.AccessToken, adminToken
 }
 
-func setupAlipayCashierTest(t *testing.T, userEmail string) (http.Handler, string, string) {
+func setupAlipayCashierTest(t *testing.T, userEmail string) (http.Handler, string, string, string) {
 	t.Helper()
 	cfg := taskAPIConfig("http://127.0.0.1:1")
 	authSvc := authservice.NewService(config.AuthConfig{
@@ -3244,7 +3249,7 @@ func setupAlipayCashierTest(t *testing.T, userEmail string) (http.Handler, strin
 	privateKey, publicKey := testRSAKeyPairPEM(t)
 	providerBody := alipayProviderBodyWithKeysForTest("支付宝沙箱回调账号", "app-123", true, 10, privateKey, publicKey)
 	createCashierProviderInstanceForSchedulingTest(t, handler, adminToken, providerBody)
-	return handler, userSession.AccessToken, privateKey
+	return handler, userSession.AccessToken, privateKey, adminToken
 }
 
 func setupWxPayCashierTest(t *testing.T, userEmail string) (http.Handler, string, string, string, string) {
@@ -3542,10 +3547,12 @@ func alipaySignForTest(t *testing.T, values url.Values, privateKeyPEM string) st
 	return base64.StdEncoding.EncodeToString(signature)
 }
 
+// alipaySignContentForTest mirrors the official Alipay signing rule: exclude
+// sign and sign_type, skip empty values, sort by ASCII, join raw values.
 func alipaySignContentForTest(values url.Values) string {
 	keys := make([]string, 0, len(values))
 	for name, items := range values {
-		if name == "sign" || len(items) == 0 || strings.TrimSpace(items[0]) == "" {
+		if name == "sign" || name == "sign_type" || len(items) == 0 || strings.TrimSpace(items[0]) == "" {
 			continue
 		}
 		keys = append(keys, name)
@@ -3724,4 +3731,76 @@ func parseTestRSAPrivateKey(t *testing.T, raw string) *rsa.PrivateKey {
 		t.Fatalf("parse test private key: %v", err)
 	}
 	return key
+}
+
+func TestCashierAlipayOrderUsesWapPayForMobileUserAgent(t *testing.T) {
+	handler, userToken, _, _ := setupAlipayCashierTest(t, "cashier-alipay-wap-user@example.com")
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/cashier/v1/orders", bytes.NewBufferString(`{"purchase_type":"custom_amount","amount_cny":"9.90000","visible_method":"alipay"}`))
+	createReq.Header.Set("Authorization", "Bearer "+userToken)
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected mobile cashier order create 201, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+	var createResp struct {
+		Data struct {
+			PaymentURL     string `json:"payment_url"`
+			PaymentDisplay struct {
+				Type       string `json:"type"`
+				PaymentURL string `json:"payment_url"`
+			} `json:"payment_display"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(createRec.Body).Decode(&createResp); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if createResp.Data.PaymentURL == "" {
+		t.Fatalf("expected payment url, body=%s", createRec.Body.String())
+	}
+	parsed, err := url.Parse(createResp.Data.PaymentURL)
+	if err != nil {
+		t.Fatalf("parse payment url: %v", err)
+	}
+	if parsed.Query().Get("method") != "alipay.trade.wap.pay" {
+		t.Fatalf("expected wap.pay for mobile user agent, got %s", createResp.Data.PaymentURL)
+	}
+	if !strings.Contains(parsed.Query().Get("biz_content"), `"total_amount":"9.90"`) {
+		t.Fatalf("expected normalized total_amount in biz_content, got %s", parsed.Query().Get("biz_content"))
+	}
+}
+
+func TestAdminCashierProviderInstancePayloadExposesCallbackURLs(t *testing.T) {
+	handler, _, _, adminToken := setupAlipayCashierTest(t, "cashier-alipay-callback-user@example.com")
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/cashier/provider-instances?page=1&page_size=10", nil)
+	listReq.Header.Set("Authorization", "Bearer "+adminToken)
+	listRec := httptest.NewRecorder()
+	handler.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected provider instances list 200, got %d", listRec.Code)
+	}
+	var resp struct {
+		Data struct {
+			Items []struct {
+				CallbackURLs struct {
+					NotifyURL string `json:"notify_url"`
+					ReturnURL string `json:"return_url"`
+				} `json:"callback_urls"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(listRec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode provider instances list: %v body=%s", err, listRec.Body.String())
+	}
+	if len(resp.Data.Items) == 0 {
+		t.Fatalf("expected at least one provider instance, body=%s", listRec.Body.String())
+	}
+	for _, item := range resp.Data.Items {
+		if item.CallbackURLs.NotifyURL == "" || item.CallbackURLs.ReturnURL == "" {
+			t.Fatalf("expected callback_urls in instance payload, got %#v", item.CallbackURLs)
+		}
+	}
 }

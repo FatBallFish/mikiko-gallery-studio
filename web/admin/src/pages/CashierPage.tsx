@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Archive, Pause, Pencil, Play, RotateCcw } from 'lucide-react'
-import type { CashierCustomAmountConfig, CashierOverview, CashierPlan, CashierPlanStatus, CashierPlanTransitionAction, PageResult, PaymentOrder, PaymentProviderInstance, PaymentProviderType, PaymentSchedulerStrategy, PaymentVisibleMethod, PaymentWebhookEvent } from '../../../shared/api-types'
+import type { AlipaySignatureCheckResult, CashierCustomAmountConfig, CashierOverview, CashierPlan, CashierPlanStatus, CashierPlanTransitionAction, PageResult, PaymentOrder, PaymentProviderInstance, PaymentProviderType, PaymentSchedulerStrategy, PaymentVisibleMethod, PaymentWebhookEvent } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { AdminTabs, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader, RefreshIconButton, TooltipIconButton } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
+import { copyText } from '../ui/clipboard'
 import { adminDataGrid, adminGridCols } from '../ui/dataGrid'
 import { FilterBar, ListPage, Pager } from '../ui/dataTable'
 import { applyJeePayWayCodeTemplate, jeepayTemplatesForProvider } from './cashierJeePayWayCodeTemplates'
@@ -157,6 +158,18 @@ const cashierClasses = {
   providerGuide: 'col-span-full grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4',
   providerGuideFields: 'flex flex-wrap gap-2 text-xs text-[var(--soft)]',
   structuredConfig: 'col-span-full grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4',
+  structuredConfigHead: 'flex flex-wrap items-center justify-between gap-2',
+  signaturePanel: 'grid gap-1.5 rounded-lg border p-3 text-sm',
+  signatureTone: {
+    success: 'border-[var(--green)]/30 bg-[var(--green)]/10 text-[var(--green)]',
+    warning: 'border-[var(--amber)]/30 bg-[var(--amber)]/10 text-[var(--amber)]',
+    danger: 'border-[var(--red)]/30 bg-[var(--red)]/10 text-[var(--red)]',
+  },
+  callbackPanel: 'col-span-full grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4',
+  callbackRow: 'flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--line)] bg-[var(--canvas)] px-3 py-2',
+  callbackMeta: 'grid min-w-0 flex-1 basis-56 gap-0.5',
+  callbackURL: 'm-0 min-w-0 text-left font-[family-name:var(--admin-font-mono)] text-xs font-normal text-[var(--fg)] [overflow-wrap:anywhere]',
+  callbackHint: 'text-xs leading-5 text-[var(--soft)]',
   secretConfig: 'col-span-full grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4',
   secretConfigGrid: 'grid grid-cols-[minmax(0,1fr)_minmax(220px,.7fr)] gap-3 max-[760px]:grid-cols-1',
   supportedMethods: 'grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2',
@@ -854,7 +867,7 @@ export function CashierPage({
                 </div>
               </div>
               <div className={cn(adminDataGrid.root, adminGridCols.editableMethods)}>
-                <div className={cn(adminDataGrid.head, adminGridCols.editableMethods)}><span>方式</span><span>展示名称</span><span>渠道类型</span><span>调度</span><span>排序</span><span>状态</span><span>操作</span></div>
+                <div className={cn(adminDataGrid.head, adminGridCols.editableMethods)}><span>方式</span><span>展示名称</span><span>渠道类型</span><span>调度</span><span>排序</span><span>状态</span><span className={adminDataGrid.headAction}>操作</span></div>
                 {methodsDraft.map((method, index) => {
                   const row = cashierVisibleMethodRow(method)
                   return (
@@ -928,7 +941,7 @@ export function CashierPage({
               <button type="button" className={adminButton.base} onClick={() => setInstanceDialog(newProviderDraft('mock'))}>新增实例</button>
             </div>
             <div className={cn(adminDataGrid.root, adminGridCols.cashierInstances)}>
-              <div className={cn(adminDataGrid.head, adminGridCols.cashierInstances)}><span>实例</span><span>类型</span><span>方式</span><span>权重</span><span>状态</span><span>操作</span></div>
+              <div className={cn(adminDataGrid.head, adminGridCols.cashierInstances)}><span>实例</span><span>类型</span><span>方式</span><span>权重</span><span>状态</span><span className={adminDataGrid.headAction}>操作</span></div>
               {data.instances.items.map((instance) => (
                 <div key={instance.id} className={cn(adminDataGrid.row, adminGridCols.cashierInstances)}>
                   <div className={adminDataGrid.stackCell}><strong>{instance.name}</strong><p className={adminDataGrid.detail}>{cashierProviderConfigStatusLabel(instance.config_status)}</p></div>
@@ -971,7 +984,7 @@ export function CashierPage({
               onPageSizeChange={(size) => { setOrdersPageSize(size); void reloadOrders(1) }}
             />
             <div className={cn(adminDataGrid.root, adminGridCols.cashierOrders)}>
-              <div className={cn(adminDataGrid.head, adminGridCols.cashierOrders)}><span>订单</span><span>金额</span><span>积分</span><span>方式</span><span>状态</span><span>操作</span></div>
+              <div className={cn(adminDataGrid.head, adminGridCols.cashierOrders)}><span>订单</span><span>金额</span><span>积分</span><span>方式</span><span>状态</span><span className={adminDataGrid.headAction}>操作</span></div>
               {data.orders.items.map((order) => (
                 <div key={order.id ?? order.order_no} className={cn(adminDataGrid.row, adminGridCols.cashierOrders)}>
                   <div className={adminDataGrid.stackCell}><strong>{order.order_no}</strong><p className={adminDataGrid.detail}>{cashierOrderPurchaseTypeLabel(order)}</p></div>
@@ -1015,7 +1028,7 @@ export function CashierPage({
               onPageSizeChange={(size) => { setEventsPageSize(size); void reloadEvents(1) }}
             />
             <div className={cn(adminDataGrid.root, adminGridCols.cashierEvents)}>
-              <div className={cn(adminDataGrid.head, adminGridCols.cashierEvents)}><span>事件</span><span>订单</span><span>渠道</span><span>状态</span><span>操作</span></div>
+              <div className={cn(adminDataGrid.head, adminGridCols.cashierEvents)}><span>事件</span><span>订单</span><span>渠道</span><span>状态</span><span className={adminDataGrid.headAction}>操作</span></div>
               {data.events.items.map((event) => {
                 const row = cashierWebhookRow(event)
                 return (
@@ -1130,6 +1143,7 @@ export function CashierPage({
               draft={instanceDialog}
               onChange={setInstanceDialog}
             />
+            <ProviderCallbackURLs draft={instanceDialog} />
           </div>
         </Drawer>
       ) : null}
@@ -1495,8 +1509,14 @@ function ProviderStructuredConfigFields({ draft, onChange }: {
   onChange: (draft: CashierProviderFormDraft) => void
 }) {
   const fields = cashierProviderConfigFields(draft.provider_type)
+  const [signatureChecking, setSignatureChecking] = useState(false)
+  const [signatureResult, setSignatureResult] = useState<AlipaySignatureCheckResult | null>(null)
+  const [signatureError, setSignatureError] = useState('')
   if (!fields.length) return null
+  const isAlipayDirect = draft.provider_type === 'alipay_direct'
   const updateField = (field: CashierProviderConfigField, value: string) => {
+    setSignatureResult(null)
+    setSignatureError('')
     if (field.kind === 'callback-base') {
       onChange({ ...draft, callback_bases: { ...draft.callback_bases, [field.key]: value } })
       return
@@ -1511,12 +1531,54 @@ function ProviderStructuredConfigFields({ draft, onChange }: {
     if (field.kind === 'callback-base') return draft.callback_bases[field.key as 'notify_url' | 'return_url'] ?? ''
     return stringFromRecord(field.storage === 'secret' ? draft.secrets : draft.config, field.key)
   }
+  const runSignatureCheck = () => {
+    if (signatureChecking) return
+    const gatewayURL = stringFromRecord(draft.config, 'gateway_url').trim()
+    const appID = stringFromRecord(draft.config, 'app_id').trim()
+    const appPrivateKey = (draft.secrets['app_private_key'] ?? '').trim()
+    // Editing a saved instance: the stored private key never round-trips to
+    // the client, so let the backend fall back to the stored config.
+    if (!draft.row && (!appID || !appPrivateKey)) {
+      setSignatureResult(null)
+      setSignatureError('请先填写应用 ID 和应用私钥，再进行签名联调。')
+      return
+    }
+    setSignatureChecking(true)
+    setSignatureError('')
+    adminApi.checkAlipaySignature({
+      instance_id: draft.row ? Number(draft.row.id) : undefined,
+      gateway_url: gatewayURL || undefined,
+      app_id: appID || undefined,
+      app_private_key: appPrivateKey || undefined,
+    }).then((result) => {
+      setSignatureResult(result)
+    }).catch((caught) => {
+      setSignatureResult(null)
+      setSignatureError(caught instanceof Error ? caught.message : '签名联调请求失败')
+    }).finally(() => {
+      setSignatureChecking(false)
+    })
+  }
   return (
     <section className={cashierClasses.structuredConfig}>
-      <div>
-        <strong>渠道字段配置</strong>
+      <div className="grid gap-2">
+        <div className={cashierClasses.structuredConfigHead}>
+          <strong>渠道字段配置</strong>
+          {isAlipayDirect ? (
+            <button
+              type="button"
+              className={cn(adminButton.base, adminButton.ghost, adminButton.small)}
+              disabled={signatureChecking}
+              onClick={runSignatureCheck}
+            >
+              {signatureChecking ? '签名联调中...' : '测试签名（联调）'}
+            </button>
+          ) : null}
+        </div>
         <p>标记 * 的字段为必填。密钥只用于新增或轮换，编辑时留空会保留已保存的密钥。</p>
-        {draft.row?.credentials_status ? <Badge tone={draft.row.credentials_status.has_secret ? 'success' : 'warning'}>{draft.row.credentials_status.has_secret ? '已保存密钥' : '未保存密钥'}</Badge> : null}
+        {draft.row?.credentials_status ? <div><Badge tone={draft.row.credentials_status.has_secret ? 'success' : 'warning'}>{draft.row.credentials_status.has_secret ? '已保存密钥' : '未保存密钥'}</Badge></div> : null}
+        {signatureError ? <InlineFeedback tone="danger" message={signatureError} /> : null}
+        {signatureResult ? <SignatureCheckResult result={signatureResult} /> : null}
       </div>
       <div className={adminPage.formGrid}>
         {fields.map((field) => (
@@ -1551,6 +1613,83 @@ function ProviderStructuredConfigFields({ draft, onChange }: {
         ))}
       </div>
     </section>
+  )
+}
+
+function SignatureCheckResult({ result }: { result: AlipaySignatureCheckResult }) {
+  const unreachable = Boolean(result.network_error.trim())
+  const tone = unreachable ? 'warning' : result.signature_ok ? 'success' : 'danger'
+  const title = unreachable ? '网关不可达' : result.signature_ok ? '签名验证通过' : '签名验证失败'
+  const details = [
+    result.gateway_code ? `gateway_code: ${result.gateway_code}` : '',
+    result.gateway_sub_code ? `gateway_sub_code: ${result.gateway_sub_code}` : '',
+    result.gateway_msg ? `gateway_msg: ${result.gateway_msg}` : '',
+  ].filter(Boolean)
+  return (
+    <div className={cn(cashierClasses.signaturePanel, cashierClasses.signatureTone[tone])} role="status">
+      <strong>{title}</strong>
+      <p className="text-xs leading-5 text-[var(--muted-strong)]">{result.hint}</p>
+      {details.length ? <p className="m-0 font-[family-name:var(--admin-font-mono)] text-xs text-[var(--soft)]">{details.join(' · ')}</p> : null}
+    </div>
+  )
+}
+
+function ProviderCallbackURLs({ draft }: { draft: CashierProviderFormDraft }) {
+  const callbacks = draft.row?.callback_urls
+  return (
+    <section className={cashierClasses.callbackPanel}>
+      <div className="grid gap-1">
+        <strong>回调地址</strong>
+        <p className={cashierClasses.callbackHint}>
+          支付宝的异步通知地址随每笔订单请求自动下发，无需在支付宝开放平台填写；若平台要求填写“授权回调地址”，可填支付完成跳转地址或站点根地址。
+        </p>
+      </div>
+      {callbacks ? (
+        <div className="grid gap-2">
+          <CallbackURLRow label="异步通知地址" url={callbacks.notify_url} />
+          <CallbackURLRow label="支付完成跳转地址" url={callbacks.return_url} />
+        </div>
+      ) : (
+        <p className={cashierClasses.callbackHint}>保存实例后，平台会按站点地址自动生成生效回调地址，并在此展示完整的通知与跳转链接。</p>
+      )}
+    </section>
+  )
+}
+
+function CallbackURLRow({ label, url }: { label: string; url: string }) {
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const resetTimer = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current)
+  }, [])
+  const value = url.trim()
+  const scheduleReset = () => {
+    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current)
+    resetTimer.current = window.setTimeout(() => setCopyState('idle'), 1600)
+  }
+  return (
+    <div className={cashierClasses.callbackRow}>
+      <div className={cashierClasses.callbackMeta}>
+        <span className="text-[11px] font-semibold text-[var(--soft)]">{label}</span>
+        <code className={cashierClasses.callbackURL}>{value || '-'}</code>
+      </div>
+      <button
+        type="button"
+        className={cn(adminButton.base, adminButton.ghost, adminButton.small)}
+        disabled={!value}
+        onClick={() => {
+          copyText(value).then(() => {
+            setCopyState('copied')
+            scheduleReset()
+          }).catch(() => {
+            setCopyState('failed')
+            scheduleReset()
+          })
+        }}
+      >
+        {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'}
+      </button>
+    </div>
   )
 }
 

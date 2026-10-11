@@ -18,6 +18,8 @@ import type {
   AdminUser,
   AdminUserCreateRequest,
   AdminUserDetail,
+  AlipaySignatureCheckRequest,
+  AlipaySignatureCheckResult,
   AuditLog,
   CallRecord,
   ClusterNode,
@@ -267,6 +269,8 @@ export const adminApi = {
     sharedApiClient.request<PaymentProviderInstance>(API_PATHS.ops.paymentProviderInstanceDetail, { method: 'PUT', pathParams: { instance_id }, body: input }),
   deletePaymentProviderInstance: (instance_id: string | number) =>
     sharedApiClient.request<PaymentProviderInstance>(API_PATHS.ops.paymentProviderInstanceDetail, { method: 'DELETE', pathParams: { instance_id } }),
+  checkAlipaySignature: (input: AlipaySignatureCheckRequest) =>
+    sharedApiClient.request<AlipaySignatureCheckResult>(API_PATHS.ops.cashierAlipaySignatureCheck, { method: 'POST', body: input }),
   getSMTPConfig: () => sharedApiClient.request<SMTPConfigView>(API_PATHS.ops.securitySMTP),
   updateSMTPConfig: (input: SMTPConfigWriteRequest) => sharedApiClient.request<SMTPConfigView>(API_PATHS.ops.securitySMTP, { method: 'PUT', body: input }),
   testSMTPConfig: (email: string, scene = 'smtp_test') => sharedApiClient.request<SMTPTestResponse>(API_PATHS.ops.securitySMTPTest, { method: 'POST', body: { email, scene } }),

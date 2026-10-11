@@ -217,6 +217,7 @@ export const API_PATHS = {
     paymentVisibleMethods: '/api/ops/admin/v1/cashier/visible-methods',
     paymentProviderInstances: '/api/ops/admin/v1/cashier/provider-instances',
     paymentProviderInstanceDetail: '/api/ops/admin/v1/cashier/provider-instances/{instance_id}',
+    cashierAlipaySignatureCheck: '/api/ops/admin/v1/cashier/payments/alipay-signature-check',
     securitySMTP: '/api/ops/admin/v1/security/smtp',
     securitySMTPTest: '/api/ops/admin/v1/security/smtp/test',
     paymentOrders: '/api/ops/admin/v1/cashier/orders',
@@ -1618,9 +1619,19 @@ export type PaymentProviderInstance = {
   config?: Record<string, unknown>
   config_status?: 'configured' | 'missing' | 'invalid' | string
   credentials_status?: SecretStatus
+  callback_urls?: { notify_url: string; return_url: string }
   last_error?: string | null
   created_at?: string
   updated_at?: string
+}
+export type AlipaySignatureCheckRequest = { instance_id?: number; gateway_url?: string; app_id?: string; app_private_key?: string }
+export type AlipaySignatureCheckResult = {
+  signature_ok: boolean
+  network_error: string
+  gateway_code: string
+  gateway_sub_code: string
+  gateway_msg: string
+  hint: string
 }
 export type PaymentProviderInstanceWriteRequest = Omit<Partial<PaymentProviderInstance>, 'id' | 'created_at' | 'updated_at'> & {
   provider_type: PaymentProviderType

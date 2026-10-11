@@ -4448,6 +4448,47 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminCashierProviderInstanceResponse
+  /api/ops/admin/v1/cashier/payments/alipay-signature-check:
+    post:
+      tags: [Admin Cashier]
+      summary: Verify an Alipay direct instance signature against the live gateway
+      operationId: postAdminCashierAlipaySignatureCheck
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [app_id, app_private_key]
+              properties:
+                gateway_url:
+                  type: string
+                app_id:
+                  type: string
+                app_private_key:
+                  type: string
+      responses:
+        '200':
+          description: Signature check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signature_ok:
+                    type: boolean
+                  network_error:
+                    type: string
+                  gateway_code:
+                    type: string
+                  gateway_sub_code:
+                    type: string
+                  gateway_msg:
+                    type: string
+                  hint:
+                    type: string
   /api/ops/admin/v1/cashier/orders:
     get:
       tags: [Admin Cashier]

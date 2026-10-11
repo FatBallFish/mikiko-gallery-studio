@@ -202,6 +202,7 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/ops/admin/v1/cashier/visible-methods/", api.HandleAdminCashierVisibleMethods)
 		mux.HandleFunc("/api/ops/admin/v1/cashier/provider-instances", api.HandleAdminCashierProviderInstances)
 		mux.HandleFunc("/api/ops/admin/v1/cashier/provider-instances/", api.HandleAdminCashierProviderInstanceDetail)
+		mux.HandleFunc("/api/ops/admin/v1/cashier/payments/alipay-signature-check", api.HandleAdminAlipaySignatureCheck)
 		mux.HandleFunc("/api/ops/admin/v1/cashier/orders", api.HandleAdminCashierOrders)
 		mux.HandleFunc("/api/ops/admin/v1/cashier/orders/", api.HandleAdminCashierOrderDetail)
 		mux.HandleFunc("/api/ops/admin/v1/cashier/webhook-events", api.HandleAdminCashierWebhookEvents)

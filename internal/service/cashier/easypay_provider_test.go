@@ -43,7 +43,7 @@ func TestEasyPayPaymentDisplayBuilderBuildsSignedPopupURL(t *testing.T) {
 	if parsed.Scheme != "https" || parsed.Host != "pay.example.com" || !strings.HasSuffix(parsed.Path, "/submit.php") {
 		t.Fatalf("expected submit.php payment url, got %s", result.PaymentURL)
 	}
-	if query.Get("pid") != "10001" || query.Get("type") != "alipay" || query.Get("out_trade_no") != "PGO-EASY-001" || query.Get("money") != "12.50000" {
+	if query.Get("pid") != "10001" || query.Get("type") != "alipay" || query.Get("out_trade_no") != "PGO-EASY-001" || query.Get("money") != "12.50" {
 		t.Fatalf("unexpected easypay params: %s", result.PaymentURL)
 	}
 	if query.Get("notify_url") != "https://pic.example.com/api/open/image/v1/payments/webhooks/easypay_alipay" || query.Get("return_url") != "https://client.example.com/#/checkout" {
@@ -103,7 +103,7 @@ func TestEasyPayPaymentDisplayBuilderAPIModePostsMAPI(t *testing.T) {
 	if upstreamPath != "/mapi.php" {
 		t.Fatalf("expected mapi.php path, got %q", upstreamPath)
 	}
-	if upstreamValues.Get("pid") != "10002" || upstreamValues.Get("type") != "wxpay" || upstreamValues.Get("out_trade_no") != "PGO-EASY-API-001" || upstreamValues.Get("money") != "16.00000" || upstreamValues.Get("clientip") != "127.0.0.1" {
+	if upstreamValues.Get("pid") != "10002" || upstreamValues.Get("type") != "wxpay" || upstreamValues.Get("out_trade_no") != "PGO-EASY-API-001" || upstreamValues.Get("money") != "16.00" || upstreamValues.Get("clientip") != "127.0.0.1" {
 		t.Fatalf("unexpected mapi params: %#v", upstreamValues)
 	}
 	if upstreamValues.Get("sign") == "" || upstreamValues.Get("sign_type") != "MD5" {

@@ -5,17 +5,19 @@ import type { CashierOrder } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { userApi } from '../../../shared/user-api'
 import { Button, LoadingState, Modal, copyText } from '../components'
+import { isMobileDeviceUA } from '../device'
 import { errorMessage } from '../useApiResource'
 import { checkoutPaymentDisplayModel } from './checkoutPaymentDisplay'
-import { dispatchPaymentWindow, navigatePaymentWindow, reservePaymentWindow } from './checkoutPaymentWindow'
+import { assignCurrentWindowToPaymentURL, dispatchPaymentWindow, navigatePaymentWindow, redirectPaymentFallbackAction, reservePaymentWindow } from './checkoutPaymentWindow'
 import { checkoutMoney, checkoutOrderActionState, checkoutOrderRuntimeState, checkoutPaymentMethodLabel } from './checkoutOrderState'
 import { paymentMonitorAutoCloseDelay, shouldAutoClosePaymentMonitor } from './paymentMonitorState'
 
 const StripePaymentPanel = lazy(async () => ({ default: (await import('./StripePaymentPanel')).StripePaymentPanel }))
 
-export function PaymentMonitorModal({ order, busy, onOrderChange, onSuccess, onCancel, onMockPay, onClose }: {
+export function PaymentMonitorModal({ order, busy, redirectScanFallback = false, onOrderChange, onSuccess, onCancel, onMockPay, onClose }: {
   order: CashierOrder
   busy: boolean
+  redirectScanFallback?: boolean
   onOrderChange: (order: CashierOrder) => void
   onSuccess: (order: CashierOrder) => void
   onCancel: (order: CashierOrder) => void
@@ -108,7 +110,7 @@ export function PaymentMonitorModal({ order, busy, onOrderChange, onSuccess, onC
           <MonitorFact label="支付方式" value={checkoutPaymentMethodLabel(order)} />
         </div>
 
-        {runtime.step === 'paying' ? <PaymentDisplayPanel order={order} busy={busy || syncing} onMockPay={() => onMockPay(order)} onConfirmed={syncCashierOrder} /> : null}
+        {runtime.step === 'paying' ? <PaymentDisplayPanel key={order.id} order={order} busy={busy || syncing} redirectScanFallback={redirectScanFallback} onMockPay={() => onMockPay(order)} onConfirmed={syncCashierOrder} /> : null}
         {syncError ? <p className="m-0 rounded-lg border border-[color-mix(in_oklch,var(--accent-coral)_40%,var(--border))] px-3 py-2 text-sm text-[var(--accent-coral)]" role="alert">{syncError}</p> : null}
         {runtime.step === 'success' ? <p className="m-0 text-sm text-[var(--muted)]">支付已确认，窗口将在 3 秒后关闭。</p> : null}
 
@@ -126,12 +128,21 @@ function MonitorFact({ label, value }: { label: string; value: string }) {
   return <span className="grid min-w-0 gap-1"><small className="text-[var(--muted)]">{label}</small><strong className="[overflow-wrap:anywhere]">{value}</strong></span>
 }
 
-function PaymentDisplayPanel({ order, busy, onMockPay, onConfirmed }: { order: CashierOrder; busy: boolean; onMockPay: () => void; onConfirmed: () => void }) {
+function PaymentDisplayPanel({ order, busy, redirectScanFallback, onMockPay, onConfirmed }: { order: CashierOrder; busy: boolean; redirectScanFallback: boolean; onMockPay: () => void; onConfirmed: () => void }) {
   const display = checkoutPaymentDisplayModel(order)
   const paymentHref = display.href ?? ''
+  const mobileDevice = isMobileDeviceUA()
+  const [scanFallback, setScanFallback] = useState(redirectScanFallback)
   const openPayment = () => {
     const paymentWindow = reservePaymentWindow()
     if (display.kind === 'form' || display.kind === 'redirect') {
+      if (display.kind === 'redirect') {
+        const dispatched = dispatchPaymentWindow(paymentWindow, display)
+        const fallback = redirectPaymentFallbackAction(paymentWindow, display, dispatched, mobileDevice)
+        if (fallback.kind === 'assign') assignCurrentWindowToPaymentURL(fallback.href)
+        if (fallback.kind === 'qr') setScanFallback(true)
+        return
+      }
       dispatchPaymentWindow(paymentWindow, display)
       return
     }
@@ -145,7 +156,22 @@ function PaymentDisplayPanel({ order, busy, onMockPay, onConfirmed }: { order: C
     <section className="grid gap-3 border-y border-[var(--border)] py-4">
       <span className="grid gap-1"><strong>{display.label}</strong><small className="text-sm leading-relaxed text-[var(--muted)]">{display.detail}</small></span>
       {display.kind === 'qr_code' && paymentHref ? <div className="grid justify-items-center gap-3"><PaymentQRCode value={paymentHref} /><Button tone="ghost" onClick={openPayment}><ExternalLink size={16} aria-hidden="true" />打开支付页</Button><Button tone="ghost" onClick={() => void copyText(paymentHref)}>复制支付链接</Button></div> : null}
-      {display.kind === 'redirect' || display.kind === 'form' ? <Button tone="primary" onClick={openPayment}><ExternalLink size={16} aria-hidden="true" />打开支付页</Button> : null}
+      {display.kind === 'redirect' && scanFallback && paymentHref ? (
+        <div className="grid justify-items-center gap-3" role="status" aria-live="polite">
+          <PaymentQRCode value={paymentHref} />
+          <p className="m-0 text-center text-sm leading-relaxed text-[var(--muted)]">支付窗口未能打开时，可使用对应支付 App 扫码完成付款。</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button tone="ghost" onClick={openPayment}><ExternalLink size={16} aria-hidden="true" />重新打开支付页面</Button>
+            <Button tone="ghost" onClick={() => void copyText(paymentHref)}>复制支付链接</Button>
+          </div>
+        </div>
+      ) : null}
+      {display.kind === 'redirect' && !scanFallback ? (
+        <div className="flex flex-wrap gap-2">
+          <Button tone="primary" onClick={openPayment}><ExternalLink size={16} aria-hidden="true" />打开支付页</Button>
+          {!mobileDevice ? <Button tone="ghost" onClick={() => setScanFallback(true)}>扫码支付</Button> : null}
+        </div>
+      ) : display.kind === 'form' ? <Button tone="primary" onClick={openPayment}><ExternalLink size={16} aria-hidden="true" />打开支付页</Button> : null}
       {display.kind === 'mock' ? <Button tone="ghost" busy={busy} onClick={onMockPay}>模拟支付成功</Button> : null}
       {display.kind === 'stripe' && display.publishableKey && display.clientSecret ? (
         <Suspense fallback={<LoadingState label="加载 Stripe 安全支付..." />}>

@@ -75,7 +75,7 @@ const dotToneClass = {
 const navIconClass = 'size-5 opacity-70 transition-opacity group-hover:opacity-100'
 const stateBlockBase = adminState.block
 const stateBlockIcon = adminState.iconWrap
-const fieldLabelClass = 'flex items-center justify-between gap-2 text-[11px] font-semibold text-[var(--soft)]'
+const fieldLabelClass = 'flex min-h-[18px] items-center justify-between gap-2 text-[11px] font-semibold leading-[18px] text-[var(--soft)]'
 const checkGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-2'
 const checkGridEmptyClass = 'grid-cols-1 text-sm font-bold text-[var(--soft)]'
 const checkOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10'
@@ -1220,7 +1220,7 @@ function routeIcon(route: ProtectedAdminRouteId) {
 
 export function Field({ label, children, error, hint }: { label: string; children: React.ReactNode; error?: string | null; hint?: string }) {
   return (
-    <label className="grid gap-1.5 text-xs font-extrabold text-[var(--soft)]">
+    <label className="grid content-start gap-1.5 text-xs font-extrabold text-[var(--soft)]">
       <span className={fieldLabelClass}>
         <span>{label}</span>
         {hint ? <FieldHint text={hint} /> : null}
@@ -1263,7 +1263,7 @@ function FieldHint({ text }: { text: string }) {
     <>
       <span
         ref={anchorRef}
-        className="grid size-[18px] place-items-center rounded-full border border-[var(--line)] text-[11px] text-[var(--blue)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)]"
+        className="grid size-[18px] shrink-0 place-items-center rounded-full border border-[var(--line)] text-[11px] text-[var(--blue)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)]"
         tabIndex={0}
         aria-label={text}
         onMouseEnter={() => setOpen(true)}
@@ -1274,7 +1274,10 @@ function FieldHint({ text }: { text: string }) {
         i
       </span>
       {open ? createPortal(
-        <span className="fixed z-[200] max-w-[260px] -translate-x-1/2 rounded-lg border border-[var(--line)] bg-[var(--text)] px-3 py-2 text-xs font-medium normal-case tracking-normal text-white shadow-[var(--pg-shadow-lg)]" role="tooltip" data-placement={position.placement} style={{ left: position.left, top: position.top }}>{text}</span>,
+        <span className={cn(
+          'pointer-events-none fixed z-[200] max-w-[260px] -translate-x-1/2 rounded-lg border border-[var(--line)] bg-[var(--text)] px-3 py-2 text-xs font-medium normal-case tracking-normal text-white shadow-[var(--pg-shadow-lg)]',
+          position.placement === 'top' && '-translate-y-full',
+        )} role="tooltip" data-placement={position.placement} style={{ left: position.left, top: position.top }}>{text}</span>,
         document.body,
       ) : null}
     </>

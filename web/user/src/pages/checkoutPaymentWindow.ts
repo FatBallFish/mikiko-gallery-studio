@@ -115,6 +115,29 @@ export function navigatePaymentWindow(paymentWindow: PaymentWindow | null, href:
   return true
 }
 
+export type RedirectPaymentFallback = { kind: 'none' } | { kind: 'assign'; href: string } | { kind: 'qr'; href: string }
+
+// Decides what to do when a redirect payment could not be navigated in the
+// reserved window (popup blocked): mobile browsers fall back to assigning the
+// current page so the wap.pay link can still wake the wallet app, desktop
+// browsers fall back to an in-page QR code for scanning.
+export function redirectPaymentFallbackAction(
+  paymentWindow: PaymentWindow | null,
+  display: CheckoutPaymentDisplayModel,
+  dispatched: boolean,
+  isMobileDevice: boolean,
+): RedirectPaymentFallback {
+  if (dispatched || paymentWindow || display.kind !== 'redirect' || !display.href) return { kind: 'none' }
+  return isMobileDevice ? { kind: 'assign', href: display.href } : { kind: 'qr', href: display.href }
+}
+
+export function assignCurrentWindowToPaymentURL(href: string): boolean {
+  const destination = safePaymentURL(href)
+  if (!destination) return false
+  window.location.assign(destination)
+  return true
+}
+
 export function closePaymentWindow(paymentWindow: PaymentWindow | null): void {
   if (paymentWindow && !paymentWindow.closed) paymentWindow.close()
 }

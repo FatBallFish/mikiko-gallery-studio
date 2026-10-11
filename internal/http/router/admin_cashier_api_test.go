@@ -1004,7 +1004,7 @@ func TestAdminCashierOrderRefundCallsEasyPayProviderBeforeLocalDeduct(t *testing
 	if refundRec.Code != http.StatusOK {
 		t.Fatalf("expected admin easypay refund 200, got %d body=%s", refundRec.Code, refundRec.Body.String())
 	}
-	if upstreamPath != "/api.php" || upstreamValues.Get("act") != "refund" || upstreamValues.Get("pid") != "10001" || upstreamValues.Get("key") != "merchant-secret" || upstreamValues.Get("money") != "12.50000" || upstreamValues.Get("out_trade_no") != orderNo {
+	if upstreamPath != "/api.php" || upstreamValues.Get("act") != "refund" || upstreamValues.Get("pid") != "10001" || upstreamValues.Get("key") != "merchant-secret" || upstreamValues.Get("money") != "12.50" || upstreamValues.Get("out_trade_no") != orderNo {
 		t.Fatalf("unexpected easypay refund request path=%q values=%#v order_no=%s", upstreamPath, upstreamValues, orderNo)
 	}
 	assertAdminCashierRefundedForTest(t, refundRec.Body.String(), orderID, "REFUND-EASYPAY-001")
@@ -1046,7 +1046,7 @@ func TestAdminCashierOrderRefundSupportsPartialEasyPayRefund(t *testing.T) {
 	if refundRec.Code != http.StatusOK {
 		t.Fatalf("expected admin easypay partial refund 200, got %d body=%s", refundRec.Code, refundRec.Body.String())
 	}
-	if upstreamValues.Get("act") != "refund" || upstreamValues.Get("money") != "5.00000" || upstreamValues.Get("out_trade_no") != orderNo {
+	if upstreamValues.Get("act") != "refund" || upstreamValues.Get("money") != "5.00" || upstreamValues.Get("out_trade_no") != orderNo {
 		t.Fatalf("unexpected easypay partial refund request values=%#v order_no=%s", upstreamValues, orderNo)
 	}
 	var refundResp struct {
@@ -1434,7 +1434,7 @@ func TestAdminCashierOrderRefundCallsAlipayDirectProvider(t *testing.T) {
 		t.Fatalf("unexpected alipay refund request path=%q query=%#v", upstreamPath, upstreamQuery)
 	}
 	bizContent := upstreamQuery.Get("biz_content")
-	if !strings.Contains(bizContent, orderNo) || !strings.Contains(bizContent, `"refund_amount":"12.50000"`) || !strings.Contains(bizContent, `"out_request_no":"REFUND-ALIPAY-001"`) {
+	if !strings.Contains(bizContent, orderNo) || !strings.Contains(bizContent, `"refund_amount":"12.50"`) || !strings.Contains(bizContent, `"out_request_no":"REFUND-ALIPAY-001"`) {
 		t.Fatalf("unexpected alipay refund biz_content=%s order_no=%s", bizContent, orderNo)
 	}
 	assertAdminCashierRefundedForTest(t, refundRec.Body.String(), orderID, "REFUND-ALIPAY-001")
@@ -3436,4 +3436,88 @@ func loginAdminForCashierPlanTest(t *testing.T, handler http.Handler) string {
 		t.Fatalf("decode login response: %v", err)
 	}
 	return loginResp.Data.AccessToken
+}
+
+func TestAdminAlipaySignatureCheckEndpoint(t *testing.T) {
+	cfg := taskAPIConfig("http://127.0.0.1:1")
+	authSvc := authservice.NewService(config.AuthConfig{
+		AccessTokenTTL:    10 * time.Minute,
+		RefreshTokenTTL:   2 * time.Hour,
+		Issuer:            "test",
+		AccessTokenSecret: "secret",
+		RefreshCookieName: "pg_refresh",
+	}, map[string]string{"basic": "1.00000"})
+	adminStore := adminauthservice.NewMemoryStore()
+	if _, err := adminStore.CreateAdmin(t.Context(), domainadminauth.AdminUser{
+		Email:        "cashier-admin@example.com",
+		PasswordHash: adminauthservice.HashPasswordForTest("password", "salt"),
+		Role:         domainadminauth.RoleAdmin,
+		Status:       "active",
+	}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	adminAuth := adminauthservice.NewService(cfg.Auth, adminStore)
+	api := handlers.NewAPIWithCompletionServices(cfg, authSvc, nil, nil, nil, billingservice.NewService(cfg.Billing), nil, adminAuth, nil)
+	handler := NewWithAPI(api)
+	adminToken := loginAdminForCashierTest(t, handler)
+
+	privateKey, _ := testRSAKeyPairPEM(t)
+	var gatewayForm string
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gatewayForm = r.PostForm.Encode()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"alipay_trade_query_response":{"code":"40004","msg":"Business Failed","sub_code":"ACQ.TRADE_NOT_EXIST"}}`))
+	}))
+	defer gateway.Close()
+
+	body := fmt.Sprintf(`{"gateway_url":%q,"app_id":"app-123","app_private_key":%q}`, gateway.URL+"/gateway.do", privateKey)
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/payments/alipay-signature-check", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected alipay signature check 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			SignatureOK  bool   `json:"signature_ok"`
+			GatewayCode  string `json:"gateway_code"`
+			GatewaySub   string `json:"gateway_sub_code"`
+			NetworkError string `json:"network_error"`
+			Hint         string `json:"hint"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode signature check response: %v body=%s", err, rec.Body.String())
+	}
+	if !resp.Data.SignatureOK || resp.Data.GatewayCode != "40004" || resp.Data.GatewaySub != "ACQ.TRADE_NOT_EXIST" || resp.Data.NetworkError != "" {
+		t.Fatalf("unexpected signature check payload %#v", resp.Data)
+	}
+	if !strings.Contains(resp.Data.Hint, "签名验证通过") || !strings.Contains(gatewayForm, "method=alipay.trade.query") {
+		t.Fatalf("unexpected hint/form hint=%q form=%s", resp.Data.Hint, gatewayForm)
+	}
+
+	// instance_id fallback: verify a saved instance without retyping its key.
+	instanceID := createProviderInstanceForCashierTest(t, handler, adminToken, fmt.Sprintf(`{"provider_type":"alipay_direct","name":"支付宝联调账号","enabled":true,"supported_methods":["alipay"],"sort_order":10,"scheduler_weight":100,"config":{"gateway_url":%q,"app_id":"app-456","app_private_key":%q}}`, gateway.URL+"/gateway.do", privateKey))
+	storedBody := fmt.Sprintf(`{"instance_id":%d}`, instanceID)
+	storedReq := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/payments/alipay-signature-check", bytes.NewBufferString(storedBody))
+	storedReq.Header.Set("Authorization", "Bearer "+adminToken)
+	storedReq.Header.Set("Content-Type", "application/json")
+	storedRec := httptest.NewRecorder()
+	handler.ServeHTTP(storedRec, storedReq)
+	if storedRec.Code != http.StatusOK {
+		t.Fatalf("expected stored instance signature check 200, got %d body=%s", storedRec.Code, storedRec.Body.String())
+	}
+	if !strings.Contains(gatewayForm, "app_id=app-456") {
+		t.Fatalf("expected stored instance config to reach gateway, form=%s", gatewayForm)
+	}
+
+	unauthorized := httptest.NewRequest(http.MethodPost, "/api/ops/admin/v1/cashier/payments/alipay-signature-check", bytes.NewBufferString(body))
+	unauthRec := httptest.NewRecorder()
+	handler.ServeHTTP(unauthRec, unauthorized)
+	if unauthRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized signature check, got %d", unauthRec.Code)
+	}
 }
