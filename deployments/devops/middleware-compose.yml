@@ -34,6 +34,9 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2025-02-03T21-03-04Z
+        # MinIO removed its images from public registries; keep the local cache
+    # authoritative and skip registry pulls for this service.
+    pull_policy: never
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:

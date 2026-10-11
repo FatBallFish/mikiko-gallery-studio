@@ -47,6 +47,10 @@ services:
   minio:
     profiles: ["full", "minio"]
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # MinIO removed its images from public registries (Docker Hub 404,
+    # quay.io auth-required), so compose pull must skip this service and
+    # operators provision the image into the local cache themselves.
+    pull_policy: never
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -65,6 +69,9 @@ services:
   minio-init:
     profiles: ["full", "minio"]
     image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    # Same upstream removal as the minio service above; the pinned local
+    # cache is the only remaining source for this one-shot init job.
+    pull_policy: never
     restart: "no"
     depends_on:
       minio:
