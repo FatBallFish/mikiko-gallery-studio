@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -438,4 +439,79 @@ func writeManagedNativeRuntimeForUninstallTest(t *testing.T, runtimeDir string, 
 		}
 	}
 	return plan
+}
+
+func TestUpgradeMigratesLegacyMinIOInstallationOntoRustFS(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{
+		Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileFull, Topology: config.DeploymentTopologySingle,
+		Role: config.DeploymentRoleSingle, RuntimeDir: "runtime", StorageDriver: "s3", ApplicationVersion: "v1", APIPort: "8080", GatewayPort: "80",
+	})
+	if err != nil {
+		t.Fatalf("BuildInstallPlan: %v", err)
+	}
+	legacyComponents := slices.Clone(plan.Components)
+	for i, component := range legacyComponents {
+		if component == ComponentRustFS {
+			legacyComponents[i] = ComponentMinIO
+		}
+	}
+	plan.Components = legacyComponents
+
+	document := upgradeTestDocument(config.DeploymentRoleSingle)
+	document.Values["DEPLOYMENT_MODE"] = "docker"
+	document.Values["DEPLOYMENT_PROFILE"] = "full"
+	document.Values["DEPLOYMENT_TOPOLOGY"] = "single"
+	document.Values["DEPLOYMENT_MODULES"] = "api,worker,user-web,admin-web,docs-web,gateway,postgres,redis,minio"
+	document.Values["POSTGRES_MANAGED"] = "true"
+	document.Values["REDIS_MANAGED"] = "true"
+	document.Values["OBJECT_STORAGE_MANAGED"] = "true"
+	document.Values["POSTGRES_DATABASE"] = "app"
+	document.Values["POSTGRES_USER"] = "app"
+	document.Values["POSTGRES_PASSWORD"] = "pg_legacy"
+	document.Values["REDIS_PASSWORD"] = "redis_legacy"
+	document.Values["MINIO_ROOT_USER"] = "minio-admin"
+	document.Values["MINIO_ROOT_PASSWORD"] = "minio_legacy_secret"
+	document.Values["STORAGE_S3_ENDPOINT"] = "http://minio:9000"
+	document.Values["STORAGE_S3_ACCESS_KEY_ID"] = "app-legacy-access"
+	document.Values["STORAGE_S3_SECRET_ACCESS_KEY"] = "s3_legacy_secret"
+
+	var written []byte
+	if _, err := Upgrade(context.Background(), UpgradeOptions{RuntimeDir: "runtime", ApplicationVersion: "v2", ImageTag: "v2"}, UpgradeDependencies{
+		LoadInstallation: func(string) (InstallPlan, config.RuntimeEnvDocument, error) { return plan, document, nil },
+		WriteRuntimeEnv:  func(_ string, content []byte) error { written = content; return nil },
+		WriteManifest:    func(string, InstallPlan) error { return nil },
+		ApplyDeployment: func(_ context.Context, rolled InstallPlan) error {
+			if slices.Contains(rolled.Components, ComponentMinIO) || !slices.Contains(rolled.Components, ComponentRustFS) {
+				t.Fatalf("rolled plan kept the legacy MinIO component: %v", rolled.Components)
+			}
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("Upgrade: %v", err)
+	}
+	upgraded, err := config.ParseRuntimeEnv(written)
+	if err != nil {
+		t.Fatalf("parse upgraded runtime env: %v", err)
+	}
+	values := upgraded.Values
+	if strings.Contains(values["DEPLOYMENT_MODULES"], "minio") || !strings.Contains(values["DEPLOYMENT_MODULES"], "rustfs") {
+		t.Fatalf("DEPLOYMENT_MODULES = %q", values["DEPLOYMENT_MODULES"])
+	}
+	if values["RUSTFS_ACCESS_KEY"] != "rustfs-admin" || !strings.HasPrefix(values["RUSTFS_SECRET_KEY"], "rustfs_") {
+		t.Fatalf("RustFS root credentials = %q / %q", values["RUSTFS_ACCESS_KEY"], values["RUSTFS_SECRET_KEY"])
+	}
+	if values["STORAGE_S3_ENDPOINT"] != "http://rustfs:9000" {
+		t.Fatalf("STORAGE_S3_ENDPOINT = %q", values["STORAGE_S3_ENDPOINT"])
+	}
+	if values["STORAGE_S3_ACCESS_KEY_ID"] != values["RUSTFS_ACCESS_KEY"] || values["STORAGE_S3_SECRET_ACCESS_KEY"] != values["RUSTFS_SECRET_KEY"] {
+		t.Fatal("managed application storage credentials must follow the RustFS root pair after legacy migration")
+	}
+	for key := range values {
+		if strings.HasPrefix(key, "MINIO_") {
+			t.Fatalf("legacy MinIO key %q survived the runtime rewrite", key)
+		}
+	}
+	if values["POSTGRES_PASSWORD"] != "pg_legacy" || values["REDIS_PASSWORD"] != "redis_legacy" {
+		t.Fatal("upgrade must preserve unrelated managed middleware credentials")
+	}
 }

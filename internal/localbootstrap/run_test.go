@@ -382,7 +382,7 @@ func validLocalInputs() (config.BootstrapConfig, config.Config, setup.InstallSta
 			Topology: config.DeploymentTopologySingle, Role: config.DeploymentRoleSingle,
 			StorageDriver: "local", SetupCompleted: true,
 		},
-		DeploymentModules: []string{"postgres", "redis", "minio", "mailpit", "api", "worker", "user-web", "admin-web", "docs-web", "nginx"},
+		DeploymentModules: []string{"postgres", "redis", "rustfs", "mailpit", "api", "worker", "user-web", "admin-web", "docs-web", "nginx"},
 		SetupCompleted:    true, InstallationID: InstallationID, ConfigRevision: 1, ApplicationVersion: "dev",
 		Values: map[string]string{"PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY": "local-secret"},
 	}

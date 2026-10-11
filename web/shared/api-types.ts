@@ -1651,7 +1651,7 @@ export type StorageConfigView = {
   code: string
   name: string
   driver: 'local' | 's3' | string
-  provider: 'local' | 'aws_s3' | 'minio' | 'r2' | 'custom_s3' | string
+  provider: 'local' | 'aws_s3' | 'minio' | 'rustfs' | 'r2' | 'custom_s3' | string
   status: 'enabled' | 'disabled' | 'deleted' | string
   read_enabled: boolean
   write_enabled: boolean
@@ -1675,7 +1675,7 @@ export type StorageConfigWriteRequest = {
   code?: string
   name: string
   driver: 'local' | 's3' | string
-  provider: 'local' | 'aws_s3' | 'minio' | 'r2' | 'custom_s3' | string
+  provider: 'local' | 'aws_s3' | 'minio' | 'rustfs' | 'r2' | 'custom_s3' | string
   status?: 'enabled' | 'disabled' | string
   read_enabled?: boolean
   write_enabled?: boolean

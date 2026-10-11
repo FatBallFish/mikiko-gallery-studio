@@ -146,7 +146,7 @@ wait_for_local_api() {
 }
 
 start_writers() {
-  "${COMPOSE[@]}" up -d minio api worker || return 1
+  "${COMPOSE[@]}" up -d rustfs api worker || return 1
   # The gateway resolves the API container at startup. Refresh it after the
   # API is restarted so it cannot retain an obsolete Compose container IP.
   "${COMPOSE[@]}" restart nginx || return 1

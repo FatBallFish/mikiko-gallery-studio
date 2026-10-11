@@ -14,7 +14,7 @@ const BASE_URL = envUrl('BASE_URL', 'http://127.0.0.1:8088')
 const USER_WEB_URL = envUrl('USER_WEB_URL', 'http://127.0.0.1:8088')
 const ADMIN_WEB_URL = envUrl('ADMIN_WEB_URL', 'http://127.0.0.1:8088/admin')
 const NGINX_URL = envUrl('NGINX_URL', 'http://127.0.0.1:8088')
-const MINIO_URL = envUrl('MINIO_URL', `http://127.0.0.1:${process.env.MINIO_API_PORT || '9000'}`)
+const S3_URL = envUrl('S3_URL', `http://127.0.0.1:${process.env.RUSTFS_API_PORT || '9000'}`)
 const MAILPIT_URL = envUrl('MAILPIT_URL', `http://127.0.0.1:${process.env.MAILPIT_UI_PORT || '8025'}`)
 const REPORT_DIR = path.join(ROOT_DIR, 'tmp/e2e')
 const RUN_ID = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)
@@ -1734,7 +1734,7 @@ async function main() {
       await waitFor(`${ADMIN_WEB_URL}/`)
       await waitFor(`${NGINX_URL}/readyz`)
       if (!SKIP_MIDDLEWARE_HEALTH) {
-        await waitFor(`${MINIO_URL}/minio/health/live`)
+        await waitFor(`${S3_URL}/health/ready`)
         await waitFor(`${MAILPIT_URL}/api/v1/info`)
       }
     })

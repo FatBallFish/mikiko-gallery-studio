@@ -10,11 +10,11 @@ const YAML = require('yaml') as { parse: (source: string) => any }
 const compose = YAML.parse(read('deployments/docker-compose/docker-compose.prod.yml'))
 const services = compose.services ?? {}
 
-for (const service of ['postgres', 'redis', 'minio', 'minio-init', 'api', 'worker', 'user-web', 'admin-web', 'docs-web', 'gateway']) {
+for (const service of ['postgres', 'redis', 'rustfs', 'rustfs-init', 'api', 'worker', 'user-web', 'admin-web', 'docs-web', 'gateway']) {
   if (!services[service]) throw new Error(`production Compose is missing ${service}`)
 }
 
-for (const service of ['postgres', 'redis', 'minio', 'minio-init']) {
+for (const service of ['postgres', 'redis', 'rustfs', 'rustfs-init']) {
   const profiles = services[service].profiles ?? []
   if (!profiles.includes('full')) throw new Error(`${service} must participate in the Docker full profile`)
 }
@@ -50,16 +50,18 @@ if (!redisCommand.includes('requirepass') || !redisHealth.includes('REDIS_PASSWO
   throw new Error('managed Redis must require and probe with authentication')
 }
 
-if (services.minio.command?.[0] !== 'server' || !services['minio-init'].depends_on?.minio) {
-  throw new Error('Docker full must include MinIO and an idempotent bucket/user initializer')
+const rustfsEnvironment = JSON.stringify(services.rustfs.environment ?? {})
+const rustfsHealth = JSON.stringify(services.rustfs.healthcheck?.test ?? [])
+if (!rustfsEnvironment.includes('RUSTFS_ACCESS_KEY') || !rustfsHealth.includes('/health/ready') || services['rustfs-init'].depends_on?.rustfs?.condition !== 'service_healthy') {
+  throw new Error('Docker full must include RustFS with root credentials, readiness probing, and an idempotent bucket initializer')
 }
-for (const dependency of ['postgres', 'redis', 'minio-init']) {
+for (const dependency of ['postgres', 'redis', 'rustfs-init']) {
   if (services.api.depends_on?.[dependency]) {
     throw new Error(`API managed dependency ${dependency} must be staged by mgsctl before application startup`)
   }
 }
-const minioInitMounts = JSON.stringify(services['minio-init'].volumes ?? [])
-if (!minioInitMounts.includes('minio-init.sh')) throw new Error('MinIO initializer script must be mounted read-only')
+const rustfsInitMounts = JSON.stringify(services['rustfs-init'].volumes ?? [])
+if (!rustfsInitMounts.includes('rustfs-init.sh')) throw new Error('RustFS initializer script must be mounted read-only')
 const postgresInitMounts = JSON.stringify(services.postgres.volumes ?? [])
 if (!postgresInitMounts.includes('postgres-init.sh') || !postgresInitMounts.includes('/opt/deploy/')) {
   throw new Error('managed PostgreSQL must install the least-privilege application-role initializer')
@@ -72,9 +74,9 @@ const postgresInit = read('deployments/docker-compose/postgres-init.sh')
 for (const marker of ['CREATE ROLE', 'ALTER DATABASE', 'ALTER ROLE CURRENT_USER PASSWORD NULL', 'NOSUPERUSER', 'NOCREATEDB', 'NOCREATEROLE', 'NOREPLICATION']) {
   if (!postgresInit.includes(marker)) throw new Error(`PostgreSQL initializer is missing least-privilege role setup: ${marker}`)
 }
-const minioInit = read('deployments/docker-compose/minio-init.sh')
-for (const marker of ['mc mb --ignore-existing', 'mc admin user info', 'mc admin policy create', 'arn:aws:s3:::$STORAGE_S3_BUCKET/*']) {
-  if (!minioInit.includes(marker)) throw new Error(`MinIO initializer is missing idempotent bucket-scoped setup: ${marker}`)
+const rustfsInit = read('deployments/docker-compose/rustfs-init.sh')
+for (const marker of ['head-bucket', 'create-bucket']) {
+  if (!rustfsInit.includes(marker)) throw new Error(`RustFS initializer is missing idempotent bucket setup: ${marker}`)
 }
 
 const nginx = read('deployments/nginx/default.conf')

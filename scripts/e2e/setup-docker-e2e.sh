@@ -83,9 +83,9 @@ start_core_middleware() {
   CORE_NETWORK="${E2E_PROJECT_PREFIX}middleware-${suffix}"
   CORE_POSTGRES="${E2E_PROJECT_PREFIX}postgres-${suffix}"
   CORE_REDIS="${E2E_PROJECT_PREFIX}redis-${suffix}"
-  CORE_MINIO="${E2E_PROJECT_PREFIX}minio-${suffix}"
+  CORE_RUSTFS="${E2E_PROJECT_PREFIX}rustfs-${suffix}"
   MIDDLEWARE_NETWORKS+=("$CORE_NETWORK")
-  MIDDLEWARE_CONTAINERS+=("$CORE_POSTGRES" "$CORE_REDIS" "$CORE_MINIO")
+  MIDDLEWARE_CONTAINERS+=("$CORE_POSTGRES" "$CORE_REDIS" "$CORE_RUSTFS")
   docker network create "$CORE_NETWORK" >/dev/null
   docker run -d --name "$CORE_POSTGRES" --network "$CORE_NETWORK" \
     -e POSTGRES_DB=app -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=e2e-postgres-bootstrap-password \
@@ -95,17 +95,18 @@ start_core_middleware() {
     'cp /opt/deploy/postgres-init.sh /docker-entrypoint-initdb.d/10-app-role.sh; chown postgres:postgres /docker-entrypoint-initdb.d/10-app-role.sh; chmod 0700 /docker-entrypoint-initdb.d/10-app-role.sh; exec docker-entrypoint.sh postgres' >/dev/null
   docker run -d --name "$CORE_REDIS" --network "$CORE_NETWORK" redis:7-alpine \
     redis-server --appendonly yes --requirepass e2e-redis-password >/dev/null
-  docker run -d --name "$CORE_MINIO" --network "$CORE_NETWORK" \
-    -e MINIO_ROOT_USER=e2e-minio -e MINIO_ROOT_PASSWORD=e2e-minio-password minio/minio:RELEASE.2025-04-22T22-12-26Z \
-    server /data --console-address :9001 >/dev/null
+  docker run -d --name "$CORE_RUSTFS" --network "$CORE_NETWORK" \
+    -e RUSTFS_ACCESS_KEY=e2e-rustfs -e RUSTFS_SECRET_KEY=e2e-rustfs-password \
+    -e RUSTFS_ADDRESS=0.0.0.0:9000 -e RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001 \
+    rustfs/rustfs:1.0.1 >/dev/null
   for _ in {1..90}; do
     docker exec "$CORE_POSTGRES" pg_isready -U app -d app >/dev/null 2>&1 && \
       docker exec "$CORE_REDIS" redis-cli -a e2e-redis-password ping 2>/dev/null | rg -q PONG && \
-      docker exec "$CORE_MINIO" curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1 && break
+      docker exec "$CORE_RUSTFS" curl -fsS http://127.0.0.1:9000/health/ready >/dev/null 2>&1 && break
     sleep 1
   done
-  docker run --rm --network "$CORE_NETWORK" --entrypoint /bin/sh minio/mc:RELEASE.2025-04-16T18-13-26Z -ec \
-    "mc alias set e2e http://${CORE_MINIO}:9000 e2e-minio e2e-minio-password >/dev/null && mc mb --ignore-existing e2e/app-assets >/dev/null"
+  docker run --rm --network "$CORE_NETWORK" --entrypoint /bin/sh amazon/aws-cli:2.37.12 -ec \
+    "AWS_ENDPOINT_URL=http://${CORE_RUSTFS}:9000 AWS_ACCESS_KEY_ID=e2e-rustfs AWS_SECRET_ACCESS_KEY=e2e-rustfs-password AWS_DEFAULT_REGION=us-east-1 aws s3api create-bucket --bucket app-assets >/dev/null"
 }
 
 configure_local_e2e_runtime() {
@@ -228,11 +229,11 @@ run_profile() {
     setup_redis_url="redis://:e2e-redis-password@${CORE_REDIS}:6379/0"
     setup_redis_key_prefix="app"
     setup_storage_driver="s3"
-    setup_storage_endpoint="http://${CORE_MINIO}:9000"
+    setup_storage_endpoint="http://${CORE_RUSTFS}:9000"
     setup_storage_region="us-east-1"
     setup_storage_bucket="app-assets"
-    setup_storage_access_key="e2e-minio"
-    setup_storage_secret_key="e2e-minio-password"
+    setup_storage_access_key="e2e-rustfs"
+    setup_storage_secret_key="e2e-rustfs-password"
     setup_storage_force_path_style="true"
     setup_storage_prefix="core"
   fi
@@ -332,7 +333,7 @@ PY
     configure_local_e2e_runtime "$runtime" "$project" "$api_port"
     BASE_URL="http://127.0.0.1:${gateway_port}" USER_WEB_URL="http://127.0.0.1:${gateway_port}" \
       ADMIN_WEB_URL="http://127.0.0.1:${gateway_port}/admin" NGINX_URL="http://127.0.0.1:${gateway_port}" \
-      MINIO_URL="http://127.0.0.1:${gateway_port}" MAILPIT_URL="http://127.0.0.1:${gateway_port}" \
+      S3_URL="http://127.0.0.1:${gateway_port}" MAILPIT_URL="http://127.0.0.1:${gateway_port}" \
       E2E_SKIP_MIDDLEWARE_HEALTH=true \
       node "$ROOT_DIR/scripts/e2e/docker-e2e.mjs"
   fi

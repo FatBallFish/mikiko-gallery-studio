@@ -5,7 +5,7 @@ POSTGRES_CONTAINER="${PIC_GALLERY_LOCAL_POSTGRES_CONTAINER:-pic-gallery-local-po
 POSTGRES_USER="${PIC_GALLERY_LOCAL_POSTGRES_USER:-postgres}"
 POSTGRES_DB="${PIC_GALLERY_LOCAL_POSTGRES_DB:-pic_gallery}"
 REDIS_CONTAINER="${PIC_GALLERY_LOCAL_REDIS_CONTAINER:-pic-gallery-local-redis-1}"
-MINIO_VOLUME="${PIC_GALLERY_LOCAL_MINIO_VOLUME:-pic-gallery-local_minio-data}"
+RUSTFS_VOLUME="${PIC_GALLERY_LOCAL_RUSTFS_VOLUME:-pic-gallery-local_rustfs-data}"
 STORAGE_VOLUME="${PIC_GALLERY_LOCAL_STORAGE_VOLUME:-pic-gallery-local_shared-storage}"
 
 fail() {
@@ -53,12 +53,12 @@ archive_volume() {
 validate_snapshot() {
   local directory=$1
   [[ -f "$directory/snapshot.ready" ]] || fail "snapshot marker is missing: $directory"
-  for file in database.dump database-manifest.tsv minio-data.tar.gz minio-manifest.sha256 shared-storage.tar.gz shared-storage-manifest.sha256; do
+  for file in database.dump database-manifest.tsv rustfs-data.tar.gz rustfs-manifest.sha256 shared-storage.tar.gz shared-storage-manifest.sha256; do
     [[ -f "$directory/$file" ]] || fail "snapshot artifact is missing: $file"
   done
   docker run --rm -v "$directory:/backup:ro" postgres:16-alpine \
     pg_restore --list /backup/database.dump >/dev/null
-  docker run --rm -v "$directory:/backup:ro" alpine:3.21 tar -tzf /backup/minio-data.tar.gz >/dev/null
+  docker run --rm -v "$directory:/backup:ro" alpine:3.21 tar -tzf /backup/rustfs-data.tar.gz >/dev/null
   docker run --rm -v "$directory:/backup:ro" alpine:3.21 tar -tzf /backup/shared-storage.tar.gz >/dev/null
 }
 
@@ -69,13 +69,13 @@ snapshot() {
   directory="$(cd "$requested_directory" && pwd)"
   [[ -z "$(find "$directory" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail "snapshot directory must be empty: $directory"
   require_running_container "$POSTGRES_CONTAINER"
-  require_volume "$MINIO_VOLUME"
+  require_volume "$RUSTFS_VOLUME"
   require_volume "$STORAGE_VOLUME"
 
   docker exec "$POSTGRES_CONTAINER" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc >"$directory/database.dump"
   database_manifest "$directory/database-manifest.tsv"
-  archive_volume "$MINIO_VOLUME" "$directory" minio-data.tar.gz
-  volume_manifest "$MINIO_VOLUME" "$directory/minio-manifest.sha256"
+  archive_volume "$RUSTFS_VOLUME" "$directory" rustfs-data.tar.gz
+  volume_manifest "$RUSTFS_VOLUME" "$directory/rustfs-manifest.sha256"
   archive_volume "$STORAGE_VOLUME" "$directory" shared-storage.tar.gz
   volume_manifest "$STORAGE_VOLUME" "$directory/shared-storage-manifest.sha256"
   printf 'ready\n' >"$directory/snapshot.ready"
@@ -103,12 +103,12 @@ assert_manifest() {
 
 restore() {
   local requested_directory=$1
-  local directory database_actual minio_actual storage_actual
+  local directory database_actual rustfs_actual storage_actual
   [[ -d "$requested_directory" ]] || fail "snapshot directory does not exist: $requested_directory"
   directory="$(cd "$requested_directory" && pwd)"
   validate_snapshot "$directory"
   require_running_container "$POSTGRES_CONTAINER"
-  require_volume "$MINIO_VOLUME"
+  require_volume "$RUSTFS_VOLUME"
   require_volume "$STORAGE_VOLUME"
 
   docker exec "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -c \
@@ -116,7 +116,7 @@ restore() {
   docker exec "$POSTGRES_CONTAINER" dropdb -U "$POSTGRES_USER" --if-exists "$POSTGRES_DB"
   docker exec "$POSTGRES_CONTAINER" createdb -U "$POSTGRES_USER" "$POSTGRES_DB"
   docker exec -i "$POSTGRES_CONTAINER" pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner <"$directory/database.dump"
-  restore_volume "$MINIO_VOLUME" "$directory" minio-data.tar.gz
+  restore_volume "$RUSTFS_VOLUME" "$directory" rustfs-data.tar.gz
   restore_volume "$STORAGE_VOLUME" "$directory" shared-storage.tar.gz
 
   if [[ "$(docker inspect -f '{{.State.Running}}' "$REDIS_CONTAINER" 2>/dev/null || true)" == "true" ]]; then
@@ -124,15 +124,15 @@ restore() {
   fi
 
   database_actual="$(mktemp "${TMPDIR:-/tmp}/pic-gallery-database-manifest.XXXXXX")"
-  minio_actual="$(mktemp "${TMPDIR:-/tmp}/pic-gallery-minio-manifest.XXXXXX")"
+  rustfs_actual="$(mktemp "${TMPDIR:-/tmp}/pic-gallery-rustfs-manifest.XXXXXX")"
   storage_actual="$(mktemp "${TMPDIR:-/tmp}/pic-gallery-storage-manifest.XXXXXX")"
   database_manifest "$database_actual"
-  volume_manifest "$MINIO_VOLUME" "$minio_actual"
+  volume_manifest "$RUSTFS_VOLUME" "$rustfs_actual"
   volume_manifest "$STORAGE_VOLUME" "$storage_actual"
   assert_manifest "$directory/database-manifest.tsv" "$database_actual" database
-  assert_manifest "$directory/minio-manifest.sha256" "$minio_actual" minio
+  assert_manifest "$directory/rustfs-manifest.sha256" "$rustfs_actual" rustfs
   assert_manifest "$directory/shared-storage-manifest.sha256" "$storage_actual" shared-storage
-  find "$database_actual" "$minio_actual" "$storage_actual" -type f -delete
+  find "$database_actual" "$rustfs_actual" "$storage_actual" -type f -delete
   echo "local state: restore verified from $directory"
 }
 

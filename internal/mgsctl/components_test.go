@@ -2,6 +2,7 @@ package mgsctl
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ func TestBuildInstallPlanExpandsApprovedPresets(t *testing.T) {
 			name: "docker full",
 			input: InstallInput{Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileFull, Topology: config.DeploymentTopologySingle,
 				Role: config.DeploymentRoleSingle, RuntimeDir: ".", StorageDriver: "s3", ApplicationVersion: "v1.0.0"},
-			components: []Component{ComponentAPI, ComponentWorker, ComponentUserWeb, ComponentAdminWeb, ComponentDocsWeb, ComponentGateway, ComponentPostgres, ComponentRedis, ComponentMinIO},
+			components: []Component{ComponentAPI, ComponentWorker, ComponentUserWeb, ComponentAdminWeb, ComponentDocsWeb, ComponentGateway, ComponentPostgres, ComponentRedis, ComponentRustFS},
 		},
 		{
 			name: "docker core single",
@@ -118,7 +119,7 @@ func TestBuildInstallPlanRejectsUnsafeDeploymentCombinations(t *testing.T) {
 			input.StorageDriver = "s3"
 			input.Components = []Component{ComponentAPI, ComponentPostgres}
 		}},
-		{name: "MinIO with local storage", mutate: func(input *InstallInput) {
+		{name: "RustFS with local storage", mutate: func(input *InstallInput) {
 			input.Profile = config.DeploymentProfileCustom
 			input.Components = []Component{ComponentAPI, ComponentMinIO}
 			input.StorageDriver = "local"
@@ -278,5 +279,29 @@ func TestValidateInstallPlanRechecksFullStorageInvariant(t *testing.T) {
 	plan.StorageDriver = "local"
 	if err := ValidateInstallPlan(plan); err == nil {
 		t.Fatal("direct full-local plan was accepted")
+	}
+}
+
+func TestBuildInstallPlanNormalizesLegacyMinIOComponentInput(t *testing.T) {
+	plan, err := BuildInstallPlan(InstallInput{
+		Mode: config.DeploymentModeDocker, Profile: config.DeploymentProfileCustom, Topology: config.DeploymentTopologySingle,
+		Role: config.DeploymentRoleSingle, Components: []Component{ComponentAPI, ComponentMinIO}, RuntimeDir: ".",
+		StorageDriver: "s3", ApplicationVersion: "v1", PublicAPIURL: "https://api.example.test", APIPort: "8080",
+	})
+	if err != nil {
+		t.Fatalf("BuildInstallPlan with legacy minio component: %v", err)
+	}
+	if !slices.Equal(plan.Components, []Component{ComponentAPI, ComponentRustFS}) {
+		t.Fatalf("components = %v, want legacy minio normalized onto rustfs", plan.Components)
+	}
+	if err := ValidateInstallPlan(plan); err != nil {
+		t.Fatalf("ValidateInstallPlan: %v", err)
+	}
+	services, err := DockerServices(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(services, []string{"api", "rustfs", "rustfs-init"}) {
+		t.Fatalf("DockerServices = %v", services)
 	}
 }

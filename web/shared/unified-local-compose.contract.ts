@@ -40,7 +40,7 @@ for (const secretPath of [
 ]) {
   if (!dockerignore.split(/\r?\n/).includes(secretPath)) throw new Error(`Docker build context must exclude ${secretPath}`)
 }
-for (const service of ['postgres:', 'redis:', 'minio:', 'mailpit:', 'bootstrap-local:', 'api:', 'worker:', 'user-web:', 'docs-web:', 'admin-web:', 'nginx:']) {
+for (const service of ['postgres:', 'redis:', 'rustfs:', 'mailpit:', 'bootstrap-local:', 'api:', 'worker:', 'user-web:', 'docs-web:', 'admin-web:', 'nginx:']) {
   if (!localCompose.includes(`  ${service}`)) throw new Error(`unified local Compose is missing ${service}`)
 }
 if (localCompose.includes('  migrate:')) throw new Error('local migration must run inside the guarded bootstrap command')
@@ -66,7 +66,7 @@ if (
 for (const forbidden of ['${POSTGRES_DB', '${POSTGRES_USER', '${DEV_NGINX_PORT']) {
   if (localCompose.includes(forbidden)) throw new Error(`local Compose override conflicts with runtime.env: ${forbidden}`)
 }
-for (const published of ['127.0.0.1:8088:80', '127.0.0.1:${MINIO_API_PORT:-9000}:9000', '127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001', '127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025', '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025']) {
+for (const published of ['127.0.0.1:8088:80', '127.0.0.1:${RUSTFS_API_PORT:-9000}:9000', '127.0.0.1:${RUSTFS_CONSOLE_PORT:-9001}:9001', '127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025', '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025']) {
   if (!localCompose.includes(published)) throw new Error(`local service must bind only to loopback: ${published}`)
 }
 
@@ -158,21 +158,13 @@ if (!dockerE2E.includes('new URL(url).origin')) {
 }
 
 const stateHelper = requireSource('scripts/e2e/local-state.sh')
-for (const required of ['pg_dump', 'pg_restore', 'minio-data', 'shared-storage', 'FLUSHDB']) {
+for (const required of ['pg_dump', 'pg_restore', 'rustfs-data', 'shared-storage', 'FLUSHDB']) {
   if (!stateHelper.includes(required)) throw new Error(`local state helper is missing ${required}`)
 }
 if (/docker volume rm|down\s+-v/.test(stateHelper)) throw new Error('local state helper must not delete persistent local volumes')
 
-const migration = requireSource('scripts/dev/migrate-unified-local.sh')
-for (const required of ['pg_dump', 'pg_restore --list', 'database-manifest', 'minio-manifest', 'shared-storage-manifest', '--execute', 'stop_old_dev_writers', 'failed to list old writer containers', 'failed to inspect old writer state', 'failed to list the source PostgreSQL container', 'failed to inspect the source PostgreSQL container', 'old writer is still running', 'SOURCE_STARTED_BY_MIGRATION', 'docker volume rm pic-gallery-dev_postgres-data']) {
-  if (!migration.includes(required)) throw new Error(`migration safety flow is missing ${required}`)
-}
-if (!migration.includes('prepare-local-runtime.sh') || migration.includes('DEV_NGINX_PORT')) {
-  throw new Error('legacy dev migration must prepare the fixed-port local runtime before full Compose startup')
-}
-if (!migration.includes('old volumes retained')) throw new Error('migration must retain old volumes until separate final cleanup')
-if (migration.indexOf('stop_old_dev_writers') > migration.indexOf('"$STATE_HELPER" snapshot')) {
-  throw new Error('migration must stop old dev writers before taking the source snapshot')
+if (existsSync(resolve('scripts/dev/migrate-unified-local.sh'))) {
+  throw new Error('the one-shot legacy dev-to-local migration script must be removed with the retired MinIO layout')
 }
 
 if (!devDown.includes('--confirm-destroy-local-data')) {

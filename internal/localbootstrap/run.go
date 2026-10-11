@@ -25,7 +25,7 @@ const (
 	localMigrationRetryDelay  = 500 * time.Millisecond
 )
 
-var requiredModules = []string{"admin-web", "api", "docs-web", "mailpit", "minio", "nginx", "postgres", "redis", "user-web", "worker"}
+var requiredModules = []string{"admin-web", "api", "docs-web", "mailpit", "nginx", "postgres", "redis", "rustfs", "user-web", "worker"}
 
 type Result struct {
 	RuntimePath string

@@ -32,7 +32,7 @@ for (const [name, source] of [['setup', setupRunner], ['cluster', clusterRunner]
     'docker-compose.local.yml',
     'pic-gallery-local',
     'pic-gallery-local_postgres-data',
-    'pic-gallery-local_minio-data',
+    'pic-gallery-local_rustfs-data',
     'docker volume prune',
     'docker system prune',
     'down -v --remove-orphans',

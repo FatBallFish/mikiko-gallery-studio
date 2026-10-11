@@ -23,17 +23,35 @@ const (
 	ComponentGateway    Component = "gateway"
 	ComponentPostgres   Component = "postgres"
 	ComponentRedis      Component = "redis"
-	ComponentMinIO      Component = "minio"
+	ComponentRustFS     Component = "rustfs"
 	ComponentMonitoring Component = "monitoring"
+
+	// ComponentMinIO is the retired managed object-storage component. It only
+	// remains as a legacy alias: plans and CLI inputs created before the
+	// RustFS swap are normalized onto ComponentRustFS.
+	ComponentMinIO Component = "minio"
 )
 
 var componentOrder = []Component{
 	ComponentAPI, ComponentWorker, ComponentUserWeb, ComponentAdminWeb, ComponentDocsWeb,
-	ComponentGateway, ComponentPostgres, ComponentRedis, ComponentMinIO, ComponentMonitoring,
+	ComponentGateway, ComponentPostgres, ComponentRedis, ComponentRustFS, ComponentMonitoring,
 }
 
 var applicationPreset = []Component{ComponentAPI, ComponentWorker, ComponentUserWeb, ComponentAdminWeb, ComponentDocsWeb, ComponentGateway}
-var fullPreset = []Component{ComponentAPI, ComponentWorker, ComponentUserWeb, ComponentAdminWeb, ComponentDocsWeb, ComponentGateway, ComponentPostgres, ComponentRedis, ComponentMinIO}
+var fullPreset = []Component{ComponentAPI, ComponentWorker, ComponentUserWeb, ComponentAdminWeb, ComponentDocsWeb, ComponentGateway, ComponentPostgres, ComponentRedis, ComponentRustFS}
+
+// normalizeLegacyComponents maps retired component aliases (MinIO) onto their
+// replacements so stored manifests and CLI inputs stay valid across upgrades.
+func normalizeLegacyComponents(components []Component) []Component {
+	normalized := make([]Component, 0, len(components))
+	for _, component := range components {
+		if component == ComponentMinIO {
+			component = ComponentRustFS
+		}
+		normalized = append(normalized, component)
+	}
+	return normalized
+}
 
 type InstallInput struct {
 	Interactive              bool
@@ -110,11 +128,12 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 		input.RuntimeDir = "."
 	}
 	input.RuntimeDir = filepath.Clean(input.RuntimeDir)
+	input.Components = normalizeLegacyComponents(input.Components)
 	if input.ApplicationVersion == "" {
 		input.ApplicationVersion = DefaultApplicationVersion
 	}
 	if input.StorageDriver == "" && input.Role != config.DeploymentRoleWeb {
-		if input.Topology == config.DeploymentTopologyCluster || input.Profile == config.DeploymentProfileFull || (input.Profile == config.DeploymentProfileCustom && slices.Contains(input.Components, ComponentMinIO)) {
+		if input.Topology == config.DeploymentTopologyCluster || input.Profile == config.DeploymentProfileFull || (input.Profile == config.DeploymentProfileCustom && slices.Contains(input.Components, ComponentRustFS)) {
 			input.StorageDriver = "s3"
 		} else {
 			input.StorageDriver = "local"
@@ -124,7 +143,7 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 		return InstallPlan{}, fmt.Errorf("validate application version: %w", err)
 	}
 	if input.Profile == config.DeploymentProfileFull && input.StorageDriver != "s3" {
-		return InstallPlan{}, fmt.Errorf("Docker full profile requires s3 object storage managed by MinIO")
+		return InstallPlan{}, fmt.Errorf("Docker full profile requires s3 object storage managed by RustFS")
 	}
 	joined := input.Role == config.DeploymentRoleAPI || input.Role == config.DeploymentRoleWorker || input.Role == config.DeploymentRoleWeb
 	context := config.DeploymentContext{
@@ -199,6 +218,7 @@ func BuildInstallPlan(input InstallInput) (InstallPlan, error) {
 }
 
 func ValidateInstallPlan(plan InstallPlan) error {
+	plan.Components = normalizeLegacyComponents(plan.Components)
 	if strings.TrimSpace(plan.RuntimeDir) == "" || filepath.Clean(plan.RuntimeDir) != plan.RuntimeDir {
 		return fmt.Errorf("runtime directory must be a non-empty clean path")
 	}
@@ -219,7 +239,7 @@ func ValidateInstallPlan(plan InstallPlan) error {
 		return fmt.Errorf("deployment role %q cannot execute migrations", plan.Role)
 	}
 	if plan.Profile == config.DeploymentProfileFull && plan.StorageDriver != "s3" {
-		return fmt.Errorf("Docker full profile requires s3 object storage managed by MinIO")
+		return fmt.Errorf("Docker full profile requires s3 object storage managed by RustFS")
 	}
 	if strings.TrimSpace(plan.PublicAPIURL) != "" {
 		if err := validatePublicAPIURL(plan.PublicAPIURL); err != nil {
@@ -416,7 +436,7 @@ func canonicalComponents(components []Component) ([]Component, error) {
 }
 
 func validateComponents(input InstallInput, components []Component) error {
-	managed := slices.Contains(components, ComponentPostgres) || slices.Contains(components, ComponentRedis) || slices.Contains(components, ComponentMinIO)
+	managed := slices.Contains(components, ComponentPostgres) || slices.Contains(components, ComponentRedis) || slices.Contains(components, ComponentRustFS)
 	if managed && input.Topology == config.DeploymentTopologyCluster {
 		return fmt.Errorf("cluster deployments cannot manage node-local middleware components")
 	}
@@ -426,8 +446,8 @@ func validateComponents(input InstallInput, components []Component) error {
 	if slices.Contains(components, ComponentMonitoring) && (input.Mode != config.DeploymentModeDocker || !slices.Contains(components, ComponentAPI)) {
 		return fmt.Errorf("monitoring requires a local Docker API component")
 	}
-	if slices.Contains(components, ComponentMinIO) && input.StorageDriver != "s3" {
-		return fmt.Errorf("MinIO component requires s3 object storage")
+	if slices.Contains(components, ComponentRustFS) && input.StorageDriver != "s3" {
+		return fmt.Errorf("RustFS component requires s3 object storage")
 	}
 	if slices.Contains(components, ComponentGateway) {
 		requiredComponents := []Component{ComponentUserWeb, ComponentAdminWeb, ComponentDocsWeb}

@@ -396,7 +396,7 @@ func (s *Service) validate(record domainstorageconfig.ConfigRecord, secrets map[
 		return errs.BadRequest("s3 endpoint must include scheme and host")
 	}
 	if !strings.EqualFold(s.environment, "local") && endpoint.Scheme != "https" && !hostLooksLocal(endpoint.Hostname()) &&
-		!(allowManagedBootstrapHTTP && isManagedMinIOEndpoint(endpoint)) {
+		!(allowManagedBootstrapHTTP && isManagedObjectStorageEndpoint(endpoint)) {
 		return errs.BadRequest("s3 endpoint must use https outside local environment")
 	}
 	return nil
@@ -509,10 +509,16 @@ func hostLooksLocal(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func isManagedMinIOEndpoint(endpoint *url.URL) bool {
-	return endpoint != nil && endpoint.Scheme == "http" && strings.EqualFold(endpoint.Hostname(), "minio") &&
-		endpoint.Port() == "9000" && endpoint.User == nil && (endpoint.Path == "" || endpoint.Path == "/") &&
-		endpoint.RawQuery == "" && endpoint.Fragment == ""
+// isManagedObjectStorageEndpoint reports whether the endpoint points at a
+// compose-managed object storage service (rustfs, or the retired minio host
+// still referenced by legacy bootstrap records) on its conventional port.
+func isManagedObjectStorageEndpoint(endpoint *url.URL) bool {
+	if endpoint == nil || endpoint.Scheme != "http" || endpoint.Port() != "9000" || endpoint.User != nil {
+		return false
+	}
+	host := strings.ToLower(endpoint.Hostname())
+	return (host == "minio" || host == "rustfs") &&
+		(endpoint.Path == "" || endpoint.Path == "/") && endpoint.RawQuery == "" && endpoint.Fragment == ""
 }
 
 func truncate(value string, max int) string {
