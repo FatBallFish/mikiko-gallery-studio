@@ -84,7 +84,7 @@ It includes:
 
 ## Production Quick Start
 
-`mgsctl` is the only supported production installation and lifecycle entrypoint. For a new single-host instance, use Docker `full/single`: it includes API, Worker, all Web applications, Gateway, PostgreSQL, Redis, and MinIO.
+`mgsctl` is the only supported production installation and lifecycle entrypoint. For a new single-host instance, use Docker `full/single`: it includes API, Worker, all Web applications, Gateway, PostgreSQL, Redis, and RustFS.
 
 Install Docker Engine with Compose v2, clone the repository, and run:
 
@@ -139,7 +139,7 @@ API and worker read `./config/runtime.env` relative to their working directory. 
 make compose-up
 ```
 
-The default development Compose file starts the full application stack: PostgreSQL, Redis, MinIO, Mailpit, API, worker, user web, admin web, and Nginx. Only Nginx is exposed to the host.
+The default development Compose file starts the full application stack: PostgreSQL, Redis, RustFS, Mailpit, API, worker, user web, admin web, and Nginx. Only Nginx is exposed to the host.
 
 Default entrypoint:
 
@@ -180,8 +180,8 @@ The middleware-only stack exposes these ports to the host:
 
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
-- MinIO API: `localhost:9000`
-- MinIO Console: `localhost:9001`
+- RustFS API: `localhost:9000`
+- RustFS Console: `localhost:9001`
 - Mailpit UI: `localhost:8025`
 
 ### 4. Start the API and worker
@@ -271,7 +271,7 @@ Admin-managed sensitive settings are write-only by contract:
 
 | Mode | Profile and topology | Components | Middleware | Typical use |
 | --- | --- | --- | --- | --- |
-| Docker | `full` / `single` only | API, Worker, user/admin/docs Web, Gateway | Managed PostgreSQL, Redis, MinIO | New single-host installation with the fewest prerequisites |
+| Docker | `full` / `single` only | API, Worker, user/admin/docs Web, Gateway | Managed PostgreSQL, Redis, RustFS | New single-host installation with the fewest prerequisites |
 | Docker | `core` / `single` | API, Worker, user/admin/docs Web, Gateway | External PostgreSQL, Redis, object storage | Existing infrastructure or independently managed middleware |
 | Docker | `core` / `cluster` | Control node first; API/Worker/Web nodes join later | Shared external PostgreSQL, Redis, S3-compatible storage | Horizontal API and Worker scaling |
 | Docker | `custom` / `single` or `cluster` | Explicit component list | Selected middleware on single-node Docker only | Split Web/API/Worker or monitoring layouts |
@@ -281,7 +281,7 @@ Important constraints:
 
 - `full` supports only Docker `single` with role `single`; native `full` and clustered `full` are rejected.
 - Cluster control, API, and Worker nodes require shared S3-compatible storage. Node-local storage is not a valid cluster backend.
-- Cluster deployments never create node-local PostgreSQL, Redis, or MinIO. Prepare those services before running Setup.
+- Cluster deployments never create node-local PostgreSQL, Redis, or RustFS. Prepare those services before running Setup.
 - Multiple API nodes require an existing load balancer or reverse proxy. Use `/healthz` for liveness and `/readyz` for traffic readiness.
 - Native targets download checksum-verified release bundles and do not need Go or Node.js installed.
 
@@ -382,7 +382,7 @@ runtime/
 
 The exact contents depend on mode and selected components. Preserve `config/runtime.env`, `config/install-state.json`, and `deployment.json` together; they carry the installation identity and recovery state.
 
-Docker install first pulls all selected images. If that pull fails and a complete checkout containing all application Dockerfiles is available, mgsctl builds only the selected Pic Gallery application images locally with the requested registry and tag, then continues startup. PostgreSQL, Redis, MinIO, Nginx, Prometheus, and Dockerfile base images are never replaced by project-local substitutes. If no complete checkout is available, the command reports both the pull failure and the local-fallback prerequisite.
+Docker install first pulls all selected images. If that pull fails and a complete checkout containing all application Dockerfiles is available, mgsctl builds only the selected Pic Gallery application images locally with the requested registry and tag, then continues startup. PostgreSQL, Redis, RustFS, Nginx, Prometheus, and Dockerfile base images are never replaced by project-local substitutes. If no complete checkout is available, the command reports both the pull failure and the local-fallback prerequisite.
 
 Rerunning the exact same plan while Setup is pending resumes deployment automatically. If a different plan targets the same pending runtime, interactive install asks whether to replace only mgsctl-generated configuration and deployment assets; declining preserves the existing runtime. Non-interactive automation must opt in with `--overwrite`. This operation preserves `data/`, `logs/`, and Docker volumes, and it is permanently refused after Setup completes or when the existing files cannot be recognized as a valid pending installation.
 
@@ -394,9 +394,9 @@ Rerunning the exact same plan while Setup is pending resumes deployment automati
 | `--profile` | `full` (default), `core`, `custom` | Component overrides require `custom` |
 | `--topology` | `single` (default), `cluster` | Deployment topology |
 | `--role` | `single`, `control` | Defaults to `single` for single topology and `control` for cluster; joined roles use `cluster join` |
-| `--components` | Comma-separated list | Required for `custom`; valid values are `api`, `worker`, `user-web`, `admin-web`, `docs-web`, `gateway`, `postgres`, `redis`, `minio`, `monitoring` |
+| `--components` | Comma-separated list | Required for `custom`; valid values are `api`, `worker`, `user-web`, `admin-web`, `docs-web`, `gateway`, `postgres`, `redis`, `rustfs`, `monitoring` |
 | `--runtime-dir` | `.` | Portable directory containing configuration, state, assets, data, and logs |
-| `--storage-driver` | `local`, `s3` | Defaults to `s3` for full, cluster, or MinIO custom installs; otherwise `local` |
+| `--storage-driver` | `local`, `s3` | Defaults to `s3` for full, cluster, or RustFS custom installs; otherwise `local` |
 | `--public-api-url` | Absolute HTTP(S) URL | Records the browser-visible API base URL; a joined Web plan requires it and receives it from Control during `cluster join` |
 | `--image-registry` | Compose default when empty | Docker image prefix; current Compose default is `docker.io/fatballfish` |
 | `--image-tag` | `latest` | Docker release selector; resolved to a concrete version and digests before installation |
@@ -418,7 +418,7 @@ All ports must be in `1-65535`, duplicate flags are rejected, and explicit compo
 - Web components without Gateway require `--external-gateway` and an operator-managed host/proxy.
 - Monitoring requires Docker and a local API component.
 - Native mode cannot manage middleware or monitoring.
-- Cluster custom profiles cannot contain `postgres`, `redis`, or `minio`.
+- Cluster custom profiles cannot contain `postgres`, `redis`, or `rustfs`.
 - A single/control authority must include API. Joined API, Worker, and Web roles must be created with `cluster join`, not `install`.
 
 Example Docker custom installation with monitoring:
@@ -441,7 +441,7 @@ Run `mgsctl` with no arguments in an interactive terminal to open the TUI. Use n
 
 The TUI starts in Chinese (`zh-CN`). Choose Language to switch to English (`en-US`); the selection is stored in the user configuration at `mgsctl/config.json` and reused next time. Full and core component selections are read-only presets; custom profile selections remain editable.
 
-After a successful install, mgsctl prints a component-aware service access summary and numbered next steps. It lists only services selected by the final plan and labels Docker-only PostgreSQL, Redis, and MinIO addresses as internal. An interactive terminal install may print the one-time Setup token. Non-interactive or redirected output never prints that token and instead shows the local `mgsctl setup token show --runtime-dir ...` recovery command.
+After a successful install, mgsctl prints a component-aware service access summary and numbered next steps. It lists only services selected by the final plan and labels Docker-only PostgreSQL, Redis, and RustFS addresses as internal. An interactive terminal install may print the one-time Setup token. Non-interactive or redirected output never prints that token and instead shows the local `mgsctl setup token show --runtime-dir ...` recovery command.
 
 For the default Docker `full/single` ports:
 
@@ -622,7 +622,7 @@ Ordinary uninstall stops and unregisters services but preserves runtime configur
 mgsctl uninstall --runtime-dir ./runtime --yes
 ```
 
-Ordinary uninstall is intended for service removal while retaining files for backup or migration. To permanently delete the managed runtime and, for Docker, its named PostgreSQL/Redis/MinIO volumes, first obtain the installation ID and then type the exact case-sensitive phrase:
+Ordinary uninstall is intended for service removal while retaining files for backup or migration. To permanently delete the managed runtime and, for Docker, its named PostgreSQL/Redis/RustFS volumes, first obtain the installation ID and then type the exact case-sensitive phrase:
 
 ```bash
 mgsctl setup status --runtime-dir ./runtime

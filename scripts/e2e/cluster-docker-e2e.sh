@@ -12,11 +12,11 @@ E2E_EVIDENCE_DIR="${E2E_EVIDENCE_DIR:-$E2E_ROOT/evidence}"
 REGISTRY_CONTAINER="${E2E_PROJECT_PREFIX}registry-${RUN_ID}"
 POSTGRES_CONTAINER="${E2E_PROJECT_PREFIX}postgres-${RUN_ID}"
 REDIS_CONTAINER="${E2E_PROJECT_PREFIX}redis-${RUN_ID}"
-MINIO_CONTAINER="${E2E_PROJECT_PREFIX}minio-${RUN_ID}"
+RUSTFS_CONTAINER="${E2E_PROJECT_PREFIX}rustfs-${RUN_ID}"
 REGISTRY_PORT="$(deployment_e2e_port)"
 POSTGRES_PORT="$(deployment_e2e_port)"
 REDIS_PORT="$(deployment_e2e_port)"
-MINIO_PORT="$(deployment_e2e_port)"
+RUSTFS_PORT="$(deployment_e2e_port)"
 RELEASE_PORT="$(deployment_e2e_port)"
 IMAGE_REGISTRY="127.0.0.1:${REGISTRY_PORT}"
 IMAGE_TAG="v0.0.0-cluster.${RUN_ID//-/.}"
@@ -54,7 +54,7 @@ cleanup() {
       deployment_e2e_remove_project "$project"
     fi
   done
-  docker rm -fv "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MINIO_CONTAINER" "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
+  docker rm -fv "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$RUSTFS_CONTAINER" "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
   rm -f "$ENROLLMENT_CAPTURE"
   find "$E2E_ROOT" -type f \( -name 'runtime.env' -o -name '*.cookie' -o -name '*token*' \) -delete 2>/dev/null || true
   if [[ "$status" -eq 0 ]]; then
@@ -142,20 +142,21 @@ docker run --detach --name "$POSTGRES_CONTAINER" --publish "127.0.0.1:${POSTGRES
   'cp /opt/deploy/postgres-init.sh /docker-entrypoint-initdb.d/10-app-role.sh; chown postgres:postgres /docker-entrypoint-initdb.d/10-app-role.sh; chmod 0700 /docker-entrypoint-initdb.d/10-app-role.sh; exec docker-entrypoint.sh postgres' >/dev/null
 docker run --detach --name "$REDIS_CONTAINER" --publish "127.0.0.1:${REDIS_PORT}:6379" redis:7-alpine \
   redis-server --appendonly yes --requirepass e2e-redis-password >/dev/null
-docker run --detach --name "$MINIO_CONTAINER" --publish "127.0.0.1:${MINIO_PORT}:9000" \
-  -e MINIO_ROOT_USER=e2e-minio -e MINIO_ROOT_PASSWORD=e2e-minio-password \
-  minio/minio:RELEASE.2025-04-22T22-12-26Z server /data --console-address :9001 >/dev/null
+docker run --detach --name "$RUSTFS_CONTAINER" --publish "127.0.0.1:${RUSTFS_PORT}:9000" \
+  -e RUSTFS_ACCESS_KEY=e2e-rustfs -e RUSTFS_SECRET_KEY=e2e-rustfs-password \
+  -e RUSTFS_ADDRESS=0.0.0.0:9000 -e RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001 \
+  rustfs/rustfs:1.0.1 >/dev/null
 for _ in {1..90}; do
   if docker exec "$POSTGRES_CONTAINER" pg_isready -U app -d app >/dev/null 2>&1 && \
     docker exec "$REDIS_CONTAINER" redis-cli --no-auth-warning -a e2e-redis-password ping 2>/dev/null | rg -q PONG && \
-    docker exec "$MINIO_CONTAINER" curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
+    docker exec "$RUSTFS_CONTAINER" curl -fsS http://127.0.0.1:9000/health/ready >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
-docker run --rm --network "container:${MINIO_CONTAINER}" --entrypoint /bin/sh \
-  minio/mc:RELEASE.2025-04-16T18-13-26Z -ec \
-  'mc alias set e2e http://127.0.0.1:9000 e2e-minio e2e-minio-password >/dev/null && mc mb --ignore-existing e2e/app-assets >/dev/null'
+docker run --rm --network "container:${RUSTFS_CONTAINER}" --entrypoint /bin/sh \
+  amazon/aws-cli:2.37.12 -ec \
+  'AWS_ENDPOINT_URL=http://127.0.0.1:9000 AWS_ACCESS_KEY_ID=e2e-rustfs AWS_SECRET_ACCESS_KEY=e2e-rustfs-password AWS_DEFAULT_REGION=us-east-1 aws s3api create-bucket --bucket app-assets >/dev/null'
 
 CONTROL_RUNTIME="$E2E_ROOT/runtime-control"
 CONTROL_API_PORT="$(deployment_e2e_port)"
@@ -183,12 +184,12 @@ curl -fsS -c "$COOKIE" -H 'Content-Type: application/json' --data "{\"token\":\"
   "http://127.0.0.1:${CONTROL_API_PORT}/api/setup/v1/session" -o /dev/null
 DATABASE_URL="postgres://app:e2e-postgres-password@host.docker.internal:${POSTGRES_PORT}/app?sslmode=disable"
 REDIS_URL="redis://:e2e-redis-password@host.docker.internal:${REDIS_PORT}/0"
-S3_ENDPOINT="http://host.docker.internal:${MINIO_PORT}"
+S3_ENDPOINT="http://host.docker.internal:${RUSTFS_PORT}"
 for probe in database redis storage; do
   case "$probe" in
     database) payload="{\"database_url\":\"$DATABASE_URL\"}" ;;
     redis) payload="{\"redis_url\":\"$REDIS_URL\",\"key_prefix\":\"app-cluster-${RUN_ID}\"}" ;;
-    storage) payload="{\"driver\":\"s3\",\"endpoint\":\"$S3_ENDPOINT\",\"region\":\"us-east-1\",\"bucket\":\"app-assets\",\"access_key_id\":\"e2e-minio\",\"secret_access_key\":\"e2e-minio-password\",\"force_path_style\":true,\"prefix\":\"cluster-${RUN_ID}\"}" ;;
+    storage) payload="{\"driver\":\"s3\",\"endpoint\":\"$S3_ENDPOINT\",\"region\":\"us-east-1\",\"bucket\":\"app-assets\",\"access_key_id\":\"e2e-rustfs\",\"secret_access_key\":\"e2e-rustfs-password\",\"force_path_style\":true,\"prefix\":\"cluster-${RUN_ID}\"}" ;;
   esac
   response="$(curl -fsS -b "$COOKIE" -H 'Content-Type: application/json' --data "$payload" \
     "http://127.0.0.1:${CONTROL_API_PORT}/api/setup/v1/probes/${probe}")"
@@ -206,8 +207,8 @@ print(json.dumps({
     "STORAGE_S3_ENDPOINT": endpoint,
     "STORAGE_S3_REGION": "us-east-1",
     "STORAGE_S3_BUCKET": "app-assets",
-    "STORAGE_S3_ACCESS_KEY_ID": "e2e-minio",
-    "STORAGE_S3_SECRET_ACCESS_KEY": "e2e-minio-password",
+    "STORAGE_S3_ACCESS_KEY_ID": "e2e-rustfs",
+    "STORAGE_S3_SECRET_ACCESS_KEY": "e2e-rustfs-password",
     "STORAGE_S3_FORCE_PATH_STYLE": "true",
     "STORAGE_S3_PREFIX": f"cluster-{run_id}",
     "CORS_ALLOWED_ORIGINS": f"http://127.0.0.1:{gateway_port},http://localhost:{gateway_port}",
@@ -291,7 +292,7 @@ JOIN_TOKENS+=("$WORKER_TWO_TOKEN")
 join_node "$WORKER_TWO_TOKEN" "$WORKER_TWO_RUNTIME"
 WORKER_TWO_PROJECT="${PROJECTS[${#PROJECTS[@]}-1]}"
 
-for key in SETUP_TOKEN CLUSTER_ENROLLMENT_SEAL_KEY POSTGRES_PASSWORD REDIS_PASSWORD MINIO_ROOT_PASSWORD; do
+for key in SETUP_TOKEN CLUSTER_ENROLLMENT_SEAL_KEY POSTGRES_PASSWORD REDIS_PASSWORD RUSTFS_SECRET_KEY; do
   assert_env_empty "$API_RUNTIME/config/runtime.env" "$key"
 done
 for runtime in "$WORKER_ONE_RUNTIME" "$WORKER_TWO_RUNTIME"; do
@@ -301,7 +302,7 @@ for runtime in "$WORKER_ONE_RUNTIME" "$WORKER_TWO_RUNTIME"; do
   done
 done
 
-for secret in e2e-postgres-password e2e-redis-password e2e-minio-password \
+for secret in e2e-postgres-password e2e-redis-password e2e-rustfs-password \
   "$(deployment_e2e_env_value "$CONTROL_ENV" AUTH_ACCESS_TOKEN_SECRET)" \
   "$(deployment_e2e_env_value "$CONTROL_ENV" PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY)" \
   "$(deployment_e2e_env_value "$CONTROL_ENV" PROMPT_OPTIMIZATION_QUOTE_SIGNING_KEY)" \

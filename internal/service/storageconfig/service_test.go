@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -325,4 +326,28 @@ func (s *memoryStore) SetDefault(_ context.Context, id string, expectedVersion, 
 	item.UpdatedBy = updatedBy
 	s.records[id] = item
 	return item, nil
+}
+
+func TestManagedObjectStorageEndpointAllowlistAcceptsRustFSAndLegacyMinIO(t *testing.T) {
+	for _, endpoint := range []string{"http://rustfs:9000", "http://minio:9000"} {
+		parsed, err := url.Parse(endpoint)
+		if err != nil {
+			t.Fatalf("parse %s: %v", endpoint, err)
+		}
+		if !isManagedObjectStorageEndpoint(parsed) {
+			t.Errorf("managed endpoint %s must stay allowed", endpoint)
+		}
+	}
+	for _, endpoint := range []string{
+		"http://rustfs:9001", "https://rustfs:9000", "http://rustfs:9000/path",
+		"http://rustfs.evil.test:9000", "http://minio:9000/objects", "http://postgres:5432",
+	} {
+		parsed, err := url.Parse(endpoint)
+		if err != nil {
+			t.Fatalf("parse %s: %v", endpoint, err)
+		}
+		if isManagedObjectStorageEndpoint(parsed) {
+			t.Errorf("endpoint %s must not be treated as managed object storage", endpoint)
+		}
+	}
 }

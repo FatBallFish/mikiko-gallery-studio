@@ -2,11 +2,14 @@ package mgsctl
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -67,6 +70,7 @@ func Upgrade(ctx context.Context, options UpgradeOptions, dependencies UpgradeDe
 	if err != nil {
 		return UpgradeResult{}, fmt.Errorf("load installation for upgrade: %w", err)
 	}
+	plan.Components = normalizeLegacyComponents(plan.Components)
 	if options.Migrate && plan.Role != config.DeploymentRoleSingle && plan.Role != config.DeploymentRoleControl {
 		return UpgradeResult{}, fmt.Errorf("deployment role %q cannot execute migrations", plan.Role)
 	}
@@ -100,6 +104,9 @@ func Upgrade(ctx context.Context, options UpgradeOptions, dependencies UpgradeDe
 		updatedValues["IMAGE_TAG"] = plan.ImageTag
 	} else {
 		updatedValues["RELEASE_VERSION"] = plan.ReleaseVersion
+	}
+	if err := migrateLegacyManagedStorage(updatedValues, plan); err != nil {
+		return UpgradeResult{}, fmt.Errorf("migrate legacy managed object storage values: %w", err)
 	}
 	if dependencies.PrepareTarget != nil {
 		if err := dependencies.PrepareTarget(ctx, &target); err != nil {
@@ -290,6 +297,53 @@ func writeDeploymentManifestPlan(path string, plan InstallPlan) error {
 	return config.WriteRuntimeEnvAtomic(path, append(rendered, '\n'))
 }
 
+// migrateLegacyManagedStorage carries Docker installations from the retired
+// MinIO component onto RustFS while rewriting the runtime configuration. It
+// refreshes DEPLOYMENT_MODULES from the normalized plan, mints RustFS root
+// credentials when they are missing (installation entropy is not retained, so
+// legacy upgrades cannot re-derive them), and repoints the managed S3
+// bootstrap values at the rustfs service using the root pair. Database-backed
+// storage configurations are deliberately untouched: the runtime.env values
+// only seed first-run bootstrap and future re-provisioning.
+func migrateLegacyManagedStorage(values map[string]string, plan InstallPlan) error {
+	if plan.Mode != config.DeploymentModeDocker {
+		return nil
+	}
+	plan.Components = normalizeLegacyComponents(plan.Components)
+	values["DEPLOYMENT_MODULES"] = componentsCSV(plan.Components)
+	if !slices.Contains(plan.Components, ComponentRustFS) || strings.TrimSpace(values["RUSTFS_ACCESS_KEY"]) != "" {
+		return nil
+	}
+	secretMaterial := make([]byte, 24)
+	if _, err := cryptorand.Read(secretMaterial); err != nil {
+		return fmt.Errorf("generate RustFS root secret: %w", err)
+	}
+	// Retired MinIO keys must not survive as extension entries: unknown
+	// values are preserved by the renderer, so delete them explicitly.
+	delete(values, "MINIO_ROOT_USER")
+	delete(values, "MINIO_ROOT_PASSWORD")
+	delete(values, "MINIO_API_PORT")
+	accessKey := "rustfs-admin"
+	secretKey := "rustfs_" + base64.RawURLEncoding.EncodeToString(secretMaterial)
+	values["RUSTFS_ACCESS_KEY"] = accessKey
+	values["RUSTFS_SECRET_KEY"] = secretKey
+	if values["OBJECT_STORAGE_MANAGED"] != "true" {
+		return nil
+	}
+	values["STORAGE_DRIVER"] = "s3"
+	values["STORAGE_S3_ENDPOINT"] = "http://rustfs:9000"
+	values["STORAGE_S3_ACCESS_KEY_ID"] = accessKey
+	values["STORAGE_S3_SECRET_ACCESS_KEY"] = secretKey
+	values["STORAGE_S3_FORCE_PATH_STYLE"] = "true"
+	if strings.TrimSpace(values["STORAGE_S3_REGION"]) == "" {
+		values["STORAGE_S3_REGION"] = "us-east-1"
+	}
+	if strings.TrimSpace(values["STORAGE_S3_BUCKET"]) == "" {
+		values["STORAGE_S3_BUCKET"] = "app-assets"
+	}
+	return nil
+}
+
 func loadInstallation(runtimeDir string) (InstallPlan, config.RuntimeEnvDocument, error) {
 	runtimeDir = filepath.Clean(defaultString(runtimeDir, "."))
 	manifestContent, err := os.ReadFile(filepath.Join(runtimeDir, "deployment.json"))
@@ -303,6 +357,7 @@ func loadInstallation(runtimeDir string) (InstallPlan, config.RuntimeEnvDocument
 		return InstallPlan{}, config.RuntimeEnvDocument{}, fmt.Errorf("deployment manifest is invalid")
 	}
 	manifest.Plan.RuntimeDir = runtimeDir
+	manifest.Plan.Components = normalizeLegacyComponents(manifest.Plan.Components)
 	if err := ValidateInstallPlan(manifest.Plan); err != nil {
 		return InstallPlan{}, config.RuntimeEnvDocument{}, fmt.Errorf("validate deployment manifest plan: %w", err)
 	}

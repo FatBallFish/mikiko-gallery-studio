@@ -119,8 +119,8 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			field("POSTGRES_USER", "managed middleware", "Docker 完整模式创建的 PostgreSQL 应用用户。", "PostgreSQL application user created in Docker full mode.", "app", "", FieldOwnerMGSCTL, requiredDockerFull, validateNonEmpty),
 			secretField("POSTGRES_PASSWORD", "managed middleware", "Docker 完整模式创建的 PostgreSQL 用户密码。", "PostgreSQL user password created in Docker full mode.", FieldOwnerMGSCTL, requiredDockerFull),
 			secretField("REDIS_PASSWORD", "managed middleware", "Docker 完整模式创建的 Redis 访问密码。", "Redis password created in Docker full mode.", FieldOwnerMGSCTL, requiredDockerFull),
-			field("MINIO_ROOT_USER", "managed middleware", "Docker 完整模式创建的 MinIO 管理用户，仅用于资源准备。", "MinIO administrative user created in Docker full mode for resource provisioning.", "minio-admin", "", FieldOwnerMGSCTL, requiredDockerFull, validateNonEmpty),
-			secretField("MINIO_ROOT_PASSWORD", "managed middleware", "Docker 完整模式创建的 MinIO 管理密码，仅用于资源准备。", "MinIO administrative password created in Docker full mode for resource provisioning.", FieldOwnerMGSCTL, requiredDockerFull),
+			field("RUSTFS_ACCESS_KEY", "managed middleware", "Docker 完整模式创建的 RustFS 根访问键；托管部署的应用也使用该键访问对象存储。", "RustFS root access key created in Docker full mode; the managed application also uses it for object storage.", "rustfs-admin", "", FieldOwnerMGSCTL, requiredDockerFull, validateNonEmpty),
+			secretField("RUSTFS_SECRET_KEY", "managed middleware", "Docker 完整模式创建的 RustFS 根密钥。", "RustFS root secret key created in Docker full mode.", FieldOwnerMGSCTL, requiredDockerFull),
 
 			secretValidatedField("DATABASE_URL", "database", "PostgreSQL 连接地址。账号需要具备当前数据库的建表、索引和读写权限，URL 内密码必须进行 percent encoding。", "PostgreSQL connection URL. The account must be able to create schema objects and read/write data, and URL passwords must be percent-encoded.", FieldOwnerSetup, requiredBackend, validateConnectionURL("postgres", "postgresql")),
 			field("DATABASE_MAX_OPEN_CONNS", "database", "数据库连接池最大打开连接数；留空使用应用默认值。", "Maximum open database connections; leave empty to use the application default.", "25", "", FieldOwnerSetup, requiredNever, validateOptionalPositiveInteger),
@@ -139,7 +139,7 @@ func DefaultRuntimeSchema() RuntimeSchema {
 			field("STORAGE_S3_BUCKET", "storage", "存放任务输入和生成结果的 S3 Bucket 名称。", "S3 bucket containing task inputs and generated outputs.", "app-assets", "", FieldOwnerSetup, requiredS3Storage, validateNonEmpty),
 			secretField("STORAGE_S3_ACCESS_KEY_ID", "storage", "S3 访问密钥 ID。", "S3 access key ID.", FieldOwnerSetup, requiredS3Storage),
 			secretField("STORAGE_S3_SECRET_ACCESS_KEY", "storage", "S3 访问密钥内容。", "S3 secret access key.", FieldOwnerSetup, requiredS3Storage),
-			field("STORAGE_S3_FORCE_PATH_STYLE", "storage", "是否强制使用 path-style S3 地址；MinIO 通常需要开启。", "Whether to force path-style S3 addressing; MinIO commonly requires it.", "true", "false", FieldOwnerSetup, requiredNever, validateBool),
+			field("STORAGE_S3_FORCE_PATH_STYLE", "storage", "是否强制使用 path-style S3 地址；自托管 S3 服务（如 RustFS）通常需要开启。", "Whether to force path-style S3 addressing; self-hosted S3 services such as RustFS commonly require it.", "true", "false", FieldOwnerSetup, requiredNever, validateBool),
 			field("STORAGE_S3_PREFIX", "storage", "当前安装在 Bucket 内使用的对象键前缀。", "Object-key prefix used by this installation inside the bucket.", "production/assets", "", FieldOwnerSetup, requiredNever, validateOptionalNonEmpty),
 
 			secretField("AUTH_ACCESS_TOKEN_SECRET", "application secrets", "签发用户和管理员访问令牌的密钥；初始化后不得替换。", "Secret used to sign user and administrator access tokens; do not replace it after initialization.", FieldOwnerMGSCTL, requiredAPINode),

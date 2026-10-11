@@ -122,13 +122,13 @@ func TestMultimediaLocalOneGiBAcceptance(t *testing.T) {
 
 func TestMultimediaS3OneGiBAcceptance(t *testing.T) {
 	requireMultimediaAcceptance(t)
-	endpoint := os.Getenv("MULTIMEDIA_MINIO_ENDPOINT")
+	endpoint := os.Getenv("MULTIMEDIA_S3_ENDPOINT")
 	if endpoint == "" {
-		t.Skip("MULTIMEDIA_MINIO_ENDPOINT is not set")
+		t.Skip("MULTIMEDIA_S3_ENDPOINT is not set")
 	}
 	backend, err := storage.NewS3Backend(config.StorageConfig{Driver: "s3", S3: config.StorageS3Config{
-		Endpoint: endpoint, Region: "us-east-1", Bucket: os.Getenv("MULTIMEDIA_MINIO_BUCKET"),
-		AccessKeyID: os.Getenv("MULTIMEDIA_MINIO_ACCESS_KEY"), SecretAccessKey: os.Getenv("MULTIMEDIA_MINIO_SECRET_KEY"), ForcePathStyle: true,
+		Endpoint: endpoint, Region: "us-east-1", Bucket: os.Getenv("MULTIMEDIA_S3_BUCKET"),
+		AccessKeyID: os.Getenv("MULTIMEDIA_S3_ACCESS_KEY"), SecretAccessKey: os.Getenv("MULTIMEDIA_S3_SECRET_KEY"), ForcePathStyle: true,
 	}})
 	if err != nil {
 		t.Fatal(err)

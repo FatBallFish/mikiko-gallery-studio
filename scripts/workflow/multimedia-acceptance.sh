@@ -10,15 +10,15 @@ if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
 fi
 
 ACCEPTANCE_ID="$(date +%s)-$$"
-MINIO_CONTAINER="mgs-multimedia-acceptance-minio-${ACCEPTANCE_ID}"
-MINIO_ROOT_USER="mgsacceptance"
-MINIO_ROOT_PASSWORD="mgs-acceptance-secret-123456"
-MINIO_BUCKET="multimedia-acceptance"
-MINIO_IMAGE="minio/minio:RELEASE.2025-09-07T16-13-09Z"
-MINIO_MC_IMAGE="minio/mc:RELEASE.2025-08-13T08-35-41Z"
+S3_CONTAINER="mgs-multimedia-acceptance-rustfs-${ACCEPTANCE_ID}"
+S3_ACCESS_KEY="mgsacceptance"
+S3_SECRET_KEY="mgs-acceptance-secret-123456"
+S3_BUCKET="multimedia-acceptance"
+RUSTFS_IMAGE="rustfs/rustfs:1.0.1"
+AWS_CLI_IMAGE="amazon/aws-cli:2.37.12"
 
 cleanup() {
-  docker rm -f "$MINIO_CONTAINER" >/dev/null 2>&1 || true
+  docker rm -f "$S3_CONTAINER" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -27,31 +27,32 @@ MULTIMEDIA_ACCEPTANCE=1 go test ./internal/acceptance \
 MULTIMEDIA_ACCEPTANCE=1 go test ./internal/acceptance \
   -run '^TestMultimediaLocalOneGiBAcceptance$' -count=1 -v -timeout=20m
 
-docker run -d --name "$MINIO_CONTAINER" \
-  -e "MINIO_ROOT_USER=$MINIO_ROOT_USER" \
-  -e "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD" \
+docker run -d --name "$S3_CONTAINER" \
+  -e "RUSTFS_ACCESS_KEY=$S3_ACCESS_KEY" \
+  -e "RUSTFS_SECRET_KEY=$S3_SECRET_KEY" \
+  -e "RUSTFS_ADDRESS=0.0.0.0:9000" \
   -p 127.0.0.1::9000 \
-  "$MINIO_IMAGE" server /data >/dev/null
+  "$RUSTFS_IMAGE" >/dev/null
 
-MINIO_PORT="$(docker port "$MINIO_CONTAINER" 9000/tcp | awk -F: 'NR == 1 { print $NF }')"
-MINIO_ENDPOINT="http://127.0.0.1:${MINIO_PORT}"
+S3_PORT="$(docker port "$S3_CONTAINER" 9000/tcp | awk -F: 'NR == 1 { print $NF }')"
+S3_ENDPOINT="http://127.0.0.1:${S3_PORT}"
 for _ in {1..80}; do
-  if curl --silent --fail "$MINIO_ENDPOINT/minio/health/live" >/dev/null 2>&1; then
+  if curl --silent --fail "$S3_ENDPOINT/health/ready" >/dev/null 2>&1; then
     break
   fi
   sleep 0.25
 done
-curl --silent --fail "$MINIO_ENDPOINT/minio/health/live" >/dev/null
+curl --silent --fail "$S3_ENDPOINT/health/ready" >/dev/null
 
-docker run --rm --network "container:$MINIO_CONTAINER" \
-  --entrypoint /bin/sh "$MINIO_MC_IMAGE" -c \
-  "mc alias set acceptance http://127.0.0.1:9000 '$MINIO_ROOT_USER' '$MINIO_ROOT_PASSWORD' >/dev/null && mc mb --ignore-existing acceptance/'$MINIO_BUCKET' >/dev/null"
+docker run --rm --network "container:$S3_CONTAINER" \
+  --entrypoint /bin/sh "$AWS_CLI_IMAGE" -c \
+  "AWS_ENDPOINT_URL=http://127.0.0.1:9000 AWS_ACCESS_KEY_ID='$S3_ACCESS_KEY' AWS_SECRET_ACCESS_KEY='$S3_SECRET_KEY' AWS_DEFAULT_REGION=us-east-1 aws s3api create-bucket --bucket '$S3_BUCKET' >/dev/null"
 
 MULTIMEDIA_ACCEPTANCE=1 \
-MULTIMEDIA_MINIO_ENDPOINT="$MINIO_ENDPOINT" \
-MULTIMEDIA_MINIO_BUCKET="$MINIO_BUCKET" \
-MULTIMEDIA_MINIO_ACCESS_KEY="$MINIO_ROOT_USER" \
-MULTIMEDIA_MINIO_SECRET_KEY="$MINIO_ROOT_PASSWORD" \
+  MULTIMEDIA_S3_ENDPOINT="$S3_ENDPOINT" \
+  MULTIMEDIA_S3_BUCKET="$S3_BUCKET" \
+  MULTIMEDIA_S3_ACCESS_KEY="$S3_ACCESS_KEY" \
+  MULTIMEDIA_S3_SECRET_KEY="$S3_SECRET_KEY" \
   go test ./internal/acceptance -run '^TestMultimediaS3OneGiBAcceptance$' -count=1 -v -timeout=20m
 
 echo "OK: multimedia heavy acceptance passed"

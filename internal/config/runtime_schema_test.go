@@ -139,7 +139,7 @@ func TestRequiredRuntimeFieldsDeploymentMatrix(t *testing.T) {
 				Mode: DeploymentModeDocker, Profile: DeploymentProfileFull, Role: DeploymentRoleSingle,
 				Topology: DeploymentTopologySingle, StorageDriver: "s3",
 			},
-			required: []string{"DEPLOYMENT_TOPOLOGY", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "STORAGE_S3_REGION", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "MINIO_ROOT_PASSWORD", "SETUP_TOKEN"},
+			required: []string{"DEPLOYMENT_TOPOLOGY", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "STORAGE_S3_REGION", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "RUSTFS_SECRET_KEY", "SETUP_TOKEN"},
 		},
 		{
 			name: "docker core cluster control",
@@ -148,7 +148,7 @@ func TestRequiredRuntimeFieldsDeploymentMatrix(t *testing.T) {
 				Topology: DeploymentTopologyCluster, StorageDriver: "s3",
 			},
 			required:  []string{"DEPLOYMENT_TOPOLOGY", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "STORAGE_S3_REGION", "STORAGE_S3_BUCKET", "SETUP_TOKEN", "INSTALLATION_ID", "CLUSTER_NODE_ID"},
-			forbidden: []string{"STORAGE_LOCAL_ROOT", "POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD"},
+			forbidden: []string{"STORAGE_LOCAL_ROOT", "POSTGRES_PASSWORD", "RUSTFS_SECRET_KEY"},
 		},
 		{
 			name: "native core api replica",
@@ -251,7 +251,7 @@ func TestRuntimeSchemaRequiresS3EndpointAndRegion(t *testing.T) {
 func TestRuntimeSchemaSecretValidatorsRejectWhitespaceOnlyValues(t *testing.T) {
 	schema := DefaultRuntimeSchema()
 	keys := []string{
-		"SETUP_TOKEN", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "MINIO_ROOT_PASSWORD",
+		"SETUP_TOKEN", "POSTGRES_PASSWORD", "REDIS_PASSWORD", "RUSTFS_SECRET_KEY",
 		"STORAGE_S3_ACCESS_KEY_ID", "STORAGE_S3_SECRET_ACCESS_KEY",
 		"AUTH_ACCESS_TOKEN_SECRET", "API_KEY_SIGNING_SECRET_ENCRYPTION_KEY",
 		"CASHIER_PROVIDER_CONFIG_ENCRYPTION_KEY", "PIC_GALLERY_SECURE_CONFIG_ENCRYPTION_KEY",

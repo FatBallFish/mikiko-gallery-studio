@@ -85,16 +85,19 @@ func TestBuildRuntimeArtifactsPrepopulatesManagedDockerFullMiddleware(t *testing
 	if document.Values["PIC_GALLERY_DOCS_URL"] != "/developer-docs/" || document.Values["PIC_GALLERY_DOCS_PROBE_URL"] != "http://gateway/developer-docs/" {
 		t.Fatalf("full Docker documentation targets = user %q probe %q", document.Values["PIC_GALLERY_DOCS_URL"], document.Values["PIC_GALLERY_DOCS_PROBE_URL"])
 	}
-	for _, key := range []string{"POSTGRES_PASSWORD", "REDIS_PASSWORD", "MINIO_ROOT_PASSWORD", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "STORAGE_S3_ACCESS_KEY_ID", "STORAGE_S3_SECRET_ACCESS_KEY"} {
+	for _, key := range []string{"POSTGRES_PASSWORD", "REDIS_PASSWORD", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY", "DATABASE_URL", "REDIS_URL", "STORAGE_S3_ENDPOINT", "STORAGE_S3_ACCESS_KEY_ID", "STORAGE_S3_SECRET_ACCESS_KEY"} {
 		if document.Values[key] == "" {
 			t.Errorf("managed full runtime missing %s", key)
 		}
 	}
-	if document.Values["STORAGE_S3_ACCESS_KEY_ID"] == document.Values["MINIO_ROOT_USER"] || document.Values["STORAGE_S3_SECRET_ACCESS_KEY"] == document.Values["MINIO_ROOT_PASSWORD"] {
-		t.Fatal("application object storage credentials must not reuse MinIO root credentials")
+	if document.Values["STORAGE_S3_ACCESS_KEY_ID"] != document.Values["RUSTFS_ACCESS_KEY"] || document.Values["STORAGE_S3_SECRET_ACCESS_KEY"] != document.Values["RUSTFS_SECRET_KEY"] {
+		t.Fatal("managed application object storage credentials must match the RustFS root pair")
+	}
+	if document.Values["STORAGE_S3_ENDPOINT"] != "http://rustfs:9000" {
+		t.Fatalf("managed storage endpoint = %q", document.Values["STORAGE_S3_ENDPOINT"])
 	}
 	for key, prefix := range map[string]string{
-		"POSTGRES_PASSWORD": "pg_", "REDIS_PASSWORD": "redis_", "MINIO_ROOT_PASSWORD": "minio_", "STORAGE_S3_SECRET_ACCESS_KEY": "s3_",
+		"POSTGRES_PASSWORD": "pg_", "REDIS_PASSWORD": "redis_", "RUSTFS_SECRET_KEY": "rustfs_", "STORAGE_S3_SECRET_ACCESS_KEY": "rustfs_",
 	} {
 		if !strings.HasPrefix(document.Values[key], prefix) {
 			t.Errorf("managed credential %s must use a CLI-safe prefix %q", key, prefix)
@@ -181,7 +184,7 @@ func TestBuildRuntimeArtifactsIncludesSelfContainedDockerAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantPaths := []string{"compose.yml", filepath.Join("assets", "nginx-default.conf"), filepath.Join("assets", "minio-init.sh"), filepath.Join("assets", "postgres-init.sh"), filepath.Join("assets", "prometheus.yml")}
+	wantPaths := []string{"compose.yml", filepath.Join("assets", "nginx-default.conf"), filepath.Join("assets", "rustfs-init.sh"), filepath.Join("assets", "postgres-init.sh"), filepath.Join("assets", "prometheus.yml")}
 	if len(artifacts.DeploymentFiles) != len(wantPaths) {
 		t.Fatalf("deployment files = %#v", artifacts.DeploymentFiles)
 	}

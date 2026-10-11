@@ -266,7 +266,7 @@ components:
           enum: [local, s3]
         provider:
           type: string
-          enum: [local, aws_s3, minio, r2, custom_s3]
+          enum: [local, aws_s3, minio, rustfs, r2, custom_s3]
         status:
           type: string
           enum: [enabled, disabled, deleted]
@@ -304,7 +304,7 @@ components:
           enum: [local, s3]
         provider:
           type: string
-          enum: [local, aws_s3, minio, r2, custom_s3]
+          enum: [local, aws_s3, minio, rustfs, r2, custom_s3]
         status:
           type: string
           enum: [enabled, disabled]

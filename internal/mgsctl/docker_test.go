@@ -25,7 +25,7 @@ func TestDockerServicesMatchFullCoreAndCustomPlans(t *testing.T) {
 		{
 			name:  "full",
 			input: InstallInput{Mode: "docker", Profile: "full", Topology: "single", Role: "single", RuntimeDir: "runtime", StorageDriver: "s3", ApplicationVersion: "v1"},
-			want:  []string{"api", "worker", "user-web", "admin-web", "docs-web", "gateway", "postgres", "redis", "minio", "minio-init"},
+			want:  []string{"api", "worker", "user-web", "admin-web", "docs-web", "gateway", "postgres", "redis", "rustfs", "rustfs-init"},
 		},
 		{
 			name:  "core",
@@ -202,8 +202,8 @@ func TestBuildDockerProcessSpecsPreparesManagedServicesBeforeApplications(t *tes
 			input: InstallInput{Mode: "docker", Profile: "full", Topology: "single", Role: "single", RuntimeDir: "runtime", StorageDriver: "s3", ApplicationVersion: "v1"},
 			wantCommands: []string{
 				"pull",
-				"up --detach --wait postgres redis minio",
-				"run --rm --no-deps minio-init",
+				"up --detach --wait postgres redis rustfs",
+				"run --rm --no-deps rustfs-init",
 				"up --detach --wait --force-recreate --remove-orphans api worker user-web admin-web docs-web gateway",
 			},
 		},

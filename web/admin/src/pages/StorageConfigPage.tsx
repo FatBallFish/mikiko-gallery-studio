@@ -335,7 +335,7 @@ export function StorageConfigPage({
             <Field label="配置代码"><input value={draft.code} disabled={Boolean(draft.id)} onChange={(event) => setDraft({ ...draft, code: event.target.value })} placeholder="r2-prod" /></Field>
             <Field label="配置名称"><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Cloudflare R2 Prod" /></Field>
             <Field label="存储驱动"><select value={draft.driver} disabled={namespaceLocked} onChange={(event) => setDraft(driverTemplate({ ...draft, driver: event.target.value }))}><option value="local">Local</option><option value="s3">S3</option></select></Field>
-            <Field label="服务提供方"><select value={draft.provider} disabled={namespaceLocked} onChange={(event) => setDraft(providerTemplate({ ...draft, provider: event.target.value }))}><option value="local">Local</option><option value="r2">Cloudflare R2</option><option value="aws_s3">AWS S3</option><option value="minio">MinIO</option><option value="custom_s3">自定义 S3</option></select></Field>
+            <Field label="服务提供方"><select value={draft.provider} disabled={namespaceLocked} onChange={(event) => setDraft(providerTemplate({ ...draft, provider: event.target.value }))}><option value="local">Local</option><option value="r2">Cloudflare R2</option><option value="aws_s3">AWS S3</option><option value="rustfs">RustFS</option><option value="minio">MinIO（兼容旧配置）</option><option value="custom_s3">自定义 S3</option></select></Field>
             <Field label="启用状态"><select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
           </div>
         </section>
@@ -540,7 +540,7 @@ function driverTemplate(draft: StorageDraft): StorageDraft {
 
 function providerTemplate(draft: StorageDraft): StorageDraft {
   if (draft.provider === 'r2') return { ...draft, driver: 's3', region: draft.region || 'auto', force_path_style: false }
-  if (draft.provider === 'minio') return { ...draft, driver: 's3', force_path_style: true }
+  if (draft.provider === 'minio' || draft.provider === 'rustfs') return { ...draft, driver: 's3', force_path_style: true }
   if (draft.provider === 'local') return { ...draft, driver: 'local' }
   return { ...draft, driver: draft.driver === 'local' ? 's3' : draft.driver }
 }

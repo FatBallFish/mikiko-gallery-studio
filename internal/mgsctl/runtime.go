@@ -91,7 +91,7 @@ func BuildRuntimeArtifacts(plan InstallPlan, random io.Reader, now time.Time) (R
 
 	postgresManaged := slices.Contains(plan.Components, ComponentPostgres)
 	redisManaged := slices.Contains(plan.Components, ComponentRedis)
-	storageManaged := slices.Contains(plan.Components, ComponentMinIO)
+	storageManaged := slices.Contains(plan.Components, ComponentRustFS)
 	values := map[string]string{
 		"DEPLOYMENT_MODE": string(plan.Mode), "DEPLOYMENT_PROFILE": string(plan.Profile),
 		"DEPLOYMENT_TOPOLOGY": string(plan.Topology), "DEPLOYMENT_ROLE": string(plan.Role),
@@ -170,7 +170,7 @@ func BuildPendingRuntimeArtifacts(plan InstallPlan, snapshot pendingInstallSnaps
 	}
 	postgresManaged := slices.Contains(plan.Components, ComponentPostgres)
 	redisManaged := slices.Contains(plan.Components, ComponentRedis)
-	storageManaged := slices.Contains(plan.Components, ComponentMinIO)
+	storageManaged := slices.Contains(plan.Components, ComponentRustFS)
 	values["DEPLOYMENT_MODE"] = string(plan.Mode)
 	values["DEPLOYMENT_PROFILE"] = string(plan.Profile)
 	values["DEPLOYMENT_TOPOLOGY"] = string(plan.Topology)
@@ -211,7 +211,7 @@ func BuildPendingRuntimeArtifacts(plan InstallPlan, snapshot pendingInstallSnaps
 	}
 	needPostgres := postgresManaged && (values["POSTGRES_PASSWORD"] == "" || values["DATABASE_URL"] == "")
 	needRedis := redisManaged && (values["REDIS_PASSWORD"] == "" || values["REDIS_URL"] == "")
-	needStorage := storageManaged && (values["MINIO_ROOT_PASSWORD"] == "" || values["STORAGE_S3_ACCESS_KEY_ID"] == "" || values["STORAGE_S3_SECRET_ACCESS_KEY"] == "")
+	needStorage := storageManaged && (values["RUSTFS_SECRET_KEY"] == "" || values["STORAGE_S3_ACCESS_KEY_ID"] == "" || values["STORAGE_S3_SECRET_ACCESS_KEY"] == "")
 	if needPostgres || needRedis || needStorage {
 		if random == nil {
 			random = cryptorand.Reader
@@ -287,7 +287,7 @@ func buildDeploymentFiles(plan InstallPlan) ([]DeploymentFile, error) {
 	return []DeploymentFile{
 		{RelativePath: "compose.yml", Content: deploymentassets.DockerCompose()},
 		{RelativePath: filepath.Join("assets", "nginx-default.conf"), Content: nginxConfig},
-		{RelativePath: filepath.Join("assets", "minio-init.sh"), Content: deploymentassets.MinIOInit()},
+		{RelativePath: filepath.Join("assets", "rustfs-init.sh"), Content: deploymentassets.RustFSInit()},
 		{RelativePath: filepath.Join("assets", "postgres-init.sh"), Content: deploymentassets.PostgresInit()},
 		{RelativePath: filepath.Join("assets", "prometheus.yml"), Content: prometheusConfig},
 	}, nil
@@ -365,16 +365,21 @@ func populateManagedResources(values map[string]string, root []byte, postgres, r
 		values["REDIS_KEY_PREFIX"] = "app"
 	}
 	if storage {
-		minioPassword := "minio_" + derivedSecret(root, "minio-root-password")
-		storageAccessIDSecret := derivedSecret(root, "minio-app-access-id")
-		values["MINIO_ROOT_USER"] = "minio-admin"
-		values["MINIO_ROOT_PASSWORD"] = minioPassword
+		// RustFS user administration is console/OIDC only (it is not
+		// mc-admin compatible and the image ships no client), so the managed
+		// deployment intentionally runs the application on the RustFS root
+		// credentials over the Docker-internal network instead of
+		// provisioning a scoped IAM user like the retired MinIO setup did.
+		rustfsAccessKey := "rustfs-admin"
+		rustfsSecretKey := "rustfs_" + derivedSecret(root, "rustfs-root-secret")
+		values["RUSTFS_ACCESS_KEY"] = rustfsAccessKey
+		values["RUSTFS_SECRET_KEY"] = rustfsSecretKey
 		values["STORAGE_DRIVER"] = "s3"
-		values["STORAGE_S3_ENDPOINT"] = "http://minio:9000"
+		values["STORAGE_S3_ENDPOINT"] = "http://rustfs:9000"
 		values["STORAGE_S3_REGION"] = "us-east-1"
 		values["STORAGE_S3_BUCKET"] = "app-assets"
-		values["STORAGE_S3_ACCESS_KEY_ID"] = "app-" + storageAccessIDSecret[:20]
-		values["STORAGE_S3_SECRET_ACCESS_KEY"] = "s3_" + derivedSecret(root, "minio-app-secret")
+		values["STORAGE_S3_ACCESS_KEY_ID"] = rustfsAccessKey
+		values["STORAGE_S3_SECRET_ACCESS_KEY"] = rustfsSecretKey
 		values["STORAGE_S3_FORCE_PATH_STYLE"] = "true"
 	}
 }

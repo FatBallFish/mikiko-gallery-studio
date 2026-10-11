@@ -59,8 +59,8 @@ func InstallSummary(plan InstallPlan, result InstallResult, revealSetupToken boo
 		if slices.Contains(plan.Components, ComponentRedis) {
 			internal = append(internal, serviceEndpoint{"Redis", "redis:6379", "Docker network only"})
 		}
-		if slices.Contains(plan.Components, ComponentMinIO) {
-			internal = append(internal, serviceEndpoint{"MinIO API", "minio:9000", "Docker network only"}, serviceEndpoint{"MinIO Console", "minio:9001", "Docker network only"})
+		if slices.Contains(plan.Components, ComponentRustFS) {
+			internal = append(internal, serviceEndpoint{"RustFS API", "rustfs:9000", "Docker network only"}, serviceEndpoint{"RustFS Console", "rustfs:9001", "Docker network only"})
 		}
 		if len(internal) > 0 {
 			summary.WriteString("\nInternal middleware endpoints:\n")

@@ -13,7 +13,7 @@ case "$MODE" in
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans
     ;;
   middleware)
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis minio mailpit
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis rustfs mailpit
     ;;
   *)
     echo "Unknown dev compose mode: $MODE (expected fullstack or middleware)" >&2

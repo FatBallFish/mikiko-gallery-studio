@@ -326,8 +326,8 @@ func BuildDockerProcessSpecsForNode(action DockerAction, plan InstallPlan, insta
 		if len(managedServices) > 0 {
 			specs = append(specs, newSpec(append([]string{"up", "--detach", "--wait"}, managedServices...)...))
 		}
-		if slices.Contains(plan.Components, ComponentMinIO) {
-			specs = append(specs, newSpec("run", "--rm", "--no-deps", "minio-init"))
+		if slices.Contains(plan.Components, ComponentRustFS) {
+			specs = append(specs, newSpec("run", "--rm", "--no-deps", "rustfs-init"))
 		}
 		applicationServices := dockerApplicationServices(plan)
 		specs = append(specs, newSpec(append([]string{"up", "--detach", "--wait", "--force-recreate", "--remove-orphans"}, applicationServices...)...))
@@ -416,7 +416,7 @@ func dockerManagedServices(plan InstallPlan) []string {
 	services := make([]string, 0, 3)
 	for _, component := range plan.Components {
 		switch component {
-		case ComponentPostgres, ComponentRedis, ComponentMinIO:
+		case ComponentPostgres, ComponentRedis, ComponentRustFS:
 			services = append(services, string(component))
 		}
 	}
@@ -427,7 +427,7 @@ func dockerApplicationServices(plan InstallPlan) []string {
 	services := make([]string, 0, len(plan.Components))
 	for _, component := range plan.Components {
 		switch component {
-		case ComponentPostgres, ComponentRedis, ComponentMinIO:
+		case ComponentPostgres, ComponentRedis, ComponentRustFS:
 			continue
 		default:
 			services = append(services, string(component))
@@ -460,8 +460,8 @@ func DockerServices(plan InstallPlan) ([]string, error) {
 	services := make([]string, 0, len(plan.Components)+1)
 	for _, component := range plan.Components {
 		services = append(services, string(component))
-		if component == ComponentMinIO {
-			services = append(services, "minio-init")
+		if component == ComponentRustFS {
+			services = append(services, "rustfs-init")
 		}
 	}
 	return services, nil

@@ -84,7 +84,7 @@ Pic Gallery 面向希望运营图片生成产品的团队，而不是只暴露�
 
 ## 生产部署快速开始
 
-`mgsctl` 是唯一受支持的生产安装与生命周期管理入口。新建单机实例推荐使用 Docker `full/single`，它包含 API、Worker、全部 Web、Gateway、PostgreSQL、Redis 和 MinIO。
+`mgsctl` 是唯一受支持的生产安装与生命周期管理入口。新建单机实例推荐使用 Docker `full/single`，它包含 API、Worker、全部 Web、Gateway、PostgreSQL、Redis 和 RustFS。
 
 安装 Docker Engine 与 Compose v2，克隆仓库后执行：
 
@@ -139,7 +139,7 @@ API 和 Worker 会相对于工作目录读取 `./config/runtime.env`。模板中
 make compose-up
 ```
 
-默认开发 Compose 文件会启动完整应用栈：PostgreSQL、Redis、MinIO、Mailpit、API、Worker、用户端 Web、管理端 Web 和 Nginx。只有 Nginx 暴露到宿主机。
+默认开发 Compose 文件会启动完整应用栈：PostgreSQL、Redis、RustFS、Mailpit、API、Worker、用户端 Web、管理端 Web 和 Nginx。只有 Nginx 暴露到宿主机。
 
 默认入口：
 
@@ -180,8 +180,8 @@ make compose-middleware-up
 
 - PostgreSQL：`localhost:5432`
 - Redis：`localhost:6379`
-- MinIO API：`localhost:9000`
-- MinIO Console：`localhost:9001`
+- RustFS API：`localhost:9000`
+- RustFS 控制台：`localhost:9001`
 - Mailpit UI：`localhost:8025`
 
 ### 4. 启动 API 和 Worker
@@ -271,7 +271,7 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
 
 | 模式 | Profile 与拓扑 | 组件 | 中间件 | 适用场景 |
 | --- | --- | --- | --- | --- |
-| Docker | 仅 `full` / `single` | API、Worker、用户/管理/文档 Web、Gateway | 托管 PostgreSQL、Redis、MinIO | 新建单机实例，前置依赖最少 |
+| Docker | 仅 `full` / `single` | API、Worker、用户/管理/文档 Web、Gateway | 托管 PostgreSQL、Redis、RustFS | 新建单机实例，前置依赖最少 |
 | Docker | `core` / `single` | API、Worker、用户/管理/文档 Web、Gateway | 外部 PostgreSQL、Redis、对象存储 | 已有基础设施或希望独立维护中间件 |
 | Docker | `core` / `cluster` | 先部署 Control，再加入 API/Worker/Web 节点 | 共享的外部 PostgreSQL、Redis、S3 兼容存储 | 横向扩展 API 与 Worker |
 | Docker | `custom` / `single` 或 `cluster` | 显式选择组件 | 仅单机 Docker 可选择托管中间件 | 拆分 Web/API/Worker 或增加监控 |
@@ -281,7 +281,7 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8080 make admin-web-dev
 
 - `full` 仅支持 Docker `single` 加 `single` 角色；原生 `full` 和集群 `full` 会被拒绝。
 - 集群 Control、API 和 Worker 节点必须使用共享的 S3 兼容存储，节点本地目录不能作为集群存储。
-- 集群部署不会创建节点本地 PostgreSQL、Redis 或 MinIO，进入 Setup 前需提前准备这些服务。
+- 集群部署不会创建节点本地 PostgreSQL、Redis 或 RustFS，进入 Setup 前需提前准备这些服务。
 - 多 API 节点需要已有负载均衡或反向代理；存活检查使用 `/healthz`，流量就绪检查使用 `/readyz`。
 - 原生目标机下载并校验发布包，不要求安装 Go 或 Node.js。
 
@@ -384,7 +384,7 @@ runtime/
 
 具体内容随模式和组件变化。`config/runtime.env`、`config/install-state.json` 与 `deployment.json` 共同承载安装身份和恢复状态，应始终一起保留。
 
-Docker 安装会先拉取选中的全部镜像。如果拉取失败且本地存在包含全部应用 Dockerfile 的完整源码仓库，mgsctl 会使用请求的 registry 和 tag 仅构建当前选中的 Pic Gallery 应用镜像，然后继续启动。PostgreSQL、Redis、MinIO、Nginx、Prometheus 及 Dockerfile 基础镜像不会被项目本地替代；若不存在完整源码仓库，命令会同时输出原始拉取错误和本地降级所缺少的条件。
+Docker 安装会先拉取选中的全部镜像。如果拉取失败且本地存在包含全部应用 Dockerfile 的完整源码仓库，mgsctl 会使用请求的 registry 和 tag 仅构建当前选中的 Pic Gallery 应用镜像，然后继续启动。PostgreSQL、Redis、RustFS、Nginx、Prometheus 及 Dockerfile 基础镜像不会被项目本地替代；若不存在完整源码仓库，命令会同时输出原始拉取错误和本地降级所缺少的条件。
 
 Setup 尚未完成时，使用完全相同的计划重试会自动续装。若另一套计划指向同一个 pending 运行目录，交互安装会询问是否只覆盖 mgsctl 生成的配置和部署资源；选择取消会保留现状。非交互自动化必须显式传入 `--overwrite`。覆盖会保留 `data/`、`logs/` 和 Docker 持久卷；Setup 已完成或现有文件无法识别为有效 pending 安装时始终拒绝覆盖。
 
@@ -396,9 +396,9 @@ Setup 尚未完成时，使用完全相同的计划重试会自动续装。若�
 | `--profile` | 默认 `full`，可选 `core`、`custom` | 只有 `custom` 可覆盖组件列表 |
 | `--topology` | 默认 `single`，可选 `cluster` | 部署拓扑 |
 | `--role` | `single`、`control` | 单机默认 `single`，集群默认 `control`；加入节点使用 `cluster join` |
-| `--components` | 逗号分隔列表 | `custom` 必填；支持 `api`、`worker`、`user-web`、`admin-web`、`docs-web`、`gateway`、`postgres`、`redis`、`minio`、`monitoring` |
+| `--components` | 逗号分隔列表 | `custom` 必填；支持 `api`、`worker`、`user-web`、`admin-web`、`docs-web`、`gateway`、`postgres`、`redis`、`rustfs`、`monitoring` |
 | `--runtime-dir` | `.` | 保存配置、状态、生成文件、数据和日志的可移动目录 |
-| `--storage-driver` | `local`、`s3` | full、cluster 或包含 MinIO 的 custom 默认 `s3`，其他情况默认 `local` |
+| `--storage-driver` | `local`、`s3` | full、cluster 或包含 RustFS 的 custom 默认 `s3`，其他情况默认 `local` |
 | `--public-api-url` | 绝对 HTTP(S) URL | 记录浏览器可访问的 API 基础地址；加入 Web 角色需要该值，并在 `cluster join` 时从 Control 获取 |
 | `--image-registry` | 留空使用 Compose 默认值 | Docker 镜像前缀；当前 Compose 默认 `docker.io/fatballfish` |
 | `--image-tag` | `latest` | Docker Release 选择器；安装前解析成具体版本和 digest |
@@ -420,7 +420,7 @@ Setup 尚未完成时，使用完全相同的计划重试会自动续装。若�
 - 选择 Web 但不选择 Gateway 时，必须传 `--external-gateway` 并自行提供托管或代理。
 - Monitoring 只支持 Docker，且必须同时包含本地 API。
 - 原生模式不能管理中间件或 Monitoring。
-- 集群 custom 不能包含 `postgres`、`redis` 或 `minio`。
+- 集群 custom 不能包含 `postgres`、`redis` 或 `rustfs`。
 - single/control 权威节点必须包含 API；API、Worker、Web 加入角色必须使用 `cluster join`，不能直接 `install`。
 
 带监控的 Docker 自定义部署示例：
@@ -443,7 +443,7 @@ Setup 尚未完成时，使用完全相同的计划重试会自动续装。若�
 
 TUI 默认使用中文（`zh-CN`）。在 Language 项切换到英文（`en-US`）后，选择会写入用户配置 `mgsctl/config.json`，下次继续使用。Full/Core 的组件为只读预设，只有 Custom Profile 可以编辑组件选择。
 
-安装成功后，mgsctl 会输出按最终组件计划生成的服务访问摘要和编号后续步骤，只列出实际部署的服务，并将仅 Docker 网络可访问的 PostgreSQL、Redis、MinIO 明确标为内部地址。交互终端安装可以显示一次性 Setup Token；重定向输出永远不显示 Token，只提示在部署主机执行 `mgsctl setup token show --runtime-dir ...`。
+安装成功后，mgsctl 会输出按最终组件计划生成的服务访问摘要和编号后续步骤，只列出实际部署的服务，并将仅 Docker 网络可访问的 PostgreSQL、Redis、RustFS 明确标为内部地址。交互终端安装可以显示一次性 Setup Token；重定向输出永远不显示 Token，只提示在部署主机执行 `mgsctl setup token show --runtime-dir ...`。
 
 Docker `full/single` 默认端口如下：
 
@@ -624,7 +624,7 @@ mgsctl upgrade \
 mgsctl uninstall --runtime-dir ./runtime --yes
 ```
 
-普通卸载适用于移除服务但保留文件，以便备份或迁移。若要永久删除受管运行目录，以及 Docker 的 PostgreSQL/Redis/MinIO 命名卷，先查询 installation ID，再输入区分大小写的精确短语：
+普通卸载适用于移除服务但保留文件，以便备份或迁移。若要永久删除受管运行目录，以及 Docker 的 PostgreSQL/Redis/RustFS 命名卷，先查询 installation ID，再输入区分大小写的精确短语：
 
 ```bash
 mgsctl setup status --runtime-dir ./runtime

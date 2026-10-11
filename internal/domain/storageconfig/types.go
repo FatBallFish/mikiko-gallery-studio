@@ -12,6 +12,7 @@ const (
 	ProviderLocal    = "local"
 	ProviderAWSS3    = "aws_s3"
 	ProviderMinIO    = "minio"
+	ProviderRustFS   = "rustfs"
 	ProviderR2       = "r2"
 	ProviderCustomS3 = "custom_s3"
 

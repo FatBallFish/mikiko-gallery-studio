@@ -16,7 +16,7 @@ The project accepts HTTP and IP-plus-port access. Domain binding, TLS certificat
 
 | Mode | Profile | Included services | Middleware |
 | --- | --- | --- | --- |
-| Docker | `full` | API, Worker, three Web apps, gateway | Managed PostgreSQL, Redis, and MinIO |
+| Docker | `full` | API, Worker, three Web apps, gateway | Managed PostgreSQL, Redis, and RustFS |
 | Docker | `core` | API, Worker, three Web apps, gateway | External PostgreSQL, Redis, and object storage |
 | Docker | `custom` | Operator-selected valid component set | Managed only when selected |
 | Native Linux/Windows | `core` or `custom` | Prebuilt API, Worker, gateway/services | External middleware only |
@@ -25,7 +25,7 @@ Native `full` is intentionally unsupported. Docker and native core nodes can joi
 
 ## Prerequisites
 
-Docker deployment requires Docker Engine, Compose v2, and a writable runtime directory. Registry access is normally required. MinIO removed its public images (Docker Hub repositories return 404 and quay.io requires authentication), so the managed compose files pin `pull_policy: never` for the `minio` and `minio-init` services and skip registry pulls for them. Full-profile deployments must provision both cached images (`minio/minio:RELEASE.2025-04-22T22-12-26Z` and `minio/mc:RELEASE.2025-04-16T18-13-26Z`) into the local Docker cache from a source the operator trusts before install or upgrade; upgrades of existing nodes reuse the cached images as-is. Official images use repositories such as `docker.io/fatballfish/mikiko-gallery-studio-api`. If a selected application image cannot be pulled, mgsctl may build selected images from a complete checkout supplied by `scripts/install.sh` or `scripts/install.ps1`. Base and middleware images still come from their registries.
+Docker deployment requires Docker Engine, Compose v2, and a writable runtime directory. Registry access is normally required. Managed object storage runs RustFS (`rustfs/rustfs:1.0.1`); the one-shot bucket job uses `amazon/aws-cli:2.37.12`. Both images pull from public registries, so no operator-side image pre-caching is required anymore (the retired MinIO images were removed upstream, which is why the project moved to RustFS; see `docs/runbooks/minio-to-rustfs-migration.md` for migrating existing installs). Official images use repositories such as `docker.io/fatballfish/mikiko-gallery-studio-api`. If a selected application image cannot be pulled, mgsctl may build selected images from a complete checkout supplied by `scripts/install.sh` or `scripts/install.ps1`. Base and middleware images still come from their registries.
 
 Native deployment requires a supported prebuilt release bundle, service-manager privileges, external PostgreSQL and Redis, and local shared storage for single-node deployments or S3-compatible storage for clusters. Target hosts do not need Go or Node.js.
 
@@ -185,7 +185,7 @@ After an upgrade, run `mgsctl doctor`, verify `/readyz`, and open the admin text
 
 Gallery references always create non-owning aliases to the original object. There is no runtime rollout switch. Before rolling back, verify the target release remains alias-aware and protects shared objects during cleanup.
 
-Back up external databases and object storage with provider-native tooling before upgrades. For Docker full, back up the named PostgreSQL and MinIO volumes before destructive maintenance.
+Back up external databases and object storage with provider-native tooling before upgrades. For Docker full, back up the named PostgreSQL and RustFS volumes before destructive maintenance.
 
 ## Uninstall Safety
 
