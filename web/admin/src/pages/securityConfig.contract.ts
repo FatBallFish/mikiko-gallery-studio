@@ -34,17 +34,40 @@ for (const phase of ['pristine', 'dirty', 'validating', 'saving', 'saved', 'fail
 
 for (const dirtyContract of [
   'onDirtyChange?: (dirty: boolean) => void',
-  'onDirtyChange?.(dirty)',
+  'onDirtyChange?.(dirty || oidcDirty)',
   "window.addEventListener('beforeunload'",
   "window.removeEventListener('beforeunload'",
   'event.preventDefault()',
   "window.confirm('当前 SMTP 配置有未保存修改，确认放弃并刷新吗？')",
   'onBusyChange?: (busy: boolean) => void',
-  'onBusyChange?.(editorLocked)',
+  'onBusyChange?.(editorLocked || oidcBusy)',
+  'OIDCConfigEditor',
 ]) {
   if (!securitySource.includes(dirtyContract)) {
     throw new Error(`security configuration must protect dirty edits: ${dirtyContract}`)
   }
+}
+
+const oidcSource = readFileSync(new URL('./SecurityOIDCConfig.tsx', import.meta.url), 'utf8')
+for (const oidcContract of [
+  'adminApi.getOIDCConfig',
+  'adminApi.updateOIDCConfig',
+  'adminApi.testOIDCConfig',
+  'data-security-editor-group="oidc-secret"',
+  'allow_local_login',
+  'allow_registration',
+  'client_secret',
+  '/auth/callback',
+]) {
+  if (!oidcSource.includes(oidcContract)) {
+    throw new Error(`security configuration must keep the oidc editor contract: ${oidcContract}`)
+  }
+}
+if (API_PATHS.ops.securityOIDC !== '/api/ops/admin/v1/security/oidc') {
+  throw new Error(`security oidc API path should be stable, got ${API_PATHS.ops.securityOIDC}`)
+}
+if (API_PATHS.ops.securityOIDCTest !== '/api/ops/admin/v1/security/oidc/test') {
+  throw new Error(`security oidc test API path should be stable, got ${API_PATHS.ops.securityOIDCTest}`)
 }
 
 for (const editorContract of [

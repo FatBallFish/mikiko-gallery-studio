@@ -18,6 +18,7 @@ import type {
   EstimateRequest,
   EstimateResult,
   FeatureFlags,
+  OIDCCallbackResponse,
   GalleryImage,
 	GalleryBatchMutationResult,
 	GalleryExportStatus,
@@ -541,6 +542,8 @@ export function normalizeTaskList(raw: any): ImageTask[] {
 export const userApi = {
   configureAuth: sharedApiClient.setAuth.bind(sharedApiClient),
   getFeatureFlags: () => sharedApiClient.request<FeatureFlags>(API_PATHS.agent.features, { auth: false, retryUnauthorized: false }),
+  completeOIDCLogin: (code: string, state: string) =>
+    sharedApiClient.request<OIDCCallbackResponse>(API_PATHS.agent.oidcCallback, { method: 'POST', body: { code, state }, auth: false, retryUnauthorized: false }),
   sendEmailCode: (email: string, scene: 'login' | 'register' | 'password_reset' | 'password_change' = 'login') =>
     sharedApiClient.request<{ email: string; scene: string; status: string }>(API_PATHS.agent.sendEmailCode, { method: 'POST', body: { email, scene }, auth: false }),
   loginWithEmailCode: (email: string, code: string) =>

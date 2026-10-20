@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
+	domainsecureconfig "github.com/fatballfish/pic-gallery/internal/domain/secureconfig"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/fatballfish/pic-gallery/pkg/httpx"
 )
@@ -15,27 +16,43 @@ type featureFlagSource interface {
 	GetTab(context.Context, string) (domainadminconfig.Tab, error)
 }
 
-type featureFlags struct {
-	VideoCreation  bool `json:"video_creation"`
-	CreativeCanvas bool `json:"creative_canvas"`
-	MediaUpload    bool `json:"media_upload"`
+type oidcSettingsSource interface {
+	ResolveOIDCSettings(ctx context.Context) (domainsecureconfig.OIDCPublicSettings, error)
 }
 
-type featureFlagResolver struct{ source featureFlagSource }
+type featureOIDCLogin struct {
+	Enabled     bool   `json:"enabled"`
+	DisplayName string `json:"display_name,omitempty"`
+}
 
-func newFeatureFlagResolver(source featureFlagSource) *featureFlagResolver {
-	return &featureFlagResolver{source: source}
+type featureFlags struct {
+	VideoCreation       bool             `json:"video_creation"`
+	CreativeCanvas      bool             `json:"creative_canvas"`
+	MediaUpload         bool             `json:"media_upload"`
+	OIDCLogin           featureOIDCLogin `json:"oidc_login"`
+	PasswordLoginEnabled bool            `json:"password_login_enabled"`
+	RegistrationEnabled bool            `json:"registration_enabled"`
+}
+
+type featureFlagResolver struct {
+	source     featureFlagSource
+	oidcSource oidcSettingsSource
+}
+
+func newFeatureFlagResolver(source featureFlagSource, oidcSource oidcSettingsSource) *featureFlagResolver {
+	return &featureFlagResolver{source: source, oidcSource: oidcSource}
 }
 
 func (r *featureFlagResolver) Get(ctx context.Context) (featureFlags, error) {
+	// Local login stays fully open unless an OIDC policy explicitly narrows it.
+	result := featureFlags{PasswordLoginEnabled: true, RegistrationEnabled: true}
 	if r == nil || r.source == nil {
-		return featureFlags{}, nil
+		return result, nil
 	}
 	tab, err := r.source.GetTab(ctx, featureConfigTab)
 	if err != nil {
 		return featureFlags{}, err
 	}
-	result := featureFlags{}
 	for _, item := range tab.Items {
 		enabled, ok := item.ConfigValue["value"].(bool)
 		if !ok || !enabled {
@@ -49,6 +66,15 @@ func (r *featureFlagResolver) Get(ctx context.Context) (featureFlags, error) {
 		case "media_upload":
 			result.MediaUpload = true
 		}
+	}
+	if r.oidcSource != nil {
+		settings, err := r.oidcSource.ResolveOIDCSettings(ctx)
+		if err != nil {
+			return featureFlags{}, err
+		}
+		result.OIDCLogin = featureOIDCLogin{Enabled: settings.Enabled, DisplayName: settings.DisplayName}
+		result.PasswordLoginEnabled = settings.AllowLocalLogin
+		result.RegistrationEnabled = settings.AllowRegistration
 	}
 	return result, nil
 }
@@ -74,7 +100,7 @@ func featureWriteBlocked(feature, method, action string) bool {
 }
 
 func (a *API) featureFlags(ctx context.Context) (featureFlags, error) {
-	return newFeatureFlagResolver(a.admin).Get(ctx)
+	return newFeatureFlagResolver(a.admin, a.secureCfg).Get(ctx)
 }
 
 func (a *API) requireFeature(ctx context.Context, name string) *errs.Error {

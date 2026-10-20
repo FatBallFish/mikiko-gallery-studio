@@ -464,6 +464,47 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/SessionResponse
+  /api/agent/auth/v1/oidc/authorize:
+    get:
+      tags: [Agent Auth]
+      summary: Start the Mikiko ID (OIDC) authorization-code + PKCE login redirect
+      description: Full-page browser navigation. Sets the sealed single-use login-transaction cookie and redirects (302) to the OIDC provider authorization endpoint. Returns 404 when OIDC login is not enabled.
+      operationId: getAgentAuthOIDCAuthorize
+      parameters:
+        - name: return_to
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Same-origin URL (or site-relative path with its query and hash) to restore after login.
+      responses:
+        '302':
+          description: Redirect to the OIDC provider authorization endpoint
+        '404':
+          description: OIDC login is not enabled
+  /api/agent/auth/v1/oidc/callback:
+    post:
+      tags: [Agent Auth]
+      summary: Exchange the OIDC authorization code for a platform session
+      description: The SPA at /auth/callback posts the code and state returned by the OIDC provider; the server validates the sealed transaction cookie, exchanges the code with PKCE, verifies the id_token, links or creates the account and issues the normal session tokens.
+      operationId: postAgentAuthOIDCCallback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/agent.yaml#/components/schemas/OIDCCallbackRequest
+      responses:
+        '200':
+          description: Platform session issued
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/agent.yaml#/components/schemas/OIDCCallbackResponse
+        '400':
+          description: Invalid or expired login transaction state
+        '401':
+          description: Token exchange or id_token verification failed
   /api/agent/auth/v1/session/refresh:
     post:
       tags: [Agent Auth]
@@ -2520,6 +2561,59 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecuritySMTPTestResponse
+  /api/ops/admin/v1/security/oidc:
+    get:
+      tags: [Admin Security Config]
+      summary: Get the Mikiko ID (OIDC) login configuration without plaintext secrets
+      operationId: getAdminSecurityOIDC
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OIDC configuration view
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecurityOIDCConfigResponse
+    put:
+      tags: [Admin Security Config]
+      summary: Replace the Mikiko ID (OIDC) login configuration and optionally rotate the write-only client secret
+      operationId: putAdminSecurityOIDC
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecurityOIDCConfigWriteRequest
+      responses:
+        '200':
+          description: OIDC configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecurityOIDCConfigResponse
+        '409':
+          description: Version conflict
+  /api/ops/admin/v1/security/oidc/test:
+    post:
+      tags: [Admin Security Config]
+      summary: Fetch the OIDC issuer discovery document to verify connectivity
+      operationId: postAdminSecurityOIDCTest
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Discovery document resolved
+          content:
+            application/json:
+              schema:
+                $ref: ./components/schemas/admin.yaml#/components/schemas/AdminSecurityOIDCTestResponse
+        '400':
+          description: OIDC is not enabled or not fully configured
+        '502':
+          description: Discovery request failed
   /api/ops/admin/v1/storage-configs:
     get:
       tags: [Admin Storage Config]
@@ -5645,11 +5739,19 @@ components:
   schemas:
     AgentFeatureFlags:
       type: object
-      required: [video_creation, creative_canvas, media_upload]
+      required: [video_creation, creative_canvas, media_upload, oidc_login, password_login_enabled, registration_enabled]
       properties:
         video_creation: {type: boolean}
         creative_canvas: {type: boolean}
         media_upload: {type: boolean}
+        oidc_login:
+          type: object
+          required: [enabled]
+          properties:
+            enabled: {type: boolean}
+            display_name: {type: string, description: Login button label, defaults to 使用 Mikiko ID 登录 when empty.}
+        password_login_enabled: {type: boolean, description: Whether password and email-code login are open.}
+        registration_enabled: {type: boolean, description: Whether local email-code sign-up may create new accounts.}
       additionalProperties: false
     AgentFeatureFlagsResponse:
       type: object

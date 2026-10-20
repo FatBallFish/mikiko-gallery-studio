@@ -74,6 +74,33 @@ components:
           format: email
         password:
           type: string
+    OIDCCallbackRequest:
+      type: object
+      required: [code, state]
+      properties:
+        code:
+          type: string
+          description: Authorization code returned by the OIDC provider to /auth/callback.
+        state:
+          type: string
+          description: State parameter echoed by the provider; must match the sealed transaction cookie.
+    OIDCCallbackResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            access_token:
+              type: string
+            expires_in_seconds:
+              type: integer
+            user_id:
+              type: integer
+            return_to:
+              type: string
+              description: Sanitized same-origin URL to restore after login; empty means the SPA default page.
+            signup_grant:
+              $ref: '#/components/schemas/SignupGrant'
     PasswordChangeRequest:
       type: object
       required: [code, new_password]

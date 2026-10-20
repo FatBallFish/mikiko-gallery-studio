@@ -2625,6 +2625,34 @@ var (
 			},
 		},
 	}
+	// UserIdentitiesColumns holds the columns for the "user_identities" table.
+	UserIdentitiesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "provider", Type: field.TypeString, Size: 32},
+		{Name: "subject", Type: field.TypeString, Size: 255},
+		{Name: "email", Type: field.TypeString, Size: 255, Default: ""},
+	}
+	// UserIdentitiesTable holds the schema information for the "user_identities" table.
+	UserIdentitiesTable = &schema.Table{
+		Name:       "user_identities",
+		Columns:    UserIdentitiesColumns,
+		PrimaryKey: []*schema.Column{UserIdentitiesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "useridentity_provider_subject",
+				Unique:  true,
+				Columns: []*schema.Column{UserIdentitiesColumns[4], UserIdentitiesColumns[5]},
+			},
+			{
+				Name:    "useridentity_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserIdentitiesColumns[3]},
+			},
+		},
+	}
 	// UserSubscriptionsColumns holds the columns for the "user_subscriptions" table.
 	UserSubscriptionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -3387,6 +3415,7 @@ var (
 		UsersTable,
 		UserGroupsTable,
 		UserGroupMembersTable,
+		UserIdentitiesTable,
 		UserSubscriptionsTable,
 		VideoModelCapabilitiesTable,
 		VideoModelRateCardsTable,

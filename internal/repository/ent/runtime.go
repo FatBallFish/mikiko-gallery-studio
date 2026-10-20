@@ -59,6 +59,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/useridentity"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelratecard"
@@ -4761,6 +4762,63 @@ func init() {
 	usergroupmemberDescCreatedAt := usergroupmemberFields[2].Descriptor()
 	// usergroupmember.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usergroupmember.DefaultCreatedAt = usergroupmemberDescCreatedAt.Default.(func() time.Time)
+	useridentityMixin := schema.UserIdentity{}.Mixin()
+	useridentityMixinFields0 := useridentityMixin[0].Fields()
+	_ = useridentityMixinFields0
+	useridentityFields := schema.UserIdentity{}.Fields()
+	_ = useridentityFields
+	// useridentityDescCreatedAt is the schema descriptor for created_at field.
+	useridentityDescCreatedAt := useridentityMixinFields0[0].Descriptor()
+	// useridentity.DefaultCreatedAt holds the default value on creation for the created_at field.
+	useridentity.DefaultCreatedAt = useridentityDescCreatedAt.Default.(func() time.Time)
+	// useridentityDescUpdatedAt is the schema descriptor for updated_at field.
+	useridentityDescUpdatedAt := useridentityMixinFields0[1].Descriptor()
+	// useridentity.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	useridentity.DefaultUpdatedAt = useridentityDescUpdatedAt.Default.(func() time.Time)
+	// useridentity.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	useridentity.UpdateDefaultUpdatedAt = useridentityDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// useridentityDescProvider is the schema descriptor for provider field.
+	useridentityDescProvider := useridentityFields[1].Descriptor()
+	// useridentity.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	useridentity.ProviderValidator = func() func(string) error {
+		validators := useridentityDescProvider.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider string) error {
+			for _, fn := range fns {
+				if err := fn(provider); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// useridentityDescSubject is the schema descriptor for subject field.
+	useridentityDescSubject := useridentityFields[2].Descriptor()
+	// useridentity.SubjectValidator is a validator for the "subject" field. It is called by the builders before save.
+	useridentity.SubjectValidator = func() func(string) error {
+		validators := useridentityDescSubject.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(subject string) error {
+			for _, fn := range fns {
+				if err := fn(subject); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// useridentityDescEmail is the schema descriptor for email field.
+	useridentityDescEmail := useridentityFields[3].Descriptor()
+	// useridentity.DefaultEmail holds the default value on creation for the email field.
+	useridentity.DefaultEmail = useridentityDescEmail.Default.(string)
+	// useridentity.EmailValidator is a validator for the "email" field. It is called by the builders before save.
+	useridentity.EmailValidator = useridentityDescEmail.Validators[0].(func(string) error)
 	usersubscriptionMixin := schema.UserSubscription{}.Mixin()
 	usersubscriptionMixinFields0 := usersubscriptionMixin[0].Fields()
 	_ = usersubscriptionMixinFields0

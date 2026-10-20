@@ -1,5 +1,12 @@
 export type ApiMeta = { request_id?: string }
-export type FeatureFlags = { video_creation: boolean; creative_canvas: boolean; media_upload: boolean }
+export type FeatureFlags = {
+  video_creation: boolean
+  creative_canvas: boolean
+  media_upload: boolean
+  oidc_login: { enabled: boolean; display_name?: string }
+  password_login_enabled: boolean
+  registration_enabled: boolean
+}
 export type ApiEnvelope<T> = { data: T; meta?: ApiMeta; code?: string; message?: string; request_id?: string }
 export type LegacyApiEnvelope<T> = { code: string; message: string; data: T; request_id: string }
 export type ApiErrorPayload = { error: { code?: string; message?: string; status_code?: number }; meta?: ApiMeta }
@@ -24,6 +31,8 @@ export const API_PATHS = {
     sendEmailCode: '/api/agent/auth/v1/email/send-code',
     loginEmailCode: '/api/agent/auth/v1/login/email-code',
     loginPassword: '/api/agent/auth/v1/login/password',
+    oidcAuthorize: '/api/agent/auth/v1/oidc/authorize',
+    oidcCallback: '/api/agent/auth/v1/oidc/callback',
     passwordSetup: '/api/agent/auth/v1/password/setup',
     refreshSession: '/api/agent/auth/v1/session/refresh',
     logout: '/api/agent/auth/v1/logout',
@@ -220,6 +229,8 @@ export const API_PATHS = {
     cashierAlipaySignatureCheck: '/api/ops/admin/v1/cashier/payments/alipay-signature-check',
     securitySMTP: '/api/ops/admin/v1/security/smtp',
     securitySMTPTest: '/api/ops/admin/v1/security/smtp/test',
+    securityOIDC: '/api/ops/admin/v1/security/oidc',
+    securityOIDCTest: '/api/ops/admin/v1/security/oidc/test',
     paymentOrders: '/api/ops/admin/v1/cashier/orders',
     paymentOrderDetail: '/api/ops/admin/v1/cashier/orders/{order_id}',
     paymentOrderComplete: '/api/ops/admin/v1/cashier/orders/{order_id}/complete',
@@ -1645,6 +1656,30 @@ export type SecretStatus = { has_secret: boolean; fingerprint?: string; updated_
 export type SMTPConfigView = { enabled: boolean; host: string; port: number; username: string; from: string; starttls: boolean; insecure_skip_verify: boolean; secret_status: SecretStatus; version: number; updated_at?: string }
 export type SMTPConfigWriteRequest = { version?: number; enabled: boolean; host: string; port: number; username: string; from: string; starttls: boolean; insecure_skip_verify: boolean; secrets?: { password?: string }; clear_secrets?: string[] }
 export type SMTPTestResponse = { status: string; recipient: string }
+export type OIDCConfigView = {
+  enabled: boolean
+  issuer_url: string
+  client_id: string
+  display_name: string
+  allow_local_login: boolean
+  allow_registration: boolean
+  secret_status: SecretStatus
+  version: number
+  updated_at?: string
+}
+export type OIDCConfigWriteRequest = {
+  version?: number
+  enabled: boolean
+  issuer_url: string
+  client_id: string
+  display_name: string
+  allow_local_login: boolean
+  allow_registration: boolean
+  secrets?: { client_secret?: string }
+  clear_secrets?: string[]
+}
+export type OIDCTestResponse = { issuer: string; authorization_endpoint: string; token_endpoint: string; userinfo_endpoint: string }
+export type OIDCCallbackResponse = { access_token: string; expires_in_seconds: number; user_id: number; return_to?: string }
 export type StorageProbeView = { status: 'never' | 'success' | 'failed' | string; checked_at?: string | null; latency_ms?: number; message?: string }
 export type StorageConfigView = {
   id: string

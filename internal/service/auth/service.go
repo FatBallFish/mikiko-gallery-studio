@@ -99,10 +99,13 @@ type Service struct {
 	allowFallback   bool
 	emailSender     EmailSender
 	smtpResolver    SMTPConfigResolver
+	localAuthPolicy LocalAuthPolicyResolver
 	userMultipliers map[string]string
 	nextUserID      int64
 	usersByEmail    map[string]*domainauth.User
 	usersByID       map[int64]*domainauth.User
+	identitiesByKey map[string]*domainauth.UserIdentity
+	nextIdentityID  int64
 	codesByEmail    map[string]emailCode
 	sessionsByHash  map[string]*refreshSession
 	familySessions  map[string][]*refreshSession
@@ -131,10 +134,17 @@ func NewServiceWithStoreAndRedis(cfg config.AuthConfig, userMultipliers map[stri
 		nextUserID:      1,
 		usersByEmail:    map[string]*domainauth.User{},
 		usersByID:       map[int64]*domainauth.User{},
+		identitiesByKey: map[string]*domainauth.UserIdentity{},
 		codesByEmail:    map[string]emailCode{},
 		sessionsByHash:  map[string]*refreshSession{},
 		familySessions:  map[string][]*refreshSession{},
 	}
+}
+
+func (s *Service) SetLocalAuthPolicyResolver(resolver LocalAuthPolicyResolver) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.localAuthPolicy = resolver
 }
 
 func NewServiceWithEmailSender(cfg config.AuthConfig, userMultipliers map[string]string, sender EmailSender) *Service {
@@ -173,6 +183,9 @@ func (s *Service) SendEmailCode(email, scene string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if allowLogin, _ := s.localAuthPolicyLocked(); !allowLogin {
+		return localLoginDisabled()
+	}
 	now := time.Now()
 	if s.redisRuntime != nil {
 		active, err := s.redisRuntime.EmailCooldownActive(context.Background(), email)
@@ -290,6 +303,9 @@ func (s *Service) LoginWithEmailCodeResult(email, code string) (LoginResult, err
 	code = strings.TrimSpace(code)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if allowLogin, _ := s.localAuthPolicyLocked(); !allowLogin {
+		return LoginResult{}, localLoginDisabled()
+	}
 	if err := s.consumeEmailCodeLocked(email, code, "login"); err != nil {
 		return LoginResult{}, err
 	}
@@ -300,6 +316,9 @@ func (s *Service) LoginWithEmailCodeResult(email, code string) (LoginResult, err
 	}
 	createdUser := false
 	if err == repoerr.ErrNotFound {
+		if _, allowRegistration := s.localAuthPolicyLocked(); !allowRegistration {
+			return LoginResult{}, registrationDisabled()
+		}
 		created, err := s.createUserLocked(email)
 		if err != nil {
 			return LoginResult{}, err
@@ -341,6 +360,9 @@ func (s *Service) LoginWithPassword(email, password string) (domainauth.User, do
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if allowLogin, _ := s.localAuthPolicyLocked(); !allowLogin {
+		return domainauth.User{}, domainauth.Session{}, localLoginDisabled()
+	}
 	user, err := s.getUserByEmailLocked(email)
 	if err != nil {
 		if err == repoerr.ErrNotFound {

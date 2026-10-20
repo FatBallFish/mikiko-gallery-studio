@@ -25,4 +25,7 @@ type Store interface {
 	MarkFamilyReplayBlocked(ctx context.Context, familyID string) error
 	RevokeRefreshSessionByHash(ctx context.Context, tokenHash string) error
 	UpdateUserProfile(ctx context.Context, req domainauth.UpdateProfileRequest) (domainauth.User, error)
+	FindUserIdentity(ctx context.Context, provider, subject string) (domainauth.UserIdentity, error)
+	CreateUserWithIdentity(ctx context.Context, user domainauth.User, identity domainauth.UserIdentity) (domainauth.User, error)
+	AttachUserIdentity(ctx context.Context, identity domainauth.UserIdentity) (domainauth.UserIdentity, error)
 }
