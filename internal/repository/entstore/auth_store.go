@@ -58,13 +58,24 @@ func (s *AuthStore) CreateUser(ctx context.Context, user domainauth.User) (domai
 		return domainauth.User{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	entity, err := createUserEntityInTx(ctx, tx, user, int64(groupEntity.ID))
+	if err != nil {
+		return domainauth.User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domainauth.User{}, err
+	}
+	return s.mapUserEntity(ctx, entity)
+}
+
+func createUserEntityInTx(ctx context.Context, tx *repoent.Tx, user domainauth.User, groupID int64) (*repoent.User, error) {
 	entity, err := tx.User.Create().
 		SetEmail(user.Email).
 		SetNillablePasswordHash(authNullableString(user.PasswordHash)).
 		SetNillableEmailVerifiedAt(user.EmailVerifiedAt).
 		SetNickname(user.Nickname).
 		SetStatus(user.Status).
-		SetUserGroupID(int64(groupEntity.ID)).
+		SetUserGroupID(groupID).
 		SetRpmLimit(user.RPMLimit).
 		SetConcurrencyLimit(user.ConcurrencyLimit).
 		SetDefaultLocale(user.DefaultLocale).
@@ -73,15 +84,12 @@ func (s *AuthStore) CreateUser(ctx context.Context, user domainauth.User) (domai
 		SetNillableClosedAt(user.ClosedAt).
 		Save(ctx)
 	if err != nil {
-		return domainauth.User{}, err
+		return nil, err
 	}
 	if _, err := createDefaultProjectInTx(ctx, tx, int64(entity.ID)); err != nil {
-		return domainauth.User{}, err
+		return nil, err
 	}
-	if err := tx.Commit(); err != nil {
-		return domainauth.User{}, err
-	}
-	return s.mapUserEntity(ctx, entity)
+	return entity, nil
 }
 
 func (s *AuthStore) GetUserByID(ctx context.Context, id int64) (domainauth.User, error) {

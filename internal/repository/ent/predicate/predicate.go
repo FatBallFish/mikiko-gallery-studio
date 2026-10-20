@@ -168,6 +168,9 @@ type UserGroup func(*sql.Selector)
 // UserGroupMember is the predicate function for usergroupmember builders.
 type UserGroupMember func(*sql.Selector)
 
+// UserIdentity is the predicate function for useridentity builders.
+type UserIdentity func(*sql.Selector)
+
 // UserSubscription is the predicate function for usersubscription builders.
 type UserSubscription func(*sql.Selector)
 

@@ -70,6 +70,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/useridentity"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelratecard"
@@ -199,6 +200,8 @@ type Client struct {
 	UserGroup *UserGroupClient
 	// UserGroupMember is the client for interacting with the UserGroupMember builders.
 	UserGroupMember *UserGroupMemberClient
+	// UserIdentity is the client for interacting with the UserIdentity builders.
+	UserIdentity *UserIdentityClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
 	// VideoModelCapability is the client for interacting with the VideoModelCapability builders.
@@ -292,6 +295,7 @@ func (c *Client) init() {
 	c.User = NewUserClient(c.config)
 	c.UserGroup = NewUserGroupClient(c.config)
 	c.UserGroupMember = NewUserGroupMemberClient(c.config)
+	c.UserIdentity = NewUserIdentityClient(c.config)
 	c.UserSubscription = NewUserSubscriptionClient(c.config)
 	c.VideoModelCapability = NewVideoModelCapabilityClient(c.config)
 	c.VideoModelRateCard = NewVideoModelRateCardClient(c.config)
@@ -452,6 +456,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		User:                        NewUserClient(cfg),
 		UserGroup:                   NewUserGroupClient(cfg),
 		UserGroupMember:             NewUserGroupMemberClient(cfg),
+		UserIdentity:                NewUserIdentityClient(cfg),
 		UserSubscription:            NewUserSubscriptionClient(cfg),
 		VideoModelCapability:        NewVideoModelCapabilityClient(cfg),
 		VideoModelRateCard:          NewVideoModelRateCardClient(cfg),
@@ -539,6 +544,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		User:                        NewUserClient(cfg),
 		UserGroup:                   NewUserGroupClient(cfg),
 		UserGroupMember:             NewUserGroupMemberClient(cfg),
+		UserIdentity:                NewUserIdentityClient(cfg),
 		UserSubscription:            NewUserSubscriptionClient(cfg),
 		VideoModelCapability:        NewVideoModelCapabilityClient(cfg),
 		VideoModelRateCard:          NewVideoModelRateCardClient(cfg),
@@ -596,11 +602,11 @@ func (c *Client) Use(hooks ...Hook) {
 		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelGroup,
 		c.RouteModelGroupMember, c.RouteModelPrice, c.RouteModelVisibilityGroup,
 		c.SecureConfig, c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User,
-		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.VideoModelCapability,
-		c.VideoModelRateCard, c.VideoPriceRule, c.VideoPricingStrategy,
-		c.VideoProviderCallbackEvent, c.VideoProviderCostRule, c.VideoRouteConfig,
-		c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput, c.VideoTaskItem,
-		c.WalletGrant, c.WalletReservationAllocation,
+		c.UserGroup, c.UserGroupMember, c.UserIdentity, c.UserSubscription,
+		c.VideoModelCapability, c.VideoModelRateCard, c.VideoPriceRule,
+		c.VideoPricingStrategy, c.VideoProviderCallbackEvent, c.VideoProviderCostRule,
+		c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput,
+		c.VideoTaskItem, c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Use(hooks...)
 	}
@@ -624,11 +630,11 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.RefreshSession, c.RouteModel, c.RouteModelCandidate, c.RouteModelGroup,
 		c.RouteModelGroupMember, c.RouteModelPrice, c.RouteModelVisibilityGroup,
 		c.SecureConfig, c.SubscriptionPlan, c.TextModel, c.TextModelAccount, c.User,
-		c.UserGroup, c.UserGroupMember, c.UserSubscription, c.VideoModelCapability,
-		c.VideoModelRateCard, c.VideoPriceRule, c.VideoPricingStrategy,
-		c.VideoProviderCallbackEvent, c.VideoProviderCostRule, c.VideoRouteConfig,
-		c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput, c.VideoTaskItem,
-		c.WalletGrant, c.WalletReservationAllocation,
+		c.UserGroup, c.UserGroupMember, c.UserIdentity, c.UserSubscription,
+		c.VideoModelCapability, c.VideoModelRateCard, c.VideoPriceRule,
+		c.VideoPricingStrategy, c.VideoProviderCallbackEvent, c.VideoProviderCostRule,
+		c.VideoRouteConfig, c.VideoTask, c.VideoTaskAttempt, c.VideoTaskInput,
+		c.VideoTaskItem, c.WalletGrant, c.WalletReservationAllocation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -745,6 +751,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.UserGroup.mutate(ctx, m)
 	case *UserGroupMemberMutation:
 		return c.UserGroupMember.mutate(ctx, m)
+	case *UserIdentityMutation:
+		return c.UserIdentity.mutate(ctx, m)
 	case *UserSubscriptionMutation:
 		return c.UserSubscription.mutate(ctx, m)
 	case *VideoModelCapabilityMutation:
@@ -8280,6 +8288,139 @@ func (c *UserGroupMemberClient) mutate(ctx context.Context, m *UserGroupMemberMu
 	}
 }
 
+// UserIdentityClient is a client for the UserIdentity schema.
+type UserIdentityClient struct {
+	config
+}
+
+// NewUserIdentityClient returns a client for the UserIdentity from the given config.
+func NewUserIdentityClient(c config) *UserIdentityClient {
+	return &UserIdentityClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `useridentity.Hooks(f(g(h())))`.
+func (c *UserIdentityClient) Use(hooks ...Hook) {
+	c.hooks.UserIdentity = append(c.hooks.UserIdentity, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `useridentity.Intercept(f(g(h())))`.
+func (c *UserIdentityClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserIdentity = append(c.inters.UserIdentity, interceptors...)
+}
+
+// Create returns a builder for creating a UserIdentity entity.
+func (c *UserIdentityClient) Create() *UserIdentityCreate {
+	mutation := newUserIdentityMutation(c.config, OpCreate)
+	return &UserIdentityCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserIdentity entities.
+func (c *UserIdentityClient) CreateBulk(builders ...*UserIdentityCreate) *UserIdentityCreateBulk {
+	return &UserIdentityCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserIdentityClient) MapCreateBulk(slice any, setFunc func(*UserIdentityCreate, int)) *UserIdentityCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserIdentityCreateBulk{err: fmt.Errorf("calling to UserIdentityClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserIdentityCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserIdentityCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserIdentity.
+func (c *UserIdentityClient) Update() *UserIdentityUpdate {
+	mutation := newUserIdentityMutation(c.config, OpUpdate)
+	return &UserIdentityUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserIdentityClient) UpdateOne(_m *UserIdentity) *UserIdentityUpdateOne {
+	mutation := newUserIdentityMutation(c.config, OpUpdateOne, withUserIdentity(_m))
+	return &UserIdentityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserIdentityClient) UpdateOneID(id int) *UserIdentityUpdateOne {
+	mutation := newUserIdentityMutation(c.config, OpUpdateOne, withUserIdentityID(id))
+	return &UserIdentityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserIdentity.
+func (c *UserIdentityClient) Delete() *UserIdentityDelete {
+	mutation := newUserIdentityMutation(c.config, OpDelete)
+	return &UserIdentityDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserIdentityClient) DeleteOne(_m *UserIdentity) *UserIdentityDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserIdentityClient) DeleteOneID(id int) *UserIdentityDeleteOne {
+	builder := c.Delete().Where(useridentity.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserIdentityDeleteOne{builder}
+}
+
+// Query returns a query builder for UserIdentity.
+func (c *UserIdentityClient) Query() *UserIdentityQuery {
+	return &UserIdentityQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserIdentity},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserIdentity entity by its id.
+func (c *UserIdentityClient) Get(ctx context.Context, id int) (*UserIdentity, error) {
+	return c.Query().Where(useridentity.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserIdentityClient) GetX(ctx context.Context, id int) *UserIdentity {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *UserIdentityClient) Hooks() []Hook {
+	return c.hooks.UserIdentity
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserIdentityClient) Interceptors() []Interceptor {
+	return c.inters.UserIdentity
+}
+
+func (c *UserIdentityClient) mutate(ctx context.Context, m *UserIdentityMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserIdentityCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserIdentityUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserIdentityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserIdentityDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserIdentity mutation op: %q", m.Op())
+	}
+}
+
 // UserSubscriptionClient is a client for the UserSubscription schema.
 type UserSubscriptionClient struct {
 	config
@@ -10285,11 +10426,11 @@ type (
 		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
 		RouteModelGroup, RouteModelGroupMember, RouteModelPrice,
 		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
-		TextModelAccount, User, UserGroup, UserGroupMember, UserSubscription,
-		VideoModelCapability, VideoModelRateCard, VideoPriceRule, VideoPricingStrategy,
-		VideoProviderCallbackEvent, VideoProviderCostRule, VideoRouteConfig, VideoTask,
-		VideoTaskAttempt, VideoTaskInput, VideoTaskItem, WalletGrant,
-		WalletReservationAllocation []ent.Hook
+		TextModelAccount, User, UserGroup, UserGroupMember, UserIdentity,
+		UserSubscription, VideoModelCapability, VideoModelRateCard, VideoPriceRule,
+		VideoPricingStrategy, VideoProviderCallbackEvent, VideoProviderCostRule,
+		VideoRouteConfig, VideoTask, VideoTaskAttempt, VideoTaskInput, VideoTaskItem,
+		WalletGrant, WalletReservationAllocation []ent.Hook
 	}
 	inters struct {
 		APIKey, APIKeyQuotaReservation, AdminUser, AuditLog, CanvasGenerationRun,
@@ -10304,10 +10445,10 @@ type (
 		RedeemCode, ReferenceAsset, RefreshSession, RouteModel, RouteModelCandidate,
 		RouteModelGroup, RouteModelGroupMember, RouteModelPrice,
 		RouteModelVisibilityGroup, SecureConfig, SubscriptionPlan, TextModel,
-		TextModelAccount, User, UserGroup, UserGroupMember, UserSubscription,
-		VideoModelCapability, VideoModelRateCard, VideoPriceRule, VideoPricingStrategy,
-		VideoProviderCallbackEvent, VideoProviderCostRule, VideoRouteConfig, VideoTask,
-		VideoTaskAttempt, VideoTaskInput, VideoTaskItem, WalletGrant,
-		WalletReservationAllocation []ent.Interceptor
+		TextModelAccount, User, UserGroup, UserGroupMember, UserIdentity,
+		UserSubscription, VideoModelCapability, VideoModelRateCard, VideoPriceRule,
+		VideoPricingStrategy, VideoProviderCallbackEvent, VideoProviderCostRule,
+		VideoRouteConfig, VideoTask, VideoTaskAttempt, VideoTaskInput, VideoTaskItem,
+		WalletGrant, WalletReservationAllocation []ent.Interceptor
 	}
 )

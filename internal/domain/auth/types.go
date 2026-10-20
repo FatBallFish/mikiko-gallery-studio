@@ -42,3 +42,15 @@ type UpdateProfileRequest struct {
 	DefaultLocale   string
 	Theme           string
 }
+
+// UserIdentity links a user to a federated (OIDC) identity. Provider+subject
+// is globally unique; email is a login-time snapshot for audit only.
+type UserIdentity struct {
+	ID        int64
+	UserID    int64
+	Provider  string
+	Subject   string
+	Email     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}

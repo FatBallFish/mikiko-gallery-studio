@@ -66,6 +66,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/user"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroup"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usergroupmember"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/useridentity"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/usersubscription"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelcapability"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/videomodelratecard"
@@ -194,6 +195,7 @@ func checkColumn(t, c string) error {
 			user.Table:                        user.ValidColumn,
 			usergroup.Table:                   usergroup.ValidColumn,
 			usergroupmember.Table:             usergroupmember.ValidColumn,
+			useridentity.Table:                useridentity.ValidColumn,
 			usersubscription.Table:            usersubscription.ValidColumn,
 			videomodelcapability.Table:        videomodelcapability.ValidColumn,
 			videomodelratecard.Table:          videomodelratecard.ValidColumn,

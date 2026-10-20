@@ -15,13 +15,16 @@ import (
 
 func TestFeatureFlagsDefaultClosedAndReadExplicitOverrides(t *testing.T) {
 	admin := adminconfigservice.NewService(config.Config{})
-	flags := newFeatureFlagResolver(admin)
+	flags := newFeatureFlagResolver(admin, nil)
 	projected, err := flags.Get(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if projected.VideoCreation || projected.CreativeCanvas || projected.MediaUpload {
 		t.Fatalf("feature defaults must fail closed: %#v", projected)
+	}
+	if !projected.PasswordLoginEnabled || !projected.RegistrationEnabled || projected.OIDCLogin.Enabled {
+		t.Fatalf("auth defaults must keep local login open: %#v", projected)
 	}
 	tab, err := admin.GetTab(t.Context(), "site")
 	if err != nil {

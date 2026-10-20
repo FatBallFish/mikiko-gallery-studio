@@ -44,6 +44,7 @@ import (
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
+	oidcservice "github.com/fatballfish/pic-gallery/internal/service/oidc"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
@@ -168,7 +169,7 @@ func runAPI(dependencies apiRunDependencies) error {
 	case setup.StartupModeSetup:
 		handler, err := dependencies.newSetupHandler(startup.Bootstrap)
 		if err != nil {
-			slog.Error("setup startup dependencies are invalid", "diagnostic_code", "SETUP_DEPENDENCIES_INVALID")
+			slog.Error("setup startup dependencies are invalid", "diagnostic_code", "SETUP_DEPENDENCIES_INVALID", "error", err)
 			return dependencies.serve(bootstrapAddress(startup.Bootstrap), apphttp.NewBroken(handlers.NewSystemAPI(handlers.BootstrapStatus{
 				Phase: handlers.BootstrapPhaseBroken, DiagnosticCode: "SETUP_DEPENDENCIES_INVALID", RetryAfterSeconds: 5,
 			})))
@@ -326,6 +327,8 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	}
 	authSvc := authservice.NewServiceWithStoreAndRedis(cfg.Auth, cfg.Billing.UserGroupMultipliers, entstore.NewAuthStore(client), authRedisRuntime, false)
 	authSvc.SetSMTPConfigResolver(secureConfigSvc)
+	authSvc.SetLocalAuthPolicyResolver(secureConfigSvc)
+	oidcClient := oidcservice.NewClient(nil)
 	adminSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
@@ -393,6 +396,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	api.SetGalleryExportService(galleryexportservice.NewService(entstore.NewGalleryExportStore(client), storageRegistry, galleryexportservice.Options{}))
 	api.SetCashierProviderInstanceStore(entstore.NewCashierStoreWithConfigEncryptionKey(client, cfg.Cashier.ProviderConfigEncryptionKey))
 	api.SetSecureConfigService(secureConfigSvc)
+	api.SetOIDCClient(oidcClient)
 	api.SetTextModelServices(textModelSvc, promptOptimizerSvc)
 	api.SetStorageConfigService(storageConfigSvc, storageRegistry, storageInvalidationBus)
 	api.SetClusterService(clusterSvc)

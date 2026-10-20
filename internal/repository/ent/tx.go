@@ -120,6 +120,8 @@ type Tx struct {
 	UserGroup *UserGroupClient
 	// UserGroupMember is the client for interacting with the UserGroupMember builders.
 	UserGroupMember *UserGroupMemberClient
+	// UserIdentity is the client for interacting with the UserIdentity builders.
+	UserIdentity *UserIdentityClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
 	// VideoModelCapability is the client for interacting with the VideoModelCapability builders.
@@ -333,6 +335,7 @@ func (tx *Tx) init() {
 	tx.User = NewUserClient(tx.config)
 	tx.UserGroup = NewUserGroupClient(tx.config)
 	tx.UserGroupMember = NewUserGroupMemberClient(tx.config)
+	tx.UserIdentity = NewUserIdentityClient(tx.config)
 	tx.UserSubscription = NewUserSubscriptionClient(tx.config)
 	tx.VideoModelCapability = NewVideoModelCapabilityClient(tx.config)
 	tx.VideoModelRateCard = NewVideoModelRateCardClient(tx.config)

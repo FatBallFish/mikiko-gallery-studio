@@ -82,6 +82,7 @@ import (
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
+	oidcservice "github.com/fatballfish/pic-gallery/internal/service/oidc"
 	"github.com/fatballfish/pic-gallery/internal/service/smtpdelivery"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
@@ -111,6 +112,7 @@ type API struct {
 	textModels     *textmodelservice.Service
 	promptOpt      *promptoptimizerservice.Service
 	secureCfg      *secureconfigservice.Service
+	oidc           *oidcservice.Client
 	storageCfg     *storageconfigservice.Service
 	storageReg     *storage.Registry
 	storagePub     storage.InvalidationPublisher
