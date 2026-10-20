@@ -56,8 +56,17 @@ if (setupBranch < 0 || setupReturn < 0 || profileFetch < 0 || !(setupBranch < se
   throw new Error('setup-required login must return before fetching profile or installing a session')
 }
 
-if (!source.includes("{intent === 'login' && !passwordSetupToken ? (") || !source.includes('role="tablist"')) {
-  throw new Error('login mode tabs must only render for the login intent')
+if (!source.includes("{intent === 'login' && !passwordSetupToken && showLocalEntry ? (") || !source.includes('role="tablist"')) {
+  throw new Error('login mode tabs must only render for the login intent (and only while local login is open)')
+}
+
+for (const oidcContract of [
+  'oidcAuthorizeHref(targetURLAfterLogin(returnTo, imageId, taskId))',
+  'availability.oidcLoginLabel',
+  '{!passwordSetupToken && availability.showOIDCLogin ? (',
+  '{!passwordSetupToken && availability.showRegistrationEntry ? <p className={loginClasses.footer}>',
+]) {
+  if (!source.includes(oidcContract)) throw new Error(`authentication page oidc contract missing: ${oidcContract}`)
 }
 
 if (source.includes("role={intent === 'login' ? 'tabpanel' : undefined}")) {

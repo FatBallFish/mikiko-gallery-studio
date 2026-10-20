@@ -5,6 +5,7 @@ import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { Badge, ErrorBlock, Field, InlineFeedback, LoadingBlock, PageHeader, StatusCell, StatusStrip } from '../components'
 import { adminButton, adminPage } from '../ui/classes'
+import { OIDCConfigEditor } from './SecurityOIDCConfig'
 
 type SMTPDraft = {
   enabled: boolean
@@ -19,10 +20,10 @@ type SMTPDraft = {
   test_email: string
 }
 
-type EditorPhase = 'pristine' | 'dirty' | 'validating' | 'saving' | 'saved' | 'failed'
+export type EditorPhase = 'pristine' | 'dirty' | 'validating' | 'saving' | 'saved' | 'failed'
 type SMTPFieldErrors = Partial<Record<'host' | 'port' | 'from', string>>
 
-const securityClasses = {
+export const securityClasses = {
   summaryList: 'grid gap-2',
   summaryToggle: 'flex items-center justify-between gap-4 rounded-lg bg-[var(--surface-solid)] p-3 transition-colors hover:bg-[var(--elevated)]',
   summaryTitle: 'text-sm font-semibold text-[var(--text)]',
@@ -57,6 +58,8 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
   const [editorPhase, setEditorPhase] = useState<EditorPhase>('pristine')
 
   const dirty = useMemo(() => Boolean(draft && config && smtpDraftIsDirty(draft, config)), [config, draft])
+  const [oidcDirty, setOIDCDirty] = useState(false)
+  const [oidcBusy, setOIDCBusy] = useState(false)
   const editorLocked = saving || testing
 
   async function load() {
@@ -86,26 +89,26 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
   }, [dirty, editorPhase])
 
   useEffect(() => {
-    onDirtyChange?.(dirty)
-  }, [dirty, onDirtyChange])
+    onDirtyChange?.(dirty || oidcDirty)
+  }, [dirty, oidcDirty, onDirtyChange])
 
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
 
   useEffect(() => {
-    onBusyChange?.(editorLocked)
-  }, [editorLocked, onBusyChange])
+    onBusyChange?.(editorLocked || oidcBusy)
+  }, [editorLocked, oidcBusy, onBusyChange])
 
   useEffect(() => () => onBusyChange?.(false), [onBusyChange])
 
   useEffect(() => {
-    if (!dirty) return undefined
+    if (!dirty && !oidcDirty) return undefined
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [dirty])
+  }, [dirty, oidcDirty])
 
   function reloadWithConfirmation() {
     if (dirty && !window.confirm('当前 SMTP 配置有未保存修改，确认放弃并刷新吗？')) return
@@ -311,6 +314,7 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
           </details>
         </>
       ) : null}
+      <OIDCConfigEditor onFeedback={onFeedback} onDirtyChange={setOIDCDirty} onBusyChange={setOIDCBusy} summaryMode={summaryMode} />
     </section>
   )
 }
@@ -352,7 +356,7 @@ function validateSMTPDraft(draft: SMTPDraft): SMTPFieldErrors {
   return errors
 }
 
-function editorPhaseLabel(phase: EditorPhase) {
+export function editorPhaseLabel(phase: EditorPhase) {
   if (phase === 'pristine') return '未修改'
   if (phase === 'dirty') return '有未保存修改'
   if (phase === 'validating') return '正在校验'
@@ -361,7 +365,7 @@ function editorPhaseLabel(phase: EditorPhase) {
   return '保存失败'
 }
 
-function editorPhaseDetail(phase: EditorPhase) {
+export function editorPhaseDetail(phase: EditorPhase) {
   if (phase === 'dirty') return '保存后新配置才会生效。'
   if (phase === 'validating') return '正在检查必填字段与端口范围。'
   if (phase === 'saving') return '正在提交敏感配置，请勿关闭页面。'
@@ -370,7 +374,7 @@ function editorPhaseDetail(phase: EditorPhase) {
   return '当前表单与已保存配置一致。'
 }
 
-function editorPhaseTone(phase: EditorPhase): 'neutral' | 'warning' | 'primary' | 'success' | 'danger' {
+export function editorPhaseTone(phase: EditorPhase): 'neutral' | 'warning' | 'primary' | 'success' | 'danger' {
   if (phase === 'dirty' || phase === 'validating') return 'warning'
   if (phase === 'saving') return 'primary'
   if (phase === 'saved') return 'success'

@@ -1,17 +1,18 @@
 import { FormEvent, KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
-import { ArrowLeft, Check, Eye, EyeOff, LoaderCircle, Moon, Sun } from 'lucide-react'
+import { ArrowLeft, Check, Eye, EyeOff, Fingerprint, LoaderCircle, Moon, Sun } from 'lucide-react'
 import { cn } from '../../../shared/classnames'
 import type { SignupGrantResult } from '../../../shared/api-types'
 import { userApi } from '../../../shared/user-api'
 import { BrandMark, siteBrand } from '../brand'
 import { useApp } from '../components'
+import { featureAvailability } from '../featureAvailability'
+import { oidcAuthorizeHref, targetURLAfterLogin } from '../oidcLogin'
 import type { RouteId } from '../types'
 import { errorMessage } from '../useApiResource'
 import { landingAssetUrl } from './landingContent'
 import { loginCopy, loginLocale } from './loginCopy'
 import {
   loginPresentation,
-  loginProviders,
   firstLoginInvalidField,
   loginCooldownForEmail,
   nextLoginFlow,
@@ -64,6 +65,7 @@ const loginClasses = {
   providerLabel: 'mb-3 text-xs font-semibold text-[var(--dim)]',
   providerGrid: 'grid grid-cols-1 gap-2 min-[360px]:grid-cols-3',
   provider: 'min-h-9 rounded-lg border border-[var(--border-subtle)] bg-transparent px-2 text-[10px] font-semibold leading-tight text-[var(--dim)] disabled:cursor-not-allowed disabled:opacity-75',
+  oidcButton: 'inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-solid)] px-5 text-sm font-bold text-[var(--fg)] transition-all duration-200 hover:-translate-y-px hover:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100',
   footer: 'mb-0 mt-6 text-center text-sm text-[var(--muted)]',
   footerAction: 'min-h-9 rounded-lg border-0 bg-transparent px-1 font-bold text-[var(--accent)] transition-colors hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
 }
@@ -113,6 +115,8 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
 
   const effectiveCooldown = loginCooldownForEmail(cooldown, cooldownEmail, email)
   const presentation = loginPresentation({ mode, intent, busy, sending, cooldown: effectiveCooldown, passwordSetupRequired: Boolean(passwordSetupToken) })
+  const availability = featureAvailability(app.featureFlags)
+  const showLocalEntry = availability.showLocalLoginForm || Boolean(passwordSetupToken)
   const isDark = app.themePreference.mode === 'dark'
   const activeTabId = `${formId}-${mode}-tab`
   const studioShowcase1280Webp = landingAssetUrl(import.meta.env.BASE_URL, '/landing/studio-showcase-1280.webp')
@@ -181,6 +185,10 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
     changeMode(nextMode)
     const target = nextMode === 'password' ? passwordTabRef : codeTabRef
     window.requestAnimationFrame(() => target.current?.focus())
+  }
+
+  function startOIDCLogin() {
+    window.location.href = oidcAuthorizeHref(targetURLAfterLogin(returnTo, imageId, taskId))
   }
 
   async function sendCode() {
@@ -318,7 +326,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
           <h2 id={`${formId}-title`} className={loginClasses.title}>{presentation.title}</h2>
           <p className={loginClasses.summary}>{presentation.summary}</p>
 
-          {intent === 'login' && !passwordSetupToken ? (
+          {intent === 'login' && !passwordSetupToken && showLocalEntry ? (
           <div className={loginClasses.tabs} role="tablist" aria-label="登录方式">
             <button
               id={`${formId}-password-tab`}
@@ -353,6 +361,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
           </div>
           ) : null}
 
+          {showLocalEntry ? (
           <form
             ref={formRef}
             id={`${formId}-form`}
@@ -500,19 +509,19 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
               {presentation.submitLabel}
             </button>
           </form>
+          ) : null}
 
-          {!passwordSetupToken ? <div className={loginClasses.providers} aria-label="第三方登录状态">
-            <p className={loginClasses.providerLabel}>第三方登录正在接入，当前请使用邮箱。</p>
-            <div className={loginClasses.providerGrid}>
-              {loginProviders.map((provider) => (
-                <button key={provider.id} type="button" className={loginClasses.provider} disabled={provider.disabled} aria-disabled={provider.disabled}>
-                  {provider.label}
-                </button>
-              ))}
+          {!passwordSetupToken && availability.showOIDCLogin ? (
+            <div className={loginClasses.providers}>
+              {showLocalEntry ? <p className={loginClasses.providerLabel}>或使用统一身份登录</p> : null}
+              <button type="button" className={loginClasses.oidcButton} onClick={startOIDCLogin}>
+                <Fingerprint size={17} aria-hidden="true" />
+                {availability.oidcLoginLabel}
+              </button>
             </div>
-          </div> : null}
+          ) : null}
 
-          {!passwordSetupToken ? <p className={loginClasses.footer}>
+          {!passwordSetupToken && availability.showRegistrationEntry ? <p className={loginClasses.footer}>
             {intent === 'register' ? '已经有账户？' : '还没有账户？'}{' '}
             <button type="button" className={loginClasses.footerAction} disabled={busy || sending} onClick={() => changeIntent(intent === 'register' ? 'login' : 'register')}>
               {intent === 'register' ? '返回登录' : '通过邮箱注册'}

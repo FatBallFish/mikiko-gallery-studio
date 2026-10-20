@@ -15,6 +15,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { ProjectProvider } from './ProjectContext'
 import { parseUserHashState, userHashForRoute, type UserRouteOptions } from './routeState'
+import { oidcAuthorizeHref, readOIDCCallback, sanitizeOIDCReturnTo, stripSSOSilent } from './oidcLogin'
 import { applyThemePreference, readLocalThemePreference, serializeThemePreference, themePreferenceFromProfile, writeLocalThemePreference } from './themePreferences'
 import { DEFAULT_FEATURE_FLAGS, featureAvailability } from './featureAvailability'
 
@@ -88,6 +89,10 @@ function UserApplication() {
   const [profile, setProfile] = useState<UserProfile | null>(() => readStoredSession()?.profile ?? null)
   const [balance, setBalance] = useState<Balance | null>(null)
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS)
+  const flagsLoadedRef = useRef(false)
+  const ssoSilentHandledRef = useRef(false)
+  const ssoCleanPathRef = useRef<string | null>(null)
+  const oidcCallbackHandledRef = useRef(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [themePreference, setThemePreferenceState] = useState<UserThemePreference>(() => (
     themePreferenceFromProfile(readStoredSession()?.profile) ?? readLocalThemePreference()
@@ -103,9 +108,35 @@ function UserApplication() {
 
   useEffect(() => {
     let cancelled = false
-    void userApi.getFeatureFlags().then((flags) => { if (!cancelled) setFeatureFlags(flags) }).catch(() => undefined)
+    void userApi.getFeatureFlags().then((flags) => {
+      if (cancelled) return
+      flagsLoadedRef.current = true
+      setFeatureFlags(flags)
+    }).catch(() => undefined)
     return () => { cancelled = true }
   }, [])
+
+  // Mikiko ID silent login: the portal enters with ?sso=silent; strip the
+  // marker once, remember the clean target, and when the flags are
+  // authoritative redirect anonymous visitors straight into the OIDC
+  // authorization flow (doc strategy A).
+  useEffect(() => {
+    if (ssoSilentHandledRef.current) return
+    if (ssoCleanPathRef.current === null) {
+      const stripped = stripSSOSilent()
+      if (!stripped.active || sessionRef.current?.token) {
+        ssoSilentHandledRef.current = true
+        return
+      }
+      ssoCleanPathRef.current = stripped.cleanPath
+    }
+    if (!flagsLoadedRef.current) return
+    ssoSilentHandledRef.current = true
+    if (featureFlags.oidc_login.enabled) {
+      window.location.href = oidcAuthorizeHref(`${window.location.origin}${ssoCleanPathRef.current}`)
+    }
+  }, [featureFlags])
+
 
   useEffect(() => {
     routeRef.current = route
@@ -186,6 +217,7 @@ function UserApplication() {
     window.localStorage.setItem(sessionKey, JSON.stringify(nextSession))
   }, [])
 
+
   const refreshAccount = useCallback(async () => {
     const currentSession = sessionRef.current
     if (!currentSession?.token) return
@@ -207,6 +239,7 @@ function UserApplication() {
       throw caught
     }
   }, [expireSession, installSession])
+
 
   useEffect(() => {
     const updateRoute = () => {
@@ -299,6 +332,42 @@ function UserApplication() {
       notify('error', '主题偏好已应用到本机，但暂未同步到账户')
     }
   }, [installSession, notify, themePreference])
+
+  // Full-page return from the OIDC provider: exchange code+state for a
+  // platform session, install it through the app session pipeline and restore
+  // the recorded target route (hash navigation keeps the SPA alive).
+  useEffect(() => {
+    if (oidcCallbackHandledRef.current) return
+    const callback = readOIDCCallback()
+    if (!callback) return
+    oidcCallbackHandledRef.current = true
+    window.history.replaceState(null, '', '/')
+    if (!('code' in callback)) {
+      writeHash('login')
+      return
+    }
+    void (async () => {
+      try {
+        const result = await userApi.completeOIDCLogin(callback.code, callback.state)
+        const profile = await userApi.getProfileWithToken(result.access_token)
+        sessionVersionRef.current += 1
+        expiredNoticeRef.current = false
+        installSession({ token: result.access_token, profile }, { applyProfileTheme: true })
+        notify('success', '登录成功，欢迎回到 Mikiko Studio')
+        const target = sanitizeOIDCReturnTo(result.return_to)
+        const parsed = parseUserHashState(new URL(target).hash || '#/home')
+        writeHash(parsed.route === 'login' || parsed.route === 'landing' ? 'home' : parsed.route, {
+          imageId: parsed.imageId,
+          taskId: parsed.taskId,
+          canvasId: parsed.canvasId,
+          media: parsed.media,
+          assetId: parsed.assetId,
+        })
+      } catch {
+        writeHash('login')
+      }
+    })()
+  }, [installSession, notify])
 
   const login = useCallback(async (nextSession: SessionState, target?: RouteId, options?: { imageId?: string | null; taskId?: string | null }) => {
     sessionVersionRef.current += 1

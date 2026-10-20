@@ -18,11 +18,13 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': {
           target: apiTarget,
-          changeOrigin: true,
+          // Keep the browser Host header so the API derives the public origin
+          // (e.g. the OIDC redirect_uri) from the page the user is on.
+          changeOrigin: false,
         },
         '/docs': {
           target: apiTarget,
-          changeOrigin: true,
+          changeOrigin: false,
         },
       },
     },

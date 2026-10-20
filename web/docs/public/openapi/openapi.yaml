@@ -589,6 +589,9 @@ components:
         - video_creation
         - creative_canvas
         - media_upload
+        - oidc_login
+        - password_login_enabled
+        - registration_enabled
       properties:
         video_creation:
           type: boolean
@@ -596,6 +599,23 @@ components:
           type: boolean
         media_upload:
           type: boolean
+        oidc_login:
+          type: object
+          required:
+            - enabled
+          properties:
+            enabled:
+              type: boolean
+            display_name:
+              type: string
+              description: Login button label
+              defaults to 使用 Mikiko ID 登录 when empty.: null
+        password_login_enabled:
+          type: boolean
+          description: Whether password and email-code login are open.
+        registration_enabled:
+          type: boolean
+          description: Whether local email-code sign-up may create new accounts.
       additionalProperties: false
     AgentFeatureFlagsResponse:
       type: object
