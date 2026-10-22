@@ -17,6 +17,7 @@ __pycache__/
 .review/
 .playwright-mcp/
 .worktrees/
+.zcode/
 .secrets/
 /config/runtime.env
 /config/install-state.json
