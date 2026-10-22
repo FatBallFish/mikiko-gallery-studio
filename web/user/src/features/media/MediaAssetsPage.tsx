@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { CheckSquare, Download, FolderInput, Globe2, ListRestart, RefreshCw, Search, Trash2, Upload } from 'lucide-react'
-import type { MediaAsset, MediaBatchAction, MediaType } from '../../../../shared/api-types'
+import {
+  ExternalLink,
+  FolderInput,
+  Image as ImageIcon,
+  MoreHorizontal,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react'
+import type { ImageResult, MediaAsset, MediaBatchAction, MediaType, Project, PublishStatus } from '../../../../shared/api-types'
 import { userApi } from '../../../../shared/user-api'
-import { ProjectSelector, useProjects } from '../../ProjectContext'
-import { Button, EmptyState, useApp } from '../../components'
+import { cn } from '../../../../shared/classnames'
+import { useProjects } from '../../ProjectContext'
+import { EmptyState, ErrorState, GalleryFilterToolbar, ImageDetailModal, copyText, imageRatioLabel, useApp, type ImageDetailAction } from '../../components'
 import { userHashForRoute } from '../../routeState'
-import { MediaAssetCard } from './MediaAssetCard'
+import { MediaAssetCard, formatBytes } from './MediaAssetCard'
 import { MediaPreviewDialog } from './MediaPreviewDialog'
 import {
   buildMediaAssetQuery,
@@ -21,6 +32,7 @@ import {
 import { MEDIA_ASSETS_CHANGED_EVENT } from './UploadTray'
 import { pollGalleryExportJob } from '../../pages/galleryBatchActions'
 import { OverlayPortal } from '../../ui/overlayPortal'
+import './media-redesign.css'
 
 type FilterState = {
   mediaType: '' | MediaType
@@ -33,6 +45,33 @@ type FilterState = {
 
 const initialFilters: FilterState = { mediaType: '', sourceType: '', groupName: '', status: '', keyword: '', sort: 'created_at:desc' }
 
+function publishStatusForAsset(value: string): PublishStatus {
+  if (value === 'public' || value === 'approved') return 'public'
+  if (value === 'pending_review' || value === 'reviewing') return 'pending_review'
+  if (value === 'rejected' || value === 'unpublished') return value
+  return 'private'
+}
+
+function mediaAssetAsImageResult(asset: MediaAsset, imageURL: string, project?: Project | null): ImageResult {
+  return {
+    id: asset.id,
+    project_id: asset.project_id,
+    project: project ? { id: project.id, name: project.name, is_default: project.is_default } : undefined,
+    url: imageURL,
+    download_url: imageURL,
+    mime_type: asset.mime_type,
+    file_size_bytes: asset.file_size_bytes,
+    width: asset.width ?? 0,
+    height: asset.height ?? 0,
+    publish_status: publishStatusForAsset(asset.visibility_status),
+    visibility_status: publishStatusForAsset(asset.visibility_status),
+    aspect_ratio: asset.width && asset.height ? imageRatioLabel(asset.width, asset.height) : undefined,
+    output_format: asset.container || asset.mime_type.split('/')[1]?.toUpperCase(),
+    created_at: asset.created_at,
+    prompt: '',
+  }
+}
+
 export function MediaAssetsPage() {
   const app = useApp()
   const projects = useProjects()
@@ -41,6 +80,9 @@ export function MediaAssetsPage() {
   const [nextCursor, setNextCursor] = useState('')
   const [selected, setSelected] = useState(new Set<string>())
   const [preview, setPreview] = useState<MediaAsset | null>(null)
+  const [mediaPreview, setMediaPreview] = useState<MediaAsset | null>(null)
+  const [detailURL, setDetailURL] = useState('')
+  const [detailBusy, setDetailBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -63,6 +105,7 @@ export function MediaAssetsPage() {
     setNextCursor('')
     setSelected(new Set())
     setPreview(null)
+    setMediaPreview(null)
     setTargetProjectID('')
   }, [projects.selectedProjectID])
 
@@ -97,9 +140,45 @@ export function MediaAssetsPage() {
     return () => window.removeEventListener(MEDIA_ASSETS_CHANGED_EVENT, refresh)
   }, [projects.selectedProjectID])
 
+  useEffect(() => {
+    if (!preview || preview.media_type !== 'image') {
+      setDetailURL('')
+      return undefined
+    }
+    let alive = true
+    setDetailURL('')
+    const assetID = preview.id
+    const loadPreview = async () => {
+      try {
+        const access = await userApi.getMediaAssetAccess(assetID, 'preview')
+        if (alive) setDetailURL(access.url)
+      } catch (caught) {
+        try {
+          const access = await userApi.getMediaAssetAccess(assetID, 'thumbnail')
+          if (alive) setDetailURL(access.url)
+        } catch {
+          if (alive) {
+            setDetailURL('')
+            app.notify('error', caught instanceof Error ? caught.message : '媒体预览加载失败')
+          }
+        }
+      }
+    }
+    void loadPreview()
+    return () => { alive = false }
+  }, [preview?.id, preview?.version, preview?.media_type])
+
   const groups = useMemo(() => Array.from(new Set(items.map((item) => item.group_name).filter(Boolean))).sort(), [items])
   const selectedItems = useMemo(() => items.filter((item) => selected.has(item.id)), [items, selected])
   const allSelected = items.length > 0 && items.every((item) => selected.has(item.id))
+  const stats = useMemo(() => {
+    const images = items.filter((item) => item.media_type === 'image').length
+    const videos = items.filter((item) => item.media_type === 'video').length
+    const storage = items.reduce((sum, item) => sum + (Number.isFinite(item.file_size_bytes) ? item.file_size_bytes : 0), 0)
+    return { total: items.length, images, videos, storage }
+  }, [items])
+  const detailImage = useMemo(() => preview ? mediaAssetAsImageResult(preview, detailURL, projects.selectedProject) : null, [preview, detailURL, projects.selectedProject])
+
   const toggle = (asset: MediaAsset) => setSelected((current) => {
     const next = new Set(current)
     if (next.has(asset.id)) next.delete(asset.id)
@@ -116,7 +195,9 @@ export function MediaAssetsPage() {
     if (!consumeSuppressedCardAction()) toggle(asset)
   }
   const openCard = (asset: MediaAsset) => {
-    if (!consumeSuppressedCardAction()) setPreview(asset)
+    if (consumeSuppressedCardAction()) return
+    if (asset.media_type === 'image') setPreview(asset)
+    else setMediaPreview(asset)
   }
 
   const beginMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -247,34 +328,199 @@ export function MediaAssetsPage() {
   const continueCreation = (options: Parameters<typeof userHashForRoute>[1]) => {
     window.location.hash = userHashForRoute('genpic', options)
   }
-  const patchAsset = (asset: MediaAsset) => {
+
+  const removeAssetLocally = (asset: MediaAsset) => {
+    setItems((current) => current.filter((item) => item.id !== asset.id))
+    setSelected((current) => {
+      if (!current.has(asset.id)) return current
+      const next = new Set(current)
+      next.delete(asset.id)
+      return next
+    })
+  }
+  const applyAssetPatch = (asset: MediaAsset) => {
     if (asset.project_id !== projects.selectedProjectID) {
-      setItems((current) => current.filter((item) => item.id !== asset.id))
-      setSelected((current) => new Set(Array.from(current).filter((id) => id !== asset.id)))
-      setPreview(null)
-      return
+      removeAssetLocally(asset)
+      return false
     }
     setItems((current) => current.map((item) => item.id === asset.id ? asset : item))
-    setPreview(asset)
+    return true
+  }
+  const patchAsset = (asset: MediaAsset) => {
+    if (applyAssetPatch(asset)) setPreview(asset)
+    else { setPreview(null); setMediaPreview(null) }
+  }
+  const patchMediaPreviewAsset = (asset: MediaAsset) => {
+    if (applyAssetPatch(asset)) setMediaPreview(asset)
+    else { setPreview(null); setMediaPreview(null) }
+  }
+  const openFullPreview = (asset: MediaAsset) => {
+    setPreview(null)
+    setMediaPreview(asset)
+  }
+  const renameAsset = async (asset: MediaAsset) => {
+    const name = window.prompt('资产名称', asset.name)?.trim()
+    if (!name || name === asset.name) return
+    setDetailBusy(true)
+    try { patchAsset(await userApi.updateMediaAsset(asset, { name })) }
+    catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '重命名失败') }
+    finally { setDetailBusy(false) }
+  }
+  const groupAsset = async (asset: MediaAsset) => {
+    const groupName = window.prompt('分组名称', asset.group_name)?.trim()
+    if (groupName === undefined) return
+    setDetailBusy(true)
+    try { patchAsset(await userApi.updateMediaAsset(asset, { group_name: groupName })) }
+    catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '设置分组失败') }
+    finally { setDetailBusy(false) }
+  }
+  const removeAsset = async (asset: MediaAsset) => {
+    if (!window.confirm(`删除“${asset.name}”？对象文件将由后台异步清理。`)) return
+    setDetailBusy(true)
+    try {
+      await userApi.deleteMediaAsset(asset)
+      removeAssetLocally(asset)
+      setPreview(null)
+      setMediaPreview(null)
+    } catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '删除失败') }
+    finally { setDetailBusy(false) }
+  }
+  const downloadAsset = async (asset: MediaAsset) => {
+    try {
+      const projection = await userApi.getMediaAssetAccess(asset.id, 'download')
+      const link = document.createElement('a')
+      link.href = projection.url
+      link.download = asset.name
+      link.rel = 'noopener'
+      link.click()
+    } catch (caught) { app.notify('error', caught instanceof Error ? caught.message : '下载失败') }
   }
 
+  const detailActions = useMemo<ImageDetailAction[]>(() => {
+    if (!preview) return []
+    const actions: ImageDetailAction[] = mediaCreationActions(preview).map((action) => ({
+      key: action.label,
+      label: action.label,
+      icon: <ExternalLink size={14} strokeWidth={1.5} aria-hidden="true" />,
+      onClick: () => { setPreview(null); continueCreation(action.options) },
+      disabled: detailBusy,
+    }))
+    actions.push(
+      { key: 'rename', label: '重命名', icon: <Pencil size={14} strokeWidth={1.5} aria-hidden="true" />, onClick: () => void renameAsset(preview), disabled: detailBusy },
+      { key: 'group', label: '设置分组', icon: <FolderInput size={14} strokeWidth={1.5} aria-hidden="true" />, onClick: () => void groupAsset(preview), disabled: detailBusy },
+      { key: 'more', label: '更多操作', icon: <MoreHorizontal size={14} strokeWidth={1.5} aria-hidden="true" />, onClick: () => openFullPreview(preview), disabled: detailBusy },
+      { key: 'delete', label: '删除资产', icon: <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />, onClick: () => void removeAsset(preview), disabled: detailBusy },
+    )
+    return actions
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview, detailBusy])
+
   return (
-    <main className="media-assets-page">
-      <header className="media-assets-header">
-        <div><p>MEDIA LIBRARY</p><h1>资产</h1></div>
-        <div className="media-assets-header-actions"><ProjectSelector />{app.featureFlags.media_upload ? <Button tone="ghost" onClick={() => window.dispatchEvent(new Event('mgs:open-media-upload'))}><Upload size={16} />上传文件</Button> : null}<button type="button" className="media-refresh-button" title="刷新" aria-label="刷新资产" onClick={() => setRefreshKey((value) => value + 1)}><RefreshCw size={18} /></button></div>
+    <main className="media-library">
+      <header className="u-page-head">
+        <div className="u-page-head__copy">
+          <span className="u-eyebrow">Media Library</span>
+          <h1 className="u-h1">资产</h1>
+          <p className="u-sub">图片、视频、音频与文档在同一个库里。筛选条件保持在同一行，批量操作只在真正选中后出现。</p>
+        </div>
+        <div className="u-page-head__actions">
+          {app.featureFlags.media_upload ? (
+            <button className="u-btn u-btn--sm" type="button" onClick={() => window.dispatchEvent(new Event('mgs:open-media-upload'))}>
+              <Upload size={16} strokeWidth={1.6} aria-hidden="true" />上传文件
+            </button>
+          ) : null}
+          <button className="u-btn u-btn--sm" type="button" aria-label="刷新资产" onClick={() => setRefreshKey((value) => value + 1)}>
+            <RefreshCw size={16} strokeWidth={1.6} className={cn(loading && 'animate-spin')} aria-hidden="true" />刷新
+          </button>
+        </div>
       </header>
-      <section className="media-filter-bar" aria-label="资产筛选">
-        <label className="media-search"><Search size={16} /><input value={filters.keyword} placeholder="搜索资产" aria-label="搜索资产" onChange={(event) => setFilters((current) => ({ ...current, keyword: event.target.value }))} /></label>
-        <select aria-label="媒体类型" value={filters.mediaType} onChange={(event) => setFilters((current) => ({ ...current, mediaType: event.target.value as FilterState['mediaType'] }))}><option value="">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="audio">音频</option></select>
-        <select aria-label="来源" value={filters.sourceType} onChange={(event) => setFilters((current) => ({ ...current, sourceType: event.target.value }))}><option value="">全部来源</option><option value="generated">平台生成</option><option value="local_upload">本地上传</option></select>
-        <select aria-label="分组" value={filters.groupName} onChange={(event) => setFilters((current) => ({ ...current, groupName: event.target.value }))}><option value="">全部分组</option>{groups.map((group) => <option key={group}>{group}</option>)}</select>
-        <select aria-label="状态" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="">全部状态</option><option value="ready">可用</option><option value="processing">处理中</option><option value="failed">失败</option></select>
-        <select aria-label="排序" value={filters.sort} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}><option value="created_at:desc">最新创建</option><option value="created_at:asc">最早创建</option><option value="name:asc">名称 A-Z</option><option value="file_size_bytes:desc">文件由大到小</option><option value="duration_ms:desc">时长由长到短</option></select>
-        <button type="button" title="重置筛选" aria-label="重置筛选" onClick={() => setFilters(initialFilters)}><ListRestart size={17} /></button>
+
+      <section className="u-stat-row media-library__stats" aria-label="资产统计">
+        <div className="u-stat">
+          <span className="u-stat__label">全部资产</span>
+          <span className="u-stat__value">{loading && !items.length ? '—' : stats.total}</span>
+          <span className="u-stat__foot">{projects.selectedProject?.name ?? '当前项目'} · 已加载</span>
+        </div>
+        <div className="u-stat">
+          <span className="u-stat__label">图片</span>
+          <span className="u-stat__value">{loading && !items.length ? '—' : stats.images}</span>
+          <span className="u-stat__foot">当前筛选 · 已加载</span>
+        </div>
+        <div className="u-stat">
+          <span className="u-stat__label">视频</span>
+          <span className="u-stat__value">{loading && !items.length ? '—' : stats.videos}</span>
+          <span className="u-stat__foot">当前筛选 · 已加载</span>
+        </div>
+        <div className="u-stat">
+          <span className="u-stat__label">存储占用</span>
+          <span className="u-stat__value">{loading && !items.length ? '—' : formatBytes(stats.storage)}</span>
+          <span className="u-stat__foot">已加载文件合计</span>
+        </div>
       </section>
-      {error ? <section className="media-assets-error" role="alert"><span>{error}</span><Button tone="ghost" onClick={() => void load(false)}>重试</Button></section> : null}
-      {!loading && !error && !items.length ? <EmptyState title="当前项目暂无资产" detail="" action={app.featureFlags.media_upload ? <Button onClick={() => window.dispatchEvent(new Event('mgs:open-media-upload'))}>上传文件</Button> : undefined} /> : null}
+
+      <GalleryFilterToolbar
+        label="资产筛选"
+        query={filters.keyword}
+        queryPlaceholder="搜索名称、提示词或任务 ID"
+        onQueryChange={(keyword) => setFilters((current) => ({ ...current, keyword }))}
+        filters={(
+          <>
+            <select className="u-filter" aria-label="媒体类型" value={filters.mediaType} onChange={(event) => setFilters((current) => ({ ...current, mediaType: event.target.value as FilterState['mediaType'] }))}>
+              <option value="">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="audio">音频</option>
+            </select>
+            <select className="u-filter" aria-label="来源" value={filters.sourceType} onChange={(event) => setFilters((current) => ({ ...current, sourceType: event.target.value }))}>
+              <option value="">全部来源</option><option value="generated">平台生成</option><option value="local_upload">本地上传</option>
+            </select>
+            <select className="u-filter" aria-label="分组" value={filters.groupName} onChange={(event) => setFilters((current) => ({ ...current, groupName: event.target.value }))}>
+              <option value="">全部分组</option>{groups.map((group) => <option key={group}>{group}</option>)}
+            </select>
+            <select className="u-filter" aria-label="状态" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
+              <option value="">全部状态</option><option value="ready">就绪</option><option value="processing">处理中</option><option value="failed">失败</option>
+            </select>
+            <select className="u-filter" aria-label="排序" value={filters.sort} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}>
+              <option value="created_at:desc">最新优先</option>
+              <option value="created_at:asc">最早优先</option>
+              <option value="name:asc">名称 A-Z</option>
+              <option value="file_size_bytes:desc">文件由大到小</option>
+              <option value="duration_ms:desc">时长由长到短</option>
+            </select>
+            <button className="u-btn u-btn--sm u-btn--quiet" type="button" onClick={() => setFilters(initialFilters)}>重置</button>
+          </>
+        )}
+        meta={loading && items.length ? '正在加载' : items.length ? `已加载 ${items.length} 项` : undefined}
+      />
+
+      {error && !items.length ? <ErrorState message={error} onRetry={() => void load(false)} /> : null}
+      {error && items.length ? (
+        <div className="u-banner u-banner--danger" role="alert">
+          <span>{error}</span>
+          <button className="u-btn u-btn--sm u-btn--quiet" type="button" onClick={() => void load(false)}>重试</button>
+        </div>
+      ) : null}
+
+      {loading && !items.length ? (
+        <div className="u-grid u-grid--gallery" aria-hidden="true">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div className="u-card media-skeleton-card" key={index}>
+              <div className="u-skeleton media-skeleton-media" />
+              <div className="u-card__body">
+                <div className="u-skeleton media-skeleton-line" />
+                <div className="u-skeleton media-skeleton-line is-short" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {!loading && !error && !items.length ? (
+        <EmptyState
+          icon={<ImageIcon size={24} strokeWidth={1.5} aria-hidden="true" />}
+          title="当前项目暂无资产"
+          detail="上传文件或从创作任务生成资产后，会在这里统一管理图片、视频、音频与文档。"
+          action={app.featureFlags.media_upload ? <button className="u-btn" type="button" onClick={() => window.dispatchEvent(new Event('mgs:open-media-upload'))}>上传文件</button> : undefined}
+        />
+      ) : null}
+
       <div
         ref={selectionSurfaceRef}
         className="media-assets-selection-surface"
@@ -284,22 +530,80 @@ export function MediaAssetsPage() {
         onPointerCancel={cancelMarqueeSelection}
         onLostPointerCapture={loseMarqueeCapture}
       >
-        <section className="media-assets-grid" aria-busy={loading}>{items.map((asset) => <MediaAssetCard key={asset.id} asset={asset} selected={selected.has(asset.id)} selectionMode={selected.size > 0} onSelect={selectCard} onOpen={openCard} onRetry={(item) => void userApi.retryMediaAssetProcessing(item.id).then(patchAsset)} />)}</section>
+        <section className="u-grid u-grid--gallery" aria-busy={loading} aria-label="资产列表">
+          {items.map((asset) => (
+            <MediaAssetCard
+              key={asset.id}
+              asset={asset}
+              selected={selected.has(asset.id)}
+              selectionMode={selected.size > 0}
+              onSelect={selectCard}
+              onOpen={openCard}
+              onRetry={(item) => void userApi.retryMediaAssetProcessing(item.id).then(patchAsset).catch((caught) => app.notify('error', caught instanceof Error ? caught.message : '重试处理失败'))}
+            />
+          ))}
+        </section>
       </div>
-      {loading ? <p className="media-assets-loading" role="status">正在加载资产</p> : null}
-      {nextCursor && !loading ? <div className="media-load-more"><Button tone="ghost" onClick={() => void load(true)}>加载更多</Button></div> : null}
-      {items.length ? <button type="button" className="media-select-mode" onClick={allSelected ? () => setSelected(new Set()) : selectAll}><CheckSquare size={16} />{allSelected ? '取消全选' : '全选'}</button> : null}
-      {selected.size ? <OverlayPortal><aside className="media-batch-toolbar" aria-label="批量工具">
-        <strong>已选 {selected.size} 项</strong><button type="button" onClick={selectAll}>全选</button><button type="button" onClick={invert}>反选</button>
-        <button type="button" disabled={busy} onClick={() => void batch('download')}><Download size={15} />下载</button>
-        <button type="button" disabled={busy} onClick={groupSelected}><FolderInput size={15} />分组</button>
-        <select aria-label="目标项目" value={targetProjectID} onChange={(event) => setTargetProjectID(event.target.value)}><option value="">转移到项目</option>{projects.projects.filter((project) => project.id !== projects.selectedProjectID).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-        <button type="button" disabled={busy || !targetProjectID} onClick={() => void batch('transfer-project', { target_project_id: targetProjectID })}>转移</button>
-        <button type="button" disabled={busy || !selectedItems.some((item) => item.media_type === 'image')} onClick={() => void publishSelected()}><Globe2 size={15} />公开图片</button>
-        <button type="button" disabled={busy} className="is-danger" onClick={() => void batch('delete')}><Trash2 size={15} />删除</button>
-      </aside></OverlayPortal> : null}
+
+      {nextCursor && !loading ? (
+        <div className="media-library__more">
+          <button className="u-btn u-btn--sm" type="button" onClick={() => void load(true)}>加载更多</button>
+        </div>
+      ) : null}
+      {loading && items.length ? <p className="u-meta" role="status">正在加载更多资产</p> : null}
+
+      {selected.size ? (
+        <OverlayPortal>
+          <aside className="gl-bulk is-open" role="region" aria-label="批量操作">
+            <span className="gl-bulk__count">已选 <b>{selected.size}</b> 项</span>
+            <button className="u-btn u-btn--sm u-btn--quiet" type="button" onClick={allSelected ? () => setSelected(new Set()) : selectAll}>{allSelected ? '取消全选' : '全选'}</button>
+            <button className="u-btn u-btn--sm u-btn--quiet" type="button" onClick={invert}>反选</button>
+            <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={() => void batch('download')}>下载</button>
+            <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={groupSelected}>分组</button>
+            <select className="u-filter gl-bulk__select" aria-label="目标项目" value={targetProjectID} onChange={(event) => setTargetProjectID(event.target.value)}>
+              <option value="">转移到项目</option>
+              {projects.projects.filter((project) => project.id !== projects.selectedProjectID).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+            <button className="u-btn u-btn--sm" type="button" disabled={busy || !targetProjectID} onClick={() => void batch('transfer-project', { target_project_id: targetProjectID })}>转移</button>
+            <button className="u-btn u-btn--sm" type="button" disabled={busy || !selectedItems.some((item) => item.media_type === 'image')} onClick={() => void publishSelected()}>公开</button>
+            <button className="u-btn u-btn--sm u-btn--danger" type="button" disabled={busy} onClick={() => void batch('delete')}>删除</button>
+            <button className="u-icon-btn u-icon-btn--plain" type="button" aria-label="取消选择" onClick={() => setSelected(new Set())}><X size={16} strokeWidth={1.6} aria-hidden="true" /></button>
+          </aside>
+        </OverlayPortal>
+      ) : null}
+
       {marquee ? <OverlayPortal><div className="media-selection-marquee" style={{ left: marquee.left, top: marquee.top, width: marquee.right - marquee.left, height: marquee.bottom - marquee.top }} aria-hidden="true" /></OverlayPortal> : null}
-      {preview ? <MediaPreviewDialog asset={preview} projects={projects.projects} creationActions={mediaCreationActions(preview)} onClose={() => setPreview(null)} onChanged={patchAsset} onDeleted={(asset) => { setItems((current) => current.filter((item) => item.id !== asset.id)); setPreview(null) }} onContinue={continueCreation} /> : null}
+
+      {preview && detailImage ? (
+        <ImageDetailModal
+          title={preview.name}
+          image={detailImage}
+          imageUrl={detailURL || undefined}
+          showPublicStats={false}
+          onDownload={() => void downloadAsset(preview)}
+          onCopyPrompt={(prompt) => { if (prompt) void copyText(prompt) }}
+          actions={detailActions}
+          previewSourceLabel="资产库"
+          onMediaRefresh={preview ? async () => {
+            const access = await userApi.getMediaAssetAccess(preview.id, 'preview')
+            setDetailURL(access.url)
+            return access.url
+          } : undefined}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
+
+      {mediaPreview ? (
+        <MediaPreviewDialog
+          asset={mediaPreview}
+          projects={projects.projects}
+          creationActions={mediaCreationActions(mediaPreview)}
+          onClose={() => setMediaPreview(null)}
+          onChanged={patchMediaPreviewAsset}
+          onDeleted={(asset) => { removeAssetLocally(asset); setMediaPreview(null) }}
+          onContinue={(options) => { setMediaPreview(null); continueCreation(options) }}
+        />
+      ) : null}
     </main>
   )
 }

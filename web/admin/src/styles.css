@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import '../../shared/base.css';
 @import '../../shared/admin-design-tokens.css';
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
 
 @theme {
   --font-admin-display: var(--admin-font-ui);

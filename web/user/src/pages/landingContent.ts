@@ -40,8 +40,8 @@ export type LandingCapability = {
 
 export const landingChapters = {
   hero: {
-    title: ['连接灵感，也连接模型', '让每张图成为可用资产'],
-    summary: '面向创作者与开发者的统一图片生成平台。从参数配置、积分预估到结果归档，在同一条清晰路径中完成。',
+    title: ['连接灵感，', '也连接模型'],
+    summary: '面向创作者与开发者的统一生成平台。图片、视频、参考图编辑与创意画布共用同一条链路：配置意图、确认预估、跟随状态、归档资产。',
     actions: [
       { label: '开始创作', kind: 'create' },
       { label: '阅读 API 文档', kind: 'docs' },

@@ -2,32 +2,15 @@ import { useMemo, useRef, useState } from 'react'
 import type { ImageResult, MediaAccessProjection } from '../../../shared/api-types'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, GalleryImageFrame, ImageDetailModal, LocalFeedback, StatusRail, copyText, useApp } from '../components'
+import { Button, EmptyState, ErrorState, GalleryImageFrame, ImageDetailModal, copyText, useApp } from '../components'
 import { useApiResource } from '../useApiResource'
 import { mediaAccess } from '../mediaAccess'
-import { ArrowRight, Image as ImageIcon, RefreshCw, Sparkles } from '../ui/icons'
+import { ArrowRight, Image as ImageIcon, Sparkles } from '../ui/icons'
 import { galleryImageAspect } from './galleryExperience'
 import { curatedHomeGallery, homeAccountReadinessView, homeContinuationView, homeGalleryCardView, homeModelReadinessView, homePublicDetailImage, homeRecentTaskView, newestHomeTask } from './homeGalleryModel'
 
 const homeClasses = {
-  content: 'mx-auto w-full max-w-[1440px] flex-1 px-6 pb-28 pt-8 md:px-10 md:pb-16 md:pt-12',
-  continuation: 'grid min-h-[300px] grid-cols-[minmax(0,1.2fr)_minmax(18rem,.8fr)] items-end gap-10 border-b border-[var(--border)] pb-12 max-[840px]:grid-cols-1 max-[840px]:gap-8',
-  kicker: 'mb-4 inline-flex items-center gap-2 text-xs font-semibold text-[var(--accent)]',
-  title: 'm-0 max-w-[18ch] font-vault-display text-[clamp(2.6rem,6vw,5.5rem)] font-medium leading-[.98] text-[var(--fg)]',
-  lead: 'mb-0 mt-6 max-w-[58ch] text-sm leading-7 text-[var(--muted)] md:text-base',
-  actions: 'mt-7 flex flex-wrap items-center gap-3',
-  recent: 'border-l border-[var(--border)] pl-8 max-[840px]:border-l-0 max-[840px]:border-t max-[840px]:pl-0 max-[840px]:pt-6',
-  recentLabel: 'mb-3 block text-xs font-semibold text-[var(--muted)]',
-  recentTitle: 'm-0 text-xl font-semibold text-[var(--fg)]',
-  recentDetail: 'mb-0 mt-3 text-sm leading-6 text-[var(--muted)]',
-  section: 'pt-16 md:pt-24',
-  sectionHeader: 'mb-7 flex flex-wrap items-end justify-between gap-5 border-b border-[var(--border)] pb-5',
-  sectionTitle: 'm-0 font-vault-display text-[clamp(2rem,4vw,3.75rem)] font-medium leading-none text-[var(--fg)]',
-  sectionDetail: 'mb-0 mt-3 max-w-[60ch] text-sm leading-6 text-[var(--muted)]',
-  gallery: 'grid grid-cols-3 gap-x-5 gap-y-9 max-[980px]:grid-cols-2 max-[620px]:grid-cols-1',
-  galleryItem: 'min-w-0',
-  galleryTitle: 'mb-0 mt-3 line-clamp-2 text-sm font-semibold leading-6 text-[var(--fg)]',
-  galleryMeta: 'mt-1 block truncate font-vault-mono text-[11px] text-[var(--muted)]',
+  gallery: 'u-grid u-grid--gallery',
 }
 
 const recentActionLabels = {
@@ -103,53 +86,72 @@ export function HomePage() {
     }
   }
 
+  const taskProgress = latestTask && (latestTask.status === 'queued' || latestTask.status === 'running')
+    ? Math.max(0, Math.min(100, Math.round(latestTask.progress || 0)))
+    : 0
+
   return (
-    <main className={homeClasses.content}>
-      <section className={homeClasses.continuation} aria-labelledby="home-continuation-title">
-        <div>
-          <span className={homeClasses.kicker}><Sparkles size={15} strokeWidth={1.5} aria-hidden="true" /> 今天的创作入口</span>
-          <h1 id="home-continuation-title" className={homeClasses.title}>回到下一张图像</h1>
-          <p className={homeClasses.lead}>继续最近的任务，或者带着一个新想法进入创作台。模型状态、可用积分与历史结果都会留在同一条路径上。</p>
-          <div className={homeClasses.actions}>
+    <main>
+      <div className="hm-return">
+        <div className="hm-return__copy">
+          <div style={{ display: 'grid', gap: 14 }}>
+            <span className="u-eyebrow">Continue where you left</span>
+            <h1 id="home-continuation-title">回到<em>下一张</em>图像</h1>
+            <p className="u-sub">继续最近的任务，或者带着一个新想法进入创作台。模型状态、可用积分与历史结果都会留在同一条路径上。</p>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
             <Button onClick={() => app.navigate(continuation.route, { taskId: continuation.taskId })}>{continuation.label}<ArrowRight size={17} strokeWidth={1.5} aria-hidden="true" /></Button>
-            <Button tone="ghost" onClick={() => app.navigate('gallery')}>查看历史资产</Button>
+            <Button tone="ghost" onClick={() => app.navigate('gallery')}>查看全部资产</Button>
+            <Button tone="ghost" onClick={() => app.navigate('public-gallery')}>寻找灵感</Button>
           </div>
         </div>
-        <div className={homeClasses.recent}>
-          <span className={homeClasses.recentLabel}>最近任务</span>
-          <h2 className={homeClasses.recentTitle}>{recent.title}</h2>
-          <p className={homeClasses.recentDetail}>{recent.detail}</p>
-          {recent.state === 'failed' ? <LocalFeedback className="mt-5" tone="error" title="可以调整参数后重试" detail="失败任务不会按成功图片数量扣费。" /> : null}
-          {recent.action !== 'none' ? (
-            <Button className="mt-5" tone="ghost" onClick={() => app.navigate('genpic', { taskId: latestTask?.id })}>
-              {recentActionLabels[recent.action]}
-              <ArrowRight size={16} strokeWidth={1.5} aria-hidden="true" />
-            </Button>
-          ) : null}
-        </div>
-      </section>
+        <aside className="hm-task">
+          <div className="u-panel-title" style={{ margin: 0 }}><h3>最近任务</h3><span>{recent.state === 'active' ? `${taskProgress}%` : recent.state === 'complete' ? '已完成' : recent.state === 'failed' ? '失败' : '等待开始'}</span></div>
+          <div className="hm-task__stage">
+            <div style={{ display: 'grid', placeItems: 'center', height: '100%', gap: 8, color: 'var(--ink-3)' }}>
+              <Sparkles size={28} strokeWidth={1.2} aria-hidden="true" />
+              <span className="u-meta">{recent.title}</span>
+            </div>
+            <span className="u-chip u-chip--accent hm-task__badge"><span className="u-dot" aria-hidden="true" />{recent.state === 'active' ? `生成中 · ${taskProgress}%` : recent.state === 'failed' ? '需要重试' : recent.state === 'complete' ? '已完成' : '待开始'}</span>
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+              <strong style={{ fontSize: 13 }}>{recent.detail}</strong>
+              <span className="u-meta">{latestTask?.route_model_code || latestTask?.abstract_model || '—'}</span>
+            </div>
+            <div className="u-progress"><span style={{ width: `${recent.state === 'active' ? taskProgress : recent.state === 'complete' ? 100 : 0}%` }} /></div>
+            <div className="u-meta">{latestTask ? `${latestTask.aspect_ratio || '-'} · ${latestTask.image_count || '—'} 张` : '还没有生成记录'}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {recent.action !== 'none' ? (
+              <Button tone="ghost" onClick={() => app.navigate('genpic', { taskId: latestTask?.id })}>{recentActionLabels[recent.action]}</Button>
+            ) : null}
+            <Button tone="ghost" onClick={() => app.navigate('genpic')}>新任务</Button>
+          </div>
+        </aside>
+      </div>
 
-      <StatusRail
-        label="创作就绪状态"
-        className="px-0 py-5"
-        items={[
-          { key: 'models', label: '生图能力', value: models.value, tone: models.warning ? 'warning' : 'success' },
-          { key: 'balance', label: '可用积分', value: balance.loading ? '读取中' : account.availableValue, tone: Number.parseFloat(balance.data?.available_points ?? '0') > 0 ? 'success' : 'warning' },
-          { key: 'trial', label: '体验额度', value: balance.loading ? '读取中' : account.trialValue, tone: account.trialWarning ? 'warning' : 'neutral' },
-        ]}
-      />
+      <div className="u-stat-row" style={{ marginBottom: 34 }}>
+        <div className="u-stat"><span className="u-stat__label">生图能力</span><span className="u-stat__value" style={{ fontSize: 19, lineHeight: 1.35 }}>{models.value}</span><span className="u-stat__foot">{models.warning ? '部分模型不可用' : '模型通道可用'}</span></div>
+        <div className="u-stat"><span className="u-stat__label">可用积分</span><span className="u-stat__value" style={{ fontSize: 19, lineHeight: 1.35 }}>{balance.loading ? '读取中' : account.availableValue}</span><span className="u-stat__foot">冻结与体验额度独立计算</span></div>
+        <div className="u-stat"><span className="u-stat__label">体验额度</span><span className="u-stat__value" style={{ fontSize: 19, lineHeight: 1.35 }}>{balance.loading ? '读取中' : account.trialValue}</span><span className="u-stat__foot">{account.trialWarning ? '体验额度即将用尽' : '可用于首次生成'}</span></div>
+        <div className="u-stat"><span className="u-stat__label">最近任务</span><span className="u-stat__value">{tasks.loading ? '…' : tasks.data?.length ?? 0}</span><span className="u-stat__foot">全部历史任务</span></div>
+      </div>
 
       {(capabilities.error || balance.error || tasks.error) ? (
         <ErrorState message={capabilities.error || balance.error || tasks.error || '首页状态读取失败'} onRetry={() => void Promise.all([capabilities.reload(), balance.reload(), tasks.reload()])} />
       ) : null}
 
-      <section className={homeClasses.section} aria-labelledby="home-inspiration-title">
-        <div className={homeClasses.sectionHeader}>
-          <div>
-            <h2 id="home-inspiration-title" className={homeClasses.sectionTitle}>精选灵感</h2>
-            <p className={homeClasses.sectionDetail}>从已公开作品中选取少量代表性结果，聚焦构图、模型与比例，不让信息流淹没下一次创作。</p>
+      <section style={{ marginTop: 36 }} aria-labelledby="home-inspiration-title">
+        <div className="u-section-head">
+          <div style={{ display: 'grid', gap: 6 }}>
+            <span className="u-eyebrow">Curated Inspiration</span>
+            <h2 id="home-inspiration-title" className="u-h2">精选灵感</h2>
           </div>
-          <Button tone="ghost" onClick={() => app.navigate('public-gallery')}>浏览公开广场<ArrowRight size={16} strokeWidth={1.5} aria-hidden="true" /></Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="u-meta">今天从公开广场挑选</span>
+            <Button tone="ghost" onClick={() => app.navigate('public-gallery')}>浏览广场</Button>
+          </div>
         </div>
 
         {publicGallery.loading && !curated.length ? <HomeGallerySkeleton /> : null}
@@ -162,19 +164,25 @@ export function HomePage() {
               const access = publicImageAccess[image.id]
               const src = access?.url || image.url || image.download_url
               return (
-                <article className={homeClasses.galleryItem} key={image.id}>
-                  <GalleryImageFrame
-                    src={src ? userApi.imageAssetUrl(src, null) : undefined}
-                    mediaExpiresAt={publicImageAccess[image.id]?.expires_at ?? image.preview_expires_at}
-                    alt={card.title}
-                    width={image.width}
-                    height={image.height}
-                    aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
-                    onOpen={() => void openImage(image)}
-                    onMediaRefresh={() => refreshPublicImage(image.id)}
-                  />
-                  <h3 className={homeClasses.galleryTitle}>{card.title}</h3>
-                  <span className={homeClasses.galleryMeta}>{card.meta}</span>
+                <article className="u-card" key={image.id}>
+                  <div className="u-card__media">
+                    <GalleryImageFrame
+                      src={src ? userApi.imageAssetUrl(src, null) : undefined}
+                      mediaExpiresAt={publicImageAccess[image.id]?.expires_at ?? image.preview_expires_at}
+                      alt={card.title}
+                      width={image.width}
+                      height={image.height}
+                      aspectRatio={galleryImageAspect({ width: image.width, height: image.height, aspectRatio: image.aspect_ratio })}
+                      onOpen={() => void openImage(image)}
+                      onMediaRefresh={() => refreshPublicImage(image.id)}
+                      className="h-full w-full rounded-none border-0"
+                    />
+                    <span className="u-card__tag"><ImageIcon size={11} strokeWidth={1.6} aria-hidden="true" />图片</span>
+                  </div>
+                  <div className="u-card__body">
+                    <div className="u-card__title">{card.title}</div>
+                    <div className="u-card__meta"><span>{card.meta}</span><span>{image.width && image.height ? `${image.width}×${image.height}` : ''}</span></div>
+                  </div>
                 </article>
               )
             })}

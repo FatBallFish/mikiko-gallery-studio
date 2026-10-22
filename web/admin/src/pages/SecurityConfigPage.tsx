@@ -3,7 +3,8 @@ import type { FormEvent } from 'react'
 import type { SMTPConfigView, SMTPConfigWriteRequest } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, ErrorBlock, Field, InlineFeedback, LoadingBlock, PageHeader, StatusCell, StatusStrip } from '../components'
+import { Badge, Button, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader } from '../components'
+import { FormSaveBar, FormSection, LedgerField, SwitchField } from './AdminMediaTabs'
 import { adminButton, adminPage } from '../ui/classes'
 import { OIDCConfigEditor } from './SecurityOIDCConfig'
 
@@ -122,8 +123,8 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
     if (editorPhase === 'failed' || editorPhase === 'saved') setEditorPhase('dirty')
   }
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  async function save(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
     if (!draft || !config) return
     setEditorPhase('validating')
     setSaveError('')
@@ -171,6 +172,9 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
   if (loading) return <LoadingBlock label="读取安全配置" />
   if (error && !config) return <ErrorBlock message={error} onRetry={load} />
 
+  const liveFieldErrors = draft ? validateSMTPDraft(draft) : {}
+  const liveErrorCount = Object.keys(liveFieldErrors).length
+
   return (
     <section className={adminPage.stack}>
       {!compact ? (
@@ -180,140 +184,66 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
           actions={<button type="button" className={adminButton.base} disabled={editorLocked} onClick={reloadWithConfirmation}>刷新</button>}
         />
       ) : null}
-      {!summaryMode ? (
-        <StatusStrip columns={4}>
-          <StatusCell label="SMTP" value={config?.enabled ? '启用' : '未启用'} />
-          <StatusCell label="密码状态" value={config?.secret_status?.has_secret ? '已配置' : '未配置'} />
-          <StatusCell label="版本" value={String(config?.version ?? 0)} />
-          <StatusCell label="指纹" value={config?.secret_status?.fingerprint ?? '-'} />
-        </StatusStrip>
-      ) : null}
       {error ? <InlineFeedback tone="danger" message={error} /> : null}
-      {draft && config ? (
-        <>
-          {summaryMode ? (
-            <section className={securityClasses.summaryList}>
-              <SecuritySummaryToggle title="SMTP 发信服务" detail={smtpSecretSummary(config)} enabled={config.enabled} />
-              <SecuritySummaryToggle title="强制邮箱验证" detail="登录、注册、密码重置邮件走真实配置中心。" enabled />
-              <SecuritySummaryToggle title="启用全站内容审核 (Moderation)" detail="内容策略由系统配置类目控制。" enabled />
-              <SecuritySummaryToggle title="限制单用户日最大生图数" detail="当前限制来自生成配置类目。" enabled />
-            </section>
-          ) : null}
-          <details className={summaryMode ? 'group rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4' : ''} open={!summaryMode}>
-            {summaryMode ? <summary className="cursor-pointer list-none text-sm font-bold text-[var(--accent)]">SMTP 高级配置</summary> : null}
-            <section className={summaryMode ? 'mt-4' : adminPage.fullSurface}>
-              <section className={summaryMode ? 'grid gap-4' : adminPage.mainLane}>
-                <form className={securityClasses.editor} aria-busy={editorLocked} onSubmit={(event) => void save(event)}>
-                  <fieldset disabled={editorLocked} className="contents">
-                  <section className={securityClasses.editorGroup} data-security-editor-group="connection">
-                    <div className={securityClasses.sectionHead}>
-                      <div>
-                        <strong>连接与启用状态</strong>
-                        <p className={securityClasses.note}>配置 SMTP 服务器地址和端口；启用时必须通过基础字段校验。</p>
-                      </div>
-                      <Badge tone={config.enabled ? 'success' : 'neutral'}>{config.enabled ? '已启用' : '未启用'}</Badge>
-                    </div>
-                    <label className={securityClasses.toggle}>
-                      <input type="checkbox" checked={draft.enabled} onChange={(event) => updateConfigDraft({ ...draft, enabled: event.target.checked })} />
-                      <span>启用 SMTP 发信</span>
-                    </label>
-                    <div className={adminPage.formGrid}>
-                      <Field label="SMTP Host" error={fieldErrors.host}>
-                        <input value={draft.host} onChange={(event) => updateConfigDraft({ ...draft, host: event.target.value })} placeholder="smtp.example.com" />
-                      </Field>
-                      <Field label="SMTP Port" error={fieldErrors.port}>
-                        <input value={draft.port} onChange={(event) => updateConfigDraft({ ...draft, port: event.target.value })} inputMode="numeric" placeholder="587" />
-                      </Field>
-                      <p className={securityClasses.note}>465 端口会自动使用隐式 TLS；587 端口通常需要启用 STARTTLS。</p>
-                    </div>
-                  </section>
 
-                  <section className={securityClasses.editorGroup} data-security-editor-group="delivery">
-                    <div className={securityClasses.sectionHead}>
-                      <div>
-                        <strong>发件身份与传输安全</strong>
-                        <p className={securityClasses.note}>用于登录、注册、密码重置和测试邮件发送。</p>
-                      </div>
-                    </div>
-                    <div className={adminPage.formGrid}>
-                      <Field label="Username">
-                        <input value={draft.username} onChange={(event) => updateConfigDraft({ ...draft, username: event.target.value })} placeholder="mailer@example.com" />
-                      </Field>
-                      <Field label="From" error={fieldErrors.from}>
-                        <input value={draft.from} onChange={(event) => updateConfigDraft({ ...draft, from: event.target.value })} placeholder="Pic Gallery <noreply@example.com>" />
-                      </Field>
-                      <label className={securityClasses.toggle}>
-                        <input type="checkbox" checked={draft.starttls} onChange={(event) => updateConfigDraft({ ...draft, starttls: event.target.checked })} />
-                        <span>启用 STARTTLS（用于 587 等支持明文升级的端口）</span>
-                      </label>
-                      <label className={securityClasses.toggle}>
-                        <input type="checkbox" checked={draft.insecure_skip_verify} onChange={(event) => updateConfigDraft({ ...draft, insecure_skip_verify: event.target.checked })} />
-                        <span>跳过 TLS 证书校验</span>
-                      </label>
-                    </div>
-                  </section>
-
-                  <section className={securityClasses.editorGroup} data-security-editor-group="secret">
-                    <div className={securityClasses.sectionHead}>
-                      <div>
-                        <strong>SMTP 密码</strong>
-                        <p className={securityClasses.note}>{smtpSecretSummary(config)}。密码保存后不会明文回显。</p>
-                      </div>
-                    </div>
-                    <div className={adminPage.formGrid}>
-                      <Field label="新密码" hint="留空表示保留已保存密码；不要填写星号占位符。">
-                        <input
-                          value={draft.password}
-                          onChange={(event) => updateConfigDraft({ ...draft, password: event.target.value, clear_password: false })}
-                          type="password"
-                          autoComplete="new-password"
-                          placeholder={config.secret_status?.has_secret ? '留空保留当前密码' : '填写 SMTP 密码'}
-                        />
-                      </Field>
-                      <label className={securityClasses.toggle}>
-                        <input
-                          type="checkbox"
-                          checked={draft.clear_password}
-                          onChange={(event) => updateConfigDraft({ ...draft, clear_password: event.target.checked, password: event.target.checked ? '' : draft.password })}
-                        />
-                        <span>清空已保存密码</span>
-                      </label>
-                    </div>
-                  </section>
-                  </fieldset>
-
-                  <footer className={securityClasses.saveRail}>
-                    <div className={securityClasses.saveRailStatus}>
-                      <Badge tone={editorPhaseTone(editorPhase)}>{editorPhaseLabel(editorPhase)}</Badge>
-                      <span className={securityClasses.note}>{editorPhaseDetail(editorPhase)}</span>
-                      {saveError ? <InlineFeedback tone="danger" message={saveError} /> : null}
-                    </div>
-                    <div className={securityClasses.actions}>
-                      {compact ? <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} disabled={editorLocked} onClick={reloadWithConfirmation}>刷新</button> : null}
-                      <button type="submit" className={cn(adminButton.base, adminButton.primary)} disabled={editorLocked || editorPhase === 'validating' || !dirty}>{saving ? '保存中...' : '保存 SMTP'}</button>
-                    </div>
-                  </footer>
-                </form>
-                <section className={securityClasses.section}>
-              <div className={securityClasses.sectionHead}>
-                <div>
-                  <strong>发送测试邮件</strong>
-                  <p className={securityClasses.note}>使用当前已保存配置发送测试验证码，不修改用户验证码缓存。</p>
-                </div>
+      <section className="a-panel a-panel--flush">
+        <div className="a-panel__head">
+          <div><h2>SMTP 邮件</h2><p>验证码、密码重置与告警邮件共用此配置。</p></div>
+          <div className="a-row-actions">
+            <Badge tone={config?.enabled ? 'success' : 'neutral'}>{config?.enabled ? '已启用' : '未启用'}</Badge>
+            <Badge tone={config?.secret_status?.has_secret ? 'success' : 'warning'}>{config?.secret_status?.has_secret ? '密码已配置' : '密码未配置'}</Badge>
+            <Badge tone={editorPhaseTone(editorPhase)}>{editorPhaseLabel(editorPhase)}</Badge>
+          </div>
+        </div>
+        {draft && config ? (
+          <form className="a-form" aria-busy={editorLocked} onSubmit={(event) => void save(event)}>
+            <FormSection index={1} title="连接" group="connection" description="配置 SMTP 服务器地址和端口；启用时必须通过基础字段校验。">
+              <SwitchField label="启用 SMTP 发信" checked={draft.enabled} onChange={(enabled) => updateConfigDraft({ ...draft, enabled })} disabled={editorLocked} />
+              <LedgerField label="SMTP 主机" error={liveFieldErrors.host}><input className="a-input" value={draft.host} onChange={(event) => updateConfigDraft({ ...draft, host: event.target.value })} placeholder="smtp.example.com" /></LedgerField>
+              <div className="a-form__pair">
+                <LedgerField label="端口" error={liveFieldErrors.port}><input className="a-input" value={draft.port} onChange={(event) => updateConfigDraft({ ...draft, port: event.target.value })} inputMode="numeric" placeholder="587" /></LedgerField>
+                <LedgerField label="传输安全"><select className="a-select" value={draft.starttls ? 'starttls' : 'tls'} onChange={(event) => updateConfigDraft({ ...draft, starttls: event.target.value === 'starttls' })}><option value="tls">SSL/TLS</option><option value="starttls">STARTTLS</option></select></LedgerField>
               </div>
-              <div className={securityClasses.testRow}>
-                <Field label="测试收件邮箱" error={!draft.test_email.trim() ? testError : undefined}>
-                  <input value={draft.test_email} disabled={editorLocked} onChange={(event) => { setDraft({ ...draft, test_email: event.target.value }); setTestError('') }} placeholder="admin@example.com" />
-                </Field>
-                <button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={editorLocked} onClick={() => void testSMTP()}>{testing ? '发送中...' : '发送测试邮件'}</button>
+              <small className="a-hint">465 端口会自动使用隐式 TLS；587 端口通常需要启用 STARTTLS。</small>
+            </FormSection>
+
+            <FormSection index={2} title="发件身份与传输安全" group="delivery">
+              <LedgerField label="Username"><input className="a-input" value={draft.username} onChange={(event) => updateConfigDraft({ ...draft, username: event.target.value })} placeholder="mailer@example.com" /></LedgerField>
+              <LedgerField label="From" error={liveFieldErrors.from}><input className="a-input" value={draft.from} onChange={(event) => updateConfigDraft({ ...draft, from: event.target.value })} placeholder="Mikiko Studio <noreply@example.com>" /></LedgerField>
+              <SwitchField label="启用 STARTTLS（用于 587 等支持明文升级的端口）" checked={draft.starttls} onChange={(starttls) => updateConfigDraft({ ...draft, starttls })} disabled={editorLocked} />
+              <SwitchField label="跳过 TLS 证书校验" checked={draft.insecure_skip_verify} onChange={(insecure_skip_verify) => updateConfigDraft({ ...draft, insecure_skip_verify })} disabled={editorLocked} hint="仅建议在受信任的内网环境中开启。" />
+            </FormSection>
+
+            <FormSection index={3} title="SMTP 密码" group="secret" description={`${smtpSecretSummary(config)}。密码保存后不会明文回显。`}>
+              <LedgerField label="新密码" hint="留空表示保留已保存密码；不要填写星号占位符。"><input className="a-input" value={draft.password} onChange={(event) => updateConfigDraft({ ...draft, password: event.target.value, clear_password: false })} type="password" autoComplete="new-password" placeholder={config.secret_status?.has_secret ? '留空保留当前密码' : '填写 SMTP 密码'} /></LedgerField>
+              <SwitchField label="清空已保存密码" checked={draft.clear_password} onChange={(clear_password) => updateConfigDraft({ ...draft, clear_password, password: clear_password ? '' : draft.password })} disabled={editorLocked} />
+            </FormSection>
+
+            <FormSection index={4} title="发送测试邮件" description="使用当前已保存配置发送测试验证码，不修改用户验证码缓存。">
+              <div className="a-form__pair">
+                <LedgerField label="测试收件邮箱" error={!draft.test_email.trim() ? testError : undefined}><input className="a-input" value={draft.test_email} disabled={editorLocked} onChange={(event) => { setDraft({ ...draft, test_email: event.target.value }); setTestError('') }} placeholder="admin@example.com" /></LedgerField>
+                <div style={{ display: 'flex', alignItems: 'flex-end' }}><Button variant="secondary" size="sm" disabled={editorLocked} onClick={() => void testSMTP()}>{testing ? '发送中...' : '发送测试邮件'}</Button></div>
               </div>
               {testError && draft.test_email.trim() ? <InlineFeedback tone="danger" message={testError} /> : null}
-                </section>
-              </section>
-            </section>
-          </details>
-        </>
-      ) : null}
+              {editorPhaseDetail(editorPhase) ? <small className="a-hint">{editorPhaseDetail(editorPhase)}</small> : null}
+            </FormSection>
+          </form>
+        ) : null}
+        {draft ? (
+          <FormSaveBar
+            dirtyCount={dirty ? 1 : 0}
+            errorCount={liveErrorCount}
+            busy={saving || testing}
+            note={saveError || '保存后新配置才会生效；敏感配置写入会记录审计日志。'}
+            onReset={reloadWithConfirmation}
+            onSave={() => void save()}
+            saveLabel="保存 SMTP"
+            resetLabel="刷新"
+            saveDisabled={!dirty || !config}
+          />
+        ) : null}
+      </section>
+
       <OIDCConfigEditor onFeedback={onFeedback} onDirtyChange={setOIDCDirty} onBusyChange={setOIDCBusy} summaryMode={summaryMode} />
     </section>
   )

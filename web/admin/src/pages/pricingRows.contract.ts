@@ -33,51 +33,19 @@ if (serverCappedPrices.length !== 101 || serverCappedPages.join(',') !== '1,2') 
   throw new Error(`price pagination must honor the backend 100-item page-size cap, got ${JSON.stringify({ length: serverCappedPrices.length, serverCappedPages })}`)
 }
 
-for (const requiredPrimitive of ['MetricStrip', 'FilterToolbar', 'DataTable', 'ActionMenu', 'InlineFeedback']) {
-  if (!pricingPageSource.includes(requiredPrimitive)) {
-    throw new Error(`pricing workspace should use the shared ${requiredPrimitive} primitive`)
+for (const noticeContract of ['价格策略已并入路由模型', '#/routing', '路由模型 → 编辑路由 → 价格页签']) {
+  if (!pricingPageSource.includes(noticeContract)) {
+    throw new Error(`pricing migration notice must point operators to routing with ${noticeContract}`)
   }
 }
-
-for (const riskContract of ['data-admin-pricing-risk', 'missingEnabledRoutes', '补齐价格', 'newPriceDialogForRoute']) {
-  if (!pricingPageSource.includes(riskContract)) {
-    throw new Error(`pricing workspace should expose missing-price repair context with ${riskContract}`)
-  }
+if (pricingPageSource.includes('newPriceDialogForRoute') || pricingPageSource.includes('adminApi.createRouteModelPrice')) {
+  throw new Error('pricing page must not keep an independent price editor after migration')
 }
 
-if (!pricingPageSource.includes("route.visibility !== 'hidden'")) {
-  throw new Error('hidden routes must not be reported as user-facing missing-price risks')
-}
-
-if (!pricingPageSource.includes("route.visibility !== 'groups' || Boolean(route.group_ids?.length)")) {
-  throw new Error('group-scoped routes without a bound group must not be reported as user-facing missing-price risks')
-}
-
-for (const groupingContract of ['expandedGroups', 'adminTaskTypeLabel(group.taskType)', 'pricingBaseResolutionLabel(row.base_resolution)']) {
-  if (!pricingPageSource.includes(groupingContract)) {
-    throw new Error(`pricing workspace should preserve grouped expansion context with ${groupingContract}`)
-  }
-}
-
-for (const rowExpansionContract of ['renderAfterRow', 'pricingExpandedGroup(group, openDialog,']) {
-  if (!pricingPageSource.includes(rowExpansionContract)) {
-    throw new Error(`expanded pricing details must render directly after their route-model row with ${rowExpansionContract}`)
-  }
-}
-
-if (pricingPageSource.includes('expandedVisibleGroups')) {
-  throw new Error('expanded pricing details must not be collected into a global block below the route-model list')
-}
-
-for (const filterStateContract of ['hasActiveFilters', "hasActiveFilters ? '已应用筛选' : '全部价格组'"]) {
-  if (!pricingPageSource.includes(filterStateContract)) {
-    throw new Error(`pricing filter toolbar should expose truthful filter state with ${filterStateContract}`)
-  }
-}
-
-for (const forbiddenPattern of ['rounded-3xl', 'tracking-[', 'uppercase', 'noticeGrid']) {
-  if (pricingPageSource.includes(forbiddenPattern)) {
-    throw new Error(`pricing workspace should remove legacy decorative styling ${forbiddenPattern}`)
+const routingSource = readFileSync(new URL('./RoutingPage.tsx', import.meta.url), 'utf8')
+for (const routingPriceContract of ['adminApi.createRouteModelPrice', 'adminApi.updateRouteModelPrice', 'adminApi.deleteRouteModelPrice', '缺价组合会在提交前阻断', 'imageTaskLabel']) {
+  if (!routingSource.includes(routingPriceContract)) {
+    throw new Error(`route edit drawer must own price maintenance with ${routingPriceContract}`)
   }
 }
 

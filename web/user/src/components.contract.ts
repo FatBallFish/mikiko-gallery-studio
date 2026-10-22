@@ -31,6 +31,7 @@ const expectedNavigation = [
   ['creative-canvas', '画布'],
   ['gallery', '资产'],
   ['projects', '项目'],
+  ['public-gallery', '广场'],
   ['checkout', '积分'],
   ['api-keys', '密钥'],
   ['settings', '设置'],

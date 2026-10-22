@@ -13,10 +13,13 @@ if (modelAccountMediaType({ adapter_type: 'openai_compatible', extra: { media_ty
 if (modelMediaType({ extra: { media_type: 'video' } } as any, { adapter_type: 'openai_compatible', extra: {} } as any) !== 'video') throw new Error('model media type must override its account default')
 if (modelMediaType({ extra: {} } as any, { adapter_type: 'openai_compatible', extra: {} } as any) !== 'image') throw new Error('legacy image models must remain image models')
 
-for (const file of ['ProviderModelsPage.tsx', 'RoutingPage.tsx', 'PricingPage.tsx']) {
+for (const file of ['ProviderModelsPage.tsx', 'RoutingPage.tsx']) {
   const source = fs.readFileSync(new URL(`./${file}`, import.meta.url), 'utf8')
   if (!source.includes('AdminMediaTabs')) throw new Error(`${file} must render the shared media tabs`)
 }
+const pricing = fs.readFileSync(new URL('./PricingPage.tsx', import.meta.url), 'utf8')
+if (!pricing.includes('价格策略已并入路由模型')) throw new Error('pricing page must remain a migration notice instead of an independent pricing workspace')
+if (pricing.includes('AdminMediaTabs')) throw new Error('pricing migration notice must not expose an independent pricing tab workspace')
 
 const settings = fs.readFileSync(new URL('./SystemSettingsPage.tsx', import.meta.url), 'utf8')
 if (settings.includes("id: 'text-models'")) throw new Error('text model configuration must leave system settings')

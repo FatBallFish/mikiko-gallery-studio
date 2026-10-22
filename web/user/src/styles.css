@@ -1,13 +1,11 @@
-@import url('https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Manrope:wght@300..800&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 @import '../../shared/base.css';
 @import '../../shared/user-theme.css';
 
 @theme {
-  --font-vault-display: 'Satoshi', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-vault-body: 'Satoshi', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-vault-display: 'Fraunces', 'Songti SC', Georgia, 'Noto Sans SC', serif;
+  --font-vault-body: 'Manrope', 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif;
   --font-vault-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 
   --color-vault-bg: oklch(12% 0.015 260);

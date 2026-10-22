@@ -17,9 +17,14 @@ if (new Set(settingsWorkspaceSections.map((item) => item.id)).size !== settingsW
   throw new Error('settings workspace section ids must be unique')
 }
 
-for (const [page, active] of [['ProfilePage.tsx', 'profile'], ['ApiKeysPage.tsx', 'api-keys'], ['SettingsPage.tsx', 'appearance']] as const) {
+// Account pages use the prototype single-column settings stack. The shared
+// secondary account nav is intentionally no longer rendered on these pages.
+for (const page of ['ProfilePage.tsx', 'ApiKeysPage.tsx', 'SettingsPage.tsx'] as const) {
   const source = readFileSync(new URL(`../pages/${page}`, import.meta.url), 'utf8')
-  if (!source.includes('<SettingsWorkspace') || !source.includes(`active="${active}"`)) {
-    throw new Error(`${page} must use the shared settings workspace for ${active}`)
+  if (source.includes('<SettingsWorkspace')) {
+    throw new Error(`${page} must not render the secondary account menu`)
+  }
+  if (!source.includes('u-settings u-settings--single') || !source.includes('u-settings__stack')) {
+    throw new Error(`${page} must use the prototype single-column settings layout`)
   }
 }

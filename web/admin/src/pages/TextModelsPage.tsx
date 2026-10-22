@@ -3,8 +3,8 @@ import { KeyRound, Plus, PlugZap, Save, Star, Trash2 } from 'lucide-react'
 import { adminApi } from '../../../shared/admin-api'
 import type { TextModel, TextModelAccount } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
-import { EmptyBlock, InlineFeedback, LoadingBlock, TooltipIconButton } from '../components'
-import { adminButton, adminPage } from '../ui/classes'
+import { Button, EmptyBlock, InlineFeedback, LoadingBlock, TooltipIconButton } from '../components'
+import { FormSaveBar, FormSection, LedgerField } from './AdminMediaTabs'
 import {
   accountDraftFromView,
   emptyTextModelAccountDraft,
@@ -38,6 +38,7 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
   const [probe, setProbe] = useState('')
   const selected = useMemo(() => accounts.find((item) => String(item.id) === selectedID), [accounts, selectedID])
   const readiness = useMemo(() => textModelReadiness(accounts, allModels), [accounts, allModels])
+  const accountValidation = validateTextModelAccountDraft(accountDraft)
 
   const markDirty = () => { setDirty(true); onDirtyChange?.(true) }
   const updateAccountDraft = (patch: Partial<TextModelAccountDraft>) => {
@@ -185,61 +186,75 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
 
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-      <aside className="min-w-0 border-r border-[var(--border)] pr-4 max-xl:border-r-0 max-xl:border-b max-xl:pb-4 max-xl:pr-0">
+      <aside className="min-w-0 border-r border-[var(--a-line)] pr-4 max-xl:border-r-0 max-xl:border-b max-xl:pb-4 max-xl:pr-0">
         <div className="mb-3 flex items-center justify-between gap-2">
           <strong className="text-sm">模型账号</strong>
-          <button type="button" className={cn(adminButton.base, adminButton.ghost, 'size-9 px-0')} title="新增文本模型账号" disabled={busy} onClick={() => { setSelectedID('new'); setAccountDraft(emptyTextModelAccountDraft()); setModels([]); setModelDrafts([]); markDirty() }}><Plus size={16} /></button>
+          <button type="button" className="a-icon-btn" title="新增文本模型账号" aria-label="新增文本模型账号" disabled={busy} onClick={() => { setSelectedID('new'); setAccountDraft(emptyTextModelAccountDraft()); setModels([]); setModelDrafts([]); markDirty() }}><Plus size={16} /></button>
         </div>
         <div className="grid gap-1.5">
           {accounts.map((account) => (
-            <button key={account.id} type="button" className={cn('flex min-h-12 min-w-0 w-full items-center justify-between gap-3 rounded-md border px-3 text-left text-sm', selectedID === String(account.id) ? 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]' : 'border-transparent hover:border-[var(--border)]')} onClick={() => void selectAccount(account)}>
-              <span className="flex min-w-0 flex-1 overflow-hidden"><span className="min-w-0 flex-1"><span className="block truncate font-semibold">{account.name}</span><span className="block truncate text-xs text-[var(--muted)]">{account.api_style === 'responses' ? 'Responses' : 'Chat Completions'}</span></span></span>
-              <span className={cn('size-2 shrink-0 rounded-full', account.enabled ? 'bg-emerald-500' : 'bg-[var(--muted)]')} />
+            <button key={account.id} type="button" className={cn('flex min-h-12 min-w-0 w-full items-center justify-between gap-3 rounded-md border px-3 text-left text-sm', selectedID === String(account.id) ? 'border-[var(--a-accent)] bg-[var(--a-accent-soft)]' : 'border-transparent hover:border-[var(--a-line)]')} onClick={() => void selectAccount(account)}>
+              <span className="flex min-w-0 flex-1 overflow-hidden"><span className="min-w-0 flex-1"><span className="block truncate font-semibold">{account.name}</span><span className="block truncate text-xs text-[var(--a-ink-3)]">{account.api_style === 'responses' ? 'Responses' : 'Chat Completions'}</span></span></span>
+              <span className={cn('size-2 shrink-0 rounded-full', account.enabled ? 'bg-[var(--a-success)]' : 'bg-[var(--a-ink-3)]')} />
             </button>
           ))}
-          {!accounts.length ? <EmptyBlock title="暂无账号" detail="新增一个 OpenAI 兼容账号。" /> : null}
+          {!accounts.length ? <EmptyBlock title="暂无账号" detail="新增一个 OpenAI 兼容账号。" variant="inline" /> : null}
         </div>
       </aside>
 
       <section className="min-w-0">
-        <section className={cn('mb-3 flex min-w-0 items-start gap-3 rounded-md border px-3 py-2.5', readiness.status === 'ready' ? 'border-[color-mix(in_oklch,var(--green)_24%,transparent)] bg-[color-mix(in_oklch,var(--green)_8%,transparent)]' : 'border-[color-mix(in_oklch,var(--amber)_24%,transparent)] bg-[color-mix(in_oklch,var(--amber)_8%,transparent)]')} role="status">
-          <span className={cn('mt-1 size-2 shrink-0 rounded-full', readiness.status === 'ready' ? 'bg-[var(--green)]' : 'bg-[var(--amber)]')} />
-          <span className="min-w-0"><strong className="block text-sm text-[var(--fg)]">{readinessTitle}</strong><span className="mt-0.5 block text-xs leading-5 text-[var(--muted)]">{readinessDetail}</span></span>
+        <section className={cn('mb-3 flex min-w-0 items-start gap-3 rounded-md border px-3 py-2.5', readiness.status === 'ready' ? 'border-[color-mix(in_oklch,var(--a-success)_24%,transparent)] bg-[var(--a-success-soft)]' : 'border-[color-mix(in_oklch,var(--a-warn)_24%,transparent)] bg-[var(--a-warn-soft)]')} role="status">
+          <span className={cn('mt-1 size-2 shrink-0 rounded-full', readiness.status === 'ready' ? 'bg-[var(--a-success)]' : 'bg-[var(--a-warn)]')} />
+          <span className="min-w-0"><strong className="block text-sm">{readinessTitle}</strong><span className="mt-0.5 block text-xs leading-5 text-[var(--a-ink-3)]">{readinessDetail}</span></span>
         </section>
         {error ? <InlineFeedback tone="danger" message={error} /> : null}
         {probe ? <InlineFeedback tone="success" message={probe} /> : null}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="账号名称"><input value={accountDraft.name} onChange={(event) => updateAccountDraft({ name: event.target.value })} /></Field>
-          <Field label="平台类型"><select value={accountDraft.platformType} disabled><option value="openai_compatible">OpenAI Compatible</option></select></Field>
-          <Field label="接口格式"><div className="grid grid-cols-2 gap-1 rounded-md border border-[var(--border)] p-1">{(['responses', 'chat_completions'] as const).map((value) => <button key={value} type="button" className={cn('min-h-9 rounded px-2 text-xs font-semibold', accountDraft.apiStyle === value ? 'bg-[var(--accent)] text-white' : 'text-[var(--muted)] hover:bg-[var(--surface)]')} onClick={() => updateAccountDraft({ apiStyle: value })}>{value === 'responses' ? 'Responses' : 'Chat'}</button>)}</div></Field>
-          <Field label="Base URL"><input value={accountDraft.baseUrl} placeholder="https://api.example.com" onChange={(event) => updateAccountDraft({ baseUrl: event.target.value })} /></Field>
-          <Field label="API 密钥"><div className="flex gap-2"><select className="max-w-28" value={accountDraft.secretMode} onChange={(event) => updateAccountDraft({ secretMode: event.target.value as TextModelAccountDraft['secretMode'], apiKey: '' })}><option value="keep">保持</option><option value="replace">替换</option><option value="clear">清除</option></select><input type="password" disabled={accountDraft.secretMode !== 'replace'} value={accountDraft.apiKey} placeholder={accountDraft.hasSecret ? `已配置 ${accountDraft.fingerprint}` : '未配置'} onChange={(event) => updateAccountDraft({ apiKey: event.target.value })} /></div></Field>
-          <Field label="账号状态"><label className="flex min-h-10 items-center gap-2"><input type="checkbox" checked={accountDraft.enabled} onChange={(event) => updateAccountDraft({ enabled: event.target.checked })} /><span>{accountDraft.enabled ? '启用' : '停用'}</span></label></Field>
-        </div>
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          {accountDraft.id ? <button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={busy || models.length > 0} onClick={() => void deleteAccount()}><Trash2 size={15} />删除账号</button> : null}
-          <button type="button" className={cn(adminButton.base, adminButton.primary)} disabled={busy} onClick={() => void saveAccount()}><Save size={15} />保存账号</button>
-        </div>
+
+        <section className="a-panel a-panel--flush">
+          <div className="a-panel__head"><div><h2>文本模型账号</h2><p>OpenAI 兼容接口；密钥只写不读。</p></div></div>
+          <form className="a-form" onSubmit={(event) => event.preventDefault()}>
+            <FormSection index={1} title="连接">
+              <LedgerField label="账号名称"><input className="a-input" value={accountDraft.name} onChange={(event) => updateAccountDraft({ name: event.target.value })} /></LedgerField>
+              <LedgerField label="平台类型"><select className="a-select" value={accountDraft.platformType} disabled><option value="openai_compatible">OpenAI Compatible</option></select></LedgerField>
+              <LedgerField label="接口格式"><div className="grid grid-cols-2 gap-1 rounded-md border border-[var(--a-line)] p-1">{(['responses', 'chat_completions'] as const).map((value) => <button key={value} type="button" className={cn('min-h-9 rounded px-2 text-xs font-semibold', accountDraft.apiStyle === value ? 'bg-[var(--a-accent)] text-white' : 'text-[var(--a-ink-3)] hover:bg-[var(--a-surface-2)]')} onClick={() => updateAccountDraft({ apiStyle: value })}>{value === 'responses' ? 'Responses' : 'Chat'}</button>)}</div></LedgerField>
+              <LedgerField label="Base URL"><input className="a-input" value={accountDraft.baseUrl} placeholder="https://api.example.com" onChange={(event) => updateAccountDraft({ baseUrl: event.target.value })} /></LedgerField>
+            </FormSection>
+            <FormSection index={2} title="鉴权">
+              <LedgerField label="API 密钥"><div className="flex gap-2"><select className="a-select" style={{ maxWidth: 112 }} value={accountDraft.secretMode} onChange={(event) => updateAccountDraft({ secretMode: event.target.value as TextModelAccountDraft['secretMode'], apiKey: '' })}><option value="keep">保持</option><option value="replace">替换</option><option value="clear">清除</option></select><input className="a-input" type="password" disabled={accountDraft.secretMode !== 'replace'} value={accountDraft.apiKey} placeholder={accountDraft.hasSecret ? `已配置 ${accountDraft.fingerprint}` : '未配置'} onChange={(event) => updateAccountDraft({ apiKey: event.target.value })} /></div></LedgerField>
+              <LedgerField label="账号状态"><select className="a-select" value={accountDraft.enabled ? 'enabled' : 'disabled'} onChange={(event) => updateAccountDraft({ enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></LedgerField>
+            </FormSection>
+          </form>
+          <FormSaveBar
+            dirtyCount={dirty ? 1 : 0}
+            errorCount={accountValidation ? 1 : 0}
+            busy={busy}
+            note={accountValidation || '文本模型不参与图片/视频路由候选；默认模型用于提示词优化。'}
+            onReset={() => { const account = accounts.find((item) => String(item.id) === selectedID); setAccountDraft(account ? accountDraftFromView(account) : emptyTextModelAccountDraft()); setDirty(false); onDirtyChange?.(false) }}
+            onSave={() => void saveAccount()}
+            saveLabel="保存账号"
+            extraActions={accountDraft.id ? <Button variant="danger" size="sm" disabled={busy || models.length > 0} onClick={() => void deleteAccount()}>删除账号</Button> : null}
+          />
+        </section>
 
         {selected ? (
-          <div className="mt-7 border-t border-[var(--border)] pt-5">
-            <div className="mb-3 flex items-center justify-between gap-3"><div><h3 className="m-0 text-base">支持模型</h3><p className="m-0 mt-1 text-xs text-[var(--muted)]">价格单位为每百万 Token，未公开别名保持 0。</p></div><button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={busy} onClick={() => { setModelDrafts((items) => [...items, emptyModelDraft()]); markDirty() }}><Plus size={15} />新增模型</button></div>
-            <div className="overflow-x-auto border-y border-[var(--border)]">
-              <table className="w-full min-w-[850px] border-collapse text-sm">
-                <thead><tr className="text-left text-xs text-[var(--muted)]"><th className="p-2">模型</th><th className="p-2">输入价</th><th className="p-2">输出价</th><th className="p-2">币种</th><th className="p-2">启用</th><th className="p-2 text-right">操作</th></tr></thead>
+          <section className="a-panel a-panel--flush" style={{ marginTop: 16 }}>
+            <div className="a-panel__head"><div><h3 style={{ fontSize: 15 }}>支持模型</h3><p>价格单位为每百万 Token，未公开别名保持 0。</p></div><Button variant="secondary" size="sm" disabled={busy} onClick={() => { setModelDrafts((items) => [...items, emptyModelDraft()]); markDirty() }}><Plus size={15} />新增模型</Button></div>
+            <div className="a-table-wrap">
+              <table className="a-table" style={{ minWidth: 850 }}>
+                <thead><tr><th>模型</th><th>输入价</th><th>输出价</th><th>币种</th><th>启用</th><th className="is-actions">操作</th></tr></thead>
                 <tbody>{modelDrafts.map((draft, index) => {
                   const persisted = models.find((item) => String(item.id) === String(draft.id))
                   const testDisabledReason = busy ? '操作处理中' : !selected.enabled ? '请先启用当前账号' : persisted && !persisted.enabled ? '请先启用该模型' : undefined
                   const defaultDisabledReason = busy ? '操作处理中' : !selected.enabled ? '请先启用当前账号' : persisted?.is_default ? '当前已是默认优化模型' : persisted && !persisted.enabled ? '请先启用该模型' : undefined
                   return (
-                    <tr key={String(draft.id ?? `new-${index}`)} className="border-t border-[var(--border)] align-top">
-                      <td className="p-2"><input value={draft.modelCode} placeholder="model-id" onChange={(event) => updateModelDraft(index, { modelCode: event.target.value })} /><input className="mt-1" value={draft.displayName} placeholder="展示名称" onChange={(event) => updateModelDraft(index, { displayName: event.target.value })} />{draft.isDefault ? <span className="mt-1 inline-flex items-center gap-1 text-xs text-[var(--accent)]"><Star size={12} fill="currentColor" />默认优化模型</span> : null}</td>
-                      <td className="p-2"><input inputMode="decimal" value={draft.inputPrice} onChange={(event) => updateModelDraft(index, { inputPrice: event.target.value })} /></td>
-                      <td className="p-2"><input inputMode="decimal" value={draft.outputPrice} onChange={(event) => updateModelDraft(index, { outputPrice: event.target.value })} /></td>
-                      <td className="p-2"><input className="w-20" value={draft.currency} onChange={(event) => updateModelDraft(index, { currency: event.target.value })} /></td>
-                      <td className="p-2"><input type="checkbox" checked={draft.enabled} onChange={(event) => updateModelDraft(index, { enabled: event.target.checked })} /></td>
-                      <td className="p-2">
-                        <div className="flex justify-end gap-1">
+                    <tr key={String(draft.id ?? `new-${index}`)}>
+                      <td><input className="a-input" value={draft.modelCode} placeholder="model-id" onChange={(event) => updateModelDraft(index, { modelCode: event.target.value })} /><input className="a-input" style={{ marginTop: 6 }} value={draft.displayName} placeholder="展示名称" onChange={(event) => updateModelDraft(index, { displayName: event.target.value })} />{draft.isDefault ? <span className="mt-1 inline-flex items-center gap-1 text-xs text-[var(--a-accent)]"><Star size={12} fill="currentColor" />默认优化模型</span> : null}</td>
+                      <td><input className="a-input cfg-table-input" inputMode="decimal" value={draft.inputPrice} onChange={(event) => updateModelDraft(index, { inputPrice: event.target.value })} /></td>
+                      <td><input className="a-input cfg-table-input" inputMode="decimal" value={draft.outputPrice} onChange={(event) => updateModelDraft(index, { outputPrice: event.target.value })} /></td>
+                      <td><input className="a-input cfg-table-input" style={{ width: 80 }} value={draft.currency} onChange={(event) => updateModelDraft(index, { currency: event.target.value })} /></td>
+                      <td><input type="checkbox" checked={draft.enabled} onChange={(event) => updateModelDraft(index, { enabled: event.target.checked })} /></td>
+                      <td className="is-actions">
+                        <div className="a-row-actions">
                           <TooltipIconButton label="保存模型" disabled={busy} disabledReason="操作处理中" onClick={() => void saveModel(index)}><Save /></TooltipIconButton>
                           {persisted ? <>
                             <TooltipIconButton label="测试连接" disabled={Boolean(testDisabledReason)} disabledReason={testDisabledReason} onClick={() => void modelAction('test', persisted)}><PlugZap /></TooltipIconButton>
@@ -253,15 +268,12 @@ export function TextModelsPage({ onFeedback, onDirtyChange, onBusyChange }: {
                 })}</tbody>
               </table>
             </div>
-          </div>
-        ) : <div className="mt-6 flex items-center gap-2 text-sm text-[var(--muted)]"><KeyRound size={16} />请先保存账号，再配置模型。</div>}
+            {!modelDrafts.length ? <div className="p-4"><EmptyBlock title="暂无文本模型" detail="新增一个模型代码与展示名称后保存。" variant="inline" /></div> : null}
+          </section>
+        ) : <div className="mt-6 flex items-center gap-2 text-sm text-[var(--a-ink-3)]"><KeyRound size={16} />请先保存账号，再配置模型。</div>}
       </section>
     </div>
   )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="grid gap-1.5 text-sm text-[var(--muted)]"><span className="font-semibold text-[var(--fg)]">{label}</span>{children}</label>
 }
 
 function errorText(error: unknown) {

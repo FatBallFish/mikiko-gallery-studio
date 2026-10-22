@@ -32,8 +32,8 @@ export type MonitoringDiagnosticRow = {
   actionLabel: string
 }
 
-export function monitoringStateView(state: string): { label: string; tone: SemanticTone } {
-  switch (state) {
+export function monitoringStateView(state: string | null | undefined): { label: string; tone: SemanticTone } {
+  switch (state ?? '') {
     case 'healthy':
       return { label: '运行正常', tone: 'success' }
     case 'pressured':
@@ -43,7 +43,7 @@ export function monitoringStateView(state: string): { label: string; tone: Seman
     case 'collecting':
       return { label: '采集中', tone: 'neutral' }
     default:
-      return { label: state.trim() || '状态未知', tone: 'neutral' }
+      return { label: (state ?? '').trim() || '状态未知', tone: 'neutral' }
   }
 }
 

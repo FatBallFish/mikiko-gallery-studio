@@ -1,65 +1,12 @@
 import { type FormEvent, useEffect, useId, useState } from 'react'
 import type { Balance, LedgerEntry, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
-import { pointsExchangeRules, pointsText } from '../../../shared/pointsDisplay'
+import { formatPoints } from '../../../shared/pointsDisplay'
 import { userApi } from '../../../shared/user-api'
-import { Button, EmptyState, Field, Modal, useApp } from '../components'
-import { button as btn, card, form } from '../ui/redesign-classes'
-import { SettingsWorkspace } from '../ui/SettingsWorkspace'
+import { EmptyState, ErrorState, Modal, useApp } from '../components'
 import { errorMessage } from '../useApiResource'
 import { balanceBucketLabel, bucketExpiryText, nextExpiringCreditText, normalizeBalanceBuckets, profileLedgerRows } from './profileBalanceModel'
 import { RedeemCodeForm } from './RedeemCodeForm'
-
-const profileClasses = {
-  content: 'w-full flex-1 p-6 md:p-10',
-  grid: 'grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]',
-  stack: 'grid gap-8',
-  compactStack: 'grid gap-3',
-  card: cn(card.padded, 'h-fit'),
-  cardTitle: 'mb-6 flex items-center gap-2 text-sm font-extrabold text-[var(--muted)]',
-  balanceDisplay: 'mb-8',
-  balanceNum: 'num mb-2 text-[64px] leading-none text-[var(--accent)]',
-  balanceLabel: 'text-sm text-[var(--muted)]',
-  planBlock: 'mt-8 border-t border-[var(--border)] pt-6',
-  planRow: 'mb-3 flex justify-between gap-3 text-sm',
-  planLabel: 'text-[var(--muted)]',
-  planValue: 'font-bold',
-  ledgerHeader: 'mb-3 flex items-center justify-between gap-3',
-  ledgerTitle: 'flex items-center gap-2 text-sm font-extrabold uppercase tracking-[.1em] text-[var(--muted)]',
-  ledgerList: 'flex flex-col gap-4',
-  ledgerItem: 'flex items-center justify-between gap-4 border-b border-[var(--border)] py-3',
-  ledgerMain: 'flex min-w-0 flex-col gap-2',
-  ledgerItemTitle: 'text-[15px] font-bold',
-  ledgerTags: 'flex flex-wrap gap-2',
-  ledgerTag: 'rounded-xl border border-[var(--border)] px-[7px] py-[3px] font-mono text-[11px] font-extrabold',
-  ledgerBucketTag: 'bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] text-[var(--accent)]',
-  ledgerSourceTag: 'bg-[color-mix(in_oklch,var(--fg)_4%,transparent)] text-[var(--muted)]',
-  ledgerMeta: 'font-mono text-xs text-[var(--muted)]',
-  ledgerAmount: 'font-mono font-bold text-[var(--fg)]',
-  ledgerAmountCredit: 'text-[var(--accent)]',
-  ledgerFooter: 'mt-8 text-center',
-  accentGhost: 'text-[var(--accent)]',
-  bucketList: 'mt-6 grid gap-2.5',
-  bucketCard: 'rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50 p-3.5',
-  bucketTrial: 'bg-[color-mix(in_oklch,var(--accent)_8%,transparent)]',
-  bucketWarning: 'border-[color-mix(in_oklch,var(--accent)_55%,var(--border))]',
-  bucketHead: 'flex items-baseline justify-between gap-3',
-  bucketTitle: 'font-extrabold',
-  bucketAmount: 'num font-extrabold',
-  bucketHint: 'mt-1.5 text-xs text-[var(--muted)]',
-  bucketHintWarning: 'text-[var(--accent)]',
-  nextExpiry: 'mt-4 border-l-2 border-[var(--accent)] pl-3 text-sm font-bold text-[var(--accent)]',
-  profileHeader: 'mb-8 flex items-center gap-6',
-  avatar: 'grid size-20 place-items-center rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] text-[32px] font-extrabold text-white shadow-[0_0_30px_rgba(var(--accent-rgb),0.3)]',
-  profileName: 'text-xl font-bold',
-  profileEmail: 'text-sm text-[var(--muted)]',
-  passwordAction: 'mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-5',
-  passwordHint: 'max-w-sm text-sm leading-6 text-[var(--muted)]',
-  modalForm: 'mt-5 grid gap-4',
-  required: 'ml-1 text-[var(--accent-coral)]',
-  modalActions: 'mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
-  codeRow: 'grid grid-cols-[minmax(0,1fr)_auto] gap-2',
-}
 
 export function ProfilePage() {
   const app = useApp()
@@ -69,17 +16,21 @@ export function ProfilePage() {
   const [showRedeemInput, setShowRedeemInput] = useState(false)
   const [showPasswordDialog, setShowPasswordDialog] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [busy, setBusy] = useState(false)
 
   async function load() {
     setLoading(true)
+    setLoadError('')
     try {
       const [nextProfile, nextBalance, nextLedger] = await Promise.all([userApi.getProfile(), userApi.getBalance(), userApi.getLedger()])
       setProfile(nextProfile)
       setBalance(nextBalance)
       setLedger(nextLedger)
     } catch (err) {
-      app.notify('error', errorMessage(err))
+      const message = errorMessage(err)
+      setLoadError(message)
+      app.notify('error', message)
     } finally {
       setLoading(false)
     }
@@ -102,66 +53,119 @@ export function ProfilePage() {
   }
 
   if (loading) return <ProfileLoadingSkeleton />
+  if (loadError && !profile) return <div className="acct-page"><ErrorState message={loadError} onRetry={() => void load()} /></div>
+
+  const available = formatPoints(balance?.available_points ?? app.balance?.available_points ?? '0')
+  const frozen = formatPoints(balance?.frozen_points ?? app.balance?.frozen_points ?? '0')
+  const trial = formatPoints(balance?.trial_points ?? '0')
+  const multiplier = balance?.user_group_multiplier ?? '1.0'
+  const ledgerRows = profileLedgerRows(ledger)
+  const rawLedger = new Map(ledger.map((entry) => [String(entry.id), entry]))
+  const nextExpiry = nextExpiringCreditText(balance)
 
   return (
-    <SettingsWorkspace
-      active="profile"
-      title="个人资料"
-      detail="管理账户资料、积分余额与兑换记录。"
-    >
-      <div className={profileClasses.grid}>
-        <div className={profileClasses.stack}>
-          <div className={cn(profileClasses.card, 'pg-enter')}>
-            <div className={profileClasses.cardTitle}>◈ 我的积分</div>
-            <div className={profileClasses.balanceDisplay}>
-              <div className={profileClasses.balanceNum}>{pointsText(balance?.available_points ?? app.balance?.available_points ?? '0')}</div>
-              <div className={profileClasses.balanceLabel}>可用余额 (◈) / 冻结 {pointsText(balance?.frozen_points ?? app.balance?.frozen_points ?? '0')} · {pointsExchangeRules.join(' · ')}</div>
+    <div className="acct-page">
+      <div className="u-settings u-settings--single">
+        <div className="u-settings__stack">
+          <div className="u-page-head" style={{ margin: 0 }}>
+            <div className="u-page-head__copy">
+              <span className="u-eyebrow">Account</span>
+              <h1 className="u-h1" style={{ fontSize: 'clamp(32px, 3.4vw, 38px)' }}>个人资料</h1>
+              <p className="u-sub">账户信息、积分与流水。积分流水按余额桶拆分，到期时间与任务来源都可追溯。</p>
             </div>
-            <div className={profileClasses.compactStack}>
-              <button className={cn(btn.base, btn.primary)} type="button" onClick={() => app.navigate('checkout')}>充值积分</button>
-              <button className={btn.base} type="button" onClick={() => setShowRedeemInput((v) => !v)}>{showRedeemInput ? '取消' : '使用兑换码'}</button>
-              {showRedeemInput ? (
-                <RedeemCodeForm onRedeemed={() => Promise.all([load(), app.refreshAccount()]).then(() => undefined)} />
-              ) : null}
-            </div>
-            <div className={profileClasses.planBlock}>
-              <div className={profileClasses.planRow}><span className={profileClasses.planLabel}>当前套餐</span><span className={profileClasses.planValue}>{balance?.plan_name ?? profile?.tier ?? '免费计划'}</span></div>
-              <div className={profileClasses.planRow}><span className={profileClasses.planLabel}>用户分组</span><span className="num">{profile?.group ?? 'DEFAULT (1.0x)'}</span></div>
-            </div>
-            <BalanceBuckets balance={balance} />
           </div>
-        </div>
 
-        <div className={profileClasses.stack}>
-          {profile ? <ProfileEditor profile={profile} busy={busy} onSave={saveProfile} onChangePassword={() => setShowPasswordDialog(true)} /> : null}
-
-          <div className={cn(profileClasses.card, 'pg-enter')}>
-            <div className={profileClasses.ledgerHeader}>
-              <div className={profileClasses.ledgerTitle}>积分流水 (最近记录)</div>
-              <Button tone="ghost" onClick={load}>刷新</Button>
-            </div>
-            {!ledger.length ? <EmptyState title="暂无流水" detail="生成或兑换后会在这里记录。" /> : null}
-            <div className={profileClasses.ledgerList}>
-              {profileLedgerRows(ledger).map((entry) => (
-                <div key={entry.id} className={profileClasses.ledgerItem}>
-                  <div className={profileClasses.ledgerMain}>
-                    <div className={profileClasses.ledgerItemTitle}>{entry.title}</div>
-                    <div className={profileClasses.ledgerTags}>
-                      <span className={cn(profileClasses.ledgerTag, profileClasses.ledgerBucketTag)}>{entry.bucketLabel}</span>
-                      <span className={cn(profileClasses.ledgerTag, profileClasses.ledgerSourceTag)}>{entry.ledgerTypeLabel}</span>
-                      <span className={cn(profileClasses.ledgerTag, profileClasses.ledgerSourceTag)}>{entry.sourceLabel}</span>
-                      <span className={cn(profileClasses.ledgerTag, profileClasses.ledgerSourceTag)}>{entry.expiryText}</span>
-                    </div>
-                    <div className={profileClasses.ledgerMeta}>{entry.occurredAt} · {entry.detail}</div>
-                    {entry.generationDetail ? <div className={profileClasses.ledgerMeta}>{entry.generationDetail}</div> : null}
-                    {entry.taskId ? <div className={profileClasses.ledgerMeta}>任务 {entry.taskId}</div> : null}
+          <div className="u-split">
+            <section className="pf-balance" aria-labelledby="profile-balance-title">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ display: 'grid', gap: 4, minWidth: 0 }}>
+                  <span className="u-eyebrow" id="profile-balance-title">Available Points</span>
+                  <div className="pf-balance__value acct-balance-value">{available.text}</div>
+                  <div className="acct-tier-row" aria-label="积分等级拆分">
+                    {available.parts.map((part) => (
+                      <span key={part.tier.key} className="u-chip u-chip--mono">{part.amount} {part.tier.short}</span>
+                    ))}
                   </div>
-                  <div className={cn(profileClasses.ledgerAmount, entry.amountTone === 'credit' && profileClasses.ledgerAmountCredit)}>{entry.amount}</div>
+                  <span className="u-meta">冻结 {frozen.text} · 体验额度 {trial.text}</span>
                 </div>
-              ))}
+                <span className="u-chip u-chip--accent">{profile?.group ?? 'DEFAULT'} 分组 ×{multiplier}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="u-btn u-btn--primary u-btn--sm" type="button" onClick={() => app.navigate('checkout')}>充值</button>
+                <button className="u-btn u-btn--sm" type="button" onClick={() => setShowRedeemInput((value) => !value)}>{showRedeemInput ? '收起兑换码' : '兑换码'}</button>
+              </div>
+              {showRedeemInput ? (
+                <div className="acct-redeem">
+                  <RedeemCodeForm onRedeemed={() => Promise.all([load(), app.refreshAccount()]).then(() => undefined)} />
+                </div>
+              ) : null}
+              <BalanceBuckets balance={balance} />
+            </section>
+
+            <div className="u-plate u-plate--pad">
+              {profile ? <ProfileEditor profile={profile} busy={busy} onSave={saveProfile} onChangePassword={() => setShowPasswordDialog(true)} /> : <ProfileEditorSkeleton />}
             </div>
-            <div className={profileClasses.ledgerFooter}>
-              <button className={cn(btn.base, btn.ghost, profileClasses.accentGhost)} type="button" onClick={load}>查看全部流水记录</button>
+          </div>
+
+          <div className="u-stat-row" aria-label="积分概览">
+            <div className="u-stat">
+              <span className="u-stat__label">可用积分</span>
+              <span className="u-stat__value acct-stat-value">{available.text}</span>
+              <span className="u-stat__foot">{available.fullText}</span>
+            </div>
+            <div className="u-stat">
+              <span className="u-stat__label">冻结积分</span>
+              <span className="u-stat__value acct-stat-value">{frozen.text}</span>
+              <span className="u-stat__foot">进行中任务预冻结</span>
+            </div>
+            <div className="u-stat">
+              <span className="u-stat__label">体验额度</span>
+              <span className="u-stat__value acct-stat-value">{trial.text}</span>
+              <span className="u-stat__foot">{trial.fullText}</span>
+            </div>
+            <div className="u-stat">
+              <span className="u-stat__label">当前套餐</span>
+              <span className="u-stat__value acct-stat-value acct-stat-value--text">{balance?.plan_name ?? profile?.tier ?? '免费计划'}</span>
+              <span className="u-stat__foot">{profile?.email}</span>
+            </div>
+          </div>
+
+          <div className="u-plate u-plate--pad">
+            <div className="u-panel-title">
+              <h3>积分流水</h3>
+              <span>最近 {ledgerRows.length} 条</span>
+            </div>
+            {nextExpiry ? <div className="acct-next-expiry">{nextExpiry}</div> : null}
+            {!ledgerRows.length ? <EmptyState title="暂无流水" detail="生成或兑换后会在这里记录。" /> : null}
+            {ledgerRows.length ? (
+              <div className="u-list acct-ledger">
+                {ledgerRows.map((entry) => {
+                  const raw = rawLedger.get(String(entry.id))
+                  const amount = formatPoints(entry.amount.replace(/^\+/, ''))
+                  const afterValue = raw?.bucket_balance_after ?? raw?.balance_after
+                  const after = afterValue ? formatPoints(afterValue) : null
+                  return (
+                    <div className="u-row" key={entry.id}>
+                      <div className="u-row__main acct-ledger__main">
+                        <div className="u-row__copy acct-ledger__copy">
+                          <strong>{entry.title}</strong>
+                          <span>{entry.bucketLabel} · {entry.sourceLabel} · {entry.occurredAt} · {entry.expiryText}</span>
+                          <span>{entry.detail}</span>
+                          {entry.generationDetail ? <span>{entry.generationDetail}</span> : null}
+                          {entry.taskId ? <span>任务 {entry.taskId}</span> : null}
+                        </div>
+                      </div>
+                      <div className="acct-ledger__amounts">
+                        <span className={cn('pf-ledger__amount', entry.amountTone === 'credit' && 'is-plus')} title={amount.fullText}>{amount.text}</span>
+                        {after ? <span className="u-meta" title={after.fullText}>余额 {after.text}</span> : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 14 }}>
+              <button className="u-btn u-btn--sm" type="button" onClick={() => void load()}>刷新流水</button>
             </div>
           </div>
         </div>
@@ -169,37 +173,35 @@ export function ProfilePage() {
       {profile && showPasswordDialog ? (
         <PasswordChangeModal profile={profile} onClose={() => setShowPasswordDialog(false)} />
       ) : null}
-    </SettingsWorkspace>
+    </div>
   )
 }
 
 function ProfileLoadingSkeleton() {
   return (
-    <div className={profileClasses.content} aria-hidden="true">
-      <div className="mb-12">
-        <div className="pg-skeleton h-12 w-40 rounded-xl md:h-16" />
-      </div>
-      <div className={profileClasses.grid}>
-        <div className={profileClasses.stack}>
-          <div className={cn(profileClasses.card, 'grid gap-4')}>
-            <div className="pg-skeleton h-4 w-24 rounded-xl" />
-            <div className="pg-skeleton h-16 w-56 rounded-xl" />
-            <div className="grid gap-3">
+    <div className="acct-page" aria-hidden="true">
+      <div className="u-settings u-settings--single">
+        <div className="u-settings__stack">
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div className="pg-skeleton h-4 w-32 rounded-xl" />
+            <div className="pg-skeleton h-12 w-64 rounded-xl" />
+            <div className="pg-skeleton h-4 w-full max-w-xl rounded-xl" />
+          </div>
+          <div className="u-split">
+            <div className="pf-balance" style={{ gap: 18 }}>
+              <div className="pg-skeleton h-8 w-48 rounded-xl" />
+              <div className="pg-skeleton h-4 w-64 rounded-xl" />
+              <div className="pg-skeleton h-24 rounded-xl" />
+            </div>
+            <div className="u-plate u-plate--pad" style={{ display: 'grid', gap: 14 }}>
+              <div className="pg-skeleton h-16 w-16 rounded-2xl" />
               <div className="pg-skeleton h-11 rounded-xl" />
-              <div className="pg-skeleton h-11 rounded-xl" />
+              <div className="pg-skeleton h-20 rounded-xl" />
             </div>
           </div>
-        </div>
-        <div className={profileClasses.stack}>
-          <div className={cn(profileClasses.card, 'grid gap-4')}>
-            <div className="pg-skeleton h-24 rounded-2xl" />
-            <div className="pg-skeleton h-11 rounded-xl" />
-            <div className="pg-skeleton h-28 rounded-2xl" />
-            <div className="pg-skeleton h-11 rounded-xl" />
-          </div>
-          <div className={cn(profileClasses.card, 'grid gap-3')}>
+          <div className="u-plate u-plate--pad" style={{ display: 'grid', gap: 14 }}>
             {Array.from({ length: 5 }).map((_, index) => (
-              <div key={index} className="grid gap-2 border-b border-[var(--border)] py-3 last:border-b-0">
+              <div key={index} style={{ display: 'grid', gap: 8, paddingBottom: 12, borderBottom: '1px solid var(--line, var(--border))' }}>
                 <div className="pg-skeleton h-4 w-2/3 rounded-xl" />
                 <div className="pg-skeleton h-3 w-1/2 rounded-xl" />
               </div>
@@ -213,25 +215,20 @@ function ProfileLoadingSkeleton() {
 
 function BalanceBuckets({ balance }: { balance: Balance | null }) {
   const buckets = normalizeBalanceBuckets(balance)
-  const nextExpiry = nextExpiringCreditText(balance)
   if (!buckets.length) return null
   return (
-    <>
-      {nextExpiry ? <div className={profileClasses.nextExpiry}>{nextExpiry}</div> : null}
-      <div className={profileClasses.bucketList}>
-        {buckets.map((bucket) => (
-          <div key={`${bucket.bucket}-${bucket.expires_at ?? 'never'}`} className={cn(profileClasses.bucketCard, bucket.bucket === 'trial' && profileClasses.bucketTrial, bucket.expire_warning && profileClasses.bucketWarning)}>
-            <div className={profileClasses.bucketHead}>
-              <span className={profileClasses.bucketTitle}>{bucket.label ?? balanceBucketLabel(bucket.bucket)}</span>
-              <span className={profileClasses.bucketAmount}>{pointsText(bucket.available_points)}</span>
-            </div>
-            <div className={cn(profileClasses.bucketHint, bucket.expire_warning && profileClasses.bucketHintWarning)}>
-              {bucketExpiryText(bucket)}
-            </div>
+    <div className="pf-buckets">
+      {buckets.map((bucket) => {
+        const points = formatPoints(bucket.available_points)
+        return (
+          <div key={`${bucket.bucket}-${bucket.expires_at ?? 'never'}`} className="pf-bucket">
+            <b>{bucket.label ?? balanceBucketLabel(bucket.bucket)}</b>
+            <span>{bucketExpiryText(bucket)}</span>
+            <b title={points.fullText}>{points.text}</b>
           </div>
-        ))}
-      </div>
-    </>
+        )
+      })}
+    </div>
   )
 }
 
@@ -240,22 +237,46 @@ function ProfileEditor({ profile, busy, onSave, onChangePassword }: { profile: U
   const [signature, setSignature] = useState(profile.signature)
 
   return (
-    <div className={cn(profileClasses.card, 'pg-enter')}>
-      <div className={profileClasses.cardTitle}>基本信息</div>
-      <div className={profileClasses.profileHeader}>
-        <div className={profileClasses.avatar}>{profile.avatar_initials}</div>
-        <div>
-          <div className={profileClasses.profileName}>{profile.display_name}</div>
-          <div className={profileClasses.profileEmail}>{profile.email}</div>
+    <>
+      <div className="u-panel-title">
+        <h3>资料</h3>
+        <span>可编辑</span>
+      </div>
+      <div className="pf-profile">
+        <div className="pf-avatar" aria-hidden="true">{profile.avatar_initials}</div>
+        <div style={{ display: 'grid', gap: 3, minWidth: 0 }}>
+          <strong style={{ fontSize: 15 }}>{profile.display_name}</strong>
+          <span className="u-meta acct-ellipsis">{profile.email}</span>
+          <span className="u-chip u-chip--mono" style={{ alignSelf: 'start', marginTop: 2 }}>UID {profile.id}</span>
         </div>
       </div>
-      <Field label="显示昵称"><input className={form.input} value={name} onChange={(event) => setName(event.target.value)} /></Field>
-      <Field label="签名"><textarea className={form.textarea} value={signature} onChange={(event) => setSignature(event.target.value)} rows={3} /></Field>
-      <button className={cn(btn.base, btn.primary)} type="button" disabled={busy} onClick={() => void onSave({ display_name: name, signature })}>{busy ? '保存中...' : '保存修改'}</button>
-      <div className={profileClasses.passwordAction}>
-        <p className={profileClasses.passwordHint}>修改密码前需要验证当前账户邮箱，成功后所有设备均需重新登录。</p>
-        <button className={btn.base} type="button" onClick={onChangePassword}>{profile.has_password ? '修改密码' : '设置密码'}</button>
+      <div style={{ display: 'grid', gap: 13, marginTop: 16 }}>
+        <label className="u-field">
+          <span className="u-label">显示昵称</span>
+          <input className="u-input" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label className="u-field">
+          <span className="u-label">签名</span>
+          <textarea className="u-textarea acct-profile-signature" value={signature} maxLength={280} onChange={(event) => setSignature(event.target.value)} />
+        </label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="u-btn u-btn--primary u-btn--sm" type="button" disabled={busy} onClick={() => void onSave({ display_name: name.trim(), signature: signature.trim() })}>
+            {busy ? '保存中...' : '保存资料'}
+          </button>
+          <button className="u-btn u-btn--sm" type="button" onClick={onChangePassword}>{profile.has_password ? '修改密码' : '设置密码'}</button>
+        </div>
       </div>
+    </>
+  )
+}
+
+function ProfileEditorSkeleton() {
+  return (
+    <div style={{ display: 'grid', gap: 14 }} aria-hidden="true">
+      <div className="pg-skeleton h-16 w-16 rounded-2xl" />
+      <div className="pg-skeleton h-11 rounded-xl" />
+      <div className="pg-skeleton h-24 rounded-xl" />
+      <div className="pg-skeleton h-9 w-32 rounded-xl" />
     </div>
   )
 }
@@ -325,30 +346,59 @@ function PasswordChangeModal({ profile, onClose }: { profile: UserProfile; onClo
   }
 
   return (
-    <Modal title="修改密码" onClose={onClose} className="w-[min(520px,calc(100vw-2rem))]">
-      <form className={profileClasses.modalForm} onSubmit={(event) => void submitPasswordChange(event)} noValidate>
-        <p className="m-0 text-sm leading-6 text-[var(--muted)]">验证码将发送至 <strong className="text-[var(--fg)]">{profile.email}</strong></p>
-        <div>
-          <label className="mb-2 block text-sm font-bold" htmlFor={`${formId}-code`}>验证码<span className={profileClasses.required} aria-hidden="true">*</span></label>
-          <div className={profileClasses.codeRow}>
-            <input id={`${formId}-code`} className={form.input} value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={6} required onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} />
-            <button className={btn.base} type="button" disabled={sending || cooldown > 0 || busy} onClick={() => void sendPasswordChangeCode()}>
+    <Modal title="修改密码" onClose={onClose} className="acct-modal w-[min(520px,calc(100vw-2rem))]">
+      <p className="u-meta" style={{ marginTop: 0 }}>验证码将发送至 {profile.email}。修改成功后需要重新登录。</p>
+      <form style={{ display: 'grid', gap: 13 }} onSubmit={(event) => void submitPasswordChange(event)} noValidate>
+        <label className="u-field" htmlFor={`${formId}-code`}>
+          <span className="u-label">邮箱验证码</span>
+          <div className="acct-code-row">
+            <input
+              id={`${formId}-code`}
+              className="u-input"
+              value={code}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              required
+              placeholder="6 位数字"
+              onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+            />
+            <button className="u-btn u-btn--sm" type="button" disabled={sending || cooldown > 0 || busy} onClick={() => void sendPasswordChangeCode()}>
               {sending ? '发送中...' : cooldown > 0 ? `${cooldown}s 后重发` : '发送验证码'}
             </button>
           </div>
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-bold" htmlFor={`${formId}-new-password`}>新密码<span className={profileClasses.required} aria-hidden="true">*</span></label>
-          <input id={`${formId}-new-password`} className={form.input} type="password" value={newPassword} autoComplete="new-password" minLength={8} required onChange={(event) => setNewPassword(event.target.value)} />
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-bold" htmlFor={`${formId}-confirm-password`}>确认新密码<span className={profileClasses.required} aria-hidden="true">*</span></label>
-          <input id={`${formId}-confirm-password`} className={form.input} type="password" value={confirmPassword} autoComplete="new-password" minLength={8} required onChange={(event) => setConfirmPassword(event.target.value)} />
-        </div>
-        {formError ? <p className="m-0 text-sm text-[var(--accent-coral)]" role="alert">{formError}</p> : null}
-        <div className={profileClasses.modalActions}>
-          <button className={btn.base} type="button" disabled={busy} onClick={onClose}>取消</button>
-          <button className={cn(btn.base, btn.primary)} type="submit" disabled={busy || sending}>{busy ? '修改中...' : '确认修改'}</button>
+        </label>
+        <label className="u-field" htmlFor={`${formId}-new-password`}>
+          <span className="u-label">新密码</span>
+          <input
+            id={`${formId}-new-password`}
+            className="u-input"
+            type="password"
+            value={newPassword}
+            autoComplete="new-password"
+            minLength={8}
+            required
+            placeholder="至少 8 位"
+            onChange={(event) => setNewPassword(event.target.value)}
+          />
+        </label>
+        <label className="u-field" htmlFor={`${formId}-confirm-password`}>
+          <span className="u-label">确认新密码</span>
+          <input
+            id={`${formId}-confirm-password`}
+            className="u-input"
+            type="password"
+            value={confirmPassword}
+            autoComplete="new-password"
+            minLength={8}
+            required
+            onChange={(event) => setConfirmPassword(event.target.value)}
+          />
+        </label>
+        {formError ? <p className="u-field__error" role="alert">{formError}</p> : null}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+          <button className="u-btn" type="button" disabled={busy} onClick={onClose}>取消</button>
+          <button className="u-btn u-btn--primary" type="submit" disabled={busy || sending}>{busy ? '修改中...' : '确认修改'}</button>
         </div>
       </form>
     </Modal>

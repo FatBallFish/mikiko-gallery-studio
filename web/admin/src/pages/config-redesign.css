@@ -1,0 +1,156 @@
+/* Configuration pages — shared refinements on top of the Command Deck skin.
+   Only tokens and prototype classes; no page-specific visual language. */
+
+.cfg-checklist {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--a-line);
+  border-radius: 8px;
+  background: var(--a-surface);
+}
+
+.cfg-checklist .a-switch {
+  min-height: 28px;
+}
+
+.cfg-savebar-status,
+.cfg-form-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cfg-form-status {
+  padding: 10px 14px;
+  border: 1px solid var(--a-line);
+  border-radius: 8px;
+  background: var(--a-surface-2);
+}
+
+.cfg-scroll-x {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--a-line);
+  border-radius: 9px;
+}
+
+.cfg-scroll-y {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.cfg-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cfg-model-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.cfg-model-card {
+  min-width: 0;
+}
+
+.cfg-read-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.cfg-read-list > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.4fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--a-line);
+  font-size: 12.5px;
+}
+
+.cfg-read-list > div:last-child {
+  border-bottom: 0;
+}
+
+.cfg-read-list dt {
+  color: var(--a-ink-3);
+}
+
+.cfg-read-list dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--a-ink);
+  overflow-wrap: anywhere;
+}
+
+.cfg-table-input {
+  min-width: 120px;
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.cfg-narrow-input {
+  max-width: 220px;
+}
+
+.cfg-full-span {
+  grid-column: 1 / -1;
+}
+
+.cfg-secret-note {
+  padding: 10px 12px;
+  border: 1px dashed var(--a-line-2);
+  border-radius: 8px;
+  color: var(--a-ink-3);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.cfg-tab-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.cfg-account-cell {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.cfg-account-cell__logo {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--a-accent-soft);
+  color: var(--a-accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cfg-empty-inline {
+  padding: 18px;
+  border: 1px dashed var(--a-line-2);
+  border-radius: 10px;
+  background: var(--a-surface);
+  color: var(--a-ink-3);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .cfg-scroll-y {
+    max-height: none;
+  }
+}

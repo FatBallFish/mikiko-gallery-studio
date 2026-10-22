@@ -1,0 +1,278 @@
+/* Bridge between the Luminous Vault prototype tokens and the legacy
+   variable names still referenced by feature code. The prototype
+   stylesheets are authoritative; these aliases only keep existing
+   components functional while their markup is migrated. */
+
+html[data-site='user'] {
+  --fg: var(--ink);
+  --muted: var(--ink-2);
+  --dim: var(--ink-3);
+  --text: var(--ink);
+  --surface-solid: var(--bg-elev);
+  --elevated: var(--surface-2);
+  --canvas: var(--bg-elev);
+  --canvas-bg: var(--media-bg);
+  --border: var(--line);
+  --border-strong: var(--line-2);
+  --border-subtle: var(--line);
+  --accent-rgb: 217, 168, 106;
+  --accent-contrast: var(--accent-ink);
+  --accent-purple: var(--violet);
+  --accent-emerald: var(--emerald);
+  --accent-coral: var(--coral);
+  --danger: #e07868;
+  --focus-ring: var(--accent);
+  --shadow-sm: var(--shadow-sm);
+  --motion-fast: var(--t-fast);
+  --motion-route: var(--t-base);
+  --motion-slow: var(--t-slow);
+  --font-body: var(--font-ui);
+  --radius-sm: var(--r-xs);
+  --radius: var(--r-sm);
+  --radius-lg: var(--r-md);
+  --radius-xl: var(--r-lg);
+  --sidebar-bg: var(--bg);
+  --topbar-h: var(--top-h);
+  --image-overlay: linear-gradient(to top, rgba(4, 5, 8, 0.72), rgba(4, 5, 8, 0.08) 55%);
+  --image-overlay-selected: rgba(4, 5, 8, 0.36);
+  --image-card-text: #f5f0e7;
+  --image-card-muted: rgba(245, 240, 231, 0.62);
+  --image-action-bg: rgba(7, 8, 13, 0.6);
+  --image-action-border: rgba(255, 255, 255, 0.12);
+  --image-action-text: rgba(245, 240, 231, 0.8);
+  --image-action-hover-bg: rgba(217, 168, 106, 0.9);
+  --image-action-hover-text: var(--accent-ink);
+  --image-checkbox-bg: rgba(7, 8, 13, 0.45);
+  --image-checkbox-border: rgba(255, 255, 255, 0.35);
+  --lightbox-backdrop: rgba(0, 0, 0, 0.9);
+  --lightbox-stage-bg: #05060a;
+  --lightbox-close-bg: rgba(0, 0, 0, 0.5);
+  --lightbox-close-text: #fff;
+  --lightbox-close-border: rgba(255, 255, 255, 0.2);
+}
+
+html[data-site='user'][data-theme='light'] {
+  --accent-rgb: 168, 111, 44;
+  --danger: #b34a3c;
+  --image-card-text: #221d16;
+  --image-card-muted: rgba(34, 29, 22, 0.62);
+  --image-action-bg: rgba(255, 255, 255, 0.78);
+  --image-action-border: rgba(34, 29, 22, 0.14);
+  --image-action-text: rgba(34, 29, 22, 0.74);
+  --image-action-hover-bg: var(--accent);
+  --image-action-hover-text: var(--accent-ink);
+  --image-checkbox-bg: rgba(255, 255, 255, 0.82);
+  --image-checkbox-border: rgba(34, 29, 22, 0.24);
+  --lightbox-backdrop: rgba(34, 29, 22, 0.56);
+  --lightbox-stage-bg: var(--media-bg);
+  --lightbox-close-bg: rgba(255, 255, 255, 0.86);
+  --lightbox-close-text: #221d16;
+  --lightbox-close-border: rgba(34, 29, 22, 0.16);
+}
+
+/* Accent themes from the settings page keep the prototype structure and
+   only rotate the accent family. */
+html[data-site='user'][data-accent-theme='violet'] {
+  --accent: var(--violet);
+  --accent-deep: color-mix(in srgb, var(--violet) 78%, black);
+  --accent-soft: color-mix(in srgb, var(--violet) 14%, transparent);
+  --accent-line: color-mix(in srgb, var(--violet) 40%, transparent);
+  --accent-rgb: 156, 144, 255;
+}
+
+html[data-site='user'][data-accent-theme='emerald'] {
+  --accent: var(--emerald);
+  --accent-deep: color-mix(in srgb, var(--emerald) 78%, black);
+  --accent-soft: color-mix(in srgb, var(--emerald) 14%, transparent);
+  --accent-line: color-mix(in srgb, var(--emerald) 40%, transparent);
+  --accent-rgb: 98, 195, 162;
+}
+
+html[data-site='user'][data-accent-theme='coral'] {
+  --accent: var(--coral);
+  --accent-deep: color-mix(in srgb, var(--coral) 78%, black);
+  --accent-soft: color-mix(in srgb, var(--coral) 14%, transparent);
+  --accent-line: color-mix(in srgb, var(--coral) 40%, transparent);
+  --accent-rgb: 225, 138, 99;
+}
+
+html[data-site='user'] body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+}
+
+/* The production app keeps one persistent scroll container; the prototype
+   lets the document scroll. Both end up with a sticky 72px top bar. */
+html[data-site='user'] .u-main {
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+html[data-site='user'] .u-content {
+  min-height: calc(100dvh - var(--top-h));
+}
+
+@media (max-width: 760px) {
+  html[data-site='user'] .u-main {
+    height: auto;
+    min-height: 100dvh;
+    padding-bottom: 64px;
+  }
+  html[data-site='user'] .u-content {
+    min-height: 0;
+  }
+}
+
+html[data-site='user'] .u-drawer--page {
+  width: 100vw;
+  border-left: 0;
+}
+
+html[data-site='user'] .u-detail__placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+html[data-site='user'] .u-detail__stage .u-chip {
+  background: rgba(7, 8, 13, 0.55);
+  color: #f5f0e7;
+  border-color: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+html[data-site='user'] .u-detail__stage .u-status {
+  color: inherit;
+}
+
+html[data-site='user'] .u-drawer__body > .u-detail {
+  min-height: 100%;
+}
+
+html[data-site='user'] .u-detail__info-scroll .u-facts {
+  grid-template-columns: 1fr 1fr;
+}
+
+html[data-site='user'] .u-prompt {
+  padding-right: 48px;
+}
+
+html[data-site='user'] .u-icon-btn--sm {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+
+html[data-site='user'] .u-icon-btn--sm svg {
+  width: 15px;
+  height: 15px;
+}
+
+html[data-site='user'] .u-icon-btn--danger {
+  color: var(--danger);
+}
+
+html[data-site='user'] .u-field__error {
+  color: var(--danger);
+  font-size: 12px;
+  font-style: normal;
+}
+
+html[data-site='user'] .u-empty--inline {
+  min-height: 140px;
+  padding: 24px;
+}
+
+html[data-site='user'] .u-account-menu__item {
+  border: 0;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+html[data-site='user'] .u-rail__link:focus-visible,
+html[data-site='user'] .u-btn:focus-visible,
+html[data-site='user'] .u-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+html[data-site='user'] .u-card__media {
+  cursor: zoom-in;
+}
+
+html[data-site='user'] .u-card__media img {
+  display: block;
+}
+
+html[data-site='user'] .u-btn--primary {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 78%, white), var(--accent));
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 22%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+html[data-site='user'] .u-btn--primary:hover {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 84%, white), color-mix(in srgb, var(--accent) 92%, black));
+}
+
+/* The app renders its own ambient layers in the shell; hide legacy grids. */
+html[data-site='user'] body::before {
+  display: none;
+}
+/* Dedicated five-item mobile navigation. The desktop icon rail stays hidden
+   on small screens so a disabled feature (canvas/video) can never collapse
+   the bottom bar below five stable destinations. */
+html[data-site='user'] .u-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  html[data-site='user'] .u-rail {
+    display: none;
+  }
+  html[data-site='user'] .u-main {
+    margin-left: 0;
+    padding-bottom: 64px;
+  }
+  html[data-site='user'] .u-bottom-nav {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: var(--z-nav);
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    height: 64px;
+    padding: 5px 8px calc(5px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(20px) saturate(130%);
+  }
+  html[data-site='user'] .u-bottom-nav button {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--ink-3);
+    font-size: 9.5px;
+    font-weight: 600;
+  }
+  html[data-site='user'] .u-bottom-nav button svg {
+    width: 19px;
+    height: 19px;
+  }
+  html[data-site='user'] .u-bottom-nav button.is-active {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  html[data-site='user'] .u-bottom-nav button:active {
+    transform: scale(.95);
+  }
+}

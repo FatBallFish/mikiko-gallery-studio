@@ -12,6 +12,8 @@ export function useAdminTheme() {
 
   useEffect(() => {
     window.localStorage.setItem(adminThemeStorageKey, theme)
+    document.documentElement.dataset.site = 'admin'
+    document.documentElement.dataset.theme = theme
   }, [theme])
 
   return { theme, setTheme }

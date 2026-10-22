@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 const tasks = readFileSync(new URL('./VideoTasksPage.tsx', import.meta.url), 'utf8')
 const policy = readFileSync(new URL('./MediaPolicyPage.tsx', import.meta.url), 'utf8')
 const navigation = readFileSync(new URL('../layout/admin-navigation.ts', import.meta.url), 'utf8')
-const pricing = readFileSync(new URL('./VideoPricingPanel.tsx', import.meta.url), 'utf8')
+const pricing = readFileSync(new URL('./RoutingPage.tsx', import.meta.url), 'utf8')
 const provider = readFileSync(new URL('./VideoProviderAccountsPanel.tsx', import.meta.url), 'utf8')
 const adminAPI = readFileSync(new URL('../../../shared/admin-api.ts', import.meta.url), 'utf8')
 
@@ -28,7 +28,7 @@ for (const expected of ['CNY/百万 Token', '输出视频 CNY/秒', '输入视�
 if (!provider.includes('with_input_video_million_tokens_cny:')) throw new Error('Seedance native rate editor must submit the input-video token rate')
 for (const expected of ['const shouldEnable = modelDraft.enabled', 'enabled: false', 'if (shouldEnable)', 'enabled: true']) if (!provider.includes(expected)) throw new Error(`video model save must stage disabled configuration before activation: ${expected}`)
 if (provider.lastIndexOf('updateModelAccountModel') < provider.indexOf('saveVideoRateCard')) throw new Error('video model must only be activated after its native rate card is saved')
-for (const expected of ['最低任务积分', '积分取整步长', '最高销售价', '全局汇率', '映射分辨率', '最高价来源']) if (!pricing.includes(expected)) throw new Error(`video quote overview must expose ${expected}`)
-for (const expected of ['setResult(null)', 'ApiError', 'details?.candidates', 'failedCandidates']) if (!pricing.includes(expected)) throw new Error(`video quote failures must replace stale results and expose candidate repairs: ${expected}`)
+for (const expected of ['最低任务积分', '积分取整步长', '最高销售价', '全局汇率', '映射分辨率', '最高价来源', '单结果积分', '总积分']) if (!pricing.includes(expected)) throw new Error(`video quote overview must expose ${expected}`)
+for (const expected of ['ApiError', 'details?.candidates', 'failedCandidates']) if (!pricing.includes(expected)) throw new Error(`video quote failures must replace stale results and expose candidate repairs: ${expected}`)
 for (const forbidden of ['payment_fee_rate', 'target_margin_rate', 'provider_cost_buffer_rate', 'reserve_markup', 'simulateVideoPricing', 'createVideoPriceRule']) if (pricing.includes(forbidden) || provider.includes(forbidden)) throw new Error(`retired video pricing concept leaked into active UI: ${forbidden}`)
 for (const forbidden of ['saveVideoCostRule', 'createVideoPricingStrategy', 'updateVideoPricingStrategy', 'deleteVideoPricingStrategy', 'createVideoPriceRule', 'updateVideoPriceRule', 'deleteVideoPriceRule']) if (adminAPI.includes(forbidden)) throw new Error(`retired video pricing client method remains reachable: ${forbidden}`)

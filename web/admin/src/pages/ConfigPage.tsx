@@ -4,6 +4,7 @@ import { type AdminSession, type ConfigItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
 import { AdminTabs, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, PageHeader } from '../components'
+import { FormSaveBar, MultiSelectField } from './AdminMediaTabs'
 import { canAdmin } from '../types'
 import { adminButton, adminPage } from '../ui/classes'
 import {
@@ -221,81 +222,80 @@ export function ConfigPage({
         />
       ) : null}
 
-      {!summaryMode ? (
-        <section className={configClasses.statusStrip}>
-          <div className={configClasses.statusCard}><label className={configClasses.statusLabel}>当前类目</label><strong className={configClasses.statusValue}>{activeMeta.label}</strong></div>
-          <div className={configClasses.statusCard}><label className={configClasses.statusLabel}>字段</label><strong className={configClasses.statusValue}>{activeRows.length} 项</strong></div>
-          <div className={configClasses.statusCard}><label className={configClasses.statusLabel}>未保存</label><strong className={configClasses.statusValue}>{dirtyKeys.length} 项</strong></div>
-          <div className={configClasses.statusCard}><label className={configClasses.statusLabel}>校验</label><strong className={configClasses.statusValue}>{conflicts.length ? `${conflicts.length} 项需处理` : '通过'}</strong></div>
-        </section>
-      ) : (
-        <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {sampleFields.map((row, index) => {
-            const key = row.config_key ?? row.key
-            const value = extractConfigValue(row)
-            const label = configFieldMeta(key, row.description).label || key
-            return (
-              <div key={`${draftId(row)}:summary`} className="space-y-2">
-                <label className="text-[11px] font-semibold text-[var(--muted-strong)]">{label}</label>
-                <div className="relative">
-                  <input readOnly value={summaryValue(value)} className="w-full" />
-                  {index === 1 ? <span className="absolute right-4 top-1/2 size-2 -translate-y-1/2 rounded-full bg-emerald-500" /> : null}
-                </div>
-              </div>
-            )
-          })}
-        </section>
-      )}
-
-      {summaryMode ? (
-        <details className="group rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-          <summary className="cursor-pointer list-none text-sm font-bold text-[var(--accent)]">编辑通用配置</summary>
-          <div className="mt-4">
-            <ConfigEditor
-              activeMeta={activeMeta}
-              tabs={tabs}
-              activeTab={activeTab}
-              setActiveTab={switchConfigTab}
-              activeRows={activeRows}
-              drafts={drafts}
-              setDrafts={setDrafts}
-              conflicts={conflicts}
-              canEditActiveTab={canEditActiveTab}
-              lockedDetail={lockedDetail}
-              saving={saving}
-              activeDirty={activeDirty}
-              compact={compact}
-              notice={notice}
-              editorState={editorState}
-              saveError={saveError}
-              revertActiveTab={revertActiveTab}
-              saveActiveTab={saveActiveTab}
-              summaryMode={summaryMode}
-            />
-          </div>
-        </details>
-      ) : (
-        <ConfigEditor
-          activeMeta={activeMeta}
-          tabs={tabs}
-          activeTab={activeTab}
-          setActiveTab={switchConfigTab}
-          activeRows={activeRows}
-          drafts={drafts}
-          setDrafts={setDrafts}
-          conflicts={conflicts}
-          canEditActiveTab={canEditActiveTab}
-          lockedDetail={lockedDetail}
-          saving={saving}
-          activeDirty={activeDirty}
-          compact={compact}
-          notice={notice}
-          editorState={editorState}
-          saveError={saveError}
-          revertActiveTab={revertActiveTab}
-          saveActiveTab={saveActiveTab}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <AdminTabs
+          ariaLabel="通用配置类目"
+          orientation="horizontal"
+          items={tabs.map((tab) => ({ id: tab.key, label: tab.label, disabled: saving }))}
+          value={activeTab}
+          onChange={switchConfigTab}
         />
-      )}
+        <div className="a-row-actions">
+          <Badge tone={!canEditActiveTab || conflicts.length ? 'warning' : 'success'}>{!canEditActiveTab ? '只读' : conflicts.length ? `${conflicts.length} 项校验未通过` : '校验通过'}</Badge>
+          <Badge tone={dirty ? 'warning' : editorState === 'saved' ? 'success' : 'neutral'}>{dirty ? `${dirtyKeys.length} 项未保存` : configEditorStateLabel(editorState, 0)}</Badge>
+        </div>
+      </div>
+
+      <section className="a-form-page">
+        <section className="a-panel a-panel--flush">
+          <div className="a-panel__head">
+            <div>
+              <h2>{activeMeta.label}</h2>
+              <p>{activeMeta.detail}</p>
+            </div>
+            <span className="a-hint">{activeRows.length} 个字段</span>
+          </div>
+          {!canEditActiveTab ? <div style={{ padding: '12px 20px' }}><InlineFeedback tone="warning" message={lockedDetail} /></div> : null}
+          {saveError ? <div style={{ padding: '12px 20px' }}><InlineFeedback tone="danger" message={saveError} /></div> : null}
+          <form className="a-form" onSubmit={(event) => event.preventDefault()}>
+            <section className="a-form__section">
+              <div className="a-form__head">
+                <h3><span className="a-form__num">1</span>{activeMeta.label}</h3>
+                <p>{activeMeta.detail || '配置字段使用单列布局，保存后 API 节点将在 1 分钟内读取新值。'}</p>
+              </div>
+              {activeRows.map((row) => {
+                const key = row.config_key ?? row.key
+                const meta = configFieldMeta(key, row.description)
+                const rowDraftId = draftId(row)
+                const conflict = configValidateValue(key, drafts[rowDraftId])
+                return (
+                  <div key={rowDraftId}>
+                    {renderConfigField(row, meta, drafts[rowDraftId], (value) => setDrafts((current) => ({ ...current, [rowDraftId]: value })), conflict, saving || !canEditActiveTab)}
+                  </div>
+                )
+              })}
+            </section>
+          </form>
+          <FormSaveBar
+            dirtyCount={dirtyKeys.length}
+            errorCount={conflicts.length}
+            busy={saving}
+            note={notice}
+            onReset={revertActiveTab}
+            onSave={() => void saveActiveTab()}
+            saveLabel="保存本类"
+            saveDisabled={!canEditActiveTab || !activeDirty}
+          />
+        </section>
+        <aside className="a-form-page__rail">
+          <div className="a-rail-card">
+            <h4>当前类目</h4>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}><span className="a-hint">类目</span><b>{activeMeta.label}</b></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}><span className="a-hint">字段</span><b>{activeRows.length} 项</b></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}><span className="a-hint">未保存</span><b style={{ color: dirty ? 'var(--a-warn)' : 'var(--a-success)' }}>{dirtyKeys.length}</b></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}><span className="a-hint">校验</span><b>{conflicts.length ? `${conflicts.length} 项需处理` : '通过'}</b></div>
+          </div>
+          <div className="a-rail-card">
+            <h4>保存规则</h4>
+            <ul>
+              <li><i style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--a-warn)' }} />切换类目会提示放弃未保存修改</li>
+              <li><i style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--a-info)' }} />保存后配置解析缓存会失效</li>
+              <li><i style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--a-success)' }} />写入会记录审计日志</li>
+            </ul>
+          </div>
+          <div className="a-rail-card"><h4>提示</h4><div className="a-hint">多值枚举使用多选组件与自定义值输入，避免逗号分隔文本造成歧义。</div></div>
+        </aside>
+      </section>
     </section>
   )
 }
@@ -443,7 +443,8 @@ function renderConfigField(row: ConfigItem, meta: ConfigFieldMeta, value: Config
     if (Array.isArray(value) && value.some((item) => isRecord(item))) {
       return <StructuredListField label={meta.label} hint={meta.hint} value={value} onChange={onChange} error={error} disabled={disabled} />
     }
-    return <Field label={meta.label} hint={meta.hint} error={error}><input value={(Array.isArray(value) ? value : []).join(', ')} onChange={(event) => onChange(event.target.value.split(',').map((item) => item.trim()).filter(Boolean))} disabled={disabled} /></Field>
+    const values = (Array.isArray(value) ? value : []).map(String)
+    return <MultiSelectField label={meta.label} hint={meta.hint} error={error} values={values} options={values} onChange={(next) => onChange(next)} disabled={disabled} customPlaceholder="输入自定义值后添加" placeholder="选择或添加值" />
   }
   return <Field label={meta.label || key} hint={meta.hint} error={error}><input value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} disabled={disabled} /></Field>
 }

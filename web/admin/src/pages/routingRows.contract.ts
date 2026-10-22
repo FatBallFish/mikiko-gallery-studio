@@ -25,8 +25,6 @@ for (const workspaceContract of [
   'FilterToolbar',
   '配置候选',
   '配置价格',
-  '启用路由',
-  '调整可见性',
   '当前路由已隐藏',
   '当前路由尚未绑定可见分组',
   'model.output_format',
@@ -34,14 +32,19 @@ for (const workspaceContract of [
   'effectiveRouteCandidates',
   'routeReadinessForMedia',
   'mediaRoutes.map',
-  '#/pricing?media=video',
   "account.status === 'enabled'",
   'visibleRoutes.find',
   'message={mutationError}',
-  'media_type: routeDialog.mediaType',
-  'label="创作类型"',
-  '<option value="video">视频</option>',
-]) {
+  'media_type: media',
+  'label="可见范围"',
+  '视频参数',
+  '视频报价',
+  'candidate_parameter_mappings',
+  'buildMappings(routeEditor.mappings)',
+  'simulateVideoRouteQuote',
+  '缺价组合会在提交前阻断',
+  '未映射的组合不参与报价',
+] ) {
   if (!routingPageSource.includes(workspaceContract)) {
     throw new Error(`routing workspace must implement ${workspaceContract}`)
   }
@@ -54,7 +57,7 @@ if (!routingPageSource.includes('prices: routePrices')) {
 for (const continuationContract of [
   'setSelectedRouteId(String(saved.id))',
   "if (created) setQuery('')",
-  'setCandidateDialog(newCandidateDialog(saved, eligibleAccountModels))',
+  'await load(String(saved.id))',
 ]) {
   if (!routingPageSource.includes(continuationContract)) {
     throw new Error(`route creation should preserve context with ${continuationContract}`)

@@ -19,8 +19,10 @@ for (const banned of [
 
 for (const required of [
   'data-landing-title-line',
-  'text-[1.5rem]',
-  'min-[360px]:text-[1.75rem]',
+  'u-hero',
+  'u-bento',
+  'u-cta',
+  'u-marquee',
   '<picture',
   '/landing/studio-showcase-1280.webp',
   '/landing/studio-showcase-1920.webp',

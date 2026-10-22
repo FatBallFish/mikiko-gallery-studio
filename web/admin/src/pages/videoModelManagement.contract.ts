@@ -7,7 +7,7 @@ for (const required of ['seedance', 'minimax', 'gasic', 'listModelAccountModels'
 }
 if (provider.includes('真实模型 ID')) throw new Error('video provider management must not require a database model ID')
 
-const routing = fs.readFileSync(new URL('./VideoRouteConfigPanel.tsx', import.meta.url), 'utf8')
+const routing = fs.readFileSync(new URL('./RoutingPage.tsx', import.meta.url), 'utf8')
 for (const required of ['candidate_parameter_mappings', 'minimum_task_points', 'rounding_step_points', 'max_output_count', 'saveRouteVideoConfig', 'deleteRouteVideoConfig', '删除视频配置']) {
   if (!routing.includes(required)) throw new Error(`video route panel must include ${required}`)
 }
@@ -15,7 +15,7 @@ for (const removed of ['用户可见参数组合', 'visible_combinations']) if (
 if (routing.includes('路由模型 ID')) throw new Error('video route management must derive the selected route ID')
 if (routing.includes('真实模型 ID')) throw new Error('video route mappings must display account and model names instead of database IDs')
 
-const pricing = fs.readFileSync(new URL('./VideoPricingPanel.tsx', import.meta.url), 'utf8')
+const pricing = fs.readFileSync(new URL('./RoutingPage.tsx', import.meta.url), 'utf8')
 for (const required of ['simulateVideoRouteQuote', 'result.candidates', 'minimum_task_points', 'rounding_step_points', 'cny_per_point']) {
   if (!pricing.includes(required)) throw new Error(`video pricing panel must include ${required}`)
 }

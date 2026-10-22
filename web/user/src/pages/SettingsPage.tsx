@@ -1,31 +1,16 @@
+import { useEffect, useState } from 'react'
 import { cn } from '../../../shared/classnames'
 import { useApp } from '../components'
-import { button as btn, card } from '../ui/redesign-classes'
-import { Sun, Moon, Palette } from '../ui/icons'
-import { SettingsWorkspace } from '../ui/SettingsWorkspace'
 import { settingsAccentThemeOptions, settingsThemeModeOptions } from './settingsThemeModel'
 
-const settingsClasses = {
-  grid: 'grid grid-cols-1 gap-6 xl:grid-cols-[0.9fr_1.1fr]',
-  card: card.padded,
-  cardHead: 'mb-6 flex items-start justify-between gap-4',
-  cardTitle: 'm-0 text-2xl font-black',
-  cardDetail: 'mt-2 text-sm leading-relaxed text-[var(--muted)]',
-  previewIcon: 'grid size-12 place-items-center rounded-2xl border border-[var(--border)] bg-[var(--bg)] text-[var(--accent)]',
-  modeGrid: 'grid grid-cols-2 gap-3',
-  modeButton: 'flex min-h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border bg-[var(--bg)]/60 px-3 text-center text-sm font-bold transition-all duration-200 active:scale-[0.98]',
-  modeActive: 'border-[var(--accent)] text-[var(--accent)] ring-1 ring-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_6%,transparent)]',
-  modeInactive: 'border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)]/60 hover:text-[var(--fg)]',
-  swatchGrid: 'grid grid-cols-1 gap-3 sm:grid-cols-2',
-  swatchButton: 'flex min-h-24 cursor-pointer items-center gap-4 rounded-2xl border bg-[var(--bg)]/60 p-4 text-left transition-all duration-200 active:scale-[0.98]',
-  swatch: 'grid size-12 shrink-0 place-items-center rounded-2xl border border-[color-mix(in_oklch,var(--fg)_12%,transparent)] shadow-[var(--pg-shadow-md)]',
-  swatchDot: 'size-4 rounded-full bg-[var(--surface-solid)]',
-  syncPanel: 'rounded-3xl border border-[var(--border)] bg-[var(--bg)]/50 p-6',
-  previewCard: 'rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4',
-  previewRow: 'flex items-center justify-between gap-3',
-  previewLabel: 'text-xs text-[var(--muted)]',
-  previewBtn: cn(btn.base, btn.primary, 'min-h-0 px-3 py-1.5 text-xs'),
-  previewBadge: 'inline-flex items-center gap-1.5 rounded-full bg-[color-mix(in_oklch,var(--accent)_18%,transparent)] px-2.5 py-1 font-vault-mono text-[11px] font-bold text-[var(--accent)]',
+const motionStorageKey = 'pic-gallery-user-motion'
+
+function readMotionPreference() {
+  try {
+    return window.localStorage.getItem(motionStorageKey) !== 'reduced'
+  } catch {
+    return true
+  }
 }
 
 export function SettingsPage() {
@@ -34,89 +19,103 @@ export function SettingsPage() {
   const accentOptions = settingsAccentThemeOptions()
   const activeMode = app.themePreference.mode
   const activeAccent = app.themePreference.accent
+  const [motionEnabled, setMotionEnabled] = useState(readMotionPreference)
+
+  useEffect(() => {
+    document.documentElement.dataset.userMotion = motionEnabled ? 'on' : 'reduced'
+    try {
+      window.localStorage.setItem(motionStorageKey, motionEnabled ? 'on' : 'reduced')
+    } catch {
+      // The preference still applies to this page when storage is unavailable.
+    }
+  }, [motionEnabled])
 
   return (
-    <SettingsWorkspace
-      active="appearance"
-      title="外观偏好"
-      detail="主题模式与强调色会即时应用，并在登录状态下同步到你的 Mikiko Studio 账户。"
-    >
-      <div className={settingsClasses.grid}>
-        <section className={settingsClasses.card}>
-          <div className={settingsClasses.cardHead}>
-            <div>
-              <h2 className={settingsClasses.cardTitle}>光暗主题</h2>
-              <p className={settingsClasses.cardDetail}>右上角也可以快速切换。</p>
-            </div>
-            <div className={settingsClasses.previewIcon} aria-hidden="true">
-              {activeMode === 'dark' ? <Moon size={20} strokeWidth={1.5} /> : <Sun size={20} strokeWidth={1.5} />}
+    <div className="acct-page">
+      <div className="u-settings u-settings--single">
+        <div className="u-settings__stack">
+          <div className="u-page-head" style={{ margin: 0 }}>
+            <div className="u-page-head__copy">
+              <span className="u-eyebrow">Appearance</span>
+              <h1 className="u-h1" style={{ fontSize: 'clamp(32px, 3.4vw, 38px)' }}>外观偏好</h1>
+              <p className="u-sub">主题与强调色即时生效，并同步到账户。系统默认跟随设备，也可以固定为浅色或深色。</p>
             </div>
           </div>
-          <div className={settingsClasses.modeGrid}>
-            {modeOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={cn(settingsClasses.modeButton, activeMode === option.value ? settingsClasses.modeActive : settingsClasses.modeInactive)}
-                onClick={() => void app.setThemePreference({ mode: option.value })}
-              >
-                {option.icon === 'moon' ? <Moon size={20} strokeWidth={1.5} /> : <Sun size={20} strokeWidth={1.5} />}
-                <span>{option.label}</span>
-                <small className="font-normal text-[var(--dim)]">{option.detail}</small>
-              </button>
-            ))}
-          </div>
-        </section>
 
-        <section className={settingsClasses.card}>
-          <div className={settingsClasses.cardHead}>
-            <div>
-              <h2 className={settingsClasses.cardTitle}>主题色</h2>
-              <p className={settingsClasses.cardDetail}>用于按钮、选中态、焦点态和关键指标。</p>
+          <section className="u-plate u-plate--pad" aria-labelledby="settings-theme-title">
+            <div className="u-panel-title">
+              <h3 id="settings-theme-title">明暗主题</h3>
+              <span>即时生效</span>
             </div>
-            <div className={settingsClasses.previewIcon} aria-hidden="true">
-              <Palette size={20} strokeWidth={1.5} />
+            <div className="st-themes">
+              {modeOptions.map((option) => {
+                const active = activeMode === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={cn('st-theme', active && 'is-active')}
+                    aria-pressed={active}
+                    onClick={() => void app.setThemePreference({ mode: option.value })}
+                  >
+                    <span className={cn('st-theme__preview', option.value === 'light' && 'st-theme__preview--light')} aria-hidden="true" />
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                      <strong style={{ fontSize: 12.5 }}>{option.value === 'dark' ? '深色 · Luminous' : '浅色 · Paper'}</strong>
+                      {active
+                        ? <span className="u-status u-status--ok"><span className="u-dot" aria-hidden="true" />当前</span>
+                        : <span className="u-meta">切换</span>}
+                    </span>
+                    <span className="u-meta">{option.detail}</span>
+                  </button>
+                )
+              })}
             </div>
-          </div>
-          <div className={settingsClasses.swatchGrid}>
-            {accentOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={cn(settingsClasses.swatchButton, activeAccent === option.value ? settingsClasses.modeActive : settingsClasses.modeInactive)}
-                onClick={() => void app.setThemePreference({ accent: option.value })}
-              >
-                <span className={settingsClasses.swatch} style={{ background: option.color }}>
-                  <span className={settingsClasses.swatchDot} />
-                </span>
-                <span>
-                  <strong className="block text-base text-[var(--fg)]">{option.label}</strong>
-                  <small className="mt-1 block text-xs leading-relaxed text-[var(--muted)]">{option.detail}</small>
-                </span>
-              </button>
-            ))}
-          </div>
-          {/* Accent live preview */}
-          <div className={settingsClasses.previewCard + ' mt-6'}>
-            <div className="text-xs font-bold text-[var(--muted)] mb-3">当前主题色预览</div>
-            <div className={settingsClasses.previewRow}>
-              <span className={settingsClasses.previewLabel}>主按钮</span>
-              <span className={settingsClasses.previewBtn}>立即开始</span>
+          </section>
+
+          <section className="u-plate u-plate--pad" aria-labelledby="settings-accent-title">
+            <div className="u-panel-title">
+              <h3 id="settings-accent-title">强调色</h3>
+              <span>单一强调</span>
             </div>
-            <div className={settingsClasses.previewRow + ' mt-2.5'}>
-              <span className={settingsClasses.previewLabel}>状态标签</span>
-              <span className={settingsClasses.previewBadge}>已完成</span>
+            <div className="st-accents" role="group" aria-label="强调色">
+              {accentOptions.map((option) => {
+                const active = activeAccent === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={cn('st-accent', active && 'is-active')}
+                    aria-pressed={active}
+                    title={option.detail}
+                    onClick={() => void app.setThemePreference({ accent: option.value })}
+                  >
+                    <i style={{ background: option.color }} aria-hidden="true" />
+                    {option.label}
+                  </button>
+                )
+              })}
             </div>
-          </div>
-        </section>
+            <div className="st-demo" aria-label="当前强调色预览">
+              <span className="u-btn u-btn--primary u-btn--sm" aria-hidden="true">主操作</span>
+              <span className="u-btn u-btn--sm" aria-hidden="true">次操作</span>
+              <span className="u-chip u-chip--accent">选中态</span>
+              <span className="u-status u-status--ok"><span className="u-dot" aria-hidden="true" />运行正常</span>
+              <span className="u-meta">实时预览</span>
+            </div>
+          </section>
+
+          <section className="u-plate u-plate--pad" aria-labelledby="settings-motion-title">
+            <div className="u-panel-title">
+              <h3 id="settings-motion-title">动效</h3>
+              <span>{motionEnabled ? '已开启' : '已减弱'}</span>
+            </div>
+            <div className="u-segment" role="group" aria-label="动效偏好">
+              <button type="button" className={motionEnabled ? 'is-active' : undefined} aria-pressed={motionEnabled} onClick={() => setMotionEnabled(true)}>标准动效</button>
+              <button type="button" className={!motionEnabled ? 'is-active' : undefined} aria-pressed={!motionEnabled} onClick={() => setMotionEnabled(false)}>减弱动效</button>
+            </div>
+          </section>
+        </div>
       </div>
-
-      <section className={cn(settingsClasses.syncPanel, 'mt-6')}>
-        <h2 className="m-0 text-xl font-black">偏好同步</h2>
-        <p className="m-0 mt-2 text-sm leading-relaxed text-[var(--muted)]">
-          当前偏好会先保存在本机，并在登录状态下同步到 Mikiko Studio 账户。若网络异常，本机外观仍会保持当前选择。
-        </p>
-      </section>
-    </SettingsWorkspace>
+    </div>
   )
 }

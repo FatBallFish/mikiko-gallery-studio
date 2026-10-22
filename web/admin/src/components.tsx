@@ -274,26 +274,26 @@ export function AdminLayout({
   }, [accountOpen])
 
   const renderNav = (onItemClick?: (route: ProtectedAdminRouteId) => void) => (
-    <nav className={adminShell.nav} aria-label="后台主导航">
+    <nav className="a-side__nav" aria-label="后台主导航">
       {visibleNavGroups.map((group) => (
-        <section key={group.label} className={adminShell.navGroup}>
-          <p className={adminShell.navLabel}>{group.label}</p>
+        <section key={group.label} className="a-side__group">
+          <div className="a-side__label">{group.label}</div>
           {group.items.map((item) => {
             const badge = item.badgeKey ? navBadges[item.badgeKey] : ''
             return (
               <a
                 key={item.id}
                 href={routeHref(item.id)}
-                className={cn(adminShell.navLink, route === item.id && adminShell.navLinkActive)}
+                className={cn('a-side__link', route === item.id && 'is-active')}
                 onClick={() => {
                   onNavigate(item.id)
                   onItemClick?.(item.id)
                 }}
                 aria-current={route === item.id ? 'page' : undefined}
               >
-                <span className={adminShell.navIcon}>{routeIcon(item.id)}</span>
+                {routeIcon(item.id)}
                 <span>{item.label}</span>
-                {badge ? <em className={adminShell.navBadge}>{badge}</em> : null}
+                {badge ? <span className="a-side__badge">{badge}</span> : null}
               </a>
             )
           })}
@@ -303,82 +303,57 @@ export function AdminLayout({
   )
 
   return (
-    <main className={adminShell.root} data-theme={theme}>
-      <header className={adminShell.mobileTopbar}>
-        <button
-          ref={navTriggerRef}
-          className={adminShell.iconButton}
-          type="button"
-          aria-label="打开导航"
-          title="打开导航"
-          onClick={() => setNavOpen(true)}
-        >
-          <MenuIcon className="size-5" />
-        </button>
-        <strong className={adminShell.mobileTitle}>{currentTitle}</strong>
-        <button
-          className={adminShell.iconButton}
-          type="button"
-          aria-label={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
-          title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
-          onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
-        >
-          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-        </button>
-      </header>
+    <main className="a-shell">
+      {navOpen ? <button className="a-scrim is-open a-side-scrim" type="button" aria-label="关闭导航" onClick={() => setNavOpen(false)} /> : null}
+      <aside ref={mobileDrawerRef} tabIndex={-1} className={cn('a-side', navOpen && 'is-open')} aria-label="Mikiko Gallery Studio Admin Navigation">
+        <div className="a-side__brand">
+          <span className="a-side__mark">M</span>
+          <span className="a-side__name"><strong>Mikiko Ops</strong><span>Command Deck</span></span>
+          <button className="a-icon-btn a-side-close" type="button" aria-label="关闭导航" title="关闭导航" onClick={() => setNavOpen(false)}><XIcon /></button>
+        </div>
 
-      {navOpen ? (
-        <>
-          <button className={adminShell.mobileDrawerBackdrop} type="button" aria-label="关闭导航" onClick={() => setNavOpen(false)} />
-          <aside ref={mobileDrawerRef} tabIndex={-1} className={adminShell.mobileDrawer} aria-label="移动端后台导航">
-            <header className={adminShell.mobileDrawerHead}>
-              <span className={adminShell.brandOrb}>M</span>
-              <strong className={adminShell.brandText}>Mikiko Admin</strong>
-              <button className={adminShell.iconButton} type="button" aria-label="关闭导航" title="关闭导航" onClick={() => setNavOpen(false)}><XIcon className="size-5" /></button>
-            </header>
-            {renderNav(() => setNavOpen(false))}
-            <div className={adminShell.sideNote}>
-              <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'w-full')} type="button" onClick={onLogout}><LogOutIcon className="size-4" />退出</button>
-            </div>
-          </aside>
-        </>
-      ) : null}
+        {renderNav(() => setNavOpen(false))}
 
-      <aside className={adminShell.sidebar} aria-label="Mikiko Gallery Studio Admin Navigation">
-        <a className={adminShell.brand} href={routeHref('dashboard')} onClick={() => onNavigate('dashboard')}>
-          <span className={adminShell.brandOrb}>M</span>
-          <strong className={adminShell.brandText}>Mikiko Admin</strong>
-        </a>
-
-        {renderNav()}
-
-        <div className={adminShell.sideNote}>
-          <div className={adminShell.sideNoteIdentity}>
-            <span className={adminShell.avatarOrb}>{session.admin_name.slice(0, 2).toUpperCase()}</span>
-            <div className="grid min-w-0 flex-1 gap-0.5">
-              <strong className="truncate text-sm text-[var(--text)]">{session.admin_name}</strong>
-              <span className="truncate text-xs text-[var(--muted-strong)]">{session.role === 'super_admin' ? '超级管理员' : '运营管理员'}</span>
+        <div className="a-side__foot">
+          <div className="a-side__foot-identity">
+            <span className="a-cell-entity__avatar">{session.admin_name.slice(0, 1).toUpperCase()}</span>
+            <div className="a-side__identity-copy">
+              <strong>{session.admin_name}</strong>
+              <span>{session.email || '未绑定邮箱'}</span>
+              <span className="a-side__role">{session.role === 'super_admin' ? 'super_admin' : 'operator'}</span>
             </div>
           </div>
-          <button className={cn(adminButton.base, adminButton.ghost, adminButton.small, 'w-full')} type="button" onClick={onLogout}><LogOutIcon className="size-4" />退出</button>
+          <button className="a-btn a-btn--quiet a-btn--sm" type="button" onClick={onLogout}><LogOutIcon />退出登录</button>
         </div>
       </aside>
 
-      <section className={adminShell.main}>
-        <header className={adminShell.topbar}>
-          <div className={adminShell.topbarMeta}>
-            <div className={adminShell.providerPill} title="Provider 状态">
-              <span className={cn('inline-block size-2 rounded-full', providers.some((item) => item.status !== 'healthy') ? dotToneClass.warning : dotToneClass.success)} />
-              <span>上游状态</span>
-              <strong>{providers.length}</strong>
-            </div>
-            <StatusChip tone={reviewCount > 0 ? 'warning' : 'success'} label="待审" value={String(reviewCount)} />
-            <StatusChip tone={configDrafts > 0 ? 'primary' : 'neutral'} label="草稿" value={String(configDrafts)} />
+      <div className="a-main">
+        <header className="a-top">
+          <button
+            ref={navTriggerRef}
+            className="a-icon-btn a-side-toggle"
+            type="button"
+            aria-label="打开导航"
+            title="打开导航"
+            onClick={() => setNavOpen(true)}
+          >
+            <MenuIcon />
+          </button>
+          <div className="a-top__crumbs">
+            <span>控制台</span>
+            <ChevronRightIcon />
+            <strong>{currentTitle}</strong>
           </div>
-
-          <div className={adminShell.metaRow}>
+          <div className="a-top__spacer" />
+          <div className="a-top__actions">
+            <div className="a-top__pulse" title="上游状态">
+              <span className={cn('a-dot', providers.some((item) => item.status !== 'healthy') ? 'is-warn' : 'is-ok')} />
+              <span>上游 {providers.length}</span>
+            </div>
+            <span className={cn('a-badge', reviewCount > 0 ? 'a-badge--warn' : 'a-badge--ok')}>待审 {reviewCount}</span>
+            {configDrafts > 0 ? <span className="a-badge a-badge--info">草稿 {configDrafts}</span> : null}
             <button
-              className={adminShell.iconButton}
+              className="a-icon-btn"
               type="button"
               aria-label={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
               title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
@@ -386,33 +361,29 @@ export function AdminLayout({
             >
               {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
             </button>
-            <button className={adminShell.iconButton} type="button" aria-label="通知" title="通知">
-              <BellIcon />
-            </button>
-            <div className={adminShell.avatarWidget}>
+            <div className="a-top__account">
               <button
                 ref={accountButtonRef}
                 type="button"
-                className="flex min-h-10 items-center gap-2 rounded-lg border border-transparent px-2 text-left transition-colors hover:border-[var(--border)] hover:bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/25"
+                className="a-cell-entity a-top__avatar-button"
                 aria-haspopup="menu"
                 aria-expanded={accountOpen}
+                aria-label="管理员账户菜单"
                 onClick={() => setAccountOpen((current) => !current)}
               >
-                <span className={adminShell.avatarOrb}>{session.admin_name.slice(0, 1).toUpperCase()}</span>
-                <span className="grid text-right">
-                  <strong className="text-sm text-[var(--fg)]">{session.admin_name}</strong>
-                  <span className="text-xs text-[var(--dim)]">{session.role === 'super_admin' ? '超级管理员' : '运营管理员'}</span>
-                </span>
-                <UserMenuIcon className="size-4 text-[var(--dim)]" />
+                <span className="a-cell-entity__avatar">{session.admin_name.slice(0, 1).toUpperCase()}</span>
               </button>
               {accountOpen ? (
-                <div ref={accountMenuRef} className="absolute right-0 top-[calc(100%+8px)] z-[70] grid min-w-52 rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-1.5 shadow-[var(--pg-shadow-lg)]" role="menu" aria-label="管理员账户菜单">
-                  <div className="grid gap-0.5 border-b border-[var(--border)] px-3 py-2">
-                    <strong className="text-sm text-[var(--fg)]">{session.admin_name}</strong>
-                    <span className="text-xs text-[var(--dim)]">{session.email}</span>
+                <div ref={accountMenuRef} className="a-account-menu" role="menu" aria-label="管理员账户菜单">
+                  <div className="a-account-menu__head">
+                    <span className="a-cell-entity__avatar">{session.admin_name.slice(0, 1).toUpperCase()}</span>
+                    <div className="a-cell-entity__copy">
+                      <span className="a-cell-entity__name">{session.admin_name}</span>
+                      <span className="a-cell-entity__meta">{session.email}</span>
+                    </div>
                   </div>
-                  <button className="flex min-h-10 items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/25" type="button" role="menuitem" onClick={onLogout}>
-                    <LogOutIcon className="size-4" />退出后台
+                  <button className="a-account-menu__item a-account-menu__item--danger" type="button" role="menuitem" onClick={onLogout}>
+                    <LogOutIcon />退出后台
                   </button>
                 </div>
               ) : null}
@@ -420,10 +391,10 @@ export function AdminLayout({
           </div>
         </header>
 
-        <section className={adminShell.content}>
+        <div className="a-content">
           {children}
-        </section>
-      </section>
+        </div>
+      </div>
     </main>
   )
 }
@@ -470,11 +441,13 @@ export function StatusStrip({ children, columns = 5 }: { children: React.ReactNo
 
 export function ToastRail({ toasts, onDismiss }: { toasts: ToastMessage[]; onDismiss: (id: string) => void }) {
   return (
-    <aside className="fixed right-5 top-5 z-[120] grid w-[min(380px,calc(100vw-40px))] gap-2" aria-live="polite" aria-label="操作反馈">
+    <aside className="a-toast-stack" aria-live="polite" aria-label="操作反馈">
       {toasts.map((toast) => (
-        <button key={toast.id} type="button" className={cn('grid rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 text-left shadow-[var(--pg-shadow-sm)]', toastToneClass[toast.tone])} onClick={() => onDismiss(toast.id)}>
-          <strong>{toast.title}</strong>
-          {toast.detail ? <span>{toast.detail}</span> : null}
+        <button key={toast.id} type="button" className={cn('a-toast', toast.tone === 'success' ? 'a-toast--ok' : toast.tone === 'danger' ? 'a-toast--bad' : '')} onClick={() => onDismiss(toast.id)}>
+          <div>
+            <strong>{toast.title}</strong>
+            {toast.detail ? <span>{toast.detail}</span> : null}
+          </div>
         </button>
       ))}
     </aside>
@@ -486,6 +459,7 @@ export function PageHeader({
   description,
   detail,
   meta,
+  eyebrow,
   primaryAction,
   secondaryActions,
   actions,
@@ -510,22 +484,23 @@ export function PageHeader({
   )
 
   return (
-    <header className="flex min-h-16 w-full max-w-none items-end justify-between gap-4 max-[920px]:min-h-0 max-[920px]:flex-col max-[920px]:items-start">
-      <div className="min-w-0">
-        <h1 className={cn('m-0', adminType.pageTitle)}>{title}</h1>
-        {resolvedDescription ? <p className={cn('mt-1 max-w-[76ch]', adminType.pageDescription)}>{resolvedDescription}</p> : null}
-        {meta ? <div className="mt-2">{meta}</div> : null}
+    <header className="a-page-head">
+      <div className="a-page-head__copy">
+        <span className="a-kicker">{eyebrow ?? 'Mikiko Ops'}</span>
+        <h1>{title}</h1>
+        {resolvedDescription ? <p>{resolvedDescription}</p> : null}
+        {meta ? <div>{meta}</div> : null}
       </div>
-      {resolvedActions ? <div className="flex flex-wrap items-center gap-2">{resolvedActions}</div> : null}
+      {resolvedActions ? <div className="a-page-head__actions">{resolvedActions}</div> : null}
     </header>
   )
 }
 
 export function PageToolbar({ children, actions }: { children: React.ReactNode; actions?: React.ReactNode }) {
   return (
-    <section className="flex flex-wrap items-end justify-between gap-3 rounded-lg bg-[var(--surface-solid)] px-3 py-3">
-      <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">{children}</div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+    <section className="a-panel a-panel--pad" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+      <div style={{ display: 'flex', minWidth: 0, flex: '1 1 auto', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 }}>{children}</div>
+      {actions ? <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>{actions}</div> : null}
     </section>
   )
 }
@@ -576,11 +551,7 @@ export function AdminTabs<T extends string>({
       role="tablist"
       aria-label={ariaLabel}
       aria-orientation={orientation}
-      className={cn(
-        'rounded-lg bg-[var(--surface-solid)] p-1',
-        vertical ? 'grid gap-1' : 'flex flex-wrap items-center gap-1',
-        className,
-      )}
+      className={cn('a-tabs', vertical && 'a-tabs--vertical', className)}
     >
       {items.map((item, index) => {
         const active = value === item.id
@@ -594,20 +565,15 @@ export function AdminTabs<T extends string>({
             aria-disabled={item.disabled || undefined}
             tabIndex={active ? 0 : -1}
             disabled={item.disabled}
-            className={cn(
-              'min-h-9 rounded-md px-3 py-2 text-sm font-bold text-[var(--muted)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklch,var(--accent)_28%,transparent)] disabled:cursor-not-allowed disabled:opacity-45',
-              vertical ? 'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-left' : 'inline-flex items-center justify-center gap-2',
-              !item.disabled && 'hover:bg-[var(--elevated)] hover:text-[var(--fg)]',
-              active && 'bg-[var(--elevated)] text-[var(--fg)] shadow-[var(--pg-shadow-sm)]',
-            )}
+            className={cn('a-tab', active && 'is-active')}
             onClick={() => onChange(item.id)}
             onKeyDown={(event) => {
               if (moveFocus(index, event.key)) event.preventDefault()
             }}
           >
-            <span className="min-w-0 truncate">{item.label}</span>
-            {item.badge ? <span className="shrink-0">{item.badge}</span> : null}
-            {vertical && item.description ? <span className="col-span-2 text-xs font-medium text-[var(--soft)]">{item.description}</span> : null}
+            <span>{item.label}</span>
+            {item.badge ? <span className="a-tab__count">{item.badge}</span> : null}
+            {vertical && item.description ? <span className="a-hint">{item.description}</span> : null}
           </button>
         )
       })}
@@ -637,35 +603,48 @@ export function ListFilterBar({
 }) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = advancedOpen ?? internalOpen
+  const primaryFields = fields.filter((field) => field.primary)
   const advancedFields = fields.filter((field) => !field.primary)
   const setOpen = (next: boolean) => {
     setInternalOpen(next)
     onAdvancedOpenChange?.(next)
   }
-  const visibleFields = fields.filter((field) => field.primary || open)
 
   return (
-    <section className="flex flex-wrap items-end justify-between gap-3">
-      <div className="flex min-w-0 flex-1 flex-wrap items-end gap-3">
-        {visibleFields.map((field) => (
-          <label key={field.key} className="grid min-w-[180px] max-w-full flex-[1_1_180px] gap-1 text-xs font-bold text-[var(--muted)]">
+    <section className={cn('a-filters', open && 'is-expanded')}>
+      <div className="a-filters__row">
+        {primaryFields.map((field) => (
+          <label key={field.key} className="a-field">
             {field.label ? <span>{field.label}</span> : null}
             {field.control}
           </label>
         ))}
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {advancedFields.length ? (
-          <button
-            type="button"
-            className={cn(adminButton.base, adminButton.ghost, adminButton.small)}
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
-            {open ? '收起筛选' : `更多筛选 ${advancedFields.length}`}
-          </button>
-        ) : null}
-        {actions}
+      {advancedFields.length ? (
+        <div className="a-filters__row a-filters__more">
+          {advancedFields.map((field) => (
+            <label key={field.key} className="a-field">
+              {field.label ? <span>{field.label}</span> : null}
+              {field.control}
+            </label>
+          ))}
+        </div>
+      ) : null}
+      <div className="a-filters__foot">
+        <span className="a-filters__result">{primaryFields.length + advancedFields.length} 个筛选条件</span>
+        <div className="a-filters__actions">
+          {advancedFields.length ? (
+            <button
+              type="button"
+              className="a-btn a-btn--sm a-btn--quiet"
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+            >
+              {open ? '收起筛选' : `更多筛选 ${advancedFields.length}`}
+            </button>
+          ) : null}
+          {actions}
+        </div>
       </div>
     </section>
   )
@@ -690,17 +669,17 @@ export function AdminListPage({
   className?: string
 }) {
   return (
-    <section className={cn('grid min-h-0 gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] p-4 shadow-[var(--pg-shadow-sm)]', className)}>
+    <section className={cn('a-panel a-panel--flush', className)}>
       {(filters || actions || resultSummary) ? (
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0 flex-1">{filters}</div>
-          {(actions || resultSummary) ? <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs font-semibold text-[var(--muted)]">{resultSummary}{actions}</div> : null}
+        <header className="a-panel__head">
+          <div style={{ minWidth: 0, flex: '1 1 auto' }}>{filters}</div>
+          {(actions || resultSummary) ? <div className="a-row-actions">{resultSummary}{actions}</div> : null}
         </header>
       ) : null}
-      <div className="min-w-0 overflow-hidden">
+      <div style={{ minWidth: 0, overflow: 'hidden' }}>
         {children}
       </div>
-      {pagination ? <footer className="flex flex-wrap items-center justify-between gap-3 pt-3 text-xs text-[var(--muted)]">{pagination}</footer> : null}
+      {pagination ? <footer className="a-pager">{pagination}</footer> : null}
     </section>
   )
 }
@@ -717,11 +696,13 @@ export function PageSection({
   variant?: 'plain' | 'panel'
 }) {
   return (
-    <section className={variant === 'panel' ? 'rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4' : 'grid gap-3'}>
+    <section className={variant === 'panel' ? 'a-panel a-panel--pad' : 'a-grid'} style={{ gap: variant === 'panel' ? 0 : 12 }}>
       {title || description ? (
-        <header className="grid gap-1">
-          {title ? <h2 className="m-0 text-base font-semibold text-[var(--fg)]">{title}</h2> : null}
-          {description ? <p className="text-sm text-[var(--soft)]">{description}</p> : null}
+        <header className="a-section-title" style={{ marginBottom: 12 }}>
+          <div>
+            {title ? <h2 style={{ margin: 0 }}>{title}</h2> : null}
+            {description ? <p>{description}</p> : null}
+          </div>
         </header>
       ) : null}
       {children}
@@ -744,14 +725,14 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
   ...props
 }, ref) {
   const variantClass = {
-    primary: adminButton.primary,
-    secondary: adminButton.secondary,
-    ghost: adminButton.ghost,
-    danger: adminButton.danger,
-    text: adminButton.text,
+    primary: 'a-btn--primary',
+    secondary: '',
+    ghost: 'a-btn--quiet',
+    danger: 'a-btn--danger',
+    text: 'a-btn--quiet',
   }[variant]
   return (
-    <button ref={ref} className={cn(adminButton.base, variantClass, size === 'sm' && adminButton.small, className)} type="button" {...props}>
+    <button ref={ref} className={cn('a-btn', variantClass, size === 'sm' && 'a-btn--sm', className)} type="button" {...props}>
       {icon}
       {children}
     </button>
@@ -768,7 +749,7 @@ export function IconButton({
   label: string
 }) {
   return (
-    <button className={cn(adminShell.iconButton, className)} type="button" aria-label={label} title={title ?? label} {...props}>
+    <button className={cn('a-icon-btn', className)} type="button" aria-label={label} title={title ?? label} {...props}>
       {children ?? '·'}
     </button>
   )
@@ -874,7 +855,7 @@ export function SegmentedControl<T extends string>({
   onChange: (value: T) => void
 }) {
   return (
-    <div role="tablist" className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1">
+    <div role="tablist" className="a-seg">
       {options.map((option) => (
         <button
           key={option.value}
@@ -882,10 +863,7 @@ export function SegmentedControl<T extends string>({
           role="tab"
           aria-selected={value === option.value}
           disabled={option.disabled}
-          className={cn(
-            'min-h-8 rounded-md px-3 text-sm font-bold text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-45',
-            value === option.value && 'bg-[var(--elevated)] text-[var(--fg)]',
-          )}
+          className={cn('a-seg__item', value === option.value && 'is-active')}
           onClick={() => onChange(option.value)}
         >
           {option.label}
@@ -1035,14 +1013,14 @@ export function ActionMenu({ actions }: { actions: ActionMenuItem[] }) {
 
 export function LoadingBlock({ label = '载入运营数据中' }: { label?: string }) {
   return (
-    <section className={stateBlockBase}>
-      <span className={stateBlockIcon}><LoaderIcon className="size-6 animate-spin" /></span>
-      <strong className={adminState.title}>{label}</strong>
-      <p className={adminState.detail}>正在请求真实后台 API，并同步构建管理端骨架数据。</p>
-      <div className="grid w-full max-w-[360px] gap-2">
-        <div className="pg-skeleton h-4 rounded-md" />
-        <div className="pg-skeleton h-4 w-4/5 rounded-md" />
-        <div className="pg-skeleton h-12 rounded-xl" />
+    <section className="a-empty">
+      <span className="a-empty__icon"><LoaderIcon className="size-6 animate-spin" /></span>
+      <h3>{label}</h3>
+      <p>正在请求真实后台 API，并同步构建管理端骨架数据。</p>
+      <div style={{ display: 'grid', width: '100%', maxWidth: 360, gap: 8 }}>
+        <div className="a-skeleton" style={{ height: 14 }} />
+        <div className="a-skeleton" style={{ height: 14, width: '80%' }} />
+        <div className="a-skeleton" style={{ height: 46 }} />
       </div>
     </section>
   )
@@ -1050,28 +1028,33 @@ export function LoadingBlock({ label = '载入运营数据中' }: { label?: stri
 
 export function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <section className={stateBlockBase}>
-      <span className={cn(stateBlockIcon, 'bg-[var(--red)]/10 text-[var(--red)]')}><AlertIcon className="size-6" /></span>
-      <strong className={adminState.title}>加载失败</strong>
-      <p className={adminState.detail}>{message}</p>
-      <button type="button" className={cn(adminButton.base, adminButton.primary)} onClick={onRetry}>重试</button>
+    <section className="a-empty" role="alert">
+      <span className="a-empty__icon" style={{ color: 'var(--a-danger)' }}><AlertIcon className="size-6" /></span>
+      <h3>加载失败</h3>
+      <p>{message}</p>
+      <button type="button" className="a-btn a-btn--primary" onClick={onRetry}>重试</button>
     </section>
   )
 }
 
 export function EmptyBlock({ title, detail, action, icon = <EmptyIcon className="size-6" />, variant = 'framed' }: { title: string; detail: string; action?: React.ReactNode; icon?: React.ReactNode; variant?: 'framed' | 'inline' }) {
   return (
-    <section className={variant === 'inline' ? 'grid min-h-[140px] place-items-center content-center gap-3 p-5 text-center' : stateBlockBase}>
-      <span className={stateBlockIcon}>{icon}</span>
-      <strong className={adminState.title}>{title}</strong>
-      <p className={adminState.detail}>{detail}</p>
+    <section className={cn('a-empty', variant === 'inline' && 'a-empty--inline')}>
+      <span className="a-empty__icon">{icon}</span>
+      <h3>{title}</h3>
+      <p>{detail}</p>
       {action}
     </section>
   )
 }
 
 export function Badge({ tone = 'neutral', children }: { tone?: ToastTone | 'success' | 'primary'; children: React.ReactNode }) {
-  return <span className={cn(adminPill.base, 'border', badgeToneClass[tone])}>{children}</span>
+  const toneClass = tone === 'success' ? 'a-badge--ok'
+    : tone === 'warning' ? 'a-badge--warn'
+      : tone === 'danger' ? 'a-badge--bad'
+        : tone === 'primary' ? 'a-badge--accent'
+          : ''
+  return <span className={cn('a-badge', toneClass)}>{children}</span>
 }
 
 export function InlineFeedback({ tone, message }: { tone: ToastTone; message: string }) {
@@ -1133,17 +1116,18 @@ export function Modal({
   useAdminLayerMotion(layerRef)
 
   return (
-    <div ref={layerRef} className="fixed inset-0 z-[90] grid place-items-center bg-black/60 p-6 backdrop-blur-md" role="presentation" onMouseDown={onClose}>
-      <section ref={dialogRef} tabIndex={-1} data-admin-motion-panel className="grid max-h-[92vh] w-[min(760px,calc(100vw-48px))] gap-5 overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface-solid)] p-5 shadow-[0_24px_80px_rgba(0,0,0,.28)]" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
-        <header className="flex flex-wrap items-center justify-between gap-3">
+    <div ref={layerRef} className="a-layer" role="presentation" onMouseDown={onClose}>
+      <div className="a-scrim is-open" aria-hidden="true" />
+      <section ref={dialogRef} tabIndex={-1} data-admin-motion-panel className="a-modal is-open" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+        <header className="a-modal__head">
           <div>
-            <strong className="font-[family-name:var(--font-admin-display)] text-lg font-semibold">{title}</strong>
-            {detail ? <p>{detail}</p> : null}
+            <h2>{title}</h2>
+            {detail ? <p className="a-hint">{detail}</p> : null}
           </div>
-          <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={onClose}>关闭</button>
+          <button type="button" className="a-btn a-btn--sm a-btn--quiet" onClick={onClose}>关闭</button>
         </header>
         <div>{children}</div>
-        <footer className="flex flex-wrap items-center justify-end gap-3">{footer}</footer>
+        <footer className="a-modal__foot">{footer}</footer>
       </section>
     </div>
   )
@@ -1155,12 +1139,18 @@ export function Drawer({
   children,
   footer,
   onClose,
+  wide = false,
+  stacked = false,
+  headerAside,
 }: {
   title: string
   description?: string
   children: React.ReactNode
   footer?: React.ReactNode
   onClose: () => void
+  wide?: boolean
+  stacked?: boolean
+  headerAside?: React.ReactNode
 }) {
   const dialogRef = useRef<HTMLElement | null>(null)
   const layerRef = useRef<HTMLDivElement | null>(null)
@@ -1168,26 +1158,28 @@ export function Drawer({
   useAdminLayerMotion(layerRef)
 
   return (
-    <div ref={layerRef} className="fixed inset-0 z-[90] bg-black/55 backdrop-blur-sm" role="presentation" onMouseDown={onClose}>
+    <div ref={layerRef} className={cn('a-layer', stacked && 'a-layer--stacked')} role="presentation" onMouseDown={onClose}>
+      {stacked ? null : <div className="a-scrim is-open" aria-hidden="true" />}
       <aside
         ref={dialogRef}
         tabIndex={-1}
         data-admin-motion-panel
-        className="ml-auto grid h-full w-[min(760px,100vw)] grid-rows-[auto_minmax(0,1fr)_auto] border-l border-[var(--border)] bg-[var(--surface-solid)] shadow-[0_24px_90px_rgba(0,0,0,.34)]"
+        className={cn('a-drawer is-open', wide && 'a-drawer--wide', stacked && 'is-stacked')}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] p-5">
-          <div className="grid gap-1">
-            <strong className="text-lg font-semibold">{title}</strong>
-            {description ? <p className="max-w-[62ch] text-sm text-[var(--soft)]">{description}</p> : null}
+        <header className="a-drawer__head">
+          <div>
+            <h2>{title}</h2>
+            {description ? <p>{description}</p> : null}
           </div>
-          <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={onClose}>关闭</button>
+          {headerAside ? <div className="a-drawer__spacer">{headerAside}</div> : <div className="a-drawer__spacer" />}
+          <button type="button" className="a-icon-btn" aria-label="关闭" onClick={onClose}><XIcon /></button>
         </header>
-        <section className="min-h-0 overflow-y-auto p-5">{children}</section>
-        {footer ? <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-[var(--border)] p-4">{footer}</footer> : null}
+        <section className="a-drawer__body">{children}</section>
+        {footer ? <footer className="a-drawer__foot">{footer}</footer> : null}
       </aside>
     </div>
   )
@@ -1220,13 +1212,13 @@ function routeIcon(route: ProtectedAdminRouteId) {
 
 export function Field({ label, children, error, hint }: { label: string; children: React.ReactNode; error?: string | null; hint?: string }) {
   return (
-    <label className="grid content-start gap-1.5 text-xs font-extrabold text-[var(--soft)]">
-      <span className={fieldLabelClass}>
+    <label className="a-field">
+      <span>
         <span>{label}</span>
         {hint ? <FieldHint text={hint} /> : null}
       </span>
       {children}
-      {error ? <em className="text-xs not-italic text-[var(--red)]">{error}</em> : null}
+      {error ? <em className="a-field__error">{error}</em> : null}
     </label>
   )
 }
@@ -1325,12 +1317,12 @@ export function ConfirmDrawer({
 
 export function MetricStrip({ metrics }: { metrics: AdminMetric[] }) {
   return (
-    <section className={adminMetric.strip} aria-label="关键运营指标">
+    <section className="a-metrics" aria-label="关键运营指标">
       {metrics.map((metric) => (
-        <div key={metric.label} className={cn(adminMetric.item, 'transition-colors duration-[var(--admin-motion-base)] hover:border-[var(--border-strong)] hover:bg-[var(--elevated)]', metricToneClass[metric.tone])}>
-          <span className={adminType.label}>{metric.label}</span>
-          <strong className={adminMetric.value}>{metric.value}</strong>
-          <span className={adminType.support}>{metric.trend}</span>
+        <div key={metric.label} className={cn('a-metric', metricToneClass[metric.tone])}>
+          <div className="a-metric__label"><span>{metric.label}</span></div>
+          <div className="a-metric__value">{metric.value}</div>
+          <div className="a-metric__foot">{metric.trend}</div>
         </div>
       ))}
     </section>
