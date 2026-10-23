@@ -1,0 +1,171 @@
+/* Routing page scoped fixes: icon picker tiles and candidate row actions. */
+
+/* ---- model icon picker (route + model-group drawers) ---- */
+.rt-icon-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.rt-icon-picker__grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rt-icon-option,
+.rt-icon-upload {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 6px;
+  border: 1px solid var(--a-line);
+  border-radius: 8px;
+  background: var(--a-surface);
+  color: var(--a-ink-3);
+  cursor: pointer;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast), color var(--t-fast), background var(--t-fast);
+}
+
+.rt-icon-option img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.rt-icon-option:hover,
+.rt-icon-upload:hover {
+  border-color: var(--a-accent);
+}
+
+.rt-icon-option.is-selected,
+.rt-icon-upload.is-selected {
+  border-color: var(--a-accent);
+  background: var(--a-accent-soft);
+  box-shadow: 0 0 0 1px var(--a-accent);
+  color: var(--a-accent);
+}
+
+.rt-icon-upload {
+  border-style: dashed;
+}
+
+.rt-icon-upload svg {
+  width: 17px;
+  height: 17px;
+  color: currentColor;
+  stroke: currentColor;
+}
+
+.rt-icon-clear {
+  align-self: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--a-ink-3);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.rt-icon-error {
+  margin: 0;
+  color: var(--a-danger);
+  font-size: 12px;
+}
+
+.rt-icon-option:focus-visible,
+.rt-icon-upload:focus-visible,
+.rt-icon-clear:focus-visible,
+.rt-candidate-delete:focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+/* ---- candidate table actions ---- */
+.rt-candidates-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.rt-candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.rt-candidate-delete {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--a-danger) 32%, var(--a-line));
+  border-radius: 7px;
+  background: var(--a-surface);
+  color: var(--a-danger);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+
+.rt-candidate-delete svg {
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+  stroke: currentColor;
+}
+
+.rt-candidate-delete:hover {
+  border-color: var(--a-danger);
+  background: var(--a-danger-soft);
+  color: var(--a-danger);
+}
+
+.rt-candidate-delete:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Keep the action column reachable while the wide candidate table scrolls. */
+.rt-candidates-table thead th.rt-candidate-actions-cell {
+  position: sticky;
+  top: 0;
+  right: 0;
+  z-index: 4;
+  width: 120px;
+  min-width: 120px;
+  white-space: normal;
+  background: var(--a-surface-2);
+}
+
+.rt-candidates-table tbody td.rt-candidate-actions-cell {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  width: 120px;
+  min-width: 120px;
+  white-space: normal;
+  background: var(--a-surface);
+  box-shadow: -8px 0 12px -14px rgba(15, 23, 42, 0.45);
+}
+
+.rt-candidates-table tbody tr:hover td.rt-candidate-actions-cell {
+  background: var(--a-surface-2);
+}
+
+@media (max-width: 720px) {
+  .rt-candidates-table thead th.rt-candidate-actions-cell,
+  .rt-candidates-table tbody td.rt-candidate-actions-cell {
+    width: 108px;
+    min-width: 108px;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+}

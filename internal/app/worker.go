@@ -44,7 +44,7 @@ func RunWorker() error {
 }
 
 func RunWorkerContext(ctx context.Context) error {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	configureDefaultLogging()
 	return runWorker(ctx, workerRunDependencies{})
 }
 

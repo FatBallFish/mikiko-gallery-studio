@@ -1,9 +1,16 @@
 import { readFileSync } from 'node:fs'
 
+// The production skin now consumes the approved prototype design system:
+// tokens from prototypes/redesign/assets/tokens.css, component classes from
+// user.css/admin.css, and a small alias bridge for legacy feature code.
+
 const root = new URL('../../../', import.meta.url)
-const tokensCss = readFileSync(new URL('web/shared/tokens.css', root), 'utf8')
-const themeCss = readFileSync(new URL('web/shared/user-theme.css', root), 'utf8')
-const userCss = readFileSync(new URL('web/user/src/styles.css', root), 'utf8')
+const tokensCss = readFileSync(new URL('web/shared/redesign-theme.css', root), 'utf8')
+const userCss = readFileSync(new URL('web/user/src/redesign.css', root), 'utf8')
+const userBridge = readFileSync(new URL('web/user/src/redesign-bridge.css', root), 'utf8')
+const adminCss = readFileSync(new URL('web/admin/src/redesign.css', root), 'utf8')
+const adminBridge = readFileSync(new URL('web/admin/src/redesign-bridge.css', root), 'utf8')
+const userStyles = readFileSync(new URL('web/user/src/styles.css', root), 'utf8')
 
 function block(source, marker) {
   const markerIndex = source.indexOf(marker)
@@ -33,95 +40,117 @@ function expectValue(values, name, expected, scope) {
   if (actual !== expected) throw new Error(`${scope} ${name}: expected ${expected}, received ${actual ?? 'missing'}`)
 }
 
-function expectMatchingRgb(values, colorName, rgbName, scope) {
-  const color = values.get(colorName)
-  const rgb = values.get(rgbName)
-  const hex = color?.match(/^#([0-9a-f]{6})$/i)?.[1]
-  if (!hex || !rgb) throw new Error(`${scope} cannot compare ${colorName} with ${rgbName}`)
-  const expected = [0, 2, 4].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)).join(', ')
-  if (rgb !== expected) throw new Error(`${scope} ${rgbName}: expected ${expected} from ${color}, received ${rgb}`)
+function expectContains(source, needle, scope) {
+  if (!source.includes(needle)) throw new Error(`${scope} is missing ${needle}`)
 }
 
-const tokenRoot = declarations(block(tokensCss, ':root'))
+const sharedRoot = declarations(block(tokensCss, ':root'))
 for (const [name, expected] of Object.entries({
-  '--pg-radius-sm': '8px',
-  '--pg-radius-md': '12px',
-  '--pg-radius-lg': '16px',
-  '--pg-radius-xl': '24px',
-  '--pg-duration-base': '220ms',
-  '--pg-sidebar-user-width': '108px',
-  '--pg-topbar-height': '76px',
-})) expectValue(tokenRoot, name, expected, 'tokens')
+  '--r-xs': '6px',
+  '--r-sm': '10px',
+  '--r-md': '14px',
+  '--r-lg': '20px',
+  '--r-xl': '28px',
+  '--t-fast': '140ms',
+  '--t-base': '220ms',
+  '--t-slow': '420ms',
+})) expectValue(sharedRoot, name, expected, 'prototype tokens')
 
-const themeDependentTokens = [
-  '--lv-bg', '--lv-canvas', '--lv-surface-1', '--lv-surface-2', '--lv-surface-3',
-  '--lv-text-primary', '--lv-text-secondary', '--lv-text-tertiary',
-  '--lv-border-subtle', '--lv-border', '--lv-border-strong',
-  '--lv-brand-amber', '--lv-brand-amber-rgb',
-  '--lv-status-violet', '--lv-status-violet-rgb',
-  '--lv-status-emerald', '--lv-status-emerald-rgb',
-  '--lv-status-coral', '--lv-status-coral-rgb',
-  '--lv-status-blue', '--lv-status-blue-rgb',
-  '--lv-image-overlay', '--lv-image-overlay-selected', '--lv-image-action',
-  '--lv-shadow-sm', '--lv-shadow-md', '--lv-shadow-lg', '--lv-focus-ring',
-  '--lv-motion-fast', '--lv-motion-route', '--lv-motion-slow',
-]
-
-const darkTheme = declarations(block(themeCss, ':root'))
-const explicitLight = declarations(block(themeCss, "html[data-theme-mode='light']"))
-const lightPreference = block(themeCss, '@media (prefers-color-scheme: light)')
-const fallbackLight = declarations(block(lightPreference, 'html:not([data-theme-mode])'))
-
-expectValue(darkTheme, 'color-scheme', 'dark', 'dark theme')
-expectValue(explicitLight, 'color-scheme', 'light', 'explicit light theme')
-expectValue(fallbackLight, 'color-scheme', 'light', 'light preference fallback')
-for (const name of themeDependentTokens) {
-  if (!darkTheme.has(name)) throw new Error(`dark theme is missing ${name}`)
-  if (!explicitLight.has(name)) throw new Error(`explicit light theme is missing ${name}`)
-  expectValue(fallbackLight, name, explicitLight.get(name), 'light preference fallback')
-}
-for (const [colorName, rgbName] of [
-  ['--lv-brand-amber', '--lv-brand-amber-rgb'],
-  ['--lv-status-violet', '--lv-status-violet-rgb'],
-  ['--lv-status-emerald', '--lv-status-emerald-rgb'],
-  ['--lv-status-coral', '--lv-status-coral-rgb'],
-  ['--lv-status-blue', '--lv-status-blue-rgb'],
-]) {
-  expectMatchingRgb(darkTheme, colorName, rgbName, 'dark theme')
-  expectMatchingRgb(explicitLight, colorName, rgbName, 'explicit light theme')
-}
-
-const userRoot = declarations(block(userCss, ':root'))
+const userDark = declarations(block(tokensCss, '[data-site="user"]'))
 for (const [name, expected] of Object.entries({
-  '--sidebar-w': 'var(--pg-sidebar-user-width)',
-  '--topbar-h': 'var(--pg-topbar-height)',
-  '--radius-sm': 'var(--pg-radius-sm)',
-  '--radius': 'var(--pg-radius-md)',
-  '--radius-lg': 'var(--pg-radius-lg)',
-  '--radius-xl': 'var(--pg-radius-xl)',
-  '--motion-route': 'var(--lv-motion-route)',
-})) expectValue(userRoot, name, expected, 'user mappings')
+  '--bg': '#08090d',
+  '--ink': '#f5f0e7',
+  '--accent': '#d9a86a',
+  '--rail-w': '92px',
+  '--top-h': '72px',
+  '--content-max': '1640px',
+})) expectValue(userDark, name, expected, 'user dark theme')
 
-for (const fontName of ['--font-vault-display', '--font-vault-body']) {
-  const fontMatch = userCss.match(new RegExp(`${fontName.replaceAll('-', '\\-')}\\s*:\\s*([^;]+);`))
-  const value = fontMatch?.[1] ?? ''
-  if (!value.includes("'Satoshi'") || !value.includes("'Noto Sans SC'") || !value.includes('sans-serif')) {
-    throw new Error(`${fontName} does not include the approved Satoshi and Chinese sans stack`)
-  }
+const userLight = declarations(block(tokensCss, '[data-site="user"][data-theme="light"]'))
+for (const [name, expected] of Object.entries({
+  '--bg': '#f5f3ee',
+  '--ink': '#221d16',
+  '--accent': '#a86f2c',
+})) expectValue(userLight, name, expected, 'user light theme')
+
+const adminRoot = declarations(block(tokensCss, '[data-site="admin"]'))
+for (const [name, expected] of Object.entries({
+  '--a-bg': '#f2f1ec',
+  '--a-surface': '#ffffff',
+  '--a-ink': '#16191e',
+  '--a-accent': '#2e4a7d',
+  '--a-side-w': '248px',
+  '--a-top-h': '68px',
+})) expectValue(adminRoot, name, expected, 'admin Command Deck tokens')
+
+const adminDark = declarations(block(tokensCss, '[data-site="admin"][data-theme="dark"]'))
+for (const name of ['--a-bg', '--a-surface', '--a-ink', '--a-accent', '--a-line']) {
+  if (!adminDark.has(name)) throw new Error(`admin dark theme is missing ${name}`)
 }
 
-if (/--accent-rgb\s*:\s*\d/.test(userCss)) {
-  throw new Error('--accent-rgb must resolve from theme-aware semantic RGB tokens')
-}
-for (const [theme, semantic] of Object.entries({
-  amber: '--lv-brand-amber-rgb',
-  violet: '--lv-status-violet-rgb',
-  emerald: '--lv-status-emerald-rgb',
-  coral: '--lv-status-coral-rgb',
-})) {
-  const selector = theme === 'amber' ? 'html[data-accent-theme="amber"]' : `html[data-accent-theme="${theme}"]`
-  const values = declarations(block(userCss, selector))
-  expectValue(values, '--accent-rgb', `var(${semantic})`, `${theme} accent`)
+for (const needle of [
+  '.u-rail',
+  'width: var(--rail-w)',
+  '.u-topbar',
+  'height: var(--top-h)',
+  '.u-detail',
+  'grid-template-columns: minmax(0, 1fr) 392px',
+  'height: clamp(320px, 58vh, 660px)',
+  'object-fit: contain',
+  '.u-drawer',
+  '.u-segment',
+  '.u-card',
+  '.u-empty',
+]) expectContains(userCss, needle, 'user component CSS')
+
+for (const needle of [
+  '.a-side',
+  'width: var(--a-side-w)',
+  '.a-top',
+  'height: var(--a-top-h)',
+  '.a-filters',
+  '.a-table',
+  '.a-pager',
+  '.a-drawer',
+  '.a-form__section',
+  '.a-multiselect',
+]) expectContains(adminCss, needle, 'admin component CSS')
+
+for (const [name, expected] of Object.entries({
+  '--fg': 'var(--ink)',
+  '--muted': 'var(--ink-2)',
+  '--dim': 'var(--ink-3)',
+  '--border': 'var(--line)',
+  '--surface-solid': 'var(--bg-elev)',
+})) expectValue(declarations(block(userBridge, "html[data-site='user']")), name, expected, 'user alias bridge')
+
+for (const [name, expected] of Object.entries({
+  '--bg': 'var(--a-bg)',
+  '--surface': 'var(--a-surface)',
+  '--fg': 'var(--a-ink)',
+  '--border': 'var(--a-line)',
+  '--accent': 'var(--a-accent)',
+})) expectValue(declarations(block(adminBridge, "html[data-site='admin']")), name, expected, 'admin alias bridge')
+
+// Fonts are part of the visual contract: Fraunces display, Manrope UI,
+// JetBrains Mono, with Chinese fallbacks.
+for (const needle of ["'Fraunces'", "'Manrope'", "'JetBrains Mono'", "'Noto Sans SC'"]) {
+  expectContains(tokensCss + userCss + userBridge + userStyles, needle, 'user font stack')
 }
 
-console.log('OK: Luminous Vault CSS contract passed')
+// Responsive rules must exist at the approved user breakpoints.
+for (const width of ['1180px', '980px', '760px', '480px']) {
+  expectContains(userCss, `max-width: ${width}`, 'user responsive CSS')
+}
+
+// The unified media drawer keeps the stage stable and the info column fixed.
+if (!/\.u-detail__stage\s*>\s*img,[\s\S]*?position:\s*absolute;[\s\S]*?object-fit:\s*contain;/.test(userCss)) {
+  throw new Error('media detail stage must absolute-fit media with object-fit: contain')
+}
+
+// Admin tables must scroll inside their own container, never the document.
+if (!/\.a-table-wrap\s*\{[^}]*overflow-x:\s*auto;/.test(adminCss)) {
+  throw new Error('admin tables must own their horizontal scroll container')
+}
+
+console.log('OK: prototype design-system CSS contract passed')

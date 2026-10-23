@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Film, Image as ImageIcon } from 'lucide-react'
+import { cn } from '../../../../shared/classnames'
 import { ImageCreationPanel } from './ImageCreationPanel'
 import { VideoCreationPanel } from './VideoCreationPanel'
 import { readCreationEntry, type CreationMediaMode } from './videoDraft'
+import './creation-redesign.css'
 
 const modeStorageKey = 'mikiko.creation.media-mode.v1'
 
@@ -29,10 +31,30 @@ export function CreationPage({ initialTaskId, initialMedia, initialAssetId, vide
   }
 
   return <div className="creation-page">
-    <nav className="creation-mode-switch" aria-label="创作类型">
-      <button type="button" aria-pressed={mode === 'image'} onClick={() => selectMode('image')}><ImageIcon size={17} />图片生成</button>
-      {videoCreationEnabled ? <button type="button" aria-pressed={mode === 'video'} onClick={() => selectMode('video')}><Film size={17} />视频生成</button> : null}
-    </nav>
+    <div className="cr-switch">
+      <div className="u-segment" role="group" aria-label="创作类型">
+        <button
+          type="button"
+          className={cn(mode === 'image' && 'is-active')}
+          aria-pressed={mode === 'image'}
+          onClick={() => selectMode('image')}
+        >
+          <ImageIcon size={16} strokeWidth={1.8} aria-hidden="true" />
+          图片生成
+        </button>
+        {videoCreationEnabled ? (
+          <button
+            type="button"
+            className={cn(mode === 'video' && 'is-active')}
+            aria-pressed={mode === 'video'}
+            onClick={() => selectMode('video')}
+          >
+            <Film size={16} strokeWidth={1.8} aria-hidden="true" />
+            视频生成
+          </button>
+        ) : null}
+      </div>
+    </div>
     {mode === 'image' ? <ImageCreationPanel initialTaskId={initialMedia === 'video' ? undefined : initialTaskId} /> : <VideoCreationPanel initialTaskId={initialMedia === 'video' ? initialTaskId : undefined} initialAssetId={initialAssetId} />}
   </div>
 }

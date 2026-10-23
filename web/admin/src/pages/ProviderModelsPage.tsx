@@ -1,32 +1,39 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ModelAccount, ModelAccountModel, ModelAccountTestImageResult } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Trash2 } from 'lucide-react'
-import { ActionMenu, Badge, Drawer, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, Modal, PageHeader, RefreshIconButton, TooltipIconButton } from '../components'
-import { adminButton, adminPage } from '../ui/classes'
-import { adminDataGrid } from '../ui/dataGrid'
-import { DataTable, FilterToolbar, ListPage, type ColumnDef } from '../ui/dataTable'
-import { AccessAccountsIcon } from '../ui/icons'
-import { adminTaskTypeOptions } from './adminTaskTypes'
+import { Image as ImageIcon, Trash2 } from 'lucide-react'
+import {
+  Badge,
+  Button,
+  Drawer,
+  EmptyBlock,
+  ErrorBlock,
+  InlineFeedback,
+  LoadingBlock,
+  Modal,
+  PageHeader,
+  RefreshIconButton,
+} from '../components'
+import { DataTable, FilterToolbar, type ColumnDef } from '../ui/dataTable'
+import { adminTaskTypeLabel, adminTaskTypeOptions } from './adminTaskTypes'
 import { modelLifecycleErrorMessage } from './adminModelLifecycle'
 import {
   credentialsStatusLabel,
   modelAccountStatusLabel,
   modelAccountStatusTone,
-  providerAccountDialogDetail,
   providerAdapterLabel,
   providerAuthLabel,
 } from './providerModelRows'
 import { createLatestListRequestGuard } from './listRefresh'
-import { VideoConfigurationImpact } from './VideoConfigurationImpact'
-import { AdminMediaTabs, useAdminModelMediaTab } from './AdminMediaTabs'
-import { modelAccountMediaType } from './adminModelMedia'
+import { AdminMediaTabs, ChecklistField, FormSection, LedgerField, MultiSelectField, SwitchField, useAdminModelMediaTab, type AdminMediaAccountCounts } from './AdminMediaTabs'
+import { modelAccountMediaType, modelMediaType } from './adminModelMedia'
 import { TextModelsPage } from './TextModelsPage'
 import { VideoProviderAccountsPanel } from './VideoProviderAccountsPanel'
+import './config-redesign.css'
 
 type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string }
-type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: string[]; base_resolution: string[]; baseResolutionInput: string; quality: string[]; qualityInput: string; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; ratioInput: string; supportsCustomRatio: boolean; supportedPixelSizes: string[]; pixelInput: string; supportsCustomSize: boolean; minWidth: string; maxWidth: string; minHeight: string; maxHeight: string; supportedBackgrounds: string[]; outputFormat: string[]; outputFormatInput: string; supportsOutputCompression: boolean; moderation: string[]; moderationInput: string; costPerImage: string; currency: string; enabled: boolean }
+type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: string[]; base_resolution: string[]; quality: string[]; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; supportsCustomRatio: boolean; supportedPixelSizes: string[]; supportsCustomSize: boolean; minWidth: string; maxWidth: string; minHeight: string; maxHeight: string; supportedBackgrounds: string[]; outputFormat: string[]; supportsOutputCompression: boolean; moderation: string[]; costPerImage: string; currency: string; enabled: boolean }
 type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string; sourceMode: string; sizeMode: string; requestedSize: string; baseResolution: string; quality: string; outputFormat: string; background: string; outputCompression: string; moderation: string; aspectRatio: string; result?: ModelAccountTestImageResult; error?: string }
 type DeleteTarget = { kind: 'account'; account: ModelAccount } | { kind: 'model'; account: ModelAccount; model: ModelAccountModel }
 
@@ -35,57 +42,62 @@ const qualityOptions = ['auto', 'low', 'medium', 'high']
 const outputFormatOptions = ['png', 'jpeg', 'webp']
 const backgroundOptions = ['auto', 'opaque', 'transparent']
 const moderationOptions = ['auto', 'low']
+const sizeModeOptions = [
+  { value: 'auto', label: '自动尺寸' },
+  { value: 'ratio', label: '按比例' },
+  { value: 'pixel', label: '按像素' },
+]
 const defaultRatios = ['1:1', '16:9', '9:16', '4:3', '3:4']
 const defaultPixelSizes = ['1024x1024', '1536x1024', '1024x1536', '1280x720', '720x1280', '1024x768', '768x1024']
 const blankAccount: AccountDraft = { name: '', adapterType: 'openai_compatible', authType: 'api_key', baseUrl: '', apiKey: '', priority: '1', weight: '100', concurrencyLimit: '5', timeoutMS: '120000', status: 'enabled', sourceMode: 'images' }
 const defaultTestPrompt = 'A small product photo of a ceramic coffee cup on a clean desk'
-const accountPrimaryActionLabel = '查看模型'
-const accountTableClasses = {
-  identity: 'flex min-w-0 items-center gap-3',
-  icon: 'grid size-9 shrink-0 place-items-center rounded-lg bg-[var(--canvas)] text-[var(--accent)]',
-  title: 'block truncate font-semibold text-[var(--text)]',
-  detail: 'mt-0.5 block truncate text-xs text-[var(--soft)]',
-  stack: 'grid gap-1',
-  configCode: 'block max-w-[220px] truncate font-mono text-[11px] text-[var(--muted)]',
-  configMeta: 'mt-0.5 block text-[11px] text-[var(--soft)]',
-  actions: 'flex flex-wrap items-center justify-end gap-2',
-  detailPanel: 'grid gap-3 rounded-lg bg-[var(--surface-solid)] p-3',
-  detailHeader: 'flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-3',
-  detailTitle: 'text-base font-semibold text-[var(--text)]',
-  detailSummary: 'mt-1 text-xs text-[var(--soft)]',
-  modelCode: 'font-mono text-[11px] text-[var(--soft)]',
-  modelCapability: 'max-w-[34rem] text-xs leading-5 text-[var(--muted)]',
-  machineValue: 'font-mono text-xs font-semibold text-[var(--text)]',
-}
-const tagInputClasses = {
-  root: 'grid gap-2',
-  list: 'flex flex-wrap gap-1.5',
-  tag: 'inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-white/5 px-2 py-1 text-xs text-[var(--text)]',
-  remove: 'ml-0.5 grid size-4 place-items-center rounded-full text-[var(--soft)] hover:bg-[rgba(184,95,84,.12)] hover:text-[var(--red)] focus-visible:bg-[rgba(184,95,84,.12)] focus-visible:text-[var(--red)] focus-visible:outline-none',
-  inputRow: 'grid grid-cols-[minmax(0,1fr)_auto] gap-2',
-}
-const providerModelTaskTypeGridClass = 'grid max-h-[220px] gap-2 overflow-auto rounded-lg border border-[var(--line)] bg-white/[0.02] p-2'
-const providerModelTaskTypeOptionClass = 'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-md border border-[var(--line)] bg-white/5 p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10'
+const accountPrimaryActionLabel = '模型配置'
 
 export function ProviderModelsPage({ accessToken, onFeedback = () => undefined }: { accessToken?: string; onFeedback?: (title: string, detail?: string) => void }) {
   const media = useAdminModelMediaTab()
-  return <section className={adminPage.stack}>
-    <AdminMediaTabs route="access-accounts" value={media} />
-    {media === 'image' ? <ImageProviderModelsPanel accessToken={accessToken} /> : null}
-    {media === 'video' ? <VideoProviderAccountsPanel /> : null}
-    {media === 'audio' ? <EmptyBlock title="音频接入能力暂未开放" detail="该分类用于后续管理语音生成、语音识别和音乐模型账号；当前版本不会创建无运行时支持的配置。" /> : null}
-    {media === 'text' ? <TextModelsPage onFeedback={onFeedback} /> : null}
-  </section>
+  const [mediaCounts, setMediaCounts] = useState<AdminMediaAccountCounts | undefined>(undefined)
+  const refreshMediaCounts = useCallback(async () => {
+    const [accountResult, textResult] = await Promise.allSettled([
+      adminApi.listModelAccounts({ page_size: 100 }),
+      adminApi.listTextModelAccounts(),
+    ])
+    if (accountResult.status !== 'fulfilled') return
+    const counts: AdminMediaAccountCounts = { image: 0, video: 0, audio: 0, text: 0 }
+    for (const account of accountResult.value) {
+      const mediaType = modelAccountMediaType(account)
+      counts[mediaType] = (counts[mediaType] ?? 0) + 1
+    }
+    if (textResult.status === 'fulfilled') counts.text = (counts.text ?? 0) + textResult.value.length
+    setMediaCounts(counts)
+  }, [])
+  useEffect(() => { void refreshMediaCounts() }, [media, refreshMediaCounts])
+  if (media === 'image') return <ImageProviderModelsPanel accessToken={accessToken} onFeedback={onFeedback} counts={mediaCounts} onAccountsChanged={refreshMediaCounts} />
+  if (media === 'video') return <VideoProviderAccountsPanel onFeedback={onFeedback} counts={mediaCounts} onAccountsChanged={refreshMediaCounts} />
+  return (
+    <section className="a-page-stack">
+      <PageHeader
+        eyebrow="Provider Accounts"
+        title="接入账号"
+        description="图片与视频账号分开维护。账号只负责连接、调度与密钥；真实模型的任务类型和能力参数在模型配置抽屉中维护。"
+      />
+      <AdminMediaTabs route="access-accounts" value={media} counts={mediaCounts} />
+      {media === 'audio' ? (
+        <EmptyBlock title="音频接入暂未开放" detail="音频模型运行时接入后，可在此维护账号、真实模型与厂商原生费率。" />
+      ) : (
+        <TextModelsPage onFeedback={onFeedback} onAccountsChanged={refreshMediaCounts} />
+      )}
+    </section>
+  )
 }
 
-function ImageProviderModelsPanel({ accessToken }: { accessToken?: string }) {
+function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsChanged }: { accessToken?: string; onFeedback: (title: string, detail?: string) => void; counts?: AdminMediaAccountCounts; onAccountsChanged?: () => void }) {
   const [accounts, setAccounts] = useState<ModelAccount[]>([])
   const [modelsByAccount, setModelsByAccount] = useState<Record<string, ModelAccountModel[]>>({})
-  const [expandedAccountId, setExpandedAccountId] = useState<string>('')
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [accountDialog, setAccountDialog] = useState<AccountDraft | null>(null)
+  const [modelAccountId, setModelAccountId] = useState('')
   const [modelDialog, setModelDialog] = useState<ModelDraft | null>(null)
   const [testDialog, setTestDialog] = useState<TestImageDialog | null>(null)
   const [saving, setSaving] = useState(false)
@@ -102,14 +114,17 @@ function ImageProviderModelsPanel({ accessToken }: { accessToken?: string }) {
     try {
       const nextAccounts = await adminApi.listModelAccounts({ page_size: 100 })
       const imageAccounts = nextAccounts.filter((account) => modelAccountMediaType(account) === 'image')
-      const modelPairs = await Promise.all(imageAccounts.map(async (account) => [String(account.id), await adminApi.listModelAccountModels(account.id)] as const))
+      const modelPairs = await Promise.all(imageAccounts.map(async (account) => {
+        const accountModels = await adminApi.listModelAccountModels(account.id)
+        return [String(account.id), accountModels.filter((model) => modelMediaType(model, account) === 'image')] as const
+      }))
       if (!requestGuard.isCurrent(request)) return
       const nextModels = Object.fromEntries(modelPairs)
       setAccounts(imageAccounts)
       setModelsByAccount(nextModels)
-      setExpandedAccountId((current) => {
+      setModelAccountId((current) => {
         const preferred = preferredAccountId || current
-        return imageAccounts.some((account) => String(account.id) === preferred) ? preferred : String(imageAccounts[0]?.id ?? '')
+        return imageAccounts.some((account) => String(account.id) === preferred) ? preferred : ''
       })
     } catch (caught) {
       if (!requestGuard.isCurrent(request)) return
@@ -137,11 +152,28 @@ function ImageProviderModelsPanel({ accessToken }: { accessToken?: string }) {
     ].some((value) => String(value ?? '').toLowerCase().includes(keyword)))
   }, [accounts, query])
 
-  useEffect(() => {
-    if (filteredAccounts.length && !filteredAccounts.some((account) => String(account.id) === expandedAccountId)) {
-      setExpandedAccountId(String(filteredAccounts[0].id))
-    }
-  }, [expandedAccountId, filteredAccounts])
+  const modelAccount = accounts.find((account) => String(account.id) === modelAccountId)
+  const modelAccountModels = modelAccount ? modelsByAccount[String(modelAccount.id)] ?? [] : []
+  const allModels = Object.values(modelsByAccount).flat()
+  const pendingModels = allModels.filter((model) => modelNeedsAttention(model))
+  const enabledAccounts = accounts.filter((account) => account.status === 'enabled').length
+  const errorAccounts = accounts.filter((account) => account.status === 'error').length
+  const adapterCount = new Set(accounts.map((account) => account.adapter_type)).size
+  const selectedTestModel = testDialog
+    ? (modelsByAccount[String(testDialog.account.id)] ?? []).find((model) => String(model.id) === testDialog.modelId)
+    : undefined
+  const selectedTestSizeModes = testModelSizeModes(selectedTestModel)
+  const selectedTestQualities = testModelOptions(selectedTestModel?.quality, ['auto'])
+  const selectedTestFormats = testModelOptions(selectedTestModel?.output_format, ['png'])
+    .filter((format) => testDialog?.background !== 'transparent' || format === 'png' || format === 'webp')
+  const selectedTestBackgrounds = testModelOptions(selectedTestModel?.supported_backgrounds, [])
+  const selectedTestModeration = testModelOptions(selectedTestModel?.moderation, ['auto'])
+  const testActualParams = testDialog?.result ? Object.entries(testDialog.result.actual_params ?? {}) : []
+  const accountValidation = accountDialog ? validateAccountDraft(accountDialog) : {}
+  const existingAccount = accountDialog?.id ? accounts.find((account) => String(account.id) === String(accountDialog.id)) : undefined
+  const accountDirty = accountDialog ? accountDraftDirtyCount(accountDialog, existingAccount) : 0
+  const modelValidation = modelDialog ? validateModelDraft(modelDialog) : {}
+  const modelDirty = modelDialog ? modelDraftDirtyCount(modelDialog) : 0
 
   async function saveAccount() {
     if (!accountDialog) return
@@ -165,7 +197,9 @@ function ImageProviderModelsPanel({ accessToken }: { accessToken?: string }) {
       const saved = accountDialog.id ? await adminApi.updateModelAccount(accountDialog.id, payload) : await adminApi.createModelAccount(payload)
       setAccountDialog(null)
       await load(String(saved.id))
-      if (creating) setModelDialog(newModelDraft(saved))
+      if (creating) setModelAccountId(String(saved.id))
+      onAccountsChanged?.()
+      onFeedback(creating ? '图片账号已创建' : '图片账号已保存', saved.name)
     } catch (caught) {
       setMutationError(caught instanceof Error ? caught.message : '模型账号保存失败')
     } finally {
@@ -178,35 +212,12 @@ function ImageProviderModelsPanel({ accessToken }: { accessToken?: string }) {
     setSaving(true)
     setMutationError(null)
     try {
-      const payload = {
-        model_code: modelDialog.modelCode,
-        display_name: modelDialog.displayName,
-        task_types: modelDialog.taskTypes,
-        base_resolution: modelDialog.base_resolution,
-        quality: modelDialog.quality,
-        max_reference_image_count: Number(modelDialog.maxReferenceImageCount),
-        max_image_count: Number(modelDialog.maxImageCount),
-        size_modes: modelDialog.sizeModes,
-		supported_ratios: modelDialog.supportedRatios,
-		supported_pixel_sizes: modelDialog.supportedPixelSizes,
-		supports_custom_ratio: modelDialog.supportsCustomRatio,
-		supported_backgrounds: modelDialog.supportedBackgrounds,
-		supports_custom_size: modelDialog.supportsCustomSize,
-		min_width: Number(modelDialog.minWidth),
-		max_width: Number(modelDialog.maxWidth),
-		min_height: Number(modelDialog.minHeight),
-		max_height: Number(modelDialog.maxHeight),
-        output_format: modelDialog.outputFormat,
-        supports_output_compression: modelDialog.supportsOutputCompression,
-        moderation: modelDialog.moderation,
-        cost_per_image: modelDialog.costPerImage,
-        currency: modelDialog.currency,
-        enabled: modelDialog.enabled,
-      }
+      const payload = modelPayload(modelDialog)
       if (modelDialog.row) await adminApi.updateModelAccountModel(modelDialog.account.id, modelDialog.row.id, payload)
       else await adminApi.createModelAccountModel(modelDialog.account.id, payload)
       setModelDialog(null)
-      await load()
+      await load(String(modelDialog.account.id))
+      onFeedback('图片真实模型已保存', `${modelDialog.account.name} · ${modelDialog.displayName || modelDialog.modelCode}`)
     } catch (caught) {
       setMutationError(caught instanceof Error ? caught.message : '真实模型保存失败')
     } finally {
@@ -221,8 +232,12 @@ function ImageProviderModelsPanel({ accessToken }: { accessToken?: string }) {
     try {
       if (deleteTarget.kind === 'account') await adminApi.deleteModelAccount(deleteTarget.account.id)
       else await adminApi.deleteModelAccountModel(deleteTarget.account.id, deleteTarget.model.id)
+      const label = deleteTarget.kind === 'account' ? deleteTarget.account.name : deleteTarget.model.model_code
+      if (deleteTarget.kind === 'model' && String(deleteTarget.account.id) === modelAccountId && modelAccountModels.length <= 1) setModelAccountId('')
       setDeleteTarget(null)
       await load()
+      if (deleteTarget.kind === 'account') onAccountsChanged?.()
+      onFeedback('模型配置已删除', label)
     } catch (caught) {
       setMutationError(modelLifecycleErrorMessage(caught, '删除模型配置失败'))
     } finally {
@@ -260,11 +275,11 @@ function ImageProviderModelsPanel({ accessToken }: { accessToken?: string }) {
         prompt: testDialog.prompt,
         source_mode: testDialog.sourceMode,
         size_mode: testDialog.sizeMode,
-		...(testDialog.sizeMode === 'pixel' ? { requested_size: testDialog.requestedSize } : {}),
-		...(testDialog.sizeMode === 'ratio' ? { base_resolution: testDialog.baseResolution, aspect_ratio: testDialog.aspectRatio } : {}),
+        ...(testDialog.sizeMode === 'pixel' ? { requested_size: testDialog.requestedSize } : {}),
+        ...(testDialog.sizeMode === 'ratio' ? { base_resolution: testDialog.baseResolution, aspect_ratio: testDialog.aspectRatio } : {}),
         quality: testDialog.quality,
-		output_format: testDialog.outputFormat,
-		background: testDialog.background || undefined,
+        output_format: testDialog.outputFormat,
+        background: testDialog.background || undefined,
         output_compression: Number(testDialog.outputCompression),
         moderation: testDialog.moderation,
       })
@@ -279,52 +294,58 @@ function ImageProviderModelsPanel({ accessToken }: { accessToken?: string }) {
   if (loading && !accounts.length) return <LoadingBlock label="载入模型接入" />
   if (error && !accounts.length) return <ErrorBlock message={error} onRetry={load} />
 
-  const selectedAccount = filteredAccounts.find((account) => String(account.id) === expandedAccountId)
-  const selectedModels = selectedAccount ? modelsByAccount[String(selectedAccount.id)] ?? [] : []
-	const selectedTestModel = testDialog
-		? (modelsByAccount[String(testDialog.account.id)] ?? []).find((model) => String(model.id) === testDialog.modelId)
-		: undefined
-	const selectedTestSizeModes = testModelSizeModes(selectedTestModel)
-	const selectedTestQualities = testModelOptions(selectedTestModel?.quality, ['auto'])
-	const selectedTestFormats = testModelOptions(selectedTestModel?.output_format, ['png'])
-		.filter((format) => testDialog?.background !== 'transparent' || format === 'png' || format === 'webp')
-	const selectedTestBackgrounds = testModelOptions(selectedTestModel?.supported_backgrounds, [])
-	const selectedTestModeration = testModelOptions(selectedTestModel?.moderation, ['auto'])
-
   return (
-    <section className={adminPage.stack}>
+    <section className="a-page-stack">
       <PageHeader
+        eyebrow="Provider Accounts"
         title="接入账号"
-        description="管理上游模型账号、真实模型能力、健康测试和密钥轮换入口。"
-        primaryAction={<button className={cn(adminButton.base, adminButton.primary)} type="button" onClick={() => openAccountDialog(blankAccount)}>添加账号</button>}
+        description="图片与视频账号分开维护。账号只负责连接、调度与密钥；真实模型的任务类型和能力参数在模型配置抽屉中维护。"
+        primaryAction={<Button variant="primary" size="sm" onClick={() => openAccountDialog({ ...blankAccount })}>添加图片账号</Button>}
         secondaryActions={<RefreshIconButton label="刷新接入账号" refreshing={loading} onClick={() => void load()} />}
       />
+      <AdminMediaTabs route="access-accounts" value="image" counts={counts} />
       {error ? <InlineFeedback tone="danger" message={`接入账号刷新失败：${error}`} /> : null}
-      {!accounts.length ? <EmptyBlock title="暂无模型接入账号" detail="创建账号后再添加真实上游模型。" /> : null}
+
+      <section className="a-metrics" aria-label="图片接入概况">
+        <div className="a-metric"><div className="a-metric__label">图片账号</div><div className="a-metric__value">{accounts.length}</div><div className="a-metric__foot">{enabledAccounts} 启用 · {errorAccounts} 异常</div></div>
+        <div className="a-metric"><div className="a-metric__label">图片真实模型</div><div className="a-metric__value">{allModels.length}</div><div className="a-metric__foot">覆盖 {adapterCount} 种接入方式</div></div>
+        <div className="a-metric"><div className="a-metric__label">已启用模型</div><div className="a-metric__value">{allModels.filter((model) => model.enabled).length}</div><div className="a-metric__foot">只统计图片真实模型</div></div>
+        <div className="a-metric"><div className="a-metric__label">待完善</div><div className="a-metric__value" style={{ color: pendingModels.length ? 'var(--a-danger)' : undefined }}>{pendingModels.length}</div><div className="a-metric__foot">缺基础分辨率 / 尺寸能力</div></div>
+      </section>
+
       {accounts.length ? (
-        <ListPage
-          filters={(
-            <FilterToolbar
-              fields={[{
-                key: 'query',
-                label: '搜索账号',
-                primary: true,
-                minWidth: '220px',
-                maxWidth: '420px',
-                control: <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="账号名称 / 适配器 / Base URL" />,
-              }]}
-              resultSummary={`共 ${accounts.length} 个账号 · 当前显示 ${filteredAccounts.length} 个`}
-            />
-          )}
-        >
+        <FilterToolbar
+          fields={[{
+            key: 'query',
+            label: '搜索账号',
+            primary: true,
+            minWidth: '220px',
+            maxWidth: '420px',
+            control: <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="账号名称 / 适配器 / Base URL" className="a-input" aria-label="搜索图片接入账号" />,
+          }]}
+          resultSummary={`共 ${accounts.length} 个图片账号 · 当前显示 ${filteredAccounts.length} 个`}
+        />
+      ) : null}
+
+      <section className="a-panel a-panel--flush">
+        <div className="a-panel__head">
+          <div>
+            <h2>图片接入账号</h2>
+            <p>图片模型只使用文生图与图片编辑任务类型。</p>
+          </div>
+        </div>
+        {!accounts.length ? (
+          <div className="a-panel__body">
+            <EmptyBlock title="暂无模型接入账号" detail="创建账号后再添加真实上游模型。" action={<Button variant="primary" size="sm" onClick={() => openAccountDialog({ ...blankAccount })}>添加图片账号</Button>} />
+          </div>
+        ) : (
           <DataTable
+            className="cfg-account-table"
+            minWidth={1180}
             columns={accountColumns({
               modelsByAccount,
-              selectedAccountId: expandedAccountId,
-              deleting,
-              onSelect: (account) => setExpandedAccountId(String(account.id)),
               onEdit: (account) => openAccountDialog(editAccountDraft(account)),
-              onAddModel: (account) => openModelDialog(newModelDraft(account)),
+              onConfigureModels: (account) => setModelAccountId(String(account.id)),
               onTest: (account) => setTestDialog(newTestImageDialog(account, modelsByAccount[String(account.id)] ?? [])),
               onDelete: (account) => { setMutationError(null); setDeleteTarget({ kind: 'account', account }) },
             })}
@@ -332,150 +353,275 @@ function ImageProviderModelsPanel({ accessToken }: { accessToken?: string }) {
             rowKey={(account) => account.id}
             empty={<EmptyBlock title="未找到接入账号" detail="换一个账号名称、适配器或 Base URL 关键词再试。" />}
           />
-        </ListPage>
-      ) : null}
-      {selectedAccount ? (
-        <section className={accountTableClasses.detailPanel} aria-label={`${selectedAccount.name} 真实模型`}>
-          <header className={accountTableClasses.detailHeader}>
-            <div>
-              <h2 className={accountTableClasses.detailTitle}>{selectedAccount.name} · 真实模型</h2>
-              <p className={accountTableClasses.detailSummary}>共 {selectedModels.length} 个模型；能力与成本在账号维度独立维护。</p>
-            </div>
-            <button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => openModelDialog(newModelDraft(selectedAccount))}>添加模型</button>
-          </header>
-          <DataTable
-            columns={modelColumns(
-              (model) => openModelDialog(editModelDraft(selectedAccount, model)),
-              (model) => { setMutationError(null); setDeleteTarget({ kind: 'model', account: selectedAccount, model }) },
-            )}
-            rows={selectedModels}
-            rowKey={(model) => model.id}
-            empty={<EmptyBlock title="暂无真实模型" detail="为当前账号添加可请求的上游模型代码。" />}
-          />
-        </section>
-      ) : null}
+        )}
+      </section>
+
       {accountDialog ? (
         <Drawer
-          title={accountDialog.id ? '编辑模型账号' : '新增模型账号'}
-          description={providerAccountDialogDetail()}
+          wide
+          title={accountDialog.id ? '编辑图片接入账号' : '新增图片接入账号'}
+          description={`${accountDialog.name || '新账号'} · ${accountDialog.id ? `${modelsByAccount[String(accountDialog.id)]?.length ?? 0} 个图片真实模型` : '填写连接与调度参数'}`}
+          headerAside={<span className={cn('a-badge', accountStatusTone(accountDialog.status))}><i />{modelAccountStatusLabel(accountDialog.status)}</span>}
           onClose={closeAccountDialog}
-          footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={closeAccountDialog}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !accountDialog.name || !accountDialog.baseUrl} onClick={() => void saveAccount()}>{saving ? '保存中...' : '保存'}</button></>}
+          footer={<>
+            <span className={cn('a-badge', Object.keys(accountValidation).length ? 'a-badge--bad' : accountDirty ? 'a-badge--warn' : 'a-badge--ok')}><i />{Object.keys(accountValidation).length ? `${Object.keys(accountValidation).length} 项校验未通过` : accountDirty ? `${accountDirty} 项未保存` : '未修改'}</span>
+            <div style={{ flex: 1 }} />
+            {existingAccount ? <Button variant="danger" size="sm" disabled={saving} onClick={() => { setMutationError(null); setDeleteTarget({ kind: 'account', account: existingAccount }) }}>删除账号</Button> : null}
+            <Button variant="ghost" size="sm" disabled={saving} onClick={closeAccountDialog}>取消</Button>
+            <Button variant="primary" size="sm" disabled={saving || Object.keys(accountValidation).length > 0} onClick={() => void saveAccount()}>{saving ? '保存中...' : '保存账号'}</Button>
+          </>}
         >
           {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
-          <div className={adminPage.formGrid}>
-            <Field label="账号名称"><input value={accountDialog.name} onChange={(event) => setAccountDialog({ ...accountDialog, name: event.target.value })} /></Field>
-            <Field label="接入方式"><select value={accountDialog.adapterType} onChange={(event) => setAccountDialog({ ...accountDialog, adapterType: event.target.value })}><option value="openai_compatible">OpenAI 兼容</option><option value="openrouter">OpenRouter</option></select></Field>
-            <Field label="鉴权方式"><select value={accountDialog.authType} onChange={(event) => setAccountDialog({ ...accountDialog, authType: event.target.value })}><option value="api_key">API Key</option></select></Field>
-            <Field label="Base URL"><input value={accountDialog.baseUrl} onChange={(event) => setAccountDialog({ ...accountDialog, baseUrl: event.target.value })} placeholder="https://api.openai.com" /></Field>
-            <Field label="API Key"><input type="password" value={accountDialog.apiKey} onChange={(event) => setAccountDialog({ ...accountDialog, apiKey: event.target.value })} placeholder={accountDialog.id ? '留空则保持原密钥' : 'sk-...'} /></Field>
-            <Field label="状态"><select value={accountDialog.status} onChange={(event) => setAccountDialog({ ...accountDialog, status: event.target.value })}><option value="enabled">启用</option><option value="disabled">停用</option><option value="error">异常</option></select></Field>
-            <Field label="gpt-image-2 来源模式" hint="Codex 来源会强制 quality=auto，并按基础分辨率与比例计算 size。"><select value={accountDialog.sourceMode} onChange={(event) => setAccountDialog({ ...accountDialog, sourceMode: event.target.value })}><option value="images">Images API</option><option value="codex_responses">Codex Responses</option></select></Field>
-            <Field label="优先级" hint="数值越小越优先作为候选账号；同优先级时再看权重。"><input type="number" min="1" value={accountDialog.priority} onChange={(event) => setAccountDialog({ ...accountDialog, priority: event.target.value })} /></Field>
-            <Field label="权重" hint="同优先级账号的分流权重，100 表示默认满权重。"><input type="number" min="0" value={accountDialog.weight} onChange={(event) => setAccountDialog({ ...accountDialog, weight: event.target.value })} /></Field>
-            <Field label="并发限制" hint="该账号同时处理的最大请求数。"><input type="number" min="1" value={accountDialog.concurrencyLimit} onChange={(event) => setAccountDialog({ ...accountDialog, concurrencyLimit: event.target.value })} /></Field>
-            <Field label="超时毫秒" hint="调用上游接口的单次请求超时时间。"><input type="number" min="1000" value={accountDialog.timeoutMS} onChange={(event) => setAccountDialog({ ...accountDialog, timeoutMS: event.target.value })} /></Field>
+          <form className="a-form" onSubmit={(event) => event.preventDefault()}>
+            <FormSection index={1} title="连接" description="图片账号只接入图片生成与图片编辑模型。">
+              <LedgerField label="账号名称" required error={accountValidation.name}><input className="a-input" value={accountDialog.name} onChange={(event) => setAccountDialog({ ...accountDialog, name: event.target.value })} /></LedgerField>
+              <LedgerField label="接入方式"><select className="a-select" value={accountDialog.adapterType} onChange={(event) => setAccountDialog({ ...accountDialog, adapterType: event.target.value })}><option value="openai_compatible">OpenAI 兼容</option><option value="openrouter">OpenRouter</option></select></LedgerField>
+              <LedgerField label="Base URL" required error={accountValidation.baseUrl} hint="代理或中转服务请填写到 /v1。"><input className="a-input" value={accountDialog.baseUrl} onChange={(event) => setAccountDialog({ ...accountDialog, baseUrl: event.target.value })} placeholder="https://api.openai.com/v1" style={{ fontFamily: 'var(--font-admin-mono)', fontSize: 12.5 }} /></LedgerField>
+              <LedgerField label="gpt-image-2 来源模式" hint="Codex 来源会强制 quality=auto，并按基础分辨率与比例计算 size。"><select className="a-select" value={accountDialog.sourceMode} onChange={(event) => setAccountDialog({ ...accountDialog, sourceMode: event.target.value })}><option value="images">Images API</option><option value="codex_responses">Codex Responses</option></select></LedgerField>
+              <LedgerField label="账号状态"><select className="a-select" value={accountDialog.status} onChange={(event) => setAccountDialog({ ...accountDialog, status: event.target.value })}><option value="enabled">启用</option><option value="disabled">停用</option><option value="error">异常</option></select></LedgerField>
+            </FormSection>
+            <FormSection index={2} title="鉴权" description="密钥只写不读，保存后显示掩码。">
+              <LedgerField label="鉴权方式"><select className="a-select" value={accountDialog.authType} onChange={(event) => setAccountDialog({ ...accountDialog, authType: event.target.value })}><option value="api_key">API Key</option></select></LedgerField>
+              <LedgerField label="API Key" hint={accountDialog.id ? '留空表示保持现有密钥。' : '首次创建账号时必须填写 API Key。'}><input className="a-input" type="password" value={accountDialog.apiKey} onChange={(event) => setAccountDialog({ ...accountDialog, apiKey: event.target.value })} placeholder={accountDialog.id ? '已配置 · 留空表示保持不变' : 'sk-...'} /></LedgerField>
+            </FormSection>
+            <FormSection index={3} title="调度">
+              <div className="a-form__pair">
+                <LedgerField label="优先级" hint="数值越小越优先作为候选账号。" error={accountValidation.priority}><input className="a-input" inputMode="numeric" value={accountDialog.priority} onChange={(event) => setAccountDialog({ ...accountDialog, priority: event.target.value })} /></LedgerField>
+                <LedgerField label="权重" hint="同优先级内按权重分配。" error={accountValidation.weight}><input className="a-input" inputMode="numeric" value={accountDialog.weight} onChange={(event) => setAccountDialog({ ...accountDialog, weight: event.target.value })} /></LedgerField>
+              </div>
+              <div className="a-form__pair">
+                <LedgerField label="并发上限" error={accountValidation.concurrencyLimit}><input className="a-input" inputMode="numeric" value={accountDialog.concurrencyLimit} onChange={(event) => setAccountDialog({ ...accountDialog, concurrencyLimit: event.target.value })} /></LedgerField>
+                <LedgerField label="超时（毫秒）" error={accountValidation.timeoutMS}><input className="a-input" inputMode="numeric" value={accountDialog.timeoutMS} onChange={(event) => setAccountDialog({ ...accountDialog, timeoutMS: event.target.value })} /></LedgerField>
+              </div>
+              <SwitchField label="启用该账号" checked={accountDialog.status === 'enabled'} onChange={(checked) => setAccountDialog({ ...accountDialog, status: checked ? 'enabled' : 'disabled' })} hint="停用后不再参与候选调度；异常状态用于保留错误上下文。" />
+            </FormSection>
+          </form>
+        </Drawer>
+      ) : null}
+
+      {modelAccount ? (
+        <Drawer
+          wide
+          title="图片模型配置"
+          description={`${modelAccount.name} · ${modelAccountModels.length} 个图片真实模型 · ${providerAdapterLabel(modelAccount.adapter_type)}`}
+          headerAside={<span className={cn('a-badge', modelAccount.status === 'enabled' ? 'a-badge--ok' : 'a-badge--warn')}><i />{modelAccount.status === 'enabled' ? '账号启用中' : '账号未启用'}</span>}
+          onClose={() => { if (modelDialog) return; setModelAccountId(''); closeModelDialog() }}
+          footer={<>
+            <Button variant="ghost" size="sm" onClick={() => { setModelAccountId(''); closeModelDialog() }}>关闭</Button>
+            <div style={{ flex: 1 }} />
+            <Button variant="primary" size="sm" onClick={() => openModelDialog(newModelDraft(modelAccount))}>添加图片模型</Button>
+          </>}
+        >
+          <div className="aa-summary">
+            <div><span>图片模型</span><strong>{modelAccountModels.length} 个</strong></div>
+            <div><span>已启用</span><strong>{modelAccountModels.filter((model) => model.enabled).length} 个</strong></div>
+            <div><span>任务类型</span><strong>文生图 / 图片编辑</strong></div>
+            <div><span>待完善</span><strong>{modelAccountModels.filter(modelNeedsAttention).length} 个</strong></div>
+          </div>
+          <div className="a-section-title" style={{ marginBottom: 0 }}>
+            <div>
+              <h3 style={{ fontSize: 15 }}>图片真实模型</h3>
+              <p>能力字段包含基础分辨率、质量、尺寸模式、比例、像素尺寸、背景、压缩、输出格式与审核。</p>
+            </div>
+          </div>
+          {!modelAccountModels.length ? (
+            <div className="aa-empty"><strong>暂无图片真实模型</strong><p>为当前账号添加可请求的上游模型代码、能力与成本。</p><Button variant="primary" size="sm" onClick={() => openModelDialog(newModelDraft(modelAccount))}>添加图片模型</Button></div>
+          ) : (
+            <div className="aa-model-grid">
+              {modelAccountModels.map((model) => (
+                <article key={String(model.id)} className="aa-model">
+                  <div className="aa-model__copy">
+                    <strong>{model.display_name || model.model_code} <span className={cn('a-badge', model.enabled ? 'a-badge--ok' : 'a-badge--warn')} style={{ marginLeft: 6 }}><i />{model.enabled ? '可用' : '停用'}</span></strong>
+                    <span>{model.model_code} · {model.task_types.map(adminTaskTypeLabel).join(' / ') || '未配置任务类型'} · {normalizeBaseResolution(model.base_resolution).join('–') || '未配置基础分辨率'}</span>
+                    <div className="aa-model__tags">
+                      {model.quality?.length ? <span className="a-badge">质量 {model.quality.join('/')}</span> : null}
+                      {model.supported_ratios?.length ? <span className="a-badge">比例 {model.supported_ratios.join('/')}</span> : null}
+                      {model.output_format?.length ? <span className="a-badge">输出 {model.output_format.join('/')}</span> : null}
+                      {model.cost_per_image ? <span className="a-badge">{model.cost_per_image} {model.currency}</span> : null}
+                      {modelNeedsAttention(model) ? <span className="a-badge a-badge--warn"><i />待完善</span> : null}
+                    </div>
+                  </div>
+                  <div className="aa-model__actions">
+                    <button className="a-row-btn a-row-btn--primary" type="button" onClick={() => openModelDialog(editModelDraft(modelAccount, model))}>编辑</button>
+                    <button className="a-row-btn" type="button" onClick={() => setTestDialog(newTestImageDialog(modelAccount, [model]))}>测试</button>
+                    <button className="a-row-btn a-row-btn--danger" type="button" aria-label={`删除真实模型 ${model.model_code}`} onClick={() => { setMutationError(null); setDeleteTarget({ kind: 'model', account: modelAccount, model }) }}>删除</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          <div className="a-banner a-banner--info">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5h.01" /></svg>
+            <div><strong style={{ fontSize: 13 }}>图片模型能力会参与路由与估价校验</strong><div className="a-hint">任务类型、基础分辨率、质量、尺寸模式、比例、像素尺寸、背景、压缩与输出格式缺失时，对应能力会被阻断。</div></div>
           </div>
         </Drawer>
       ) : null}
+
       {modelDialog ? (
         <Drawer
-          title={modelDialog.row ? '编辑真实模型' : '新增真实模型'}
-          description={modelDialog.account.name}
+          stacked={Boolean(modelAccount)}
+          wide
+          title="图片真实模型配置"
+          description={`${modelDialog.account.name} · ${modelDialog.displayName || '新增图片模型'}${modelDialog.modelCode ? ` · ${modelDialog.modelCode}` : ''}`}
+          headerAside={<span className={cn('a-badge', modelDialog.enabled ? 'a-badge--ok' : 'a-badge--warn')}><i />{modelDialog.enabled ? '可用' : '停用'}</span>}
           onClose={closeModelDialog}
-          footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={saving} onClick={closeModelDialog}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={saving || !modelDialog.modelCode} onClick={() => void saveModel()}>{saving ? '保存中...' : '保存'}</button></>}
+          footer={<>
+            <span className={cn('a-badge', Object.keys(modelValidation).length ? 'a-badge--bad' : modelDirty ? 'a-badge--warn' : 'a-badge--ok')}><i />{Object.keys(modelValidation).length ? `${Object.keys(modelValidation).length} 项校验未通过` : modelDirty ? `${modelDirty} 项未保存` : '未修改'}</span>
+            <div style={{ flex: 1 }} />
+            <Button variant="ghost" size="sm" disabled={saving} onClick={closeModelDialog}>取消</Button>
+            <Button variant="primary" size="sm" disabled={saving || Object.keys(modelValidation).length > 0} onClick={() => void saveModel()}>{saving ? '保存中...' : '保存模型'}</Button>
+          </>}
         >
           {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
-          <div className={adminPage.formGrid}>
-            <Field label="模型代码"><input value={modelDialog.modelCode} onChange={(event) => setModelDialog({ ...modelDialog, modelCode: event.target.value })} placeholder="gpt-image-1" /></Field>
-            <Field label="展示名称"><input value={modelDialog.displayName} onChange={(event) => setModelDialog({ ...modelDialog, displayName: event.target.value })} /></Field>
-            <Field label="任务类型"><div className={providerModelTaskTypeGridClass}>{adminTaskTypeOptions.map((option) => <label key={option.value} className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.taskTypes.includes(option.value)} onChange={(event) => setModelDialog({ ...modelDialog, taskTypes: event.target.checked ? [...modelDialog.taskTypes, option.value] : modelDialog.taskTypes.filter((item) => item !== option.value) })} /><span>{option.label}</span></label>)}</div></Field>
-            <Field label="基础分辨率"><BaseResolutionTagInput draft={modelDialog} onChange={setModelDialog} /></Field>
-            <Field label="质量参数"><TagInput values={modelDialog.quality} input={modelDialog.qualityInput} placeholder="auto / low / medium / high" options={qualityOptions} normalize={normalizeLowerEnum} onInput={(qualityInput) => setModelDialog({ ...modelDialog, qualityInput })} onChange={(quality, qualityInput = '') => setModelDialog({ ...modelDialog, quality, qualityInput })} /></Field>
-            <Field label="最大参考图"><input type="number" min="0" max="64" value={modelDialog.maxReferenceImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxReferenceImageCount: event.target.value })} /></Field>
-			<Field label="最大出图数"><input type="number" min="1" max="10" value={modelDialog.maxImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxImageCount: event.target.value })} /></Field>
-			<Field label="尺寸模式">
-			  <div className={providerModelTaskTypeGridClass}>
-				<label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.sizeModes.includes('auto')} onChange={(event) => setModelDialog(toggleSizeMode(modelDialog, 'auto', event.target.checked))} /><span>支持自动尺寸</span></label>
-				<label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.sizeModes.includes('ratio')} onChange={(event) => setModelDialog(toggleSizeMode(modelDialog, 'ratio', event.target.checked))} /><span>支持图片比例</span></label>
-                <label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.sizeModes.includes('pixel')} onChange={(event) => setModelDialog(toggleSizeMode(modelDialog, 'pixel', event.target.checked))} /><span>支持像素大小</span></label>
+          <form className="a-form" onSubmit={(event) => event.preventDefault()}>
+            <FormSection index={1} title="模型标识" description="图片模型的任务类型只有文生图与图片编辑。">
+              <LedgerField label="模型代码" required error={modelValidation.modelCode}><input className="a-input" value={modelDialog.modelCode} onChange={(event) => setModelDialog({ ...modelDialog, modelCode: event.target.value })} placeholder="gpt-image-2" style={{ fontFamily: 'var(--font-admin-mono)' }} /></LedgerField>
+              <LedgerField label="展示名称" error={modelValidation.displayName}><input className="a-input" value={modelDialog.displayName} onChange={(event) => setModelDialog({ ...modelDialog, displayName: event.target.value })} /></LedgerField>
+              <LedgerField label="任务类型" required error={modelValidation.taskTypes}>
+                <div className="cfg-checklist">
+                  {adminTaskTypeOptions.map((option) => (
+                    <label key={option.value} className="a-switch">
+                      <input type="checkbox" checked={modelDialog.taskTypes.includes(option.value)} onChange={(event) => setModelDialog({ ...modelDialog, taskTypes: event.target.checked ? [...modelDialog.taskTypes, option.value] : modelDialog.taskTypes.filter((item) => item !== option.value) })} />
+                      <span className="a-switch__track" />
+                      <span>{option.label} <span className="a-hint">{option.value}</span></span>
+                    </label>
+                  ))}
+                </div>
+              </LedgerField>
+              <SwitchField label="启用该模型" checked={modelDialog.enabled} onChange={(enabled) => setModelDialog({ ...modelDialog, enabled })} />
+            </FormSection>
+
+            <FormSection index={2} title="尺寸能力" description="基础分辨率、质量、尺寸模式与像素尺寸共同决定用户可选参数。">
+              <MultiSelectField label="基础分辨率" values={modelDialog.base_resolution} options={baseResolutionOptions} onChange={(base_resolution) => setModelDialog({ ...modelDialog, base_resolution })} customPlaceholder="自定义分辨率，如 8K" hint="用于路由价格档位与尺寸计算。" error={modelValidation.base_resolution} />
+              <MultiSelectField label="质量参数" values={modelDialog.quality} options={qualityOptions} onChange={(quality) => setModelDialog({ ...modelDialog, quality })} customPlaceholder="自定义质量值" normalize={normalizeLowerEnum} />
+              <ChecklistField label="尺寸模式" values={modelDialog.sizeModes} options={sizeModeOptions} onChange={(sizeModes) => setModelDialog(toggleSizeModes(modelDialog, sizeModes))} />
+              {modelDialog.sizeModes.includes('ratio') ? (
+                <>
+                  <MultiSelectField label="支持比例" values={modelDialog.supportedRatios} options={defaultRatios} onChange={(supportedRatios) => setModelDialog({ ...modelDialog, supportedRatios })} customPlaceholder="自定义比例，如 3:2" normalize={normalizeRatio} error={modelValidation.supportedRatios} />
+                  <SwitchField label="允许用户自定义比例" checked={modelDialog.supportsCustomRatio} onChange={(supportsCustomRatio) => setModelDialog({ ...modelDialog, supportsCustomRatio })} />
+                </>
+              ) : null}
+              {modelDialog.sizeModes.includes('pixel') ? (
+                <>
+                  <MultiSelectField label="支持像素尺寸" values={modelDialog.supportedPixelSizes} options={defaultPixelSizes} onChange={(supportedPixelSizes) => setModelDialog({ ...modelDialog, supportedPixelSizes })} customPlaceholder="自定义像素，如 2048x2048" normalize={normalizePixelSize} error={modelValidation.supportedPixelSizes} />
+                  <SwitchField label="允许用户自定义尺寸" checked={modelDialog.supportsCustomSize} onChange={(supportsCustomSize) => setModelDialog({ ...modelDialog, supportsCustomSize })} hint="启用后，用户输入的宽度和高度必须满足下方范围。" />
+                  <div className="a-form__pair">
+                    <LedgerField label="最小宽度" error={modelValidation.minWidth}><input className="a-input" type="number" min="16" max="3840" step="16" value={modelDialog.minWidth} onChange={(event) => setModelDialog({ ...modelDialog, minWidth: event.target.value })} /></LedgerField>
+                    <LedgerField label="最大宽度" error={modelValidation.maxWidth}><input className="a-input" type="number" min="16" max="3840" step="16" value={modelDialog.maxWidth} onChange={(event) => setModelDialog({ ...modelDialog, maxWidth: event.target.value })} /></LedgerField>
+                  </div>
+                  <div className="a-form__pair">
+                    <LedgerField label="最小高度" error={modelValidation.minHeight}><input className="a-input" type="number" min="16" max="3840" step="16" value={modelDialog.minHeight} onChange={(event) => setModelDialog({ ...modelDialog, minHeight: event.target.value })} /></LedgerField>
+                    <LedgerField label="最大高度" error={modelValidation.maxHeight}><input className="a-input" type="number" min="16" max="3840" step="16" value={modelDialog.maxHeight} onChange={(event) => setModelDialog({ ...modelDialog, maxHeight: event.target.value })} /></LedgerField>
+                  </div>
+                </>
+              ) : null}
+            </FormSection>
+
+            <FormSection index={3} title="输出与审核">
+              <MultiSelectField label="输出格式" values={modelDialog.outputFormat} options={outputFormatOptions} onChange={(outputFormat) => setModelDialog({ ...modelDialog, outputFormat })} customPlaceholder="自定义格式" normalize={normalizeLowerEnum} />
+              <MultiSelectField label="支持背景" values={modelDialog.supportedBackgrounds} options={backgroundOptions} onChange={(supportedBackgrounds) => setModelDialog({ ...modelDialog, supportedBackgrounds })} customPlaceholder="自定义背景值" normalize={normalizeLowerEnum} />
+              <SwitchField label="支持输出压缩质量" checked={modelDialog.supportsOutputCompression} onChange={(supportsOutputCompression) => setModelDialog({ ...modelDialog, supportsOutputCompression })} hint="仅在 JPEG / WebP 输出格式下开放 1–100 压缩质量。" />
+              <MultiSelectField label="审核等级" values={modelDialog.moderation} options={moderationOptions} onChange={(moderation) => setModelDialog({ ...modelDialog, moderation })} customPlaceholder="自定义审核等级" normalize={normalizeLowerEnum} />
+              <div className="a-form__pair">
+                <LedgerField label="最大出图数" error={modelValidation.maxImageCount}><input className="a-input" type="number" min="1" max="10" value={modelDialog.maxImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxImageCount: event.target.value })} /></LedgerField>
+                <LedgerField label="最大参考图" error={modelValidation.maxReferenceImageCount}><input className="a-input" type="number" min="0" max="64" value={modelDialog.maxReferenceImageCount} onChange={(event) => setModelDialog({ ...modelDialog, maxReferenceImageCount: event.target.value })} /></LedgerField>
               </div>
-            </Field>
-			{modelDialog.sizeModes.includes('ratio') ? <Field label="支持比例"><TagInput values={modelDialog.supportedRatios} input={modelDialog.ratioInput} placeholder="例如 3:2，回车添加" options={defaultRatios} normalize={normalizeRatio} onInput={(ratioInput) => setModelDialog({ ...modelDialog, ratioInput })} onChange={(supportedRatios, ratioInput = '') => setModelDialog({ ...modelDialog, supportedRatios, ratioInput })} /></Field> : null}
-			{modelDialog.sizeModes.includes('ratio') ? <Field label="允许自定义比例"><label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportsCustomRatio} onChange={(event) => setModelDialog({ ...modelDialog, supportsCustomRatio: event.target.checked })} /><span>{modelDialog.supportsCustomRatio ? '允许' : '不允许'}</span></label></Field> : null}
-			{modelDialog.sizeModes.includes('pixel') ? <Field label="支持像素"><TagInput values={modelDialog.supportedPixelSizes} input={modelDialog.pixelInput} placeholder="例如 2048x2048，回车添加" options={defaultPixelSizes} normalize={normalizePixelSize} onInput={(pixelInput) => setModelDialog({ ...modelDialog, pixelInput })} onChange={(supportedPixelSizes, pixelInput = '') => setModelDialog({ ...modelDialog, supportedPixelSizes, pixelInput })} /></Field> : null}
-			{modelDialog.sizeModes.includes('pixel') ? <Field label="允许用户自定义尺寸" hint="启用后，用户输入的 Width 和 Height 必须严格满足以下范围及平台尺寸规则。"><label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportsCustomSize} onChange={(event) => setModelDialog({ ...modelDialog, supportsCustomSize: event.target.checked })} /><span>{modelDialog.supportsCustomSize ? '允许' : '不允许'}</span></label></Field> : null}
-			{modelDialog.sizeModes.includes('pixel') ? <Field label="像素宽度范围"><div className="grid grid-cols-2 gap-2"><input aria-label="最小宽度" type="number" min="16" max="3840" step="16" value={modelDialog.minWidth} onChange={(event) => setModelDialog({ ...modelDialog, minWidth: event.target.value })} /><input aria-label="最大宽度" type="number" min="16" max="3840" step="16" value={modelDialog.maxWidth} onChange={(event) => setModelDialog({ ...modelDialog, maxWidth: event.target.value })} /></div></Field> : null}
-			{modelDialog.sizeModes.includes('pixel') ? <Field label="像素高度范围"><div className="grid grid-cols-2 gap-2"><input aria-label="最小高度" type="number" min="16" max="3840" step="16" value={modelDialog.minHeight} onChange={(event) => setModelDialog({ ...modelDialog, minHeight: event.target.value })} /><input aria-label="最大高度" type="number" min="16" max="3840" step="16" value={modelDialog.maxHeight} onChange={(event) => setModelDialog({ ...modelDialog, maxHeight: event.target.value })} /></div></Field> : null}
-			<Field label="支持背景"><div className={providerModelTaskTypeGridClass}>{backgroundOptions.map((value) => <label key={value} className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportedBackgrounds.includes(value)} onChange={(event) => setModelDialog({ ...modelDialog, supportedBackgrounds: event.target.checked ? [...modelDialog.supportedBackgrounds, value] : modelDialog.supportedBackgrounds.filter((item) => item !== value) })} /><span>{value}</span></label>)}</div></Field>
-            <Field label="输出格式"><TagInput values={modelDialog.outputFormat} input={modelDialog.outputFormatInput} placeholder="png / jpeg / webp" options={outputFormatOptions} normalize={normalizeLowerEnum} onInput={(outputFormatInput) => setModelDialog({ ...modelDialog, outputFormatInput })} onChange={(outputFormat, outputFormatInput = '') => setModelDialog({ ...modelDialog, outputFormat, outputFormatInput })} /></Field>
-            <Field label="是否支持压缩质量" hint="启用后，用户可在 JPEG/WebP 输出格式下配置 1-100 的压缩质量。"><label className={providerModelTaskTypeOptionClass}><input type="checkbox" checked={modelDialog.supportsOutputCompression} onChange={(event) => setModelDialog({ ...modelDialog, supportsOutputCompression: event.target.checked })} /><span>{modelDialog.supportsOutputCompression ? '支持' : '不支持'}</span></label></Field>
-            <Field label="审核等级"><TagInput values={modelDialog.moderation} input={modelDialog.moderationInput} placeholder="auto / low" options={moderationOptions} normalize={normalizeLowerEnum} onInput={(moderationInput) => setModelDialog({ ...modelDialog, moderationInput })} onChange={(moderation, moderationInput = '') => setModelDialog({ ...modelDialog, moderation, moderationInput })} /></Field>
-            <Field label="单图成本"><input value={modelDialog.costPerImage} onChange={(event) => setModelDialog({ ...modelDialog, costPerImage: event.target.value })} /></Field>
-            <Field label="币种"><input value={modelDialog.currency} onChange={(event) => setModelDialog({ ...modelDialog, currency: event.target.value })} /></Field>
-            <Field label="状态"><select value={modelDialog.enabled ? 'enabled' : 'disabled'} onChange={(event) => setModelDialog({ ...modelDialog, enabled: event.target.value === 'enabled' })}><option value="enabled">启用</option><option value="disabled">停用</option></select></Field>
-          </div>
+            </FormSection>
+
+            <FormSection index={4} title="成本">
+              <div className="a-form__pair">
+                <LedgerField label="单图成本" error={modelValidation.costPerImage}><input className="a-input" inputMode="decimal" value={modelDialog.costPerImage} onChange={(event) => setModelDialog({ ...modelDialog, costPerImage: event.target.value })} /></LedgerField>
+                <LedgerField label="币种" error={modelValidation.currency}><input className="a-input" value={modelDialog.currency} onChange={(event) => setModelDialog({ ...modelDialog, currency: event.target.value })} placeholder="CNY" /></LedgerField>
+              </div>
+            </FormSection>
+          </form>
         </Drawer>
       ) : null}
+
       {testDialog ? (
-        <Modal title="测试模型账号" detail={testDialog.account.name} onClose={() => setTestDialog(null)} footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={testing} onClick={() => setTestDialog(null)}>关闭</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={testing || !testDialog.modelId || !testDialog.prompt.trim()} onClick={() => void runTestImage()}>{testing ? '测试中...' : '开始测试'}</button></>}>
-          <div className={adminPage.formGrid}>
-            <Field label="测试模型"><select value={testDialog.modelId} onChange={(event) => { const selected = (modelsByAccount[String(testDialog.account.id)] ?? []).find((model) => String(model.id) === event.target.value); if (selected) setTestDialog(rebuildTestImageDialog(testDialog, selected)) }}>{(modelsByAccount[String(testDialog.account.id)] ?? []).filter((model) => model.enabled).map((model) => <option key={String(model.id)} value={String(model.id)}>{model.display_name || model.model_code}</option>)}</select></Field>
-            <Field label="来源模式"><select value={testDialog.sourceMode} onChange={(event) => setTestDialog({ ...testDialog, sourceMode: event.target.value, result: undefined, error: undefined })}><option value="images">Images API</option><option value="codex_responses">Codex Responses</option></select></Field>
-			<Field label="尺寸模式"><select value={testDialog.sizeMode} onChange={(event) => setTestDialog({ ...testDialog, sizeMode: event.target.value, result: undefined, error: undefined })}>{selectedTestSizeModes.map((option) => <option key={option} value={option}>{sizeModeLabel(option)}</option>)}</select></Field>
-			{testDialog.sizeMode === 'ratio' ? <><Field label="比例">{selectedTestModel?.supports_custom_ratio ? <><input list="test-model-ratios" value={testDialog.aspectRatio} onChange={(event) => setTestDialog({ ...testDialog, aspectRatio: event.target.value, result: undefined, error: undefined })} /><datalist id="test-model-ratios">{(selectedTestModel.supported_ratios ?? []).map((option) => <option key={option} value={option} />)}</datalist></> : <select value={testDialog.aspectRatio} onChange={(event) => setTestDialog({ ...testDialog, aspectRatio: event.target.value, result: undefined, error: undefined })}>{(selectedTestModel?.supported_ratios ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select>}</Field><Field label="基础分辨率"><select value={testDialog.baseResolution} onChange={(event) => setTestDialog({ ...testDialog, baseResolution: event.target.value, result: undefined, error: undefined })}>{normalizeBaseResolution(selectedTestModel?.base_resolution ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select></Field></> : testDialog.sizeMode === 'pixel' ? <Field label="像素尺寸">{selectedTestModel?.supports_custom_size ? <><input list="test-model-pixel-sizes" value={testDialog.requestedSize} onChange={(event) => setTestDialog({ ...testDialog, requestedSize: event.target.value, result: undefined, error: undefined })} /><datalist id="test-model-pixel-sizes">{(selectedTestModel.supported_pixel_sizes ?? []).map((option) => <option key={option} value={option} />)}</datalist></> : <select value={testDialog.requestedSize} onChange={(event) => setTestDialog({ ...testDialog, requestedSize: event.target.value, result: undefined, error: undefined })}>{(selectedTestModel?.supported_pixel_sizes ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select>}</Field> : null}
-            <Field label="质量参数"><select value={testDialog.quality} onChange={(event) => setTestDialog({ ...testDialog, quality: event.target.value, result: undefined, error: undefined })}>{selectedTestQualities.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
-			<Field label="输出格式"><select value={testDialog.outputFormat} onChange={(event) => setTestDialog({ ...testDialog, outputFormat: event.target.value, result: undefined, error: undefined })}>{selectedTestFormats.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
-			<Field label="背景"><select value={testDialog.background} onChange={(event) => setTestDialog(changeTestImageBackground(testDialog, event.target.value, selectedTestFormats))}><option value="">不传</option>{selectedTestBackgrounds.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
-            {selectedTestModel?.supports_output_compression && (testDialog.outputFormat === 'jpeg' || testDialog.outputFormat === 'webp') ? <Field label="压缩质量"><input type="number" min="1" max="100" value={testDialog.outputCompression} onChange={(event) => setTestDialog({ ...testDialog, outputCompression: event.target.value, result: undefined, error: undefined })} /></Field> : null}
-            <Field label="审核等级"><select value={testDialog.moderation} onChange={(event) => setTestDialog({ ...testDialog, moderation: event.target.value, result: undefined, error: undefined })}>{selectedTestModeration.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
-            <Field label="提示词"><textarea value={testDialog.prompt} onChange={(event) => setTestDialog({ ...testDialog, prompt: event.target.value, result: undefined, error: undefined })} rows={4} /></Field>
-            {testDialog.error ? <InlineFeedback tone="danger" message={testDialog.error} /> : null}
-            {testDialog.result ? (
-              <section className="col-span-full grid gap-3 rounded-lg border border-[var(--line)] bg-white/[0.02] p-3">
-                {testDialog.result.image_url ? <img className="max-h-[360px] w-full rounded-lg border border-[var(--line)] object-contain" src={adminApi.modelAccountTestImageUrl(testDialog.result.image_url, accessToken)} alt="" /> : null}
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2 text-sm">
-                  <code className={adminDataGrid.code}>status: {testDialog.result.status}</code>
-                  <code className={adminDataGrid.code}>size: {testDialog.result.width ?? 0}x{testDialog.result.height ?? 0}</code>
-                  <code className={adminDataGrid.code}>elapsed: {testDialog.result.elapsed_ms}ms</code>
-                  <code className={adminDataGrid.code}>request: {testDialog.result.provider_request_id || '-'}</code>
+        <Drawer
+          title="测试图片模型"
+          description={`${testDialog.account.name} · 使用真实账号发起一次上游请求`}
+          onClose={() => setTestDialog(null)}
+          footer={<><Button variant="ghost" size="sm" disabled={testing} onClick={() => setTestDialog(null)}>关闭</Button><div style={{ flex: 1 }} /><Button variant="primary" size="sm" disabled={testing || !testDialog.modelId || !testDialog.prompt.trim()} onClick={() => void runTestImage()}>{testing ? '测试中...' : '开始测试'}</Button></>}
+        >
+          <form className="a-form" onSubmit={(event) => event.preventDefault()}>
+            <FormSection title="测试参数" description="测试不会创建用户任务，也不会扣减积分。">
+              <LedgerField label="测试模型"><select className="a-select" value={testDialog.modelId} onChange={(event) => { const selected = (modelsByAccount[String(testDialog.account.id)] ?? []).find((model) => String(model.id) === event.target.value); if (selected) setTestDialog(rebuildTestImageDialog(testDialog, selected)) }}>{(modelsByAccount[String(testDialog.account.id)] ?? []).filter((model) => model.enabled).map((model) => <option key={String(model.id)} value={String(model.id)}>{model.display_name || model.model_code}</option>)}</select></LedgerField>
+              <LedgerField label="来源模式"><select className="a-select" value={testDialog.sourceMode} onChange={(event) => setTestDialog({ ...testDialog, sourceMode: event.target.value, result: undefined, error: undefined })}><option value="images">Images API</option><option value="codex_responses">Codex Responses</option></select></LedgerField>
+              <LedgerField label="尺寸模式"><select className="a-select" value={testDialog.sizeMode} onChange={(event) => setTestDialog({ ...testDialog, sizeMode: event.target.value, result: undefined, error: undefined })}>{selectedTestSizeModes.map((option) => <option key={option} value={option}>{sizeModeLabel(option)}</option>)}</select></LedgerField>
+              {testDialog.sizeMode === 'ratio' ? <div className="a-form__pair"><LedgerField label="比例">{selectedTestModel?.supports_custom_ratio ? <input className="a-input" list="test-model-ratios" value={testDialog.aspectRatio} onChange={(event) => setTestDialog({ ...testDialog, aspectRatio: event.target.value, result: undefined, error: undefined })} /> : <select className="a-select" value={testDialog.aspectRatio} onChange={(event) => setTestDialog({ ...testDialog, aspectRatio: event.target.value, result: undefined, error: undefined })}>{(selectedTestModel?.supported_ratios ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select>}<datalist id="test-model-ratios">{(selectedTestModel?.supported_ratios ?? []).map((option) => <option key={option} value={option} />)}</datalist></LedgerField><LedgerField label="基础分辨率"><select className="a-select" value={testDialog.baseResolution} onChange={(event) => setTestDialog({ ...testDialog, baseResolution: event.target.value, result: undefined, error: undefined })}>{normalizeBaseResolution(selectedTestModel?.base_resolution ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select></LedgerField></div> : testDialog.sizeMode === 'pixel' ? <LedgerField label="像素尺寸">{selectedTestModel?.supports_custom_size ? <><input className="a-input" list="test-model-pixel-sizes" value={testDialog.requestedSize} onChange={(event) => setTestDialog({ ...testDialog, requestedSize: event.target.value, result: undefined, error: undefined })} /><datalist id="test-model-pixel-sizes">{(selectedTestModel?.supported_pixel_sizes ?? []).map((option) => <option key={option} value={option} />)}</datalist></> : <select className="a-select" value={testDialog.requestedSize} onChange={(event) => setTestDialog({ ...testDialog, requestedSize: event.target.value, result: undefined, error: undefined })}>{(selectedTestModel?.supported_pixel_sizes ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select>}</LedgerField> : null}
+              <div className="a-form__pair">
+                <LedgerField label="质量参数"><select className="a-select" value={testDialog.quality} onChange={(event) => setTestDialog({ ...testDialog, quality: event.target.value, result: undefined, error: undefined })}>{selectedTestQualities.map((option) => <option key={option} value={option}>{option}</option>)}</select></LedgerField>
+                <LedgerField label="输出格式"><select className="a-select" value={testDialog.outputFormat} onChange={(event) => setTestDialog({ ...testDialog, outputFormat: event.target.value, result: undefined, error: undefined })}>{selectedTestFormats.map((option) => <option key={option} value={option}>{option}</option>)}</select></LedgerField>
+              </div>
+              <div className="a-form__pair">
+                <LedgerField label="背景"><select className="a-select" value={testDialog.background} onChange={(event) => setTestDialog(changeTestImageBackground(testDialog, event.target.value, selectedTestFormats))}><option value="">不传</option>{selectedTestBackgrounds.map((option) => <option key={option} value={option}>{option}</option>)}</select></LedgerField>
+                {selectedTestModel?.supports_output_compression && (testDialog.outputFormat === 'jpeg' || testDialog.outputFormat === 'webp') ? <LedgerField label="压缩质量"><input className="a-input" type="number" min="1" max="100" value={testDialog.outputCompression} onChange={(event) => setTestDialog({ ...testDialog, outputCompression: event.target.value, result: undefined, error: undefined })} /></LedgerField> : null}
+              </div>
+              <LedgerField label="审核等级"><select className="a-select" value={testDialog.moderation} onChange={(event) => setTestDialog({ ...testDialog, moderation: event.target.value, result: undefined, error: undefined })}>{selectedTestModeration.map((option) => <option key={option} value={option}>{option}</option>)}</select></LedgerField>
+              <LedgerField label="提示词"><textarea className="a-textarea" value={testDialog.prompt} onChange={(event) => setTestDialog({ ...testDialog, prompt: event.target.value, result: undefined, error: undefined })} rows={4} /></LedgerField>
+            </FormSection>
+            {testing ? (
+              <section className="cfg-test-media" aria-live="polite" aria-busy="true">
+                <div className="a-skeleton cfg-test-media__frame" />
+                <div className="cfg-test-media__status">
+                  <div className="cfg-test-progress" role="progressbar" aria-label="正在生成测试图片"><i /></div>
+                  <strong>正在请求真实上游模型...</strong>
+                  <span className="a-hint">这通常需要数秒，完成后会在此显示图片结果。</span>
                 </div>
-                <pre className="max-h-[180px] overflow-auto rounded-lg border border-[var(--line)] bg-white/5 p-3 text-xs">{JSON.stringify(testDialog.result.actual_params ?? {}, null, 2)}</pre>
               </section>
-            ) : null}
-          </div>
-        </Modal>
+            ) : testDialog.error ? (
+              <InlineFeedback tone="danger" message={testDialog.error} />
+            ) : testDialog.result ? (
+              <section className="cfg-test-media">
+                {testDialog.result.image_url ? (
+                  <img className="cfg-test-media__image" src={adminApi.modelAccountTestImageUrl(testDialog.result.image_url, accessToken)} alt="测试图片结果" />
+                ) : (
+                  <div className="cfg-test-media__missing">上游未返回图片结果</div>
+                )}
+                <div className="cfg-test-meta">
+                  <Badge tone="success">{testDialog.result.status}</Badge>
+                  <Badge>{testDialog.result.width ?? 0} × {testDialog.result.height ?? 0}</Badge>
+                  <Badge>{testDialog.result.elapsed_ms} ms</Badge>
+                  {testDialog.result.provider_request_id ? <Badge>请求 {testDialog.result.provider_request_id}</Badge> : null}
+                </div>
+                {testActualParams.length ? (
+                  <div className="cfg-test-params">
+                    {testActualParams.map(([key, value]) => <span key={key} className="a-badge">{key}: {value}</span>)}
+                  </div>
+                ) : null}
+              </section>
+            ) : (
+              <section className="cfg-test-media__idle">
+                <ImageIcon aria-hidden="true" />
+                <strong>尚无测试结果</strong>
+                <span className="a-hint">填写参数后开始测试，图片会显示在这里。</span>
+              </section>
+            )}
+          </form>
+        </Drawer>
       ) : null}
+
       {deleteTarget ? (
         <Modal
           title={deleteTarget.kind === 'account' ? '删除接入账号' : '删除真实模型'}
           detail={deleteTarget.kind === 'account' ? deleteTarget.account.name : `${deleteTarget.account.name} / ${deleteTarget.model.model_code}`}
           onClose={() => { if (!deleting) setDeleteTarget(null) }}
-          footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={deleting} onClick={() => setDeleteTarget(null)}>取消</button><button className={cn(adminButton.base, adminButton.danger)} type="button" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? '删除中...' : '确认删除'}</button></>}
+          footer={<><Button variant="ghost" disabled={deleting} onClick={() => setDeleteTarget(null)}>取消</Button><Button variant="danger" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? '删除中...' : '确认删除'}</Button></>}
         >
           {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
-          <p className="m-0 text-sm leading-6 text-[var(--muted)]">删除后该配置不再参与新请求，历史任务仍按已保存的模型快照展示。</p>
+          <p className="m-0 text-sm leading-6 text-[var(--a-ink-2)]">删除后该配置不再参与新请求，历史任务仍按已保存的模型快照展示。</p>
         </Modal>
       ) : null}
     </section>
   )
 }
 
-function accountColumns({
-  modelsByAccount,
-  selectedAccountId,
-  deleting,
-  onSelect,
-  onEdit,
-  onAddModel,
-  onTest,
-  onDelete,
-}: {
+function accountColumns({ modelsByAccount, onEdit, onConfigureModels, onTest, onDelete }: {
   modelsByAccount: Record<string, ModelAccountModel[]>
-  selectedAccountId: string
-  deleting: boolean
-  onSelect: (account: ModelAccount) => void
   onEdit: (account: ModelAccount) => void
-  onAddModel: (account: ModelAccount) => void
+  onConfigureModels: (account: ModelAccount) => void
   onTest: (account: ModelAccount) => void
   onDelete: (account: ModelAccount) => void
 }): ColumnDef<ModelAccount>[] {
@@ -485,27 +631,46 @@ function accountColumns({
       title: '账号',
       width: 'minmax(220px,2fr)',
       render: (account) => (
-        <span className={accountTableClasses.identity}>
-          <span className={accountTableClasses.icon}><AccessAccountsIcon className="size-4" aria-hidden="true" /></span>
-          <span className="min-w-0">
-            <span className={accountTableClasses.title}>{account.name}</span>
-            <span className={accountTableClasses.detail}>{credentialsStatusLabel(account.credentials_status?.has_api_key)}</span>
-          </span>
+        <span className="cfg-account-cell">
+          <span className="cfg-account-cell__logo">{account.name.slice(0, 1).toUpperCase()}</span>
+          <span className="a-cell-stack"><strong>{account.name}</strong><span>{providerAdapterLabel(account.adapter_type)} · {accountsSecondaryLabel(account)}</span></span>
         </span>
       ),
     },
     {
       key: 'adapter',
       title: '接入方式',
-      width: 'minmax(130px,1fr)',
-      render: (account) => <span className={accountTableClasses.stack}><span className="font-semibold text-[var(--text)]">{providerAdapterLabel(account.adapter_type)}</span><span className={accountTableClasses.detail}>{providerAuthLabel(account.auth_type)}</span></span>,
+      width: 'minmax(140px,1fr)',
+      render: (account) => <span className="a-cell-stack"><strong>{providerAdapterLabel(account.adapter_type)}</strong><span>{providerAuthLabel(account.auth_type)}</span></span>,
     },
     {
-      key: 'configuration',
-      title: '配置',
+      key: 'baseUrl',
+      title: 'Base URL',
       width: 'minmax(220px,2fr)',
       kind: 'code',
-      render: (account) => <span><code className={accountTableClasses.configCode} title={account.base_url}>{account.base_url}</code><span className={accountTableClasses.configMeta}>P:{account.priority} · W:{account.weight} · C:{account.concurrency_limit} · {account.timeout_ms}ms</span></span>,
+      render: (account) => <code className="a-mono text-[11.5px]" title={account.base_url}>{account.base_url}</code>,
+    },
+    {
+      key: 'credentials',
+      title: '密钥',
+      width: 'minmax(100px,.8fr)',
+      render: (account) => <Badge tone={account.credentials_status?.has_api_key ? 'success' : 'danger'}>{credentialsStatusLabel(account.credentials_status?.has_api_key)}</Badge>,
+    },
+    {
+      key: 'models',
+      title: '真实模型',
+      width: 'minmax(90px,.7fr)',
+      align: 'right',
+      kind: 'number',
+      render: (account) => <span className="a-num">{modelsByAccount[String(account.id)]?.length ?? 0}</span>,
+    },
+    {
+      key: 'concurrency',
+      title: '并发 / 超时',
+      width: 'minmax(110px,.8fr)',
+      align: 'right',
+      kind: 'number',
+      render: (account) => <span className="a-num">{account.concurrency_limit} / {Math.round(account.timeout_ms / 1000)}s</span>,
     },
     {
       key: 'status',
@@ -514,77 +679,32 @@ function accountColumns({
       render: (account) => <Badge tone={modelAccountStatusTone(account.status)}>{modelAccountStatusLabel(account.status)}</Badge>,
     },
     {
-      key: 'models',
-      title: '真实模型',
-      width: 'minmax(100px,.8fr)',
-      kind: 'number',
-      render: (account) => <span className={accountTableClasses.machineValue}>{modelsByAccount[String(account.id)]?.length ?? 0}</span>,
-    },
-    {
       key: 'actions',
       title: '操作',
-      width: 'minmax(190px,1.2fr)',
+      width: 'minmax(220px,1.4fr)',
       align: 'right',
-      render: (account) => {
-        const selected = selectedAccountId === String(account.id)
-        return (
-          <span className={accountTableClasses.actions}>
-            <button className={cn(adminButton.base, selected ? adminButton.ghost : adminButton.primary, adminButton.small)} type="button" aria-pressed={selected} onClick={() => onSelect(account)}>{accountPrimaryActionLabel}</button>
-            <ActionMenu actions={[
-              { id: 'edit-account', label: '编辑账号', run: () => onEdit(account) },
-              { id: 'add-model', label: '添加真实模型', run: () => onAddModel(account) },
-              { id: 'test-account', label: '测试模型账号', run: () => onTest(account) },
-            ]} />
-            <TooltipIconButton label={`删除账号 ${account.name}`} disabled={deleting} disabledReason="删除处理中" onClick={() => onDelete(account)}><Trash2 /></TooltipIconButton>
-          </span>
-        )
-      },
+      render: (account) => (
+        <span className="a-row-actions">
+          <button className="a-row-btn" type="button" onClick={() => onEdit(account)}>编辑</button>
+          <button className="a-row-btn a-row-btn--primary" type="button" onClick={() => onConfigureModels(account)}>{accountPrimaryActionLabel}</button>
+          <button className="a-row-btn" type="button" onClick={() => onTest(account)}>测试</button>
+          <button className="a-icon-btn" style={{ width: 32, height: 32 }} type="button" aria-label={`删除账号 ${account.name}`} title="删除账号" onClick={() => onDelete(account)}><Trash2 className="size-4" /></button>
+        </span>
+      ),
     },
   ]
 }
 
-function modelColumns(onEdit: (model: ModelAccountModel) => void, onDelete: (model: ModelAccountModel) => void): ColumnDef<ModelAccountModel>[] {
-  return [
-    {
-      key: 'model',
-      title: '真实模型',
-      width: 'minmax(190px,1.5fr)',
-      render: (model) => <span className={accountTableClasses.stack}><span className={accountTableClasses.title}>{model.display_name || model.model_code}</span><code className={accountTableClasses.modelCode}>{model.model_code}</code></span>,
-    },
-    {
-      key: 'capability',
-      title: '任务与尺寸能力',
-      width: 'minmax(280px,2.5fr)',
-      render: (model) => <span className={accountTableClasses.modelCapability}>{(model.task_types ?? []).join(' / ') || '未配置任务类型'}<br />{normalizeBaseResolution(model.base_resolution).join(' / ') || '未配置基础分辨率'} · {capabilitySummary(model)}</span>,
-    },
-    {
-      key: 'output',
-      title: '输出能力',
-      width: 'minmax(150px,1.2fr)',
-      render: (model) => <span className={accountTableClasses.stack}><span>{model.output_format?.join(' / ') || '-'}</span><Badge tone={model.supports_output_compression ? 'success' : 'neutral'}>{model.supports_output_compression ? '支持压缩质量' : '固定质量'}</Badge></span>,
-    },
-    {
-      key: 'cost',
-      title: '单图成本',
-      width: 'minmax(110px,.8fr)',
-      kind: 'number',
-      align: 'right',
-      render: (model) => <span className={accountTableClasses.machineValue}>{model.cost_per_image} {model.currency}</span>,
-    },
-    {
-      key: 'status',
-      title: '状态',
-      width: 'minmax(84px,.6fr)',
-      render: (model) => <Badge tone={model.enabled ? 'success' : 'warning'}>{model.enabled ? '启用' : '停用'}</Badge>,
-    },
-    {
-      key: 'actions',
-      title: '操作',
-      width: 'minmax(90px,.7fr)',
-      align: 'right',
-      render: (model) => <span className={accountTableClasses.actions}><button className={cn(adminButton.base, adminButton.primary, adminButton.small)} type="button" onClick={() => onEdit(model)}>编辑</button><TooltipIconButton label={`删除真实模型 ${model.model_code}`} onClick={() => onDelete(model)}><Trash2 /></TooltipIconButton></span>,
-    },
-  ]
+function accountsSecondaryLabel(account: ModelAccount) {
+  if (account.status === 'error') return '异常 · 查看账号配置'
+  if (account.status === 'disabled') return '停用'
+  return account.extra?.source_mode === 'codex_responses' ? 'Codex Responses' : '主账号'
+}
+
+function accountStatusTone(status: string) {
+  if (status === 'enabled') return 'a-badge--ok'
+  if (status === 'error') return 'a-badge--bad'
+  return 'a-badge--warn'
 }
 
 function editAccountDraft(row: ModelAccount): AccountDraft {
@@ -592,21 +712,49 @@ function editAccountDraft(row: ModelAccount): AccountDraft {
 }
 
 function newModelDraft(account: ModelAccount): ModelDraft {
-  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], base_resolution: ['1K', '2K'], baseResolutionInput: '', quality: ['auto'], qualityInput: '', maxReferenceImageCount: '5', maxImageCount: '1', sizeModes: ['ratio'], supportedRatios: defaultRatios, ratioInput: '', supportsCustomRatio: false, supportedPixelSizes: defaultPixelSizes, pixelInput: '', supportsCustomSize: false, minWidth: '512', maxWidth: '3840', minHeight: '512', maxHeight: '3840', supportedBackgrounds: ['auto'], outputFormat: ['png'], outputFormatInput: '', supportsOutputCompression: false, moderation: ['auto'], moderationInput: '', costPerImage: '0.00000', currency: 'USD', enabled: true }
+  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], base_resolution: ['1K', '2K'], quality: ['auto'], maxReferenceImageCount: '5', maxImageCount: '1', sizeModes: ['ratio'], supportedRatios: defaultRatios, supportsCustomRatio: false, supportedPixelSizes: defaultPixelSizes, supportsCustomSize: false, minWidth: '512', maxWidth: '3840', minHeight: '512', maxHeight: '3840', supportedBackgrounds: ['auto'], outputFormat: ['png'], supportsOutputCompression: false, moderation: ['auto'], costPerImage: '0.00000', currency: 'USD', enabled: true }
 }
 
 function editModelDraft(account: ModelAccount, row: ModelAccountModel): ModelDraft {
-  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, base_resolution: normalizeBaseResolution(row.base_resolution), baseResolutionInput: '', quality: normalizeLowerEnums(row.quality ?? ['auto']), qualityInput: '', maxReferenceImageCount: String(row.max_reference_image_count ?? 5), maxImageCount: String(row.max_image_count ?? 1), sizeModes: row.size_modes?.length ? row.size_modes : ['ratio'], supportedRatios: row.supported_ratios?.length ? row.supported_ratios : defaultRatios, ratioInput: '', supportsCustomRatio: Boolean(row.supports_custom_ratio), supportedPixelSizes: row.supported_pixel_sizes?.length ? row.supported_pixel_sizes : defaultPixelSizes, pixelInput: '', supportsCustomSize: Boolean(row.supports_custom_size), minWidth: String(row.min_width ?? 512), maxWidth: String(row.max_width ?? 3840), minHeight: String(row.min_height ?? 512), maxHeight: String(row.max_height ?? 3840), supportedBackgrounds: normalizeLowerEnums(row.supported_backgrounds ?? []), outputFormat: normalizeLowerEnums(row.output_format ?? ['png']), outputFormatInput: '', supportsOutputCompression: Boolean(row.supports_output_compression), moderation: normalizeLowerEnums(row.moderation ?? ['auto']), moderationInput: '', costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
+  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, base_resolution: normalizeBaseResolution(row.base_resolution), quality: normalizeLowerEnums(row.quality ?? ['auto']), maxReferenceImageCount: String(row.max_reference_image_count ?? 5), maxImageCount: String(row.max_image_count ?? 1), sizeModes: row.size_modes?.length ? row.size_modes : ['ratio'], supportedRatios: row.supported_ratios?.length ? row.supported_ratios : defaultRatios, supportsCustomRatio: Boolean(row.supports_custom_ratio), supportedPixelSizes: row.supported_pixel_sizes?.length ? row.supported_pixel_sizes : defaultPixelSizes, supportsCustomSize: Boolean(row.supports_custom_size), minWidth: String(row.min_width ?? 512), maxWidth: String(row.max_width ?? 3840), minHeight: String(row.min_height ?? 512), maxHeight: String(row.max_height ?? 3840), supportedBackgrounds: normalizeLowerEnums(row.supported_backgrounds ?? []), outputFormat: normalizeLowerEnums(row.output_format ?? ['png']), supportsOutputCompression: Boolean(row.supports_output_compression), moderation: normalizeLowerEnums(row.moderation ?? ['auto']), costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
+}
+
+function modelPayload(draft: ModelDraft) {
+  return {
+    model_code: draft.modelCode,
+    display_name: draft.displayName,
+    task_types: draft.taskTypes,
+    base_resolution: draft.base_resolution,
+    quality: draft.quality,
+    max_reference_image_count: Number(draft.maxReferenceImageCount),
+    max_image_count: Number(draft.maxImageCount),
+    size_modes: draft.sizeModes,
+    supported_ratios: draft.supportedRatios,
+    supported_pixel_sizes: draft.supportedPixelSizes,
+    supports_custom_ratio: draft.supportsCustomRatio,
+    supported_backgrounds: draft.supportedBackgrounds,
+    supports_custom_size: draft.supportsCustomSize,
+    min_width: Number(draft.minWidth),
+    max_width: Number(draft.maxWidth),
+    min_height: Number(draft.minHeight),
+    max_height: Number(draft.maxHeight),
+    output_format: draft.outputFormat,
+    supports_output_compression: draft.supportsOutputCompression,
+    moderation: draft.moderation,
+    cost_per_image: draft.costPerImage,
+    currency: draft.currency,
+    enabled: draft.enabled,
+  }
 }
 
 function newTestImageDialog(account: ModelAccount, models: ModelAccountModel[]): TestImageDialog {
   const enabledModels = models.filter((model) => model.enabled)
   const selected = enabledModels.find((model) => model.model_code === 'gpt-image-2') ?? enabledModels[0] ?? models[0]
-	return buildTestImageDialog(account, selected, defaultTestPrompt, sourceModeFromExtra(account.extra))
+  return buildTestImageDialog(account, selected, defaultTestPrompt, sourceModeFromExtra(account.extra))
 }
 
 function rebuildTestImageDialog(current: TestImageDialog, selected: ModelAccountModel): TestImageDialog {
-	return buildTestImageDialog(current.account, selected, current.prompt, current.sourceMode)
+  return buildTestImageDialog(current.account, selected, current.prompt, current.sourceMode)
 }
 
 function buildTestImageDialog(account: ModelAccount, selected: ModelAccountModel | undefined, prompt: string, sourceMode: string): TestImageDialog {
@@ -617,116 +765,97 @@ function buildTestImageDialog(account: ModelAccount, selected: ModelAccountModel
   const outputFormat = background === 'transparent'
     ? configuredFormats.find((format) => format === 'png' || format === 'webp') ?? 'png'
     : configuredFormats[0] ?? 'png'
-	return { account, modelId: selected ? String(selected.id) : '', prompt, sourceMode, sizeMode, requestedSize: selected?.supported_pixel_sizes?.[0] ?? '1024x1024', baseResolution: normalizeBaseResolution(selected?.base_resolution ?? ['1K'])[0] ?? '1K', quality: selected?.quality?.[0] ?? 'auto', outputFormat, background, outputCompression: String(selected?.output_compression ?? 100), moderation: selected?.moderation?.[0] ?? 'auto', aspectRatio: selected?.supported_ratios?.[0] ?? '1:1' }
+  return { account, modelId: selected ? String(selected.id) : '', prompt, sourceMode, sizeMode, requestedSize: selected?.supported_pixel_sizes?.[0] ?? '1024x1024', baseResolution: normalizeBaseResolution(selected?.base_resolution ?? ['1K'])[0] ?? '1K', quality: selected?.quality?.[0] ?? 'auto', outputFormat, background, outputCompression: String(selected?.output_compression ?? 100), moderation: selected?.moderation?.[0] ?? 'auto', aspectRatio: selected?.supported_ratios?.[0] ?? '1:1' }
 }
 
 function testModelSizeModes(model?: ModelAccountModel) {
-	const modes = (model?.size_modes ?? []).filter((mode) => mode === 'auto' || mode === 'ratio' || mode === 'pixel')
-	return modes.length ? modes : ['ratio']
+  const modes = (model?.size_modes ?? []).filter((mode) => mode === 'auto' || mode === 'ratio' || mode === 'pixel')
+  return modes.length ? modes : ['ratio']
 }
 
 function testModelOptions(values: string[] | undefined, fallback: string[]) {
-	const options = normalizeLowerEnums(values ?? [])
-	return options.length ? options : fallback
+  const options = normalizeLowerEnums(values ?? [])
+  return options.length ? options : fallback
 }
 
 function sizeModeLabel(mode: string) {
-	if (mode === 'auto') return '自动'
-	if (mode === 'pixel') return '按像素'
-	return '按比例'
+  if (mode === 'auto') return '自动'
+  if (mode === 'pixel') return '按像素'
+  return '按比例'
 }
 
 function changeTestImageBackground(dialog: TestImageDialog, background: string, availableFormats: string[]): TestImageDialog {
-	const outputFormat = background === 'transparent' && dialog.outputFormat !== 'png' && dialog.outputFormat !== 'webp'
-		? availableFormats.find((format) => format === 'png' || format === 'webp') ?? 'png'
-		: dialog.outputFormat
-	return { ...dialog, background, outputFormat, result: undefined, error: undefined }
+  const outputFormat = background === 'transparent' && dialog.outputFormat !== 'png' && dialog.outputFormat !== 'webp'
+    ? availableFormats.find((format) => format === 'png' || format === 'webp') ?? 'png'
+    : dialog.outputFormat
+  return { ...dialog, background, outputFormat, result: undefined, error: undefined }
 }
 
-function toggleSizeMode(draft: ModelDraft, mode: 'auto' | 'ratio' | 'pixel', checked: boolean): ModelDraft {
-  const next = checked ? Array.from(new Set([...draft.sizeModes, mode])) : draft.sizeModes.filter((item) => item !== mode)
-  if (mode === 'pixel' && checked) {
-    return { ...draft, sizeModes: next, supportedPixelSizes: draft.supportedPixelSizes.length ? draft.supportedPixelSizes : defaultPixelSizes }
+function toggleSizeModes(draft: ModelDraft, next: string[]): ModelDraft {
+  const sizeModes = next.length ? next : ['auto']
+  return {
+    ...draft,
+    sizeModes,
+    supportsCustomSize: sizeModes.includes('pixel') ? draft.supportsCustomSize : false,
+    supportsCustomRatio: sizeModes.includes('ratio') ? draft.supportsCustomRatio : false,
   }
-  if (mode === 'pixel' && !checked) {
-    return { ...draft, sizeModes: next.length ? next : ['pixel'], supportsCustomSize: false }
-  }
-  if (mode === 'ratio' && !checked) {
-    return { ...draft, sizeModes: next.length ? next : ['ratio'], supportsCustomRatio: false }
-  }
-  return { ...draft, sizeModes: next.length ? next : ['auto'] }
 }
 
-function TagInput({
-  values,
-  input,
-  placeholder,
-  options,
-  normalize,
-  onInput,
-  onChange,
-}: {
-  values: string[]
-  input: string
-  placeholder: string
-  options: string[]
-  normalize: (value: string) => string
-  onInput: (value: string) => void
-  onChange: (values: string[], input?: string) => void
-}) {
-  const addValue = (raw: string) => {
-    const value = normalize(raw)
-    if (!value || values.some((item) => item.toLowerCase() === value.toLowerCase())) {
-      onChange(values, '')
-      return
-    }
-    onChange([...values, value], '')
-  }
-  const removeValue = (value: string) => onChange(values.filter((item) => item !== value), input)
-  return (
-    <div className={tagInputClasses.root}>
-      <div className={tagInputClasses.list}>
-        {values.map((value) => <span key={value} className={tagInputClasses.tag}>{value}<span className={tagInputClasses.remove} role="button" tabIndex={0} aria-label={`删除 ${value}`} onClick={() => removeValue(value)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') removeValue(value) }}>x</span></span>)}
-      </div>
-      <div className={tagInputClasses.inputRow}>
-        <input list={`tag-options-${placeholder}`} value={input} onChange={(event) => onInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addValue(input) } }} placeholder={placeholder} />
-        <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => addValue(input)}>添加</button>
-      </div>
-      <datalist id={`tag-options-${placeholder}`}>{options.map((value) => <option key={value} value={value} />)}</datalist>
-    </div>
-  )
+function validateAccountDraft(draft: AccountDraft): Record<string, string> {
+  const errors: Record<string, string> = {}
+  if (!draft.name.trim()) errors.name = '请填写账号名称。'
+  if (!draft.baseUrl.trim()) errors.baseUrl = '请填写 Base URL。'
+  else if (!/^https?:\/\//i.test(draft.baseUrl.trim())) errors.baseUrl = 'Base URL 必须以 http:// 或 https:// 开头。'
+  if (!Number.isFinite(Number(draft.priority)) || Number(draft.priority) < 0) errors.priority = '优先级必须是非负整数。'
+  if (!Number.isFinite(Number(draft.weight)) || Number(draft.weight) < 0) errors.weight = '权重必须是非负整数。'
+  if (!Number.isInteger(Number(draft.concurrencyLimit)) || Number(draft.concurrencyLimit) < 1) errors.concurrencyLimit = '并发上限必须大于 0。'
+  if (!Number.isInteger(Number(draft.timeoutMS)) || Number(draft.timeoutMS) < 1000) errors.timeoutMS = '超时至少为 1000 毫秒。'
+  return errors
 }
 
-function BaseResolutionTagInput({ draft, onChange }: { draft: ModelDraft; onChange: (next: ModelDraft) => void }) {
-  const addBaseResolution = (raw: string) => {
-    const baseResolution = normalizeBaseResolutionValue(raw)
-    if (!baseResolution || draft.base_resolution.some((item) => item.toLowerCase() === baseResolution.toLowerCase())) {
-      onChange({ ...draft, baseResolutionInput: '' })
-      return
-    }
-    onChange({ ...draft, base_resolution: [...draft.base_resolution, baseResolution], baseResolutionInput: '' })
-  }
-  const removeBaseResolution = (baseResolution: string) => onChange({ ...draft, base_resolution: draft.base_resolution.filter((item) => item !== baseResolution) })
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== 'Enter') return
-    event.preventDefault()
-    addBaseResolution(draft.baseResolutionInput)
-  }
+function accountDraftDirtyCount(draft: AccountDraft, existing?: ModelAccount): number {
+  const baseline = existing ? editAccountDraft(existing) : blankAccount
+  const fields: Array<[string, string]> = [
+    ['name', draft.name], ['adapterType', draft.adapterType], ['authType', draft.authType], ['baseUrl', draft.baseUrl],
+    ['priority', draft.priority], ['weight', draft.weight], ['concurrencyLimit', draft.concurrencyLimit], ['timeoutMS', draft.timeoutMS],
+    ['status', draft.status], ['sourceMode', draft.sourceMode],
+  ]
+  let count = fields.filter(([key, value]) => String((baseline as unknown as Record<string, unknown>)[key] ?? '') !== String(value)).length
+  if (draft.apiKey) count += 1
+  return count
+}
 
-  return (
-    <div className={tagInputClasses.root}>
-      <div className={tagInputClasses.list}>
-        {draft.base_resolution.map((baseResolution) => (
-          <span key={baseResolution} className={tagInputClasses.tag}>{baseResolution}<span className={tagInputClasses.remove} role="button" tabIndex={0} aria-label={`删除 ${baseResolution}`} onClick={() => removeBaseResolution(baseResolution)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') removeBaseResolution(baseResolution) }}>x</span></span>
-        ))}
-      </div>
-      <div className={tagInputClasses.inputRow}>
-        <input list="model-base-resolution-options" value={draft.baseResolutionInput} onChange={(event) => onChange({ ...draft, baseResolutionInput: event.target.value })} onKeyDown={onKeyDown} placeholder="选择或输入基础分辨率，回车添加" />
-        <button className={cn(adminButton.base, adminButton.ghost, adminButton.small)} type="button" onClick={() => addBaseResolution(draft.baseResolutionInput)}>添加</button>
-      </div>
-      <datalist id="model-base-resolution-options">{baseResolutionOptions.map((baseResolution) => <option key={baseResolution} value={baseResolution} />)}</datalist>
-    </div>
-  )
+function validateModelDraft(draft: ModelDraft): Record<string, string> {
+  const errors: Record<string, string> = {}
+  if (!draft.modelCode.trim()) errors.modelCode = '请填写模型代码。'
+  if (!draft.taskTypes.length) errors.taskTypes = '至少选择一种图片任务类型。'
+  if (!draft.base_resolution.length) errors.base_resolution = '至少配置一个基础分辨率。'
+  if (draft.sizeModes.includes('ratio') && !draft.supportedRatios.length) errors.supportedRatios = '按比例模式至少需要一种比例。'
+  if (draft.sizeModes.includes('pixel') && !draft.supportedPixelSizes.length) errors.supportedPixelSizes = '按像素模式至少需要一个像素尺寸。'
+  if (draft.sizeModes.includes('pixel')) {
+    if (Number(draft.minWidth) < 16 || Number(draft.minWidth) > Number(draft.maxWidth)) errors.minWidth = '最小宽度需大于等于 16 且不超过最大宽度。'
+    if (Number(draft.maxWidth) > 3840) errors.maxWidth = '最大宽度不能超过 3840。'
+    if (Number(draft.minHeight) < 16 || Number(draft.minHeight) > Number(draft.maxHeight)) errors.minHeight = '最小高度需大于等于 16 且不超过最大高度。'
+    if (Number(draft.maxHeight) > 3840) errors.maxHeight = '最大高度不能超过 3840。'
+  }
+  if (!Number.isInteger(Number(draft.maxImageCount)) || Number(draft.maxImageCount) < 1) errors.maxImageCount = '最大出图数至少为 1。'
+  if (!Number.isInteger(Number(draft.maxReferenceImageCount)) || Number(draft.maxReferenceImageCount) < 0) errors.maxReferenceImageCount = '最大参考图不能为负数。'
+  if (!Number.isFinite(Number(draft.costPerImage)) || Number(draft.costPerImage) < 0) errors.costPerImage = '单图成本必须是非负数字。'
+  if (!draft.currency.trim()) errors.currency = '请填写币种。'
+  return errors
+}
+
+function modelDraftDirtyCount(draft: ModelDraft): number {
+  if (!draft.row) return modelPayload(draft).model_code ? 1 : 0
+  const baseline = editModelDraft(draft.account, draft.row)
+  return JSON.stringify(modelPayload(draft)) === JSON.stringify(modelPayload(baseline)) ? 0 : 1
+}
+
+function modelNeedsAttention(model: ModelAccountModel) {
+  const hasBaseResolution = normalizeBaseResolution(model.base_resolution).length > 0
+  const hasRatio = !model.size_modes?.includes('ratio') || Boolean(model.supported_ratios?.length)
+  const hasPixel = !model.size_modes?.includes('pixel') || Boolean(model.supported_pixel_sizes?.length)
+  return !hasBaseResolution || !hasRatio || !hasPixel
 }
 
 function normalizeBaseResolution(values?: string[] | null) {
@@ -770,14 +899,6 @@ function gcd(a: number, b: number): number {
     right = next
   }
   return left || 1
-}
-
-function capabilitySummary(model: ModelAccountModel) {
-  const modes = model.size_modes?.length ? model.size_modes : ['ratio']
-  const parts = [`参考图 ${model.max_reference_image_count ?? 5}`]
-  if (modes.includes('ratio')) parts.push(`比例 ${model.supported_ratios?.join('/') || '-'}`)
-  if (modes.includes('pixel')) parts.push(`像素 ${model.supported_pixel_sizes?.join('/') || '-'}`)
-  return parts.join(' · ')
 }
 
 function sourceModeFromExtra(extra?: Record<string, unknown>) {

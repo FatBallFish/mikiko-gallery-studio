@@ -713,6 +713,7 @@ export const userApi = {
     sharedApiClient.request<MediaAccessProjection>(API_PATHS.open.galleryImageAccess, { pathParams: { image_id }, query: { purpose }, auth: false }),
   deleteReferenceAsset: (asset_id: string) => sharedApiClient.request<void>(API_PATHS.agent.referenceAssetDetail, { method: 'DELETE', pathParams: { asset_id } }),
   imageAssetUrl: (url: string, accessToken?: string | null) => mediaAssetURL(url, accessToken),
+  mediaAssetUrl: (url: string, accessToken?: string | null) => mediaAssetURL(url, accessToken),
   createTask: async (req: CreateTaskRequest) => {
     const wire = buildCreateTaskWireRequest(req)
     return toTask(await sharedApiClient.request(API_PATHS.agent.tasks, { method: 'POST', body: wire.body, headers: wire.headers }))

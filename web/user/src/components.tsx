@@ -1,17 +1,19 @@
 import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Maximize2 as FullscreenIcon } from 'lucide-react'
 import type { GalleryImage, ImageResult, ImageTaskStatus, ImageTaskType, PublishStatus } from '../../shared/api-types'
 import { cn } from '../../shared/classnames'
 import { pointsExchangeRules, pointsText } from '../../shared/pointsDisplay'
 import { RefreshableMediaImage, useMediaRefreshOnce, type MediaRefreshHandler } from './ui/mediaRefresh'
 import { avatarMenuItems, type AvatarMenuIcon } from './avatarMenu'
-import { BrandMark, siteBrand } from './brand'
+import { siteBrand } from './brand'
+import { useProjects } from './ProjectContext'
 import { openDocsEntry } from './docsUrl'
 import { publicEngagementStats } from './publicEngagementModel'
 import type { AppContextValue, RouteId, Toast } from './types'
 import { userShell, userButton, userForm, userState, userPill, userCard, userText } from './ui/classes'
 import { focusableElements, focusTrapTargetIndex } from './ui/focusTrap'
 import { overlayLayers, rdShell } from './ui/redesign-classes'
-import { Home, Sparkles, LayoutGrid, User, KeyRound, CreditCard, Settings, FileText, Sun, Moon, LogOut, ChevronDown, Eye, Heart, Star, Download, Copy, Edit, Globe, FolderPlus, FolderKanban, Trash2, X } from './ui/icons'
+import { Home, Sparkles, LayoutGrid, User, KeyRound, CreditCard, Settings, FileText, Sun, Moon, LogOut, ChevronDown, Eye, Heart, Star, Download, Copy, Edit, Globe, FolderPlus, FolderKanban, Trash2, X, Bell, Film, Plus, Search } from './ui/icons'
 import { OverlayPortal } from './ui/overlayPortal'
 import { imageMediaTransition, initialImageMediaState } from './ui/imageMediaModel'
 import { shouldStartZoomDrag } from './ui/zoomPointer'
@@ -222,45 +224,12 @@ export function PublicDetailIcon({ name, active }: { name: 'eye' | 'heart' | 'st
   return <Copy {...props} />
 }
 
-const publicDetailClasses = {
-  root: 'grid grid-cols-[minmax(0,1.15fr)_minmax(300px,.85fr)] items-start gap-6 max-[760px]:grid-cols-1',
-  media: 'grid min-w-0 gap-3',
-  references: 'flex items-center gap-2.5 overflow-x-auto rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-2.5',
-  referenceLabel: 'shrink-0 text-xs text-[var(--muted)]',
-  referenceButton: 'size-[72px] shrink-0 cursor-zoom-in overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] p-0 disabled:cursor-default disabled:opacity-80',
-  referenceImage: 'block size-full object-cover',
-  imageFrame: 'grid min-h-80 place-items-center overflow-hidden rounded-2xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--bg)_82%,black_10%)]',
-  imageButton: 'min-h-80 size-full cursor-zoom-in border-0 bg-transparent p-0 disabled:cursor-default',
-  image: 'block size-full max-h-[66vh] object-contain',
-  placeholder: 'grid min-h-80 place-items-center text-[var(--muted)]',
-  side: 'grid min-w-0 gap-[18px]',
-  prompt: 'grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-[var(--border)] pb-[18px]',
-  promptLabel: 'text-[11px] uppercase tracking-[.08em] text-[var(--muted)]',
-  promptText: 'm-0 mt-2 max-h-48 overflow-y-auto rounded-lg pr-2 leading-[1.7] text-[var(--muted)] [overflow-wrap:anywhere] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]',
-  meta: 'grid grid-cols-2 gap-2.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5 max-[760px]:grid-cols-1',
-  stats: 'grid grid-cols-3 gap-2.5 max-[760px]:grid-cols-1',
-  metaItem: 'grid min-w-0 gap-1 text-xs text-[var(--muted)]',
-  metaValue: 'overflow-hidden text-ellipsis whitespace-nowrap text-sm text-[var(--fg)]',
-  statItem: 'grid min-w-0 gap-1 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3 text-center text-xs text-[var(--muted)]',
-  statValue: 'overflow-hidden text-ellipsis whitespace-nowrap font-vault-mono text-lg text-[var(--fg)]',
-  actions: 'flex justify-end gap-2.5 pt-2',
-  iconButton: cn(userButton.icon, 'pg-public-detail-action size-10 min-h-10 cursor-pointer rounded-xl p-0 hover:border-[var(--accent)] hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45'),
-  iconDanger: 'hover:border-[var(--accent-coral)] hover:bg-[color-mix(in_oklch,var(--accent-coral)_12%,transparent)] hover:text-[var(--accent-coral)]',
-  iconLiked: 'border-[color-mix(in_oklch,var(--accent-coral)_72%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_18%,transparent)] text-[var(--accent-coral)] shadow-[0_0_18px_color-mix(in_oklch,var(--accent-coral)_18%,transparent)]',
-  iconFavorited: 'border-[color-mix(in_oklch,var(--accent)_72%,var(--border))] bg-[color-mix(in_oklch,var(--accent)_18%,transparent)] text-[var(--accent)] shadow-[0_0_18px_color-mix(in_oklch,var(--accent)_18%,transparent)]',
-}
-
-export function publicDetailButton(label: string, icon: React.ReactNode, onClick: () => void, className = '', disabled?: boolean) {
-  const toneClass = className === 'liked'
-    ? publicDetailClasses.iconLiked
-    : className === 'favorited'
-      ? publicDetailClasses.iconFavorited
-      : className === 'danger'
-        ? publicDetailClasses.iconDanger
-        : className
+export function publicDetailButton(label: string, icon: React.ReactNode, onClick: () => void, tone = '', disabled?: boolean) {
+  const toneClass = tone === 'liked' || tone === 'favorited' ? 'is-on' : tone === 'danger' ? 'u-action--danger' : ''
   return (
-    <button type="button" className={cn(publicDetailClasses.iconButton, toneClass)} title={label} aria-label={label} disabled={disabled} onClick={onClick}>
+    <button type="button" className={cn('u-action', toneClass)} title={label} aria-label={label} disabled={disabled} onClick={onClick}>
       {icon}
+      <span>{label}</span>
     </button>
   )
 }
@@ -274,6 +243,11 @@ export type ImageDetailAction = {
   disabled?: boolean
 }
 
+/**
+ * One media-detail surface for images and videos. The drawer keeps a fixed
+ * stage height and a 392px information column; "详情" expands the same
+ * component to a full-width detail view and returns to the source.
+ */
 export function ImageDetailModal({ title, image, imageUrl, referenceImages = [], showPublicStats = true, onLike, onFavorite, onDownload, onCopyPrompt, actions = [], previewSourceLabel = '历史资产', onMediaRefresh, onClose }: {
   title: string
   image: ImageResult | GalleryImage | null
@@ -290,7 +264,12 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
   onClose: () => void
 }) {
   const [zoomImage, setZoomImage] = useState<ImagePreviewPayload | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [shareState, setShareState] = useState<'idle' | 'done'>('idle')
+  const drawerRef = useRef<HTMLElement | null>(null)
+  useDismissableLayer(Boolean(image), onClose, drawerRef)
   useEffect(() => setZoomImage(null), [image?.id])
+  useEffect(() => { setExpanded(false); setShareState('idle') }, [image?.id])
   if (!image) return null
   const zoomableReferences = referenceImages.map((item) => ({
     ...item,
@@ -303,24 +282,63 @@ export function ImageDetailModal({ title, image, imageUrl, referenceImages = [],
       onMediaRefresh: item.onMediaRefresh ?? onMediaRefresh,
     }),
   }))
+
+  async function share() {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setShareState('done')
+      window.setTimeout(() => setShareState('idle'), 2000)
+    } catch {
+      setShareState('done')
+    }
+  }
+
   return (
     <>
-      <Modal title={title} onClose={onClose}>
-        <PublicImageDetail
-          image={image}
-          imageUrl={imageUrl}
-          referenceImages={zoomableReferences}
-          showPublicStats={showPublicStats}
-          onPreviewImage={setZoomImage}
-          onLike={onLike}
-          onFavorite={onFavorite}
-          onDownload={onDownload}
-          onCopyPrompt={onCopyPrompt}
-          actions={actions}
-          previewSourceLabel={previewSourceLabel}
-          onMediaRefresh={onMediaRefresh}
-        />
-      </Modal>
+      <OverlayPortal>
+        <div className="u-backdrop is-open" role="presentation" data-focus-layer onMouseDown={onClose}>
+          <aside
+            ref={drawerRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
+            className={cn('u-drawer is-open', expanded && 'u-drawer--page')}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="u-drawer__head">
+              <div className="u-drawer__title">
+                <strong>{expanded ? '媒体详情' : title}</strong>
+                <span>{previewSourceLabel}{image.created_at ? ` · ${formatDate(image.created_at || '')}` : ''}</span>
+              </div>
+              <div className="u-drawer__spacer" />
+              {expanded ? (
+                <button className="u-btn u-btn--sm" type="button" onClick={() => setExpanded(false)}>返回来源</button>
+              ) : (
+                <button className="u-btn u-btn--sm" type="button" onClick={() => setExpanded(true)}>详情</button>
+              )}
+              <button className="u-btn u-btn--sm" type="button" onClick={() => void share()}>{shareState === 'done' ? '已复制链接' : '分享'}</button>
+              <button className="u-icon-btn" type="button" aria-label="关闭" onClick={onClose}><X size={18} strokeWidth={1.6} aria-hidden="true" /></button>
+            </header>
+            <div className="u-drawer__body">
+              <PublicImageDetail
+                image={image}
+                imageUrl={imageUrl}
+                referenceImages={zoomableReferences}
+                showPublicStats={showPublicStats}
+                onPreviewImage={setZoomImage}
+                onLike={onLike}
+                onFavorite={onFavorite}
+                onDownload={onDownload}
+                onCopyPrompt={onCopyPrompt}
+                actions={actions}
+                previewSourceLabel={previewSourceLabel}
+                onMediaRefresh={onMediaRefresh}
+              />
+            </div>
+          </aside>
+        </div>
+      </OverlayPortal>
       {zoomImage ? <ImageZoomViewer image={zoomImage} onClose={() => setZoomImage(null)} /> : null}
     </>
   )
@@ -341,117 +359,175 @@ export function PublicImageDetail({ image, imageUrl, referenceImages = [], showP
   onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void>
 }) {
   const authorName = image.author_name || '匿名用户'
-  const prompt = image.prompt || '-'
+  const prompt = image.prompt || ''
   const actualResolution = image.width > 0 && image.height > 0 ? imagePixelsLabel(image.width, image.height) : '-'
   const taskType = image.task_type === 'image_edit' ? '图片编辑' : image.task_type === 'text_to_image' ? '文生图' : image.task_type || '-'
   const sizeMode = image.size_mode === 'pixel' ? '像素尺寸' : image.size_mode === 'ratio' ? '按比例' : image.size_mode || '-'
   const outputCompression = image.output_compression == null ? '-' : `${image.output_compression}%`
   const outputCount = image.requested_output_image_count ?? image.image_count ?? '-'
+  const visibility = image.visibility_status || ('publish_status' in image ? image.publish_status : undefined)
+  const statusValue = ('task_status' in image && image.task_status) || visibility || 'succeeded'
+  const statusLabel = visibility === 'public' ? '已公开' : visibility === 'pending_review' ? '审核中' : '私有'
+  const title = prompt.trim().split('\n')[0] || `资产 ${image.id.slice(0, 8)}`
+  const facts: Array<{ label: string; value: React.ReactNode }> = [
+    { label: '实际分辨率', value: actualResolution },
+    { label: '基础分辨率', value: image.base_resolution || '-' },
+    { label: '比例', value: image.aspect_ratio || '-' },
+    { label: '尺寸模式', value: sizeMode },
+    { label: '请求尺寸', value: image.requested_size || '-' },
+    { label: '质量', value: image.quality || '-' },
+    { label: '任务类型', value: taskType },
+    { label: '输出格式', value: image.output_format?.toUpperCase() || '-' },
+    { label: '压缩质量', value: outputCompression },
+    { label: '审核等级', value: image.moderation || '-' },
+    { label: '输出数量', value: outputCount },
+    { label: '作者', value: authorName },
+    { label: '归属', value: image.project?.name || '默认项目' },
+  ]
+
   return (
-    <div className={publicDetailClasses.root}>
-      <div className={publicDetailClasses.media}>
+    <div className="u-detail">
+      <section className="u-detail__stage-col">
         {referenceImages.length ? (
-          <div className={publicDetailClasses.references}>
-            <span className={publicDetailClasses.referenceLabel}>引用图片</span>
-            {referenceImages.map((item) => (
-              <button key={item.id || item.url} type="button" className={publicDetailClasses.referenceButton} onClick={item.onPreview} disabled={!item.onPreview}>
-                <RefreshableMediaImage src={item.url} mediaExpiresAt={item.mediaExpiresAt} alt={item.alt} className={publicDetailClasses.referenceImage} onMediaRefresh={item.onMediaRefresh ?? onMediaRefresh} />
+          <div className="u-detail__refs">
+            <span className="u-detail__refs-label">参考图 {referenceImages.length}</span>
+            {referenceImages.map((item, index) => (
+              <button key={item.id || item.url} className="u-detail__ref" type="button" onClick={item.onPreview} disabled={!item.onPreview} aria-label={`查看参考图 ${index + 1}`}>
+                <RefreshableMediaImage src={item.url} mediaExpiresAt={item.mediaExpiresAt} alt={item.alt} onMediaRefresh={item.onMediaRefresh ?? onMediaRefresh} />
               </button>
             ))}
           </div>
         ) : null}
-        <div className={publicDetailClasses.imageFrame}>
+        <div className="u-detail__stage">
+          <span className="u-detail__stage-label">
+            <StatusPill status={statusValue} />
+            <span className="u-chip u-chip--mono">{actualResolution}</span>
+          </span>
+          {onPreviewImage && imageUrl ? (
+            <button className="u-icon-btn u-detail__zoom" type="button" aria-label="全屏查看" onClick={() => onPreviewImage({
+              url: imageUrl,
+              downloadUrl: imageUrl,
+              alt: prompt || image.id,
+              prompt: image.prompt,
+              width: image.width,
+              height: image.height,
+              ratio: image.aspect_ratio,
+              model: image.route_model_code || image.abstract_model,
+              source: previewSourceLabel,
+              creationDraft: workspaceCreationDraftFromSnapshot(image),
+              mediaExpiresAt: image.preview_expires_at,
+              onMediaRefresh,
+            })}><FullscreenIcon /></button>
+          ) : null}
           {imageUrl ? (
             <DetailImageMedia
               src={imageUrl}
               mediaExpiresAt={image.preview_expires_at}
-              alt={image.prompt || image.id}
-              onOpen={onPreviewImage ? () => onPreviewImage({
-                url: imageUrl,
-                downloadUrl: imageUrl,
-                alt: image.prompt || image.id,
-                prompt: image.prompt,
-                width: image.width,
-                height: image.height,
-                ratio: image.aspect_ratio,
-                model: image.route_model_code || image.abstract_model,
-                source: previewSourceLabel,
-                creationDraft: workspaceCreationDraftFromSnapshot(image),
-                mediaExpiresAt: image.preview_expires_at,
-                onMediaRefresh,
-              }) : undefined}
+              alt={prompt || image.id}
               onMediaRefresh={onMediaRefresh}
             />
-          ) : <div className={publicDetailClasses.placeholder}>图片不可预览</div>}
+          ) : <div className="u-detail__placeholder">图片不可预览</div>}
         </div>
-      </div>
-      <div className={publicDetailClasses.side}>
-        <div className={publicDetailClasses.prompt}>
-          <div>
-            <small className={publicDetailClasses.promptLabel}>Prompt</small>
-            <p className={publicDetailClasses.promptText} tabIndex={0}>{prompt}</p>
+        <div className="u-actions" style={{ justifyContent: 'space-between' }}>
+          <div className="u-actions">
+            <span className="u-chip u-chip--accent">{statusLabel}</span>
+            <span className="u-chip u-chip--mono">{image.route_model_code || image.abstract_model || '-'}</span>
           </div>
-          {publicDetailButton('复制 Prompt', <PublicDetailIcon name="copy" />, () => onCopyPrompt(prompt), '', !image.prompt)}
-        </div>
-        <div className={publicDetailClasses.meta}>
-          <span className={publicDetailClasses.metaItem}>作者 <b className={publicDetailClasses.metaValue}>{authorName}</b></span>
-          <span className={publicDetailClasses.metaItem}>模型 <b className={publicDetailClasses.metaValue}>{image.route_model_code || image.abstract_model || '-'}</b></span>
-          <span className={publicDetailClasses.metaItem}>实际分辨率 <b className={publicDetailClasses.metaValue}>{actualResolution}</b></span>
-          <span className={publicDetailClasses.metaItem}>基础分辨率 <b className={publicDetailClasses.metaValue}>{image.base_resolution || '-'}</b></span>
-          <span className={publicDetailClasses.metaItem}>比例 <b className={publicDetailClasses.metaValue}>{image.aspect_ratio || '-'}</b></span>
-          <span className={publicDetailClasses.metaItem}>尺寸模式 <b className={publicDetailClasses.metaValue}>{sizeMode}</b></span>
-          <span className={publicDetailClasses.metaItem}>请求尺寸 <b className={publicDetailClasses.metaValue}>{image.requested_size || '-'}</b></span>
-          <span className={publicDetailClasses.metaItem}>任务类型 <b className={publicDetailClasses.metaValue}>{taskType}</b></span>
-          <span className={publicDetailClasses.metaItem}>质量 <b className={publicDetailClasses.metaValue}>{image.quality || '-'}</b></span>
-          <span className={publicDetailClasses.metaItem}>输出格式 <b className={publicDetailClasses.metaValue}>{image.output_format?.toUpperCase() || '-'}</b></span>
-          <span className={publicDetailClasses.metaItem}>压缩质量 <b className={publicDetailClasses.metaValue}>{outputCompression}</b></span>
-          <span className={publicDetailClasses.metaItem}>审核等级 <b className={publicDetailClasses.metaValue}>{image.moderation || '-'}</b></span>
-          <span className={publicDetailClasses.metaItem}>输出数量 <b className={publicDetailClasses.metaValue}>{outputCount}</b></span>
-        </div>
-        {showPublicStats ? (
-          <div className={publicDetailClasses.stats}>
-            {publicEngagementStats(image).map((item) => (
-              <span key={item.key} className={publicDetailClasses.statItem}>{item.label} <b className={publicDetailClasses.statValue}>{item.value}</b></span>
-            ))}
+          <div className="u-actions">
+            {onLike ? publicDetailButton(`点赞 ${image.like_count ?? 0}`, <PublicDetailIcon name="heart" active={image.liked_by_viewer} />, () => onLike(image), image.liked_by_viewer ? 'liked' : '') : null}
+            {onFavorite ? publicDetailButton(`收藏 ${image.favorite_count ?? 0}`, <PublicDetailIcon name="star" active={image.favorited_by_viewer} />, () => onFavorite(image), image.favorited_by_viewer ? 'favorited' : '') : null}
+            <button className="u-action" type="button" onClick={() => onCopyPrompt(prompt)} disabled={!image.prompt}><Copy size={14} strokeWidth={1.6} aria-hidden="true" />复制 Prompt</button>
+            {onDownload ? publicDetailButton('下载原图', <PublicDetailIcon name="download" />, () => onDownload(image), '', !image.url && !image.download_url) : null}
           </div>
-        ) : null}
-        <div className={publicDetailClasses.actions}>
-          {onLike ? publicDetailButton(`点赞 ${image.like_count ?? 0}`, <PublicDetailIcon name="heart" active={image.liked_by_viewer} />, () => onLike(image), image.liked_by_viewer ? 'liked' : '') : null}
-          {onFavorite ? publicDetailButton(`收藏 ${image.favorite_count ?? 0}`, <PublicDetailIcon name="star" active={image.favorited_by_viewer} />, () => onFavorite(image), image.favorited_by_viewer ? 'favorited' : '') : null}
-          {onDownload ? publicDetailButton('下载图片', <PublicDetailIcon name="download" />, () => onDownload(image), '', !image.url && !image.download_url) : null}
-          {actions.map((action) => (
-            <React.Fragment key={action.key}>
-              {publicDetailButton(action.label, action.icon, action.onClick, action.tone ?? '', action.disabled)}
-            </React.Fragment>
-          ))}
         </div>
-      </div>
+      </section>
+
+      <section className="u-detail__info">
+        <div className="u-detail__info-scroll">
+          <div style={{ display: 'grid', gap: 7 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <span className="u-chip u-chip--accent">图片</span>
+              <span className="u-chip u-chip--mono">{image.route_model_code || image.abstract_model || '未知模型'}</span>
+              <span className="u-chip u-chip--mono">{statusLabel}</span>
+            </div>
+            <h2 className="u-detail__title">{title}</h2>
+            <div className="u-meta">{formatDate(image.created_at || '')} · {image.project?.name || '默认项目'}</div>
+          </div>
+
+          <div className="u-detail__section">
+            <h4>Prompt</h4>
+            <div className="u-prompt" tabIndex={0} aria-label="Prompt">
+              {prompt || '未记录 Prompt'}
+              {prompt ? (
+                <button className="u-icon-btn u-icon-btn--sm u-prompt__copy" type="button" aria-label="复制 Prompt" onClick={() => onCopyPrompt(prompt)}><Copy size={14} strokeWidth={1.6} aria-hidden="true" /></button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="u-detail__section">
+            <h4>生成参数</h4>
+            <dl className="u-facts">
+              {facts.map((fact) => (
+                <div className="u-fact" key={fact.label}><dt>{fact.label}</dt><dd title={String(fact.value)}>{fact.value}</dd></div>
+              ))}
+            </dl>
+          </div>
+
+          {showPublicStats ? (
+            <div className="u-detail__section">
+              <h4>互动与任务</h4>
+              <div className="u-facts">
+                {publicEngagementStats(image).map((item) => (
+                  <div className="u-fact" key={item.key}><dt>{item.label}</dt><dd>{item.value}</dd></div>
+                ))}
+                <div className="u-fact"><dt>任务 ID</dt><dd title={('task_id' in image ? image.task_id : undefined) || image.id}>{('task_id' in image ? image.task_id : undefined) || image.id}</dd></div>
+                <div className="u-fact"><dt>来源</dt><dd>{previewSourceLabel}</dd></div>
+              </div>
+            </div>
+          ) : null}
+
+          {actions.length ? (
+            <div className="u-detail__section">
+              <h4>更多操作</h4>
+              <div className="u-actions">
+                {actions.map((action) => (
+                  <button key={action.key} type="button" className="u-action" onClick={action.onClick} disabled={action.disabled}>
+                    {action.icon}
+                    <span>{action.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="u-detail__foot">
+          <button className="u-btn u-btn--primary u-btn--sm" type="button" onClick={() => onCopyPrompt(prompt)} disabled={!image.prompt}>复用 Prompt</button>
+          {onDownload ? <button className="u-btn u-btn--sm" type="button" onClick={() => onDownload(image)} disabled={!image.url && !image.download_url}>下载原图</button> : null}
+        </div>
+      </section>
     </div>
   )
 }
 
-function DetailImageMedia({ src, mediaExpiresAt, alt, onOpen, onMediaRefresh }: { src: string; mediaExpiresAt?: string; alt: string; onOpen?: () => void; onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void> }) {
+function DetailImageMedia({ src, mediaExpiresAt, alt, onMediaRefresh }: { src: string; mediaExpiresAt?: string; alt: string; onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void> }) {
   const [failed, setFailed] = useState(false)
   const { currentSrc, mediaRetryKey, markMediaLoaded, refreshFailedMedia, resetMediaRefresh } = useMediaRefreshOnce(src, onMediaRefresh, mediaExpiresAt, true)
   useEffect(() => setFailed(false), [src])
-  if (failed) return <div className={publicDetailClasses.placeholder}><ImageMediaFallback onRetry={() => { resetMediaRefresh(); setFailed(false) }} /></div>
+  if (failed) return <div className="u-detail__placeholder"><ImageMediaFallback onRetry={() => { resetMediaRefresh(); setFailed(false) }} /></div>
   return (
-    <button type="button" className={publicDetailClasses.imageButton} onClick={onOpen} disabled={!onOpen}>
-      <img
-        key={mediaRetryKey}
-        src={currentSrc}
-        alt={alt}
-        className={publicDetailClasses.image}
-        loading="lazy"
-        decoding="async"
-        onLoad={() => { markMediaLoaded(); setFailed(false) }}
-        onError={() => {
-          void refreshFailedMedia().then((refreshed) => {
-            if (!refreshed) setFailed(true)
-          })
-        }}
-      />
-    </button>
+    <img
+      key={mediaRetryKey}
+      src={currentSrc}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      onLoad={() => { markMediaLoaded(); setFailed(false) }}
+      onError={() => {
+        void refreshFailedMedia().then((refreshed) => {
+          if (!refreshed) setFailed(true)
+        })
+      }}
+    />
   )
 }
 
@@ -480,12 +556,15 @@ function avatarMenuIcon(icon: AvatarMenuIcon) {
   return <User size={18} strokeWidth={1.5} />
 }
 
+function PublicGalleryIcon() { return <Film size={22} strokeWidth={1.5} /> }
+
 export const navItems: Array<{ route: RouteId; label: string; icon: React.ReactNode }> = [
   { route: 'home', label: '首页', icon: <HomeIcon /> },
   { route: 'genpic', label: '创作', icon: <SparklesIcon /> },
   { route: 'creative-canvas', label: '画布', icon: <CanvasIcon /> },
   { route: 'gallery', label: '资产', icon: <GridIcon /> },
   { route: 'projects', label: '项目', icon: <ProjectsIcon /> },
+  { route: 'public-gallery', label: '广场', icon: <PublicGalleryIcon /> },
   { route: 'checkout', label: '积分', icon: <CreditCardIcon /> },
   { route: 'api-keys', label: '密钥', icon: <KeyIcon /> },
   { route: 'settings', label: '设置', icon: <SettingsIcon /> },
@@ -505,150 +584,283 @@ export function mobileNavActiveRoute(route: RouteId): RouteId {
 
 export function Shell({ children, scrollMode = 'app' }: { children: React.ReactNode; scrollMode?: ShellScrollMode }) {
   const app = useApp()
+  const projects = useProjects()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 8 })
+  const [projectOpen, setProjectOpen] = useState(false)
+  const [projectPosition, setProjectPosition] = useState({ top: 0, left: 8 })
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null)
+  const projectMenuRef = useRef<HTMLDivElement | null>(null)
+  const projectButtonRef = useRef<HTMLButtonElement | null>(null)
   const mainScrollRef = useRef<HTMLElement | null>(null)
   const accountMenuItems = avatarMenuItems()
   const isDark = app.themePreference.mode === 'dark'
-  const layout = shellLayoutClasses(scrollMode)
   const visibleNavItems = app.featureFlags.creative_canvas ? navItems : navItems.filter((item) => item.route !== 'creative-canvas')
-  const visibleMobileNavItems = app.featureFlags.creative_canvas ? mobileNavItems : mobileNavItems.filter((item) => item.route !== 'creative-canvas')
-  const activeNavIndex = shellActiveNavIndex(app.route, visibleNavItems)
+  const visibleMobileNavItems = app.featureFlags.creative_canvas
+    ? mobileNavItems
+    : mobileNavItems.map((item) => item.route === 'creative-canvas' ? { route: 'projects' as RouteId, label: '项目', icon: <ProjectsIcon /> } : item)
   const mobileActiveRoute = mobileNavActiveRoute(app.route)
+  const activeNavIndex = shellActiveNavIndex(app.route, visibleNavItems)
+  const activeProjectName = projects.selectedProject?.name ?? '默认项目'
+  const pointsLabel = app.balance ? pointsText(app.balance.available_points) : '...'
 
   useLayoutEffect(() => {
     resetShellScroll(scrollMode, mainScrollRef.current, window)
   }, [app.route, scrollMode])
 
   useEffect(() => {
-    if (!menuOpen) return undefined
+    if (!menuOpen && !projectOpen) return undefined
     const close = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+      const target = event.target as Node
+      if (menuOpen && !menuRef.current?.contains(target) && !menuButtonRef.current?.contains(target)) setMenuOpen(false)
+      if (projectOpen && !projectMenuRef.current?.contains(target) && !projectButtonRef.current?.contains(target)) setProjectOpen(false)
     }
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false)
+      if (event.key !== 'Escape') return
+      if (projectOpen) {
+        setProjectOpen(false)
+        projectButtonRef.current?.focus()
+      } else if (menuOpen) {
+        setMenuOpen(false)
+        menuButtonRef.current?.focus()
+      }
     }
+    const closeOnScroll = () => { setMenuOpen(false); setProjectOpen(false) }
     window.addEventListener('mousedown', close)
     window.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('resize', closeOnScroll)
+    window.addEventListener('scroll', closeOnScroll, true)
     return () => {
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('resize', closeOnScroll)
+      window.removeEventListener('scroll', closeOnScroll, true)
     }
-  }, [menuOpen])
+  }, [menuOpen, projectOpen])
+
+  const toggleAccountMenu = () => {
+    if (menuOpen) {
+      setMenuOpen(false)
+      return
+    }
+    const rect = menuButtonRef.current?.getBoundingClientRect()
+    if (rect) setMenuPosition({ top: Math.round(rect.bottom + 8), right: Math.max(8, Math.round(window.innerWidth - rect.right)) })
+    setProjectOpen(false)
+    setMenuOpen(true)
+  }
+
+  const toggleProjectMenu = () => {
+    if (projectOpen) {
+      setProjectOpen(false)
+      return
+    }
+    const rect = projectButtonRef.current?.getBoundingClientRect()
+    if (rect) setProjectPosition({ top: Math.round(rect.bottom + 8), left: Math.max(8, Math.round(rect.left)) })
+    setMenuOpen(false)
+    setProjectOpen(true)
+  }
 
   return (
-    <div className={cn(shellChromeClasses.wrapper, 'redesign-demo-scope')}>
-      <div className={layout.shell}>
-      <aside className={shellChromeClasses.sidebar} aria-label={`${siteBrand.name} 用户导航`}>
-        <button className={shellChromeClasses.brand} type="button" onClick={() => app.navigate('home')} aria-label={`${siteBrand.name} 首页`}>
-          <BrandMark />
-        </button>
-        <nav className={shellChromeClasses.nav}>
-          {activeNavIndex >= 0 ? <span className={shellChromeClasses.navIndicator} style={{ transform: `translateY(${activeNavIndex * 64}px)` }} aria-hidden="true" /> : null}
-          {visibleNavItems.map((item) => (
-            <a
-              key={item.route}
-              href={`#/${item.route}`}
-              className={cn(shellChromeClasses.navLink, app.route === item.route && shellChromeClasses.navLinkActive)}
-              aria-current={app.route === item.route ? 'page' : undefined}
-              onClick={(event) => {
-                event.preventDefault()
-                app.navigate(item.route)
-              }}
-            >
-              {item.icon}
-              <span className={shellChromeClasses.navLabel}>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-      </aside>
-      <main ref={mainScrollRef} className={layout.main}>
-        <header className={shellChromeClasses.topbar}>
-          <div className={shellChromeClasses.topbarInner}>
-          <div className={rdShell.userTools}>
+    <>
+      <div className="u-ambient" aria-hidden="true" />
+      <div className="u-grain" aria-hidden="true" />
+      <div className="u-shell">
+        <aside className="u-rail" aria-label={`${siteBrand.name} 用户导航`}>
+          <button className="u-rail__brand" type="button" onClick={() => app.navigate('home')} aria-label={`${siteBrand.name} 首页`}>
+            <img src={siteBrand.logoUrl} alt="" aria-hidden="true" />
+          </button>
+          <nav className="u-rail__nav" aria-label="主导航">
+            {activeNavIndex >= 0 ? <span className="u-rail__indicator" style={{ transform: `translateY(${activeNavIndex * 55}px)` }} aria-hidden="true" /> : null}
+            {visibleNavItems.map((item) => (
+              <a
+                key={item.route}
+                href={`#/${item.route}`}
+                className={cn('u-rail__link', app.route === item.route && 'is-active')}
+                aria-current={app.route === item.route ? 'page' : undefined}
+                onClick={(event) => {
+                  event.preventDefault()
+                  app.navigate(item.route)
+                }}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </a>
+            ))}
+          </nav>
+          <div className="u-rail__spacer" />
+          <div className="u-rail__foot">
             <button
               type="button"
-              className="grid size-11 place-items-center rounded-2xl border border-[var(--border)] bg-[var(--surface)] text-[var(--fg)] transition-all hover:border-[var(--accent)] hover:text-[var(--accent)]"
+              className="u-icon-btn u-icon-btn--plain"
               aria-label={isDark ? '切换浅色主题' : '切换深色主题'}
               title={isDark ? '切换浅色主题' : '切换深色主题'}
               onClick={() => void app.setThemePreference({ mode: isDark ? 'light' : 'dark' })}
             >
               {isDark ? <MoonIcon /> : <SunIcon />}
             </button>
-            <div
-              className={rdShell.balancePill}
-              title={pointsExchangeRules.join('\n')}
-              aria-label={`可用余额 ${app.balance ? pointsText(app.balance.available_points) : '...'}。${pointsExchangeRules.join('；')}`}
-            >
-              <span className={rdShell.balanceText}>◈</span>
-              <b className={rdShell.balanceValue}>{app.balance ? pointsText(app.balance.available_points) : '...'}</b>
-              <button type="button" className={rdShell.rechargeBtn} onClick={() => app.navigate('checkout')} aria-label="充值积分">+</button>
-            </div>
-            <div className="relative" ref={menuRef}>
+            <button type="button" className="u-icon-btn u-icon-btn--plain" aria-label="退出登录" title="退出登录" onClick={() => void app.logout()}>
+              <LogoutIcon />
+            </button>
+          </div>
+        </aside>
+
+        <main ref={mainScrollRef} className="u-main">
+          <header className="u-topbar">
+            <div className="u-topbar__context">
               <button
-                className={rdShell.avatarBtn}
+                ref={projectButtonRef}
+                className="u-topbar__project"
                 type="button"
                 aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                onClick={() => setMenuOpen((open) => !open)}
+                aria-expanded={projectOpen}
+                onClick={toggleProjectMenu}
               >
-                <span className={rdShell.avatarImg}>{app.profile?.avatar_initials ?? 'PG'}</span>
-                <b className={rdShell.userName}>{app.profile?.display_name ?? 'Guest'}</b>
-                <ChevronIcon className={cn(rdShell.userChevron, menuOpen && 'rotate-180')} />
+                <FolderKanban size={15} strokeWidth={1.6} aria-hidden="true" />
+                <span>{activeProjectName}</span>
+                <ChevronDown size={14} strokeWidth={1.6} aria-hidden="true" />
               </button>
-              {menuOpen ? (
-                <div className="absolute right-0 top-[calc(100%+12px)] z-50 w-56 rounded-2xl border border-[var(--border)] bg-[var(--surface)]/95 p-2 shadow-2xl shadow-black/30 backdrop-blur-2xl" role="menu">
-                  {accountMenuItems.map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      role="menuitem"
-                      data-permission={item.permission}
-                      onClick={() => {
-                        setMenuOpen(false)
-                        if (item.external) openDocsEntry('account-menu')
-                        else app.navigate(item.route)
-                      }}
-                      className="flex min-h-10 w-full cursor-pointer items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2 text-left text-sm font-bold text-[var(--fg)] transition-colors hover:bg-[var(--accent)]/10 hover:text-[var(--accent)]"
-                    >
-                      {avatarMenuIcon(item.icon)}
-                      {item.label}
-                    </button>
-                  ))}
-                  <hr className="my-2 h-px border-0 bg-[var(--border)]" />
-                  <button type="button" role="menuitem" className="flex min-h-10 w-full cursor-pointer items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2 text-left text-sm font-bold text-[var(--accent-coral)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-coral)_14%,transparent)]" onClick={() => { setMenuOpen(false); void app.logout() }}><LogoutIcon />退出登录</button>
-                </div>
-              ) : null}
+            </div>
+            <div className="u-topbar__spacer" />
+            <div className="u-topbar__actions">
+              <button className="u-icon-btn" type="button" aria-label="通知" title="通知" onClick={() => app.notify('info', '暂无新通知')}>
+                <Bell size={17} strokeWidth={1.6} aria-hidden="true" />
+              </button>
+              <button
+                className="u-balance"
+                type="button"
+                onClick={() => app.navigate('checkout')}
+                title={pointsExchangeRules.join('\n')}
+                aria-label={`可用余额 ${pointsLabel}。${pointsExchangeRules.join('；')}`}
+              >
+                <span className="u-topbar__dot" aria-hidden="true" />
+                <span className="u-balance__label">可用积分</span>
+                <b>{pointsLabel}</b>
+                <span className="u-balance__plus" aria-hidden="true"><Plus size={13} strokeWidth={2} /></span>
+              </button>
+              <button
+                ref={menuButtonRef}
+                className="u-avatar"
+                type="button"
+                aria-label="账户菜单"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onClick={toggleAccountMenu}
+              >
+                {app.profile?.avatar_initials ?? 'PG'}
+              </button>
+            </div>
+          </header>
+
+          <div className="u-content">
+            <div key={app.route} className={cn('flex min-h-0 flex-1 flex-col', shellLayoutClasses(scrollMode).content)}>{children}</div>
+          </div>
+        </main>
+      </div>
+
+      <nav className="u-bottom-nav" aria-label={`${siteBrand.name} 移动导航`}>
+        {visibleMobileNavItems.map((item) => (
+          <button
+            key={item.route}
+            type="button"
+            className={cn(mobileActiveRoute === item.route && 'is-active')}
+            aria-current={mobileActiveRoute === item.route ? 'page' : undefined}
+            onClick={() => app.navigate(item.route)}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {projectOpen ? (
+        <div
+          ref={projectMenuRef}
+          className="u-account-menu is-open"
+          style={{ top: projectPosition.top, left: projectPosition.left, right: 'auto', width: 280 }}
+          role="menu"
+          aria-label="切换项目"
+        >
+          <div className="u-account-menu__head" style={{ paddingBottom: 8 }}>
+            <div className="u-account-menu__identity">
+              <strong>切换项目</strong>
+              <span>{projects.projects.length} 个项目</span>
             </div>
           </div>
-          </div>
-        </header>
-        <div className={shellChromeClasses.contentConstrain}>
-          <div key={app.route} className={cn('flex min-h-0 flex-1 flex-col', layout.content)}>{children}</div>
-          <footer className={rdShell.footer}>
-            <div className={rdShell.footerContent}>
-              <div className="flex flex-col items-center gap-2 md:flex-row">
-                <span>© 2026 {siteBrand.name}. All rights reserved.</span>
-              </div>
-              <div className={rdShell.footerLinks}>
-                <span className={rdShell.footerLink}>服务协议</span>
-                <span className={rdShell.footerLink}>隐私条款</span>
-                <button className={cn(rdShell.footerLink, 'border-0 bg-transparent p-0 text-inherit')} type="button" onClick={() => openDocsEntry('footer')}>API 文档</button>
-              </div>
-            </div>
-          </footer>
+          {projects.projects.length ? projects.projects.map((project) => (
+            <button
+              key={project.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={project.id === projects.selectedProjectID}
+              className="u-account-menu__item"
+              onClick={() => {
+                projects.selectProject(project.id)
+                setProjectOpen(false)
+              }}
+            >
+              <FolderKanban size={15} strokeWidth={1.6} aria-hidden="true" />
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.name}</span>
+              {project.id === projects.selectedProjectID ? <span className="u-dot" style={{ color: 'var(--accent)' }} aria-hidden="true" /> : null}
+            </button>
+          )) : <div className="u-account-menu__item" style={{ cursor: 'default' }}>{projects.loading ? '正在载入项目…' : '暂无项目'}</div>}
+          <div className="u-account-menu__sep" />
+          <button type="button" role="menuitem" className="u-account-menu__item" onClick={() => { setProjectOpen(false); app.navigate('projects') }}>
+            <Settings size={15} strokeWidth={1.6} aria-hidden="true" />管理项目
+          </button>
         </div>
-        <nav className={shellChromeClasses.mobileNav} aria-label={`${siteBrand.name} 移动导航`}>
-          {visibleMobileNavItems.map((item) => (
-            <button key={item.route} type="button" aria-current={mobileActiveRoute === item.route ? 'page' : undefined} className={cn(shellChromeClasses.mobileNavLink, mobileActiveRoute === item.route && shellChromeClasses.mobileNavLinkActive)} onClick={() => app.navigate(item.route)}>
-              {item.icon}
-              <span className="text-[10px] font-bold">{item.label}</span>
+      ) : null}
+
+      {menuOpen ? (
+        <div
+          ref={menuRef}
+          className="u-account-menu is-open"
+          style={{ top: menuPosition.top, right: menuPosition.right }}
+          role="menu"
+          aria-label="账户菜单"
+        >
+          <div className="u-account-menu__head">
+            <span className="u-avatar">{app.profile?.avatar_initials ?? 'PG'}</span>
+            <div className="u-account-menu__identity">
+              <strong>{app.profile?.display_name ?? 'Guest'}</strong>
+              <span>{app.profile?.email || '未绑定邮箱'}</span>
+            </div>
+          </div>
+          <div className="u-account-menu__balance">
+            <span>可用积分</span>
+            <b>{app.balance ? pointsText(app.balance.available_points) : '...'}</b>
+          </div>
+          {accountMenuItems.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              role="menuitem"
+              data-permission={item.permission}
+              className="u-account-menu__item"
+              style={{ width: '100%', border: 0, background: 'transparent', textAlign: 'left' }}
+              onClick={() => {
+                setMenuOpen(false)
+                if (item.external) openDocsEntry('account-menu')
+                else app.navigate(item.route)
+              }}
+            >
+              {avatarMenuIcon(item.icon)}
+              {item.label}
             </button>
           ))}
-        </nav>
-      </main>
-      </div>
-    </div>
+          <div className="u-account-menu__sep" />
+          <button
+            type="button"
+            role="menuitem"
+            className="u-account-menu__item u-account-menu__item--danger"
+            style={{ width: '100%', border: 0, background: 'transparent', textAlign: 'left' }}
+            onClick={() => { setMenuOpen(false); void app.logout() }}
+          >
+            <LogoutIcon />退出登录
+          </button>
+        </div>
+      ) : null}
+    </>
   )
 }
 
@@ -693,18 +905,18 @@ export const componentPrimitiveNames = [
 
 export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: React.ReactNode }) {
   return (
-    <label className={userForm.field}>
-      <span className={userForm.fieldLabel}>{label}</span>
+    <label className="u-field">
+      <span>{label}{hint ? <em className="u-label__hint">{hint}</em> : null}</span>
       {children}
-      {error ? <span className="text-xs not-italic text-[var(--accent-coral)]" role="alert">{error}</span> : hint ? <span className="text-xs text-[var(--dim)]">{hint}</span> : null}
+      {error ? <span className="u-field__error" role="alert">{error}</span> : null}
     </label>
   )
 }
 
 export function Button({ children, tone = 'primary', busy = false, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'primary' | 'ghost' | 'danger'; busy?: boolean }) {
-  const toneClass = tone === 'primary' ? userButton.primary : tone === 'danger' ? userButton.danger : userButton.ghost
+  const toneClass = tone === 'primary' ? 'u-btn--primary' : tone === 'danger' ? 'u-btn--danger' : 'u-btn--quiet'
   return (
-    <button {...props} className={cn(userButton.base, toneClass, props.className)} disabled={props.disabled || busy}>
+    <button {...props} className={cn('u-btn', toneClass, props.className)} disabled={props.disabled || busy}>
       {busy ? <span className={userState.spinner} aria-hidden="true" /> : null}
       {children}
     </button>
@@ -722,11 +934,7 @@ export function IconButton({ label, tone = 'default', size = 'md', children, ...
       type={props.type ?? 'button'}
       aria-label={label}
       title={props.title ?? label}
-      className={cn(
-        size === 'sm' ? userButton.iconSm : userButton.icon,
-        tone === 'danger' && 'text-[var(--accent-coral)] hover:border-[var(--accent-coral)] hover:text-[var(--accent-coral)]',
-        props.className,
-      )}
+      className={cn('u-icon-btn', size === 'sm' && 'u-icon-btn--sm', tone === 'danger' && 'u-icon-btn--danger', props.className)}
     >
       {children}
     </button>
@@ -749,21 +957,18 @@ export function SegmentedControl<T extends string>({ label, value, options, onCh
   className?: string
 }) {
   return (
-    <div className={cn('inline-grid min-w-0 grid-flow-col auto-cols-fr rounded-xl border border-[var(--border)] bg-[var(--bg)] p-1', className)} role="group" aria-label={label}>
+    <div className={cn('u-segment', className)} role="group" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
-          className={cn(
-            'inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border-0 bg-transparent px-3 text-sm font-semibold text-[var(--muted)] transition-colors duration-[var(--motion-fast)] hover:text-[var(--fg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]',
-            value === option.value && 'bg-[var(--surface)] text-[var(--fg)] shadow-[var(--pg-shadow-sm)]',
-          )}
+          className={cn(value === option.value && 'is-active')}
           aria-pressed={value === option.value}
           disabled={disabled || option.disabled}
           onClick={() => onChange(option.value)}
         >
           {option.icon}
-          <span className="truncate">{option.label}</span>
+          <span>{option.label}</span>
         </button>
       ))}
     </div>
@@ -771,7 +976,7 @@ export function SegmentedControl<T extends string>({ label, value, options, onCh
 }
 
 export function Toolbar({ label = '页面工具栏', children, className = '' }: { label?: string; children: React.ReactNode; className?: string }) {
-  return <div className={cn('flex min-h-14 flex-wrap items-center justify-between gap-3 border-y border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_64%,transparent)] px-4 py-2', className)} role="toolbar" aria-label={label}>{children}</div>
+  return <div className={cn('u-toolbar', className)} role="toolbar" aria-label={label}>{children}</div>
 }
 
 export function GalleryFilterToolbar({ label, query, queryPlaceholder, onQueryChange, filters, meta, action, className = '' }: {
@@ -785,20 +990,20 @@ export function GalleryFilterToolbar({ label, query, queryPlaceholder, onQueryCh
   className?: string
 }) {
   return (
-    <Toolbar label={label} className={cn('gap-4 px-0 py-3', className)}>
-      <label className="relative min-w-[min(100%,17rem)] flex-1 max-[620px]:basis-full max-[620px]:max-w-none sm:max-w-[22rem]">
+    <Toolbar label={label} className={className}>
+      <label className="u-search max-[620px]:basis-full">
         <span className="sr-only">{queryPlaceholder}</span>
+        <Search size={15} strokeWidth={1.6} aria-hidden="true" />
         <input
           type="search"
-          className={cn(userForm.input, 'h-11 w-full rounded-xl pl-4')}
           value={query}
           placeholder={queryPlaceholder}
           onChange={(event) => onQueryChange(event.target.value)}
         />
       </label>
       {filters ? <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 max-[620px]:basis-full">{filters}</div> : null}
-      {meta ? <div className="ml-auto shrink-0 text-xs text-[var(--muted)]" aria-live="polite">{meta}</div> : null}
-      {action ? <div className="shrink-0">{action}</div> : null}
+      {meta ? <span className="u-meta" aria-live="polite">{meta}</span> : null}
+      {action}
     </Toolbar>
   )
 }
@@ -818,12 +1023,12 @@ export function StatusRail({ items, label = '当前状态', className = '' }: { 
     error: 'bg-[var(--accent-coral)]',
   }
   return (
-    <dl className={cn('flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--border)] px-4 py-3', className)} aria-label={label}>
+    <dl className={cn('u-stat-row', className)} aria-label={label}>
       {items.map((item) => (
-        <div key={item.key} className="flex min-w-0 items-center gap-2 text-xs">
-          <span className={cn('size-1.5 shrink-0 rounded-full', toneClass[item.tone ?? 'neutral'])} aria-hidden="true" />
-          <dt className="text-[var(--muted)]">{item.label}</dt>
-          <dd className="m-0 truncate font-semibold text-[var(--fg)]">{item.value}</dd>
+        <div key={item.key} className="u-stat">
+          <dt className="u-stat__label">{item.label}</dt>
+          <dd className={cn('u-stat__value', item.tone === 'error' && 'text-[var(--danger)]')}>{item.value}</dd>
+          <span className={cn('u-stat__foot', toneClass[item.tone ?? 'neutral'])}>{item.tone === 'warning' ? '需要关注' : item.tone === 'error' ? '异常' : item.tone === 'success' ? '正常' : '就绪'}</span>
         </div>
       ))}
     </dl>
@@ -831,7 +1036,7 @@ export function StatusRail({ items, label = '当前状态', className = '' }: { 
 }
 
 export function Surface({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <section className={cn(userCard.base, className)}>{children}</section>
+  return <section className={cn('u-plate', className)}>{children}</section>
 }
 
 export const imageFrameActionsClass = 'pg-image-frame-actions'
@@ -934,26 +1139,32 @@ export function GalleryImageFrame({ src, mediaExpiresAt, alt, width, height, asp
 
 export function PageIntro({ eyebrow, title, detail, action }: { eyebrow?: string; title: string; detail?: string; action?: React.ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-5">
-      <div>
-        {eyebrow ? <p className={userText.eyebrow}>{eyebrow}</p> : null}
-        <h1 className="m-0 font-vault-display text-[clamp(2.4rem,5vw,4.5rem)] font-medium leading-none">{title}</h1>
-        {detail ? <span className="mt-3 block max-w-[68ch] text-[var(--muted)]">{detail}</span> : null}
+    <div className="u-page-head">
+      <div className="u-page-head__copy">
+        {eyebrow ? <span className="u-eyebrow">{eyebrow}</span> : null}
+        <h1 className="u-h1">{title}</h1>
+        {detail ? <p className="u-sub">{detail}</p> : null}
       </div>
-      {action ? <div className="flex flex-wrap items-center gap-3">{action}</div> : null}
+      {action ? <div className="u-page-head__actions">{action}</div> : null}
     </div>
   )
 }
 
 export function LoadingState({ label = '正在读取实时数据...' }: { label?: string }) {
-  return <div className={userState.stateLine}><span className={userState.spinner} />{label}</div>
+  return (
+    <div className="u-empty" role="status">
+      <span className="u-empty__icon"><span className={userState.spinner} aria-hidden="true" /></span>
+      <h3>{label}</h3>
+    </div>
+  )
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className={cn(userState.stateLine, 'error-state')}>
-      <b>读取失败</b>
-      <span>{message}</span>
+    <div className="u-empty error-state" role="alert">
+      <span className="u-empty__icon" aria-hidden="true">!</span>
+      <h3>读取失败</h3>
+      <p>{message}</p>
       {onRetry ? <Button tone="ghost" onClick={onRetry}>重试</Button> : null}
     </div>
   )
@@ -961,10 +1172,10 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 
 export function EmptyState({ title, detail, action, icon }: { title: string; detail: string; action?: React.ReactNode; icon?: React.ReactNode }) {
   return (
-    <div className={userState.empty}>
-      {icon ? <div className={userState.emptyIcon}>{icon}</div> : null}
-      <strong className={userState.emptyTitle}>{title}</strong>
-      <span className={userState.emptyDetail}>{detail}</span>
+    <div className="u-empty">
+      {icon ? <div className="u-empty__icon">{icon}</div> : null}
+      <h3>{title}</h3>
+      <p>{detail}</p>
       {action}
     </div>
   )
@@ -1041,10 +1252,10 @@ export function Modal({ title, children, onClose, className = '' }: { title: str
   useDismissableLayer(true, onClose, dialogRef)
   return (
     <OverlayPortal>
-      <div className={userState.modalBackdrop} role="presentation" data-focus-layer onMouseDown={onClose}>
-        <section ref={dialogRef} tabIndex={-1} className={cn(userState.modalCard, className)} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
-          <div className="flex items-center justify-between gap-5">
-            <h2 className="m-0 text-xl">{title}</h2>
+      <div className="u-backdrop is-open" role="presentation" data-focus-layer onMouseDown={onClose}>
+        <section ref={dialogRef} tabIndex={-1} className={cn('u-modal is-open', className)} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+          <div className="u-modal__head">
+            <h2>{title}</h2>
             <IconButton label="关闭" onClick={onClose}><X size={18} strokeWidth={1.5} aria-hidden="true" /></IconButton>
           </div>
           {children}
@@ -1054,39 +1265,43 @@ export function Modal({ title, children, onClose, className = '' }: { title: str
   )
 }
 
-export function Drawer({ open, title, children, onClose, side = 'right', className = '' }: {
+export function Drawer({ open, title, children, onClose, side = 'right', wide = false, className = '' }: {
   open: boolean
   title: string
   children: React.ReactNode
   onClose: () => void
   side?: 'left' | 'right' | 'bottom'
+  wide?: boolean
   className?: string
 }) {
   const drawerRef = useRef<HTMLElement | null>(null)
   useDismissableLayer(open, onClose, drawerRef)
   if (!open) return null
+  const width = wide ? 'min(1080px, 96vw)' : 'min(720px, 100vw)'
   const position = side === 'left'
-    ? 'inset-y-0 left-0 w-[min(420px,92vw)] border-r'
+    ? { inset: '0 auto 0 0', width, borderLeft: 0, borderRight: '1px solid var(--line-2)', transform: 'none' }
     : side === 'bottom'
-      ? 'inset-x-0 bottom-0 max-h-[88vh] rounded-t-2xl border-t'
-      : 'inset-y-0 right-0 w-[min(420px,92vw)] border-l'
+      ? { inset: 'auto 0 0 0', width: '100vw', maxHeight: '88vh', borderTop: '1px solid var(--line-2)', transform: 'none' }
+      : { width }
   return (
     <OverlayPortal>
-      <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm" role="presentation" data-focus-layer onMouseDown={onClose}>
+      <div className="u-backdrop is-open" role="presentation" data-focus-layer onMouseDown={onClose}>
         <section
           ref={drawerRef}
           tabIndex={-1}
           role="dialog"
           aria-modal="true"
           aria-label={title}
-          className={cn('absolute flex max-h-full flex-col border-[var(--border)] bg-[var(--surface)] shadow-[var(--pg-shadow-lg)]', position, className)}
+          className={cn('u-drawer is-open', className)}
+          style={position}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          <header className="flex min-h-16 items-center justify-between gap-4 border-b border-[var(--border)] px-5">
-            <h2 className="m-0 text-lg font-semibold">{title}</h2>
+          <header className="u-drawer__head">
+            <div className="u-drawer__title"><strong>{title}</strong></div>
+            <div className="u-drawer__spacer" />
             <IconButton label="关闭" onClick={onClose}><X size={18} strokeWidth={1.5} aria-hidden="true" /></IconButton>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
+          <div className="u-drawer__body">{children}</div>
         </section>
       </div>
     </OverlayPortal>
@@ -1142,8 +1357,8 @@ export function StatusPill({ status }: { status: ImageTaskStatus | PublishStatus
     active: '启用中',
     disabled: '已禁用',
   }
-  const pillTone = tone as keyof typeof userPill
-  return <span className={cn(userPill.base, userPill[pillTone] ?? userPill.neutral)}>{label[status] ?? status}</span>
+  const statusTone = tone === 'good' ? 'u-status--ok' : tone === 'bad' ? 'u-status--bad' : tone === 'warn' ? 'u-status--warn' : ''
+  return <span className="u-chip"><span className={cn('u-status', statusTone)}><span className="u-dot" aria-hidden="true" />{label[status] ?? status}</span></span>
 }
 
 export function taskTypeLabel(type: ImageTaskType | string) {

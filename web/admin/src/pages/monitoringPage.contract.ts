@@ -22,11 +22,16 @@ for (const contract of [
   '请求负载',
   '响应质量',
   '资源压力',
+  'StatusDistribution',
   'ResourceTrend',
+  'resourceNote',
+  'mn-gauge',
+  'a-dist',
   '热点接口',
   '状态码分布',
   '依赖与诊断',
   'data-admin-monitoring-runtime',
+  'a-status-strip',
 ]) {
   if (!source.includes(contract)) {
     throw new Error(`runtime monitoring page should preserve ${contract}`)
@@ -39,7 +44,7 @@ for (const primitive of ['MetricStrip', 'DataTable', 'Badge', 'InlineFeedback', 
   }
 }
 
-for (const obsolete of ['完整上线检查', '上游探针', 'data-admin-monitoring-blockers', 'healthScore', 'Math.random', 'peer sr-only']) {
+for (const obsolete of ['完整上线检查', '上游探针', 'data-admin-monitoring-blockers', 'healthScore', 'Math.random', 'peer sr-only', 'setLoading(true)']) {
   if (source.includes(obsolete)) {
     throw new Error(`runtime monitoring page should remove obsolete pattern ${obsolete}`)
   }

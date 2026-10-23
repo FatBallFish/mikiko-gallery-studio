@@ -53,7 +53,6 @@ export const navGroups: AdminNavGroup[] = [
     items: [
       { id: 'access-accounts', label: '接入账号' },
       { id: 'routing', label: '路由模型' },
-      { id: 'pricing', label: '价格策略' },
       { id: 'video-tasks', label: '视频任务' },
       { id: 'call-records', label: '图片任务' },
     ],

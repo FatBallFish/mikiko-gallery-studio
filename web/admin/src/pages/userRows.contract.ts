@@ -22,12 +22,8 @@ if (/detailTarget\s*\?\s*\(\s*<Modal/.test(usersPageSource)) {
   throw new Error('user detail should use a Drawer instead of a Modal')
 }
 
-if (!usersPageSource.includes('data-admin-user-section={dataSection}')) {
-  throw new Error('user detail sections should expose stable rendered section markers')
-}
-
 for (const section of ['profile', 'ledger', 'resources', 'limits', 'danger']) {
-  if (!usersPageSource.includes(`dataSection="${section}"`)) {
+  if (!usersPageSource.includes(`data-admin-user-section="${section}"`)) {
     throw new Error(`user detail drawer should expose the ${section} section`)
   }
 }
@@ -44,8 +40,12 @@ if (!usersPageSource.includes('message={actionError}')) {
   throw new Error('user mutations should keep failure feedback local to the active operation')
 }
 
-if (!usersPageSource.includes('detailTarget && !action ? (')) {
-  throw new Error('user detail Drawer must unmount while a nested action Modal owns focus')
+if (!usersPageSource.includes('detailTarget ? (')) {
+  throw new Error('user detail Drawer must stay mounted while nested actions open')
+}
+
+if (!usersPageSource.includes('stacked={Boolean(detailTarget)}')) {
+  throw new Error('user mutations opened from the detail drawer must stack as a second drawer')
 }
 
 for (const unsafeConfirmation of ['confirmEmail: rawRow.email', 'confirmEmail: user.email']) {

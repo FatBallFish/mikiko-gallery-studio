@@ -19,6 +19,7 @@ import (
 	domainadmincallrecord "github.com/fatballfish/pic-gallery/internal/domain/admincallrecord"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
+	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	admincallrecordservice "github.com/fatballfish/pic-gallery/internal/service/admincallrecord"
@@ -57,11 +58,44 @@ func (s *AdminCallRecordStore) ListCallRecords(ctx context.Context, req domainad
 	if err != nil {
 		return domainadmincallrecord.ListPage{}, err
 	}
+	resultImages, err := s.resultImagesByTask(ctx, entities)
+	if err != nil {
+		return domainadmincallrecord.ListPage{}, err
+	}
 	items := make([]domainadmincallrecord.Record, 0, len(entities))
 	for _, entity := range entities {
-		items = append(items, mapAdminCallRecord(entity))
+		items = append(items, mapAdminCallRecord(entity, resultImages[entity.ID]))
 	}
 	return domainadmincallrecord.ListPage{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+func (s *AdminCallRecordStore) resultImagesByTask(ctx context.Context, entities []*repoent.ImageTask) (map[uuid.UUID][]domainadmincallrecord.ResultImage, error) {
+	if len(entities) == 0 {
+		return nil, nil
+	}
+	taskIDs := make([]uuid.UUID, 0, len(entities))
+	for _, entity := range entities {
+		taskIDs = append(taskIDs, entity.ID)
+	}
+	rows, err := s.client.ImageResult.Query().
+		Where(
+			imageresult.TaskIDIn(taskIDs...),
+			imageresult.ImageRoleEQ("output"),
+			imageresult.DeletedAtIsNil(),
+		).
+		Order(repoent.Asc(imageresult.FieldCreatedAt), repoent.Asc(imageresult.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load call record result images: %w", err)
+	}
+	result := make(map[uuid.UUID][]domainadmincallrecord.ResultImage, len(rows))
+	for _, row := range rows {
+		result[row.TaskID] = append(result[row.TaskID], domainadmincallrecord.ResultImage{
+			ID: row.ID.String(), ImageRole: row.ImageRole, MimeType: row.MimeType,
+			Width: row.Width, Height: row.Height, SizeBytes: row.FileSizeBytes,
+		})
+	}
+	return result, nil
 }
 
 func (s *AdminCallRecordStore) CallDistribution(ctx context.Context, req domainadmincallrecord.DistributionRequest) (domainadmincallrecord.Distribution, error) {
@@ -447,6 +481,9 @@ func adminCallRecordPredicates(req domainadmincallrecord.ListRequest) []predicat
 			predicates = append(predicates, imagetask.IDEQ(taskUUID))
 		}
 	}
+	if routeModelCode := strings.TrimSpace(req.RouteModelCode); routeModelCode != "" {
+		predicates = append(predicates, imagetask.RouteModelCodeEQ(routeModelCode))
+	}
 	if !req.CreatedFrom.IsZero() {
 		predicates = append(predicates, imagetask.CreatedAtGTE(req.CreatedFrom))
 	}
@@ -463,9 +500,11 @@ func adminCallRecordPredicates(req domainadmincallrecord.ListRequest) []predicat
 	return predicates
 }
 
-func mapAdminCallRecord(entity *repoent.ImageTask) domainadmincallrecord.Record {
+func mapAdminCallRecord(entity *repoent.ImageTask, resultImages []domainadmincallrecord.ResultImage) domainadmincallrecord.Record {
 	record := domainadmincallrecord.Record{
 		TaskID:                    entity.ID.String(),
+		Prompt:                    entity.Prompt,
+		ResultImages:              resultImages,
 		UserID:                    entity.UserID,
 		APIKeyID:                  entity.APIKeyID,
 		SourceChannel:             entity.SourceChannel,

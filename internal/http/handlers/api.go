@@ -78,15 +78,16 @@ import (
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	mediaerrors "github.com/fatballfish/pic-gallery/internal/service/mediaerrors"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
+	oidcservice "github.com/fatballfish/pic-gallery/internal/service/oidc"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
-	oidcservice "github.com/fatballfish/pic-gallery/internal/service/oidc"
 	"github.com/fatballfish/pic-gallery/internal/service/smtpdelivery"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
 	videocallbackservice "github.com/fatballfish/pic-gallery/internal/service/videocallback"
+	videomodeltestservice "github.com/fatballfish/pic-gallery/internal/service/videomodeltest"
 	videoroutingservice "github.com/fatballfish/pic-gallery/internal/service/videorouting"
 	videotaskservice "github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/fatballfish/pic-gallery/internal/storage"
@@ -128,6 +129,7 @@ type API struct {
 	videoTasks     *videotaskservice.Service
 	videoCallbacks *videocallbackservice.Service
 	adminVideo     *adminvideoservice.Service
+	videoModelTest *videomodeltestservice.Service
 	adminPerms     domainadminauth.PermissionResolver
 	docsReady      DocsReadinessChecker
 	cashierSync    cashierOrderSyncCoordinator
@@ -481,6 +483,7 @@ func NewAPIWithModelAdminService(cfg config.Config, authSvc *authservice.Service
 	api.redeem = redeemSvc
 	api.callRecord = callRecordSvc
 	api.modelAdmin = modelAdminSvc
+	api.videoModelTest = videomodeltestservice.NewService(modelAdminSvc)
 	api.caps.SetModelRoutingSource(modelAdminSvc)
 	api.tasks.SetModelRoutingSource(modelAdminSvc)
 	api.billing.SetModelRoutingSource(modelAdminSvc)
@@ -7039,6 +7042,7 @@ func (a *API) HandleAdminCallRecords(w http.ResponseWriter, r *http.Request) {
 		SourceChannel:    r.URL.Query().Get("source_channel"),
 		UserID:           userID,
 		TaskID:           r.URL.Query().Get("task_id"),
+		RouteModelCode:   r.URL.Query().Get("route_model_code"),
 		CreatedFrom:      createdFrom,
 		CreatedTo:        createdTo,
 		PlatformLossOnly: platformLoss != nil && *platformLoss,
@@ -7055,6 +7059,36 @@ func (a *API) HandleAdminCallRecords(w http.ResponseWriter, r *http.Request) {
 			"total":     result.Total,
 		},
 	})
+}
+
+func (a *API) HandleAdminCallRecordImage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, r, errs.New(http.StatusMethodNotAllowed, errs.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	if _, appErr := a.requireAdminPermissionWithQueryToken(r, domainadminauth.PermissionReadOnly); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if a.tasks == nil {
+		httpx.WriteError(w, r, errs.Internal("image task service is unavailable"))
+		return
+	}
+	imageID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/ops/admin/v1/call-records/images/"), "/")
+	if imageID == "" || strings.Contains(imageID, "/") {
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "call record image route not found"))
+		return
+	}
+	result, content, err := a.tasks.DownloadImageResultForAdmin(r.Context(), imageID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	w.Header().Set("Content-Type", defaultString(result.MimeType, "application/octet-stream"))
+	w.Header().Set("Content-Disposition", `inline; filename="`+imageDownloadFilename(result)+`"`)
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
 }
 
 func (a *API) HandleAdminModelAccounts(w http.ResponseWriter, r *http.Request) {
@@ -7111,6 +7145,10 @@ func (a *API) HandleAdminModelAccountDetail(w http.ResponseWriter, r *http.Reque
 	}
 	if len(parts) == 2 && parts[1] == "test-image" {
 		a.handleAdminModelAccountTestImage(w, r, admin.AdminID, accountID)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "test-video" {
+		a.handleAdminModelAccountTestVideo(w, r, admin.AdminID, accountID)
 		return
 	}
 	switch r.Method {
@@ -7227,6 +7265,57 @@ func (a *API) handleAdminModelAccountTestImage(w http.ResponseWriter, r *http.Re
 		return
 	}
 	httpx.WriteSuccess(w, r, http.StatusOK, result)
+}
+
+func (a *API) handleAdminModelAccountTestVideo(w http.ResponseWriter, r *http.Request, adminID, accountID int64) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if a.videoModelTest == nil {
+		httpx.WriteError(w, r, errs.Internal("video model test service is unavailable"))
+		return
+	}
+	var input videomodeltestservice.Request
+	if !decodeJSONBody(w, r, &input) {
+		return
+	}
+	input.AccountID = accountID
+	test, err := a.videoModelTest.Submit(r.Context(), input)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	_ = a.recordAudit(r, "admin", fmt.Sprintf("%d", adminID), "model_account.test_video", "model_account", fmt.Sprintf("%d", accountID), map[string]any{
+		"model_id": input.AccountModelID, "task_type": input.TaskType, "test_id": test.ID, "status": test.Status,
+	})
+	httpx.WriteSuccess(w, r, http.StatusAccepted, test)
+}
+
+func (a *API) HandleAdminVideoModelTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if _, appErr := a.requireAdminPermission(r, domainadminauth.PermissionManageModels); appErr != nil {
+		httpx.WriteError(w, r, appErr)
+		return
+	}
+	if a.videoModelTest == nil {
+		httpx.WriteError(w, r, errs.Internal("video model test service is unavailable"))
+		return
+	}
+	testID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/ops/admin/v1/video-model-tests/"), "/")
+	if testID == "" || strings.Contains(testID, "/") {
+		httpx.WriteError(w, r, errs.New(http.StatusNotFound, errs.CodeNotFound, "video model test route not found"))
+		return
+	}
+	test, err := a.videoModelTest.Get(testID)
+	if err != nil {
+		httpx.WriteError(w, r, normalizeAppError(err))
+		return
+	}
+	httpx.WriteSuccess(w, r, http.StatusOK, test)
 }
 
 func (a *API) handleAdminModelAccountModels(w http.ResponseWriter, r *http.Request, adminID, accountID int64, parts []string) {

@@ -1,16 +1,14 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
-import { ChevronUp, Copy, Info, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { ChevronUp, Copy, Download, Info, Pencil, RotateCcw } from 'lucide-react'
 import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, ImageResult, ImageTask, ImageTaskStatus, ImageTaskType, ReferenceAsset, UserProfile } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
 import { toTask, userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, ImageDetailModal, InlineCopyButton, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImagePreviewPayload } from '../components'
-import { userButton, userForm, userState } from '../ui/classes'
+import { Button, Drawer, EmptyState, ErrorState, ImageDetailModal, InlineCopyButton, LoadingState, Modal, PublicDetailIcon, StatusPill, copyText, taskTypeLabel, useApp, type ImagePreviewPayload } from '../components'
+import { userState } from '../ui/classes'
 import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
 import { RefreshableMediaImage } from '../ui/mediaRefresh'
-import { consoleClasses } from './consoleClasses'
 import { pointsText } from '../../../shared/pointsDisplay'
 import { errorMessage } from '../useApiResource'
 import { mediaAccess, type MediaResource } from '../mediaAccess'
@@ -20,7 +18,7 @@ import { currentWorkspaceEstimate, workspaceDisplayedResolvedSize, workspaceEsti
 import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, galleryImportSuccessMessage, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
 import { WorkspaceStatusRail } from './WorkspaceStatusRail'
 import { workspaceTaskCardView, workspaceTaskFailureView } from './workspaceTaskFailure'
-import { generationSlots, workspaceBaseResolutionLabel } from './workspaceTaskProgress'
+import { generationSlots, workspaceBaseResolutionLabel, type WorkspaceProgressNode } from './workspaceTaskProgress'
 import { limitReferenceSelection, remainingReferenceCapacity, singleReferenceAddition, workspaceReferenceMaximum, workspaceRequiredReferencesReady } from './workspaceReferenceLimit'
 import { createWorkspaceViewModel, matchWorkspaceCapabilityOption, normalizeWorkspaceImageCount, workspaceTaskImageSafetyLimit } from './workspaceViewModel'
 import { useCompactWorkspaceViewport, workspaceParametersHidden } from './workspaceResponsive'
@@ -37,7 +35,7 @@ import { ModelGroupSelect } from './ModelGroupSelect'
 import { buildPromptReferenceBindings, buildPromptVariableInputs, expandedPromptCodePointLength, promptVariableValidation, reconcilePromptVariables, renamePromptReference } from './promptTemplateEditorModel'
 import { parsePromptTemplate } from './promptTemplateParser'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
-import { ProjectSelector, useProjects } from '../ProjectContext'
+import { useProjects } from '../ProjectContext'
 import { MEDIA_ASSETS_CHANGED_EVENT, QUEUE_MEDIA_UPLOAD_EVENT } from '../features/media/UploadTray'
 import { workspaceProjectReadiness, workspaceSubmissionIsCurrent, type WorkspaceProjectSelection } from './workspaceProjectLifecycle'
 
@@ -151,140 +149,13 @@ function generationParameterErrorMessage(error: unknown) {
   return errorMessage(error)
 }
 
-const workspaceClasses: typeof consoleClasses & Record<string, string> = {
-  ...consoleClasses,
-  root: 'relative grid w-full max-w-full min-w-0 flex-1 grid-cols-1 gap-4 overflow-x-hidden p-4 pb-44 min-[761px]:grid-cols-[360px_minmax(0,1fr)] min-[761px]:items-start min-[761px]:p-6 min-[1180px]:grid-cols-[390px_minmax(0,1fr)]',
-  panel: 'z-40 flex min-w-0 flex-col overflow-hidden border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_90%,transparent)] shadow-[var(--pg-shadow-lg)] backdrop-blur-2xl max-[760px]:fixed max-[760px]:inset-x-3 max-[760px]:bottom-[calc(68px+env(safe-area-inset-bottom))] max-[760px]:max-h-[82dvh] max-[760px]:rounded-2xl min-[761px]:sticky min-[761px]:top-24 min-[761px]:h-[calc(100dvh-120px)] min-[761px]:rounded-2xl',
-  parameterRegion: 'flex min-h-0 flex-1 flex-col overflow-hidden transition-[max-height] duration-[var(--motion-route)] motion-reduce:transition-none max-[760px]:flex-none',
-  panelScroll: rdWorkspace.sidebarScroll,
-  mobileSheetHeader: 'flex min-h-12 items-center justify-between gap-3 border-b border-[var(--border)] px-4 min-[761px]:hidden',
-  mobileSheetButton: 'flex min-h-11 flex-1 touch-none select-none items-center justify-between gap-3 border-0 bg-transparent text-left text-sm font-bold text-[var(--fg)] cursor-grab active:cursor-grabbing',
-  panelSection: rdWorkspace.sidebarSection,
-  panelSectionFinal: cn(rdWorkspace.actionBar, 'max-[760px]:p-3'),
-  tabs: 'mb-6 grid grid-cols-2 gap-3',
-  tab: cn(rdWorkspace.selectItem, 'min-h-11 flex-row text-sm'),
-  tabActive: 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_18%,var(--surface))] text-[var(--lv-accent-contrast)] shadow-[0_0_20px_rgba(var(--accent-rgb),0.18)] ring-1 ring-[var(--accent)]/50 [&_*]:text-[var(--lv-accent-contrast)]',
-  panelTitle: 'm-0 mb-1.5 font-vault-display text-2xl font-semibold leading-tight text-[var(--fg)]',
-  panelCopy: 'm-0 mb-4 text-sm leading-relaxed text-[var(--muted)]',
-  uploadStrip: 'mt-3 grid grid-cols-2 gap-2',
-  refThumb: cn(rdWorkspace.uploadBox, 'mt-0 flex h-16 items-center justify-center gap-2 px-3 py-2 text-center text-[11px] font-bold leading-tight text-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:size-4'),
-  refThumbDrag: 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] text-[var(--accent)] shadow-[0_0_0_1px_color-mix(in_oklch,var(--accent)_34%,transparent)]',
-  refThumbUpload: 'border-dashed',
-  refThumbImport: 'border-dashed',
-  hiddenInput: 'hidden',
-  refGrid: rdWorkspace.uploadGrid,
-  refTile: 'group min-w-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)]',
-  refPreview: 'relative aspect-square overflow-hidden bg-[var(--canvas-bg)]',
-  refImage: rdWorkspace.uploadImg,
-  refPlaceholder: 'grid size-full place-items-center px-2 text-center text-[11px] leading-snug text-[var(--muted)]',
-  refRemove: 'absolute right-1 top-1 grid size-6 place-items-center rounded-xl border border-[var(--image-action-border)] bg-[var(--image-action-bg)] text-[var(--image-action-text)] opacity-0 backdrop-blur transition hover:bg-[var(--accent-coral)] hover:text-[var(--fg)] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 max-[760px]:opacity-100 [@media(pointer:coarse)]:opacity-100',
-  editSourcePanel: 'my-5 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg)]/50',
-  editSourceTrigger: 'flex w-full cursor-pointer items-center justify-between gap-3 border-0 bg-transparent px-4 py-3 text-left text-[var(--fg)] transition hover:text-[var(--accent)]',
-  editSourceTitle: 'flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider',
-  editSourceChevron: 'grid size-6 shrink-0 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition-transform',
-  editSourceBody: 'overflow-hidden px-4 transition-[max-height,padding] duration-300',
-  editSourceBodyOpen: 'max-h-[360px] pb-4',
-  editSourceBodyClosed: 'max-h-0 pb-0',
-  fieldLabel: rdWorkspace.sectionTitle,
-  uploadHint: 'mt-2 text-[12px] leading-snug text-[var(--muted)]',
-  editUploadRow: 'mt-2.5 flex items-center gap-2',
-  editUploadButton: 'inline-flex min-h-9 cursor-pointer items-center justify-center rounded-xl border border-dashed border-[color-mix(in_oklch,var(--accent)_45%,var(--border))] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] px-3 text-[13px] font-bold text-[var(--accent)]',
-  importButton: 'inline-flex min-h-9 cursor-pointer items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] font-bold text-[var(--fg)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50',
-  fieldBlock: 'mb-5',
-  promptBlock: 'mt-0',
-  promptBlockReference: 'mt-6',
-  details: 'mt-3',
-  summary: 'cursor-pointer text-xs text-[var(--muted)]',
-  negativeArea: 'mt-2',
-  selectGrid: rdWorkspace.grid4,
-  selectGridThree: rdWorkspace.grid3,
-  selectItem: cn(rdWorkspace.selectItem, 'min-h-14'),
-  selectItemActive: 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_18%,var(--surface))] text-[var(--lv-accent-contrast)] shadow-[0_0_20px_rgba(var(--accent-rgb),0.18)] ring-1 ring-[var(--accent)]/50 hover:bg-[color-mix(in_oklch,var(--accent)_24%,var(--surface))] [&_*]:text-[var(--lv-accent-contrast)]',
-  modelButton: cn(rdWorkspace.modelItem, 'mb-2 text-left'),
-  modelButtonActive: 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_18%,var(--surface))] text-[var(--lv-accent-contrast)] ring-1 ring-[var(--accent)]/50 shadow-[0_0_20px_rgba(var(--accent-rgb),0.18)] [&_*]:text-[var(--lv-accent-contrast)] hover:bg-[color-mix(in_oklch,var(--accent)_24%,var(--surface))]',
-  modelMeta: cn('num text-xs', rdWorkspace.modelPoints),
-  modelMetaActive: 'bg-[color-mix(in_oklch,var(--accent)_16%,transparent)] text-[var(--lv-accent-contrast)]',
-  countInputWrap: 'flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 p-2',
-  countStepper: 'grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-lg font-black text-[var(--fg)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40',
-  countInput: 'h-10 min-w-0 flex-1 rounded-xl border border-transparent bg-transparent px-3 text-center font-vault-mono text-base font-black text-[var(--fg)] focus:border-transparent focus:shadow-none',
-  countHint: 'mt-2 text-[11px] text-[var(--muted)]',
-  estimateRow: rdWorkspace.priceRow,
-  estimateValue: cn('num', rdWorkspace.priceValue),
-  formError: 'mb-3 text-[13px] text-[var(--accent-coral)]',
-  formActions: 'mt-2.5 flex flex-wrap gap-2 max-[420px]:flex-col max-[420px]:items-stretch',
-  generateHint: 'mb-3 rounded-xl border border-[color-mix(in_oklch,var(--accent)_32%,var(--border))] bg-[color-mix(in_oklch,var(--accent)_9%,transparent)] p-3 text-sm text-[var(--accent)]',
-  createButton: rdWorkspace.generateBtn,
-  canvas: 'flex min-h-[620px] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--canvas-bg)_82%,transparent)] max-[760px]:min-h-[calc(100dvh-180px)]',
-  feed: 'flex min-h-0 flex-1 flex-col justify-start gap-4 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-3 sm:px-5',
-  outputTabs: 'mx-auto flex w-full max-w-5xl shrink-0 rounded-xl border border-[var(--border)] bg-[var(--surface)]/72 p-1 backdrop-blur',
-  outputTab: 'flex-1 rounded-xl px-4 py-2 text-sm font-bold text-[var(--muted)] transition hover:bg-[var(--accent)] hover:text-white',
-  outputTabActive: 'bg-[var(--accent)] text-white shadow-[0_8px_24px_rgba(var(--accent-rgb),0.18)]',
-  placeholder: 'grid min-h-0 flex-1 place-items-center px-6 text-center',
-  placeholderTitle: 'm-0 mb-2 text-3xl font-black leading-tight text-[var(--fg)]',
-  placeholderText: 'm-0',
-  readyIcon: 'mx-auto grid size-14 place-items-center rounded-2xl border border-[var(--border)] bg-[var(--accent)]/10 text-[var(--accent)]',
-  record: 'flex min-h-0 w-full flex-1 flex-col justify-start gap-4',
-  recordHead: 'mx-auto grid w-full max-w-5xl grid-cols-[38px_minmax(0,1fr)] items-start gap-3.5 rounded-2xl border border-[var(--border)] bg-[var(--surface)]/55 p-4 max-[760px]:grid-cols-1',
-  recordAvatar: 'grid size-[38px] place-items-center rounded-full border border-[var(--border)] bg-[color-mix(in_oklch,var(--accent)_18%,var(--surface))] font-mono text-[11px] font-bold text-[var(--accent)]',
-  recordTitle: 'mb-1.5 flex flex-wrap items-center gap-2.5',
-  recordTitleText: 'text-[15px]',
-  recordDate: 'text-xs text-[var(--muted)]',
-  recordPrompt: 'm-0 max-w-[78ch] leading-relaxed text-[var(--muted)] [overflow-wrap:anywhere]',
-  recordParams: 'mt-2 flex flex-wrap gap-2.5 font-mono text-xs text-[var(--muted)]',
-  recordParam: 'rounded-full bg-[color-mix(in_oklch,var(--fg)_7%,transparent)] px-2 py-1',
-  sourceImages: 'mx-auto flex w-full max-w-5xl flex-wrap items-center gap-2 text-xs text-[var(--muted)]',
-  sourceImagesTitle: 'font-bold text-[var(--fg)]',
-  sourceImageButton: 'h-[54px] w-[72px] cursor-zoom-in overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] p-0',
-  recordImages: 'mx-auto grid w-full max-w-5xl grid-cols-[repeat(auto-fit,minmax(220px,1fr))] content-start gap-4',
-  pending: 'mx-auto grid min-h-[360px] w-full max-w-2xl place-items-center content-center gap-2 rounded-3xl border border-dashed border-[var(--border)] bg-[var(--bg)]/55 text-center text-[var(--muted)]',
-  pendingStrong: 'text-[var(--fg)]',
-  pendingFailed: 'border-[color-mix(in_oklch,var(--accent-coral)_62%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_16%,var(--surface))]',
-  pendingFailedTitle: 'text-[var(--accent-coral)]',
-  failureMeta: 'mt-1.5 flex flex-wrap justify-center gap-2',
-  failureMetaItem: 'inline-flex max-w-full items-center gap-1.5 rounded-xl border border-[color-mix(in_oklch,var(--accent-coral)_50%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_14%,var(--surface))] px-2 py-1 text-[11px]',
-  failureMetaLabel: 'text-[var(--muted)]',
-  failureMetaValue: 'm-0 font-mono text-[var(--fg)] [overflow-wrap:anywhere]',
-  recordActions: 'mx-auto flex w-full max-w-5xl flex-wrap justify-center gap-2 [&_.pg-public-detail-action]:size-[34px] [&_.pg-public-detail-action]:min-h-[34px] [&_.pg-public-detail-action]:rounded-xl',
-  generatedFigure: 'group relative m-0 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg)] shadow-xl',
-  generatedPreview: 'block w-full cursor-zoom-in border-0 bg-transparent p-0 [aspect-ratio:var(--generated-ratio)] max-h-[calc(100vh-430px)]',
-  generatedImage: 'block size-full max-h-[calc(100vh-430px)] object-contain transition duration-500 group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100',
-  generatedCaption: 'absolute right-3 top-3 z-10 flex translate-y-1 justify-end gap-1.5 rounded-xl border border-[var(--image-action-border)] bg-[var(--image-action-bg)] p-1 opacity-0 shadow-2xl backdrop-blur-2xl transition motion-reduce:transition-none group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 max-[760px]:translate-y-0 max-[760px]:opacity-100',
-  generatedAction: rdWorkspace.outputBtn,
-  generatedIconAction: 'grid size-8 place-items-center rounded-xl text-[var(--image-action-text)] transition hover:bg-[var(--image-action-hover-bg)] hover:text-[var(--image-action-hover-text)] [&_svg]:size-4',
-  outputActions: 'absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 translate-y-8 items-center gap-1.5 rounded-2xl border border-[var(--border)] bg-[var(--surface)]/92 px-2 py-1.5 opacity-0 shadow-2xl backdrop-blur-2xl transition duration-300 motion-reduce:transition-none group-hover:translate-y-0 group-hover:opacity-100 max-[760px]:static max-[760px]:left-auto max-[760px]:top-auto max-[760px]:translate-x-0 max-[760px]:translate-y-0 max-[760px]:opacity-100',
-  outputProgressFoot: 'mt-2 flex w-full items-center justify-between text-[10px] text-[var(--muted)]',
-  outputResultWrap: 'relative flex min-h-0 w-full flex-1 flex-col items-center justify-start gap-3 pb-2 pt-2 animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none group',
-  outputResultGrid: 'grid w-full grid-cols-[repeat(auto-fit,minmax(200px,1fr))] content-start gap-3',
-  outputMetaRow: 'mt-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 border-t border-[var(--border)]/30 pt-4 text-[10px] font-vault-mono text-[var(--muted)]',
-  slotState: 'grid min-h-[260px] place-items-center content-center gap-2 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--bg)]/70 p-4 text-center text-[var(--muted)]',
-  slotSkeleton: 'grid min-h-[260px] place-items-center rounded-2xl border border-dashed border-[var(--border)] bg-[var(--bg)]/70 p-4',
-  slotSkeletonFrame: 'relative h-full min-h-[220px] w-full overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]/80',
-  slotSkeletonGlow: 'absolute inset-0 -translate-x-full bg-[linear-gradient(90deg,transparent_0%,rgba(var(--accent-rgb),0.16)_48%,transparent_100%)] animate-[shimmer_1.8s_linear_infinite] motion-reduce:animate-none',
-  slotSkeletonLoader: 'absolute inset-0 grid place-items-center text-[var(--muted)]',
-  slotFailed: 'border-[color-mix(in_oklch,var(--accent-coral)_60%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_16%,var(--surface))]',
-  slotCode: 'max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-[color-mix(in_oklch,var(--accent-coral)_50%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_12%,var(--surface))] px-2 py-1 font-mono text-[11px] text-[var(--fg)]',
-  importGrid: 'mt-5 grid max-h-[54vh] grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 overflow-auto pr-1',
-  importFilters: 'mt-5 grid grid-cols-[minmax(160px,1fr)_repeat(4,minmax(120px,auto))] gap-2 max-[860px]:grid-cols-2 max-[520px]:grid-cols-1',
-  importInput: 'min-h-10 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--fg)]',
-  importTile: 'relative cursor-pointer overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] text-left transition hover:border-[var(--accent)]',
-  importTileActive: 'border-[var(--accent)] ring-1 ring-[var(--accent)]',
-  importThumb: 'aspect-square w-full bg-[var(--bg)] object-cover',
-  importCheck: 'absolute left-2 top-2 grid size-7 place-items-center rounded-xl border border-[var(--image-checkbox-border)] bg-[var(--image-checkbox-bg)] text-sm font-black text-[var(--accent)]',
-  importInfo: 'grid gap-1 p-2 text-xs text-[var(--muted)]',
-  importTitle: 'overflow-hidden text-ellipsis whitespace-nowrap text-[var(--fg)]',
-  importActions: 'sticky bottom-0 mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] bg-[var(--surface)] pt-4',
-  historyGrid: 'grid min-h-0 w-full grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4 overflow-y-auto pr-1',
-  historyCard: 'group relative flex min-w-0 flex-col gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)]/60 p-3 text-left transition hover:-translate-y-1 hover:border-[var(--accent)] hover:shadow-xl hover:shadow-[rgba(var(--accent-rgb),0.14)]',
-  historyPreview: 'relative aspect-[4/3] overflow-visible',
-  historyLayer: 'absolute inset-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] shadow-lg',
-  historyLayerBack1: 'translate-x-2 translate-y-2 rotate-2 bg-[var(--surface)]',
-  historyLayerBack2: 'translate-x-4 translate-y-4 rotate-[4deg] bg-[var(--bg)]',
+const workspaceClasses = {
+  generatedImage: 'object-contain transition duration-500 group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100',
   historyImage: 'size-full object-cover transition duration-500 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100',
-  historyState: 'grid size-full place-items-center content-center gap-2 p-3 text-center text-xs text-[var(--muted)]',
-  historyFailed: 'border-[color-mix(in_oklch,var(--accent-coral)_55%,var(--border))] bg-[color-mix(in_oklch,var(--accent-coral)_10%,var(--surface))]',
-  historyWarn: 'absolute right-2 top-2 z-10 inline-flex min-h-7 items-center rounded-full border border-[color-mix(in_oklch,var(--accent-coral)_52%,transparent)] bg-[color-mix(in_oklch,var(--accent-coral)_22%,var(--canvas))] px-2 text-[10px] font-black tracking-[0.04em] text-[var(--fg)] shadow-lg',
-  historyTitle: 'line-clamp-2 min-h-[2.5em] text-sm font-bold leading-snug text-[var(--fg)]',
-  historyMeta: 'flex items-center justify-between gap-2 text-[10px] font-vault-mono text-[var(--muted)]',
+  outputResultWrap: 'animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none',
+  slotSkeletonGlow: 'absolute inset-0 -translate-x-full bg-[linear-gradient(90deg,transparent_0%,rgba(var(--accent-rgb),0.16)_48%,transparent_100%)] animate-[shimmer_1.8s_linear_infinite] motion-reduce:animate-none',
+  refRemove: 'opacity-100 transition-opacity duration-[var(--motion-fast)] group-focus-within:opacity-100 focus-visible:opacity-100 max-[760px]:opacity-100 [@media(pointer:coarse)]:opacity-100 motion-reduce:transition-none',
+  panelSectionFinal: 'max-[760px]:p-3',
 }
 
 export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
@@ -327,7 +198,6 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const [initialTaskReloadKey, setInitialTaskReloadKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [editSourceOpen, setEditSourceOpen] = useState(false)
   const [previewImage, setPreviewImage] = useState<ImagePreviewPayload | null>(null)
   const previewDetailImage: ImageResult | null = previewImage?.detailImage ?? (previewImage ? {
     id: previewImage.alt || 'preview',
@@ -686,10 +556,6 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       app.notify('error', errorMessage(err))
     }
   }
-
-  useEffect(() => {
-    if (editRefs.length) setEditSourceOpen(true)
-  }, [editRefs.length])
 
   useEffect(() => {
     if (capability) {
@@ -1371,438 +1237,393 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     ? { transform: `translate3d(0, ${sheetDragOffset}px, 0)`, transition: 'none' }
     : undefined
 
-  const parameterPanel = (
-    <aside className={workspaceClasses.panel} aria-label="创作参数" style={sheetDragStyle} data-sheet-dragging={sheetDragOffset !== 0 || undefined}>
-        <header className={workspaceClasses.mobileSheetHeader}>
-          <button
-            type="button"
-            className={workspaceClasses.mobileSheetButton}
-            aria-expanded={parametersExpanded}
-            aria-controls="workspace-parameter-controls"
-            data-workspace-sheet-handle="true"
-            onClick={toggleParametersExpanded}
-            onPointerDown={handleSheetPointerDown}
-            onPointerMove={handleSheetPointerMove}
-            onPointerUp={handleSheetPointerUp}
-            onPointerCancel={handleSheetPointerCancel}
-          >
-            <span className="flex items-center gap-2"><SlidersHorizontal size={17} strokeWidth={1.7} aria-hidden="true" />创作参数</span>
-            <span className="flex items-center gap-2 font-vault-mono text-xs text-[var(--muted)]">
-              {workspaceView.estimate.label}
-              <ChevronUp className={cn('transition-transform motion-reduce:transition-none', !parametersExpanded && 'rotate-180')} size={16} aria-hidden="true" />
-            </span>
-          </button>
-          {compactViewport && !parametersExpanded ? (
-            <button
-              type="button"
-              className="inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)] px-3 text-xs font-bold text-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-45"
-              aria-label="开始创作（移动端）"
-              data-workspace-compact-generate="true"
-              disabled={generateReadiness.disabled}
-              onClick={() => void createTask()}
-            >
-              开始
-            </button>
-          ) : null}
-        </header>
-        <div
-          id="workspace-parameter-controls"
-          className={cn(workspaceClasses.parameterRegion, parametersExpanded ? 'max-[760px]:max-h-[calc(82dvh-49px)]' : 'max-[760px]:max-h-0')}
-          aria-hidden={parametersHidden || undefined}
-          inert={parametersHidden ? true : undefined}
-        >
-        <div className={workspaceClasses.panelScroll}>
-        <div className={workspaceClasses.panelSection}>
-          <div>
-            <h2 className={workspaceClasses.panelTitle}>图片创作</h2>
-          </div>
-          <p className={workspaceClasses.panelCopy}>通过文字生成图片；添加图片后会自动进入图片编辑模式。</p>
+  const modelControls = (
+    <div className="cr-group">
+      <div className="cr-group__head">
+        <h4 aria-label="模型分组">模型</h4>
+        {availableModels.length ? <span>{availableModels.length} 可用</span> : null}
+      </div>
+      {loading && !capability ? <LoadingState label="正在加载可用模型..." /> : null}
+      {!loading && availableModels.length ? (
+        <ModelGroupSelect options={availableModels} groups={capability?.route_model_groups} value={model} onChange={setModel} />
+      ) : null}
+      {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
+    </div>
+  )
 
-          <div className={workspaceClasses.fieldBlock}>
-            <label className={workspaceClasses.fieldLabel} htmlFor="workspace-model-group">模型分组</label>
-            {loading && !capability ? <LoadingState label="正在加载可用模型..." /> : null}
-            {!loading && availableModels.length ? (
-              <ModelGroupSelect options={availableModels} groups={capability?.route_model_groups} value={model} onChange={setModel} />
-            ) : null}
-            {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
-          </div>
-
-          <div className={workspaceClasses.editSourcePanel}>
-              <button type="button" className={workspaceClasses.editSourceTrigger} onClick={() => setEditSourceOpen((open) => !open)}>
-                <span className={workspaceClasses.editSourceTitle}>
-                  <ImageGlyph />
-                  图片编辑来源 ({editRefs.length}/{maxReferenceImages})
-                </span>
-                <span className={cn(workspaceClasses.editSourceChevron, editSourceOpen && 'rotate-180')}><ChevronGlyph /></span>
-              </button>
-              <div className={cn(workspaceClasses.editSourceBody, editSourceOpen ? workspaceClasses.editSourceBodyOpen : workspaceClasses.editSourceBodyClosed)}>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <label className={cn(workspaceClasses.refThumb, workspaceClasses.refThumbUpload, dragUpload.edit && workspaceClasses.refThumbDrag)} aria-disabled={busy || editRemainingLimit <= 0} {...uploadDropBindings('edit')}>
-                    <input className={workspaceClasses.hiddenInput} type="file" accept={referenceAccept} multiple disabled={busy || editRemainingLimit <= 0} onChange={(event) => uploadReference(event, 'edit')} />
-                    <UploadGlyph />
-                    <span>本地上传</span>
-                  </label>
-                  <button type="button" className={cn(workspaceClasses.refThumb, workspaceClasses.refThumbImport)} disabled={busy || editRemainingLimit <= 0} onClick={() => void openGalleryImport('edit')}>
-                    <ImportGlyph />
-                    <span>从资产导入</span>
-                  </button>
-                </div>
-                <p className={workspaceClasses.uploadHint}>
-                  {maxReferenceUploadLabel ? `单张最大 ${maxReferenceUploadLabel}；` : ''}支持 {referenceFormatLabel}
-                </p>
-                {editRefs.length ? (
-                  <div className={workspaceClasses.refGrid}>
-                    {editRefs.map((asset) => (
-                      <div key={asset.id || asset.preview_url} className={workspaceClasses.refTile}>
-                        <div className={workspaceClasses.refPreview}>
-                          <ReferenceAssetPreview
-                            asset={asset}
-                            accessToken={app.session?.token}
-                            onMediaRefresh={() => refreshWorkspaceReference(asset.id)}
-                          />
-                          <button type="button" className={workspaceClasses.refRemove} title="移除编辑图片" onClick={() => removeEditAsset(asset)}><CloseGlyph /></button>
-                        </div>
-                        <div className="reference-name-row">
-                          <span title={asset.name}>{asset.name}</span>
-                          <button type="button" title="重命名资产" aria-label={`重命名资产 ${asset.name}`} onClick={() => beginRenameReference(asset)}><Pencil size={13} /></button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-          </div>
-
-          {/* Prompt */}
-          <div className={workspaceClasses.promptBlock}>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <label className={workspaceClasses.fieldLabel}>提示词</label>
-              <PromptEditorActions
-                optimizing={promptOptimization.stage === 'estimating' || promptOptimization.stage === 'optimizing'}
-                canUndo={promptOptimization.stage === 'applied'}
-                onExpand={() => setPromptExpanded(true)}
-                onOptimize={() => void startPromptOptimization()}
-                onUndo={undoOptimization}
+  const referenceControls = (
+    <div className="cr-group">
+      <div className="cr-group__head">
+        <h4>参考图/图片编辑来源</h4>
+        <div className="cr-ref-head">
+          <span>{editRefs.length} / {maxReferenceImages}</span>
+          <button type="button" disabled={busy || editRemainingLimit <= 0} onClick={() => void openGalleryImport('edit')}>从资产导入</button>
+        </div>
+      </div>
+      <div className="u-ref-grid">
+        {editRefs.map((asset) => (
+          <div key={asset.id || asset.preview_url} className="u-ref-item group">
+            <div className="u-ref-thumb">
+              <ReferenceAssetPreview
+                asset={asset}
+                accessToken={app.session?.token}
+                onMediaRefresh={() => refreshWorkspaceReference(asset.id)}
               />
+              <button type="button" className={workspaceClasses.refRemove} title="移除编辑图片" aria-label={`移除 ${asset.name || '参考图'}`} onClick={() => removeEditAsset(asset)}><CloseGlyph /></button>
             </div>
-            <PromptTemplateEditor
-              ref={compactPromptEditorRef}
-              value={prompt}
-              assets={editRefs}
-              variables={promptVariables}
-              accessToken={app.session?.token}
-              disabled={busy || promptExpanded}
-              onChange={setPrompt}
-              onAddAsset={() => { setEditSourceOpen(true); void openGalleryImport('edit', 'compact') }}
-              onPasteFiles={(files) => { window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail: { files, projectID: projects.selectedProjectID } })) }}
+            <div className="reference-name-row">
+              <span title={asset.name}>{asset.name}</span>
+              <button type="button" title="重命名资产" aria-label={`重命名资产 ${asset.name}`} onClick={() => beginRenameReference(asset)}><Pencil size={13} /></button>
+            </div>
+          </div>
+        ))}
+        <label
+          className={cn('u-refdrop cr-refdrop', dragUpload.edit && 'is-drag')}
+          role="button"
+          tabIndex={0}
+          aria-label="上传参考图"
+          aria-disabled={busy || editRemainingLimit <= 0}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            event.currentTarget.querySelector<HTMLInputElement>('input[type="file"]')?.click()
+          }}
+          {...uploadDropBindings('edit')}
+        >
+          <input className="hidden" type="file" accept={referenceAccept} multiple disabled={busy || editRemainingLimit <= 0} onChange={(event) => uploadReference(event, 'edit')} />
+          <UploadGlyph />
+          <span>上传</span>
+        </label>
+        <button type="button" className="u-refdrop cr-refdrop" disabled={busy || editRemainingLimit <= 0} onClick={() => void openGalleryImport('edit')}>
+          <ImportGlyph />
+          <span>从资产</span>
+        </button>
+      </div>
+      <p className="u-meta">{maxReferenceUploadLabel ? `单张最大 ${maxReferenceUploadLabel} · ` : ''}支持 {referenceFormatLabel}</p>
+    </div>
+  )
+
+  const promptControls = (
+    <div className="cr-group">
+      <div className="cr-group__head">
+        <h4>提示词</h4>
+        <span>{promptExpandedLength} / 4000</span>
+      </div>
+      <div className="u-prompt-box cr-prompt">
+        <div className="u-prompt-box__head">
+          <span className="u-meta">支持 @资产 与 $变量</span>
+          <div className="u-prompt-box__tools">
+            <PromptEditorActions
+              optimizing={promptOptimization.stage === 'estimating' || promptOptimization.stage === 'optimizing'}
+              canUndo={promptOptimization.stage === 'applied'}
+              onExpand={() => setPromptExpanded(true)}
+              onOptimize={() => void startPromptOptimization()}
+              onUndo={undoOptimization}
             />
-            <PromptVariableForm template={prompt} values={promptVariables} disabled={busy} onChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))} />
           </div>
-
         </div>
-
-        {/* Parameters */}
-        <div className={workspaceClasses.panelSection}>
-          {selectedModel ? (
-            <>
-              {sizeModes.length > 1 ? (
-                <div className={workspaceClasses.fieldBlock}>
-                  <label className={workspaceClasses.fieldLabel}>尺寸模式</label>
-                  <div className={workspaceClasses.selectGridThree}>
-                    {sizeModes.map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className={cn(workspaceClasses.selectItem, sizeMode === value && workspaceClasses.selectItemActive)}
-                        onClick={() => setSizeMode(value)}
-                      >
-						<span className={rdWorkspace.itemLabel}>{value === 'auto' ? '自动' : value === 'pixel' ? '按像素' : '按比例'}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Base Resolution */}
-              {sizeMode === 'ratio' && baseResolutionOptionsForModel.length ? (
-                <div className={workspaceClasses.fieldBlock}>
-                  <label className={workspaceClasses.fieldLabel}>基础分辨率</label>
-                  <div className={workspaceClasses.selectGrid}>
-                    {baseResolutionOptionsForModel.map((q) => (
-                      <button
-                        key={q}
-                        type="button"
-                        className={cn(workspaceClasses.selectItem, baseResolution === q && workspaceClasses.selectItemActive)}
-                        onClick={() => setBaseResolution(q)}
-                      >
-                        {workspaceBaseResolutionLabel(q)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Aspect Ratio */}
-              {sizeMode === 'ratio' && ratios.length ? (
-                <div className={workspaceClasses.fieldBlock}>
-                  <label className={workspaceClasses.fieldLabel}>比例</label>
-                  <div className={workspaceClasses.selectGridThree}>
-					{ratios.map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        className={cn(workspaceClasses.selectItem, ratio === r && workspaceClasses.selectItemActive)}
-                        onClick={() => setRatio(r)}
-                      >
-                        <AspectRatioIcon ratio={r} active={ratio === r} />
-                        <span className={rdWorkspace.itemLabel}>{r}</span>
-                      </button>
-					))}
-					{customRatioSupported ? (
-						<button
-							type="button"
-							className={cn(workspaceClasses.selectItem, ratio === 'custom' && workspaceClasses.selectItemActive)}
-							onClick={() => setRatio('custom')}
-						>
-							<span className={rdWorkspace.itemLabel}>自定义比例</span>
-						</button>
-					) : null}
-				  </div>
-				  {customRatioSupported && ratio === 'custom' ? (
-					<label className="mt-3 grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-ratio">
-						比例
-						<input id="workspace-custom-ratio" className={userForm.input} value={customRatio} placeholder="例如 7:5" onChange={(event) => setCustomRatio(event.target.value)} />
-						<span role="status" className={sizeParameterError ? 'text-[var(--danger)]' : undefined}>{sizeParameterError || `预计比例：${customRatio}`}</span>
-					</label>
-				  ) : null}
-				</div>
-              ) : null}
-
-              {sizeMode === 'ratio' && displayedResolvedSize ? (
-                <p className="mb-5 rounded-lg border border-[var(--border)] bg-[var(--surface)]/45 px-3 py-2 text-xs leading-5 text-[var(--muted)]" role="status">
-                  预计输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{displayedResolvedSize}</strong>
-                </p>
-              ) : null}
-
-              {sizeMode === 'pixel' && (pixelSizes.length || customSizeSupported) ? (
-                <div className={workspaceClasses.fieldBlock}>
-                  <label className={workspaceClasses.fieldLabel}>像素尺寸</label>
-                  <div className={workspaceClasses.selectGridThree}>
-                    {pixelSizes.map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className={cn(workspaceClasses.selectItem, pixelSelection === 'preset' && pixelSize === value && workspaceClasses.selectItemActive)}
-                        onClick={() => { setPixelSelection('preset'); setPixelSize(value) }}
-                      >
-                        <span className={rdWorkspace.itemLabel}>{value}</span>
-                      </button>
-                    ))}
-                    {customSizeSupported ? (
-                      <button
-                        type="button"
-                        className={cn(workspaceClasses.selectItem, pixelSelection === 'custom' && workspaceClasses.selectItemActive)}
-                        onClick={() => setPixelSelection('custom')}
-                      >
-                        <span className={rdWorkspace.itemLabel}>自定义尺寸</span>
-                      </button>
-                    ) : null}
-                  </div>
-                  {customSizeSupported && pixelSelection === 'custom' ? (
-                    <div className="mt-3 grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)]/45 p-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <label className="grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-width">
-                          Width
-						  <input id="workspace-custom-width" className={userForm.input} type="number" inputMode="numeric" min={selectedModel.min_width ?? 16} max={selectedModel.max_width ?? 3840} step="16" value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
-                        </label>
-                        <label className="grid gap-1.5 text-xs text-[var(--muted)]" htmlFor="workspace-custom-height">
-                          Height
-						  <input id="workspace-custom-height" className={userForm.input} type="number" inputMode="numeric" min={selectedModel.min_height ?? 16} max={selectedModel.max_height ?? 3840} step="16" value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
-                        </label>
-                      </div>
-                      <p className="text-xs leading-5 text-[var(--muted)]" role="status">
-						{customSizeNormalization.valid ? <>输出尺寸：<strong className="font-vault-mono text-[var(--text)]">{customSizeNormalization.size}</strong></> : <span className="text-[var(--danger)]">{sizeParameterError}</span>}
-					  </p>
-					  <p className="text-xs leading-5 text-[var(--muted)]">宽高必须为 16 的倍数，并满足当前模型配置区间、1:3 至 3:1 比例及平台像素上限。</p>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {outputOptions.quality.length ? (
-                <div className={workspaceClasses.fieldBlock}>
-                  <label className={workspaceClasses.fieldLabel}>质量</label>
-                  <div className={workspaceClasses.selectGridThree}>
-                    {outputOptions.quality.map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className={cn(workspaceClasses.selectItem, quality === value && workspaceClasses.selectItemActive)}
-                        onClick={() => setQuality(value)}
-                      >
-                        <span className={rdWorkspace.itemLabel}>{value === 'auto' ? '自动' : value}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {outputOptions.outputFormat.length ? (
-                <div className={workspaceClasses.fieldBlock}>
-                  <label className={workspaceClasses.fieldLabel}>输出格式</label>
-                  <div className={workspaceClasses.selectGridThree}>
-                    {outputOptions.outputFormat.map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className={cn(workspaceClasses.selectItem, outputFormat === value && workspaceClasses.selectItemActive)}
-                        onClick={() => setOutputFormat(value)}
-                      >
-                        <span className={rdWorkspace.itemLabel}>{value.toUpperCase()}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-			  {compressionVisible ? (
-                <div className={workspaceClasses.fieldBlock}>
-                  <label className={workspaceClasses.fieldLabel} htmlFor="workspace-output-compression">压缩质量</label>
-                  <div className="grid grid-cols-[minmax(0,1fr)_5rem] items-center gap-3">
-                    <input
-                      id="workspace-output-compression"
-                      type="range"
-                      min="1"
-                      max="100"
-                      value={outputCompression}
-                      onChange={(event) => setOutputCompression(Number(event.target.value))}
-                    />
-                    <input
-                      className={cn(userForm.input, 'text-center')}
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={outputCompression}
-                      aria-label="压缩质量数值"
-                      onChange={(event) => setOutputCompression(Math.max(1, Math.min(100, Number(event.target.value) || 100)))}
-                    />
-                  </div>
-                </div>
-			  ) : null}
-
-			  {backgroundOptions.length ? (
-				<div className={workspaceClasses.fieldBlock}>
-				  <label className={workspaceClasses.fieldLabel}>背景</label>
-				  <div className={workspaceClasses.selectGridThree}>
-					{backgroundOptions.map((value) => (
-					  <button key={value} type="button" className={cn(workspaceClasses.selectItem, background === value && workspaceClasses.selectItemActive)} onClick={() => {
-						if (value === 'transparent' && !['png', 'webp'].includes(outputFormat)) {
-						  setOutputFormat(outputOptions.outputFormat.find((format) => format === 'png' || format === 'webp') ?? outputFormat)
-						}
-						setBackground(value)
-					  }}>
-						<span className={rdWorkspace.itemLabel}>{value === 'auto' ? '自动' : value === 'opaque' ? '不透明' : '透明'}</span>
-					  </button>
-					))}
-				  </div>
-				</div>
-			  ) : null}
-
-              {outputOptions.moderation.length > 1 ? (
-                <div className={workspaceClasses.fieldBlock}>
-                  <label className={workspaceClasses.fieldLabel}>审核等级</label>
-                  <div className={workspaceClasses.selectGridThree}>
-                    {outputOptions.moderation.map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className={cn(workspaceClasses.selectItem, moderation === value && workspaceClasses.selectItemActive)}
-                        onClick={() => setModeration(value)}
-                      >
-                        <span className={rdWorkspace.itemLabel}>{value === 'auto' ? '自动' : value}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Image Count */}
-              {selectedModel ? (
-                <div>
-                  <label className={workspaceClasses.fieldLabel}>图片数量</label>
-                  <div className={workspaceClasses.countInputWrap}>
-                    <button type="button" className={workspaceClasses.countStepper} disabled={count <= 1} onClick={() => updateImageCount(count - 1)}>-</button>
-                    <input
-                      className={workspaceClasses.countInput}
-                      type="number"
-                      min={1}
-                      max={workspaceTaskImageSafetyLimit}
-                      value={count || 1}
-                      onChange={(event) => updateImageCount(Number(event.target.value))}
-                    />
-                    <button type="button" className={workspaceClasses.countStepper} disabled={count >= workspaceTaskImageSafetyLimit} onClick={() => updateImageCount(count + 1)}>+</button>
-                  </div>
-                </div>
-              ) : null}
-            </>
-          ) : null}
+        <PromptTemplateEditor
+          ref={compactPromptEditorRef}
+          value={prompt}
+          assets={editRefs}
+          variables={promptVariables}
+          accessToken={app.session?.token}
+          disabled={busy || promptExpanded}
+          onChange={setPrompt}
+          onAddAsset={() => { void openGalleryImport('edit', 'compact') }}
+          onPasteFiles={(files) => { window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail: { files, projectID: projects.selectedProjectID } })) }}
+        />
+        <div className="u-prompt-box__foot">
+          <span>@ 插入资产 · $ 插入变量</span>
+          <span>{promptTemplateIssue ? '请检查提示词标记' : '◈ 预估随参数更新'}</span>
         </div>
-        </div>
+      </div>
+      <PromptVariableForm template={prompt} values={promptVariables} disabled={busy} onChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))} />
+      {promptTemplateIssue ? <span className="cr-field-error" role="status">{promptTemplateIssue}</span> : null}
+    </div>
+  )
 
-        {/* Estimate & Create */}
-        <div className={workspaceClasses.panelSectionFinal} data-workspace-full-actions="true">
-          <div className={workspaceClasses.estimateRow}>
-            <span>预估消耗</span>
-            <span className={workspaceClasses.estimateValue}>{workspaceView.estimate.label}</span>
+  const sizeControls = selectedModel ? (
+    <div className="cr-group">
+      <div className="cr-group__head">
+        <h4>尺寸</h4>
+        {sizeMode === 'ratio' && displayedResolvedSize ? <span>{displayedResolvedSize}</span> : null}
+      </div>
+      <label className="u-label">尺寸模式</label>
+      {sizeModes.length > 1 ? (
+        <div className="u-segment" role="group" aria-label="尺寸模式">
+          {sizeModes.map((value) => (
+            <button
+              key={value}
+              type="button"
+              className={cn(sizeMode === value && 'is-active')}
+              aria-pressed={sizeMode === value}
+              onClick={() => setSizeMode(value)}
+            >
+              {value === 'auto' ? '自动' : value === 'pixel' ? '按像素' : '按比例'}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {sizeMode === 'ratio' && baseResolutionOptionsForModel.length ? (
+        <div className="u-field">
+          <label className="u-label" htmlFor="workspace-base-resolution">基础分辨率</label>
+          <select id="workspace-base-resolution" className="u-select" value={baseResolution} onChange={(event) => setBaseResolution(event.target.value)}>
+            {baseResolutionOptionsForModel.map((option) => <option key={option} value={option}>{workspaceBaseResolutionLabel(option)}</option>)}
+          </select>
+        </div>
+      ) : null}
+
+      {sizeMode === 'ratio' && ratios.length ? (
+        <div className="u-field">
+          <label className="u-label">比例</label>
+          <div className="u-ratio-grid">
+            {ratios.map((r) => (
+              <button key={r} type="button" className={cn('u-ratio', ratio === r && 'is-active')} aria-pressed={ratio === r} onClick={() => setRatio(r)}>
+                <i aria-hidden="true" style={ratioIconDimensions(r)} />
+                {r}
+              </button>
+            ))}
+            {customRatioSupported ? (
+              <button type="button" className={cn('u-ratio', ratio === 'custom' && 'is-active')} aria-pressed={ratio === 'custom'} onClick={() => setRatio('custom')}>
+                <i aria-hidden="true" style={{ width: 18, height: 18 }} />
+                自定义比例
+              </button>
+            ) : null}
           </div>
-          {workspaceView.estimate.state === 'ready' || workspaceView.estimate.state === 'loading' ? (
-            <p className="mb-3 mt-[-8px] text-xs leading-5 text-[var(--muted)]" role="status">{workspaceView.estimate.detail}</p>
-          ) : null}
-          {estimate && !estimate.sufficient ? (
-            <div className={workspaceClasses.formError}>
-              <div>
-                积分不足，还差 {displayPoints(estimate.insufficient_points)}。
-                当前可用 {displayPoints(estimate.balance?.available_points)}。
+        </div>
+      ) : null}
+
+      {sizeMode === 'ratio' && customRatioSupported && ratio === 'custom' ? (
+        <label className="u-field" htmlFor="workspace-custom-ratio">
+          <span className="u-label">自定义比例</span>
+          <input id="workspace-custom-ratio" className="u-input" value={customRatio} placeholder="例如 7:5" onChange={(event) => setCustomRatio(event.target.value)} />
+          <span role="status" className={sizeParameterError ? 'cr-field-error' : 'u-meta'}>{sizeParameterError || `预计比例：${customRatio}`}</span>
+        </label>
+      ) : null}
+
+      {sizeMode === 'ratio' && displayedResolvedSize ? (
+        <p className="u-meta" role="status">预计输出尺寸：<strong className="num">{displayedResolvedSize}</strong></p>
+      ) : null}
+
+      {sizeMode === 'pixel' && (pixelSizes.length || customSizeSupported) ? (
+        <div className="u-field">
+          <label className="u-label" htmlFor="workspace-pixel-size">像素尺寸</label>
+          <select
+            id="workspace-pixel-size"
+            className="u-select"
+            value={pixelSelection === 'custom' ? '__custom__' : pixelSize}
+            onChange={(event) => {
+              if (event.target.value === '__custom__') {
+                setPixelSelection('custom')
+                return
+              }
+              setPixelSelection('preset')
+              setPixelSize(event.target.value)
+            }}
+          >
+            {pixelSizes.map((value) => <option key={value} value={value}>{value}</option>)}
+            {customSizeSupported ? <option value="__custom__">自定义尺寸</option> : null}
+          </select>
+          {customSizeSupported && pixelSelection === 'custom' ? (
+            <div className="cr-custom-size">
+              <div className="cr-inline-pair">
+                <label className="u-field" htmlFor="workspace-custom-width">
+                  <span className="u-label">Width</span>
+                  <input id="workspace-custom-width" className="u-input" type="number" inputMode="numeric" min={selectedModel.min_width ?? 16} max={selectedModel.max_width ?? 3840} step="16" value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
+                </label>
+                <label className="u-field" htmlFor="workspace-custom-height">
+                  <span className="u-label">Height</span>
+                  <input id="workspace-custom-height" className="u-input" type="number" inputMode="numeric" min={selectedModel.min_height ?? 16} max={selectedModel.max_height ?? 3840} step="16" value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
+                </label>
               </div>
-              <div className={workspaceClasses.formActions}>
-                <button className={cn(userButton.base, userButton.primary)} type="button" onClick={() => app.navigate('checkout')}>去充值</button>
-                <button className={cn(userButton.base, userButton.ghost)} type="button" onClick={() => app.navigate('profile')}>兑换积分</button>
-              </div>
+              <p className="u-meta" role="status">
+                {customSizeNormalization.valid ? <>输出尺寸：<strong className="num">{customSizeNormalization.size}</strong></> : <span className="cr-field-error">{sizeParameterError}</span>}
+              </p>
+              <p className="u-meta">宽高必须为 16 的倍数，并满足当前模型配置区间、1:3 至 3:1 比例及平台像素上限。</p>
             </div>
           ) : null}
-          {generateReadiness.reason && !generateReadiness.showRechargeAction ? (
-            <div className={cn(workspaceClasses.generateHint, !parametersExpanded && 'max-[760px]:hidden')}>
-              {generateReadiness.reason}
-            </div>
-          ) : null}
+        </div>
+      ) : null}
+    </div>
+  ) : null
+
+  const qualityControls = selectedModel ? (
+    <div className="cr-group">
+      <div className="cr-group__head"><h4>质量</h4><span>输出与审核</span></div>
+      <div className="cr-inline">
+        {outputOptions.quality.length ? (
+          <div className="u-field">
+            <label className="u-label" htmlFor="workspace-quality">质量</label>
+            <select id="workspace-quality" className="u-select" value={quality} onChange={(event) => setQuality(event.target.value)}>
+              {outputOptions.quality.map((value) => <option key={value} value={value}>{value === 'auto' ? '自动' : value}</option>)}
+            </select>
+          </div>
+        ) : null}
+        {outputOptions.outputFormat.length ? (
+          <div className="u-field">
+            <label className="u-label" htmlFor="workspace-output-format">输出格式</label>
+            <select id="workspace-output-format" className="u-select" value={outputFormat} onChange={(event) => setOutputFormat(event.target.value)}>
+              {outputOptions.outputFormat.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+            </select>
+          </div>
+        ) : null}
+      </div>
+      {backgroundOptions.length ? (
+        <div className="u-field">
+          <label className="u-label" htmlFor="workspace-background">背景</label>
+          <select id="workspace-background" className="u-select" value={background} onChange={(event) => {
+            const value = event.target.value
+            if (value === 'transparent' && !['png', 'webp'].includes(outputFormat)) {
+              setOutputFormat(outputOptions.outputFormat.find((format) => format === 'png' || format === 'webp') ?? outputFormat)
+            }
+            setBackground(value)
+          }}>
+            {backgroundOptions.map((value) => <option key={value} value={value}>{value === 'auto' ? '自动' : value === 'opaque' ? '不透明' : '透明'}</option>)}
+          </select>
+        </div>
+      ) : null}
+      {outputOptions.moderation.length > 1 ? (
+        <div className="u-field">
+          <label className="u-label" htmlFor="workspace-moderation">审核等级</label>
+          <select id="workspace-moderation" className="u-select" value={moderation} onChange={(event) => setModeration(event.target.value)}>
+            {outputOptions.moderation.map((value) => <option key={value} value={value}>{value === 'auto' ? '自动' : value}</option>)}
+          </select>
+        </div>
+      ) : null}
+      {compressionVisible ? (
+        <div className="u-field">
+          <label className="u-label" htmlFor="workspace-output-compression">压缩质量</label>
+          <div className="cr-inline-pair" style={{ alignItems: 'center' }}>
+            <input id="workspace-output-compression" type="range" min="1" max="100" value={outputCompression} onChange={(event) => setOutputCompression(Number(event.target.value))} />
+            <input
+              className="u-input num"
+              type="number"
+              min="1"
+              max="100"
+              value={outputCompression}
+              aria-label="压缩质量数值"
+              onChange={(event) => setOutputCompression(Math.max(1, Math.min(100, Number(event.target.value) || 100)))}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  ) : null
+
+  const countControls = selectedModel ? (
+    <div className="cr-group">
+      <div className="cr-group__head"><h4>数量</h4><span>上限 {workspaceTaskImageSafetyLimit}</span></div>
+      <div className="cr-count-row">
+        <div className="u-stepper">
+          <button type="button" aria-label="减少数量" disabled={count <= 1} onClick={() => updateImageCount(count - 1)}>−</button>
+          <input
+            type="number"
+            min={1}
+            max={workspaceTaskImageSafetyLimit}
+            value={count || 1}
+            aria-label="生成数量"
+            onChange={(event) => updateImageCount(Number(event.target.value))}
+          />
+          <button type="button" aria-label="增加数量" disabled={count >= workspaceTaskImageSafetyLimit} onClick={() => updateImageCount(count + 1)}>+</button>
+        </div>
+        <div className="cr-presets">
+          {[1, 2, 4, 8].filter((value) => value <= workspaceTaskImageSafetyLimit).map((value) => (
+            <button key={value} type="button" className={cn('cr-preset', count === value && 'is-active')} aria-pressed={count === value} onClick={() => updateImageCount(value)}>{value}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  const parameterPanel = (
+    <aside className={cn('u-controls', parametersExpanded && 'is-open')} aria-label="创作参数" style={sheetDragStyle} data-sheet-dragging={sheetDragOffset !== 0 || undefined}>
+      <header className="u-controls__head">
+        <button
+          type="button"
+          className="cr-panel-head__toggle"
+          aria-expanded={parametersExpanded}
+          aria-controls="workspace-parameter-controls"
+          data-workspace-sheet-handle="true"
+          onClick={toggleParametersExpanded}
+          onPointerDown={handleSheetPointerDown}
+          onPointerMove={handleSheetPointerMove}
+          onPointerUp={handleSheetPointerUp}
+          onPointerCancel={handleSheetPointerCancel}
+        >
+          <span className="cr-panel-head__title">
+            <strong>创作参数</strong>
+            <span className="u-meta">图片 · {taskType === 'image_edit' ? '参考图生图' : '文生图'}</span>
+          </span>
+          <ChevronUp className={cn('cr-panel-head__chevron', !parametersExpanded && 'is-collapsed')} size={16} aria-hidden="true" />
+        </button>
+        <span className="u-chip u-chip--mono">{workspaceView.estimate.label}</span>
+        {compactViewport && !parametersExpanded ? (
           <button
-            className={workspaceClasses.createButton}
             type="button"
+            className="u-btn u-btn--sm u-btn--primary cr-panel-head__cta"
+            aria-label="开始创作（移动端）"
+            data-workspace-compact-generate="true"
             disabled={generateReadiness.disabled}
             onClick={() => void createTask()}
           >
-            <span className={rdWorkspace.btnGlow} />
-            <span className={rdWorkspace.btnText}>
-            {busy ? (
-              <>
-                <span className={userState.spinner} />
-                生成中...
-              </>
-            ) : (
-              <>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
-                开始创作
-              </>
-            )}
-            </span>
+            开始
           </button>
+        ) : null}
+      </header>
+      <div
+        id="workspace-parameter-controls"
+        className="u-controls__body"
+        aria-hidden={parametersHidden || undefined}
+        inert={parametersHidden ? true : undefined}
+      >
+        {modelControls}
+        {promptControls}
+        {referenceControls}
+        {sizeControls}
+        {qualityControls}
+        {countControls}
+      </div>
+      <div className={cn('u-controls__foot', workspaceClasses.panelSectionFinal)} data-workspace-full-actions="true">
+        <div className="u-price-row">
+          <span>预估消耗 · {count} 张</span>
+          <strong>{workspaceView.estimate.label}</strong>
         </div>
-        </div>
+        <p className={cn('u-meta', workspaceView.estimate.state === 'error' && 'cr-inline-error')} role="status">{workspaceView.estimate.detail}</p>
+        {estimate && !estimate.sufficient ? (
+          <div className="u-banner u-banner--danger" role="alert">
+            <div>
+              积分不足，还差 {displayPoints(estimate.insufficient_points)}。当前可用 {displayPoints(estimate.balance?.available_points)}。
+              <div className="cr-estimate-actions">
+                <button className="u-btn u-btn--sm u-btn--primary" type="button" onClick={() => app.navigate('checkout')}>去充值</button>
+                <button className="u-btn u-btn--sm" type="button" onClick={() => app.navigate('profile')}>兑换积分</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {generateReadiness.reason && !generateReadiness.showRechargeAction ? (
+          <div className={cn('u-banner', !parametersExpanded && 'max-[760px]:hidden')} role="status">{generateReadiness.reason}</div>
+        ) : null}
+        <button
+          className={cn('u-btn u-btn--primary u-btn--lg u-btn--block', !parametersExpanded && 'max-[760px]:hidden')}
+          type="button"
+          disabled={generateReadiness.disabled}
+          onClick={() => void createTask()}
+        >
+          {busy ? (
+            <>
+              <span className={userState.spinner} />
+              生成中...
+            </>
+          ) : '开始创作'}
+        </button>
+      </div>
     </aside>
   )
 
   return (
-    <div className={workspaceClasses.root} data-workspace-layout="creative">
+    <div className="u-workbench" data-workspace-layout="creative">
       {compactViewport ? <OverlayPortal>{parameterPanel}</OverlayPortal> : parameterPanel}
       {promptExpanded ? (
         <PromptEditorDialog
@@ -1814,7 +1635,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           optimization={promptOptimization}
           onPromptChange={setPrompt}
           onVariableChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))}
-          onAddAsset={() => { setEditSourceOpen(true); void openGalleryImport('edit', 'expanded') }}
+          onAddAsset={() => { void openGalleryImport('edit', 'expanded') }}
           onPasteFiles={(files) => { window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail: { files, projectID: projects.selectedProjectID } })) }}
           onClose={() => { setPromptExpanded(false); window.setTimeout(() => compactPromptEditorRef.current?.focus(), 0) }}
           onOptimize={() => void startPromptOptimization()}
@@ -1837,7 +1658,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           <Modal title="重命名资产" onClose={() => setRenamingReferenceID(null)}>
             <form className="reference-rename-dialog" onSubmit={(event) => { event.preventDefault(); void saveReferenceName(asset) }}>
               <label htmlFor="reference-rename-input">资产名称</label>
-              <input id="reference-rename-input" autoFocus className={userForm.input} value={renamingReferenceName} maxLength={64} onChange={(event) => setRenamingReferenceName(event.target.value)} />
+              <input id="reference-rename-input" autoFocus className="u-input" value={renamingReferenceName} maxLength={64} onChange={(event) => setRenamingReferenceName(event.target.value)} />
               <div className="reference-rename-dialog-actions">
                 <Button type="button" tone="ghost" disabled={renamingReferenceBusy} onClick={() => setRenamingReferenceID(null)}>取消</Button>
                 <Button type="submit" busy={renamingReferenceBusy} disabled={!renamingReferenceName.trim() || renamingReferenceName.trim() === asset.name}>保存</Button>
@@ -1847,34 +1668,40 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         )
       })() : null}
 
-      {/* Right Canvas */}
-      <section className={workspaceClasses.canvas}>
-        <div className="flex shrink-0 justify-end border-b border-[var(--border)] px-4 py-3 sm:px-5">
-          <ProjectSelector className="w-full sm:w-auto" />
-        </div>
-        {initialTaskLoading ? <div className="border-b border-[var(--border)] px-5 py-3"><LoadingState label="正在读取指定任务..." /></div> : null}
-        {initialTaskError ? (
-          <div className="border-b border-[var(--border)] px-5 py-3">
-            <ErrorState message={initialTaskError} onRetry={() => setInitialTaskReloadKey((key) => key + 1)} />
+      <section className="u-canvas" aria-label="创作输出">
+        <div className="u-canvas__head">
+          <div className="u-segment" role="tablist" aria-label="创作输出">
+            <button type="button" role="tab" aria-selected={outputTab === 'current'} className={cn(outputTab === 'current' && 'is-active')} onClick={() => setOutputTab('current')}>当前创作</button>
+            <button type="button" role="tab" aria-selected={outputTab === 'history'} className={cn(outputTab === 'history' && 'is-active')} onClick={() => setOutputTab('history')}>历史创作</button>
           </div>
-        ) : null}
-        {latestTask ? <WorkspaceStatusRail task={workspaceView.task} startedAt={latestTask.created_at} finishedAt={latestTask.updated_at} /> : null}
-        {historyTasks.length ? (
-          <RecentHistoryStrip
-            tasks={historyTasks}
-            activeTaskId={latestTask?.id}
-            accessToken={app.session?.token}
-            onSelectTask={selectRecentTask}
-            onMediaRefresh={refreshWorkspaceImage}
-          />
-        ) : null}
-        {latestTask ? (
-          <div className={workspaceClasses.feed}>
-            <div className={workspaceClasses.outputTabs} role="tablist" aria-label="创作输出">
-              <button type="button" role="tab" aria-selected={outputTab === 'current'} className={cn(workspaceClasses.outputTab, outputTab === 'current' && workspaceClasses.outputTabActive)} onClick={() => setOutputTab('current')}>当前创作</button>
-              <button type="button" role="tab" aria-selected={outputTab === 'history'} className={cn(workspaceClasses.outputTab, outputTab === 'history' && workspaceClasses.outputTabActive)} onClick={() => setOutputTab('history')}>历史创作</button>
-            </div>
-            {outputTab === 'current' ? (
+          <div className="cr-canvas-actions">
+            {latestTask ? (
+              <>
+                <span className="u-chip u-chip--mono cr-task-id" title={latestTask.id}>task_{latestTask.id.slice(0, 8)}</span>
+                <button className="u-btn u-btn--sm" type="button" onClick={() => {
+                  void copyText(latestTask.id).then(() => app.notify('success', '任务 ID 已复制')).catch(() => app.notify('error', '复制失败'))
+                }}>复制</button>
+                <button className="u-btn u-btn--sm" type="button" disabled={!latestTask.results.length} onClick={() => {
+                  const image = latestTask.results[0]
+                  if (!image) return
+                  setPreviewImage(imagePreviewPayload(image, latestTask, app.profile, app.session?.token))
+                }}>打开详情</button>
+              </>
+            ) : (
+              <span className="u-meta">{projectReadiness.ready ? '准备就绪' : projectReadiness.reason}</span>
+            )}
+          </div>
+        </div>
+
+        {initialTaskLoading ? <LoadingState label="正在读取指定任务..." /> : null}
+        {initialTaskError ? <ErrorState message={initialTaskError} onRetry={() => setInitialTaskReloadKey((key) => key + 1)} /> : null}
+
+        {latestTask ? <div className="cr-sr-only"><WorkspaceStatusRail task={workspaceView.task} startedAt={latestTask.created_at} finishedAt={latestTask.updated_at} /></div> : null}
+
+        {outputTab === 'current' ? (
+          <div className="cr-canvas-panel">
+            {latestTask ? <StageRail nodes={workspaceView.task.rail} trailing={`已用 ${formatCompactDuration(taskElapsedMs(latestTask))}`} /> : null}
+            {latestTask ? (
               <GenerationOutput
                 key={latestTask.id}
                 task={latestTask}
@@ -1924,19 +1751,30 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 onReferenceMediaRefresh={refreshWorkspaceReference}
               />
             ) : (
-              <HistoryCreationGrid tasks={historyTasks} profile={app.profile} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} onMediaRefresh={refreshWorkspaceImage} />
+              <div className="u-stage cr-stage--empty">
+                <div className="u-empty cr-stage-empty">
+                  <span className="u-empty__icon"><SparkleGlyph /></span>
+                  <h3>准备就绪</h3>
+                  <p>{projectReadiness.ready ? '在左侧设置参数并输入提示词，点击「开始创作」即可生成画面。' : projectReadiness.reason}</p>
+                </div>
+              </div>
             )}
-            <div ref={feedEndRef} />
+            {historyTasks.length ? (
+              <RecentHistoryStrip
+                tasks={historyTasks}
+                activeTaskId={latestTask?.id}
+                accessToken={app.session?.token}
+                onSelectTask={selectRecentTask}
+                onMediaRefresh={refreshWorkspaceImage}
+              />
+            ) : null}
           </div>
         ) : (
-          <div className={workspaceClasses.placeholder}>
-            <div className="max-w-sm opacity-60">
-              <div className={workspaceClasses.readyIcon}><SparkleGlyph /></div>
-              <h2 className={workspaceClasses.placeholderTitle}>准备就绪</h2>
-              <p className={workspaceClasses.placeholderText}>在左侧设置参数并输入提示词，点击「开始创作」即可生成画面。</p>
-            </div>
+          <div className="cr-canvas-panel">
+            <HistoryCreationGrid tasks={historyTasks} profile={app.profile} accessToken={app.session?.token} onPreviewImage={setPreviewImage} onOpenTaskDialog={openHistoryTaskDialog} onMediaRefresh={refreshWorkspaceImage} />
           </div>
         )}
+        <div ref={feedEndRef} />
 
         <ImageDetailModal
           title="图片详情"
@@ -1998,25 +1836,60 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             }}
           />
         ) : null}
-
       </section>
     </div>
   )
 }
 
+function StageRail({ nodes, trailing }: { nodes: WorkspaceProgressNode[]; trailing?: string }) {
+  if (!nodes.length) return null
+  return (
+    <div className="u-stage-rail" aria-hidden="true">
+      <span>任务阶段</span>
+      <div className="u-stage-rail__steps">
+        {nodes.map((node) => (
+          <span
+            key={node.phase}
+            className={cn(
+              'u-stage-rail__step',
+              node.status === 'done' && 'is-done',
+              node.status === 'active' && 'is-now',
+              node.status === 'failed' && 'is-failed',
+            )}
+          >
+            <i className="u-stage-rail__dot" />
+            {node.label}
+          </span>
+        ))}
+      </div>
+      {trailing ? <span className="u-meta">{trailing}</span> : null}
+    </div>
+  )
+}
+
+function ratioIconDimensions(ratio: string) {
+  const [rawWidth, rawHeight] = ratio.split(':').map(Number)
+  if (!(rawWidth > 0) || !(rawHeight > 0)) return { width: 18, height: 18 }
+  const longest = Math.max(rawWidth, rawHeight)
+  return {
+    width: Math.max(10, Math.round((rawWidth / longest) * 26)),
+    height: Math.max(10, Math.round((rawHeight / longest) * 26)),
+  }
+}
+
 function ReferenceAssetPreview({ asset, accessToken, onClick, onMediaRefresh }: { asset: ReferenceAsset; accessToken?: string | null; onClick?: (url: string, asset: ReferenceAsset) => void; onMediaRefresh?: () => string | undefined | void | Promise<string | undefined | void> }) {
   const previewURL = referenceAssetPreviewURL(asset, accessToken)
   if (!previewURL) {
-    return <div className={workspaceClasses.refPlaceholder}>无法预览</div>
+    return <div className="cr-ref-placeholder">无法预览</div>
   }
   if (onClick) {
     return (
-      <button className={workspaceClasses.sourceImageButton} type="button" onClick={() => onClick(previewURL, asset)}>
-        <RefreshableMediaImage className={workspaceClasses.refImage} src={previewURL} mediaExpiresAt={asset.preview_expires_at} alt={asset.name || '参考图'} onMediaRefresh={onMediaRefresh} />
+      <button className="u-detail__ref" type="button" onClick={() => onClick(previewURL, asset)}>
+        <RefreshableMediaImage className="size-full object-cover" src={previewURL} mediaExpiresAt={asset.preview_expires_at} alt={asset.name || '参考图'} onMediaRefresh={onMediaRefresh} />
       </button>
     )
   }
-  return <RefreshableMediaImage src={previewURL} mediaExpiresAt={asset.preview_expires_at} alt={asset.name || '参考图'} className={workspaceClasses.refImage} onMediaRefresh={onMediaRefresh} />
+  return <RefreshableMediaImage src={previewURL} mediaExpiresAt={asset.preview_expires_at} alt={asset.name || '参考图'} className="size-full object-cover" onMediaRefresh={onMediaRefresh} />
 }
 
 function SparkleGlyph() {
@@ -2024,16 +1897,6 @@ function SparkleGlyph() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 3l1.7 5.2L19 10l-5.3 1.8L12 17l-1.7-5.2L5 10l5.3-1.8L12 3Z" />
       <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" />
-    </svg>
-  )
-}
-
-function ImageGlyph() {
-  return (
-    <svg className="size-4 text-[var(--accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="m3 16 5-5 4 4 2-2 7 6" />
-      <circle cx="8.5" cy="9.5" r="1.5" />
     </svg>
   )
 }
@@ -2066,48 +1929,6 @@ function CloseGlyph() {
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
     </svg>
-  )
-}
-
-function ChevronGlyph() {
-  return (
-    <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  )
-}
-
-function EditGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
-    </svg>
-  )
-}
-
-function DownloadGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3v12" />
-      <path d="m7 10 5 5 5-5" />
-      <path d="M5 21h14" />
-    </svg>
-  )
-}
-
-function AspectRatioIcon({ ratio, active }: { ratio: string; active?: boolean }) {
-  const [rawWidth, rawHeight] = ratio.split(':').map(Number)
-  const width = rawWidth > 0 && rawHeight > 0 ? Math.max(10, Math.min(24, 22 * (rawWidth / Math.max(rawWidth, rawHeight)))) : 16
-  const height = rawWidth > 0 && rawHeight > 0 ? Math.max(10, Math.min(24, 22 * (rawHeight / Math.max(rawWidth, rawHeight)))) : 16
-  return (
-    <span className={cn(rdWorkspace.itemIcon, active && rdWorkspace.itemIconActive)}>
-      <span
-        className="block rounded-xl border-2 border-current"
-        style={{ width, height }}
-        aria-hidden="true"
-      />
-    </span>
   )
 }
 
@@ -2146,21 +1967,21 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, acc
 
   return (
     <Modal title="从资产导入参考图" onClose={onClose}>
-      <div className={workspaceClasses.importFilters}>
-        <input className={workspaceClasses.importInput} value={filter.query} onChange={(event) => updateFilter({ query: event.target.value })} placeholder="搜索提示词、模型、分组" />
-        <select className={workspaceClasses.importInput} value={filter.group} onChange={(event) => updateFilter({ group: event.target.value })}>
+      <div className="u-toolbar cr-import-toolbar">
+        <input className="u-input" type="search" value={filter.query} onChange={(event) => updateFilter({ query: event.target.value })} placeholder="搜索提示词、模型、分组" />
+        <select className="u-filter" value={filter.group} onChange={(event) => updateFilter({ group: event.target.value })}>
           <option value="all">全部分组</option>
           {options.groups.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <select className={workspaceClasses.importInput} value={filter.publishStatus} onChange={(event) => updateFilter({ publishStatus: event.target.value })}>
+        <select className="u-filter" value={filter.publishStatus} onChange={(event) => updateFilter({ publishStatus: event.target.value })}>
           <option value="all">全部状态</option>
           {options.publishStatuses.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <select className={workspaceClasses.importInput} value={filter.model} onChange={(event) => updateFilter({ model: event.target.value })}>
+        <select className="u-filter" value={filter.model} onChange={(event) => updateFilter({ model: event.target.value })}>
           <option value="all">全部模型</option>
           {options.models.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <select className={workspaceClasses.importInput} value={filter.ratio} onChange={(event) => updateFilter({ ratio: event.target.value })}>
+        <select className="u-filter" value={filter.ratio} onChange={(event) => updateFilter({ ratio: event.target.value })}>
           <option value="all">全部比例</option>
           {options.ratios.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
@@ -2169,7 +1990,7 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, acc
       {loading ? <LoadingState label="正在读取资产..." /> : null}
       {!loading && !rows.length ? <EmptyState title="没有匹配的资产" detail="换一个搜索词或筛选条件。" /> : null}
       {rows.length ? (
-        <div className={workspaceClasses.importGrid}>
+        <div className="u-grid cr-import-grid">
           {rows.map((image) => {
             const selected = selectedIds.has(image.id)
             const disabled = !selected && selectedIds.size >= remainingLimit
@@ -2178,23 +1999,27 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, acc
               <button
                 key={image.id}
                 type="button"
-                className={cn(workspaceClasses.importTile, selected && workspaceClasses.importTileActive)}
+                className={cn('u-card cr-import-tile', selected && 'is-selected')}
                 disabled={disabled}
                 onClick={() => toggle(image.id)}
               >
-                <span className={workspaceClasses.importCheck}>{selected ? '✓' : ''}</span>
-                {imageUrl ? (
-                  <RefreshableMediaImage
-                    className={workspaceClasses.importThumb}
-                    src={imageUrl}
-                    mediaExpiresAt={image.preview_expires_at}
-                    alt={image.prompt || image.id}
-                    onMediaRefresh={() => onMediaRefresh(image.id)}
-                  />
-                ) : null}
-                <span className={workspaceClasses.importInfo}>
-                  <strong className={workspaceClasses.importTitle}>{image.prompt || image.id}</strong>
-                  <span>{image.route_model_code || image.abstract_model || '未知模型'} · {image.aspect_ratio || '未知比例'}</span>
+                <span className="u-card__media">
+                  <span className="cr-import-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+                  {imageUrl ? (
+                    <RefreshableMediaImage
+                      src={imageUrl}
+                      mediaExpiresAt={image.preview_expires_at}
+                      alt={image.prompt || image.id}
+                      onMediaRefresh={() => onMediaRefresh(image.id)}
+                    />
+                  ) : null}
+                </span>
+                <span className="u-card__body">
+                  <span className="u-card__title">{image.prompt || image.id}</span>
+                  <span className="u-card__meta">
+                    <span>{image.route_model_code || image.abstract_model || '未知模型'}</span>
+                    <span>{image.aspect_ratio || '未知比例'}</span>
+                  </span>
                 </span>
               </button>
             )
@@ -2202,8 +2027,8 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, acc
         </div>
       ) : null}
 
-      <div className={workspaceClasses.importActions}>
-        <span className="mr-auto text-sm text-[var(--muted)]">已选 {selectedIds.size} 张，最多还能选择 {remainingLimit} 张</span>
+      <div className="cr-modal-actions">
+        <span className="cr-modal-actions__meta">已选 {selectedIds.size} 张，最多还能选择 {remainingLimit} 张</span>
         <Button tone="ghost" onClick={onClose}>取消</Button>
         <Button busy={busy} disabled={!selectedIds.size || selectedIds.size > remainingLimit} onClick={() => onConfirm(Array.from(selectedIds))}>确定</Button>
       </div>
@@ -2231,8 +2056,12 @@ function RecentHistoryStrip({ tasks, activeTaskId, accessToken, onSelectTask, on
   onMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
 }) {
   return (
-    <section className="border-b border-[var(--border)] px-3 py-2.5 sm:px-5" aria-label="最近创作">
-      <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
+    <section className="cr-history-section" aria-label="最近创作">
+      <div className="cr-section-head">
+        <h3 className="u-h3">最近创作</h3>
+        <span className="u-meta">{tasks.length} 条</span>
+      </div>
+      <div className="u-history-strip">
         {tasks.slice(0, 8).map((task) => {
           const card = workspaceTaskCardView(task)
           const image = task.results[0]
@@ -2240,19 +2069,20 @@ function RecentHistoryStrip({ tasks, activeTaskId, accessToken, onSelectTask, on
             <button
               key={task.id}
               type="button"
-              className={cn(
-                'grid min-w-[154px] grid-cols-[42px_minmax(0,1fr)] items-center gap-2 rounded-xl border bg-[var(--surface)]/55 p-1.5 text-left transition-colors duration-[var(--motion-fast)] hover:border-[var(--accent)] motion-reduce:transition-none',
-                task.id === activeTaskId ? 'border-[var(--accent)]' : 'border-[var(--border)]',
-              )}
+              className={cn('u-history-card cr-history-card', task.id === activeTaskId && 'is-active')}
               aria-current={task.id === activeTaskId ? 'true' : undefined}
               onClick={() => onSelectTask(task)}
             >
-              <span className="grid size-[42px] place-items-center overflow-hidden rounded-lg bg-[var(--bg)] text-[10px] text-[var(--muted)]">
-                {image ? <RefreshableMediaImage className="size-full object-cover" src={userApi.imageAssetUrl(image.url, accessToken)} mediaExpiresAt={image.preview_expires_at} alt="" onMediaRefresh={() => onMediaRefresh(image.id)} /> : <span className="px-1 text-center leading-tight">{card.statusLabel}</span>}
+              <span className="u-history-card__media">
+                {image ? (
+                  <RefreshableMediaImage className="size-full object-cover" src={userApi.imageAssetUrl(image.url, accessToken)} mediaExpiresAt={image.preview_expires_at} alt="" onMediaRefresh={() => onMediaRefresh(image.id)} />
+                ) : (
+                  <span className="cr-history-state">{card.statusLabel}</span>
+                )}
               </span>
-              <span className="min-w-0">
-                <strong className="block truncate text-xs text-[var(--fg)]">{card.taskTypeLabel}</strong>
-                <span className="mt-0.5 block truncate text-[10px] text-[var(--muted)]">{card.statusLabel} · {formatHistoryTime(task.created_at)}</span>
+              <span className="u-history-card__body">
+                <strong>{card.taskTypeLabel}</strong>
+                <span className="u-meta">{card.statusLabel} · {formatHistoryTime(task.created_at)}</span>
               </span>
             </button>
           )
@@ -2287,22 +2117,52 @@ function HistoryCreationGrid({ tasks, profile, accessToken, onPreviewImage, onOp
   onOpenTaskDialog: (task: ImageTask) => void
   onMediaRefresh: (imageId: string) => string | undefined | void | Promise<string | undefined | void>
 }) {
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState('all')
+  const rows = useMemo(() => {
+    const normalized = query.trim().toLowerCase()
+    return tasks.filter((task) => {
+      if (status !== 'all') {
+        const matchesStatus = status === 'running' ? !isTerminalStatus(task.status) : task.status === status
+        if (!matchesStatus) return false
+      }
+      if (!normalized) return true
+      return task.id.toLowerCase().includes(normalized)
+        || task.title.toLowerCase().includes(normalized)
+        || task.prompt.toLowerCase().includes(normalized)
+    })
+  }, [query, status, tasks])
+
   if (!tasks.length) {
     return <EmptyState title="暂无历史创作" detail="完成一次创作后，任务记录会展示在这里。" />
   }
   return (
-    <div className={workspaceClasses.historyGrid}>
-      {tasks.map((task) => (
-        <HistoryCreationCard
-          key={task.id}
-          task={task}
-          profile={profile}
-          accessToken={accessToken}
-          onPreviewImage={onPreviewImage}
-          onOpenTaskDialog={onOpenTaskDialog}
-          onMediaRefresh={onMediaRefresh}
-        />
-      ))}
+    <div className="cr-history-panel">
+      <div className="u-toolbar" style={{ margin: 0 }}>
+        <input className="u-input" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索提示词或任务 ID" aria-label="搜索历史创作" />
+        <select className="u-filter" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="按状态筛选">
+          <option value="all">全部状态</option>
+          <option value="succeeded">成功</option>
+          <option value="partial_failed">部分失败</option>
+          <option value="failed">失败</option>
+          <option value="running">进行中</option>
+        </select>
+      </div>
+      {rows.length ? (
+        <div className="cr-hist">
+          {rows.map((task) => (
+            <HistoryCreationCard
+              key={task.id}
+              task={task}
+              profile={profile}
+              accessToken={accessToken}
+              onPreviewImage={onPreviewImage}
+              onOpenTaskDialog={onOpenTaskDialog}
+              onMediaRefresh={onMediaRefresh}
+            />
+          ))}
+        </div>
+      ) : <EmptyState title="没有匹配的创作" detail="换一个搜索词或状态筛选。" />}
     </div>
   )
 }
@@ -2321,7 +2181,6 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
   const running = !isTerminalStatus(task.status)
   const allFailed = isTerminalStatus(task.status) && !task.results.length && task.status !== 'succeeded'
   const partialFailed = task.status === 'partial_failed' || (isTerminalStatus(task.status) && task.results.length > 0 && task.results.length < requested)
-  const multi = requested > 1
   const interaction = workspaceTaskHistoryInteraction({ surface: 'history', status: task.status, resultCount: task.results.length })
   const imageUrl = imageSlot ? userApi.imageAssetUrl(imageSlot.image.url, accessToken) : ''
   const downloadUrl = imageSlot ? userApi.imageAssetUrl(imageSlot.image.download_url ?? imageSlot.image.url, accessToken) : ''
@@ -2349,32 +2208,30 @@ function HistoryCreationCard({ task, profile, accessToken, onPreviewImage, onOpe
   }
 
   return (
-    <button type="button" className={workspaceClasses.historyCard} disabled={!interaction.openDialog && !interaction.openLightbox} onClick={openPreview}>
-      <span className={workspaceClasses.historyPreview}>
-        {multi ? <span className={cn(workspaceClasses.historyLayer, workspaceClasses.historyLayerBack2)} aria-hidden="true" /> : null}
-        {multi ? <span className={cn(workspaceClasses.historyLayer, workspaceClasses.historyLayerBack1)} aria-hidden="true" /> : null}
-        <span className={cn(workspaceClasses.historyLayer, allFailed && workspaceClasses.historyFailed)}>
-          {imageSlot && imageUrl ? (
-            <RefreshableMediaImage className={workspaceClasses.historyImage} src={imageUrl} mediaExpiresAt={imageSlot.image.preview_expires_at} alt={task.title} onMediaRefresh={() => onMediaRefresh(imageSlot.image.id)} />
-          ) : running ? (
-            <span className={workspaceClasses.historyState}>
-              <span className={userState.spinner} />
-              <span>生成中</span>
-            </span>
-          ) : (
-            <span className={workspaceClasses.historyState}>
-              <span className="text-xl font-black text-[var(--accent-coral)]">!</span>
-              <span>{task.error_message || task.failure_reason || '生成失败'}</span>
-            </span>
-          )}
-        </span>
-        {partialFailed ? <span className={workspaceClasses.historyWarn} title="部分失败">部分失败</span> : null}
+    <button type="button" className="u-card cr-card-button group" disabled={!interaction.openDialog && !interaction.openLightbox} onClick={openPreview} aria-label={task.prompt || task.title || '未命名创作'}>
+      <span className="u-card__media">
+        {imageSlot && imageUrl ? (
+          <RefreshableMediaImage className={workspaceClasses.historyImage} src={imageUrl} mediaExpiresAt={imageSlot.image.preview_expires_at} alt={task.title} onMediaRefresh={() => onMediaRefresh(imageSlot.image.id)} />
+        ) : running ? (
+          <span className="cr-card-state">
+            <span className={userState.spinner} />
+            <span>生成中</span>
+          </span>
+        ) : (
+          <span className="cr-card-state">
+            <strong className="cr-card-flag" style={{ position: 'static' }}>!</strong>
+            <span>{task.error_message || task.failure_reason || '生成失败'}</span>
+          </span>
+        )}
+        <span className="u-card__tag">{task.results.length}/{requested} 张</span>
+        {partialFailed ? <span className="cr-card-flag">部分失败</span> : null}
       </span>
-      <span className={workspaceClasses.historyTitle}>{task.prompt || task.title || '未命名创作'}</span>
-      <span className={workspaceClasses.historyMeta}>
-        <span>{formatHistoryTime(task.created_at)}</span>
-        <span>{formatCompactDuration(taskElapsedMs(task))}</span>
-        <span>{task.results.length}/{requested} 张</span>
+      <span className="u-card__body">
+        <span className="u-card__title">{task.prompt || task.title || '未命名创作'}</span>
+        <span className="u-card__meta">
+          <span>{formatHistoryTime(task.created_at)}</span>
+          <span>{formatCompactDuration(taskElapsedMs(task))}</span>
+        </span>
       </span>
     </button>
   )
@@ -2389,8 +2246,9 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
   onClose: () => void
 }) {
   const app = useApp()
-  if (!task.results.length) return null
-  const requested = Math.max(Number(task.image_count || 1), task.results.length)
+  const requested = Math.max(Number(task.image_count || 1), task.results.length || 0)
+  const running = !isTerminalStatus(task.status)
+  const errorText = task.error_message || task.failure_reason || '本次未产生可用图片'
   const referenceImages = task.reference_assets.map((asset) => ({
     id: asset.id,
     url: referenceAssetPreviewURL(asset, accessToken),
@@ -2400,53 +2258,138 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
   })).filter((item) => item.url)
 
   return (
-    <Modal title="历史创作总览" onClose={onClose} className="max-h-[90vh] w-[min(960px,calc(100vw-2rem))] max-w-none overflow-y-auto">
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-[var(--border)] py-3 text-xs text-[var(--muted)]">
-        <span className="min-w-0 flex-1 truncate" title={task.prompt || task.title}>{task.prompt || task.title || '未命名创作'}</span>
-        <span>{task.results.length}/{requested} 张</span>
-        <span>{formatHistoryTime(task.created_at)}</span>
-        <span className="inline-flex items-center gap-1"><span title={task.id}>任务ID: {task.id}</span><InlineCopyButton text={task.id} label="复制任务ID" /></span>
-      </div>
-      <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
-        {task.results.map((image, index) => {
-          const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
-          return (
-            <button
-              key={image.id}
-              type="button"
-              data-history-image-id={image.id}
-              className="group grid min-w-0 gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-2 text-left transition hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]"
-              aria-label={`查看第 ${index + 1} 张图片详情`}
-              onClick={() => onPreviewImage({
-                url: imageUrl,
-                downloadUrl: userApi.imageAssetUrl(image.download_url ?? image.url, accessToken),
-                alt: image.prompt || `${task.title || '历史创作'} ${index + 1}`,
-                prompt: image.prompt || task.prompt,
-                width: image.width,
-                height: image.height,
-                ratio: task.aspect_ratio,
-                model: image.route_model_code || task.route_model_code || task.model_group,
-                source: '历史创作',
-                creationDraft: workspaceCreationDraftFromSnapshot(task),
-                detailImage: projectWorkspaceImageDetail(image, task, app.profile),
-                mediaResource: { kind: 'image', scope: 'private', id: image.id },
-                mediaExpiresAt: image.preview_expires_at,
-                referenceImages,
+    <Drawer open wide title="历史创作详情" onClose={onClose}>
+      <div className="u-detail">
+        <section className="u-detail__stage-col">
+          {referenceImages.length ? (
+            <div className="u-detail__refs">
+              <span className="u-detail__refs-label">参考图 {referenceImages.length}</span>
+              {referenceImages.map((item, index) => (
+                <button key={item.id} className="u-detail__ref" type="button" aria-label={`查看参考图 ${index + 1}`} onClick={() => onPreviewImage({
+                  url: item.url,
+                  downloadUrl: item.url,
+                  alt: item.alt,
+                  source: '原图引用',
+                  mediaExpiresAt: item.mediaExpiresAt,
+                  referenceImages,
+                })}>
+                  <RefreshableMediaImage src={item.url} mediaExpiresAt={item.mediaExpiresAt} alt={item.alt} onMediaRefresh={item.onMediaRefresh} />
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {task.results.length ? (
+            <div className={cn('cr-history-detail-grid', task.results.length === 1 && 'is-single')}>
+              {task.results.map((image, index) => {
+                const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
+                return (
+                  <button
+                    key={image.id}
+                    type="button"
+                    data-history-image-id={image.id}
+                    className="u-result cr-history-result"
+                    aria-label={`查看第 ${index + 1} 张图片详情`}
+                    onClick={() => onPreviewImage({
+                      url: imageUrl,
+                      downloadUrl: userApi.imageAssetUrl(image.download_url ?? image.url, accessToken),
+                      alt: image.prompt || `${task.title || '历史创作'} ${index + 1}`,
+                      prompt: image.prompt || task.prompt,
+                      width: image.width,
+                      height: image.height,
+                      ratio: task.aspect_ratio,
+                      model: image.route_model_code || task.route_model_code || task.model_group,
+                      source: '历史创作',
+                      creationDraft: workspaceCreationDraftFromSnapshot(task),
+                      detailImage: projectWorkspaceImageDetail(image, task, app.profile),
+                      mediaResource: { kind: 'image', scope: 'private', id: image.id },
+                      mediaExpiresAt: image.preview_expires_at,
+                      referenceImages,
+                    })}
+                  >
+                    <RefreshableMediaImage
+                      className="cr-history-result__media"
+                      src={imageUrl}
+                      mediaExpiresAt={image.preview_expires_at}
+                      alt={image.prompt || `${task.title || '历史创作'} ${index + 1}`}
+                      onMediaRefresh={() => onImageMediaRefresh(image.id)}
+                    />
+                    <span className="u-result__bar">
+                      <span className="u-result__ops"><span className="u-chip u-chip--mono">第 {index + 1} 张</span></span>
+                      <span className="u-result__caption">{image.width}×{image.height} · {image.output_format?.toUpperCase() || 'PNG'}</span>
+                    </span>
+                  </button>
+                )
               })}
-            >
-              <RefreshableMediaImage
-                className="aspect-square w-full rounded-lg bg-[var(--surface)] object-cover"
-                src={imageUrl}
-                mediaExpiresAt={image.preview_expires_at}
-                alt={image.prompt || `${task.title || '历史创作'} ${index + 1}`}
-                onMediaRefresh={() => onImageMediaRefresh(image.id)}
-              />
-              <span className="truncate text-xs font-semibold text-[var(--fg)]">第 {index + 1} 张</span>
-            </button>
-          )
-        })}
+            </div>
+          ) : (
+            <div className="u-detail__stage">
+              <div className="cr-history-empty">
+                {running ? <span className={userState.spinner} aria-hidden="true" /> : <strong className="cr-card-flag" style={{ position: 'static' }}>!</strong>}
+                <h3>{running ? '正在生成' : '生成失败'}</h3>
+                <p>{running ? (task.progress_message || '任务正在处理中，结果完成后会出现在这里。') : errorText}</p>
+                {running ? <div className="u-progress" style={{ width: 'min(320px, 100%)' }}><span /></div> : null}
+              </div>
+            </div>
+          )}
+
+          <div className="u-actions" style={{ justifyContent: 'space-between' }}>
+            <div className="u-actions">
+              <StatusPill status={task.status} />
+              <span className="u-chip u-chip--mono">{task.results.length}/{requested} 张</span>
+              <span className="u-chip u-chip--mono">{formatCompactDuration(taskElapsedMs(task))}</span>
+            </div>
+            <span className="u-chip u-chip--mono">{formatHistoryTime(task.created_at)}</span>
+          </div>
+        </section>
+
+        <section className="u-detail__info">
+          <div className="u-detail__info-scroll">
+            <div style={{ display: 'grid', gap: 7 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                <span className="u-chip u-chip--accent">图片</span>
+                <span className="u-chip u-chip--mono">{task.route_model_code || task.model_group || '未知模型'}</span>
+                <StatusPill status={task.status} />
+              </div>
+              <h2 className="u-detail__title">{task.prompt || task.title || '未命名创作'}</h2>
+              <div className="u-meta">{formatHistoryTime(task.created_at)} · {formatCompactDuration(taskElapsedMs(task))}</div>
+            </div>
+
+            <div className="u-detail__section">
+              <h4>Prompt</h4>
+              <div className="u-prompt" tabIndex={0}>{task.prompt || '未记录 Prompt'}</div>
+            </div>
+
+            <div className="u-detail__section">
+              <h4>生成参数</h4>
+              <dl className="u-facts">
+                <div className="u-fact"><dt>任务类型</dt><dd>{taskTypeLabel(task.task_type)}</dd></div>
+                <div className="u-fact"><dt>模型</dt><dd>{task.route_model_code || task.model_group || '-'}</dd></div>
+                <div className="u-fact"><dt>比例</dt><dd>{task.aspect_ratio || '-'}</dd></div>
+                <div className="u-fact"><dt>请求数量</dt><dd>{requested}</dd></div>
+                <div className="u-fact"><dt>质量</dt><dd>{task.quality || task.requested_quality || '-'}</dd></div>
+                <div className="u-fact"><dt>状态</dt><dd>{task.progress_message || task.status}</dd></div>
+              </dl>
+            </div>
+
+            <div className="u-detail__section">
+              <h4>任务信息</h4>
+              <dl className="u-facts">
+                <div className="u-fact"><dt>任务 ID</dt><dd title={task.id}>{task.id}</dd></div>
+                <div className="u-fact"><dt>创建时间</dt><dd>{formatHistoryTime(task.created_at)}</dd></div>
+                <div className="u-fact"><dt>耗时</dt><dd>{formatCompactDuration(taskElapsedMs(task))}</dd></div>
+                <div className="u-fact"><dt>参考图</dt><dd>{referenceImages.length}</dd></div>
+                {errorText && !running ? <div className="u-fact"><dt>失败原因</dt><dd title={errorText}>{errorText}</dd></div> : null}
+              </dl>
+            </div>
+          </div>
+          <div className="u-detail__foot">
+            <InlineCopyButton text={task.id} label="复制任务 ID" />
+            <Button tone="ghost" onClick={onClose}>关闭</Button>
+          </div>
+        </section>
       </div>
-    </Modal>
+    </Drawer>
   )
 }
 
@@ -2467,11 +2410,15 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
 }) {
   const slots = generationSlots(task)
   const activeStage = task.progress_message || task.progress_stage || '等待后端返回任务进度'
-  const successImages = slots.filter((slot): slot is Extract<typeof slot, { kind: 'image' }> => slot.kind === 'image')
-  const primaryImage = successImages[0]?.image ?? null
+  const successSlots = slots.filter((slot): slot is Extract<typeof slot, { kind: 'image' }> => slot.kind === 'image')
+  const successImages = successSlots.map((slot) => slot.image)
+  const primaryImage = successImages[0] ?? null
+  const pendingCount = slots.filter((slot) => slot.kind === 'pending').length
+  const failedSlots = slots.filter((slot): slot is Extract<typeof slot, { kind: 'failed' }> => slot.kind === 'failed')
   const [skeletonPhase, setSkeletonPhase] = useState(false)
   const showInitialLoading = !isTerminalStatus(task.status) && !skeletonPhase && !successImages.length
-  const showSlots = skeletonPhase || successImages.length > 0 || isTerminalStatus(task.status)
+  const batchSlots = slots.length > 1 ? slots : []
+  const requested = Math.max(Number(task.image_count || 1), slots.length)
 
   useEffect(() => {
     if (isTerminalStatus(task.status) || successImages.length > 0) {
@@ -2484,82 +2431,133 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
   }, [task.id, task.status, successImages.length])
 
   return (
-    <article className={workspaceClasses.record}>
-      {showInitialLoading ? (
-        <div className={cn(rdWorkspace.outputLoading, 'm-auto')}>
-          <div className={rdWorkspace.outputRing}>
-            <div className={rdWorkspace.outputRingInner1} />
-            <div className={rdWorkspace.outputRingInner2} />
-            <div className={rdWorkspace.outputRingCore}>
-              <SparkleGlyph />
-            </div>
-          </div>
-          <h4 className={rdWorkspace.outputStage}>Mikiko Studio 引擎解算中</h4>
-          <p className={rdWorkspace.outputStageText}>{activeStage}</p>
+    <article className={cn('cr-output', workspaceClasses.outputResultWrap)}>
+      <div className="cr-output__head">
+        <h3 className="u-h3">本批次输出</h3>
+        <span className="u-meta">{requested} 张 · 成功 {successImages.length} · 生成中 {pendingCount}{failedSlots.length ? ` · 失败 ${failedSlots.length}` : ''}</span>
+      </div>
+
+      {task.task_type === 'image_edit' && task.reference_assets.length ? (
+        <div className="u-detail__refs">
+          <span className="u-detail__refs-label">原图引用</span>
+          {task.reference_assets.map((asset) => (
+            <ReferenceAssetPreview
+              key={asset.id || asset.preview_url || asset.download_url}
+              asset={asset}
+              accessToken={accessToken}
+              onMediaRefresh={() => onReferenceMediaRefresh(asset.id)}
+              onClick={(url, selectedAsset) => onPreviewImage({
+                url,
+                downloadUrl: url,
+                alt: selectedAsset.name || '原图引用',
+                source: '原图引用',
+                mediaExpiresAt: selectedAsset.preview_expires_at,
+                mediaResource: { kind: 'reference', scope: 'private', id: selectedAsset.id },
+              })}
+            />
+          ))}
         </div>
-      ) : showSlots && slots.length ? (
-        <div className={workspaceClasses.outputResultWrap}>
-          {task.task_type === 'image_edit' && task.reference_assets.length ? (
-            <div className={workspaceClasses.sourceImages}>
-              <span className={workspaceClasses.sourceImagesTitle}>原图引用</span>
-              {task.reference_assets.map((asset) => (
-                <ReferenceAssetPreview
-                  key={asset.id || asset.preview_url || asset.download_url}
-                  asset={asset}
-                  accessToken={accessToken}
-                  onMediaRefresh={() => onReferenceMediaRefresh(asset.id)}
-                  onClick={(url, selectedAsset) => onPreviewImage({
-                    url,
-                    downloadUrl: url,
-                    alt: selectedAsset.name || '原图引用',
-                    source: '原图引用',
-                    mediaExpiresAt: selectedAsset.preview_expires_at,
-                    mediaResource: { kind: 'reference', scope: 'private', id: selectedAsset.id },
-                  })}
-                />
-              ))}
+      ) : null}
+
+      {showInitialLoading ? (
+        <div className="u-stage cr-stage--loading">
+          <div className={cn(rdWorkspace.outputLoading, 'm-auto')}>
+            <div className={rdWorkspace.outputRing}>
+              <div className={rdWorkspace.outputRingInner1} />
+              <div className={rdWorkspace.outputRingInner2} />
+              <div className={rdWorkspace.outputRingCore}>
+                <SparkleGlyph />
+              </div>
+            </div>
+            <h4 className={rdWorkspace.outputStage}>Mikiko Studio 引擎解算中</h4>
+            <p className={rdWorkspace.outputStageText}>{activeStage}</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {primaryImage ? (
+            <div className="u-stage">
+              <GeneratedImage
+                image={primaryImage}
+                task={task}
+                profile={profile}
+                alt={task.title}
+                fallbackRatio={task.aspect_ratio}
+                accessToken={accessToken}
+                onUseReference={onUseReference}
+                onPreview={onPreviewImage}
+                onDownload={onDownloadImage}
+                onMediaRefresh={() => onImageMediaRefresh(primaryImage.id)}
+                onCopyPrompt={() => void onCopyPrompt()}
+                onReuseConfig={() => onReuseConfig(task)}
+                onOpenDetail={onOpenDetail}
+              />
+            </div>
+          ) : failedSlots.length ? (
+            <div className="u-stage">
+              <div className="cr-stage-message">
+                <GenerationSlotFailure title={failedSlots[0].title} reason={failedSlots[0].reason} code={failedSlots[0].code} />
+              </div>
+            </div>
+          ) : isTerminalStatus(task.status) ? (
+            <div className="u-stage">
+              <div className="cr-stage-message">
+                <TaskFailureBlock task={task} onRetry={() => onRetryTask(task)} onDelete={() => onDeleteTask(task)} />
+              </div>
+            </div>
+          ) : (
+            <div className="u-stage">
+              <GenerationSlotPending label={activeStage} skeleton={skeletonPhase} />
+            </div>
+          )}
+
+          {batchSlots.length ? (
+            <div className="cr-output__batch">
+              <div className="u-grid cr-batch-grid">
+                {batchSlots.map((slot) => {
+                  if (slot.kind === 'image') {
+                    return (
+                      <GeneratedBatchFigure
+                        key={slot.image.id || `image-${slot.index}`}
+                        image={slot.image}
+                        ordinal={slot.index + 1}
+                        task={task}
+                        profile={profile}
+                        accessToken={accessToken}
+                        onPreview={onPreviewImage}
+                        onDownload={onDownloadImage}
+                        onMediaRefresh={() => onImageMediaRefresh(slot.image.id)}
+                      />
+                    )
+                  }
+                  if (slot.kind === 'failed') {
+                    return (
+                      <div key={`failed-${slot.index}`} className="cr-figure__failure" role="alert">
+                        <strong>{slot.title}</strong>
+                        <span>{slot.reason}</span>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div key={`pending-${slot.index}`} className="u-skeleton cr-figure__pending">
+                      {skeletonPhase ? <span className={workspaceClasses.slotSkeletonGlow} aria-hidden="true" /> : null}
+                      <span className={userState.spinner} />
+                      生成中 #{slot.index + 1}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           ) : null}
-          <div className={successImages.length === 1 && slots.length === 1 ? 'w-full max-w-5xl' : workspaceClasses.outputResultGrid}>
-            {slots.map((slot) => {
-              if (slot.kind === 'image') {
-                return (
-                  <GeneratedImage
-                    key={slot.image.id || `image-${slot.index}`}
-                    image={slot.image}
-                    task={task}
-                    profile={profile}
-                    alt={task.title}
-                    fallbackRatio={task.aspect_ratio}
-                    accessToken={accessToken}
-                    onUseReference={onUseReference}
-                    onPreview={onPreviewImage}
-                    onDownload={onDownloadImage}
-                    onMediaRefresh={() => onImageMediaRefresh(slot.image.id)}
-                    onCopyPrompt={() => void onCopyPrompt()}
-                    onReuseConfig={() => onReuseConfig(task)}
-                    onOpenDetail={onOpenDetail}
-                  />
-                )
-              }
-              if (slot.kind === 'failed') {
-                return <GenerationSlotFailure key={`failed-${slot.index}`} title={slot.title} reason={slot.reason} code={slot.code} />
-              }
-              return <GenerationSlotPending key={`pending-${slot.index}`} label={slot.label} skeleton={skeletonPhase} />
-            })}
-          </div>
-          <div className={workspaceClasses.outputMetaRow}>
+
+          <div className="u-meta cr-output__meta">
             <span>模型: {task.route_model_name || task.route_model_code || task.model_group}</span>
             <span>{task.size_mode === 'pixel' ? `尺寸: ${task.requested_size || task.aspect_ratio}` : `比例: ${task.aspect_ratio}`}</span>
             <span>数量: {task.image_count}</span>
             <span>耗时: {formatCompactDuration(taskElapsedMs(task))}</span>
             <span>消耗: {displayTaskPoints(task)}</span>
           </div>
-        </div>
-      ) : isTerminalStatus(task.status) ? (
-        <TaskFailureBlock task={task} onRetry={() => onRetryTask(task)} onDelete={() => onDeleteTask(task)} />
-      ) : (
-        <GenerationSlotPending label="生成中" skeleton={false} />
+        </>
       )}
     </article>
   )
@@ -2568,33 +2566,26 @@ function GenerationOutput({ task, profile, onCopyPrompt, onUseReference, onPrevi
 function GenerationSlotPending({ label, skeleton }: { label: string; skeleton: boolean }) {
   if (skeleton) {
     return (
-      <div className={workspaceClasses.slotSkeleton}>
-        <div className={workspaceClasses.slotSkeletonFrame}>
-          <span className={workspaceClasses.slotSkeletonGlow} aria-hidden="true" />
-          <span className={workspaceClasses.slotSkeletonLoader}>
-            <span className="grid place-items-center gap-2">
-              <span className={userState.spinner} />
-              <strong className={workspaceClasses.pendingStrong}>{label}</strong>
-            </span>
-          </span>
-        </div>
+      <div className="cr-working">
+        <span className={userState.spinner} />
+        <strong>{label}</strong>
       </div>
     )
   }
   return (
-    <div className={workspaceClasses.slotState}>
+    <div className="cr-working">
       <span className={userState.spinner} />
-      <strong className={workspaceClasses.pendingStrong}>{label}</strong>
+      <strong>{label}</strong>
     </div>
   )
 }
 
 function GenerationSlotFailure({ title, reason, code }: { title: string; reason: string; code?: string }) {
   return (
-    <div className={cn(workspaceClasses.slotState, workspaceClasses.slotFailed)}>
-      <strong className={workspaceClasses.pendingFailedTitle}>{title}</strong>
-      <p className={workspaceClasses.placeholderText}>{reason}</p>
-      {code ? <span className={workspaceClasses.slotCode}>{code}</span> : null}
+    <div className="cr-slot-failure" role="alert">
+      <strong>{title}</strong>
+      <p>{reason}</p>
+      {code ? <span className="u-chip u-chip--mono">{code}</span> : null}
     </div>
   )
 }
@@ -2602,15 +2593,15 @@ function GenerationSlotFailure({ title, reason, code }: { title: string; reason:
 function TaskFailureBlock({ task, onRetry, onDelete }: { task: ImageTask; onRetry: () => Promise<void>; onDelete: () => Promise<void> }) {
   const view = workspaceTaskFailureView(task)
   return (
-    <div className={cn(workspaceClasses.pending, workspaceClasses.pendingFailed)}>
-      <strong className={workspaceClasses.pendingFailedTitle}>{view.title}</strong>
-      <p className={workspaceClasses.placeholderText}>{view.reason}</p>
+    <div className="cr-slot-failure" role="alert">
+      <strong>{view.title}</strong>
+      <p>{view.reason}</p>
       {view.meta.length ? (
-        <dl className={workspaceClasses.failureMeta}>
+        <dl className="u-facts">
           {view.meta.map((item) => (
-            <div className={workspaceClasses.failureMetaItem} key={item.label}>
-              <dt className={workspaceClasses.failureMetaLabel}>{item.label}</dt>
-              <dd className={cn(workspaceClasses.failureMetaValue, 'inline-flex items-center gap-1 break-all')}>
+            <div className="u-fact" key={item.label}>
+              <dt>{item.label}</dt>
+              <dd className="inline-flex items-center gap-1">
                 {item.value}
                 {item.label === '任务ID' ? <InlineCopyButton text={item.value} label="复制任务ID" /> : null}
               </dd>
@@ -2618,9 +2609,9 @@ function TaskFailureBlock({ task, onRetry, onDelete }: { task: ImageTask; onRetr
           ))}
         </dl>
       ) : null}
-      <div className="mt-3 flex flex-wrap justify-center gap-2">
-        <button className={cn(userButton.base, userButton.primary, 'min-h-9 rounded-xl px-3 text-sm')} type="button" onClick={() => void onRetry()}>重试</button>
-        <button className={cn(userButton.base, userButton.ghost, 'min-h-9 rounded-xl px-3 text-sm')} type="button" onClick={() => void onDelete()}>删除</button>
+      <div className="cr-task-actions">
+        <button className="u-btn u-btn--sm u-btn--primary" type="button" onClick={() => void onRetry()}>重试</button>
+        <button className="u-btn u-btn--sm" type="button" onClick={() => void onDelete()}>删除</button>
       </div>
     </div>
   )
@@ -2632,13 +2623,33 @@ function parsePixelDimensions(input: string) {
   return { width: Number(match[1]), height: Number(match[2]) }
 }
 
-function normalizeAspectRatio(input?: string) {
-  if (!input) return undefined
-  const colon = input.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/)
-  if (colon) return `${colon[1]} / ${colon[2]}`
-  const size = input.match(/^(\d+)x(\d+)$/i)
-  if (size) return `${size[1]} / ${size[2]}`
-  return undefined
+
+function imageSizeLabel(image: ImageResult, fallbackRatio?: string) {
+  if (image.width && image.height) return `${image.width} × ${image.height}`
+  return fallbackRatio || '原始尺寸'
+}
+
+function imageQualityLabel(task: ImageTask) {
+  return task.quality || task.requested_quality || task.resolved_quality_bucket || 'auto'
+}
+
+function imagePreviewPayload(image: ImageResult, task: ImageTask, profile: Pick<UserProfile, 'display_name'> | null | undefined, accessToken?: string): ImagePreviewPayload {
+  const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
+  return {
+    url: imageUrl,
+    downloadUrl: imageUrl,
+    alt: task.title,
+    prompt: image.prompt || task.title,
+    width: image.width,
+    height: image.height,
+    ratio: task.aspect_ratio,
+    model: image.route_model_code || image.abstract_model,
+    source: '创作输出',
+    creationDraft: workspaceCreationDraftFromSnapshot(task),
+    detailImage: projectWorkspaceImageDetail(image, task, profile),
+    mediaResource: { kind: 'image', scope: 'private', id: image.id },
+    mediaExpiresAt: image.preview_expires_at,
+  }
 }
 
 function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken, onUseReference, onPreview, onDownload, onMediaRefresh, onCopyPrompt, onReuseConfig, onOpenDetail }: {
@@ -2657,41 +2668,57 @@ function GeneratedImage({ image, task, profile, alt, fallbackRatio, accessToken,
   onOpenDetail: () => void
 }) {
   const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
-  const aspectRatio = image.width && image.height ? `${image.width} / ${image.height}` : normalizeAspectRatio(fallbackRatio)
-  const ratioStyle = aspectRatio ? { '--generated-ratio': aspectRatio } as CSSProperties : undefined
-  const sizeClass = fallbackRatio && Number((fallbackRatio.split(':')[0] || '').trim()) > Number((fallbackRatio.split(':')[1] || '').trim())
-    ? 'max-h-[calc(100vh-470px)]'
-    : 'max-h-[calc(100vh-520px)]'
+  const caption = `#1 · ${imageSizeLabel(image, fallbackRatio)} · ${imageQualityLabel(task)} · ${formatCompactDuration(taskElapsedMs(task))}`
   return (
-    <figure className={workspaceClasses.generatedFigure} style={ratioStyle}>
+    <figure className="u-result cr-result cr-result--stage group">
       <button
         type="button"
-        className={cn(workspaceClasses.generatedPreview, sizeClass)}
-        onClick={() => onPreview({
-          url: imageUrl,
-          downloadUrl: imageUrl,
-          alt,
-          prompt: image.prompt || alt,
-          width: image.width,
-          height: image.height,
-          ratio: fallbackRatio,
-          model: image.route_model_code || image.abstract_model,
-          source: '创作输出',
-          creationDraft: workspaceCreationDraftFromSnapshot(task),
-          detailImage: projectWorkspaceImageDetail(image, task, profile),
-          mediaResource: { kind: 'image', scope: 'private', id: image.id },
-          mediaExpiresAt: image.preview_expires_at,
-        })}
+        className="cr-result__media"
+        onClick={() => onPreview(imagePreviewPayload(image, task, profile, accessToken))}
         aria-label="预览生成图片"
       >
-        <RefreshableMediaImage className={cn(workspaceClasses.generatedImage, sizeClass)} src={imageUrl} mediaExpiresAt={image.preview_expires_at} alt={alt} onMediaRefresh={onMediaRefresh} />
+        <RefreshableMediaImage className={cn('cr-result__img', workspaceClasses.generatedImage)} src={imageUrl} mediaExpiresAt={image.preview_expires_at} alt={alt} onMediaRefresh={onMediaRefresh} />
       </button>
-      <figcaption className={workspaceClasses.generatedCaption}>
-        <button className={workspaceClasses.generatedIconAction} type="button" title="复制提示词" aria-label="复制提示词" onClick={onCopyPrompt}><Copy size={16} /></button>
-        <button className={workspaceClasses.generatedIconAction} type="button" title="复用参数" aria-label="复用参数" onClick={onReuseConfig}><RotateCcw size={16} /></button>
-        <button className={workspaceClasses.generatedIconAction} type="button" title="编辑" aria-label="编辑图片" onClick={() => void onUseReference(image)}><EditGlyph /></button>
-        <button className={workspaceClasses.generatedIconAction} type="button" title="详情" aria-label="查看任务详情" onClick={onOpenDetail}><Info size={16} /></button>
-        <button className={workspaceClasses.generatedIconAction} type="button" title="下载" aria-label="下载图片" onClick={() => void onDownload(image)}><DownloadGlyph /></button>
+      <div className="u-result__bar">
+        <div className="u-result__ops">
+          <button className="u-result__op" type="button" title="复制提示词" aria-label="复制提示词" onClick={onCopyPrompt}><Copy size={15} /></button>
+          <button className="u-result__op" type="button" title="复用参数" aria-label="复用参数" onClick={onReuseConfig}><RotateCcw size={15} /></button>
+          <button className="u-result__op" type="button" title="编辑" aria-label="编辑图片" onClick={() => void onUseReference(image)}><Pencil size={15} /></button>
+          <button className="u-result__op" type="button" title="详情" aria-label="查看任务详情" onClick={onOpenDetail}><Info size={15} /></button>
+          <button className="u-result__op" type="button" title="下载" aria-label="下载图片" onClick={() => void onDownload(image)}><Download size={15} /></button>
+        </div>
+        <span className="u-result__caption">{caption}</span>
+      </div>
+    </figure>
+  )
+}
+
+function GeneratedBatchFigure({ image, ordinal, task, profile, accessToken, onPreview, onDownload, onMediaRefresh }: {
+  image: ImageResult
+  ordinal: number
+  task: ImageTask
+  profile?: Pick<UserProfile, 'display_name'> | null
+  accessToken?: string
+  onPreview: (image: ImagePreviewPayload) => void
+  onDownload: (image: ImageResult) => Promise<void>
+  onMediaRefresh: () => string | undefined | void | Promise<string | undefined | void>
+}) {
+  const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
+  const preview = () => onPreview(imagePreviewPayload(image, task, profile, accessToken))
+  return (
+    <figure className="cr-figure group">
+      <div className="cr-figure__frame">
+        <button type="button" className="cr-figure__media" onClick={preview} aria-label={`预览第 ${ordinal} 张图片`}>
+          <RefreshableMediaImage className={workspaceClasses.generatedImage} src={imageUrl} mediaExpiresAt={image.preview_expires_at} alt={`${task.title} ${ordinal}`} onMediaRefresh={onMediaRefresh} />
+        </button>
+        <div className="cr-figure__ops">
+          <button className="u-card__op" type="button" title="详情" aria-label="查看图片详情" onClick={preview}><Info size={15} /></button>
+          <button className="u-card__op" type="button" title="下载" aria-label="下载图片" onClick={() => void onDownload(image)}><Download size={15} /></button>
+        </div>
+      </div>
+      <figcaption className="cr-figure__cap">
+        <span>#{ordinal} · {imageSizeLabel(image, task.aspect_ratio)}</span>
+        <span>{formatCompactDuration(taskElapsedMs(task))}</span>
       </figcaption>
     </figure>
   )

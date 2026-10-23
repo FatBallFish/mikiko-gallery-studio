@@ -58,7 +58,7 @@ assertEqual(
   'model capability summary',
 )
 
-for (const primitive of ['FilterToolbar', 'DataTable', 'ActionMenu', 'Drawer', 'Modal', 'Badge']) {
+for (const primitive of ['FilterToolbar', 'DataTable', 'Drawer', 'Modal', 'Badge']) {
   if (!providerModelsSource.includes(`<${primitive}`)) {
     throw new Error(`provider model operations must use the shared ${primitive} primitive`)
   }
@@ -78,44 +78,64 @@ for (const operationContract of [
   }
 }
 
-if (!providerModelsSource.includes("accountPrimaryActionLabel = '查看模型'")) {
+if (!providerModelsSource.includes("accountPrimaryActionLabel = '模型配置'")) {
   throw new Error('account rows must expose one persistent primary action')
 }
 
-if (!providerModelsSource.includes('setExpandedAccountId((current) =>')) {
-  throw new Error('provider master-detail should preserve the current account or select the first account after loading')
+if (!providerModelsSource.includes('setModelAccountId((current) =>')) {
+  throw new Error('provider model drawer should preserve the current account or clear it after loading')
 }
 
-if (!providerModelsSource.includes('filteredAccounts.find')) {
-  throw new Error('provider detail must stay inside the currently visible filtered account set')
+if (!providerModelsSource.includes('const filteredAccounts = useMemo')) {
+  throw new Error('provider list must stay inside the currently visible filtered account set')
 }
 
 if (!providerModelsSource.includes('message={mutationError}')) {
   throw new Error('provider account and model mutations should expose local failure feedback')
 }
 
-for (const createContinuation of ['const saved =', 'await load(String(saved.id))', 'setModelDialog(newModelDraft(saved))']) {
+for (const createContinuation of ['const saved =', 'await load(String(saved.id))', 'setModelAccountId(String(saved.id))']) {
   if (!providerModelsSource.includes(createContinuation)) {
     throw new Error(`new provider accounts should continue into model setup with ${createContinuation}`)
   }
 }
 
-for (const menuAction of ["id: 'edit-account'", "id: 'add-model'", "id: 'test-account'"]) {
-  if (!providerModelsSource.includes(menuAction)) {
-    throw new Error(`secondary account operation must move into ActionMenu: ${menuAction}`)
+for (const rowAction of ['onConfigureModels(account)', 'onEdit(account)', 'onTest(account)']) {
+  if (!providerModelsSource.includes(rowAction)) {
+    throw new Error(`account row must expose a direct row action: ${rowAction}`)
   }
 }
 
-if (!providerModelsSource.includes("<Drawer\n          title={modelDialog.row ? '编辑真实模型' : '新增真实模型'}")) {
-  throw new Error('the long real-model editor must use a Drawer')
+if (!providerModelsSource.includes("<Drawer\n          stacked={Boolean(modelAccount)}")) {
+  throw new Error('the long real-model editor must use a stacked Drawer')
 }
 
-if (!providerModelsSource.includes("<Drawer\n          title={accountDialog.id ? '编辑模型账号' : '新增模型账号'}")) {
+if (!providerModelsSource.includes("title={accountDialog.id ? '编辑图片接入账号' : '新增图片接入账号'}")) {
   throw new Error('the multi-field provider account editor must use a Drawer')
 }
 
-if (!providerModelsSource.includes('<Modal title="测试模型账号"')) {
-  throw new Error('the bounded model test request must remain in a Modal')
+if (!providerModelsSource.includes('title="测试图片模型"')) {
+  throw new Error('the model test request must remain a real capability-driven form')
+}
+
+if (providerModelsSource.includes('测试连接')) {
+  throw new Error('the image account drawer must not expose the unusable API connection test button')
+}
+
+for (const marker of [
+  'counts={counts}',
+  'className="cfg-account-table"',
+  'className="a-skeleton cfg-test-media__frame"',
+  'className="cfg-test-progress"',
+  'className="cfg-test-media__image"',
+]) {
+  if (!providerModelsSource.includes(marker)) {
+    throw new Error(`access account pages must keep the structural UI contract: ${marker}`)
+  }
+}
+
+if (providerModelsSource.includes('JSON.stringify(testDialog.result.actual_params')) {
+  throw new Error('image test results must render media and metadata instead of raw JSON')
 }
 
 for (const drift of ['rounded-3xl', 'uppercase tracking-']) {

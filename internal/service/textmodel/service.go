@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -219,10 +220,24 @@ func (s *Service) TestModelConnection(ctx context.Context, modelID int64) (Conne
 	defer cancel()
 	startedAt := time.Now()
 	response, err := optimizer.Optimize(testCtx, textprovider.OptimizeRequest{
-		Model: model.ModelCode, SystemPrompt: "Return only the word OK.", Prompt: "Connection test", MaxOutputTokens: 8,
+		Model: model.ModelCode, SystemPrompt: "Return only the word OK.", Prompt: "Connection test", MaxOutputTokens: 256,
 	})
-	if err != nil || strings.TrimSpace(response.Text) == "" {
-		return ConnectionTestResult{}, errs.New(502, errs.CodeUpstreamUnavailable, "text model connection test failed")
+	if err != nil {
+		var providerErr *textprovider.Error
+		if errors.As(err, &providerErr) {
+			slog.WarnContext(ctx, "text model connection test failed",
+				"model_id", model.ID, "model_code", model.ModelCode, "api_style", account.APIStyle,
+				"upstream_status", providerErr.StatusCode, "upstream_code", providerErr.Code, "upstream_message", providerErr.Message,
+			)
+			return ConnectionTestResult{}, errs.New(502, errs.CodeUpstreamUnavailable,
+				fmt.Sprintf("text model connection test failed: upstream %d %s", providerErr.StatusCode, providerErr.Code))
+		}
+		slog.WarnContext(ctx, "text model connection test failed", "model_id", model.ID, "model_code", model.ModelCode, "err", err)
+		return ConnectionTestResult{}, errs.New(502, errs.CodeUpstreamUnavailable, "text model connection test failed: "+err.Error())
+	}
+	if strings.TrimSpace(response.Text) == "" {
+		slog.WarnContext(ctx, "text model connection test returned an empty response", "model_id", model.ID, "model_code", model.ModelCode, "request_id", response.RequestID)
+		return ConnectionTestResult{}, errs.New(502, errs.CodeUpstreamUnavailable, "text model connection test failed: upstream returned an empty response")
 	}
 	return ConnectionTestResult{
 		Status: "success", ModelID: model.ID, ModelCode: model.ModelCode, APIStyle: account.APIStyle,

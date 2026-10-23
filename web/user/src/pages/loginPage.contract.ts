@@ -3,9 +3,11 @@ import { readFileSync } from 'node:fs'
 const source = readFileSync(new URL('./LoginPage.tsx', import.meta.url), 'utf8')
 
 for (const required of [
-  'motion-reduce:transition-none',
-  'motion-reduce:hover:translate-y-0',
-  'motion-reduce:active:scale-100',
+  'u-login',
+  'u-login__form',
+  'u-login__tabs',
+  'u-input',
+  'u-btn--primary',
   "tabIndex={mode === 'password' ? 0 : -1}",
   "tabIndex={mode === 'code' ? 0 : -1}",
   'onKeyDown={handleTabKeyDown}',
@@ -28,15 +30,6 @@ for (const required of [
   'type="image/webp"',
   'srcSet=',
   '<BrandMark withText inverse />',
-  'md:h-dvh',
-  'md:min-h-0',
-  'md:overflow-hidden',
-  'md:h-full',
-  'md:overflow-y-auto',
-  'md:overscroll-contain',
-  'md:py-10',
-  'md:[@media(max-height:860px)]:py-4',
-  'md:[@media(max-height:860px)]:p-6',
 ]) {
   if (!source.includes(required)) throw new Error(`authentication page source contract missing: ${required}`)
 }

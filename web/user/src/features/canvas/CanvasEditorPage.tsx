@@ -1026,6 +1026,7 @@ function GenerationNodeForm({ node, run, estimate, busy, readOnly, imageCapabili
 }
 
 function PromptNodeBody({ node, readOnly, resourceCandidates, optimizationTarget, onUpdate }: { node: CanvasNode; readOnly: boolean; busy: boolean; resourceCandidates: CanvasPromptResourceCandidate[]; optimizationTarget: CanvasPromptOptimizationTarget; onUpdate: (payload: Record<string, unknown>) => void }) {
+  const app = useApp()
   const [text, setText] = useState(String(node.payload?.text ?? ''))
   const [optimizing, setOptimizing] = useState(false)
   const [assets, setAssets] = useState<ReferenceAsset[]>([])
@@ -1039,13 +1040,13 @@ function PromptNodeBody({ node, readOnly, resourceCandidates, optimizationTarget
     void Promise.all(usable.map(async (candidate) => {
       try {
         const access = await userApi.getMediaAssetAccess(candidate.assetID, 'preview')
-        return { ...canvasPromptReferenceAsset(candidate), preview_url: access.url, download_url: access.url, preview_expires_at: access.expires_at }
+        return { ...canvasPromptReferenceAsset(candidate), preview_url: userApi.mediaAssetUrl(access.url, app.session?.token), download_url: userApi.mediaAssetUrl(access.url, app.session?.token), preview_expires_at: access.expires_at }
       } catch {
         return canvasPromptReferenceAsset(candidate)
       }
     })).then((next) => { if (alive) setAssets(next) })
     return () => { alive = false }
-  }, [resourceCandidateSignature])
+  }, [resourceCandidateSignature, app.session?.token])
   const commitText = (next: string) => {
     setText(next)
     onUpdate({ text: next, variables: Object.fromEntries(promptVariableNames(next).map((name) => [name, String(variables[name] ?? '')])) })
@@ -1074,6 +1075,7 @@ function canvasPromptReferenceAsset(candidate: CanvasPromptResourceCandidate): R
 }
 
 function CanvasMediaNode({ node, readOnly, canUpload, onChooseImage, onUploadImage, onDetail, onContinueImage, onContinueVideo, onReuseVideo, onFitMedia }: { node: CanvasNode; readOnly: boolean; canUpload: boolean; onChooseImage: () => void; onUploadImage: () => void; onDetail: () => void; onContinueImage: () => void; onContinueVideo: () => void; onReuseVideo: () => void; onFitMedia: (size: { width: number; height: number }) => void }) {
+  const app = useApp()
   const [previewURL, setPreviewURL] = useState('')
   const [accessError, setAccessError] = useState('')
   useEffect(() => {
@@ -1082,15 +1084,15 @@ function CanvasMediaNode({ node, readOnly, canUpload, onChooseImage, onUploadIma
     if (!node.asset_id) return undefined
     let alive = true
     void userApi.getMediaAssetAccess(node.asset_id, 'preview').then((access) => {
-      if (alive) setPreviewURL(access.url)
+      if (alive) setPreviewURL(userApi.mediaAssetUrl(access.url, app.session?.token))
     }).catch((caught) => { if (alive) setAccessError(errorMessage(caught)) })
     return () => { alive = false }
-  }, [node.asset_id])
+  }, [node.asset_id, app.session?.token])
   const download = async () => {
     if (!node.asset_id) return
     const access = await userApi.getMediaAssetAccess(node.asset_id, 'download')
     const link = document.createElement('a')
-    link.href = access.url
+    link.href = userApi.mediaAssetUrl(access.url, app.session?.token)
     link.download = String(node.payload?.name ?? '')
     link.rel = 'noopener'
     link.click()

@@ -3,7 +3,7 @@ import type { AccentTheme, ThemeMode, UserProfile, UserThemePreference } from '.
 export const themeStorageKey = 'pic-gallery-user-theme'
 
 export const defaultThemePreference: UserThemePreference = {
-  mode: 'light',
+  mode: 'dark',
   accent: 'amber',
 }
 
@@ -58,6 +58,8 @@ export function writeLocalThemePreference(preference: UserThemePreference, stora
 
 export function applyThemePreference(preference: UserThemePreference, target: HTMLElement = document.documentElement) {
   const normalized = normalizeThemePreference(preference)
+  target.dataset.site = 'user'
+  target.dataset.theme = normalized.mode
   target.dataset.themeMode = normalized.mode
   target.dataset.accentTheme = normalized.accent
 }

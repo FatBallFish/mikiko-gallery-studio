@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import {
   routeCandidateLabel,
   routeCandidateSummary,
+  routeCodeError,
+  routeCodeMaxLength,
   routeEnabledBadge,
   routeEnabledOptions,
   routeReadinessBadge,
@@ -15,6 +17,8 @@ import {
 } from './routingRows'
 
 const routingPageSource = readFileSync(new URL('./RoutingPage.tsx', import.meta.url), 'utf8')
+const routeModelGroupsSource = readFileSync(new URL('./RouteModelGroupsPanel.tsx', import.meta.url), 'utf8')
+const routingCssSource = readFileSync(new URL('./routing-redesign.css', import.meta.url), 'utf8')
 
 for (const workspaceContract of [
   'data-admin-routing-workspace',
@@ -25,8 +29,6 @@ for (const workspaceContract of [
   'FilterToolbar',
   '配置候选',
   '配置价格',
-  '启用路由',
-  '调整可见性',
   '当前路由已隐藏',
   '当前路由尚未绑定可见分组',
   'model.output_format',
@@ -34,14 +36,19 @@ for (const workspaceContract of [
   'effectiveRouteCandidates',
   'routeReadinessForMedia',
   'mediaRoutes.map',
-  '#/pricing?media=video',
   "account.status === 'enabled'",
   'visibleRoutes.find',
   'message={mutationError}',
-  'media_type: routeDialog.mediaType',
-  'label="创作类型"',
-  '<option value="video">视频</option>',
-]) {
+  'media_type: media',
+  'label="可见范围"',
+  '视频参数',
+  '视频报价',
+  'candidate_parameter_mappings',
+  'buildMappings(routeEditor.mappings)',
+  'simulateVideoRouteQuote',
+  '缺价组合会在提交前阻断',
+  '未映射的组合不参与报价',
+] ) {
   if (!routingPageSource.includes(workspaceContract)) {
     throw new Error(`routing workspace must implement ${workspaceContract}`)
   }
@@ -54,7 +61,7 @@ if (!routingPageSource.includes('prices: routePrices')) {
 for (const continuationContract of [
   'setSelectedRouteId(String(saved.id))',
   "if (created) setQuery('')",
-  'setCandidateDialog(newCandidateDialog(saved, eligibleAccountModels))',
+  'await load(String(saved.id))',
 ]) {
   if (!routingPageSource.includes(continuationContract)) {
     throw new Error(`route creation should preserve context with ${continuationContract}`)
@@ -65,6 +72,57 @@ for (const disconnectedPattern of ['<details', 'expandedRoutes', 'selectedRoutes
   if (routingPageSource.includes(disconnectedPattern)) {
     throw new Error(`routing workspace should replace disconnected expandable-table pattern ${disconnectedPattern}`)
   }
+}
+
+// Route code stays editable on both image and video create/edit forms, and the
+// normalized value must reach the create/update payload.
+if (routingPageSource.includes('disabled={Boolean(routeEditor.row)}')) {
+  throw new Error('route code must remain editable when editing an existing image or video route')
+}
+if (!routingPageSource.includes('code: routeEditor.code.trim().toLowerCase()')) {
+  throw new Error('route create/update payload must include the normalized route code')
+}
+if (!routingPageSource.includes('const codeError = routeCodeError(editor.code)')) {
+  throw new Error('route editor must validate the editable route code')
+}
+if (routingPageSource.includes('路由代码创建后不可修改') || routingPageSource.includes('创建后不可修改。')) {
+  throw new Error('route code hints must not claim the code is immutable')
+}
+
+if (routeCodeError('') === null || routeCodeError('   ') === null) {
+  throw new Error('empty route code must be rejected')
+}
+if (routeCodeError('plus-image') !== null || routeCodeError('Seedance.Pro_2') !== null || routeCodeError('a'.repeat(routeCodeMaxLength)) !== null) {
+  throw new Error('valid route codes must pass validation')
+}
+for (const invalidCode of ['has space', '-leading', '.leading', '中文代码', 'a'.repeat(routeCodeMaxLength + 1)]) {
+  if (routeCodeError(invalidCode) === null) {
+    throw new Error(`invalid route code ${JSON.stringify(invalidCode)} must be rejected`)
+  }
+}
+
+// Icon selection must update icon_key and icon_svg in one state transition so
+// choosing a builtin icon cannot be overwritten by a stale custom-SVG reset.
+if (!routeModelGroupsSource.includes('onChange({ iconKey:')) {
+  throw new Error('model icon picker must update icon key and SVG atomically')
+}
+if (routeModelGroupsSource.includes("'自定义' : '上传'") || routeModelGroupsSource.includes('>上传<')) {
+  throw new Error('custom icon upload tile must use an icon instead of overflowing text')
+}
+if (!routeModelGroupsSource.includes('rt-icon-upload') || !routeModelGroupsSource.includes('<Upload') || !routingCssSource.includes('.rt-icon-upload') || !routingCssSource.includes('border-style: dashed')) {
+  throw new Error('custom icon upload tile must be a scoped dashed tile with an upload icon')
+}
+
+// Candidate delete action must stay a visible 32–36px currentColor icon button
+// and its action column must remain reachable in the horizontally scrolling table.
+if (!routingPageSource.includes('rt-candidate-delete')) {
+  throw new Error('candidate delete action must use the scoped icon button')
+}
+if (!routingCssSource.includes('.rt-candidate-delete') || !/\.rt-candidate-delete\s*\{[^}]*width:\s*3[2-6]px/.test(routingCssSource) || !/\.rt-candidate-delete\s*\{[^}]*height:\s*3[2-6]px/.test(routingCssSource)) {
+  throw new Error('candidate delete icon button must be 32–36px square')
+}
+if (!routingCssSource.includes('stroke: currentColor') || !routingCssSource.includes('.rt-candidate-actions-cell')) {
+  throw new Error('candidate delete icon must use currentColor and keep a reachable action column')
 }
 
 const publicBadge = routeVisibilityBadge('public')

@@ -376,6 +376,59 @@ func TestExecuteMapsGPTImage2CodexSourceToProviderAutoQualityAndCalculatedSize(t
 	if req.Size != "2880x2880" {
 		t.Fatalf("expected 4K 1:1 calculated size, got %q", req.Size)
 	}
+	if req.SendResponseFormat || req.ResponseFormat != provider.ResponseFormatB64JSON {
+		t.Fatalf("codex source must not forward response_format, got send=%v format=%q", req.SendResponseFormat, req.ResponseFormat)
+	}
+}
+
+func TestExecuteLeasedGPTImage2ImagesSourceForwardsURLResponseFormat(t *testing.T) {
+	cfg := taskTestConfig()
+	captured := make(chan provider.ImageRequest, 1)
+	providers := map[string]provider.ImageProvider{
+		"openai": fakeProvider{generateFunc: func(ctx context.Context, req provider.ImageRequest) (provider.ImageResponse, error) {
+			captured <- req
+			return provider.ImageResponse{Created: 1770000031, Data: []provider.ImageResult{{B64JSON: tinyPNGBase64}}}, nil
+		}},
+	}
+	store := imagetask.NewMemoryStore()
+	svc := imagetask.NewServiceWithProvidersAndStore(cfg, providers, store)
+	svc.SetModelRoutingSource(&staticModelRoutingSource{snapshot: modelhub.ModelRoutingSnapshot{
+		ProviderModels: []modelhub.ProviderCandidate{{
+			AccountModelID:     302,
+			ModelAccountID:     202,
+			Provider:           "openai",
+			AdapterType:        "",
+			AuthType:           "api_key",
+			BaseURL:            "https://api.example.test/v1",
+			Credentials:        map[string]string{"api_key": "test-key"},
+			ModelCode:          "gpt-image-2",
+			SupportedTaskTypes: []string{"text_to_image"},
+			HealthStatus:       "enabled",
+			AccountExtra:       map[string]any{"source_mode": "images"},
+		}},
+	}})
+
+	created, err := svc.CreateTask(context.Background(), domainimagetask.CreateRequest{
+		UserID:           77,
+		AbstractModel:    "plus",
+		TaskType:         string(provider.TaskTypeTextToImage),
+		Prompt:           "Generate square image",
+		OutputImageCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	leased, ok, err := svc.AcquireNextTask(context.Background(), "worker-1", time.Minute)
+	if err != nil || !ok || leased.ID != created.ID {
+		t.Fatalf("AcquireNextTask ok=%v err=%v task=%#v", ok, err, leased)
+	}
+	if _, err := svc.ExecuteLeasedTask(context.Background(), leased, "worker-1", []string{"openai"}); err != nil {
+		t.Fatalf("ExecuteLeasedTask: %v", err)
+	}
+	req := <-captured
+	if !req.SendResponseFormat || req.ResponseFormat != provider.ResponseFormatURL {
+		t.Fatalf("images source must forward response_format=url, got send=%v format=%q", req.SendResponseFormat, req.ResponseFormat)
+	}
 }
 
 func TestTestModelAccountUsesDirectCandidateWithoutBilling(t *testing.T) {

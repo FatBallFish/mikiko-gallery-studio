@@ -17,7 +17,7 @@ for (const marker of ['export function RefreshIconButton', '<RefreshCw', 'aria-l
 const pages = [
   'OverviewPage', 'MonitoringPage', 'ClusterPage', 'UsersPage', 'UserGroupsPage', 'ReviewPage',
   'RedeemPage', 'OrdersPage', 'PackagesPage', 'CashierPage', 'ProviderModelsPage', 'RoutingPage',
-  'PricingPage', 'CallRecordsPage', 'SystemUsersPage', 'AuditPage', 'SystemSettingsPage',
+  'CallRecordsPage', 'SystemUsersPage', 'AuditPage', 'SystemSettingsPage',
 ]
 for (const page of pages) {
   const source = readFileSync(new URL(`./${page}.tsx`, import.meta.url), 'utf8')

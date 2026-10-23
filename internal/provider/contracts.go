@@ -62,9 +62,12 @@ type ImageRequest struct {
 	Moderation        string
 	OutputImageCount  int
 	ResponseFormat    ResponseFormat
-	ReferenceImages   []ImageInput
-	Mask              *ImageInput
-	User              string
+	// SendResponseFormat asks the adapter to forward response_format even for
+	// models that normally reject it (GPT Image on official OpenAI).
+	SendResponseFormat bool
+	ReferenceImages    []ImageInput
+	Mask               *ImageInput
+	User               string
 }
 
 type ImageResult struct {

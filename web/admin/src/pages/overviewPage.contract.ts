@@ -24,18 +24,23 @@ for (const inlineEmpty of ['暂无模型调用', '暂无待处理事项', '暂�
 }
 
 for (const overviewContract of [
-  'MetricStrip',
+  'a-status-strip',
+  'a-metrics',
+  'a-metric',
+  'PageHeader',
+  'RefreshIconButton',
   'DataTable',
+  'a-chart',
+  'function TrendPanel',
+  'buildTimeSeriesPath',
+  'function PendingPanel',
   'function overviewReadinessColumns',
-  'grid-flow-dense grid-cols-12',
-  'lg:col-span-8',
-  'lg:col-span-4',
-  'function OperationalAlertRail',
   '生成成功率',
   'call_distribution',
   '真实上游调用',
   '24 小时窗口',
   'preflight_failure_count',
+  'adminApi.getMonitoringSnapshot',
 ]) {
   if (!source.includes(overviewContract)) throw new Error(`overview must implement ${overviewContract}`)
 }
@@ -53,5 +58,11 @@ for (const forbidden of ['<details', 'rounded-2xl', 'rounded-3xl', '.trend?.matc
 for (const brokenReadinessGrid of ['readinessGrid:', 'overviewClasses.readinessGrid', 'overviewClasses.dataGrid']) {
   if (source.includes(brokenReadinessGrid)) {
     throw new Error(`overview readiness risks must not reuse nested grid contract ${brokenReadinessGrid}`)
+  }
+}
+
+for (const removedLegacyPanel of ['grid-flow-dense grid-cols-12', 'lg:col-span-8', 'lg:col-span-4']) {
+  if (source.includes(removedLegacyPanel)) {
+    throw new Error(`overview must use Command Deck layout classes instead of legacy ${removedLegacyPanel}`)
   }
 }

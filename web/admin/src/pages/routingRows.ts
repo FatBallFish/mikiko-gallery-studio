@@ -33,6 +33,21 @@ export const routingFieldHints = {
   fallbackOrder: '候选失败后的兜底顺序，数值越小越早兜底。',
 } as const
 
+// Route codes are the abstract model identifier used by the user web and the
+// public API. The API normalizes them to lowercase; the admin form validates
+// the same shape before submit and relies on the API's conflict response for
+// duplicate codes.
+export const routeCodeMaxLength = 64
+const routeCodePattern = /^[a-z0-9][a-z0-9._-]*$/i
+
+export function routeCodeError(value: string): string | null {
+  const code = value.trim()
+  if (!code) return '请填写路由代码。'
+  if (code.length > routeCodeMaxLength) return `路由代码不能超过 ${routeCodeMaxLength} 个字符。`
+  if (!routeCodePattern.test(code)) return '路由代码只能包含字母、数字、点、下划线或短横线，且必须以字母或数字开头。'
+  return null
+}
+
 export function routeVisibilityBadge(visibility?: string | null): RoutingBadge {
   const normalized = normalize(visibility)
   if (normalized === 'public') return { label: '全员可见', tone: 'success' }

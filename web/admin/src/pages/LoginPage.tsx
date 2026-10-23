@@ -1,29 +1,10 @@
 import { FormEvent, useState } from 'react'
 import type { AdminSession } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
-import { cn } from '../../../shared/classnames'
-import { Field, InlineFeedback } from '../components'
+import { Field } from '../components'
 import { useAdminTheme } from '../layout/useAdminTheme'
-import { adminButton } from '../ui/classes'
 import { MoonIcon, SunIcon } from '../ui/icons'
 import { adminLoginCopy, adminLoginInitialForm, adminLoginValidation, adminLoginVisibleError } from './adminLoginCopy'
-
-const loginClasses = {
-  screen: 'grid min-h-screen place-items-center bg-[var(--bg)] p-6 text-[var(--fg)] selection:bg-[var(--accent)]/30 max-[620px]:p-3',
-  panel: 'grid w-[min(460px,100%)] gap-8 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-8 shadow-[var(--pg-shadow-lg)] backdrop-blur-xl max-[620px]:p-5',
-  brand: 'flex items-center gap-3',
-  brandOrb: 'grid size-10 place-items-center rounded-xl bg-[var(--accent)]/12 text-sm font-black text-[var(--accent)]',
-  brandText: 'grid gap-0.5',
-  brandName: 'font-[family-name:var(--font-admin-display)] text-lg font-semibold text-[var(--fg)]',
-  brandMeta: 'text-xs font-semibold text-[var(--dim)]',
-  hero: 'font-[family-name:var(--font-admin-display)] text-3xl font-semibold text-[var(--fg)]',
-  detail: 'text-sm leading-6 text-[var(--soft)]',
-  proofGrid: 'grid grid-cols-2 gap-2 max-[620px]:grid-cols-1',
-  proofItem: 'rounded-lg border border-[var(--border)] bg-[var(--surface-solid)] px-3 py-2.5 text-xs font-semibold text-[var(--muted)]',
-  form: 'grid gap-4',
-  title: 'm-0 text-lg font-bold text-[var(--fg)]',
-  themeButton: 'absolute right-4 top-4 grid size-10 place-items-center rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] transition hover:text-[var(--fg)]',
-}
 
 export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => void }) {
   const { theme, setTheme } = useAdminTheme()
@@ -35,6 +16,12 @@ export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => voi
   const [error, setError] = useState<string | null>(null)
 
   const { emailError, passwordError } = adminLoginValidation(email, password)
+  const proofs = [
+    { label: '构建模式', value: env.MODE || 'production' },
+    { label: '控制台', value: typeof window === 'undefined' ? '-' : window.location.host },
+    { label: '访问控制', value: 'RBAC 权限校验' },
+    { label: '会话', value: '受保护 · 审计开启' },
+  ]
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -55,48 +42,108 @@ export function LoginPage({ onLogin }: { onLogin: (session: AdminSession) => voi
   }
 
   return (
-    <main className={cn(loginClasses.screen, 'relative')} data-theme={theme}>
-      <button
-        type="button"
-        className={loginClasses.themeButton}
-        aria-label={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
-        title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
-        onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
-      >
-        {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-      </button>
-      <section className={loginClasses.panel}>
-        <div className="grid gap-5">
-          <div className={loginClasses.brand}>
-            <span className={loginClasses.brandOrb}>M</span>
-            <div className={loginClasses.brandText}>
-              <strong className={loginClasses.brandName}>Mikiko Admin</strong>
-              <span className={loginClasses.brandMeta}>{adminLoginCopy.brand}</span>
-            </div>
-          </div>
-          <strong className={loginClasses.hero}>登录运营后台</strong>
-          <p className={loginClasses.detail}>{adminLoginCopy.heroDetail}</p>
-          <div className={loginClasses.proofGrid}>
-            {adminLoginCopy.proofItems.map((item) => <span key={item} className={loginClasses.proofItem}>{item}</span>)}
-          </div>
+    <main className="a-login" data-theme={theme}>
+      <section className="a-login__brandcol" aria-label="运营控制台介绍">
+        <div className="a-login__brand">
+          <i>M</i>
+          <span>Mikiko Ops</span>
+          <span style={{ marginLeft: 'auto', color: 'rgba(242,240,234,.45)', fontFamily: 'var(--font-admin-mono)', fontSize: 11 }}>
+            Command Deck
+          </span>
         </div>
+        <div className="a-login__statement">
+          <span className="a-kicker" style={{ color: 'rgba(242,240,234,.45)' }}>Operations Command Deck</span>
+          <h1>看清每一笔消耗，<br />再决定下一步。</h1>
+          <p>{adminLoginCopy.heroDetail}</p>
+        </div>
+        <div className="a-login__proofs">
+          {proofs.map((proof) => (
+            <div key={proof.label} className="a-login__proof">
+              <span>{proof.label}</span>
+              <strong style={{ overflowWrap: 'anywhere' }}>{proof.value}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
 
-        <form className={loginClasses.form} onSubmit={submit} noValidate>
-          <label>{adminLoginCopy.formEyebrow}</label>
-          <h1 className={loginClasses.title}>管理员登录</h1>
-          {error ? <InlineFeedback tone="danger" message={error} /> : <InlineFeedback tone="neutral" message={adminLoginCopy.idleNotice} />}
+      <section className="a-login__pane">
+        <div className="a-login__form">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              <span className="a-side__mark" aria-hidden="true">M</span>
+              <div style={{ display: 'grid', gap: 1, minWidth: 0 }}>
+                <strong style={{ fontSize: 14 }}>Mikiko Ops</strong>
+                <span className="a-hint" style={{ fontFamily: 'var(--font-admin-mono)', fontSize: 10.5 }}>{adminLoginCopy.brand}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="a-icon-btn"
+              aria-label={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
+              title={theme === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
+              onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+            >
+              {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+            </button>
+          </div>
 
-          <Field label={adminLoginCopy.emailLabel} error={emailError}>
-            <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder={adminLoginCopy.emailPlaceholder} autoComplete="username" />
-          </Field>
-          <Field label={adminLoginCopy.passwordLabel} error={passwordError}>
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={adminLoginCopy.passwordPlaceholder} autoComplete="current-password" />
-          </Field>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <span className="a-kicker">Admin Access</span>
+            <h2>{adminLoginCopy.heroTitle}</h2>
+            <p className="a-hint">使用管理员邮箱与密码。连续失败会触发登录限流并写入审计日志。</p>
+          </div>
 
-          <button type="submit" className={cn(adminButton.base, adminButton.primary, 'w-full')} disabled={busy || Boolean(emailError || passwordError)}>
-            {busy ? adminLoginCopy.submittingLabel : adminLoginCopy.submitLabel}
-          </button>
-        </form>
+          <form className="a-form" style={{ display: 'grid', gap: 16 }} onSubmit={submit} noValidate>
+            <Field label={adminLoginCopy.emailLabel} error={emailError}>
+              <input
+                className="a-input"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder={adminLoginCopy.emailPlaceholder}
+                autoComplete="username"
+                inputMode="email"
+                aria-invalid={Boolean(emailError)}
+                style={{ minHeight: 46 }}
+              />
+            </Field>
+            <Field label={adminLoginCopy.passwordLabel} error={passwordError} hint="忘记密码请联系超级管理员重置">
+              <input
+                className="a-input"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                type="password"
+                placeholder={adminLoginCopy.passwordPlaceholder}
+                autoComplete="current-password"
+                aria-invalid={Boolean(passwordError)}
+                style={{ minHeight: 46 }}
+              />
+            </Field>
+
+            {error ? (
+              <div className="a-banner a-banner--danger" role="alert">
+                <span>{error}</span>
+              </div>
+            ) : (
+              <div className="a-banner a-banner--info" style={{ fontSize: 12.5 }}>
+                <span>{adminLoginCopy.idleNotice}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="a-btn a-btn--primary a-btn--block"
+              style={{ minHeight: 46, fontSize: 14.5 }}
+              disabled={busy || Boolean(emailError || passwordError)}
+              aria-busy={busy}
+            >
+              {busy ? adminLoginCopy.submittingLabel : adminLoginCopy.submitLabel}
+            </button>
+          </form>
+
+          <p className="a-hint" style={{ fontFamily: 'var(--font-admin-mono)', fontSize: 11 }}>
+            会话受保护 · 登录行为将写入审计日志
+          </p>
+        </div>
       </section>
     </main>
   )

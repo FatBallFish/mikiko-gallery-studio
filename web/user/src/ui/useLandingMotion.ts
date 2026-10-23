@@ -44,17 +44,21 @@ export function useLandingMotion(scope: RefObject<HTMLElement | null>): void {
     })
 
     gsap.utils.toArray<HTMLElement>(landingMotionSelectors.image).forEach((image) => {
-      const overlay = image.parentElement?.querySelector<HTMLElement>(landingMotionSelectors.overlay)
+      // Animate the picture wrapper, never the <img> itself: the prototype's
+      // hover transitions own the image transform, and an inline GSAP
+      // transform on the image would override them permanently.
+      const target = image.closest('picture') ?? image
+      const overlay = target.parentElement?.querySelector<HTMLElement>(landingMotionSelectors.overlay)
       const timeline = gsap.timeline({
         scrollTrigger: {
-          trigger: image,
+          trigger: target,
           start: 'top 94%',
           end: 'bottom 6%',
           scrub: 0.75,
         },
       })
       timeline
-        .fromTo(image, {
+        .fromTo(target, {
           scale: 0.82,
           opacity: 0.38,
         }, {
@@ -63,7 +67,7 @@ export function useLandingMotion(scope: RefObject<HTMLElement | null>): void {
           ease: 'none',
           duration: 0.58,
         })
-        .to(image, {
+        .to(target, {
           opacity: 0.2,
           ease: 'none',
           duration: 0.42,

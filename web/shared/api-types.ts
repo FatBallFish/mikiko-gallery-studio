@@ -199,6 +199,7 @@ export const API_PATHS = {
     storageConfigSetStatus: '/api/ops/admin/v1/storage-configs/{storage_config_id}:set-status',
     imageReviews: '/api/ops/admin/v1/image-reviews',
     imageReviewImage: '/api/ops/admin/v1/image-reviews/{image_id}/image',
+    callRecordImage: '/api/ops/admin/v1/call-records/images/{image_id}',
     imageReviewApprove: '/api/ops/admin/v1/image-reviews/{image_id}:approve',
     imageReviewReject: '/api/ops/admin/v1/image-reviews/{image_id}:reject',
     imageReviewUnpublish: '/api/ops/admin/v1/image-reviews/{image_id}:unpublish',
@@ -210,6 +211,8 @@ export const API_PATHS = {
     videoModelRateCards: '/api/ops/admin/v1/video-models/{id}/rate-cards',
     videoModelRateCardDetail: '/api/ops/admin/v1/video-models/{id}/rate-cards/{rate_card_id}',
     videoRouteQuoteSimulation: '/api/ops/admin/v1/video-routes/{id}/quote-simulation',
+    modelAccountTestVideo: '/api/ops/admin/v1/model-accounts/{account_id}/test-video',
+    videoModelTest: '/api/ops/admin/v1/video-model-tests/{test_id}',
     routeVideoConfig: '/api/ops/admin/v1/route-models/{id}/video-config',
     routeVideoImpact: '/api/ops/admin/v1/route-models/{id}/video-impact',
     adminVideoTasks: '/api/ops/admin/v1/video-tasks',
@@ -320,6 +323,33 @@ export type CanvasRun = {
   id: string; canvas_id: string; node_id: string; submitted_revision: number; task_kind: 'image' | 'video'; task_id: string
   status: 'submitting' | 'queued' | 'running' | 'saving' | 'succeeded' | 'failed' | 'canceled' | 'attached' | 'unplaced'
   result_asset_ids?: string[]; attached_revision?: number; error_code?: string; error_message?: string
+}
+export type VideoModelTestInput = { role: string; url: string; media_type?: string; ordinal?: number }
+export type VideoModelTestRequest = {
+  model_id: number
+  prompt: string
+  task_type: string
+  duration_seconds: number
+  resolution: string
+  aspect_ratio: string
+  generate_audio?: boolean
+  inputs?: VideoModelTestInput[]
+}
+export type VideoModelTestArtifact = { url: string; mime_type?: string; size_bytes?: number; expires_at?: string | null }
+export type VideoModelTest = {
+  id: string
+  account_id: number
+  account_model_id: number
+  provider: string
+  model_code: string
+  task_type: string
+  prompt: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | string
+  provider_job_id?: string
+  error?: string
+  artifacts?: VideoModelTestArtifact[]
+  created_at: string
+  updated_at: string
 }
 export type AdminVideoImpact = { route_model_id?: number; code: string; summary: string; blocking: boolean; fix_route: 'models' | 'routing' | string }
 export type AdminVideoConfiguration = {
@@ -1576,7 +1606,8 @@ export type RedeemCodeExportResult = { items: RedeemCode[]; count: number; filte
 export type CallRecordAttempt = { provider?: string; adapter_type?: string; account_model_id?: number | null; model_account_id?: number | null; model_code?: string; status?: string; error?: string; error_code?: string; error_message?: string; error_detail?: Record<string, unknown>; started_at?: string | null; finished_at?: string | null }
 export type ArtifactDiagnostic = { code?: string; stage?: string; attempt?: number; url_host?: string; url_path?: string; http_status?: number; content_type?: string; content_length?: number; bytes_read?: number; duration_ms?: number; storage_config_id?: string; storage_version?: number; retryable: boolean; cause?: string; started_at?: string; finished_at?: string }
 export type ArtifactRecoverySummary = { status: string; attempt_count: number; last_diagnostic?: ArtifactDiagnostic; diagnostics?: ArtifactDiagnostic[] }
-export type CallRecord = { id?: number; task_id: string; user_id: number; api_key_id?: number | null; source_channel: string; task_type: ImageTaskType | string; status: string; provider: string; route_model_code?: string; account_model_id?: number | null; model_account_id?: number | null; upstream_model_code?: string; abstract_model: string; base_resolution: string; quality: string; requested_output_image_count: number; success_output_image_count: number; reference_image_count: number; estimated_points: string; actual_points: string; provider_request_id?: string; provider_cost: string; gross_margin: string; pricing_snapshot?: Record<string, unknown>; upstream_succeeded_at?: string | null; failure_phase?: 'preflight' | 'upstream' | 'artifact_persistence' | string; platform_loss: boolean; artifact_recovery?: ArtifactRecoverySummary; error_code?: string | null; error_message?: string | null; error_detail?: Record<string, unknown>; attempts?: CallRecordAttempt[]; created_at: string; updated_at: string; started_at?: string | null; finished_at?: string | null; attempt_count: number }
+export type CallRecordResultImage = { id: string; image_role?: string; mime_type?: string; width: number; height: number; size_bytes?: number }
+export type CallRecord = { id?: number; task_id: string; prompt?: string; result_images?: CallRecordResultImage[]; user_id: number; api_key_id?: number | null; source_channel: string; task_type: ImageTaskType | string; status: string; provider: string; route_model_code?: string; account_model_id?: number | null; model_account_id?: number | null; upstream_model_code?: string; abstract_model: string; base_resolution: string; quality: string; requested_output_image_count: number; success_output_image_count: number; reference_image_count: number; estimated_points: string; actual_points: string; provider_request_id?: string; provider_cost: string; gross_margin: string; pricing_snapshot?: Record<string, unknown>; upstream_succeeded_at?: string | null; failure_phase?: 'preflight' | 'upstream' | 'artifact_persistence' | string; platform_loss: boolean; artifact_recovery?: ArtifactRecoverySummary; error_code?: string | null; error_message?: string | null; error_detail?: Record<string, unknown>; attempts?: CallRecordAttempt[]; created_at: string; updated_at: string; started_at?: string | null; finished_at?: string | null; attempt_count: number }
 export type AuditLog = { id: ID; actor: string; action: string; target: string; detail: string; created_at: string; actor_type?: string; actor_id?: string; target_type?: string; target_id?: string; result?: string; metadata?: Record<string, unknown>; ip_addr?: string; user_agent?: string; updated_at?: string }
 export type AdminDashboardQueueItem = { item: string; count: string; detail: string }
 export type AdminDashboard = { operations: AdminDashboardOperations; call_distribution: AdminCallDistribution; metrics: AdminMetric[]; providers: ProviderHealth[]; queue: AdminDashboardQueueItem[]; audit: AuditLog[] }

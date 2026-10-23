@@ -35,6 +35,7 @@ import {
 } from './cashierStatusRows'
 import { cashierWebhookEventAction } from './cashierWebhookEventActions'
 import { createLatestListRequestGuard } from './listRefresh'
+import { FormSection, LedgerField, SwitchField } from './AdminMediaTabs'
 
 type CashierData = {
   overview: CashierOverview
@@ -131,7 +132,7 @@ const cashierClasses = {
   riskLabel: 'mb-1 text-xs font-semibold text-[var(--muted-strong)]',
   riskValue: 'text-lg font-bold text-[var(--text)]',
   toggle: 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--canvas)] p-2 text-sm has-[:checked]:border-[var(--accent)]/40 has-[:checked]:bg-[var(--accent)]/10',
-  amountGrid: 'grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3',
+  amountGrid: 'a-form__pair',
   toolbar: 'flex flex-wrap items-start justify-between gap-3',
   actions: 'flex flex-wrap items-center justify-end gap-2',
   orderFilter: 'flex flex-wrap items-center justify-between gap-4',
@@ -213,7 +214,13 @@ export function CashierPage({
   const [closingOrderID, setClosingOrderID] = useState<number | string | null>(null)
   const [retryingEventID, setRetryingEventID] = useState<number | string | null>(null)
   const [loading, setLoading] = useState(true)
-  const visibleTabs = cashierTabs.filter((tab) => !allowedTabs || allowedTabs.includes(tab.id))
+  const visibleTabs = cashierTabs.filter((tab) => {
+    if (!allowedTabs) return true
+    if (allowedTabs.includes(tab.id)) return true
+    // Cashier configuration is the single entry for overview, payment methods,
+    // channel instances, orders and webhook events. Plans stay on PackagesPage.
+    return tab.id !== 'plans' && ['overview', 'methods', 'instances', 'orders', 'events'].includes(tab.id)
+  })
   const safeInitialTab = visibleTabs.some((tab) => tab.id === initialTab) ? initialTab : visibleTabs[0]?.id ?? 'overview'
   const [activeTab, setActiveTab] = useState<CashierTabId>(safeInitialTab)
   const [customAmountOpen, setCustomAmountOpen] = useState(false)
@@ -652,7 +659,7 @@ export function CashierPage({
   if (error && !data) return <ErrorBlock message={error} onRetry={load} />
   if (!data) return <EmptyBlock title="暂无收银台数据" detail="后台尚未返回收银台配置。" />
 
-  const isOrdersPage = visibleTabs.some((tab) => tab.id === 'orders')
+  const isOrdersPage = visibleTabs.length === 1 && visibleTabs[0]?.id === 'orders'
   const isConfigPage = visibleTabs.some((tab) => tab.id === 'methods' || tab.id === 'instances')
   const isPackagesPage = visibleTabs.length === 1 && visibleTabs[0]?.id === 'plans'
   const showSoloTabs = visibleTabs.length > 1
@@ -685,7 +692,9 @@ export function CashierPage({
         <>
           {isConfigPage ? <CashierConfigOverview data={data} onAddInstance={() => setInstanceDialog(newProviderDraft('mock'))} /> : <CashierOverviewCards data={data} />}
           {isConfigPage ? <CashierSection title="注册送体验额度">
-            <form className={cashierClasses.configForm} onSubmit={(event) => void saveTrialConfig(event)}>
+            <form className="a-form" onSubmit={(event) => void saveTrialConfig(event)}>
+              <section className="a-form__section">
+                <div className="a-form__head"><h3><span className="a-form__num">1</span>注册送体验额度</h3><p>体验额度优先于充值余额消耗，过期后自动失效。</p></div>
               <div className={cashierClasses.toolbar}>
                 <p>{trialDraft ? cashierTrialConfigDraftDetail(trialDraft) : data.trial.detail}</p>
                 <div className={cashierClasses.actions}>
@@ -737,6 +746,7 @@ export function CashierPage({
                   <span>每个用户仅领取一次</span>
                 </label>
               </div>
+              </section>
             </form>
           </CashierSection> : null}
         </>
@@ -814,7 +824,9 @@ export function CashierPage({
           ><p className="text-sm leading-6 text-[var(--muted-strong)]">状态变更只影响后续展示和购买，不会修改历史订单、积分或账本记录。</p></Modal> : null}
 
           {activeTab === 'plans' && (!isPackagesPage || customAmountOpen) ? <CashierSection title="自定义金额">
-            <form className={cashierClasses.configForm} onSubmit={(event) => void saveCustomAmount(event)}>
+            <form className="a-form" onSubmit={(event) => void saveCustomAmount(event)}>
+              <section className="a-form__section">
+                <div className="a-form__head"><h3><span className="a-form__num">1</span>自定义金额</h3><p>控制用户输入金额的范围与人民币积分汇率。</p></div>
               <label className={cashierClasses.toggle}>
                 <input
                   type="checkbox"
@@ -853,11 +865,14 @@ export function CashierPage({
                   <button type="submit" className={adminButton.base} disabled={savingCustomAmount}>{savingCustomAmount ? '保存中' : '保存'}</button>
                 </div>
               </div>
+              </section>
             </form>
           </CashierSection> : null}
 
           {activeTab === 'methods' ? <CashierSection title="可见支付方式">
-            <form className={cashierClasses.configForm} onSubmit={(event) => void saveVisibleMethods(event)}>
+            <form className="a-form" onSubmit={(event) => void saveVisibleMethods(event)}>
+              <section className="a-form__section">
+                <div className="a-form__head"><h3><span className="a-form__num">1</span>支付方式</h3><p>控制用户收银台可选择的支付入口；生产环境 Mock 仍由后端隐藏。</p></div>
               <div className={cashierClasses.toolbar}>
                 <p>控制用户收银台可选择的支付入口；生产环境 Mock 仍由后端隐藏。</p>
                 <div className={cashierClasses.actions}>
@@ -932,6 +947,7 @@ export function CashierPage({
               <datalist id="cashier-visible-method-codes">
                 {commonVisibleMethodOptions.map((method) => <option key={method} value={method}>{cashierSupportedMethodLabel(method)}</option>)}
               </datalist>
+              </section>
             </form>
           </CashierSection> : null}
 
@@ -1064,87 +1080,93 @@ export function CashierPage({
           footer={<><button className={cn(adminButton.base, adminButton.ghost)} type="button" disabled={savingInstance} onClick={() => setInstanceDialog(null)}>取消</button><button className={cn(adminButton.base, adminButton.primary)} type="button" disabled={savingInstance || !instanceDialog.name || !instanceDialog.provider_type} onClick={() => void saveInstance()}>{savingInstance ? '保存中...' : '保存'}</button></>}
         >
           {error ? <InlineFeedback tone="danger" message={error} /> : null}
-          <div className="mb-4 grid grid-cols-3 gap-2 text-xs font-bold text-[var(--muted)] max-[720px]:grid-cols-1">
-            {['基础信息', '金额限制', '渠道字段'].map((step, index) => (
-              <span key={step} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">{index + 1}. {step}</span>
-            ))}
-          </div>
-          <div className={adminPage.formGrid}>
-            <ProviderConfigGuide providerType={instanceDialog.provider_type} />
-            <Field label="实例名称"><input value={instanceDialog.name} onChange={(event) => setInstanceDialog({ ...instanceDialog, name: event.target.value })} placeholder="支付宝沙箱主账号" /></Field>
-            <Field label="渠道类型">
-              <select
-                value={instanceDialog.provider_type}
-                onChange={(event) => {
-                  const providerType = event.target.value as PaymentProviderType
-                  setInstanceDialog(providerDraftForTypeChange(instanceDialog, providerType))
-                }}
-              >
-                {cashierProviderTypes.map((providerType) => <option key={providerType} value={providerType}>{cashierProviderLabel(providerType)}</option>)}
-              </select>
-            </Field>
-            <Field label="支持方式">
-              <div className={cashierClasses.supportedMethods}>
-                {cashierProviderSupportedMethodOptions(instanceDialog.provider_type, instanceDialog.supported_methods).map((option) => (
-                  <label key={option.value} className={cashierClasses.checkOption}>
-                    <input
-                      type="checkbox"
-                      checked={option.checked}
-                      onChange={(event) => setInstanceDialog({
-                        ...instanceDialog,
-                        supported_methods: cashierToggleSupportedMethod(instanceDialog.supported_methods, option.value, event.target.checked),
-                      })}
-                    />
-                    <span>{option.label}</span>
-                  </label>
-                ))}
-              </div>
-            </Field>
-            <Field label="排序" hint={cashierProviderInstanceFieldHints.sortOrder}><input value={instanceDialog.sort_order} onChange={(event) => setInstanceDialog({ ...instanceDialog, sort_order: event.target.value })} type="number" min="0" /></Field>
-            <Field label="调度权重" hint={cashierProviderInstanceFieldHints.schedulerWeight}><input value={instanceDialog.scheduler_weight} onChange={(event) => setInstanceDialog({ ...instanceDialog, scheduler_weight: event.target.value })} type="number" min="1" /></Field>
-            <Field label="最小金额" hint={cashierProviderInstanceFieldHints.minAmount}><input value={instanceDialog.min_amount_cny} onChange={(event) => setInstanceDialog({ ...instanceDialog, min_amount_cny: event.target.value })} inputMode="decimal" placeholder="1.00000" /></Field>
-            <Field label="最大金额" hint={cashierProviderInstanceFieldHints.maxAmount}><input value={instanceDialog.max_amount_cny} onChange={(event) => setInstanceDialog({ ...instanceDialog, max_amount_cny: event.target.value })} inputMode="decimal" placeholder="500.00000" /></Field>
-            <Field label="日限额" hint={cashierProviderInstanceFieldHints.dailyLimit}><input value={instanceDialog.daily_amount_limit_cny} onChange={(event) => setInstanceDialog({ ...instanceDialog, daily_amount_limit_cny: event.target.value })} inputMode="decimal" placeholder="5000.00000" /></Field>
-            <label className={cashierClasses.toggle}>
-              <input type="checkbox" checked={instanceDialog.enabled} onChange={(event) => setInstanceDialog({ ...instanceDialog, enabled: event.target.checked })} />
-              <span>启用实例</span>
-            </label>
-            {jeepayTemplatesForProvider(instanceDialog.provider_type).length ? (
-              <div className={cashierClasses.jeepayTemplate}>
-                <div>
-                  <strong>JeePay 场景模板</strong>
-                  <p>按基础支付、网页支付、服务商、分账和行业参数套用模板；会保留已有商户号、密钥和网关地址，只补齐支付模式、wayCode 和 channelExtra 示例。</p>
-                </div>
-                <div className={cashierClasses.templateButtonRow}>
-                  {jeepayTemplatesForProvider(instanceDialog.provider_type).map((template) => (
-                    <button
-                      key={template.way_code}
-                      type="button"
-                      className={cn(adminButton.base, adminButton.ghost, adminButton.small, cashierClasses.templateButton)}
-                      title={`${template.category} · ${template.description}`}
-                      onClick={() => {
-                        try {
-                          const config = parseConfigText(applyJeePayWayCodeTemplate(JSON.stringify(instanceDialog.config), template.way_code))
-                          setInstanceDialog({ ...instanceDialog, config })
-                        } catch (caught) {
-                          setError(caught instanceof Error ? caught.message : 'JeePay 模板套用失败')
-                        }
-                      }}
-                    >
-                      <span>{template.category}</span>
-                      <strong>{template.label}</strong>
-                      <em>{template.way_code}</em>
-                    </button>
+          <form className="a-form" onSubmit={(event) => event.preventDefault()}>
+            <FormSection index={1} title="基础信息" description="选择渠道类型与支付方式；密钥只写不读，编辑时留空会保留已保存值。">
+              <ProviderConfigGuide providerType={instanceDialog.provider_type} />
+              <LedgerField label="实例名称" required><input className="a-input" value={instanceDialog.name} onChange={(event) => setInstanceDialog({ ...instanceDialog, name: event.target.value })} placeholder="支付宝沙箱主账号" /></LedgerField>
+              <LedgerField label="渠道类型" required>
+                <select
+                  className="a-select"
+                  value={instanceDialog.provider_type}
+                  onChange={(event) => {
+                    const providerType = event.target.value as PaymentProviderType
+                    setInstanceDialog(providerDraftForTypeChange(instanceDialog, providerType))
+                  }}
+                >
+                  {cashierProviderTypes.map((providerType) => <option key={providerType} value={providerType}>{cashierProviderLabel(providerType)}</option>)}
+                </select>
+              </LedgerField>
+              <LedgerField label="支持方式">
+                <div className={cashierClasses.supportedMethods}>
+                  {cashierProviderSupportedMethodOptions(instanceDialog.provider_type, instanceDialog.supported_methods).map((option) => (
+                    <label key={option.value} className={cashierClasses.checkOption}>
+                      <input
+                        type="checkbox"
+                        checked={option.checked}
+                        onChange={(event) => setInstanceDialog({
+                          ...instanceDialog,
+                          supported_methods: cashierToggleSupportedMethod(instanceDialog.supported_methods, option.value, event.target.checked),
+                        })}
+                      />
+                      <span>{option.label}</span>
+                    </label>
                   ))}
                 </div>
+              </LedgerField>
+              <SwitchField label="启用该实例" checked={instanceDialog.enabled} onChange={(enabled) => setInstanceDialog({ ...instanceDialog, enabled })} hint="停用后该实例不再参与支付调度。" />
+            </FormSection>
+
+            <FormSection index={2} title="调度与金额限制" description="按排序、权重与单日限额筛选可用渠道实例。">
+              <div className="a-form__pair">
+                <LedgerField label="排序" hint={cashierProviderInstanceFieldHints.sortOrder}><input className="a-input" value={instanceDialog.sort_order} onChange={(event) => setInstanceDialog({ ...instanceDialog, sort_order: event.target.value })} type="number" min="0" /></LedgerField>
+                <LedgerField label="调度权重" hint={cashierProviderInstanceFieldHints.schedulerWeight}><input className="a-input" value={instanceDialog.scheduler_weight} onChange={(event) => setInstanceDialog({ ...instanceDialog, scheduler_weight: event.target.value })} type="number" min="1" /></LedgerField>
               </div>
-            ) : null}
-            <ProviderStructuredConfigFields
-              draft={instanceDialog}
-              onChange={setInstanceDialog}
-            />
-            <ProviderCallbackURLs draft={instanceDialog} />
-          </div>
+              <div className="a-form__pair">
+                <LedgerField label="单笔最低金额" hint={cashierProviderInstanceFieldHints.minAmount}><input className="a-input" value={instanceDialog.min_amount_cny} onChange={(event) => setInstanceDialog({ ...instanceDialog, min_amount_cny: event.target.value })} inputMode="decimal" placeholder="1.00000" /></LedgerField>
+                <LedgerField label="单笔最高金额" hint={cashierProviderInstanceFieldHints.maxAmount}><input className="a-input" value={instanceDialog.max_amount_cny} onChange={(event) => setInstanceDialog({ ...instanceDialog, max_amount_cny: event.target.value })} inputMode="decimal" placeholder="500.00000" /></LedgerField>
+              </div>
+              <LedgerField label="单日限额" hint={cashierProviderInstanceFieldHints.dailyLimit}><input className="a-input cfg-narrow-input" value={instanceDialog.daily_amount_limit_cny} onChange={(event) => setInstanceDialog({ ...instanceDialog, daily_amount_limit_cny: event.target.value })} inputMode="decimal" placeholder="5000.00000" /></LedgerField>
+            </FormSection>
+
+            <FormSection index={3} title="渠道凭据与回调" description="标记 * 的字段为必填；保存前建议先执行一次探测或签名联调。">
+              {jeepayTemplatesForProvider(instanceDialog.provider_type).length ? (
+                <div className={cashierClasses.jeepayTemplate}>
+                  <div>
+                    <strong>JeePay 场景模板</strong>
+                    <p>按基础支付、网页支付、服务商、分账和行业参数套用模板；会保留已有商户号、密钥和网关地址，只补齐支付模式、wayCode 和 channelExtra 示例。</p>
+                  </div>
+                  <div className={cashierClasses.templateButtonRow}>
+                    {jeepayTemplatesForProvider(instanceDialog.provider_type).map((template) => (
+                      <button
+                        key={template.way_code}
+                        type="button"
+                        className={cn(adminButton.base, adminButton.ghost, adminButton.small, cashierClasses.templateButton)}
+                        title={`${template.category} · ${template.description}`}
+                        onClick={() => {
+                          try {
+                            const config = parseConfigText(applyJeePayWayCodeTemplate(JSON.stringify(instanceDialog.config), template.way_code))
+                            setInstanceDialog({ ...instanceDialog, config })
+                          } catch (caught) {
+                            setError(caught instanceof Error ? caught.message : 'JeePay 模板套用失败')
+                          }
+                        }}
+                      >
+                        <span>{template.category}</span>
+                        <strong>{template.label}</strong>
+                        <em>{template.way_code}</em>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <ProviderStructuredConfigFields draft={instanceDialog} onChange={setInstanceDialog} />
+              <ProviderCallbackURLs draft={instanceDialog} />
+              <div className="a-banner a-banner--info">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5h.01" /></svg>
+                <div><strong style={{ fontSize: 13 }}>保存前建议先执行一次探测</strong><div className="a-hint">确认凭据与回调可达；实例停用后不再参与调度，历史订单仍保留渠道快照。</div></div>
+              </div>
+            </FormSection>
+          </form>
         </Drawer>
       ) : null}
       {orderDetail ? (
@@ -1580,7 +1602,7 @@ function ProviderStructuredConfigFields({ draft, onChange }: {
         {signatureError ? <InlineFeedback tone="danger" message={signatureError} /> : null}
         {signatureResult ? <SignatureCheckResult result={signatureResult} /> : null}
       </div>
-      <div className={adminPage.formGrid}>
+      <div className="grid gap-4">
         {fields.map((field) => (
           <Field key={field.key} label={`${field.label} ${field.required ? '*' : '（选填）'}`} hint={field.hint}>
             {field.kind === 'select' ? (

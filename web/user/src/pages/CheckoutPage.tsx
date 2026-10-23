@@ -1,11 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import type { CashierOptions, CashierOrder, CashierPlan, PublicPaymentVisibleMethod } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
-import { pointsExchangeRules } from '../../../shared/pointsDisplay'
+import { formatPoints, pointsExchangeRules } from '../../../shared/pointsDisplay'
 import { userApi } from '../../../shared/user-api'
 import { Button, EmptyState, ErrorState, LoadingState, useApp } from '../components'
 import { isMobileDeviceUA } from '../device'
-import { rdBilling } from '../ui/redesign-classes'
 import { QrCode } from '../ui/icons'
 import { errorMessage } from '../useApiResource'
 import { checkoutPaymentMethodEmptyState, checkoutPlanEmptyState, checkoutUnavailableEmptyState, type CheckoutUnavailableEmptyState } from './checkoutEmptyState'
@@ -22,51 +21,22 @@ import { PaymentOrderDetailModal } from './PaymentOrderDetailModal'
 import alipayIcon from '../assets/payment/alipay.svg'
 import wechatPayIcon from '../assets/payment/wechat-pay.svg'
 import stripeIcon from '../assets/payment/stripe.svg'
+import './account-redesign.css'
 
-const checkoutClasses = {
-  page: 'w-full flex-1 px-4 py-6 sm:px-6 md:px-10 md:py-8',
-  header: 'mb-8 border-b border-[var(--border)] pb-7',
-  title: 'mb-3 text-[clamp(2rem,4vw,3.25rem)] font-black leading-none',
-  detail: 'max-w-3xl text-sm leading-relaxed text-[var(--muted)] md:text-base',
-  layout: rdBilling.layout,
-  panel: cn(rdBilling.card, 'grid min-w-0 gap-6'),
-  sectionHeading: 'text-sm font-bold text-[var(--muted)]',
-  optionGrid: rdBilling.planGrid,
-  optionButton: rdBilling.planItem,
-  optionActive: rdBilling.planActive,
-  optionLabel: 'text-[13px] text-[var(--muted)]',
-  planPoints: rdBilling.planPrice,
-  planPrice: 'text-[13px] not-italic text-[var(--fg)]',
-  optionMeta: 'text-xs font-semibold text-[var(--muted)]',
-  methodGrid: 'grid grid-cols-2 gap-2 max-[420px]:grid-cols-1',
-  methodButton: 'group flex min-h-[64px] min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg)]/50 p-3 text-left text-[var(--fg)] transition-colors hover:border-[var(--accent)] motion-reduce:transition-none',
-  methodIcon: 'grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg border border-[var(--border)] bg-white text-[var(--accent)]',
-  custom: 'mt-4 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]/80 px-4 py-3',
-  customResult: 'grid min-h-[70px] gap-1.5 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--fg)_5%,transparent)] p-3.5',
-  customResultLabel: 'text-xs text-[var(--muted)]',
-  customResultValue: 'font-mono text-2xl text-[var(--accent)]',
-  sectionTitle: 'text-sm font-bold text-[var(--muted)]',
-  orderPanel: rdBilling.orderPanel,
-  order: 'grid gap-3',
-  orderTitle: rdBilling.orderTitle,
-  orderField: rdBilling.orderRow,
-  orderLabel: 'text-xs text-[var(--muted)]',
-  orderValue: 'min-w-0 [overflow-wrap:anywhere]',
-  orderHint: 'text-[13px] leading-normal not-italic text-[var(--muted)]',
-  orderSectionTitle: 'text-xs font-bold text-[var(--muted)]',
-  orderTotalRow: cn(rdBilling.orderRow, 'mt-2 border-0 pt-6'),
-  orderTotal: rdBilling.orderTotal,
-  payButton: 'relative mt-1 grid h-14 w-full place-items-center overflow-hidden rounded-xl bg-[var(--accent)] px-5 text-base font-black text-[#111218] shadow-[0_14px_34px_rgba(var(--accent-rgb),0.24)] transition-transform hover:scale-[1.01] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100 motion-reduce:transform-none motion-reduce:transition-none',
-  actions: 'flex flex-wrap justify-end gap-3 max-[420px]:flex-col max-[420px]:items-stretch',
-  recentActions: 'flex flex-wrap items-center justify-end gap-2 md:col-start-4 md:justify-self-end',
-  recent: 'mt-10 grid gap-4 border-t border-[var(--border)] pt-8',
-  recentTitle: 'flex items-center justify-between gap-3',
-  recentList: 'grid gap-2.5',
-  recentRow: 'grid grid-cols-1 items-center gap-3 rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--surface)_86%,var(--bg))] p-3.5 text-left text-[var(--fg)] md:grid-cols-[minmax(180px,1.25fr)_minmax(120px,.72fr)_minmax(120px,.72fr)_minmax(220px,.9fr)]',
-  recentRowActive: 'border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_10%,var(--surface))]',
-  recentCell: 'grid min-w-0 gap-1',
-  recentStrong: 'min-w-0 [overflow-wrap:anywhere]',
-  recentMeta: 'text-xs not-italic text-[var(--muted)] [overflow-wrap:anywhere]',
+// Restore the local motion preference as soon as the account bundle loads so
+// it survives reloads without touching the application entry point.
+try {
+  document.documentElement.dataset.userMotion = window.localStorage.getItem('pic-gallery-user-motion') === 'reduced' ? 'reduced' : 'on'
+} catch {
+  // Storage may be unavailable; the default motion state still applies.
+}
+
+function checkoutOrderTone(status?: string) {
+  const normalized = (status ?? '').trim().toLowerCase()
+  if (normalized === 'paid' || normalized === 'completed') return 'u-status--ok'
+  if (normalized === 'pending' || normalized === 'manual_review') return 'u-status--warn'
+  if (normalized === 'failed' || normalized === 'refunded' || normalized === 'partially_refunded') return 'u-status--bad'
+  return ''
 }
 
 export function CheckoutPage() {
@@ -93,8 +63,10 @@ export function CheckoutPage() {
     try {
       const next = await userApi.getCashierOptions()
       setOptions(next)
-      setSelectedPlan((current) => current || checkoutPurchasablePlans(next.plans)[0]?.plan_code || '')
+      const purchasablePlans = checkoutPurchasablePlans(next.plans)
+      setSelectedPlan((current) => current || purchasablePlans[0]?.plan_code || '')
       setSelectedMethod((current) => current || next.visible_methods.find((item) => item.enabled)?.method || '')
+      setPurchaseType((current) => purchasablePlans.length === 0 && next.custom_amount.enabled ? 'custom_amount' : current)
     } catch (caught) {
       setError(errorMessage(caught))
     } finally {
@@ -140,6 +112,7 @@ export function CheckoutPage() {
       amountLabel: currentPlan ? checkoutMoney(currentPlan.price_cny) : '-',
     }
   const recentRows = useMemo(() => checkoutRecentOrderRows(recentOrders), [recentOrders])
+  const balanceText = app.balance ? formatPoints(app.balance.available_points).text : '—'
 
   async function createOrder(event: FormEvent) {
     event.preventDefault()
@@ -236,153 +209,216 @@ export function CheckoutPage() {
     }
   }
 
-  if (loading) return <LoadingState label="读取收银台配置..." />
-  if (error) return <ErrorState message={error} onRetry={load} />
+  if (loading) return <div className="acct-page"><LoadingState label="读取收银台配置..." /></div>
+  if (error) return <div className="acct-page"><ErrorState message={error} onRetry={load} /></div>
   if (!options) {
     const empty = checkoutUnavailableEmptyState()
     return (
-      <EmptyState
-        title={empty.title}
-        detail={empty.detail}
-        action={<CheckoutEmptyActions empty={empty} onRefresh={load} onBalance={() => app.navigate('profile')} />}
-      />
+      <div className="acct-page">
+        <EmptyState
+          title={empty.title}
+          detail={empty.detail}
+          action={<CheckoutEmptyActions empty={empty} onRefresh={load} onBalance={() => app.navigate('profile')} />}
+        />
+      </div>
     )
   }
 
   return (
-    <div className={checkoutClasses.page}>
-      <div className={checkoutClasses.header}>
-        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 className={checkoutClasses.title}>积分充值</h1>
-            <p className={checkoutClasses.detail}>自定义金额充值积分长期有效。</p>
-            <div className="mt-4 grid gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface)]/70 px-4 py-3 text-xs leading-relaxed text-[var(--muted)]" aria-label="积分汇率规则">
-              <strong className="text-[var(--fg)]">积分等级与汇率</strong>
-              {pointsExchangeRules.map((rule) => <span key={rule}>{rule}</span>)}
-              <span>展示口径：余额与消耗按等级自动换算（如 300 积分 = 3 银币）；本页积分包与订单记录展示原始积分值。</span>
-            </div>
+    <div className="acct-page">
+      <div className="u-page-head">
+        <div className="u-page-head__copy">
+          <span className="u-eyebrow">Add Points</span>
+          <h1 className="u-h1">积分充值</h1>
+          <p className="u-sub">套餐购买的积分有效期以套餐说明为准；自定义金额即时到账。余额与消耗按积分等级自动换算展示。</p>
+          <div className="u-points-rules" style={{ marginTop: 12 }} aria-label="积分等级与汇率">
+            <strong>积分等级与汇率</strong>
+            {pointsExchangeRules.map((rule) => <span key={rule}>{rule}</span>)}
+            <span>展示口径：余额与消耗按等级自动换算（如 300 积分 = 3 银币积分）；本页积分包与订单记录展示原始积分值。</span>
           </div>
+        </div>
+        <div className="u-page-head__actions">
+          <span className="u-chip u-chip--mono acct-balance-chip">可用积分 <span className="u-points">{balanceText}</span></span>
           <Button tone="ghost" onClick={() => void load()}>刷新配置</Button>
         </div>
       </div>
 
-      <div className={checkoutClasses.layout}>
-        <div className="flex flex-col gap-8">
-          <form id="checkout-order-form" className={checkoutClasses.panel} onSubmit={createOrder}>
-            <h3 className={checkoutClasses.sectionHeading}>选择积分包</h3>
-            <section className={checkoutClasses.optionGrid} aria-label="积分包与自定义金额">
-              {activePlans.map((plan) => (
-                <PlanButton
-                  key={plan.plan_code}
-                  plan={plan}
-                  active={purchaseType === 'plan' && selectedPlan === plan.plan_code}
-                  onSelect={() => {
-                    setPurchaseType('plan')
-                    setSelectedPlan(plan.plan_code)
-                  }}
-                />
-              ))}
-              {options.custom_amount.enabled ? (
-                <CustomAmountCard
-                  active={purchaseType === 'custom_amount'}
-                  customAmount={customAmount}
-                  customPoints={customPoints}
-                  unitPrice={customUnitPrice}
-                  error={normalizedCustomAmount.valid ? undefined : normalizedCustomAmount.error}
-                  rangeLabel={`范围 ${checkoutMoney(options.custom_amount.min_amount_cny)} - ${checkoutMoney(options.custom_amount.max_amount_cny)}`}
-                  onSelect={() => setPurchaseType('custom_amount')}
-                  onChange={(value) => {
-                    setPurchaseType('custom_amount')
-                    setCustomAmount(value)
-                  }}
-                />
-              ) : null}
-              {!activePlans.length && !options.custom_amount.enabled ? (
-                <CheckoutInlineEmptyState empty={checkoutPlanEmptyState()} onRefresh={load} onBalance={() => app.navigate('profile')} />
-              ) : null}
+      <div className="ck-layout">
+        <div className="acct-checkout-pane">
+          <form id="checkout-order-form" onSubmit={createOrder} className="acct-checkout-form">
+            <section aria-labelledby="checkout-plans-title">
+              <div className="u-section-head">
+                <div style={{ display: 'grid', gap: 5, minWidth: 0 }}>
+                  <h2 id="checkout-plans-title" className="u-h3">选择套餐</h2>
+                  <span className="u-meta">按积分从少到多</span>
+                </div>
+                <div className="u-segment" role="group" aria-label="充值方式">
+                  <button type="button" className={purchaseType === 'plan' ? 'is-active' : undefined} disabled={!activePlans.length} onClick={() => setPurchaseType('plan')}>积分包</button>
+                  <button type="button" className={purchaseType === 'custom_amount' ? 'is-active' : undefined} disabled={!options.custom_amount.enabled} onClick={() => setPurchaseType('custom_amount')}>自定义金额</button>
+                </div>
+              </div>
+              <div className="ck-plans">
+                {activePlans.map((plan) => (
+                  <PlanButton
+                    key={plan.plan_code}
+                    plan={plan}
+                    active={purchaseType === 'plan' && selectedPlan === plan.plan_code}
+                    onSelect={() => {
+                      setPurchaseType('plan')
+                      setSelectedPlan(plan.plan_code)
+                    }}
+                  />
+                ))}
+                {!activePlans.length ? (
+                  <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
+                    <CheckoutInlineEmptyState empty={checkoutPlanEmptyState()} onRefresh={load} onBalance={() => app.navigate('profile')} />
+                  </div>
+                ) : null}
+              </div>
             </section>
+
+            {options.custom_amount.enabled ? (
+              <section className={cn('ck-custom', purchaseType === 'custom_amount' && 'is-active')} aria-labelledby="checkout-custom-title">
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
+                    <strong id="checkout-custom-title" style={{ fontSize: 13 }}>自定义金额</strong>
+                    <span className="u-meta">范围 {checkoutMoney(options.custom_amount.min_amount_cny)} - {checkoutMoney(options.custom_amount.max_amount_cny)}</span>
+                  </div>
+                  <label className="u-switch">
+                    <input
+                      type="checkbox"
+                      checked={purchaseType === 'custom_amount'}
+                      onChange={(event) => setPurchaseType(event.target.checked ? 'custom_amount' : 'plan')}
+                    />
+                    <span className="u-switch__track" aria-hidden="true" />
+                    使用自定义金额
+                  </label>
+                </div>
+                <div className="ck-custom__row">
+                  <label className="u-field" style={{ flex: '0 1 180px', minWidth: 120 }}>
+                    <span className="u-label">充值金额</span>
+                    <input
+                      className="u-input"
+                      inputMode="decimal"
+                      min="1"
+                      max="10000"
+                      value={customAmount}
+                      onFocus={() => setPurchaseType('custom_amount')}
+                      onChange={(event) => {
+                        setPurchaseType('custom_amount')
+                        setCustomAmount(event.target.value.replace(/[^\d.]/g, ''))
+                      }}
+                      placeholder="25.00"
+                      aria-invalid={!normalizedCustomAmount.valid}
+                    />
+                  </label>
+                  <span className="u-meta">元</span>
+                  <div style={{ flex: 1 }} />
+                  <div className="acct-custom-result">
+                    <span className="u-meta">实时换算</span>
+                    <strong className="u-num">{customPoints} 积分</strong>
+                    <span className="u-meta">{customUnitPrice}</span>
+                  </div>
+                </div>
+                {!normalizedCustomAmount.valid && normalizedCustomAmount.error ? <span className="u-field__error" role="alert">{normalizedCustomAmount.error}</span> : null}
+              </section>
+            ) : null}
           </form>
+
+          <section aria-labelledby="checkout-recent-title">
+            <div className="u-section-head">
+              <h2 id="checkout-recent-title" className="u-h3">最近订单</h2>
+              <span className="u-meta">最近 10 条</span>
+            </div>
+            <div className="u-plate" style={{ padding: '0 18px' }}>
+              {recentError ? <ErrorState message={recentError} onRetry={loadRecentOrders} /> : null}
+              {!recentError && recentLoading ? <LoadingState label="读取最近订单..." /> : null}
+              {!recentError && !recentLoading && !recentRows.length ? <EmptyState title="暂无充值订单" detail="创建充值订单后，最近 10 条记录会显示在这里。" /> : null}
+              {!recentError && !recentLoading && recentRows.length ? (
+                <div className="u-list">
+                  {recentRows.map((row) => {
+                    const actions = checkoutOrderActionState(row.order)
+                    const selected = monitorOrder?.id === row.id || detailOrder?.id === row.id
+                    return (
+                      <div className={cn('ck-order', selected && 'is-active')} key={row.id}>
+                        <div className="ck-order__main">
+                          <strong>{row.title}</strong>
+                          <span className="u-meta">{row.orderNo} · {row.method} · {row.createdAtLabel}</span>
+                          <span className="u-meta">
+                            {row.order.purchase_type === 'custom_amount'
+                              ? `到账 ${row.points} 积分`
+                              : `套餐 ${row.basePoints} · 赠送 ${row.bonusPoints}`}
+                            {' · '}{row.creditValidity}
+                          </span>
+                        </div>
+                        <div className="ck-order__side">
+                          <span className={cn('u-status', checkoutOrderTone(row.order.status))}><span className="u-dot" aria-hidden="true" />{row.status}</span>
+                          <span className="u-num" style={{ fontSize: 13 }}>{row.amount}</span>
+                          {actions.canContinuePay ? (
+                            <>
+                              <button className="u-btn u-btn--sm" type="button" onClick={() => openPaymentMonitor(row.order)}>继续支付</button>
+                              <button className="u-btn u-btn--sm" type="button" disabled={busy} onClick={() => void cancelOrder(row.order)}>取消支付</button>
+                            </>
+                          ) : (
+                            <button className="u-btn u-btn--sm" type="button" onClick={() => openOrderDetail(row.order)}>查看订单</button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section aria-labelledby="checkout-redeem-title">
+            <div className="u-section-head">
+              <h2 id="checkout-redeem-title" className="u-h3">兑换积分</h2>
+            </div>
+            <div className="u-plate u-plate--pad ck-redeem">
+              <RedeemCodeForm onRedeemed={() => Promise.all([app.refreshAccount(), loadRecentOrders()]).then(() => undefined)} />
+            </div>
+          </section>
         </div>
 
-        <aside className={checkoutClasses.orderPanel}>
-          <h3 className={checkoutClasses.orderTitle}>订单概览</h3>
-          <div className={checkoutClasses.order}>
-            <div className={checkoutClasses.orderField}><span className={checkoutClasses.orderLabel}>购买项目</span><strong className={checkoutClasses.orderValue}>{selectedPurchase.name}</strong></div>
-            <div className={checkoutClasses.orderField}><span className={checkoutClasses.orderLabel}>到账积分</span><strong className="text-[var(--accent)]">{selectedPurchase.points} ◈</strong></div>
-            <div className={checkoutClasses.orderField}><span className={checkoutClasses.orderLabel}>支付金额</span><strong className={checkoutClasses.orderValue}>{selectedPurchase.amountLabel}</strong></div>
-            <div className={checkoutClasses.orderTotalRow}><span className="text-xl font-black">应付总额</span><span className={checkoutClasses.orderTotal}>{selectedPurchase.amountLabel}</span></div>
-
-            <section className="grid gap-3 pt-2" aria-label="支付方式">
-              <div className={checkoutClasses.orderSectionTitle}>支付方式</div>
-              <div className={checkoutClasses.methodGrid}>
-                {methods.map((method) => (
-                  <MethodButton key={method.method} method={method} active={selectedMethod === method.method} onSelect={() => setSelectedMethod(method.method)} />
-                ))}
-              </div>
-              {!methods.length ? (
-                <CheckoutInlineEmptyState empty={checkoutPaymentMethodEmptyState()} onRefresh={load} onBalance={() => app.navigate('profile')} />
-              ) : null}
-            </section>
-
-            <button className={checkoutClasses.payButton} type="submit" form="checkout-order-form" disabled={busy || !methods.length || (purchaseType === 'plan' && !activePlans.length) || (purchaseType === 'custom_amount' && !normalizedCustomAmount.valid)}>
-              {busy ? '创建中...' : '立即支付'}
-            </button>
+        <aside className="ck-summary" aria-labelledby="checkout-summary-title">
+          <div className="u-panel-title" style={{ margin: 0 }}>
+            <h3 id="checkout-summary-title">订单概览</h3>
+            <span>Step 1 / 2</span>
+          </div>
+          <div className="u-estimate">
+            <div className="u-estimate__row"><span>购买项目</span><b>{selectedPurchase.name}</b></div>
+            <div className="u-estimate__row"><span>到账积分</span><b>{selectedPurchase.points}</b></div>
+            <div className="u-estimate__row"><span>支付金额</span><b>{selectedPurchase.amountLabel}</b></div>
+            <div className="u-estimate__row u-estimate__row--total"><span>应付总额</span><b>{selectedPurchase.amountLabel}</b></div>
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <span className="u-label">支付方式</span>
+            <div className="ck-methods grid-cols-2">
+              {methods.map((method) => (
+                <MethodButton key={method.method} method={method} active={selectedMethod === method.method} onSelect={() => setSelectedMethod(method.method)} />
+              ))}
+            </div>
+            {!methods.length ? (
+              <CheckoutInlineEmptyState empty={checkoutPaymentMethodEmptyState()} onRefresh={load} onBalance={() => app.navigate('profile')} />
+            ) : null}
+          </div>
+          <button
+            className="u-btn u-btn--primary u-btn--lg u-btn--block"
+            type="submit"
+            form="checkout-order-form"
+            disabled={busy || !methods.length || (purchaseType === 'plan' && !activePlans.length) || (purchaseType === 'custom_amount' && !normalizedCustomAmount.valid)}
+          >
+            {busy ? '创建中...' : `立即支付 ${selectedPurchase.amountLabel}`}
+          </button>
+          <p className="u-meta" style={{ lineHeight: 1.6 }}>支付成功后积分即时到账。订单与回调可追溯；未到账时可在“最近订单”中查看状态。</p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <span className="u-chip u-chip--mono">安全支付</span>
+            <span className="u-chip u-chip--mono">订单可追溯</span>
+            <span className="u-chip u-chip--mono">原路退款</span>
           </div>
         </aside>
       </div>
-
-      <section className={checkoutClasses.recent} aria-label="最近充值订单">
-        <div className={checkoutClasses.recentTitle}>
-          <span>最近订单</span>
-          <Button tone="ghost" busy={recentLoading} onClick={() => void loadRecentOrders()}>刷新</Button>
-        </div>
-        {recentError ? <ErrorState message={recentError} onRetry={loadRecentOrders} /> : null}
-        {!recentError && recentLoading ? <LoadingState label="读取最近订单..." /> : null}
-        {!recentError && !recentLoading && !recentRows.length ? <EmptyState title="暂无充值订单" detail="创建充值订单后，最近 10 条记录会显示在这里。" /> : null}
-        {!recentError && !recentLoading && recentRows.length ? (
-          <div className={checkoutClasses.recentList}>
-            {recentRows.map((row) => (
-              <article
-                key={row.id}
-                className={cn(checkoutClasses.recentRow, (monitorOrder?.id === row.id || detailOrder?.id === row.id) && checkoutClasses.recentRowActive)}
-              >
-                <span className={checkoutClasses.recentCell}>
-                  <strong className={checkoutClasses.recentStrong}>{row.title}</strong>
-                  <em className={checkoutClasses.recentMeta}>{row.orderNo}</em>
-                </span>
-                <span className={checkoutClasses.recentCell}>
-                  <strong className={checkoutClasses.recentStrong}>{row.amount}</strong>
-                  <em className={checkoutClasses.recentMeta}>{row.order.purchase_type === 'custom_amount' ? `到账 ${row.points} 积分` : `套餐 ${row.basePoints} · 赠送 ${row.bonusPoints}`}</em>
-                  <em className={checkoutClasses.recentMeta}>{row.creditValidity}</em>
-                </span>
-                <span className={checkoutClasses.recentCell}>
-                  <strong className={checkoutClasses.recentStrong}>{row.status}</strong>
-                  <em className={checkoutClasses.recentMeta}>{row.method}</em>
-                </span>
-                <div className={checkoutClasses.recentActions}>
-                  <time className={checkoutClasses.recentMeta} dateTime={row.createdAt}>{row.createdAtLabel}</time>
-                  {checkoutOrderActionState(row.order).canContinuePay ? (
-                    <>
-                      <Button tone="ghost" onClick={() => openPaymentMonitor(row.order)}>继续支付</Button>
-                      <Button tone="ghost" busy={busy} onClick={() => void cancelOrder(row.order)}>取消支付</Button>
-                    </>
-                  ) : (
-                    <Button tone="ghost" onClick={() => openOrderDetail(row.order)}>查看订单</Button>
-                  )}
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : null}
-      </section>
-
-      <section className="mt-10 grid max-w-xl gap-4 border-t border-[var(--border)] pt-8" aria-label="兑换积分">
-        <div>
-          <h2 className="m-0 text-lg font-black text-[var(--fg)]">兑换积分</h2>
-          <p className="m-0 mt-1 text-sm text-[var(--muted)]">输入有效兑换码后，积分会直接进入账户余额。</p>
-        </div>
-        <RedeemCodeForm onRedeemed={() => Promise.all([app.refreshAccount(), loadRecentOrders()]).then(() => undefined)} />
-      </section>
 
       {monitorOrder ? (
         <PaymentMonitorModal
@@ -416,7 +452,7 @@ function newCheckoutOrderIdempotencyKey() {
 
 function CheckoutEmptyActions({ empty, onRefresh, onBalance }: { empty: CheckoutUnavailableEmptyState; onRefresh: () => void | Promise<void>; onBalance: () => void }) {
   return (
-    <div className={checkoutClasses.actions}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
       <Button tone="primary" onClick={() => void onRefresh()}>{empty.primaryAction}</Button>
       <Button tone="ghost" onClick={onBalance}>{empty.secondaryAction}</Button>
     </div>
@@ -434,48 +470,17 @@ function CheckoutInlineEmptyState({ empty, onRefresh, onBalance }: { empty: Chec
 }
 
 function PlanButton({ plan, active, onSelect }: { plan: CashierPlan; active: boolean; onSelect: () => void }) {
+  const bonus = Number(plan.bonus_points ?? '0')
   return (
-    <button type="button" className={cn(checkoutClasses.optionButton, active && checkoutClasses.optionActive)} onClick={onSelect}>
-      <span className={checkoutClasses.optionLabel}>{plan.plan_name}</span>
-      <strong className={checkoutClasses.planPoints}>{checkoutPoints(plan.points)} 积分</strong>
-      <em className={checkoutClasses.planPrice}>{checkoutMoney(plan.price_cny)}{Number(plan.bonus_points ?? '0') > 0 ? ` / 赠 ${checkoutPoints(plan.bonus_points)}` : ''}</em>
-      <span className={checkoutClasses.optionMeta}>{checkoutPlanValidityLabel(plan)}</span>
-    </button>
-  )
-}
-
-function CustomAmountCard({ active, customAmount, customPoints, unitPrice, error, rangeLabel, onSelect, onChange }: {
-  active: boolean
-  customAmount: string
-  customPoints: string
-  unitPrice: string
-  error?: string
-  rangeLabel: string
-  onSelect: () => void
-  onChange: (value: string) => void
-}) {
-  return (
-    <button type="button" className={cn(checkoutClasses.optionButton, active && checkoutClasses.optionActive)} onClick={onSelect}>
-      <span className={checkoutClasses.optionLabel}>自定义金额</span>
-      <strong className={checkoutClasses.planPoints}>{customPoints} 积分</strong>
-      <em className={checkoutClasses.planPrice}>{error ?? unitPrice}</em>
-      <span className={checkoutClasses.custom} onClick={(event) => event.stopPropagation()}>
-        <label className="mb-2 block text-[10px] font-vault-mono uppercase tracking-widest text-[var(--muted)]">支付金额 / 1-10000</label>
-        <span className="flex items-center gap-2">
-          <span className="text-sm font-bold text-[var(--muted)]">¥</span>
-          <input
-            className="w-full bg-transparent text-xl font-black text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
-            inputMode="decimal"
-            min="1"
-            max="10000"
-            value={customAmount}
-            onFocus={onSelect}
-            onChange={(event) => onChange(event.target.value.replace(/[^\d.]/g, ''))}
-            placeholder="100"
-          />
-        </span>
-        <span className="mt-2 block text-[11px] text-[var(--muted)]">{rangeLabel}</span>
+    <button type="button" className={cn('ck-plan', active && 'is-active')} aria-pressed={active} onClick={onSelect}>
+      {active ? <span className="u-chip u-chip--accent ck-plan__selected">已选择</span> : null}
+      <span className="ck-plan__name">{plan.plan_name}</span>
+      <span className="ck-plan__points">{checkoutPoints(plan.points)} <small>积分</small></span>
+      <span className="ck-plan__price">
+        <span>{bonus > 0 ? `含赠送 ${checkoutPoints(plan.bonus_points)}` : '基础到账'}</span>
+        <b>{checkoutMoney(plan.price_cny)}</b>
       </span>
+      <span className="u-meta">{checkoutPlanValidityLabel(plan)}</span>
     </button>
   )
 }
@@ -483,12 +488,9 @@ function CustomAmountCard({ active, customAmount, customPoints, unitPrice, error
 function MethodButton({ method, active, onSelect }: { method: PublicPaymentVisibleMethod; active: boolean; onSelect: () => void }) {
   const display = checkoutPublicPaymentMethod(method)
   return (
-    <button type="button" className={cn(checkoutClasses.optionButton, checkoutClasses.methodButton, active && checkoutClasses.optionActive)} onClick={onSelect}>
-      <span className={checkoutClasses.methodIcon}><PaymentMethodBrandIcon brand={display.icon} /></span>
-      <span className="grid min-w-0 gap-1">
-        <strong>{display.label}</strong>
-        <span className={checkoutClasses.optionLabel}>{display.detail}</span>
-      </span>
+    <button type="button" className={cn('ck-method', active && 'is-active')} aria-pressed={active} title={display.detail} onClick={onSelect}>
+      <span className="ck-method__logo"><PaymentMethodBrandIcon brand={display.icon} /></span>
+      <span className="acct-method-label">{display.label}</span>
     </button>
   )
 }

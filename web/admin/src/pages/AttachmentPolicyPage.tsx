@@ -3,9 +3,11 @@ import { FileText, Image, Music2, RotateCcw, Save, Video } from 'lucide-react'
 import { ADMIN_PERMISSIONS, type AdminSession, type ConfigItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, ErrorBlock, Field, InlineFeedback, LoadingBlock, PageHeader } from '../components'
+import { Badge, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader } from '../components'
+import { FormSaveBar, FormSection, LedgerField, MultiSelectField } from './AdminMediaTabs'
 import { canAdmin } from '../types'
 import { adminButton, adminPage } from '../ui/classes'
+import { systemSettingsSectionAnchor } from './systemSettingsTabs'
 
 export type AttachmentPolicyKey =
   | 'image_max_mb'
@@ -84,12 +86,14 @@ export function AttachmentPolicyPage({
   onDirtyChange,
   onBusyChange,
   compact = false,
+  activeSection,
 }: {
   session: AdminSession
   onFeedback?: (title: string, detail?: string) => void
   onDirtyChange?: (dirty: boolean) => void
   onBusyChange?: (busy: boolean) => void
   compact?: boolean
+  activeSection?: string
 }) {
   const [rows, setRows] = useState<ConfigItem[]>([])
   const [draft, setDraft] = useState<AttachmentPolicyDraft>(() => cloneAttachmentPolicyDraft(attachmentPolicyDefaults))
@@ -104,6 +108,7 @@ export function AttachmentPolicyPage({
   const dirty = useMemo(() => attachmentPolicyIsDirty(baseline, draft), [baseline, draft])
   const validationErrors = useMemo(() => validateAttachmentPolicyDraft(draft), [draft])
   const validationCount = Object.keys(validationErrors).length
+  const dirtyFieldCount = attachmentPolicyDirtyFieldCount(baseline, draft)
 
   async function load(initial = false) {
     if (initial) setLoading(true)
@@ -152,7 +157,15 @@ export function AttachmentPolicyPage({
     setSaveFeedback(null)
     setDraft((current) => ({
       ...current,
-      [field.key]: field.control === 'number' ? Number(value) : [value],
+      [field.key]: field.control === 'number' ? Number(value) : normalizeAttachmentFormats([value]),
+    }))
+  }
+
+  function updateFormats(field: AttachmentPolicyFieldDefinition, formats: string[]) {
+    setSaveFeedback(null)
+    setDraft((current) => ({
+      ...current,
+      [field.key]: normalizeAttachmentFormats(formats),
     }))
   }
 
@@ -178,6 +191,11 @@ export function AttachmentPolicyPage({
           scope: rows.find((row) => (row.config_key || row.key) === field.key)?.scope || 'global',
         })),
       })
+      // Reset the baseline immediately after the write so the dirty indicator
+      // clears even if the follow-up refresh fails.
+      const savedDraft = cloneAttachmentPolicyDraft(draft)
+      setDraft(savedDraft)
+      setBaseline(cloneAttachmentPolicyDraft(savedDraft))
       const loaded = await load()
       if (!loaded) throw new Error('配置已保存，但重新读取最新值失败，请刷新页面确认。')
       setSaveFeedback({ tone: 'success', message: '附件策略已保存并立即对新上传请求生效。' })
@@ -195,40 +213,43 @@ export function AttachmentPolicyPage({
   return (
     <section className={adminPage.stack} aria-busy={saving}>
       {!compact ? <PageHeader title="附件策略" detail="统一管理附件体积和格式限制；当前只有图片策略接入上传链路。" /> : null}
-      <section className={attachmentClasses.surface}>
-        <header className={attachmentClasses.status}>
+      <section className="a-panel a-panel--flush">
+        <header className="a-panel__head">
           <div>
-            <strong className="text-sm text-[var(--text)]">上传校验策略</strong>
-            <p className="m-0 mt-1 text-xs text-[var(--soft)]">图片配置当前生效，其余 6 项为预留配置。</p>
+            <h2>上传校验策略</h2>
+            <p>图片配置当前生效，视频、音频与文档为预留配置；多值格式使用多选组件维护。</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="a-row-actions">
             <Badge tone={validationCount ? 'warning' : 'success'}>{validationCount ? `${validationCount} 项需修正` : '校验通过'}</Badge>
-            <Badge tone={dirty ? 'primary' : 'neutral'}>{dirty ? '有未保存修改' : '已同步'}</Badge>
+            <Badge tone={dirty ? 'warning' : 'neutral'}>{dirty ? `${dirtyFieldCount} 项未保存` : '已同步'}</Badge>
           </div>
         </header>
 
-        <div className={attachmentClasses.policyGrid}>
-          {kinds.map((kind) => {
+        {loadError ? <div style={{ padding: '12px 20px' }}><InlineFeedback tone="warning" message={loadError} /></div> : null}
+
+        <form className="a-form" onSubmit={(event) => { event.preventDefault(); void save() }}>
+          {kinds.map((kind, index) => {
             const meta = kindMeta[kind]
             const Icon = meta.icon
             const fields = attachmentPolicyFieldDefinitions.filter((field) => field.kind === kind)
             return (
-              <section key={kind} className={attachmentClasses.policySection}>
-                <header className={attachmentClasses.sectionHead}>
-                  <div className={attachmentClasses.sectionIdentity}>
-                    <span className={attachmentClasses.icon}><Icon size={18} aria-hidden="true" /></span>
-                    <div className="min-w-0">
-                      <h2 className={attachmentClasses.title}>{meta.title}</h2>
-                      <p className={attachmentClasses.detail}>{meta.detail}</p>
-                    </div>
-                  </div>
-                  <Badge tone={kind === 'image' ? 'success' : 'neutral'}>{kind === 'image' ? '已生效' : '预留配置'}</Badge>
-                </header>
-                <div className={attachmentClasses.fields}>
+              <div
+                key={kind}
+                id={systemSettingsSectionAnchor('attachment-policy', kind)}
+                className={cn('ss-block', activeSection === kind && 'is-active')}
+              >
+                <FormSection
+                  index={index + 1}
+                  title={meta.title}
+                  description={meta.detail}
+                  aside={<Badge tone={kind === 'image' ? 'success' : 'neutral'}>{kind === 'image' ? '已生效' : '预留配置'}</Badge>}
+                >
+                  <div className="cfg-inline-actions" style={{ color: 'var(--a-ink-3)', fontSize: 12.5 }}><Icon size={16} aria-hidden="true" />{kind === 'image' ? '用户端与 API 共用同一套校验。' : '配置会保存，但在运行时接入前不会开放对应上传入口。'}</div>
                   {fields.map((field) => (
-                    <Field key={field.key} label={field.label} hint={field.hint} error={showErrors ? validationErrors[field.key] : null}>
-                      {field.control === 'number' ? (
+                    field.control === 'number' ? (
+                      <LedgerField key={field.key} label={field.label} hint={field.hint} error={showErrors || dirty ? validationErrors[field.key] : null}>
                         <input
+                          className="a-input cfg-narrow-input"
                           type="number"
                           min="1"
                           max={attachmentPolicyMaxMB(field.kind)}
@@ -236,38 +257,39 @@ export function AttachmentPolicyPage({
                           disabled={saving || !canEdit}
                           onChange={(event) => updateField(field, event.target.value)}
                         />
-                      ) : (
-                        <input
-                          value={draft[field.key as AttachmentFormatsKey].join(', ')}
-                          placeholder="png, jpeg"
-                          disabled={saving || !canEdit}
-                          onChange={(event) => updateField(field, event.target.value)}
-                        />
-                      )}
-                    </Field>
+                      </LedgerField>
+                    ) : (
+                      <MultiSelectField
+                        key={field.key}
+                        label={field.label}
+                        hint={field.hint}
+                        error={showErrors || dirty ? validationErrors[field.key] : null}
+                        values={draft[field.key as AttachmentFormatsKey]}
+                        options={Array.from(new Set([...attachmentFormatOptions(field.kind), ...draft[field.key as AttachmentFormatsKey]]))}
+                        onChange={(formats) => updateFormats(field, formats)}
+                        disabled={saving || !canEdit}
+                        customPlaceholder="输入扩展名后添加"
+                        normalize={(value) => normalizeAttachmentFormats([value])[0] ?? ''}
+                      />
+                    )
                   ))}
-                </div>
-              </section>
+                </FormSection>
+              </div>
             )
           })}
-        </div>
+        </form>
 
-        <footer className={attachmentClasses.saveRail}>
-          <div className="min-w-0 flex-1">
-            {!canEdit ? <InlineFeedback tone="warning" message="当前账号没有 manage:config 权限，附件策略仅可查看。" /> : null}
-            {loadError ? <InlineFeedback tone="warning" message={loadError} /> : null}
-            {saveFeedback ? <InlineFeedback tone={saveFeedback.tone} message={saveFeedback.message} /> : null}
-            {!loadError && !saveFeedback && canEdit ? <span className="text-xs text-[var(--soft)]">保存后配置解析缓存会失效，新上传请求立即读取最新策略。</span> : null}
-          </div>
-          <div className={attachmentClasses.actions}>
-            <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} disabled={saving || !dirty} onClick={revert}>
-              <RotateCcw size={15} aria-hidden="true" />恢复
-            </button>
-            <button type="button" className={cn(adminButton.base, adminButton.primary, adminButton.small)} disabled={saving || !dirty || !canEdit} onClick={() => void save()}>
-              <Save size={15} aria-hidden="true" />{saving ? '保存中...' : '保存附件策略'}
-            </button>
-          </div>
-        </footer>
+        <FormSaveBar
+          dirtyCount={dirtyFieldCount}
+          errorCount={validationCount}
+          busy={saving}
+          note={!canEdit ? '当前账号没有 manage:config 权限，附件策略仅可查看。' : saveFeedback?.message ?? '保存后配置解析缓存会失效，新上传请求立即读取最新策略。'}
+          onReset={revert}
+          onSave={() => void save()}
+          saveLabel="保存附件策略"
+          saveDisabled={!canEdit || !dirty}
+        />
+        {saveFeedback?.tone === 'danger' ? <div style={{ padding: '0 20px 16px' }}><InlineFeedback tone="danger" message={saveFeedback.message} /></div> : null}
       </section>
     </section>
   )
@@ -331,6 +353,20 @@ export function validateAttachmentPolicyDraft(draft: AttachmentPolicyDraft): Par
 
 export function attachmentPolicyMaxMB(kind: AttachmentKind) {
   return kind === 'image' ? 100 : 10240
+}
+
+export function attachmentPolicyDirtyFieldCount(baseline: AttachmentPolicyDraft, draft: AttachmentPolicyDraft) {
+  return attachmentPolicyFieldDefinitions.filter((field) => {
+    if (field.control === 'number') return baseline[field.key as AttachmentSizeKey] !== draft[field.key as AttachmentSizeKey]
+    return normalizeAttachmentFormats(baseline[field.key as AttachmentFormatsKey]).join(',') !== normalizeAttachmentFormats(draft[field.key as AttachmentFormatsKey]).join(',')
+  }).length
+}
+
+function attachmentFormatOptions(kind: AttachmentKind) {
+  if (kind === 'image') return ['png', 'jpeg', 'webp', 'gif']
+  if (kind === 'video') return ['mp4', 'webm', 'mov']
+  if (kind === 'audio') return ['mp3', 'wav', 'aac']
+  return ['pdf', 'txt', 'md', 'docx']
 }
 
 export function attachmentPolicyIsDirty(baseline: AttachmentPolicyDraft, draft: AttachmentPolicyDraft) {

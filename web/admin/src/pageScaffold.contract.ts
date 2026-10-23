@@ -24,12 +24,12 @@ createElement(PageSection, {
   children: createElement('div'),
 })
 
-for (const pageHeaderContract of ['adminType.pageTitle', 'adminType.pageDescription', 'w-full max-w-none']) {
+for (const pageHeaderContract of ['a-page-head', 'a-page-head__copy', 'a-page-head__actions', 'a-kicker']) {
   if (!componentsSource.includes(pageHeaderContract)) {
-    throw new Error(`PageHeader must use the unified compact typography contract: ${pageHeaderContract}`)
+    throw new Error(`PageHeader must use the Command Deck page header contract: ${pageHeaderContract}`)
   }
 }
 
-if (componentsSource.includes('{eyebrow ?')) {
-  throw new Error('PageHeader must not render decorative eyebrow labels')
+if (!componentsSource.includes('{resolvedDescription ? <p>{resolvedDescription}</p> : null}')) {
+  throw new Error('PageHeader must render its description inside the Command Deck copy column')
 }

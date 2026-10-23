@@ -41,10 +41,10 @@ import (
 	mediaassetservice "github.com/fatballfish/pic-gallery/internal/service/mediaasset"
 	modeladminservice "github.com/fatballfish/pic-gallery/internal/service/modeladmin"
 	objectcleanupservice "github.com/fatballfish/pic-gallery/internal/service/objectcleanup"
+	oidcservice "github.com/fatballfish/pic-gallery/internal/service/oidc"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
-	oidcservice "github.com/fatballfish/pic-gallery/internal/service/oidc"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
 	textmodelservice "github.com/fatballfish/pic-gallery/internal/service/textmodel"
@@ -135,7 +135,7 @@ func Run() error {
 }
 
 func runAPI(dependencies apiRunDependencies) error {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	configureDefaultLogging()
 	if dependencies.runtimeEnvPath == nil {
 		dependencies.runtimeEnvPath = configuredRuntimeEnvPath
 	}

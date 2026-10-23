@@ -210,6 +210,23 @@ mgsctl uninstall --delete-data \
 
 For Docker, this additionally removes Compose named volumes. Before stopping services or deleting any persistent resource, the command verifies that the runtime tree contains only mgsctl-managed configuration, deployment assets, native release files, application data, and logs. Unknown files or directories fail closed. The command also refuses filesystem roots, the current working directory, and directories containing the current working directory.
 
+## Logging and Retention
+
+API and Worker write structured logs to stdout. Docker Compose services use the `json-file` driver with `max-size=100m` and `max-file=5`, so each container is capped at roughly 500 MiB of logs.
+
+Native deployments that redirect process output themselves can also enable the built-in bounded file sink:
+
+```bash
+APP_LOG_FILE=/var/log/mikiko-gallery-studio/api.log
+APP_LOG_MAX_MB=100
+APP_LOG_MAX_BACKUPS=5
+APP_LOG_MAX_AGE_DAYS=14
+```
+
+The file rotates when it reaches `APP_LOG_MAX_MB`, keeps at most `APP_LOG_MAX_BACKUPS` backups, and removes backups older than `APP_LOG_MAX_AGE_DAYS`. Cleanup also runs hourly in the background. When `APP_LOG_FILE` is unset, only stdout is written.
+
+Image and video generation logs include the sanitized prompt, routing model, account/model IDs, request parameters, upstream status, and result metadata such as MIME type, byte size, dimensions, and durations. API keys, base64 image payloads, signed URL query strings, and callback credentials are never logged.
+
 ## Failure Recovery
 
 - If an initial image pull failed, rerun the exact install command to resume. From a complete source checkout, missing Mikiko Gallery Studio application images are built locally. Use `--overwrite` only when intentionally replacing a different Setup-pending plan; it rerenders configuration and force-recreates affected services while preserving identity, secrets, middleware credentials, and persistent data.

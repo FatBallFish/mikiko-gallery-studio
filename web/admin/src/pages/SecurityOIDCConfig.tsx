@@ -3,7 +3,8 @@ import type { FormEvent } from 'react'
 import type { OIDCConfigView, OIDCConfigWriteRequest } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Badge, ErrorBlock, Field, InlineFeedback, LoadingBlock, StatusCell, StatusStrip } from '../components'
+import { Badge, Button, ErrorBlock, InlineFeedback, LoadingBlock } from '../components'
+import { FormSaveBar, FormSection, LedgerField, SwitchField } from './AdminMediaTabs'
 import { adminButton, adminPage } from '../ui/classes'
 import { editorPhaseDetail, editorPhaseLabel, editorPhaseTone, securityClasses, type EditorPhase } from './SecurityConfigPage'
 
@@ -132,8 +133,8 @@ export function OIDCConfigEditor({ onFeedback, onDirtyChange, onBusyChange, summ
     if (phase === 'failed' || phase === 'saved') setPhase('dirty')
   }
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  async function save(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
     if (!draft || !config) return
     setPhase('validating')
     setSaveError('')
@@ -184,126 +185,62 @@ export function OIDCConfigEditor({ onFeedback, onDirtyChange, onBusyChange, summ
 
   const callbackURL = `${window.location.origin}/auth/callback`
 
+  const liveFieldErrors = draft && config ? validateOIDCDraft(draft, config) : {}
+  const liveErrorCount = Object.keys(liveFieldErrors).length
+
   return (
-    <>
-      {!summaryMode ? (
-        <StatusStrip columns={4}>
-          <StatusCell label="Mikiko ID" value={config?.enabled ? '启用' : '未启用'} />
-          <StatusCell label="Client Secret" value={config?.secret_status?.has_secret ? '已配置' : '未配置'} />
-          <StatusCell label="版本" value={String(config?.version ?? 0)} />
-          <StatusCell label="本地登录" value={config?.allow_local_login !== false ? '开放' : '已关闭'} />
-        </StatusStrip>
-      ) : null}
-      {error ? <InlineFeedback tone="danger" message={error} /> : null}
+    <section className="a-panel a-panel--flush">
+      <div className="a-panel__head">
+        <div><h2>OIDC 统一身份</h2><p>Mikiko ID 单点登录；机密客户端密钥只写不读。</p></div>
+        <div className="a-row-actions">
+          <Badge tone={config?.enabled ? 'success' : 'neutral'}>{config?.enabled ? '已启用' : '未启用'}</Badge>
+          <Badge tone={config?.secret_status?.has_secret ? 'success' : 'warning'}>{config?.secret_status?.has_secret ? 'Secret 已配置' : 'Secret 未配置'}</Badge>
+          <Badge tone={editorPhaseTone(phase)}>{editorPhaseLabel(phase)}</Badge>
+        </div>
+      </div>
+      {error ? <div style={{ padding: '12px 20px' }}><InlineFeedback tone="danger" message={error} /></div> : null}
       {draft && config ? (
-        <details className={summaryMode ? 'group rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4' : ''} open={!summaryMode}>
-          {summaryMode ? <summary className="cursor-pointer list-none text-sm font-bold text-[var(--accent)]">Mikiko ID 统一认证（OIDC）高级配置</summary> : null}
-          <section className={summaryMode ? 'mt-4' : adminPage.fullSurface}>
-            <section className={summaryMode ? 'grid gap-4' : adminPage.mainLane}>
-              <form className={securityClasses.editor} aria-busy={locked} onSubmit={(event) => void save(event)}>
-                <fieldset disabled={locked} className="contents">
-                  <section className={securityClasses.editorGroup} data-security-editor-group="oidc-provider">
-                    <div className={securityClasses.sectionHead}>
-                      <div>
-                        <strong>Mikiko ID 统一认证（OIDC）</strong>
-                        <p className={securityClasses.note}>对接 Mikiko AI 统一身份（Keycloak realm mikiko）。启用后登录页出现「使用 Mikiko ID 登录」入口，并支持门户静默免登。</p>
-                      </div>
-                      <Badge tone={config.enabled ? 'success' : 'neutral'}>{config.enabled ? '已启用' : '未启用'}</Badge>
-                    </div>
-                    <label className={securityClasses.toggle}>
-                      <input type="checkbox" checked={draft.enabled} onChange={(event) => updateDraft({ ...draft, enabled: event.target.checked })} />
-                      <span>启用 Mikiko ID 登录</span>
-                    </label>
-                    <div className={adminPage.formGrid}>
-                      <Field label="Issuer URL" error={fieldErrors.issuer_url}>
-                        <input value={draft.issuer_url} onChange={(event) => updateDraft({ ...draft, issuer_url: event.target.value })} placeholder="https://oauth.mikiko.ai/realms/mikiko" />
-                      </Field>
-                      <Field label="Client ID" error={fieldErrors.client_id}>
-                        <input value={draft.client_id} onChange={(event) => updateDraft({ ...draft, client_id: event.target.value })} placeholder="mikiko_studio" />
-                      </Field>
-                      <Field label="按钮显示名" hint="留空使用默认「使用 Mikiko ID 登录」。">
-                        <input value={draft.display_name} onChange={(event) => updateDraft({ ...draft, display_name: event.target.value })} placeholder="使用 Mikiko ID 登录" />
-                      </Field>
-                      <Field label="回调地址（只读）" hint="在 Keycloak client 的有效重定向 URI 中精确登记该地址。">
-                        <input value={callbackURL} readOnly disabled />
-                      </Field>
-                    </div>
-                  </section>
+        <form className="a-form" aria-busy={locked} onSubmit={(event) => void save(event)}>
+          <FormSection index={1} title="身份提供方" group="oidc-provider" description="启用后登录页出现「使用 Mikiko ID 登录」入口，并支持门户静默免登。">
+            <SwitchField label="启用 Mikiko ID 登录" checked={draft.enabled} onChange={(enabled) => updateDraft({ ...draft, enabled })} disabled={locked} />
+            <LedgerField label="Issuer URL" error={liveFieldErrors.issuer_url}><input className="a-input" value={draft.issuer_url} onChange={(event) => updateDraft({ ...draft, issuer_url: event.target.value })} placeholder="https://oauth.mikiko.ai/realms/mikiko" style={{ fontFamily: 'var(--font-admin-mono)', fontSize: 12.5 }} /></LedgerField>
+            <LedgerField label="Client ID" error={liveFieldErrors.client_id}><input className="a-input" value={draft.client_id} onChange={(event) => updateDraft({ ...draft, client_id: event.target.value })} placeholder="mikiko_studio" style={{ fontFamily: 'var(--font-admin-mono)', fontSize: 12.5 }} /></LedgerField>
+            <LedgerField label="按钮显示名" hint="留空使用默认「使用 Mikiko ID 登录」。"><input className="a-input" value={draft.display_name} onChange={(event) => updateDraft({ ...draft, display_name: event.target.value })} placeholder="使用 Mikiko ID 登录" /></LedgerField>
+            <LedgerField label="回调地址（只读）" hint="在 Keycloak client 的有效重定向 URI 中精确登记该地址。"><input className="a-input" value={callbackURL} readOnly disabled /></LedgerField>
+          </FormSection>
 
-                  <section className={securityClasses.editorGroup} data-security-editor-group="oidc-login-policy">
-                    <div className={securityClasses.sectionHead}>
-                      <div>
-                        <strong>登录方式开关</strong>
-                        <p className={securityClasses.note}>关闭平台账密登录后，密码与邮箱验证码登录一并停用；OIDC 首次登录始终自动注册。</p>
-                      </div>
-                    </div>
-                    <label className={securityClasses.toggle}>
-                      <input type="checkbox" checked={draft.allow_local_login} onChange={(event) => updateDraft({ ...draft, allow_local_login: event.target.checked })} />
-                      <span>允许平台账密登录（密码 + 邮箱验证码）</span>
-                    </label>
-                    <label className={securityClasses.toggle}>
-                      <input type="checkbox" checked={draft.allow_registration} onChange={(event) => updateDraft({ ...draft, allow_registration: event.target.checked })} />
-                      <span>允许通过邮箱验证码注册新账号</span>
-                    </label>
-                  </section>
+          <FormSection index={2} title="登录方式开关" group="oidc-login-policy" description="关闭平台账密登录后，密码与邮箱验证码登录一并停用；OIDC 首次登录始终自动注册。">
+            <SwitchField label="允许平台账密登录（密码 + 邮箱验证码）" checked={draft.allow_local_login} onChange={(allow_local_login) => updateDraft({ ...draft, allow_local_login })} disabled={locked} />
+            <SwitchField label="允许通过邮箱验证码注册新账号" checked={draft.allow_registration} onChange={(allow_registration) => updateDraft({ ...draft, allow_registration })} disabled={locked} />
+          </FormSection>
 
-                  <section className={securityClasses.editorGroup} data-security-editor-group="oidc-secret">
-                    <div className={securityClasses.sectionHead}>
-                      <div>
-                        <strong>Client Secret</strong>
-                        <p className={securityClasses.note}>{oidcSecretSummary(config)}。机密客户端密钥只写不读，后端加密存储。</p>
-                      </div>
-                    </div>
-                    <div className={adminPage.formGrid}>
-                      <Field label="新 Client Secret" hint="留空表示保留已保存密钥；不要填写星号占位符。">
-                        <input
-                          value={draft.client_secret}
-                          onChange={(event) => updateDraft({ ...draft, client_secret: event.target.value, clear_client_secret: false })}
-                          type="password"
-                          autoComplete="new-password"
-                          placeholder={config.secret_status?.has_secret ? '留空保留当前密钥' : '填写 Keycloak client secret'}
-                        />
-                      </Field>
-                      <label className={securityClasses.toggle}>
-                        <input
-                          type="checkbox"
-                          checked={draft.clear_client_secret}
-                          onChange={(event) => updateDraft({ ...draft, clear_client_secret: event.target.checked, client_secret: event.target.checked ? '' : draft.client_secret })}
-                        />
-                        <span>清空已保存密钥</span>
-                      </label>
-                    </div>
-                  </section>
-                </fieldset>
+          <FormSection index={3} title="Client Secret" group="oidc-secret" description={`${oidcSecretSummary(config)}。机密客户端密钥只写不读，后端加密存储。`}>
+            <LedgerField label="新 Client Secret" hint="留空表示保留已保存密钥；不要填写星号占位符。"><input className="a-input" value={draft.client_secret} onChange={(event) => updateDraft({ ...draft, client_secret: event.target.value, clear_client_secret: false })} type="password" autoComplete="new-password" placeholder={config.secret_status?.has_secret ? '留空保留当前密钥' : '填写 Keycloak client secret'} /></LedgerField>
+            <SwitchField label="清空已保存密钥" checked={draft.clear_client_secret} onChange={(clear_client_secret) => updateDraft({ ...draft, clear_client_secret, client_secret: clear_client_secret ? '' : draft.client_secret })} disabled={locked} />
+          </FormSection>
 
-                <footer className={securityClasses.saveRail}>
-                  <div className={securityClasses.saveRailStatus}>
-                    <Badge tone={editorPhaseTone(phase)}>{editorPhaseLabel(phase)}</Badge>
-                    <span className={securityClasses.note}>{editorPhaseDetail(phase)}</span>
-                    {saveError ? <InlineFeedback tone="danger" message={saveError} /> : null}
-                  </div>
-                  <div className={securityClasses.actions}>
-                    <button type="submit" className={cn(adminButton.base, adminButton.primary)} disabled={locked || phase === 'validating' || !dirty}>{saving ? '保存中...' : '保存 Mikiko ID 配置'}</button>
-                  </div>
-                </footer>
-              </form>
-              <section className={securityClasses.section}>
-                <div className={securityClasses.sectionHead}>
-                  <div>
-                    <strong>连通性测试</strong>
-                    <p className={securityClasses.note}>拉取已保存配置的 discovery 文档，验证 Issuer 可达性与端点信息。</p>
-                  </div>
-                </div>
-                <div className={securityClasses.actions}>
-                  <button type="button" className={cn(adminButton.base, adminButton.ghost)} disabled={locked} onClick={() => void testConnection()}>{testing ? '测试中...' : '测试 Discovery 连通性'}</button>
-                </div>
-                {testResult ? <InlineFeedback tone="success" message={testResult} /> : null}
-                {testError ? <InlineFeedback tone="danger" message={testError} /> : null}
-              </section>
-            </section>
-          </section>
-        </details>
+          <FormSection index={4} title="连通性测试" description="拉取已保存配置的 discovery 文档，验证 Issuer 可达性与端点信息。">
+            <div className="a-row-actions">
+              <Button variant="secondary" size="sm" disabled={locked} onClick={() => void testConnection()}>{testing ? '测试中...' : '测试 Discovery 连通性'}</Button>
+            </div>
+            {testResult ? <InlineFeedback tone="success" message={testResult} /> : null}
+            {testError ? <InlineFeedback tone="danger" message={testError} /> : null}
+          </FormSection>
+        </form>
       ) : null}
-    </>
+      {draft ? (
+        <FormSaveBar
+          dirtyCount={dirty ? 1 : 0}
+          errorCount={liveErrorCount}
+          busy={saving || testing}
+          note={saveError || '保存后新的登录入口与登录策略立即生效。'}
+          onReset={() => { if (config) updateDraft(oidcDraftFromConfig(config)) }}
+          onSave={() => void save()}
+          saveLabel="保存 Mikiko ID 配置"
+          resetLabel="恢复"
+          saveDisabled={!dirty || !config}
+        />
+      ) : null}
+    </section>
   )
 }
