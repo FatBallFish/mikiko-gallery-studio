@@ -5,12 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	applogging "github.com/fatballfish/pic-gallery/internal/logging"
 	videoprovider "github.com/fatballfish/pic-gallery/internal/provider/video"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -99,6 +101,18 @@ func (s *Service) Receive(ctx context.Context, providerCode string, accountPubli
 	if err != nil {
 		return Result{}, err
 	}
+	artifacts := make([]string, 0, len(event.Status.Artifacts))
+	for _, artifact := range event.Status.Artifacts {
+		artifacts = append(artifacts, applogging.SanitizeURL(artifact.URL))
+	}
+	slog.InfoContext(ctx, "video provider callback processed",
+		"provider", providerCode, "model_account_id", resolved.ModelAccountID, "event_id", eventID,
+		"job_id", jobID, "state", string(event.Status.State), "error_code", event.Status.ErrorCode,
+		"error_message", applogging.TruncateText(event.Status.ErrorMessage, 2000),
+		"artifacts", strings.Join(artifacts, "; "), "duplicate", duplicate,
+		"usage", applogging.SanitizeJSON(event.Status.Usage, 2000),
+		"provider_raw", applogging.SanitizeJSON(event.Status.Raw, 4000),
+	)
 	return Result{Accepted: true, Duplicate: duplicate}, nil
 }
 

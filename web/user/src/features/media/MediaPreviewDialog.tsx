@@ -42,6 +42,7 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
   onContinue: (options: MediaCreationAction['options']) => void
 }) {
   const app = useApp()
+  const mediaURL = (url?: string) => url ? userApi.mediaAssetUrl(url, app.session?.token) : ''
   const [access, setAccess] = useState<MediaAccessProjection | null>(null)
   const [poster, setPoster] = useState<MediaAccessProjection | null>(null)
   const [documentContent, setDocumentContent] = useState<string | null>(null)
@@ -77,7 +78,7 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
     } else if (isDocumentAsset(asset)) {
       void userApi.getMediaAssetAccess(asset.id, 'content').then(async (next) => {
         try {
-          const response = await fetch(next.url)
+          const response = await fetch(mediaURL(next.url))
           if (!response.ok) throw new Error('文档内容加载失败')
           const text = await response.text()
           if (alive) setDocumentContent(text)
@@ -93,7 +94,7 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
     if (imageFallbackTried.current) return undefined
     imageFallbackTried.current = true
     const next = await userApi.getMediaAssetAccess(asset.id, 'preview').catch(() => null)
-    if (next) { setAccess(next); setImageError(false); return next.url }
+    if (next) { setAccess(next); setImageError(false); return mediaURL(next.url) }
     setImageError(true)
     return undefined
   }
@@ -142,7 +143,7 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
     try {
       const projection = await userApi.getMediaAssetAccess(asset.id, 'download')
       const link = globalThis.document.createElement('a')
-      link.href = projection.url
+      link.href = mediaURL(projection.url)
       link.download = asset.name
       link.rel = 'noopener'
       link.click()
@@ -178,7 +179,7 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
   }
 
   const imageFullScreen = fullscreen && asset.media_type === 'image' && access?.url
-    ? <ImageZoomPreview url={access.url} alt={asset.name} onClose={() => setFullscreen(false)} onMediaRefresh={refreshImageAccess} /> : null
+    ? <ImageZoomPreview url={mediaURL(access.url)} alt={asset.name} onClose={() => setFullscreen(false)} onMediaRefresh={refreshImageAccess} /> : null
   const status = assetStatus(asset)
   const projectName = projects.find((project) => project.id === asset.project_id)?.name || '默认项目'
   const typeLabel = isDocumentAsset(asset) ? '文档' : mediaTypeLabels[asset.media_type] ?? '文件'
@@ -206,14 +207,14 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
 
               {asset.media_type === 'image' && access?.url && !imageError ? (
                 <button className="media-detail-media" type="button" onClick={() => setFullscreen(true)} aria-label="全屏查看图片">
-                  <img key={access.url} src={access.url} alt={asset.name} onError={() => void refreshImageAccess()} />
+                  <img key={access.url} src={mediaURL(access.url)} alt={asset.name} onError={() => void refreshImageAccess()} />
                 </button>
               ) : null}
               {asset.media_type === 'image' && imageError ? <span className="media-detail-message">图片暂时无法显示，请稍后重试或下载原件。</span> : null}
 
               {asset.media_type === 'video' ? (
                 <button className="media-detail-media" type="button" onClick={() => setFullscreen(true)} aria-label="播放视频">
-                  {poster?.url ? <img src={poster.url} alt={asset.name} /> : <span className="media-detail-message">缩略图生成中</span>}
+                  {poster?.url ? <img src={mediaURL(poster.url)} alt={asset.name} /> : <span className="media-detail-message">缩略图生成中</span>}
                   <span className="media-detail-play"><Play size={24} fill="currentColor" aria-hidden="true" /></span>
                 </button>
               ) : null}
@@ -240,7 +241,7 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
                   <span className="u-meta">{formatSeconds(audioState.current)} / {formatSeconds(audioState.duration)}</span>
                   <audio
                     ref={audioRef}
-                    src={access?.url}
+                    src={mediaURL(access?.url)}
                     preload="metadata"
                     onLoadedMetadata={(event) => setAudioState((current) => ({ ...current, duration: event.currentTarget.duration || 0 }))}
                     onTimeUpdate={(event) => setAudioState((current) => ({ ...current, current: event.currentTarget.currentTime }))}
@@ -345,12 +346,13 @@ export function MediaPreviewDialog({ asset, projects, creationActions, onClose, 
 }
 
 function VideoFullscreenPreview({ asset, onClose }: { asset: MediaAsset; onClose: () => void }) {
+  const app = useApp()
   const [access, setAccess] = useState<MediaAccessProjection | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const shellRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => { void userApi.getMediaAssetAccess(asset.id, 'preview').then(setAccess).catch(() => undefined) }, [asset.id])
   useEffect(() => { window.setTimeout(() => videoRef.current?.play().catch(() => undefined), 0) }, [access?.url])
-  return <OverlayPortal><div ref={shellRef} className="media-fullscreen-preview" role="dialog" aria-modal="true" aria-label={`预览视频 ${asset.name}`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><button type="button" className="media-fullscreen-close" onClick={onClose} aria-label="关闭视频预览"><X size={20} /></button>{access?.url ? <video ref={videoRef} src={access.url} controls playsInline preload="metadata" /> : <span>视频预览生成中，请稍后重试</span>}</div></OverlayPortal>
+  return <OverlayPortal><div ref={shellRef} className="media-fullscreen-preview" role="dialog" aria-modal="true" aria-label={`预览视频 ${asset.name}`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><button type="button" className="media-fullscreen-close" onClick={onClose} aria-label="关闭视频预览"><X size={20} /></button>{access?.url ? <video ref={videoRef} src={userApi.mediaAssetUrl(access.url, app.session?.token)} controls playsInline preload="metadata" /> : <span>视频预览生成中，请稍后重试</span>}</div></OverlayPortal>
 }
 
 function isDocumentAsset(asset: MediaAsset) {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -19,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
+	applogging "github.com/fatballfish/pic-gallery/internal/logging"
 	providervideo "github.com/fatballfish/pic-gallery/internal/provider/video"
 	"github.com/fatballfish/pic-gallery/internal/storage"
 	"github.com/shopspring/decimal"
@@ -306,13 +308,18 @@ func (r *Runner) submit(ctx context.Context, item WorkItem) error {
 	if err != nil {
 		return r.applyFailure(ctx, prepared, "provider_input_unavailable", err.Error(), false)
 	}
+	slog.InfoContext(ctx, "video generation request", videoRequestLogAttrs(prepared, request)...)
 	job, err := provider.Submit(ctx, request)
 	if err != nil {
+		slog.WarnContext(ctx, "video generation submit failed", "task_id", prepared.TaskID, "item_id", prepared.ID,
+			"provider", prepared.ProviderCode, "model_code", prepared.Request.ProviderOptions["model_code"], "error", err.Error())
 		if providerErr, ok := providervideo.AsError(err); ok && providerErr.SubmissionUnknown {
 			return r.apply(ctx, prepared, domainvideo.ItemStateReconciling, "reconciling", "", providervideo.Artifact{}, nextAt(r.options.Now(), r.pollInterval(prepared.Attempt.No)), "", "", false)
 		}
 		return r.applyFailure(ctx, prepared, "provider_submit_failed", err.Error(), false)
 	}
+	slog.InfoContext(ctx, "video generation submitted", "task_id", prepared.TaskID, "item_id", prepared.ID,
+		"provider", prepared.ProviderCode, "job_id", job.ID, "request_id", job.RequestID, "state", string(job.State))
 	return r.applyJob(ctx, prepared, job)
 }
 
@@ -342,8 +349,11 @@ func (r *Runner) poll(ctx context.Context, item WorkItem) error {
 	}
 	status, err := provider.Get(ctx, providervideo.JobRef{ID: item.Attempt.JobID})
 	if err != nil {
+		slog.WarnContext(ctx, "video generation poll failed", "task_id", item.TaskID, "item_id", item.ID,
+			"provider", item.ProviderCode, "job_id", item.Attempt.JobID, "error", err.Error())
 		return r.schedule(ctx, item, item.State, item.Attempt.Status, "provider_poll_failed", err.Error())
 	}
+	logVideoStatus(ctx, item, status)
 	return r.applyStatus(ctx, item, status)
 }
 
@@ -448,8 +458,12 @@ func (r *Runner) persistArtifact(ctx context.Context, item WorkItem) error {
 	}
 	file, size, sum, mimeType, err := r.downloadArtifact(ctx, item.Artifact, execution.ArtifactAllowedHosts)
 	if err != nil {
+		slog.WarnContext(ctx, "video artifact download failed", "task_id", item.TaskID, "item_id", item.ID,
+			"artifact_url", applogging.SanitizeURL(item.Artifact.URL), "error", err.Error())
 		return r.handleArtifactFailure(ctx, item, err)
 	}
+	slog.InfoContext(ctx, "video artifact downloaded", "task_id", item.TaskID, "item_id", item.ID,
+		"artifact_url", applogging.SanitizeURL(item.Artifact.URL), "mime_type", mimeType, "size_bytes", size, "sha256", sum)
 	defer func() {
 		name := file.Name()
 		_ = file.Close()
@@ -481,11 +495,17 @@ func (r *Runner) persistArtifact(ctx context.Context, item WorkItem) error {
 	})
 	if err != nil || !committed {
 		_ = writer.Backend.Delete(context.WithoutCancel(ctx), objectKey)
+		slog.WarnContext(ctx, "video artifact commit failed", "task_id", item.TaskID, "item_id", item.ID,
+			"asset_id", assetID, "committed", committed, "error", err)
 		if err != nil && r.options.Observer != nil {
 			r.options.Observer.RecordArtifactTransfer("video", "failed", 0)
 		}
-	} else if r.options.Observer != nil {
-		r.options.Observer.RecordArtifactTransfer("video", "success", size)
+	} else {
+		slog.InfoContext(ctx, "video artifact persisted", "task_id", item.TaskID, "item_id", item.ID,
+			"asset_id", assetID, "object_key", objectKey, "mime_type", mimeType, "size_bytes", size, "sha256", sum)
+		if r.options.Observer != nil {
+			r.options.Observer.RecordArtifactTransfer("video", "success", size)
+		}
 	}
 	return err
 }
@@ -812,6 +832,52 @@ func providerRequest(item WorkItem) providervideo.Request {
 	request.AttemptID = item.Attempt.ID
 	request.IdempotencyKey = item.Attempt.IdempotencyKey
 	return request
+}
+
+func videoRequestLogAttrs(item WorkItem, request providervideo.Request) []any {
+	inputs := make([]string, 0, len(request.Inputs))
+	for _, input := range request.Inputs {
+		inputs = append(inputs, fmt.Sprintf("%s#%d=%s", input.Role, input.Ordinal, applogging.SanitizeURL(input.URL)))
+	}
+	modelCode, _ := request.ProviderOptions["model_code"].(string)
+	optionKeys := make([]string, 0, len(request.ProviderOptions))
+	for key := range request.ProviderOptions {
+		optionKeys = append(optionKeys, key)
+	}
+	return []any{
+		"task_id", item.TaskID, "item_id", item.ID, "user_id", item.UserID,
+		"provider", item.ProviderCode, "account_model_id", item.Attempt.AccountModelID,
+		"model_account_id", item.Attempt.ModelAccountID, "model_code", modelCode,
+		"task_type", request.TaskType, "prompt", applogging.TruncateText(request.Prompt, 4000),
+		"prompt_chars", len([]rune(request.Prompt)),
+		"duration_seconds", request.DurationSeconds, "resolution", request.Resolution,
+		"aspect_ratio", request.AspectRatio, "generate_audio", request.GenerateAudio,
+		"output_format", request.OutputFormat, "inputs", strings.Join(inputs, "; "),
+		"input_count", len(request.Inputs), "provider_option_keys", optionKeys,
+	}
+}
+
+func logVideoStatus(ctx context.Context, item WorkItem, status providervideo.Status) {
+	artifacts := make([]string, 0, len(status.Artifacts))
+	for _, artifact := range status.Artifacts {
+		artifacts = append(artifacts, fmt.Sprintf("%s mime=%s size=%d sha256=%s", applogging.SanitizeURL(artifact.URL), artifact.MIMEType, artifact.SizeBytes, artifact.SHA256))
+	}
+	attrs := []any{
+		"task_id", item.TaskID, "item_id", item.ID, "provider", item.ProviderCode,
+		"job_id", status.JobID, "state", string(status.State), "artifact_count", len(status.Artifacts),
+		"artifacts", strings.Join(artifacts, "; "), "error_code", status.ErrorCode,
+		"error_message", applogging.TruncateText(status.ErrorMessage, 2000),
+		"usage", applogging.SanitizeJSON(status.Usage, 2000),
+		"provider_raw", applogging.SanitizeJSON(status.Raw, 4000),
+	}
+	switch status.State {
+	case providervideo.StateSucceeded:
+		slog.InfoContext(ctx, "video generation succeeded", attrs...)
+	case providervideo.StateFailed, providervideo.StateCancelled:
+		slog.WarnContext(ctx, "video generation finished with failure", attrs...)
+	default:
+		slog.DebugContext(ctx, "video generation status", attrs...)
+	}
 }
 
 func (r *Runner) signInputs(ctx context.Context, request providervideo.Request) (providervideo.Request, error) {

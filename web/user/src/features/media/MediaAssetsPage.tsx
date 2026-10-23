@@ -151,11 +151,11 @@ export function MediaAssetsPage() {
     const loadPreview = async () => {
       try {
         const access = await userApi.getMediaAssetAccess(assetID, 'preview')
-        if (alive) setDetailURL(access.url)
+        if (alive) setDetailURL(userApi.mediaAssetUrl(access.url, app.session?.token))
       } catch (caught) {
         try {
           const access = await userApi.getMediaAssetAccess(assetID, 'thumbnail')
-          if (alive) setDetailURL(access.url)
+          if (alive) setDetailURL(userApi.mediaAssetUrl(access.url, app.session?.token))
         } catch {
           if (alive) {
             setDetailURL('')
@@ -166,7 +166,7 @@ export function MediaAssetsPage() {
     }
     void loadPreview()
     return () => { alive = false }
-  }, [preview?.id, preview?.version, preview?.media_type])
+  }, [preview?.id, preview?.version, preview?.media_type, app.session?.token])
 
   const groups = useMemo(() => Array.from(new Set(items.map((item) => item.group_name).filter(Boolean))).sort(), [items])
   const selectedItems = useMemo(() => items.filter((item) => selected.has(item.id)), [items, selected])
@@ -389,7 +389,7 @@ export function MediaAssetsPage() {
     try {
       const projection = await userApi.getMediaAssetAccess(asset.id, 'download')
       const link = document.createElement('a')
-      link.href = projection.url
+      link.href = userApi.mediaAssetUrl(projection.url, app.session?.token)
       link.download = asset.name
       link.rel = 'noopener'
       link.click()
@@ -586,8 +586,9 @@ export function MediaAssetsPage() {
           previewSourceLabel="资产库"
           onMediaRefresh={preview ? async () => {
             const access = await userApi.getMediaAssetAccess(preview.id, 'preview')
-            setDetailURL(access.url)
-            return access.url
+            const authenticatedURL = userApi.mediaAssetUrl(access.url, app.session?.token)
+            setDetailURL(authenticatedURL)
+            return authenticatedURL
           } : undefined}
           onClose={() => setPreview(null)}
         />

@@ -11,6 +11,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"path"
@@ -57,7 +58,8 @@ func (c *Client) Generate(ctx context.Context, req provider.ImageRequest) (provi
 	if req.Background != "" {
 		payload["background"] = req.Background
 	}
-	if req.ResponseFormat != "" && !isGPTImageModel(req.Model) {
+	sendResponseFormat := req.ResponseFormat != "" && (req.SendResponseFormat || !isGPTImageModel(req.Model))
+	if sendResponseFormat {
 		payload["response_format"] = string(req.ResponseFormat)
 	}
 	if req.OutputImageCount > 0 {
@@ -75,7 +77,31 @@ func (c *Client) Generate(ctx context.Context, req provider.ImageRequest) (provi
 	if req.User != "" {
 		payload["user"] = req.User
 	}
-	return c.doJSON(ctx, http.MethodPost, "/v1/images/generations", payload)
+	response, err := c.doJSON(ctx, http.MethodPost, "/v1/images/generations", payload)
+	if err != nil {
+		slog.WarnContext(ctx, "openai image generation request failed", "model", req.Model, "response_format", string(req.ResponseFormat), "send_response_format", sendResponseFormat, "err", err)
+	} else {
+		slog.InfoContext(ctx, "openai image generation request completed", "model", req.Model, "response_format", string(req.ResponseFormat), "send_response_format", sendResponseFormat, "results", len(response.Data), "request_id", response.ProviderRequestID)
+	}
+	if err != nil && sendResponseFormat && isGPTImageModel(req.Model) && responseFormatRejected(err) {
+		slog.WarnContext(ctx, "openai image generation retrying without response_format", "model", req.Model)
+		delete(payload, "response_format")
+		response, err = c.doJSON(ctx, http.MethodPost, "/v1/images/generations", payload)
+		if err == nil {
+			slog.InfoContext(ctx, "openai image generation request completed", "model", req.Model, "response_format", "", "send_response_format", false, "results", len(response.Data), "request_id", response.ProviderRequestID)
+		}
+		return response, err
+	}
+	return response, err
+}
+
+func responseFormatRejected(err error) bool {
+	upstream, ok := provider.AsUpstreamError(err)
+	if !ok || upstream.HTTPStatus != http.StatusBadRequest {
+		return false
+	}
+	message := strings.ToLower(upstream.Message + " " + upstream.Code + " " + upstream.Type)
+	return strings.Contains(message, "response_format") || strings.Contains(message, "unknown parameter") || strings.Contains(message, "unsupported parameter")
 }
 
 func isGPTImageModel(model string) bool {

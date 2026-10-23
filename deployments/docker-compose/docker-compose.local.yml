@@ -1,7 +1,14 @@
 name: pic-gallery-local
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "5"
+
 services:
   postgres:
+    logging: *default-logging
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -17,6 +24,7 @@ services:
       retries: 5
 
   redis:
+    logging: *default-logging
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
@@ -29,6 +37,7 @@ services:
       retries: 5
 
   rustfs:
+    logging: *default-logging
     image: rustfs/rustfs:1.0.1
     restart: unless-stopped
     environment:
@@ -50,6 +59,7 @@ services:
       retries: 5
 
   mailpit:
+    logging: *default-logging
     image: axllent/mailpit:v1.24
     restart: unless-stopped
     ports:
@@ -62,6 +72,7 @@ services:
       retries: 5
 
   bootstrap-local:
+    logging: *default-logging
     image: mikiko-gallery-studio-api:${IMAGE_TAG:-dev}
     pull_policy: never
     restart: "no"
@@ -74,6 +85,7 @@ services:
       - ${PIC_GALLERY_LOCAL_CONFIG_DIR:-../../config}:/app/config
 
   api:
+    logging: *default-logging
     build:
       context: ../..
       dockerfile: Dockerfile.api
@@ -99,6 +111,7 @@ services:
       retries: 10
 
   worker:
+    logging: *default-logging
     build:
       context: ../..
       dockerfile: Dockerfile.worker
@@ -124,6 +137,7 @@ services:
       - worker-temp:/var/lib/pic-gallery/tmp
 
   user-web:
+    logging: *default-logging
     build:
       context: ../..
       dockerfile: Dockerfile.user-web
@@ -147,6 +161,7 @@ services:
       retries: 10
 
   docs-web:
+    logging: *default-logging
     build:
       context: ../..
       dockerfile: Dockerfile.docs-web
@@ -161,6 +176,7 @@ services:
       retries: 10
 
   admin-web:
+    logging: *default-logging
     build:
       context: ../..
       dockerfile: Dockerfile.admin-web
@@ -183,6 +199,7 @@ services:
       retries: 10
 
   nginx:
+    logging: *default-logging
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:

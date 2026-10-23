@@ -366,7 +366,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     try {
       const access = await userApi.getMediaAssetAccess(assetID, 'download')
       const anchor = document.createElement('a')
-      anchor.href = access.url
+      anchor.href = userApi.mediaAssetUrl(access.url, app.session?.token)
       anchor.download = ''
       anchor.rel = 'noopener'
       document.body.appendChild(anchor)
@@ -382,7 +382,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     setEditingAsset(true)
     try {
       const access = await userApi.getMediaAssetAccess(assetID, 'preview')
-      const frame = await captureVideoFrameBlob(access.url)
+      const frame = await captureVideoFrameBlob(userApi.mediaAssetUrl(access.url, app.session?.token))
       const asset = await uploadSingleMediaAsset(new File([frame], `视频续帧-${assetID.slice(0, 8)}.png`, { type: 'image/png' }), projects.selectedProjectID)
       setSelectedAssets((current) => ({ ...current, [asset.id]: asset }))
       patchDraft({ task_type: 'image_to_video', inputs: replaceInput(activeDraft.inputs, 'first_frame', asset.id) })
@@ -884,6 +884,7 @@ function isVideoTaskTerminal(task: VideoTask) {
 // Fresh result assets briefly 409 on poster access while the media pipeline
 // generates the derivative, so retry with backoff instead of giving up.
 function usePosterURL(assetID: string | undefined) {
+  const app = useApp()
   const [posterURL, setPosterURL] = useState('')
   useEffect(() => {
     if (!assetID) {
@@ -896,7 +897,7 @@ function usePosterURL(assetID: string | undefined) {
     setPosterURL('')
     const run = () => {
       void userApi.getMediaAssetAccess(assetID, 'poster').then((access) => {
-        if (alive) setPosterURL(access.url)
+        if (alive) setPosterURL(userApi.mediaAssetUrl(access.url, app.session?.token))
       }).catch(() => {
         if (!alive || attempt >= 5) return
         attempt += 1
@@ -905,11 +906,12 @@ function usePosterURL(assetID: string | undefined) {
     }
     run()
     return () => { alive = false; window.clearTimeout(timer) }
-  }, [assetID])
+  }, [assetID, app.session?.token])
   return posterURL
 }
 
 function VideoResultThumb({ assetID, alt }: { assetID: string; alt: string }) {
+  const app = useApp()
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const posterURL = usePosterURL(assetID)
   const [hoverURL, setHoverURL] = useState('')
@@ -919,7 +921,7 @@ function VideoResultThumb({ assetID, alt }: { assetID: string; alt: string }) {
       void videoRef.current?.play()
       return
     }
-    void userApi.getMediaAssetAccess(assetID, 'hover').then((access) => setHoverURL(access.url)).catch(() => undefined)
+    void userApi.getMediaAssetAccess(assetID, 'hover').then((access) => setHoverURL(userApi.mediaAssetUrl(access.url, app.session?.token))).catch(() => undefined)
   }
   const endHover = () => {
     videoRef.current?.pause()
@@ -1056,6 +1058,7 @@ function VideoCurrentTaskCard({ task, busy, onCancel, onDetail, onReuse, onResul
 }
 
 function VideoResultFigure({ assetID, ordinal, aspectRatio, caption, editing, onOpen, onCopyPrompt, onReuse, onExtend, onDetail, onDownload }: { assetID: string; ordinal: number; aspectRatio: string; caption: string; editing: boolean; onOpen: () => void; onCopyPrompt: () => void; onReuse: () => void; onExtend: () => void; onDetail: () => void; onDownload: () => void }) {
+  const app = useApp()
   const posterURL = usePosterURL(assetID)
   const [hoverURL, setHoverURL] = useState('')
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -1065,7 +1068,7 @@ function VideoResultFigure({ assetID, ordinal, aspectRatio, caption, editing, on
       void videoRef.current?.play()
       return
     }
-    void userApi.getMediaAssetAccess(assetID, 'hover').then((access) => setHoverURL(access.url)).catch(() => undefined)
+    void userApi.getMediaAssetAccess(assetID, 'hover').then((access) => setHoverURL(userApi.mediaAssetUrl(access.url, app.session?.token))).catch(() => undefined)
   }
   const endHover = () => {
     videoRef.current?.pause()
@@ -1183,6 +1186,7 @@ async function uploadSingleMediaAsset(file: File, projectID: string): Promise<Me
 }
 
 function VideoTaskDetailDialog({ task, onClose, onResult, onReuse }: { task: VideoTask; onClose: () => void; onResult: (assetID: string) => void; onReuse: () => void }) {
+  const app = useApp()
   const accounting = buildVideoTaskAccounting(task)
   const resultAssetID = task.items.find((item) => item.result_asset_id)?.result_asset_id
   const [previewURL, setPreviewURL] = useState('')
@@ -1207,12 +1211,12 @@ function VideoTaskDetailDialog({ task, onClose, onResult, onReuse }: { task: Vid
     let cancelled = false
     setPreviewError('')
     void userApi.getMediaAssetAccess(resultAssetID, 'preview').then((projection) => {
-      if (!cancelled) setPreviewURL(projection.url)
+      if (!cancelled) setPreviewURL(userApi.mediaAssetUrl(projection.url, app.session?.token))
     }).catch((caught) => {
       if (!cancelled) setPreviewError(caught instanceof Error ? caught.message : '结果视频暂时无法预览')
     })
     return () => { cancelled = true }
-  }, [resultAssetID])
+  }, [resultAssetID, app.session?.token])
 
   return (
     <Drawer open wide title="视频任务详情" onClose={onClose}>

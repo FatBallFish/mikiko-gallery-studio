@@ -34,6 +34,7 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
+	applogging "github.com/fatballfish/pic-gallery/internal/logging"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	openaiprovider "github.com/fatballfish/pic-gallery/internal/provider/openai"
 	openrouterprovider "github.com/fatballfish/pic-gallery/internal/provider/openrouter"
@@ -88,6 +89,7 @@ type executionOptions struct {
 	prompt             string
 	size               string
 	responseFormat     string
+	sendResponseFormat bool
 	user               string
 	referenceImages    []provider.ImageInput
 	mask               *provider.ImageInput
@@ -602,6 +604,7 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 	return s.executeResolvedTask(ctx, task, owner, resolved, executionOptions{
 		prompt:             taskExecutionPrompt(task),
 		responseFormat:     string(provider.ResponseFormatURL),
+		sendResponseFormat: true,
 		referenceImages:    referenceImages,
 		preferredProviders: preferredProviders,
 	})
@@ -726,16 +729,16 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 		OutputCompression: defaultPositive(task.OutputCompression, 100),
 		Moderation:        defaultString(task.Moderation, "auto"),
 		OutputImageCount:  1,
-		ResponseFormat:    provider.ResponseFormatB64JSON,
+		ResponseFormat:    provider.ResponseFormatURL,
 	}
 	applyOutputCompressionCapability(&providerReq, candidate)
 	if sizeErr := applyProviderImageSize(&providerReq, task, resolved); sizeErr != nil {
 		return domainimagetask.TestModelAccountResult{}, sizeErr
 	}
-	if compatErr := applyProviderRequestCompatibility(&providerReq, task, candidate, resolved); compatErr != nil {
+	if compatErr := applyProviderRequestCompatibility(&providerReq, task, candidate, resolved, true); compatErr != nil {
 		return domainimagetask.TestModelAccountResult{}, compatErr
 	}
-
+	slog.InfoContext(ctx, "image model test request", imageGenerationRequestAttrs(task, candidate, providerReq)...)
 	startedAt := s.nowUTC()
 	resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task, providerReq)
 	finishedAt := s.nowUTC()
@@ -841,9 +844,10 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		if sizeErr := applyProviderImageSize(&providerReq, task, resolved); sizeErr != nil {
 			return s.failOwnedTask(ctx, task, owner, sizeErr)
 		}
-		if compatErr := applyProviderRequestCompatibility(&providerReq, task, candidate, resolved); compatErr != nil {
+		if compatErr := applyProviderRequestCompatibility(&providerReq, task, candidate, resolved, opts.sendResponseFormat); compatErr != nil {
 			return s.failOwnedTask(ctx, task, owner, compatErr)
 		}
+		slog.InfoContext(ctx, "image generation request", imageGenerationRequestAttrs(task, candidate, providerReq)...)
 
 		attemptStarted := s.nowUTC()
 		openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
@@ -1033,10 +1037,15 @@ func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.Image
 			return provider.ImageResponse{}, err
 		}
 		defer release()
+		startedAt := time.Now()
+		var response provider.ImageResponse
 		if task.TaskType == string(provider.TaskTypeImageEdit) {
-			return client.Edit(ctx, singleReq)
+			response, err = client.Edit(ctx, singleReq)
+		} else {
+			response, err = client.Generate(ctx, singleReq)
 		}
-		return client.Generate(ctx, singleReq)
+		logImageGenerationResponse(ctx, task, candidate, singleReq, response, err, time.Since(startedAt))
+		return response, err
 	}
 
 	count := normalizedCount(req.OutputImageCount)
@@ -1132,7 +1141,7 @@ func (s *Service) executeOpenAIFanout(ctx context.Context, client provider.Image
 	return progress, nil
 }
 
-func applyProviderRequestCompatibility(req *provider.ImageRequest, task domainimagetask.Task, candidate modelhub.ProviderCandidate, resolved modelhub.ResolvedRequest) error {
+func applyProviderRequestCompatibility(req *provider.ImageRequest, task domainimagetask.Task, candidate modelhub.ProviderCandidate, resolved modelhub.ResolvedRequest, allowResponseFormat bool) error {
 	if req == nil {
 		return nil
 	}
@@ -1142,11 +1151,15 @@ func applyProviderRequestCompatibility(req *provider.ImageRequest, task domainim
 
 	if !isGPTImage2CodexSource(req.Model, candidate) {
 		req.Quality = defaultString(task.Quality, req.Quality)
+		// OpenAI-compatible gpt-image-2 relays stream b64_json bodies slowly;
+		// URL responses keep the request inside the account timeout.
+		req.SendResponseFormat = allowResponseFormat && gptImageResponseFormatEnabled(candidate)
 		return nil
 	}
 
 	req.Quality = "auto"
 	req.ResponseFormat = provider.ResponseFormatB64JSON
+	req.SendResponseFormat = false
 	if modelhub.PublicSizeMode(task.SizeMode) == modelhub.SizeModeAuto {
 		req.Size = ""
 		return nil
@@ -1247,6 +1260,19 @@ func isGPTImage2CodexSource(model string, candidate modelhub.ProviderCandidate) 
 		truthyExtra(candidate.ModelExtra, "gpt_image_2_codex_source") ||
 		strings.EqualFold(stringExtra(candidate.AccountExtra, "source_mode"), "codex_responses") ||
 		strings.EqualFold(stringExtra(candidate.ModelExtra, "source_mode"), "codex_responses")
+}
+
+func gptImageResponseFormatEnabled(candidate modelhub.ProviderCandidate) bool {
+	for _, extra := range []map[string]any{candidate.AccountExtra, candidate.ModelExtra} {
+		if raw, ok := extra["gpt_image_response_format"]; ok {
+			if enabled, ok := raw.(bool); ok {
+				return enabled
+			}
+			value := strings.ToLower(strings.TrimSpace(stringExtra(extra, "gpt_image_response_format")))
+			return value == "url" || value == "true" || value == "1" || value == "yes"
+		}
+	}
+	return true
 }
 
 func isOpenAIImagesCompatibleCandidate(candidate modelhub.ProviderCandidate) bool {
@@ -1364,10 +1390,15 @@ func (s *Service) executeProviderRequest(ctx context.Context, client provider.Im
 			return provider.ImageResponse{}, err
 		}
 		defer release()
+		startedAt := time.Now()
+		var response provider.ImageResponse
 		if task.TaskType == string(provider.TaskTypeImageEdit) {
-			return client.Edit(ctx, singleReq)
+			response, err = client.Edit(ctx, singleReq)
+		} else {
+			response, err = client.Generate(ctx, singleReq)
 		}
-		return client.Generate(ctx, singleReq)
+		logImageGenerationResponse(ctx, task, candidate, singleReq, response, err, time.Since(startedAt))
+		return response, err
 	}
 
 	count := normalizedCount(req.OutputImageCount)
@@ -1472,6 +1503,20 @@ func (s *Service) providerHTTPClient(candidate modelhub.ProviderCandidate) *http
 	}
 	clone := *base
 	clone.Timeout = time.Duration(candidate.TimeoutMS) * time.Millisecond
+	return &clone
+}
+
+// artifactHTTPClient mirrors the configured client (including any test
+// transport) but allows large result files to finish downloading.
+func (s *Service) artifactHTTPClient() *http.Client {
+	base := s.httpClient
+	if base == nil {
+		base = http.DefaultClient
+	}
+	clone := *base
+	if clone.Timeout < 5*time.Minute {
+		clone.Timeout = 5 * time.Minute
+	}
 	return &clone
 }
 
@@ -2352,23 +2397,32 @@ func (s *Service) persistImageResults(ctx context.Context, task domainimagetask.
 			item.B64JSON = item.URL
 			item.URL = ""
 		}
-		if strings.TrimSpace(item.URL) != "" {
+		var stored provider.ImageResult
+		switch {
+		case strings.TrimSpace(item.URL) != "":
 			mirrored, err := s.persistRemoteImageResult(ctx, task, index, item)
 			if err != nil {
 				return nil, err
 			}
-			persisted = append(persisted, mirrored)
-			continue
+			stored = mirrored
+		case strings.TrimSpace(item.B64JSON) == "":
+			stored = item
+		default:
+			local, err := s.persistBase64ImageResult(task, index, item)
+			if err != nil {
+				return nil, err
+			}
+			stored = local
 		}
-		if strings.TrimSpace(item.B64JSON) == "" {
-			persisted = append(persisted, item)
-			continue
-		}
-		local, err := s.persistBase64ImageResult(task, index, item)
-		if err != nil {
-			return nil, err
-		}
-		persisted = append(persisted, local)
+		slog.InfoContext(ctx, "image generation result persisted",
+			"task_id", task.ID, "result_index", index, "image_id", stored.ID,
+			"mime_type", stored.MimeType, "size_bytes", stored.FileSizeBytes,
+			"width", stored.Width, "height", stored.Height,
+			"storage_driver", stored.StorageDriver, "object_key", stored.ObjectKey,
+			"source_url", applogging.SanitizeURL(item.URL), "source_b64_bytes", len(item.B64JSON),
+			"revised_prompt", applogging.TruncateText(item.RevisedPrompt, 1000),
+		)
+		persisted = append(persisted, stored)
 	}
 	return persisted, nil
 }
@@ -2383,7 +2437,7 @@ func (s *Service) persistRemoteImageResult(ctx context.Context, task domainimage
 	if err != nil {
 		return provider.ImageResult{}, newArtifactFailure(s, errs.CodeArtifactSourceURLInvalid, "fetch", false, err)
 	}
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.artifactHTTPClient().Do(req)
 	if err != nil {
 		failure := classifyFetchError(s, err)
 		decorateArtifactHTTPDiagnostic(s, &failure.diagnostic, req, nil, 0, startedAt)
@@ -3281,7 +3335,69 @@ func fanoutLogAttrs(operation string, task domainimagetask.Task, candidate model
 		"request_output_compression", req.OutputCompression,
 		"request_moderation", req.Moderation,
 		"request_response_format", string(req.ResponseFormat),
+		"send_response_format", req.SendResponseFormat,
 	}
+}
+
+func imageGenerationRequestAttrs(task domainimagetask.Task, candidate modelhub.ProviderCandidate, req provider.ImageRequest) []any {
+	referenceBytes := 0
+	referenceMIMEs := make([]string, 0, len(req.ReferenceImages))
+	for _, image := range req.ReferenceImages {
+		referenceBytes += len(image.Data)
+		referenceMIMEs = append(referenceMIMEs, image.MIMEType)
+	}
+	maskBytes := 0
+	if req.Mask != nil {
+		maskBytes = len(req.Mask.Data)
+	}
+	return []any{
+		"task_id", task.ID, "user_id", task.UserID, "task_type", task.TaskType,
+		"route_model_id", candidate.RouteModelID, "route_model_code", candidate.RouteModelCode,
+		"account_model_id", candidate.AccountModelID, "model_account_id", candidate.ModelAccountID,
+		"provider", candidate.Provider, "adapter_type", candidate.AdapterType, "model_code", candidate.ModelCode,
+		"prompt", applogging.TruncateText(req.Prompt, 4000), "prompt_chars", len([]rune(req.Prompt)),
+		"negative_prompt", applogging.TruncateText(task.NegativePrompt, 1000),
+		"size_mode", task.SizeMode, "requested_size", req.Size, "aspect_ratio", task.AspectRatio,
+		"base_resolution", task.BaseResolution, "quality", req.Quality,
+		"output_format", req.OutputFormat, "output_compression", req.OutputCompression,
+		"background", req.Background, "moderation", req.Moderation,
+		"output_count", req.OutputImageCount, "reference_count", len(req.ReferenceImages),
+		"reference_mime_types", referenceMIMEs, "reference_bytes", referenceBytes,
+		"has_mask", req.Mask != nil, "mask_bytes", maskBytes,
+		"response_format", string(req.ResponseFormat), "send_response_format", req.SendResponseFormat,
+	}
+}
+
+func logImageGenerationResponse(ctx context.Context, task domainimagetask.Task, candidate modelhub.ProviderCandidate, req provider.ImageRequest, response provider.ImageResponse, err error, elapsed time.Duration) {
+	base := []any{
+		"task_id", task.ID, "model_code", req.Model, "account_model_id", candidate.AccountModelID,
+		"route_model_code", candidate.RouteModelCode, "elapsed_ms", elapsed.Milliseconds(),
+		"response_format", string(req.ResponseFormat), "send_response_format", req.SendResponseFormat,
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "image generation response", append(base, "error", err.Error())...)
+		return
+	}
+	summaries := make([]string, 0, len(response.Data))
+	revisedPrompt := ""
+	for _, item := range response.Data {
+		switch {
+		case strings.TrimSpace(item.URL) != "":
+			summaries = append(summaries, "url="+applogging.SanitizeURL(item.URL))
+		case strings.TrimSpace(item.B64JSON) != "":
+			summaries = append(summaries, fmt.Sprintf("b64_bytes=%d", len(item.B64JSON)))
+		default:
+			summaries = append(summaries, "empty")
+		}
+		if revisedPrompt == "" && item.RevisedPrompt != "" {
+			revisedPrompt = item.RevisedPrompt
+		}
+	}
+	slog.InfoContext(ctx, "image generation response", append(base,
+		"result_count", len(response.Data), "results", strings.Join(summaries, "; "),
+		"revised_prompt", applogging.TruncateText(revisedPrompt, 1000),
+		"provider_request_id", response.ProviderRequestID,
+	)...)
 }
 
 func contextErrorString(ctx context.Context) string {

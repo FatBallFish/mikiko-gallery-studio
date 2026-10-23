@@ -329,3 +329,59 @@ func TestEditUsesMultipartImagesEndpoint(t *testing.T) {
 		t.Fatalf("unexpected response %#v", resp)
 	}
 }
+
+func TestGenerateForwardsResponseFormatWhenRequested(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode json: %v", err)
+		}
+		if got := body["response_format"]; got != "url" {
+			t.Fatalf("expected response_format=url, got %#v", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"created":1770000000,"data":[{"url":"https://cdn.example.test/result.png"}]}`)
+	}))
+	defer server.Close()
+
+	client := openai.NewClient(openai.Config{BaseURL: server.URL, APIKey: "test-key", HTTPClient: server.Client()})
+	resp, err := client.Generate(context.Background(), provider.ImageRequest{
+		Model: "gpt-image-2", Prompt: "safe test", OutputFormat: "jpeg",
+		ResponseFormat: provider.ResponseFormatURL, SendResponseFormat: true,
+	})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if len(resp.Data) != 1 || resp.Data[0].URL == "" {
+		t.Fatalf("unexpected response %#v", resp)
+	}
+}
+
+func TestGenerateRetriesWithoutResponseFormatWhenRejected(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode json: %v", err)
+		}
+		if _, ok := body["response_format"]; ok {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"message":"Unsupported parameter: response_format","type":"invalid_request_error","code":"unsupported_parameter"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"created":1770000000,"data":[{"b64_json":"ZmFrZQ=="}]}`)
+	}))
+	defer server.Close()
+
+	client := openai.NewClient(openai.Config{BaseURL: server.URL, APIKey: "test-key", HTTPClient: server.Client()})
+	resp, err := client.Generate(context.Background(), provider.ImageRequest{
+		Model: "gpt-image-2", Prompt: "safe test", ResponseFormat: provider.ResponseFormatURL, SendResponseFormat: true,
+	})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if calls != 2 || len(resp.Data) != 1 || resp.Data[0].B64JSON != "ZmFrZQ==" {
+		t.Fatalf("expected fallback after rejection, calls=%d response=%#v", calls, resp)
+	}
+}

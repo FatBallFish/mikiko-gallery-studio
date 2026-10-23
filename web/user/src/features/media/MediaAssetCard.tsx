@@ -3,7 +3,7 @@ import { AudioLines, Check, FileImage, Film, LoaderCircle, Pause, Play, RotateCc
 import type { MediaAccessProjection, MediaAsset } from '../../../../shared/api-types'
 import { cn } from '../../../../shared/classnames'
 import { userApi } from '../../../../shared/user-api'
-import { formatDate } from '../../components'
+import { formatDate, useApp } from '../../components'
 import { canHoverPreview, mediaAudioCoordinator, mediaHoverScheduler } from './mediaExperience'
 
 type Props = {
@@ -76,6 +76,7 @@ function mediaStatusBadge(asset: MediaAsset) {
 }
 
 export function MediaAssetCard({ asset, selected = false, selectionMode = false, onSelect, onOpen, onRetry }: Props) {
+  const app = useApp()
   const imagePreview = useImagePreview(asset)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -187,10 +188,10 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
         </button>
       ) : null}
       <button className="u-card__media gl-card__stage" type="button" onClick={open} aria-label={`${selectionMode ? (selected ? '取消选择' : '选择') : '预览'} ${asset.name}`}>
-        {asset.media_type === 'image' && imagePreview.access?.url ? <img key={`${imagePreview.purpose}:${imagePreview.access.url}`} src={imagePreview.access.url} alt="" loading="lazy" draggable={false} onError={() => void imagePreview.refreshOnce()} /> : null}
-        {asset.media_type === 'video' && !hoverURL && posterURL ? <img src={posterURL} alt="" loading="lazy" draggable={false} /> : null}
-        {asset.media_type === 'video' && hoverURL ? <video ref={videoRef} src={hoverURL} muted loop autoPlay playsInline preload="metadata" draggable={false} onError={() => void refreshHoverOnce()} /> : null}
-        {asset.media_type === 'audio' && waveformURL ? <img src={waveformURL} alt="" loading="lazy" draggable={false} /> : null}
+        {asset.media_type === 'image' && imagePreview.access?.url ? <img key={`${imagePreview.purpose}:${imagePreview.access.url}`} src={userApi.mediaAssetUrl(imagePreview.access.url, app.session?.token)} alt="" loading="lazy" draggable={false} onError={() => void imagePreview.refreshOnce()} /> : null}
+        {asset.media_type === 'video' && !hoverURL && posterURL ? <img src={userApi.mediaAssetUrl(posterURL, app.session?.token)} alt="" loading="lazy" draggable={false} /> : null}
+        {asset.media_type === 'video' && hoverURL ? <video ref={videoRef} src={userApi.mediaAssetUrl(hoverURL, app.session?.token)} muted loop autoPlay playsInline preload="metadata" draggable={false} onError={() => void refreshHoverOnce()} /> : null}
+        {asset.media_type === 'audio' && waveformURL ? <img src={userApi.mediaAssetUrl(waveformURL, app.session?.token)} alt="" loading="lazy" draggable={false} /> : null}
         {!hasPreview ? (
           <span className={cn('gl-card__placeholder', asset.media_type === 'audio' && 'is-audio')} aria-hidden="true">
             {asset.status === 'processing' || asset.status === 'ready_original' ? <LoaderCircle className="animate-spin" /> : asset.media_type === 'video' ? <Film /> : asset.media_type === 'audio' ? <AudioLines /> : <FileImage />}
@@ -234,7 +235,7 @@ export function MediaAssetCard({ asset, selected = false, selectionMode = false,
       {audioURL ? (
         <audio
           ref={audioRef}
-          src={audioURL}
+          src={userApi.mediaAssetUrl(audioURL, app.session?.token)}
           preload="metadata"
           onError={() => void refreshAudioOnce()}
           onPlay={() => { setAudioPlaying(true); mediaAudioCoordinator.activate(asset.id, () => audioRef.current?.pause()) }}
