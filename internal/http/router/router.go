@@ -168,9 +168,11 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/ops/admin/v1/redeem-codes", api.HandleAdminRedeemCodes)
 		mux.HandleFunc("/api/ops/admin/v1/redeem-codes/", api.HandleAdminRedeemCodeDetail)
 		mux.HandleFunc("/api/ops/admin/v1/call-records", api.HandleAdminCallRecords)
+		mux.HandleFunc("/api/ops/admin/v1/call-records/images/", api.HandleAdminCallRecordImage)
 		mux.HandleFunc("/api/ops/admin/v1/model-accounts", api.HandleAdminModelAccounts)
 		mux.HandleFunc("/api/ops/admin/v1/model-accounts/", api.HandleAdminModelAccountDetail)
 		mux.HandleFunc("/api/ops/admin/v1/model-account-models/", api.HandleAdminVideoModelConfiguration)
+		mux.HandleFunc("/api/ops/admin/v1/video-model-tests/", api.HandleAdminVideoModelTest)
 		mux.HandleFunc("/api/ops/admin/v1/text-model-accounts", api.HandleAdminTextModelAccounts)
 		mux.HandleFunc("/api/ops/admin/v1/text-model-accounts/", api.HandleAdminTextModelAccountDetail)
 		mux.HandleFunc("/api/ops/admin/v1/text-models/", api.HandleAdminTextModelDetail)
@@ -358,6 +360,9 @@ var supplementalNormalTemplateRoutes = map[string]map[string]bool{
 	"/api/agent/gallery/v1/images:batch-download":                  {http.MethodPost: true},
 	"/api/agent/gallery/v1/export-jobs/{job_id}":                   {http.MethodGet: true},
 	"/api/agent/gallery/v1/export-jobs/{job_id}/download":          {http.MethodGet: true},
+	"/api/ops/admin/v1/call-records/images/{image_id}":             {http.MethodGet: true},
+	"/api/ops/admin/v1/model-accounts/{account_id}/test-video":     {http.MethodPost: true},
+	"/api/ops/admin/v1/video-model-tests/{test_id}":                {http.MethodGet: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:approve":           {http.MethodPost: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:reject":            {http.MethodPost: true},
 	"/api/ops/admin/v1/image-reviews/{image_id}:unpublish":         {http.MethodPost: true},

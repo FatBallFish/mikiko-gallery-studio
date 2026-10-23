@@ -243,7 +243,7 @@ function AdminApplication() {
       case 'cashier-config':
         return <CashierPage onFeedback={feedback} initialTab="overview" allowedTabs={['overview', 'methods', 'instances']} pageTitle="收银台配置" />
       case 'call-records':
-        return <CallRecordsPage />
+        return <CallRecordsPage accessToken={session?.token} />
       case 'access-accounts':
         return <ProviderModelsPage accessToken={session?.token} onFeedback={feedback} />
       case 'audit':

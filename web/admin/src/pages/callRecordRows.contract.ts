@@ -300,8 +300,8 @@ if (!callRecordsPageSource.includes('created_from: isoQueryTime(filters.createdF
   throw new Error('call-record page should send the backend-supported created_from/created_to query params')
 }
 
-if (!callRecordsPageSource.includes('callRecordRouteModelOptions') || !callRecordsPageSource.includes('appliedFilters.routeModel')) {
-  throw new Error('call-record page should offer a real route-model filter')
+if (!callRecordsPageSource.includes('callRecordRouteModelOptions') || !callRecordsPageSource.includes('route_model_code: filters.routeModel || undefined')) {
+  throw new Error('call-record page should send the backend route_model_code filter')
 }
 
 if (!callRecordsPageSource.includes('callRecordProviderOptions') || callRecordsPageSource.includes('Provider 或账号')) {

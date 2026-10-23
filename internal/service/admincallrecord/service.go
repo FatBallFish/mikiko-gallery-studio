@@ -42,6 +42,7 @@ func (s *Service) ListCallRecords(ctx context.Context, req domainadmincallrecord
 	req.Provider = strings.ToLower(strings.TrimSpace(req.Provider))
 	req.SourceChannel = strings.ToLower(strings.TrimSpace(req.SourceChannel))
 	req.TaskID = strings.TrimSpace(req.TaskID)
+	req.RouteModelCode = strings.TrimSpace(req.RouteModelCode)
 	if req.UserID < 0 {
 		return domainadmincallrecord.ListPage{}, errs.BadRequest("invalid user_id")
 	}

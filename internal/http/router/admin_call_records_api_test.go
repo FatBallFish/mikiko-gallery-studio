@@ -190,15 +190,16 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 
 	taskStore := entstore.NewImageTaskStore(client)
 	if err := taskStore.Save(t.Context(), domainimagetask.Task{
-		UserID:        77,
-		APIKeyID:      13,
-		SourceChannel: "openapi",
-		ID:            "cccccccc-cccc-cccc-cccc-cccccccccccc",
-		Status:        domainimagetask.StatusSucceeded,
-		Provider:      "openai",
-		AbstractModel: "plus",
-		TaskType:      string(provider.TaskTypeTextToImage),
-		Prompt:        "admin list",
+		UserID:         77,
+		APIKeyID:       13,
+		SourceChannel:  "openapi",
+		ID:             "cccccccc-cccc-cccc-cccc-cccccccccccc",
+		Status:         domainimagetask.StatusSucceeded,
+		Provider:       "openai",
+		AbstractModel:  "plus",
+		TaskType:       string(provider.TaskTypeTextToImage),
+		Prompt:         "admin list",
+		RouteModelCode: "plus-image",
 
 		BaseResolution:      "2k",
 		Quality:             "auto",
@@ -248,6 +249,20 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 		t.Fatalf("Save artifact loss task: %v", err)
 	}
 
+	if _, err := client.ImageResult.Create().
+		SetTaskID(uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")).
+		SetUserID(77).
+		SetObjectKey("generated/call-record-result.png").
+		SetMimeType("image/png").
+		SetSha256(strings.Repeat("a", 64)).
+		SetWidth(1024).
+		SetHeight(768).
+		SetFileSizeBytes(2048).
+		SetImageRole("output").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create call record result image: %v", err)
+	}
+
 	adminToken := loginAdminForCallRecordsTest(t, handler)
 	listReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/call-records?page=1&page_size=5&status=succeeded&provider=openai&source_channel=openapi&user_id=77&task_id=cccccccc-cccc-cccc-cccc-cccccccccccc", nil)
 	listReq.Header.Set("Authorization", "Bearer "+adminToken)
@@ -261,7 +276,14 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 	var listResp struct {
 		Data struct {
 			Items []struct {
-				TaskID                    string  `json:"task_id"`
+				TaskID       string `json:"task_id"`
+				Prompt       string `json:"prompt"`
+				ResultImages []struct {
+					ID       string `json:"id"`
+					MimeType string `json:"mime_type"`
+					Width    int    `json:"width"`
+					Height   int    `json:"height"`
+				} `json:"result_images"`
 				UserID                    int64   `json:"user_id"`
 				APIKeyID                  *int64  `json:"api_key_id"`
 				SourceChannel             string  `json:"source_channel"`
@@ -312,6 +334,19 @@ func TestAdminCallRecordsEndpointListsRealImageTasks(t *testing.T) {
 	}
 	if item.RequestedOutputImageCount != 2 || item.SuccessOutputImageCount != 0 || item.ReferenceImageCount != 1 || item.EstimatedPoints != "8.00000" || item.ActualPoints != "8.00000" || item.AttemptCount != 1 {
 		t.Fatalf("unexpected usage fields %#v", item)
+	}
+	if item.Prompt != "admin list" {
+		t.Fatalf("expected prompt projection, got %#v", item.Prompt)
+	}
+	if len(item.ResultImages) != 1 || item.ResultImages[0].MimeType != "image/png" || item.ResultImages[0].Width != 1024 || item.ResultImages[0].Height != 768 {
+		t.Fatalf("expected result image projection, got %#v", item.ResultImages)
+	}
+	routeReq := httptest.NewRequest(http.MethodGet, "/api/ops/admin/v1/call-records?page=1&page_size=5&route_model_code=plus-image", nil)
+	routeReq.Header.Set("Authorization", "Bearer "+adminToken)
+	routeRec := httptest.NewRecorder()
+	handler.ServeHTTP(routeRec, routeReq)
+	if routeRec.Code != http.StatusOK || !strings.Contains(routeRec.Body.String(), "cccccccc-cccc-cccc-cccc-cccccccccccc") || strings.Contains(routeRec.Body.String(), "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee") {
+		t.Fatalf("expected route_model_code filter to return only the plus-image task, got %d body=%s", routeRec.Code, routeRec.Body.String())
 	}
 	if item.ErrorCode != nil || item.ErrorMessage != nil || item.CreatedAt == "" || item.UpdatedAt == "" || item.StartedAt == nil || item.FinishedAt == nil {
 		t.Fatalf("unexpected nullable/timestamp fields %#v", item)

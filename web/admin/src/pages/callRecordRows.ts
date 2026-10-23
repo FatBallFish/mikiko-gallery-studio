@@ -1,4 +1,4 @@
-import type { CallRecord, ModelProvider, RouteModel } from '../../../shared/api-types'
+import type { CallRecord, CallRecordResultImage, ModelProvider, RouteModel } from '../../../shared/api-types'
 import { adminTaskTypeLabel } from './adminTaskTypes'
 
 export type CallRecordRowModel = {
@@ -30,6 +30,7 @@ export type CallRecordRowModel = {
   durationSeconds: number
   durationLabel: string
   previewURL: string | null
+  resultImages: CallRecordResultImage[]
   prompt: string
 }
 
@@ -130,6 +131,7 @@ export function callRecordRows(records: CallRecord[]): CallRecordRowModel[] {
     durationSeconds: callRecordDurationSeconds(record),
     durationLabel: callRecordDurationLabel(record),
     previewURL: callRecordPreviewURL(record),
+    resultImages: record.result_images ?? [],
     prompt: callRecordPrompt(record),
   }))
 }

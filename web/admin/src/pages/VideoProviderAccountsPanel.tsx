@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Video as VideoIcon } from "lucide-react";
 import type {
   AdminVideoConfiguration,
   ModelAccount,
   ModelAccountModel,
+  VideoModelTest,
+  VideoModelTestRequest,
 } from "../../../shared/api-types";
 import { adminApi } from "../../../shared/admin-api";
 import { cn } from "../../../shared/classnames";
@@ -59,6 +61,7 @@ type AccountDraft = {
   weight: number;
   concurrency: number;
   timeout: number;
+  artifactHosts: string;
 };
 type ModelDraft = {
   account: ModelAccount;
@@ -82,6 +85,20 @@ type ModelDraft = {
   baseline?: string;
 };
 type DeleteTarget = { kind: "account"; account: ModelAccount } | { kind: "model"; account: ModelAccount; model: ModelAccountModel };
+type VideoTestDraft = {
+  account: ModelAccount;
+  model: ModelAccountModel;
+  taskType: string;
+  prompt: string;
+  duration: string;
+  resolution: string;
+  ratio: string;
+  audio: boolean;
+  inputs: Record<string, string>;
+  test?: VideoModelTest;
+  error?: string;
+  submitting: boolean;
+};
 
 const adapterBadgeLabels: Record<string, string> = {
   seedance: "Seedance",
@@ -102,6 +119,7 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined, count
   const [modelAccountID, setModelAccountID] = useState("");
   const [accountDraft, setAccountDraft] = useState<AccountDraft | null>(null);
   const [modelDraft, setModelDraft] = useState<ModelDraft | null>(null);
+  const [videoTest, setVideoTest] = useState<VideoTestDraft | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -188,7 +206,11 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined, count
         weight: accountDraft.weight,
         concurrency_limit: accountDraft.concurrency,
         timeout_ms: accountDraft.timeout,
-        extra: { media_type: "video" },
+        extra: {
+          ...(accountDraft.row?.extra ?? {}),
+          media_type: "video",
+          video_artifact_hosts: artifactHostList(accountDraft.artifactHosts),
+        },
       };
       const saved = accountDraft.row
         ? await adminApi.updateModelAccount(accountDraft.row.id, input)
@@ -378,10 +400,104 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined, count
     }
   }
 
+  useEffect(() => {
+    const test = videoTest?.test;
+    if (!test || ["succeeded", "failed", "cancelled"].includes(test.status))
+      return undefined;
+    const timer = window.setInterval(() => {
+      void adminApi
+        .getVideoModelTest(test.id)
+        .then((next) => {
+          setVideoTest((current) =>
+            current && current.test?.id === next.id
+              ? { ...current, test: next, error: undefined }
+              : current,
+          );
+        })
+        .catch((caught) => {
+          setVideoTest((current) =>
+            current && current.test?.id === test.id
+              ? { ...current, error: errorText(caught) }
+              : current,
+          );
+        });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [videoTest?.test?.id, videoTest?.test?.status]);
+
+  function openVideoTest(account: ModelAccount, model: ModelAccountModel) {
+    const taskType = model.task_types[0] || "text_to_video";
+    setVideoTest({
+      account,
+      model,
+      taskType,
+      prompt: "A calm ocean at sunset, gentle camera push in, cinematic light.",
+      duration: "5",
+      resolution: "480p",
+      ratio: "16:9",
+      audio: false,
+      inputs: {},
+      submitting: false,
+    });
+  }
+
+  async function startVideoTest() {
+    if (!videoTest) return;
+    const prompt = videoTest.prompt.trim();
+    if (!prompt) {
+      setVideoTest({ ...videoTest, error: "请填写测试提示词。" });
+      return;
+    }
+    const inputs = videoTestInputRoles(videoTest.taskType)
+      .map((role) => ({
+        role: role.role,
+        media_type: role.mediaType,
+        url: (videoTest.inputs[role.role] || "").trim(),
+      }))
+      .filter((input) => input.url);
+    const missing = videoTestInputRoles(videoTest.taskType).find(
+      (role) => !(videoTest.inputs[role.role] || "").trim(),
+    );
+    if (missing) {
+      setVideoTest({
+        ...videoTest,
+        error: `请填写${missing.label}的可公开访问 URL。`,
+      });
+      return;
+    }
+    const request: VideoModelTestRequest = {
+      model_id: Number(videoTest.model.id),
+      prompt,
+      task_type: videoTest.taskType,
+      duration_seconds: Number(videoTest.duration) || 5,
+      resolution: videoTest.resolution,
+      aspect_ratio: videoTest.ratio,
+      generate_audio: videoTest.audio,
+      inputs,
+    };
+    setVideoTest({ ...videoTest, submitting: true, error: undefined, test: undefined });
+    try {
+      const test = await adminApi.startVideoModelTest(videoTest.account.id, request);
+      setVideoTest((current) => current ? { ...current, test, submitting: false } : current);
+    } catch (caught) {
+      setVideoTest((current) => current ? { ...current, submitting: false, error: errorText(caught) } : current);
+    }
+  }
+
   if (loading && !accounts.length)
     return <LoadingBlock label="载入视频接入账号" />;
   if (error && !accounts.length)
     return <EmptyBlock title="视频接入账号载入失败" detail={error} action={<Button variant="primary" size="sm" onClick={() => void load()}>重试</Button>} />;
+
+  const videoTestCapability = videoTest
+    ? (capabilityFor(snapshot, videoTest.model)?.capability as Record<string, unknown> | undefined)
+    : undefined;
+  const videoTestTaskConfig = videoTest && videoTestCapability && typeof videoTestCapability.task_types === "object"
+    ? ((videoTestCapability.task_types as Record<string, unknown>)[videoTest.taskType] as Record<string, unknown> | undefined)
+    : undefined;
+  const videoTestDurations = withCurrent(stringOptions(videoTestTaskConfig?.durations, ["4", "5", "8", "10", "12", "15"]), videoTest?.duration);
+  const videoTestResolutions = withCurrent(stringOptions(videoTestTaskConfig?.resolutions, ["480p", "720p", "1080p"]), videoTest?.resolution);
+  const videoTestRatios = withCurrent(stringOptions(videoTestTaskConfig?.aspect_ratios, ["16:9", "9:16", "1:1", "4:3", "3:4"]), videoTest?.ratio);
 
   return (
     <section className="a-page-stack" data-video-provider-accounts>
@@ -456,6 +572,19 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined, count
               <LedgerField label="账号名称" required error={accountValidation.name}><input className="a-input" value={accountDraft.name} onChange={(event) => setAccountDraft({ ...accountDraft, name: event.target.value })} /></LedgerField>
               <LedgerField label="适配器" hint="Seedance 按 Token、MiniMax/百炼按秒、Gasic 按次计费。"><select className="a-select" value={accountDraft.adapter} onChange={(event) => setAccountDraft({ ...accountDraft, adapter: event.target.value as AccountDraft["adapter"] })}><option value="seedance">Seedance</option><option value="minimax">MiniMax</option><option value="gasic">Gasic</option><option value="bailian">阿里百炼</option></select></LedgerField>
               <LedgerField label="Base URL" required error={accountValidation.baseURL}><input className="a-input" value={accountDraft.baseURL} onChange={(event) => setAccountDraft({ ...accountDraft, baseURL: event.target.value })} placeholder="https://ark.cn-beijing.volces.com/api/v3" style={{ fontFamily: "var(--font-admin-mono)", fontSize: 12.5 }} /></LedgerField>
+              <LedgerField
+                label="结果文件域名白名单"
+                hint="Worker 只允许从这些 HTTPS 域名下载上游生成结果，防止任意 URL 下载（SSRF 防护）。每行一个域名，例如 dashscope-a717.oss-accelerate.aliyuncs.com；留空会导致视频结果保存失败。"
+              >
+                <textarea
+                  className="a-textarea"
+                  rows={3}
+                  value={accountDraft.artifactHosts}
+                  onChange={(event) => setAccountDraft({ ...accountDraft, artifactHosts: event.target.value })}
+                  placeholder="dashscope-a717.oss-accelerate.aliyuncs.com"
+                  style={{ fontFamily: "var(--font-admin-mono)", fontSize: 12.5 }}
+                />
+              </LedgerField>
               <LedgerField label="账号状态"><select className="a-select" value={accountDraft.status} onChange={(event) => setAccountDraft({ ...accountDraft, status: event.target.value })}><option value="enabled">启用</option><option value="disabled">停用</option><option value="error">异常</option></select></LedgerField>
             </FormSection>
             <FormSection index={2} title="鉴权" description="密钥只写不读，保存后显示掩码。">
@@ -514,6 +643,7 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined, count
                     </div>
                     <div className="aa-model__actions">
                       <button className="a-row-btn a-row-btn--primary" type="button" onClick={() => { setMutationError(""); setModelDraft(editModel(modelAccount, model, snapshot)); }}>编辑</button>
+                      <button className="a-row-btn" type="button" onClick={() => { setMutationError(""); openVideoTest(modelAccount, model); }}>测试</button>
                       <button className="a-row-btn a-row-btn--danger" type="button" onClick={() => { setMutationError(""); setDeleteTarget({ kind: "model", account: modelAccount, model }); }}>删除</button>
                     </div>
                   </article>
@@ -610,6 +740,107 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined, count
         </Drawer>
       ) : null}
 
+      {videoTest ? (
+        <Drawer
+          stacked
+          wide
+          title="视频模型测试"
+          description={`${videoTest.account.name} · ${videoTest.model.display_name || videoTest.model.model_code} · ${videoTest.model.model_code}`}
+          headerAside={<Badge tone={videoTest.test?.status === "succeeded" ? "success" : videoTest.test?.status === "failed" ? "danger" : "neutral"}>{videoTest.test?.status || "待测试"}</Badge>}
+          onClose={() => { if (!videoTest.submitting) setVideoTest(null); }}
+          footer={(
+            <>
+              <div className="lr-spacer" />
+              <Button variant="ghost" disabled={videoTest.submitting} onClick={() => setVideoTest(null)}>关闭</Button>
+              <Button variant="primary" disabled={videoTest.submitting || videoTest.test?.status === "queued" || videoTest.test?.status === "running"} onClick={() => void startVideoTest()}>
+                {videoTest.submitting || videoTest.test?.status === "queued" || videoTest.test?.status === "running" ? "测试中..." : "开始测试"}
+              </Button>
+            </>
+          )}
+        >
+          <FormSection index={1} title="测试参数" description="测试会直接调用真实上游视频模型；请使用可公开访问的输入 URL。">
+            <LedgerField label="任务类型">
+              <select className="a-select" value={videoTest.taskType} onChange={(event) => setVideoTest({ ...videoTest, taskType: event.target.value, inputs: {}, test: undefined, error: undefined })}>
+                {videoTest.model.task_types.map((task) => <option key={task} value={task}>{videoTaskLabel(task)}</option>)}
+              </select>
+            </LedgerField>
+            <LedgerField label="提示词" hint="用于验证模型是否接受当前任务类型与参数。">
+              <textarea className="a-textarea" rows={4} value={videoTest.prompt} onChange={(event) => setVideoTest({ ...videoTest, prompt: event.target.value, test: undefined, error: undefined })} />
+            </LedgerField>
+            <div className="a-form__pair">
+              <LedgerField label="时长（秒）">
+                <select className="a-select" value={videoTest.duration} onChange={(event) => setVideoTest({ ...videoTest, duration: event.target.value, test: undefined, error: undefined })}>
+                  {videoTestDurations.map((value) => <option key={value} value={value}>{value} 秒</option>)}
+                </select>
+              </LedgerField>
+              <LedgerField label="分辨率">
+                <select className="a-select" value={videoTest.resolution} onChange={(event) => setVideoTest({ ...videoTest, resolution: event.target.value, test: undefined, error: undefined })}>
+                  {videoTestResolutions.map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </LedgerField>
+            </div>
+            <div className="a-form__pair">
+              <LedgerField label="比例">
+                <select className="a-select" value={videoTest.ratio} onChange={(event) => setVideoTest({ ...videoTest, ratio: event.target.value, test: undefined, error: undefined })}>
+                  {videoTestRatios.map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </LedgerField>
+              <LedgerField label="音频">
+                <label className="a-switch">
+                  <input type="checkbox" checked={videoTest.audio} onChange={(event) => setVideoTest({ ...videoTest, audio: event.target.checked, test: undefined, error: undefined })} />
+                  <span className="a-switch__track" />
+                  <span>{videoTest.audio ? "生成音频" : "静音"}</span>
+                </label>
+              </LedgerField>
+            </div>
+            {videoTestInputRoles(videoTest.taskType).map((role) => (
+              <LedgerField key={role.role} label={role.label} hint={role.hint}>
+                <input
+                  className="a-input"
+                  value={videoTest.inputs[role.role] || ""}
+                  placeholder="https://..."
+                  onChange={(event) => setVideoTest({ ...videoTest, inputs: { ...videoTest.inputs, [role.role]: event.target.value }, test: undefined, error: undefined })}
+                />
+              </LedgerField>
+            ))}
+          </FormSection>
+
+          <FormSection index={2} title="测试结果" description="进度会每 2 秒刷新；完成后在此直接播放返回的视频。">
+            {videoTest.submitting || videoTest.test?.status === "queued" || videoTest.test?.status === "running" ? (
+              <section className="cfg-test-media" aria-live="polite" aria-busy="true">
+                <div className="a-skeleton cfg-test-media__frame" />
+                <div className="cfg-test-media__status">
+                  <div className="cfg-test-progress" role="progressbar" aria-label="正在生成测试视频"><i /></div>
+                  <strong>正在请求视频上游...</strong>
+                  <span className="a-hint">视频生成通常需要数十秒；完成后会在此显示播放器。</span>
+                </div>
+              </section>
+            ) : videoTest.error || videoTest.test?.status === "failed" ? (
+              <InlineFeedback tone="danger" message={videoTest.error || videoTest.test?.error || "视频模型测试失败"} />
+            ) : videoTest.test?.artifacts?.length ? (
+              <section className="cfg-test-media">
+                <video className="cfg-test-media__video" controls preload="metadata" src={videoTest.test.artifacts[0].url} aria-label="视频模型测试结果" />
+                <div className="cfg-test-meta">
+                  <Badge tone="success">已完成</Badge>
+                  <Badge>{videoTest.test.model_code}</Badge>
+                  <Badge>{videoTest.test.task_type}</Badge>
+                  {videoTest.test.provider_job_id ? <Badge>上游任务 {videoTest.test.provider_job_id}</Badge> : null}
+                </div>
+                <span className="a-hint">结果 URL 由上游临时签发；过期后请重新测试。</span>
+              </section>
+            ) : videoTest.test?.status === "succeeded" ? (
+              <div className="cfg-test-media__missing">上游已完成，但没有返回可播放的视频地址。</div>
+            ) : (
+              <section className="cfg-test-media__idle">
+                <VideoIcon aria-hidden="true" />
+                <strong>尚无测试结果</strong>
+                <span className="a-hint">填写参数后开始测试，视频会显示在这里。</span>
+              </section>
+            )}
+          </FormSection>
+        </Drawer>
+      ) : null}
+
       {deleteTarget ? (
         <Modal
           title={deleteTarget.kind === "account" ? "删除视频账号" : "删除视频真实模型"}
@@ -666,7 +897,7 @@ function videoAccountColumns({ models, onEdit, onConfigureModels, onDelete }: {
 }
 
 function blankAccount(): AccountDraft {
-  return { name: "", adapter: "seedance", baseURL: "", apiKey: "", status: "enabled", priority: 1, weight: 100, concurrency: 5, timeout: 300000 };
+  return { name: "", adapter: "seedance", baseURL: "", apiKey: "", status: "enabled", priority: 1, weight: 100, concurrency: 5, timeout: 300000, artifactHosts: "" };
 }
 
 function editAccount(row: ModelAccount): AccountDraft {
@@ -681,6 +912,7 @@ function editAccount(row: ModelAccount): AccountDraft {
     weight: row.weight,
     concurrency: row.concurrency_limit,
     timeout: row.timeout_ms,
+    artifactHosts: artifactHostsFromExtra(row.extra),
   };
 }
 
@@ -919,4 +1151,47 @@ function nextVersion(prefix: string, current?: string) {
 
 function errorText(value: unknown) {
   return value instanceof Error ? value.message : "视频模型配置操作失败";
+}
+type VideoTestInputRole = { role: string; label: string; mediaType: "image" | "video"; hint: string };
+
+const VIDEO_TEST_INPUT_ROLES: Record<string, VideoTestInputRole[]> = {
+  image_to_video: [{ role: "first_frame", label: "首帧图片 URL", mediaType: "image", hint: "上游需要可公开访问的图片地址。" }],
+  first_last_frame_to_video: [
+    { role: "first_frame", label: "首帧图片 URL", mediaType: "image", hint: "上游需要可公开访问的图片地址。" },
+    { role: "last_frame", label: "尾帧图片 URL", mediaType: "image", hint: "上游需要可公开访问的图片地址。" },
+  ],
+  reference_to_video: [{ role: "reference_image", label: "参考图片 URL", mediaType: "image", hint: "用于约束主体或风格。" }],
+  video_edit: [{ role: "reference_video", label: "待编辑视频 URL", mediaType: "video", hint: "上游需要可公开访问的视频地址。" }],
+  video_extend: [{ role: "reference_video", label: "待延长视频 URL", mediaType: "video", hint: "上游需要可公开访问的视频地址。" }],
+};
+
+function videoTestInputRoles(taskType: string): VideoTestInputRole[] {
+  return VIDEO_TEST_INPUT_ROLES[taskType] ?? [];
+}
+
+function stringOptions(value: unknown, fallback: string[]): string[] {
+  if (Array.isArray(value)) {
+    const list = value.map((item) => String(item).trim()).filter(Boolean);
+    if (list.length) return list;
+  }
+  if (value && typeof value === "object" && Array.isArray((value as { values?: unknown }).values)) {
+    return stringOptions((value as { values: unknown[] }).values, fallback);
+  }
+  return fallback;
+}
+
+function withCurrent(values: string[], current?: string): string[] {
+  if (!current || values.includes(current)) return values;
+  return [current, ...values];
+}
+
+function artifactHostsFromExtra(extra?: Record<string, unknown>): string {
+  const value = extra?.video_artifact_hosts;
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean).join("\n");
+  if (typeof value === "string") return value;
+  return "";
+}
+
+function artifactHostList(value: string): string[] {
+  return Array.from(new Set(value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean)));
 }

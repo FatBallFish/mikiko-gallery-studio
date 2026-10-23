@@ -312,3 +312,11 @@
     max-height: none;
   }
 }
+.cfg-test-media__video {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  border: 1px solid var(--a-line);
+  border-radius: 10px;
+  background: #000;
+}

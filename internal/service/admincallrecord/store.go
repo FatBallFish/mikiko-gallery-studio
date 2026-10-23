@@ -118,6 +118,9 @@ func (s *MemoryStore) ListCallRecords(_ context.Context, req domainadmincallreco
 		if req.TaskID != "" && !strings.EqualFold(record.TaskID, req.TaskID) {
 			continue
 		}
+		if req.RouteModelCode != "" && !strings.EqualFold(record.RouteModelCode, req.RouteModelCode) {
+			continue
+		}
 		if !req.CreatedFrom.IsZero() && record.CreatedAt.Before(req.CreatedFrom) {
 			continue
 		}

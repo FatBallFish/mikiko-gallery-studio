@@ -91,12 +91,13 @@ function callRecordQuery(filters: AppliedCallRecordFilters, page: number, pageSi
     provider: filters.provider || undefined,
     user_id: filters.userId || undefined,
     task_id: filters.taskId || undefined,
+    route_model_code: filters.routeModel || undefined,
     created_from: isoQueryTime(filters.createdFrom),
     created_to: isoQueryTime(filters.createdTo),
   }
 }
 
-export function CallRecordsPage() {
+export function CallRecordsPage({ accessToken }: { accessToken?: string | null }) {
   const [rows, setRows] = useState<CallRecord[]>([])
   const [filters, setFilters] = useState<CallRecordFilters>(initialFilters)
   const [appliedFilters, setAppliedFilters] = useState<AppliedCallRecordFilters>(initialAppliedFilters)
@@ -116,11 +117,7 @@ export function CallRecordsPage() {
   const [providerDirectory, setProviderDirectory] = useState<ModelProvider[]>([])
   const requestGenerationRef = useRef(0)
   const [reloadKey, setReloadKey] = useState(0)
-  const displayRows = useMemo(() => (
-    appliedFilters.routeModel
-      ? rows.filter((record) => callRecordRouteModelCode(record).toLowerCase() === appliedFilters.routeModel.toLowerCase())
-      : rows
-  ), [appliedFilters.routeModel, rows])
+  const displayRows = rows
   const viewRows = useMemo(() => callRecordRows(displayRows), [displayRows])
   const stats = useMemo(() => callRecordStats(displayRows), [displayRows])
   const distributions = useMemo(() => callRecordDistributions(rows, directoryRoutes), [directoryRoutes, rows])
@@ -289,7 +286,7 @@ export function CallRecordsPage() {
               <button className="a-btn a-btn--sm a-btn--quiet" type="button" onClick={resetFilters}>重置</button>
             </>
           )}
-          resultSummary={`共 ${total} 条调用 · 当前显示 ${displayRows.length} 条${appliedFilters.routeModel ? ' · 路由模型筛选仅作用于当前页' : ''}`}
+          resultSummary={`共 ${total} 条调用 · 当前显示 ${displayRows.length} 条`}
         />
       </form>
       {filterFeedback ? <InlineFeedback tone={filterFeedback.tone} message={filterFeedback.message} /> : null}
@@ -300,7 +297,7 @@ export function CallRecordsPage() {
         <ListPage
           pagination={<Pager page={page} pageSize={pageSize} total={total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
         >
-          {!displayRows.length ? <EmptyBlock variant="inline" title="当前页没有匹配的路由模型" detail="路由模型筛选只作用于当前页；可翻页或清空该筛选后重试。" /> : (
+          {!displayRows.length ? <EmptyBlock variant="inline" title="没有匹配的调用记录" detail="请调整筛选条件后重试。" /> : (
           <div className="a-table-wrap">
             <table className="a-table cr-table" style={{ minWidth: 1180 }}>
               <thead>
@@ -417,6 +414,7 @@ export function CallRecordsPage() {
           onClose={() => { if (!peekUser) { setSelected(null); setCopyNotice('') } }}
           onPeekUser={setPeekUser}
           onCopy={copy}
+          accessToken={accessToken}
         />
       ) : null}
 
@@ -451,6 +449,7 @@ function CallRecordDrawer({
   onClose,
   onPeekUser,
   onCopy,
+  accessToken,
 }: {
   record: CallRecord
   user?: AdminUser
@@ -461,18 +460,20 @@ function CallRecordDrawer({
   onClose: () => void
   onPeekUser: (user: AdminUser) => void
   onCopy: (value: string, label: string) => void
+  accessToken?: string | null
 }) {
   const row = callRecordRows([record])[0]
   const repair = callRecordRepair(record.error_code)
-  const previewURL = row.previewURL
+  const resultImages = row.resultImages
+  const previewURL = resultImages[0] ? adminApi.callRecordImageUrl(resultImages[0].id, accessToken) : row.previewURL
   const prompt = row.prompt
   const userLabel = user ? (user.display_name || user.nickname || user.email) : `用户 #${record.user_id}`
   const attempts = record.attempt_count || record.attempts?.length || 0
   const previewEmptyTitle = record.success_output_image_count > 0
-    ? '接口未返回结果预览'
+    ? '结果文件暂不可访问'
     : record.error_code ? '任务未产生可预览结果' : '暂无可预览结果'
   const previewEmptyDetail = record.success_output_image_count > 0
-    ? `该任务有 ${record.success_output_image_count} 张成功输出，但调用记录接口没有返回可访问的预览地址。`
+    ? `该任务有 ${record.success_output_image_count} 张成功输出，但结果文件记录缺失或已被清理。`
     : record.error_code
       ? `任务以 ${record.error_code} 结束，没有生成可预览的输出图。`
       : '任务尚未产生输出图，完成后可在此查看。'
@@ -511,7 +512,18 @@ function CallRecordDrawer({
           <div className="cr-detail-grid">
             <section className="a-panel a-panel--pad lr-panel-flat cr-preview-panel">
               <div className="a-section-title" style={{ margin: 0 }}><h2>结果预览</h2><span className="a-hint">{record.success_output_image_count} / {record.requested_output_image_count} 张输出</span></div>
-              {previewURL ? (
+              {resultImages.length ? (
+                <div className={cn('cr-preview__grid', resultImages.length === 1 && 'is-single')}>
+                  {resultImages.map((image, index) => {
+                    const url = adminApi.callRecordImageUrl(image.id, accessToken)
+                    return (
+                      <a key={image.id} className="cr-preview__media" href={url} target="_blank" rel="noreferrer" title="在新窗口打开结果图">
+                        <img src={url} alt={`任务 ${record.task_id} 的第 ${index + 1} 张结果`} loading="lazy" />
+                      </a>
+                    )
+                  })}
+                </div>
+              ) : previewURL ? (
                 <a className="cr-preview__media" href={previewURL} target="_blank" rel="noreferrer" title="在新窗口打开结果图">
                   <img src={previewURL} alt={`任务 ${record.task_id} 的结果预览`} />
                 </a>
@@ -565,7 +577,7 @@ function CallRecordDrawer({
           <section className="a-drawer__section cr-prompt-section">
             <div className="a-section-title" style={{ margin: 0 }}><h2>提示词与生成参数</h2><span className="a-hint">完整宽度</span></div>
             <div className={cn('lr-prompt', !prompt && 'cr-prompt--empty')}>
-              {prompt || '调用记录接口未返回提示词原文。请结合生成参数、错误码与「原始数据」中的请求快照排查。'}
+              {prompt || '该任务没有记录提示词。请结合生成参数、错误码与「原始数据」中的请求快照排查。'}
             </div>
             <dl className="a-kv cr-params">
               <div><dt>任务类型</dt><dd>{row.taskDetail.split(' · ')[0]}</dd></div>

@@ -28,8 +28,19 @@ type Attempt struct {
 	FinishedAt     *time.Time     `json:"finished_at,omitempty"`
 }
 
+type ResultImage struct {
+	ID        string `json:"id"`
+	ImageRole string `json:"image_role,omitempty"`
+	MimeType  string `json:"mime_type,omitempty"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	SizeBytes int64  `json:"size_bytes,omitempty"`
+}
+
 type Record struct {
 	TaskID                    string                   `json:"task_id"`
+	Prompt                    string                   `json:"prompt,omitempty"`
+	ResultImages              []ResultImage            `json:"result_images,omitempty"`
 	UserID                    int64                    `json:"user_id"`
 	APIKeyID                  *int64                   `json:"api_key_id"`
 	SourceChannel             string                   `json:"source_channel"`
@@ -76,6 +87,7 @@ type ListRequest struct {
 	SourceChannel    string
 	UserID           int64
 	TaskID           string
+	RouteModelCode   string
 	CreatedFrom      time.Time
 	CreatedTo        time.Time
 	PlatformLossOnly bool
