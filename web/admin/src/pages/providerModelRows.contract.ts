@@ -118,6 +118,26 @@ if (!providerModelsSource.includes('title="测试图片模型"')) {
   throw new Error('the model test request must remain a real capability-driven form')
 }
 
+if (providerModelsSource.includes('测试连接')) {
+  throw new Error('the image account drawer must not expose the unusable API connection test button')
+}
+
+for (const marker of [
+  'counts={counts}',
+  'className="cfg-account-table"',
+  'className="a-skeleton cfg-test-media__frame"',
+  'className="cfg-test-progress"',
+  'className="cfg-test-media__image"',
+]) {
+  if (!providerModelsSource.includes(marker)) {
+    throw new Error(`access account pages must keep the structural UI contract: ${marker}`)
+  }
+}
+
+if (providerModelsSource.includes('JSON.stringify(testDialog.result.actual_params')) {
+  throw new Error('image test results must render media and metadata instead of raw JSON')
+}
+
 for (const drift of ['rounded-3xl', 'uppercase tracking-']) {
   if (providerModelsSource.includes(drift)) {
     throw new Error(`provider model workspace must remove visual drift: ${drift}`)

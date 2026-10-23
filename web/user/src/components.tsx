@@ -667,7 +667,9 @@ export function Shell({ children, scrollMode = 'app' }: { children: React.ReactN
       <div className="u-grain" aria-hidden="true" />
       <div className="u-shell">
         <aside className="u-rail" aria-label={`${siteBrand.name} 用户导航`}>
-          <button className="u-rail__brand" type="button" onClick={() => app.navigate('home')} aria-label={`${siteBrand.name} 首页`}>M</button>
+          <button className="u-rail__brand" type="button" onClick={() => app.navigate('home')} aria-label={`${siteBrand.name} 首页`}>
+            <img src={siteBrand.logoUrl} alt="" aria-hidden="true" />
+          </button>
           <nav className="u-rail__nav" aria-label="主导航">
             {activeNavIndex >= 0 ? <span className="u-rail__indicator" style={{ transform: `translateY(${activeNavIndex * 55}px)` }} aria-hidden="true" /> : null}
             {visibleNavItems.map((item) => (
@@ -1263,22 +1265,24 @@ export function Modal({ title, children, onClose, className = '' }: { title: str
   )
 }
 
-export function Drawer({ open, title, children, onClose, side = 'right', className = '' }: {
+export function Drawer({ open, title, children, onClose, side = 'right', wide = false, className = '' }: {
   open: boolean
   title: string
   children: React.ReactNode
   onClose: () => void
   side?: 'left' | 'right' | 'bottom'
+  wide?: boolean
   className?: string
 }) {
   const drawerRef = useRef<HTMLElement | null>(null)
   useDismissableLayer(open, onClose, drawerRef)
   if (!open) return null
+  const width = wide ? 'min(1080px, 96vw)' : 'min(720px, 100vw)'
   const position = side === 'left'
-    ? { inset: '0 auto 0 0', width: 'min(720px, 100vw)', borderLeft: 0, borderRight: '1px solid var(--line-2)', transform: 'none' }
+    ? { inset: '0 auto 0 0', width, borderLeft: 0, borderRight: '1px solid var(--line-2)', transform: 'none' }
     : side === 'bottom'
       ? { inset: 'auto 0 0 0', width: '100vw', maxHeight: '88vh', borderTop: '1px solid var(--line-2)', transform: 'none' }
-      : { width: 'min(720px, 100vw)' }
+      : { width }
   return (
     <OverlayPortal>
       <div className="u-backdrop is-open" role="presentation" data-focus-layer onMouseDown={onClose}>

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ModelAccount, ModelAccountModel, ModelAccountTestImageResult } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { Search, Trash2 } from 'lucide-react'
+import { Image as ImageIcon, Trash2 } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -15,7 +15,7 @@ import {
   PageHeader,
   RefreshIconButton,
 } from '../components'
-import { DataTable, FilterToolbar, ListPage, type ColumnDef } from '../ui/dataTable'
+import { DataTable, FilterToolbar, type ColumnDef } from '../ui/dataTable'
 import { adminTaskTypeLabel, adminTaskTypeOptions } from './adminTaskTypes'
 import { modelLifecycleErrorMessage } from './adminModelLifecycle'
 import {
@@ -26,7 +26,7 @@ import {
   providerAuthLabel,
 } from './providerModelRows'
 import { createLatestListRequestGuard } from './listRefresh'
-import { AdminMediaTabs, ChecklistField, FormSection, LedgerField, MultiSelectField, SwitchField, useAdminModelMediaTab } from './AdminMediaTabs'
+import { AdminMediaTabs, ChecklistField, FormSection, LedgerField, MultiSelectField, SwitchField, useAdminModelMediaTab, type AdminMediaAccountCounts } from './AdminMediaTabs'
 import { modelAccountMediaType, modelMediaType } from './adminModelMedia'
 import { TextModelsPage } from './TextModelsPage'
 import { VideoProviderAccountsPanel } from './VideoProviderAccountsPanel'
@@ -55,8 +55,24 @@ const accountPrimaryActionLabel = '模型配置'
 
 export function ProviderModelsPage({ accessToken, onFeedback = () => undefined }: { accessToken?: string; onFeedback?: (title: string, detail?: string) => void }) {
   const media = useAdminModelMediaTab()
-  if (media === 'image') return <ImageProviderModelsPanel accessToken={accessToken} onFeedback={onFeedback} />
-  if (media === 'video') return <VideoProviderAccountsPanel onFeedback={onFeedback} />
+  const [mediaCounts, setMediaCounts] = useState<AdminMediaAccountCounts | undefined>(undefined)
+  const refreshMediaCounts = useCallback(async () => {
+    const [accountResult, textResult] = await Promise.allSettled([
+      adminApi.listModelAccounts({ page_size: 100 }),
+      adminApi.listTextModelAccounts(),
+    ])
+    if (accountResult.status !== 'fulfilled') return
+    const counts: AdminMediaAccountCounts = { image: 0, video: 0, audio: 0, text: 0 }
+    for (const account of accountResult.value) {
+      const mediaType = modelAccountMediaType(account)
+      counts[mediaType] = (counts[mediaType] ?? 0) + 1
+    }
+    if (textResult.status === 'fulfilled') counts.text = (counts.text ?? 0) + textResult.value.length
+    setMediaCounts(counts)
+  }, [])
+  useEffect(() => { void refreshMediaCounts() }, [media, refreshMediaCounts])
+  if (media === 'image') return <ImageProviderModelsPanel accessToken={accessToken} onFeedback={onFeedback} counts={mediaCounts} onAccountsChanged={refreshMediaCounts} />
+  if (media === 'video') return <VideoProviderAccountsPanel onFeedback={onFeedback} counts={mediaCounts} onAccountsChanged={refreshMediaCounts} />
   return (
     <section className="a-page-stack">
       <PageHeader
@@ -64,17 +80,17 @@ export function ProviderModelsPage({ accessToken, onFeedback = () => undefined }
         title="接入账号"
         description="图片与视频账号分开维护。账号只负责连接、调度与密钥；真实模型的任务类型和能力参数在模型配置抽屉中维护。"
       />
-      <AdminMediaTabs route="access-accounts" value={media} />
+      <AdminMediaTabs route="access-accounts" value={media} counts={mediaCounts} />
       {media === 'audio' ? (
         <EmptyBlock title="音频接入暂未开放" detail="音频模型运行时接入后，可在此维护账号、真实模型与厂商原生费率。" />
       ) : (
-        <TextModelsPage onFeedback={onFeedback} />
+        <TextModelsPage onFeedback={onFeedback} onAccountsChanged={refreshMediaCounts} />
       )}
     </section>
   )
 }
 
-function ImageProviderModelsPanel({ accessToken, onFeedback }: { accessToken?: string; onFeedback: (title: string, detail?: string) => void }) {
+function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsChanged }: { accessToken?: string; onFeedback: (title: string, detail?: string) => void; counts?: AdminMediaAccountCounts; onAccountsChanged?: () => void }) {
   const [accounts, setAccounts] = useState<ModelAccount[]>([])
   const [modelsByAccount, setModelsByAccount] = useState<Record<string, ModelAccountModel[]>>({})
   const [query, setQuery] = useState('')
@@ -152,6 +168,7 @@ function ImageProviderModelsPanel({ accessToken, onFeedback }: { accessToken?: s
     .filter((format) => testDialog?.background !== 'transparent' || format === 'png' || format === 'webp')
   const selectedTestBackgrounds = testModelOptions(selectedTestModel?.supported_backgrounds, [])
   const selectedTestModeration = testModelOptions(selectedTestModel?.moderation, ['auto'])
+  const testActualParams = testDialog?.result ? Object.entries(testDialog.result.actual_params ?? {}) : []
   const accountValidation = accountDialog ? validateAccountDraft(accountDialog) : {}
   const existingAccount = accountDialog?.id ? accounts.find((account) => String(account.id) === String(accountDialog.id)) : undefined
   const accountDirty = accountDialog ? accountDraftDirtyCount(accountDialog, existingAccount) : 0
@@ -181,6 +198,7 @@ function ImageProviderModelsPanel({ accessToken, onFeedback }: { accessToken?: s
       setAccountDialog(null)
       await load(String(saved.id))
       if (creating) setModelAccountId(String(saved.id))
+      onAccountsChanged?.()
       onFeedback(creating ? '图片账号已创建' : '图片账号已保存', saved.name)
     } catch (caught) {
       setMutationError(caught instanceof Error ? caught.message : '模型账号保存失败')
@@ -218,6 +236,7 @@ function ImageProviderModelsPanel({ accessToken, onFeedback }: { accessToken?: s
       if (deleteTarget.kind === 'model' && String(deleteTarget.account.id) === modelAccountId && modelAccountModels.length <= 1) setModelAccountId('')
       setDeleteTarget(null)
       await load()
+      if (deleteTarget.kind === 'account') onAccountsChanged?.()
       onFeedback('模型配置已删除', label)
     } catch (caught) {
       setMutationError(modelLifecycleErrorMessage(caught, '删除模型配置失败'))
@@ -284,7 +303,7 @@ function ImageProviderModelsPanel({ accessToken, onFeedback }: { accessToken?: s
         primaryAction={<Button variant="primary" size="sm" onClick={() => openAccountDialog({ ...blankAccount })}>添加图片账号</Button>}
         secondaryActions={<RefreshIconButton label="刷新接入账号" refreshing={loading} onClick={() => void load()} />}
       />
-      <AdminMediaTabs route="access-accounts" value="image" />
+      <AdminMediaTabs route="access-accounts" value="image" counts={counts} />
       {error ? <InlineFeedback tone="danger" message={`接入账号刷新失败：${error}`} /> : null}
 
       <section className="a-metrics" aria-label="图片接入概况">
@@ -294,51 +313,46 @@ function ImageProviderModelsPanel({ accessToken, onFeedback }: { accessToken?: s
         <div className="a-metric"><div className="a-metric__label">待完善</div><div className="a-metric__value" style={{ color: pendingModels.length ? 'var(--a-danger)' : undefined }}>{pendingModels.length}</div><div className="a-metric__foot">缺基础分辨率 / 尺寸能力</div></div>
       </section>
 
+      {accounts.length ? (
+        <FilterToolbar
+          fields={[{
+            key: 'query',
+            label: '搜索账号',
+            primary: true,
+            minWidth: '220px',
+            maxWidth: '420px',
+            control: <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="账号名称 / 适配器 / Base URL" className="a-input" aria-label="搜索图片接入账号" />,
+          }]}
+          resultSummary={`共 ${accounts.length} 个图片账号 · 当前显示 ${filteredAccounts.length} 个`}
+        />
+      ) : null}
+
       <section className="a-panel a-panel--flush">
         <div className="a-panel__head">
           <div>
             <h2>图片接入账号</h2>
             <p>图片模型只使用文生图与图片编辑任务类型。</p>
           </div>
-          <div className="a-search" style={{ width: 'min(320px, 100%)' }}>
-            <Search aria-hidden="true" />
-            <input className="a-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索账号、适配器或 Base URL" aria-label="搜索图片接入账号" />
-          </div>
         </div>
         {!accounts.length ? (
-          <div className="p-4">
+          <div className="a-panel__body">
             <EmptyBlock title="暂无模型接入账号" detail="创建账号后再添加真实上游模型。" action={<Button variant="primary" size="sm" onClick={() => openAccountDialog({ ...blankAccount })}>添加图片账号</Button>} />
           </div>
         ) : (
-          <ListPage
-            filters={(
-              <FilterToolbar
-                fields={[{
-                  key: 'query',
-                  label: '搜索账号',
-                  primary: true,
-                  minWidth: '220px',
-                  maxWidth: '420px',
-                  control: <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="账号名称 / 适配器 / Base URL" className="a-input" />,
-                }]}
-                resultSummary={`共 ${accounts.length} 个图片账号 · 当前显示 ${filteredAccounts.length} 个`}
-              />
-            )}
-          >
-            <DataTable
-              minWidth={1180}
-              columns={accountColumns({
-                modelsByAccount,
-                onEdit: (account) => openAccountDialog(editAccountDraft(account)),
-                onConfigureModels: (account) => setModelAccountId(String(account.id)),
-                onTest: (account) => setTestDialog(newTestImageDialog(account, modelsByAccount[String(account.id)] ?? [])),
-                onDelete: (account) => { setMutationError(null); setDeleteTarget({ kind: 'account', account }) },
-              })}
-              rows={filteredAccounts}
-              rowKey={(account) => account.id}
-              empty={<EmptyBlock title="未找到接入账号" detail="换一个账号名称、适配器或 Base URL 关键词再试。" />}
-            />
-          </ListPage>
+          <DataTable
+            className="cfg-account-table"
+            minWidth={1180}
+            columns={accountColumns({
+              modelsByAccount,
+              onEdit: (account) => openAccountDialog(editAccountDraft(account)),
+              onConfigureModels: (account) => setModelAccountId(String(account.id)),
+              onTest: (account) => setTestDialog(newTestImageDialog(account, modelsByAccount[String(account.id)] ?? [])),
+              onDelete: (account) => { setMutationError(null); setDeleteTarget({ kind: 'account', account }) },
+            })}
+            rows={filteredAccounts}
+            rowKey={(account) => account.id}
+            empty={<EmptyBlock title="未找到接入账号" detail="换一个账号名称、适配器或 Base URL 关键词再试。" />}
+          />
         )}
       </section>
 
@@ -369,7 +383,6 @@ function ImageProviderModelsPanel({ accessToken, onFeedback }: { accessToken?: s
             <FormSection index={2} title="鉴权" description="密钥只写不读，保存后显示掩码。">
               <LedgerField label="鉴权方式"><select className="a-select" value={accountDialog.authType} onChange={(event) => setAccountDialog({ ...accountDialog, authType: event.target.value })}><option value="api_key">API Key</option></select></LedgerField>
               <LedgerField label="API Key" hint={accountDialog.id ? '留空表示保持现有密钥。' : '首次创建账号时必须填写 API Key。'}><input className="a-input" type="password" value={accountDialog.apiKey} onChange={(event) => setAccountDialog({ ...accountDialog, apiKey: event.target.value })} placeholder={accountDialog.id ? '已配置 · 留空表示保持不变' : 'sk-...'} /></LedgerField>
-              <div><Button variant="secondary" size="sm" disabled={!accountDialog.id || !modelsByAccount[String(accountDialog.id)]?.length} onClick={() => { const account = accounts.find((item) => String(item.id) === String(accountDialog.id)); if (account) setTestDialog(newTestImageDialog(account, modelsByAccount[String(account.id)] ?? [])) }}>测试连接</Button></div>
             </FormSection>
             <FormSection index={3} title="调度">
               <div className="a-form__pair">
@@ -549,19 +562,43 @@ function ImageProviderModelsPanel({ accessToken, onFeedback }: { accessToken?: s
               <LedgerField label="审核等级"><select className="a-select" value={testDialog.moderation} onChange={(event) => setTestDialog({ ...testDialog, moderation: event.target.value, result: undefined, error: undefined })}>{selectedTestModeration.map((option) => <option key={option} value={option}>{option}</option>)}</select></LedgerField>
               <LedgerField label="提示词"><textarea className="a-textarea" value={testDialog.prompt} onChange={(event) => setTestDialog({ ...testDialog, prompt: event.target.value, result: undefined, error: undefined })} rows={4} /></LedgerField>
             </FormSection>
-            {testDialog.error ? <InlineFeedback tone="danger" message={testDialog.error} /> : null}
-            {testDialog.result ? (
-              <section className="grid gap-3 rounded-lg border border-[var(--a-line)] bg-[var(--a-surface)] p-3">
-                {testDialog.result.image_url ? <img className="max-h-[360px] w-full rounded-lg border border-[var(--a-line)] object-contain" src={adminApi.modelAccountTestImageUrl(testDialog.result.image_url, accessToken)} alt="" /> : null}
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2 text-sm">
-                  <code>status: {testDialog.result.status}</code>
-                  <code>size: {testDialog.result.width ?? 0}x{testDialog.result.height ?? 0}</code>
-                  <code>elapsed: {testDialog.result.elapsed_ms}ms</code>
-                  <code>request: {testDialog.result.provider_request_id || '-'}</code>
+            {testing ? (
+              <section className="cfg-test-media" aria-live="polite" aria-busy="true">
+                <div className="a-skeleton cfg-test-media__frame" />
+                <div className="cfg-test-media__status">
+                  <div className="cfg-test-progress" role="progressbar" aria-label="正在生成测试图片"><i /></div>
+                  <strong>正在请求真实上游模型...</strong>
+                  <span className="a-hint">这通常需要数秒，完成后会在此显示图片结果。</span>
                 </div>
-                <pre className="max-h-[180px] overflow-auto rounded-lg border border-[var(--a-line)] bg-[var(--a-surface-2)] p-3 text-xs">{JSON.stringify(testDialog.result.actual_params ?? {}, null, 2)}</pre>
               </section>
-            ) : null}
+            ) : testDialog.error ? (
+              <InlineFeedback tone="danger" message={testDialog.error} />
+            ) : testDialog.result ? (
+              <section className="cfg-test-media">
+                {testDialog.result.image_url ? (
+                  <img className="cfg-test-media__image" src={adminApi.modelAccountTestImageUrl(testDialog.result.image_url, accessToken)} alt="测试图片结果" />
+                ) : (
+                  <div className="cfg-test-media__missing">上游未返回图片结果</div>
+                )}
+                <div className="cfg-test-meta">
+                  <Badge tone="success">{testDialog.result.status}</Badge>
+                  <Badge>{testDialog.result.width ?? 0} × {testDialog.result.height ?? 0}</Badge>
+                  <Badge>{testDialog.result.elapsed_ms} ms</Badge>
+                  {testDialog.result.provider_request_id ? <Badge>请求 {testDialog.result.provider_request_id}</Badge> : null}
+                </div>
+                {testActualParams.length ? (
+                  <div className="cfg-test-params">
+                    {testActualParams.map(([key, value]) => <span key={key} className="a-badge">{key}: {value}</span>)}
+                  </div>
+                ) : null}
+              </section>
+            ) : (
+              <section className="cfg-test-media__idle">
+                <ImageIcon aria-hidden="true" />
+                <strong>尚无测试结果</strong>
+                <span className="a-hint">填写参数后开始测试，图片会显示在这里。</span>
+              </section>
+            )}
           </form>
         </Drawer>
       ) : null}

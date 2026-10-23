@@ -1,0 +1,185 @@
+/* System settings — horizontal section tabs with vertical block navigation.
+   Command Deck tokens only; no page-level palette. */
+
+.ss-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
+.ss-workspace--with-subnav {
+  grid-template-columns: 200px minmax(0, 1fr) 280px;
+}
+
+.ss-subnav {
+  position: sticky;
+  top: calc(var(--a-top-h) + 18px);
+  display: grid;
+  gap: 2px;
+  align-self: start;
+}
+
+.ss-subnav__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--a-ink-2);
+  font-size: 13px;
+  text-align: left;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.ss-subnav__item:hover {
+  background: var(--a-surface-2);
+  color: var(--a-ink);
+}
+
+.ss-subnav__item.is-active {
+  background: var(--a-accent-soft);
+  color: var(--a-accent);
+  font-weight: 650;
+}
+
+.ss-subnav__item em {
+  margin-left: auto;
+  color: var(--a-ink-3);
+  font-family: var(--font-admin-mono);
+  font-size: 10.5px;
+  font-style: normal;
+}
+
+.ss-subnav__item:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.ss-content {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.ss-content-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ss-content-head strong {
+  color: var(--a-ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.ss-content-head p {
+  margin-top: 2px;
+}
+
+.ss-rail {
+  position: sticky;
+  top: calc(var(--a-top-h) + 18px);
+  display: grid;
+  gap: 12px;
+  align-self: start;
+  max-height: calc(100vh - var(--a-top-h) - 36px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.ss-rail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.ss-rail-row b {
+  color: var(--a-ink);
+  font-weight: 600;
+}
+
+.ss-rail-row b.is-warn {
+  color: var(--a-warn);
+}
+
+.ss-rail-row b.is-ok {
+  color: var(--a-success);
+}
+
+.ss-dot--warn {
+  color: var(--a-warn);
+}
+
+.ss-dot--info {
+  color: var(--a-info);
+}
+
+.ss-dot--success {
+  color: var(--a-success);
+}
+
+.ss-block {
+  scroll-margin-top: calc(var(--a-top-h) + 24px);
+  border-radius: 12px;
+  transition: box-shadow var(--t-base) var(--ease-out);
+}
+
+/* FormSection is wrapped in an anchor block, so it is no longer the last
+   section of the form; keep the ledger divider the global rule expects. */
+.ss-block > section.a-form__section {
+  border-bottom: 1px solid var(--a-line);
+}
+
+.ss-block:last-child > section.a-form__section {
+  border-bottom: 0;
+}
+
+.ss-block.is-active {
+  box-shadow: 0 0 0 1px var(--a-accent-line);
+}
+
+.ss-block.is-active > .a-panel,
+.ss-block.is-active > section.a-form__section {
+  border-color: var(--a-accent-line);
+}
+
+@media (max-width: 1280px) {
+  .ss-workspace--with-subnav {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+
+  .ss-workspace--with-subnav .ss-rail,
+  .ss-workspace:not(.ss-workspace--with-subnav) .ss-rail {
+    grid-column: 1 / -1;
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 980px) {
+  .ss-workspace,
+  .ss-workspace--with-subnav {
+    grid-template-columns: 1fr;
+  }
+
+  .ss-subnav {
+    position: static;
+  }
+
+  .ss-rail {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}

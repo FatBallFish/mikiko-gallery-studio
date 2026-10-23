@@ -25,12 +25,12 @@ for (const required of ['className="reference-name-row"', 'title={asset.name}', 
 if (source.includes('className="reference-name-editor"')) {
   throw new Error('reference asset naming must use the full-size rename dialog instead of the thumbnail editor')
 }
-const modelGroupPosition = source.indexOf('模型分组')
-const referencePosition = source.indexOf('图片编辑来源')
-const promptPosition = source.indexOf('>提示词</label>')
-const sizeModePosition = source.indexOf('>尺寸模式</label>')
-if (!(modelGroupPosition >= 0 && modelGroupPosition < referencePosition && referencePosition < promptPosition && promptPosition < sizeModePosition)) {
-  throw new Error('creative workspace order must be model group, references, prompt, then generation parameters')
+const controlOrder = ['{modelControls}', '{promptControls}', '{referenceControls}', '{sizeControls}', '{qualityControls}', '{countControls}'].map((needle) => source.indexOf(needle))
+if (controlOrder.some((position) => position < 0) || controlOrder.some((position, index) => index > 0 && position < controlOrder[index - 1])) {
+  throw new Error('creative workspace render order must be model, prompt, references, size, quality, count')
+}
+if (!source.includes('<h4>提示词</h4>') || !source.includes('参考图/图片编辑来源')) {
+  throw new Error('creative workspace headings must expose the production labels')
 }
 
 for (const required of [
@@ -221,7 +221,7 @@ if (!source.includes('<PromptTemplateEditor') || source.includes('redesign-promp
 }
 for (const required of [
   'function HistoryTaskGalleryModal',
-  '历史创作总览',
+  '历史创作详情',
   'onPreviewImage',
   'setHistoryTaskDialog(null)',
 ]) {

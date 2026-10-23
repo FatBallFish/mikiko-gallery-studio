@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import type {
   AdminVideoConfiguration,
   ModelAccount,
@@ -18,7 +18,7 @@ import {
   PageHeader,
   RefreshIconButton,
 } from "../components";
-import { DataTable, FilterToolbar, ListPage, type ColumnDef } from "../ui/dataTable";
+import { DataTable, FilterToolbar, type ColumnDef } from "../ui/dataTable";
 import {
   AdminMediaTabs,
   ChecklistField,
@@ -26,6 +26,7 @@ import {
   LedgerField,
   MultiSelectField,
   SwitchField,
+  type AdminMediaAccountCounts,
 } from "./AdminMediaTabs";
 import { modelAccountMediaType, modelMediaType } from "./adminModelMedia";
 
@@ -93,7 +94,7 @@ function adapterBadgeLabel(adapterType: string) {
   return adapterBadgeLabels[adapterType] ?? adapterType;
 }
 
-export function VideoProviderAccountsPanel({ onFeedback = () => undefined }: { onFeedback?: (title: string, detail?: string) => void }) {
+export function VideoProviderAccountsPanel({ onFeedback = () => undefined, counts, onAccountsChanged }: { onFeedback?: (title: string, detail?: string) => void; counts?: AdminMediaAccountCounts; onAccountsChanged?: () => void }) {
   const [accounts, setAccounts] = useState<ModelAccount[]>([]);
   const [models, setModels] = useState<Record<string, ModelAccountModel[]>>({});
   const [snapshot, setSnapshot] = useState<AdminVideoConfiguration | null>(null);
@@ -194,6 +195,7 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined }: { o
         : await adminApi.createModelAccount(input);
       setAccountDraft(null);
       await load(String(saved.id));
+      onAccountsChanged?.();
       onFeedback(accountDraft.row ? "视频账号已保存" : "视频账号已创建", saved.name);
     } catch (caught) {
       setMutationError(errorText(caught));
@@ -364,8 +366,10 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined }: { o
         await adminApi.deleteModelAccountModel(deleteTarget.account.id, deleteTarget.model.id);
       }
       const label = deleteTarget.kind === "account" ? deleteTarget.account.name : deleteTarget.model.model_code;
+      const deletingAccount = deleteTarget.kind === "account";
       setDeleteTarget(null);
       await load();
+      if (deletingAccount) onAccountsChanged?.();
       onFeedback("视频配置已删除", label);
     } catch (caught) {
       setMutationError(errorText(caught));
@@ -388,7 +392,7 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined }: { o
         primaryAction={<Button variant="primary" size="sm" onClick={() => setAccountDraft(blankAccount())}>添加视频账号</Button>}
         secondaryActions={<RefreshIconButton label="刷新视频接入账号" refreshing={loading} onClick={() => void load()} />}
       />
-      <AdminMediaTabs route="access-accounts" value="video" />
+      <AdminMediaTabs route="access-accounts" value="video" counts={counts} />
       {error ? <InlineFeedback tone="danger" message={error} /> : null}
 
       <section className="a-metrics" aria-label="视频接入概况">
@@ -398,41 +402,36 @@ export function VideoProviderAccountsPanel({ onFeedback = () => undefined }: { o
         <div className="a-metric"><div className="a-metric__label">待完善</div><div className="a-metric__value" style={{ color: pendingModels.length ? "var(--a-danger)" : undefined }}>{pendingModels.length}</div><div className="a-metric__foot">缺费率 / 能力 / 启用状态</div></div>
       </section>
 
+      {accounts.length ? (
+        <FilterToolbar
+          fields={[{ key: "query", label: "搜索账号", primary: true, minWidth: "220px", maxWidth: "420px", control: <input value={query} onChange={(event) => setQuery(event.target.value)} className="a-input" placeholder="账号名称 / 适配器 / Base URL" aria-label="搜索视频接入账号" /> }]}
+          resultSummary={`共 ${accounts.length} 个视频账号 · 当前显示 ${filteredAccounts.length} 个`}
+        />
+      ) : null}
+
       <section className="a-panel a-panel--flush">
         <div className="a-panel__head">
           <div>
             <h2>视频接入账号</h2>
             <p>视频账号按适配器区分；任务类型与时长/分辨率/音频能力在真实模型中配置。</p>
           </div>
-          <div className="a-search" style={{ width: "min(320px, 100%)" }}>
-            <Search aria-hidden="true" />
-            <input className="a-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索视频账号、适配器或 Base URL" aria-label="搜索视频接入账号" />
-          </div>
         </div>
         {!accounts.length ? (
-          <div className="p-4"><EmptyBlock title="暂无视频账号" detail="新增 Seedance、MiniMax、Gasic 或阿里百炼账号后，再添加真实模型。" action={<Button variant="primary" size="sm" onClick={() => setAccountDraft(blankAccount())}>添加视频账号</Button>} /></div>
+          <div className="a-panel__body"><EmptyBlock title="暂无视频账号" detail="新增 Seedance、MiniMax、Gasic 或阿里百炼账号后，再添加真实模型。" action={<Button variant="primary" size="sm" onClick={() => setAccountDraft(blankAccount())}>添加视频账号</Button>} /></div>
         ) : (
-          <ListPage
-            filters={(
-              <FilterToolbar
-                fields={[{ key: "query", label: "搜索账号", primary: true, minWidth: "220px", maxWidth: "420px", control: <input value={query} onChange={(event) => setQuery(event.target.value)} className="a-input" placeholder="账号名称 / 适配器 / Base URL" /> }]}
-                resultSummary={`共 ${accounts.length} 个视频账号 · 当前显示 ${filteredAccounts.length} 个`}
-              />
-            )}
-          >
-            <DataTable
-              minWidth={1180}
-              columns={videoAccountColumns({
-                models,
-                onEdit: (account) => { setMutationError(""); setAccountDraft(editAccount(account)); },
-                onConfigureModels: (account) => setModelAccountID(String(account.id)),
-                onDelete: (account) => { setMutationError(""); setDeleteTarget({ kind: "account", account }); },
-              })}
-              rows={filteredAccounts}
-              rowKey={(account) => account.id}
-              empty={<EmptyBlock title="未找到视频账号" detail="换一个账号名称、适配器或 Base URL 关键词再试。" />}
-            />
-          </ListPage>
+          <DataTable
+            className="cfg-account-table"
+            minWidth={1180}
+            columns={videoAccountColumns({
+              models,
+              onEdit: (account) => { setMutationError(""); setAccountDraft(editAccount(account)); },
+              onConfigureModels: (account) => setModelAccountID(String(account.id)),
+              onDelete: (account) => { setMutationError(""); setDeleteTarget({ kind: "account", account }); },
+            })}
+            rows={filteredAccounts}
+            rowKey={(account) => account.id}
+            empty={<EmptyBlock title="未找到视频账号" detail="换一个账号名称、适配器或 Base URL 关键词再试。" />}
+          />
         )}
       </section>
 

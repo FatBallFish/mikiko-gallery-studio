@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { Dispatch, SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { type AdminSession, type ConfigItem } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { cn } from '../../../shared/classnames'
-import { AdminTabs, Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, PageHeader } from '../components'
+import { Badge, EmptyBlock, ErrorBlock, Field, InlineFeedback, LoadingBlock, PageHeader } from '../components'
 import { FormSaveBar, MultiSelectField } from './AdminMediaTabs'
 import { canAdmin } from '../types'
 import { adminButton, adminPage } from '../ui/classes'
+import { systemSettingsSectionAnchor, settingsValuesEqual, type SystemSettingsSection } from './systemSettingsTabs'
 import {
   configFieldMeta,
   configLockedDetail,
@@ -18,7 +18,6 @@ import {
   generalConfigCategories,
   inferConfigFieldType,
   isRecord,
-  isSameConfigValue,
   normalizeDraftValue,
   type ConfigFieldMeta,
   type ConfigValue,
@@ -28,28 +27,28 @@ type DraftMap = Record<string, ConfigValue>
 type ConfigEditorState = 'pristine' | 'dirty' | 'validating' | 'saving' | 'saved' | 'failed'
 
 const configClasses = {
-  statusStrip: 'grid grid-cols-4 gap-4 max-[920px]:grid-cols-2 max-[620px]:grid-cols-1',
-  statusCell: 'min-w-0 border-r border-[var(--line)] px-4 py-3 last:border-r-0 max-[620px]:border-r-0 max-[620px]:border-b max-[620px]:last:border-b-0',
-  statusLabel: 'block text-[11px] font-semibold text-[var(--soft)]',
-  statusValue: 'mt-1 block truncate text-[var(--text)]',
-  statusCard: 'rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5',
-  board: 'grid min-h-0 grid-cols-[220px_minmax(0,1fr)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] max-[1260px]:grid-cols-1',
-  boardFull: 'grid min-h-0 grid-cols-[220px_minmax(0,1fr)_280px] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] max-[1260px]:grid-cols-1',
-  rail: 'border-r border-[var(--border)] bg-[var(--surface)] p-3 max-[1260px]:border-r-0 max-[1260px]:border-b',
-  lane: 'min-w-0 overflow-y-auto border-r border-[var(--line)] px-[18px] py-4 max-[1260px]:border-r-0',
-  head: 'mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-3',
-  headTitle: 'block text-[var(--text)]',
-  headDetail: 'm-0 mt-1 text-sm text-[var(--soft)]',
-  permissionNote: 'rounded-xl border border-[rgba(184,135,64,.28)] bg-[rgba(184,135,64,.08)] px-3 py-2 text-sm text-[var(--amber)]',
-  formGrid: 'mt-4 grid grid-cols-[repeat(2,minmax(220px,1fr))] items-start gap-3.5 max-[760px]:grid-cols-1',
-  formItem: 'grid min-w-0 self-start gap-2',
-  sideRail: 'sticky top-[84px] grid min-w-0 content-start self-start overflow-y-auto bg-[var(--surface)] max-[1260px]:static',
-  sideStrip: 'border-b border-[var(--line)] px-4 py-[15px] last:border-b-0',
-  sideLabel: 'block text-[11px] font-semibold text-[var(--soft)]',
-  sideStrong: 'mt-2 block text-[var(--text)]',
-  sideText: 'm-0 mt-2 text-sm text-[var(--soft)]',
   kvList: 'grid gap-2',
   kvRow: 'grid grid-cols-[minmax(90px,.9fr)_minmax(100px,1fr)] gap-2 max-[620px]:grid-cols-1',
+}
+
+const generalSectionLabels: Record<string, string> = {
+  site: '站点基础',
+  features: '功能开关',
+  public_gallery: '公开内容',
+}
+
+const generalSectionDetails: Record<string, string> = {
+  site: '站点基础信息与访问设置。',
+  features: '用户端功能入口开关；关闭后历史资产仍会保留。',
+  public_gallery: '图片公开申请、广场展示和内容可见性开关。',
+}
+
+function configSectionLabel(key: string) {
+  return generalSectionLabels[key] ?? configTabMeta(key).label
+}
+
+function configSectionDetail(key: string) {
+  return generalSectionDetails[key] ?? configTabMeta(key).detail
 }
 
 export function ConfigPage({
@@ -61,6 +60,9 @@ export function ConfigPage({
   keys,
   onDirtyChange,
   onBusyChange,
+  sectionRequest,
+  onSectionsChange,
+  onActiveSectionChange,
 }: {
   session: AdminSession
   onFeedback: (title: string, detail?: string) => void
@@ -70,9 +72,13 @@ export function ConfigPage({
   keys?: readonly string[]
   onDirtyChange?: (dirty: boolean) => void
   onBusyChange?: (busy: boolean) => void
+  sectionRequest?: { id: string; nonce: number } | null
+  onSectionsChange?: (sections: SystemSettingsSection[]) => void
+  onActiveSectionChange?: (section: string) => void
 }) {
   const [rows, setRows] = useState<ConfigItem[]>([])
   const [drafts, setDrafts] = useState<DraftMap>({})
+  const [baseline, setBaseline] = useState<DraftMap>({})
   const [activeTab, setActiveTab] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +86,7 @@ export function ConfigPage({
   const [notice, setNotice] = useState('配置中心已连接真实 API。')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [editorState, setEditorState] = useState<ConfigEditorState>('pristine')
+  const handledSectionRequest = useRef(0)
 
   const load = async () => {
     setLoading(true)
@@ -87,8 +94,10 @@ export function ConfigPage({
     try {
       const nextRows = await adminApi.listConfig()
       const generalRows = nextRows.filter((row) => configRowAllowed(row, categories, keys))
+      const nextDrafts = draftMapFromRows(generalRows)
       setRows(generalRows)
-      setDrafts(Object.fromEntries(generalRows.map((row) => [draftId(row), extractConfigValue(row)])))
+      setDrafts(nextDrafts)
+      setBaseline(cloneDraftMap(nextDrafts))
       setActiveTab((current) => {
         if (current && generalRows.some((row) => (row.config_category || row.tab) === current)) return current
         return generalRows[0]?.config_category || generalRows[0]?.tab || ''
@@ -106,13 +115,13 @@ export function ConfigPage({
 
   const tabs = useMemo(() => {
     const keys = Array.from(new Set(rows.map((row) => row.config_category || row.tab).filter(Boolean)))
-    return keys.map((key) => ({ key, label: configTabMeta(key).label }))
+    return keys.map((key) => ({ key, label: configSectionLabel(key) }))
   }, [rows])
   const activeRows = rows.filter((row) => (row.config_category || row.tab) === activeTab)
   // Config categories (for example `features`) are displayed as editor tabs,
   // while writes must target the owning persistence tab (for example `site`).
   const activePersistenceTab = activeRows[0]?.tab || activeTab
-  const dirtyKeys = rows.filter((row) => !isSameConfigValue(drafts[draftId(row)], extractConfigValue(row))).map(draftId)
+  const dirtyKeys = rows.filter((row) => !settingsValuesEqual(drafts[draftId(row)], baseline[draftId(row)])).map(draftId)
   const activeDirty = activeRows.some((row) => dirtyKeys.includes(draftId(row)))
   const dirty = dirtyKeys.length > 0
   const conflicts = activeRows.flatMap((row) => {
@@ -120,11 +129,17 @@ export function ConfigPage({
     const message = configValidateValue(row.config_key ?? row.key, drafts[key])
     return message ? [{ key: row.key, message }] : []
   })
-  const activeMeta = configTabMeta(activeTab || activeRows[0]?.tab || '')
+  const activeMetaKey = activeTab || activeRows[0]?.tab || ''
+  const activeMeta = { ...configTabMeta(activeMetaKey), label: configSectionLabel(activeMetaKey), detail: configSectionDetail(activeMetaKey) }
   const requiredPermission = configPermission(activeTab)
   const canEditActiveTab = canAdmin(session, requiredPermission)
   const lockedDetail = configLockedDetail(requiredPermission)
-  const sampleFields = activeRows.slice(0, 4)
+  const sectionItems = useMemo<SystemSettingsSection[]>(() => tabs.map((tab) => ({
+    id: tab.key,
+    label: tab.label,
+    count: rows.filter((row) => (row.config_category || row.tab) === tab.key).length,
+    disabled: saving,
+  })), [rows, saving, tabs])
 
   useEffect(() => {
     onDirtyChange?.(dirty)
@@ -135,6 +150,14 @@ export function ConfigPage({
   }, [onBusyChange, saving])
 
   useEffect(() => () => onBusyChange?.(false), [onBusyChange])
+
+  useEffect(() => {
+    onSectionsChange?.(sectionItems)
+  }, [onSectionsChange, sectionItems])
+
+  useEffect(() => {
+    if (activeTab) onActiveSectionChange?.(activeTab)
+  }, [activeTab, onActiveSectionChange])
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -168,17 +191,31 @@ export function ConfigPage({
           scope: row.scope ?? 'global',
         })),
       })
+    } catch (caught) {
+      setSaveError(caught instanceof Error ? caught.message : '通用配置保存失败')
+      setEditorState('failed')
+      setSaving(false)
+      return
+    }
+
+    // The write succeeded: reset the baseline from the values that were sent
+    // so the dirty indicator clears before the optional refresh completes.
+    const savedDrafts = Object.fromEntries(activeRows.map((row) => [draftId(row), cloneConfigValue(drafts[draftId(row)]) as ConfigValue]))
+    setDrafts((current) => ({ ...current, ...savedDrafts }))
+    setBaseline((current) => ({ ...current, ...cloneDraftMap(savedDrafts) }))
+    setNotice(`${activeMeta.label}已保存，API 节点将在 1 分钟内读取新配置。`)
+    setEditorState('saved')
+    onFeedback('通用配置已保存', activeMeta.label)
+
+    try {
       const nextRows = await adminApi.listConfig()
       const generalRows = nextRows.filter((row) => configRowAllowed(row, categories, keys))
+      const nextDrafts = draftMapFromRows(generalRows)
       setRows(generalRows)
-      setDrafts(Object.fromEntries(generalRows.map((row) => [draftId(row), extractConfigValue(row)])))
-      setNotice(`${activeMeta.label}已保存，API 节点将在 1 分钟内读取新配置。`)
-      setEditorState('saved')
-      onFeedback('通用配置已保存', activeMeta.label)
+      setDrafts(nextDrafts)
+      setBaseline(cloneDraftMap(nextDrafts))
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : '通用配置保存失败'
-      setSaveError(message)
-      setEditorState('failed')
+      setSaveError(caught instanceof Error ? `配置已保存，但重新读取最新值失败：${caught.message}` : '配置已保存，但重新读取最新值失败，请刷新页面确认。')
     } finally {
       setSaving(false)
     }
@@ -187,7 +224,7 @@ export function ConfigPage({
   const revertActiveTab = () => {
     setDrafts((current) => ({
       ...current,
-      ...Object.fromEntries(activeRows.map((row) => [draftId(row), extractConfigValue(row)])),
+      ...draftMapFromRows(activeRows, baseline),
     }))
     setNotice(`${activeMeta.label}已恢复为当前生效值。`)
     setSaveError(null)
@@ -197,17 +234,28 @@ export function ConfigPage({
   const switchConfigTab = (tab: string) => {
     if (saving) return
     if (tab === activeTab) return
+    if (!tabs.some((item) => item.key === tab)) return
     if (activeDirty) {
-      if (!window.confirm('当前类目存在未保存修改，放弃并切换吗？')) return
+      if (!window.confirm('当前类目存在未保存修改，放弃并切换吗？')) {
+        onActiveSectionChange?.(activeTab)
+        return
+      }
       setDrafts((current) => ({
         ...current,
-        ...Object.fromEntries(activeRows.map((row) => [draftId(row), extractConfigValue(row)])),
+        ...draftMapFromRows(activeRows, baseline),
       }))
     }
     setSaveError(null)
     setEditorState('pristine')
     setActiveTab(tab)
+    onActiveSectionChange?.(tab)
   }
+
+  useEffect(() => {
+    if (!sectionRequest || sectionRequest.nonce === handledSectionRequest.current) return
+    handledSectionRequest.current = sectionRequest.nonce
+    switchConfigTab(sectionRequest.id)
+  }, [sectionRequest])
 
   if (loading) return <LoadingBlock label="载入通用配置" />
   if (error) return <ErrorBlock message={error} onRetry={load} />
@@ -215,7 +263,7 @@ export function ConfigPage({
 
   return (
     <section className={adminPage.stack}>
-      {!compact ? (
+      {!compact && !summaryMode ? (
         <PageHeader
           title="通用配置"
           detail="只维护公开内容等低风险配置；认证、支付、审核和生成限制已拆到对应独立页面。"
@@ -223,183 +271,58 @@ export function ConfigPage({
       ) : null}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <AdminTabs
-          ariaLabel="通用配置类目"
-          orientation="horizontal"
-          items={tabs.map((tab) => ({ id: tab.key, label: tab.label, disabled: saving }))}
-          value={activeTab}
-          onChange={switchConfigTab}
-        />
+        <span className="a-hint">{tabs.length > 1 ? '通过左侧区块导航切换类目；每个类目独立保存。' : '配置字段使用单列账本布局；保存后 API 节点将在 1 分钟内读取新值。'}</span>
         <div className="a-row-actions">
           <Badge tone={!canEditActiveTab || conflicts.length ? 'warning' : 'success'}>{!canEditActiveTab ? '只读' : conflicts.length ? `${conflicts.length} 项校验未通过` : '校验通过'}</Badge>
           <Badge tone={dirty ? 'warning' : editorState === 'saved' ? 'success' : 'neutral'}>{dirty ? `${dirtyKeys.length} 项未保存` : configEditorStateLabel(editorState, 0)}</Badge>
         </div>
       </div>
 
-      <section className="a-form-page">
-        <section className="a-panel a-panel--flush">
-          <div className="a-panel__head">
-            <div>
-              <h2>{activeMeta.label}</h2>
-              <p>{activeMeta.detail}</p>
+      <section
+        id={systemSettingsSectionAnchor('general', activeTab)}
+        className={cn('a-panel a-panel--flush', 'ss-block is-active')}
+        data-admin-config-save-rail
+      >
+        <div className="a-panel__head">
+          <div>
+            <h2>{activeMeta.label}</h2>
+            <p>{activeMeta.detail}</p>
+          </div>
+          <span className="a-hint">{activeRows.length} 个字段</span>
+        </div>
+        {!canEditActiveTab ? <div style={{ padding: '12px 20px' }}><InlineFeedback tone="warning" message={lockedDetail} /></div> : null}
+        {saveError ? <div style={{ padding: '12px 20px' }}><InlineFeedback tone="danger" message={saveError} /></div> : null}
+        <form className="a-form" onSubmit={(event) => event.preventDefault()}>
+          <section className="a-form__section">
+            <div className="a-form__head">
+              <h3><span className="a-form__num">1</span>{activeMeta.label}</h3>
+              <p>{activeMeta.detail || '配置字段使用单列布局，保存后 API 节点将在 1 分钟内读取新值。'}</p>
             </div>
-            <span className="a-hint">{activeRows.length} 个字段</span>
-          </div>
-          {!canEditActiveTab ? <div style={{ padding: '12px 20px' }}><InlineFeedback tone="warning" message={lockedDetail} /></div> : null}
-          {saveError ? <div style={{ padding: '12px 20px' }}><InlineFeedback tone="danger" message={saveError} /></div> : null}
-          <form className="a-form" onSubmit={(event) => event.preventDefault()}>
-            <section className="a-form__section">
-              <div className="a-form__head">
-                <h3><span className="a-form__num">1</span>{activeMeta.label}</h3>
-                <p>{activeMeta.detail || '配置字段使用单列布局，保存后 API 节点将在 1 分钟内读取新值。'}</p>
-              </div>
-              {activeRows.map((row) => {
-                const key = row.config_key ?? row.key
-                const meta = configFieldMeta(key, row.description)
-                const rowDraftId = draftId(row)
-                const conflict = configValidateValue(key, drafts[rowDraftId])
-                return (
-                  <div key={rowDraftId}>
-                    {renderConfigField(row, meta, drafts[rowDraftId], (value) => setDrafts((current) => ({ ...current, [rowDraftId]: value })), conflict, saving || !canEditActiveTab)}
-                  </div>
-                )
-              })}
-            </section>
-          </form>
-          <FormSaveBar
-            dirtyCount={dirtyKeys.length}
-            errorCount={conflicts.length}
-            busy={saving}
-            note={notice}
-            onReset={revertActiveTab}
-            onSave={() => void saveActiveTab()}
-            saveLabel="保存本类"
-            saveDisabled={!canEditActiveTab || !activeDirty}
-          />
-        </section>
-        <aside className="a-form-page__rail">
-          <div className="a-rail-card">
-            <h4>当前类目</h4>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}><span className="a-hint">类目</span><b>{activeMeta.label}</b></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}><span className="a-hint">字段</span><b>{activeRows.length} 项</b></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}><span className="a-hint">未保存</span><b style={{ color: dirty ? 'var(--a-warn)' : 'var(--a-success)' }}>{dirtyKeys.length}</b></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}><span className="a-hint">校验</span><b>{conflicts.length ? `${conflicts.length} 项需处理` : '通过'}</b></div>
-          </div>
-          <div className="a-rail-card">
-            <h4>保存规则</h4>
-            <ul>
-              <li><i style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--a-warn)' }} />切换类目会提示放弃未保存修改</li>
-              <li><i style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--a-info)' }} />保存后配置解析缓存会失效</li>
-              <li><i style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--a-success)' }} />写入会记录审计日志</li>
-            </ul>
-          </div>
-          <div className="a-rail-card"><h4>提示</h4><div className="a-hint">多值枚举使用多选组件与自定义值输入，避免逗号分隔文本造成歧义。</div></div>
-        </aside>
-      </section>
-    </section>
-  )
-}
-
-function ConfigEditor({
-  activeMeta,
-  tabs,
-  activeTab,
-  setActiveTab,
-  activeRows,
-  drafts,
-  setDrafts,
-  conflicts,
-  canEditActiveTab,
-  lockedDetail,
-  saving,
-  activeDirty,
-  compact,
-  notice,
-  editorState,
-  saveError,
-  revertActiveTab,
-  saveActiveTab,
-  summaryMode = false,
-}: {
-  activeMeta: ReturnType<typeof configTabMeta>
-  tabs: Array<{ key: string; label: string }>
-  activeTab: string
-  setActiveTab: (tab: string) => void
-  activeRows: ConfigItem[]
-  drafts: DraftMap
-  setDrafts: Dispatch<SetStateAction<DraftMap>>
-  conflicts: Array<{ key: string; message: string }>
-  canEditActiveTab: boolean
-  lockedDetail: string
-  saving: boolean
-  activeDirty: boolean
-  compact: boolean
-  notice: string
-  editorState: ConfigEditorState
-  saveError: string | null
-  revertActiveTab: () => void
-  saveActiveTab: () => Promise<void>
-  summaryMode?: boolean
-}) {
-  return (
-    <section className={summaryMode ? configClasses.board : configClasses.boardFull}>
-        <aside className={configClasses.rail}>
-          <AdminTabs
-            ariaLabel="通用配置类目"
-            orientation="vertical"
-            items={tabs.map((tab) => ({ id: tab.key, label: tab.label, disabled: saving }))}
-            value={activeTab}
-            onChange={setActiveTab}
-          />
-        </aside>
-
-        <section className={configClasses.lane}>
-          <div className={configClasses.head}>
-            <div>
-              <strong className={configClasses.headTitle}>{activeMeta.label}</strong>
-              <p className={configClasses.headDetail}>{activeMeta.detail}</p>
-              {summaryMode ? <p className={cn(configClasses.headDetail, 'text-[var(--accent)]')}>{notice}</p> : null}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone={!canEditActiveTab || conflicts.length ? 'warning' : 'success'}>{!canEditActiveTab ? '只读' : conflicts.length ? '需修正' : '可保存'}</Badge>
-              <Badge tone={!canEditActiveTab || conflicts.length || editorState === 'failed' ? 'warning' : editorState === 'saved' ? 'success' : 'neutral'}>{configEditorStateLabel(editorState, conflicts.length)}</Badge>
-            </div>
-          </div>
-          {!canEditActiveTab ? <div className={configClasses.permissionNote}>{lockedDetail}</div> : null}
-
-          <div className={configClasses.formGrid}>
             {activeRows.map((row) => {
               const key = row.config_key ?? row.key
               const meta = configFieldMeta(key, row.description)
               const rowDraftId = draftId(row)
               const conflict = configValidateValue(key, drafts[rowDraftId])
               return (
-                <div key={rowDraftId} className={configClasses.formItem}>
+                <div key={rowDraftId}>
                   {renderConfigField(row, meta, drafts[rowDraftId], (value) => setDrafts((current) => ({ ...current, [rowDraftId]: value })), conflict, saving || !canEditActiveTab)}
                 </div>
               )
             })}
-          </div>
-        </section>
-
-        {summaryMode ? null : (
-          <aside className={configClasses.sideRail} data-admin-config-save-rail>
-            <section className={configClasses.sideStrip}>
-              <label className={configClasses.sideLabel}>保存状态</label>
-              <strong className={configClasses.sideStrong}>{configEditorStateLabel(editorState, conflicts.length)}</strong>
-              <p className={configClasses.sideText}>{notice}</p>
-              {saveError ? <InlineFeedback tone="danger" message={saveError} /> : null}
-            </section>
-            <section className={configClasses.sideStrip}>
-              <div className="grid gap-2">
-                <button type="button" className={cn(adminButton.base, adminButton.ghost, adminButton.small)} onClick={revertActiveTab} disabled={saving || !activeDirty}>恢复本类</button>
-                <button type="button" className={cn(adminButton.base, adminButton.primary, adminButton.small)} onClick={() => void saveActiveTab()} disabled={saving || Boolean(conflicts.length) || !activeDirty || !canEditActiveTab}>{saving ? '保存中...' : '保存本类'}</button>
-              </div>
-            </section>
-            <section className={configClasses.sideStrip}><label className={configClasses.sideLabel}>提示</label><p className={configClasses.sideText}>鼠标悬停字段名旁的提示符可查看用途说明；复杂列表以结构化文本编辑，保存后仍按原始接口契约提交。</p></section>
-          </aside>
-        )}
+          </section>
+        </form>
+        <FormSaveBar
+          dirtyCount={dirtyKeys.length}
+          errorCount={conflicts.length}
+          busy={saving}
+          note={notice}
+          onReset={revertActiveTab}
+          onSave={() => void saveActiveTab()}
+          saveLabel="保存本类"
+          saveDisabled={!canEditActiveTab || !activeDirty}
+        />
       </section>
+    </section>
   )
 }
 
@@ -411,13 +334,6 @@ function configEditorStateLabel(state: ConfigEditorState, conflictCount: number)
   if (state === 'saved') return '已保存'
   if (state === 'failed') return '保存失败'
   return '未修改'
-}
-
-function summaryValue(value: ConfigValue) {
-  if (typeof value === 'boolean') return value ? '开启' : '关闭'
-  if (Array.isArray(value)) return `${value.length} 项`
-  if (isRecord(value)) return Object.keys(value).join(', ') || '-'
-  return String(value ?? '-')
 }
 
 function renderConfigField(row: ConfigItem, meta: ConfigFieldMeta, value: ConfigValue, onChange: (value: ConfigValue) => void, error: string | null, disabled: boolean) {
@@ -507,4 +423,25 @@ function MapField({ label, hint, value, onChange, error, disabled }: { label: st
 
 function draftId(row: ConfigItem) {
   return `${row.config_category ?? row.tab}:${row.config_key ?? row.key}:${row.scope ?? 'global'}`
+}
+
+function draftMapFromRows(rows: ConfigItem[], source: DraftMap = {}): DraftMap {
+  return Object.fromEntries(rows.map((row) => {
+    const id = draftId(row)
+    const value = id in source ? source[id] : extractConfigValue(row)
+    return [id, cloneConfigValue(value) as ConfigValue]
+  }))
+}
+
+function cloneDraftMap(source: DraftMap): DraftMap {
+  return Object.fromEntries(Object.entries(source).map(([key, value]) => [key, cloneConfigValue(value) as ConfigValue]))
+}
+
+function cloneConfigValue(value: ConfigValue | undefined): ConfigValue | undefined {
+  if (value === undefined) return undefined
+  try {
+    return JSON.parse(JSON.stringify(value)) as ConfigValue
+  } catch {
+    return value
+  }
 }

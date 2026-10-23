@@ -1,4 +1,4 @@
-import type { CallRecord } from '../../../shared/api-types'
+import type { CallRecord, ModelProvider, RouteModel } from '../../../shared/api-types'
 import { adminTaskTypeLabel } from './adminTaskTypes'
 
 export type CallRecordRowModel = {
@@ -10,6 +10,7 @@ export type CallRecordRowModel = {
   userDetail: string
   routeLabel: string
   routeDetail: string
+  routeModelCode: string
   providerLabel: string
   providerDetail: string
   status: string
@@ -22,6 +23,19 @@ export type CallRecordRowModel = {
   marginLabel: string
   lifecycleLabel: string
   createdAt: string
+  startedAtLabel: string
+  finishedAtLabel: string
+  updatedAtLabel: string
+  upstreamSucceededAtLabel: string
+  durationSeconds: number
+  durationLabel: string
+  previewURL: string | null
+  prompt: string
+}
+
+export type CallRecordFilterOption = {
+  value: string
+  label: string
 }
 
 export const callRecordFilterCopy = {
@@ -33,16 +47,22 @@ export const callRecordFilterCopy = {
     label: '入口',
   },
   provider: {
-    label: 'Provider',
-    placeholder: 'Provider 或账号',
+    label: '上游渠道',
+    placeholder: '选择上游渠道',
+  },
+  routeModel: {
+    label: '路由模型',
   },
   userId: {
-    label: '用户 ID',
-    placeholder: '用户 ID',
+    label: '用户',
+    placeholder: '用户 ID / 邮箱',
   },
   taskId: {
     label: '任务 ID',
     placeholder: '任务 ID',
+  },
+  createdAt: {
+    label: '创建时间',
   },
 } as const
 
@@ -90,6 +110,7 @@ export function callRecordRows(records: CallRecord[]): CallRecordRowModel[] {
     userDetail: record.api_key_id ? `API Key #${record.api_key_id}` : channelLabel(record.source_channel),
     routeLabel: record.route_model_code || snapshotText(record.pricing_snapshot, 'route_model_code') || record.abstract_model || '-',
     routeDetail: `${record.base_resolution || '-'} · ${record.quality || '-'} · ${channelLabel(record.source_channel)}`,
+    routeModelCode: callRecordRouteModelCode(record),
     providerLabel: record.provider || '-',
     providerDetail: providerDetail(record),
     status: record.status,
@@ -102,7 +123,127 @@ export function callRecordRows(records: CallRecord[]): CallRecordRowModel[] {
     marginLabel: emptyDash(record.gross_margin),
     lifecycleLabel: lifecycleText(record),
     createdAt: formatDateTime(record.created_at),
+    startedAtLabel: formatDateTime(record.started_at),
+    finishedAtLabel: formatDateTime(record.finished_at),
+    updatedAtLabel: formatDateTime(record.updated_at),
+    upstreamSucceededAtLabel: formatDateTime(record.upstream_succeeded_at),
+    durationSeconds: callRecordDurationSeconds(record),
+    durationLabel: callRecordDurationLabel(record),
+    previewURL: callRecordPreviewURL(record),
+    prompt: callRecordPrompt(record),
   }))
+}
+
+export function callRecordRouteModelCode(record: CallRecord): string {
+  return record.route_model_code || snapshotText(record.pricing_snapshot, 'route_model_code') || ''
+}
+
+export function callRecordDurationSeconds(record: CallRecord): number {
+  const started = firstValidTime(record.started_at, record.created_at)
+  let finished = validTime(record.finished_at)
+  if (finished === null && isTerminalStatus(record.status)) {
+    finished = validTime(record.upstream_succeeded_at)
+    if (finished === null) finished = validTime(record.updated_at)
+  }
+  if (started === null || finished === null || finished <= started) return 0
+  return (finished - started) / 1000
+}
+
+export function callRecordDurationLabel(record: CallRecord): string {
+  const seconds = callRecordDurationSeconds(record)
+  return seconds > 0 ? `${seconds.toFixed(1)}s` : '—'
+}
+
+export function callRecordRouteModelOptions(routes: Iterable<RouteModel>, records: CallRecord[] = []): CallRecordFilterOption[] {
+  const options = new Map<string, string>()
+  for (const route of routes) {
+    if (route.code) options.set(route.code, route.name ? `${route.name} · ${route.code}` : route.code)
+  }
+  for (const record of records) {
+    const code = callRecordRouteModelCode(record)
+    if (code && !options.has(code)) options.set(code, code)
+  }
+  return Array.from(options, ([value, label]) => ({ value, label }))
+    .sort((left, right) => left.label.localeCompare(right.label, 'zh-Hans-CN'))
+}
+
+export function callRecordProviderOptions(providers: ModelProvider[], records: CallRecord[] = []): CallRecordFilterOption[] {
+  const options = new Map<string, string>()
+  for (const provider of providers) {
+    if (provider.provider_code) options.set(provider.provider_code, provider.provider_code)
+  }
+  for (const record of records) {
+    if (record.provider && !options.has(record.provider)) options.set(record.provider, record.provider)
+  }
+  return Array.from(options, ([value, label]) => ({ value, label }))
+    .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
+}
+
+type CallRecordPreviewFields = {
+  preview_url?: unknown
+  image_url?: unknown
+  download_url?: unknown
+  output_url?: unknown
+  result_url?: unknown
+  results?: unknown
+}
+
+/**
+ * The current admin call-record API does not project output artifacts. Keep this
+ * resolver narrow so a future backend projection can be rendered without
+ * inventing URLs; callers must show an explicit empty state when it returns null.
+ */
+export function callRecordPreviewURL(record: CallRecord): string | null {
+  const extended = record as CallRecord & CallRecordPreviewFields
+  for (const value of [extended.preview_url, extended.image_url, extended.download_url, extended.output_url, extended.result_url]) {
+    const url = safePreviewURL(value)
+    if (url) return url
+  }
+  if (Array.isArray(extended.results)) {
+    for (const item of extended.results) {
+      if (!item || typeof item !== 'object') continue
+      const result = item as Record<string, unknown>
+      for (const value of [result.preview_url, result.url, result.download_url, result.image_url]) {
+        const url = safePreviewURL(value)
+        if (url) return url
+      }
+    }
+  }
+  return null
+}
+
+export function callRecordPrompt(record: CallRecord): string {
+  const extended = record as CallRecord & { prompt?: unknown; negative_prompt?: unknown }
+  if (typeof extended.prompt === 'string' && extended.prompt.trim()) return extended.prompt.trim()
+  const snapshotPrompt = record.pricing_snapshot?.prompt
+  return typeof snapshotPrompt === 'string' ? snapshotPrompt.trim() : ''
+}
+
+function safePreviewURL(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const url = value.trim()
+  if (!url) return null
+  if (url.startsWith('//') || url.startsWith('/\\')) return null
+  if (url.startsWith('/') || url.startsWith('https://') || url.startsWith('http://')) return url
+  return null
+}
+
+function validTime(value?: string | null): number | null {
+  if (!value) return null
+  const parsed = new Date(value).getTime()
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function firstValidTime(...values: Array<string | null | undefined>): number | null {
+  for (const value of values) {
+    const parsed = validTime(value)
+    if (parsed !== null) return parsed
+  }
+  return null
+}
+
+function isTerminalStatus(status: string) {
+  return status === 'succeeded' || status === 'failed' || status === 'canceled' || status === 'rejected'
 }
 
 export function callRecordStatusLabel(status: string) {

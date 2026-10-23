@@ -225,19 +225,20 @@ export function LandingPage() {
               </div>
             </div>
             <div>
-              <pre><span className="c"># 创建任务（异步）</span>
-curl -X POST https://api.mikiko.studio/v1/images/generations \
-  -H <span className="s">"Authorization: Bearer $MIKIKO_SK"</span> \
-  -d <span className="s">'{'{'}
+              <pre>
+                <span className="c"># 创建任务（异步）</span>{"\n"}
+                curl -X POST https://api.mikiko.studio/v1/images/generations \{"\n"}
+                {"  "}-H <span className="s">"Authorization: Bearer $MIKIKO_SK"</span> \{"\n"}
+                {"  "}-d <span className="s">{`'{
     "model": "plus-image",
     "prompt": "黄昏光线下的玻璃温室，胶片质感",
     "size": "1536x1024",
     "quality": "high",
     "n": 2
-  {'}'}'</span>
-
-<span className="c"># 查询任务与积分结算</span>
-GET /v1/tasks/<span className="n">{'{'}task_id{'}'}</span></pre>
+  }'`}</span>{"\n\n"}
+                <span className="c"># 查询任务与积分结算</span>{"\n"}
+                GET /v1/tasks/<span className="n">{'{'}task_id{'}'}</span>
+              </pre>
               <div className="u-marquee" style={{ marginTop: 14 }}>
                 <div className="landing-marquee-track">
                   {[...landingChapters.developer.terms, ...landingChapters.developer.terms].map((term, index) => (

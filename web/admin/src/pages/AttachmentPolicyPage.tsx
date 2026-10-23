@@ -7,6 +7,7 @@ import { Badge, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader } from '../
 import { FormSaveBar, FormSection, LedgerField, MultiSelectField } from './AdminMediaTabs'
 import { canAdmin } from '../types'
 import { adminButton, adminPage } from '../ui/classes'
+import { systemSettingsSectionAnchor } from './systemSettingsTabs'
 
 export type AttachmentPolicyKey =
   | 'image_max_mb'
@@ -85,12 +86,14 @@ export function AttachmentPolicyPage({
   onDirtyChange,
   onBusyChange,
   compact = false,
+  activeSection,
 }: {
   session: AdminSession
   onFeedback?: (title: string, detail?: string) => void
   onDirtyChange?: (dirty: boolean) => void
   onBusyChange?: (busy: boolean) => void
   compact?: boolean
+  activeSection?: string
 }) {
   const [rows, setRows] = useState<ConfigItem[]>([])
   const [draft, setDraft] = useState<AttachmentPolicyDraft>(() => cloneAttachmentPolicyDraft(attachmentPolicyDefaults))
@@ -188,6 +191,11 @@ export function AttachmentPolicyPage({
           scope: rows.find((row) => (row.config_key || row.key) === field.key)?.scope || 'global',
         })),
       })
+      // Reset the baseline immediately after the write so the dirty indicator
+      // clears even if the follow-up refresh fails.
+      const savedDraft = cloneAttachmentPolicyDraft(draft)
+      setDraft(savedDraft)
+      setBaseline(cloneAttachmentPolicyDraft(savedDraft))
       const loaded = await load()
       if (!loaded) throw new Error('配置已保存，但重新读取最新值失败，请刷新页面确认。')
       setSaveFeedback({ tone: 'success', message: '附件策略已保存并立即对新上传请求生效。' })
@@ -225,43 +233,48 @@ export function AttachmentPolicyPage({
             const Icon = meta.icon
             const fields = attachmentPolicyFieldDefinitions.filter((field) => field.kind === kind)
             return (
-              <FormSection
+              <div
                 key={kind}
-                index={index + 1}
-                title={meta.title}
-                description={meta.detail}
-                aside={<Badge tone={kind === 'image' ? 'success' : 'neutral'}>{kind === 'image' ? '已生效' : '预留配置'}</Badge>}
+                id={systemSettingsSectionAnchor('attachment-policy', kind)}
+                className={cn('ss-block', activeSection === kind && 'is-active')}
               >
-                <div className="cfg-inline-actions" style={{ color: 'var(--a-ink-3)', fontSize: 12.5 }}><Icon size={16} aria-hidden="true" />{kind === 'image' ? '用户端与 API 共用同一套校验。' : '配置会保存，但在运行时接入前不会开放对应上传入口。'}</div>
-                {fields.map((field) => (
-                  field.control === 'number' ? (
-                    <LedgerField key={field.key} label={field.label} hint={field.hint} error={showErrors || dirty ? validationErrors[field.key] : null}>
-                      <input
-                        className="a-input cfg-narrow-input"
-                        type="number"
-                        min="1"
-                        max={attachmentPolicyMaxMB(field.kind)}
-                        value={String(draft[field.key as AttachmentSizeKey])}
+                <FormSection
+                  index={index + 1}
+                  title={meta.title}
+                  description={meta.detail}
+                  aside={<Badge tone={kind === 'image' ? 'success' : 'neutral'}>{kind === 'image' ? '已生效' : '预留配置'}</Badge>}
+                >
+                  <div className="cfg-inline-actions" style={{ color: 'var(--a-ink-3)', fontSize: 12.5 }}><Icon size={16} aria-hidden="true" />{kind === 'image' ? '用户端与 API 共用同一套校验。' : '配置会保存，但在运行时接入前不会开放对应上传入口。'}</div>
+                  {fields.map((field) => (
+                    field.control === 'number' ? (
+                      <LedgerField key={field.key} label={field.label} hint={field.hint} error={showErrors || dirty ? validationErrors[field.key] : null}>
+                        <input
+                          className="a-input cfg-narrow-input"
+                          type="number"
+                          min="1"
+                          max={attachmentPolicyMaxMB(field.kind)}
+                          value={String(draft[field.key as AttachmentSizeKey])}
+                          disabled={saving || !canEdit}
+                          onChange={(event) => updateField(field, event.target.value)}
+                        />
+                      </LedgerField>
+                    ) : (
+                      <MultiSelectField
+                        key={field.key}
+                        label={field.label}
+                        hint={field.hint}
+                        error={showErrors || dirty ? validationErrors[field.key] : null}
+                        values={draft[field.key as AttachmentFormatsKey]}
+                        options={Array.from(new Set([...attachmentFormatOptions(field.kind), ...draft[field.key as AttachmentFormatsKey]]))}
+                        onChange={(formats) => updateFormats(field, formats)}
                         disabled={saving || !canEdit}
-                        onChange={(event) => updateField(field, event.target.value)}
+                        customPlaceholder="输入扩展名后添加"
+                        normalize={(value) => normalizeAttachmentFormats([value])[0] ?? ''}
                       />
-                    </LedgerField>
-                  ) : (
-                    <MultiSelectField
-                      key={field.key}
-                      label={field.label}
-                      hint={field.hint}
-                      error={showErrors || dirty ? validationErrors[field.key] : null}
-                      values={draft[field.key as AttachmentFormatsKey]}
-                      options={Array.from(new Set([...attachmentFormatOptions(field.kind), ...draft[field.key as AttachmentFormatsKey]]))}
-                      onChange={(formats) => updateFormats(field, formats)}
-                      disabled={saving || !canEdit}
-                      customPlaceholder="输入扩展名后添加"
-                      normalize={(value) => normalizeAttachmentFormats([value])[0] ?? ''}
-                    />
-                  )
-                ))}
-              </FormSection>
+                    )
+                  ))}
+                </FormSection>
+              </div>
             )
           })}
         </form>

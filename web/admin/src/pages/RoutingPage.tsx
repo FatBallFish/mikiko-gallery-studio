@@ -44,9 +44,11 @@ import { createLatestListRequestGuard } from './listRefresh'
 import { VideoConfigurationImpact } from './VideoConfigurationImpact'
 import { AdminMediaTabs, FormSection, LedgerField, MultiSelectField, SwitchField, useAdminModelMediaTab } from './AdminMediaTabs'
 import { modelMediaType } from './adminModelMedia'
+import './routing-redesign.css'
 import {
   routeCandidateLabel,
   routeCandidateSummary,
+  routeCodeError,
   routeEnabledOptions,
   routingFieldHints,
   routingFieldLabels,
@@ -311,7 +313,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
     try {
       const groupIds = routeEditor.visibility === 'groups' ? routeEditor.groupIds.map(Number).filter((id) => Number.isFinite(id) && id > 0) : []
       const payload = {
-        code: routeEditor.code,
+        code: routeEditor.code.trim().toLowerCase(),
         name: routeEditor.name,
         description: routeEditor.description,
         visibility: routeEditor.visibility,
@@ -545,12 +547,12 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
           {routeEditor.tab === 'base' ? (
             <form className="a-form" onSubmit={(event) => event.preventDefault()}>
               <FormSection index={1} title="标识">
-                <LedgerField label="路由代码" required error={editorErrors.code} hint={routeEditor.row ? '路由代码创建后不可修改。' : '用户端与 API 使用的抽象模型代码，创建后不可修改。'}>
-                  <input className="a-input" value={routeEditor.code} disabled={Boolean(routeEditor.row)} onChange={(event) => setRouteEditor({ ...routeEditor, code: event.target.value })} style={{ fontFamily: 'var(--font-admin-mono)' }} />
+                <LedgerField label="路由代码" required error={editorErrors.code} hint={routeEditor.row ? '用户端与 API 使用的抽象模型代码；保存后新请求立即使用新代码（统一转为小写），历史记录保留原代码快照。' : '用户端与 API 使用的抽象模型代码，支持字母、数字、点、下划线与短横线；保存时统一转为小写。'}>
+                  <input className="a-input" value={routeEditor.code} aria-invalid={Boolean(editorErrors.code)} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="例如：plus-image" onChange={(event) => setRouteEditor({ ...routeEditor, code: event.target.value })} style={{ fontFamily: 'var(--font-admin-mono)' }} />
                 </LedgerField>
                 <LedgerField label="路由名称" required error={editorErrors.name}><input className="a-input" value={routeEditor.name} onChange={(event) => setRouteEditor({ ...routeEditor, name: event.target.value })} /></LedgerField>
                 <LedgerField label="路由图标" hint="显示在用户端模型选择与后台路由列表；缺省使用站点图标。">
-                  <ModelIconPicker iconKey={routeEditor.iconKey} iconSvg={routeEditor.iconSvg} onChange={(iconKey) => setRouteEditor({ ...routeEditor, iconKey })} onSvgChange={(iconSvg) => setRouteEditor({ ...routeEditor, iconSvg })} />
+                  <ModelIconPicker iconKey={routeEditor.iconKey} iconSvg={routeEditor.iconSvg} onChange={(next) => setRouteEditor({ ...routeEditor, ...next })} />
                 </LedgerField>
                 <LedgerField label="描述"><textarea className="a-textarea" value={routeEditor.description} onChange={(event) => setRouteEditor({ ...routeEditor, description: event.target.value })} /></LedgerField>
               </FormSection>
@@ -861,8 +863,8 @@ function RouteDetailWorkspace({
         <div className="a-panel__head"><div><h2>候选模型</h2><p>{route.media_type === 'video' ? '候选只包含已验证且启用的视频真实模型；按优先级与权重调度。' : '候选只包含图片真实模型；按优先级与权重调度。'}</p></div><button className="a-row-btn" type="button" onClick={onAddCandidate}>添加候选</button></div>
         {routeCandidates.length ? (
           <div className="a-table-wrap">
-            <table className="a-table" style={{ minWidth: 860 }}>
-              <thead><tr><th>真实账号 / 模型</th><th>能力</th><th className="is-num">{routingFieldLabels.priority}</th><th className="is-num">{routingFieldLabels.weight}</th><th className="is-num">{routingFieldLabels.fallbackOrder}</th><th>状态</th><th className="is-actions">操作</th></tr></thead>
+            <table className="a-table rt-candidates-table" style={{ minWidth: 860 }}>
+              <thead><tr><th>真实账号 / 模型</th><th>能力</th><th className="is-num">{routingFieldLabels.priority}</th><th className="is-num">{routingFieldLabels.weight}</th><th className="is-num">{routingFieldLabels.fallbackOrder}</th><th>状态</th><th className="is-actions rt-candidate-actions-cell">操作</th></tr></thead>
               <tbody>
                 {routeCandidates.map((candidate) => {
                   const model = accountModels.find((item) => String(item.id) === String(candidate.account_model_id))
@@ -876,7 +878,7 @@ function RouteDetailWorkspace({
                       <td className="is-num a-num">{candidate.weight}</td>
                       <td className="is-num a-num">{candidate.fallback_order}</td>
                       <td><Badge tone={effective ? 'success' : 'warning'}>{effective ? '可路由' : candidate.enabled ? '底层不可用' : '候选停用'}</Badge></td>
-                      <td className="is-actions"><span className="a-row-actions"><button className="a-row-btn" type="button" onClick={() => onEditCandidate(candidate)}>编辑</button><button className="a-row-btn a-row-btn--danger" type="button" aria-label={`删除候选 ${candidate.model_code || candidate.id}`} onClick={() => onDeleteCandidate(candidate)}><Trash2 className="size-3.5" /></button></span></td>
+                      <td className="is-actions rt-candidate-actions-cell"><span className="rt-candidate-actions"><button className="a-row-btn" type="button" onClick={() => onEditCandidate(candidate)}>编辑</button><button className="rt-candidate-delete" type="button" title={`删除候选 ${candidate.model_code || candidate.id}`} aria-label={`删除候选 ${candidate.model_code || candidate.id}`} onClick={() => onDeleteCandidate(candidate)}><Trash2 aria-hidden="true" /></button></span></td>
                     </tr>
                   )
                 })}
@@ -1052,7 +1054,8 @@ function routeEditorMappingError(editor: RouteEditorDraft, candidates: RouteMode
 
 function routeEditorErrors(editor: RouteEditorDraft, media: RouteModelMediaType, accountModels: ModelAccountModel[], candidates: RouteModelCandidate[]): Record<string, string> {
   const errors: Record<string, string> = {}
-  if (!editor.code.trim()) errors.code = '请填写路由代码。'
+  const codeError = routeCodeError(editor.code)
+  if (codeError) errors.code = codeError
   if (!editor.name.trim()) errors.name = '请填写路由名称。'
   if (editor.visibility === 'groups' && !editor.groupIds.length) errors.groups = '按分组可见时至少选择一个分组。'
   if (!Number.isFinite(Number(editor.sortOrder))) errors.sortOrder = '排序值必须是数字。'

@@ -1,0 +1,340 @@
+/* Scoped refinements for the admin image-task call-record page. */
+
+/* ---------- task id column ---------- */
+.cr-table th.cr-col-task,
+.cr-table td.cr-col-task {
+  width: 172px;
+  max-width: 172px;
+}
+
+.cr-task-id {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--a-ink);
+  font-family: var(--font-admin-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: copy;
+}
+
+.cr-task-id:hover {
+  color: var(--a-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cr-task-id:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+.cr-duration {
+  color: var(--a-ink-2);
+  font-family: var(--font-admin-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- combined creation-time control ---------- */
+.cr-range {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid var(--a-line-2);
+  border-radius: 8px;
+  background: var(--a-surface);
+  overflow: hidden;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+/* FilterBar wraps every control in .a-field; reset its label-span styling. */
+.a-field > .cr-range {
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  font-size: inherit;
+  font-weight: 400;
+}
+
+.cr-range:focus-within {
+  border-color: var(--a-accent);
+  box-shadow: 0 0 0 3px var(--a-accent-soft);
+}
+
+.cr-range .cr-range__input.a-input {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--a-ink-2);
+  font-family: var(--font-admin-mono);
+  font-size: 11.5px;
+}
+
+.cr-range .cr-range__input.a-input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.cr-range__sep {
+  display: grid;
+  place-items: center;
+  padding: 0 1px;
+  border-left: 1px solid var(--a-line);
+  border-right: 1px solid var(--a-line);
+  color: var(--a-ink-3);
+  font-size: 10.5px;
+}
+
+/* ---------- overview drawer: preview + attribution ---------- */
+.cr-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, .92fr) minmax(0, 1.28fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.cr-preview-panel,
+.cr-attribution {
+  min-width: 0;
+}
+
+.cr-preview__media {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+  margin-top: 12px;
+  border: 1px solid var(--a-line);
+  border-radius: 9px;
+  background: var(--a-surface-2);
+  overflow: hidden;
+}
+
+.cr-preview__media img {
+  display: block;
+  width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+}
+
+.cr-preview__placeholder {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 7px;
+  min-height: 240px;
+  margin-top: 12px;
+  padding: 22px;
+  border: 1px dashed var(--a-line-2);
+  border-radius: 9px;
+  background: var(--a-surface-2);
+  text-align: center;
+}
+
+.cr-preview__glyph {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--a-surface-3);
+  color: var(--a-ink-3);
+  font-size: 20px;
+}
+
+.cr-preview__placeholder strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.cr-preview__placeholder p {
+  max-width: 34ch;
+  color: var(--a-ink-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.cr-preview__facts {
+  margin-top: 12px;
+}
+
+.cr-preview__facts > div {
+  grid-template-columns: 88px minmax(0, 1fr);
+}
+
+.cr-user-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 11px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--a-line);
+  border-radius: 9px;
+  background: var(--a-surface);
+}
+
+.cr-user-card__avatar {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 10px;
+  background: var(--a-accent-soft);
+  color: var(--a-accent);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.cr-user-card__body {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 150px;
+}
+
+.cr-user-card__body strong {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.cr-user-card__body > span {
+  color: var(--a-ink-3);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.cr-user-card__meta {
+  font-family: var(--font-admin-mono);
+  font-size: 10.5px !important;
+}
+
+.cr-attribution__meta {
+  margin-top: 12px;
+}
+
+.cr-attribution__meta > div {
+  grid-template-columns: 110px minmax(0, 1fr);
+  padding: 7px 0;
+}
+
+.cr-attribution__meta dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.cr-billing {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 12px;
+  border: 1px solid var(--a-line);
+  border-radius: 9px;
+  background: var(--a-line);
+  overflow: hidden;
+}
+
+.cr-billing > div {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  background: var(--a-surface);
+}
+
+.cr-billing span {
+  color: var(--a-ink-3);
+  font-size: 10.5px;
+}
+
+.cr-billing strong {
+  font-family: var(--font-admin-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cr-billing__loss {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+/* ---------- full-width prompt row ---------- */
+.cr-prompt-section {
+  display: grid;
+  gap: 10px;
+}
+
+.cr-prompt-section .lr-prompt {
+  margin: 0;
+}
+
+.cr-prompt--empty {
+  border-style: dashed;
+  color: var(--a-ink-3);
+}
+
+.cr-params {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 22px;
+}
+
+.cr-params > div {
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 0;
+}
+
+@media (max-width: 880px) {
+  .cr-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cr-preview__media,
+  .cr-preview__placeholder {
+    min-height: 200px;
+  }
+}
+
+@media (max-width: 720px) {
+  .cr-billing,
+  .cr-params {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .cr-range {
+    flex-wrap: wrap;
+  }
+
+  .cr-range .cr-range__input.a-input {
+    flex: 1 1 150px;
+  }
+
+  .cr-range__sep {
+    display: none;
+  }
+
+  .cr-billing,
+  .cr-params {
+    grid-template-columns: 1fr;
+  }
+}

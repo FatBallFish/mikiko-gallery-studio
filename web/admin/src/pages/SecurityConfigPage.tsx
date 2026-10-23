@@ -6,6 +6,7 @@ import { cn } from '../../../shared/classnames'
 import { Badge, Button, ErrorBlock, InlineFeedback, LoadingBlock, PageHeader } from '../components'
 import { FormSaveBar, FormSection, LedgerField, SwitchField } from './AdminMediaTabs'
 import { adminButton, adminPage } from '../ui/classes'
+import { systemSettingsSectionAnchor } from './systemSettingsTabs'
 import { OIDCConfigEditor } from './SecurityOIDCConfig'
 
 type SMTPDraft = {
@@ -46,9 +47,10 @@ export const securityClasses = {
   saveRailStatus: 'flex min-w-0 flex-1 flex-wrap items-center gap-2',
 }
 
-export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, compact = false, summaryMode = false }: { onFeedback?: (title: string, detail?: string) => void; onDirtyChange?: (dirty: boolean) => void; onBusyChange?: (busy: boolean) => void; compact?: boolean; summaryMode?: boolean }) {
+export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, compact = false, summaryMode = false, activeSection }: { onFeedback?: (title: string, detail?: string) => void; onDirtyChange?: (dirty: boolean) => void; onBusyChange?: (busy: boolean) => void; compact?: boolean; summaryMode?: boolean; activeSection?: string }) {
   const [config, setConfig] = useState<SMTPConfigView | null>(null)
   const [draft, setDraft] = useState<SMTPDraft | null>(null)
+  const [baseline, setBaseline] = useState<SMTPDraft | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -58,7 +60,7 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
   const [fieldErrors, setFieldErrors] = useState<SMTPFieldErrors>({})
   const [editorPhase, setEditorPhase] = useState<EditorPhase>('pristine')
 
-  const dirty = useMemo(() => Boolean(draft && config && smtpDraftIsDirty(draft, config)), [config, draft])
+  const dirty = useMemo(() => Boolean(draft && baseline && smtpDraftIsDirty(draft, baseline)), [baseline, draft])
   const [oidcDirty, setOIDCDirty] = useState(false)
   const [oidcBusy, setOIDCBusy] = useState(false)
   const editorLocked = saving || testing
@@ -69,7 +71,9 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
     try {
       const next = await adminApi.getSMTPConfig()
       setConfig(next)
-      setDraft(smtpDraftFromConfig(next))
+      const nextDraft = smtpDraftFromConfig(next)
+      setDraft(nextDraft)
+      setBaseline(nextDraft)
       setEditorPhase('pristine')
       setSaveError('')
       setTestError('')
@@ -141,7 +145,9 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
       const payload = smtpPayloadFromDraft(draft, config)
       const updated = await adminApi.updateSMTPConfig(payload)
       setConfig(updated)
-      setDraft(smtpDraftFromConfig(updated, draft.test_email))
+      const nextDraft = smtpDraftFromConfig(updated, draft.test_email)
+      setDraft(nextDraft)
+      setBaseline(nextDraft)
       setEditorPhase('saved')
       onFeedback?.('SMTP 配置已保存', smtpSecretSummary(updated))
     } catch (caught) {
@@ -186,6 +192,10 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
       ) : null}
       {error ? <InlineFeedback tone="danger" message={error} /> : null}
 
+      <div
+        id={systemSettingsSectionAnchor('security', 'smtp')}
+        className={cn('ss-block', activeSection === 'smtp' && 'is-active')}
+      >
       <section className="a-panel a-panel--flush">
         <div className="a-panel__head">
           <div><h2>SMTP 邮件</h2><p>验证码、密码重置与告警邮件共用此配置。</p></div>
@@ -243,8 +253,14 @@ export function SecurityConfigPage({ onFeedback, onDirtyChange, onBusyChange, co
           />
         ) : null}
       </section>
+      </div>
 
-      <OIDCConfigEditor onFeedback={onFeedback} onDirtyChange={setOIDCDirty} onBusyChange={setOIDCBusy} summaryMode={summaryMode} />
+      <div
+        id={systemSettingsSectionAnchor('security', 'oidc')}
+        className={cn('ss-block', activeSection === 'oidc' && 'is-active')}
+      >
+        <OIDCConfigEditor onFeedback={onFeedback} onDirtyChange={setOIDCDirty} onBusyChange={setOIDCBusy} summaryMode={summaryMode} />
+      </div>
     </section>
   )
 }
@@ -263,13 +279,12 @@ function SecuritySummaryToggle({ title, detail, enabled }: { title: string; deta
   )
 }
 
-function smtpDraftIsDirty(draft: SMTPDraft, config: SMTPConfigView) {
-  const baseline = smtpDraftFromConfig(config, draft.test_email)
+function smtpDraftIsDirty(draft: SMTPDraft, baseline: SMTPDraft) {
   return draft.enabled !== baseline.enabled
-    || draft.host !== baseline.host
-    || draft.port !== baseline.port
-    || draft.username !== baseline.username
-    || draft.from !== baseline.from
+    || draft.host.trim() !== baseline.host.trim()
+    || draft.port.trim() !== baseline.port.trim()
+    || draft.username.trim() !== baseline.username.trim()
+    || draft.from.trim() !== baseline.from.trim()
     || draft.starttls !== baseline.starttls
     || draft.insecure_skip_verify !== baseline.insecure_skip_verify
     || Boolean(draft.password.trim())

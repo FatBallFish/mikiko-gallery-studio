@@ -1,5 +1,8 @@
 // @ts-nocheck
 import fs from 'node:fs'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { AdminMediaTabs, MultiSelect } from './AdminMediaTabs'
 import { adminModelMediaHref, adminModelMediaTabFromHash, adminModelMediaTabs, modelAccountMediaType, modelMediaType } from './adminModelMedia'
 
 if (adminModelMediaTabs.map((item) => item.id).join(',') !== 'image,video,audio,text') throw new Error('model administration tabs must keep image/video/audio/text order')
@@ -20,6 +23,29 @@ for (const file of ['ProviderModelsPage.tsx', 'RoutingPage.tsx']) {
 const pricing = fs.readFileSync(new URL('./PricingPage.tsx', import.meta.url), 'utf8')
 if (!pricing.includes('价格策略已并入路由模型')) throw new Error('pricing page must remain a migration notice instead of an independent pricing workspace')
 if (pricing.includes('AdminMediaTabs')) throw new Error('pricing migration notice must not expose an independent pricing tab workspace')
+
+const multiSelectHtml = renderToStaticMarkup(createElement(MultiSelect, {
+  values: ['silent', 'custom-mode'],
+  options: [{ value: 'silent', label: '静音' }],
+  onChange: () => undefined,
+}))
+if (!multiSelectHtml.includes('静音、custom-mode')) {
+  throw new Error('collapsed multi-select must show option labels and keep custom values')
+}
+if (!multiSelectHtml.includes('<span>custom-mode</span>')) {
+  throw new Error('custom multi-select values must be listed as removable options')
+}
+
+const mediaTabsHtml = renderToStaticMarkup(createElement(AdminMediaTabs, {
+  route: 'access-accounts',
+  value: 'image',
+  counts: { image: 3, video: 2, audio: 0, text: 5 },
+}))
+for (const count of ['3', '2', '0', '5']) {
+  if (!mediaTabsHtml.includes(`<span class="a-tab__count">${count}</span>`)) {
+    throw new Error(`access-account media tabs must render the account count ${count}`)
+  }
+}
 
 const settings = fs.readFileSync(new URL('./SystemSettingsPage.tsx', import.meta.url), 'utf8')
 if (settings.includes("id: 'text-models'")) throw new Error('text model configuration must leave system settings')

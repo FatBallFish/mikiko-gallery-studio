@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { AdminTabs } from "../components";
 import { cn } from "../../../shared/classnames";
@@ -23,17 +23,30 @@ export function useAdminModelMediaTab() {
   return media;
 }
 
+export type AdminMediaAccountCounts = Partial<
+  Record<AdminModelMediaTab, number>
+>;
+
 export function AdminMediaTabs({
   route,
   value,
+  counts,
 }: {
   route: AdminModelMediaRoute;
   value: AdminModelMediaTab;
+  counts?: AdminMediaAccountCounts;
 }) {
+  const items = adminModelMediaTabs.map((item) => ({
+    ...item,
+    badge:
+      route === "access-accounts" && counts?.[item.id] !== undefined
+        ? String(counts[item.id])
+        : undefined,
+  }));
   return (
     <AdminTabs
       ariaLabel="模型配置媒体类型"
-      items={adminModelMediaTabs}
+      items={items}
       value={value}
       onChange={(next) => {
         if (next === value) return;
@@ -141,6 +154,29 @@ export function MultiSelect({
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const entries = useMemo(() => {
+    const declared = options.map((option) => ({
+      value: optionValue(option),
+      label: optionLabel(option),
+    }));
+    const declaredValues = new Set(
+      declared.map((option) => option.value.toLowerCase()),
+    );
+    const customValues = values.filter(
+      (value) => !declaredValues.has(value.toLowerCase()),
+    );
+    return [
+      ...declared,
+      ...customValues.map((value) => ({ value, label: value })),
+    ];
+  }, [options, values]);
+  const labels = useMemo(
+    () =>
+      new Map(
+        entries.map((entry) => [entry.value.toLowerCase(), entry.label]),
+      ),
+    [entries],
+  );
 
   useEffect(() => {
     if (!open) return undefined;
@@ -168,8 +204,14 @@ export function MultiSelect({
       }
       return;
     }
-    onChange(values.filter((item) => item !== value));
+    onChange(
+      values.filter((item) => item.toLowerCase() !== value.toLowerCase()),
+    );
   };
+
+  const summary = values.length
+    ? values.map((value) => labels.get(value.toLowerCase()) ?? value).join("、")
+    : placeholder;
 
   return (
     <div ref={rootRef} className={cn("a-multiselect", open && "is-open")}>
@@ -181,27 +223,24 @@ export function MultiSelect({
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="a-multiselect__value">
-          {values.length ? values.join("、") : placeholder}
-        </span>
+        <span className="a-multiselect__value">{summary}</span>
         <ChevronDown aria-hidden="true" />
       </button>
       <div className="a-multiselect__panel" role="group">
         <div className="a-multiselect__options">
-          {options.map((option) => {
-            const value = optionValue(option);
-            return (
-              <label key={value}>
-                <input
-                  type="checkbox"
-                  checked={values.includes(value)}
-                  disabled={disabled}
-                  onChange={(event) => toggle(value, event.target.checked)}
-                />
-                <span>{optionLabel(option)}</span>
-              </label>
-            );
-          })}
+          {entries.map((option, index) => (
+            <label key={`${option.value}-${index}`}>
+              <input
+                type="checkbox"
+                checked={values.some(
+                  (value) => value.toLowerCase() === option.value.toLowerCase(),
+                )}
+                disabled={disabled}
+                onChange={(event) => toggle(option.value, event.target.checked)}
+              />
+              <span>{option.label}</span>
+            </label>
+          ))}
         </div>
         {allowCustom ? (
           <div className="a-multiselect__custom">

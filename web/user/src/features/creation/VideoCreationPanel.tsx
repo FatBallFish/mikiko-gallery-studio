@@ -3,7 +3,7 @@ import { Ban, ChevronUp, Copy, Download, FastForward, Film, Image as ImageIcon, 
 import type { CapabilityModelGroup, MediaAsset, PromptReferenceBinding, ReferenceAsset, VideoCapability, VideoEstimateRequest, VideoTask, VideoTaskType } from '../../../../shared/api-types'
 import { userApi } from '../../../../shared/user-api'
 import { cn } from '../../../../shared/classnames'
-import { Button, EmptyState, ErrorState, InlineCopyButton, LoadingState, Modal, copyText, useApp } from '../../components'
+import { Button, Drawer, EmptyState, ErrorState, InlineCopyButton, LoadingState, Modal, copyText, useApp } from '../../components'
 import { useProjects } from '../../ProjectContext'
 import { ModelGroupSelect } from '../../pages/ModelGroupSelect'
 import { PromptTemplateEditor, type PromptTemplateEditorHandle } from '../../pages/PromptTemplateEditor'
@@ -1184,6 +1184,11 @@ async function uploadSingleMediaAsset(file: File, projectID: string): Promise<Me
 
 function VideoTaskDetailDialog({ task, onClose, onResult, onReuse }: { task: VideoTask; onClose: () => void; onResult: (assetID: string) => void; onReuse: () => void }) {
   const accounting = buildVideoTaskAccounting(task)
+  const resultAssetID = task.items.find((item) => item.result_asset_id)?.result_asset_id
+  const [previewURL, setPreviewURL] = useState('')
+  const [previewError, setPreviewError] = useState('')
+  const terminal = task.status === 'succeeded' || task.status === 'partial' || task.status === 'failed' || task.status === 'cancelled'
+  const running = !terminal
   const summary = [
     ['任务ID', task.id],
     ['状态', stageLabels[task.progress_stage || task.status] ?? task.status],
@@ -1193,84 +1198,142 @@ function VideoTaskDetailDialog({ task, onClose, onResult, onReuse }: { task: Vid
     ['退回积分', pointsText(accounting.refundPoints)],
     ['结算状态', settlementLabels[accounting.settlementStatus] ?? accounting.settlementStatus],
   ]
+
+  useEffect(() => {
+    if (!resultAssetID) {
+      setPreviewURL('')
+      return undefined
+    }
+    let cancelled = false
+    setPreviewError('')
+    void userApi.getMediaAssetAccess(resultAssetID, 'preview').then((projection) => {
+      if (!cancelled) setPreviewURL(projection.url)
+    }).catch((caught) => {
+      if (!cancelled) setPreviewError(caught instanceof Error ? caught.message : '结果视频暂时无法预览')
+    })
+    return () => { cancelled = true }
+  }, [resultAssetID])
+
   return (
-    <Modal title="视频任务详情" onClose={onClose} className="w-[min(960px,calc(100vw-2rem))] max-w-none">
-      <dl className="u-facts cr-detail-summary">
-        {summary.map(([label, value]) => (
-          <div className="u-fact" key={label}>
-            <dt>{label}</dt>
-            <dd className="inline-flex items-center gap-1 break-all">
-              {value}
-              {label === '任务ID' ? <InlineCopyButton text={task.id} label="复制任务ID" /> : null}
-            </dd>
+    <Drawer open wide title="视频任务详情" onClose={onClose}>
+      <div className="u-detail">
+        <section className="u-detail__stage-col">
+          <div className="u-detail__stage">
+            {previewURL ? (
+              <video src={previewURL} controls playsInline preload="metadata" aria-label="视频生成结果" />
+            ) : (
+              <div className="cr-history-empty">
+                {running ? <span className={userState.spinner} aria-hidden="true" /> : <strong className="cr-card-flag" style={{ position: 'static' }}>!</strong>}
+                <h3>{running ? '视频生成中' : resultAssetID ? '结果视频加载中' : '暂无结果视频'}</h3>
+                <p>{running ? (task.progress_message || '任务正在上游生成，完成后结果会出现在这里。') : previewError || (task.items.find((item) => item.error_message)?.error_message || '本次任务没有可播放的结果。')}</p>
+                {running ? <div className="u-progress" style={{ width: 'min(320px, 100%)' }}><span /></div> : null}
+              </div>
+            )}
           </div>
-        ))}
-      </dl>
-
-      <section className="u-detail__section">
-        <h4>生成参数</h4>
-        <dl className="u-facts">
-          <div className="u-fact"><dt>模型分组</dt><dd>{task.route_model_code}</dd></div>
-          <div className="u-fact"><dt>生成方式</dt><dd>{taskTypeLabels[task.task_type]}</dd></div>
-          <div className="u-fact"><dt>时长</dt><dd>{task.duration_seconds} 秒</dd></div>
-          <div className="u-fact"><dt>清晰度</dt><dd>{task.resolution.toUpperCase()}</dd></div>
-          <div className="u-fact"><dt>比例</dt><dd>{task.aspect_ratio}</dd></div>
-          <div className="u-fact"><dt>音频</dt><dd>{task.audio_mode === 'generated' || task.generate_audio ? '生成音频' : '静音'}</dd></div>
-          <div className="u-fact"><dt>方案数量</dt><dd>{task.requested_output_count}</dd></div>
-          {accounting.unitPoints ? <div className="u-fact"><dt>单价</dt><dd>{pointsText(accounting.unitPoints)}</dd></div> : null}
-        </dl>
-        <p className="u-prompt">{task.prompt_template}</p>
-      </section>
-
-      {accounting.variables.length ? (
-        <section className="u-detail__section">
-          <h4>本次变量</h4>
-          <dl className="u-facts">
-            {accounting.variables.map((variable) => (
-              <div className="u-fact" key={variable.name}><dt>{variable.name}</dt><dd>{variable.value}</dd></div>
-            ))}
-          </dl>
+          <div className="u-actions" style={{ justifyContent: 'space-between' }}>
+            <div className="u-actions">
+              <span className="u-chip u-chip--accent">{taskTypeLabels[task.task_type]}</span>
+              <span className="u-chip u-chip--mono">{stageLabels[task.progress_stage || task.status] ?? task.status}</span>
+              <span className="u-chip u-chip--mono">{pointsText(accounting.actualPoints)}</span>
+            </div>
+            <span className="u-chip u-chip--mono">{task.duration_seconds}s · {task.resolution?.toUpperCase() || '-'} · {task.aspect_ratio || '-'}</span>
+          </div>
         </section>
-      ) : null}
 
-      {accounting.inputs.length ? (
-        <section className="u-detail__section">
-          <h4>输入素材</h4>
-          <ul className="cr-detail-list">
-            {accounting.inputs.map((input) => (
-              <li key={`${input.role}-${input.assetID}`}><span>{INPUT_ROLE_LABELS[input.role] ?? input.role}</span><strong>{input.name}</strong></li>
-            ))}
-          </ul>
+        <section className="u-detail__info">
+          <div className="u-detail__info-scroll">
+            <div style={{ display: 'grid', gap: 7 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                <span className="u-chip u-chip--accent">视频</span>
+                <span className="u-chip u-chip--mono">{task.route_model_code || '未知模型'}</span>
+                <span className="u-chip u-chip--mono">{settlementLabels[accounting.settlementStatus] ?? accounting.settlementStatus}</span>
+              </div>
+              <h2 className="u-detail__title">{task.prompt_template.split('\n')[0] || '视频任务'}</h2>
+              <div className="u-meta">{task.created_at ? formatVideoTime(task.created_at) : '-'} · {task.id}</div>
+            </div>
+
+            <div className="u-detail__section">
+              <h4>Prompt</h4>
+              <div className="u-prompt" tabIndex={0}>{task.prompt_template || '未记录 Prompt'}</div>
+            </div>
+
+            <div className="u-detail__section">
+              <h4>任务与结算</h4>
+              <dl className="u-facts">
+                {summary.map(([label, value]) => (
+                  <div className="u-fact" key={label}>
+                    <dt>{label}</dt>
+                    <dd title={value}>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            <div className="u-detail__section">
+              <h4>生成参数</h4>
+              <dl className="u-facts">
+                <div className="u-fact"><dt>生成方式</dt><dd>{taskTypeLabels[task.task_type]}</dd></div>
+                <div className="u-fact"><dt>时长</dt><dd>{task.duration_seconds} 秒</dd></div>
+                <div className="u-fact"><dt>清晰度</dt><dd>{task.resolution?.toUpperCase() || '-'}</dd></div>
+                <div className="u-fact"><dt>比例</dt><dd>{task.aspect_ratio || '-'}</dd></div>
+                <div className="u-fact"><dt>音频</dt><dd>{task.audio_mode === 'generated' || task.generate_audio ? '生成音频' : '静音'}</dd></div>
+                <div className="u-fact"><dt>方案数量</dt><dd>{task.requested_output_count}</dd></div>
+                {accounting.unitPoints ? <div className="u-fact"><dt>单价</dt><dd>{pointsText(accounting.unitPoints)}</dd></div> : null}
+              </dl>
+            </div>
+
+            {accounting.variables.length ? (
+              <div className="u-detail__section">
+                <h4>本次变量</h4>
+                <dl className="u-facts">
+                  {accounting.variables.map((variable) => (
+                    <div className="u-fact" key={variable.name}><dt>{variable.name}</dt><dd>{variable.value}</dd></div>
+                  ))}
+                </dl>
+              </div>
+            ) : null}
+
+            {accounting.inputs.length ? (
+              <div className="u-detail__section">
+                <h4>输入素材</h4>
+                <ul className="cr-detail-list">
+                  {accounting.inputs.map((input) => (
+                    <li key={`${input.role}-${input.assetID}`}><span>{INPUT_ROLE_LABELS[input.role] ?? input.role}</span><strong>{input.name}</strong></li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <div className="u-detail__section">
+              <h4>时间记录</h4>
+              <ul className="cr-detail-list">
+                {accounting.timeline.map((event) => (
+                  <li key={event.label}><span>{event.label}</span><time dateTime={event.value}>{formatVideoTime(event.value)}</time></li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="u-detail__section">
+              <h4>结果与费用</h4>
+              <ul className="cr-detail-list">
+                {accounting.items.map((item) => (
+                  <li key={item.id}>
+                    <span>方案 #{item.ordinal + 1}</span>
+                    <strong>{stageLabels[item.status] ?? item.status} · {item.actualSeconds ? `${item.actualSeconds} 秒 · ` : ''}{pointsText(item.actualPoints)}</strong>
+                    {item.error ? <small className="cr-field-error">{item.error}</small> : null}
+                    {item.resultAssetID ? <button className="u-btn u-btn--sm" type="button" onClick={() => onResult(item.resultAssetID!)}>查看结果</button> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div className="u-detail__foot">
+            <Button tone="ghost" onClick={onReuse}><RotateCcw size={16} />复用参数</Button>
+            <Button tone="ghost" onClick={onClose}>关闭</Button>
+          </div>
         </section>
-      ) : null}
-
-      <section className="u-detail__section">
-        <h4>时间记录</h4>
-        <ul className="cr-detail-list">
-          {accounting.timeline.map((event) => (
-            <li key={event.label}><span>{event.label}</span><time dateTime={event.value}>{formatVideoTime(event.value)}</time></li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="u-detail__section">
-        <h4>结果与费用</h4>
-        <ul className="cr-detail-list">
-          {accounting.items.map((item) => (
-            <li key={item.id}>
-              <span>方案 #{item.ordinal + 1}</span>
-              <strong>{stageLabels[item.status] ?? item.status} · {item.actualSeconds ? `${item.actualSeconds} 秒 · ` : ''}{pointsText(item.actualPoints)}</strong>
-              {item.error ? <small className="cr-field-error">{item.error}</small> : null}
-              {item.resultAssetID ? <button className="u-btn u-btn--sm" type="button" onClick={() => onResult(item.resultAssetID!)}>查看结果</button> : null}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <div className="cr-modal-actions">
-        <Button tone="ghost" onClick={onReuse}><RotateCcw size={16} />复用参数</Button>
       </div>
-    </Modal>
+    </Drawer>
   )
 }
 

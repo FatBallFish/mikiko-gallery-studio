@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Upload } from 'lucide-react'
 import type { RouteModel, RouteModelGroupRecord, RouteModelMediaType } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
 import { builtinModelIcons, defaultIconKey, modelIconSrc, siteIcon } from '../../../shared/modelIcons'
@@ -10,11 +10,10 @@ import { FormSection, LedgerField, SwitchField } from './AdminMediaTabs'
 // Shared icon picker: built-in vendor grid (incl. the site fallback), plus
 // an SVG upload that stores the document inline. Empty selection + no upload
 // means the user web renders the site favicon.
-export function ModelIconPicker({ iconKey, iconSvg, onChange, onSvgChange }: {
+export function ModelIconPicker({ iconKey, iconSvg, onChange }: {
   iconKey: string
   iconSvg: string
-  onChange: (key: string) => void
-  onSvgChange: (svg: string) => void
+  onChange: (next: { iconKey: string; iconSvg: string }) => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploadError, setUploadError] = useState('')
@@ -29,13 +28,12 @@ export function ModelIconPicker({ iconKey, iconSvg, onChange, onSvgChange }: {
       setUploadError('文件不是 SVG 文档')
       return
     }
-    onSvgChange(text)
-    onChange('')
+    onChange({ iconKey: '', iconSvg: text })
   }
   const effective = iconSvg ? 'custom' : iconKey || defaultIconKey
   return (
-    <div className="grid gap-2">
-      <div className="flex flex-wrap gap-2">
+    <div className="rt-icon-picker">
+      <div className="rt-icon-picker__grid">
         {[siteIcon, ...builtinModelIcons].map((item) => (
           <button
             key={item.key}
@@ -43,26 +41,28 @@ export function ModelIconPicker({ iconKey, iconSvg, onChange, onSvgChange }: {
             title={item.label}
             aria-label={item.label}
             aria-pressed={effective === item.key && !iconSvg}
-            className={cn('grid size-10 place-items-center rounded-lg border bg-[var(--a-surface)] p-1.5 transition', effective === item.key && !iconSvg ? 'border-[var(--a-accent)] ring-1 ring-[var(--a-accent)]' : 'border-[var(--a-line)] hover:border-[var(--a-accent)]')}
-            onClick={() => { onChange(item.key === defaultIconKey ? '' : item.key); onSvgChange('') }}
+            className={cn('rt-icon-option', effective === item.key && !iconSvg && 'is-selected')}
+            onClick={() => onChange({ iconKey: item.key === defaultIconKey ? '' : item.key, iconSvg: '' })}
           >
             <img src={modelIconSrc(item.key)} alt="" width={22} height={22} />
           </button>
         ))}
         <button
           type="button"
+          title="上传自定义 SVG 图标"
+          aria-label="上传自定义 SVG 图标"
           aria-pressed={Boolean(iconSvg)}
-          className={cn('grid size-10 place-items-center rounded-lg border border-dashed bg-[var(--a-surface)] p-1.5 text-xs font-bold transition', iconSvg ? 'border-[var(--a-accent)] ring-1 ring-[var(--a-accent)] text-[var(--a-accent)]' : 'border-[var(--a-line)] text-[var(--a-ink-3)] hover:border-[var(--a-accent)]')}
+          className={cn('rt-icon-upload', iconSvg && 'is-selected')}
           onClick={() => fileRef.current?.click()}
         >
-          {iconSvg ? '自定义' : '上传'}
+          <Upload aria-hidden="true" />
         </button>
         <input ref={fileRef} type="file" accept=".svg,image/svg+xml" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readFile(file); event.target.value = '' }} />
         {iconSvg ? (
-          <button type="button" className="self-center text-xs text-[var(--a-ink-3)] underline" onClick={() => onSvgChange('')}>清除上传图标</button>
+          <button type="button" className="rt-icon-clear" onClick={() => onChange({ iconKey: '', iconSvg: '' })}>清除上传图标</button>
         ) : null}
       </div>
-      {uploadError ? <p className="m-0 text-xs text-[var(--a-danger)]">{uploadError}</p> : null}
+      {uploadError ? <p className="rt-icon-error">{uploadError}</p> : null}
     </div>
   )
 }
@@ -196,7 +196,7 @@ export function RouteModelGroupsPanel({ media, routes, onFeedback, onChanged }: 
           {error ? <InlineFeedback tone="danger" message={error} /> : null}
           <form className="a-form" onSubmit={(event) => event.preventDefault()}>
             <FormSection index={1} title="标识">
-              <LedgerField label="分组图标" hint="图标会显示在分组列表、路由可见性与用户端分组标识中。"><ModelIconPicker iconKey={draft.iconKey} iconSvg={draft.iconSvg} onChange={(iconKey) => setDraft({ ...draft, iconKey })} onSvgChange={(iconSvg) => setDraft({ ...draft, iconSvg })} /></LedgerField>
+              <LedgerField label="分组图标" hint="图标会显示在分组列表、路由可见性与用户端分组标识中。"><ModelIconPicker iconKey={draft.iconKey} iconSvg={draft.iconSvg} onChange={(next) => setDraft({ ...draft, ...next })} /></LedgerField>
               <LedgerField label="分组代码" required error={groupErrors.code} hint="创建后不可修改；用于路由可见性配置。"><input className="a-input" value={draft.code} disabled={Boolean(draft.row)} onChange={(event) => setDraft({ ...draft, code: event.target.value })} placeholder="例如：studio" style={{ fontFamily: 'var(--font-admin-mono)' }} /></LedgerField>
               <LedgerField label="分组名称" error={groupErrors.name}><input className="a-input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="例如：Studio" /></LedgerField>
               <LedgerField label="描述"><textarea className="a-textarea" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="说明这个分组对谁可见" /></LedgerField>

@@ -12,11 +12,26 @@ import {
 import { readFileSync } from 'node:fs'
 
 const pageSource = readFileSync(new URL('./TextModelsPage.tsx', import.meta.url), 'utf8')
-if (!pageSource.includes('className="flex min-w-0 flex-1 overflow-hidden"')) {
-  throw new Error('text model account labels must shrink and clip inside the account sidebar')
+for (const marker of [
+  '<DataTable',
+  'title="文本模型配置"',
+  '模型配置',
+  'stacked={Boolean(modelAccount)}',
+  'adminApi.listTextModelAccounts',
+  'adminApi.listTextModels',
+  'adminApi.createTextModelAccount',
+  'adminApi.updateTextModelAccount',
+  'adminApi.deleteTextModelAccount',
+  'adminApi.createTextModel',
+  'adminApi.updateTextModel',
+  'adminApi.deleteTextModel',
+  'adminApi.setDefaultTextModel',
+  'adminApi.testTextModel',
+]) {
+  if (!pageSource.includes(marker)) throw new Error(`text model page must preserve the drawer flow or API: ${marker}`)
 }
-if (!pageSource.includes("cn('flex min-h-12 min-w-0 w-full")) {
-  throw new Error('text model account buttons must allow the sidebar grid track to shrink')
+if (!pageSource.includes('setModelAccountID(accountID)') || !pageSource.includes('setModelDraft(null)')) {
+  throw new Error('creating a text model must close the editor and reopen the model configuration drawer')
 }
 if (!pageSource.includes('TooltipIconButton')) throw new Error('text model actions must use the shared tooltip icon button')
 if (pageSource.includes('function IconButton(')) throw new Error('text model page must not define a local undersized icon button')

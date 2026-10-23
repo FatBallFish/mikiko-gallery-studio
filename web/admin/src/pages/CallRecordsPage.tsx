@@ -1,20 +1,52 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { AdminMetric, AdminUser, CallRecord, CallRecordAttempt, RouteModel } from '../../../shared/api-types'
+import type { AdminMetric, AdminUser, CallRecord, CallRecordAttempt, ModelProvider, RouteModel } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
 import { adminApi } from '../../../shared/admin-api'
 import { AdminTabs, Badge, Drawer, EmptyBlock, ErrorBlock, InlineFeedback, LoadingBlock, MetricStrip, Modal, PageHeader, RefreshIconButton } from '../components'
 import { FilterToolbar, ListPage, Pager } from '../ui/dataTable'
-import { callRecordCommonErrorCodes, callRecordFilterCopy, callRecordRepair, callRecordRows, callRecordSourceChannelOptions, callRecordStatusOptions } from './callRecordRows'
+import {
+  callRecordCommonErrorCodes,
+  callRecordDurationSeconds,
+  callRecordFilterCopy,
+  callRecordProviderOptions,
+  callRecordRepair,
+  callRecordRouteModelCode,
+  callRecordRouteModelOptions,
+  callRecordRows,
+  callRecordSourceChannelOptions,
+  callRecordStatusOptions,
+} from './callRecordRows'
 import './list-redesign.css'
+import './call-records.css'
 
 type CallRecordFilters = {
   status: string
   errorCode: string
   sourceChannel: string
   provider: string
+  routeModel: string
+  userQuery: string
+  taskId: string
+  createdFrom: string
+  createdTo: string
+}
+
+type AppliedCallRecordFilters = {
+  status: string
+  errorCode: string
+  sourceChannel: string
+  provider: string
+  routeModel: string
   userId: string
   taskId: string
+  createdFrom: string
+  createdTo: string
+}
+
+type FilterFeedback = {
+  tone: 'neutral' | 'danger'
+  message: string
 }
 
 type DetailTab = 'overview' | 'attempts' | 'billing' | 'raw'
@@ -24,11 +56,32 @@ const initialFilters: CallRecordFilters = {
   errorCode: '',
   sourceChannel: '',
   provider: '',
-  userId: '',
+  routeModel: '',
+  userQuery: '',
   taskId: '',
+  createdFrom: '',
+  createdTo: '',
 }
 
-function callRecordQuery(filters: CallRecordFilters, page: number, pageSize: number): Record<string, string | number | undefined> {
+const initialAppliedFilters: AppliedCallRecordFilters = {
+  status: '',
+  errorCode: '',
+  sourceChannel: '',
+  provider: '',
+  routeModel: '',
+  userId: '',
+  taskId: '',
+  createdFrom: '',
+  createdTo: '',
+}
+
+function isoQueryTime(value: string): string | undefined {
+  if (!value) return undefined
+  const date = new Date(value)
+  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined
+}
+
+function callRecordQuery(filters: AppliedCallRecordFilters, page: number, pageSize: number): Record<string, string | number | undefined> {
   return {
     page,
     page_size: pageSize,
@@ -38,30 +91,42 @@ function callRecordQuery(filters: CallRecordFilters, page: number, pageSize: num
     provider: filters.provider || undefined,
     user_id: filters.userId || undefined,
     task_id: filters.taskId || undefined,
+    created_from: isoQueryTime(filters.createdFrom),
+    created_to: isoQueryTime(filters.createdTo),
   }
 }
 
 export function CallRecordsPage() {
   const [rows, setRows] = useState<CallRecord[]>([])
   const [filters, setFilters] = useState<CallRecordFilters>(initialFilters)
-  const [appliedFilters, setAppliedFilters] = useState<CallRecordFilters>(initialFilters)
+  const [appliedFilters, setAppliedFilters] = useState<AppliedCallRecordFilters>(initialAppliedFilters)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [filterFeedback, setFilterFeedback] = useState<FilterFeedback | null>(null)
   const [selected, setSelected] = useState<CallRecord | null>(null)
   const [detailTab, setDetailTab] = useState<DetailTab>('overview')
   const [peekUser, setPeekUser] = useState<AdminUser | null>(null)
   const [copyNotice, setCopyNotice] = useState('')
   const [directoryUsers, setDirectoryUsers] = useState<Map<string, AdminUser>>(new Map())
   const [directoryRoutes, setDirectoryRoutes] = useState<Map<string, RouteModel>>(new Map())
+  const [providerDirectory, setProviderDirectory] = useState<ModelProvider[]>([])
   const requestGenerationRef = useRef(0)
   const [reloadKey, setReloadKey] = useState(0)
-  const viewRows = useMemo(() => callRecordRows(rows), [rows])
-  const stats = useMemo(() => callRecordStats(rows), [rows])
+  const displayRows = useMemo(() => (
+    appliedFilters.routeModel
+      ? rows.filter((record) => callRecordRouteModelCode(record).toLowerCase() === appliedFilters.routeModel.toLowerCase())
+      : rows
+  ), [appliedFilters.routeModel, rows])
+  const viewRows = useMemo(() => callRecordRows(displayRows), [displayRows])
+  const stats = useMemo(() => callRecordStats(displayRows), [displayRows])
   const distributions = useMemo(() => callRecordDistributions(rows, directoryRoutes), [directoryRoutes, rows])
+  const userOptions = useMemo(() => Array.from(directoryUsers.values()), [directoryUsers])
+  const routeFilterOptions = useMemo(() => callRecordRouteModelOptions(directoryRoutes.values(), rows), [directoryRoutes, rows])
+  const providerFilterOptions = useMemo(() => callRecordProviderOptions(providerDirectory, rows), [providerDirectory, rows])
   const metrics = useMemo<AdminMetric[]>(() => [
     { label: '当前页调用', value: String(stats.tasks), trend: `筛选结果共 ${total} 条`, tone: 'neutral' },
     { label: '成功出图', value: String(stats.images), trend: '当前页成功结果', tone: 'good' },
@@ -95,26 +160,57 @@ export function CallRecordsPage() {
   useEffect(() => {
     let active = true
     void Promise.all([
-      adminApi.listUsersPage('', 1, 200).catch(() => null),
+      adminApi.listUsersPage('', 1, 100).catch(() => null),
       adminApi.listRouteModels({ page: 1, page_size: 500 }).catch(() => null),
-    ]).then(([userPage, routeRows]) => {
+      adminApi.listModelProviders({ page: 1, page_size: 100 }).catch(() => null),
+    ]).then(([userPage, routeRows, providerPage]) => {
       if (!active) return
       if (userPage) setDirectoryUsers(new Map(userPage.items.map((user) => [String(user.id), user])))
       if (routeRows) setDirectoryRoutes(new Map(routeRows.map((route) => [route.code, route])))
+      if (providerPage) setProviderDirectory(providerPage.items)
     })
     return () => { active = false }
   }, [])
 
   const submitFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    void applyFilters()
+  }
+
+  const applyFilters = async () => {
+    if (filters.createdFrom && filters.createdTo) {
+      const from = new Date(filters.createdFrom).getTime()
+      const to = new Date(filters.createdTo).getTime()
+      if (Number.isFinite(from) && Number.isFinite(to) && from > to) {
+        setFilterFeedback({ tone: 'danger', message: '创建时间的开始时间不能晚于结束时间。' })
+        return
+      }
+    }
+    const resolvedUser = await resolveUserFilter(filters.userQuery, userOptions)
+    if ('error' in resolvedUser) {
+      setFilterFeedback({ tone: 'danger', message: resolvedUser.error })
+      return
+    }
+    setFilterFeedback(resolvedUser.message ? { tone: 'neutral', message: resolvedUser.message } : null)
     setPage(1)
-    setAppliedFilters(filters)
+    setAppliedFilters({
+      status: filters.status,
+      errorCode: filters.errorCode,
+      sourceChannel: filters.sourceChannel,
+      provider: filters.provider,
+      routeModel: filters.routeModel,
+      userId: resolvedUser.userId,
+      taskId: filters.taskId,
+      createdFrom: filters.createdFrom,
+      createdTo: filters.createdTo,
+    })
     setReloadKey((value) => value + 1)
   }
 
   const resetFilters = () => {
     setFilters(initialFilters)
-    setAppliedFilters(initialFilters)
+    setAppliedFilters(initialAppliedFilters)
+    setFilterFeedback(null)
     setPage(1)
   }
 
@@ -149,12 +245,40 @@ export function CallRecordsPage() {
       <form onSubmit={submitFilters}>
         <FilterToolbar
           fields={[
-            { key: 'userId', label: callRecordFilterCopy.userId.label, primary: true, control: <input className="a-input" value={filters.userId} onChange={(event) => setFilters((value) => ({ ...value, userId: event.target.value }))} placeholder={callRecordFilterCopy.userId.placeholder} inputMode="numeric" /> },
+            { key: 'userQuery', label: callRecordFilterCopy.userId.label, primary: true, minWidth: '210px', control: <input className="a-input" value={filters.userQuery} onChange={(event) => setFilters((value) => ({ ...value, userQuery: event.target.value }))} placeholder={callRecordFilterCopy.userId.placeholder} /> },
             { key: 'status', label: '任务状态', primary: true, control: <select className="a-select" value={filters.status} onChange={(event) => setFilters((value) => ({ ...value, status: event.target.value }))}>{callRecordStatusOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}</select> },
+            { key: 'routeModel', label: callRecordFilterCopy.routeModel.label, primary: true, minWidth: '200px', control: routeFilterOptions.length ? <select className="a-select" value={filters.routeModel} onChange={(event) => setFilters((value) => ({ ...value, routeModel: event.target.value }))}><option value="">全部路由</option>{routeFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : <input className="a-input" value={filters.routeModel} onChange={(event) => setFilters((value) => ({ ...value, routeModel: event.target.value }))} placeholder="路由模型 code" /> },
             { key: 'sourceChannel', label: '调用入口', primary: true, control: <select className="a-select" value={filters.sourceChannel} onChange={(event) => setFilters((value) => ({ ...value, sourceChannel: event.target.value }))}>{callRecordSourceChannelOptions.map((option) => <option key={option.value || 'all'} value={option.value}>{option.label}</option>)}</select> },
-            { key: 'provider', label: callRecordFilterCopy.provider.label, control: <input className="a-input" value={filters.provider} onChange={(event) => setFilters((value) => ({ ...value, provider: event.target.value }))} placeholder={callRecordFilterCopy.provider.placeholder} /> },
+            { key: 'provider', label: callRecordFilterCopy.provider.label, control: providerFilterOptions.length ? <select className="a-select" value={filters.provider} onChange={(event) => setFilters((value) => ({ ...value, provider: event.target.value }))}><option value="">全部上游渠道</option>{providerFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select> : <input className="a-input" value={filters.provider} onChange={(event) => setFilters((value) => ({ ...value, provider: event.target.value }))} placeholder="上游渠道 code" /> },
             { key: 'taskId', label: callRecordFilterCopy.taskId.label, control: <input className="a-input" value={filters.taskId} onChange={(event) => setFilters((value) => ({ ...value, taskId: event.target.value }))} placeholder={callRecordFilterCopy.taskId.placeholder} /> },
             { key: 'errorCode', label: callRecordFilterCopy.errorCode.label, control: <input className="a-input" value={filters.errorCode} onChange={(event) => setFilters((value) => ({ ...value, errorCode: event.target.value }))} list="call-record-error-codes" placeholder={callRecordFilterCopy.errorCode.placeholder} /> },
+            {
+              key: 'createdAt',
+              label: callRecordFilterCopy.createdAt.label,
+              minWidth: '290px',
+              maxWidth: '390px',
+              control: (
+                <span className="cr-range">
+                  <input
+                    className="a-input cr-range__input"
+                    type="datetime-local"
+                    aria-label="创建时间开始"
+                    value={filters.createdFrom}
+                    max={filters.createdTo || undefined}
+                    onChange={(event) => setFilters((value) => ({ ...value, createdFrom: event.target.value }))}
+                  />
+                  <span className="cr-range__sep" aria-hidden="true">→</span>
+                  <input
+                    className="a-input cr-range__input"
+                    type="datetime-local"
+                    aria-label="创建时间结束"
+                    value={filters.createdTo}
+                    min={filters.createdFrom || undefined}
+                    onChange={(event) => setFilters((value) => ({ ...value, createdTo: event.target.value }))}
+                  />
+                </span>
+              ),
+            },
           ]}
           actions={(
             <>
@@ -165,20 +289,23 @@ export function CallRecordsPage() {
               <button className="a-btn a-btn--sm a-btn--quiet" type="button" onClick={resetFilters}>重置</button>
             </>
           )}
-          resultSummary={`共 ${total} 条调用 · 当前显示 ${rows.length} 条`}
+          resultSummary={`共 ${total} 条调用 · 当前显示 ${displayRows.length} 条${appliedFilters.routeModel ? ' · 路由模型筛选仅作用于当前页' : ''}`}
         />
       </form>
+      {filterFeedback ? <InlineFeedback tone={filterFeedback.tone} message={filterFeedback.message} /> : null}
+      {copyNotice && !selected ? <InlineFeedback tone="neutral" message={copyNotice} /> : null}
       {refreshing ? <InlineFeedback tone="neutral" message="正在刷新图片任务，当前数据会保留到新结果返回。" /> : null}
       {error && rows.length ? <InlineFeedback tone="danger" message={error} /> : null}
       {!rows.length ? <EmptyBlock title="暂无图片任务" detail="生成任务执行后会出现在这里。" /> : (
         <ListPage
           pagination={<Pager page={page} pageSize={pageSize} total={total} onChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
         >
+          {!displayRows.length ? <EmptyBlock variant="inline" title="当前页没有匹配的路由模型" detail="路由模型筛选只作用于当前页；可翻页或清空该筛选后重试。" /> : (
           <div className="a-table-wrap">
-            <table className="a-table" style={{ minWidth: 1180 }}>
+            <table className="a-table cr-table" style={{ minWidth: 1180 }}>
               <thead>
                 <tr>
-                  <th>任务 / 时间</th>
+                  <th className="cr-col-task">任务 / 时间</th>
                   <th>用户</th>
                   <th>路由与模型</th>
                   <th>配置 / 结果</th>
@@ -190,14 +317,24 @@ export function CallRecordsPage() {
               </thead>
               <tbody>
                 {viewRows.map((row, index) => {
-                  const record = rows[index]
+                  const record = displayRows[index]
                   const user = directoryUsers.get(String(record.user_id))
-                  const route = record.route_model_code ? directoryRoutes.get(record.route_model_code) : undefined
+                  const routeCode = callRecordRouteModelCode(record)
+                  const route = routeCode ? directoryRoutes.get(routeCode) : undefined
                   return (
                     <tr key={row.id} className={selected?.task_id === record.task_id ? 'is-selected' : undefined} onDoubleClick={() => openDetail(record)}>
-                      <td>
+                      <td className="cr-col-task">
                         <div className="lr-cell">
-                          <strong style={{ fontFamily: 'var(--font-admin-mono)', fontSize: 12 }}>{row.fullTaskId}</strong>
+                          <button
+                            className="cr-task-id"
+                            type="button"
+                            title={`复制完整任务 ID：${record.task_id}`}
+                            aria-label={`复制任务 ID ${record.task_id}`}
+                            onClick={() => void copy(record.task_id, '任务 ID')}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                          >
+                            {row.taskLabel}
+                          </button>
                           <span>{row.createdAt}</span>
                         </div>
                       </td>
@@ -219,8 +356,8 @@ export function CallRecordsPage() {
                       </td>
                       <td>
                         <div className="lr-route">
-                          <strong className={route ? undefined : 'lr-entity-fallback'}>{route?.name || record.route_model_code || row.routeLabel}</strong>
-                          <span>{record.route_model_code || '—'} · {record.upstream_model_code || record.abstract_model || '—'}</span>
+                          <strong className={route ? undefined : 'lr-entity-fallback'}>{route?.name || routeCode || row.routeLabel}</strong>
+                          <span>{routeCode || '—'} · {record.upstream_model_code || record.abstract_model || '—'}</span>
                           <div className="lr-chain">
                             <span className="a-tag">{channelLabel(record.source_channel)}</span>
                             <i>→</i>
@@ -240,7 +377,7 @@ export function CallRecordsPage() {
                           <span>估 {emptyDash(record.estimated_points)}</span>
                         </span>
                       </td>
-                      <td className="is-num">{latencyLabel(record)}</td>
+                      <td className="is-num"><span className="cr-duration">{row.durationLabel}</span></td>
                       <td>
                         <div className="lr-stack--sm">
                           <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
@@ -259,6 +396,7 @@ export function CallRecordsPage() {
               </tbody>
             </table>
           </div>
+          )}
         </ListPage>
       )}
 
@@ -272,7 +410,7 @@ export function CallRecordsPage() {
         <CallRecordDrawer
           record={selected}
           user={directoryUsers.get(String(selected.user_id))}
-          route={selected.route_model_code ? directoryRoutes.get(selected.route_model_code) : undefined}
+          route={directoryRoutes.get(callRecordRouteModelCode(selected))}
           tab={detailTab}
           copyNotice={copyNotice}
           onTab={setDetailTab}
@@ -326,6 +464,18 @@ function CallRecordDrawer({
 }) {
   const row = callRecordRows([record])[0]
   const repair = callRecordRepair(record.error_code)
+  const previewURL = row.previewURL
+  const prompt = row.prompt
+  const userLabel = user ? (user.display_name || user.nickname || user.email) : `用户 #${record.user_id}`
+  const attempts = record.attempt_count || record.attempts?.length || 0
+  const previewEmptyTitle = record.success_output_image_count > 0
+    ? '接口未返回结果预览'
+    : record.error_code ? '任务未产生可预览结果' : '暂无可预览结果'
+  const previewEmptyDetail = record.success_output_image_count > 0
+    ? `该任务有 ${record.success_output_image_count} 张成功输出，但调用记录接口没有返回可访问的预览地址。`
+    : record.error_code
+      ? `任务以 ${record.error_code} 结束，没有生成可预览的输出图。`
+      : '任务尚未产生输出图，完成后可在此查看。'
   return (
     <Drawer
       wide
@@ -358,50 +508,82 @@ function CallRecordDrawer({
 
       {tab === 'overview' ? (
         <div className="lr-stack">
-          <div className="lr-detail-grid lr-detail-grid--2">
-            <section className="a-panel a-panel--pad lr-panel-flat">
-              <div className="a-section-title" style={{ margin: 0 }}><h2>任务归属</h2><span className="a-hint">{record.task_type}</span></div>
-              <dl className="a-kv" style={{ marginTop: 8 }}>
-                <div><dt>用户</dt><dd>{user ? (
-                  <button className="a-cell-entity" type="button" onClick={() => onPeekUser(user)}>
-                    <span className="a-cell-entity__avatar" style={{ width: 24, height: 24, borderRadius: 6, fontSize: 9 }}>{avatarText(user)}</span>
-                    <span className="a-cell-entity__copy">
-                      <span className="a-cell-entity__name" style={{ fontSize: 12.5 }}>{user.display_name || user.nickname || user.email}</span>
-                      <span className="a-cell-entity__meta">{user.email}</span>
-                    </span>
-                  </button>
-                ) : <span className="lr-entity-fallback">用户 #{record.user_id}</span>}</dd></div>
-                <div><dt>入口</dt><dd>{channelLabel(record.source_channel)}{record.api_key_id ? ` · API Key #${record.api_key_id}` : ''}</dd></div>
-                <div><dt>路由模型</dt><dd>{route?.name || record.route_model_code || row.routeLabel} {record.route_model_code ? <span className="a-tag">{record.route_model_code}</span> : null}</dd></div>
-                <div><dt>真实模型</dt><dd>{record.upstream_model_code || record.abstract_model || '—'} {record.provider ? <span className="a-tag">{record.provider}</span> : null}</dd></div>
-                <div><dt>任务类型</dt><dd>{row.taskDetail.split(' · ')[0]}</dd></div>
-                <div><dt>尺寸</dt><dd>{record.base_resolution || '—'} · {record.quality || '—'} · {record.requested_output_image_count} 张请求 / {record.success_output_image_count} 张成功</dd></div>
-                <div><dt>耗时</dt><dd>{latencyLabel(record)} · {record.attempt_count || record.attempts?.length || 0} 次尝试</dd></div>
-                <div><dt>失败阶段</dt><dd>{record.failure_phase || (record.error_code ? '调用失败' : '—')}</dd></div>
+          <div className="cr-detail-grid">
+            <section className="a-panel a-panel--pad lr-panel-flat cr-preview-panel">
+              <div className="a-section-title" style={{ margin: 0 }}><h2>结果预览</h2><span className="a-hint">{record.success_output_image_count} / {record.requested_output_image_count} 张输出</span></div>
+              {previewURL ? (
+                <a className="cr-preview__media" href={previewURL} target="_blank" rel="noreferrer" title="在新窗口打开结果图">
+                  <img src={previewURL} alt={`任务 ${record.task_id} 的结果预览`} />
+                </a>
+              ) : (
+                <div className="cr-preview__placeholder" role="status">
+                  <span className="cr-preview__glyph" aria-hidden="true">▧</span>
+                  <strong>{previewEmptyTitle}</strong>
+                  <p>{previewEmptyDetail}</p>
+                </div>
+              )}
+              <dl className="a-kv cr-preview__facts">
+                <div><dt>输出数量</dt><dd>{record.success_output_image_count} / {record.requested_output_image_count} 张</dd></div>
+                <div><dt>尺寸</dt><dd>{record.base_resolution || '—'} · {record.quality || '—'}</dd></div>
+                <div><dt>任务状态</dt><dd><Badge tone={row.statusTone}>{row.statusLabel}</Badge>{record.failure_phase ? <span className="a-hint"> · {failurePhaseLabel(record.failure_phase)}</span> : null}</dd></div>
               </dl>
             </section>
-            <div className="lr-stack--sm">
-              <section className="a-drawer__section">
-                <h3>提示词与参数</h3>
-                <div className="lr-prompt">调用记录不保存提示词原文。请结合任务类型、参数、错误码与「原始数据」中的请求快照排查。</div>
-                <dl className="a-kv">
-                  <div><dt>质量</dt><dd>{record.quality || '—'}</dd></div>
-                  <div><dt>基础分辨率</dt><dd>{record.base_resolution || '—'}</dd></div>
-                  <div><dt>参考图</dt><dd>{record.reference_image_count} 张</dd></div>
-                  <div><dt>输出数量</dt><dd>{record.success_output_image_count} / {record.requested_output_image_count}</dd></div>
-                  <div><dt>任务状态</dt><dd><Badge tone={row.statusTone}>{row.statusLabel}</Badge></dd></div>
-                </dl>
-              </section>
-              {record.error_code ? (
-                <div className="a-banner a-banner--warn">
-                  <span>!</span>
-                  <div><strong style={{ fontSize: 13 }}>{record.error_code}</strong><div className="a-hint">{row.failureDetail}</div></div>
+            <section className="a-panel a-panel--pad lr-panel-flat cr-attribution">
+              <div className="a-section-title" style={{ margin: 0 }}><h2>任务归属</h2><span className="a-hint">{record.task_type}</span></div>
+              <div className="cr-user-card">
+                <span className="cr-user-card__avatar">{user ? avatarText(user) : '?'}</span>
+                <div className="cr-user-card__body">
+                  <strong>{userLabel}</strong>
+                  <span>{user ? user.email : '未映射到用户目录'}</span>
+                  <span className="cr-user-card__meta">
+                    用户 #{record.user_id}
+                    {user ? ` · ${user.group || '未分组'} · ${userStatusLabel(user.status)} · 余额 ${user.balance}` : ''}
+                  </span>
                 </div>
-              ) : (
-                <div className="a-banner a-banner--info"><span>i</span><div><strong style={{ fontSize: 13 }}>任务已成功</strong><div className="a-hint">成功输出 {record.success_output_image_count} 张，计费 {emptyDash(record.actual_points)} 积分。</div></div></div>
-              )}
-            </div>
+                {user ? <button className="a-row-btn" type="button" onClick={() => onPeekUser(user)}>摘要</button> : null}
+              </div>
+              <dl className="a-kv cr-attribution__meta">
+                <div><dt>路由模型</dt><dd>{route?.name || row.routeModelCode || row.routeLabel}{row.routeModelCode ? <span className="a-tag">{row.routeModelCode}</span> : null}</dd></div>
+                <div><dt>真实模型</dt><dd>{record.upstream_model_code || record.abstract_model || '—'}{record.provider ? <span className="a-tag">{record.provider}</span> : null}</dd></div>
+                <div><dt>账号</dt><dd>{record.account_model_id ? `账号模型 #${record.account_model_id}` : '账号模型未记录'}{record.model_account_id ? ` · 模型账号 #${record.model_account_id}` : ''}</dd></div>
+                <div><dt>入口</dt><dd>{channelLabel(record.source_channel)}{record.api_key_id ? ` · API Key #${record.api_key_id}` : ''}</dd></div>
+                <div><dt>任务状态</dt><dd><Badge tone={row.statusTone}>{row.statusLabel}</Badge>{record.failure_phase ? <span className="a-hint">{failurePhaseLabel(record.failure_phase)}</span> : null}{record.error_code ? <span className="a-tag">{record.error_code}</span> : null}</dd></div>
+                <div><dt>创建时间</dt><dd>{row.createdAt}</dd></div>
+                <div><dt>开始 / 结束</dt><dd>{row.startedAtLabel} → {row.finishedAtLabel}</dd></div>
+                <div><dt>上游成功 / 更新</dt><dd>{row.upstreamSucceededAtLabel} / {row.updatedAtLabel}</dd></div>
+                <div><dt>耗时</dt><dd>{row.durationLabel} · {attempts} 次尝试</dd></div>
+              </dl>
+              <div className="cr-billing" aria-label="计费快照">
+                <div><span>预估积分</span><strong>{emptyDash(record.estimated_points)}</strong></div>
+                <div><span>实际扣除</span><strong>{emptyDash(record.actual_points)}</strong></div>
+                <div><span>上游成本</span><strong>¥ {emptyDash(record.provider_cost)}</strong></div>
+                <div><span>毛利</span><strong>{emptyDash(record.gross_margin)}</strong></div>
+              </div>
+              {record.platform_loss ? <div className="a-banner a-banner--warn cr-billing__loss"><span>!</span><div>该任务标记为平台亏损，详细快照见「计费快照」。</div></div> : null}
+            </section>
           </div>
+          <section className="a-drawer__section cr-prompt-section">
+            <div className="a-section-title" style={{ margin: 0 }}><h2>提示词与生成参数</h2><span className="a-hint">完整宽度</span></div>
+            <div className={cn('lr-prompt', !prompt && 'cr-prompt--empty')}>
+              {prompt || '调用记录接口未返回提示词原文。请结合生成参数、错误码与「原始数据」中的请求快照排查。'}
+            </div>
+            <dl className="a-kv cr-params">
+              <div><dt>任务类型</dt><dd>{row.taskDetail.split(' · ')[0]}</dd></div>
+              <div><dt>质量</dt><dd>{record.quality || '—'}</dd></div>
+              <div><dt>基础分辨率</dt><dd>{record.base_resolution || '—'}</dd></div>
+              <div><dt>参考图</dt><dd>{record.reference_image_count} 张</dd></div>
+              <div><dt>输出数量</dt><dd>{record.success_output_image_count} / {record.requested_output_image_count}</dd></div>
+              <div><dt>调用入口</dt><dd>{channelLabel(record.source_channel)}</dd></div>
+            </dl>
+          </section>
+          {record.error_code ? (
+            <div className="a-banner a-banner--warn">
+              <span>!</span>
+              <div><strong style={{ fontSize: 13 }}>{record.error_code}</strong><div className="a-hint">{row.failureDetail}</div></div>
+            </div>
+          ) : (
+            <div className="a-banner a-banner--info"><span>i</span><div><strong style={{ fontSize: 13 }}>任务已成功</strong><div className="a-hint">成功输出 {record.success_output_image_count} 张，计费 {emptyDash(record.actual_points)} 积分。</div></div></div>
+          )}
         </div>
       ) : null}
 
@@ -496,14 +678,77 @@ type DistributionRowModel = {
 function callRecordStats(records: CallRecord[]) {
   const images = records.reduce((sum, record) => sum + (record.success_output_image_count || 0), 0)
   const points = records.reduce((sum, record) => sum + numeric(record.actual_points), 0)
-  const durations = records.map(durationSeconds).filter((value) => value > 0)
+  const durations = records.map(callRecordDurationSeconds).filter((value) => value > 0)
   const average = durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : 0
   return {
     tasks: records.length,
     images,
     points: points ? points.toFixed(5).replace(/\.?0+$/, '') : '0',
-    averageLatency: average ? `${average.toFixed(1)}s` : '-',
+    averageLatency: average ? `${average.toFixed(1)}s` : '—',
   }
+}
+
+function resolveUserFilter(
+  rawQuery: string,
+  directory: AdminUser[],
+): Promise<{ userId: string; message?: string } | { error: string }> {
+  const query = rawQuery.trim()
+  if (!query) return Promise.resolve({ userId: '' })
+  const numericQuery = /^\d+$/.test(query)
+  const localMatches = directory.filter((user) => userMatchesQuery(user, query))
+  return adminApi.listUsersPage(query, 1, 50)
+    .then((page) => ({ page, failed: false }))
+    .catch(() => ({ page: null, failed: true }))
+    .then(({ page, failed }) => {
+      const merged = mergeDirectoryUsers(localMatches, page?.items ?? [])
+        .filter((user) => userMatchesQuery(user, query))
+      const exactID = merged.find((user) => String(user.id) === query)
+      if (exactID) return { userId: String(exactID.id) }
+      if (numericQuery && merged.length === 0) return { userId: query }
+      if (merged.length === 1) {
+        return { userId: String(merged[0].id), message: `已按匹配用户 #${merged[0].id} ${merged[0].email} 筛选。` }
+      }
+      const exactEmail = merged.filter((user) => user.email.toLowerCase() === query.toLowerCase())
+      if (exactEmail.length === 1) {
+        return { userId: String(exactEmail[0].id), message: `已按匹配用户 #${exactEmail[0].id} ${exactEmail[0].email} 筛选。` }
+      }
+      if (merged.length > 1) {
+        return { error: `“${query}”匹配到 ${merged.length} 个用户，请输入完整邮箱或用户 ID。` }
+      }
+      if (failed) {
+        return { error: '用户目录查询失败，无法解析邮箱；请直接输入用户 ID。' }
+      }
+      return { error: `未找到与“${query}”匹配的用户 ID 或邮箱。` }
+    })
+}
+
+function mergeDirectoryUsers(...groups: AdminUser[][]): AdminUser[] {
+  const users = new Map<string, AdminUser>()
+  for (const group of groups) {
+    for (const user of group) users.set(String(user.id), user)
+  }
+  return Array.from(users.values())
+}
+
+function userMatchesQuery(user: AdminUser, query: string) {
+  const needle = query.toLowerCase()
+  return String(user.id).includes(needle) || user.email.toLowerCase().includes(needle)
+}
+
+function numeric(value?: string | null) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function emptyDash(value?: string | null) {
+  return value && value !== '0' ? value : value === '0' ? '0' : '—'
+}
+
+function failurePhaseLabel(phase: string) {
+  if (phase === 'preflight') return '预检失败'
+  if (phase === 'upstream') return '上游失败'
+  if (phase === 'artifact_persistence') return '结果落盘失败'
+  return phase
 }
 
 function callRecordDistributions(records: CallRecord[], routeDirectory: Map<string, RouteModel>) {
@@ -529,29 +774,6 @@ function topDistribution(labels: string[]): DistributionRowModel[] {
     .map(([label, value]) => ({ label, value, percent: Math.max(1, Math.round((value / total) * 100)) }))
 }
 
-function latencyLabel(record?: CallRecord) {
-  if (!record) return '-'
-  const seconds = durationSeconds(record)
-  return seconds ? `${seconds.toFixed(1)}s` : '-'
-}
-
-function durationSeconds(record: CallRecord) {
-  if (!record.started_at || !record.finished_at) return 0
-  const started = new Date(record.started_at).getTime()
-  const finished = new Date(record.finished_at).getTime()
-  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished <= started) return 0
-  return (finished - started) / 1000
-}
-
-function numeric(value?: string | null) {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-function emptyDash(value?: string | null) {
-  return value && value !== '0' ? value : value === '0' ? '0' : '-'
-}
-
 function stableJson(value: Record<string, unknown>) {
   return JSON.stringify(value, Object.keys(value).sort(), 2)
 }
@@ -564,7 +786,7 @@ function requestSnapshot(record: CallRecord) {
     source_channel: record.source_channel,
     task_type: record.task_type,
     status: record.status,
-    route_model_code: record.route_model_code,
+    route_model_code: callRecordRouteModelCode(record),
     account_model_id: record.account_model_id,
     model_account_id: record.model_account_id,
     upstream_model_code: record.upstream_model_code,
@@ -575,8 +797,10 @@ function requestSnapshot(record: CallRecord) {
     reference_image_count: record.reference_image_count,
     error_code: record.error_code,
     created_at: record.created_at,
+    updated_at: record.updated_at,
     started_at: record.started_at,
     finished_at: record.finished_at,
+    upstream_succeeded_at: record.upstream_succeeded_at,
   })
 }
 

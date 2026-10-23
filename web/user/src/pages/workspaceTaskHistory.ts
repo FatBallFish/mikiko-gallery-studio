@@ -27,13 +27,10 @@ export function workspaceTaskHistoryInteraction(input: WorkspaceTaskHistoryInter
   if (input.surface === 'recent') {
     return { selectTask: true, navigateHash: true, outputTab: 'current', openDialog: false, openLightbox: false }
   }
-  if (input.resultCount > 1) {
-    return { selectTask: false, navigateHash: false, outputTab: null, openDialog: true, openLightbox: false }
-  }
-  if (input.resultCount === 1) {
-    return { selectTask: false, navigateHash: false, outputTab: null, openDialog: false, openLightbox: true }
-  }
-  return { selectTask: false, navigateHash: false, outputTab: null, openDialog: false, openLightbox: false }
+  // Every history record opens the task drawer, including queued/running and
+// failed tasks. The drawer shows the task's results when present and the
+// status/error otherwise, so no history card is silently inert.
+  return { selectTask: false, navigateHash: false, outputTab: null, openDialog: true, openLightbox: false }
 }
 
 function trimWorkspaceTaskRecords<T extends WorkspaceTaskRecord>(records: Iterable<T>, options: WorkspaceTaskHistoryOptions) {

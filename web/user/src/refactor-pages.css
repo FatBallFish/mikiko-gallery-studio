@@ -324,3 +324,21 @@
   .u-login__pane { padding: 40px 20px; }
   .u-login__form { max-width: 100%; }
 }
+
+/* Landing code sample: preserve line breaks without forcing a one-line row */
+.u-code pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+
+/* Login spacing, divider and visible theme control */
+.u-login__pane { position: relative; }
+.u-login__form form { display: grid; gap: 18px; }
+.u-login__form form > * { min-width: 0; }
+.u-login__form .u-btn--lg { margin-top: 2px; }
+.u-login__divider { display: flex; align-items: center; gap: 12px; color: var(--ink-3); font-size: 12px; }
+.u-login__divider::before,
+.u-login__divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.u-login__divider span { flex: none; }
+.u-login__theme { position: absolute; right: 16px; top: 16px; z-index: 20; }
+.u-login__providers { margin-top: 20px; padding-top: 0; border-top: 0; }
+
+/* Platform mark in the user rail */
+.u-rail__brand img { width: 28px; height: 28px; object-fit: contain; }

@@ -4,7 +4,7 @@ import type { Capability, CapabilityModelGroup, EstimateRequest, GalleryImage, I
 import { cn } from '../../../shared/classnames'
 import { ApiError } from '../../../shared/http-client'
 import { toTask, userApi } from '../../../shared/user-api'
-import { Button, EmptyState, ErrorState, ImageDetailModal, InlineCopyButton, LoadingState, Modal, PublicDetailIcon, copyText, useApp, type ImagePreviewPayload } from '../components'
+import { Button, Drawer, EmptyState, ErrorState, ImageDetailModal, InlineCopyButton, LoadingState, Modal, PublicDetailIcon, StatusPill, copyText, taskTypeLabel, useApp, type ImagePreviewPayload } from '../components'
 import { userState } from '../ui/classes'
 import { rdWorkspace } from '../ui/redesign-classes'
 import { OverlayPortal } from '../ui/overlayPortal'
@@ -1254,7 +1254,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const referenceControls = (
     <div className="cr-group">
       <div className="cr-group__head">
-        <h4>参考图<span className="cr-group__note">图片编辑来源</span></h4>
+        <h4>参考图/图片编辑来源</h4>
         <div className="cr-ref-head">
           <span>{editRefs.length} / {maxReferenceImages}</span>
           <button type="button" disabled={busy || editRemainingLimit <= 0} onClick={() => void openGalleryImport('edit')}>从资产导入</button>
@@ -1306,7 +1306,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const promptControls = (
     <div className="cr-group">
       <div className="cr-group__head">
-        <label className="u-label">提示词</label>
+        <h4>提示词</h4>
         <span>{promptExpandedLength} / 4000</span>
       </div>
       <div className="u-prompt-box cr-prompt">
@@ -2246,8 +2246,9 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
   onClose: () => void
 }) {
   const app = useApp()
-  if (!task.results.length) return null
-  const requested = Math.max(Number(task.image_count || 1), task.results.length)
+  const requested = Math.max(Number(task.image_count || 1), task.results.length || 0)
+  const running = !isTerminalStatus(task.status)
+  const errorText = task.error_message || task.failure_reason || '本次未产生可用图片'
   const referenceImages = task.reference_assets.map((asset) => ({
     id: asset.id,
     url: referenceAssetPreviewURL(asset, accessToken),
@@ -2257,55 +2258,138 @@ function HistoryTaskGalleryModal({ task, accessToken, onPreviewImage, onImageMed
   })).filter((item) => item.url)
 
   return (
-    <Modal title="历史创作总览" onClose={onClose} className="max-h-[90vh] w-[min(960px,calc(100vw-2rem))] max-w-none overflow-y-auto">
-      <div className="u-toolbar cr-detail-summary">
-        <span className="u-meta" style={{ flex: '1 1 100%', overflowWrap: 'anywhere' }} title={task.prompt || task.title}>{task.prompt || task.title || '未命名创作'}</span>
-        <span className="u-chip u-chip--mono">{task.results.length}/{requested} 张</span>
-        <span className="u-chip u-chip--mono">{formatHistoryTime(task.created_at)}</span>
-        <span className="u-chip u-chip--mono inline-flex items-center gap-1"><span title={task.id}>任务ID: {task.id}</span><InlineCopyButton text={task.id} label="复制任务ID" /></span>
-      </div>
-      <div className="u-grid cr-detail-grid">
-        {task.results.map((image, index) => {
-          const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
-          return (
-            <button
-              key={image.id}
-              type="button"
-              data-history-image-id={image.id}
-              className="u-card cr-card-button group"
-              aria-label={`查看第 ${index + 1} 张图片详情`}
-              onClick={() => onPreviewImage({
-                url: imageUrl,
-                downloadUrl: userApi.imageAssetUrl(image.download_url ?? image.url, accessToken),
-                alt: image.prompt || `${task.title || '历史创作'} ${index + 1}`,
-                prompt: image.prompt || task.prompt,
-                width: image.width,
-                height: image.height,
-                ratio: task.aspect_ratio,
-                model: image.route_model_code || task.route_model_code || task.model_group,
-                source: '历史创作',
-                creationDraft: workspaceCreationDraftFromSnapshot(task),
-                detailImage: projectWorkspaceImageDetail(image, task, app.profile),
-                mediaResource: { kind: 'image', scope: 'private', id: image.id },
-                mediaExpiresAt: image.preview_expires_at,
-                referenceImages,
+    <Drawer open wide title="历史创作详情" onClose={onClose}>
+      <div className="u-detail">
+        <section className="u-detail__stage-col">
+          {referenceImages.length ? (
+            <div className="u-detail__refs">
+              <span className="u-detail__refs-label">参考图 {referenceImages.length}</span>
+              {referenceImages.map((item, index) => (
+                <button key={item.id} className="u-detail__ref" type="button" aria-label={`查看参考图 ${index + 1}`} onClick={() => onPreviewImage({
+                  url: item.url,
+                  downloadUrl: item.url,
+                  alt: item.alt,
+                  source: '原图引用',
+                  mediaExpiresAt: item.mediaExpiresAt,
+                  referenceImages,
+                })}>
+                  <RefreshableMediaImage src={item.url} mediaExpiresAt={item.mediaExpiresAt} alt={item.alt} onMediaRefresh={item.onMediaRefresh} />
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {task.results.length ? (
+            <div className={cn('cr-history-detail-grid', task.results.length === 1 && 'is-single')}>
+              {task.results.map((image, index) => {
+                const imageUrl = userApi.imageAssetUrl(image.url, accessToken)
+                return (
+                  <button
+                    key={image.id}
+                    type="button"
+                    data-history-image-id={image.id}
+                    className="u-result cr-history-result"
+                    aria-label={`查看第 ${index + 1} 张图片详情`}
+                    onClick={() => onPreviewImage({
+                      url: imageUrl,
+                      downloadUrl: userApi.imageAssetUrl(image.download_url ?? image.url, accessToken),
+                      alt: image.prompt || `${task.title || '历史创作'} ${index + 1}`,
+                      prompt: image.prompt || task.prompt,
+                      width: image.width,
+                      height: image.height,
+                      ratio: task.aspect_ratio,
+                      model: image.route_model_code || task.route_model_code || task.model_group,
+                      source: '历史创作',
+                      creationDraft: workspaceCreationDraftFromSnapshot(task),
+                      detailImage: projectWorkspaceImageDetail(image, task, app.profile),
+                      mediaResource: { kind: 'image', scope: 'private', id: image.id },
+                      mediaExpiresAt: image.preview_expires_at,
+                      referenceImages,
+                    })}
+                  >
+                    <RefreshableMediaImage
+                      className="cr-history-result__media"
+                      src={imageUrl}
+                      mediaExpiresAt={image.preview_expires_at}
+                      alt={image.prompt || `${task.title || '历史创作'} ${index + 1}`}
+                      onMediaRefresh={() => onImageMediaRefresh(image.id)}
+                    />
+                    <span className="u-result__bar">
+                      <span className="u-result__ops"><span className="u-chip u-chip--mono">第 {index + 1} 张</span></span>
+                      <span className="u-result__caption">{image.width}×{image.height} · {image.output_format?.toUpperCase() || 'PNG'}</span>
+                    </span>
+                  </button>
+                )
               })}
-            >
-              <span className="u-card__media">
-                <RefreshableMediaImage
-                  className="size-full object-cover"
-                  src={imageUrl}
-                  mediaExpiresAt={image.preview_expires_at}
-                  alt={image.prompt || `${task.title || '历史创作'} ${index + 1}`}
-                  onMediaRefresh={() => onImageMediaRefresh(image.id)}
-                />
-                <span className="u-card__tag">第 {index + 1} 张</span>
-              </span>
-            </button>
-          )
-        })}
+            </div>
+          ) : (
+            <div className="u-detail__stage">
+              <div className="cr-history-empty">
+                {running ? <span className={userState.spinner} aria-hidden="true" /> : <strong className="cr-card-flag" style={{ position: 'static' }}>!</strong>}
+                <h3>{running ? '正在生成' : '生成失败'}</h3>
+                <p>{running ? (task.progress_message || '任务正在处理中，结果完成后会出现在这里。') : errorText}</p>
+                {running ? <div className="u-progress" style={{ width: 'min(320px, 100%)' }}><span /></div> : null}
+              </div>
+            </div>
+          )}
+
+          <div className="u-actions" style={{ justifyContent: 'space-between' }}>
+            <div className="u-actions">
+              <StatusPill status={task.status} />
+              <span className="u-chip u-chip--mono">{task.results.length}/{requested} 张</span>
+              <span className="u-chip u-chip--mono">{formatCompactDuration(taskElapsedMs(task))}</span>
+            </div>
+            <span className="u-chip u-chip--mono">{formatHistoryTime(task.created_at)}</span>
+          </div>
+        </section>
+
+        <section className="u-detail__info">
+          <div className="u-detail__info-scroll">
+            <div style={{ display: 'grid', gap: 7 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                <span className="u-chip u-chip--accent">图片</span>
+                <span className="u-chip u-chip--mono">{task.route_model_code || task.model_group || '未知模型'}</span>
+                <StatusPill status={task.status} />
+              </div>
+              <h2 className="u-detail__title">{task.prompt || task.title || '未命名创作'}</h2>
+              <div className="u-meta">{formatHistoryTime(task.created_at)} · {formatCompactDuration(taskElapsedMs(task))}</div>
+            </div>
+
+            <div className="u-detail__section">
+              <h4>Prompt</h4>
+              <div className="u-prompt" tabIndex={0}>{task.prompt || '未记录 Prompt'}</div>
+            </div>
+
+            <div className="u-detail__section">
+              <h4>生成参数</h4>
+              <dl className="u-facts">
+                <div className="u-fact"><dt>任务类型</dt><dd>{taskTypeLabel(task.task_type)}</dd></div>
+                <div className="u-fact"><dt>模型</dt><dd>{task.route_model_code || task.model_group || '-'}</dd></div>
+                <div className="u-fact"><dt>比例</dt><dd>{task.aspect_ratio || '-'}</dd></div>
+                <div className="u-fact"><dt>请求数量</dt><dd>{requested}</dd></div>
+                <div className="u-fact"><dt>质量</dt><dd>{task.quality || task.requested_quality || '-'}</dd></div>
+                <div className="u-fact"><dt>状态</dt><dd>{task.progress_message || task.status}</dd></div>
+              </dl>
+            </div>
+
+            <div className="u-detail__section">
+              <h4>任务信息</h4>
+              <dl className="u-facts">
+                <div className="u-fact"><dt>任务 ID</dt><dd title={task.id}>{task.id}</dd></div>
+                <div className="u-fact"><dt>创建时间</dt><dd>{formatHistoryTime(task.created_at)}</dd></div>
+                <div className="u-fact"><dt>耗时</dt><dd>{formatCompactDuration(taskElapsedMs(task))}</dd></div>
+                <div className="u-fact"><dt>参考图</dt><dd>{referenceImages.length}</dd></div>
+                {errorText && !running ? <div className="u-fact"><dt>失败原因</dt><dd title={errorText}>{errorText}</dd></div> : null}
+              </dl>
+            </div>
+          </div>
+          <div className="u-detail__foot">
+            <InlineCopyButton text={task.id} label="复制任务 ID" />
+            <Button tone="ghost" onClick={onClose}>关闭</Button>
+          </div>
+        </section>
       </div>
-    </Modal>
+    </Drawer>
   )
 }
 

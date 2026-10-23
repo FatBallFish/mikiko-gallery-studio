@@ -54,6 +54,7 @@ export function StorageConfigPage({
 }) {
   const [items, setItems] = useState<StorageConfigView[]>([])
   const [draft, setDraft] = useState<StorageDraft | null>(null)
+  const [baseline, setBaseline] = useState<StorageDraft | null>(null)
   const [initialLoading, setInitialLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -65,12 +66,12 @@ export function StorageConfigPage({
 
   const defaultItem = items.find((item) => item.is_default)
   const selected = draft?.id ? items.find((item) => item.id === draft.id) ?? null : null
-  const isDirty = draft ? (selected ? storageDraftIsDirty(draft, selected) : draftHasContent(draft)) : false
+  const isDirty = draft && baseline ? storageDraftBaselineDirty(draft, baseline) : false
   const editorState = storageEditorState({ saving, probing, activationPhase, isDirty, feedback })
   const editorLocked = saving || probing || refreshing || Boolean(activationID)
   const namespaceLocked = Boolean(draft?.id)
   const validation = draft ? validateStorageDraft(draft) : {}
-  const dirtyCount = draft ? storageDirtyCount(draft, selected) : 0
+  const dirtyCount = draft ? storageDirtyCount(draft, baseline) : 0
   const probeActionLabel = !draft?.id || isDirty ? '测试草稿连接' : '探测已保存配置'
 
   async function load(refreshID?: string, initial = false) {
@@ -85,7 +86,11 @@ export function StorageConfigPage({
       setItems(next)
       if (draft?.id) {
         const latest = next.find((item) => item.id === draft.id)
-        if (latest && !storageDraftIsDirty(draft, latest)) setDraft(draftFromStorage(latest))
+        if (latest && (!baseline || !storageDraftBaselineDirty(draft, baseline))) {
+          const nextDraft = draftFromStorage(latest)
+          setDraft(nextDraft)
+          setBaseline(nextDraft)
+        }
       }
       void refreshID
       setLoadError(null)
@@ -131,7 +136,9 @@ export function StorageConfigPage({
     if (editorLocked) return
     if (!confirmDiscardChanges()) return
     setFeedback(null)
-    setDraft(newStorageDraft())
+    const next = newStorageDraft()
+    setDraft(next)
+    setBaseline(next)
   }
 
   function openEdit(item: StorageConfigView) {
@@ -139,13 +146,16 @@ export function StorageConfigPage({
     if (draft?.id === item.id) return
     if (!confirmDiscardChanges()) return
     setFeedback(null)
-    setDraft(draftFromStorage(item))
+    const next = draftFromStorage(item)
+    setDraft(next)
+    setBaseline(next)
   }
 
   function closeEditor() {
     if (saving || probing) return
     if (!confirmDiscardChanges()) return
     setDraft(null)
+    setBaseline(null)
     setFeedback(null)
   }
 
@@ -162,7 +172,9 @@ export function StorageConfigPage({
     try {
       const saved = draft.id ? await adminApi.updateStorageConfig(draft.id, payload) : await adminApi.createStorageConfig(payload)
       onFeedback?.('存储配置已保存', saved.code)
-      setDraft(draftFromStorage(saved))
+      const nextDraft = draftFromStorage(saved)
+      setDraft(nextDraft)
+      setBaseline(nextDraft)
       await load(saved.id)
       setFeedback({ tone: 'success', message: `配置 ${saved.code} 已保存。` })
     } catch (caught) {
@@ -186,18 +198,23 @@ export function StorageConfigPage({
     const latest = nextItems.find((item) => item.id === currentDraft.id)
     if (!latest) {
       setDraft(null)
+      setBaseline(null)
       setFeedback({ tone: 'danger', message: '存储配置已被删除或不可用，请刷新后再操作。' })
       return true
     }
     if (selected && storageEditableSignature(latest) === storageEditableSignature(selected)) {
       const saved = await adminApi.updateStorageConfig(currentDraft.id, { ...payload, version: latest.version })
       onFeedback?.('存储配置已保存', saved.code)
-      setDraft(draftFromStorage(saved))
+      const nextDraft = draftFromStorage(saved)
+      setDraft(nextDraft)
+      setBaseline(nextDraft)
       await load(saved.id)
       setFeedback({ tone: 'success', message: `配置 ${saved.code} 已使用最新版本保存。` })
       return true
     }
-    setDraft(draftFromStorage(latest))
+    const nextDraft = draftFromStorage(latest)
+    setDraft(nextDraft)
+    setBaseline(nextDraft)
     setFeedback({ tone: 'danger', message: '存储配置已被其他操作更新，已刷新最新内容，请确认后再保存。' })
     return true
   }
@@ -214,7 +231,9 @@ export function StorageConfigPage({
         onFeedback?.('草稿连接测试完成', probeResultSummary(result))
       } else {
         const updated = await adminApi.probeStorageConfig(draft.id)
-        setDraft(draftFromStorage(updated))
+        const nextDraft = draftFromStorage(updated)
+        setDraft(nextDraft)
+        setBaseline(nextDraft)
         await load(updated.id)
         setFeedback({ tone: 'success', message: `已保存配置探测：${probeSummary(updated)}` })
         onFeedback?.('已保存配置探测完成', probeSummary(updated))
@@ -283,7 +302,9 @@ export function StorageConfigPage({
       const updated = await adminApi.setStorageConfigStatus(draft.id, { version: draft.version, status: 'enabled', read_enabled: true, write_enabled: false })
       onFeedback?.('存储已设为只读', updated.code)
       await load(updated.id)
-      setDraft(draftFromStorage(updated))
+      const nextDraft = draftFromStorage(updated)
+      setDraft(nextDraft)
+      setBaseline(nextDraft)
       setFeedback({ tone: 'success', message: `配置 ${updated.code} 已设为只读。` })
     } catch (caught) {
       setFeedback({ tone: 'danger', message: caught instanceof Error ? caught.message : '状态更新失败' })
@@ -461,9 +482,8 @@ function validateStorageDraft(draft: StorageDraft): Record<string, string> {
   return errors
 }
 
-function storageDirtyCount(draft: StorageDraft, selected: StorageConfigView | null): number {
-  if (!selected) return draftHasContent(draft) ? 1 : 0
-  const baseline = draftFromStorage(selected)
+function storageDirtyCount(draft: StorageDraft, baseline: StorageDraft | null): number {
+  if (!baseline) return draftHasContent(draft) ? 1 : 0
   const keys: Array<keyof StorageDraft> = ['code', 'name', 'driver', 'provider', 'status', 'read_enabled', 'write_enabled', 'endpoint', 'region', 'bucket', 'prefix', 'force_path_style', 'local_root', 'public_base_url']
   let count = keys.filter((key) => String(draft[key]) !== String(baseline[key])).length
   if (draft.access_key_id.trim()) count += 1
@@ -473,6 +493,15 @@ function storageDirtyCount(draft: StorageDraft, selected: StorageConfigView | nu
 
 function draftHasContent(draft: StorageDraft): boolean {
   return Boolean(draft.name || draft.code || draft.endpoint || draft.bucket || draft.local_root || draft.access_key_id || draft.secret_access_key)
+}
+
+function storageDraftBaselineDirty(draft: StorageDraft, baseline: StorageDraft) {
+  return storageDraftIsDirty(draft, {
+    ...baseline,
+    is_default: false,
+    secret_status: { has_secret: false },
+    last_probe: { status: 'never' },
+  })
 }
 
 function newStorageDraft(): StorageDraft {

@@ -513,7 +513,7 @@ export function LoginPage({ returnTo, imageId, taskId }: { returnTo?: RouteId; i
 
           {!passwordSetupToken && availability.showOIDCLogin ? (
             <div className={loginClasses.providers}>
-              {showLocalEntry ? <p className={loginClasses.providerLabel}>或使用统一身份登录</p> : null}
+              {showLocalEntry ? <div className="u-login__divider"><span>或使用统一身份登录</span></div> : null}
               <button type="button" className={loginClasses.oidcButton} onClick={startOIDCLogin}>
                 <Fingerprint size={17} aria-hidden="true" />
                 {availability.oidcLoginLabel}
