@@ -12,17 +12,19 @@ import (
 	"github.com/fatballfish/pic-gallery/internal/config"
 	domainadminconfig "github.com/fatballfish/pic-gallery/internal/domain/adminconfig"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
 
 type Service struct {
-	cfg     config.BillingConfig
-	calc    *domainbilling.Calculator
-	store   Store
-	routing modelhub.ModelRoutingSource
-	admin   adminConfigResolver
+	cfg              config.BillingConfig
+	calc             *domainbilling.Calculator
+	store            Store
+	routing          modelhub.ModelRoutingSource
+	admin            adminConfigResolver
+	generationLimits config.GenerationLimitsConfig
 }
 
 type adminConfigResolver interface {
@@ -54,7 +56,9 @@ func NewServiceWithStore(cfg config.BillingConfig, store Store) *Service {
 	if store == nil {
 		store = NewMemoryStore(cfg.PointsScale)
 	}
-	return &Service{cfg: cfg, calc: domainbilling.NewCalculator(cfg), store: store}
+	svc := &Service{cfg: cfg, calc: domainbilling.NewCalculator(cfg), store: store}
+	svc.SetGenerationLimits(config.GenerationLimitsConfig{})
+	return svc
 }
 
 func normalizeBillingConfig(cfg config.BillingConfig) config.BillingConfig {
@@ -77,6 +81,19 @@ func normalizeSignupTrialConfig(cfg config.SignupTrialConfig) config.SignupTrial
 	return cfg
 }
 
+// SetGenerationLimits binds estimates to the same platform limits as task creation.
+// Call only during initialization, before serving requests.
+func (s *Service) SetGenerationLimits(limits config.GenerationLimitsConfig) {
+	// Match config loading defaults for services constructed without a runtime config.
+	if limits.MaxImageCount == 0 {
+		limits.MaxImageCount = 5
+	}
+	if limits.ReferenceImageMaxCount == 0 {
+		limits.ReferenceImageMaxCount = 4
+	}
+	s.generationLimits = limits
+}
+
 func (s *Service) SetModelRoutingSource(source modelhub.ModelRoutingSource) {
 	s.routing = source
 }
@@ -97,11 +114,14 @@ func (s *Service) EstimateContext(ctx context.Context, req domainbilling.Estimat
 	if !provider.IsSupportedTaskType(req.TaskType) {
 		return domainbilling.EstimateResult{}, errs.BadRequest("unsupported task_type")
 	}
+	if s.routing != nil && strings.TrimSpace(req.RouteModelCode) == "" {
+		req.RouteModelCode = strings.TrimSpace(req.AbstractModel)
+		if req.RouteModelCode == "" {
+			return domainbilling.EstimateResult{}, errs.New(409, errs.CodeRouteModelPriceMissing, "route model is required for image pricing")
+		}
+	}
 	if strings.TrimSpace(req.RouteModelCode) != "" {
-		_, estimate, err := s.ResolveAndEstimateRouteTask(ctx, req, config.GenerationLimitsConfig{
-			MaxImageCount:          1 << 30,
-			ReferenceImageMaxCount: 1 << 30,
-		})
+		_, estimate, err := s.ResolveAndEstimateRouteTask(ctx, req, s.generationLimits)
 		return estimate, err
 	}
 	cfg := s.currentBillingConfig(ctx)
@@ -126,7 +146,8 @@ func (s *Service) ResolveAndEstimateRouteTask(ctx context.Context, req domainbil
 	if len(groupCodes) == 0 && strings.TrimSpace(req.UserGroupCode) != "" {
 		groupCodes = append(groupCodes, req.UserGroupCode)
 	}
-	resolveReq, err := modelhub.NormalizeResolveRequest(modelhub.ResolveRequest{
+	resolveReq := modelhub.ResolveRequest{
+		Operation: req.Operation, NativeOptions: req.NativeOptions,
 		RouteKey:                  req.RouteKey,
 		RouteModelCode:            req.RouteModelCode,
 		TaskType:                  req.TaskType,
@@ -144,15 +165,31 @@ func (s *Service) ResolveAndEstimateRouteTask(ctx context.Context, req domainbil
 		MaskPresent:               req.MaskPresent,
 		UserGroupCodes:            groupCodes,
 		ExpectedCapabilityVersion: req.CapabilityVersion,
-	})
-	if err != nil {
-		return modelhub.ResolvedRequest{}, domainbilling.EstimateResult{}, err
 	}
 	resolved, err := resolver.ResolveContext(ctx, resolveReq)
 	if err != nil {
 		return resolved, domainbilling.EstimateResult{}, err
 	}
 	baseResolution := resolved.BaseResolution
+	var routePrice *imagepricing.Config
+	for _, route := range routing.RouteModels {
+		if route.ID == resolved.RouteModelID {
+			routePrice = route.ImagePricing
+			break
+		}
+	}
+	if len(resolved.Providers) > 0 && modelhub.IsNativeImageCandidate(resolved.Providers[0]) {
+		estimate, err := estimateNative(req, resolved, cfg.CNYPerPoint, defaultBillingString(cfg.TaskMultipliers[req.TaskType], "1"), routePrice)
+		return resolved, estimate, err
+	}
+	if routePrice != nil {
+		estimate, err := estimateRouteImage(req, resolved, routePrice, cfg.CNYPerPoint, defaultBillingString(cfg.TaskMultipliers[req.TaskType], "1"))
+		return resolved, estimate, err
+	}
+	resolveReq, err = modelhub.NormalizeResolveRequest(resolveReq)
+	if err != nil {
+		return resolved, domainbilling.EstimateResult{}, err
+	}
 	for _, price := range routing.Prices {
 		if !price.Enabled || price.RouteModelID != resolved.RouteModelID || !strings.EqualFold(price.TaskType, req.TaskType) || !strings.EqualFold(price.BaseResolution, baseResolution) {
 			continue

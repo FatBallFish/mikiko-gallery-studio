@@ -2077,6 +2077,9 @@ func (s *failingSaveStore) Save(ctx context.Context, task domainimagetask.Task) 
 }
 
 func (s *failingSaveStore) SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	if task.UpstreamStartedAt != nil && task.UpstreamSucceededAt == nil && len(task.Attempts) == 0 && task.ErrorCode == "" {
+		return s.base.SaveIfOwned(ctx, task, owner, now)
+	}
 	s.ownedSnapshots = append(s.ownedSnapshots, task)
 	if s.failSaveIfOwned {
 		s.failSaveIfOwned = false
@@ -2285,6 +2288,11 @@ func (s *raceyTerminalStore) Save(ctx context.Context, task domainimagetask.Task
 }
 
 func (s *raceyTerminalStore) SaveIfOwned(ctx context.Context, task domainimagetask.Task, owner string, now time.Time) error {
+	// The injected conflict targets terminal/checkpoint writes, after the durable
+	// pre-submission marker has succeeded.
+	if task.UpstreamStartedAt != nil && task.UpstreamSucceededAt == nil && len(task.Attempts) == 0 && task.ErrorCode == "" {
+		return s.base.SaveIfOwned(ctx, task, owner, now)
+	}
 	if s.failSaveIfOwned {
 		s.failSaveIfOwned = false
 		if s.failSaveIfOwnedError != nil {
@@ -4255,50 +4263,34 @@ func TestExecuteLeasedTaskDoesNotOverwriteReclaimedOwner(t *testing.T) {
 			err    error
 		}{result: result, err: execErr}
 	}()
+	secondOutcome := <-secondDone
+	if secondOutcome.err == nil || secondOutcome.result.Task.Status != domainimagetask.StatusRejected || secondOutcome.result.Task.ErrorCode != "IMAGE_UPSTREAM_SUBMISSION_UNCERTAIN" {
+		t.Fatalf("uncertain submission must stop: %#v %v", secondOutcome.result.Task, secondOutcome.err)
+	}
 	select {
 	case <-secondProviderStarted:
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("expected reclaimed worker to start provider generation")
+		t.Fatal("reclaimed worker repeated paid provider request")
+	default:
 	}
-
 	close(store.releaseTerminalSave)
-
 	firstOutcome := <-firstDone
-	var conflictErr *errs.Error
-	if firstOutcome.err == nil || !errors.As(firstOutcome.err, &conflictErr) || conflictErr.Code != errs.CodeConflict {
-		t.Fatalf("expected stale worker lease conflict, got result=%#v err=%v", firstOutcome.result, firstOutcome.err)
-	}
-
-	duringReclaim, err := svc.GetByID(context.Background(), 187, created.ID)
-	if err != nil {
-		t.Fatalf("GetByID during reclaim: %v", err)
-	}
-	if duringReclaim.Status != domainimagetask.StatusRunning || duringReclaim.LeaseOwner != "worker-b" || duringReclaim.ProgressStage != domainimagetask.ProgressStageProvider {
-		t.Fatalf("stale worker must not overwrite reclaimed task, got %#v", duringReclaim)
-	}
-
-	close(secondProviderRelease)
-	secondOutcome := <-secondDone
-	if secondOutcome.err != nil {
-		t.Fatalf("second ExecuteLeasedTask: %v", secondOutcome.err)
-	}
-	if secondOutcome.result.Task.Status != domainimagetask.StatusSucceeded {
-		t.Fatalf("expected reclaimed worker to succeed, got %#v", secondOutcome.result.Task)
+	if firstOutcome.err == nil {
+		t.Fatal("stale worker unexpectedly persisted checkpoint")
 	}
 	generateMu.Lock()
 	finalGenerateCalls := generateCalls
 	generateMu.Unlock()
-	if finalGenerateCalls != 2 {
-		t.Fatalf("expected each lease owner to make its own provider call after expiry, got %d", finalGenerateCalls)
+	if finalGenerateCalls != 1 {
+		t.Fatalf("expected one paid call, got %d", finalGenerateCalls)
 	}
-
 	finalTask, err := svc.GetByID(context.Background(), 187, created.ID)
 	if err != nil {
-		t.Fatalf("GetByID final: %v", err)
+		t.Fatal(err)
 	}
-	if finalTask.Status != domainimagetask.StatusSucceeded || len(finalTask.Results) != 1 || finalTask.Results[0].RevisedPrompt != "reclaimed-worker" {
-		t.Fatalf("expected succeeded task after reclaim race recovery, got %#v", finalTask)
+	if finalTask.Status != domainimagetask.StatusRejected || finalTask.BillingDiagnostic == "" {
+		t.Fatalf("missing reconciliation marker: %#v", finalTask)
 	}
+	close(secondProviderRelease)
 }
 
 func TestExecuteLeasedTaskRejectsStaleWorkerAfterReclaim(t *testing.T) {

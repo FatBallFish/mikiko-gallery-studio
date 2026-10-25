@@ -320,3 +320,24 @@
   border-radius: 10px;
   background: #000;
 }
+
+/* Native image configuration follows the shared ledger spacing. */
+.cfg-native-pricing { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 18px; border: 1px solid var(--a-line); border-radius: 8px; }
+.cfg-native-pricing legend { padding: 0 8px; font-weight: 600; font-size: 13px; }
+.cfg-tier-group { display: grid; gap: 10px; min-width: 0; }
+.cfg-tier-group h4 { margin: 0; font-size: 13px; }
+.cfg-tier-group > button { justify-self: start; }
+.cfg-tier-scroll { max-width: 100%; overflow-x: auto; }
+.cfg-tier-table { width: 100%; min-width: 620px; border-collapse: collapse; text-align: left; }
+.cfg-tier-table th { color: var(--a-ink-2); font-size: 11px; font-weight: 500; }
+.cfg-tier-table th, .cfg-tier-table td { padding: 8px 6px; border-bottom: 1px solid var(--a-line); }
+.cfg-tier-table td:nth-child(1) { width: 110px; }
+.cfg-tier-table td:nth-child(2) { width: 160px; }
+.cfg-tier-table td:nth-child(4) { width: 130px; }
+.cfg-config-summary { max-height: 240px; overflow: auto; margin: 0; padding: 12px; background: var(--a-surface); border: 1px solid var(--a-line); border-radius: 6px; font: 11px/1.6 var(--font-admin-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .cfg-native-pricing { padding: 12px; } }
+
+.cfg-config-tree { margin: 8px 0; padding-left: 12px; border-left: 1px solid var(--a-line); font-size: 12px; overflow-wrap: anywhere; }
+.cfg-config-tree > div { display: grid; grid-template-columns: minmax(100px, .7fr) minmax(0, 1fr); gap: 12px; padding: 5px 0; }
+.cfg-config-tree dt { color: var(--a-ink-2); }
+.cfg-config-tree dd { margin: 0; min-width: 0; }

@@ -18,6 +18,7 @@ import (
 
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	repoent "github.com/fatballfish/pic-gallery/internal/repository/ent"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/imageresult"
@@ -2413,6 +2414,23 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		}
 	}
 	if entity.RoutingSnapshot != nil {
+		if raw := entity.RoutingSnapshot["upstream_started_at"]; raw != nil {
+			if err := decodeJSONValue(raw, &task.UpstreamStartedAt); err != nil {
+				return domainimagetask.Task{}, fmt.Errorf("decode upstream submission marker: %w", err)
+			}
+		}
+		if raw := entity.RoutingSnapshot["native_image_v1"]; raw != nil {
+			var native struct {
+				Operation nativeimage.Operation `json:"operation"`
+				Options   *nativeimage.Options  `json:"options"`
+			}
+			if err := decodeJSONValue(raw, &native); err != nil {
+				return domainimagetask.Task{}, fmt.Errorf("decode native image snapshot: %w", err)
+			}
+			task.Operation = native.Operation
+			task.NativeOptions = native.Options
+		}
+
 		if snapshot, err := decodeGenerationSnapshot(entity.RoutingSnapshot["generation_snapshot"]); err == nil {
 			task.GenerationSnapshot = snapshot
 		} else {
@@ -2422,6 +2440,7 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 
 	if entity.ProviderTrace != nil {
 		trace := entity.ProviderTrace
+		task.BillingDiagnostic, _ = trace["billing_diagnostic"].(string)
 		if providerName, ok := trace["provider"].(string); ok {
 			task.Provider = providerName
 		}
@@ -2430,6 +2449,21 @@ func mapImageTaskEntity(entity *repoent.ImageTask, resultEntities []*repoent.Ima
 		}
 	}
 	task.Results = mapFallbackResults(resultEntities)
+	// Metadata is additive to authoritative result rows. Never resurrect deleted rows
+	// or restore upstream URLs from provider trace.
+	if entity.ProviderTrace != nil {
+		var traced []provider.ImageResult
+		if err := decodeJSONValue(entity.ProviderTrace["results"], &traced); err != nil {
+			return domainimagetask.Task{}, fmt.Errorf("decode result metadata: %w", err)
+		}
+		byID := map[string]provider.ImageResult{}
+		for _, r := range traced {
+			byID[r.ID] = r
+		}
+		for i := range task.Results {
+			task.Results[i].Layer = byID[task.Results[i].ID].Layer
+		}
+	}
 	return task, nil
 }
 
@@ -2438,6 +2472,7 @@ func buildProviderTrace(task domainimagetask.Task) (map[string]any, error) {
 		return nil, errProviderTraceExceedsLimits
 	}
 	trace := map[string]any{
+		"billing_diagnostic":     task.BillingDiagnostic,
 		"provider":               task.Provider,
 		"provider_model_id":      task.ProviderModelID,
 		"provider_cost":          task.ProviderCost,
@@ -2477,13 +2512,28 @@ func decodeOpenRequestFingerprint(snapshot map[string]any) string {
 }
 
 func buildRoutingSnapshot(task domainimagetask.Task) (map[string]any, error) {
+	var upstreamStarted any
+	if task.UpstreamStartedAt != nil {
+		upstreamStarted = task.UpstreamStartedAt.UTC().Format(time.RFC3339Nano)
+	}
 	snapshot := map[string]any{
 		"reference_asset_ids":      task.ReferenceAssetIDs,
+		"upstream_started_at":      upstreamStarted,
 		"mask_asset_id":            strings.TrimSpace(task.MaskAssetID),
 		"open_request_fingerprint": task.RequestFingerprint,
 		"provider_model_id":        task.ProviderModelID,
 		"route_snapshot_version":   task.RouteSnapshotVersion,
 		"fallback_count":           task.FallbackCount,
+	}
+	if task.Operation != "" || task.NativeOptions != nil {
+		native, err := jsonRoundTrip(struct {
+			Operation nativeimage.Operation `json:"operation"`
+			Options   *nativeimage.Options  `json:"options,omitempty"`
+		}{task.Operation, task.NativeOptions})
+		if err != nil {
+			return nil, err
+		}
+		snapshot["native_image_v1"] = native
 	}
 	if strings.TrimSpace(task.GenerationSnapshot.CapabilityVersion) != "" {
 		generationSnapshot, err := jsonRoundTrip(task.GenerationSnapshot)

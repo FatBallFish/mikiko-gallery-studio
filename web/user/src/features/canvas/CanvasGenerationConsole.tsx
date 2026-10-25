@@ -1,3 +1,8 @@
+import { NegativePromptControl } from '../creation/NegativePromptControl'
+import { userNativeImageFields } from '../creation/nativeImageUX'
+import { NativeImageControls } from '../creation/NativeImageControls'
+import { nativeLayerUnavailableReason } from '../../pages/workspaceParameters'
+import { nativeImageValidation, type NativeImageRequestFields } from '../../../../shared/native-image'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowUp, Check, ChevronDown, Expand, FolderOpen, ImagePlus, LoaderCircle, MousePointer2, Plus, Shrink, SlidersHorizontal, Sparkles, Undo2, Upload, X } from 'lucide-react'
@@ -29,6 +34,8 @@ export type CanvasGenerationConsoleProps = {
   accessToken?: string | null
   onPatchDraft: (patch: Record<string, unknown>) => void
   onUpload: (role?: CanvasInputRole) => void
+  onUploadMarkedReference?: (file: File, assetID: string) => Promise<string>
+  onRestoreReference?: (assetID: string, originalID: string) => Promise<void>
   onLibrary: (role?: CanvasInputRole) => void
   onPickCanvasReference: (role?: CanvasInputRole) => void
   onRemoveReference: (id: string) => void
@@ -42,6 +49,9 @@ const taskLabels: Record<string, string> = { text_to_image: '文生图', image_e
 
 export function CanvasGenerationConsole(props: CanvasGenerationConsoleProps) {
   const { node, draft, imageCapability, videoCapability, references, estimate, run, busy = false, estimating = false, accessToken, onPatchDraft, onUpload, onLibrary, onPickCanvasReference, onRemoveReference, onGenerate, onEstimate, style, className = '' } = props
+  const [editingReferenceID, setEditingReferenceID] = useState('')
+  const [pendingMarks, setPendingMarks] = useState(false)
+  const [editedReferenceIDs, setEditedReferenceIDs] = useState<string[]>([])
   const [expanded, setExpanded] = useState(false)
   const [menu, setMenu] = useState(false)
   const [parameters, setParameters] = useState(false)
@@ -66,10 +76,13 @@ export function CanvasGenerationConsole(props: CanvasGenerationConsoleProps) {
   const locked = busy || optimizer.stage === 'running' || optimizer.stage === 'estimating'
   const validationDraft = video ? { ...draft, inputs: references.filter((reference) => reference.role && reference.role !== 'reference' && reference.role !== 'prompt' && reference.role !== 'result').map((reference, ordinal) => ({ asset_id: reference.asset.id, role: reference.role, ordinal })) } : draft
   const errors = canvasConsoleParameterErrors(validationDraft, imageCapability, videoCapability, video)
+  const layerError = !video && draft.operation === 'layer_decomposition' ? nativeLayerUnavailableReason(model?.native_image_profile, references.length, model?.native_image_layer_pricing_confirmed === true, model?.native_image_layer_unavailable_reason) : ''
+  const nativeError = !video ? layerError || nativeImageValidation(model?.native_image_profile, draft as NativeImageRequestFields, references.length) : ''
+  if (nativeError) errors.push(nativeError)
   const parsed = parsePromptTemplate(template)
   const missingVariable = parsed.variableNames.some((name) => !variables[name]?.trim())
   const missingReference = parsed.referenceNames.some((name) => !references.some((reference) => reference.alias === name && ['ready', 'ready_original'].includes(reference.asset.status)))
-  const canGenerate = !locked && !estimating && Boolean(template.trim()) && !parsed.error && !missingVariable && !missingReference && !errors.length && estimate?.valid === true && estimate.sufficient !== false && !estimate.error
+  const canGenerate = !locked && !pendingMarks && !estimating && Boolean(template.trim()) && !parsed.error && !missingVariable && !missingReference && !errors.length && estimate?.valid === true && estimate.sufficient !== false && !estimate.error
   const assets = references.map((reference) => ({ ...reference.asset, name: reference.alias, display_name: reference.title }))
 
   useLayoutEffect(() => {
@@ -85,6 +98,7 @@ export function CanvasGenerationConsole(props: CanvasGenerationConsoleProps) {
 
   function patch(value: Record<string, unknown>, field?: keyof VideoDraft) {
     let next = { ...draft, ...value }
+    if (!video && typeof value.route_model_code === 'string' && value.route_model_code !== draft.route_model_code) next = { ...next, native_options: undefined, operation: undefined, seed: undefined, negative_prompt: undefined }
     if (!video && imageCapability && typeof value.route_model_code === 'string') {
       const selected = imageCapability.model_groups.find((item) => item.code === value.route_model_code)
       if (selected && !selected.task_types.includes(next.task_type === 'image_edit' ? 'image_edit' : 'text_to_image')) next = { ...next, task_type: selected.task_types[0] }
@@ -129,14 +143,16 @@ export function CanvasGenerationConsole(props: CanvasGenerationConsoleProps) {
     </header>
     {references.length || (video && roles.length) ? <div className="canvas-console-v2__references" aria-label="参考资产">
       {references.map((reference) => <div key={reference.id} className="canvas-console-v2__reference" title={`${reference.title} · @${reference.alias}`}>
-        {reference.asset.preview_url && !reference.asset.mime_type?.startsWith('video/') && !reference.asset.mime_type?.startsWith('audio/') ? <img src={reference.asset.preview_url} alt="" /> : <ImagePlus size={18} />}
+        {reference.asset.preview_url && !reference.asset.mime_type?.startsWith('video/') && !reference.asset.mime_type?.startsWith('audio/') ? <button type="button" className="canvas-console-v2__reference-preview" disabled={locked || model?.native_image_profile?.adapter !== 'seedream_image'} aria-label={`标记参考图 ${reference.title}`} onClick={() => setEditingReferenceID(reference.asset.id)}><img src={reference.asset.preview_url} alt="" />{editedReferenceIDs.includes(reference.asset.id) ? <span className="reference-edited-badge">已编辑</span> : null}</button> : <ImagePlus size={18} />}
         <span>{reference.title}<small>@{reference.alias}{reference.role && reference.role !== 'reference' ? ` · ${videoTaskInputLabel(reference.role as VideoDraftInputRole)}` : ''}</small></span><button type="button" disabled={locked} aria-label={`移除参考 ${reference.title}`} onClick={() => onRemoveReference(reference.id)}><X size={12} /></button>
       </div>)}
       {video ? roles.filter((item) => !references.some((reference) => reference.role === item)).map((item) => <button key={item} className="canvas-console-v2__reference-slot" type="button" disabled={locked} onClick={() => { setRole(item); setMenu(true) }}><Plus size={14} />{videoTaskInputLabel(item as VideoDraftInputRole)}</button>) : null}
     </div> : null}
     <div className="canvas-console-v2__prompt"><PromptTemplateEditor value={template} assets={assets} variables={variables} accessToken={accessToken} disabled={locked} expanded={expanded} onChange={patchPrompt} onAddAsset={() => setMenu(true)} placeholder={video ? '描述镜头、动作与氛围… 输入 @ 引用资产，$ 添加变量' : '描述你想看到的画面… 输入 @ 引用资产，$ 添加变量'} /><PromptVariableForm template={template} values={variables} disabled={locked} onChange={(name, value) => onPatchDraft({ variables: { ...variables, [name]: value } })} /></div>
+    {!video ? <NegativePromptControl supported={model?.native_image_profile?.negative_prompt} value={draft.native_options ? (draft as NativeImageRequestFields).native_options?.negative_prompt ?? '' : ''} disabled={locked} onChange={(negative_prompt) => patch({ ...userNativeImageFields(draft as NativeImageRequestFields, model?.native_image_profile, references.length), native_options: { ...(draft as NativeImageRequestFields).native_options, negative_prompt } })} /> : null}
+    {!video ? <>        <NativeImageControls onRefreshReference={async (id) => (await userApi.getMediaAssetAccess(id, 'preview')).url} persistedMarks={draft.ui_reference_marks} onPersistMarks={(ui_reference_marks) => onPatchDraft({ ui_reference_marks })} layerPriceReady={model?.native_image_layer_pricing_confirmed === true} layerUnavailableReason={model?.native_image_layer_unavailable_reason} mappingManaged accessToken={accessToken} profile={model?.native_image_profile} value={draft as NativeImageRequestFields} onChange={(next) => patch({ ...next, ...(next.operation === 'layer_decomposition' ? { output_image_count: 1, size_mode: 'auto', requested_size: '' } : {}) })} disabled={locked} references={references.map((reference) => reference.asset)} editingReferenceID={editingReferenceID} onEditingReferenceChange={setEditingReferenceID} onPendingChange={setPendingMarks} onEditedChange={setEditedReferenceIDs} onUploadMarkedReference={props.onUploadMarkedReference} onRestoreReference={props.onRestoreReference} /></> : null}
     {parameters ? <div className="canvas-console-v2__parameters" aria-label="生成参数">
-      {select('生成方式', 'task_type', video ? videoModel?.task_types : model?.task_types)}
+      {video ? select('生成方式', 'task_type', videoModel?.task_types) : null}
       {video ? <>{select('时长 / 秒', 'duration_seconds', videoOptions?.durations)}{select('分辨率', 'resolution', videoOptions?.resolutions)}{select('画面比例', 'aspect_ratio', videoOptions?.aspect_ratios)}{select('生成数量', 'output_count', Array.from({ length: videoModel?.max_output_count ?? 1 }, (_, index) => index + 1))}{videoOptions?.audio_generation ? <label className="canvas-console-v2__field"><span>生成音频</span><input type="checkbox" checked={videoDraft?.generate_audio ?? false} disabled={locked} onChange={(event) => patch({ generate_audio: event.target.checked, audio_mode: event.target.checked ? 'generated' : 'silent' }, 'generate_audio')} /></label> : null}</> : <>
         {select('尺寸模式', 'size_mode', model?.size_modes)}{draft.size_mode === 'ratio' ? <>{select('基础分辨率', 'base_resolution', model?.base_resolution)}{select('画面比例', 'aspect_ratio', model?.aspect_ratios)}</> : null}{draft.size_mode === 'pixel' ? select('像素尺寸', 'requested_size', model?.pixel_sizes) : null}{select('画质', 'quality', model?.quality ?? model?.qualities)}{select('格式', 'output_format', model?.output_format)}<label className="canvas-console-v2__field"><span>生成数量</span><input type="number" min={1} max={workspaceTaskImageSafetyLimit} step={1} value={Number(draft.output_image_count ?? 1)} disabled={locked} onChange={(event) => patch({ output_image_count: Number(event.target.value) })} /></label>
       </>}
@@ -145,7 +161,13 @@ export function CanvasGenerationConsole(props: CanvasGenerationConsoleProps) {
     {optimizer.stage === 'applied' ? <div className="canvas-console-v2__notice" role="status"><Check size={14} /><span>提示词已优化</span><button type="button" disabled={template !== optimizer.result || locked} onClick={() => { patchPrompt(optimizer.original); setOptimizer({ stage: 'idle', original: '' }) }}><Undo2 size={13} />撤销</button></div> : null}
     {optimizer.error || estimate?.error ? <p className="canvas-console-v2__error" role="alert">{optimizer.error || estimate?.error}</p> : null}
     <footer className="canvas-console-v2__bottom">
-      <select className="canvas-console-v2__model" aria-label="生成模型" value={String(draft.route_model_code ?? '')} disabled={locked} onChange={(event) => patch({ route_model_code: event.target.value })}><option value="" disabled>选择模型</option>{(video ? videoCapability?.model_groups : imageCapability?.model_groups)?.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}</select>
+      <select className="canvas-console-v2__model" aria-label="生成模型" value={String(draft.route_model_code ?? '')} disabled={locked} onChange={(event) => { const code = event.target.value; void (async () => {
+        try {
+          const originals = (draft.ui_reference_marks as { originals?: Array<[string, { id: string }]> } | undefined)?.originals ?? []
+          for (const [assetID, original] of originals) if (references.some((item) => item.asset.id === assetID)) await props.onRestoreReference?.(assetID, original.id)
+          patch({ route_model_code: code, ui_reference_marks: undefined })
+        } catch (reason) { setOptimizer({ stage: 'error', original: template, error: reason instanceof Error ? reason.message : '恢复原始引用失败' }) }
+      })() }}><option value="" disabled>选择模型</option>{draft.route_model_code && !(video ? videoCapability?.model_groups : imageCapability?.model_groups)?.some((item) => item.code === draft.route_model_code) ? <option value={String(draft.route_model_code)}>{String(draft.route_model_code)}（当前不可用）</option> : null}{(video ? videoCapability?.model_groups : imageCapability?.model_groups)?.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}</select>
       <button type="button" className="canvas-console-v2__text-button canvas-console-v2__summary" aria-label="生成参数" aria-expanded={parameters} disabled={locked} onClick={() => setParameters(!parameters)}><SlidersHorizontal size={14} /><span>{canvasMediaParameterSummary(draft, video)}</span></button>
       <button type="button" className="canvas-console-v2__icon-button" aria-label="优化提示词" title="优化提示词" disabled={locked || !template.trim()} onClick={() => void optimize()}>{optimizer.stage === 'estimating' || optimizer.stage === 'running' ? <LoaderCircle size={16} className="canvas-media-v2__spinner" /> : <Sparkles size={16} />}</button>
       <span className="canvas-console-v2__points" aria-live="polite">{estimating ? <LoaderCircle className="canvas-media-v2__spinner" size={13} /> : null}{estimating ? '估算中' : estimate?.valid ? `${estimate.display_points ?? estimate.estimated_points ?? '—'} 积分` : '待估算'}</span>

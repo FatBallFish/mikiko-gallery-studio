@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/predicate"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 )
@@ -51,6 +52,18 @@ func (_u *RouteModelUpdate) SetNillableDeletedAt(v *time.Time) *RouteModelUpdate
 // ClearDeletedAt clears the value of the "deleted_at" field.
 func (_u *RouteModelUpdate) ClearDeletedAt() *RouteModelUpdate {
 	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
+// SetImagePricing sets the "image_pricing" field.
+func (_u *RouteModelUpdate) SetImagePricing(v *imagepricing.Config) *RouteModelUpdate {
+	_u.mutation.SetImagePricing(v)
+	return _u
+}
+
+// ClearImagePricing clears the value of the "image_pricing" field.
+func (_u *RouteModelUpdate) ClearImagePricing() *RouteModelUpdate {
+	_u.mutation.ClearImagePricing()
 	return _u
 }
 
@@ -284,6 +297,12 @@ func (_u *RouteModelUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	if _u.mutation.DeletedAtCleared() {
 		_spec.ClearField(routemodel.FieldDeletedAt, field.TypeTime)
 	}
+	if value, ok := _u.mutation.ImagePricing(); ok {
+		_spec.SetField(routemodel.FieldImagePricing, field.TypeJSON, value)
+	}
+	if _u.mutation.ImagePricingCleared() {
+		_spec.ClearField(routemodel.FieldImagePricing, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.Code(); ok {
 		_spec.SetField(routemodel.FieldCode, field.TypeString, value)
 	}
@@ -357,6 +376,18 @@ func (_u *RouteModelUpdateOne) SetNillableDeletedAt(v *time.Time) *RouteModelUpd
 // ClearDeletedAt clears the value of the "deleted_at" field.
 func (_u *RouteModelUpdateOne) ClearDeletedAt() *RouteModelUpdateOne {
 	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
+// SetImagePricing sets the "image_pricing" field.
+func (_u *RouteModelUpdateOne) SetImagePricing(v *imagepricing.Config) *RouteModelUpdateOne {
+	_u.mutation.SetImagePricing(v)
+	return _u
+}
+
+// ClearImagePricing clears the value of the "image_pricing" field.
+func (_u *RouteModelUpdateOne) ClearImagePricing() *RouteModelUpdateOne {
+	_u.mutation.ClearImagePricing()
 	return _u
 }
 
@@ -619,6 +650,12 @@ func (_u *RouteModelUpdateOne) sqlSave(ctx context.Context) (_node *RouteModel, 
 	}
 	if _u.mutation.DeletedAtCleared() {
 		_spec.ClearField(routemodel.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ImagePricing(); ok {
+		_spec.SetField(routemodel.FieldImagePricing, field.TypeJSON, value)
+	}
+	if _u.mutation.ImagePricingCleared() {
+		_spec.ClearField(routemodel.FieldImagePricing, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.Code(); ok {
 		_spec.SetField(routemodel.FieldCode, field.TypeString, value)

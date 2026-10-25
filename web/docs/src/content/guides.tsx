@@ -44,6 +44,24 @@ POST /api/open/v1/image-tasks
 POST /api/open/v1/video-tasks
 GET  /api/open/v1/image-tasks
 GET  /api/open/v1/video-tasks`} />
+      <h2 id="native-image-contract">Qwen / Seedream 原生图片契约</h2>
+      <p>先读取模型的 native_image_profile，再预检完整请求。operation 为 generate、edit 或 layer_decomposition；是否允许执行还取决于部署路由、权限和已确认价格。普通图片数量与拆层产物数量独立，不能用 n=17 请求拆层。</p>
+      <CodeBlock code={JSON.stringify({ operation: 'edit', native_options: { watermark: false, annotations: [{ reference_index: 1, label: '目标', point: [520, 460] }], seedream: { optimize_prompt_mode: 'standard' } } }, null, 2)} />
+      <p>以上仅是需合入完整预检请求的原生字段片段。native_options 顶层字段为 seed、negative_prompt、watermark、annotations、qwen、seedream；Qwen 的 prompt_extend、prompt_extend_mode、enable_thinking 放入 qwen，Seedream 的 optimize_prompt_mode 放入 seedream。annotations 的 reference_index 从 1 开始，point 与 bbox 二选一，提示词坐标为 0..999。</p>
+      <p>结果元数据位于 results[].layer，包含 z_index、is_base 和可选 name、description、bounding_box。bounding_box.absolute 是像素坐标，normalized 是响应的 0..1000 坐标，不能与输入标注的 0..999 混用。保留底图、透明 PNG 和层次顺序。</p>
+      <h2 id="native-support">原生图片支持表</h2>
+      <table><thead><tr><th>型号</th><th>参考图 / 普通输出</th><th>专属能力</th></tr></thead><tbody>
+        <tr><td>Qwen 3.0 / 可选 3.0-pro</td><td>最多 3 / 1–6</td><td>seed、negative_prompt、提示词扩展/思考、PNG</td></tr>
+        <tr><td>Qwen 2.1-pro / 2.1-turbo</td><td>最多 10 / 1–6</td><td>seed、提示词扩展/思考；提示词驱动透明输出</td></tr>
+        <tr><td>Seedream 5.0 pro</td><td>最多 10 / 1</td><td>坐标标注；优化 standard/fast；拆层需确认价格</td></tr>
+        <tr><td>Seedream 5.0 flash</td><td>最多 10 / 1</td><td>坐标标注；优化 standard；拆层价格尚待确认</td></tr>
+      </tbody></table>
+      <p>Qwen 输出 262144–4194304 像素，宽高比至 8:1；Seedream 输出 921600–4624220 像素，宽高比至 16:1，JPEG/PNG。Seedream 不支持 seed/negative_prompt。profile 的拆层能力不代表线上已经启用；一张参考图拆为一张底图和最多 16 个透明层，不能改写为普通批量图片。</p>
+      <h2 id="native-setup">管理员配置与价格确认</h2>
+      <p>原生 adapter 分别为 qwen_image 和 seedream_image，默认端点为 https://dashscope.aliyuncs.com 与 https://ark.cn-beijing.volces.com/api/v3。账号模型使用 extra.native_image = {'{model, profile?, pricing, sale_pricing}'}，model 填 Endpoint 对应的真实型号；可选 profile 必须与其能力一致。pricing 是成本 CNY，sale_pricing 是销售 CNY，需显式配置后启用路由。默认牌价不会自动应用到线上。</p>
+      <p>拆层成本与售价都需已确认的 layer_base_cny、layer_tiers 和 layer_pricing_confirmed=true。Pro 底图收费、Flash 拆层价格尚待核实，未知价格拒绝执行，不能置零。确认为零也须显式记录并由操作人员确认。CNY 与积分分开，预检按配置换算并绑定能力/价格版本。</p>
+      <h2 id="layer-download">图层清单与下载边界</h2>
+      <p>{'浏览器会话可读取 GET /api/agent/image/v1/tasks/{task_id}/layers，以及 /layers/archive ZIP；ZIP 内包含固定 layer-NN 文件和 manifest.json，最多 17 个结果且图片总量不超过 128 MiB。API Key/MCP 使用 get_image_task_layers({id})，每层返回 access_operation=get_image_result_access 与 access_input={task_id,image_id,purpose:"download"} 以续期下载；浏览器 ZIP URL 不能当作 OAuth 下载链接。工具和 REST 路径以当前部署实际发现与接口参考为准。'}</p>
       <Callout>保存创建响应中的任务 ID。客户端断开连接不会把已经持久化的异步任务变成仅存在于连接中的作业。</Callout>
     </>,
   },
@@ -56,6 +74,7 @@ GET  /api/open/v1/video-tasks`} />
   ${auth} \\
   -H "Content-Type: application/json" \\
   -d '{"model":"REPLACE_WITH_DISCOVERED_MODEL","prompt":"editorial still life","size":"1024x1024","n":1}'`} />
+      <p>已配置的新 Qwen/Seedream 模型可通过兼容接口进行普通生成与编辑，具体能力和数量按发现结果约束。独立 layer_decomposition 操作仅通过原生 REST/MCP 暴露，n 始终表示普通输出图片数量。两种原生适配器均不声明独立 mask 能力。</p>
       <h2 id="stream">流式行为</h2>
       <p>stream 扩展只表达平台任务生命周期和最终结果。排队、执行或保存状态不是部分图片。只有上游真实提供并且适配器支持时才能发送部分图片事件；不能通过拆分最终图片模拟。不能支持的参数必须返回错误。</p>
       <p>stream=true 返回 task 与 result 事件，成功结果后发送 data: [DONE]；错误以 error 事件结束，不发送成功标记。响应头 X-Stream-Protocol 为 platform-image-lifecycle-v1。默认同步等待最多两分钟，超时返回 504 TASK_WAIT_INTERRUPTED，但持久任务保留，通过 X-Task-ID 与 Location 恢复查询。partial_images 明确不支持。</p>
@@ -152,7 +171,7 @@ print(client.models.list())`} /><Callout>OpenAPI 是请求与响应类型的唯�
   {
     id: 'inventory', group: '开始使用', title: '能力与信任边界', summary: '区分开发者 API、现有浏览器功能、管理端和回调。',
     searchText: 'inventory capability browser admin callbacks public gallery 功能 清单 边界',
-    content: <><Lead>统一开发者范围包括身份与余额、模型发现、完整预检、异步生成、资产与上传、持久分组和项目管理。并非全部浏览器或管理功能都自动成为开发者工具。</Lead><h2 id="existing">现有产品功能</h2><p>浏览器现有登录与 OIDC、账户管理、积分流水、订阅与收银台、图片与视频创作、媒体资产、公开发布审核、历史记录、画布和提示词优化。管理端管理用户、配置、存储、模型账户与路由、价格、审核、订单和集群。</p><h2 id="boundaries">独立接口</h2><Bullet items={['公开图库：保留 /api/open/image/v1/gallery/images 与 /api/public/v1/videos 路径族；详情权限仍按原有规则执行。', '支付与供应商回调：保留已有路径及供应商验证机制，不使用开发者 API Key 替代验签。', '浏览器 /api/agent 与管理员 /api/ops 接口：继续使用各自会话与权限。', '集群挑战与加入：属于部署信任机制，不在开发者 API 参考中展示。', '画布、提示词优化、收银台、公开发布审核、批量导出和历史管理不因本次统一 API 自动开放为 MCP 工具。']} /></>,
+    content: <><Lead>统一开发者范围包括身份与余额、模型发现、完整预检、异步生成、资产与上传、持久分组和项目管理。并非全部浏览器或管理功能都自动成为开发者工具。</Lead><h2 id="existing">现有产品功能</h2><p>浏览器现有登录与 OIDC、账户管理、积分流水、订阅与收银台、图片与视频创作、媒体资产、公开发布审核、历史记录、画布和提示词优化。管理端管理用户、配置、存储、模型账户与路由、价格、审核、订单和集群。</p><h2 id="boundaries">独立接口</h2><Bullet items={['公开混合媒体摘要：GET /api/public/v1/media，图片/视频统一排序分页，无完整 Prompt；liked/favorited 依赖浏览器身份，匿名过滤为空。详情与访问继续使用原图片/视频接口。公开图库：保留 /api/open/image/v1/gallery/images 与 /api/public/v1/videos 路径族；详情权限仍按原有规则执行。', '支付与供应商回调：保留已有路径及供应商验证机制，不使用开发者 API Key 替代验签。', '浏览器 /api/agent 与管理员 /api/ops 接口：继续使用各自会话与权限。', '集群挑战与加入：属于部署信任机制，不在开发者 API 参考中展示。', '画布、提示词优化、收银台、公开发布审核、批量导出和历史管理不因本次统一 API 自动开放为 MCP 工具。']} /></>,
   },
 ]
 

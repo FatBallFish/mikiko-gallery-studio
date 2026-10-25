@@ -146,9 +146,264 @@ components:
           type: string
         image_count:
           type: integer
+    NativeImageOperation:
+      type: string
+      enum: [generate, edit, layer_decomposition]
+      description: Native operation, independent of ordinary output count. Layer decomposition is exposed through native REST/MCP only when capability and confirmed pricing permit it; never encode it as n.
+    NativeImageOptions:
+      type: object
+      additionalProperties: false
+      description: Model-specific options. Unsupported fields are rejected; read native_image_profile before preflight. These fields belong directly under native_options, not inside qwen or seedream.
+      properties:
+        seed:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        negative_prompt:
+          type: string
+        watermark:
+          type: boolean
+        annotations:
+          type: array
+          items:
+            $ref: '#/components/schemas/NativeImageAnnotation'
+        qwen:
+          type: object
+          additionalProperties: false
+          properties:
+            prompt_extend: { type: boolean }
+            prompt_extend_mode:
+              type: string
+              enum: [direct, agent]
+              description: agent supports generate only.
+            enable_thinking:
+              type: boolean
+              description: Cannot be true when prompt_extend is explicitly false.
+        seedream:
+          type: object
+          additionalProperties: false
+          properties:
+            optimize_prompt_mode:
+              type: string
+              enum: [standard, fast]
+              description: fast requires a model profile that explicitly supports it.
+    NativeImageAnnotation:
+      type: object
+      additionalProperties: false
+      required: [reference_index]
+      description: Seedream editing annotation. Exactly one point or bbox; reference_index is one-based. Prompt coordinates use inclusive 0..999, independently of response bounding_box.normalized.
+      oneOf:
+        - required: [point]
+          not: { required: [bbox] }
+        - required: [bbox]
+          not: { required: [point] }
+      properties:
+        reference_index: { type: integer, minimum: 1 }
+        label: { type: string }
+        point:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { type: integer, minimum: 0, maximum: 999 }
+          description: '[x, y]'
+        bbox:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { type: integer, minimum: 0, maximum: 999 }
+          description: '[x1, y1, x2, y2], with x1 < x2 and y1 < y2.'
+    NativeImageLayerMetadata:
+      type: object
+      required: [z_index, is_base]
+      properties:
+        z_index: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        is_base: { type: boolean }
+        bounding_box:
+          type: object
+          required: [absolute, normalized]
+          description: Provider result coordinates; preserve both forms for reconstruction. Normalized response coordinates are distinct from annotation prompt coordinates.
+          properties:
+            absolute:
+              type: array
+              minItems: 4
+              maxItems: 4
+              items: { type: integer }
+              description: '[x1, y1, x2, y2] in output pixels.'
+            normalized:
+              type: array
+              minItems: 4
+              maxItems: 4
+              items: { type: integer, minimum: 0, maximum: 1000 }
+              description: '[x1, y1, x2, y2] on the provider response 0..1000 scale.'
+    NativeImageCapabilityProfile:
+      type: object
+      required: [version, model, adapter, operations, min_pixels, max_pixels, max_aspect_ratio, max_reference_images, max_output_images, output_formats, input_formats, size_modes, negative_prompt, seed, layer_decomposition]
+      description: Exact native model constraints. Capability support does not imply that routing or layer pricing is enabled.
+      properties:
+        version: { type: string }
+        model: { type: string }
+        adapter: { type: string, enum: [qwen_image, seedream_image] }
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/NativeImageOperation'
+        min_pixels: { type: integer }
+        max_pixels: { type: integer }
+        max_aspect_ratio: { type: number }
+        max_reference_images: { type: integer }
+        max_output_images: { type: integer }
+        input_formats:
+          type: array
+          items: { type: string }
+        layer_size_modes:
+          type: array
+          items: { type: string }
+        max_layers:
+          type: integer
+          description: Maximum foreground layers, excluding the base image.
+        output_formats:
+          type: array
+          items: { type: string }
+        size_modes:
+          type: array
+          items: { type: string }
+        negative_prompt: { type: boolean }
+        seed: { type: boolean }
+        layer_decomposition: { type: boolean }
+        optimize_prompt_modes:
+          type: array
+          items: { type: string }
+    NativeImagePriceTier:
+      type: object
+      required: [name, cny]
+      properties:
+        name: { type: string }
+        max_pixels: { type: integer }
+        cny: { type: number }
+    NativeImagePricing:
+      type: object
+      required: [currency, model, version, input_cny, free_input_images, output_tiers, layer_pricing_confirmed]
+      description: Explicit CNY cost or sale pricing. Unknown layer pricing must fail closed; no defaults enable production pricing. Confirm both base and layer rates before setting layer_pricing_confirmed.
+      properties:
+        currency: { type: string, enum: [CNY] }
+        model: { type: string }
+        version: { type: string }
+        input_cny: { type: number }
+        free_input_images: { type: integer }
+        output_tiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/NativeImagePriceTier'
+        layer_tiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/NativeImagePriceTier'
+        layer_base_cny:
+          type: number
+          description: Omission means unknown, never zero. Explicit zero requires an operator-confirmed charging basis.
+        layer_pricing_confirmed: { type: boolean }
+    NativeImageDefaults:
+      type: object
+      additionalProperties: false
+      description: Official provider defaults only. Model fields inherit account fields before platform defaults; explicit API/MCP native_options override them. Seed is Qwen-only. Watermark defaults false; Qwen prompt extension/thinking default false, enabled extension defaults direct and thinking requires extension. Seedream defaults standard (there is no off); fast is Pro-only. Effective options are frozen at task creation and retained during worker replay.
+      properties:
+        seed: { type: integer, minimum: 0, maximum: 2147483647 }
+        watermark: { type: boolean }
+        qwen:
+          type: object
+          additionalProperties: false
+          properties:
+            prompt_extend: { type: boolean }
+            enable_thinking: { type: boolean }
+            prompt_extend_mode: { type: string, enum: [direct, agent] }
+        seedream:
+          type: object
+          additionalProperties: false
+          properties:
+            optimize_prompt_mode: { type: string, enum: [standard, fast] }
+    NativeImageConfig:
+      type: object
+      required: [model]
+      description: Stored at extra.native_image on account/model configuration. Model overrides account settings. model identifies the real underlying model when model_code is an Endpoint ID. Pricing must be configured explicitly to permit billed execution.
+      properties:
+        model: { type: string }
+        profile:
+          $ref: '#/components/schemas/NativeImageCapabilityProfile'
+        pricing:
+          $ref: '#/components/schemas/NativeImagePricing'
+        defaults:
+          $ref: '#/components/schemas/NativeImageDefaults'
+        sale_pricing:
+          $ref: '#/components/schemas/NativeImagePricing'
+    ImageTaskLayersManifest:
+      type: object
+      required: [version, task_id, operation, layers]
+      properties:
+        version: { type: integer, enum: [1] }
+        task_id: { type: string }
+        operation: { type: string, enum: [layer_decomposition] }
+        layers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageResult'
+      description: Browser session manifest. Includes the base image and available transparent layers; an unfinished task can have no results yet.
+    DeveloperImageTaskLayersManifest:
+      type: object
+      required: [version, task_id, operation, layers]
+      properties:
+        version: { type: integer, enum: [1] }
+        task_id: { type: string }
+        operation: { type: string, enum: [layer_decomposition] }
+        layers:
+          type: array
+          items:
+            type: object
+            required: [image_id, width, height, format, layer, access_operation, access_input]
+            properties:
+              image_id: { type: string }
+              width: { type: integer }
+              height: { type: integer }
+              format: { type: string }
+              layer:
+                $ref: '#/components/schemas/NativeImageLayerMetadata'
+              access_operation: { type: string, enum: [get_image_result_access] }
+              access_input:
+                type: object
+                required: [task_id, image_id, purpose]
+                properties:
+                  task_id: { type: string }
+                  image_id: { type: string }
+                  purpose: { type: string, enum: [download] }
+      description: API Key/MCP manifest. Renew individual download links using access_operation and access_input; browser ZIP URLs are not OAuth download capabilities.
+    ImageTaskLayerArchiveManifest:
+      type: object
+      required: [version, task_id, layers]
+      description: manifest.json inside the browser ZIP, distinct from the JSON endpoint manifest. ZIP contains layer-00 through layer-16 with extensions derived from stored MIME types; no client-supplied filenames or URLs.
+      properties:
+        version: { type: integer, enum: [1] }
+        task_id: { type: string }
+        layers:
+          type: array
+          minItems: 1
+          maxItems: 17
+          items:
+            type: object
+            required: [file, id, width, height, layer]
+            properties:
+              file: { type: string, pattern: '^layer-[0-9]{2}\.(png|jpg|webp)$' }
+              id: { type: string }
+              width: { type: integer }
+              height: { type: integer }
+              layer:
+                $ref: '#/components/schemas/NativeImageLayerMetadata'
     ImageResult:
       type: object
       properties:
+        layer:
+          $ref: '#/components/schemas/NativeImageLayerMetadata'
         id:
           type: string
           format: uuid
@@ -195,6 +450,10 @@ components:
     ImageTask:
       type: object
       properties:
+        operation:
+          $ref: '#/components/schemas/NativeImageOperation'
+        native_options:
+          $ref: '#/components/schemas/NativeImageOptions'
         id:
           type: string
           format: uuid

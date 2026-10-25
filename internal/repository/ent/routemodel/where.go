@@ -244,6 +244,16 @@ func DeletedAtNotNil() predicate.RouteModel {
 	return predicate.RouteModel(sql.FieldNotNull(FieldDeletedAt))
 }
 
+// ImagePricingIsNil applies the IsNil predicate on the "image_pricing" field.
+func ImagePricingIsNil() predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldIsNull(FieldImagePricing))
+}
+
+// ImagePricingNotNil applies the NotNil predicate on the "image_pricing" field.
+func ImagePricingNotNil() predicate.RouteModel {
+	return predicate.RouteModel(sql.FieldNotNull(FieldImagePricing))
+}
+
 // CodeEQ applies the EQ predicate on the "code" field.
 func CodeEQ(v string) predicate.RouteModel {
 	return predicate.RouteModel(sql.FieldEQ(FieldCode, v))

@@ -20,6 +20,7 @@ Discover schemas and annotations through `tools/list`. The shared operation cata
 
 - `get_current_user`, `get_balance`, `list_image_models`, `list_video_models`.
 - `preflight_image_task`, `create_image_task`, `get_image_task`, `list_image_tasks` and video equivalents, plus `cancel_video_task`.
+- `get_image_task_layers` (`images:read`, input `{id}`) returns the native decomposition manifest: `{version:1,task_id,operation,layers:[{image_id,width,height,format,layer,access_operation,access_input}]}`. Use each entry's `get_image_result_access` with `{task_id,image_id,purpose:"download"}` for OAuth-authorized downloads; browser session ZIP URLs are not OAuth capabilities.
 - `get_image_result_access`, `get_video_result_access` renew owned task output URLs using image/video read scope without broad asset-library access.
 - `list_assets`, `get_asset`, `update_asset`, `delete_asset`, `get_asset_access`.
 - `create_upload`, `get_upload`, `get_upload_part_url`, `complete_upload`, `abort_upload`.

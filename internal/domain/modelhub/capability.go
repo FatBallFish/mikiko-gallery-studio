@@ -159,6 +159,9 @@ func NormalizeCapability(raw ImageModelCapability) (ImageModelCapability, error)
 }
 
 func NormalizeResolveRequest(req ResolveRequest) (ResolveRequest, error) {
+	if req.Operation != "" || req.NativeOptions != nil {
+		return req, nil
+	}
 	if req.RequestedOutputImageCount <= 0 {
 		req.RequestedOutputImageCount = 1
 	}

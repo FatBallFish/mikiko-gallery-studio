@@ -226,6 +226,7 @@
 
 .cr-history-panel { display: grid; gap: 14px; }
 .cr-history-panel .u-toolbar .u-input { flex: 1 1 240px; min-width: 200px; }
+.cr-history-panel .cr-hist > .u-card > .cr-task-actions { padding: 0 14px 15px; }
 .cr-detail-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); margin-top: 16px; }
 .cr-task-progress { display: grid; gap: 8px; }
 .cr-stage--working { min-height: 300px; }
@@ -236,6 +237,7 @@
 
 @media (max-width: 760px) {
   .cr-frame-actions .u-btn { min-height: 34px; }
+  .cr-history-panel .cr-hist > .u-card > .cr-task-actions { padding: 0 10px 10px; }
   .cr-history-video .u-card__title { min-height: 0; }
 }
 

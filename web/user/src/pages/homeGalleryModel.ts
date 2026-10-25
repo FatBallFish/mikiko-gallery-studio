@@ -8,7 +8,7 @@ export type HomeContinuationView = {
 }
 
 export type HomeRecentTaskView = {
-  state: 'loading' | 'empty' | 'active' | 'complete' | 'failed'
+  state: 'loading' | 'empty' | 'active' | 'complete' | 'failed' | 'recovering'
   tone: 'neutral' | 'success' | 'warning' | 'error'
   title: string
   detail: string
@@ -23,17 +23,22 @@ export function homeContinuationView(tasks: ImageTask[]): HomeContinuationView {
   return { action: 'inspect', route: 'genpic', label: '继续创作', taskId: latest.id }
 }
 
+export function homeRecentResult(task: ImageTask | null): ImageResult | null {
+  return task?.results?.find((image) => Boolean(image.id && (image.url || image.download_url))) ?? task?.results?.find((image) => Boolean(image.id)) ?? null
+}
+
 export function homeRecentTaskView(task: ImageTask | null, loading: boolean): HomeRecentTaskView {
   if (loading) return { state: 'loading', tone: 'neutral', title: '正在读取最近任务', detail: '进度与结果会在这里同步。', action: 'none' }
   if (!task) return { state: 'empty', tone: 'neutral', title: '还没有生成记录', detail: '从一段提示词开始你的第一张作品。', action: 'create' }
   if (isFailedTask(task.status)) {
-    return { state: 'failed', tone: 'error', title: task.title || '最近任务未完成', detail: task.failure_reason || '本次未产生可用图片，不会按成功结果扣费。', action: 'retry' }
+    return { state: 'failed', tone: 'error', title: homeRecentResult(task)?.name?.trim() || task.title || '最近任务未完成', detail: task.failure_reason || '本次未产生可用图片，不会按成功结果扣费。', action: 'retry' }
   }
   if (task.status === 'queued' || task.status === 'running') {
     const progress = Math.max(0, Math.min(100, Math.round(task.progress || 0)))
     return { state: 'active', tone: 'warning', title: task.title || '正在生成', detail: `${task.status === 'queued' ? '已进入队列' : '正在生成'} · ${progress}%`, action: 'continue' }
   }
-  return { state: 'complete', tone: 'success', title: task.title || '最近作品已完成', detail: `${taskTypeLabel(task.task_type)} · ${task.route_model_code || task.abstract_model || task.model_group || '-'}`, action: 'inspect' }
+  if (!homeRecentResult(task)) return { state: 'recovering', tone: 'warning', title: task.title || '结果待恢复', detail: '暂未读取到结果，可进入任务查看或重试读取。', action: 'inspect' }
+  return { state: 'complete', tone: 'success', title: homeRecentResult(task)?.name?.trim() || task.title || '最近作品已完成', detail: `${taskTypeLabel(task.task_type)} · ${task.route_model_code || task.abstract_model || task.model_group || '-'}`, action: 'inspect' }
 }
 
 export function curatedHomeGallery(images: ImageResult[], limit = 6) {

@@ -229,3 +229,9 @@ export async function retry<T>(operation: () => Promise<T>, attempts = MEDIA_UPL
   }
   throw lastError
 }
+
+export const MEDIA_UPLOAD_TERMINATED_EVENT = 'mgs:media-upload-terminated'
+export type MediaUploadTerminatedDetail = { target?: UploadTarget; status: 'failed' | 'cancelled'; error?: string }
+export function notifyUploadTerminated(detail: MediaUploadTerminatedDetail) {
+  window.dispatchEvent(new CustomEvent<MediaUploadTerminatedDetail>(MEDIA_UPLOAD_TERMINATED_EVENT, { detail }))
+}

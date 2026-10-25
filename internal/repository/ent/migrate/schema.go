@@ -2264,6 +2264,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "image_pricing", Type: field.TypeJSON, Nullable: true},
 		{Name: "code", Type: field.TypeString, Size: 64},
 		{Name: "name", Type: field.TypeString, Size: 128},
 		{Name: "description", Type: field.TypeString, Size: 2147483647, Default: ""},
@@ -2283,17 +2284,17 @@ var (
 			{
 				Name:    "routemodel_code",
 				Unique:  true,
-				Columns: []*schema.Column{RouteModelsColumns[4]},
+				Columns: []*schema.Column{RouteModelsColumns[5]},
 			},
 			{
 				Name:    "routemodel_visibility_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{RouteModelsColumns[7], RouteModelsColumns[9]},
+				Columns: []*schema.Column{RouteModelsColumns[8], RouteModelsColumns[10]},
 			},
 			{
 				Name:    "routemodel_media_type_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{RouteModelsColumns[8], RouteModelsColumns[9]},
+				Columns: []*schema.Column{RouteModelsColumns[9], RouteModelsColumns[10]},
 			},
 		},
 	}

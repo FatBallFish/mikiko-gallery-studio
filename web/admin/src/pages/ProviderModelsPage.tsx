@@ -1,3 +1,7 @@
+import { ImageConfigurationFields } from './ImageConfigurationFields'
+import { configValue, effectiveNativeProfile, nativeConfigurationErrors, patchConfig, switchNativePreset } from './nativeImageConfig'
+import { NativeImagePricingFields } from './NativeImagePricingFields'
+import { nativeImagePresets, nativeImageProfile, type NativeImagePricing } from '../../../shared/native-image'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ModelAccount, ModelAccountModel, ModelAccountTestImageResult } from '../../../shared/api-types'
 import { adminApi } from '../../../shared/admin-api'
@@ -32,8 +36,8 @@ import { TextModelsPage } from './TextModelsPage'
 import { VideoProviderAccountsPanel } from './VideoProviderAccountsPanel'
 import './config-redesign.css'
 
-type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string }
-type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: string[]; base_resolution: string[]; quality: string[]; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; supportsCustomRatio: boolean; supportedPixelSizes: string[]; supportsCustomSize: boolean; minWidth: string; maxWidth: string; minHeight: string; maxHeight: string; supportedBackgrounds: string[]; outputFormat: string[]; supportsOutputCompression: boolean; moderation: string[]; costPerImage: string; currency: string; enabled: boolean }
+type AccountDraft = { id?: string | number; name: string; adapterType: string; authType: string; baseUrl: string; apiKey: string; priority: string; weight: string; concurrencyLimit: string; timeoutMS: string; status: string; sourceMode: string; extra?: Record<string, unknown> }
+type ModelDraft = { account: ModelAccount; row?: ModelAccountModel; modelCode: string; displayName: string; taskTypes: string[]; base_resolution: string[]; quality: string[]; maxReferenceImageCount: string; maxImageCount: string; sizeModes: string[]; supportedRatios: string[]; supportsCustomRatio: boolean; supportedPixelSizes: string[]; supportsCustomSize: boolean; minWidth: string; maxWidth: string; minHeight: string; maxHeight: string; supportedBackgrounds: string[]; outputFormat: string[]; supportsOutputCompression: boolean; moderation: string[]; costPerImage: string; currency: string; enabled: boolean; extra?: Record<string, unknown>; extraError?: string }
 type TestImageDialog = { account: ModelAccount; modelId: string; prompt: string; sourceMode: string; sizeMode: string; requestedSize: string; baseResolution: string; quality: string; outputFormat: string; background: string; outputCompression: string; moderation: string; aspectRatio: string; result?: ModelAccountTestImageResult; error?: string }
 type DeleteTarget = { kind: 'account'; account: ModelAccount } | { kind: 'model'; account: ModelAccount; model: ModelAccountModel }
 
@@ -191,7 +195,7 @@ function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsC
         concurrency_limit: Number(accountDialog.concurrencyLimit),
         timeout_ms: Number(accountDialog.timeoutMS),
         status: accountDialog.status,
-        extra: { source_mode: accountDialog.sourceMode },
+        extra: { ...accountDialog.extra, media_type: 'image' },
       }
       const creating = !accountDialog.id
       const saved = accountDialog.id ? await adminApi.updateModelAccount(accountDialog.id, payload) : await adminApi.createModelAccount(payload)
@@ -208,7 +212,7 @@ function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsC
   }
 
   async function saveModel() {
-    if (!modelDialog) return
+    if (!modelDialog || modelDialog.extraError) return
     setSaving(true)
     setMutationError(null)
     try {
@@ -375,9 +379,8 @@ function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsC
           <form className="a-form" onSubmit={(event) => event.preventDefault()}>
             <FormSection index={1} title="连接" description="图片账号只接入图片生成与图片编辑模型。">
               <LedgerField label="账号名称" required error={accountValidation.name}><input className="a-input" value={accountDialog.name} onChange={(event) => setAccountDialog({ ...accountDialog, name: event.target.value })} /></LedgerField>
-              <LedgerField label="接入方式"><select className="a-select" value={accountDialog.adapterType} onChange={(event) => setAccountDialog({ ...accountDialog, adapterType: event.target.value })}><option value="openai_compatible">OpenAI 兼容</option><option value="openrouter">OpenRouter</option></select></LedgerField>
-              <LedgerField label="Base URL" required error={accountValidation.baseUrl} hint="代理或中转服务请填写到 /v1。"><input className="a-input" value={accountDialog.baseUrl} onChange={(event) => setAccountDialog({ ...accountDialog, baseUrl: event.target.value })} placeholder="https://api.openai.com/v1" style={{ fontFamily: 'var(--font-admin-mono)', fontSize: 12.5 }} /></LedgerField>
-              <LedgerField label="gpt-image-2 来源模式" hint="Codex 来源会强制 quality=auto，并按基础分辨率与比例计算 size。"><select className="a-select" value={accountDialog.sourceMode} onChange={(event) => setAccountDialog({ ...accountDialog, sourceMode: event.target.value })}><option value="images">Images API</option><option value="codex_responses">Codex Responses</option></select></LedgerField>
+              <LedgerField label="接入方式"><select className="a-select" value={accountDialog.adapterType} onChange={(event) => setAccountDialog({ ...accountDialog, adapterType: event.target.value })}><option value="openai_compatible">OpenAI 兼容</option><option value="openrouter">OpenRouter</option><option value="qwen_image">Qwen 原生图片</option><option value="seedream_image">Seedream 原生图片</option></select></LedgerField>
+              <LedgerField label="Base URL" required error={accountValidation.baseUrl} hint={accountDialog.adapterType === 'seedream_image' ? '填写 Ark 根地址 https://ark.cn-beijing.volces.com；适配器自动添加 API 路径，不要重复填写版本。' : accountDialog.adapterType === 'qwen_image' ? '填写 DashScope workspace 服务根地址；适配器自动添加原生图片 API 路径。' : '代理或中转服务请填写到 /v1。'}><input className="a-input" value={accountDialog.baseUrl} onChange={(event) => setAccountDialog({ ...accountDialog, baseUrl: event.target.value })} placeholder={accountDialog.adapterType === 'seedream_image' ? 'https://ark.cn-beijing.volces.com' : accountDialog.adapterType === 'qwen_image' ? 'https://dashscope.aliyuncs.com' : 'https://api.openai.com/v1'} style={{ fontFamily: 'var(--font-admin-mono)', fontSize: 12.5 }} /></LedgerField>
               <LedgerField label="账号状态"><select className="a-select" value={accountDialog.status} onChange={(event) => setAccountDialog({ ...accountDialog, status: event.target.value })}><option value="enabled">启用</option><option value="disabled">停用</option><option value="error">异常</option></select></LedgerField>
             </FormSection>
             <FormSection index={2} title="鉴权" description="密钥只写不读，保存后显示掩码。">
@@ -395,6 +398,7 @@ function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsC
               </div>
               <SwitchField label="启用该账号" checked={accountDialog.status === 'enabled'} onChange={(checked) => setAccountDialog({ ...accountDialog, status: checked ? 'enabled' : 'disabled' })} hint="停用后不再参与候选调度；异常状态用于保留错误上下文。" />
             </FormSection>
+            <ImageConfigurationFields extra={accountDialog.extra} adapter={accountDialog.adapterType} onChange={(extra) => setAccountDialog({ ...accountDialog, extra })} />
           </form>
         </Drawer>
       ) : null}
@@ -437,7 +441,7 @@ function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsC
                       {model.quality?.length ? <span className="a-badge">质量 {model.quality.join('/')}</span> : null}
                       {model.supported_ratios?.length ? <span className="a-badge">比例 {model.supported_ratios.join('/')}</span> : null}
                       {model.output_format?.length ? <span className="a-badge">输出 {model.output_format.join('/')}</span> : null}
-                      {model.cost_per_image ? <span className="a-badge">{model.cost_per_image} {model.currency}</span> : null}
+                      {!['qwen_image', 'seedream_image'].includes(modelAccount.adapter_type) && model.cost_per_image ? <span className="a-badge">{model.cost_per_image} {model.currency}</span> : null}
                       {modelNeedsAttention(model) ? <span className="a-badge a-badge--warn"><i />待完善</span> : null}
                     </div>
                   </div>
@@ -469,12 +473,13 @@ function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsC
             <span className={cn('a-badge', Object.keys(modelValidation).length ? 'a-badge--bad' : modelDirty ? 'a-badge--warn' : 'a-badge--ok')}><i />{Object.keys(modelValidation).length ? `${Object.keys(modelValidation).length} 项校验未通过` : modelDirty ? `${modelDirty} 项未保存` : '未修改'}</span>
             <div style={{ flex: 1 }} />
             <Button variant="ghost" size="sm" disabled={saving} onClick={closeModelDialog}>取消</Button>
-            <Button variant="primary" size="sm" disabled={saving || Object.keys(modelValidation).length > 0} onClick={() => void saveModel()}>{saving ? '保存中...' : '保存模型'}</Button>
+            <Button variant="primary" size="sm" disabled={saving || Boolean(modelDialog.extraError) || Object.keys(modelValidation).length > 0} onClick={() => void saveModel()}>{saving ? '保存中...' : '保存模型'}</Button>
           </>}
         >
           {mutationError ? <InlineFeedback tone="danger" message={mutationError} /> : null}
           <form className="a-form" onSubmit={(event) => event.preventDefault()}>
             <FormSection index={1} title="模型标识" description="图片模型的任务类型只有文生图与图片编辑。">
+              {['qwen_image', 'seedream_image'].includes(modelDialog.account.adapter_type) ? <LedgerField label="精确型号预设"><select className="a-select" value={String((modelDialog.extra?.native_image as Record<string, unknown> | undefined)?.model ?? '')} onChange={(event) => { const profile = nativeImageProfile(event.target.value); if (!profile) return; setModelDialog({ ...modelDialog, modelCode: profile.model, displayName: profile.model, taskTypes: ['text_to_image', 'image_edit'], maxReferenceImageCount: String(profile.max_reference_images), maxImageCount: String(profile.max_output_images), sizeModes: profile.adapter === 'qwen_image' ? ['auto', 'pixel'] : ['pixel'], supportedPixelSizes: profile.adapter === 'qwen_image' ? ['1024x1024', '1536x1024', '1024x1536', '2048x2048'] : ['1024x1024', '1536x1536', '2048x2048'], supportsCustomSize: true, minWidth: '16', minHeight: '16', maxWidth: '3840', maxHeight: '3840', supportedBackgrounds: [], quality: ['auto'], outputFormat: profile.output_formats, currency: 'CNY', enabled: false, extra: { ...modelDialog.extra, native_image: configValue(switchNativePreset(modelDialog.extra, profile), ['native_image']) } }) }}><option value="">选择型号（Endpoint ID 可随后填写）</option>{nativeImagePresets.filter((code) => nativeImageProfile(code)?.adapter === modelDialog.account.adapter_type).map((code) => <option key={code} value={code}>{code}</option>)}</select><small>切换实际型号会清除旧成本及拆层成本确认（旧 sale 扩展保留）；应用后默认禁用，请重新配置计费。Seedream 可将模型代码替换为真实 Endpoint ID，预设能力保留。</small></LedgerField> : null}
               <LedgerField label="模型代码" required error={modelValidation.modelCode}><input className="a-input" value={modelDialog.modelCode} onChange={(event) => setModelDialog({ ...modelDialog, modelCode: event.target.value })} placeholder="gpt-image-2" style={{ fontFamily: 'var(--font-admin-mono)' }} /></LedgerField>
               <LedgerField label="展示名称" error={modelValidation.displayName}><input className="a-input" value={modelDialog.displayName} onChange={(event) => setModelDialog({ ...modelDialog, displayName: event.target.value })} /></LedgerField>
               <LedgerField label="任务类型" required error={modelValidation.taskTypes}>
@@ -491,7 +496,7 @@ function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsC
               <SwitchField label="启用该模型" checked={modelDialog.enabled} onChange={(enabled) => setModelDialog({ ...modelDialog, enabled })} />
             </FormSection>
 
-            <FormSection index={2} title="尺寸能力" description="基础分辨率、质量、尺寸模式与像素尺寸共同决定用户可选参数。">
+            <FormSection index={2} title="模型能力 · 尺寸" description="基础分辨率、质量、尺寸模式与像素尺寸共同决定用户可选参数。">
               <MultiSelectField label="基础分辨率" values={modelDialog.base_resolution} options={baseResolutionOptions} onChange={(base_resolution) => setModelDialog({ ...modelDialog, base_resolution })} customPlaceholder="自定义分辨率，如 8K" hint="用于路由价格档位与尺寸计算。" error={modelValidation.base_resolution} />
               <MultiSelectField label="质量参数" values={modelDialog.quality} options={qualityOptions} onChange={(quality) => setModelDialog({ ...modelDialog, quality })} customPlaceholder="自定义质量值" normalize={normalizeLowerEnum} />
               <ChecklistField label="尺寸模式" values={modelDialog.sizeModes} options={sizeModeOptions} onChange={(sizeModes) => setModelDialog(toggleSizeModes(modelDialog, sizeModes))} />
@@ -517,7 +522,7 @@ function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsC
               ) : null}
             </FormSection>
 
-            <FormSection index={3} title="输出与审核">
+            <FormSection index={3} title="模型能力 · 输出与审核">
               <MultiSelectField label="输出格式" values={modelDialog.outputFormat} options={outputFormatOptions} onChange={(outputFormat) => setModelDialog({ ...modelDialog, outputFormat })} customPlaceholder="自定义格式" normalize={normalizeLowerEnum} />
               <MultiSelectField label="支持背景" values={modelDialog.supportedBackgrounds} options={backgroundOptions} onChange={(supportedBackgrounds) => setModelDialog({ ...modelDialog, supportedBackgrounds })} customPlaceholder="自定义背景值" normalize={normalizeLowerEnum} />
               <SwitchField label="支持输出压缩质量" checked={modelDialog.supportsOutputCompression} onChange={(supportsOutputCompression) => setModelDialog({ ...modelDialog, supportsOutputCompression })} hint="仅在 JPEG / WebP 输出格式下开放 1–100 压缩质量。" />
@@ -528,12 +533,26 @@ function ImageProviderModelsPanel({ accessToken, onFeedback, counts, onAccountsC
               </div>
             </FormSection>
 
-            <FormSection index={4} title="成本">
+            <ImageConfigurationFields extra={modelDialog.extra} inherited={modelDialog.account.extra} adapter={modelDialog.account.adapter_type} profile={effectiveNativeProfile(modelDialog.extra, modelDialog.account.extra, modelDialog.modelCode)} onChange={(extra) => setModelDialog({ ...modelDialog, extra })} />
+            {['qwen_image', 'seedream_image'].includes(modelDialog.account.adapter_type) ? <FormSection index={4} title="厂商原生成本" description="此处仅维护厂商人民币成本；启用需要完整成本。统一销售价格在路由模型配置，成本不能代替售价。">
+              {(['pricing'] as const).map((field) => {
+                const local = configValue(modelDialog.extra, ['native_image', field])
+                const inherited = configValue(modelDialog.account.extra, ['native_image', field])
+                const profile = effectiveNativeProfile(modelDialog.extra, modelDialog.account.extra, modelDialog.modelCode)
+                return <div key={field}>
+                  <p className="a-hint">{local === undefined ? '继承账号价格；编辑任一价格字段将创建本模型覆盖。' : local === null ? '当前为显式 null；编辑后建立价格覆盖。' : '本模型价格覆盖。'}</p>
+                  <NativeImagePricingFields label="厂商原生成本" value={(local === undefined ? inherited : local) as NativeImagePricing | undefined} model={profile?.model ?? ''} profile={profile} enabled={modelDialog.enabled} onChange={(value) => setModelDialog({ ...modelDialog, extra: patchConfig(modelDialog.extra, ['native_image', field], value) })} />
+                  {local !== undefined ? <button type="button" className="a-btn a-btn--sm" onClick={() => { if (window.confirm('移除本模型价格覆盖并继承账号价格？')) setModelDialog({ ...modelDialog, extra: patchConfig(modelDialog.extra, ['native_image', field], undefined) }) }}>恢复价格继承</button> : null}
+                </div>
+              })}
+              <a className="a-btn a-btn--sm" href="#/routing?media=image">前往路由配置统一图片售价</a>
+              {modelValidation.native ? <p className="a-field__error" role="alert">{modelValidation.native}</p> : null}
+            </FormSection> : <FormSection index={4} title="成本">
               <div className="a-form__pair">
                 <LedgerField label="单图成本" error={modelValidation.costPerImage}><input className="a-input" inputMode="decimal" value={modelDialog.costPerImage} onChange={(event) => setModelDialog({ ...modelDialog, costPerImage: event.target.value })} /></LedgerField>
                 <LedgerField label="币种" error={modelValidation.currency}><input className="a-input" value={modelDialog.currency} onChange={(event) => setModelDialog({ ...modelDialog, currency: event.target.value })} placeholder="CNY" /></LedgerField>
               </div>
-            </FormSection>
+            </FormSection>}
           </form>
         </Drawer>
       ) : null}
@@ -708,19 +727,21 @@ function accountStatusTone(status: string) {
 }
 
 function editAccountDraft(row: ModelAccount): AccountDraft {
-  return { id: row.id, name: row.name, adapterType: row.adapter_type, authType: row.auth_type, baseUrl: row.base_url, apiKey: '', priority: String(row.priority), weight: String(row.weight), concurrencyLimit: String(row.concurrency_limit), timeoutMS: String(row.timeout_ms), status: row.status, sourceMode: sourceModeFromExtra(row.extra) }
+  return { id: row.id, name: row.name, adapterType: row.adapter_type, authType: row.auth_type, baseUrl: row.base_url, apiKey: '', priority: String(row.priority), weight: String(row.weight), concurrencyLimit: String(row.concurrency_limit), timeoutMS: String(row.timeout_ms), status: row.status, sourceMode: sourceModeFromExtra(row.extra), extra: row.extra }
 }
 
 function newModelDraft(account: ModelAccount): ModelDraft {
-  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], base_resolution: ['1K', '2K'], quality: ['auto'], maxReferenceImageCount: '5', maxImageCount: '1', sizeModes: ['ratio'], supportedRatios: defaultRatios, supportsCustomRatio: false, supportedPixelSizes: defaultPixelSizes, supportsCustomSize: false, minWidth: '512', maxWidth: '3840', minHeight: '512', maxHeight: '3840', supportedBackgrounds: ['auto'], outputFormat: ['png'], supportsOutputCompression: false, moderation: ['auto'], costPerImage: '0.00000', currency: 'USD', enabled: true }
+  return { account, modelCode: '', displayName: '', taskTypes: ['text_to_image'], base_resolution: ['1K', '2K'], quality: ['auto'], maxReferenceImageCount: '5', maxImageCount: '1', sizeModes: ['ratio'], supportedRatios: defaultRatios, supportsCustomRatio: false, supportedPixelSizes: defaultPixelSizes, supportsCustomSize: false, minWidth: '512', maxWidth: '3840', minHeight: '512', maxHeight: '3840', supportedBackgrounds: ['auto'], outputFormat: ['png'], supportsOutputCompression: false, moderation: ['auto'], costPerImage: '0.00000', currency: 'USD', enabled: false }
 }
 
 function editModelDraft(account: ModelAccount, row: ModelAccountModel): ModelDraft {
-  return { account, row, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, base_resolution: normalizeBaseResolution(row.base_resolution), quality: normalizeLowerEnums(row.quality ?? ['auto']), maxReferenceImageCount: String(row.max_reference_image_count ?? 5), maxImageCount: String(row.max_image_count ?? 1), sizeModes: row.size_modes?.length ? row.size_modes : ['ratio'], supportedRatios: row.supported_ratios?.length ? row.supported_ratios : defaultRatios, supportsCustomRatio: Boolean(row.supports_custom_ratio), supportedPixelSizes: row.supported_pixel_sizes?.length ? row.supported_pixel_sizes : defaultPixelSizes, supportsCustomSize: Boolean(row.supports_custom_size), minWidth: String(row.min_width ?? 512), maxWidth: String(row.max_width ?? 3840), minHeight: String(row.min_height ?? 512), maxHeight: String(row.max_height ?? 3840), supportedBackgrounds: normalizeLowerEnums(row.supported_backgrounds ?? []), outputFormat: normalizeLowerEnums(row.output_format ?? ['png']), supportsOutputCompression: Boolean(row.supports_output_compression), moderation: normalizeLowerEnums(row.moderation ?? ['auto']), costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
+  return { account, row, extra: row.extra, modelCode: row.model_code, displayName: row.display_name, taskTypes: row.task_types, base_resolution: normalizeBaseResolution(row.base_resolution), quality: normalizeLowerEnums(row.quality ?? ['auto']), maxReferenceImageCount: String(row.max_reference_image_count ?? 5), maxImageCount: String(row.max_image_count ?? 1), sizeModes: row.size_modes?.length ? row.size_modes : ['ratio'], supportedRatios: row.supported_ratios?.length ? row.supported_ratios : defaultRatios, supportsCustomRatio: Boolean(row.supports_custom_ratio), supportedPixelSizes: row.supported_pixel_sizes?.length ? row.supported_pixel_sizes : defaultPixelSizes, supportsCustomSize: Boolean(row.supports_custom_size), minWidth: String(row.min_width ?? 512), maxWidth: String(row.max_width ?? 3840), minHeight: String(row.min_height ?? 512), maxHeight: String(row.max_height ?? 3840), supportedBackgrounds: normalizeLowerEnums(row.supported_backgrounds ?? []), outputFormat: normalizeLowerEnums(row.output_format ?? ['png']), supportsOutputCompression: Boolean(row.supports_output_compression), moderation: normalizeLowerEnums(row.moderation ?? ['auto']), costPerImage: row.cost_per_image, currency: row.currency, enabled: row.enabled }
 }
 
 function modelPayload(draft: ModelDraft) {
+  const extra: Record<string, unknown> = { ...draft.extra, media_type: 'image' }
   return {
+    extra,
     model_code: draft.modelCode,
     display_name: draft.displayName,
     task_types: draft.taskTypes,
@@ -821,6 +842,7 @@ function accountDraftDirtyCount(draft: AccountDraft, existing?: ModelAccount): n
     ['status', draft.status], ['sourceMode', draft.sourceMode],
   ]
   let count = fields.filter(([key, value]) => String((baseline as unknown as Record<string, unknown>)[key] ?? '') !== String(value)).length
+  if (JSON.stringify(draft.extra) !== JSON.stringify(baseline.extra)) count += 1
   if (draft.apiKey) count += 1
   return count
 }
@@ -840,8 +862,12 @@ function validateModelDraft(draft: ModelDraft): Record<string, string> {
   }
   if (!Number.isInteger(Number(draft.maxImageCount)) || Number(draft.maxImageCount) < 1) errors.maxImageCount = '最大出图数至少为 1。'
   if (!Number.isInteger(Number(draft.maxReferenceImageCount)) || Number(draft.maxReferenceImageCount) < 0) errors.maxReferenceImageCount = '最大参考图不能为负数。'
-  if (!Number.isFinite(Number(draft.costPerImage)) || Number(draft.costPerImage) < 0) errors.costPerImage = '单图成本必须是非负数字。'
+  if (!['qwen_image', 'seedream_image'].includes(draft.account.adapter_type) && (!Number.isFinite(Number(draft.costPerImage)) || Number(draft.costPerImage) < 0)) errors.costPerImage = '单图成本必须是非负数字。'
   if (!draft.currency.trim()) errors.currency = '请填写币种。'
+  if (['qwen_image', 'seedream_image'].includes(draft.account.adapter_type)) {
+    const nativeErrors = nativeConfigurationErrors(draft.extra, draft.account.extra, draft.modelCode, draft.enabled)
+    if (nativeErrors.length) errors.native = nativeErrors.join(' ')
+  }
   return errors
 }
 

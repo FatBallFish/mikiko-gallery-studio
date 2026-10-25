@@ -1,3 +1,7 @@
+import { RouteImagePricingFields } from './RouteImagePricingFields'
+import { routeImageCapabilities, routeImagePricingErrors, routeImagePricingAvailability, confirmPricingTransition, legacyRoutePriceErrors, type RouteImageCapabilities } from './routeImagePricing'
+import type { ImagePricingConfig } from '../../../shared/api-types'
+import { adminNativeImageProfile } from './adminModelMedia'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AdminMetric,
@@ -74,6 +78,7 @@ type RouteEditorDraft = {
   groupIds: string[]
   iconKey: string
   iconSvg: string
+  imagePricing?: ImagePricingConfig | null
   priceRows: PriceDraftRow[]
   mappings: MappingDraftRow[]
   maxOutputCount: string
@@ -116,7 +121,7 @@ export function RoutingPage({ onFeedback }: { onFeedback: (title: string, detail
       <PageHeader
         eyebrow="Model Routing"
         title="路由模型"
-        description="图片与视频路由分开维护。图片路由按路由 + 任务类型 + 基础分辨率定价；视频路由使用候选厂商原生费率、分辨率映射与最低任务积分。"
+        description="图片路由按操作统一维护按张或平台像素 Token 售价；视频路由使用候选厂商原生费率、分辨率映射与最低任务积分。"
       />
       <AdminMediaTabs route="routing" value={media} />
       {media === 'audio' ? (
@@ -199,6 +204,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
       route,
       candidates: effectiveRouteCandidates(candidates[String(route.id)] ?? route.candidates ?? [], accountModels, modelAccounts),
       prices: prices.filter((price) => String(price.route_model_id) === String(route.id)),
+      imageCapability: routeImageCapabilities(candidates[String(route.id)] ?? route.candidates ?? [], accountModels, modelAccounts),
       videoConfig: videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(route.id)),
       videoImpacts: videoSnapshot?.impacts ?? [],
     }).state !== 'ready').length,
@@ -240,7 +246,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
   const routePrices = selectedRoute ? prices.filter((price) => String(price.route_model_id) === String(selectedRoute.id)) : []
   const routeVideoConfig = media === 'video' ? videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(selectedRoute?.id)) : undefined
   const editorErrors = routeEditor
-    ? routeEditorErrors(routeEditor, media, accountModels, routeEditor.row ? (candidates[String(routeEditor.row.id)] ?? []) : [])
+    ? routeEditorErrors(routeEditor, media, accountModels, routeEditor.row ? (candidates[String(routeEditor.row.id)] ?? []) : [], modelAccounts)
     : {}
 
   useEffect(() => {
@@ -262,7 +268,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
       tab,
       prices: prices.filter((price) => String(price.route_model_id) === String(route.id)),
       candidates: candidates[String(route.id)] ?? route.candidates ?? [],
-      accountModels,
+      accountModels: media === 'image' ? accountModels.filter((model) => modelAccounts.some((account) => String(account.id) === String(model.account_id) && account.status === 'enabled')) : accountModels,
       videoConfig: videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(route.id)),
       rateCards: videoSnapshot?.rate_cards ?? [],
     }))
@@ -304,7 +310,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
     if (!routeEditor) return
     setSaving(true)
     setMutationError(null)
-    const editorErrors = routeEditorErrors(routeEditor, media, accountModels, routeEditor.row ? (candidates[String(routeEditor.row.id)] ?? []) : [])
+    const editorErrors = routeEditorErrors(routeEditor, media, accountModels, routeEditor.row ? (candidates[String(routeEditor.row.id)] ?? []) : [], modelAccounts)
     if (Object.keys(editorErrors).length) {
       setMutationError(Object.values(editorErrors)[0])
       setSaving(false)
@@ -323,11 +329,16 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
         group_ids: groupIds,
         icon_key: routeEditor.iconKey,
         icon_svg: routeEditor.iconSvg,
+        ...(media === 'image' ? { image_pricing: routeEditor.imagePricing } : {}),
       }
       const saved = routeEditor.row ? await adminApi.updateRouteModel(routeEditor.row.id, payload) : await adminApi.createRouteModel(payload)
       if (media === 'image') {
+        const saleCapability = routeImageCapabilities(routeEditor.row ? candidates[String(routeEditor.row.id)] ?? [] : [], accountModels, modelAccounts)
         await Promise.all(routeEditor.priceRows.map(async (row) => {
+          if (saleCapability.hasNative || !saleCapability.resolutions.includes(row.baseResolution)) return
           if (!row.basePoints.trim() && !row.id) return
+          const existing = prices.find((price) => String(price.id) === String(row.id))
+          if (existing && existing.base_points === row.basePoints && existing.reference_multiplier === row.referenceMultiplier && existing.enabled === row.enabled) return
           const pricePayload = {
             route_model_id: Number(saved.id),
             task_type: row.taskType,
@@ -438,7 +449,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
         title="路由模型"
         description={media === 'video'
           ? '视频路由使用候选厂商原生费率、分辨率映射与最低任务积分；销售价由系统推导，不允许手工填写每秒售价。'
-          : '图片路由按路由 + 任务类型 + 基础分辨率定价；缺价组合会在提交前阻断。'}
+          : '图片路由按生成、编辑、拆层操作统一维护销售价格，支持按张与平台像素 Token；可配置范围由有效候选能力决定，缺价会阻断。'}
         primaryAction={<Button variant="primary" size="sm" onClick={openNewRoute}>{media === 'video' ? '新增视频路由' : '新增图片路由'}</Button>}
         secondaryActions={<RefreshIconButton label="刷新路由模型" refreshing={loading} onClick={() => void load()} />}
       />
@@ -481,7 +492,8 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
                   route,
                   candidates: effectiveRouteCandidates(routeCandidateList, accountModels, modelAccounts),
                   prices: prices.filter((price) => String(price.route_model_id) === String(route.id)),
-                  videoConfig: videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(route.id)),
+                  imageCapability: routeImageCapabilities(routeCandidateList, accountModels, modelAccounts),
+            videoConfig: videoSnapshot?.routes.find((item) => String(item.route_model_id) === String(route.id)),
                   videoImpacts: videoSnapshot?.impacts ?? [],
                 })
                 const active = String(route.id) === selectedRouteId
@@ -571,7 +583,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
                 </div>
                 <div className="a-row-actions">
                   {media === 'image' ? <Button variant="secondary" size="sm" onClick={() => setRouteEditor({ ...routeEditor, tab: 'pricing' })}>配置价格</Button> : <><Button variant="secondary" size="sm" onClick={() => setRouteEditor({ ...routeEditor, tab: 'params' })}>配置视频参数</Button><Button variant="secondary" size="sm" onClick={() => setRouteEditor({ ...routeEditor, tab: 'quote' })}>查看视频报价</Button></>}
-                  {routeEditor.row ? <Button variant="secondary" size="sm" onClick={() => { setRouteEditor(null); setCandidateDialog(newCandidateDialog(routeEditor.row!, eligibleAccountModels)) }}>配置候选</Button> : null}
+                  {routeEditor.row ? <Button variant="secondary" size="sm" onClick={() => { if (!confirmPricingTransition(Boolean(routeEditorDirtyCount(routeEditor)), window.confirm, '配置候选会离开路由编辑并丢弃尚未保存的价格和其他修改。确认放弃并继续？')) return; setRouteEditor(null); setCandidateDialog(newCandidateDialog(routeEditor.row!, eligibleAccountModels)) }}>配置候选</Button> : null}
                 </div>
               </FormSection>
             </form>
@@ -579,7 +591,8 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
 
           {routeEditor.tab === 'pricing' ? (
             <form className="a-form" onSubmit={(event) => event.preventDefault()}>
-              <FormSection title="图片价格" description="图片价格按路由 + 任务类型 + 基础分辨率维护；参考图倍率只影响含参考图的图片编辑任务。">
+              <RouteImagePricingFields value={routeEditor.imagePricing} capability={routeImageCapabilities(routeEditor.row ? candidates[String(routeEditor.row.id)] ?? routeEditor.row.candidates ?? [] : [], accountModels, modelAccounts)} onChange={(imagePricing) => setRouteEditor({ ...routeEditor, imagePricing })} />
+              <FormSection title="传统图片路由价格（兼容）" description="图片价格按路由 + 任务类型 + 基础分辨率维护；参考图倍率只影响含参考图的图片编辑任务。">
                 <div className="a-banner a-banner--info">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5h.01" /></svg>
                   <div><strong style={{ fontSize: 13 }}>缺价组合会在提交前阻断</strong><div className="a-hint">价格保存后立即用于用户端估价；历史流水不会回溯重算。</div></div>
@@ -591,14 +604,16 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
                       <tbody>
                         {routeEditor.priceRows.map((row, index) => {
                           const missing = !row.basePoints.trim()
+                          const capability = routeImageCapabilities(routeEditor.row ? candidates[String(routeEditor.row.id)] ?? [] : [], accountModels, modelAccounts)
+                          const compatible = !capability.hasNative && capability.resolutions.includes(row.baseResolution) && capability.operations.includes(row.taskType === 'text_to_image' ? 'generate' : 'edit')
                           return (
                             <tr key={row.key}>
                               <td>{imageTaskLabel(row.taskType)}</td>
-                              <td className="a-mono">{row.baseResolution}</td>
-                              <td className="is-num"><input className="a-input cfg-table-input" inputMode="decimal" value={row.basePoints} placeholder="8.00000" onChange={(event) => setRouteEditor({ ...routeEditor, priceRows: updatePriceRow(routeEditor.priceRows, index, { basePoints: event.target.value }) })} /></td>
-                              <td className="is-num"><input className="a-input cfg-table-input" inputMode="decimal" value={row.referenceMultiplier} placeholder="1.00000" onChange={(event) => setRouteEditor({ ...routeEditor, priceRows: updatePriceRow(routeEditor.priceRows, index, { referenceMultiplier: event.target.value }) })} /></td>
+                              <td className="a-mono">{row.baseResolution}{!compatible ? <small className="a-field__error">候选不支持；仅保留旧配置，可删除</small> : null}</td>
+                              <td className="is-num"><input className="a-input cfg-table-input" inputMode="decimal" disabled={!compatible} value={row.basePoints} placeholder="8.00000" onChange={(event) => setRouteEditor({ ...routeEditor, priceRows: updatePriceRow(routeEditor.priceRows, index, { basePoints: event.target.value }) })} /></td>
+                              <td className="is-num"><input className="a-input cfg-table-input" inputMode="decimal" disabled={!compatible} value={row.referenceMultiplier} placeholder="1.00000" onChange={(event) => setRouteEditor({ ...routeEditor, priceRows: updatePriceRow(routeEditor.priceRows, index, { referenceMultiplier: event.target.value }) })} /></td>
                               <td>
-                                <select className="a-select a-select--sm" value={row.enabled ? 'enabled' : 'disabled'} onChange={(event) => setRouteEditor({ ...routeEditor, priceRows: updatePriceRow(routeEditor.priceRows, index, { enabled: event.target.value === 'enabled' }) })}>
+                                <select className="a-select a-select--sm" disabled={!compatible} value={row.enabled ? 'enabled' : 'disabled'} onChange={(event) => setRouteEditor({ ...routeEditor, priceRows: updatePriceRow(routeEditor.priceRows, index, { enabled: event.target.value === 'enabled' }) })}>
                                   <option value="enabled">启用</option>
                                   <option value="disabled">停用</option>
                                 </select>
@@ -614,7 +629,7 @@ function MediaRoutingPanel({ media, onFeedback }: { media: RouteModelMediaType; 
                     </table>
                   </div>
                 ) : (
-                  <div className="cfg-empty-inline">当前路由尚未绑定图片候选。绑定候选后，系统会按候选模型的任务类型与基础分辨率生成价格组合；未绑定候选时可以先保存路由。</div>
+                  <div className="cfg-empty-inline">{routeImageCapabilities(routeEditor.row ? candidates[String(routeEditor.row.id)] ?? routeEditor.row.candidates ?? [] : [], accountModels, modelAccounts).hasNative ? '此原生路由使用上方统一售价，不提供传统分辨率价格。' : '当前路由尚未绑定图片候选。绑定候选后，系统会按候选模型的任务类型与基础分辨率生成价格组合；未绑定候选时可以先保存路由。'}</div>
                 )}
                 {routeEditorPriceError(routeEditor, media, accountModels) ? <InlineFeedback tone="warning" message={routeEditorPriceError(routeEditor, media, accountModels) ?? ''} /> : null}
               </FormSection>
@@ -829,6 +844,7 @@ function RouteDetailWorkspace({
     route,
     candidates: effectiveRouteCandidates(routeCandidates, accountModels, modelAccounts),
     prices: routePrices,
+    imageCapability: routeImageCapabilities(routeCandidates, accountModels, modelAccounts),
     videoConfig,
     videoImpacts,
   })
@@ -851,8 +867,13 @@ function RouteDetailWorkspace({
           <div className="a-panel" style={{ boxShadow: 'none', padding: 12 }}><div className="a-hint" style={{ fontSize: 11 }}>创作类型</div><strong style={{ fontSize: 13 }}>{route.media_type === 'video' ? '视频' : '图片'}</strong></div>
           <div className="a-panel" style={{ boxShadow: 'none', padding: 12 }}><div className="a-hint" style={{ fontSize: 11 }}>可见范围</div><strong style={{ fontSize: 13 }}>{routeVisibilityBadge(route.visibility).label} · {routeGroupNames(route.group_ids, groups)}</strong></div>
           <div className="a-panel" style={{ boxShadow: 'none', padding: 12 }}><div className="a-hint" style={{ fontSize: 11 }}>候选模型</div><strong style={{ fontSize: 13 }}>{routeCandidateSummary(routeCandidates)}</strong></div>
-          <div className="a-panel" style={{ boxShadow: 'none', padding: 12 }}><div className="a-hint" style={{ fontSize: 11 }}>{route.media_type === 'video' ? '报价方式' : '价格配置'}</div><strong style={{ fontSize: 13 }}>{route.media_type === 'video' ? (videoConfig?.enabled ? `原生费率 · 最低 ${videoConfig.minimum_task_points} 积分` : '尚未启用') : `${enabledPrices.length} 个启用价格`}</strong></div>
+          <div className="a-panel" style={{ boxShadow: 'none', padding: 12 }}><div className="a-hint" style={{ fontSize: 11 }}>{route.media_type === 'video' ? '报价方式' : '价格配置'}</div><strong style={{ fontSize: 13 }}>{route.media_type === 'video' ? (videoConfig?.enabled ? `原生费率 · 最低 ${videoConfig.minimum_task_points} 积分` : '尚未启用') : route.image_pricing ? `${route.image_pricing.rules.length} 个统一售价操作` : `${enabledPrices.length} 个传统价格`}</strong></div>
         </div>
+        {route.media_type === 'image' && route.image_pricing ? (() => {
+          const status = routeImagePricingAvailability(route.image_pricing, routeImageCapabilities(routeCandidates, accountModels, modelAccounts))
+          return <div className="a-hint"><p>已开放操作：{status.available.map((op) => ({ generate: '图片生成', edit: '参考图编辑', layer_decomposition: '图层拆分' })[op]).join(' / ') || '暂无'}</p>{status.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div>
+        })() : null}
+        {route.media_type === 'image' && readiness.state === 'missing_price' ? <div className="a-hint">{(route.image_pricing ? routeImagePricingErrors(route.image_pricing, routeImageCapabilities(routeCandidates, accountModels, modelAccounts)) : legacyRoutePriceErrors(routePrices, routeImageCapabilities(routeCandidates, accountModels, modelAccounts))).join(' ')}</div> : null}
         {readiness.state !== 'ready' ? <div style={{ marginTop: 12 }}><InlineFeedback tone={readiness.tone === 'danger' ? 'danger' : 'warning'} message={routeReadinessMessage(route, readiness.state)} /></div> : null}
         <div className="a-row-actions" style={{ marginTop: 12 }}>
           {route.media_type === 'image' ? <button className="a-btn a-btn--sm" type="button" onClick={() => onEditRoute('pricing')}>配置图片价格</button> : <><button className="a-btn a-btn--sm" type="button" onClick={() => onEditRoute('params')}>配置视频参数</button><button className="a-btn a-btn--sm" type="button" onClick={() => onEditRoute('quote')}>查看视频报价</button></>}
@@ -957,6 +978,7 @@ function buildRouteEditor({
     groupIds: (route.group_ids ?? []).map(String),
     iconKey: route.icon_key ?? '',
     iconSvg: route.icon_svg ?? '',
+    imagePricing: route.image_pricing,
     priceRows,
     mappings,
     maxOutputCount: String(videoConfig?.max_output_count ?? 1),
@@ -986,6 +1008,7 @@ function routeEditorSignature(editor: RouteEditorDraft) {
     groupIds: editor.groupIds,
     iconKey: editor.iconKey,
     iconSvg: editor.iconSvg,
+    imagePricing: editor.imagePricing,
     priceRows: editor.priceRows.map((row) => ({ taskType: row.taskType, baseResolution: row.baseResolution, basePoints: row.basePoints, referenceMultiplier: row.referenceMultiplier, enabled: row.enabled })),
     mappings: editor.mappings.map((row) => ({ candidateID: row.candidateID, routeResolution: row.routeResolution, nativeResolution: row.nativeResolution })),
     maxOutputCount: editor.maxOutputCount,
@@ -997,9 +1020,9 @@ function routeEditorSignature(editor: RouteEditorDraft) {
 }
 
 function imagePriceRows(route: RouteModel, candidates: RouteModelCandidate[], accountModels: ModelAccountModel[], prices: RouteModelPrice[]): PriceDraftRow[] {
-  const models = candidates.map((candidate) => accountModels.find((model) => String(model.id) === String(candidate.account_model_id))).filter(Boolean) as ModelAccountModel[]
-  const tasks = Array.from(new Set(models.flatMap((model) => model.task_types.filter((task): task is ImageTaskType => task === 'text_to_image' || task === 'image_edit'))))
-  const resolutions = Array.from(new Set(models.flatMap((model) => normalizeResolutionList(model.base_resolution)))).sort(compareBaseResolution)
+  const models = candidates.filter((candidate) => candidate.enabled).map((candidate) => accountModels.find((model) => String(model.id) === String(candidate.account_model_id))).filter((model) => model?.enabled && !adminNativeImageProfile(model)) as ModelAccountModel[]
+  const tasks = models.length ? models[0].task_types.filter((task): task is ImageTaskType => (task === 'text_to_image' || task === 'image_edit') && models.every((model) => model.task_types.includes(task))) : []
+  const resolutions = (models.length ? normalizeResolutionList(models[0].base_resolution).filter((resolution) => models.every((model) => normalizeResolutionList(model.base_resolution).includes(resolution))) : []).sort(compareBaseResolution)
   const combos = tasks.flatMap((taskType) => resolutions.map((baseResolution) => ({ taskType, baseResolution })))
   const rows: PriceDraftRow[] = combos.map((combo) => {
     const existing = prices.find((price) => price.task_type === combo.taskType && price.base_resolution === combo.baseResolution)
@@ -1052,7 +1075,7 @@ function routeEditorMappingError(editor: RouteEditorDraft, candidates: RouteMode
   return routeEditorErrors(editor, 'video', [], candidates).mappings ?? routeEditorErrors(editor, 'video', [], candidates).defaults ?? null
 }
 
-function routeEditorErrors(editor: RouteEditorDraft, media: RouteModelMediaType, accountModels: ModelAccountModel[], candidates: RouteModelCandidate[]): Record<string, string> {
+function routeEditorErrors(editor: RouteEditorDraft, media: RouteModelMediaType, accountModels: ModelAccountModel[], candidates: RouteModelCandidate[], accounts: ModelAccount[] = []): Record<string, string> {
   const errors: Record<string, string> = {}
   const codeError = routeCodeError(editor.code)
   if (codeError) errors.code = codeError
@@ -1060,22 +1083,13 @@ function routeEditorErrors(editor: RouteEditorDraft, media: RouteModelMediaType,
   if (editor.visibility === 'groups' && !editor.groupIds.length) errors.groups = '按分组可见时至少选择一个分组。'
   if (!Number.isFinite(Number(editor.sortOrder))) errors.sortOrder = '排序值必须是数字。'
   if (media === 'image') {
-    const missing = editor.priceRows.filter((row) => !row.basePoints.trim())
-    if (missing.length) errors.prices = `以下价格组合缺少基础积分：${missing.map((row) => `${imageTaskLabel(row.taskType)} ${row.baseResolution}`).join('、')}。`
-    if (editor.row) {
-      const routeCandidateModels = candidates.length
-        ? candidates.map((candidate) => accountModels.find((model) => String(model.id) === String(candidate.account_model_id))).filter(Boolean) as ModelAccountModel[]
-        : accountModels.filter(() => false)
-      const expectedTasks = Array.from(new Set(routeCandidateModels.flatMap((model) => model.task_types.filter((task): task is ImageTaskType => task === 'text_to_image' || task === 'image_edit'))))
-      const expectedResolutions = Array.from(new Set(routeCandidateModels.flatMap((model) => normalizeResolutionList(model.base_resolution))))
-      for (const taskType of expectedTasks) {
-        for (const baseResolution of expectedResolutions) {
-          if (!editor.priceRows.some((row) => row.taskType === taskType && row.baseResolution === baseResolution && row.basePoints.trim())) {
-            errors.prices = `缺少 ${imageTaskLabel(taskType)} · ${baseResolution} 的价格，提交前必须补齐。`
-            return errors
-          }
-        }
-      }
+    const capability = routeImageCapabilities(candidates, accountModels, accounts)
+    if (editor.imagePricing) {
+      const pricingErrors = routeImagePricingErrors(editor.imagePricing, capability)
+      if (pricingErrors.length) errors.prices = pricingErrors.join(' ')
+    } else if (editor.enabled && capability.active.length) {
+      const pricingErrors = legacyRoutePriceErrors(editor.priceRows.map((row) => ({ enabled: row.enabled, task_type: row.taskType, base_resolution: row.baseResolution, base_points: row.basePoints })), capability)
+      if (pricingErrors.length) errors.prices = pricingErrors.join(' ')
     }
   } else {
     if (editor.row && candidates.length) {
@@ -1224,10 +1238,12 @@ function routeReadinessForMedia({
   prices,
   videoConfig,
   videoImpacts,
+  imageCapability,
 }: {
   route: RouteModel
+  imageCapability?: RouteImageCapabilities
   candidates: Pick<RouteModelCandidate, 'enabled'>[]
-  prices: Pick<RouteModelPrice, 'enabled'>[]
+  prices: RouteModelPrice[]
   videoConfig?: AdminVideoConfiguration['routes'][number]
   videoImpacts: AdminVideoConfiguration['impacts']
 }) {
@@ -1236,9 +1252,18 @@ function routeReadinessForMedia({
     visibility: route.visibility,
     groupCount: route.group_ids?.length ?? 0,
     candidates,
-    prices: route.media_type === 'image' ? prices : undefined,
+    prices: undefined,
   })
-  if (base.state !== 'ready' || route.media_type !== 'video') return base
+  if (base.state !== 'ready') return base
+  if (route.media_type === 'image') {
+    if (route.image_pricing && imageCapability) {
+      const status = routeImagePricingAvailability(route.image_pricing, imageCapability)
+      return !status.ready ? { state: 'missing_price' as const, label: '不可用 · 无有效操作售价', tone: 'warning' as const }
+        : status.warnings.length ? { state: 'ready' as const, label: '部分可用 · 部分操作未开放', tone: 'warning' as const } : base
+    }
+    const errors = imageCapability ? legacyRoutePriceErrors(prices, imageCapability) : ['能力尚未核对']
+    return errors.length ? { state: 'missing_price' as const, label: '不可用 · 售价或能力不完整', tone: 'warning' as const } : base
+  }
   if (!videoConfig?.enabled) return { state: 'missing_price' as const, label: '不可用 · 未配置视频参数', tone: 'warning' as const }
   const impact = videoImpacts.find((item) => item.blocking && String(item.route_model_id ?? '') === String(route.id))
   if (!impact) return base
@@ -1248,6 +1273,8 @@ function routeReadinessForMedia({
 
 function candidateCapabilitySummary(model?: ModelAccountModel) {
   if (!model) return '能力配置不可用'
+  const native = adminNativeImageProfile(model)
+  if (native) { const config = model.extra?.native_image as { pricing?: { layer_pricing_confirmed?: boolean } } | undefined; return `${native.model} · ${native.operations.join(' / ')} · 参考图≤${native.max_reference_images} · ${native.min_pixels}–${native.max_pixels}像素 · ${native.layer_decomposition ? `最多${native.max_layers ?? '未配'}层 / ${(native.layer_size_modes ?? []).join('/')} · ` : ''}${native.layer_decomposition ? config?.pricing?.layer_pricing_confirmed ? '拆层成本已确认（销售见路由）' : '拆层成本待确认' : '普通出图'}` }
   const tasks = model.task_types ?? []
   const resolutions = model.base_resolution ?? []
   const formats = model.output_format ?? []
@@ -1258,7 +1285,7 @@ function candidateCapabilitySummary(model?: ModelAccountModel) {
 
 function routeReadinessMessage(route: RouteModel, state: ReturnType<typeof routeReadinessBadge>['state']) {
   if (state === 'missing_candidate') return '当前路由缺少启用候选，配置候选后才能接收用户请求。'
-  if (state === 'missing_price') return route.media_type === 'video' ? '当前视频路由缺少启用的视频参数或原生费率，提交前需要在编辑抽屉中补齐映射与报价。' : '当前路由缺少启用价格，生成请求会被计费校验阻断。'
+  if (state === 'missing_price') return route.media_type === 'video' ? '当前视频路由缺少启用的视频参数或原生费率，提交前需要在编辑抽屉中补齐映射与报价。' : '当前路由售价或候选能力不完整。请在图片价格中检查共同操作、完整档位与价格规则；原生模型必须设置统一售价。'
   if (route.visibility === 'hidden') return '当前路由已隐藏，不会向用户展示或接收请求。'
   if (route.visibility === 'groups' && !route.group_ids?.length) return '当前路由尚未绑定可见分组，不会对任何用户生效。'
   return '当前路由已停用，不会向用户展示或接收请求。'

@@ -549,6 +549,7 @@ func (s *ModelAdminStore) CreateRouteModel(ctx context.Context, req domainmodela
 		SetSortOrder(req.SortOrder).
 		SetIconKey(req.IconKey).
 		SetIconSvg(req.IconSVG).
+		SetImagePricing(req.ImagePricing).
 		Save(ctx)
 	if err != nil {
 		if repoent.IsConstraintError(err) {
@@ -571,7 +572,7 @@ func (s *ModelAdminStore) UpdateRouteModel(ctx context.Context, routeModelID int
 			}
 			return domainmodeladmin.RouteModel{}, err
 		}
-		entity, err := store.client.RouteModel.UpdateOne(current).
+		update := store.client.RouteModel.UpdateOne(current).
 			SetCode(req.Code).
 			SetName(req.Name).
 			SetDescription(req.Description).
@@ -580,8 +581,13 @@ func (s *ModelAdminStore) UpdateRouteModel(ctx context.Context, routeModelID int
 			SetEnabled(req.Enabled).
 			SetSortOrder(req.SortOrder).
 			SetIconKey(req.IconKey).
-			SetIconSvg(req.IconSVG).
-			Save(ctx)
+			SetIconSvg(req.IconSVG)
+		if req.ImagePricing != nil {
+			update.SetImagePricing(req.ImagePricing)
+		} else if req.ImagePricingPresent {
+			update.ClearImagePricing()
+		}
+		entity, err := update.Save(ctx)
 		if err != nil {
 			if repoent.IsConstraintError(err) {
 				return domainmodeladmin.RouteModel{}, repoerr.ErrConflict
@@ -1515,7 +1521,7 @@ func (s *ModelAdminStore) newModelRoutingConfig(ctx context.Context) (modelhub.M
 		if model.UpdatedAt.After(latestVersionAt) {
 			latestVersionAt = model.UpdatedAt
 		}
-		snapshot.RouteModels = append(snapshot.RouteModels, modelhub.RouteModelConfig{ID: int64(model.ID), Code: model.Code, Name: model.Name, Description: model.Description, Visibility: model.Visibility, MediaType: model.MediaType, Enabled: model.Enabled, SortOrder: model.SortOrder})
+		snapshot.RouteModels = append(snapshot.RouteModels, modelhub.RouteModelConfig{ImagePricing: model.ImagePricing, ID: int64(model.ID), Code: model.Code, Name: model.Name, Description: model.Description, Visibility: model.Visibility, MediaType: model.MediaType, Enabled: model.Enabled, SortOrder: model.SortOrder})
 	}
 	for _, candidate := range candidates {
 		snapshot.Candidates = append(snapshot.Candidates, modelhub.RouteCandidateConfig{ID: int64(candidate.ID), RouteModelID: candidate.RouteModelID, AccountModelID: candidate.AccountModelID, Priority: candidate.Priority, Weight: candidate.Weight, FallbackOrder: candidate.FallbackOrder, Enabled: candidate.Enabled})
@@ -1733,7 +1739,7 @@ func normalizeLegacyModelAccountMaxBound(value int) int {
 }
 
 func mapRouteModel(entity *repoent.RouteModel, groupIDs []int64) domainmodeladmin.RouteModel {
-	return domainmodeladmin.RouteModel{
+	return domainmodeladmin.RouteModel{ImagePricing: entity.ImagePricing,
 		ID:          int64(entity.ID),
 		Code:        entity.Code,
 		Name:        entity.Name,

@@ -80,7 +80,7 @@ export function canvasImageDraftForTask(
 ): Record<string, unknown> & { task_type: 'text_to_image' | 'image_edit' } {
   const supportedModels = capability.model_groups.filter((model) => model.task_types.includes(taskType))
   const currentCode = String(draft.route_model_code ?? draft.abstract_model ?? '').trim()
-  const model = supportedModels.find((item) => item.code === currentCode) ?? supportedModels[0]
+  const model = currentCode ? supportedModels.find((item) => item.code === currentCode) : supportedModels[0]
   if (!model) return { ...draft, task_type: taskType }
 
   const scoped = model.capabilities_by_task_type?.[taskType]
@@ -262,11 +262,18 @@ export function pasteCanvasSelection(state: CanvasCommandState, clipboard: Canva
   return commit(state, { ...state.present, nodes: [...state.present.nodes, ...nodes], edges: [...state.present.edges, ...edges] })
 }
 
+export function compareCanvasReferenceEdges(a: CanvasEdge, b: CanvasEdge) {
+  return (a.ordinal ?? 0) - (b.ordinal ?? 0) || (a.source < b.source ? -1 : a.source > b.source ? 1 : 0)
+}
+export function nextCanvasReferenceOrdinal(edges: CanvasEdge[], target: string) {
+  return edges.filter((edge) => edge.target === target).reduce((maximum, edge) => Math.max(maximum, edge.ordinal ?? 0), -1) + 1
+}
+
 export function connectCanvasNodes(state: CanvasCommandState, edge: CanvasEdge) {
   if (state.present.edges.some((item) => item.id === edge.id)) return state
   const error = inspectCanvasConnection(state.present, edge)
   if (error) throw new Error(error)
-  const next = { ...state.present, edges: [...state.present.edges, { ...edge }] }
+  const next = { ...state.present, edges: [...state.present.edges, { ...edge, ordinal: edge.ordinal ?? nextCanvasReferenceOrdinal(state.present.edges, edge.target) }] }
   return commit(state, next)
 }
 
@@ -413,6 +420,17 @@ export function selectCanvasNodesInRect(nodes: CanvasNode[], rect: { x: number; 
 export function attachCanvasResults(state: CanvasCommandState, runID: string, sourceNodeID: string, results: CanvasResult[]) {
   const source = state.present.nodes.find((node) => node.id === sourceNodeID)
   if (!source) return state
+  if (results.some((result) => result.layer)) {
+    const ordered = [...results].sort((a, b) => (a.layer?.z_index ?? 0) - (b.layer?.z_index ?? 0))
+    const base = ordered.find((result) => result.layer?.is_base) ?? ordered[0]
+    const scale = source.size.width / (base.width || source.size.width)
+    const added: CanvasNode[] = ordered.filter((result) => !state.present.nodes.some((node) => node.id === stableResultNodeID(runID, result.asset_id))).map((result) => {
+      const b = result.layer?.bounding_box?.absolute ?? [0, 0, result.width || base.width || 1, result.height || base.height || 1]
+      return { id: stableResultNodeID(runID, result.asset_id), type: 'image_v2', asset_id: result.asset_id, position: { x: source.position.x + source.size.width + 80 + b[0] * scale, y: source.position.y + b[1] * scale }, size: { width: (b[2] - b[0]) * scale, height: (b[3] - b[1]) * scale }, payload: { name: result.layer?.name, layer: result.layer, run_id: runID, width: result.width, height: result.height } }
+    })
+    if (!added.length) return state
+    return commit(state, { ...state.present, nodes: [...state.present.nodes, ...added], groups: [...(state.present.groups ?? []), { id: `layers-${runID}`, label: '拆分图层', node_ids: added.map((node) => node.id) }] })
+  }
   if (isCanvasV2MediaNode(source)) {
     const kind = canvasNodeMediaKind(source)
     if (results.some((result) => result.media_type !== kind)) throw new Error('result_media_mismatch')

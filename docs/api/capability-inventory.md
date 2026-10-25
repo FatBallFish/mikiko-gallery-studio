@@ -16,10 +16,46 @@ The approved scope is [the unified API and MCP design](../plans/2026-10-24-unifi
 | MCP | New adapter in this scope | Shared application operations through standard Streamable HTTP and browser OAuth |
 | OAuth | Existing browser login/OIDC | New authorization code + PKCE S256, consent, opaque access/refresh tokens, rotation and connected-app revocation |
 
+## Qwen / Seedream native images
+
+The model requirements and official source links are in [the native image PRD](../prd/2026-10-25-native-image-models-and-public-feed.md), with [the technical design](../tech/2026-10-25-native-image-models-and-public-feed.md). The shared types in `internal/domain/nativeimage/contracts.go` and `pricing.go` define the implemented profiles and CNY pricing shape. A profile describes provider capabilities; it does not prove that a deployment has enabled routing, configured prices, or completed a live provider test.
+
+| Model | Reference images for edit | Ordinary outputs | Output pixels / maximum aspect ratio | Native options / output |
+| --- | --- | --- | --- | --- |
+| `qwen-image-3.0`, optional `qwen-image-3.0-pro` | 1–3 | 1–6 | 262144–4194304 / 8:1 | Seed, negative prompt, prompt extension/thinking; PNG |
+| `qwen-image-2.1-pro`, `qwen-image-2.1-turbo` | 1–10 | 1–6 | 262144–4194304 / 8:1 | Seed, prompt extension/thinking; PNG; transparency through prompt |
+| `doubao-seedream-5-0-pro-260628` | 1–10 | 1 | 921600–4624220 / 16:1 | Coordinate annotations, optimize `standard`/`fast`; JPEG/PNG |
+| `doubao-seedream-5-0-flash-260915` | 1–10 | 1 | 921600–4624220 / 16:1 | Coordinate annotations, optimize `standard`; JPEG/PNG |
+
+All six profiles support generate/edit. Seedream profiles advertise `layer_decomposition`, but billing must separately permit that operation. Neither adapter declares independent mask editing. Seedream does not support seed or negative prompt. Ordinary output count is never a layer count. A decomposition uses one reference and returns one base image plus up to 16 transparent PNG layers. Qwen `prompt_extend_mode=agent` supports generation only; `enable_thinking=true` cannot be combined with `prompt_extend=false`.
+
+### Setup and explicit pricing
+
+1. Configure a provider account with the native adapter `qwen_image` or `seedream_image`, its credentials, and the correct regional endpoint. Current defaults are `https://dashscope.aliyuncs.com` and `https://ark.cn-beijing.volces.com/api/v3`. These are native JSON adapters, including editing; do not substitute OpenAI multipart as their upstream protocol.
+2. Configure each account model's `extra.native_image` as `{model, profile?, defaults?, pricing, sale_pricing}`. `model` is the real underlying model ID, including when the upstream model selector is an Endpoint ID such as `ep-...`; use the real model to select and validate the capability profile. An optional `profile` must describe that real model. `pricing` is cost CNY and `sale_pricing` is sale CNY. There is no top-level `native_pricing` setting. `defaults` accepts only `seed` (Qwen integer 0..2147483647), `watermark`, `qwen.{prompt_extend,enable_thinking,prompt_extend_mode}` and `seedream.optimize_prompt_mode`. Omitted model fields inherit account fields; explicit API/MCP options override defaults. Platform defaults are watermark=false, Qwen prompt_extend=false/enable_thinking=false (enabled extension uses direct unless configured), and Seedream standard; Seedream has no off mode and fast is Pro-only. Thinking requires extension. Effective options are frozen in new task snapshots; historical snapshots retain their original missing/explicit options during replay.
+3. Each pricing object follows `Pricing`: `currency: "CNY"`, `model`, `version`, `input_cny`, `free_input_images`, `output_tiers: [{name,max_pixels?,cny}]`, optional `layer_tiers`, optional `layer_base_cny`, and `layer_pricing_confirmed`. Configure cost and sale explicitly before enabling routing. The default source-price table is a reference, never an automatic production configuration or free-price fallback.
+4. Layer pricing fails closed unless the operator explicitly confirms the charging basis: `layer_pricing_confirmed=true`, a known `layer_base_cny` (explicit zero only if confirmed), and applicable `layer_tiers` are required in both cost and sale configuration. Seedream Pro's base-image charge and Flash layer prices remain unconfirmed in the PRD; never infer them from ordinary generation prices. Unknown is not zero. Reconfirm official rates and the business sale price before enabling.
+5. Read deployed capabilities, preflight the complete request, then run the smallest authorized test. Fixture tests and a built-in profile are not evidence of a live provider call. CNY costs and point balances are separate; the configured conversion and quote determine point reservation/settlement.
+
+### Request and result contract
+
+Native REST and MCP requests carry `operation: generate|edit|layer_decomposition` and `native_options`. The options object has **top-level** `seed`, `negative_prompt`, `watermark`, `annotations`, `qwen`, and `seedream`. Only Qwen prompt controls live inside `qwen`; only `optimize_prompt_mode` lives inside `seedream`. Read `native_image_profile` from discovery and preserve the full request through preflight/create; unsupported options must be rejected rather than discarded. Browser requests use `requested_output_image_count`; unified developer/MCP requests use `output_image_count`.
+
+Annotations use one-based `reference_index`, optional `label`, and exactly one `point: [x,y]` or `bbox: [x1,y1,x2,y2]`. Prompt coordinates are inclusive **0..999**, with strictly ordered bbox corners. Result `results[].layer` contains `z_index`, optional `name`/`description`/`bounding_box`, and `is_base`. Result `bounding_box.absolute` uses output pixels and `normalized` uses the provider response **0..1000** scale; do not reuse the prompt-coordinate conversion for result reconstruction. Preserve transparent layer bytes and place by bbox and z-order.
+
+OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` can use newly configured models for ordinary generation/editing subject to their discovered limits. Dedicated layer decomposition belongs to native REST/MCP. OpenAI `n` means ordinary outputs, never the base-plus-layer set; neither `n=17` nor a large native output count requests decomposition.
+
+### Layer retrieval and authentication
+
+- Browser session: `GET /api/agent/image/v1/tasks/{task_id}/layers` returns `data: {version:1,task_id,operation,layers:ImageResult[]}`. It checks task ownership and the decomposition operation; results can still be empty while work is pending.
+- Browser ZIP: `GET /api/agent/image/v1/tasks/{task_id}/layers/archive` downloads `layers.zip`, containing `layer-00.png` (or `.jpg`/`.webp` according to stored MIME), subsequent fixed filenames, and `manifest.json`. The embedded manifest is `{version:1,task_id,layers:[{file,id,width,height,layer}]}` and differs from the JSON endpoint. It requires 1–17 stored results, caps total image bytes at 128 MiB, and uses private/no-store caching.
+- API Key/MCP: discover `get_image_task_layers` in `tools/list` (`images:read`, input `{id}`). Its manifest is `{version:1,task_id,operation,layers:[{image_id,width,height,format,layer,access_operation,access_input}]}`. `access_operation` is `get_image_result_access`; pass `{task_id,image_id,purpose:"download"}` to renew each owned layer's access. The browser ZIP URL is not an OAuth access capability. The developer REST route is `GET /api/open/v1/image-tasks/{task_id}/layers`, with the same `images:read` requirement.
+
 ## Separate trust boundaries
 
 | Surface | Preserved paths / implementation | Developer API relationship |
 | --- | --- | --- |
+| Public mixed media feed | `GET /api/public/v1/media` | Anonymous approved-image/ready-approved-video summaries; full prompts excluded. `page=1`, `page_size=20` (max 100), `sort=latest|hot`, `query`, `route_model_code`, `liked`, `favorited`. Optional browser identity powers liked/favorited; anonymous filtered requests are empty. Stable shared pagination; details/access retain existing boundaries. |
 | Public image gallery | `/api/open/image/v1/gallery/images`, `/{image_id}`, `/{image_id}/access` | Retains existing public/detail permission rules, not a signed user endpoint |
 | Public video gallery | `/api/public/v1/videos`, `/{asset_id}`, `/{asset_id}/video`, `/{asset_id}/poster` | Existing public publication boundary |
 | Payment callback | `/api/open/image/v1/payments/webhooks/{channel}` | Provider-specific verification; no developer Bearer replacement |

@@ -1,9 +1,9 @@
 import type { Capability, VideoCapability, VideoTaskType } from '../../../../shared/api-types'
-import { canvasImageDraftForTask, canvasImageParameterErrors, canvasVideoTaskType } from './core/canvasState'
+import { canvasImageDraftForTask, canvasImageParameterErrors } from './core/canvasState'
 import type { CanvasDocument } from './core/types'
 import { workspaceModelForTask } from '../../pages/workspaceParameters'
 import { normalizeWorkspaceImageCount, workspaceTaskImageSafetyLimit } from '../../pages/workspaceViewModel'
-import { applyVideoCapability, defaultVideoDraft, VIDEO_TASK_INPUT_ROLES, videoTaskInputMissing, type VideoDraft } from '../creation/videoDraft'
+import { applyVideoCapability, defaultVideoDraft, videoDraftInvalidReason, VIDEO_TASK_INPUT_ROLES, videoTaskInputMissing, type VideoDraft } from '../creation/videoDraft'
 
 /** Canvas accepts ${name}; persisted/editor syntax remains {{$name}}. Escapes remain literal. */
 export function canvasPromptTemplate(value: string) {
@@ -57,7 +57,10 @@ export function canvasVideoDraft(draft: Record<string, unknown>, capability: Vid
 }
 
 export function normalizeCanvasVideoDraft(draft: Record<string, unknown>, capability: VideoCapability, preferredField?: keyof VideoDraft) {
-  const next = applyVideoCapability(canvasVideoDraft(draft, capability), capability, preferredField).draft
+  const current = canvasVideoDraft(draft, capability)
+  const model = capability.model_groups.find((item) => item.code === current.route_model_code)
+  if (current.route_model_code && (!model || !model.task_types.includes(current.task_type))) return draft
+  const next = applyVideoCapability(current, capability, preferredField).draft
   const { inputs: _inputs, prompt_variables: _variables, ...parameters } = next
   return { ...draft, ...parameters, variables: canvasPromptVariables(draft), audio_mode: next.generate_audio ? 'generated' : 'silent' }
 }
@@ -67,13 +70,11 @@ export function normalizeCanvasVideoGraphDraft(document: CanvasDocument, nodeID:
   const draft = node?.payload?.draft && typeof node.payload.draft === 'object' && !Array.isArray(node.payload.draft) ? node.payload.draft as Record<string, unknown> : {}
   const inputs = document.edges.filter((edge) => edge.target === nodeID && document.nodes.some((source) => source.id === edge.source && source.asset_id))
   if (node?.type !== 'video_v2' || node.asset_id || !inputs.length) return { draft, error: null }
-  const task = canvasVideoTaskType(document, nodeID)
-  if (inputs.some((input) => !VIDEO_TASK_INPUT_ROLES[task].includes(input.input_role as VideoDraft['inputs'][number]['role']))) return { draft, error: '引用角色与生成方式不匹配，请调整连接或生成方式' }
-  const supported = capability.model_groups.filter((model) => model.task_types.includes(task) && Boolean(model.options_by_task_type[task]?.combinations.length))
-  const model = supported.find((item) => item.code === draft.route_model_code) ?? supported[0]
-  // Keep the inferred task visible to validation instead of falling back to an incompatible default.
-  if (!model) return { draft: { ...draft, task_type: task }, error: '当前没有支持画布引用所需生成方式的视频模型' }
-  return { draft: normalizeCanvasVideoDraft({ ...draft, task_type: task, route_model_code: model.code }, capability), error: null }
+  const task = String(draft.task_type ?? 'text_to_video') as VideoTaskType
+  if (inputs.some((input) => !VIDEO_TASK_INPUT_ROLES[task]?.includes(input.input_role as VideoDraft['inputs'][number]['role']))) return { draft, error: '引用角色与生成方式不匹配，请调整连接或手动选择生成方式' }
+  const model = capability.model_groups.find((item) => item.code === draft.route_model_code)
+  if (!model || !model.task_types.includes(task) || !model.options_by_task_type[task]?.combinations.length) return { draft, error: '当前视频型号不支持所选生成方式，请手动选择型号或生成方式' }
+  return { draft, error: null }
 }
 
 export function canvasConsoleParameterErrors(draft: Record<string, unknown>, image: Capability | null, video: VideoCapability | null, isVideo: boolean) {
@@ -87,10 +88,16 @@ export function canvasConsoleParameterErrors(draft: Record<string, unknown>, ima
   const model = video.model_groups.find((item) => item.code === next.route_model_code)
   const options = model?.options_by_task_type[next.task_type]
   if (!model || !model.task_types.includes(next.task_type) || !options) return ['请选择可用的视频模型与生成方式']
-  const errors: string[] = []
+  const invalidReason = videoDraftInvalidReason(next, video)
+  const errors: string[] = invalidReason ? [invalidReason] : []
   if (!options.combinations.some((item) => item.duration_seconds === next.duration_seconds && item.resolution === next.resolution && item.aspect_ratio === next.aspect_ratio && item.audio_mode === (next.generate_audio ? 'generated' : 'silent'))) errors.push('当前参数组合不可用')
   if (!Number.isInteger(next.output_count) || next.output_count < 1 || next.output_count > model.max_output_count) errors.push('生成数量超出模型范围')
   if (next.inputs.some((input) => !VIDEO_TASK_INPUT_ROLES[next.task_type]?.includes(input.role))) errors.push('引用角色与生成方式不匹配')
   if (videoTaskInputMissing(next.task_type, next.inputs)) errors.push('请添加当前生成方式需要的参考资产')
   return errors
+}
+
+/** Capability disappearance preserves marked originals; only a confirmed model change restores them. */
+export function canvasReferenceMarksModelChanged(marksModel: unknown, profile: { model: string } | undefined) {
+  return Boolean(profile && marksModel && marksModel !== profile.model)
 }

@@ -96,8 +96,11 @@ if (!source.includes('button: background.button') || source.includes("} else if 
 const app = fs.readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8')
 const tray = fs.readFileSync(new URL('../media/UploadTray.tsx', import.meta.url), 'utf8')
 if (!app.includes("<UploadTray hidden={route === 'creative-canvas' && Boolean(routeCanvasId)} />")) throw new Error('canvas editor must hide the global tray without unmounting it')
-if (!tray.includes('hidden={hidden}') || !tray.includes("style={hidden ? { display: 'none' } : undefined}") || tray.includes('if (hidden) return')) throw new Error('hidden upload presentation must retain its input and processing hooks')
-for (const required of ['window.addEventListener(QUEUE_MEDIA_UPLOAD_EVENT', "window.addEventListener('mgs:open-media-upload'", 'MEDIA_UPLOAD_COMPLETED_EVENT, { detail:', 'controllers.current', 'void addFiles(detail.files']) {
+// Hiding is presentation-only. The final display override must win over float geometry.
+const hiddenStyle = /style=\{hidden\s*\?\s*\{\s*display:\s*'none'\s*\}\s*:\s*undefined\}/.test(tray)
+  || /style=\{\{\s*\.\.\.floatingStyle,\s*\.\.\.\(hidden\s*\?\s*\{\s*display:\s*'none'\s*\}\s*:\s*\{\}\)\s*\}\}/.test(tray)
+if (!tray.includes('hidden={hidden}') || !hiddenStyle || /if\s*\(hidden\)\s*\{?\s*return\b/.test(tray)) throw new Error('hidden upload presentation must retain its input and processing hooks')
+for (const required of ['ref={inputRef}', 'type="file"', 'onChange={(event) => void addFiles(event.target.files)}', 'useEffect(', 'window.addEventListener(QUEUE_MEDIA_UPLOAD_EVENT', "window.addEventListener('mgs:open-media-upload'", 'MEDIA_UPLOAD_COMPLETED_EVENT, { detail:', 'controllers.current', 'void addFiles(detail.files']) {
   if (!tray.includes(required)) throw new Error(`hidden upload processing must retain ${required}`)
 }
 
@@ -108,3 +111,7 @@ for (const required of ['estimatePromptOptimization', 'optimizePrompt', 'PromptT
 }
 const mediaSource = fs.readFileSync(new URL('./canvasMediaV2.ts', import.meta.url), 'utf8')
 if (!mediaSource.includes('normalizeWorkspaceImageCount')) throw new Error('extracted image draft must retain image-count normalization')
+
+const autoEstimateEffect = source.slice(source.indexOf('const targets: CanvasEstimateTarget[]'), source.indexOf('const timers = Object.entries(nodeEstimates)'))
+if (!autoEstimateEffect.includes('generationErrors(node, documentState)') || !autoEstimateEffect.includes('hydratedMedia]')) throw new Error('automatic estimates must share generation validation and rerun after media hydration')
+if (source.includes('const pending = uploadTargetsRef.current.get(token)')) throw new Error('active reference uploads must not expire on a wall-clock timer')

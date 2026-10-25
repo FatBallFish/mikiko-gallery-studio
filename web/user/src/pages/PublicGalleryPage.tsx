@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ImageResult } from '../../../shared/api-types'
+import { publicMediaApi, type PublicMediaItem } from '../../../shared/public-media-api'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
 import { cn } from '../../../shared/classnames'
 import { EmptyState, ErrorState, GalleryFilterToolbar, GalleryImageFrame, ImageDetailModal, PublicDetailIcon, SegmentedControl, copyText, useApp } from '../components'
-import { PublicVideoGallery } from '../features/media/PublicVideoGallery'
+import { PublicVideoCard } from '../features/media/PublicVideoGallery'
 import { errorMessage } from '../useApiResource'
 import { mediaAccess } from '../mediaAccess'
 import { Download, Heart, Image as ImageIcon, RefreshCw, Star } from '../ui/icons'
@@ -35,6 +36,7 @@ function downloadFilename(image: Pick<ImageResult, 'id' | 'url' | 'download_url'
 export function PublicGalleryPage({ imageId }: { imageId?: string }) {
   const app = useApp()
   const accessToken = app.session?.token
+  const [feed, setFeed] = useState<PublicMediaItem[]>([])
   const [rows, setRows] = useState<ImageResult[]>([])
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
@@ -63,18 +65,17 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
     } else setLoadingMore(true)
     setLoadError(null)
     try {
-      const result = await openApi.listPublicGallery(pageNumber, PAGE_SIZE, {
+      const result = await publicMediaApi.list(pageNumber, PAGE_SIZE, {
         accessToken,
+        model: modelFilter || undefined,
         query: query.trim() || undefined,
         liked: filter === 'liked',
         favorited: filter === 'favorited',
       })
       if (!canCommitPublicGalleryRequest(requestStateRef.current, requestToken)) return
-      setRows((current) => {
-        if (mode === 'replace') return result.items
-        const known = new Set(current.map((image) => image.id))
-        return [...current, ...result.items.filter((image) => !known.has(image.id))]
-      })
+      setFeed((current) => mode === 'replace' ? result.items : [...current, ...result.items.filter((item) => !current.some((known) => known.media_type === item.media_type && known.id === item.id))])
+      const images = result.items.flatMap((item) => item.media_type === 'image' ? [item.image] : [])
+      setRows((current) => mode === 'replace' ? images : [...current, ...images.filter((image) => !current.some((known) => known.id === image.id))])
       const resultTotal = result.pagination?.total ?? result.total ?? 0
       if (mode === 'replace' || resultTotal > 0) setTotal(resultTotal)
       setHasMore(result.items.length === PAGE_SIZE && (resultTotal <= 0 || pageNumber * PAGE_SIZE < resultTotal))
@@ -87,10 +88,11 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [accessToken, filter, query])
+  }, [accessToken, filter, query, modelFilter])
 
   useEffect(() => {
     setRows([])
+    setFeed([])
     setPage(1)
     setHasMore(true)
     setTotal(0)
@@ -111,15 +113,7 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
   }, [hasMore, loadError, loadPage, loading, loadingMore, page])
 
   const models = useMemo(() => Array.from(new Set(rows.map((image) => image.route_model_code || image.abstract_model).filter(Boolean) as string[])).sort(), [rows])
-  const modelKey = models.join('|')
-  useEffect(() => {
-    if (modelFilter && !models.includes(modelFilter)) setModelFilter('')
-  }, [modelFilter, modelKey, models])
-
-  const visibleRows = useMemo(() => {
-    if (!modelFilter) return rows
-    return rows.filter((image) => (image.route_model_code || image.abstract_model) === modelFilter)
-  }, [rows, modelFilter])
+  const visibleRows = feed
 
   function assetUrl(url: string) {
     return userApi.imageAssetUrl(url, null)
@@ -298,18 +292,20 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
 
       {detailError && detailError.imageId === imageId?.trim() ? <ErrorState message={detailError.message} onRetry={retryDeepLinkDetail} /> : null}
 
-      {loading && !rows.length ? <PublicGallerySkeleton /> : null}
-      {loadError && !rows.length ? <ErrorState message={loadError} onRetry={() => void loadPage(1, 'replace')} /> : null}
-      {!loading && !loadError && !rows.length ? <EmptyState icon={<ImageIcon size={28} strokeWidth={1.5} aria-hidden="true" />} title="暂无公开作品" detail="公开广场未开启，或当前筛选下还没有审核通过的图片。" /> : null}
-      {!loading && !loadError && rows.length > 0 && !visibleRows.length ? <EmptyState icon={<ImageIcon size={28} strokeWidth={1.5} aria-hidden="true" />} title="当前模型暂无作品" detail="换一个模型筛选，或刷新查看新公开的作品。" /> : null}
+      {loading && !feed.length ? <PublicGallerySkeleton /> : null}
+      {loadError && !feed.length ? <ErrorState message={loadError} onRetry={() => void loadPage(1, 'replace')} /> : null}
+      {!loading && !loadError && !feed.length ? <EmptyState icon={<ImageIcon size={28} strokeWidth={1.5} aria-hidden="true" />} title="暂无公开作品" detail="公开广场未开启，或当前筛选下还没有审核通过的作品。" /> : null}
+      {!loading && !loadError && feed.length > 0 && !visibleRows.length ? <EmptyState icon={<ImageIcon size={28} strokeWidth={1.5} aria-hidden="true" />} title="当前模型暂无作品" detail="换一个模型筛选，或刷新查看新公开的作品。" /> : null}
 
       {visibleRows.length ? (
         <div className="u-grid u-grid--gallery">
-          {visibleRows.map((image) => {
+          {visibleRows.map((item) => {
+            if (item.media_type === 'video') return <PublicVideoCard key={`video:${item.id}`} video={item.video} />
+            const image = rows.find((row) => row.id === item.id) ?? item.image
             const card = publicGalleryCardView(image)
             const imagePath = image.url || image.download_url
             return (
-              <article key={image.id} className="u-card pg-card">
+              <article key={`image:${image.id}`} className="u-card pg-card">
                 <div className="u-card__media">
                   <GalleryImageFrame
                     src={imagePath ? assetUrl(imagePath) : undefined}
@@ -376,11 +372,10 @@ export function PublicGalleryPage({ imageId }: { imageId?: string }) {
       ) : null}
 
       <div ref={loadMoreRef} className="pg-load-more" aria-live="polite">
-        {rows.length ? <span className="u-meta">{loadedLabel}</span> : null}
-        {loadingMore ? <span className="u-meta">正在加载更多作品</span> : loadError && rows.length ? <button className="u-btn u-btn--sm" type="button" onClick={() => void loadPage(page + 1, 'append')}>重试加载</button> : loadError ? null : hasMore ? <button className="u-btn u-btn--sm" type="button" onClick={() => void loadPage(page + 1, 'append')}>加载更多</button> : rows.length ? <span className="u-meta">已显示全部作品</span> : null}
+        {feed.length ? <span className="u-meta">{loadedLabel}</span> : null}
+        {loadingMore ? <span className="u-meta">正在加载更多作品</span> : loadError && feed.length ? <button className="u-btn u-btn--sm" type="button" onClick={() => void loadPage(page + 1, 'append')}>重试加载</button> : loadError ? null : hasMore ? <button className="u-btn u-btn--sm" type="button" onClick={() => void loadPage(page + 1, 'append')}>加载更多</button> : feed.length ? <span className="u-meta">已显示全部作品</span> : null}
       </div>
 
-      <PublicVideoGallery />
       <ImageDetailModal
         context="public"
         title="公开图片详情"

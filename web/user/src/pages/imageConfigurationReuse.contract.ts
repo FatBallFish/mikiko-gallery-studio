@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs'
+import { nativeImageCountLimit, nativeImageProfile } from '../../../shared/native-image'
+import { normalizeWorkspaceImageCount, workspaceTaskImageSafetyLimit } from './workspaceViewModel'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const components = read('../components.tsx')
@@ -31,8 +33,26 @@ for (const required of [
 ]) {
   if (!workspace.includes(required)) throw new Error(`workspace history reuse/detail integration is missing: ${required}`)
 }
-if (!workspace.includes('setCount((current) => normalizeWorkspaceImageCount(restoreParameters?.imageCount ?? current))')) {
-  throw new Error('parameter restoration must preserve later user count changes with a functional state update')
+const restoreCountStatement = workspace.match(/setCount\(\(current\) => [^\n]+restoreParameters\?\.imageCount[^\n]+/u)?.[0]
+if (!restoreCountStatement) throw new Error('parameter restoration must use a functional count update')
+function restoredCount(current: number, imageCount: number | undefined, imageCountLimit: number) {
+  let result = current
+  new Function('setCount', 'restoreParameters', 'imageCountLimit', 'normalizeWorkspaceImageCount', restoreCountStatement! )(
+    (update: (current: number) => number) => { result = update(current) },
+    imageCount === undefined ? null : { imageCount }, imageCountLimit, normalizeWorkspaceImageCount,
+  )
+  return result
+}
+for (const [model, expectedLimit] of [['doubao-seedream-5-0-pro-260628', 1], ['qwen-image-3.0', 6]] as const) {
+  const limit = nativeImageCountLimit(nativeImageProfile(model), workspaceTaskImageSafetyLimit)
+  if (limit !== expectedLimit || restoredCount(2, 8, limit) !== expectedLimit || restoredCount(8, undefined, limit) !== expectedLimit) {
+    throw new Error(`${model} must cap both restored and current counts at its native output limit`)
+  }
+}
+if (restoredCount(4, undefined, workspaceTaskImageSafetyLimit) !== 4
+  || restoredCount(8, 2, workspaceTaskImageSafetyLimit) !== 2
+  || restoredCount(4, 0, workspaceTaskImageSafetyLimit) !== normalizeWorkspaceImageCount(0)) {
+  throw new Error('count restoration must prefer saved counts, normalize them, and preserve later user changes when absent')
 }
 if (/\[taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions, count\]/.test(workspace)) {
   throw new Error('user count changes must not rerun the whole parameter restoration effect')

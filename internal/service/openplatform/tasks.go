@@ -10,6 +10,7 @@ import (
 	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	image "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 	"github.com/fatballfish/pic-gallery/internal/service/videotask"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 	"github.com/google/uuid"
@@ -20,6 +21,8 @@ import (
 )
 
 type ImageInput struct {
+	Operation         nativeimage.Operation        `json:"operation,omitempty"`
+	NativeOptions     *nativeimage.Options         `json:"native_options,omitempty"`
 	MaskAssetID       string                       `json:"mask_asset_id"`
 	ProjectID         string                       `json:"project_id"`
 	AbstractModel     string                       `json:"abstract_model"`
@@ -63,6 +66,26 @@ func taskID(p Principal, key string) string {
 func (s *Service) imageOperation(ctx context.Context, p Principal, user domainauth.User, op string, raw json.RawMessage) (any, error) {
 	if s.deps.Images == nil {
 		return nil, unavailable()
+	}
+	if op == "get_image_task_layers" {
+		var in struct {
+			ID string `json:"id"`
+		}
+		if err := decode(raw, &in); err != nil {
+			return nil, err
+		}
+		task, err := s.deps.Images.GetByID(ctx, user.ID, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if task.Operation != nativeimage.OperationLayerDecomposition {
+			return nil, errs.BadRequest("task is not a layer decomposition")
+		}
+		layers := make([]map[string]any, 0, len(task.Results))
+		for _, r := range task.Results {
+			layers = append(layers, map[string]any{"image_id": r.ID, "width": r.Width, "height": r.Height, "format": r.Format, "layer": r.Layer, "access_operation": "get_image_result_access", "access_input": map[string]any{"task_id": task.ID, "image_id": r.ID, "purpose": "download"}})
+		}
+		return map[string]any{"version": 1, "task_id": task.ID, "operation": task.Operation, "layers": layers}, nil
 	}
 	if op == "get_image_task" || op == "list_image_tasks" {
 		var in struct {
@@ -127,6 +150,8 @@ func (s *Service) imageOperation(ctx context.Context, p Principal, user domainau
 		return nil, err
 	}
 	req := image.CreateRequest{UserID: user.ID, ProjectID: in.ProjectID, APIKeyID: kid, SourceChannel: "open_api", AbstractModel: in.AbstractModel, RouteModelCode: in.RouteModelCode, TaskType: in.TaskType, Prompt: in.Prompt, PromptVariables: in.PromptVariables, ReferenceBindings: in.ReferenceBindings, ReferenceAssetIDs: in.ReferenceAssetIDs, ReferenceImageCount: len(in.ReferenceAssetIDs), NegativePrompt: in.NegativePrompt, SizeMode: in.SizeMode, RequestedSize: in.RequestedSize, BaseResolution: in.BaseResolution, Quality: in.Quality, OutputFormat: in.OutputFormat, Background: in.Background, OutputCompression: in.OutputCompression, Moderation: in.Moderation, AspectRatio: in.AspectRatio, OutputImageCount: in.OutputImageCount, ReferenceStrength: in.ReferenceStrength, Seed: in.Seed, UserGroupCode: user.GroupCode, UserGroupCodes: user.GroupCodes, UserGroupMultiplier: user.GroupMultiplier, CapabilityVersion: in.CapabilityVersion}
+	req.Operation = in.Operation
+	req.NativeOptions = in.NativeOptions
 	req.MaskAssetID = in.MaskAssetID
 	req.MaskPresent = in.MaskAssetID != ""
 	if req.TaskType == "" {

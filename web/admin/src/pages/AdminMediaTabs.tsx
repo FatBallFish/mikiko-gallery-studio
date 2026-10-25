@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { AdminTabs } from "../components";
 import { cn } from "../../../shared/classnames";
@@ -85,17 +85,21 @@ export function LedgerField({
   required?: boolean;
   children: ReactNode;
 }) {
+  const id = useId();
+  const describedBy = [hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined;
+  const control = React.isValidElement<{ id?: string; 'aria-label'?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean }>(children) && typeof children.type === 'string' && ['input', 'select', 'textarea'].includes(children.type)
+    ? React.cloneElement(children, { id: children.props.id ?? id, 'aria-label': children.props['aria-label'] ?? label, 'aria-describedby': describedBy, 'aria-invalid': Boolean(error) }) : children;
   return (
     <div className="a-field">
       <span>
-        <span>
+        <span id={`${id}-label`}>
           {label}
           {required ? <span className="a-required"> *</span> : null}
         </span>
       </span>
-      {children}
-      {hint ? <small className="a-hint">{hint}</small> : null}
-      {error ? <em className="a-field__error">{error}</em> : null}
+      {control}
+      {hint ? <small id={`${id}-hint`} className="a-hint">{hint}</small> : null}
+      {error ? <em id={`${id}-error`} className="a-field__error">{error}</em> : null}
     </div>
   );
 }

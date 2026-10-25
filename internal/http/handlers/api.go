@@ -50,9 +50,11 @@ import (
 	domainauth "github.com/fatballfish/pic-gallery/internal/domain/auth"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domaincashier "github.com/fatballfish/pic-gallery/internal/domain/cashier"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
 	domainmodelhub "github.com/fatballfish/pic-gallery/internal/domain/modelhub"
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 	domainredeem "github.com/fatballfish/pic-gallery/internal/domain/redeem"
 	domainsecureconfig "github.com/fatballfish/pic-gallery/internal/domain/secureconfig"
 	domainstorageconfig "github.com/fatballfish/pic-gallery/internal/domain/storageconfig"
@@ -81,6 +83,7 @@ import (
 	oidcservice "github.com/fatballfish/pic-gallery/internal/service/oidc"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
+	publicfeedservice "github.com/fatballfish/pic-gallery/internal/service/publicfeed"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	"github.com/fatballfish/pic-gallery/internal/service/smtpdelivery"
@@ -128,6 +131,7 @@ type API struct {
 	canvases             *canvasservice.Service
 	projects             *projectservice.Service
 	galleryExport        *galleryexportservice.Service
+	publicFeed           *publicfeedservice.Service
 	videoPublications    *videopublicationservice.Service
 	mediaAssets          *mediaassetservice.Service
 	videoRouting         *videoroutingservice.Service
@@ -343,6 +347,7 @@ func NewAPIWithCompletionServices(cfg config.Config, authSvc *authservice.Servic
 	if billingSvc == nil {
 		billingSvc = billingservice.NewService(cfg.Billing)
 	}
+	billingSvc.SetGenerationLimits(cfg.GenerationLimits)
 	if assetSvc == nil {
 		assetSvc = assetservice.NewService(cfg.Storage, cfg.GenerationLimits)
 	}
@@ -995,7 +1000,20 @@ func (a *API) HandleEstimate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
+	nativeOptions, nativeErr := parseNativeOptionsQuery(r)
+	if nativeErr != nil {
+		httpx.WriteError(w, r, nativeErr)
+		return
+	}
+	inputDimensions, referenceCount, dimensionErr := a.estimateInputDimensions(r.Context(), user.ID, estimateReferenceIDs(r), refCount, r.URL.Query().Has("reference_image_count"))
+	if dimensionErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(dimensionErr))
+		return
+	}
+	refCount = referenceCount
 	result, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
+		TrustedInputDimensions: inputDimensions,
+		Operation:              nativeimage.Operation(r.URL.Query().Get("operation")), NativeOptions: nativeOptions,
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
 		RouteModelCode:            r.URL.Query().Get("route_model_code"),
@@ -1795,7 +1813,20 @@ func (a *API) HandleOpenEstimate(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, queryErr)
 		return
 	}
+	nativeOptions, nativeErr := parseNativeOptionsQuery(r)
+	if nativeErr != nil {
+		httpx.WriteError(w, r, nativeErr)
+		return
+	}
+	inputDimensions, referenceCount, dimensionErr := a.estimateInputDimensions(r.Context(), identity.UserID, estimateReferenceIDs(r), refCount, r.URL.Query().Has("reference_image_count"))
+	if dimensionErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(dimensionErr))
+		return
+	}
+	refCount = referenceCount
 	result, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
+		TrustedInputDimensions: inputDimensions,
+		Operation:              nativeimage.Operation(r.URL.Query().Get("operation")), NativeOptions: nativeOptions,
 		TaskType:                  r.URL.Query().Get("task_type"),
 		AbstractModel:             r.URL.Query().Get("abstract_model"),
 		RouteModelCode:            r.URL.Query().Get("route_model_code"),
@@ -8504,6 +8535,8 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
+		Operation                 nativeimage.Operation                  `json:"operation"`
+		NativeOptions             *nativeimage.Options                   `json:"native_options"`
 		ProjectID                 string                                 `json:"project_id"`
 		TaskType                  string                                 `json:"task_type"`
 		Prompt                    string                                 `json:"prompt"`
@@ -8535,7 +8568,8 @@ func (a *API) handleAgentTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := a.tasks.CreateTask(r.Context(), domainimagetask.CreateRequest{
-		TaskID:              idempotentTaskID(user.ID, r.Header.Get("Idempotency-Key"), req),
+		TaskID:    idempotentTaskID(user.ID, r.Header.Get("Idempotency-Key"), req),
+		Operation: req.Operation, NativeOptions: req.NativeOptions,
 		UserID:              user.ID,
 		ProjectID:           req.ProjectID,
 		AbstractModel:       req.AbstractModel,
@@ -8580,6 +8614,8 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	defer cleanup()
 
 	var req struct {
+		Operation                 nativeimage.Operation                  `json:"operation"`
+		NativeOptions             *nativeimage.Options                   `json:"native_options"`
 		ProjectID                 string                                 `json:"project_id"`
 		TaskType                  string                                 `json:"task_type"`
 		Prompt                    string                                 `json:"prompt"`
@@ -8614,7 +8650,14 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if taskID == "" {
 		taskID = uuid.NewString()
 	}
+	inputDimensions, _, dimensionErr := a.estimateInputDimensions(r.Context(), identity.UserID, req.ReferenceAssetIDs, len(req.ReferenceAssetIDs), true)
+	if dimensionErr != nil {
+		httpx.WriteError(w, r, normalizeAppError(dimensionErr))
+		return
+	}
 	estimate, err := a.billing.EstimateContext(r.Context(), domainbilling.EstimateRequest{
+		TrustedInputDimensions: inputDimensions,
+		Operation:              req.Operation, NativeOptions: req.NativeOptions,
 		TaskType:                  req.TaskType,
 		AbstractModel:             req.AbstractModel,
 		RouteModelCode:            req.RouteModelCode,
@@ -8643,7 +8686,8 @@ func (a *API) handleOpenTaskCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := a.tasks.CreateTask(r.Context(), domainimagetask.CreateRequest{
-		TaskID:              taskID,
+		TaskID:    taskID,
+		Operation: req.Operation, NativeOptions: req.NativeOptions,
 		UserID:              identity.UserID,
 		ProjectID:           req.ProjectID,
 		APIKeyID:            identity.APIKeyID,
@@ -9971,23 +10015,31 @@ func decodeModelAccountTestImageRequest(w http.ResponseWriter, r *http.Request) 
 
 func decodeRouteModelWriteRequest(w http.ResponseWriter, r *http.Request) (domainmodeladmin.RouteModelWriteRequest, bool) {
 	var req struct {
-		Code        string  `json:"code"`
-		Name        string  `json:"name"`
-		Description string  `json:"description"`
-		Visibility  string  `json:"visibility"`
-		MediaType   string  `json:"media_type"`
-		Enabled     bool    `json:"enabled"`
-		SortOrder   int     `json:"sort_order"`
-		GroupIDs    []int64 `json:"group_ids"`
-		IconKey     string  `json:"icon_key"`
-		IconSVG     string  `json:"icon_svg"`
+		ImagePricing json.RawMessage `json:"image_pricing"`
+		Code         string          `json:"code"`
+		Name         string          `json:"name"`
+		Description  string          `json:"description"`
+		Visibility   string          `json:"visibility"`
+		MediaType    string          `json:"media_type"`
+		Enabled      bool            `json:"enabled"`
+		SortOrder    int             `json:"sort_order"`
+		GroupIDs     []int64         `json:"group_ids"`
+		IconKey      string          `json:"icon_key"`
+		IconSVG      string          `json:"icon_svg"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, r, errs.BadRequest("invalid json body"))
 		return domainmodeladmin.RouteModelWriteRequest{}, false
 	}
+	var pricing *imagepricing.Config
+	if len(req.ImagePricing) > 0 {
+		if err := json.Unmarshal(req.ImagePricing, &pricing); err != nil {
+			httpx.WriteError(w, r, errs.BadRequest("invalid image_pricing"))
+			return domainmodeladmin.RouteModelWriteRequest{}, false
+		}
+	}
 	_ = req.IconSVG
-	return domainmodeladmin.RouteModelWriteRequest{Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, MediaType: req.MediaType, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: req.GroupIDs, IconKey: req.IconKey, IconSVG: req.IconSVG}, true
+	return domainmodeladmin.RouteModelWriteRequest{ImagePricingPresent: len(req.ImagePricing) > 0, ImagePricing: pricing, Code: req.Code, Name: req.Name, Description: req.Description, Visibility: req.Visibility, MediaType: req.MediaType, Enabled: req.Enabled, SortOrder: req.SortOrder, GroupIDs: req.GroupIDs, IconKey: req.IconKey, IconSVG: req.IconSVG}, true
 }
 
 func (a *API) HandleAdminRouteModelGroups(w http.ResponseWriter, r *http.Request) {
@@ -11620,4 +11672,41 @@ func isProductionAppEnv(env string) bool {
 	default:
 		return false
 	}
+}
+
+func estimateReferenceIDs(r *http.Request) []string {
+	var ids []string
+	for _, value := range r.URL.Query()["reference_asset_ids"] {
+		for _, id := range strings.Split(value, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+func (a *API) estimateInputDimensions(ctx context.Context, userID int64, ids []string, count int, explicit bool) ([]imagepricing.Dimensions, int, error) {
+	if len(ids) == 0 {
+		return nil, count, nil
+	}
+	if explicit && count != len(ids) {
+		return nil, count, errs.BadRequest("reference_image_count must match reference_asset_ids")
+	}
+	if a.assets == nil {
+		return nil, count, errs.BadRequest("reference metadata unavailable")
+	}
+	dims := make([]imagepricing.Dimensions, 0, len(ids))
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			return nil, count, errs.BadRequest("duplicate reference asset")
+		}
+		seen[id] = true
+		asset, err := a.assets.GetMetadata(ctx, userID, id)
+		if err != nil {
+			return nil, count, err
+		}
+		dims = append(dims, imagepricing.Dimensions{Width: int64(asset.Width), Height: int64(asset.Height)})
+	}
+	return dims, len(ids), nil
 }

@@ -124,8 +124,17 @@ if (homeSource.includes('heroImage') || homeSource.includes('高奢视觉生成�
   throw new Error('authenticated home must prioritize continuation instead of a marketing hero or documentation')
 }
 
-for (const homeFeature of ['homeContinuationView', 'homeRecentTaskView', 'curatedHomeGallery', '<GalleryImageFrame']) {
+for (const homeFeature of ['homeContinuationView', 'homeRecentTaskView', 'publicMediaApi.list(1, 6,', 'curated.map((item)', '<GalleryImageFrame']) {
   if (!homeSource.includes(homeFeature)) throw new Error(`home must render ${homeFeature}`)
+}
+
+for (const [name, source] of [['home', homeSource], ['public gallery', publicGallerySource]] as const) {
+  for (const required of ['publicMediaApi.list(', "item.media_type === 'video'", '<PublicVideoCard', 'const image =', 'key={`image:${image.id}`}']) {
+    if (!source.includes(required)) throw new Error(`${name} must render both media types in feed order: ${required}`)
+  }
+  if (source.includes('<PublicVideoGallery') || source.includes('openApi.listPublicGallery(')) {
+    throw new Error(`${name} must use one mixed feed instead of independently paginated media sections`)
+  }
 }
 
 if (!publicGallerySource.includes('IntersectionObserver') || !publicGallerySource.includes('loadMoreRef')) {

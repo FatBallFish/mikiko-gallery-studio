@@ -1,6 +1,7 @@
 import { canHideHistoryRecord } from '../../pages/historyRecordActions'
 import { useHistoryRecordActions } from '../../pages/HistoryRecordControls'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { OverlayPortal } from '../../ui/overlayPortal'
 import { Ban, ChevronUp, Copy, Download, FastForward, Film, Image as ImageIcon, Info, LoaderCircle, Play, RefreshCw, RotateCcw, Sparkles, Volume2, VolumeX, X } from 'lucide-react'
 import type { CapabilityModelGroup, MediaAsset, PromptReferenceBinding, ReferenceAsset, VideoCapability, VideoEstimateRequest, VideoTask, VideoTaskType } from '../../../../shared/api-types'
 import { userApi } from '../../../../shared/user-api'
@@ -19,9 +20,9 @@ import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimizatio
 import { errorMessage } from '../../useApiResource'
 import { MediaAssetPicker } from '../media/MediaAssetPicker'
 import { MediaPreviewDialog } from '../media/MediaPreviewDialog'
-import { QUEUE_MEDIA_UPLOAD_EVENT } from '../media/UploadTray'
+import { createReferenceReservations, referenceAdmission } from '../../../../shared/reference-admission'
 import { buildVideoQuoteBreakdown, buildVideoTaskAccounting } from './videoAccounting'
-import { applyVideoCapability, defaultVideoDraft, invalidateVideoQuote, promptReferenceNames, reuseVideoTask, videoDraftKey, videoModelForDraft, VIDEO_TASK_INPUT_ROLES, videoTaskInputLabel, videoTaskInputMissing, type VideoDraft, type VideoDraftInputRole, type VideoQuoteState } from './videoDraft'
+import { videoDraftInvalidReason, videoInputAssetReason, videoReferencePolicy, resolveInputCapabilities, applyVideoCapability, defaultVideoDraft, invalidateVideoQuote, promptReferenceNames, reuseVideoTask, videoDraftKey, videoModelForDraft, VIDEO_TASK_INPUT_ROLES, videoTaskInputLabel, videoTaskInputMissing, type VideoDraft, type VideoDraftInputRole, type VideoQuoteState } from './videoDraft'
 import { cachedVideoCapability, loadVideoCapability } from './videoCapabilityCache'
 import { pointsText } from '../../../../shared/pointsDisplay'
 import { userState } from '../../ui/classes'
@@ -50,6 +51,10 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     const snapshot = cachedVideoCapability()
     return snapshot ? defaultVideoDraft(snapshot, initialAssetId ? 'image_to_video' : undefined) : null
   })
+  const live = useRef({ draft, capability, projectID: projects.selectedProjectID })
+  live.current = { draft, capability, projectID: projects.selectedProjectID }
+  const reservations = useRef(createReferenceReservations<VideoDraftInputRole>())
+  const [pendingUploads, setPendingUploads] = useState(0)
   const [quote, setQuote] = useState<VideoQuoteState | null>(null)
   const [tasks, setTasks] = useState<VideoTask[]>([])
   const [loading, setLoading] = useState(true)
@@ -96,9 +101,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         const base = current ?? defaultVideoDraft(next, initialAssetId ? 'image_to_video' : undefined)
         const normalized = applyVideoCapability(base, next)
         if (normalized.changes.length) app.notify('info', normalized.changes.join('；'))
-		return initialAssetId && normalized.draft.task_type === 'image_to_video' && normalized.draft.inputs.length === 0
-			? { ...normalized.draft, inputs: [{ asset_id: initialAssetId, role: 'first_frame', ordinal: 0 }] }
-          : normalized.draft
+        return normalized.draft
       })
       setError('')
     }).catch((reason) => alive && setError(errorMessage(reason))).finally(() => alive && setLoading(false))
@@ -106,11 +109,11 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   }, [app, initialAssetId])
 
   useEffect(() => {
-    if (!initialAssetId) return
+    if (!initialAssetId || !capability) return
     let alive = true
-    userApi.getMediaAsset(initialAssetId).then((asset) => { if (alive) setSelectedAssets((current) => ({ ...current, [asset.id]: asset })) }).catch(() => undefined)
+    userApi.getMediaAsset(initialAssetId).then((asset) => { if (alive) admitAssets([asset], 'first_frame') }).catch(() => { if (alive) app.notify('error', '首帧素材不可用或无权访问') })
     return () => { alive = false }
-  }, [initialAssetId])
+  }, [initialAssetId, capability])
 
   useEffect(() => {
 	if (!initialTaskId || !capability) return
@@ -181,11 +184,11 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   }, [app, app.session?.token, projects.selectedProjectID])
 
   useEffect(() => {
-    if (!draft || !capability || !projects.selectedProjectID || !draft.prompt_template.trim()) {
+    if (pendingUploads > 0 || Object.values(reservations.current.pending()).some((count) => (count ?? 0) > 0) || !draft || !capability || !projects.selectedProjectID || !draft.prompt_template.trim()) {
       setQuote(null)
       return undefined
     }
-		if (videoTaskInputMissing(draft.task_type, draft.inputs)) {
+		if (videoDraftInvalidReason(draft, capability, selectedAssets) || videoTaskInputMissing(draft.task_type, draft.inputs)) {
       setQuote(null)
       return undefined
     }
@@ -193,6 +196,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     const timer = window.setTimeout(() => {
       const request = estimateRequest(projects.selectedProjectID, draft, selectedAssets)
       userApi.estimateVideo(request, controller.signal).then((result) => {
+        if (controller.signal.aborted || Object.values(reservations.current.pending()).some((count) => (count ?? 0) > 0)) return
         setQuote({
           key: videoDraftKey(draft), quote_token: result.quote_token, quote_expires_at: result.expires_at,
           unit_points: result.unit_points, estimated_points: result.estimated_points, max_reserved_points: result.max_reserved_points,
@@ -209,7 +213,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
       })
     }, 250)
     return () => { window.clearTimeout(timer); controller.abort() }
-  }, [capability, draft, projects.selectedProjectID])
+  }, [capability, draft, projects.selectedProjectID, selectedAssets, pendingUploads])
 
   useEffect(() => {
     if (draft && priorDraftRef.current) setQuote((current) => invalidateVideoQuote(current, priorDraftRef.current!, draft))
@@ -253,12 +257,15 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
 
   if (loading && !capability) return <LoadingState label="正在读取视频能力..." />
   if (error && !capability) return <ErrorState message={error} />
-  if (!capability || !draft || !model || !options) return <EmptyState title="暂无可用视频模型" detail="当前用户组没有已启用的视频模型分组。" />
+  if (!capability || !draft) return <EmptyState title="暂无可用视频模型" detail="当前用户组没有已启用的视频模型分组。" />
+  const invalidReason = videoDraftInvalidReason(draft, capability, selectedAssets)
+  const displayModel = model ?? { task_types: [] as VideoTaskType[], max_output_count: draft.output_count }
+  const displayOptions = options ?? { durations: [draft.duration_seconds], combinations: [], audio_generation: false }
   const activeCapability = capability
   const activeDraft = draft
-  const resolutionOptions = uniqueVideoValues(options.combinations.filter((item) => item.duration_seconds === draft.duration_seconds).map((item) => item.resolution))
-  const aspectRatioOptions = uniqueVideoValues(options.combinations.filter((item) => item.duration_seconds === draft.duration_seconds && item.resolution === draft.resolution).map((item) => item.aspect_ratio))
-  const audioAvailable = options.combinations.some((item) => item.duration_seconds === draft.duration_seconds && item.resolution === draft.resolution && item.aspect_ratio === draft.aspect_ratio && item.audio_mode === 'generated')
+  const resolutionOptions = uniqueVideoValues(displayOptions.combinations.filter((item) => item.duration_seconds === draft.duration_seconds).map((item) => item.resolution))
+  const aspectRatioOptions = uniqueVideoValues(displayOptions.combinations.filter((item) => item.duration_seconds === draft.duration_seconds && item.resolution === draft.resolution).map((item) => item.aspect_ratio))
+  const audioAvailable = displayOptions.combinations.some((item) => item.duration_seconds === draft.duration_seconds && item.resolution === draft.resolution && item.aspect_ratio === draft.aspect_ratio && item.audio_mode === 'generated')
   const quoteBreakdown = quote ? buildVideoQuoteBreakdown({
     quote_token: quote.quote_token, expires_at: quote.quote_expires_at, capability_version: capability.capability_version,
     config_version: '', price_version: '', unit_points: quote.unit_points, estimated_points: quote.estimated_points,
@@ -266,9 +273,79 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     summary: quote.summary, balance: quote.available_points ? { available_points: quote.available_points, sufficient: quote.sufficient !== false } : undefined,
   }) : null
 
+  function admitAssets(assets: MediaAsset[], role: VideoDraftInputRole, excludeToken?: number) {
+    const state = live.current
+    if (!state.draft || !state.capability) return false
+    const model = videoModelForDraft(state.capability, state.draft)
+    for (const asset of assets) {
+      const reason = videoInputAssetReason(model, state.draft.task_type, role, asset)
+      if (reason) { app.notify('error', reason); return false }
+    }
+    const current = role === 'first_frame' || role === 'last_frame' ? state.draft.inputs.filter((input) => input.role !== role) : state.draft.inputs
+    const incoming = assets.map((asset, ordinal) => ({ asset_id: asset.id, role, ordinal }))
+    const result = referenceAdmission({ policy: videoReferencePolicy(model, state.draft.task_type), current, incoming, reserved: reservations.current.pending(excludeToken), kind: (input) => input.role, key: (input) => `${input.role}:${input.asset_id}` })
+    if (!result.ok) { app.notify('error', result.reason); return false }
+    const next = { ...state.draft, inputs: result.merged }
+    live.current = { ...state, draft: next }
+    setDraft(next)
+    setSelectedAssets((previous) => ({ ...previous, ...Object.fromEntries(assets.map((asset) => [asset.id, asset])) }))
+    setQuote(null)
+    return true
+  }
+
+  async function uploadReferences(files: File[]) {
+    if (!files.length) return
+    const state = live.current
+    if (!state.draft || !state.capability) return
+    const model = videoModelForDraft(state.capability, state.draft)
+    const policy = videoReferencePolicy(model, state.draft.task_type)
+    if (policy.reason) { app.notify('error', policy.reason); return }
+    const entries = files.map((file, ordinal) => {
+      const mediaType = file.type.split('/')[0]
+      const role = VIDEO_TASK_INPUT_ROLES[state.draft!.task_type].find((role) => resolveInputCapabilities(model, state.draft!.task_type)?.[role]?.media_types.includes(mediaType))
+      return { file, role, asset_id: `pending:${ordinal}:${file.name}`, ordinal }
+    })
+    for (const entry of entries) {
+      if (!entry.role) { app.notify('error', '当前模型与生成方式不支持该引用类型'); return }
+      const reason = videoInputAssetReason(model, state.draft.task_type, entry.role, { media_type: entry.file.type.split('/')[0] as MediaAsset['media_type'], mime_type: entry.file.type, name: entry.file.name, file_size_bytes: entry.file.size })
+      if (reason) { app.notify('error', reason); return }
+    }
+    const incoming = entries.map((entry) => ({ asset_id: entry.asset_id, role: entry.role!, ordinal: entry.ordinal }))
+    const replacing = new Set(incoming.filter((input) => input.role === 'first_frame' || input.role === 'last_frame').map((input) => input.role))
+    const current = state.draft.inputs.filter((input) => !replacing.has(input.role))
+    const reservation = reservations.current.reserve(policy, current, incoming, (input) => input.role)
+    if (!reservation.ok) { app.notify('error', reservation.reason); return }
+    setQuote(null)
+    setPendingUploads((count) => count + 1)
+    try {
+      const uploaded = await Promise.all(entries.map(async (entry) => ({ asset: await uploadSingleMediaAsset(entry.file, state.projectID), role: entry.role! })))
+      const now = live.current
+      if (!now.draft || !now.capability || now.projectID !== state.projectID || now.draft.route_model_code !== state.draft.route_model_code || now.draft.task_type !== state.draft.task_type) {
+        app.notify('error', '模型、生成方式或项目已变化，上传素材保留在资产库，请重新选择引用'); return
+      }
+      const currentModel = videoModelForDraft(now.capability, now.draft)
+      for (const { asset, role } of uploaded) {
+        const reason = videoInputAssetReason(currentModel, now.draft.task_type, role, asset)
+        if (reason) { app.notify('error', reason); return }
+      }
+      const result = referenceAdmission({ policy: videoReferencePolicy(currentModel, now.draft.task_type), current: now.draft.inputs.filter((input) => !replacing.has(input.role)), incoming: uploaded.map(({ asset, role }, ordinal) => ({ asset_id: asset.id, role, ordinal })), reserved: reservations.current.pending(reservation.token), kind: (input) => input.role, key: (input) => `${input.role}:${input.asset_id}` })
+      if (!result.ok) { app.notify('error', result.reason); return }
+      const next = { ...now.draft, inputs: result.merged }
+      live.current = { ...now, draft: next }
+      setDraft(next)
+      setSelectedAssets((previous) => ({ ...previous, ...Object.fromEntries(uploaded.map(({ asset }) => [asset.id, asset])) }))
+      setQuote(null)
+    } catch (caught) { app.notify('error', errorMessage(caught)) }
+    finally {
+      if (reservation.token !== undefined) reservations.current.release(reservation.token)
+      setPendingUploads((count) => Math.max(0, count - 1))
+    }
+  }
+
   function patchDraft(patch: Partial<VideoDraft>) {
     const preferredField = Object.keys(patch)[0] as keyof VideoDraft | undefined
-    const normalized = applyVideoCapability({ ...activeDraft, ...patch }, activeCapability, preferredField)
+    const normalized = applyVideoCapability({ ...(live.current.draft ?? activeDraft), ...patch }, live.current.capability ?? activeCapability, preferredField)
+    live.current = { ...live.current, draft: normalized.draft }
     setDraft(normalized.draft)
     setFieldErrors({})
     if (normalized.changes.length) app.notify('info', normalized.changes.join('；'))
@@ -322,8 +399,10 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   }
 
   function openFramePicker() {
-    if (activeDraft.task_type === 'text_to_video') patchDraft({ task_type: 'image_to_video' })
-    setPickerRole(activeDraft.task_type === 'first_last_frame_to_video' && activeDraft.inputs.some((item) => item.role === 'first_frame' && item.asset_id.trim()) ? 'last_frame' : 'first_frame')
+    const policy = videoReferencePolicy(model, activeDraft.task_type)
+    if (policy.reason) { app.notify('error', policy.reason); return }
+    const role = VIDEO_TASK_INPUT_ROLES[activeDraft.task_type].find((role) => resolveInputCapabilities(model, activeDraft.task_type)?.[role]?.max_count !== 0 && resolveInputCapabilities(model, activeDraft.task_type)?.[role])
+    if (role) setPickerRole(role)
   }
 
   function changePrompt(value: string) {
@@ -352,8 +431,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
         const asset = await userApi.getMediaAsset(input.asset_id)
         setSelectedAssets((current) => ({ ...current, [asset.id]: asset }))
       } catch {
-        setDraft((current) => current ? { ...current, inputs: current.inputs.filter((item) => item.asset_id !== input.asset_id) } : current)
-        app.notify('info', '部分引用已失效或无权访问，未恢复该素材')
+        app.notify('error', '部分引用已失效或无权访问，已保留引用，请移除或重新选择')
       }
     }))
   }
@@ -387,12 +465,11 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   async function editFromResult(assetID: string) {
     setEditingAsset(true)
     try {
+      const policy = videoReferencePolicy(model, activeDraft.task_type)
+      if (policy.reason || !resolveInputCapabilities(model, activeDraft.task_type)?.first_frame) { app.notify('error', policy.reason || '当前生成方式不支持首帧引用'); return }
       const access = await userApi.getMediaAssetAccess(assetID, 'preview')
       const frame = await captureVideoFrameBlob(userApi.mediaAssetUrl(access.url, app.session?.token))
-      const asset = await uploadSingleMediaAsset(new File([frame], `视频续帧-${assetID.slice(0, 8)}.png`, { type: 'image/png' }), projects.selectedProjectID)
-      setSelectedAssets((current) => ({ ...current, [asset.id]: asset }))
-      patchDraft({ task_type: 'image_to_video', inputs: replaceInput(activeDraft.inputs, 'first_frame', asset.id) })
-      app.notify('success', '已截取视频末帧并设为首帧输入')
+      await uploadReferences([new File([frame], `视频续帧-${assetID.slice(0, 8)}.png`, { type: 'image/png' })])
     } catch (caught) {
       app.notify('error', errorMessage(caught))
     } finally {
@@ -401,6 +478,10 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
   }
 
   async function submit() {
+    if (Object.values(reservations.current.pending()).some((count) => (count ?? 0) > 0)) { app.notify('error', '引用素材正在上传，请等待上传完成后重新估价'); return }
+    const current = live.current
+    const reason = current.draft && current.capability ? videoDraftInvalidReason(current.draft, current.capability, selectedAssets) : '视频能力不可用'
+    if (reason) { app.notify('error', reason); return }
     if (!quote || quote.key !== videoDraftKey(activeDraft) || new Date(quote.quote_expires_at).getTime() <= Date.now()) {
       setEstimateError('报价已失效，正在重新估价。')
       setQuote(null)
@@ -489,9 +570,10 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
     }
   }
 
+  const ParameterHost = compactViewport ? OverlayPortal : Fragment
   return (
     <div className="u-workbench">
-      <aside className={cn('u-controls', controlsOpen && 'is-open')} aria-label="视频生成参数">
+      <ParameterHost><aside className={cn('u-controls', controlsOpen && 'is-open')} aria-label="视频生成参数">
         <header className="u-controls__head">
           <button
             type="button"
@@ -504,7 +586,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
               <strong>生成设置</strong>
               <span className="u-meta">视频 · {taskTypeLabels[draft.task_type]}</span>
             </span>
-            <ChevronUp className={cn('cr-panel-head__chevron', compactViewport && !controlsOpen && 'is-collapsed')} size={16} aria-hidden="true" />
+            {compactViewport ? <ChevronUp className={cn('cr-panel-head__chevron', compactViewport && !controlsOpen && 'is-collapsed')} size={16} aria-hidden="true" /> : null}
           </button>
           <span className="u-chip u-chip--mono">{quote ? pointsText(quote.display_points ?? quote.max_reserved_points) : '--'}</span>
         </header>
@@ -514,15 +596,14 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
             <div className="cr-group__head"><h4>模型</h4><span>{modelOptions.length} 可用</span></div>
             <ModelGroupSelect options={modelOptions} groups={capability?.route_model_groups} value={draft.route_model_code} onChange={(route_model_code) => patchDraft({ route_model_code })} />
             <div className="vd-modes" role="group" aria-label="生成方式">
-              {model.task_types.map((value) => (
+              {displayModel.task_types.map((value) => (
                 <button
                   key={value}
                   type="button"
                   className={cn('vd-mode', draft.task_type === value && 'is-active')}
                   aria-pressed={draft.task_type === value}
                   onClick={() => {
-                    const stale = VIDEO_TASK_INPUT_ROLES[value].length === 0 ? [] : draft.inputs.filter((item) => VIDEO_TASK_INPUT_ROLES[value].includes(item.role))
-                    patchDraft({ task_type: value, inputs: stale })
+                    patchDraft({ task_type: value })
                   }}
                 >
                   <b>{taskTypeLabels[value]}</b>
@@ -532,22 +613,19 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
             </div>
           </div>
 
-          {draft.task_type !== 'text_to_video' ? (
+          {draft.task_type !== 'text_to_video' || draft.inputs.length ? (
             <div className="cr-group">
               <div className="cr-group__head"><h4>输入素材</h4><span>{VIDEO_TASK_INPUT_ROLES[draft.task_type].length} 个槽位</span></div>
               <div className="vd-frames">
-                {VIDEO_TASK_INPUT_ROLES[draft.task_type].map((role) => (
-                  <FrameInput
-                    key={role}
-                    role={role}
-                    label={videoTaskInputLabel(role)}
-                    error={fieldErrorFor(fieldErrors, `inputs.${role}`)}
-                    asset={selectedAssets[draft.inputs.find((item) => item.role === role)?.asset_id ?? '']}
-                    onSelect={() => setPickerRole(role)}
-                    onPreview={setPreviewAsset}
-                    onRemove={() => patchDraft({ inputs: replaceInput(draft.inputs, role, '') })}
-                  />
-                ))}
+                {Array.from(new Set([...VIDEO_TASK_INPUT_ROLES[draft.task_type], ...draft.inputs.map((input) => input.role)])).flatMap((role) => {
+                  const inputs = draft.inputs.filter((input) => input.role === role)
+                  return [...inputs, { asset_id: '', role, ordinal: inputs.length }].map((input, index) => <FrameInput
+                    key={`${role}-${input.asset_id || 'add'}`} role={role}
+                    label={`${videoTaskInputLabel(role)}${inputs.length > 1 ? ` ${index + 1}` : ''}${input.asset_id && !selectedAssets[input.asset_id] ? ` · ${input.asset_id}` : ''}`}
+                    error={fieldErrorFor(fieldErrors, `inputs.${role}`)} asset={selectedAssets[input.asset_id]}
+                    onSelect={() => setPickerRole(role)} onPreview={setPreviewAsset}
+                    onRemove={() => patchDraft({ inputs: draft.inputs.filter((item) => item !== input && item.asset_id !== input.asset_id) })} />)
+                })}
               </div>
             </div>
           ) : null}
@@ -580,7 +658,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
                 placeholder="描述想要生成的画面...，输入 @ 引用首帧/尾帧资产，输入 $ 添加变量"
                 onChange={changePrompt}
                 onAddAsset={openFramePicker}
-                onPasteFiles={(files) => { window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail: { files, projectID: projects.selectedProjectID } })) }}
+                onPasteFiles={(files) => { void uploadReferences(files) }}
               />
               <div className="u-prompt-box__foot">
                 <span>@ 引用首帧/尾帧 · $ 插入变量</span>
@@ -596,12 +674,12 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
           <div className="cr-group">
             <div className="cr-group__head"><h4>参数</h4></div>
             <div className="vd-grid2">
-              <Choice label="时长" error={fieldErrors.duration_seconds} value={draft.duration_seconds} values={options.durations} format={(value) => `${value} 秒`} onChange={(duration_seconds) => patchDraft({ duration_seconds })} />
+              <Choice label="时长" error={fieldErrors.duration_seconds} value={draft.duration_seconds} values={displayOptions.durations} format={(value) => `${value} 秒`} onChange={(duration_seconds) => patchDraft({ duration_seconds })} />
               <Choice label="清晰度" error={fieldErrors.resolution} value={draft.resolution} values={resolutionOptions} format={(value) => value.toUpperCase()} onChange={(resolution) => patchDraft({ resolution })} />
               <Choice label="比例" error={fieldErrors.aspect_ratio} value={draft.aspect_ratio} values={aspectRatioOptions} onChange={(aspect_ratio) => patchDraft({ aspect_ratio })} />
-              <Choice label="数量" error={fieldErrors.output_count} value={draft.output_count} values={Array.from({ length: Math.max(1, model.max_output_count) }, (_, index) => index + 1)} onChange={(output_count) => patchDraft({ output_count })} />
+              <Choice label="数量" error={fieldErrors.output_count} value={draft.output_count} values={Array.from({ length: Math.max(1, displayModel.max_output_count) }, (_, index) => index + 1)} onChange={(output_count) => patchDraft({ output_count })} />
             </div>
-            {options.audio_generation ? (
+            {displayOptions.audio_generation ? (
               <label className="u-switch">
                 <input type="checkbox" checked={draft.generate_audio} disabled={!audioAvailable && !draft.generate_audio} onChange={(event) => patchDraft({ generate_audio: event.target.checked })} />
                 <span className="u-switch__track" />
@@ -627,13 +705,15 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
             <strong>{quote ? pointsText(quote.display_points ?? quote.max_reserved_points) : '--'}</strong>
           </div>
           <div className="u-meta">提交后按实际生成秒数结算，失败自动退回预留</div>
+          {pendingUploads > 0 ? <p className="u-meta" role="status">引用素材正在上传，完成后重新估价</p> : null}
+          {invalidReason ? <p className="cr-inline-error" role="alert">{invalidReason}</p> : null}
           {estimateError ? <p className="cr-inline-error" role="status">{estimateError}</p> : null}
           {quote?.sufficient === false ? <p className="cr-inline-error" role="status">积分不足</p> : null}
-          <button className="u-btn u-btn--primary u-btn--lg u-btn--block" type="button" disabled={!quote || quote.sufficient === false || submitting} onClick={() => void submit()}>
+          <button className="u-btn u-btn--primary u-btn--lg u-btn--block" type="button" disabled={pendingUploads > 0 || Boolean(invalidReason) || !quote || quote.sufficient === false || submitting} onClick={() => void submit()}>
             {submitting ? <><span className={userState.spinner} />提交中...</> : <><Sparkles size={17} />生成视频</>}
           </button>
         </div>
-      </aside>
+      </aside></ParameterHost>
 
       <section className="u-canvas" aria-label="视频任务">
         <div className="u-canvas__head">
@@ -685,12 +765,8 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
       </section>
 
       {historyActions.feedback}
-      {pickerRole ? <MediaAssetPicker projectID={projects.selectedProjectID} mediaTypes={[PICKER_MEDIA_TYPES[pickerRole]]} title={PICKER_TITLES[pickerRole]} onClose={() => setPickerRole(null)} onConfirm={(assets) => {
-        const asset = assets[0]
-        if (!asset) return
-        setSelectedAssets((current) => ({ ...current, [asset.id]: asset }))
-        patchDraft({ inputs: replaceInput(draft.inputs, pickerRole, asset.id) })
-        setPickerRole(null)
+      {pickerRole ? <MediaAssetPicker projectID={projects.selectedProjectID} mediaTypes={[PICKER_MEDIA_TYPES[pickerRole]]} multiple={pickerRole.startsWith('reference_')} title={PICKER_TITLES[pickerRole]} onClose={() => setPickerRole(null)} onConfirm={(assets) => {
+        if (admitAssets(assets, pickerRole)) setPickerRole(null)
       }} /> : null}
       {previewAsset ? <MediaPreviewDialog asset={previewAsset} projects={projects.projects} creationActions={undefined} onClose={() => setPreviewAsset(null)} onChanged={(asset) => { setPreviewAsset(asset); setSelectedAssets((current) => ({ ...current, [asset.id]: asset })) }} onDeleted={(asset) => { setPreviewAsset(null); setSelectedAssets((current) => { const next = { ...current }; delete next[asset.id]; return next }) }} /> : null}
       {detailTask ? <VideoTaskDetailDialog task={detailTask} onClose={() => setDetailTask(null)} onReuse={() => { reuseDraft(detailTask); setDetailTask(null) }} onResult={(assetID) => void userApi.getMediaAsset(assetID).then(setPreviewAsset).catch((caught) => app.notify('error', errorMessage(caught)))} /> : null}
@@ -704,7 +780,7 @@ export function VideoCreationPanel({ initialTaskId, initialAssetId }: Props) {
           onPromptChange={changePrompt}
           onVariableChange={changePromptVariable}
           onAddAsset={() => { setPromptExpanded(false); openFramePicker() }}
-          onPasteFiles={(files) => { window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail: { files, projectID: projects.selectedProjectID } })) }}
+          onPasteFiles={(files) => { void uploadReferences(files) }}
           onClose={() => { setPromptExpanded(false); window.setTimeout(() => promptEditorRef.current?.focus(), 0) }}
           onOptimize={() => void startPromptOptimization()}
           onConfirm={() => void confirmOptimization()}
@@ -1410,13 +1486,6 @@ function formatVideoTime(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(date)
 }
-
-function replaceInput(inputs: VideoDraft['inputs'], role: VideoDraftInputRole, assetId: string) {
-  const filtered = inputs.filter((item) => item.role !== role)
-  const ordinal = VIDEO_TASK_INPUT_ROLES_ORDER[role]
-  return assetId ? [...filtered, { asset_id: assetId, role, ordinal }] : filtered
-}
-const VIDEO_TASK_INPUT_ROLES_ORDER: Record<VideoDraftInputRole, number> = { first_frame: 0, last_frame: 1, reference_image: 2, reference_video: 3, reference_audio: 4 }
 
 function reconcileVariables(template: string, current: VideoDraft['prompt_variables']) {
   const names = Array.from(new Set(Array.from(template.matchAll(/\{\{\s*([a-zA-Z][\w-]{0,63})\s*\}\}/g), (match) => match[1])))

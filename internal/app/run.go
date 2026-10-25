@@ -45,6 +45,7 @@ import (
 	oidcservice "github.com/fatballfish/pic-gallery/internal/service/oidc"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	promptoptimizerservice "github.com/fatballfish/pic-gallery/internal/service/promptoptimizer"
+	publicfeedservice "github.com/fatballfish/pic-gallery/internal/service/publicfeed"
 	redeemservice "github.com/fatballfish/pic-gallery/internal/service/redeem"
 	secureconfigservice "github.com/fatballfish/pic-gallery/internal/service/secureconfig"
 	storageconfigservice "github.com/fatballfish/pic-gallery/internal/service/storageconfig"
@@ -334,6 +335,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 	adminSvc := adminconfigservice.NewServiceWithStore(cfg, entstore.NewAdminConfigStore(client))
 	billingStore := entstore.NewBillingStore(client, cfg.Billing.PointsScale)
 	billingSvc := billingservice.NewServiceWithStore(cfg.Billing, billingStore)
+	billingSvc.SetGenerationLimits(cfg.GenerationLimits)
 	billingSvc.SetAdminConfigResolver(adminSvc)
 	assetSvc := assetservice.NewServiceWithStoreAndRouter(cfg.GenerationLimits, entstore.NewAssetsStore(client), storageRegistry)
 	projectSvc := projectservice.NewService(entstore.NewProjectStore(client))
@@ -383,6 +385,7 @@ func runNormalStartupWithOptions(startup apiStartup, options normalStartupOption
 		},
 	})
 	api.SetMediaAssetService(mediaAssetSvc)
+	api.SetPublicFeed(publicfeedservice.NewService(entstore.NewPublicFeedStore(client)))
 	api.SetVideoPublications(videopublicationservice.NewService(entstore.NewVideoPublicationStore(client), mediaAssetSvc))
 	videoConfigStore := entstore.NewVideoConfigStore(client)
 	videoRoutingSvc := videoroutingservice.NewService(videoConfigStore)

@@ -19,6 +19,7 @@ import (
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domaincanvas "github.com/fatballfish/pic-gallery/internal/domain/canvas"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
 	domainvideo "github.com/fatballfish/pic-gallery/internal/domain/video"
 	imagetaskservice "github.com/fatballfish/pic-gallery/internal/service/imagetask"
@@ -59,6 +60,7 @@ func (e *ImageBillingEstimator) EstimateImage(ctx context.Context, req domainima
 		RequestedSize: req.RequestedSize, RequestedOutputImageCount: count, ReferenceImageCount: req.ReferenceImageCount,
 		MaskPresent: req.MaskPresent, UserGroupCode: req.UserGroupCode, UserGroupCodes: append([]string(nil), req.UserGroupCodes...),
 		UserGroupMultiplier: req.UserGroupMultiplier, CapabilityVersion: req.CapabilityVersion,
+		Operation: req.Operation, NativeOptions: req.NativeOptions,
 	})
 	if err != nil {
 		return Estimate{}, err
@@ -271,33 +273,35 @@ func (g *TaskGenerator) Cancel(ctx context.Context, userID int64, kind TaskKind,
 
 func imageRequest(submission GenerationSubmission) (domainimagetask.CreateRequest, error) {
 	type imageDraft struct {
-		AbstractModel     string `json:"abstract_model"`
-		RouteModelCode    string `json:"route_model_code"`
-		TaskType          string `json:"task_type"`
-		Prompt            string `json:"prompt"`
-		PromptTemplate    string `json:"prompt_template"`
-		NegativePrompt    string `json:"negative_prompt"`
-		SizeMode          string `json:"size_mode"`
-		RequestedSize     string `json:"requested_size"`
-		BaseResolution    string `json:"base_resolution"`
-		Quality           string `json:"quality"`
-		OutputFormat      string `json:"output_format"`
-		Background        string `json:"background"`
-		OutputCompression int    `json:"output_compression"`
-		Moderation        string `json:"moderation"`
-		AspectRatio       string `json:"aspect_ratio"`
-		OutputImageCount  int    `json:"output_image_count"`
-		ReferenceStrength int    `json:"reference_strength"`
-		Seed              *int64 `json:"seed"`
-		ResponseMode      string `json:"response_mode"`
-		SavePolicy        string `json:"save_policy"`
-		CapabilityVersion string `json:"capability_version"`
+		Operation         nativeimage.Operation `json:"operation"`
+		NativeOptions     *nativeimage.Options  `json:"native_options"`
+		AbstractModel     string                `json:"abstract_model"`
+		RouteModelCode    string                `json:"route_model_code"`
+		TaskType          string                `json:"task_type"`
+		Prompt            string                `json:"prompt"`
+		PromptTemplate    string                `json:"prompt_template"`
+		NegativePrompt    string                `json:"negative_prompt"`
+		SizeMode          string                `json:"size_mode"`
+		RequestedSize     string                `json:"requested_size"`
+		BaseResolution    string                `json:"base_resolution"`
+		Quality           string                `json:"quality"`
+		OutputFormat      string                `json:"output_format"`
+		Background        string                `json:"background"`
+		OutputCompression int                   `json:"output_compression"`
+		Moderation        string                `json:"moderation"`
+		AspectRatio       string                `json:"aspect_ratio"`
+		OutputImageCount  int                   `json:"output_image_count"`
+		ReferenceStrength int                   `json:"reference_strength"`
+		Seed              *int64                `json:"seed"`
+		ResponseMode      string                `json:"response_mode"`
+		SavePolicy        string                `json:"save_policy"`
+		CapabilityVersion string                `json:"capability_version"`
 	}
 	var draft imageDraft
 	if err := json.Unmarshal(generationDraft(submission.Node.Payload), &draft); err != nil {
 		return domainimagetask.CreateRequest{}, fmt.Errorf("decode image generation node: %w", err)
 	}
-	request := domainimagetask.CreateRequest{AbstractModel: draft.AbstractModel, RouteModelCode: draft.RouteModelCode, TaskType: draft.TaskType, Prompt: draft.Prompt, PromptTemplate: draft.PromptTemplate, NegativePrompt: draft.NegativePrompt, SizeMode: draft.SizeMode, RequestedSize: draft.RequestedSize, BaseResolution: draft.BaseResolution, Quality: draft.Quality, OutputFormat: draft.OutputFormat, Background: draft.Background, OutputCompression: draft.OutputCompression, Moderation: draft.Moderation, AspectRatio: draft.AspectRatio, OutputImageCount: draft.OutputImageCount, ReferenceStrength: draft.ReferenceStrength, Seed: draft.Seed, ResponseMode: draft.ResponseMode, SavePolicy: draft.SavePolicy, CapabilityVersion: draft.CapabilityVersion}
+	request := domainimagetask.CreateRequest{Operation: draft.Operation, NativeOptions: draft.NativeOptions, AbstractModel: draft.AbstractModel, RouteModelCode: draft.RouteModelCode, TaskType: draft.TaskType, Prompt: draft.Prompt, PromptTemplate: draft.PromptTemplate, NegativePrompt: draft.NegativePrompt, SizeMode: draft.SizeMode, RequestedSize: draft.RequestedSize, BaseResolution: draft.BaseResolution, Quality: draft.Quality, OutputFormat: draft.OutputFormat, Background: draft.Background, OutputCompression: draft.OutputCompression, Moderation: draft.Moderation, AspectRatio: draft.AspectRatio, OutputImageCount: draft.OutputImageCount, ReferenceStrength: draft.ReferenceStrength, Seed: draft.Seed, ResponseMode: draft.ResponseMode, SavePolicy: draft.SavePolicy, CapabilityVersion: draft.CapabilityVersion}
 	switch request.SizeMode {
 	case "auto":
 		request.RequestedSize, request.BaseResolution, request.AspectRatio = "", "", ""
@@ -327,7 +331,7 @@ func imageRequest(submission GenerationSubmission) (domainimagetask.CreateReques
 	if request.AbstractModel == "" && request.RouteModelCode == "" {
 		return request, errors.New("image generation node must select a model")
 	}
-	if request.Prompt == "" && request.PromptTemplate == "" {
+	if request.Prompt == "" && request.PromptTemplate == "" && request.Operation != nativeimage.OperationLayerDecomposition {
 		return request, errors.New("image generation node must connect or define a prompt")
 	}
 	request.TaskID = uuid.NewString()
@@ -347,6 +351,12 @@ func imageRequest(submission GenerationSubmission) (domainimagetask.CreateReques
 	request.TaskType = "text_to_image"
 	if request.ReferenceImageCount > 0 {
 		request.TaskType = "image_edit"
+	}
+	if request.Operation == "" {
+		request.Operation = nativeimage.OperationGenerate
+		if request.ReferenceImageCount > 0 {
+			request.Operation = nativeimage.OperationEdit
+		}
 	}
 	bindings, err := promptReferenceBindings(prompt.ReferenceNames, submission.Inputs)
 	if err != nil {

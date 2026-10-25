@@ -3,6 +3,7 @@ package modeladmin
 import (
 	"context"
 	"errors"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
 	"strings"
 
 	domainmodeladmin "github.com/fatballfish/pic-gallery/internal/domain/modeladmin"
@@ -93,6 +94,9 @@ func (s *Service) CreateModelAccountModel(ctx context.Context, req domainmodelad
 	if err != nil {
 		return domainmodeladmin.ModelAccountModel{}, err
 	}
+	if err := s.validateModelNativeDefaults(ctx, normalized.AccountID, normalized.ModelCode, normalized.Extra); err != nil {
+		return domainmodeladmin.ModelAccountModel{}, err
+	}
 	item, err := s.store.CreateModelAccountModel(ctx, normalized)
 	return item, normalizeStoreError(err, "model account model already exists")
 }
@@ -103,6 +107,9 @@ func (s *Service) UpdateModelAccountModel(ctx context.Context, accountModelID in
 	}
 	normalized, err := normalizeModelAccountModelWrite(req)
 	if err != nil {
+		return domainmodeladmin.ModelAccountModel{}, err
+	}
+	if err := s.validateModelNativeDefaults(ctx, normalized.AccountID, normalized.ModelCode, normalized.Extra); err != nil {
 		return domainmodeladmin.ModelAccountModel{}, err
 	}
 	item, err := s.store.UpdateModelAccountModel(ctx, accountModelID, normalized)
@@ -281,6 +288,20 @@ func (s *Service) UpdateRouteModel(ctx context.Context, routeModelID int64, req 
 	if err != nil {
 		return domainmodeladmin.RouteModel{}, err
 	}
+	pricing := normalized.ImagePricing
+	if !normalized.ImagePricingPresent && pricing == nil {
+		current, err := s.store.GetRouteModel(ctx, routeModelID)
+		if err != nil {
+			return domainmodeladmin.RouteModel{}, normalizeStoreError(err, "route model not found")
+		}
+		pricing = current.ImagePricing
+	}
+	if pricing != nil && normalized.MediaType != "image" {
+		return domainmodeladmin.RouteModel{}, errs.BadRequest("image_pricing requires image route")
+	}
+	if err := s.validateRoutePricing(ctx, routeModelID, pricing, nil); err != nil {
+		return domainmodeladmin.RouteModel{}, err
+	}
 	item, err := s.store.UpdateRouteModel(ctx, routeModelID, normalized)
 	return item, normalizeStoreError(err, "route model not found")
 }
@@ -316,6 +337,13 @@ func (s *Service) CreateRouteModelCandidate(ctx context.Context, req domainmodel
 	if err != nil {
 		return domainmodeladmin.RouteModelCandidate{}, err
 	}
+	route, routeErr := s.store.GetRouteModel(ctx, normalized.RouteModelID)
+	if routeErr != nil {
+		return domainmodeladmin.RouteModelCandidate{}, normalizeStoreError(routeErr, "route model not found")
+	}
+	if err := s.validateRoutePricing(ctx, normalized.RouteModelID, route.ImagePricing, &modelhub.RouteCandidateConfig{ID: 0, RouteModelID: normalized.RouteModelID, AccountModelID: normalized.AccountModelID, Enabled: normalized.Enabled}); err != nil {
+		return domainmodeladmin.RouteModelCandidate{}, err
+	}
 	item, err := s.store.CreateRouteModelCandidate(ctx, normalized)
 	return item, normalizeStoreError(err, "route model candidate already exists")
 }
@@ -326,6 +354,13 @@ func (s *Service) UpdateRouteModelCandidate(ctx context.Context, candidateID int
 	}
 	normalized, err := normalizeRouteModelCandidateWrite(req)
 	if err != nil {
+		return domainmodeladmin.RouteModelCandidate{}, err
+	}
+	route, routeErr := s.store.GetRouteModel(ctx, normalized.RouteModelID)
+	if routeErr != nil {
+		return domainmodeladmin.RouteModelCandidate{}, normalizeStoreError(routeErr, "route model not found")
+	}
+	if err := s.validateRoutePricing(ctx, normalized.RouteModelID, route.ImagePricing, &modelhub.RouteCandidateConfig{ID: candidateID, RouteModelID: normalized.RouteModelID, AccountModelID: normalized.AccountModelID, Enabled: normalized.Enabled}); err != nil {
 		return domainmodeladmin.RouteModelCandidate{}, err
 	}
 	item, err := s.store.UpdateRouteModelCandidate(ctx, candidateID, normalized)
@@ -429,7 +464,7 @@ func normalizeModelAccountWrite(req domainmodeladmin.ModelAccountWriteRequest, c
 	if req.Name == "" || req.AdapterType == "" || req.AuthType == "" || req.BaseURL == "" {
 		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("name, adapter_type, auth_type and base_url are required")
 	}
-	if req.AdapterType != domainmodeladmin.AdapterTypeOpenAICompatible && req.AdapterType != domainmodeladmin.AdapterTypeOpenRouter && req.AdapterType != domainmodeladmin.AdapterTypeSeedance && req.AdapterType != domainmodeladmin.AdapterTypeMiniMax && req.AdapterType != domainmodeladmin.AdapterTypeGasic && req.AdapterType != domainmodeladmin.AdapterTypeBailian {
+	if req.AdapterType != domainmodeladmin.AdapterTypeOpenAICompatible && req.AdapterType != domainmodeladmin.AdapterTypeOpenRouter && req.AdapterType != domainmodeladmin.AdapterTypeSeedance && req.AdapterType != domainmodeladmin.AdapterTypeMiniMax && req.AdapterType != domainmodeladmin.AdapterTypeGasic && req.AdapterType != domainmodeladmin.AdapterTypeQwenImage && req.AdapterType != domainmodeladmin.AdapterTypeSeedreamImage && req.AdapterType != domainmodeladmin.AdapterTypeBailian {
 		return domainmodeladmin.ModelAccountWriteRequest{}, errs.BadRequest("unsupported adapter_type")
 	}
 	if req.AuthType != domainmodeladmin.AuthTypeAPIKey {
@@ -455,6 +490,9 @@ func normalizeModelAccountWrite(req domainmodeladmin.ModelAccountWriteRequest, c
 	}
 	if req.Extra == nil {
 		req.Extra = map[string]any{}
+	}
+	if err := validateNativeDefaults(req.Extra, req.AdapterType, ""); err != nil {
+		return req, err
 	}
 	return req, nil
 }
@@ -628,6 +666,12 @@ func validateIconWrite(iconKey, iconSVG string) error {
 }
 
 func normalizeRouteModelWrite(req domainmodeladmin.RouteModelWriteRequest, requireCode bool) (domainmodeladmin.RouteModelWriteRequest, error) {
+	if err := imagepricing.Validate(req.ImagePricing); err != nil {
+		return req, errs.BadRequest(err.Error())
+	}
+	if req.ImagePricing != nil && req.MediaType == "video" {
+		return req, errs.BadRequest("image_pricing requires image route")
+	}
 	req.Code = normalizeCode(req.Code)
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)

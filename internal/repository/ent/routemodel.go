@@ -3,12 +3,14 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/routemodel"
 )
 
@@ -23,6 +25,8 @@ type RouteModel struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// DeletedAt holds the value of the "deleted_at" field.
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	// ImagePricing holds the value of the "image_pricing" field.
+	ImagePricing *imagepricing.Config `json:"image_pricing,omitempty"`
 	// Code holds the value of the "code" field.
 	Code string `json:"code,omitempty"`
 	// Name holds the value of the "name" field.
@@ -49,6 +53,8 @@ func (*RouteModel) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case routemodel.FieldImagePricing:
+			values[i] = new([]byte)
 		case routemodel.FieldEnabled:
 			values[i] = new(sql.NullBool)
 		case routemodel.FieldID, routemodel.FieldSortOrder:
@@ -96,6 +102,14 @@ func (_m *RouteModel) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.DeletedAt = new(time.Time)
 				*_m.DeletedAt = value.Time
+			}
+		case routemodel.FieldImagePricing:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field image_pricing", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ImagePricing); err != nil {
+					return fmt.Errorf("unmarshal field image_pricing: %w", err)
+				}
 			}
 		case routemodel.FieldCode:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -197,6 +211,9 @@ func (_m *RouteModel) String() string {
 		builder.WriteString("deleted_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("image_pricing=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ImagePricing))
 	builder.WriteString(", ")
 	builder.WriteString("code=")
 	builder.WriteString(_m.Code)

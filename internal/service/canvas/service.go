@@ -474,7 +474,16 @@ func (s *Service) AttachResults(ctx context.Context, req AttachResultsRequest) (
 		if !validRecoveryPosition(*req.RecoveryPosition) {
 			return Run{}, fmt.Errorf("invalid recovery position")
 		}
+		layers, err := s.runLayers(ctx, run)
+		if err != nil {
+			return Run{}, err
+		}
 		nodes := recoveredResultPlacement(run, *req.RecoveryPosition)
+		if len(layers) > 0 {
+			const width = 320.0
+			height := width * float64(layers[0].result.Height) / float64(layers[0].result.Width)
+			nodes = layerPlacement(run, layers, domaincanvas.Point{X: req.RecoveryPosition.X - width/2, Y: req.RecoveryPosition.Y - height/2}, width)
+		}
 		return s.store.AttachResults(ctx, AttachRecord{UserID: run.UserID, CanvasID: run.CanvasID, RunID: run.ID, Nodes: nodes, RecoverUnplaced: true})
 	}
 	if run.Status != RunStatusSucceeded {
@@ -497,6 +506,18 @@ func (s *Service) attachSucceededResults(ctx context.Context, run Run) (Run, err
 	source, ok := findNode(canvas.Document, run.NodeID)
 	if !ok || !CanAttachToSource(run, canvas.Document) {
 		return s.store.AttachResults(ctx, AttachRecord{UserID: run.UserID, CanvasID: run.CanvasID, RunID: run.ID})
+	}
+	layers, err := s.runLayers(ctx, run)
+	if err != nil {
+		return Run{}, err
+	}
+	if len(layers) > 0 {
+		width := source.Size.Width
+		if width <= 0 {
+			width = 320
+		}
+		nodes := layerPlacement(run, layers, domaincanvas.Point{X: source.Position.X + source.Size.Width + 80, Y: source.Position.Y}, width)
+		return s.store.AttachResults(ctx, AttachRecord{UserID: run.UserID, CanvasID: run.CanvasID, RunID: run.ID, ExpectedRevision: canvas.Revision, Nodes: nodes})
 	}
 	runs, err := s.store.ListRuns(ctx, run.UserID, run.CanvasID)
 	if err != nil {

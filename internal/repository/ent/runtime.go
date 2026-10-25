@@ -4085,7 +4085,7 @@ func init() {
 	// routemodel.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	routemodel.UpdateDefaultUpdatedAt = routemodelDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// routemodelDescCode is the schema descriptor for code field.
-	routemodelDescCode := routemodelFields[0].Descriptor()
+	routemodelDescCode := routemodelFields[1].Descriptor()
 	// routemodel.CodeValidator is a validator for the "code" field. It is called by the builders before save.
 	routemodel.CodeValidator = func() func(string) error {
 		validators := routemodelDescCode.Validators
@@ -4103,7 +4103,7 @@ func init() {
 		}
 	}()
 	// routemodelDescName is the schema descriptor for name field.
-	routemodelDescName := routemodelFields[1].Descriptor()
+	routemodelDescName := routemodelFields[2].Descriptor()
 	// routemodel.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	routemodel.NameValidator = func() func(string) error {
 		validators := routemodelDescName.Validators
@@ -4121,37 +4121,37 @@ func init() {
 		}
 	}()
 	// routemodelDescDescription is the schema descriptor for description field.
-	routemodelDescDescription := routemodelFields[2].Descriptor()
+	routemodelDescDescription := routemodelFields[3].Descriptor()
 	// routemodel.DefaultDescription holds the default value on creation for the description field.
 	routemodel.DefaultDescription = routemodelDescDescription.Default.(string)
 	// routemodelDescVisibility is the schema descriptor for visibility field.
-	routemodelDescVisibility := routemodelFields[3].Descriptor()
+	routemodelDescVisibility := routemodelFields[4].Descriptor()
 	// routemodel.DefaultVisibility holds the default value on creation for the visibility field.
 	routemodel.DefaultVisibility = routemodelDescVisibility.Default.(string)
 	// routemodel.VisibilityValidator is a validator for the "visibility" field. It is called by the builders before save.
 	routemodel.VisibilityValidator = routemodelDescVisibility.Validators[0].(func(string) error)
 	// routemodelDescMediaType is the schema descriptor for media_type field.
-	routemodelDescMediaType := routemodelFields[4].Descriptor()
+	routemodelDescMediaType := routemodelFields[5].Descriptor()
 	// routemodel.DefaultMediaType holds the default value on creation for the media_type field.
 	routemodel.DefaultMediaType = routemodelDescMediaType.Default.(string)
 	// routemodel.MediaTypeValidator is a validator for the "media_type" field. It is called by the builders before save.
 	routemodel.MediaTypeValidator = routemodelDescMediaType.Validators[0].(func(string) error)
 	// routemodelDescEnabled is the schema descriptor for enabled field.
-	routemodelDescEnabled := routemodelFields[5].Descriptor()
+	routemodelDescEnabled := routemodelFields[6].Descriptor()
 	// routemodel.DefaultEnabled holds the default value on creation for the enabled field.
 	routemodel.DefaultEnabled = routemodelDescEnabled.Default.(bool)
 	// routemodelDescSortOrder is the schema descriptor for sort_order field.
-	routemodelDescSortOrder := routemodelFields[6].Descriptor()
+	routemodelDescSortOrder := routemodelFields[7].Descriptor()
 	// routemodel.DefaultSortOrder holds the default value on creation for the sort_order field.
 	routemodel.DefaultSortOrder = routemodelDescSortOrder.Default.(int)
 	// routemodelDescIconKey is the schema descriptor for icon_key field.
-	routemodelDescIconKey := routemodelFields[7].Descriptor()
+	routemodelDescIconKey := routemodelFields[8].Descriptor()
 	// routemodel.DefaultIconKey holds the default value on creation for the icon_key field.
 	routemodel.DefaultIconKey = routemodelDescIconKey.Default.(string)
 	// routemodel.IconKeyValidator is a validator for the "icon_key" field. It is called by the builders before save.
 	routemodel.IconKeyValidator = routemodelDescIconKey.Validators[0].(func(string) error)
 	// routemodelDescIconSvg is the schema descriptor for icon_svg field.
-	routemodelDescIconSvg := routemodelFields[8].Descriptor()
+	routemodelDescIconSvg := routemodelFields[9].Descriptor()
 	// routemodel.DefaultIconSvg holds the default value on creation for the icon_svg field.
 	routemodel.DefaultIconSvg = routemodelDescIconSvg.Default.(string)
 	// routemodel.IconSvgValidator is a validator for the "icon_svg" field. It is called by the builders before save.

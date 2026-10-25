@@ -1,3 +1,10 @@
+import { createReferenceReservations, referenceAdmission, type ReferenceAdmissionPolicy } from '../../../shared/reference-admission'
+import { LayerResult } from '../features/creation/LayerResult'
+import { NegativePromptControl } from '../features/creation/NegativePromptControl'
+import { userNativeImageFields } from '../features/creation/nativeImageUX'
+import { NativeImageControls } from '../features/creation/NativeImageControls'
+import { nativeLayerUnavailableReason } from './workspaceParameters'
+import { nativeImageFields, nativeImageDimensions, nativeWorkspaceModel, nativeImageCountLimit, nativeImageReferencePolicy, nativeImageReferenceAccept, nativeImageReferenceFileError, nativeImageValidation, type NativeImageRequestFields } from '../../../shared/native-image'
 import { canHideHistoryRecord, canRetryImageHistory } from './historyRecordActions'
 import { useHistoryRecordActions } from './HistoryRecordControls'
 import { creationReuseEvent } from '../features/media/mediaCreationNavigation'
@@ -15,14 +22,14 @@ import { RefreshableMediaImage } from '../ui/mediaRefresh'
 import { pointsText } from '../../../shared/pointsDisplay'
 import { errorMessage } from '../useApiResource'
 import { mediaAccess, type MediaResource } from '../mediaAccess'
-import { consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
+import { mergeWorkspaceReferenceRefresh, createWorkspaceRestoreGeneration, consumeWorkspaceCreationDraft, normalizeWorkspaceCreationDraft, stageWorkspaceCreationDraft, workspaceCreationDraftFromSnapshot, type WorkspaceCreationDraft } from './workspaceCreationDraft'
 import { displayPoints, publicUnavailableReason, WORKSPACE_REFERENCE_REQUIRED_MESSAGE } from './workspaceGenerateReadiness'
 import { currentWorkspaceEstimate, workspaceDisplayedResolvedSize, workspaceEstimateKey, type WorkspaceEstimateSnapshot } from './workspaceEstimate'
-import { defaultGalleryImportFilter, filterGalleryImportImages, firstGalleryReferenceReuse, galleryImportOptions, galleryImportSuccessMessage, mergeReferenceAssets, type GalleryImportFilter } from './workspaceGalleryImport'
+import { defaultGalleryImportFilter, filterGalleryImportImages, galleryImportOptions, galleryImportSuccessMessage, type GalleryImportFilter } from './workspaceGalleryImport'
 import { WorkspaceStatusRail } from './WorkspaceStatusRail'
 import { workspaceTaskCardView, workspaceTaskFailureView } from './workspaceTaskFailure'
 import { generationSlots, workspaceBaseResolutionLabel, type WorkspaceProgressNode } from './workspaceTaskProgress'
-import { limitReferenceSelection, remainingReferenceCapacity, singleReferenceAddition, workspaceReferenceMaximum, workspaceRequiredReferencesReady } from './workspaceReferenceLimit'
+import { remainingReferenceCapacity, workspaceRequiredReferencesReady } from './workspaceReferenceLimit'
 import { createWorkspaceViewModel, matchWorkspaceCapabilityOption, normalizeWorkspaceImageCount, workspaceTaskImageSafetyLimit } from './workspaceViewModel'
 import { useCompactWorkspaceViewport, workspaceParametersHidden } from './workspaceResponsive'
 import { workspaceSheetDragOffset, workspaceSheetSnap } from './workspaceSheetGesture'
@@ -39,7 +46,7 @@ import { buildPromptReferenceBindings, buildPromptVariableInputs, expandedPrompt
 import { parsePromptTemplate } from './promptTemplateParser'
 import { applyOptimizedPrompt, beginPromptOptimization, confirmPromptOptimization, failPromptOptimization, initialPromptOptimizationState, receivePromptEstimate, receivePromptOptimization, undoPromptOptimization } from './workspacePromptOptimization'
 import { useProjects } from '../ProjectContext'
-import { MEDIA_ASSETS_CHANGED_EVENT, QUEUE_MEDIA_UPLOAD_EVENT } from '../features/media/UploadTray'
+
 import { workspaceProjectReadiness, workspaceSubmissionIsCurrent, type WorkspaceProjectSelection } from './workspaceProjectLifecycle'
 
 type OutputTab = 'current' | 'history'
@@ -60,10 +67,6 @@ type RestoreParameters = {
 type UploadTarget = 'edit'
 type DragUploadState = Record<UploadTarget, boolean>
 type SheetDragState = { pointerId: number; startY: number; dragged: boolean }
-
-function selectableModels(capability: Capability, taskType: ImageTaskType) {
-  return capability.model_groups.filter((item) => item.task_types.includes(taskType))
-}
 
 function baseResolutionOptions(model: CapabilityModelGroup | undefined) {
   return model?.base_resolution?.length ? model.base_resolution : []
@@ -168,12 +171,21 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const compactViewport = useCompactWorkspaceViewport()
 
   const [capability, setCapability] = useState<Capability | null>(null)
-  const [editRefs, setEditRefs] = useState<ReferenceAsset[]>([])
+  const [editRefs, setEditRefs] = useState<Array<ReferenceAsset & { reference_invalid_reason?: string }>>([])
+  const restoreGeneration = useRef(createWorkspaceRestoreGeneration()).current
+  const [, refreshRestore] = useState(0)
+  const restoreContext = useRef({ project: '', user: '', model: '', references: '' })
+
   const [prompt, setPrompt] = useState('')
   const [promptVariables, setPromptVariables] = useState<Record<string, string>>({})
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [promptOptimization, setPromptOptimization] = useState(initialPromptOptimizationState)
   const [model, setModel] = useState('')
+  const [editingReferenceID, setEditingReferenceID] = useState('')
+  const [pendingMarks, setPendingMarks] = useState(false)
+  const [editedReferenceIDs, setEditedReferenceIDs] = useState<string[]>([])
+  const originalReferences = useRef(new Map<string, ReferenceAsset>())
+  const [nativeDraft, setNativeDraft] = useState<NativeImageRequestFields>({})
   const [sizeMode, setSizeMode] = useState<WorkspaceSizeMode>('auto')
   const [baseResolution, setBaseResolution] = useState('')
   const [ratio, setRatio] = useState('')
@@ -252,6 +264,11 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const sheetClickResetRef = useRef<number | null>(null)
   const taskType: ImageTaskType = editRefs.length ? 'image_edit' : 'text_to_image'
   const referenceCount = editRefs.length
+  restoreContext.current = { project: `${selectedProjectID}:${projects.selectionGeneration}`, user: app.profile?.id == null ? '' : String(app.profile.id), model, references: editRefs.map((item) => item.id).join(',') }
+  restoreGeneration.reconcile(restoreContext.current)
+  const pendingRestore = restoreGeneration.pending(restoreContext.current)
+  useEffect(() => () => restoreGeneration.cancel(), [restoreGeneration])
+
   const requiredReferencesReady = workspaceRequiredReferencesReady(taskType, referenceCount)
   const projectReadiness = workspaceProjectReadiness({
     loading: projects.loading,
@@ -485,16 +502,20 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   const applyCreationDraft = useCallback((draft: WorkspaceCreationDraft) => {
     if (!capability) return undefined
-    let cancelled = false
+    if (reservations.pending().image) { notifyRef.current('error', '引用正在添加，请等待完成后复用配置。'); return undefined }
     let normalized: ReturnType<typeof normalizeWorkspaceCreationDraft>
     try {
-      normalized = normalizeWorkspaceCreationDraft(draft, capability)
+      normalized = normalizeWorkspaceCreationDraft(draft.intent === 'asset-edit' && !draft.route_model_code && admissionLive.current.model ? { ...draft, route_model_code: admissionLive.current.model } : draft, capability)
     } catch (err) {
       pendingCreationDraftRef.current = null
       notifyRef.current('error', errorMessage(err))
       return undefined
     }
     const values = normalized.values
+    setNativeDraft(nativeImageFields(draft))
+    restoreContext.current = { ...restoreContext.current, model: values.route_model_code }
+    const ticket = restoreGeneration.begin({ ...restoreContext.current })
+    refreshRestore((value) => value + 1)
     restoreParametersRef.current = {
       routeModelCode: values.route_model_code,
 		sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio',
@@ -529,8 +550,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           return null
         }
       }))
-      if (cancelled) return
+      if (!restoreGeneration.current(ticket, restoreContext.current)) {
+        restoreGeneration.finish(ticket)
+        refreshRestore((value) => value + 1)
+        return
+      }
       const accessible = restored.filter((asset): asset is ReferenceAsset => Boolean(asset))
+      restoreGeneration.finish(ticket)
+      refreshRestore((value) => value + 1)
       setEditRefs(accessible)
       const missing = values.reference_asset_ids.length - accessible.length
       const notices = [...normalized.notices]
@@ -540,7 +567,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       pendingCreationDraftRef.current = null
     }
     void restoreReferences()
-    return () => { cancelled = true }
+    return () => { restoreGeneration.finish(ticket); refreshRestore((value) => value + 1) }
   }, [capability])
 
   useEffect(() => {
@@ -571,35 +598,44 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }
 
   useEffect(() => {
-    if (capability) {
-      const nextModels = selectableModels(capability, taskType)
-      const preferredModel = restoreParametersRef.current?.routeModelCode
-      if (preferredModel && nextModels.some((item) => item.code === preferredModel)) {
-        if (model !== preferredModel) setModel(preferredModel)
-        return
-      }
-      if (!nextModels.some((item) => item.code === model)) setModel(nextModels[0]?.code ?? '')
-    }
-  }, [taskType, capability, model])
+    if (capability && !model) setModel(capability.model_groups[0]?.code ?? '')
+  }, [capability, model])
 
-  const availableModels = useMemo(() => capability ? selectableModels(capability, taskType) : [], [capability, taskType])
+  const availableModels = useMemo(() => capability?.model_groups ?? [], [capability])
   const rawSelectedModel = useMemo(() => availableModels.find((item) => item.code === model), [availableModels, model])
-  const selectedModel = useMemo(() => workspaceModelForTask(rawSelectedModel, taskType), [rawSelectedModel, taskType])
+  const selectedModel = useMemo(() => { const scoped = workspaceModelForTask(rawSelectedModel, taskType); return scoped ? nativeWorkspaceModel(scoped) : undefined }, [rawSelectedModel, taskType])
+  const modelSelectionError = !rawSelectedModel ? '所选型号已不可用或无权访问，请手动选择其他型号。'
+    : !rawSelectedModel.task_types.includes(taskType) ? '当前型号不支持此创作操作，请移除引用或手动选择支持的型号。' : ''
+  const editModel = workspaceModelForTask(rawSelectedModel, 'image_edit')
+  const editProfile = editModel?.native_image_profile
+  const admissionPolicy: ReferenceAdmissionPolicy<'image'> = {
+    limits: { image: nativeDraft.operation === 'layer_decomposition' ? 1 : editModel?.max_reference_image_count == null ? editProfile?.max_reference_images ?? null : Math.min(editModel.max_reference_image_count, editProfile?.max_reference_images ?? Infinity) },
+    reason: !rawSelectedModel ? modelSelectionError : !rawSelectedModel.task_types.includes('image_edit') || editProfile && !editProfile.operations.includes(nativeDraft.operation === 'layer_decomposition' ? 'layer_decomposition' : 'edit') ? '当前型号不支持此引用操作，请手动选择支持的型号。' : undefined,
+  }
+  const admissionMounted = useRef(true)
+  useEffect(() => { admissionMounted.current = true; return () => { admissionMounted.current = false } }, [])
+  const reservations = useRef(createReferenceReservations<'image'>()).current
+  const admissionLive = useRef({ policy: admissionPolicy, refs: editRefs, model, projectID: selectedProjectID, profile: editProfile, operation: nativeDraft.operation })
+  admissionLive.current = { policy: admissionPolicy, refs: editRefs, model, projectID: selectedProjectID, profile: editProfile, operation: nativeDraft.operation }
+  const [, setReservationVersion] = useState(0)
+  const referenceError = editRefs.find((asset) => asset.reference_invalid_reason)?.reference_invalid_reason || (editRefs.length ? referenceAdmission({ policy: admissionPolicy, current: editRefs, incoming: [], kind: () => 'image' as const, key: (item) => item.id }).reason : '')
+
 	const sizeModes = useMemo(() => workspaceSizeModeOptions(selectedModel), [selectedModel])
   const baseResolutionOptionsForModel = useMemo(() => baseResolutionOptions(selectedModel), [selectedModel])
 	const ratios = useMemo(() => workspaceRatioOptions(selectedModel, capability?.aspect_ratios ?? []), [selectedModel, capability])
 	const pixelSizes = useMemo(() => workspacePixelOptions(selectedModel, capability?.pixel_sizes ?? []), [selectedModel, capability])
 	const outputOptions = useMemo(() => workspaceOutputOptions(selectedModel), [selectedModel])
 	const backgroundOptions = useMemo(() => workspaceBackgroundOptions(selectedModel), [selectedModel])
+  const imageCountLimit = nativeImageCountLimit(selectedModel?.native_image_profile, workspaceTaskImageSafetyLimit)
   const compressionVisible = workspaceCompressionVisible(selectedModel, outputFormat)
   const customSizeSupported = workspaceCustomSizeSupported(selectedModel) && sizeModes.includes('pixel')
-	const customSizeNormalization = useMemo(() => normalizeWorkspaceCustomSize(customWidth, customHeight, selectedModel), [customWidth, customHeight, selectedModel])
+	const customSizeNormalization = useMemo(() => selectedModel?.native_image_profile ? nativeImageDimensions(selectedModel.native_image_profile, customWidth, customHeight) : normalizeWorkspaceCustomSize(customWidth, customHeight, selectedModel), [customWidth, customHeight, selectedModel])
   const effectivePixelSize = pixelSelection === 'custom' && customSizeSupported
     ? customSizeNormalization.valid ? customSizeNormalization.size : ''
 		: pixelSize
   const customRatioSupported = workspaceCustomRatioSupported(selectedModel) && sizeModes.includes('ratio')
   const effectiveRatio = ratio === 'custom' ? customRatio : ratio
-  const sizeParameterError = workspaceSizeParameterError({ sizeMode, pixelSelection, customWidth, customHeight, ratio, customRatio, customRatioSupported, model: selectedModel })
+  const sizeParameterError = selectedModel?.native_image_profile && sizeMode === 'pixel' && pixelSelection === 'custom' ? customSizeNormalization.error ?? '' : workspaceSizeParameterError({ sizeMode, pixelSelection, customWidth, customHeight, ratio, customRatio, customRatioSupported, model: selectedModel })
   const ratioPixelEstimate = useMemo(
     () => workspaceRatioPixelEstimate(baseResolution, effectiveRatio, selectedModel?.auto_base_resolution_by_task_type?.[taskType]),
     [baseResolution, effectiveRatio, selectedModel, taskType],
@@ -615,7 +651,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     )
     if (waitingForPreferredModel) return
 
-    setSizeMode((current) => chooseWorkspaceSizeMode(sizeModes, restoreParameters?.sizeMode, current))
+    setSizeMode((current) => chooseWorkspaceSizeMode(sizeModes, restoreParameters?.sizeMode, selectedModel.native_image_profile ? undefined : current))
     setBaseResolution(matchWorkspaceCapabilityOption(baseResolutionOptionsForModel, restoreParameters?.baseResolution) ?? baseResolutionOptionsForModel[0] ?? '')
 	const restoredRatio = restoreParameters?.aspectRatio
 	if (customRatioSupported && restoredRatio && !ratios.includes(restoredRatio) && workspaceCustomRatioValid(restoredRatio)) {
@@ -633,6 +669,11 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       setPixelSelection('custom')
       setCustomWidth(String(restoredCustomDimensions.width))
       setCustomHeight(String(restoredCustomDimensions.height))
+    } else if (selectedModel.native_image_profile && customSizeSupported) {
+      setPixelSelection('custom')
+      const dimensions = parsePixelDimensions(restoredPixelSize ?? '')
+      setCustomWidth(String(dimensions?.width ?? 1024))
+      setCustomHeight(String(dimensions?.height ?? 1024))
     } else {
       setPixelSelection('preset')
       setCustomWidth('')
@@ -644,9 +685,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	setBackground(workspaceBackgroundForFormat(selectedModel, restoreParameters?.background ?? background, matchWorkspaceCapabilityOption(outputOptions.outputFormat, restoreParameters?.outputFormat) ?? outputOptions.outputFormat[0] ?? ''))
     setOutputCompression(restoreParameters?.outputCompression ?? 100)
 	setModeration(matchWorkspaceCapabilityOption(outputOptions.moderation, restoreParameters?.moderation) ?? outputOptions.moderation[0] ?? '')
-    setCount((current) => normalizeWorkspaceImageCount(restoreParameters?.imageCount ?? current))
+    setCount((current) => Math.min(imageCountLimit, normalizeWorkspaceImageCount(restoreParameters?.imageCount ?? current)))
     restoreParametersRef.current = null
-  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions, customSizeSupported, customRatioSupported])
+  }, [taskType, capability, selectedModel, availableModels, sizeModes, baseResolutionOptionsForModel, ratios, pixelSizes, outputOptions, customSizeSupported, customRatioSupported, imageCountLimit])
 
   useEffect(() => {
     if (!selectedModel) return
@@ -666,7 +707,20 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 		? Boolean(effectivePixelSize && (pixelSelection === 'custom' ? customSizeSupported && customSizeNormalization.valid : pixelSizes.includes(pixelSize)))
 		: Boolean(baseResolution && effectiveRatio && baseResolutionOptionsForModel.includes(baseResolution) && (ratios.includes(effectiveRatio) || customRatioSupported && workspaceCustomRatioValid(effectiveRatio)))
 
+  const workspaceMarkContext = useRef({ projectID: projects.selectedProjectID, userID: app.profile?.id, model, ids: editRefs.map((item) => item.id) })
+  workspaceMarkContext.current = { projectID: projects.selectedProjectID, userID: app.profile?.id, model, ids: editRefs.map((item) => item.id) }
+  const cleanNativeDraft = userNativeImageFields(nativeDraft, selectedModel?.native_image_profile, editRefs.length)
+  useEffect(() => {
+    if (!selectedModel) return
+    const clean = userNativeImageFields(nativeDraft, selectedModel.native_image_profile, editRefs.length)
+    if (JSON.stringify(clean) !== JSON.stringify(nativeDraft)) setNativeDraft(clean)
+  }, [nativeDraft, selectedModel, editRefs.length])
+  const referenceFilePolicy = editProfile ? nativeImageReferencePolicy(editProfile, nativeDraft.operation) : referenceImagePolicy(capability)
+  const incompatibleReference = editRefs.some((asset) => asset.mime_type && !referenceFilePolicy.allowedMIMETypes.includes(asset.mime_type) || (asset.file_size_bytes ?? 0) > referenceFilePolicy.maxBytes)
+  const layerParameterError = nativeDraft.operation === 'layer_decomposition' ? nativeLayerUnavailableReason(selectedModel?.native_image_profile, editRefs.length, selectedModel?.native_image_layer_pricing_confirmed === true, selectedModel?.native_image_layer_unavailable_reason) : ''
+  const nativeParameterError = incompatibleReference ? '已有引用格式或大小不受当前型号支持，请移除对应引用或手动选择型号。' : layerParameterError || (pendingMarks ? '请先保存或放弃引用标记' : nativeImageValidation(selectedModel?.native_image_profile, cleanNativeDraft, editRefs.length))
   const parametersReady = Boolean(
+    !pendingRestore && !modelSelectionError && !referenceError && !nativeParameterError && !(reservations.pending().image ?? 0) &&
     selectedModel
     && count
 	&& sizeModes.includes(sizeMode)
@@ -676,14 +730,16 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	&& outputOptions.moderation.includes(moderation)
 	&& (!background || backgroundOptions.includes(background))
 	&& (!compressionVisible || (outputCompression >= 1 && outputCompression <= 100))
+    && count <= imageCountLimit
     && count >= 1
     && requiredReferencesReady,
   )
 
   const estimatePayload = useMemo<EstimateRequest>(() => ({
+      ...(selectedModel?.native_image_profile ? { ...cleanNativeDraft, ...(nativeDraft.operation === 'layer_decomposition' ? { size_mode: 'auto' } : {}) } : {}),
 		task_type: taskType,
 		route_model_code: model,
-		size_mode: sizeMode,
+		size_mode: nativeDraft.operation === 'layer_decomposition' && selectedModel?.native_image_profile ? 'auto' : sizeMode,
 		...(sizeMode === 'ratio' ? { base_resolution: baseResolution, aspect_ratio: effectiveRatio } : {}),
 		...(sizeMode === 'pixel' ? { pixel_size: effectivePixelSize } : {}),
 	quality,
@@ -693,7 +749,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 	moderation,
     image_count: count,
     reference_asset_ids: taskType === 'image_edit' ? editRefs.map((item) => item.id) : [],
-  }), [taskType, model, sizeMode, baseResolution, effectiveRatio, quality, outputFormat, background, compressionVisible, outputCompression, moderation, effectivePixelSize, count, editRefs])
+  }), [nativeDraft, selectedModel, taskType, model, sizeMode, baseResolution, effectiveRatio, quality, outputFormat, background, compressionVisible, outputCompression, moderation, effectivePixelSize, count, editRefs])
   const estimateKey = useMemo(() => workspaceEstimateKey(estimatePayload), [estimatePayload])
   const currentEstimate = currentWorkspaceEstimate(estimateKey, estimateSnapshot)
   const estimate = currentEstimate.estimate
@@ -727,27 +783,45 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     }
   }, [capability, estimateKey, estimatePayload, model, parametersReady])
 
-  const referencePolicy = useMemo(() => referenceImagePolicy(capability), [capability])
-  const referenceAccept = useMemo(() => referenceImageAccept(referencePolicy), [referencePolicy])
+  const referencePolicy = referenceFilePolicy
+  const referenceAccept = editProfile ? nativeImageReferenceAccept(editProfile, nativeDraft.operation) : referenceImageAccept(referencePolicy)
   const maxReferenceUploadBytes = referencePolicy.maxBytes
   const maxReferenceUploadLabel = formatFileSize(maxReferenceUploadBytes)
   const referenceFormatLabel = referencePolicy.allowedFormats.map((format) => format.toUpperCase()).join('、')
-  const maxReferenceImages = workspaceReferenceMaximum(selectedModel?.max_reference_image_count)
-  const editRemainingLimit = remainingReferenceCapacity(maxReferenceImages, editRefs.length)
-
-  useEffect(() => {
-    const onMediaAssetChanged = (event: Event) => {
-      const detail = (event as CustomEvent<{ assetID?: string; mediaType?: string }>).detail
-      if (!detail?.assetID || detail.mediaType !== 'image') return
-      void userApi.importReferenceAssetsFromMedia([detail.assetID]).then((aliases) => {
-        if (!aliases.length) return
-        setEditRefs((items) => mergeReferenceAssets(items, aliases, maxReferenceImages))
-      }).catch(() => undefined)
-    }
-    window.addEventListener(MEDIA_ASSETS_CHANGED_EVENT, onMediaAssetChanged)
-    return () => window.removeEventListener(MEDIA_ASSETS_CHANGED_EVENT, onMediaAssetChanged)
-  }, [maxReferenceImages])
+  const maxReferenceImages = pendingRestore || admissionPolicy.reason ? 0 : admissionPolicy.limits.image ?? 0
+  const editRemainingLimit = Math.max(0, maxReferenceImages - editRefs.length - (reservations.pending().image ?? 0))
   const remainingGalleryImportLimit = editRemainingLimit
+
+  async function admitReferences<T>(incoming: T[], key: ((item: T) => string) | undefined, load: () => Promise<ReferenceAsset[]>) {
+    if (restoreGeneration.pending(restoreContext.current)) { app.notify('error', '正在恢复创作引用，请等待完成后再添加。'); return null }
+    const context = admissionLive.current
+    const request = reservations.reserve<unknown>(context.policy, context.refs, incoming, () => 'image', key ? (item) => typeof item === 'object' && item !== null && 'id' in item ? String(item.id) : key(item as T) : undefined)
+    if (!request.ok || request.token === undefined) { app.notify('error', request.reason); return null }
+    setReservationVersion((value) => value + 1)
+    try {
+      const assets = await load()
+      const live = admissionLive.current
+      if (!admissionMounted.current || context.model !== live.model || context.projectID !== live.projectID || context.operation !== live.operation) throw new Error('型号、操作或项目已变化，本批引用未添加，请重试。')
+      for (const asset of assets) {
+        const formatError = referenceAssetError(asset)
+        if (formatError) throw new Error(formatError)
+      }
+      const result = referenceAdmission({ policy: live.policy, current: live.refs, incoming: assets, reserved: reservations.pending(request.token), kind: () => 'image' as const, key: (item) => item.id })
+      if (!result.ok) throw new Error(result.reason)
+      admissionLive.current = { ...live, refs: result.merged }
+      setEditRefs(result.merged)
+      return result.added
+    } finally {
+      reservations.release(request.token)
+      setReservationVersion((value) => value + 1)
+    }
+  }
+  function referenceAssetError(asset: { mime_type?: string; size_bytes?: number; file_size_bytes?: number }) {
+    const policy = admissionLive.current.profile ? nativeImageReferencePolicy(admissionLive.current.profile, admissionLive.current.operation) : referencePolicy
+    if (asset.mime_type && !policy.allowedMIMETypes.includes(asset.mime_type)) return '资产图片格式不受当前型号支持，本批未导入。'
+    if ((asset.file_size_bytes ?? asset.size_bytes ?? 0) > policy.maxBytes) return '资产图片超过当前型号大小限制，本批未导入。'
+    return ''
+  }
   const promptTemplateParse = useMemo(() => parsePromptTemplate(prompt), [prompt])
   const promptReferenceBindings = useMemo(() => buildPromptReferenceBindings(prompt, editRefs), [editRefs, prompt])
   const promptVariableState = useMemo(() => promptVariableValidation(prompt, promptVariables), [prompt, promptVariables])
@@ -778,8 +852,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const baseGenerateReadiness = projectReadiness.ready
     ? workspaceView.generate
     : { disabled: true, reason: projectReadiness.reason, showRechargeAction: false }
-  const generateReadiness = promptTemplateIssue
-    ? { disabled: true, reason: promptTemplateIssue, showRechargeAction: false }
+  const blockingReason = (pendingRestore ? '正在恢复创作引用，请等待完成。' : '') || modelSelectionError || referenceError || nativeParameterError || ((reservations.pending().image ?? 0) > 0 ? '引用正在添加，请等待完成。' : '') || promptTemplateIssue
+  const generateReadiness = blockingReason
+    ? { disabled: true, reason: blockingReason, showRechargeAction: false }
     : baseGenerateReadiness
   const historyTasks = useMemo(() => (
     [...records].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -850,9 +925,9 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   async function openGalleryImport(target: 'edit', promptInsertTarget: 'compact' | 'expanded' | null = null) {
     const remaining = editRemainingLimit
-    if (remaining <= 0) {
+    if (admissionPolicy.reason || remaining <= 0) {
       pendingPromptAssetInsertRef.current = null
-      app.notify('error', '当前模型的参考图数量已达上限，请先移除一张。')
+      app.notify('error', admissionPolicy.reason || '当前模型的参考图数量已达上限，请先移除一张。')
       return
     }
     pendingPromptAssetInsertRef.current = promptInsertTarget
@@ -870,42 +945,20 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   async function confirmGalleryImport(selectedIds: string[]) {
     if (!galleryImportTarget || !selectedIds.length) return
-    const limited = limitReferenceSelection(selectedIds, remainingGalleryImportLimit)
-    if (limited.rejectedCount > 0) {
-      app.notify('error', remainingGalleryImportLimit <= 0
-        ? '当前模型的参考图数量已达上限，请先移除一张。'
-        : `当前模型最多还能添加 ${remainingGalleryImportLimit} 张，已跳过 ${limited.rejectedCount} 张。`)
-    }
-    if (!limited.accepted.length) return
+    if (selectedIds.some((id) => { const image = galleryImages.find((item) => item.id === id); return !image || referenceAssetError(image) })) { app.notify('error', '所选资产格式或大小不符合当前型号要求，本批未导入。'); return }
     setGalleryImportBusy(true)
     try {
-      const assets = await userApi.importReferenceAssetsFromGallery(limited.accepted)
+      const assets = await admitReferences([...new Set(selectedIds)], (id) => id, () => userApi.importReferenceAssetsFromGallery([...new Set(selectedIds)]))
+      if (!assets) return
       const promptInsertTarget = pendingPromptAssetInsertRef.current
-      const reused = capability ? firstGalleryReferenceReuse(editRefs.length, assets, capability) : null
-      setEditRefs((items) => mergeReferenceAssets(items, assets, maxReferenceImages))
       const promptEditorRef = promptInsertTarget === 'expanded' ? expandedPromptEditorRef : promptInsertTarget === 'compact' ? compactPromptEditorRef : null
       for (const asset of assets) {
         const name = asset.name?.trim()
         if (name) promptEditorRef?.current?.insertToken('reference', name)
       }
-      if (reused) {
-        const values = reused.values
-        restoreParametersRef.current = { routeModelCode: values.route_model_code, sizeMode: values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio', baseResolution: values.base_resolution, aspectRatio: values.aspect_ratio, pixelSize: values.pixel_size, quality: values.quality, outputFormat: values.output_format, background: values.background, outputCompression: values.output_compression, moderation: values.moderation, imageCount: values.image_count }
-        setModel(values.route_model_code)
-        setSizeMode(values.size_mode === 'auto' ? 'auto' : values.size_mode === 'pixel' ? 'pixel' : 'ratio')
-        setBaseResolution(values.base_resolution)
-        setRatio(values.aspect_ratio)
-        setPixelSize(values.pixel_size)
-        setQuality(values.quality)
-        setOutputFormat(values.output_format)
-        setBackground(values.background)
-        setOutputCompression(values.output_compression)
-        setModeration(values.moderation)
-        setCount(values.image_count)
-      }
       pendingPromptAssetInsertRef.current = null
       setGalleryImportTarget(null)
-      app.notify(reused?.notices.length ? 'info' : 'success', galleryImportSuccessMessage(assets.length, reused?.notices))
+      app.notify('success', galleryImportSuccessMessage(assets.length))
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -918,28 +971,19 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     const accepted: File[] = []
     const rejected: string[] = []
     for (const file of files) {
-      const validation = validateReferenceImageFile(file, referencePolicy)
+      const nativeError = editProfile ? nativeImageReferenceFileError(file, editProfile, nativeDraft.operation) : null
+      const validation = nativeError !== null ? { ok: !nativeError, message: nativeError } : validateReferenceImageFile(file, referencePolicy)
       if (validation.ok) accepted.push(file)
       else rejected.push(validation.message ?? `${file.name} 不符合图片上传要求。`)
     }
     if (rejected.length) {
-      app.notify('error', rejected.length === 1 ? rejected[0] : `${rejected.length} 个文件不符合上传要求，已跳过。${rejected[0] ? ` ${rejected[0]}` : ''}`)
+      app.notify('error', rejected.length === 1 ? rejected[0] : `${rejected.length} 个文件不符合上传要求，本批未上传。${rejected[0] ? ` ${rejected[0]}` : ''}`)
     }
-    const remaining = editRemainingLimit
-    const limited = limitReferenceSelection(accepted, remaining)
-    if (limited.rejectedCount > 0) {
-      app.notify('error', remaining <= 0
-        ? '当前模型的参考图数量已达上限，请先移除一张。'
-        : `当前模型最多还能添加 ${remaining} 张，已跳过 ${limited.rejectedCount} 张。`)
-    }
-    if (!limited.accepted.length) {
-      return
-    }
+    if (rejected.length) return
     setBusy(true)
     try {
-      const uploaded = await Promise.all(limited.accepted.map((file) => userApi.uploadReferenceAsset(file)))
-      setEditRefs((items) => mergeReferenceAssets(items, uploaded, maxReferenceImages))
-      app.notify('success', `已上传 ${uploaded.length} 张参考图`)
+      const uploaded = await admitReferences(accepted, undefined, () => Promise.all(accepted.map((file) => userApi.uploadReferenceAsset(file))))
+      if (uploaded) app.notify('success', `已上传 ${uploaded.length} 张参考图`)
     } catch (err) {
       app.notify('error', uploadErrorMessage(err))
     } finally {
@@ -995,6 +1039,8 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       app.notify('error', generateReadiness.reason)
       return
     }
+    const submissionRestoreVersion = restoreGeneration.checkpoint()
+    const submissionRestoreContext = JSON.stringify(restoreContext.current)
     const activeTaskType = taskType
     const editSourceAssets = activeTaskType === 'image_edit' ? [...editRefs] : []
     const submissionProject = projectSelectionRef.current
@@ -1031,21 +1077,25 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
     } catch (err) {
       if (!workspaceSubmissionIsCurrent(submissionProject, projectSelectionRef.current)) return
       if (err instanceof ApiError && err.code === 'PROMPT_TEMPLATE_STALE') {
-        const refreshedResults = await Promise.allSettled(editRefs.map((asset) => userApi.getReferenceAsset(asset.id)))
-        let refreshFailed = false
-        const refreshedAssets = refreshedResults.flatMap((result, index) => {
-          if (result.status === 'fulfilled') return [result.value]
-          if (result.reason instanceof ApiError && result.reason.status === 404) return []
-          refreshFailed = true
-          return [editRefs[index]]
-        })
-        setEditRefs(refreshedAssets)
-        app.notify(
-          'error',
-          refreshFailed
-            ? '引用资产名称已变化，部分资产状态刷新失败。请刷新页面并检查红色标记后重新确认创作。'
-            : '引用资产名称已变化，已刷新资产状态。请检查红色标记后重新确认创作。',
-        )
+        if (!restoreGeneration.unchanged(submissionRestoreVersion) || JSON.stringify(restoreContext.current) !== submissionRestoreContext) return
+        const ticket = restoreGeneration.begin({ ...restoreContext.current })
+        refreshRestore((value) => value + 1)
+        const source = [...editRefs]
+        try {
+          const refreshedResults = await Promise.allSettled(source.map((asset) => userApi.getReferenceAsset(asset.id)))
+          if (!restoreGeneration.current(ticket, restoreContext.current)) return
+          const missing = (reason: unknown) => reason instanceof ApiError && reason.status === 404
+          const refreshFailed = refreshedResults.some((result) => result.status === 'rejected')
+          setEditRefs((items) => mergeWorkspaceReferenceRefresh(items, source, refreshedResults, missing))
+          app.notify(
+            'error',
+            refreshedResults.some((result) => result.status === 'rejected' && missing(result.reason))
+              ? '引用资产名称已变化，部分引用已失效或无权访问，已保留并标记无效。请手动移除失效引用后重新确认创作。'
+              : refreshFailed
+                ? '引用资产名称已变化，部分资产状态刷新失败。请刷新页面并检查红色标记后重新确认创作。'
+                : '引用资产名称已变化，已刷新资产状态。请检查红色标记后重新确认创作。',
+          )
+        } finally { restoreGeneration.finish(ticket); refreshRestore((value) => value + 1) }
         return
       }
       if (err instanceof ApiError && err.code === 'capability_changed') {
@@ -1111,17 +1161,12 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }
 
   async function applyAsEditSource(image: ImageResult) {
-    const addition = singleReferenceAddition(image, maxReferenceImages, editRefs.length)
-    if (!addition.item) {
-      app.notify('error', '当前模型的参考图数量已达上限，请先移除一张。')
-      return
-    }
+    const invalid = referenceAssetError(image)
+    if (invalid) { app.notify('error', invalid); return }
     setBusy(true)
     try {
-      const imported = await userApi.importReferenceAssetsFromGallery([addition.item.id])
-      if (!imported.length) throw new Error('图片导入失败，请稍后重试。')
-      setEditRefs((items) => mergeReferenceAssets(items, imported, maxReferenceImages))
-      app.notify('success', '已加入图片编辑')
+      const imported = await admitReferences([image], (item) => item.id, () => userApi.importReferenceAssetsFromGallery([image.id]))
+      if (imported) app.notify('success', '已加入图片编辑')
     } catch (err) {
       app.notify('error', errorMessage(err))
     } finally {
@@ -1164,7 +1209,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   }
 
   function updateImageCount(value: number) {
-    setCount(normalizeWorkspaceImageCount(value))
+    setCount(Math.min(imageCountLimit, normalizeWorkspaceImageCount(value)))
   }
 
   function selectRecentTask(task: ImageTask) {
@@ -1307,7 +1352,23 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
       </div>
       {loading && !capability ? <LoadingState label="正在加载可用模型..." /> : null}
       {!loading && availableModels.length ? (
-        <ModelGroupSelect options={availableModels} groups={capability?.route_model_groups} value={model} onChange={setModel} />
+        <ModelGroupSelect options={model && !rawSelectedModel ? [{ code: model, id: model, name: `${model}（不可用）`, task_types: [], prices: [], supports_reference: false }, ...availableModels] : availableModels} groups={capability?.route_model_groups} value={model} onChange={(code) => {
+          restoreContext.current = { ...restoreContext.current, model: code }
+          const ticket = restoreGeneration.begin({ ...restoreContext.current })
+          setModel(code); setNativeDraft({}); refreshRestore((value) => value + 1)
+          const sourceRefs = [...editRefs]
+          void (async () => {
+            try {
+              const stored = JSON.parse(sessionStorage.getItem(`mgs.reference-marks.${app.profile?.id}.${projects.selectedProjectID}`) ?? 'null')
+              const originals = new Map<string, ReferenceAsset>(stored?.originals ?? [])
+              const restored = await Promise.all(sourceRefs.map(async (asset) => { const original = originals.get(asset.id); return original ? await userApi.getReferenceAsset(original.id) : asset }))
+              if (!restoreGeneration.current(ticket, restoreContext.current)) return
+              const replacements = new Map(restored.map((asset, index) => [sourceRefs[index].id, asset]))
+              setEditRefs((items) => items.map((asset) => replacements.get(asset.id) ?? asset))
+            } catch (reason) { if (restoreGeneration.current(ticket, restoreContext.current)) app.notify('error', errorMessage(reason)) }
+            finally { restoreGeneration.finish(ticket); refreshRestore((value) => value + 1) }
+          })()
+        }} />
       ) : null}
       {!loading && !availableModels.length ? <EmptyState title="平台模型配置中" detail={publicUnavailableReason(capability?.unavailable_reason)} /> : null}
     </div>
@@ -1331,10 +1392,13 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
                 accessToken={app.session?.token}
                 onMediaRefresh={() => refreshWorkspaceReference(asset.id)}
               />
+              {selectedModel?.native_image_profile?.adapter === 'seedream_image' ? <button type="button" className="reference-mark-trigger" disabled={busy} aria-label={`标记参考图 ${asset.name}`} onClick={() => setEditingReferenceID(asset.id)} /> : null}
+              {editedReferenceIDs.includes(asset.id) ? <span className="reference-edited-badge">已编辑</span> : null}
               <button type="button" className={workspaceClasses.refRemove} title="移除编辑图片" aria-label={`移除 ${asset.display_name || asset.name || '参考图'}`} onClick={() => removeEditAsset(asset)}><CloseGlyph /></button>
             </div>
             <div className="reference-name-row">
-              <span title={asset.display_name || asset.name}>{asset.display_name || asset.name}</span>
+              <span title={asset.reference_invalid_reason || asset.display_name || asset.name}>{asset.display_name || asset.name}</span>
+              {asset.reference_invalid_reason ? <small role="status" className="u-meta">{asset.reference_invalid_reason}</small> : null}
               <button type="button" title="重命名资产" aria-label={`重命名资产 ${asset.display_name || asset.name}`} onClick={() => beginRenameReference(asset)}><Pencil size={13} /></button>
             </div>
           </div>
@@ -1393,13 +1457,14 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           disabled={busy || promptExpanded}
           onChange={setPrompt}
           onAddAsset={() => { void openGalleryImport('edit', 'compact') }}
-          onPasteFiles={(files) => { window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail: { files, projectID: projects.selectedProjectID } })) }}
+          onPasteFiles={(files) => { void uploadReferenceFiles(files, 'edit') }}
         />
         <div className="u-prompt-box__foot">
           <span>@ 插入资产 · $ 插入变量</span>
           <span>{promptTemplateIssue ? '请检查提示词标记' : '◈ 预估随参数更新'}</span>
         </div>
       </div>
+      <NegativePromptControl supported={selectedModel?.native_image_profile?.negative_prompt} value={cleanNativeDraft.native_options?.negative_prompt ?? ''} disabled={busy} onChange={(negative_prompt) => setNativeDraft({ ...cleanNativeDraft, native_options: { ...cleanNativeDraft.native_options, negative_prompt } })} />
       <PromptVariableForm template={prompt} values={promptVariables} disabled={busy} onChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))} />
       {promptTemplateIssue ? <span className="cr-field-error" role="status">{promptTemplateIssue}</span> : null}
     </div>
@@ -1493,17 +1558,17 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
               <div className="cr-inline-pair">
                 <label className="u-field" htmlFor="workspace-custom-width">
                   <span className="u-label">Width</span>
-                  <input id="workspace-custom-width" className="u-input" type="number" inputMode="numeric" min={selectedModel.min_width ?? 16} max={selectedModel.max_width ?? 3840} step="16" value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
+                  <input id="workspace-custom-width" className="u-input" type="number" inputMode="numeric" min={selectedModel.min_width ?? 16} max={selectedModel.native_image_profile?.max_pixels ?? selectedModel.max_width ?? 3840} step={selectedModel.native_image_profile ? 1 : 16} value={customWidth} onChange={(event) => setCustomWidth(event.target.value)} />
                 </label>
                 <label className="u-field" htmlFor="workspace-custom-height">
                   <span className="u-label">Height</span>
-                  <input id="workspace-custom-height" className="u-input" type="number" inputMode="numeric" min={selectedModel.min_height ?? 16} max={selectedModel.max_height ?? 3840} step="16" value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
+                  <input id="workspace-custom-height" className="u-input" type="number" inputMode="numeric" min={selectedModel.min_height ?? 16} max={selectedModel.native_image_profile?.max_pixels ?? selectedModel.max_height ?? 3840} step={selectedModel.native_image_profile ? 1 : 16} value={customHeight} onChange={(event) => setCustomHeight(event.target.value)} />
                 </label>
               </div>
               <p className="u-meta" role="status">
                 {customSizeNormalization.valid ? <>输出尺寸：<strong className="num">{customSizeNormalization.size}</strong></> : <span className="cr-field-error">{sizeParameterError}</span>}
               </p>
-              <p className="u-meta">宽高必须为 16 的倍数，并满足当前模型配置区间、1:3 至 3:1 比例及平台像素上限。</p>
+              <p className="u-meta">{selectedModel.native_image_profile ? `宽高为正整数，总像素 ${selectedModel.native_image_profile.min_pixels}–${selectedModel.native_image_profile.max_pixels}，最大宽高比 ${selectedModel.native_image_profile.max_aspect_ratio}:1。` : '宽高必须为 16 的倍数，并满足当前模型配置区间、1:3 至 3:1 比例及平台像素上限。'}</p>
             </div>
           ) : null}
         </div>
@@ -1576,22 +1641,22 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
   const countControls = selectedModel ? (
     <div className="cr-group">
-      <div className="cr-group__head"><h4>数量</h4><span>上限 {workspaceTaskImageSafetyLimit}</span></div>
+      <div className="cr-group__head"><h4>数量</h4><span>上限 {imageCountLimit}</span></div>
       <div className="cr-count-row">
         <div className="u-stepper">
           <button type="button" aria-label="减少数量" disabled={count <= 1} onClick={() => updateImageCount(count - 1)}>−</button>
           <input
             type="number"
             min={1}
-            max={workspaceTaskImageSafetyLimit}
+            max={imageCountLimit}
             value={count || 1}
             aria-label="生成数量"
             onChange={(event) => updateImageCount(Number(event.target.value))}
           />
-          <button type="button" aria-label="增加数量" disabled={count >= workspaceTaskImageSafetyLimit} onClick={() => updateImageCount(count + 1)}>+</button>
+          <button type="button" aria-label="增加数量" disabled={count >= imageCountLimit} onClick={() => updateImageCount(count + 1)}>+</button>
         </div>
         <div className="cr-presets">
-          {[1, 2, 4, 8].filter((value) => value <= workspaceTaskImageSafetyLimit).map((value) => (
+          {[1, 2, 4, 8].filter((value) => value <= imageCountLimit).map((value) => (
             <button key={value} type="button" className={cn('cr-preset', count === value && 'is-active')} aria-pressed={count === value} onClick={() => updateImageCount(value)}>{value}</button>
           ))}
         </div>
@@ -1602,7 +1667,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
   const parameterPanel = (
     <aside className={cn('u-controls', parametersExpanded && 'is-open')} aria-label="创作参数" style={sheetDragStyle} data-sheet-dragging={sheetDragOffset !== 0 || undefined}>
       <header className="u-controls__head">
-        <button
+        {compactViewport ? <button
           type="button"
           className="cr-panel-head__toggle"
           aria-expanded={parametersExpanded}
@@ -1619,7 +1684,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             <span className="u-meta">图片 · {taskType === 'image_edit' ? '参考图生图' : '文生图'}</span>
           </span>
           <ChevronUp className={cn('cr-panel-head__chevron', !parametersExpanded && 'is-collapsed')} size={16} aria-hidden="true" />
-        </button>
+        </button> : <div className="cr-panel-head__title"><strong>创作参数</strong><span className="u-meta">图片 · {taskType === 'image_edit' ? '参考图生图' : '文生图'}</span></div>}
         <span className="u-chip u-chip--mono">{workspaceView.estimate.label}</span>
         {compactViewport && !parametersExpanded ? (
           <button
@@ -1645,6 +1710,19 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
         {referenceControls}
         {sizeControls}
         {qualityControls}
+          <NativeImageControls persistenceKey={`mgs.reference-marks.${app.profile?.id}.${projects.selectedProjectID}`} layerPriceReady={editModel?.native_image_layer_pricing_confirmed === true} layerUnavailableReason={editModel?.native_image_layer_unavailable_reason} accessToken={app.session?.token} profile={editProfile ?? selectedModel?.native_image_profile} value={nativeDraft} onChange={(next) => { setNativeDraft(next); if (next.operation === 'layer_decomposition') setCount(1) }} disabled={busy} references={editRefs} editingReferenceID={editingReferenceID} onEditingReferenceChange={setEditingReferenceID} onPendingChange={setPendingMarks} onEditedChange={setEditedReferenceIDs} onRestoreReference={async (assetID, originalID) => { const original = originalReferences.current.get(originalID) ?? await userApi.getReferenceAsset(originalID); setEditRefs((items) => items.map((item) => item.id === assetID ? original : item)) }} onUploadMarkedReference={async (file, assetID) => {
+            const original = editRefs.find((item) => item.id === assetID); if (!original) throw new Error('引用已移除，请重新选择')
+            const validation = selectedModel?.native_image_profile ? nativeImageReferenceFileError(file, selectedModel.native_image_profile, nativeDraft.operation) : ''
+            if (validation) throw new Error(validation)
+            const uploadContext = JSON.stringify(workspaceMarkContext.current)
+            const uploaded = await userApi.uploadReferenceAsset(file)
+            if (JSON.stringify(workspaceMarkContext.current) !== uploadContext) throw new Error('引用上下文已变化，已上传资产可从资产库恢复')
+            if (!uploaded.id || !['ready', 'ready_original'].includes(uploaded.status)) throw new Error('标记图尚未就绪，请重试')
+            originalReferences.current.set(original.id, original)
+            setEditRefs((items) => items.map((item) => item.id === assetID ? uploaded : item))
+            return uploaded.id
+          }} />
+          {nativeParameterError ? <p role="alert">{nativeParameterError}</p> : null}
         {countControls}
       </div>
       <div className={cn('u-controls__foot', workspaceClasses.panelSectionFinal)} data-workspace-full-actions="true">
@@ -1698,7 +1776,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
           onPromptChange={setPrompt}
           onVariableChange={(name, value) => setPromptVariables((current) => ({ ...current, [name]: value }))}
           onAddAsset={() => { void openGalleryImport('edit', 'expanded') }}
-          onPasteFiles={(files) => { window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail: { files, projectID: projects.selectedProjectID } })) }}
+          onPasteFiles={(files) => { void uploadReferenceFiles(files, 'edit') }}
           onClose={() => { setPromptExpanded(false); window.setTimeout(() => compactPromptEditorRef.current?.focus(), 0) }}
           onOptimize={() => void startPromptOptimization()}
           onConfirm={() => void confirmOptimization()}
@@ -1762,6 +1840,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
 
         {outputTab === 'current' ? (
           <div className="cr-canvas-panel">
+            {latestTask ? <LayerResult task={latestTask} accessToken={app.session?.token} /> : null}
             {latestTask ? <StageRail nodes={workspaceView.task.rail} trailing={`已用 ${formatCompactDuration(taskElapsedMs(latestTask))}`} /> : null}
             {latestTask ? (
               <GenerationOutput
@@ -1862,6 +1941,7 @@ export function WorkspacePage({ initialTaskId }: { initialTaskId?: string }) {
             loading={galleryImportLoading}
             busy={galleryImportBusy}
             remainingLimit={remainingGalleryImportLimit}
+            assetError={referenceAssetError}
             accessToken={app.session?.token}
             onFilterChange={setGalleryImportFilter}
             onConfirm={(ids) => void confirmGalleryImport(ids)}
@@ -1968,12 +2048,13 @@ function CloseGlyph() {
   )
 }
 
-function GalleryImportModal({ images, filter, loading, busy, remainingLimit, accessToken, onFilterChange, onConfirm, onMediaRefresh, onClose }: {
+function GalleryImportModal({ images, filter, loading, busy, remainingLimit, assetError, accessToken, onFilterChange, onConfirm, onMediaRefresh, onClose }: {
   images: GalleryImage[]
   filter: GalleryImportFilter
   loading: boolean
   busy: boolean
   remainingLimit: number
+  assetError: (asset: GalleryImage) => string
   accessToken?: string | null
   onFilterChange: (filter: GalleryImportFilter) => void
   onConfirm: (ids: string[]) => void
@@ -1995,7 +2076,7 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, acc
         next.delete(id)
         return next
       }
-      if (next.size >= remainingLimit) return next
+      if (next.size >= remainingLimit || assetError(images.find((image) => image.id === id) ?? {} as GalleryImage)) return next
       next.add(id)
       return next
     })
@@ -2029,7 +2110,7 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, acc
         <div className="u-grid cr-import-grid">
           {rows.map((image) => {
             const selected = selectedIds.has(image.id)
-            const disabled = !selected && selectedIds.size >= remainingLimit
+            const disabled = Boolean(assetError(image)) || !selected && selectedIds.size >= remainingLimit
             const imageUrl = userApi.imageAssetUrl(image.url || image.download_url || '', accessToken)
             return (
               <button
@@ -2037,6 +2118,7 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, acc
                 type="button"
                 className={cn('u-card cr-import-tile', selected && 'is-selected')}
                 disabled={disabled}
+                title={assetError(image) || undefined}
                 onClick={() => toggle(image.id)}
               >
                 <span className="u-card__media">
@@ -2066,7 +2148,7 @@ function GalleryImportModal({ images, filter, loading, busy, remainingLimit, acc
       <div className="cr-modal-actions">
         <span className="cr-modal-actions__meta">已选 {selectedIds.size} 张，最多还能选择 {remainingLimit} 张</span>
         <Button tone="ghost" onClick={onClose}>取消</Button>
-        <Button busy={busy} disabled={!selectedIds.size || selectedIds.size > remainingLimit} onClick={() => onConfirm(Array.from(selectedIds))}>确定</Button>
+        <Button busy={busy} disabled={!selectedIds.size || selectedIds.size > remainingLimit || images.some((image) => selectedIds.has(image.id) && assetError(image))} onClick={() => onConfirm(Array.from(selectedIds))}>确定</Button>
       </div>
     </Modal>
   )

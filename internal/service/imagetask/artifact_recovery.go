@@ -59,7 +59,7 @@ func (s *Service) checkpointProviderSuccess(
 	if task == nil {
 		return fmt.Errorf("checkpoint provider success: task is nil")
 	}
-	payload, err := s.encryptArtifactResults(response.Data)
+	payload, err := s.encryptArtifactResults(response.Data, response)
 	if err != nil {
 		return fmt.Errorf("encrypt artifact recovery payload: %w", err)
 	}
@@ -99,7 +99,7 @@ func (s *Service) checkpointProviderSuccess(
 	*task = decorated
 	// The paid upstream response is durable before optional title enrichment.
 	s.nameImageResults(ctx, *task, response.Data)
-	if namedPayload, nameErr := s.encryptArtifactResults(response.Data); nameErr == nil {
+	if namedPayload, nameErr := s.encryptArtifactResults(response.Data, response); nameErr == nil {
 		namedTask := *task
 		namedTask.ArtifactRecovery.EncryptedPayload = namedPayload
 		if s.saveTerminalState(ctx, namedTask, owner) == nil {
@@ -139,9 +139,11 @@ func (s *Service) executeArtifactRecovery(ctx context.Context, task domainimaget
 	reconcileAttemptDimensions(&task, persisted)
 	task.Results = append([]provider.ImageResult(nil), persisted...)
 	if err := s.applyActualPoints(&task, len(persisted)); err != nil {
-		return s.failOwnedTask(ctx, task, owner, err)
+		return s.holdPaidSettlement(ctx, task, owner, err)
 	}
-	task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
+	if task.PricingSnapshot.NativeImage == nil {
+		task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
+	}
 	task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
 	setTaskProgress(&task, domainimagetask.ProgressStageSettling, "结果已恢复，正在结算积分")
 	if err := s.saveOwnedTask(ctx, task, owner); err != nil {
@@ -151,7 +153,7 @@ func (s *Service) executeArtifactRecovery(ctx context.Context, task domainimaget
 		return domainimagetask.ExecuteResult{}, err
 	}
 	task.Status = domainimagetask.StatusSucceeded
-	if len(persisted) < normalizedCount(task.OutputImageCount) {
+	if task.ErrorCode == "IMAGE_PARTIAL_ARTIFACT_ERROR" || len(persisted) < normalizedCount(task.OutputImageCount) {
 		task.Status = domainimagetask.StatusPartialFailed
 	}
 	setCompletedTaskProgress(&task)
@@ -348,11 +350,18 @@ func verifyStoredArtifact(ctx context.Context, backend storage.Backend, key stri
 	return nil
 }
 
-func (s *Service) encryptArtifactResults(results []provider.ImageResult) (string, error) {
+func (s *Service) encryptArtifactResults(results []provider.ImageResult, response ...provider.ImageResponse) (string, error) {
 	if s == nil || s.recoveryCodec == nil {
 		return "", fmt.Errorf("artifact recovery codec is unavailable")
 	}
-	envelope, err := s.recoveryCodec.EncryptJSON(map[string]any{"results": results})
+	payload := map[string]any{"version": 2, "results": results}
+	if len(response) > 0 {
+		payload["operation"] = response[0].Operation
+		payload["usage"] = response[0].Usage
+		payload["provider_metadata"] = response[0].ProviderMetadata
+		payload["provider_request_id"] = response[0].ProviderRequestID
+	}
+	envelope, err := s.recoveryCodec.EncryptJSON(payload)
 	if err != nil {
 		return "", err
 	}

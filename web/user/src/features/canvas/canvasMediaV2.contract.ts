@@ -9,11 +9,11 @@ assert.equal(canvasPromptTemplate('Draw ${ subject } with {{@stable_alias}} and 
 assert.deepEqual(canvasPromptVariables({ variables: { subject: 'moon', bad: 7 }, prompt_variables: [{ name: 'ignored', value: 'x' }] }), { subject: 'moon' })
 const image: Capability = { task_types: ['text_to_image'], aspect_ratios: ['1:1'], max_image_count: 10, model_groups: [{ id: 'i', code: 'i', name: 'Image', task_types: ['text_to_image'], prices: [], supports_reference: false, size_modes: ['ratio'], base_resolution: ['1K'], aspect_ratios: ['1:1'], quality: ['auto'], output_format: ['png'], max_output_image_count: 2 }] }
 const normalized = normalizeCanvasImageDraft({ route_model_code: 'missing', quality: 'bad', output_image_count: 99, prompt_template: '{{@stable_alias}} ${subject}', variables: { subject: 'moon' } }, image)
-assert.equal(normalized.route_model_code, 'i')
-assert.equal(normalized.quality, 'auto')
+assert.equal(normalized.route_model_code, 'missing')
+assert.equal(normalized.quality, 'bad')
 assert.equal(normalized.output_image_count, 99, 'platform fan-out count must not be clamped by provider max')
 assert.deepEqual(normalized.variables, { subject: 'moon' })
-assert.equal(canvasConsoleParameterErrors(normalized, image, null, false).length, 0)
+assert.ok(canvasConsoleParameterErrors(normalized, image, null, false).length)
 assert.equal(normalizeCanvasImageDraft({ ...normalized, output_image_count: workspaceTaskImageSafetyLimit + 1 }, image).output_image_count, workspaceTaskImageSafetyLimit)
 assert.ok(canvasConsoleParameterErrors({ ...normalized, output_image_count: workspaceTaskImageSafetyLimit + 1 }, image, null, false).length)
 assert.equal(canvasMediaParameterSummary({ base_resolution: '2K', aspect_ratio: '1:1', quality: 'auto', output_image_count: 99 }, false), '1:1 · 2K 清晰度 · 自动 · ×99')
@@ -22,7 +22,7 @@ const uploadMenu = consoleSource.slice(consoleSource.indexOf('{menu ?'), console
 assert.ok(uploadMenu.includes('本地上传') && uploadMenu.includes('资产库上传'))
 assert.ok(consoleSource.includes('画布参考') && consoleSource.includes('expanded ? <Shrink'))
 assert.ok(!uploadMenu.slice(0, uploadMenu.indexOf('</div> : null}')).includes('onPickCanvasReference'))
-const video: VideoCapability = { capability_version: 'v1', model_groups: [{ code: 'v', name: 'Video', minimum_points: '1', max_output_count: 1, task_types: ['image_to_video'], defaults: { task_type: 'image_to_video', duration_seconds: 5, resolution: '720p', aspect_ratio: '16:9', generate_audio: false }, options_by_task_type: { image_to_video: { durations: [5], resolutions: ['720p'], aspect_ratios: ['16:9'], audio_generation: false, combinations: [{ duration_seconds: 5, resolution: '720p', aspect_ratio: '16:9', audio_mode: 'silent' }] } } }] }
+const video: VideoCapability = { capability_version: 'v1', model_groups: [{ code: 'v', name: 'Video', minimum_points: '1', max_output_count: 1, task_types: ['image_to_video'], defaults: { task_type: 'image_to_video', duration_seconds: 5, resolution: '720p', aspect_ratio: '16:9', generate_audio: false }, options_by_task_type: { image_to_video: { inputs: { first_frame: { required: true, max_count: 1, media_types: ['image'], formats: ['png'] } }, durations: [5], resolutions: ['720p'], aspect_ratios: ['16:9'], audio_generation: false, combinations: [{ duration_seconds: 5, resolution: '720p', aspect_ratio: '16:9', audio_mode: 'silent' }] } } }] }
 const videoDraft = normalizeCanvasVideoDraft({ route_model_code: 'v', task_type: 'image_to_video', variables: { scene: 'night' }, prompt_template: '${scene}', duration_seconds: 100, generate_audio: true, output_count: 10 }, video)
 assert.equal(videoDraft.duration_seconds, 5)
 assert.equal(videoDraft.generate_audio, false)
@@ -40,14 +40,14 @@ const graph: import('./core/types').CanvasDocument = { schema_version: 1, viewpo
   { id: 'target', type: 'video_v2', position: { x: 400, y: 0 }, size: { width: 320, height: 240 }, payload: { draft: { ...videoDraft, route_model_code: 'text-only', task_type: 'text_to_video' } } },
 ], edges: [{ id: 'ref', source: 'image', target: 'target', input_role: 'first_frame' }] }
 const inferred = normalizeCanvasVideoGraphDraft(graph, 'target', video)
-assert.equal(inferred.error, null)
-assert.equal(inferred.draft.task_type, 'image_to_video', 'graph references synchronize saved task')
-assert.equal(inferred.draft.route_model_code, 'v', 'derived task selects a supporting model')
-assert.deepEqual(canvasConsoleParameterErrors({ ...inferred.draft, inputs: [{ asset_id: 'asset', role: 'first_frame', ordinal: 0 }] }, null, video, true), [], 'inferred draft passes console validation')
+assert.ok(inferred.error)
+assert.equal(inferred.draft.task_type, 'text_to_video', 'graph references preserve the selected task')
+assert.equal(inferred.draft.route_model_code, 'text-only', 'references never replace an explicit model')
+assert.ok(canvasConsoleParameterErrors({ ...inferred.draft, inputs: [{ asset_id: 'asset', role: 'first_frame', ordinal: 0 }] }, null, video, true).length)
 assert.deepEqual(normalizeCanvasVideoGraphDraft({ ...graph, nodes: graph.nodes.map((node) => node.id === 'target' ? { ...node, payload: { draft: inferred.draft } } : node) }, 'target', video).draft, inferred.draft, 'normalization is stable')
 const unavailable = normalizeCanvasVideoGraphDraft(graph, 'target', { ...video, model_groups: [] })
 assert.ok(unavailable.error)
-assert.equal(unavailable.draft.task_type, 'image_to_video', 'unsupported inferred task never silently falls back to text')
+assert.equal(unavailable.draft.task_type, 'text_to_video', 'unsupported task remains visible for manual correction')
 for (const task of ['video_edit', 'video_extend'] as const) {
   const editGraph = { ...graph, nodes: graph.nodes.map((node) => node.id === 'target' ? { ...node, payload: { draft: { ...videoDraft, task_type: task } } } : { ...node, type: 'video_v2' as const }), edges: [{ ...graph.edges[0], input_role: 'reference_video' as const }] }
   const capability: VideoCapability = { ...video, model_groups: [{ ...video.model_groups[0], task_types: [task], options_by_task_type: { [task]: video.model_groups[0].options_by_task_type.image_to_video } }] }

@@ -1,6 +1,9 @@
 package modeladmin
 
-import "time"
+import (
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
+	"time"
+)
 
 type LifecycleAudit struct {
 	ActorType  string
@@ -14,6 +17,8 @@ type LifecycleAudit struct {
 }
 
 const (
+	AdapterTypeQwenImage        = "qwen_image"
+	AdapterTypeSeedreamImage    = "seedream_image"
 	AdapterTypeOpenAICompatible = "openai_compatible"
 	AdapterTypeOpenRouter       = "openrouter"
 	AdapterTypeSeedance         = "seedance"
@@ -164,20 +169,21 @@ type ModelAccountModelListPage struct {
 }
 
 type RouteModel struct {
-	ID          int64     `json:"id"`
-	Code        string    `json:"code"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Visibility  string    `json:"visibility"`
-	MediaType   string    `json:"media_type"`
-	Enabled     bool      `json:"enabled"`
-	SortOrder   int       `json:"sort_order"`
-	GroupIDs    []int64   `json:"group_ids,omitempty"`
-	GroupCodes  []string  `json:"group_codes,omitempty"`
-	IconKey     string    `json:"icon_key,omitempty"`
-	IconSVG     string    `json:"icon_svg,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ImagePricing *imagepricing.Config `json:"image_pricing,omitempty"`
+	ID           int64                `json:"id"`
+	Code         string               `json:"code"`
+	Name         string               `json:"name"`
+	Description  string               `json:"description"`
+	Visibility   string               `json:"visibility"`
+	MediaType    string               `json:"media_type"`
+	Enabled      bool                 `json:"enabled"`
+	SortOrder    int                  `json:"sort_order"`
+	GroupIDs     []int64              `json:"group_ids,omitempty"`
+	GroupCodes   []string             `json:"group_codes,omitempty"`
+	IconKey      string               `json:"icon_key,omitempty"`
+	IconSVG      string               `json:"icon_svg,omitempty"`
+	CreatedAt    time.Time            `json:"created_at"`
+	UpdatedAt    time.Time            `json:"updated_at"`
 }
 
 // RouteModelGroup buckets route models for the two-level user picker. A
@@ -210,16 +216,19 @@ type RouteModelGroupWriteRequest struct {
 }
 
 type RouteModelWriteRequest struct {
-	Code        string
-	Name        string
-	Description string
-	Visibility  string
-	MediaType   string
-	Enabled     bool
-	SortOrder   int
-	GroupIDs    []int64
-	IconKey     string
-	IconSVG     string
+	// ImagePricingPresent distinguishes an omitted field from explicit null on updates.
+	ImagePricingPresent bool
+	ImagePricing        *imagepricing.Config
+	Code                string
+	Name                string
+	Description         string
+	Visibility          string
+	MediaType           string
+	Enabled             bool
+	SortOrder           int
+	GroupIDs            []int64
+	IconKey             string
+	IconSVG             string
 }
 
 type RouteModelListRequest struct {

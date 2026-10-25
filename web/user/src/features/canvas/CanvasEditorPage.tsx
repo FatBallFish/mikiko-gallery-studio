@@ -1,3 +1,10 @@
+import { MEDIA_UPLOAD_TERMINATED_EVENT, type MediaUploadTerminatedDetail } from '../media/uploadManager'
+import { videoInputAssetReason, videoDraftInvalidReason } from '../creation/videoDraft'
+import { nativeImageValidation, type NativeImageRequestFields } from '../../../../shared/native-image'
+import { createReferenceReservations } from '../../../../shared/reference-admission'
+import { canvasReferenceAdmission, canvasReferenceEntries, canvasReferenceKind, canvasReferencePolicy, type CanvasReferenceKind } from './canvasPageIntegration'
+import { compareCanvasReferenceEdges } from './core/canvasState'
+import { userNativeImageFields, bindReferenceAnnotations, remapReferenceAnnotations } from '../creation/nativeImageUX'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from 'zustand'
 import {
@@ -31,11 +38,11 @@ import { MEDIA_UPLOAD_COMPLETED_EVENT, QUEUE_MEDIA_UPLOAD_EVENT, type MediaUploa
 import { mediaTypeForFile } from '../media/uploadManager'
 import { workspaceTaskImageSafetyLimit } from '../../pages/workspaceViewModel'
 import { CanvasMediaNodeV2 } from './CanvasMediaNodeV2'
-import { normalizeCanvasImageDraft, normalizeCanvasVideoDraft, normalizeCanvasVideoGraphDraft, canvasConsoleParameterErrors } from './canvasMediaV2'
+import { canvasReferenceMarksModelChanged, normalizeCanvasImageDraft, normalizeCanvasVideoDraft, normalizeCanvasVideoGraphDraft, canvasConsoleParameterErrors } from './canvasMediaV2'
 import { CanvasGenerationConsole } from './CanvasGenerationConsole'
 import { canvasNodeMediaKind, isCanvasV2MediaNode, isCanvasGenerationNode, canCreateCanvasNode, canCopyCanvasNode } from './core/canvasNodeKinds'
 import { canvasMediaSize, resizeCanvasMediaSize } from './core/canvasMediaSizing'
-import { canvasAssetNode, canvasConsoleBounds, canvasEstimateSufficient, canvasQuoteRemainingMS, canvasReferenceAsset, insertCanvasReference, useCanvasMediaHydration, validateCanvasReference, type CanvasHydratedMedia } from './canvasPageIntegration'
+import { settleCanvasReferenceUpload, canvasAssetNode, canvasConsoleBounds, canvasEstimateSufficient, canvasQuoteRemainingMS, canvasReferenceAsset, insertCanvasReference, useCanvasMediaHydration, validateCanvasReference, type CanvasHydratedMedia } from './canvasPageIntegration'
 import { canvasConnectionGeometry, canvasHandle, canvasPointerIntent, canvasConnectionRelease, resolveCanvasConnection, type CanvasConnectionDraft } from './core/canvasConnections'
 import { createCanvasEstimateCoordinator, type CanvasEstimateTarget } from './core/canvasEstimateCoordinator'
 import './canvas.css'
@@ -85,7 +92,19 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [referencePick, setReferencePick] = useState<{ nodeID: string; role: CanvasEdge['input_role'] } | null>(null)
   const [assetRole, setAssetRole] = useState<CanvasEdge['input_role']>('reference')
-  const uploadTargetsRef = useRef(new Map<string, { nodeID: string; role: CanvasEdge['input_role'] }>())
+  const nativeReferenceIDs = useRef(new Map<string, string[]>())
+  const markedSources = useRef(new Map<string, string>())
+  const uploadTargetsRef = useRef(new Map<string, { nodeID: string; role: CanvasEdge['input_role']; reservation?: number }>())
+  const [reservationVersion, setReservationVersion] = useState(0)
+  const referenceReservations = useRef(new Map<string, ReturnType<typeof createReferenceReservations<CanvasReferenceKind>>>())
+  function reservationsFor(nodeID: string) {
+    let value = referenceReservations.current.get(nodeID)
+    if (!value) { value = createReferenceReservations<CanvasReferenceKind>(); referenceReservations.current.set(nodeID, value) }
+    return value
+  }
+  const admissionCapabilities = useRef({ image: imageCapability, video: videoCapability })
+  admissionCapabilities.current = { image: imageCapability, video: videoCapability }
+  function admissionContext(nodeID: string, exclude?: number) { return { ...admissionCapabilities.current, reserved: reservationsFor(nodeID).pending(exclude) } }
   const [groupConfigID, setGroupConfigID] = useState('')
   const spacePressedRef = useRef(false)
   const [spacePressed, setSpacePressed] = useState(false)
@@ -134,6 +153,8 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     canvasID: string; store: ReturnType<typeof createCanvasStore>; base: CanvasDocument; revision: number
     enqueue: ReturnType<typeof createCanvasRemoteOperationQueue>; blocked: boolean
   } | null>(null)
+  const activeUserRef = useRef(app.profile?.id)
+  activeUserRef.current = app.profile?.id
   const activeCanvasIDRef = useRef(canvasID)
   activeCanvasIDRef.current = canvasID
   const loadSequenceRef = useRef(0)
@@ -165,12 +186,24 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
       const target = uploadTargetsRef.current.get(detail.target.nodeID)
       if (!target) return
       uploadTargetsRef.current.delete(detail.target.nodeID)
-      try { insertCanvasReference(store, detail.asset, target.nodeID, target.role) }
+      try { insertCanvasReference(store, detail.asset, target.nodeID, target.role, admissionContext(target.nodeID, target.reservation)) }
       catch (caught) { app.notify('error', errorMessage(caught)) }
+      finally { if (target.reservation !== undefined) reservationsFor(target.nodeID).release(target.reservation); setReservationVersion((value) => value + 1) }
+    }
+    const terminated = (event: Event) => {
+      const detail = (event as CustomEvent<MediaUploadTerminatedDetail>).detail
+      if (detail?.target?.canvasID !== canvasID) return
+      // Failed uploads may resume; keep the destination and revalidate their eventual success.
+      const changed = settleCanvasReferenceUpload(uploadTargetsRef.current, detail.target.nodeID, detail.status, (target) => {
+        if (target.reservation !== undefined) reservationsFor(target.nodeID).release(target.reservation)
+      })
+      if (!changed) return
+      setReservationVersion((value) => value + 1)
     }
     window.addEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete)
-    return () => window.removeEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete)
-  }, [canvasID, store])
+    window.addEventListener(MEDIA_UPLOAD_TERMINATED_EVENT, terminated)
+    return () => { window.removeEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete); window.removeEventListener(MEDIA_UPLOAD_TERMINATED_EVENT, terminated) }
+  }, [canvasID, store, imageCapability, videoCapability])
 
   const loadCanvas = useCallback(async () => {
     const sequence = ++loadSequenceRef.current
@@ -264,6 +297,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
       return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target as HTMLElement)?.isContentEditable || (target as HTMLElement)?.closest?.('[data-canvas-no-zoom]')
     }
     function keydown(event: KeyboardEvent) {
+      if (document.querySelector('[role="dialog"]')) return
       if (event.code === 'Space' && !isTypingTarget(event.target)) {
         event.preventDefault()
         if (!spacePressedRef.current) { spacePressedRef.current = true; setSpacePressed(true) }
@@ -407,7 +441,35 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     for (const node of documentState.nodes) {
       if (node.type !== 'image_v2' || node.asset_id) continue
       const draft = asObject(node.payload?.draft)
-      const next = canvasImageDraftForTask(draft, imageCapability, canvasImageTaskType(documentState, node.id))
+      const normalized = canvasImageDraftForTask(draft, imageCapability, canvasImageTaskType(documentState, node.id))
+      const ids = documentState.edges.filter((edge) => edge.target === node.id && edge.input_role === 'reference').sort(compareCanvasReferenceEdges).flatMap((edge) => { const source = documentState.nodes.find((item) => item.id === edge.source); return source?.asset_id ? [source.asset_id] : [] })
+      const profile = imageCapability.model_groups.find((item) => item.code === normalized.route_model_code)?.native_image_profile
+      const marks = asObject(draft.ui_reference_marks)
+      if (canvasReferenceMarksModelChanged(marks.model, profile) && Array.isArray(marks.originals)) {
+        for (const [markedID, original] of marks.originals as Array<[string, { id: string }]>) {
+          const source = documentState.nodes.find((item) => item.asset_id === markedID && documentState.edges.some((edge) => edge.target === node.id && edge.source === item.id))
+          if (source) store.getState().updateNode(source.id, (current) => ({ ...current, asset_id: original.id }))
+        }
+        store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, draft: { ...normalized, native_options: undefined, ui_reference_marks: undefined } } }))
+        continue
+      }
+      const selectedModel = imageCapability.model_groups.find((item) => item.code === normalized.route_model_code)
+      if (!selectedModel || !selectedModel.task_types.includes(normalized.task_type)) continue
+      if (draft.operation === 'layer_decomposition' && !profile?.operations.includes('layer_decomposition')) continue
+      if (!profile && draft.ui_reference_marks) continue
+      const clean = userNativeImageFields(normalized as import('../../../../shared/native-image').NativeImageRequestFields, profile, ids.length)
+      const previousIDs = nativeReferenceIDs.current.get(node.id)
+      if (previousIDs && JSON.stringify(previousIDs) !== JSON.stringify(ids) && clean.native_options?.annotations) clean.native_options.annotations = remapReferenceAnnotations(bindReferenceAnnotations(clean.native_options.annotations, previousIDs), ids)
+      nativeReferenceIDs.current.set(node.id, ids)
+      const prunedMarks = marks.model ? {
+        ...marks,
+        pending: Array.isArray(marks.pending) ? marks.pending.filter((id) => ids.includes(String(id))) : [],
+        painted: Array.isArray(marks.painted) ? marks.painted.filter((id) => ids.includes(String(id))) : [],
+        drafts: Object.fromEntries(Object.entries(asObject(marks.drafts)).filter(([id]) => ids.includes(id))),
+        saved: Object.fromEntries(Object.entries(asObject(marks.saved)).filter(([id]) => ids.includes(id))),
+        originals: Array.isArray(marks.originals) ? marks.originals.filter((entry) => Array.isArray(entry) && ids.includes(String(entry[0]))) : [],
+      } : normalized.ui_reference_marks
+      const next = { ...normalized, ...clean, ...(prunedMarks ? { ui_reference_marks: prunedMarks } : {}) }
       if (JSON.stringify(next) === JSON.stringify(draft)) continue
       store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, draft: next } }))
     }
@@ -466,14 +528,13 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     const targets: CanvasEstimateTarget[] = []
     for (const node of documentState.nodes.filter(isCanvasGenerationNode)) {
       const signature = canvasGenerationEstimateSignature(documentState, node.id)
-      const roleInputs = documentState.edges.filter((edge) => edge.target === node.id).map((edge) => ({ role: edge.input_role, asset_id: documentState.nodes.find((item) => item.id === edge.source)?.asset_id }))
-      const errors = [...canvasConsoleParameterErrors({ ...asObject(node.payload?.draft), inputs: roleInputs }, imageCapability, videoCapability, node.type === 'video_v2'), ...generationInputSummary(node, documentState).errors, ...(node.type === 'image_v2' ? canvasImageParameterErrors(asObject(node.payload?.draft), imageCapability, canvasImageTaskType(documentState, node.id), workspaceTaskImageSafetyLimit) : [])]
+      const errors = generationErrors(node, documentState)
       const eligible = errors.length === 0 && canvasGenerationEstimateEligible(documentState, node.id) && !activeNodeIDs.has(node.id)
       if (!eligible) continue
       targets.push({ nodeID: node.id, signature, force: estimateRetryNodesRef.current.delete(node.id) })
     }
     coordinator.sync(targets)
-  }, [canvasID, documentState, estimateRetryVersion, flushDocument, imageCapability, videoCapability, readOnly, runs, store])
+  }, [canvasID, documentState, estimateRetryVersion, flushDocument, imageCapability, videoCapability, readOnly, reservationVersion, runs, store, hydratedMedia])
 
   useEffect(() => {
     const timers = Object.entries(nodeEstimates).flatMap(([nodeID, estimate]) => {
@@ -626,7 +687,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   }
   function addAsset(asset: MediaAsset) {
     try {
-      if (assetTargetNodeID) insertCanvasReference(store!, asset, assetTargetNodeID, assetRole)
+      if (assetTargetNodeID) insertCanvasReference(store!, asset, assetTargetNodeID, assetRole, admissionContext(assetTargetNodeID))
       else addAssetNode(store!, asset, worldPoint(viewportSize.width / 2 + (viewportRef.current?.getBoundingClientRect().left ?? 0), viewportSize.height / 2 + (viewportRef.current?.getBoundingClientRect().top ?? 0)))
       setAssetTargetNodeID(''); setShowAssets(false)
     } catch (caught) { app.notify('error', errorMessage(caught)) }
@@ -645,6 +706,17 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
     if (!file || !target) return
     const expected = target.role === 'reference_video' ? 'video' : target.role === 'reference_audio' ? 'audio' : 'image'
     if (mediaTypeForFile(file) !== expected) { app.notify('error', '文件类型与参考角色不匹配'); return }
+    const document = store!.getState().command.present
+    const targetNode = document.nodes.find((node) => node.id === target.nodeID)
+    if (targetNode?.type === 'video_v2') {
+      const draft = asObject(targetNode.payload?.draft)
+      const reason = videoInputAssetReason(videoCapability?.model_groups.find((item) => item.code === draft.route_model_code), draft.task_type as import('../../../../shared/api-types').VideoTaskType, target.role as import('../creation/videoDraft').VideoDraftInputRole, { media_type: expected, mime_type: file.type, name: file.name, file_size_bytes: file.size })
+      if (reason) { app.notify('error', reason); return }
+    }
+    const reservation = reservationsFor(target.nodeID).reserve(canvasReferencePolicy(document, target.nodeID, admissionContext(target.nodeID), true), canvasReferenceEntries(document, target.nodeID), [{ id: token, kind: canvasReferenceKind(target.role) }], (item) => item.kind, (item) => item.id)
+    if (!reservation.ok) { app.notify('error', reservation.reason); return }
+    uploadTargetsRef.current.set(token, { ...target, reservation: reservation.token })
+    setReservationVersion((value) => value + 1)
     const detail: QueueMediaUploadDetail = { files: [file], projectID: canvas!.project_id, target: { canvasID, nodeID: token } }
     window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail }))
     if (imageUploadInputRef.current) imageUploadInputRef.current.value = ''
@@ -652,9 +724,30 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   function estimateNode(node: CanvasNode) {
     estimateRetryNodesRef.current.add(node.id); setEstimateRetryVersion((value) => value + 1)
   }
+  function generationErrors(node: CanvasNode, document: CanvasDocument) {
+    const inputs = document.edges.filter((edge) => edge.target === node.id && edge.input_role !== 'prompt').map((edge) => ({ role: edge.input_role, asset_id: document.nodes.find((source) => source.id === edge.source)?.asset_id }))
+    const errors = [...generationInputSummary(node, document).errors, ...canvasConsoleParameterErrors({ ...asObject(node.payload?.draft), inputs }, imageCapability, videoCapability, node.type === 'video_v2')]
+    if (Object.values(reservationsFor(node.id).pending()).some((count) => count > 0)) errors.push('参考素材正在上传，请等待完成后生成')
+    const admission = canvasReferenceAdmission(document, node.id, [], admissionContext(node.id))
+    if (!admission.ok) errors.push(admission.reason)
+    if (node.type === 'video_v2' && videoCapability) {
+      const error = videoDraftInvalidReason({ ...asObject(node.payload?.draft), inputs } as unknown as import('../creation/videoDraft').VideoDraft, videoCapability, Object.fromEntries(Object.entries(hydratedMedia).map(([id, media]) => [id, media.asset])))
+      if (error) errors.push(error)
+    }
+    if (node.type === 'image_v2') {
+      const draft = asObject(node.payload?.draft)
+      const model = imageCapability?.model_groups.find((item) => item.code === String(draft.route_model_code ?? draft.abstract_model ?? ''))
+      const error = nativeImageValidation(model?.native_image_profile, draft as NativeImageRequestFields, inputs.length)
+      if (error) errors.push(error)
+    }
+    return errors
+  }
   async function generateNode(node: CanvasNode) {
     const currentNode = store!.getState().command.present.nodes.find((item) => item.id === node.id)
     if (readOnly || !currentNode || !isCanvasGenerationNode(currentNode) || busyNodeID || runs.some((run) => run.node_id === node.id && activeRunStatuses.has(run.status))) return
+    if (Array.isArray(asObject(asObject(currentNode.payload?.draft).ui_reference_marks).pending) && (asObject(asObject(currentNode.payload?.draft).ui_reference_marks).pending as unknown[]).length) { app.notify('error', '请先保存或放弃引用标记'); return }
+    const errors = generationErrors(currentNode, store!.getState().command.present)
+    if (errors.length) { app.notify('error', errors[0]); return }
     const signature = canvasGenerationEstimateSignature(store!.getState().command.present, node.id)
     const estimate = nodeEstimatesRef.current[node.id]
     if (!estimate || estimate.status !== 'ready' || estimate.signature !== signature || canvasQuoteRemainingMS(estimate.detail) <= 0) {
@@ -674,6 +767,8 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
         app.notify('error', '画布内容已变化，正在重新估价')
         return
       }
+      const latestErrors = generationErrors(latest.nodes.find((item) => item.id === node.id)!, latest)
+      if (latestErrors.length) { app.notify('error', latestErrors[0]); return }
       if (node.type === 'video_v2' && !String(asObject(latest.nodes.find((item) => item.id === node.id)?.payload?.draft).quote_token ?? '')) { estimateNode(node); app.notify('error', '视频报价已失效，正在重新估价'); return }
       if (!canvasEstimateSufficient(app.balance?.available_points, estimate)) { app.notify('error', '积分不足，请充值后重试'); return }
       const run = await userApi.generateCanvasNode(canvas!.id, node.id, crypto.randomUUID())
@@ -718,7 +813,7 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   function referenceCandidateError(node: CanvasNode, pick: { nodeID: string; role: CanvasEdge['input_role'] }) {
     const media = node.asset_id ? hydratedMedia[node.asset_id] : undefined
     if (!media || !['ready', 'ready_original'].includes(media.asset.status)) return '素材尚未准备就绪，请稍后重试'
-    return validateCanvasReference(store!.getState().command.present, node, pick.nodeID, pick.role)
+    return validateCanvasReference(store!.getState().command.present, node, pick.nodeID, pick.role, admissionContext(pick.nodeID))
   }
   function connectionCandidate(sourceID: string, targetID: string, sourceHandle?: 'left' | 'right', targetHandle?: 'left' | 'right') {
     return resolveCanvasConnection(store!.getState().command.present, sourceID, targetID, { id: `edge-${crypto.randomUUID().slice(0, 12)}`, startHandle: sourceHandle, endHandle: targetHandle })
@@ -734,6 +829,11 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   function finishConnection(draft: ConnectionDraft, targetID: string, handle?: 'left' | 'right') {
     const candidate = connectionCandidate(draft.sourceID, targetID, draft.sourceHandle, handle ?? draft.targetHandle)
     if (candidate.edge && !candidate.error) {
+      const source = store!.getState().command.present.nodes.find((node) => node.id === candidate.edge!.source)
+      if (source?.asset_id && candidate.edge.input_role !== 'prompt' && candidate.edge.input_role !== 'result') {
+        const error = validateCanvasReference(store!.getState().command.present, source, candidate.edge.target, candidate.edge.input_role, admissionContext(candidate.edge.target))
+        if (error) { app.notify('error', error); updateConnection(null); return }
+      }
       store!.getState().connect(candidate.edge)
       updateConnection(null)
       return
@@ -754,6 +854,13 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
   }
   function chooseNodeMenuOption(option: { type: CanvasNodeType; role?: CanvasEdge['input_role'] }) {
     if (!nodeMenu) return
+    const source = documentState.nodes.find((node) => node.id === nodeMenu.sourceID)
+    if (source?.asset_id && option.role) {
+      const target: CanvasNode = { id: 'candidate-target', type: option.type, position: nodeMenu.point, size: { width: 420, height: 340 }, payload: defaultNodePayload(option.type, imageCapability, videoCapability) }
+      const candidate = { ...documentState, nodes: [...documentState.nodes, target] }
+      const error = validateCanvasReference(candidate, source, target.id, option.role, { image: imageCapability, video: videoCapability })
+      if (error) { app.notify('error', error); return }
+    }
     const nodeID = addNode(option.type, nodeMenu.point)
     if (nodeMenu.sourceID && option.role) {
       store!.getState().connect({ id: `edge-${crypto.randomUUID().slice(0, 12)}`, source: nodeMenu.sourceID, target: nodeID, input_role: option.role })
@@ -1067,9 +1174,9 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
         const signature = canvasGenerationEstimateSignature(documentState, node.id)
         const estimate = nodeEstimates[node.id]
         const valid = estimate?.status === 'ready' && estimate.signature === signature && canvasQuoteRemainingMS(estimate.detail) > 0
-        const errors = generationInputSummary(node, documentState).errors
+        const errors = generationErrors(node, documentState)
         const sufficient = estimate ? canvasEstimateSufficient(app.balance?.available_points, estimate) : false
-        const references = documentState.edges.filter((edge) => edge.target === node.id && edge.input_role !== 'prompt').flatMap((edge) => {
+        const references = documentState.edges.filter((edge) => edge.target === node.id && edge.input_role !== 'prompt').sort(compareCanvasReferenceEdges).flatMap((edge) => {
           const source = documentState.nodes.find((item) => item.id === edge.source)
           if (!source?.asset_id) return []
           const media = hydratedMedia[source.asset_id]
@@ -1077,7 +1184,46 @@ export function CanvasEditorPage({ canvasID, onBack }: Props) {
           return [{ id: edge.id, alias: String(source.payload?.name ?? asset.name), title: media?.asset.name ?? String(source.payload?.title ?? source.payload?.name ?? source.id), asset, role: edge.input_role }]
         })
         return <div ref={observeConsole} className="canvas-console-anchor" data-canvas-no-zoom style={canvasConsoleBounds(viewportSize, { x: node.position.x * documentState.viewport.zoom + documentState.viewport.x, y: (node.position.y + node.size.height) * documentState.viewport.zoom + documentState.viewport.y + 20 }, consoleHeight)}>
-          <CanvasGenerationConsole node={{ ...node, type: node.type as 'image_v2' | 'video_v2' }} draft={asObject(node.payload?.draft)} imageCapability={imageCapability} videoCapability={videoCapability} references={references} estimate={{ estimated_points: estimate?.points, display_points: estimate?.points, valid: valid && !errors.length, sufficient, error: errors[0] || estimate?.error || (valid && !sufficient ? '积分不足，请充值后重试' : undefined) }} run={adaptCanvasRun(runs.find((run) => run.node_id === node.id))} busy={busyNodeID === node.id || runs.some((run) => run.node_id === node.id && activeRunStatuses.has(run.status))} estimating={estimate?.status === 'waiting' || estimate?.status === 'loading'} accessToken={app.session?.token} onPatchDraft={(patch) => store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, draft: { ...asObject(current.payload?.draft), ...patch, quote_token: undefined } } }))} onUpload={(role = 'reference') => uploadImageForFrame(node.id, role as CanvasEdge['input_role'])} onLibrary={(role = 'reference') => chooseImageForFrame(node.id, role as CanvasEdge['input_role'])} onPickCanvasReference={(role = 'reference') => setReferencePick({ nodeID: node.id, role: role as CanvasEdge['input_role'] })} onRemoveReference={(edgeID) => { store.getState().selectEdges([edgeID]); store.getState().deleteSelected(); store.getState().select([node.id]) }} onGenerate={() => void generateNode(node)} onEstimate={() => estimateNode(node)} />
+          <CanvasGenerationConsole key={node.id} node={{ ...node, type: node.type as 'image_v2' | 'video_v2' }} draft={asObject(node.payload?.draft)} imageCapability={imageCapability} videoCapability={videoCapability} references={references} estimate={{ estimated_points: estimate?.points, display_points: estimate?.points, valid: valid && !errors.length, sufficient, error: errors[0] || estimate?.error || (valid && !sufficient ? '积分不足，请充值后重试' : undefined) }} run={adaptCanvasRun(runs.find((run) => run.node_id === node.id))} busy={busyNodeID === node.id || runs.some((run) => run.node_id === node.id && activeRunStatuses.has(run.status))} estimating={estimate?.status === 'waiting' || estimate?.status === 'loading'} accessToken={app.session?.token} onPatchDraft={(patch) => store.getState().updateNode(node.id, (current) => ({ ...current, payload: { ...current.payload, draft: { ...asObject(current.payload?.draft), ...patch, quote_token: undefined } } }))} onRestoreReference={async (assetID, originalID) => {
+            const sourceID = markedSources.current.get(assetID) ?? store.getState().command.present.edges.filter((edge) => edge.target === node.id).map((edge) => edge.source).find((id) => store.getState().command.present.nodes.some((item) => item.id === id && item.asset_id === assetID))
+            const source = store.getState().command.present.nodes.find((item) => item.id === sourceID && item.asset_id === assetID)
+            if (!source) throw new Error('引用已变化，无法恢复原图')
+            nativeReferenceIDs.current.set(node.id, (nativeReferenceIDs.current.get(node.id) ?? []).map((id) => id === assetID ? originalID : id))
+            store.getState().updateNode(source.id, (current) => ({ ...current, asset_id: originalID }))
+          }} onUploadMarkedReference={async (file, assetID) => {
+            const uploadDocument = store.getState().command.present
+            const source = uploadDocument.nodes.find((item) => item.asset_id === assetID && uploadDocument.edges.some((edge) => edge.target === node.id && edge.source === item.id))
+            const uploadUser = activeUserRef.current
+            const uploadSession = remoteSessionRef.current
+            const uploadModel = asObject(uploadDocument.nodes.find((item) => item.id === node.id)?.payload?.draft).route_model_code
+            const uploadEdges = uploadDocument.edges.filter((edge) => edge.target === node.id && edge.input_role !== 'prompt').sort(compareCanvasReferenceEdges)
+            const uploadSignature = JSON.stringify(uploadEdges)
+            if (!source) throw new Error('引用已移除，请重新选择')
+            const admission = canvasReferenceAdmission(uploadDocument, node.id, [], admissionContext(node.id))
+            if (!admission.ok) throw new Error(admission.reason)
+            const token = `marked-${crypto.randomUUID()}`
+            return await new Promise<string>((resolve, reject) => {
+              const timer = window.setTimeout(() => { window.removeEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete); reject(new Error('上传尚未完成，草稿已保留。请检查上传队列后重试。')) }, 120000)
+              const complete = (event: Event) => {
+                const detail = (event as CustomEvent<MediaUploadCompletedDetail>).detail
+                if (detail.target?.nodeID !== token || detail.target.canvasID !== canvasID) return
+                window.clearTimeout(timer); window.removeEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete)
+                const latest = store.getState().command.present.nodes.find((item) => item.id === source.id)
+                const currentDocument = store.getState().command.present
+                const target = currentDocument.nodes.find((item) => item.id === node.id)
+                if (activeUserRef.current !== uploadUser || activeCanvasIDRef.current !== canvasID || remoteSessionRef.current !== uploadSession || !target || asObject(target.payload?.draft).route_model_code !== uploadModel || JSON.stringify(currentDocument.edges.filter((edge) => edge.target === node.id && edge.input_role !== 'prompt').sort(compareCanvasReferenceEdges)) !== uploadSignature || latest?.asset_id !== assetID) { reject(new Error('引用已变化，已上传资产可从资产库恢复')); return }
+                const admission = canvasReferenceAdmission(currentDocument, node.id, [], admissionContext(node.id))
+                if (!admission.ok) { reject(new Error(admission.reason)); return }
+                nativeReferenceIDs.current.set(node.id, (nativeReferenceIDs.current.get(node.id) ?? []).map((id) => id === assetID ? detail.asset.id : id))
+                markedSources.current.set(detail.asset.id, source.id)
+                store.getState().updateNode(source.id, (current) => ({ ...current, asset_id: detail.asset.id }))
+                resolve(detail.asset.id)
+              }
+              window.addEventListener(MEDIA_UPLOAD_COMPLETED_EVENT, complete)
+              const detail: QueueMediaUploadDetail = { files: [file], projectID: canvas!.project_id, target: { canvasID, nodeID: token } }
+              window.dispatchEvent(new CustomEvent(QUEUE_MEDIA_UPLOAD_EVENT, { detail }))
+            })
+          }} onUpload={(role = 'reference') => uploadImageForFrame(node.id, role as CanvasEdge['input_role'])} onLibrary={(role = 'reference') => chooseImageForFrame(node.id, role as CanvasEdge['input_role'])} onPickCanvasReference={(role = 'reference') => setReferencePick({ nodeID: node.id, role: role as CanvasEdge['input_role'] })} onRemoveReference={(edgeID) => { store.getState().selectEdges([edgeID]); store.getState().deleteSelected(); store.getState().select([node.id]) }} onGenerate={() => void generateNode(node)} onEstimate={() => estimateNode(node)} />
         </div>
       })() : null}
       <div className="canvas-zoom-controls" data-canvas-no-zoom>
@@ -1141,7 +1287,7 @@ function CanvasNodeView({ node, selected, readOnly, connecting, connectValid, co
   onUpdate: (payload: Record<string, unknown>) => void; onRename: (name: string) => void; onAttach: () => void; onCancel: () => void; onMediaDetail: () => void; onMediaDimensions: (size: { width: number; height: number }) => void
 }) {
   const v2 = isCanvasV2MediaNode(node)
-  return <article className={`canvas-node${v2 ? ' canvas-node-v2' : ''}`} data-canvas-node data-canvas-drag-handle={v2 ? '' : undefined} data-node-id={node.id} data-type={node.type} data-selected={selected} data-connecting={connecting} data-connect-valid={connectValid || undefined} data-connect-invalid={connectInvalid || undefined} data-reference-eligible={referenceEligible || undefined} style={{ left: node.position.x, top: node.position.y, width: node.size.width, height: node.size.height }} onPointerDown={onSelect} onPointerMove={onDrag} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
+  return <article className={`canvas-node${v2 ? ' canvas-node-v2' : ''}`} data-canvas-node data-canvas-drag-handle={v2 ? '' : undefined} data-node-id={node.id} data-layer={node.payload?.layer ? true : undefined} data-type={node.type} data-selected={selected} data-connecting={connecting} data-connect-valid={connectValid || undefined} data-connect-invalid={connectInvalid || undefined} data-reference-eligible={referenceEligible || undefined} style={{ left: node.position.x, top: node.position.y, width: node.size.width, height: node.size.height }} onPointerDown={onSelect} onPointerMove={onDrag} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
     {!readOnly && selected && v2 ? <button type="button" className="canvas-port canvas-port-target" data-canvas-interactive data-canvas-port="left" title="连接节点（左侧）" onPointerDown={onStartConnection} /> : null}
     {v2 ? <CanvasMediaNodeV2 node={{ ...node, type: node.type as 'image_v2' | 'video_v2' }} title={media?.asset.name ?? String(node.payload?.title ?? nodeLabels[node.type])} mediaUrl={media?.url} aspectRatio={node.size.width / node.size.height} selected={selected} run={adaptCanvasRun(run)} onRename={readOnly ? undefined : onRename} onPreview={onMediaDetail} onMediaDimensions={onMediaDimensions} /> : <>
       <header data-canvas-drag-handle><span>{nodeTypeIcon(node.type)}</span><strong>{String(node.payload?.title ?? nodeLabels[node.type])}</strong></header>

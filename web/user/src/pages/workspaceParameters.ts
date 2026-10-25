@@ -1,5 +1,13 @@
 import type { CapabilityModelGroup, ImageTaskType } from '../../../shared/api-types'
+import type { NativeImageProfile } from '../../../shared/native-image'
 import { calculateImageSizeForBaseResolution, validateCustomImageSize, type CustomImageSizeNormalization } from '../../../shared/image-size'
+
+export function nativeLayerUnavailableReason(profile: NativeImageProfile | undefined, referenceCount: number, layerPriceReady: boolean, reason?: string): string {
+  if (!profile?.layer_decomposition || !profile.operations.includes('layer_decomposition')) return '当前型号拆层操作能力尚未开放'
+  if (referenceCount !== 1) return '拆层需要一张参考图'
+  if (!layerPriceReady) return reason?.trim() || '当前路由尚未完成拆层价格配置'
+  return ''
+}
 
 export type WorkspaceOutputParameters = {
   quality: string
@@ -30,6 +38,9 @@ export function workspaceModelForTask(model: CapabilityModelGroup | undefined, t
   if (scoped.auto_base_resolution) autoBaseResolutionByTaskType[taskType] = scoped.auto_base_resolution
   return {
     ...model,
+    native_image_profile: scoped.native_image_profile ?? model.native_image_profile,
+    native_image_layer_pricing_confirmed: scoped.native_image_layer_pricing_confirmed ?? model.native_image_layer_pricing_confirmed,
+    native_image_layer_unavailable_reason: scoped.native_image_layer_unavailable_reason ?? (scoped.native_image_layer_pricing_confirmed === undefined ? model.native_image_layer_unavailable_reason : undefined),
     base_resolution: scoped.base_resolution ?? model.base_resolution,
     auto_base_resolution_by_task_type: autoBaseResolutionByTaskType,
     size_modes: scoped.size_modes ?? model.size_modes,

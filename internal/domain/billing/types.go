@@ -2,6 +2,8 @@ package billing
 
 import (
 	"fmt"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +21,9 @@ type PlanLifecycleAudit struct {
 }
 
 type EstimateRequest struct {
+	TrustedInputDimensions    []imagepricing.Dimensions `json:"-"`
+	Operation                 nativeimage.Operation
+	NativeOptions             *nativeimage.Options
 	RouteKey                  string
 	TaskType                  string
 	AbstractModel             string
@@ -58,26 +63,28 @@ type EstimateResult struct {
 }
 
 type PricingSnapshot struct {
-	AbstractModel             string `json:"abstract_model"`
-	RouteModelCode            string `json:"route_model_code,omitempty"`
-	TaskType                  string `json:"task_type"`
-	SizeMode                  string `json:"size_mode,omitempty"`
-	AspectRatio               string `json:"aspect_ratio,omitempty"`
-	BaseResolution            string `json:"base_resolution"`
-	Quality                   string `json:"quality,omitempty"`
-	OutputFormat              string `json:"output_format,omitempty"`
-	Background                string `json:"background,omitempty"`
-	OutputCompression         int    `json:"output_compression,omitempty"`
-	Moderation                string `json:"moderation,omitempty"`
-	RequestedSize             string `json:"requested_size,omitempty"`
-	RequestedOutputImageCount int    `json:"requested_output_image_count"`
-	ReferenceImageCount       int    `json:"reference_image_count"`
-	UserGroupCode             string `json:"user_group_code,omitempty"`
-	UserGroupMultiplier       string `json:"user_group_multiplier"`
-	BaseUnitPoints            string `json:"base_unit_points"`
-	TaskMultiplier            string `json:"task_multiplier"`
-	ReferenceExtraMultiplier  string `json:"reference_extra_multiplier"`
-	EstimatedPoints           string `json:"estimated_points"`
+	RouteImage                *NativeImagePricingSnapshot `json:"route_image,omitempty"`
+	NativeImage               *NativeImagePricingSnapshot `json:"native_image,omitempty"`
+	AbstractModel             string                      `json:"abstract_model"`
+	RouteModelCode            string                      `json:"route_model_code,omitempty"`
+	TaskType                  string                      `json:"task_type"`
+	SizeMode                  string                      `json:"size_mode,omitempty"`
+	AspectRatio               string                      `json:"aspect_ratio,omitempty"`
+	BaseResolution            string                      `json:"base_resolution"`
+	Quality                   string                      `json:"quality,omitempty"`
+	OutputFormat              string                      `json:"output_format,omitempty"`
+	Background                string                      `json:"background,omitempty"`
+	OutputCompression         int                         `json:"output_compression,omitempty"`
+	Moderation                string                      `json:"moderation,omitempty"`
+	RequestedSize             string                      `json:"requested_size,omitempty"`
+	RequestedOutputImageCount int                         `json:"requested_output_image_count"`
+	ReferenceImageCount       int                         `json:"reference_image_count"`
+	UserGroupCode             string                      `json:"user_group_code,omitempty"`
+	UserGroupMultiplier       string                      `json:"user_group_multiplier"`
+	BaseUnitPoints            string                      `json:"base_unit_points"`
+	TaskMultiplier            string                      `json:"task_multiplier"`
+	ReferenceExtraMultiplier  string                      `json:"reference_extra_multiplier"`
+	EstimatedPoints           string                      `json:"estimated_points"`
 }
 
 type BalanceSummary struct {

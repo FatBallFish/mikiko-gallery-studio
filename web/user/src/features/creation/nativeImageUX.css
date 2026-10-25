@@ -1,0 +1,26 @@
+.native-negative-prompt { margin-top: 12px; min-width: 0; }
+.native-negative-prompt summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; padding: 8px 0; }
+.native-negative-prompt .prompt-template-editor { min-height: 76px; }
+.native-layer-entry { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.native-layer-entry small { font-size: 11px; color: var(--text-secondary); }
+.reference-mark-modal { width: min(840px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; }
+.reference-mark-toolbar, .reference-mark-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0; }
+.reference-mark-toolbar [aria-pressed=true] { border-color: var(--accent); background: var(--bg-hover); }
+.reference-mark-stage { display: flex; justify-content: center; background: var(--bg-secondary); border-radius: 12px; overflow: hidden; }
+.reference-mark-image { position: relative; width: min(100%, 600px); max-height: 48dvh; max-width: 100%; }
+.reference-mark-image img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.reference-mark-image svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.reference-mark-image svg :is(rect, circle, path) { stroke: #f43f5e; stroke-width: 3px; vector-effect: non-scaling-stroke; fill: none; pointer-events: none; stroke-linecap: round; stroke-linejoin: round; }
+.reference-mark-image svg circle { fill: #f43f5e; }
+.reference-mark-status { font-size: 12px; padding: 10px 0; }
+.reference-mark-coordinates { max-height: 100px; overflow: auto; font-size: 12px; padding-left: 18px; }
+.reference-mark-actions { justify-content: flex-end; position: sticky; bottom: 0; background: var(--bg-primary); z-index: 1; }
+.reference-mark-refresh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 10px; font-size: 12px; }
+.reference-mark-refresh [role=alert] { flex: 1 1 220px; }
+@media (max-width: 480px) {
+  .reference-mark-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .reference-mark-actions .u-btn { min-width: 0; white-space: normal; min-height: 40px; }
+}
+.reference-mark-trigger { position: absolute; inset: 0; cursor: crosshair; border: 0; background: transparent; }
+.reference-edited-badge { position: absolute; left: 4px; bottom: 4px; border-radius: 4px; background: #222c; color: white; font-size: 10px; padding: 2px 5px; pointer-events: none; }
+.canvas-console-v2__reference-preview { position: relative; border: 0; background: transparent; padding: 0; cursor: pointer; }

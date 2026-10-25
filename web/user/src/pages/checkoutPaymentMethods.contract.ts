@@ -9,7 +9,7 @@ type CashierOrderLeaksProviderInstance = 'provider_instance_id' extends keyof Ca
 type CashierOrderLeaksTrade = 'trade_no' extends keyof CashierOrder ? true : false
 type CashierSyncLeaksProvider = 'provider_type' extends keyof CashierOrderSyncResult ? true : false
 type CashierSyncLeaksTrade = 'trade_no' extends keyof CashierOrderSyncResult ? true : false
-type ImageTaskLeaksNegativePrompt = 'negative_prompt' extends keyof ImageTask ? true : false
+type ImageTaskSupportsNegativePrompt = 'negative_prompt' extends keyof ImageTask ? true : false
 
 const publicContractAssertions: [
   AssertFalse<CashierOrderLeaksProvider>,
@@ -18,8 +18,8 @@ const publicContractAssertions: [
   AssertFalse<CashierOrderLeaksTrade>,
   AssertFalse<CashierSyncLeaksProvider>,
   AssertFalse<CashierSyncLeaksTrade>,
-  AssertFalse<ImageTaskLeaksNegativePrompt>,
-] = [false, false, false, false, false, false, false]
+  ImageTaskSupportsNegativePrompt,
+] = [false, false, false, false, false, false, true]
 void publicContractAssertions
 
 const alipay = checkoutPublicPaymentMethod({ method: 'alipay', label: '', enabled: true, display_order: 10 })

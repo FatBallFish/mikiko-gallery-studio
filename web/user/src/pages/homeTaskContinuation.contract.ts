@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import type { ImageTask } from '../../../shared/api-types'
-import { homeContinuationView, homeRecentTaskView } from './homeGalleryModel'
+import { homeContinuationView, homeRecentTaskView, homeRecentResult } from './homeGalleryModel'
 
 const failed = task({ id: 'task_failed', status: 'failed' })
 const running = task({ id: 'task_running', status: 'running' })
@@ -19,6 +19,14 @@ const runningRecent = homeRecentTaskView(running, false)
 if (failedRecent.action === runningRecent.action || failedRecent.action !== 'retry' || runningRecent.action !== 'continue') {
   throw new Error(`failed and running recent tasks need distinct actions, got ${JSON.stringify({ failedRecent, runningRecent })}`)
 }
+
+const completedEmpty = homeRecentTaskView(task({ status: 'succeeded' }), false)
+if (completedEmpty.state !== 'recovering') throw new Error('completed task without results needs recovery state')
+const partial = task({ status: 'partial_failed', results: [
+  { id: 'missing', url: '', publish_status: 'private', width: 0, height: 0, created_at: '' },
+  { id: 'usable', name: '实际作品名称', publish_status: 'private', url: '/private-result', width: 100, height: 100, created_at: '' },
+] })
+if (homeRecentResult(partial)?.id !== 'usable' || homeRecentTaskView(partial, false).title !== '实际作品名称') throw new Error('recent task must prefer usable result and result name')
 
 const homeSource = readFileSync(new URL('./HomePage.tsx', import.meta.url), 'utf8')
 for (const required of [

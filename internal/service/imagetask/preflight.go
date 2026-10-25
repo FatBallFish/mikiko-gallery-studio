@@ -9,6 +9,7 @@ import (
 
 	domainassets "github.com/fatballfish/pic-gallery/internal/domain/assets"
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/pkg/errs"
 )
@@ -44,6 +45,22 @@ func (s *Service) prepareRequest(ctx context.Context, req domainimagetask.Create
 		return req, err
 	}
 	req.ReferenceImageCount = len(req.ReferenceAssetIDs)
+	// Ignore dimensions supplied by callers; only persisted, ownership-checked metadata is trusted.
+	req.TrustedInputDimensions = make([]imagepricing.Dimensions, len(req.ReferenceAssetIDs))
+	if loader, ok := s.assets.(assetMetadataLoader); ok {
+		for i, id := range req.ReferenceAssetIDs {
+			asset, err := loader.GetMetadata(ctx, req.UserID, id)
+			if err != nil {
+				var typed *errs.Error
+				if errors.As(err, &typed) {
+					copy := *typed
+					return req, errs.WithDetails(&copy, map[string]any{"field": "reference_asset_ids"})
+				}
+				return req, fmt.Errorf("load trusted reference dimensions: %w", err)
+			}
+			req.TrustedInputDimensions[i] = imagepricing.Dimensions{Width: int64(asset.Width), Height: int64(asset.Height)}
+		}
+	}
 	seen := map[string]bool{}
 	for _, id := range req.ReferenceAssetIDs {
 		if seen[id] {
@@ -51,8 +68,8 @@ func (s *Service) prepareRequest(ctx context.Context, req domainimagetask.Create
 		}
 		seen[id] = true
 		if metadataOnly {
-			if err := s.validateAssetMetadata(ctx, req.UserID, id, "reference_asset_ids"); err != nil {
-				return req, err
+			if _, ok := s.assets.(assetMetadataLoader); !ok {
+				return req, errs.New(503, "IMAGE_REFERENCE_UNAVAILABLE", "reference metadata is unavailable")
 			}
 			continue
 		}
@@ -118,7 +135,7 @@ func (s *Service) estimatePrepared(ctx context.Context, req domainimagetask.Crea
 	if manager, ok := s.billing.(routeTaskPreflightManager); ok && req.RouteModelCode != "" {
 		_, estimate, err = manager.ResolveAndEstimateRouteTask(ctx, taskEstimateRequest(req, normalizedCount(req.OutputImageCount)), s.cfg.GenerationLimits)
 	} else {
-		_, err = s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent, req.CapabilityVersion)
+		_, err = s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent, req.CapabilityVersion, req)
 		if err == nil && s.billing != nil {
 			estimate, err = s.billing.Estimate(taskEstimateRequest(req, normalizedCount(req.OutputImageCount)))
 		}

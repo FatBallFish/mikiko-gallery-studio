@@ -989,6 +989,7 @@ paths:
         - $ref: ./components/parameters/common.yaml#/components/parameters/Moderation
         - $ref: ./components/parameters/common.yaml#/components/parameters/RequestedSize
         - $ref: ./components/parameters/common.yaml#/components/parameters/OutputImageCount
+        - $ref: ./components/parameters/common.yaml#/components/parameters/ReferenceAssetIDs
         - $ref: ./components/parameters/common.yaml#/components/parameters/ReferenceImageCount
         - $ref: ./components/parameters/common.yaml#/components/parameters/TaskType
       responses:
@@ -1419,6 +1420,55 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/agent.yaml#/components/schemas/ImageTaskResponse
+  /api/agent/image/v1/tasks/{task_id}/layers:
+    get:
+      tags: [ Agent Image ]
+      summary: Get owned image task layer manifest
+      operationId: getAgentImageTaskLayers
+      description: Browser session endpoint for layer_decomposition tasks. Returns available results including the base image. This is distinct from the API Key/MCP manifest.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/TaskId
+      responses:
+        '200':
+          description: Layer manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: ./components/schemas/common.yaml#/components/schemas/ImageTaskLayersManifest
+        '400':
+          description: Task is not a layer decomposition
+        '401':
+          description: Browser authentication required
+        '404':
+          description: Task not found or not owned
+  /api/agent/image/v1/tasks/{task_id}/layers/archive:
+    get:
+      tags: [ Agent Image ]
+      summary: Download owned image task layers as ZIP
+      operationId: getAgentImageTaskLayerArchive
+      description: Browser session only. Includes fixed layer-NN filenames and manifest.json (ImageTaskLayerArchiveManifest). Requires 1..17 persisted results; total image bytes must not exceed 128 MiB. The response is private and no-store. OAuth/MCP callers must renew individual links using get_image_result_access instead.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/TaskId
+      responses:
+        '200':
+          description: layers.zip with layer files and manifest.json
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        '400':
+          description: Invalid layer set or archive exceeds 128 MiB
+        '401':
+          description: Browser authentication required
+        '404':
+          description: Task or persisted result not found or not owned
   /api/agent/image/v1/images/{image_id}:
     get:
       tags: [ Agent Image ]
@@ -1588,7 +1638,31 @@ paths:
       parameters:
         - { name: route_model_code, in: query, required: true, schema: { type: string } }
       responses:
-        '200': { description: Candidate-backed capability union }
+        '200':
+          description: Candidate-backed capability union with conservative input constraints shared by routable candidates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      route_model_code: { type: string }
+                      input_capabilities_by_task_type:
+                        type: object
+                        description: Input constraints by task type then input role; absent roles are unsupported. Counts come from verified provider capabilities.
+                        additionalProperties:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            required: [required, max_count, media_types, formats, max_bytes]
+                            properties:
+                              required: { type: boolean }
+                              max_count: { type: integer, description: Negative means unlimited; zero rejects the role. }
+                              media_types: { type: array, items: { type: string } }
+                              formats: { type: array, items: { type: string } }
+                              max_bytes: { type: integer, format: int64, description: Zero means no byte limit. }
         '404': { description: Route model not found }
         '409': { description: No verified enabled candidate }
   /api/agent/video/v1/estimates:
@@ -5736,6 +5810,48 @@ paths:
             application/json:
               schema:
                 $ref: ./components/schemas/common.yaml#/components/schemas/ErrorEnvelope
+  /api/public/v1/media:
+    get:
+      tags: [Public Gallery]
+      operationId: listPublicMedia
+      summary: List approved public images and ready approved videos together
+      security: []
+      description: Anonymous public summary feed with optional browser identity for liked/favorited filters. Excludes deleted media and full prompts. latest sorts by published_at, created_at, id and media type descending; hot first uses image likes*2 + favorites*3 (videos score zero), followed by the same stable order. gallery_enabled=false returns an empty list. Detail and access permissions remain on the existing image/video endpoints.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [latest, hot], default: latest }
+        - name: query
+          in: query
+          schema: { type: string }
+        - name: route_model_code
+          in: query
+          schema: { type: string }
+        - name: liked
+          in: query
+          description: Only liked images for the optional browser user. Anonymous requests with this filter return no items.
+          schema: { type: boolean }
+        - name: favorited
+          in: query
+          description: Only favorited images for the optional browser user. Anonymous requests with this filter return no items.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Unified media page; Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicMediaPageResponse'
+        '400':
+          description: Invalid pagination
+        '503':
+          description: Public feed service unavailable
   /api/public/v1/videos:
     get:
       tags:
@@ -7261,6 +7377,16 @@ paths:
                         type: array
                         items: &a44
                           type: object
+                          properties:
+                            native_image_layer_pricing_confirmed:
+                              type: boolean
+                              description: All usable route candidates support layers and have valid, explicitly confirmed cost and sale layer pricing.
+                            capabilities_by_task_type:
+                              type: object
+                              additionalProperties:
+                                $ref: ./components/schemas/agent.yaml#/components/schemas/CapabilityTaskOptions
+                            native_image_profile:
+                              $ref: ./components/schemas/common.yaml#/components/schemas/NativeImageCapabilityProfile
                           additionalProperties: true
                       model_groups:
                         type: array
@@ -7683,6 +7809,36 @@ paths:
             application/json:
               schema:
                 $ref: ./components/error-components.yaml#/components/schemas/ErrorResponse
+  /api/open/v1/image-tasks/{task_id}/layers:
+    get:
+      tags: [Developer API]
+      operationId: get_image_task_layers
+      summary: Get owned image task layer manifest
+      description: Requires images:read. Returns native layer metadata and access operation inputs. Renew individual links via get_image_result_access; the browser ZIP endpoint requires a browser session.
+      security:
+        - developerBearerAuth: []
+      x-required-scopes: [images:read]
+      parameters:
+        - $ref: ./components/parameters/common.yaml#/components/parameters/TaskId
+      responses:
+        '200':
+          description: Developer layer manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: ./components/schemas/common.yaml#/components/schemas/DeveloperImageTaskLayersManifest
+        '400':
+          description: Task is not a layer decomposition
+        '401':
+          description: Missing or invalid developer credential
+        '403':
+          description: images:read scope required
+        '404':
+          description: Task not found or not owned
   /api/open/v1/image-tasks/{task_id}/events:
     get:
       tags:
@@ -10934,6 +11090,54 @@ components:
           properties:
             request_id:
               type: string
+    PublicMediaVideoSummary:
+      type: object
+      required: [id, title, media_type, status, video_url, poster_url, created_at]
+      description: Public feed video summary with no full prompt, owner identity, project or review metadata.
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        media_type: { type: string, enum: [video] }
+        status: { type: string, enum: [approved] }
+        video_url: { type: string }
+        poster_url: { type: string }
+        width: { type: integer }
+        height: { type: integer }
+        duration_ms: { type: integer, format: int64 }
+        published_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    PublicMediaItem:
+      oneOf:
+        - type: object
+          required: [media_type, id, image]
+          properties:
+            media_type: { type: string, enum: [image] }
+            id: { type: string }
+            image:
+              $ref: ./components/schemas/common.yaml#/components/schemas/PublicGalleryListImage
+        - type: object
+          required: [media_type, id, video]
+          properties:
+            media_type: { type: string, enum: [video] }
+            id: { type: string }
+            video:
+              $ref: '#/components/schemas/PublicMediaVideoSummary'
+      discriminator:
+        propertyName: media_type
+    PublicMediaPageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [items, pagination]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PublicMediaItem'
+            pagination:
+              $ref: ./components/schemas/common.yaml#/components/schemas/Pagination
     VideoPublication:
       type: object
       required:
@@ -11531,6 +11735,10 @@ components:
     DeveloperImagePreflightRequest:
       type: object
       properties:
+        operation:
+          $ref: ./components/schemas/common.yaml#/components/schemas/NativeImageOperation
+        native_options:
+          $ref: ./components/schemas/common.yaml#/components/schemas/NativeImageOptions
         project_id: &a2
           type: string
         route_model_code: *a2
@@ -11593,6 +11801,10 @@ components:
     DeveloperImageCreateRequest:
       type: object
       properties:
+        operation:
+          $ref: ./components/schemas/common.yaml#/components/schemas/NativeImageOperation
+        native_options:
+          $ref: ./components/schemas/common.yaml#/components/schemas/NativeImageOptions
         project_id: &a4
           type: string
         route_model_code: *a4

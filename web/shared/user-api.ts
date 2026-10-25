@@ -1,3 +1,4 @@
+import { nativeImageFields } from './native-image'
 import type {
   ApiKey,
   Balance,
@@ -222,6 +223,7 @@ export function toTask(raw: any): ImageTask {
 export function buildEstimateWireRequest(req: EstimateRequest): BackendEstimateRequest {
 	const sizeMode = req.size_mode === 'auto' ? 'auto' : req.size_mode === 'pixel' ? 'pixel' : 'ratio'
 	return {
+		...nativeImageFields(req),
 		task_type: toBackendTaskType(req.task_type),
 		route_model_code: req.route_model_code,
 		size_mode: sizeMode,
@@ -234,6 +236,7 @@ export function buildEstimateWireRequest(req: EstimateRequest): BackendEstimateR
 		moderation: req.moderation ?? 'auto',
 		requested_output_image_count: req.image_count,
 		reference_image_count: req.reference_asset_ids?.length ?? 0,
+		...(req.reference_asset_ids?.length ? { reference_asset_ids: [...req.reference_asset_ids] } : {}),
   }
 }
 
@@ -301,6 +304,17 @@ export function toGalleryImage(raw: any): GalleryImage {
   }
 }
 
+function optionalNativeImageCapabilities(source: unknown): Pick<CapabilityTaskOptions, 'native_image_profile' | 'native_image_layer_pricing_confirmed' | 'native_image_layer_unavailable_reason'> {
+	const profile = pick<CapabilityTaskOptions['native_image_profile']>(source, 'native_image_profile', 'NativeImageProfile')
+	const layerPricingConfirmed = pick<unknown>(source, 'native_image_layer_pricing_confirmed', 'NativeImageLayerPricingConfirmed')
+	const layerUnavailableReason = pick<unknown>(source, 'native_image_layer_unavailable_reason', 'NativeImageLayerUnavailableReason')
+	return {
+		...(profile ? { native_image_profile: profile } : {}),
+		...(typeof layerPricingConfirmed === 'boolean' ? { native_image_layer_pricing_confirmed: layerPricingConfirmed } : {}),
+		...(typeof layerUnavailableReason === 'string' ? { native_image_layer_unavailable_reason: layerUnavailableReason } : {}),
+	}
+}
+
 function optionalOutputCapabilities(source: any) {
 	const result: {
 		quality?: string[]
@@ -343,11 +357,12 @@ function optionalOutputCapabilities(source: any) {
     )
   }
   if (moderation !== undefined) result.moderation = moderation
-  return result
+  return { ...result, ...optionalNativeImageCapabilities(source) }
 }
 
 function normalizeTaskCapability(source: unknown): CapabilityTaskOptions {
 	const result: CapabilityTaskOptions = {
+    ...optionalNativeImageCapabilities(source),
     auto_base_resolution: String(pick(source, 'auto_base_resolution', 'AutoBaseResolution') ?? '').trim().toLowerCase() || undefined,
     supports_output_compression: Boolean(pick(source, 'supports_output_compression', 'SupportsOutputCompression')),
 		supports_custom_size: Boolean(pick(source, 'supports_custom_size', 'SupportsCustomSize')),
@@ -438,6 +453,7 @@ export function normalizeCapabilities(raw: any): Capability {
       supports_reference: Boolean(pick(item, 'supports_reference', 'SupportsReference', 'supports_image_input', 'SupportsImageInput') ?? ((maxReference > 0) || normalizedTaskTypes.includes('image_edit'))),
       display_points: pick<string>(item, 'display_points', 'DisplayPoints') ?? prices[0]?.display_points,
       ...optionalOutputCapabilities(item),
+      ...(item.native_image_profile ? { native_image_profile: item.native_image_profile } : {}),
     }]
   })
   const qualities = pick<string[]>(raw, 'qualities', 'Qualities', 'supported_qualities', 'SupportedQualities') ?? normalizedModels[0]?.qualities ?? ['auto', '1K', '2K', '4K']
@@ -487,6 +503,7 @@ export function normalizeVideoCapabilities(raw: VideoCapabilityListWire): VideoC
 				const combinations = group.combinations.filter((item) => item.task_type === taskType)
 				if (combinations.length === 0) return []
 				return [[taskType, {
+					inputs: group.input_capabilities_by_task_type?.[taskType],
 					durations: uniqueValues(combinations.map((item) => item.duration_seconds)),
 					resolutions: uniqueValues(combinations.map((item) => item.resolution)),
 					aspect_ratios: uniqueValues(combinations.map((item) => item.aspect_ratio)),
@@ -511,6 +528,7 @@ export function normalizeVideoCapabilities(raw: VideoCapabilityListWire): VideoC
 					aspect_ratio: first.aspect_ratio,
 					generate_audio: first.audio_mode === 'generated',
 				},
+				input_capabilities_by_task_type: group.input_capabilities_by_task_type,
 				options_by_task_type: optionsByTaskType,
 			}]
 		}),
@@ -608,6 +626,8 @@ export const userApi = {
   cancelCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderCancel, { method: 'POST', pathParams: { order_id } }),
   mockPayCashierOrder: (order_id: string | number) => sharedApiClient.request<CashierOrder>(API_PATHS.agent.cashierOrderMockPay, { method: 'POST', pathParams: { order_id } }),
   redeemCode: (code: string, idempotencyKey = crypto.randomUUID()) => sharedApiClient.request(API_PATHS.agent.redeemCode, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: { code } }),
+  getImageLayers: (id: string) => sharedApiClient.request<{ version: 1; task_id: string; operation: string; layers: ImageResult[] }>(`/api/agent/image/v1/tasks/${encodeURIComponent(id)}/layers`),
+  downloadImageLayers: (id: string) => sharedApiClient.blob(`/api/agent/image/v1/tasks/${encodeURIComponent(id)}/layers/archive`),
   getCapabilities: async (): Promise<Capability> => normalizeCapabilities(await sharedApiClient.request(API_PATHS.agent.capabilities)),
 	getVideoCapabilities: async (): Promise<VideoCapability> => normalizeVideoCapabilities(await sharedApiClient.request<VideoCapabilityListWire>(API_PATHS.agent.videoCapabilities)),
 	estimateVideo: (req: VideoEstimateRequest, signal?: AbortSignal) => sharedApiClient.request<VideoEstimate>(API_PATHS.agent.videoEstimates, { method: 'POST', body: buildVideoEstimateWireRequest(req), signal }),
@@ -674,7 +694,7 @@ export const userApi = {
   abortMediaUpload: (upload_id: string) => sharedApiClient.request<{ status: string }>(API_PATHS.agent.mediaUploadDetail, { method: 'DELETE', pathParams: { upload_id } }),
   estimatePromptOptimization: (prompt: string, mediaType?: 'image' | 'video', routeModelCode?: string) => sharedApiClient.request<PromptOptimizationEstimate>(API_PATHS.agent.promptOptimizationEstimate, { method: 'POST', body: { prompt, ...(mediaType ? { media_type: mediaType } : {}), ...(routeModelCode ? { route_model_code: routeModelCode } : {}) } }),
   optimizePrompt: (prompt: string, quote: string, mediaType?: 'image' | 'video', routeModelCode?: string) => sharedApiClient.request<PromptOptimizationResult>(API_PATHS.agent.promptOptimizations, { method: 'POST', body: { prompt, quote, ...(mediaType ? { media_type: mediaType } : {}), ...(routeModelCode ? { route_model_code: routeModelCode } : {}) } }),
-  estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: buildEstimateWireRequest(req) }), req),
+  estimate: async (req: EstimateRequest) => toEstimate(await sharedApiClient.request(API_PATHS.agent.estimate, { query: (() => { const { native_options, reference_asset_ids, ...fields } = buildEstimateWireRequest(req); return { ...fields, ...(reference_asset_ids?.length ? { reference_asset_ids: reference_asset_ids.join(',') } : {}), ...(native_options ? { native_options: JSON.stringify(native_options) } : {}) } })() }), req),
   uploadReferenceAsset: async (file: File | string, sizeBytes?: number) => {
     if (typeof file === 'string') {
       return { id: '', name: file, preview_url: '', status: 'ready', size_bytes: sizeBytes ?? 0, created_at: '' } satisfies ReferenceAsset

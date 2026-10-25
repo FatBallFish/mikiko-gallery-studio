@@ -75,3 +75,8 @@
   .canvas-console-v2__generate { padding: 7px 10px; }
 }
 @media (prefers-reduced-motion: reduce) { .canvas-media-v2__spinner { animation: none; } }
+
+/* Layer geometry is supplied by the manifest; transparent pixels reveal lower layers. */
+.canvas-node[data-layer="true"] .canvas-media-v2__body { border-radius: 0; background: transparent; }
+.canvas-node[data-layer="true"] .canvas-media-v2__placeholder { min-height: 0; padding: 0; }
+.canvas-node[data-layer="true"]:not([data-selected="true"]) .canvas-media-v2__title { visibility: hidden; }

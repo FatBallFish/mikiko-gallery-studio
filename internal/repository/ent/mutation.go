@@ -11,6 +11,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/adminuser"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikey"
 	"github.com/fatballfish/pic-gallery/internal/repository/ent/apikeyquotareservation"
@@ -60645,6 +60646,7 @@ type RouteModelMutation struct {
 	created_at    *time.Time
 	updated_at    *time.Time
 	deleted_at    *time.Time
+	image_pricing **imagepricing.Config
 	code          *string
 	name          *string
 	description   *string
@@ -60878,6 +60880,55 @@ func (m *RouteModelMutation) DeletedAtCleared() bool {
 func (m *RouteModelMutation) ResetDeletedAt() {
 	m.deleted_at = nil
 	delete(m.clearedFields, routemodel.FieldDeletedAt)
+}
+
+// SetImagePricing sets the "image_pricing" field.
+func (m *RouteModelMutation) SetImagePricing(i *imagepricing.Config) {
+	m.image_pricing = &i
+}
+
+// ImagePricing returns the value of the "image_pricing" field in the mutation.
+func (m *RouteModelMutation) ImagePricing() (r *imagepricing.Config, exists bool) {
+	v := m.image_pricing
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImagePricing returns the old "image_pricing" field's value of the RouteModel entity.
+// If the RouteModel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RouteModelMutation) OldImagePricing(ctx context.Context) (v *imagepricing.Config, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImagePricing is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImagePricing requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImagePricing: %w", err)
+	}
+	return oldValue.ImagePricing, nil
+}
+
+// ClearImagePricing clears the value of the "image_pricing" field.
+func (m *RouteModelMutation) ClearImagePricing() {
+	m.image_pricing = nil
+	m.clearedFields[routemodel.FieldImagePricing] = struct{}{}
+}
+
+// ImagePricingCleared returns if the "image_pricing" field was cleared in this mutation.
+func (m *RouteModelMutation) ImagePricingCleared() bool {
+	_, ok := m.clearedFields[routemodel.FieldImagePricing]
+	return ok
+}
+
+// ResetImagePricing resets all changes to the "image_pricing" field.
+func (m *RouteModelMutation) ResetImagePricing() {
+	m.image_pricing = nil
+	delete(m.clearedFields, routemodel.FieldImagePricing)
 }
 
 // SetCode sets the "code" field.
@@ -61258,7 +61309,7 @@ func (m *RouteModelMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RouteModelMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 13)
 	if m.created_at != nil {
 		fields = append(fields, routemodel.FieldCreatedAt)
 	}
@@ -61267,6 +61318,9 @@ func (m *RouteModelMutation) Fields() []string {
 	}
 	if m.deleted_at != nil {
 		fields = append(fields, routemodel.FieldDeletedAt)
+	}
+	if m.image_pricing != nil {
+		fields = append(fields, routemodel.FieldImagePricing)
 	}
 	if m.code != nil {
 		fields = append(fields, routemodel.FieldCode)
@@ -61309,6 +61363,8 @@ func (m *RouteModelMutation) Field(name string) (ent.Value, bool) {
 		return m.UpdatedAt()
 	case routemodel.FieldDeletedAt:
 		return m.DeletedAt()
+	case routemodel.FieldImagePricing:
+		return m.ImagePricing()
 	case routemodel.FieldCode:
 		return m.Code()
 	case routemodel.FieldName:
@@ -61342,6 +61398,8 @@ func (m *RouteModelMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldUpdatedAt(ctx)
 	case routemodel.FieldDeletedAt:
 		return m.OldDeletedAt(ctx)
+	case routemodel.FieldImagePricing:
+		return m.OldImagePricing(ctx)
 	case routemodel.FieldCode:
 		return m.OldCode(ctx)
 	case routemodel.FieldName:
@@ -61389,6 +61447,13 @@ func (m *RouteModelMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDeletedAt(v)
+		return nil
+	case routemodel.FieldImagePricing:
+		v, ok := value.(*imagepricing.Config)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImagePricing(v)
 		return nil
 	case routemodel.FieldCode:
 		v, ok := value.(string)
@@ -61501,6 +61566,9 @@ func (m *RouteModelMutation) ClearedFields() []string {
 	if m.FieldCleared(routemodel.FieldDeletedAt) {
 		fields = append(fields, routemodel.FieldDeletedAt)
 	}
+	if m.FieldCleared(routemodel.FieldImagePricing) {
+		fields = append(fields, routemodel.FieldImagePricing)
+	}
 	return fields
 }
 
@@ -61518,6 +61586,9 @@ func (m *RouteModelMutation) ClearField(name string) error {
 	case routemodel.FieldDeletedAt:
 		m.ClearDeletedAt()
 		return nil
+	case routemodel.FieldImagePricing:
+		m.ClearImagePricing()
+		return nil
 	}
 	return fmt.Errorf("unknown RouteModel nullable field %s", name)
 }
@@ -61534,6 +61605,9 @@ func (m *RouteModelMutation) ResetField(name string) error {
 		return nil
 	case routemodel.FieldDeletedAt:
 		m.ResetDeletedAt()
+		return nil
+	case routemodel.FieldImagePricing:
+		m.ResetImagePricing()
 		return nil
 	case routemodel.FieldCode:
 		m.ResetCode()

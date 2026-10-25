@@ -12,6 +12,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1021,9 +1022,13 @@ type domainauthSession struct {
 	AccessToken string
 }
 
-func createAndProcessAgentTask(t *testing.T, handler http.Handler, taskSvc *imagetaskservice.Service, accessToken string) string {
+func createAndProcessAgentTask(t *testing.T, handler http.Handler, taskSvc *imagetaskservice.Service, accessToken string, routeModelCode ...string) string {
 	t.Helper()
-	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a downloadable banner","abstract_model":"plus","base_resolution":"auto","requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`)
+	model := `"abstract_model":"plus","base_resolution":"auto"`
+	if len(routeModelCode) > 0 {
+		model = `"route_model_code":` + strconv.Quote(routeModelCode[0]) + `,"size_mode":"pixel"`
+	}
+	createBody := bytes.NewBufferString(`{"task_type":"text_to_image","prompt":"Generate a downloadable banner",` + model + `,"requested_size":"1536x1024","requested_output_image_count":1,"response_mode":"async"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/agent/image/v1/tasks", createBody)
 	createReq.Header.Set("Authorization", "Bearer "+accessToken)
 	createReq.Header.Set("Content-Type", "application/json")

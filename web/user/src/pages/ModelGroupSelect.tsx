@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from 'react'
+import { OverlayPortal } from '../ui/overlayPortal'
 import { ArrowLeft, Check, ChevronDown } from 'lucide-react'
 import type { CapabilityModelGroup, RouteModelGroupMeta } from '../../../shared/api-types'
 import { cn } from '../../../shared/classnames'
@@ -14,8 +15,18 @@ function pointsSubject(raw?: string) {
 
 const UNGROUPED = '__ungrouped__'
 
+export function modelMenuGeometry(trigger: { left: number; top: number; bottom: number; width: number }, viewport: { left: number; top: number; width: number; height: number }) {
+  const margin = 8
+  const width = Math.min(trigger.width, viewport.width - margin * 2)
+  const below = Math.max(0, viewport.top + viewport.height - margin - trigger.bottom - 6)
+  const above = Math.max(0, trigger.top - viewport.top - margin - 6)
+  const height = Math.min(320, Math.max(below, above))
+  const top = below >= height ? trigger.bottom + 6 : trigger.top - 6 - height
+  return { left: Math.max(viewport.left + margin, Math.min(trigger.left, viewport.left + viewport.width - width - margin)), top: Math.max(viewport.top + margin, Math.min(top, viewport.top + viewport.height - height - margin)), width, height }
+}
+
 // Progressive drill-down model picker. The dropdown is a single full-width
-// column: level 1 lists the model groups, tapping one slides to level 2 with
+// column: level 1 lists the model groups, tapping one shows level 2 with
 // that group's route models and a back row. Selecting always yields a
 // concrete route model code. When the dropdown opens with a selection
 // already made, it starts on that model's group so one tap adjusts it.
@@ -33,6 +44,31 @@ export function ModelGroupSelect({ options, value, onChange, groups }: {
   const [open, setOpen] = useState(false)
   const [level, setLevel] = useState<1 | 2>(1)
   const [activeGroupCode, setActiveGroupCode] = useState<string>(UNGROUPED)
+  const [menuGeometry, setMenuGeometry] = useState<ReturnType<typeof modelMenuGeometry> | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const viewport = window.visualViewport
+    const reposition = () => {
+      const trigger = triggerRef.current?.getBoundingClientRect()
+      if (!trigger) return
+      setMenuGeometry(modelMenuGeometry(trigger, { left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0, width: viewport?.width ?? window.innerWidth, height: viewport?.height ?? window.innerHeight }))
+    }
+    reposition()
+    window.addEventListener('resize', reposition)
+    document.addEventListener('scroll', reposition, true)
+    viewport?.addEventListener('resize', reposition)
+    viewport?.addEventListener('scroll', reposition)
+    const observer = new ResizeObserver(reposition)
+    if (triggerRef.current) observer.observe(triggerRef.current)
+    return () => {
+      window.removeEventListener('resize', reposition)
+      document.removeEventListener('scroll', reposition, true)
+      viewport?.removeEventListener('resize', reposition)
+      viewport?.removeEventListener('scroll', reposition)
+      observer.disconnect()
+    }
+  }, [open])
 
   const sections = useMemo<PickerSection[]>(() => {
     const configured = (groups ?? []).filter((group) => options.some((option) => (option.group_codes ?? []).includes(group.code)))
@@ -55,18 +91,28 @@ export function ModelGroupSelect({ options, value, onChange, groups }: {
 
   useEffect(() => {
     if (!open) return undefined
-    // Reopening with a selection lands on level 2 of that model's group;
-    // otherwise level 1.
-    setLevel(selectedSection ? 2 : 1)
-    setActiveGroupCode(selectedSection?.group?.code ?? UNGROUPED)
     const frame = window.requestAnimationFrame(() => panelRef.current?.focus())
     return () => window.cancelAnimationFrame(frame)
-  }, [open, selectedSection])
+  }, [open, level])
+
+  function toggleOpen() {
+    if (!open) {
+      // Initialize once per opening; refreshed option objects must not undo Back.
+      setLevel(selectedSection ? 2 : 1)
+      setActiveGroupCode(selectedSection?.group?.code ?? UNGROUPED)
+    }
+    setOpen((current) => !current)
+  }
+
+  function showGroups() {
+    panelRef.current?.focus()
+    setLevel(1)
+  }
 
   useEffect(() => {
     if (!open) return undefined
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (rootRef.current?.contains(event.target as Node)) return
+      if (rootRef.current?.contains(event.target as Node) || panelRef.current?.contains(event.target as Node)) return
       setOpen(false)
     }
     document.addEventListener('pointerdown', closeOnOutsidePointer)
@@ -86,9 +132,10 @@ export function ModelGroupSelect({ options, value, onChange, groups }: {
   function handleKeyDown(event: React.KeyboardEvent) {
     if (event.key === 'Escape' && open) {
       event.preventDefault()
+      event.stopPropagation()
       if (level === 2 && hasGroups) {
         event.stopPropagation()
-        setLevel(1)
+        showGroups()
         return
       }
       closeAndFocus()
@@ -102,7 +149,8 @@ export function ModelGroupSelect({ options, value, onChange, groups }: {
       className={cn('model-group-select', hasGroups && 'is-drilldown')}
       onKeyDown={handleKeyDown}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
+        const next = event.relatedTarget as Node | null
+        if (!rootRef.current?.contains(next) && !panelRef.current?.contains(next)) setOpen(false)
       }}
     >
       <button
@@ -111,10 +159,10 @@ export function ModelGroupSelect({ options, value, onChange, groups }: {
         type="button"
         className="model-group-select-trigger"
         data-value={value}
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={listboxID}
-        onClick={() => setOpen((current) => !current)}
+        onClick={toggleOpen}
       >
         <ModelIcon
           iconKey={selectedModel.icon_key}
@@ -133,17 +181,18 @@ export function ModelGroupSelect({ options, value, onChange, groups }: {
         <ChevronDown className={cn('model-group-select-chevron', open && 'rotate-180')} size={16} aria-hidden="true" />
       </button>
       {open ? (
-        <div
+        <OverlayPortal><div
           id={listboxID}
           ref={panelRef}
           tabIndex={-1}
           className={cn('model-group-select-menu', level === 2 && 'is-level2')}
-          role="listbox"
-          aria-label="选择模型分组"
+          style={{ position: 'fixed', zIndex: 80, right: 'auto', ...menuGeometry, visibility: menuGeometry ? 'visible' : 'hidden', overflowY: 'auto' }}
+          role="dialog"
+          aria-label={hasGroups && level === 1 ? '选择模型分组' : '选择路由模型'}
         >
           {hasGroups ? (
-            <div className="model-group-select-page" data-level={level}>
-              <div className="model-group-select-level" data-level="1">
+            <div className="model-group-select-page" data-level={level} style={{ height: '100%' }}>
+              <div className="model-group-select-level" data-level="1" hidden={level !== 1} inert={level !== 1} aria-hidden={level !== 1}>
                 <ul className="model-group-select-list" role="group" aria-label="模型分组">
                   {sections.map((section) => {
                     const key = section.group?.code ?? UNGROUPED
@@ -153,6 +202,7 @@ export function ModelGroupSelect({ options, value, onChange, groups }: {
                           type="button"
                           className="model-group-select-row"
                           onClick={() => {
+                            panelRef.current?.focus()
                             setActiveGroupCode(key)
                             setLevel(2)
                           }}
@@ -172,11 +222,11 @@ export function ModelGroupSelect({ options, value, onChange, groups }: {
                   })}
                 </ul>
               </div>
-              <div className="model-group-select-level" data-level="2">
+              <div className="model-group-select-level" data-level="2" hidden={level !== 2} inert={level !== 2} aria-hidden={level !== 2}>
                 <button
                   type="button"
                   className="model-group-select-back"
-                  onClick={() => setLevel(1)}
+                  onClick={showGroups}
                   aria-label="返回模型分组列表"
                 >
                   <ArrowLeft size={15} aria-hidden="true" />
@@ -189,7 +239,7 @@ export function ModelGroupSelect({ options, value, onChange, groups }: {
                     <span>其他模型</span>
                   )}
                 </button>
-                <ul className="model-group-select-list" role="group" aria-label="路由模型">
+                <ul className="model-group-select-list" role="listbox" aria-label="路由模型">
                   {(activeSection?.models ?? []).map((item) => (
                     <li key={item.code}>
                       <button
@@ -242,7 +292,7 @@ export function ModelGroupSelect({ options, value, onChange, groups }: {
               ))}
             </ul>
           )}
-        </div>
+        </div></OverlayPortal>
       ) : null}
     </div>
   )

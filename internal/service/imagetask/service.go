@@ -31,12 +31,15 @@ import (
 	domainbilling "github.com/fatballfish/pic-gallery/internal/domain/billing"
 	domainimagetask "github.com/fatballfish/pic-gallery/internal/domain/imagetask"
 	"github.com/fatballfish/pic-gallery/internal/domain/modelhub"
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 	"github.com/fatballfish/pic-gallery/internal/domain/prompttemplate"
 	applogging "github.com/fatballfish/pic-gallery/internal/logging"
 	"github.com/fatballfish/pic-gallery/internal/provider"
 	openaiprovider "github.com/fatballfish/pic-gallery/internal/provider/openai"
 	openrouterprovider "github.com/fatballfish/pic-gallery/internal/provider/openrouter"
+	qwenprovider "github.com/fatballfish/pic-gallery/internal/provider/qwenimage"
+	seedreamprovider "github.com/fatballfish/pic-gallery/internal/provider/seedreamimage"
 	"github.com/fatballfish/pic-gallery/internal/repository/repoerr"
 	projectservice "github.com/fatballfish/pic-gallery/internal/service/project"
 	"github.com/fatballfish/pic-gallery/internal/service/secretcodec"
@@ -297,7 +300,7 @@ func (s *Service) CreateTask(ctx context.Context, req domainimagetask.CreateRequ
 			prefetchedEstimate = &estimate
 		}
 	} else {
-		resolved, err = s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent, req.CapabilityVersion)
+		resolved, err = s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, req.ReferenceImageCount, req.MaskPresent, req.CapabilityVersion, req)
 	}
 	if err != nil {
 		_ = s.persistPreflightFailedRequest(ctx, req, resolved, err)
@@ -464,7 +467,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		req.ProjectID = project.ID
 		selectedProject = &project
 	}
-	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, len(req.ReferenceImages), req.Mask != nil, "")
+	resolved, err := s.resolveTask(ctx, req.TaskID, req.AbstractModel, req.RouteModelCode, req.UserGroupCodes, req.TaskType, req.SizeMode, req.AspectRatio, req.BaseResolution, req.Quality, req.OutputFormat, req.Background, req.OutputCompression, req.Moderation, req.RequestedSize, req.OutputImageCount, len(req.ReferenceImages), req.Mask != nil, "", domainimagetask.CreateRequest{Operation: req.Operation, NativeOptions: req.NativeOptions})
 	if err != nil {
 		return domainimagetask.ExecuteResult{}, err
 	}
@@ -482,6 +485,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
+		Operation:           req.Operation, NativeOptions: cloneNativeOptions(req.NativeOptions),
 		SizeMode:            req.SizeMode,
 		AspectRatio:         req.AspectRatio,
 		RequestedSize:       req.RequestedSize,
@@ -517,6 +521,7 @@ func (s *Service) Execute(ctx context.Context, req domainimagetask.ExecuteReques
 		RouteModelCode:      req.RouteModelCode,
 		TaskType:            req.TaskType,
 		Prompt:              req.Prompt,
+		Operation:           req.Operation, NativeOptions: cloneNativeOptions(req.NativeOptions),
 		SizeMode:            req.SizeMode,
 		AspectRatio:         req.AspectRatio,
 		RequestedSize:       req.RequestedSize,
@@ -570,6 +575,9 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 		return s.executeArtifactRecovery(ctx, task, owner)
 	}
 
+	if task.UpstreamStartedAt != nil && len(task.Results) == 0 {
+		return s.rejectUncertainSubmission(ctx, task, owner)
+	}
 	if recovered, ok, err := s.resumeTerminalization(ctx, task, owner); err != nil || ok {
 		return recovered, err
 	}
@@ -594,6 +602,8 @@ func (s *Service) ExecuteLeasedTask(ctx context.Context, task domainimagetask.Ta
 		OutputCompression: task.OutputCompression, Moderation: task.Moderation, RequestedSize: requestedSize,
 		RequestedOutputImageCount: task.OutputImageCount, ReferenceImageCount: len(referenceImages), MaskPresent: mask != nil,
 		RouteKey: task.ID, TrustedResolvedSize: trustedResolvedSize,
+		Operation: task.Operation, NativeOptions: task.NativeOptions,
+		PreserveNativeOptions: true,
 	})
 	if err != nil {
 		return s.failOwnedTask(ctx, task, owner, err)
@@ -734,6 +744,12 @@ func (s *Service) TestModelAccount(ctx context.Context, req domainimagetask.Test
 		OutputImageCount:  1,
 		ResponseFormat:    provider.ResponseFormatURL,
 	}
+	if modelhub.IsNativeImageCandidate(candidate) {
+		providerReq.Operation = nativeimage.OperationGenerate
+		providerReq.Quality = ""
+		providerReq.Moderation = ""
+		providerReq.OutputCompression = 0
+	}
 	applyOutputCompressionCapability(&providerReq, candidate)
 	if sizeErr := applyProviderImageSize(&providerReq, task, resolved); sizeErr != nil {
 		return domainimagetask.TestModelAccountResult{}, sizeErr
@@ -829,7 +845,8 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			continue
 		}
 		providerReq := provider.ImageRequest{
-			Model:             s.providerModelName(task.AbstractModel, candidate.Provider, candidate.ModelCode),
+			Model:     s.providerModelName(task.AbstractModel, candidate.Provider, candidate.ModelCode),
+			Operation: task.Operation, NativeOptions: cloneNativeOptions(task.NativeOptions),
 			TaskType:          provider.TaskType(task.TaskType),
 			Prompt:            opts.prompt,
 			Quality:           defaultString(task.Quality, "auto"),
@@ -843,6 +860,13 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			Mask:              opts.mask,
 			User:              opts.user,
 		}
+		if modelhub.IsNativeImageCandidate(candidate) {
+			providerReq.Quality = ""
+			providerReq.Moderation = ""
+			providerReq.OutputCompression = 0
+			providerReq.User = ""
+			providerReq.SendResponseFormat = false
+		}
 		applyOutputCompressionCapability(&providerReq, candidate)
 		if sizeErr := applyProviderImageSize(&providerReq, task, resolved); sizeErr != nil {
 			return s.failOwnedTask(ctx, task, owner, sizeErr)
@@ -853,11 +877,16 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 		slog.InfoContext(ctx, "image generation request", imageGenerationRequestAttrs(task, candidate, providerReq)...)
 
 		attemptStarted := s.nowUTC()
+		task.UpstreamStartedAt = &attemptStarted
+		if markerErr := s.saveOwnedTask(ctx, task, owner); markerErr != nil {
+			return domainimagetask.ExecuteResult{}, fmt.Errorf("persist upstream start before submission: %w", markerErr)
+		}
 		openAIFormat := strings.EqualFold(candidate.Provider, string(provider.ProviderTypeOpenAI)) || strings.EqualFold(candidate.AdapterType, "openai_compatible")
 		if openAIFormat && normalizedCount(task.OutputImageCount) > 1 {
 			progress, progressErr := s.executeOpenAIFanout(ctx, providerClient, candidate, task, providerReq)
 			attemptFinished := s.nowUTC()
 			if progressErr != nil {
+				task.UpstreamStartedAt = nil
 				task = s.decorateTaskProvider(task, candidate)
 				if len(progress.Attempts) > 0 {
 					task.Attempts = append(task.Attempts, progress.Attempts...)
@@ -897,6 +926,9 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			}
 			reconcileAttemptDimensions(&task, persistedResults)
 			finalStatus := domainimagetask.StatusSucceeded
+			if task.ErrorCode == "IMAGE_PARTIAL_ARTIFACT_ERROR" {
+				finalStatus = domainimagetask.StatusPartialFailed
+			}
 			if len(persistedResults) < normalizedCount(task.OutputImageCount) {
 				finalStatus = domainimagetask.StatusPartialFailed
 				if task.ErrorCode == "" {
@@ -907,12 +939,14 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			task.Status = domainimagetask.StatusRunning
 			task.FallbackCount = fallbackCount
 			task.Results = persistedResults
-			task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
 			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
-				return s.failOwnedTask(ctx, task, owner, billingErr)
+				return s.holdPaidSettlement(ctx, task, owner, billingErr)
 			}
-			task.ProviderCost = calculateProviderCost(candidate, len(persistedResults))
-			task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
+			task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
+			if task.PricingSnapshot.NativeImage == nil {
+				task.ProviderCost = calculateProviderCost(candidate, len(persistedResults))
+				task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
+			}
 			setTaskProgress(&task, domainimagetask.ProgressStageSettling, "结果已保存，正在结算积分")
 			if saveErr := s.saveOwnedTask(ctx, task, owner); saveErr != nil {
 				recoveredTask, recovered, recoverErr := s.recoverTerminalLeaseConflict(ctx, task, owner, finalStatus, "task completed after lease conflict")
@@ -939,6 +973,11 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 
 		resp, err := s.executeProviderRequest(ctx, providerClient, candidate, task, providerReq)
 		attemptFinished := s.nowUTC()
+		if len(resp.Data) > 0 && err != nil {
+			task.ErrorCode = "IMAGE_PARTIAL_ARTIFACT_ERROR"
+			task.ErrorMessage = "部分上游产物失败，已保留成功结果"
+			err = nil
+		} // Paid partial output must checkpoint before any fallback.
 		if err == nil {
 			if checkpointErr := s.checkpointProviderSuccess(ctx, &task, owner, candidate, resp, providerReq.Size, nil, attemptStarted, attemptFinished); checkpointErr != nil {
 				return s.handleProviderSuccessCheckpointFailure(ctx, task, owner, checkpointErr)
@@ -949,6 +988,9 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			}
 			reconcileAttemptDimensions(&task, persistedResults)
 			finalStatus := domainimagetask.StatusSucceeded
+			if task.ErrorCode == "IMAGE_PARTIAL_ARTIFACT_ERROR" {
+				finalStatus = domainimagetask.StatusPartialFailed
+			}
 			if len(persistedResults) < normalizedCount(task.OutputImageCount) {
 				finalStatus = domainimagetask.StatusPartialFailed
 				task.ErrorCode = errs.CodeUpstreamUnavailable
@@ -957,12 +999,14 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			task.Status = domainimagetask.StatusRunning
 			task.FallbackCount = fallbackCount
 			task.Results = append([]provider.ImageResult(nil), persistedResults...)
-			task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
 			if billingErr := s.applyActualPoints(&task, len(persistedResults)); billingErr != nil {
-				return s.failOwnedTask(ctx, task, owner, billingErr)
+				return s.holdPaidSettlement(ctx, task, owner, billingErr)
 			}
-			task.ProviderCost = calculateProviderCost(candidate, len(persistedResults))
-			task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
+			task.ArtifactRecovery = completedArtifactRecovery(task.ArtifactRecovery)
+			if task.PricingSnapshot.NativeImage == nil {
+				task.ProviderCost = calculateProviderCost(candidate, len(persistedResults))
+				task.GrossMargin = calculateGrossMargin(task.ActualPoints, task.ProviderCost)
+			}
 			setTaskProgress(&task, domainimagetask.ProgressStageSettling, "结果已保存，正在结算积分")
 			if saveErr := s.saveOwnedTask(ctx, task, owner); saveErr != nil {
 				recoveredTask, recovered, recoverErr := s.recoverTerminalLeaseConflict(ctx, task, owner, finalStatus, "task completed after lease conflict")
@@ -987,6 +1031,12 @@ func (s *Service) executeResolvedTask(ctx context.Context, task domainimagetask.
 			return domainimagetask.ExecuteResult{Task: task, Response: resp}, nil
 		}
 
+		if modelhub.IsNativeImageCandidate(candidate) && nativeSubmissionUncertain(err) {
+			task = s.decorateTaskProvider(task, candidate)
+			task.Attempts = append(task.Attempts, buildProviderAttempt(candidate, domainimagetask.StatusFailed, err, attemptStarted, attemptFinished))
+			return s.rejectUncertainSubmission(ctx, task, owner)
+		}
+		task.UpstreamStartedAt = nil
 		lastErr = err
 		task.Provider = candidate.Provider
 		task.ProviderModelID = candidate.ProviderModelID
@@ -1483,7 +1533,19 @@ func (s *Service) providerClientForCandidate(candidate modelhub.ProviderCandidat
 		if apiKey == "" || strings.TrimSpace(candidate.BaseURL) == "" {
 			return nil, false
 		}
+		var nativeProfile *nativeimage.CapabilityProfile
+		if modelhub.IsNativeImageCandidate(candidate) {
+			cfg, err := modelhub.NativeConfig(candidate)
+			if err != nil {
+				return nil, false
+			}
+			nativeProfile = cfg.Profile
+		}
 		switch candidate.AdapterType {
+		case "qwen_image":
+			return qwenprovider.New(qwenprovider.Config{BaseURL: candidate.BaseURL, APIKey: apiKey, HTTPClient: s.providerHTTPClient(candidate), Profile: nativeProfile}), true
+		case "seedream_image":
+			return seedreamprovider.New(seedreamprovider.Config{BaseURL: candidate.BaseURL, APIKey: apiKey, HTTPClient: s.providerHTTPClient(candidate), Profile: nativeProfile}), true
 		case "openai_compatible":
 			return openaiprovider.NewClient(openaiprovider.Config{BaseURL: candidate.BaseURL, APIKey: apiKey, HTTPClient: s.providerHTTPClient(candidate)}), true
 		case "openrouter":
@@ -1601,7 +1663,13 @@ func (s *Service) resumeTerminalization(ctx context.Context, task domainimagetas
 	return domainimagetask.ExecuteResult{Task: task}, true, errs.New(500, defaultString(task.ErrorCode, errs.CodeInternal), defaultString(task.ErrorMessage, "image task failed"))
 }
 
-func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, routeModelCode string, userGroupCodes []string, taskType, sizeMode, aspectRatio, baseResolution, quality, outputFormat, background string, outputCompression int, moderation, requestedSize string, outputImageCount, referenceImageCount int, maskPresent bool, capabilityVersion string) (modelhub.ResolvedRequest, error) {
+func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, routeModelCode string, userGroupCodes []string, taskType, sizeMode, aspectRatio, baseResolution, quality, outputFormat, background string, outputCompression int, moderation, requestedSize string, outputImageCount, referenceImageCount int, maskPresent bool, capabilityVersion string, native ...domainimagetask.CreateRequest) (modelhub.ResolvedRequest, error) {
+	var operation nativeimage.Operation
+	var options *nativeimage.Options
+	if len(native) > 0 {
+		operation = native[0].Operation
+		options = native[0].NativeOptions
+	}
 	return s.resolver.ResolveContext(ctx, modelhub.ResolveRequest{
 		AbstractModel:             abstractModel,
 		RouteModelCode:            routeModelCode,
@@ -1621,6 +1689,7 @@ func (s *Service) resolveTask(ctx context.Context, routeKey, abstractModel, rout
 		RouteKey:                  routeKey,
 		UserGroupCodes:            append([]string(nil), userGroupCodes...),
 		ExpectedCapabilityVersion: capabilityVersion,
+		Operation:                 operation, NativeOptions: options,
 	})
 }
 
@@ -2039,6 +2108,9 @@ func (s *Service) RetryTask(ctx context.Context, userID int64, taskID string, re
 	if err != nil {
 		return domainimagetask.Task{}, err
 	}
+	if original.ErrorCode == "IMAGE_UPSTREAM_SUBMISSION_UNCERTAIN" {
+		return domainimagetask.Task{}, errs.New(409, errs.CodeConflict, "upstream submission requires manual reconciliation before retry")
+	}
 	switch original.Status {
 	case domainimagetask.StatusFailed, domainimagetask.StatusPartialFailed, domainimagetask.StatusRejected:
 	default:
@@ -2054,15 +2126,16 @@ func (s *Service) RetryTask(ctx context.Context, userID int64, taskID string, re
 
 func imageRetryRequest(original domainimagetask.Task) domainimagetask.CreateRequest {
 	retryReq := domainimagetask.CreateRequest{
-		UserID:              original.UserID,
-		ProjectID:           original.ProjectID,
-		APIKeyID:            original.APIKeyID,
-		SourceChannel:       defaultString(original.SourceChannel, "web"),
-		AbstractModel:       original.AbstractModel,
-		RouteModelCode:      original.RouteModelCode,
-		TaskType:            original.TaskType,
-		Prompt:              original.Prompt,
-		NegativePrompt:      original.NegativePrompt,
+		UserID:         original.UserID,
+		ProjectID:      original.ProjectID,
+		APIKeyID:       original.APIKeyID,
+		SourceChannel:  defaultString(original.SourceChannel, "web"),
+		AbstractModel:  original.AbstractModel,
+		RouteModelCode: original.RouteModelCode,
+		TaskType:       original.TaskType,
+		Prompt:         original.Prompt,
+		NegativePrompt: original.NegativePrompt,
+		Operation:      original.Operation, NativeOptions: cloneNativeOptions(original.NativeOptions),
 		SizeMode:            original.SizeMode,
 		RequestedSize:       original.RequestedSize,
 		BaseResolution:      original.BaseResolution,
@@ -2753,7 +2826,9 @@ func (s *Service) applyTaskEstimate(ctx context.Context, task *domainimagetask.T
 
 func taskEstimateRequest(req domainimagetask.CreateRequest, outputImageCount int) domainbilling.EstimateRequest {
 	return domainbilling.EstimateRequest{
-		RouteKey:                  req.TaskID,
+		TrustedInputDimensions: req.TrustedInputDimensions,
+		RouteKey:               req.TaskID,
+		Operation:              req.Operation, NativeOptions: req.NativeOptions,
 		TaskType:                  req.TaskType,
 		AbstractModel:             req.AbstractModel,
 		RouteModelCode:            req.RouteModelCode,
@@ -2777,6 +2852,9 @@ func taskEstimateRequest(req domainimagetask.CreateRequest, outputImageCount int
 }
 
 func (s *Service) applyTaskEstimateResult(ctx context.Context, task *domainimagetask.Task, req domainimagetask.CreateRequest, estimate domainbilling.EstimateResult) error {
+	if task.GenerationSnapshot.NativeDefaultsFrozen && estimate.CapabilityVersion != task.GenerationSnapshot.CapabilityVersion {
+		return errs.New(409, errs.CodeConflict, "native capability changed during task estimation; request a new quote")
+	}
 	if modelhub.PublicSizeMode(task.SizeMode) != modelhub.SizeModeAuto {
 		task.BaseResolution = estimate.BaseResolution
 	}
@@ -2828,6 +2906,43 @@ func (s *Service) applyActualPoints(task *domainimagetask.Task, successOutputIma
 		return nil
 	}
 
+	if task.PricingSnapshot.RouteImage != nil {
+		artifacts := make([]domainbilling.NativeImageArtifact, 0, len(task.Results))
+		for _, result := range task.Results {
+			artifacts = append(artifacts, domainbilling.NativeImageArtifact{Width: int64(result.Width), Height: int64(result.Height), Pixels: result.Width * result.Height})
+		}
+		actual, err := domainbilling.RouteImageActualPoints(task.PricingSnapshot, artifacts)
+		if err != nil {
+			return fmt.Errorf("settle route image: %w", err)
+		}
+		task.ActualPoints = actual
+		return nil
+	}
+	if task.PricingSnapshot.NativeImage != nil {
+		artifacts := make([]domainbilling.NativeImageArtifact, 0, len(task.Results))
+		for _, result := range task.Results {
+			artifacts = append(artifacts, domainbilling.NativeImageArtifact{Width: int64(result.Width), Height: int64(result.Height), Pixels: result.Width * result.Height, IsBase: result.Layer != nil && result.Layer.IsBase})
+		}
+		settlement, err := domainbilling.SettleNativeImageArtifacts(task.PricingSnapshot, task.AccountModelID, artifacts)
+		if err != nil {
+			return fmt.Errorf("settle native image: %w", err)
+		}
+		task.ActualPoints = settlement.ActualPoints
+		task.ProviderCost = settlement.CostCNY
+		revenue, _ := decimal.NewFromString(settlement.RevenueCNY)
+		cost, _ := decimal.NewFromString(settlement.CostCNY)
+		task.GrossMargin = revenue.Sub(cost).StringFixed(5)
+		if settlement.PricingIncomplete {
+			task.ProviderCost = ""
+			task.GrossMargin = ""
+			task.BillingDiagnostic = settlement.Diagnostic
+		}
+		if settlement.ReservationExceeded {
+			task.BillingDiagnostic = "native_reservation_exceeded: uncharged_points=" + settlement.UnchargedPoints
+			slog.Warn("native image reservation exceeded", "task_id", task.ID, "uncharged_points", settlement.UnchargedPoints)
+		}
+		return nil
+	}
 	actual, err := s.billing.ActualPoints(task.PricingSnapshot, successOutputImageCount)
 	if err != nil {
 		return fmt.Errorf("calculate actual image task points: %w", err)
@@ -2856,6 +2971,9 @@ func (s *Service) zeroPoints() string {
 }
 
 func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequest, status string) domainimagetask.Task {
+	if resolved.NativeOptions != nil {
+		req.NativeOptions = cloneNativeOptions(resolved.NativeOptions)
+	}
 	taskID := strings.TrimSpace(req.TaskID)
 	if taskID == "" {
 		taskID = uuid.NewString()
@@ -2878,24 +2996,25 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 		PromptTemplateVersion: req.PromptTemplateVersion,
 		PromptBindingSnapshot: req.PromptBindingSnapshot,
 		NegativePrompt:        req.NegativePrompt,
-		SizeMode:              modelhub.PublicSizeMode(req.SizeMode),
-		RequestedSize:         req.RequestedSize,
-		BaseResolution:        resolved.BaseResolution,
-		Quality:               defaultString(modelhub.NormalizeQuality(req.Quality), "auto"),
-		OutputFormat:          defaultString(modelhub.NormalizeOutputFormat(req.OutputFormat), "png"),
-		Background:            strings.ToLower(strings.TrimSpace(req.Background)),
-		OutputCompression:     defaultPositive(req.OutputCompression, 100),
-		Moderation:            defaultString(modelhub.NormalizeModeration(req.Moderation), "auto"),
-		AspectRatio:           req.AspectRatio,
-		ResponseMode:          defaultString(req.ResponseMode, "async"),
-		SavePolicy:            defaultString(req.SavePolicy, "private"),
-		OutputImageCount:      normalizedCount(req.OutputImageCount),
-		ReferenceImageCount:   req.ReferenceImageCount,
-		ReferenceAssetIDs:     append([]string(nil), req.ReferenceAssetIDs...),
-		MaskAssetID:           strings.TrimSpace(req.MaskAssetID),
-		RequestFingerprint:    req.RequestFingerprint,
-		ReferenceStrength:     req.ReferenceStrength,
-		Seed:                  req.Seed,
+		Operation:             req.Operation, NativeOptions: cloneNativeOptions(req.NativeOptions),
+		SizeMode:            modelhub.PublicSizeMode(req.SizeMode),
+		RequestedSize:       req.RequestedSize,
+		BaseResolution:      resolved.BaseResolution,
+		Quality:             defaultString(modelhub.NormalizeQuality(req.Quality), "auto"),
+		OutputFormat:        defaultString(modelhub.NormalizeOutputFormat(req.OutputFormat), "png"),
+		Background:          strings.ToLower(strings.TrimSpace(req.Background)),
+		OutputCompression:   defaultPositive(req.OutputCompression, 100),
+		Moderation:          defaultString(modelhub.NormalizeModeration(req.Moderation), "auto"),
+		AspectRatio:         req.AspectRatio,
+		ResponseMode:        defaultString(req.ResponseMode, "async"),
+		SavePolicy:          defaultString(req.SavePolicy, "private"),
+		OutputImageCount:    normalizedCount(req.OutputImageCount),
+		ReferenceImageCount: req.ReferenceImageCount,
+		ReferenceAssetIDs:   append([]string(nil), req.ReferenceAssetIDs...),
+		MaskAssetID:         strings.TrimSpace(req.MaskAssetID),
+		RequestFingerprint:  req.RequestFingerprint,
+		ReferenceStrength:   req.ReferenceStrength,
+		Seed:                req.Seed,
 	}
 	switch task.SizeMode {
 	case modelhub.SizeModeAuto:
@@ -2915,13 +3034,14 @@ func buildTask(req domainimagetask.CreateRequest, resolved modelhub.ResolvedRequ
 	}
 	if strings.TrimSpace(resolved.CapabilityVersion) != "" {
 		task.GenerationSnapshot = domainimagetask.GenerationSnapshot{
-			CapabilityVersion: resolved.CapabilityVersion,
-			SizeMode:          task.SizeMode,
-			BaseResolution:    task.BaseResolution,
-			AspectRatio:       task.AspectRatio,
-			ResolvedSize:      task.RequestedSize,
-			ResolvedWidth:     task.ResolvedWidth,
-			ResolvedHeight:    task.ResolvedHeight,
+			CapabilityVersion:    resolved.CapabilityVersion,
+			NativeDefaultsFrozen: resolved.NativeOptions != nil,
+			SizeMode:             task.SizeMode,
+			BaseResolution:       task.BaseResolution,
+			AspectRatio:          task.AspectRatio,
+			ResolvedSize:         task.RequestedSize,
+			ResolvedWidth:        task.ResolvedWidth,
+			ResolvedHeight:       task.ResolvedHeight,
 		}
 	}
 	setInitialTaskProgress(&task)
@@ -3066,6 +3186,11 @@ func setTaskProgress(task *domainimagetask.Task, stage, message string) {
 }
 
 func normalizeCreateRequest(req domainimagetask.CreateRequest) (domainimagetask.CreateRequest, error) {
+	var nativeErr error
+	req, nativeErr = normalizeNativeCreate(req)
+	if nativeErr != nil {
+		return req, nativeErr
+	}
 	req.MaskAssetID = strings.TrimSpace(req.MaskAssetID)
 	if req.MaskPresent && req.MaskAssetID == "" {
 		return req, errs.New(400, errs.CodeImageCapabilityMismatch, "mask_asset_id is required when a mask is requested")
@@ -3452,6 +3577,7 @@ func errorMessage(err error) string {
 }
 
 func cloneTask(task domainimagetask.Task) domainimagetask.Task {
+	task.NativeOptions = cloneNativeOptions(task.NativeOptions)
 	task.Attempts = append([]domainimagetask.Attempt(nil), task.Attempts...)
 	task.Results = append([]provider.ImageResult(nil), task.Results...)
 	task.ArtifactRecovery.Diagnostics = append([]domainimagetask.ArtifactDiagnostic(nil), task.ArtifactRecovery.Diagnostics...)

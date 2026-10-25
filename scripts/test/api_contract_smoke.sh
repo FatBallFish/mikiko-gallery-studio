@@ -2410,10 +2410,6 @@ VALUES (
 );
 SQL
 
-estimate_body="$(request "$BASE_URL/api/agent/billing/v1/estimate?task_type=text_to_image&abstract_model=basic&base_resolution=auto&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0" \
-  -H "Authorization: Bearer $ACCESS_TOKEN")"
-[[ "$(assert_json_field "$estimate_body" "data.estimated_points")" == "2.00000" ]]
-
 key_body="$(request -X POST "$BASE_URL/api/agent/account/v1/api-keys" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
@@ -2423,10 +2419,9 @@ API_SECRET="$(assert_json_field "$key_body" "data.secret")"
 
 developer_projects="$(request "$BASE_URL/api/agent/project/v1/projects" -H "Authorization: Bearer $ACCESS_TOKEN")"
 DEVELOPER_PROJECT_ID="$(assert_json_field "$developer_projects" "data.default_project_id")"
-open_preflight_input="{\"project_id\":\"$DEVELOPER_PROJECT_ID\",\"task_type\":\"text_to_image\",\"prompt\":\"smoke prompt\",\"abstract_model\":\"basic\",\"base_resolution\":\"auto\",\"requested_size\":\"1024x1024\",\"output_image_count\":1}"
-open_estimate_body="$(developer_request POST /api/open/v1/image-tasks/preflight "$open_preflight_input")"
-[[ "$(assert_json_field "$open_estimate_body" "data.estimated_points")" == "2.00000" ]]
-assert_json_field "$open_estimate_body" "data.quote_token" >/dev/null
+# This payload is also used for auth rejection checks before route setup.
+# Successful image preflight runs below, after its route, candidate and price exist.
+open_preflight_input="{\"project_id\":\"$DEVELOPER_PROJECT_ID\",\"task_type\":\"text_to_image\",\"prompt\":\"smoke prompt\",\"route_model_code\":\"smoke-image\",\"size_mode\":\"pixel\",\"requested_size\":\"1024x1024\",\"output_image_count\":1}"
 assert_json_field "$(developer_request GET /api/open/v1/me)" "data.id" >/dev/null
 assert_json_field "$(developer_request GET /api/open/v1/me/balance)" "data.available_points" >/dev/null
 developer_request GET /api/open/v1/image-models >/dev/null
@@ -2625,7 +2620,14 @@ model_account_model_body="$(request -X POST "$BASE_URL/api/ops/admin/v1/model-ac
     "model_code":"openai/gpt-image-1",
     "display_name":"Smoke GPT Image",
     "task_types":["text_to_image"],
-    "qualities":["1k"],
+    "base_resolution":["1k"],
+    "quality":["auto"],
+    "size_modes":["ratio","pixel"],
+    "supported_pixel_sizes":["1024x1024"],
+    "min_width":512,
+    "max_width":2048,
+    "min_height":512,
+    "max_height":2048,
     "supported_ratios":["1:1","16:9"],
     "max_image_count":2,
     "max_reference_image_count":0,
@@ -2662,10 +2664,14 @@ body = json.loads(os.environ['JSON'])
 if body.get('object') != 'list' or not any(item.get('id') == 'smoke-image' for item in body['data']):
     raise SystemExit('developer model catalogue after setup: configured public route smoke-image is missing (response omitted)')
 PY
-open_preflight_input="{\"project_id\":\"$DEVELOPER_PROJECT_ID\",\"task_type\":\"text_to_image\",\"prompt\":\"smoke prompt\",\"route_model_code\":\"smoke-image\",\"base_resolution\":\"auto\",\"requested_size\":\"1024x1024\",\"output_image_count\":1}"
-
-# Refresh the quote after provider configuration; create revalidates its versions.
+# Both agent and developer estimates require this explicit route sale price.
+# Keep the original basic 1K tariff of 2 points; no abstract-model fallback.
+estimate_body="$(request "$BASE_URL/api/agent/billing/v1/estimate?task_type=text_to_image&route_model_code=smoke-image&size_mode=pixel&requested_size=1024x1024&requested_output_image_count=1&reference_image_count=0" \
+  -H "Authorization: Bearer $ACCESS_TOKEN")"
+[[ "$(assert_json_field "$estimate_body" "data.estimated_points")" == "2.00000" ]]
 open_estimate_body="$(developer_request POST /api/open/v1/image-tasks/preflight "$open_preflight_input")"
+[[ "$(assert_json_field "$open_estimate_body" "data.estimated_points")" == "2.00000" ]]
+assert_json_field "$open_estimate_body" "data.quote_token" >/dev/null
 open_task_body="$(INPUT="$open_preflight_input" QUOTE="$(assert_json_field "$open_estimate_body" "data.quote_token")" python3 - <<'PY'
 import json
 import os
@@ -3493,7 +3499,7 @@ printf '%s\n' "storage root intentionally blocked for artifact recovery smoke" >
 artifact_loss_task_body="$(request -X POST "$BASE_URL/api/agent/image/v1/tasks" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
-  --data '{"task_type":"text_to_image","prompt":"smoke artifact recovery loss","abstract_model":"basic","requested_quality":"auto","requested_size":"1024x1024","requested_output_image_count":1,"response_mode":"async"}')"
+  --data '{"task_type":"text_to_image","prompt":"smoke artifact recovery loss","route_model_code":"smoke-image","size_mode":"pixel","requested_quality":"auto","requested_size":"1024x1024","requested_output_image_count":1,"response_mode":"async"}')"
 ARTIFACT_LOSS_TASK_ID="$(assert_json_field "$artifact_loss_task_body" "data.id")"
 artifact_loss_detail_body="$(wait_for_task_status "$ARTIFACT_LOSS_TASK_ID" "failed")"
 [[ "$(assert_json_field "$artifact_loss_detail_body" "data.error_code")" == "IMAGE_STORAGE_FAILED" ]]

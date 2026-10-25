@@ -8,6 +8,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 )
 
 const maxCanvasCoordinate = 1_000_000
@@ -42,7 +44,11 @@ func ValidateDocument(document DocumentV1, limits Limits) *ValidationError {
 			return graphError("invalid_node_position", node.ID, "", "canvas node position is outside the safety range")
 		}
 		minimum := minimumNodeSize(node.Type)
-		if !isFinite(node.Size.Width) || !isFinite(node.Size.Height) || node.Size.Width < minimum.Width || node.Size.Height < minimum.Height || (IsIntegrated(node.Type) && math.Max(node.Size.Width, node.Size.Height) < 80) {
+		layer, layerErr := validLayerGeometry(node)
+		if layerErr != nil {
+			return graphError("invalid_layer_geometry", node.ID, "", layerErr.Error())
+		}
+		if !isFinite(node.Size.Width) || !isFinite(node.Size.Height) || node.Size.Width <= 0 || node.Size.Height <= 0 || (!layer && (node.Size.Width < minimum.Width || node.Size.Height < minimum.Height || (IsIntegrated(node.Type) && math.Max(node.Size.Width, node.Size.Height) < 80))) {
 			return graphError("invalid_node_size", node.ID, "", "canvas node size is below the supported minimum")
 		}
 		if isMediaNode(node.Type) && !IsIntegrated(node.Type) && node.Type != NodeTypeImage && strings.TrimSpace(node.AssetID) == "" {
@@ -180,6 +186,43 @@ func isHexColor(value string) bool {
 		}
 	}
 	return true
+}
+
+// validLayerGeometry permits small image crops without weakening ordinary media
+// node minimums. Raw pixel dimensions and bbox remain bounded and well formed.
+func validLayerGeometry(node Node) (bool, error) {
+	if node.Type != NodeTypeImageV2 || len(node.Payload) == 0 {
+		return false, nil
+	}
+	var payload struct {
+		Layer  *nativeimage.LayerMetadata `json:"layer"`
+		Width  int                        `json:"width"`
+		Height int                        `json:"height"`
+	}
+	if json.Unmarshal(node.Payload, &payload) != nil || payload.Layer == nil {
+		return false, nil
+	}
+	if strings.TrimSpace(node.AssetID) == "" || payload.Width <= 0 || payload.Height <= 0 || payload.Width > maxCanvasCoordinate || payload.Height > maxCanvasCoordinate || node.Size.Width > maxCanvasCoordinate || node.Size.Height > maxCanvasCoordinate {
+		return false, fmt.Errorf("canvas layer dimensions are outside the safety range")
+	}
+	if b := payload.Layer.BoundingBox; b != nil {
+		for _, coordinate := range b.Absolute {
+			if coordinate < 0 || coordinate > maxCanvasCoordinate {
+				return false, fmt.Errorf("canvas layer bounding box is outside the safety range")
+			}
+		}
+		for _, coordinate := range b.Normalized {
+			if coordinate < 0 || coordinate > 1000 {
+				return false, fmt.Errorf("canvas layer normalized bounding box is outside the safety range")
+			}
+		}
+		if b.Absolute[2] <= b.Absolute[0] || b.Absolute[3] <= b.Absolute[1] || b.Normalized[2] < b.Normalized[0] || b.Normalized[3] < b.Normalized[1] {
+			return false, fmt.Errorf("canvas layer bounding box ordering is invalid")
+		}
+	} else if !payload.Layer.IsBase {
+		return false, fmt.Errorf("canvas layer requires a bounding box")
+	}
+	return true, nil
 }
 
 func minimumNodeSize(nodeType NodeType) Size {

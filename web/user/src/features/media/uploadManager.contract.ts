@@ -149,3 +149,18 @@ if (uploadFailure(pauseError, 'initializing').status !== 'paused') throw new Err
 if (!uploadFailure(new Error('offline'), 'completing').error?.includes('完成上传失败')) throw new Error('completion failures must identify the correct stage')
 
 console.log('media upload manager contract passed')
+
+const { MEDIA_UPLOAD_TERMINATED_EVENT, notifyUploadTerminated } = await import('./uploadManager')
+const terminalEvents: CustomEvent[] = []
+const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+Object.defineProperty(globalThis, 'window', { configurable: true, value: { dispatchEvent: (event: CustomEvent) => { terminalEvents.push(event); return true } } })
+try {
+  const target = { canvasID: 'canvas', nodeID: 'upload-token' }
+  notifyUploadTerminated({ target, status: 'failed', error: 'network failed' })
+  notifyUploadTerminated({ target, status: 'cancelled' })
+  if (terminalEvents.length !== 2 || terminalEvents.some((event) => event.type !== MEDIA_UPLOAD_TERMINATED_EVENT || event.detail.target !== target)) throw new Error('terminal events must carry the original upload destination')
+  if (terminalEvents[0].detail.status !== 'failed' || terminalEvents[1].detail.status !== 'cancelled') throw new Error('failure and cancellation must remain distinct')
+} finally {
+  if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
+  else Reflect.deleteProperty(globalThis, 'window')
+}

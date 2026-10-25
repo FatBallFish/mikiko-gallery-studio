@@ -1,4 +1,5 @@
-import type { VideoCapability, VideoCapabilityModelGroup, VideoTask, VideoTaskType } from '../../../../shared/api-types'
+import type { MediaAsset, VideoCapability, VideoCapabilityModelGroup, VideoTask, VideoTaskType } from '../../../../shared/api-types'
+import { referenceAdmission, type ReferenceAdmissionPolicy } from '../../../../shared/reference-admission'
 
 export type CreationMediaMode = 'image' | 'video'
 export type VideoDraftInputRole = 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio'
@@ -54,18 +55,15 @@ export function defaultVideoDraft(capability: VideoCapability, preferredTaskType
 
 export function applyVideoCapability(draft: VideoDraft, capability: VideoCapability, preferredField?: keyof VideoDraft): { draft: VideoDraft; changes: string[] } {
   const changes: string[] = []
-  const model = capability.model_groups.find((item) => item.code === draft.route_model_code) ?? capability.model_groups[0]
+  const model = capability.model_groups.find((item) => item.code === draft.route_model_code) ?? (!draft.route_model_code ? capability.model_groups[0] : undefined)
   if (!model) return { draft, changes }
   let next = draft
   if (model.code !== draft.route_model_code) {
     next = { ...next, route_model_code: model.code }
     changes.push('模型分组已调整')
   }
-  const taskType = model.task_types.includes(next.task_type) ? next.task_type : model.defaults.task_type
-  if (taskType !== next.task_type) {
-    next = { ...next, task_type: taskType }
-    changes.push('生成方式已调整')
-  }
+  const taskType = next.task_type
+  if (!model.task_types.includes(taskType)) return { draft: next, changes }
   const options = model.options_by_task_type[taskType]
   if (!options) return { draft: next, changes }
   const requestedAudio = next.generate_audio ? 'generated' : 'silent'
@@ -87,9 +85,6 @@ export function applyVideoCapability(draft: VideoDraft, capability: VideoCapabil
       next = { ...next, duration_seconds: match.duration_seconds, resolution: match.resolution, aspect_ratio: match.aspect_ratio, generate_audio: match.audio_mode === 'generated' }
     }
   }
-  const allowedRoles = VIDEO_TASK_INPUT_ROLES[next.task_type]
-  const inputs = next.inputs.filter((input) => allowedRoles.includes(input.role))
-  if (inputs.length !== next.inputs.length) { next = { ...next, inputs }; changes.push('已移除当前生成方式不支持的引用') }
   const outputCount = Math.max(1, Math.min(model.max_output_count || 1, next.output_count))
   if (outputCount !== next.output_count) { next = { ...next, output_count: outputCount }; changes.push('输出数量已调整') }
   return { draft: next, changes }
@@ -141,6 +136,49 @@ export function promptReferenceNames(template: string) {
     if (name) names.add(name)
   }
   return names
+}
+
+export function resolveInputCapabilities(model: VideoCapabilityModelGroup | undefined, taskType: VideoTaskType) {
+  return model?.input_capabilities_by_task_type?.[taskType] ?? model?.options_by_task_type[taskType]?.inputs
+}
+
+export function videoReferencePolicy(model: VideoCapabilityModelGroup | undefined, taskType: VideoTaskType): ReferenceAdmissionPolicy<VideoDraftInputRole> {
+  if (!model) return { limits: {}, reason: '所选视频模型已失效、下线或无权限，请重新选择模型' }
+  if (!model.task_types.includes(taskType) || !model.options_by_task_type[taskType]) return { limits: {}, reason: '当前模型不支持所选生成方式，请手动调整' }
+  if (taskType === 'text_to_video') return { limits: {}, reason: '文生视频不接受引用素材，请手动切换生成方式' }
+  const inputs = resolveInputCapabilities(model, taskType)
+  if (!inputs) return { limits: {}, reason: '当前模型的输入能力尚未公开，暂不能添加引用' }
+  return { limits: Object.fromEntries(Object.entries(inputs).map(([role, input]) => [role, input!.max_count < 0 ? Number.MAX_SAFE_INTEGER : input!.max_count])) }
+}
+
+export function videoInputAssetReason(model: VideoCapabilityModelGroup | undefined, taskType: VideoTaskType, role: VideoDraftInputRole, asset: Pick<MediaAsset, 'media_type' | 'mime_type' | 'file_size_bytes' | 'name'>) {
+  const policy = videoReferencePolicy(model, taskType)
+  if (policy.reason) return policy.reason
+  const input = resolveInputCapabilities(model, taskType)?.[role]
+  if (!input || input.max_count === 0) return `当前模型不支持${videoTaskInputLabel(role)}`
+  if (!input.media_types.includes(asset.media_type)) return `${videoTaskInputLabel(role)}不支持该素材类型`
+  const alias = (value: string) => ({ jpeg: 'jpg', 'x-wav': 'wav', quicktime: 'mov', 'x-m4v': 'mp4', mpeg: asset.media_type === 'audio' ? 'mp3' : 'mpeg' }[value] ?? value)
+  const formats = input.formats.map((value) => alias(value.toLowerCase().replace(/^.*\//, '')))
+  const format = alias((asset.mime_type?.split('/')[1] || asset.name.split('.').pop() || '').toLowerCase())
+  if (!formats.includes(format)) return `${videoTaskInputLabel(role)}不支持该文件格式`
+  if (input.max_bytes && asset.file_size_bytes > input.max_bytes) return `${videoTaskInputLabel(role)}文件超过模型大小上限`
+  return ''
+}
+
+export function videoDraftInvalidReason(draft: VideoDraft, capability: VideoCapability, assets?: Record<string, MediaAsset>) {
+  const model = videoModelForDraft(capability, draft)
+  if (!model) return '所选视频模型已失效、下线或无权限，请重新选择模型'
+  if (!model.task_types.includes(draft.task_type) || !model.options_by_task_type[draft.task_type]) return '当前模型不支持所选生成方式，请手动调整'
+  if (draft.inputs.length) {
+    const result = referenceAdmission({ policy: videoReferencePolicy(model, draft.task_type), current: [], incoming: draft.inputs, kind: (input) => input.role })
+    if (!result.ok) return result.reason
+    for (const input of draft.inputs) {
+      const asset = assets?.[input.asset_id]
+      if (assets && !asset) return '引用素材不可用或正在读取，请移除或重新选择'
+      if (asset) { const reason = videoInputAssetReason(model, draft.task_type, input.role, asset); if (reason) return reason }
+    }
+  }
+  return ''
 }
 
 export function videoModelForDraft(capability: VideoCapability, draft: VideoDraft): VideoCapabilityModelGroup | undefined {

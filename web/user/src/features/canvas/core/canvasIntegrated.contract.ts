@@ -36,6 +36,10 @@ assert(inspectCanvasConnection(first.present, { id: 'first2', source: image.id, 
 const cyclic = { ...document, edges: [{ id: 'old-cycle', source: target.id, target: image.id, input_role: 'reference' as const }] }
 assert(inspectCanvasConnection(cyclic, { id: 'cycle', source: image.id, target: target.id, input_role: 'reference' }) === 'cycle', 'historical edges still participate in cycle detection')
 const signature = canvasGenerationEstimateSignature(state.present, target.id)
+const replacedReference = updateCanvasNode(state, image.id, (source) => ({ ...source, asset_id: 'new-owned-reference' }))
+assert(canvasGenerationEstimateSignature(replacedReference.present, target.id) !== signature, 'replacing an asset on the same reference edge must invalidate the persisted graph quote')
+const resizedReference = resizeCanvasNode(state, image.id, { width: 640, height: 480 })
+assert(canvasGenerationEstimateSignature(resizedReference.present, target.id) === signature, 'display dimensions must not become trusted input dimensions for token pricing')
 const withDraft = (patch: Record<string, unknown>) => ({ ...state.present, nodes: state.present.nodes.map((n) => n.id === target.id ? { ...n, payload: { ...n.payload, draft: { ...(n.payload?.draft as object), ...patch } } } : n) })
 assert(canvasGenerationEstimateSignature(withDraft({ quote_token: 'quote' }), target.id) === signature, 'quote token never invalidates its own signature')
 assert(canvasGenerationEstimateSignature(withDraft({ variables: { subject: 'dog' } }), target.id) !== signature, 'inline variables invalidate estimates')

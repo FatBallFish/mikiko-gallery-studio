@@ -2,7 +2,10 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"time"
+
+	"github.com/fatballfish/pic-gallery/internal/domain/nativeimage"
 
 	domainproject "github.com/fatballfish/pic-gallery/internal/domain/project"
 )
@@ -51,6 +54,8 @@ type ImageInput struct {
 }
 
 type ImageRequest struct {
+	Operation         nativeimage.Operation
+	NativeOptions     *nativeimage.Options
 	Model             string
 	TaskType          TaskType
 	Prompt            string
@@ -71,36 +76,40 @@ type ImageRequest struct {
 }
 
 type ImageResult struct {
-	Name              string                  `json:"name,omitempty"`
-	MediaAssetID      string                  `json:"media_asset_id,omitempty"`
-	ID                string                  `json:"id,omitempty"`
-	ProjectID         string                  `json:"project_id,omitempty"`
-	Project           *domainproject.Snapshot `json:"project,omitempty"`
-	URL               string                  `json:"url,omitempty"`
-	DownloadURL       string                  `json:"download_url,omitempty"`
-	PreviewExpiresAt  *time.Time              `json:"preview_expires_at,omitempty"`
-	DownloadExpiresAt *time.Time              `json:"download_expires_at,omitempty"`
-	B64JSON           string                  `json:"b64_json,omitempty"`
-	RevisedPrompt     string                  `json:"revised_prompt,omitempty"`
-	Format            string                  `json:"format,omitempty"`
-	MimeType          string                  `json:"mime_type,omitempty"`
-	FileSizeBytes     int64                   `json:"file_size_bytes"`
-	Width             int                     `json:"width"`
-	Height            int                     `json:"height"`
-	SHA256            string                  `json:"sha256,omitempty"`
-	StorageConfigID   string                  `json:"storage_config_id,omitempty"`
-	ObjectKey         string                  `json:"object_key,omitempty"`
-	StorageDriver     string                  `json:"storage_driver,omitempty"`
-	ImageGroup        string                  `json:"image_group,omitempty"`
-	VisibilityStatus  string                  `json:"visibility_status,omitempty"`
-	ReviewReason      string                  `json:"review_reason,omitempty"`
-	PublishedAt       *time.Time              `json:"published_at,omitempty"`
+	Layer             *nativeimage.LayerMetadata `json:"layer,omitempty"`
+	Name              string                     `json:"name,omitempty"`
+	MediaAssetID      string                     `json:"media_asset_id,omitempty"`
+	ID                string                     `json:"id,omitempty"`
+	ProjectID         string                     `json:"project_id,omitempty"`
+	Project           *domainproject.Snapshot    `json:"project,omitempty"`
+	URL               string                     `json:"url,omitempty"`
+	DownloadURL       string                     `json:"download_url,omitempty"`
+	PreviewExpiresAt  *time.Time                 `json:"preview_expires_at,omitempty"`
+	DownloadExpiresAt *time.Time                 `json:"download_expires_at,omitempty"`
+	B64JSON           string                     `json:"b64_json,omitempty"`
+	RevisedPrompt     string                     `json:"revised_prompt,omitempty"`
+	Format            string                     `json:"format,omitempty"`
+	MimeType          string                     `json:"mime_type,omitempty"`
+	FileSizeBytes     int64                      `json:"file_size_bytes"`
+	Width             int                        `json:"width"`
+	Height            int                        `json:"height"`
+	SHA256            string                     `json:"sha256,omitempty"`
+	StorageConfigID   string                     `json:"storage_config_id,omitempty"`
+	ObjectKey         string                     `json:"object_key,omitempty"`
+	StorageDriver     string                     `json:"storage_driver,omitempty"`
+	ImageGroup        string                     `json:"image_group,omitempty"`
+	VisibilityStatus  string                     `json:"visibility_status,omitempty"`
+	ReviewReason      string                     `json:"review_reason,omitempty"`
+	PublishedAt       *time.Time                 `json:"published_at,omitempty"`
 }
 
 type ImageResponse struct {
-	Created           int64         `json:"created,omitempty"`
-	Data              []ImageResult `json:"data"`
-	ProviderRequestID string        `json:"-"`
+	Created           int64                 `json:"created,omitempty"`
+	Data              []ImageResult         `json:"data"`
+	ProviderRequestID string                `json:"provider_request_id,omitempty"`
+	Operation         nativeimage.Operation `json:"operation,omitempty"`
+	Usage             json.RawMessage       `json:"usage,omitempty"`
+	ProviderMetadata  json.RawMessage       `json:"-"`
 }
 
 type ImageProvider interface {

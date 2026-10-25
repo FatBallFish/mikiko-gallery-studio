@@ -138,6 +138,9 @@ func openRoute(parts []string, method string) (string, map[string]any) {
 	if resource == "image-tasks" || resource == "video-tasks" {
 		kind := strings.TrimSuffix(resource, "-tasks")
 		switch {
+		case kind == "image" && len(parts) == 3 && parts[2] == "layers" && method == http.MethodGet:
+			extra["id"] = parts[1]
+			return "get_image_task_layers", extra
 		case len(parts) == 5 && parts[2] == "results" && parts[4] == "access" && method == http.MethodPost:
 			extra["task_id"] = parts[1]
 			if kind == "image" {

@@ -1,3 +1,7 @@
+import type { ImagePricingConfig } from './image-pricing'
+export type * from './image-pricing'
+import type { NativeImageRequestFields, NativeImageProfile, NativeImageLayer } from './native-image'
+export type * from './native-image'
 export type ApiMeta = { request_id?: string }
 export type FeatureFlags = {
   video_creation: boolean
@@ -267,7 +271,9 @@ export type ImageTaskType = 'text_to_image' | 'image_edit'
 export type VideoTaskType = 'text_to_video' | 'image_to_video' | 'first_last_frame_to_video' | 'reference_to_video' | 'video_edit' | 'video_extend'
 export type VideoTaskStatus = 'queued' | 'running' | 'saving' | 'succeeded' | 'partial' | 'failed' | 'cancelled' | string
 export type VideoTaskCombination = { duration_seconds: number; resolution: string; aspect_ratio: string; audio_mode: 'silent' | 'generated' }
-export type VideoTaskOptions = { durations: number[]; resolutions: string[]; aspect_ratios: string[]; audio_generation: boolean; combinations: VideoTaskCombination[] }
+export type PublicInputCapability = { required: boolean; max_count: number; media_types: string[]; formats: string[]; max_bytes?: number }
+export type VideoInputCapabilities = Partial<Record<VideoInputRole, PublicInputCapability>>
+export type VideoTaskOptions = { inputs?: VideoInputCapabilities; durations: number[]; resolutions: string[]; aspect_ratios: string[]; audio_generation: boolean; combinations: VideoTaskCombination[] }
 export type VideoCapabilityModelGroup = {
   code: string
   name: string
@@ -276,6 +282,7 @@ export type VideoCapabilityModelGroup = {
   max_output_count: number
   task_types: VideoTaskType[]
   defaults: { task_type: VideoTaskType; duration_seconds: number; resolution: string; aspect_ratio: string; generate_audio: boolean }
+  input_capabilities_by_task_type?: Partial<Record<VideoTaskType, VideoInputCapabilities>>
   options_by_task_type: Partial<Record<VideoTaskType, VideoTaskOptions>>
 }
 export type VideoCapability = { capability_version: string; model_groups: VideoCapabilityModelGroup[]; route_model_groups?: RouteModelGroupMeta[] }
@@ -283,6 +290,7 @@ export type VideoCapabilityCombinationWire = { task_type: VideoTaskType; duratio
 export type VideoCapabilityGroupWire = {
   route_model_code: string; name: string; description?: string; icon_key?: string; icon_svg?: string; group_codes?: string[]; config_version: string; capability_version: string; minimum_points?: string
   max_output_count: number; task_types: VideoTaskType[]; combinations: VideoCapabilityCombinationWire[]
+  input_capabilities_by_task_type?: Partial<Record<VideoTaskType, VideoInputCapabilities>>
 }
 export type VideoCapabilityListWire = { groups: VideoCapabilityGroupWire[] }
 export type VideoInputRole = 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio'
@@ -853,6 +861,9 @@ export type LedgerEntry = {
 }
 
 export type CapabilityItem = {
+  native_image_layer_pricing_confirmed?: boolean
+  native_image_layer_unavailable_reason?: string
+  native_image_profile?: NativeImageProfile
   route_model_code: string
   task_types: string[]
   qualities?: string[]
@@ -877,6 +888,9 @@ export type CapabilityItem = {
   moderation?: string[]
 }
 export type CapabilityTaskOptions = {
+  native_image_layer_pricing_confirmed?: boolean
+  native_image_layer_unavailable_reason?: string
+  native_image_profile?: NativeImageProfile
   base_resolution?: string[]
   auto_base_resolution?: string
   size_modes?: Array<'auto' | 'ratio' | 'pixel' | string>
@@ -907,6 +921,9 @@ export type RouteModelPriceQuote = {
 }
 export type RouteModelGroupMeta = { code: string; name: string; icon_key?: string; icon_svg?: string }
 export type CapabilityModelGroup = {
+  native_image_layer_pricing_confirmed?: boolean
+  native_image_layer_unavailable_reason?: string
+  native_image_profile?: NativeImageProfile
   id: string
   code: string
   name: string
@@ -970,9 +987,9 @@ export type Capability = {
   reference_image_allowed_mime_types?: string[]
   task_types: ImageTaskType[]
 }
-export type EstimateRequest = { task_type: ImageTaskType; route_model_code: string; size_mode?: 'auto' | 'ratio' | 'pixel' | string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; aspect_ratio?: string; pixel_size?: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
+export type EstimateRequest = NativeImageRequestFields & { task_type: ImageTaskType; route_model_code: string; size_mode?: 'auto' | 'ratio' | 'pixel' | string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; aspect_ratio?: string; pixel_size?: string; image_count: number; reference_asset_ids?: string[]; model_group?: string }
 export type BackendImageTaskType = ImageTaskType
-export type BackendEstimateRequest = { task_type: BackendImageTaskType; route_model_code: string; size_mode?: string; aspect_ratio?: string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; requested_size?: string; requested_output_image_count: number; reference_image_count?: number }
+export type BackendEstimateRequest = NativeImageRequestFields & { task_type: BackendImageTaskType; route_model_code: string; size_mode?: string; aspect_ratio?: string; base_resolution?: string; quality?: string; output_format?: string; background?: string; output_compression?: number; moderation?: string; requested_size?: string; requested_output_image_count: number; reference_image_count?: number; reference_asset_ids?: string[] }
 export type EstimateResult = {
 	capability_version?: string
   resolved_quality_bucket?: string
@@ -1035,7 +1052,7 @@ export type ReferenceAsset = {
 }
 export type PromptReferenceBinding = { name: string; asset_id: string }
 export type PromptVariableInput = { name: string; value: string }
-export type ReferenceGenerationSnapshot = {
+export type ReferenceGenerationSnapshot = NativeImageRequestFields & {
   task_type?: ImageTaskType
   abstract_model?: string
   route_model_code?: string
@@ -1051,7 +1068,8 @@ export type ReferenceGenerationSnapshot = {
   moderation?: string
   image_count?: number
 }
-export type ImageResult = {
+export type ImageResult = NativeImageRequestFields & {
+  layer?: NativeImageLayer
   media_asset_id?: string
   name?: string
   id: string
@@ -1097,7 +1115,7 @@ export type ImageResult = {
   favorited_by_viewer?: boolean
   created_at?: string
 }
-export type ImageTask = {
+export type ImageTask = NativeImageRequestFields & {
   id: string
   project_id?: string | null
   project?: ProjectSnapshot
@@ -1552,6 +1570,7 @@ export type PromptOptimizationResult = { run_id: string; optimized_prompt: strin
 export type RouteModelVisibility = 'public' | 'groups' | 'hidden' | string
 export type RouteModelMediaType = 'image' | 'video'
 export type RouteModel = {
+  image_pricing?: ImagePricingConfig | null
   id: ID
   code: string
   name: string
@@ -1569,7 +1588,7 @@ export type RouteModel = {
   created_at: string
   updated_at: string
 }
-export type RouteModelWriteRequest = { code: string; name: string; description?: string; visibility: RouteModelVisibility; media_type: RouteModelMediaType; enabled: boolean; sort_order: number; group_ids?: ID[]; icon_key?: string; icon_svg?: string }
+export type RouteModelWriteRequest = { image_pricing?: ImagePricingConfig | null; code: string; name: string; description?: string; visibility: RouteModelVisibility; media_type: RouteModelMediaType; enabled: boolean; sort_order: number; group_ids?: ID[]; icon_key?: string; icon_svg?: string }
 export type RouteModelGroupRecord = { id: ID; code: string; name: string; description: string; media_type: RouteModelMediaType; icon_key?: string; icon_svg?: string; sort_order: number; enabled: boolean; route_model_ids: ID[]; created_at?: string; updated_at?: string }
 export type RouteModelGroupWriteRequest = { code: string; name: string; description?: string; media_type: RouteModelMediaType; icon_key?: string; icon_svg?: string; sort_order: number; enabled: boolean; route_model_ids: ID[] }
 export type RouteModelCandidate = {

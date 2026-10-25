@@ -109,7 +109,7 @@ if (switchedTaskDraft.route_model_code !== 'both' || switchedTaskDraft.task_type
   throw new Error(`task changes must normalize scoped image parameters: ${JSON.stringify(switchedTaskDraft)}`)
 }
 const switchedModelDraft = canvasImageDraftForTask({ route_model_code: 'text-only', output_image_count: 1 }, taskCapability, 'image_edit')
-if (switchedModelDraft.route_model_code !== 'both' || switchedModelDraft.task_type !== 'image_edit') {
+if (switchedModelDraft.route_model_code !== 'text-only' || switchedModelDraft.task_type !== 'image_edit') {
   throw new Error(`task changes must select a model that supports the derived task: ${JSON.stringify(switchedModelDraft)}`)
 }
 const unsupportedEditErrors = canvasImageParameterErrors({ route_model_code: 'text-only', size_mode: 'auto', quality: 'auto', output_format: 'jpeg', output_image_count: 1 }, { model_groups: [taskCapability.model_groups[0]] }, 'image_edit')

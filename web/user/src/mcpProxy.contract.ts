@@ -32,13 +32,41 @@ assert(address && typeof address !== 'string')
 const previousTarget = process.env.VITE_API_PROXY_TARGET
 process.env.VITE_API_PROXY_TARGET = `http://127.0.0.1:${address.port}`
 let vite: Awaited<ReturnType<typeof createServer>> | undefined
+async function closeFixture(name: string, close: () => Promise<unknown>) {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  console.log(`cleanup: closing ${name}`)
+  try {
+    await Promise.race([
+      Promise.resolve().then(close),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(
+          `${name} cleanup timed out after 10000ms; active resources: ${process.getActiveResourcesInfo().join(', ')}`,
+        )), 10000)
+      }),
+    ])
+    console.log(`cleanup: closed ${name}`)
+  } finally {
+    clearTimeout(timeout)
+  }
+}
 try {
   vite = await createServer({
     configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)),
     root: fileURLToPath(new URL('..', import.meta.url)),
-    server: { host: '127.0.0.1', port: 0, open: false, watch: null },
+    server: { host: '127.0.0.1', port: 0, open: false },
+    // This contract only requests proxy routes and HTML, never app modules.
+    optimizeDeps: { noDiscovery: true, include: [] },
+    plugins: [{
+      name: 'mcp-contract-disable-watch',
+      enforce: 'post',
+      configResolved(config) {
+        // Vite's config merge skips null inline overrides.
+        config.server.watch = null
+      },
+    }],
     logLevel: 'error',
   })
+  assert.equal(vite.config.server.watch, null, 'fixture must disable resolved file watching')
   await vite.listen()
   const viteAddress = vite.httpServer!.address()
   assert(viteAddress && typeof viteAddress !== 'string')
@@ -77,12 +105,20 @@ try {
     assert.match(await response.text(), /<html/, path)
     assert.equal(requests.length, count, `SPA route must not be proxied: ${path}`)
   }
-  console.log('OK: real Vite canonical MCP/OAuth proxy, streaming and SPA boundaries')
 } finally {
   releaseStream?.()
-  await vite?.close()
-  upstream.closeAllConnections()
-  await new Promise<void>(resolve => upstream.close(() => resolve()))
-  if (previousTarget === undefined) delete process.env.VITE_API_PROXY_TARGET
-  else process.env.VITE_API_PROXY_TARGET = previousTarget
+  try {
+    await closeFixture('Vite', async () => { await vite?.close() })
+  } finally {
+    try {
+      upstream.closeAllConnections()
+      await closeFixture('upstream', () => new Promise<void>((resolve, reject) => {
+        upstream.close(error => error ? reject(error) : resolve())
+      }))
+    } finally {
+      if (previousTarget === undefined) delete process.env.VITE_API_PROXY_TARGET
+      else process.env.VITE_API_PROXY_TARGET = previousTarget
+    }
+  }
 }
+console.log('OK: real Vite canonical MCP/OAuth proxy, streaming and SPA boundaries')

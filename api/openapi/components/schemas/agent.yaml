@@ -805,6 +805,12 @@ components:
     CapabilityTaskOptions:
       type: object
       properties:
+        native_image_layer_unavailable_reason: { type: string }
+        native_image_layer_pricing_confirmed:
+          type: boolean
+          description: True only when all usable route candidates support layer decomposition and have valid, explicitly confirmed cost and sale layer pricing. Unknown pricing remains unavailable.
+        native_image_profile:
+          $ref: ./common.yaml#/components/schemas/NativeImageCapabilityProfile
         base_resolution:
           type: array
           items: { type: string }
@@ -839,6 +845,12 @@ components:
     CapabilityItem:
       type: object
       properties:
+        native_image_layer_unavailable_reason: { type: string }
+        native_image_layer_pricing_confirmed:
+          type: boolean
+          description: True only when all usable route candidates support layer decomposition and have valid, explicitly confirmed cost and sale layer pricing. Unknown pricing remains unavailable.
+        native_image_profile:
+          $ref: ./common.yaml#/components/schemas/NativeImageCapabilityProfile
         abstract_model:
           type: string
         task_types:
@@ -919,6 +931,12 @@ components:
     CapabilityModelGroup:
       type: object
       properties:
+        native_image_layer_unavailable_reason: { type: string }
+        native_image_layer_pricing_confirmed:
+          type: boolean
+          description: True only when all usable route candidates support layer decomposition and have valid, explicitly confirmed cost and sale layer pricing. Unknown pricing remains unavailable.
+        native_image_profile:
+          $ref: ./common.yaml#/components/schemas/NativeImageCapabilityProfile
         id:
           type: integer
           format: int64
@@ -1266,6 +1284,10 @@ components:
       type: object
       required: [task_type, prompt, route_model_code, requested_output_image_count]
       properties:
+        operation:
+          $ref: ./common.yaml#/components/schemas/NativeImageOperation
+        native_options:
+          $ref: ./common.yaml#/components/schemas/NativeImageOptions
         project_id:
           type: string
           description: Owned project for the task and outputs. Omission resolves the caller's default project.
@@ -1313,11 +1335,11 @@ components:
         requested_output_image_count:
           type: integer
           minimum: 1
-          maximum: 5
+          description: Ordinary output count, constrained by the deployed model profile and platform limits. Qwen allows up to 6; Seedream ordinary output is 1. Never use this field as layer count.
         reference_image_count:
           type: integer
           minimum: 0
-          maximum: 4
+          description: Constrained by deployed capabilities and platform limits; Qwen 3.0 up to 3, Qwen 2.1 and Seedream up to 10, decomposition exactly 1.
         reference_asset_ids:
           type: array
           items:

@@ -28,6 +28,7 @@ func Specs() []OperationSpec {
 		add("preflight_"+kind+"_task", plural+":write", props, "project_id", "route_model_code")
 		add("create_"+kind+"_task", plural+":write", props, "project_id", "route_model_code", "idempotency_key")
 	}
+	add("get_image_task_layers", "images:read", map[string]any{"id": stringProperty()}, "id")
 	add("get_image_result_access", "images:read", map[string]any{"task_id": stringProperty(), "image_id": stringProperty(), "purpose": stringProperty()}, "task_id", "image_id")
 	add("get_video_result_access", "videos:read", map[string]any{"task_id": stringProperty(), "asset_id": stringProperty(), "purpose": stringProperty()}, "task_id", "asset_id")
 	add("cancel_video_task", "videos:delete", map[string]any{"id": stringProperty(), "idempotency_key": stringProperty()}, "id", "idempotency_key")
@@ -67,6 +68,19 @@ func listProperties() map[string]any {
 	p["limit"] = map[string]any{"type": "integer"}
 	return p
 }
+func nativeImageOptionsSchema() map[string]any {
+	boolean := func() map[string]any { return map[string]any{"type": "boolean"} }
+	coords := func(n int) map[string]any {
+		return map[string]any{"type": "array", "minItems": n, "maxItems": n, "items": map[string]any{"type": "integer", "minimum": 0, "maximum": 999}}
+	}
+	return objectSchema(map[string]any{
+		"seed": map[string]any{"type": "integer", "minimum": 0, "maximum": 2147483647}, "negative_prompt": stringProperty(), "watermark": boolean(),
+		"qwen":        objectSchema(map[string]any{"prompt_extend": boolean(), "prompt_extend_mode": map[string]any{"type": "string", "enum": []string{"direct", "agent"}}, "enable_thinking": boolean()}),
+		"seedream":    objectSchema(map[string]any{"optimize_prompt_mode": map[string]any{"type": "string", "enum": []string{"standard", "fast"}}}),
+		"annotations": map[string]any{"type": "array", "items": objectSchema(map[string]any{"reference_index": map[string]any{"type": "integer", "minimum": 1, "maximum": 10}, "label": stringProperty(), "point": coords(2), "bbox": coords(4)})},
+	})
+}
+
 func taskProperties(kind string) map[string]any {
 	p := map[string]any{}
 	keys := []string{"project_id", "route_model_code", "task_type", "quote_token", "idempotency_key"}
@@ -88,6 +102,8 @@ func taskProperties(kind string) map[string]any {
 	p["prompt_variables"] = map[string]any{"type": "array", "items": objectSchema(map[string]any{"name": stringProperty(), "value": stringProperty()}, "name", "value")}
 	p["reference_bindings"] = map[string]any{"type": "array", "items": objectSchema(map[string]any{"name": stringProperty(), "asset_id": stringProperty()}, "name", "asset_id")}
 	if kind == "image" {
+		p["operation"] = map[string]any{"type": "string", "enum": []string{"generate", "edit", "layer_decomposition"}}
+		p["native_options"] = nativeImageOptionsSchema()
 		p["reference_asset_ids"] = map[string]any{"type": "array", "items": stringProperty()}
 	} else {
 		p["inputs"] = map[string]any{"type": "array", "items": objectSchema(map[string]any{"asset_id": stringProperty(), "role": stringProperty(), "ordinal": map[string]any{"type": "integer"}}, "asset_id", "role", "ordinal")}

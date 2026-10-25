@@ -1,14 +1,15 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ImageResult, MediaAccessProjection } from '../../../shared/api-types'
+import { publicMediaApi } from '../../../shared/public-media-api'
 import { openApi } from '../../../shared/open-api'
 import { userApi } from '../../../shared/user-api'
-import { PublicVideoGallery } from '../features/media/PublicVideoGallery'
+import { PublicVideoCard } from '../features/media/PublicVideoGallery'
 import { Button, EmptyState, ErrorState, GalleryImageFrame, ImageDetailModal, copyText, useApp } from '../components'
 import { useApiResource } from '../useApiResource'
 import { mediaAccess } from '../mediaAccess'
 import { ArrowRight, Image as ImageIcon, Sparkles } from '../ui/icons'
 import { galleryImageAspect } from './galleryExperience'
-import { curatedHomeGallery, homeAccountReadinessView, homeContinuationView, homeGalleryCardView, homeModelReadinessView, homePublicDetailImage, homeRecentTaskView, newestHomeTask } from './homeGalleryModel'
+import { homeAccountReadinessView, homeContinuationView, homeGalleryCardView, homeModelReadinessView, homePublicDetailImage, homeRecentTaskView, homeRecentResult, newestHomeTask } from './homeGalleryModel'
 
 const homeClasses = {
   gallery: 'u-grid u-grid--gallery',
@@ -26,17 +27,54 @@ export function HomePage() {
   const balance = useApiResource(() => userApi.getBalance(), [])
   const capabilities = useApiResource(() => userApi.getCapabilities(), [])
   const tasks = useApiResource(() => userApi.listTasks(), [])
-  const publicGallery = useApiResource(() => openApi.listPublicGallery(1, 12, { sort: 'hot', accessToken: null }), [])
+  const publicGallery = useApiResource(() => publicMediaApi.list(1, 6, { sort: 'hot', accessToken: null }), [])
   const [selectedImage, setSelectedImage] = useState<ImageResult | null>(null)
   const [publicImageAccess, setPublicImageAccess] = useState<Record<string, MediaAccessProjection>>({})
   const publicDetailRequestRef = useRef(0)
 
   const latestTask = useMemo(() => newestHomeTask(tasks.data ?? []), [tasks.data])
   const continuation = useMemo(() => homeContinuationView(tasks.data ?? []), [tasks.data])
-  const recent = homeRecentTaskView(latestTask, tasks.loading)
+  const [recentTask, setRecentTask] = useState<typeof latestTask | null>(null)
+  const [recentError, setRecentError] = useState('')
+  const [recentReload, setRecentReload] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    setRecentTask(null)
+    setRecentError('')
+    async function load() {
+      if (!latestTask) return
+      try {
+        const detail = await userApi.getTask(latestTask.id)
+        if (cancelled) return
+        setRecentTask(detail)
+        setRecentError('')
+        if ((detail.status === 'running' || detail.status === 'queued') && ++attempts < 60) timer = setTimeout(() => void load(), 5000)
+      } catch (error) {
+        if (!cancelled) setRecentError(error instanceof Error ? error.message : '最近任务读取失败')
+      }
+    }
+    void load()
+    return () => { cancelled = true; if (timer) clearTimeout(timer) }
+  }, [latestTask?.id, latestTask?.status, recentReload])
+  const resolvedTask = recentTask?.id === latestTask?.id ? recentTask : latestTask
+  const recentResult = homeRecentResult(resolvedTask)
+  const [recentAccess, setRecentAccess] = useState<{ id: string; projection: MediaAccessProjection } | null>(null)
+  const recentRequest = useRef(0)
+  useEffect(() => { recentRequest.current += 1; setRecentAccess(null); return () => { recentRequest.current += 1 } }, [recentResult?.id])
+  async function refreshRecentImage() {
+    if (!recentResult) return ''
+    const request = recentRequest.current
+    const projection = await mediaAccess.preview({ kind: 'image', scope: 'private', id: recentResult.id })
+    if (request === recentRequest.current) setRecentAccess({ id: recentResult.id, projection })
+    return userApi.imageAssetUrl(projection.url, app.session?.token)
+  }
+  const recentProjection = recentAccess?.id === recentResult?.id ? recentAccess?.projection : undefined
+  const recent = homeRecentTaskView(resolvedTask, tasks.loading)
   const account = homeAccountReadinessView(balance.data)
   const models = homeModelReadinessView(capabilities.data, capabilities.loading)
-  const curated = useMemo(() => curatedHomeGallery(publicGallery.data?.items ?? [], 6), [publicGallery.data?.items])
+  const curated = useMemo(() => publicGallery.data?.items ?? [], [publicGallery.data?.items])
 
   async function openImage(image: ImageResult) {
     const access = publicImageAccess[image.id]
@@ -88,7 +126,7 @@ export function HomePage() {
   }
 
   const taskProgress = latestTask && (latestTask.status === 'queued' || latestTask.status === 'running')
-    ? Math.max(0, Math.min(100, Math.round(latestTask.progress || 0)))
+    ? Math.max(0, Math.min(100, Math.round(resolvedTask?.progress || 0)))
     : 0
 
   return (
@@ -107,25 +145,32 @@ export function HomePage() {
           </div>
         </div>
         <aside className="hm-task">
-          <div className="u-panel-title" style={{ margin: 0 }}><h3>最近任务</h3><span>{recent.state === 'active' ? `${taskProgress}%` : recent.state === 'complete' ? '已完成' : recent.state === 'failed' ? '失败' : '等待开始'}</span></div>
+          <div className="u-panel-title" style={{ margin: 0 }}><h3>最近任务</h3><span>{recent.state === 'active' ? `${taskProgress}%` : recent.state === 'complete' ? '已完成' : recent.state === 'failed' ? '失败' : recent.state === 'recovering' ? '结果待恢复' : '等待开始'}</span></div>
           <div className="hm-task__stage">
-            <div style={{ display: 'grid', placeItems: 'center', height: '100%', gap: 8, color: 'var(--ink-3)' }}>
+            {recentResult ? <GalleryImageFrame
+              src={recentProjection?.url || recentResult.url || recentResult.download_url ? userApi.imageAssetUrl(recentProjection?.url || recentResult.url || recentResult.download_url || '', app.session?.token) : undefined}
+              mediaExpiresAt={recentProjection?.expires_at ?? recentResult.preview_expires_at}
+              alt={recent.title} aspectRatio="4 / 3"
+              onOpen={() => app.navigate('genpic', { taskId: latestTask?.id })}
+              onMediaRefresh={refreshRecentImage} className="h-full w-full rounded-none border-0"
+            /> : <div style={{ display: 'grid', placeItems: 'center', height: '100%', gap: 8, color: 'var(--ink-3)' }}>
               <Sparkles size={28} strokeWidth={1.2} aria-hidden="true" />
               <span className="u-meta">{recent.title}</span>
-            </div>
-            <span className="u-chip u-chip--accent hm-task__badge"><span className="u-dot" aria-hidden="true" />{recent.state === 'active' ? `生成中 · ${taskProgress}%` : recent.state === 'failed' ? '需要重试' : recent.state === 'complete' ? '已完成' : '待开始'}</span>
+            </div>}
+            <span className="u-chip u-chip--accent hm-task__badge"><span className="u-dot" aria-hidden="true" />{recent.state === 'active' ? `生成中 · ${taskProgress}%` : recent.state === 'failed' ? '需要重试' : recent.state === 'complete' ? '已完成' : recent.state === 'recovering' ? '结果待恢复' : '待开始'}</span>
           </div>
           <div style={{ display: 'grid', gap: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-              <strong style={{ fontSize: 13 }}>{recent.detail}</strong>
+              <strong style={{ fontSize: 13 }}>{recent.title}</strong>
               <span className="u-meta">{latestTask?.route_model_code || latestTask?.abstract_model || '—'}</span>
             </div>
             <div className="u-progress"><span style={{ width: `${recent.state === 'active' ? taskProgress : recent.state === 'complete' ? 100 : 0}%` }} /></div>
+            <div className="u-meta">{recent.detail}</div>
             <div className="u-meta">{latestTask ? `${latestTask.aspect_ratio || '-'} · ${latestTask.image_count || '—'} 张` : '还没有生成记录'}</div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {recent.action !== 'none' ? (
-              <Button tone="ghost" onClick={() => app.navigate('genpic', { taskId: latestTask?.id })}>{recentActionLabels[recent.action]}</Button>
+              <Button onClick={() => app.navigate('genpic', { taskId: latestTask?.id })}>{recentActionLabels[recent.action]}</Button>
             ) : null}
             <Button tone="ghost" onClick={() => app.navigate('genpic')}>新任务</Button>
           </div>
@@ -139,8 +184,8 @@ export function HomePage() {
         <div className="u-stat"><span className="u-stat__label">最近任务</span><span className="u-stat__value">{tasks.loading ? '…' : tasks.data?.length ?? 0}</span><span className="u-stat__foot">全部历史任务</span></div>
       </div>
 
-      {(capabilities.error || balance.error || tasks.error) ? (
-        <ErrorState message={capabilities.error || balance.error || tasks.error || '首页状态读取失败'} onRetry={() => void Promise.all([capabilities.reload(), balance.reload(), tasks.reload()])} />
+      {(capabilities.error || balance.error || tasks.error || recentError) ? (
+        <ErrorState message={capabilities.error || balance.error || tasks.error || recentError || '首页状态读取失败'} onRetry={() => void Promise.all([capabilities.reload(), balance.reload(), tasks.reload(), Promise.resolve(setRecentReload((value) => value + 1))])} />
       ) : null}
 
       <section style={{ marginTop: 36 }} aria-labelledby="home-inspiration-title">
@@ -157,15 +202,17 @@ export function HomePage() {
 
         {publicGallery.loading && !curated.length ? <HomeGallerySkeleton /> : null}
         {publicGallery.error && !curated.length ? <ErrorState message={publicGallery.error} onRetry={() => void publicGallery.reload()} /> : null}
-        {!publicGallery.loading && !publicGallery.error && !curated.length ? <EmptyState icon={<ImageIcon size={26} strokeWidth={1.5} />} title="暂无精选作品" detail="公开广场还没有审核通过的图片。" /> : null}
+        {!publicGallery.loading && !publicGallery.error && !curated.length ? <EmptyState icon={<ImageIcon size={26} strokeWidth={1.5} />} title="暂无精选作品" detail="公开广场还没有审核通过的作品。" /> : null}
         {curated.length ? (
           <div className={homeClasses.gallery}>
-            {curated.map((image) => {
+            {curated.map((item) => {
+              if (item.media_type === 'video') return <PublicVideoCard key={`video:${item.id}`} video={item.video} />
+              const image = item.image
               const card = homeGalleryCardView(image)
               const access = publicImageAccess[image.id]
               const src = access?.url || image.url || image.download_url
               return (
-                <article className="u-card" key={image.id}>
+                <article className="u-card" key={`image:${image.id}`}>
                   <div className="u-card__media">
                     <GalleryImageFrame
                       src={src ? userApi.imageAssetUrl(src, null) : undefined}
@@ -190,7 +237,6 @@ export function HomePage() {
           </div>
         ) : null}
       </section>
-      <PublicVideoGallery pageSize={6} />
       <ImageDetailModal
         context="public"
         title="精选作品详情"

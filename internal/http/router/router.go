@@ -76,6 +76,7 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		mux.HandleFunc("/api/agent/gallery/v1/images/", api.HandleAgentGalleryImageDetail)
 		mux.HandleFunc("/api/agent/media/v1/groups", api.HandleMediaGroups)
 		mux.HandleFunc("/api/agent/media/v1/video-publications/", api.HandleVideoPublication)
+		mux.HandleFunc("/api/public/v1/media", api.HandlePublicFeed)
 		mux.HandleFunc("/api/public/v1/videos", api.HandlePublicVideos)
 		mux.HandleFunc("/api/public/v1/videos/", api.HandlePublicVideoDetail)
 		mux.HandleFunc("/api/agent/media/v1/assets", api.HandleMediaAssets)
@@ -132,7 +133,16 @@ func newNormalMux(api *handlers.API, system *handlers.SystemAPI, corsAllowedOrig
 		})
 		mux.HandleFunc("/api/agent/image/v1/tasks", api.HandleAgentTasks)
 		mux.HandleFunc("/api/agent/image/v1/tasks/events", api.HandleAgentTaskEvents)
-		mux.HandleFunc("/api/agent/image/v1/tasks/", api.HandleAgentTaskDetail)
+		mux.HandleFunc("/api/agent/image/v1/tasks/", func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/layers/archive"):
+				api.ImageTaskLayerArchive(w, r)
+			case strings.HasSuffix(r.URL.Path, "/layers"):
+				api.ImageTaskLayers(w, r)
+			default:
+				api.HandleAgentTaskDetail(w, r)
+			}
+		})
 		mux.HandleFunc("/api/agent/image/v1/history/tasks/clear-failed", api.HandleImageHistoryClearFailed)
 		mux.HandleFunc("/api/agent/image/v1/history/tasks", api.HandleAgentHistoryTasks)
 		mux.HandleFunc("/api/agent/image/v1/history/tasks/", api.HandleAgentHistoryTaskDetail)

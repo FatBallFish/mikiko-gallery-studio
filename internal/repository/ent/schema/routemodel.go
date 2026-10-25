@@ -6,6 +6,7 @@ import (
 	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+	"github.com/fatballfish/pic-gallery/internal/domain/imagepricing"
 )
 
 type RouteModel struct{ ent.Schema }
@@ -14,6 +15,7 @@ func (RouteModel) Mixin() []ent.Mixin { return []ent.Mixin{TimeMixin{}, SoftDele
 
 func (RouteModel) Fields() []ent.Field {
 	return []ent.Field{
+		field.JSON("image_pricing", &imagepricing.Config{}).Optional(),
 		field.String("code").MaxLen(64).NotEmpty(),
 		field.String("name").MaxLen(128).NotEmpty(),
 		field.Text("description").Default(""),
